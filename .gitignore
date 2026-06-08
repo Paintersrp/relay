@@ -1,0 +1,26 @@
+# Go
+/bin/
+/tmp/
+
+# Local data
+/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Frontend
+node_modules/
+web/static/app.css
+web/static/app.js
+
+# Environment
+.env
+.env.local
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+
+AGENTS.md
+.clinerules
