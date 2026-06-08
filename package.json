@@ -1,0 +1,22 @@
+{
+  "name": "relay",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build:css": "npx @tailwindcss/cli -i web/src/styles.css -o web/static/app.css",
+    "build:js": "npx esbuild web/src/main.ts --bundle --outfile=web/static/app.js --format=iife --platform=browser --target=es2020",
+    "build": "npm run build:css ; if ($?) { npm run build:js }",
+    "watch:css": "npx @tailwindcss/cli -i web/src/styles.css -o web/static/app.css --watch",
+    "watch:js": "npx esbuild web/src/main.ts --bundle --outfile=web/static/app.js --format=iife --platform=browser --target=es2020 --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.0.0",
+    "esbuild": "^0.23.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "alpinejs": "^3.14.0",
+    "htmx.org": "^1.9.0"
+  }
+}

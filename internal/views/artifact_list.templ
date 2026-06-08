@@ -1,0 +1,29 @@
+package views
+
+import "relay/internal/store"
+
+templ ArtifactList(artifacts []store.Artifact, runID int64) {
+	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
+		<h3 class="font-medium mb-3">Artifacts</h3>
+		if len(artifacts) == 0 {
+			<p class="text-xs text-gray-600">No artifacts yet.</p>
+		} else {
+			<ul class="space-y-2">
+				for _, a := range artifacts {
+					<li class="flex items-center justify-between text-xs py-2 border-b border-gray-800/50 last:border-0">
+						<div>
+							<span class="text-gray-300 font-medium">{ a.Kind }</span>
+							<span class="text-gray-600 ml-2">{ a.CreatedAt }</span>
+						</div>
+						<div class="flex gap-2">
+							<a href={"/runs/" + Itoa(runID) + "/artifacts/" + a.Kind}
+								class="text-indigo-400 hover:text-indigo-300">View</a>
+							<a href={"/runs/" + Itoa(runID) + "/artifacts/" + a.Kind + "/download"}
+								class="text-gray-500 hover:text-gray-300">Download</a>
+						</div>
+					</li>
+				}
+			</ul>
+		}
+	</div>
+}

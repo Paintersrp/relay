@@ -1,0 +1,110 @@
+package views
+
+import "relay/internal/store"
+
+templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check) {
+	<div class="space-y-3">
+		<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-3">
+					<span class="text-xs font-bold text-gray-500 w-6">1</span>
+					<div>
+						<h3 class="font-medium">Handoff Validation</h3>
+						<p class="text-xs text-gray-500">Validate handoff structure and completeness</p>
+					</div>
+				</div>
+				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST" class="flex gap-2">
+					<input type="hidden" name="action" value="validate-handoff"/>
+					<button type="submit"
+						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+						Run Validation
+					</button>
+				</form>
+			</div>
+			if len(checks) > 0 {
+				<div class="mt-3 pt-3 border-t border-gray-800">
+					for _, c := range checks {
+						if c.Kind == "validation" {
+							<div class="flex items-center gap-2 text-xs py-1">
+								if c.Status == "pass" {
+									<span class="text-green-400 font-mono">{ c.Status }</span>
+								} else if c.Status == "fail" {
+									<span class="text-red-400 font-mono">{ c.Status }</span>
+								} else if c.Status == "warn" {
+									<span class="text-yellow-400 font-mono">{ c.Status }</span>
+								} else {
+									<span class="text-gray-400 font-mono">{ c.Status }</span>
+								}
+								<span class="text-gray-300">{ c.Summary }</span>
+							</div>
+						}
+					}
+				</div>
+			}
+		</div>
+
+		<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-3">
+					<span class="text-xs font-bold text-gray-500 w-6">2</span>
+					<div>
+						<h3 class="font-medium">Ready Prompt</h3>
+						<p class="text-xs text-gray-500">Generate agent-ready prompt from handoff</p>
+					</div>
+				</div>
+				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST" class="flex gap-2">
+					<input type="hidden" name="action" value="prepare-prompt"/>
+					<button type="submit"
+						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+						Generate Prompt
+					</button>
+				</form>
+			</div>
+			if artifactExists(artifacts, "ready_prompt") {
+				<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/ready_prompt"}
+						class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/ready_prompt/download"}
+						class="text-xs text-gray-500 hover:text-gray-300">Download</a>
+				</div>
+			}
+		</div>
+
+		@futureStep(3, "Agent Execution", "Execute the ready prompt with a code agent", run.ID, "run-agent")
+		@futureStep(4, "Validation", "Run validation commands and capture output", run.ID, "run-validation")
+		@futureStep(5, "Diff / Scope", "Inspect git diff and scope changes", run.ID, "inspect-diff")
+		@futureStep(6, "Audit Packet", "Generate review audit packet", run.ID, "generate-audit-packet")
+
+		@ActionButtons(run.ID)
+	</div>
+}
+
+templ futureStep(num int, title, desc string, runID int64, action string) {
+	<div class="border border-gray-800/50 rounded-lg p-4 bg-gray-900/30 opacity-70">
+		<div class="flex items-center justify-between">
+			<div class="flex items-center gap-3">
+				<span class="text-xs font-bold text-gray-600 w-6">{ Fmt("%d", num) }</span>
+				<div>
+					<h3 class="font-medium text-gray-500">{ title }</h3>
+					<p class="text-xs text-gray-600">{ desc }</p>
+				</div>
+			</div>
+			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST">
+				<input type="hidden" name="action" value={ action }/>
+				<button type="submit"
+					class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 hover:border-gray-600 hover:text-gray-400 transition-colors">
+					Not Implemented
+				</button>
+			</form>
+		</div>
+	</div>
+}
+
+func artifactExists(artifacts []store.Artifact, kind string) bool {
+	for _, a := range artifacts {
+		if a.Kind == kind {
+			return true
+		}
+	}
+	return false
+}

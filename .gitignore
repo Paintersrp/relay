@@ -1,26 +1,47 @@
-# Go
+# Go build output
 /bin/
 /tmp/
+*.test
+*.out
 
-# Local data
+# Local app data
 /data/
 *.sqlite
+*.sqlite3
 *.sqlite-shm
 *.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
 
-# Frontend
+# Generated frontend dependencies/output
 node_modules/
 web/static/app.css
+web/static/app.css.map
 web/static/app.js
+web/static/app.js.map
+
+# Coverage
+coverage/
+coverage.out
 
 # Environment
 .env
 .env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
 
 # OS/editor
 .DS_Store
+Thumbs.db
 .vscode/
 .idea/
 
-AGENTS.md
-.clinerules
+# Misc temporary files
+*.tmp
+*.bak
+*.swp
+*.swo

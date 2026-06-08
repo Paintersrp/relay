@@ -1,0 +1,27 @@
+package views
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en" class="bg-gray-950 text-gray-200">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title } - Relay</title>
+			<link rel="stylesheet" href="/static/app.css"/>
+			<script src="/static/app.js" defer></script>
+		</head>
+		<body class="min-h-screen">
+			<nav class="border-b border-gray-800 px-6 py-3 flex items-center gap-4">
+				<a href="/" class="text-lg font-bold text-indigo-400 hover:text-indigo-300">Relay</a>
+				<span class="text-gray-600 text-sm">local-first handoff orchestration</span>
+				<div class="flex-1"></div>
+				<a href="/handoffs/new" class="inline-flex items-center px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors">
+					New Handoff
+				</a>
+			</nav>
+			<main class="max-w-5xl mx-auto px-6 py-8">
+				{ children... }
+			</main>
+		</body>
+	</html>
+}
