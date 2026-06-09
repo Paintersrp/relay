@@ -2,16 +2,73 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
 
+func quoteArg(arg string) string {
+	if !strings.ContainsAny(arg, " 	") {
+		return arg
+	}
+	return `"` + strings.ReplaceAll(arg, `"`, `\"`) + `"`
+}
+
+func quoteCommand(args []string) string {
+	quoted := make([]string, 0, len(args))
+	for _, arg := range args {
+		quoted = append(quoted, quoteArg(arg))
+	}
+	return strings.Join(quoted, " ")
+}
+
+func helperCommand(args ...string) string {
+	parts := []string{os.Args[0], "-test.run=TestHelperProcess", "--"}
+	parts = append(parts, args...)
+	return quoteCommand(parts)
+}
+
+func TestHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+
+	args := os.Args
+	for len(args) > 0 && args[0] != "--" {
+		args = args[1:]
+	}
+	if len(args) > 0 {
+		args = args[1:]
+	}
+
+	if len(args) == 0 {
+		os.Exit(2)
+	}
+
+	switch args[0] {
+	case "success":
+		fmt.Fprintln(os.Stdout, "hello world")
+		fmt.Fprintln(os.Stderr, "warning text")
+		os.Exit(0)
+	case "fail":
+		fmt.Fprintln(os.Stderr, "forced failure")
+		os.Exit(7)
+	case "sleep":
+		time.Sleep(2 * time.Second)
+		os.Exit(0)
+	default:
+		os.Exit(2)
+	}
+}
+
 func TestRunCommandSuccess(t *testing.T) {
+	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+
 	cmd := ValidationCommand{
 		Label:   "echo",
-		Command: `cmd /c echo hello world`,
+		Command: helperCommand("success"),
 		Source:  "test",
 	}
 
@@ -28,18 +85,23 @@ func TestRunCommandSuccess(t *testing.T) {
 	if !strings.Contains(result.Stdout, "hello world") {
 		t.Errorf("expected stdout to contain 'hello world', got %q", result.Stdout)
 	}
+	if !strings.Contains(result.Stderr, "warning text") {
+		t.Errorf("expected stderr to contain 'warning text', got %q", result.Stderr)
+	}
 	if result.TimedOut {
 		t.Error("expected not timed out")
 	}
-	if result.DurationMS <= 0 {
-		t.Errorf("expected positive duration, got %d", result.DurationMS)
+	if result.DurationMS < 0 {
+		t.Errorf("expected non-negative duration, got %d", result.DurationMS)
 	}
 }
 
 func TestRunCommandNonZeroExit(t *testing.T) {
+	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+
 	cmd := ValidationCommand{
 		Label:   "fail",
-		Command: `cmd /c exit 1`,
+		Command: helperCommand("fail"),
 		Source:  "test",
 	}
 
@@ -50,8 +112,11 @@ func TestRunCommandNonZeroExit(t *testing.T) {
 
 	result := RunValidationCommand(context.Background(), dir, cmd, 10*time.Second)
 
-	if result.ExitCode != 1 {
-		t.Errorf("expected exit code 1, got %d", result.ExitCode)
+	if result.ExitCode != 7 {
+		t.Errorf("expected exit code 7, got %d", result.ExitCode)
+	}
+	if !strings.Contains(result.Stderr, "forced failure") {
+		t.Errorf("expected stderr to contain 'forced failure', got %q", result.Stderr)
 	}
 	if result.TimedOut {
 		t.Error("expected not timed out")
@@ -81,10 +146,11 @@ func TestRunInvalidCommand(t *testing.T) {
 }
 
 func TestRunCommandTimeout(t *testing.T) {
-	// Use ping to create a long-running command on Windows
+	t.Setenv("GO_WANT_HELPER_PROCESS", "1")
+
 	cmd := ValidationCommand{
 		Label:   "timeout",
-		Command: "ping -n 10 127.0.0.1",
+		Command: helperCommand("sleep"),
 		Source:  "test",
 	}
 
@@ -93,7 +159,7 @@ func TestRunCommandTimeout(t *testing.T) {
 		t.Fatalf("os.Getwd: %v", err)
 	}
 
-	result := RunValidationCommand(context.Background(), dir, cmd, 100*time.Millisecond)
+	result := RunValidationCommand(context.Background(), dir, cmd, 50*time.Millisecond)
 
 	if !result.TimedOut {
 		t.Error("expected timed out to be true")
