@@ -4,14 +4,14 @@ Local-first handoff orchestration web app.
 
 Relay accepts surgical implementation handoffs, stores run metadata and artifacts, validates handoff structure, generates transformed Agent Prompts, and provides a run workbench for inspection.
 
-## Workflow
+## Intended Relay workflow
 
-Relay's intended workflow:
+Relay's intended workflow is:
 
 1. Parse the original handoff.
 2. Build Intake Review.
 3. Detect model, branch, repo, scoped files, validation commands, final output contract, and suggested commit.
-4. Warn/block when the selected repo does not match the handoff scope.
+4. Warn or block when the selected repo does not match the handoff scope.
 5. Generate a transformed Agent Prompt for the running repo agent.
 6. Store original handoff and transformed Agent Prompt separately.
 7. Store manual agent result intake.
@@ -29,7 +29,7 @@ Key design points:
 
 ## Not implemented yet
 
-These items are not implemented in the current local-first flow:
+The current local-first flow does not yet implement:
 
 - direct OpenCode execution
 - automatic repo-agent execution
@@ -108,33 +108,33 @@ make test       # run tests
 
 ## Routes
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | Dashboard with recent runs |
-| GET | `/handoffs/new` | New handoff form |
-| POST | `/handoffs` | Create handoff run |
-| GET | `/runs/{id}` | Run detail workbench |
-| POST | `/runs/{id}/actions` | Execute run action |
-| GET | `/runs/{id}/artifacts/{kind}` | View artifact |
-| GET | `/runs/{id}/artifacts/{kind}/download` | Download artifact |
-| GET | `/settings/repos` | Repository settings |
-| POST | `/settings/repos/roots` | Add scan root |
-| POST | `/settings/repos/scan` | Scan repos now |
+| Method | Path                                   | Description                |
+| ------ | -------------------------------------- | -------------------------- |
+| GET    | `/`                                    | Dashboard with recent runs |
+| GET    | `/handoffs/new`                        | New handoff form           |
+| POST   | `/handoffs`                            | Create handoff run         |
+| GET    | `/runs/{id}`                           | Run detail workbench       |
+| POST   | `/runs/{id}/actions`                   | Execute run action         |
+| GET    | `/runs/{id}/artifacts/{kind}`          | View artifact              |
+| GET    | `/runs/{id}/artifacts/{kind}/download` | Download artifact          |
+| GET    | `/settings/repos`                      | Repository settings        |
+| POST   | `/settings/repos/roots`                | Add scan root              |
+| POST   | `/settings/repos/scan`                 | Scan repos now             |
 
 ## Run Actions
 
-| Action | Status |
-|--------|--------|
-| `validate-handoff` | Implemented |
-| `prepare-prompt` | Implemented (generates Agent Prompt) |
-| `mark-accepted` | Implemented |
-| `mark-needs-cleanup` | Implemented |
-| `generate-opencode-packet` | Implemented |
-| `submit-agent-result` | Implemented |
-| `run-agent` | Future |
-| `run-validation` | Implemented |
-| `inspect-diff` | Future |
-| `generate-audit-packet` | Future |
+| Action                     | Status                               |
+| -------------------------- | ------------------------------------ |
+| `validate-handoff`         | Implemented                          |
+| `prepare-prompt`           | Implemented (generates Agent Prompt) |
+| `mark-accepted`            | Implemented                          |
+| `mark-needs-cleanup`       | Implemented                          |
+| `generate-opencode-packet` | Implemented                          |
+| `submit-agent-result`      | Implemented                          |
+| `run-agent`                | Future                               |
+| `run-validation`           | Implemented                          |
+| `inspect-diff`             | Future                               |
+| `generate-audit-packet`    | Future                               |
 
 ## Development live reload
 

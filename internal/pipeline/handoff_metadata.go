@@ -6,6 +6,19 @@ import (
 	"strings"
 )
 
+var allowedRootScopedFiles = map[string]bool{
+	"README.md":     true,
+	"AGENTS.md":     true,
+	".clinerules":   true,
+	"Makefile":      true,
+	"go.mod":        true,
+	"go.sum":        true,
+	"package.json":  true,
+	"tsconfig.json": true,
+	"sqlc.yaml":     true,
+	"sqlc.yml":      true,
+}
+
 type HandoffMetadata struct {
 	Title               string              `json:"title"`
 	RecommendedModel    string              `json:"recommended_model"`
@@ -41,9 +54,33 @@ func isOutputContractHeading(line string) bool {
 }
 
 var sourceFileRe = regexp.MustCompile(`[a-zA-Z0-9_/\\.*-]+\.[a-zA-Z]+`)
+var scopedFileRe = regexp.MustCompile(`^[a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+$`)
 
 func looksLikeSourceFile(s string) bool {
 	return sourceFileRe.MatchString(s) && (strings.Contains(s, "/") || strings.Contains(s, "\\"))
+}
+
+func looksLikeScopedFile(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+
+	if strings.Contains(s, "/") || strings.Contains(s, "\\") {
+		return scopedFileRe.MatchString(s)
+	}
+
+	if allowedRootScopedFiles[s] {
+		return true
+	}
+
+	ext := strings.ToLower(filepath.Ext(s))
+	switch ext {
+	case ".go", ".ts", ".tsx", ".js", ".jsx", ".templ", ".md", ".json", ".yaml", ".yml", ".sql":
+		return true
+	default:
+		return false
+	}
 }
 
 func cleanPathToken(s string) string {
@@ -130,25 +167,26 @@ func ParseHandoffMetadata(handoffText string, repoDefaultCommandsJSON string) Ha
 	inScopeSection := false
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if !inScopeSection && scopeSectionRe.MatchString(trimmed) {
-			inScopeSection = true
+
+		if strings.HasPrefix(trimmed, "## ") {
+			inScopeSection = scopeSectionRe.MatchString(trimmed)
 			continue
 		}
-		if inScopeSection {
-			if strings.HasPrefix(trimmed, "## ") {
-				break
-			}
-			cleaned := cleanPathToken(trimmed)
-			if cleaned == "" || seen[cleaned] {
-				continue
-			}
-			if looksLikeSourceFile(cleaned) {
-				seen[cleaned] = true
-				meta.ScopedFiles = append(meta.ScopedFiles, ScopedFile{
-					Path:   cleaned,
-					Source: "handoff",
-				})
-			}
+
+		if !inScopeSection {
+			continue
+		}
+
+		cleaned := cleanPathToken(trimmed)
+		if cleaned == "" || seen[cleaned] {
+			continue
+		}
+		if looksLikeScopedFile(cleaned) {
+			seen[cleaned] = true
+			meta.ScopedFiles = append(meta.ScopedFiles, ScopedFile{
+				Path:   cleaned,
+				Source: "handoff",
+			})
 		}
 	}
 

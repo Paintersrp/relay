@@ -250,6 +250,69 @@ Return DONE or BLOCKED.
 	}
 }
 
+func TestValidateHandoffScopePathsUseMetadataExtraction(t *testing.T) {
+	text := `# Example Surgical Implementation
+
+## Goal
+
+Do a thing.
+
+## Do not change
+
+- Unrelated behavior.
+
+## Task checklist
+
+- [ ] Update code
+
+## Direct files likely changed
+
+- ` + "`README.md`" + `
+- ` + "`internal/pipeline/handoff_metadata.go`" + `
+
+## Tests / validation
+
+` + "```bash" + `
+go test ./...
+` + "```" + `
+
+If large.md or input.files are missing, check config.
+Prefer rtk.exe over raw commands.
+
+## Output
+
+Return DONE or BLOCKED.
+`
+
+	report := ValidateHandoff(text, "DeepSeek V4 Flash")
+
+	for _, sp := range report.Detected.ScopePaths {
+		if sp == "large.md" || sp == "input.files" || sp == "rtk.exe" {
+			t.Errorf("code example identifier %q should not appear as scope path", sp)
+		}
+	}
+
+	foundREADME := false
+	foundHandoffMeta := false
+	for _, sp := range report.Detected.ScopePaths {
+		if sp == "README.md" {
+			foundREADME = true
+		}
+		if sp == "internal/pipeline/handoff_metadata.go" {
+			foundHandoffMeta = true
+		}
+	}
+	if !foundREADME {
+		t.Errorf("expected README.md in scope paths, got %#v", report.Detected.ScopePaths)
+	}
+	if !foundHandoffMeta {
+		t.Errorf("expected internal/pipeline/handoff_metadata.go in scope paths, got %#v", report.Detected.ScopePaths)
+	}
+	if len(report.Detected.ScopePaths) != 2 {
+		t.Fatalf("expected 2 scope paths, got %d: %#v", len(report.Detected.ScopePaths), report.Detected.ScopePaths)
+	}
+}
+
 func TestValidateHandoffScopePathsIgnoreCodeExampleIdentifiers(t *testing.T) {
 	text := `# Example Surgical Implementation
 

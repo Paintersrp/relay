@@ -185,6 +185,71 @@ func TestBuildIntakeReviewNoScopedFilesNoBlocker(t *testing.T) {
 	}
 }
 
+func TestParseHandoffMetadataScansMultipleScopedFileSections(t *testing.T) {
+	text := `# Test
+
+## Scope
+
+Exact areas affected:
+
+- parser behavior
+
+## Goal
+
+Do a thing.
+
+## Direct files likely changed
+
+- ` + "`internal/pipeline/handoff_metadata.go`" + `
+- ` + "`README.md`" + `
+
+## Direct context files
+
+- ` + "`internal/pipeline/validate_handoff.go`" + `
+- ` + "`package.json`" + `
+`
+	meta := ParseHandoffMetadata(text, "[]")
+	expected := []string{
+		"internal/pipeline/handoff_metadata.go",
+		"README.md",
+		"internal/pipeline/validate_handoff.go",
+		"package.json",
+	}
+	if len(meta.ScopedFiles) != len(expected) {
+		t.Fatalf("expected %d scoped files, got %d: %#v", len(expected), len(meta.ScopedFiles), meta.ScopedFiles)
+	}
+	for _, exp := range expected {
+		found := false
+		for _, sf := range meta.ScopedFiles {
+			if sf.Path == exp {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected scoped file %q not found in %#v", exp, meta.ScopedFiles)
+		}
+	}
+}
+
+func TestParseHandoffMetadataAllowsExplicitRootLevelFiles(t *testing.T) {
+	text := `# Test
+
+## Direct files likely changed
+
+- ` + "`README.md`" + `
+- ` + "`Makefile`" + `
+- ` + "`go.mod`" + `
+- ` + "`package.json`" + `
+- ` + "`tsconfig.json`" + `
+- ` + "`sqlc.yaml`" + `
+`
+	meta := ParseHandoffMetadata(text, "[]")
+	if len(meta.ScopedFiles) != 6 {
+		t.Fatalf("expected 6 scoped files, got %d: %#v", len(meta.ScopedFiles), meta.ScopedFiles)
+	}
+}
+
 func TestExtractScopedFilePathsIgnoresCodeExampleIdentifiers(t *testing.T) {
 	text := "# Test\n\n## Direct files likely changed\n\n- internal/handlers/handoff_intake.go\n\n## Validation\n\n" +
 		"```bash\n" +
