@@ -1,9 +1,20 @@
 package views
 
+type PreviewDiffLine struct {
+	Kind string
+	Text string
+}
+
+type PreviewDiff struct {
+	Lines     []PreviewDiffLine
+	Truncated bool
+}
+
 type RunPreviews struct {
 	OriginalHandoff string
 	ValidationJSON  string
 	AgentPrompt     string
+	AgentPromptDiff PreviewDiff
 }
 
 templ RunPreviewPanels(previews RunPreviews) {

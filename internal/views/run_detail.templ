@@ -31,7 +31,7 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 			@IntakeReviewPanel(run, repo, intakeReview)
 		}
 
-		@StepCards(run, artifacts, checks)
+		@StepCards(run, artifacts, checks, previews)
 
 		@OpenCodePreview(run, repo, artifacts)
 

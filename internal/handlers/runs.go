@@ -62,10 +62,25 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	checksList, _ := h.store.ListChecksByRun(id)
 	eventsList, _ := h.store.ListEventsByRun(id)
 
+	originalPreview := readArtifactPreview(id, "original_handoff")
+	agentPromptPreview := readAgentPromptPreview(id)
+
 	previews := views.RunPreviews{
-		OriginalHandoff: readArtifactPreview(id, "original_handoff"),
+		OriginalHandoff: originalPreview,
 		ValidationJSON:  readArtifactPreview(id, "handoff_validation_json"),
-		AgentPrompt:     readAgentPromptPreview(id),
+		AgentPrompt:     agentPromptPreview,
+	}
+
+	if originalPreview != "" && agentPromptPreview != "" {
+		pipelineDiff := pipeline.BuildPreviewDiff(originalPreview, agentPromptPreview, 300)
+		var diffLines []views.PreviewDiffLine
+		for _, l := range pipelineDiff.Lines {
+			diffLines = append(diffLines, views.PreviewDiffLine{Kind: l.Kind, Text: l.Text})
+		}
+		previews.AgentPromptDiff = views.PreviewDiff{
+			Lines:     diffLines,
+			Truncated: pipelineDiff.Truncated,
+		}
 	}
 
 	// compute intake review

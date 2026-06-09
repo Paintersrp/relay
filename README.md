@@ -191,6 +191,8 @@ Model selection is automatic by default. The model override control is optional 
 
 The Agent Prompt is a transformed execution prompt for the running repo agent. Relay parses the original handoff, removes orchestration-only metadata, strips raw validation command blocks, and appends validation responsibility and final output contract sections. The original handoff and transformed Agent Prompt are stored separately.
 
+Run detail shows an inline Original Handoff → Agent Prompt diff after the Agent Prompt is generated, while keeping View/Download links for full artifacts.
+
 Relay does not execute OpenCode yet, and the OpenCode packet is metadata only until a future execution adapter consumes it.
 
 ## OpenCode handoff packet
