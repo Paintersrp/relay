@@ -6,6 +6,13 @@ import (
 	"testing"
 )
 
+func requireGit(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+}
+
 func TestListLocalBranches_EmptyPath(t *testing.T) {
 	branches, err := ListLocalBranches("")
 	if err == nil {
@@ -29,9 +36,12 @@ func TestListLocalBranches_NotAGitRepo(t *testing.T) {
 }
 
 func TestListLocalBranches_DetectsCurrentBranch(t *testing.T) {
+	requireGit(t)
 	root := t.TempDir()
 
 	runCmd(t, root, "git", "init", "-b", "main")
+	runCmd(t, root, "git", "config", "user.email", "relay-test@example.invalid")
+	runCmd(t, root, "git", "config", "user.name", "Relay Test")
 	runCmd(t, root, "git", "commit", "--allow-empty", "-m", "initial")
 
 	branches, err := ListLocalBranches(root)
@@ -50,9 +60,12 @@ func TestListLocalBranches_DetectsCurrentBranch(t *testing.T) {
 }
 
 func TestListLocalBranches_MultipleBranches(t *testing.T) {
+	requireGit(t)
 	root := t.TempDir()
 
 	runCmd(t, root, "git", "init", "-b", "main")
+	runCmd(t, root, "git", "config", "user.email", "relay-test@example.invalid")
+	runCmd(t, root, "git", "config", "user.name", "Relay Test")
 	runCmd(t, root, "git", "commit", "--allow-empty", "-m", "initial")
 	runCmd(t, root, "git", "branch", "feature-a")
 	runCmd(t, root, "git", "branch", "feature-b")

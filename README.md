@@ -207,7 +207,13 @@ Open `/settings/repos` to:
 - scan now
 - review discovered repositories
 
-The New Handoff page lets you select a discovered repo or use manual repo name/path entry. The New Handoff form discovers local Git branches for discovered repositories. Branch selection is populated from the selected local repo. Manual repo entry keeps a manual branch/worktree field because branches cannot be discovered until the repo path is submitted.
+The New Handoff page lets you select a discovered repo or use manual repo name/path entry. The New Handoff form discovers local Git branches for discovered repositories. Branch selection is populated from the selected local repo. Manual repo entry keeps a manual branch/worktree field because branches cannot be discovered until the repo path is submitted. Branch discovery has a 2-second timeout and fails gracefully if the repo is unavailable or slow.
+
+## New handoff intake
+
+A run can be created by pasting a handoff or uploading a `.txt` / `.md` handoff file. If both upload and paste are provided, the uploaded file is used.
+
+The title field is optional. When blank, Relay derives the run title from the handoff's first `#` heading and falls back to `Untitled handoff`.
 
 ## Project Structure
 

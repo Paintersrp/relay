@@ -1,10 +1,14 @@
 package repos
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
+
+const branchDiscoveryTimeout = 2 * time.Second
 
 type BranchInfo struct {
 	Name      string
@@ -17,15 +21,21 @@ func ListLocalBranches(repoPath string) ([]BranchInfo, error) {
 		return nil, fmt.Errorf("repo path is required")
 	}
 
-	currentBytes, errCurrent := exec.Command("git", "-C", repoPath, "branch", "--show-current").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), branchDiscoveryTimeout)
+	defer cancel()
+
+	currentBytes, errCurrent := exec.CommandContext(ctx, "git", "-C", repoPath, "branch", "--show-current").Output()
 	currentBranch := ""
 	if errCurrent == nil {
 		currentBranch = strings.TrimSpace(string(currentBytes))
 	}
 
-	cmd := exec.Command("git", "-C", repoPath, "for-each-ref", "--format=%(refname:short)", "refs/heads/")
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "for-each-ref", "--format=%(refname:short)", "refs/heads/")
 	out, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("branch discovery timed out for %s", repoPath)
+		}
 		return nil, err
 	}
 

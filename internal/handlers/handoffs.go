@@ -42,19 +42,19 @@ func (h *HandoffsHandler) NewForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form", http.StatusBadRequest)
+	handoffText, handoffSource, err := resolveHandoffText(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	repoIDText := r.FormValue("repo_id")
 	repoName := r.FormValue("repo_name")
 	repoPath := r.FormValue("repo_path")
-	title := r.FormValue("title")
+	title := deriveRunTitle(r.FormValue("title"), handoffText)
 	selectedModelOption := r.FormValue("selected_model_option")
 	selectedModelCustom := r.FormValue("selected_model_custom")
 	branchName := strings.TrimSpace(r.FormValue("branch_name"))
-	handoffText := r.FormValue("handoff_text")
 
 	recommendedModel, _ := pipeline.ParseRecommendedModel(handoffText)
 	selectedModel, _ := pipeline.ResolveSelectedModel(selectedModelOption, selectedModelCustom, recommendedModel)
@@ -112,7 +112,7 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("create artifact record", "error", err)
 	}
 
-	h.store.CreateEvent(run.ID, "info", "Handoff created")
+	h.store.CreateEvent(run.ID, "info", "Handoff created from "+handoffSource)
 
 	h.log.Info("handoff created", "run_id", run.ID, "repo", repo.Name)
 
