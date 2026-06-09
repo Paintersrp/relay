@@ -4,26 +4,30 @@ import "relay/internal/store"
 
 templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
 	<div class="space-y-3">
+		// Step 1 — Intake Review
 		<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
 			<div class="flex items-center justify-between">
 				<div class="flex items-center gap-3">
 					<span class="text-xs font-bold text-gray-500 w-6">1</span>
 					<div>
-						<h3 class="font-medium">Handoff Validation</h3>
-						<p class="text-xs text-gray-500">Validate handoff structure and completeness</p>
+						<h3 class="font-medium">Intake Review</h3>
+						<p class="text-xs text-gray-500">Parse and verify the original handoff before agent execution.</p>
 					</div>
 				</div>
-				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-					hx-target="body"
-					hx-swap="outerHTML"
-					class="flex gap-2">
-					<input type="hidden" name="action" value="validate-handoff"/>
-					<button type="submit"
-						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-						Run Validation
-					</button>
-				</form>
+				<div class="flex items-center gap-3">
+					@intakeStatusChip(checks)
+					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+						hx-target="body"
+						hx-swap="outerHTML"
+						class="flex gap-2">
+						<input type="hidden" name="action" value="validate-handoff"/>
+						<button type="submit"
+							class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+							Run Validation
+						</button>
+					</form>
+				</div>
 			</div>
 			if len(checks) > 0 {
 				<div class="mt-3 pt-3 border-t border-gray-800">
@@ -45,30 +49,48 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 					}
 				</div>
 			}
+			if hasCheckKind(checks, "validation") {
+				<div class="mt-2 text-xs text-gray-500">
+					if hasCheckStatus(checks, "validation", "block") {
+						Resolve Intake Review blockers before generating Agent Prompt.
+					} else if hasCheckStatus(checks, "validation", "warn") {
+						Intake Review has warnings. Agent Prompt can still be generated.
+					} else if hasCheckStatus(checks, "validation", "pass") {
+						Intake Review passed. Ready to generate Agent Prompt.
+					}
+				</div>
+			}
 		</div>
 
+		// Step 2 — Agent Prompt
 		<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
 			<div class="flex items-center justify-between">
 				<div class="flex items-center gap-3">
 					<span class="text-xs font-bold text-gray-500 w-6">2</span>
 					<div>
 						<h3 class="font-medium">Agent Prompt</h3>
-						<p class="text-xs text-gray-500">Transformed execution prompt for the running agent. Relay removes orchestration-only metadata and owns validation separately.</p>
+						<p class="text-xs text-gray-500">Generate the transformed prompt for the running agent.</p>
 					</div>
 				</div>
-				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-					hx-target="body"
-					hx-swap="outerHTML"
-					class="flex gap-2">
-					<input type="hidden" name="action" value="prepare-prompt"/>
-					<button type="submit"
-						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-						Generate Agent Prompt
-					</button>
-				</form>
+				<div class="flex items-center gap-3">
+					@agentPromptStatusChip(artifactExists(artifacts, "agent_prompt"), checks)
+					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+						hx-target="body"
+						hx-swap="outerHTML"
+						class="flex gap-2">
+						<input type="hidden" name="action" value="prepare-prompt"/>
+						<button type="submit"
+							class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+							Generate Agent Prompt
+						</button>
+					</form>
+				</div>
 			</div>
 			if artifactExists(artifacts, "agent_prompt") {
+				<div class="mt-2 text-xs text-gray-500">
+					Agent Prompt generated. Review the hunk diff below.
+				</div>
 				<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
 					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt"}
 						class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
@@ -107,34 +129,41 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 			}
 		</div>
 
+		// Step 3 — Agent Packet
 		<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
 			<div class="flex items-center justify-between">
 				<div class="flex items-center gap-3">
 					<span class="text-xs font-bold text-gray-500 w-6">3</span>
 					<div>
-						<h3 class="font-medium">OpenCode Packet</h3>
-						<p class="text-xs text-gray-500">Metadata only. Relay does not execute this packet yet.</p>
+						<h3 class="font-medium">Agent Packet</h3>
+						<p class="text-xs text-gray-500">Generate metadata packet for external agent tooling.</p>
 					</div>
 				</div>
-				if artifactExists(artifacts, "agent_prompt") {
-					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="body"
-						hx-swap="outerHTML"
-						class="flex gap-2">
-						<input type="hidden" name="action" value="generate-opencode-packet"/>
-						<button type="submit"
-							class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors font-medium">
-							Generate Packet (preview)
-						</button>
-					</form>
-				} else {
-					<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600">
-						Generate Agent Prompt first
-					</span>
-				}
+				<div class="flex items-center gap-3">
+					@agentPacketStatusChip(artifactExists(artifacts, "opencode_handoff_packet"), artifactExists(artifacts, "agent_prompt"))
+					if artifactExists(artifacts, "agent_prompt") {
+						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+							hx-target="body"
+							hx-swap="outerHTML"
+							class="flex gap-2">
+							<input type="hidden" name="action" value="generate-opencode-packet"/>
+							<button type="submit"
+								class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors font-medium">
+								Generate Packet (preview)
+							</button>
+						</form>
+					} else {
+						<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600">
+							Generate Agent Prompt first
+						</span>
+					}
+				</div>
 			</div>
 			if artifactExists(artifacts, "opencode_handoff_packet") {
+				<div class="mt-2 text-xs text-gray-500">
+					Packet generated. Relay still does not execute it.
+				</div>
 				<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
 					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet"}
 						class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
@@ -153,15 +182,17 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 			}
 		</div>
 
+		// Step 4 — Agent Result
 		<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
 			<div class="flex items-center justify-between">
 				<div class="flex items-center gap-3">
 					<span class="text-xs font-bold text-gray-500 w-6">4</span>
 					<div>
 						<h3 class="font-medium">Agent Result</h3>
-						<p class="text-xs text-gray-500">Paste final output from OpenCode, Cline, Codex, or another external agent</p>
+						<p class="text-xs text-gray-500">Paste the external agent's final DONE/BLOCKED response.</p>
 					</div>
 				</div>
+				@agentResultStatusChip(artifactExists(artifacts, "agent_result_raw"))
 			</div>
 			<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 				hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
@@ -178,6 +209,9 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 				</button>
 			</form>
 			if artifactExists(artifacts, "agent_result_raw") {
+				<div class="mt-2 text-xs text-gray-500">
+					Agent result received. Run Relay Validation next.
+				</div>
 				<div class="mt-3 pt-3 border-t border-gray-800 flex gap-3">
 					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw"}
 						class="text-xs text-indigo-400 hover:text-indigo-300">View raw result</a>
@@ -193,28 +227,41 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 			}
 		</div>
 
+		// Step 5 — Relay Validation
 		<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
 			<div class="flex items-center justify-between">
 				<div class="flex items-center gap-3">
 					<span class="text-xs font-bold text-gray-500 w-6">5</span>
 					<div>
-						<h3 class="font-medium">Validation Commands</h3>
-						<p class="text-xs text-gray-500">Run extracted handoff or repo-default validation commands in the selected repo</p>
+						<h3 class="font-medium">Relay Validation</h3>
+						<p class="text-xs text-gray-500">Run Relay-extracted validation commands locally after agent result.</p>
 					</div>
 				</div>
-				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-					hx-target="body"
-					hx-swap="outerHTML"
-					class="flex gap-2">
-					<input type="hidden" name="action" value="run-validation"/>
-					<button type="submit"
-						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-						Run Validation Commands
-					</button>
-				</form>
+				<div class="flex items-center gap-3">
+					@validationStatusChip(artifactExists(artifacts, "validation_run_json"), checks, artifactExists(artifacts, "agent_result_raw"))
+					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+						hx-target="body"
+						hx-swap="outerHTML"
+						class="flex gap-2">
+						<input type="hidden" name="action" value="run-validation"/>
+						<button type="submit"
+							class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+							Run Validation Commands
+						</button>
+					</form>
+				</div>
 			</div>
 			if artifactExists(artifacts, "validation_run_json") {
+				<div class="mt-2">
+					if hasCheckStatus(checks, "validation-run", "pass") {
+						<div class="text-xs text-green-400">Validation passed.</div>
+					} else if hasCheckStatus(checks, "validation-run", "fail") {
+						<div class="text-xs text-red-400">Validation failed. Review stdout/stderr artifacts.</div>
+					} else {
+						<div class="text-xs text-gray-500">Validation completed. Check artifacts for details.</div>
+					}
+				</div>
 				<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
 					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json"}
 						class="text-xs text-indigo-400 hover:text-indigo-300">View validation JSON</a>
@@ -228,35 +275,103 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 			}
 		</div>
 
-		@futureStep(6, "Diff / Scope", "Inspect git diff and scope changes", run.ID, "inspect-diff")
-		@futureStep(7, "Audit Packet", "Generate review audit packet", run.ID, "generate-audit-packet")
+		// Step 6 — Diff / Audit (future)
+		<div class="border border-gray-800/50 rounded-lg p-4 bg-gray-900/30 opacity-70">
+			<div class="flex items-start justify-between">
+				<div class="flex items-start gap-3">
+					<span class="text-xs font-bold text-gray-600 w-6">6</span>
+					<div>
+						<h3 class="font-medium text-gray-500">Diff / Audit</h3>
+						<p class="text-xs text-gray-600">Later: inspect git diff and generate GPT audit packet.</p>
+						<div class="mt-2 text-xs text-gray-600">
+							Later: Relay will inspect git diff and generate a GPT audit packet. Not implemented yet.
+						</div>
+					</div>
+				</div>
+				<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600">
+					Future
+				</span>
+			</div>
+		</div>
 
 		@ActionButtons(run.ID)
 	</div>
 }
 
-templ futureStep(num int, title, desc string, runID int64, action string) {
-	<div class="border border-gray-800/50 rounded-lg p-4 bg-gray-900/30 opacity-70">
-		<div class="flex items-center justify-between">
-			<div class="flex items-center gap-3">
-				<span class="text-xs font-bold text-gray-600 w-6">{ Fmt("%d", num) }</span>
-				<div>
-					<h3 class="font-medium text-gray-500">{ title }</h3>
-					<p class="text-xs text-gray-600">{ desc }</p>
-				</div>
-			</div>
-			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
-				hx-post={"/runs/" + Itoa(runID) + "/actions"}
-				hx-target="body"
-				hx-swap="outerHTML">
-				<input type="hidden" name="action" value={ action }/>
-				<button type="submit"
-					class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 hover:border-gray-600 hover:text-gray-400 transition-colors">
-					Not Implemented
-				</button>
-			</form>
-		</div>
-	</div>
+templ intakeStatusChip(checks []store.Check) {
+	if hasCheckStatus(checks, "validation", "block") {
+		<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">blocked</span>
+	} else if hasCheckStatus(checks, "validation", "warn") {
+		<span class="px-2 py-0.5 text-xs rounded bg-yellow-900/50 text-yellow-400 border border-yellow-800">warn</span>
+	} else if hasCheckStatus(checks, "validation", "pass") {
+		<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">pass</span>
+	} else if hasCheckStatus(checks, "validation", "fail") {
+		<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">blocked</span>
+	} else {
+		<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">pending</span>
+	}
+}
+
+templ agentPromptStatusChip(hasAgentPrompt bool, checks []store.Check) {
+	if hasAgentPrompt {
+		<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">ready</span>
+	} else if hasCheckStatus(checks, "validation", "block") {
+		<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">blocked</span>
+	} else {
+		<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">pending</span>
+	}
+}
+
+templ agentPacketStatusChip(hasPacket, hasPrompt bool) {
+	if hasPacket {
+		<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">ready</span>
+	} else if hasPrompt {
+		<span class="px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800">available</span>
+	} else {
+		<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">pending</span>
+	}
+}
+
+templ agentResultStatusChip(hasResult bool) {
+	if hasResult {
+		<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">received</span>
+	} else {
+		<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">pending</span>
+	}
+}
+
+templ validationStatusChip(hasRun bool, checks []store.Check, hasAgentResult bool) {
+	if hasRun {
+		if hasCheckStatus(checks, "validation-run", "pass") {
+			<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">passed</span>
+		} else if hasCheckStatus(checks, "validation-run", "fail") {
+			<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">failed</span>
+		} else {
+			<span class="px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800">ran</span>
+		}
+	} else if hasAgentResult {
+		<span class="px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800">available</span>
+	} else {
+		<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">pending</span>
+	}
+}
+
+func hasCheckKind(checks []store.Check, kind string) bool {
+	for _, c := range checks {
+		if c.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func hasCheckStatus(checks []store.Check, kind, status string) bool {
+	for _, c := range checks {
+		if c.Kind == kind && c.Status == status {
+			return true
+		}
+	}
+	return false
 }
 
 func artifactExists(artifacts []store.Artifact, kind string) bool {

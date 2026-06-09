@@ -15,7 +15,7 @@ func TestHandoffInstructionsContainsRequiredSections(t *testing.T) {
 	checks := []string{
 		"## Required handoff .txt structure",
 		"## Relay Agent Prompt transformation rules",
-		"Validation commands are part of the original handoff",
+		"## Test instructions are preserved in Agent Prompts",
 	}
 	for _, s := range checks {
 		if !strings.Contains(HandoffInstructions, s) {

@@ -9,6 +9,8 @@ func PreparePrompt(originalHandoff string) string {
 	return BuildAgentPrompt(originalHandoff)
 }
 
+const relayValidationRemovedNote = "> Relay validation commands were extracted from the original handoff and removed from this Agent Prompt. Relay will run validation separately."
+
 func BuildAgentPrompt(originalHandoff string) string {
 	meta := ParseHandoffMetadata(originalHandoff, "")
 	title := meta.Title
@@ -18,9 +20,6 @@ func BuildAgentPrompt(originalHandoff string) string {
 
 	sectionsToStrip := []string{
 		"execution model",
-		"tests / validation",
-		"tests",
-		"validation",
 		"agent final output requirement",
 		"agent final output",
 		"agent final response",
@@ -30,6 +29,7 @@ func BuildAgentPrompt(originalHandoff string) string {
 
 	stripped := stripSections(originalHandoff, sectionsToStrip...)
 	stripped = stripH1Title(stripped)
+	stripped = cleanValidationExecutionMaterial(stripped)
 
 	commands := ExtractValidationCommands(originalHandoff, "")
 	var cmdList strings.Builder
@@ -76,6 +76,178 @@ func BuildAgentPrompt(originalHandoff string) string {
 	b.WriteString("- blocker/error only if BLOCKED\n")
 
 	return b.String()
+}
+
+// cleanValidationExecutionMaterial removes shell command fences and
+// command-like lines from test/validation sections while preserving
+// test implementation instructions (prose, bullets, checklists).
+//
+// Sections cleaned:
+//   - ## Tests / validation
+//   - ## Tests
+//   - ## Validation
+//   - ## Relay validation commands
+//   - ## Tests to add or update
+func cleanValidationExecutionMaterial(markdown string) string {
+	cleanupHeadings := map[string]bool{
+		"tests / validation":        true,
+		"tests":                     true,
+		"validation":                true,
+		"relay validation commands": true,
+		"tests to add or update":    true,
+	}
+
+	lines := strings.Split(markdown, "\n")
+	var result []string
+	inCleanupSection := false
+	inFence := false
+	fenceIsShell := false
+	sectionRemovedCount := 0
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Detect section heading transitions
+		if !inFence && strings.HasPrefix(trimmed, "## ") {
+			heading := strings.ToLower(strings.TrimSpace(trimmed[3:]))
+
+			// Finalize previous section if we were in one
+			if inCleanupSection && sectionRemovedCount > 0 {
+				if !strings.HasSuffix(strings.TrimSpace(strings.Join(result, "\n")), relayValidationRemovedNote) {
+					result = append(result, "", relayValidationRemovedNote)
+				}
+				sectionRemovedCount = 0
+			}
+
+			isCleanup := false
+			for h := range cleanupHeadings {
+				if heading == h || strings.HasPrefix(heading, h+" ") || strings.HasPrefix(heading, h+":") {
+					isCleanup = true
+					break
+				}
+			}
+			inCleanupSection = isCleanup
+			inFence = false
+			fenceIsShell = false
+			result = append(result, line)
+			continue
+		}
+
+		// Non-heading line transitions out of cleanup section
+		if inCleanupSection && !inFence && strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "## ") {
+			if sectionRemovedCount > 0 {
+				if !strings.HasSuffix(strings.TrimSpace(strings.Join(result, "\n")), relayValidationRemovedNote) {
+					result = append(result, "", relayValidationRemovedNote)
+				}
+				sectionRemovedCount = 0
+			}
+			inCleanupSection = false
+			result = append(result, line)
+			continue
+		}
+
+		if !inCleanupSection {
+			result = append(result, line)
+			continue
+		}
+
+		// Handle fenced code blocks inside cleanup sections
+		if strings.HasPrefix(trimmed, "```") {
+			if !inFence {
+				lang, ok := isShellFenceOpener(line)
+				if ok && lang != "" {
+					fenceIsShell = true
+				} else {
+					fenceIsShell = false
+				}
+				inFence = true
+				if fenceIsShell {
+					sectionRemovedCount++
+				} else {
+					result = append(result, line)
+				}
+			} else {
+				// Closing fence
+				if fenceIsShell {
+					// Don't emit the closing fence for shell blocks
+				} else {
+					result = append(result, line)
+				}
+				inFence = false
+				fenceIsShell = false
+			}
+			continue
+		}
+
+		if inFence {
+			if fenceIsShell {
+				// Discard lines inside shell fences
+				sectionRemovedCount++
+				continue
+			}
+			result = append(result, line)
+			continue
+		}
+
+		// Outside fences: check if line is a command-like line to remove
+		if isValidationCommandLineForPromptCleanup(trimmed) {
+			sectionRemovedCount++
+			continue
+		}
+
+		// Check if line is an orphaned label that directly introduced command material
+		if isOrphanedCommandLabel(trimmed) {
+			// Peek ahead: if the next non-empty line is also command-like, skip this label
+			if i+1 < len(lines) {
+				nextTrimmed := strings.TrimSpace(lines[i+1])
+				if nextTrimmed == "" || isValidationCommandLineForPromptCleanup(nextTrimmed) || strings.HasPrefix(nextTrimmed, "```") {
+					sectionRemovedCount++
+					continue
+				}
+			}
+		}
+
+		result = append(result, line)
+	}
+
+	// Finalize last section if needed
+	if inCleanupSection && sectionRemovedCount > 0 {
+		if !strings.HasSuffix(strings.TrimSpace(strings.Join(result, "\n")), relayValidationRemovedNote) {
+			result = append(result, "", relayValidationRemovedNote)
+		}
+	}
+
+	return strings.TrimSpace(strings.Join(result, "\n"))
+}
+
+// isValidationCommandLineForPromptCleanup returns true when line looks like a
+// validation command that should be removed from the Agent Prompt.
+func isValidationCommandLineForPromptCleanup(line string) bool {
+	if line == "" || isCommentOrEmpty(line) {
+		return false
+	}
+	if hasKnownCommandPrefix(line) {
+		return true
+	}
+	return false
+}
+
+// isOrphanedCommandLabel returns true when line is a label that only introduces
+// command material and would become orphaned after command removal.
+func isOrphanedCommandLabel(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	orphanLabels := []string{
+		"run:", "run :",
+		"validation:", "validation :",
+		"rtk preference:", "rtk preference :",
+		"if rtk is available, prefer:", "if rtk is available, prefer :",
+	}
+	for _, label := range orphanLabels {
+		if lower == label || strings.HasPrefix(lower, label) {
+			return true
+		}
+	}
+	return false
 }
 
 func stripH1Title(text string) string {

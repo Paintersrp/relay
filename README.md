@@ -13,6 +13,9 @@ Relay's intended workflow is:
 3. Detect model, branch, repo, scoped files, validation commands, final output contract, and suggested commit.
 4. Warn or block when the selected repo does not match the handoff scope.
 5. Generate a transformed Agent Prompt for the running repo agent.
+   - Preserves test implementation instructions.
+   - Removes validation command execution material.
+   - Tells the agent Relay will run validation separately.
 6. Store original handoff and transformed Agent Prompt separately.
 7. Store manual agent result intake.
 8. Run validation commands locally after agent result.
@@ -23,7 +26,9 @@ Relay's intended workflow is:
 Key design points:
 
 - Original handoff contains validation commands for Relay extraction.
+- Agent Prompt preserves test implementation instructions in validation sections.
 - Agent Prompt tells agent not to run validation by default.
+- Test/validation section headings are preserved; only command fences and command lines are removed.
 - Validation runner is local/user-triggered.
 - `AGENTS.md` and `.clinerules` source templates live under `internal/instructions`.
 
@@ -189,9 +194,22 @@ Model selection is automatic by default. The model override control is optional 
 
 ## Agent Prompt
 
-The Agent Prompt is a transformed execution prompt for the running repo agent. Relay parses the original handoff, removes orchestration-only metadata, strips raw validation command blocks, and appends validation responsibility and final output contract sections. The original handoff and transformed Agent Prompt are stored separately.
+The Agent Prompt is a transformed execution prompt for the running repo agent. Relay parses the original handoff, removes orchestration-only metadata, strips validation command execution material (shell fences and command lines), and appends validation responsibility and final output contract sections.
+
+Key behaviors:
+
+- Agent Prompt preserves test implementation instructions (prose, bullets, checklists) under `## Tests / validation`, `## Tests`, `## Validation`, and `## Tests to add or update` sections.
+- Relay removes only command execution material (shell fenced blocks, bare command lines) from test/validation sections.
+- Relay runs validation separately after agent result — the agent is told not to run validation commands by default.
+- Validation commands remain in the original handoff for Relay extraction only.
+
+The original handoff and transformed Agent Prompt are stored separately.
 
 Run detail shows an inline Original Handoff → Agent Prompt hunk diff after the Agent Prompt is generated, while keeping View/Download links for full artifacts.
+
+## Run workbench workflow
+
+Run detail is organized as a guided workflow: Intake Review → Agent Prompt → Agent Packet → Agent Result → Relay Validation → later Diff/Audit. Each step includes a status chip, purpose description, and next-action guidance based on current run state.
 
 Relay does not execute OpenCode yet, and the OpenCode packet is metadata only until a future execution adapter consumes it.
 

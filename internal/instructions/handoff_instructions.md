@@ -10,7 +10,7 @@ Handoffs are the orchestration/source artifact. Relay parses them into structure
 
 Every Relay handoff must follow this structure in a context-named `.txt` file:
 
-```text
+````text
 # <Title>
 
 ## Execution model
@@ -52,9 +52,18 @@ Exact areas affected:
 - <existing behavior that must be preserved>
 - ...
 
-## Tests / validation
+## Tests to add or update
 
-<Validation commands that Relay will extract and run. Use canonical raw commands.>
+List test implementation work the running agent should perform:
+
+- <test cases to add or update>
+- <expected assertions>
+- <fixture / setup details>
+- <files to update>
+
+## Relay validation commands
+
+Commands Relay should extract and run locally after agent result. These commands are for Relay, not default instructions for the running agent. Use canonical raw commands:
 
 ```bash
 go fmt ./...
@@ -62,7 +71,7 @@ templ generate
 npm run build
 go test ./...
 go vet ./...
-```
+````
 
 RTK preference:
 
@@ -71,6 +80,8 @@ If RTK is available in the environment, Relay or the user may prefer rtk.exe fir
 ```
 
 Do not list RTK-wrapped commands as separate validation commands.
+
+For older handoffs, `## Tests / validation` is still accepted. In that section, write test implementation instructions as prose/checklists and put command lines in fenced shell blocks so Relay can remove them from the Agent Prompt.
 
 ## Agent final output requirement
 
@@ -81,12 +92,12 @@ Return only:
 - test status
 - count of LOC changed
 - blocker/error only if BLOCKED
-```
 
 ## Surgical implementation details
 
 <Detailed implementation instructions, code snippets, and architectural guidance>
-```
+
+````
 
 ## Suggested commit message
 
@@ -94,22 +105,26 @@ After the `.txt` file, provide a suggested conventional commit message:
 
 ```text
 Suggested commit message: type(scope): brief description
-```
+````
 
 ## Relay Agent Prompt transformation rules
 
 Relay generates a transformed Agent Prompt from the original handoff:
 
 1. Preserve implementation instructions (`## Goal`, `## Scope`, `## Do not change`, `## Task checklist`, `## Direct files likely changed`, `## Direct context files`, `## Current implementation facts to preserve`, `## Surgical implementation details`)
-2. Remove or rewrite `## Execution model` section
-3. Remove or rewrite `## Tests / validation` section — validation commands are part of the original handoff for Relay extraction only
-4. Remove original `## Agent final output requirement` and append a clean final output contract
-5. Add `## Validation responsibility` section telling the agent Relay will run validation
-6. Add `## Relay validation plan` with extracted commands (not for agent execution)
+2. Remove `## Execution model` section (orchestration-only)
+3. Preserve `## Tests`, `## Tests / validation`, `## Tests to add or update`, and `## Validation` sections — remove only command fences and command-like lines, keep test implementation prose.
+4. Remove `## Relay validation commands` section — these are Relay-local commands, not for the running agent.
+5. Remove original `## Agent final output requirement` and append a clean final output contract
+6. Add `## Validation responsibility` section telling the agent Relay will run validation
+7. Add `## Relay validation plan` with extracted commands (not for agent execution)
+8. Insert a Relay validation removed note where command material was cleaned from test sections
 
-## Validation commands are part of the original handoff
+## Test instructions are preserved in Agent Prompts
 
-Validation commands remain in the original handoff so Relay can extract and run them locally after agent result. The running agent is told not to run validation commands by default.
+Agent Prompt transformation preserves test implementation instructions (prose, bullet checklists, test descriptions). Only command execution material is removed from validation/test sections. Relay tells the agent not to run validation commands by default.
+
+Validation commands remain in the original handoff so Relay can extract and run them locally after agent result.
 
 Generated Agent Prompts tell the running agent not to run validation by default and not to paste validation logs.
 
