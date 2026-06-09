@@ -15,6 +15,8 @@ var allowedKinds = map[string]bool{
 	"ready_prompt":            true,
 	"audit_packet":            true,
 	"opencode_handoff_packet": true,
+	"agent_result_raw":        true,
+	"agent_result_json":       true,
 }
 
 func Dir(runID int64) string {

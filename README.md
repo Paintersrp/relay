@@ -95,6 +95,7 @@ make test       # run tests
 | `mark-accepted` | Implemented |
 | `mark-needs-cleanup` | Implemented |
 | `generate-opencode-packet` | Implemented |
+| `submit-agent-result` | Implemented |
 | `run-agent` | Future |
 | `run-validation` | Future |
 | `inspect-diff` | Future |
@@ -136,6 +137,24 @@ Relay can generate an `opencode_handoff_packet.json` artifact after a ready prom
 The packet includes the run id, local repo path, branch/worktree metadata, selected model, recommended model, ready prompt artifact path, run artifact directory, and an execution status of `not_implemented`.
 
 Relay does not execute OpenCode yet.
+
+## Manual agent result intake
+
+Relay can store the final output from an external repo agent after the user runs that agent outside Relay.
+
+Expected final output shape:
+
+```text
+DONE or BLOCKED
+Build status: ...
+Test status: ...
+Count of LOC changed: ...
+Blocker/error only if BLOCKED: ...
+```
+
+Relay stores the raw pasted result, records parsed metadata as an agent result check, and updates the run status to `agent_done`, `agent_blocked`, or `agent_result_needs_review`.
+
+Relay still does not execute OpenCode or other agents in this phase.
 
 ## Local repository discovery
 

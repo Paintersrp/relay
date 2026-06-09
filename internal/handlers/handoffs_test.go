@@ -48,5 +48,3 @@ func TestNormalizeManualRepoInputRejectsDotPath(t *testing.T) {
 		t.Fatal("expected error for dot path")
 	}
 }
-
-

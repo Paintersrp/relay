@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"relay/internal/artifacts"
 	"relay/internal/pipeline"
@@ -92,6 +93,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.notImplemented(w, r, id, "Git diff inspection is not yet implemented")
 	case "generate-audit-packet":
 		h.notImplemented(w, r, id, "Audit packet generation is not yet implemented")
+	case "submit-agent-result":
+		h.submitAgentResult(w, r, id)
 	case "generate-opencode-packet":
 		h.generateOpenCodePacket(w, r, id)
 	default:
@@ -252,6 +255,67 @@ func (h *RunsHandler) generateOpenCodePacket(w http.ResponseWriter, r *http.Requ
 	h.store.CreateEvent(runID, "info", "OpenCode handoff packet generated")
 
 	h.log.Info("opencode handoff packet generated", "run_id", runID)
+
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+}
+
+func (h *RunsHandler) submitAgentResult(w http.ResponseWriter, r *http.Request, runID int64) {
+	raw := strings.TrimSpace(r.FormValue("agent_result_text"))
+	if raw == "" {
+		http.Error(w, "agent result text is required", http.StatusBadRequest)
+		return
+	}
+
+	result := pipeline.ParseAgentResult(raw)
+
+	rawPath, err := artifacts.Write(runID, "agent_result_raw", pipeline.ArtifactFilename("agent_result_raw"), []byte(raw))
+	if err != nil {
+		h.log.Error("write agent result raw", "error", err)
+		http.Error(w, "failed to save agent result", http.StatusInternalServerError)
+		return
+	}
+	h.store.CreateArtifact(runID, "agent_result_raw", rawPath, "text/plain")
+
+	resultJSON, err := result.JSON()
+	if err != nil {
+		h.log.Error("marshal agent result json", "error", err)
+		http.Error(w, "failed to parse agent result", http.StatusInternalServerError)
+		return
+	}
+	jsonPath, err := artifacts.Write(runID, "agent_result_json", pipeline.ArtifactFilename("agent_result_json"), resultJSON)
+	if err != nil {
+		h.log.Error("write agent result json", "error", err)
+		http.Error(w, "failed to save agent result metadata", http.StatusInternalServerError)
+		return
+	}
+	h.store.CreateArtifact(runID, "agent_result_json", jsonPath, "application/json")
+
+	h.store.DeleteChecksByRunKind(runID, "agent_result")
+
+	var checkStatus, checkSummary, runStatus, eventMsg string
+	switch result.Status {
+	case pipeline.AgentResultDone:
+		checkStatus = "pass"
+		checkSummary = "Agent reported DONE"
+		runStatus = "agent_done"
+		eventMsg = "Agent result submitted: DONE"
+	case pipeline.AgentResultBlocked:
+		checkStatus = "fail"
+		checkSummary = "Agent reported BLOCKED"
+		runStatus = "agent_blocked"
+		eventMsg = "Agent result submitted: BLOCKED"
+	default:
+		checkStatus = "warn"
+		checkSummary = "Agent result status unknown"
+		runStatus = "agent_result_needs_review"
+		eventMsg = "Agent result submitted: UNKNOWN"
+	}
+
+	h.store.CreateCheck(runID, "agent_result", checkStatus, checkSummary, string(resultJSON))
+	h.store.UpdateRunStatus(runID, runStatus)
+	h.store.CreateEvent(runID, "info", eventMsg)
+
+	h.log.Info("agent result submitted", "run_id", runID, "status", result.Status)
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
 }
