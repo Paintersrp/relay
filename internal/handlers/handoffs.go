@@ -3,10 +3,13 @@ package handlers
 import (
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"relay/internal/artifacts"
 	"relay/internal/pipeline"
+	"relay/internal/repos"
 	"relay/internal/store"
 	"relay/internal/views"
 )
@@ -21,11 +24,11 @@ func NewHandoffsHandler(s *store.Store, log *slog.Logger) *HandoffsHandler {
 }
 
 func (h *HandoffsHandler) NewForm(w http.ResponseWriter, r *http.Request) {
-	repos, err := h.store.ListRepos()
+	reposList, err := h.store.ListReposByName()
 	if err != nil {
-		repos = nil
+		reposList = nil
 	}
-	views.NewHandoff(repos).Render(r.Context(), w)
+	views.NewHandoff(reposList).Render(r.Context(), w)
 }
 
 func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +37,7 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	repoIDText := r.FormValue("repo_id")
 	repoName := r.FormValue("repo_name")
 	repoPath := r.FormValue("repo_path")
 	title := r.FormValue("title")
@@ -45,22 +49,45 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if selectedModel == "" {
 		selectedModel = recommendedModel
 	}
-	if repoName == "" {
-		repoName = "default"
-	}
 
-	// find or create repo
-	repo, err := h.store.GetRepoByName(repoName)
-	if err != nil {
-		repo, err = h.store.CreateRepo(repoName, repoPath)
+	var repo *store.Repo
+
+	if repoIDText != "" {
+		repoID, err := strconv.ParseInt(repoIDText, 10, 64)
 		if err != nil {
-			h.log.Error("create repo", "error", err)
-			http.Error(w, "failed to create repo", http.StatusInternalServerError)
+			http.Error(w, "invalid repo selection", http.StatusBadRequest)
 			return
+		}
+		repo, err = h.store.GetRepo(repoID)
+		if err != nil {
+			http.Error(w, "selected repo not found", http.StatusBadRequest)
+			return
+		}
+	} else {
+		repoName = strings.TrimSpace(repoName)
+		repoPath = repos.NormalizePath(repoPath)
+
+		if repoName == "" && repoPath != "" {
+			repoName = filepath.Base(repoPath)
+		}
+		if repoName == "" || repoPath == "" {
+			http.Error(w, "repo name and path are required for manual repo entry", http.StatusBadRequest)
+			return
+		}
+
+		existing, err := h.store.GetRepoByPath(repoPath)
+		if err == nil {
+			repo = existing
+		} else {
+			repo, err = h.store.CreateRepo(repoName, repoPath)
+			if err != nil {
+				h.log.Error("create repo", "error", err)
+				http.Error(w, "failed to create repo", http.StatusInternalServerError)
+				return
+			}
 		}
 	}
 
-	// create run
 	run, err := h.store.CreateRun(repo.ID, title, "draft", recommendedModel, selectedModel, branchName)
 	if err != nil {
 		h.log.Error("create run", "error", err)
@@ -68,7 +95,6 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// save original handoff to disk
 	artifactPath, err := artifacts.Write(run.ID, "original_handoff", pipeline.ArtifactFilename("original_handoff"), []byte(handoffText))
 	if err != nil {
 		h.log.Error("write handoff artifact", "error", err)
@@ -76,16 +102,14 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// create artifact metadata
 	_, err = h.store.CreateArtifact(run.ID, "original_handoff", artifactPath, "text/plain")
 	if err != nil {
 		h.log.Error("create artifact record", "error", err)
 	}
 
-	// create event
 	h.store.CreateEvent(run.ID, "info", "Handoff created")
 
-	h.log.Info("handoff created", "run_id", run.ID, "repo", repoName)
+	h.log.Info("handoff created", "run_id", run.ID, "repo", repo.Name)
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(run.ID, 10), http.StatusSeeOther)
 }

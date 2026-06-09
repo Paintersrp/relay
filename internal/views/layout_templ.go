@@ -42,7 +42,17 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " - Relay</title><link rel=\"stylesheet\" href=\"/static/app.css\"><script src=\"/static/app.js\" defer></script></head><body class=\"min-h-screen\"><nav class=\"border-b border-gray-800 px-6 py-3 flex items-center gap-4\"><a href=\"/\" class=\"text-lg font-bold text-indigo-400 hover:text-indigo-300\">Relay</a> <span class=\"text-gray-600 text-sm\">local-first handoff orchestration</span><div class=\"flex-1\"></div><a href=\"/handoffs/new\" class=\"inline-flex items-center px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors\">New Handoff</a></nav><main class=\"max-w-5xl mx-auto px-6 py-8\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " - Relay</title><link rel=\"stylesheet\" href=\"/static/app.css\"><script src=\"/static/app.js\" defer></script>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if DevReloadEnabled() {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<meta name=\"relay-dev-reload\" content=\"enabled\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</head><body class=\"min-h-screen\"><nav class=\"border-b border-gray-800 px-6 py-3 flex items-center gap-4\"><a href=\"/\" class=\"text-lg font-bold text-indigo-400 hover:text-indigo-300\">Relay</a> <span class=\"text-gray-600 text-sm\">local-first handoff orchestration</span><div class=\"flex-1\"></div><a href=\"/settings/repos\" class=\"text-sm text-gray-400 hover:text-gray-200\">Repos</a> <a href=\"/handoffs/new\" class=\"inline-flex items-center px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors\">New Handoff</a></nav><main class=\"max-w-5xl mx-auto px-6 py-8\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -50,7 +60,7 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</main></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</main></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

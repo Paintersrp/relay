@@ -10,7 +10,7 @@ import (
 )
 
 const createRepo = `-- name: CreateRepo :one
-INSERT INTO repos (name, path, default_validation_commands) VALUES (?, ?, ?) RETURNING id, name, path, default_validation_commands, created_at, updated_at
+INSERT INTO repos (name, path, default_validation_commands) VALUES (?, ?, ?) RETURNING id, name, path, default_validation_commands, created_at, updated_at, source, discovered_at, last_seen_at
 `
 
 type CreateRepoParams struct {
@@ -29,12 +29,15 @@ func (q *Queries) CreateRepo(ctx context.Context, arg CreateRepoParams) (Repo, e
 		&i.DefaultValidationCommands,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Source,
+		&i.DiscoveredAt,
+		&i.LastSeenAt,
 	)
 	return i, err
 }
 
 const getRepo = `-- name: GetRepo :one
-SELECT id, name, path, default_validation_commands, created_at, updated_at FROM repos WHERE id = ?
+SELECT id, name, path, default_validation_commands, created_at, updated_at, source, discovered_at, last_seen_at FROM repos WHERE id = ?
 `
 
 func (q *Queries) GetRepo(ctx context.Context, id int64) (Repo, error) {
@@ -47,12 +50,15 @@ func (q *Queries) GetRepo(ctx context.Context, id int64) (Repo, error) {
 		&i.DefaultValidationCommands,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Source,
+		&i.DiscoveredAt,
+		&i.LastSeenAt,
 	)
 	return i, err
 }
 
 const getRepoByName = `-- name: GetRepoByName :one
-SELECT id, name, path, default_validation_commands, created_at, updated_at FROM repos WHERE name = ?
+SELECT id, name, path, default_validation_commands, created_at, updated_at, source, discovered_at, last_seen_at FROM repos WHERE name = ?
 `
 
 func (q *Queries) GetRepoByName(ctx context.Context, name string) (Repo, error) {
@@ -65,12 +71,36 @@ func (q *Queries) GetRepoByName(ctx context.Context, name string) (Repo, error) 
 		&i.DefaultValidationCommands,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Source,
+		&i.DiscoveredAt,
+		&i.LastSeenAt,
+	)
+	return i, err
+}
+
+const getRepoByPath = `-- name: GetRepoByPath :one
+SELECT id, name, path, default_validation_commands, created_at, updated_at, source, discovered_at, last_seen_at FROM repos WHERE path = ?
+`
+
+func (q *Queries) GetRepoByPath(ctx context.Context, path string) (Repo, error) {
+	row := q.db.QueryRowContext(ctx, getRepoByPath, path)
+	var i Repo
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Path,
+		&i.DefaultValidationCommands,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Source,
+		&i.DiscoveredAt,
+		&i.LastSeenAt,
 	)
 	return i, err
 }
 
 const listRepos = `-- name: ListRepos :many
-SELECT id, name, path, default_validation_commands, created_at, updated_at FROM repos ORDER BY updated_at DESC
+SELECT id, name, path, default_validation_commands, created_at, updated_at, source, discovered_at, last_seen_at FROM repos ORDER BY updated_at DESC
 `
 
 func (q *Queries) ListRepos(ctx context.Context) ([]Repo, error) {
@@ -89,6 +119,46 @@ func (q *Queries) ListRepos(ctx context.Context) ([]Repo, error) {
 			&i.DefaultValidationCommands,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Source,
+			&i.DiscoveredAt,
+			&i.LastSeenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReposByName = `-- name: ListReposByName :many
+SELECT id, name, path, default_validation_commands, created_at, updated_at, source, discovered_at, last_seen_at FROM repos ORDER BY lower(name), lower(path)
+`
+
+func (q *Queries) ListReposByName(ctx context.Context) ([]Repo, error) {
+	rows, err := q.db.QueryContext(ctx, listReposByName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Repo{}
+	for rows.Next() {
+		var i Repo
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Path,
+			&i.DefaultValidationCommands,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Source,
+			&i.DiscoveredAt,
+			&i.LastSeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -104,7 +174,7 @@ func (q *Queries) ListRepos(ctx context.Context) ([]Repo, error) {
 }
 
 const updateRepo = `-- name: UpdateRepo :one
-UPDATE repos SET name = ?, path = ?, default_validation_commands = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_validation_commands, created_at, updated_at
+UPDATE repos SET name = ?, path = ?, default_validation_commands = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, name, path, default_validation_commands, created_at, updated_at, source, discovered_at, last_seen_at
 `
 
 type UpdateRepoParams struct {
@@ -129,6 +199,49 @@ func (q *Queries) UpdateRepo(ctx context.Context, arg UpdateRepoParams) (Repo, e
 		&i.DefaultValidationCommands,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Source,
+		&i.DiscoveredAt,
+		&i.LastSeenAt,
+	)
+	return i, err
+}
+
+const upsertDiscoveredRepo = `-- name: UpsertDiscoveredRepo :one
+INSERT INTO repos (
+  name,
+  path,
+  default_validation_commands,
+  source,
+  discovered_at,
+  last_seen_at
+)
+VALUES (?, ?, '[]', 'discovered', datetime('now'), datetime('now'))
+ON CONFLICT(path) WHERE path <> ''
+DO UPDATE SET
+  name = excluded.name,
+  last_seen_at = datetime('now'),
+  updated_at = datetime('now')
+RETURNING id, name, path, default_validation_commands, created_at, updated_at, source, discovered_at, last_seen_at
+`
+
+type UpsertDiscoveredRepoParams struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+func (q *Queries) UpsertDiscoveredRepo(ctx context.Context, arg UpsertDiscoveredRepoParams) (Repo, error) {
+	row := q.db.QueryRowContext(ctx, upsertDiscoveredRepo, arg.Name, arg.Path)
+	var i Repo
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Path,
+		&i.DefaultValidationCommands,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Source,
+		&i.DiscoveredAt,
+		&i.LastSeenAt,
 	)
 	return i, err
 }

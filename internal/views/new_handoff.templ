@@ -9,18 +9,43 @@ templ NewHandoff(repos []store.Repo) {
 			<p class="text-gray-500 text-sm mb-8">Paste a surgical implementation handoff to start a new run.</p>
 
 			<form action="/handoffs" method="POST" class="space-y-6">
-				<div class="grid grid-cols-2 gap-4">
+				<div x-data="{ repoMode: 'select' }" class="space-y-4">
 					<div>
-						<label class="block text-sm font-medium text-gray-400 mb-1">Repo Name</label>
-						<input type="text" name="repo_name" value="default"
-							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-							placeholder="default"/>
+						<label class="block text-sm font-medium text-gray-400 mb-1">Repository</label>
+						if len(repos) == 0 {
+							<p class="text-xs text-yellow-400 mb-2">
+								No repositories discovered yet. Add or scan roots in Repository Settings, or use manual entry below.
+							</p>
+						}
+						<select name="repo_id" x-model="repoMode"
+							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+							<option value="">Manual repository path</option>
+							for _, repo := range repos {
+								<option value={ Itoa(repo.ID) }>
+									{ repo.Name } - { repo.Path }
+								</option>
+							}
+						</select>
+						<div class="mt-2">
+							<a href="/settings/repos" class="text-xs text-indigo-400 hover:text-indigo-300">
+								Manage repository scan roots
+							</a>
+						</div>
 					</div>
-					<div>
-						<label class="block text-sm font-medium text-gray-400 mb-1">Repo Path</label>
-						<input type="text" name="repo_path" value="."
-							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-							placeholder="."/>
+
+					<div x-show="repoMode === ''" class="grid grid-cols-2 gap-4">
+						<div>
+							<label class="block text-sm font-medium text-gray-400 mb-1">Repo Name</label>
+							<input type="text" name="repo_name"
+								class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+								placeholder="relay"/>
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-gray-400 mb-1">Repo Path</label>
+							<input type="text" name="repo_path"
+								class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+								placeholder="D:/Code/relay"/>
+						</div>
 					</div>
 				</div>
 

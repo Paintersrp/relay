@@ -22,3 +22,40 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 });
+
+function initDevReload(): void {
+  const marker = document.querySelector('meta[name="relay-dev-reload"][content="enabled"]');
+  if (!marker || typeof EventSource === 'undefined') return;
+
+  let connectedOnce = false;
+  let disconnectedAfterConnect = false;
+
+  const connect = () => {
+    const source = new EventSource('/dev/reload');
+
+    source.onopen = () => {
+      if (connectedOnce && disconnectedAfterConnect) {
+        window.location.reload();
+        return;
+      }
+      connectedOnce = true;
+      disconnectedAfterConnect = false;
+    };
+
+    source.addEventListener('reload', () => {
+      window.location.reload();
+    });
+
+    source.onerror = () => {
+      if (connectedOnce) {
+        disconnectedAfterConnect = true;
+      }
+      source.close();
+      window.setTimeout(connect, 500);
+    };
+  };
+
+  connect();
+}
+
+initDevReload();

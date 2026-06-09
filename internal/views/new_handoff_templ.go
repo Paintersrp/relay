@@ -43,7 +43,66 @@ func NewHandoff(repos []store.Repo) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-2xl\"><h1 class=\"text-2xl font-bold mb-2\">New Handoff</h1><p class=\"text-gray-500 text-sm mb-8\">Paste a surgical implementation handoff to start a new run.</p><form action=\"/handoffs\" method=\"POST\" class=\"space-y-6\"><div class=\"grid grid-cols-2 gap-4\"><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Repo Name</label> <input type=\"text\" name=\"repo_name\" value=\"default\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"default\"></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Repo Path</label> <input type=\"text\" name=\"repo_path\" value=\".\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\".\"></div></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Title</label> <input type=\"text\" name=\"title\" required class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"Implementation handoff title\"></div><div class=\"grid grid-cols-2 gap-4\"><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Recommended Model</label> <input type=\"text\" name=\"recommended_model\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"e.g. claude-sonnet-4-5\"></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Selected Model</label> <input type=\"text\" name=\"selected_model\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"Defaults to recommended\"></div></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Branch / Worktree</label> <input type=\"text\" name=\"branch_name\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"main\"></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Handoff Text</label> <textarea name=\"handoff_text\" rows=\"20\" required class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 resize-y\" placeholder=\"Paste the full implementation handoff here...\"></textarea></div><div class=\"flex gap-3\"><button type=\"submit\" class=\"inline-flex items-center px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors\">Create Run</button> <a href=\"/\" class=\"inline-flex items-center px-4 py-2 rounded border border-gray-700 hover:border-gray-600 text-sm transition-colors\">Cancel</a></div></form></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-2xl\"><h1 class=\"text-2xl font-bold mb-2\">New Handoff</h1><p class=\"text-gray-500 text-sm mb-8\">Paste a surgical implementation handoff to start a new run.</p><form action=\"/handoffs\" method=\"POST\" class=\"space-y-6\"><div x-data=\"{ repoMode: 'select' }\" class=\"space-y-4\"><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Repository</label> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if len(repos) == 0 {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<p class=\"text-xs text-yellow-400 mb-2\">No repositories discovered yet. Add or scan roots in Repository Settings, or use manual entry below.</p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<select name=\"repo_id\" x-model=\"repoMode\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\"><option value=\"\">Manual repository path</option> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, repo := range repos {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<option value=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var3 string
+				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(Itoa(repo.ID))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 24, Col: 37}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var4 string
+				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(repo.Name)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 25, Col: 20}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, " - ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var5 string
+				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(repo.Path)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 25, Col: 36}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</option>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</select><div class=\"mt-2\"><a href=\"/settings/repos\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">Manage repository scan roots</a></div></div><div x-show=\"repoMode === ''\" class=\"grid grid-cols-2 gap-4\"><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Repo Name</label> <input type=\"text\" name=\"repo_name\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"relay\"></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Repo Path</label> <input type=\"text\" name=\"repo_path\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"D:/Code/relay\"></div></div></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Title</label> <input type=\"text\" name=\"title\" required class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"Implementation handoff title\"></div><div class=\"grid grid-cols-2 gap-4\"><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Recommended Model</label> <input type=\"text\" name=\"recommended_model\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"e.g. claude-sonnet-4-5\"></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Selected Model</label> <input type=\"text\" name=\"selected_model\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"Defaults to recommended\"></div></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Branch / Worktree</label> <input type=\"text\" name=\"branch_name\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"main\"></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Handoff Text</label> <textarea name=\"handoff_text\" rows=\"20\" required class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 resize-y\" placeholder=\"Paste the full implementation handoff here...\"></textarea></div><div class=\"flex gap-3\"><button type=\"submit\" class=\"inline-flex items-center px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors\">Create Run</button> <a href=\"/\" class=\"inline-flex items-center px-4 py-2 rounded border border-gray-700 hover:border-gray-600 text-sm transition-colors\">Cancel</a></div></form></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

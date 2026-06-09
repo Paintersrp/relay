@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"relay/internal/store/generated"
 
@@ -14,6 +15,7 @@ import (
 )
 
 type Repo = generated.Repo
+type RepoRoot = generated.RepoRoot
 type Run = generated.Run
 type Artifact = generated.Artifact
 type Event = generated.Event
@@ -84,6 +86,87 @@ func (s *Store) GetRepoByName(name string) (*Repo, error) {
 		return nil, err
 	}
 	return &repo, nil
+}
+
+func (s *Store) GetRepoByPath(path string) (*Repo, error) {
+	repo, err := s.queries.GetRepoByPath(context.Background(), path)
+	if err != nil {
+		return nil, err
+	}
+	return &repo, nil
+}
+
+func (s *Store) UpsertDiscoveredRepo(name, path string) (*Repo, error) {
+	repo, err := s.queries.UpsertDiscoveredRepo(context.Background(), generated.UpsertDiscoveredRepoParams{
+		Name: name,
+		Path: path,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &repo, nil
+}
+
+func (s *Store) ListReposByName() ([]Repo, error) {
+	return s.queries.ListReposByName(context.Background())
+}
+
+// Repo Roots
+
+func (s *Store) CreateRepoRoot(path string) (*RepoRoot, error) {
+	root, err := s.queries.CreateRepoRoot(context.Background(), path)
+	if err != nil {
+		return nil, err
+	}
+	return &root, nil
+}
+
+func (s *Store) ListRepoRoots() ([]RepoRoot, error) {
+	return s.queries.ListRepoRoots(context.Background())
+}
+
+func (s *Store) ListEnabledRepoRoots() ([]RepoRoot, error) {
+	return s.queries.ListEnabledRepoRoots(context.Background())
+}
+
+func (s *Store) SetRepoRootEnabled(id int64, enabled bool) (*RepoRoot, error) {
+	value := int64(0)
+	if enabled {
+		value = 1
+	}
+	root, err := s.queries.SetRepoRootEnabled(context.Background(), generated.SetRepoRootEnabledParams{
+		ID:      id,
+		Enabled: value,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &root, nil
+}
+
+func (s *Store) DeleteRepoRoot(id int64) error {
+	return s.queries.DeleteRepoRoot(context.Background(), id)
+}
+
+func (s *Store) TouchRepoRootScanned(id int64) (*RepoRoot, error) {
+	root, err := s.queries.TouchRepoRootScanned(context.Background(), id)
+	if err != nil {
+		return nil, err
+	}
+	return &root, nil
+}
+
+func (s *Store) EnsureDefaultRepoRoots(paths []string) error {
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if _, err := s.CreateRepoRoot(path); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Runs

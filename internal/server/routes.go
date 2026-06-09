@@ -4,14 +4,16 @@ import (
 	"log/slog"
 	"net/http"
 
+	"relay/internal/devreload"
 	"relay/internal/handlers"
+	"relay/internal/repos"
 	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func BuildRoutes(s *store.Store, log *slog.Logger) http.Handler {
+func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.Logger)
@@ -33,7 +35,21 @@ func BuildRoutes(s *store.Store, log *slog.Logger) http.Handler {
 	r.Get("/runs/{id}/artifacts/{kind}", artifactsH.View)
 	r.Get("/runs/{id}/artifacts/{kind}/download", artifactsH.Download)
 
-	// serve static assets
+	repoSettings := handlers.NewRepoSettingsHandler(s, rs, log)
+	r.Get("/settings/repos", repoSettings.Get)
+	r.Post("/settings/repos/roots", repoSettings.AddRoot)
+	r.Post("/settings/repos/roots/{id}/toggle", repoSettings.ToggleRoot)
+	r.Post("/settings/repos/roots/{id}/delete", repoSettings.DeleteRoot)
+	r.Post("/settings/repos/scan", repoSettings.Scan)
+
+	if devreload.Enabled() {
+		reloader := devreload.New(log)
+		if err := reloader.Watch("web/static"); err != nil {
+			log.Warn("dev reload watcher failed", "error", err)
+		}
+		r.Get("/dev/reload", reloader.Handler)
+	}
+
 	fileServer := http.FileServer(http.Dir("web/static"))
 	r.Handle("/static/*", http.StripPrefix("/static/", fileServer))
 

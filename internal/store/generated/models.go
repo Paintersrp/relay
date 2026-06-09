@@ -39,6 +39,18 @@ type Repo struct {
 	DefaultValidationCommands string `json:"default_validation_commands"`
 	CreatedAt                 string `json:"created_at"`
 	UpdatedAt                 string `json:"updated_at"`
+	Source                    string `json:"source"`
+	DiscoveredAt              string `json:"discovered_at"`
+	LastSeenAt                string `json:"last_seen_at"`
+}
+
+type RepoRoot struct {
+	ID            int64  `json:"id"`
+	Path          string `json:"path"`
+	Enabled       int64  `json:"enabled"`
+	LastScannedAt string `json:"last_scanned_at"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 type Run struct {

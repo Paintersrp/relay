@@ -22,6 +22,7 @@ Relay accepts surgical implementation handoffs, stores run metadata and artifact
 - `sqlc` CLI
 - `goose` CLI
 - `templ` CLI
+- `air` CLI for live-reload development
 
 Install CLI tools:
 
@@ -29,6 +30,7 @@ Install CLI tools:
 go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 go install github.com/pressly/goose/v3/cmd/goose@latest
 go install github.com/a-h/templ/cmd/templ@latest
+go install github.com/air-verse/air@latest
 ```
 
 ## Setup
@@ -80,6 +82,9 @@ make test       # run tests
 | POST | `/runs/{id}/actions` | Execute run action |
 | GET | `/runs/{id}/artifacts/{kind}` | View artifact |
 | GET | `/runs/{id}/artifacts/{kind}/download` | Download artifact |
+| GET | `/settings/repos` | Repository settings |
+| POST | `/settings/repos/roots` | Add scan root |
+| POST | `/settings/repos/scan` | Scan repos now |
 
 ## Run Actions
 
@@ -93,6 +98,46 @@ make test       # run tests
 | `run-validation` | Future |
 | `inspect-diff` | Future |
 | `generate-audit-packet` | Future |
+
+## Development live reload
+
+Relay supports a local dev live-reload workflow for server-rendered development.
+
+Install frontend dependencies and required CLIs, then run:
+
+```bash
+make dev
+```
+
+This runs Tailwind watch, esbuild watch, templ watch, and an Air-managed Go server with `RELAY_DEV_RELOAD=1`.
+
+If running directly on Windows PowerShell:
+
+```powershell
+$env:RELAY_DEV_RELOAD="1"
+npm run dev
+```
+
+The browser reloads when built frontend assets change or when the Go server restarts.
+
+## Local repository discovery
+
+Relay discovers local Git repositories from configured scan roots.
+
+The default scan root is:
+
+```text
+D:/Code
+```
+
+Open `/settings/repos` to:
+
+- add additional roots
+- enable or disable roots
+- scan now
+- review discovered repositories
+
+The New Handoff page lets you select a discovered repo or use manual repo name/path entry.
 
 ## Project Structure
 

@@ -1,4 +1,4 @@
-.PHONY: dev build assets install sqlc templ db-migrate test fmt clean
+.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean
 
 install:
 	npm install
@@ -18,8 +18,11 @@ db-migrate:
 build: assets sqlc templ
 	go build -o bin/relay.exe ./cmd/relay
 
-dev: assets
-	go run ./cmd/relay
+dev:
+	RELAY_DEV_RELOAD=1 npm run dev
+
+dev-server:
+	RELAY_DEV_RELOAD=1 air -c .air.toml
 
 test:
 	go test ./...

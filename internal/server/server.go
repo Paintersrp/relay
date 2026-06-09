@@ -4,21 +4,24 @@ import (
 	"log/slog"
 	"net/http"
 
+	"relay/internal/repos"
 	"relay/internal/store"
 )
 
 type Server struct {
-	store *store.Store
-	log   *slog.Logger
-	mux   http.Handler
+	store       *store.Store
+	repoService *repos.Service
+	log         *slog.Logger
+	mux         http.Handler
 }
 
-func New(s *store.Store, log *slog.Logger) *Server {
-	mux := BuildRoutes(s, log)
+func New(s *store.Store, rs *repos.Service, log *slog.Logger) *Server {
+	mux := BuildRoutes(s, rs, log)
 	return &Server{
-		store: s,
-		log:   log,
-		mux:   mux,
+		store:       s,
+		repoService: rs,
+		log:         log,
+		mux:         mux,
 	}
 }
 

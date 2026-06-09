@@ -9,12 +9,18 @@ templ Layout(title string) {
 			<title>{ title } - Relay</title>
 			<link rel="stylesheet" href="/static/app.css"/>
 			<script src="/static/app.js" defer></script>
+			if DevReloadEnabled() {
+				<meta name="relay-dev-reload" content="enabled"/>
+			}
 		</head>
 		<body class="min-h-screen">
 			<nav class="border-b border-gray-800 px-6 py-3 flex items-center gap-4">
 				<a href="/" class="text-lg font-bold text-indigo-400 hover:text-indigo-300">Relay</a>
 				<span class="text-gray-600 text-sm">local-first handoff orchestration</span>
 				<div class="flex-1"></div>
+				<a href="/settings/repos" class="text-sm text-gray-400 hover:text-gray-200">
+					Repos
+				</a>
 				<a href="/handoffs/new" class="inline-flex items-center px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors">
 					New Handoff
 				</a>

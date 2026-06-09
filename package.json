@@ -7,10 +7,16 @@
     "build:js": "npx esbuild web/src/main.ts --bundle --outfile=web/static/app.js --format=iife --platform=browser --target=es2020",
     "build": "npm run build:css && npm run build:js",
     "watch:css": "npx @tailwindcss/cli -i web/src/styles.css -o web/static/app.css --watch",
-    "watch:js": "npx esbuild web/src/main.ts --bundle --outfile=web/static/app.js --format=iife --platform=browser --target=es2020 --watch"
+    "watch:js": "npx esbuild web/src/main.ts --bundle --outfile=web/static/app.js --format=iife --platform=browser --target=es2020 --watch",
+    "dev:css": "npx @tailwindcss/cli -i web/src/styles.css -o web/static/app.css --watch",
+    "dev:js": "npx esbuild web/src/main.ts --bundle --outfile=web/static/app.js --format=iife --platform=browser --target=es2020 --watch",
+    "dev:templ": "templ generate --watch",
+    "dev:server": "air -c .air.toml",
+    "dev": "concurrently \"npm:dev:css\" \"npm:dev:js\" \"npm:dev:templ\" \"npm:dev:server\""
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.0.0",
+    "concurrently": "^9.0.0",
     "esbuild": "^0.23.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.5.0"

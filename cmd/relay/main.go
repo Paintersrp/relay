@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
 
+	"relay/internal/repos"
 	"relay/internal/server"
 	"relay/internal/store"
 )
@@ -24,7 +26,23 @@ func main() {
 	}
 	defer s.Close()
 
-	srv := server.New(s, log)
+	repoService := repos.NewService(s, log)
+
+	if err := s.EnsureDefaultRepoRoots([]string{"D:/Code"}); err != nil {
+		log.Warn("ensure default repo roots", "error", err)
+	}
+
+	go func() {
+		summary := repoService.ScanEnabledRoots(context.Background())
+		log.Info("repo discovery completed",
+			"roots_scanned", summary.RootsScanned,
+			"repos_found", summary.ReposFound,
+			"repos_saved", summary.ReposSaved,
+			"warnings", summary.Warnings,
+		)
+	}()
+
+	srv := server.New(s, repoService, log)
 
 	port := "8080"
 	if p := os.Getenv("PORT"); p != "" {
