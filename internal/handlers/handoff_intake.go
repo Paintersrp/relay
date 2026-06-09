@@ -31,10 +31,13 @@ func resolveHandoffText(r *http.Request) (text string, source string, err error)
 				return "", "", fmt.Errorf("handoff upload must be a .txt or .md file")
 			}
 
-			limited := io.LimitReader(file, int64(maxHandoffUploadBytes))
+			limited := io.LimitReader(file, int64(maxHandoffUploadBytes)+1)
 			data, readErr := io.ReadAll(limited)
 			if readErr != nil {
 				return "", "", fmt.Errorf("failed to read uploaded file: %w", readErr)
+			}
+			if len(data) > maxHandoffUploadBytes {
+				return "", "", fmt.Errorf("handoff upload must be 2 MiB or smaller")
 			}
 
 			uploadedText := string(data)
@@ -54,16 +57,10 @@ func resolveHandoffText(r *http.Request) (text string, source string, err error)
 	return pasted, "paste", nil
 }
 
-func deriveRunTitle(providedTitle string, handoffText string) string {
-	trimmed := strings.TrimSpace(providedTitle)
-	if trimmed != "" {
-		return trimmed
-	}
-
+func deriveRunTitle(handoffText string) string {
 	meta := pipeline.ParseHandoffMetadata(handoffText, "")
-	if meta.Title != "" {
-		return meta.Title
+	if strings.TrimSpace(meta.Title) != "" {
+		return strings.TrimSpace(meta.Title)
 	}
-
 	return "Untitled handoff"
 }

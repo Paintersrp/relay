@@ -211,9 +211,9 @@ The New Handoff page lets you select a discovered repo or use manual repo name/p
 
 ## New handoff intake
 
-A run can be created by pasting a handoff or uploading a `.txt` / `.md` handoff file. If both upload and paste are provided, the uploaded file is used.
+A run can be created from the New Handoff source picker by uploading a `.txt` / `.md` handoff file or switching to Text input to paste the handoff. Upload wins if both upload and text are submitted.
 
-The title field is optional. When blank, Relay derives the run title from the handoff's first `#` heading and falls back to `Untitled handoff`.
+Relay derives the run title from the handoff's first `#` heading. If no H1 heading exists, the run is named `Untitled handoff`.
 
 ## Project Structure
 

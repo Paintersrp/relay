@@ -10,31 +10,24 @@ import (
 	"testing"
 )
 
-func TestDeriveRunTitle_ProvidedTitleWins(t *testing.T) {
-	got := deriveRunTitle("Manual title", "# H1 title\n\nbody")
-	if got != "Manual title" {
-		t.Fatalf("expected 'Manual title', got %q", got)
-	}
-}
-
-func TestDeriveRunTitle_BlankTitleDerivesH1(t *testing.T) {
-	got := deriveRunTitle("", "# H1 title\n\nbody")
+func TestDeriveRunTitle_DerivesH1(t *testing.T) {
+	got := deriveRunTitle("# H1 title\n\nbody")
 	if got != "H1 title" {
 		t.Fatalf("expected 'H1 title', got %q", got)
 	}
 }
 
-func TestDeriveRunTitle_BlankTitleNoH1Fallback(t *testing.T) {
-	got := deriveRunTitle("", "no h1 here")
+func TestDeriveRunTitle_NoH1Fallback(t *testing.T) {
+	got := deriveRunTitle("no h1 here")
 	if got != "Untitled handoff" {
 		t.Fatalf("expected 'Untitled handoff', got %q", got)
 	}
 }
 
-func TestDeriveRunTitle_WhitespaceTitleFallsBack(t *testing.T) {
-	got := deriveRunTitle("  ", "# H1 title\n\nbody")
-	if got != "H1 title" {
-		t.Fatalf("expected 'H1 title', got %q", got)
+func TestDeriveRunTitle_TrimsH1(t *testing.T) {
+	got := deriveRunTitle("#   padded h1   \n\nbody")
+	if got != "padded h1" {
+		t.Fatalf("expected 'padded h1', got %q", got)
 	}
 }
 
@@ -143,6 +136,29 @@ func TestResolveHandoffText_EmptyUpload(t *testing.T) {
 	_, _, err := resolveHandoffText(req)
 	if err == nil {
 		t.Fatal("expected error for empty upload")
+	}
+}
+
+func TestResolveHandoffText_OversizedUploadRejected(t *testing.T) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	payload := make([]byte, maxHandoffUploadBytes+1)
+	for i := range payload {
+		payload[i] = 'a'
+	}
+	fileWriter, _ := w.CreateFormFile("handoff_file", "large.md")
+	fileWriter.Write(payload)
+	w.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/handoffs", &buf)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+
+	_, _, err := resolveHandoffText(req)
+	if err == nil {
+		t.Fatal("expected error for oversized upload")
+	}
+	if !strings.Contains(err.Error(), "2 MiB") && !strings.Contains(err.Error(), "smaller") {
+		t.Fatalf("expected error mentioning size limit, got %v", err)
 	}
 }
 

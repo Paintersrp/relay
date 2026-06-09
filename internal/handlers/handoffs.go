@@ -51,7 +51,7 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	repoIDText := r.FormValue("repo_id")
 	repoName := r.FormValue("repo_name")
 	repoPath := r.FormValue("repo_path")
-	title := deriveRunTitle(r.FormValue("title"), handoffText)
+	title := deriveRunTitle(handoffText)
 	selectedModelOption := r.FormValue("selected_model_option")
 	selectedModelCustom := r.FormValue("selected_model_custom")
 	branchName := strings.TrimSpace(r.FormValue("branch_name"))
