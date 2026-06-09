@@ -134,17 +134,8 @@ func ValidateHandoff(text string, recommendedModel string) *ValidationReport {
 		check("validation_commands", "warn", "No validation commands detected")
 	}
 
-	// scope paths
-	pathRe := regexp.MustCompile("`[a-zA-Z0-9_/\\.*-]+\\.[a-zA-Z]+`")
-	matches := pathRe.FindAllString(text, -1)
-	seen := map[string]bool{}
-	for _, m := range matches {
-		clean := strings.Trim(m, "`")
-		if !seen[clean] {
-			seen[clean] = true
-			report.Detected.ScopePaths = append(report.Detected.ScopePaths, clean)
-		}
-	}
+	// scope paths — use metadata-backed extraction
+	report.Detected.ScopePaths = ExtractScopedFilePaths(text)
 	if len(report.Detected.ScopePaths) > 0 {
 		check("scope_paths", "pass", "Scope paths detected")
 	} else {

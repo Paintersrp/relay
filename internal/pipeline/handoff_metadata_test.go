@@ -184,3 +184,26 @@ func TestBuildIntakeReviewNoScopedFilesNoBlocker(t *testing.T) {
 		t.Fatalf("expected no blockers when no scoped files, got %q", review.Blockers)
 	}
 }
+
+func TestExtractScopedFilePathsIgnoresCodeExampleIdentifiers(t *testing.T) {
+	text := "# Test\n\n## Direct files likely changed\n\n- internal/handlers/handoff_intake.go\n\n## Validation\n\n" +
+		"```bash\n" +
+		"go test ./...\n" +
+		"```\n\n" +
+		"If large.md or input.files are missing, check config.\n" +
+		"Prefer rtk.exe over raw commands.\n"
+	paths := ExtractScopedFilePaths(text)
+
+	for _, p := range paths {
+		if p == "large.md" || p == "input.files" || p == "rtk.exe" {
+			t.Errorf("code example identifier %q should not appear as scope path", p)
+		}
+	}
+
+	if len(paths) != 1 {
+		t.Fatalf("expected 1 scope path, got %d: %#v", len(paths), paths)
+	}
+	if paths[0] != "internal/handlers/handoff_intake.go" {
+		t.Errorf("expected 'internal/handlers/handoff_intake.go', got %q", paths[0])
+	}
+}

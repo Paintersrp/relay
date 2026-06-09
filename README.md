@@ -2,7 +2,42 @@
 
 Local-first handoff orchestration web app.
 
-Relay accepts surgical implementation handoffs, stores run metadata and artifacts, validates handoff structure, generates ready prompts, and provides a run workbench for inspection.
+Relay accepts surgical implementation handoffs, stores run metadata and artifacts, validates handoff structure, generates transformed Agent Prompts, and provides a run workbench for inspection.
+
+## Workflow
+
+Relay's intended workflow:
+
+1. Parse the original handoff.
+2. Build Intake Review.
+3. Detect model, branch, repo, scoped files, validation commands, final output contract, and suggested commit.
+4. Warn/block when the selected repo does not match the handoff scope.
+5. Generate a transformed Agent Prompt for the running repo agent.
+6. Store original handoff and transformed Agent Prompt separately.
+7. Store manual agent result intake.
+8. Run validation commands locally after agent result.
+9. Store validation stdout/stderr/json artifacts.
+10. Later: inspect git diff.
+11. Later: generate audit packet for GPT review.
+
+Key design points:
+
+- Original handoff contains validation commands for Relay extraction.
+- Agent Prompt tells agent not to run validation by default.
+- Validation runner is local/user-triggered.
+- `AGENTS.md` and `.clinerules` source templates live under `internal/instructions`.
+
+## Not implemented yet
+
+These items are not implemented in the current local-first flow:
+
+- direct OpenCode execution
+- automatic repo-agent execution
+- automatic branch/worktree creation
+- automatic commits
+- automatic validation failure repair
+- git diff inspection
+- audit packet generation
 
 ## Stack
 
@@ -91,7 +126,7 @@ make test       # run tests
 | Action | Status |
 |--------|--------|
 | `validate-handoff` | Implemented |
-| `prepare-prompt` | Implemented |
+| `prepare-prompt` | Implemented (generates Agent Prompt) |
 | `mark-accepted` | Implemented |
 | `mark-needs-cleanup` | Implemented |
 | `generate-opencode-packet` | Implemented |
@@ -154,11 +189,13 @@ Model selection is automatic by default. The model override control is optional 
 
 ## Agent Prompt
 
-The Agent Prompt artifact is currently the handoff text prepared for copying to an external agent. Relay does not execute OpenCode yet, and the OpenCode packet is metadata only until a future execution adapter consumes it.
+The Agent Prompt is a transformed execution prompt for the running repo agent. Relay parses the original handoff, removes orchestration-only metadata, strips raw validation command blocks, and appends validation responsibility and final output contract sections. The original handoff and transformed Agent Prompt are stored separately.
+
+Relay does not execute OpenCode yet, and the OpenCode packet is metadata only until a future execution adapter consumes it.
 
 ## OpenCode handoff packet
 
-Relay can generate an `opencode_handoff_packet.json` artifact after an agent prompt exists.
+Relay can generate an `opencode_handoff_packet.json` artifact after an Agent Prompt exists.
 
 The packet includes the run id, local repo path, branch/worktree metadata, selected model, recommended model, agent prompt artifact path, run artifact directory, and an execution status of `not_implemented`.
 
@@ -225,6 +262,7 @@ internal/
   store/            SQLite store + models
   pipeline/         Handoff validation + prompt prep
   artifacts/        Filesystem artifact storage
+  instructions/     Source-of-truth instruction templates
   views/            templ templates
   db/
     migrations/     goose SQL migrations

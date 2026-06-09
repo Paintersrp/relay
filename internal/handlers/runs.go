@@ -34,6 +34,14 @@ func readArtifactPreview(runID int64, kind string) string {
 	return string(data)
 }
 
+func readAgentPromptPreview(runID int64) string {
+	data := readArtifactPreview(runID, "agent_prompt")
+	if data != "" {
+		return data
+	}
+	return readArtifactPreview(runID, "ready_prompt")
+}
+
 func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -57,7 +65,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	previews := views.RunPreviews{
 		OriginalHandoff: readArtifactPreview(id, "original_handoff"),
 		ValidationJSON:  readArtifactPreview(id, "handoff_validation_json"),
-		ReadyPrompt:     readArtifactPreview(id, "ready_prompt"),
+		AgentPrompt:     readAgentPromptPreview(id),
 	}
 
 	// compute intake review
@@ -178,35 +186,42 @@ func (h *RunsHandler) preparePrompt(w http.ResponseWriter, r *http.Request, runI
 		return
 	}
 
-	prompt := pipeline.PreparePrompt(string(handoffData))
-
-	promptPath, err := artifacts.Write(runID, "ready_prompt", pipeline.ArtifactFilename("ready_prompt"), []byte(prompt))
+	run, err := h.store.GetRun(runID)
 	if err != nil {
-		h.log.Error("write ready prompt", "error", err)
-		http.Error(w, "failed to save ready prompt", http.StatusInternalServerError)
+		http.Error(w, "run not found", http.StatusNotFound)
 		return
 	}
 
-	h.store.CreateArtifact(runID, "ready_prompt", promptPath, "text/plain")
-
-	// Check intake blockers before marking ready
-	run, err := h.store.GetRun(runID)
-	if err == nil {
-		repo, _ := h.store.GetRepo(run.RepoID)
-		repoPath := ""
-		repoDefaults := ""
-		if repo != nil {
-			repoPath = repo.Path
-			repoDefaults = repo.DefaultValidationCommands
-		}
-		metadata := pipeline.ParseHandoffMetadata(string(handoffData), repoDefaults)
-		review := pipeline.BuildIntakeReview(metadata, repoPath)
-		if len(review.Blockers) > 0 {
-			h.store.UpdateRunStatus(runID, "needs_review")
-		} else {
-			h.store.UpdateRunStatus(runID, "ready")
-		}
+	repo, _ := h.store.GetRepo(run.RepoID)
+	repoPath := ""
+	repoDefaults := ""
+	if repo != nil {
+		repoPath = repo.Path
+		repoDefaults = repo.DefaultValidationCommands
 	}
+
+	metadata := pipeline.ParseHandoffMetadata(string(handoffData), repoDefaults)
+	review := pipeline.BuildIntakeReview(metadata, repoPath)
+
+	if len(review.Blockers) > 0 {
+		h.store.CreateEvent(runID, "warn",
+			"Cannot generate Agent Prompt while Intake Review has blockers. Fix repo selection or handoff scope first.")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+		return
+	}
+
+	prompt := pipeline.PreparePrompt(string(handoffData))
+
+	promptPath, err := artifacts.Write(runID, "agent_prompt", pipeline.ArtifactFilename("agent_prompt"), []byte(prompt))
+	if err != nil {
+		h.log.Error("write agent prompt", "error", err)
+		http.Error(w, "failed to save agent prompt", http.StatusInternalServerError)
+		return
+	}
+
+	h.store.CreateArtifact(runID, "agent_prompt", promptPath, "text/plain")
+
+	h.store.UpdateRunStatus(runID, "ready")
 
 	h.store.CreateEvent(runID, "info", "Agent prompt generated")
 
@@ -383,15 +398,23 @@ func (h *RunsHandler) generateOpenCodePacket(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var readyPromptArtifact *store.Artifact
+	var promptArtifact *store.Artifact
 	for i := range artifactsList {
-		if artifactsList[i].Kind == "ready_prompt" {
-			readyPromptArtifact = &artifactsList[i]
+		if artifactsList[i].Kind == "agent_prompt" {
+			promptArtifact = &artifactsList[i]
 			break
 		}
 	}
-	if readyPromptArtifact == nil {
-		http.Error(w, "generate ready prompt first", http.StatusBadRequest)
+	if promptArtifact == nil {
+		for i := range artifactsList {
+			if artifactsList[i].Kind == "ready_prompt" {
+				promptArtifact = &artifactsList[i]
+				break
+			}
+		}
+	}
+	if promptArtifact == nil {
+		http.Error(w, "generate agent prompt first", http.StatusBadRequest)
 		return
 	}
 
@@ -401,7 +424,7 @@ func (h *RunsHandler) generateOpenCodePacket(w http.ResponseWriter, r *http.Requ
 		run.BranchName,
 		run.SelectedModel,
 		run.RecommendedModel,
-		readyPromptArtifact.Path,
+		promptArtifact.Path,
 		artifacts.Dir(run.ID),
 	)
 

@@ -45,11 +45,11 @@ templ OpenCodePreview(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 				<tr>
 					<td class="py-2 pr-4 text-gray-500 w-40 align-top">Prompt artifact</td>
 					<td class="py-2">
-						if hasArtifact(artifacts, "ready_prompt") {
+						if hasArtifact(artifacts, "agent_prompt") {
 							<div class="flex gap-2">
-								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/ready_prompt"}
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt"}
 									class="text-indigo-400 hover:text-indigo-300">View</a>
-								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/ready_prompt/download"}
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
 									class="text-gray-500 hover:text-gray-300">Download</a>
 							</div>
 						} else {

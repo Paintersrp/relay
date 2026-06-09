@@ -249,3 +249,52 @@ Return DONE or BLOCKED.
 		t.Fatalf("expected 2 validation commands, got %#v", report.Detected.ValidationCommands)
 	}
 }
+
+func TestValidateHandoffScopePathsIgnoreCodeExampleIdentifiers(t *testing.T) {
+	text := `# Example Surgical Implementation
+
+## Goal
+
+Do a thing.
+
+## Do not change
+
+- Unrelated behavior.
+
+## Task checklist
+
+- [ ] Update code
+
+## Direct files likely changed
+
+- internal/handlers/handoff_intake.go
+
+## Validation
+
+` + "```bash" + `
+go test ./...
+` + "```" + `
+
+If large.md or input.files are missing, check config.
+Prefer rtk.exe over raw commands.
+
+## Output
+
+Return DONE or BLOCKED.
+`
+
+	report := ValidateHandoff(text, "DeepSeek V4 Flash")
+
+	for _, sp := range report.Detected.ScopePaths {
+		if sp == "large.md" || sp == "input.files" || sp == "rtk.exe" {
+			t.Errorf("code example identifier %q should not appear as scope path", sp)
+		}
+	}
+
+	if len(report.Detected.ScopePaths) != 1 {
+		t.Fatalf("expected 1 scope path (internal/handlers/handoff_intake.go), got %#v", report.Detected.ScopePaths)
+	}
+	if report.Detected.ScopePaths[0] != "internal/handlers/handoff_intake.go" {
+		t.Errorf("expected 'internal/handlers/handoff_intake.go', got %q", report.Detected.ScopePaths[0])
+	}
+}

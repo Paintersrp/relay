@@ -13,6 +13,7 @@ var allowedKinds = map[string]bool{
 	"original_handoff":        true,
 	"handoff_validation_json": true,
 	"ready_prompt":            true,
+	"agent_prompt":            true,
 	"audit_packet":            true,
 	"opencode_handoff_packet": true,
 	"agent_result_raw":        true,

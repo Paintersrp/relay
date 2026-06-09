@@ -108,13 +108,13 @@ func OpenCodePreview(run *store.Run, repo *store.Repo, artifacts []store.Artifac
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if hasArtifact(artifacts, "ready_prompt") {
+		if hasArtifact(artifacts, "agent_prompt") {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"flex gap-2\"><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var6 templ.SafeURL
-			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/ready_prompt")
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt")
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/opencode_preview.templ`, Line: 50, Col: 68}
 			}
@@ -127,7 +127,7 @@ func OpenCodePreview(run *store.Run, repo *store.Repo, artifacts []store.Artifac
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 templ.SafeURL
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/ready_prompt/download")
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download")
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/opencode_preview.templ`, Line: 52, Col: 77}
 			}

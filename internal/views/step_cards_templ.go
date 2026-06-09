@@ -169,7 +169,7 @@ func StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check)
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div><div class=\"border border-gray-800 rounded-lg p-4 bg-gray-900/50\"><div class=\"flex items-center justify-between\"><div class=\"flex items-center gap-3\"><span class=\"text-xs font-bold text-gray-500 w-6\">2</span><div><h3 class=\"font-medium\">Agent Prompt</h3><p class=\"text-xs text-gray-500\">Copy or download the handoff prompt for an external agent.</p></div></div><form action=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div><div class=\"border border-gray-800 rounded-lg p-4 bg-gray-900/50\"><div class=\"flex items-center justify-between\"><div class=\"flex items-center gap-3\"><span class=\"text-xs font-bold text-gray-500 w-6\">2</span><div><h3 class=\"font-medium\">Agent Prompt</h3><p class=\"text-xs text-gray-500\">Transformed execution prompt for the running agent. Relay removes orchestration-only metadata and owns validation separately.</p></div></div><form action=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -199,13 +199,13 @@ func StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if artifactExists(artifacts, "ready_prompt") {
+		if artifactExists(artifacts, "agent_prompt") {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<div class=\"mt-3 pt-3 border-t border-gray-800 flex gap-2\"><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 templ.SafeURL
-			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/ready_prompt")
+			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt")
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 73, Col: 65}
 			}
@@ -218,7 +218,7 @@ func StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check)
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var12 templ.SafeURL
-			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/ready_prompt/download")
+			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download")
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 75, Col: 74}
 			}
@@ -235,7 +235,7 @@ func StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if artifactExists(artifacts, "ready_prompt") {
+		if artifactExists(artifacts, "agent_prompt") {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<form action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err

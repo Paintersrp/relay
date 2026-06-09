@@ -231,3 +231,45 @@ func TestIgnoresNonShellFenceInValidationSection(t *testing.T) {
 		t.Fatalf("expected 0 commands, got %d", len(cmds))
 	}
 }
+
+func TestExtractValidationCommandsNormalizesRTKDuplicates(t *testing.T) {
+	handoff := `## Tests / validation
+
+` + "```bash" + `
+go fmt ./...
+npm run build
+go test ./...
+` + "```" + `
+
+If RTK is available, prefer:
+
+` + "```bash" + `
+rtk.exe go fmt ./...
+rtk.exe test "npm run build"
+rtk.exe go test ./...
+` + "```" + `
+`
+	cmds := ExtractValidationCommands(handoff, "[]")
+
+	expected := []string{
+		"go fmt ./...",
+		"npm run build",
+		"go test ./...",
+	}
+
+	if len(cmds) != len(expected) {
+		t.Fatalf("expected %d canonical commands, got %d: %#v", len(expected), len(cmds), cmds)
+	}
+
+	for i, cmd := range cmds {
+		if cmd.Command != expected[i] {
+			t.Errorf("command %d: expected %q, got %q", i, expected[i], cmd.Command)
+		}
+	}
+
+	for _, cmd := range cmds {
+		if strings.HasPrefix(cmd.Command, "rtk") {
+			t.Errorf("RTK-wrapped command should not appear after normalization: %q", cmd.Command)
+		}
+	}
+}

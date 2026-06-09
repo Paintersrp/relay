@@ -158,6 +158,15 @@ func ParseHandoffMetadata(handoffText string, repoDefaultCommandsJSON string) Ha
 	return meta
 }
 
+func ExtractScopedFilePaths(text string) []string {
+	meta := ParseHandoffMetadata(text, "")
+	paths := make([]string, 0, len(meta.ScopedFiles))
+	for _, f := range meta.ScopedFiles {
+		paths = append(paths, f.Path)
+	}
+	return paths
+}
+
 func IsSourceFilePath(s string) bool {
 	ext := filepath.Ext(s)
 	if ext == "" {

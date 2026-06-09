@@ -72,6 +72,10 @@ templ IntakeReviewPanel(run *store.Run, repo *store.Repo, review *pipeline.Intak
 			</tbody>
 		</table>
 
+		<div class="mt-3 pt-3 border-t border-gray-800">
+			<p class="text-xs text-gray-500">Transformed execution prompt for the running agent. Relay removes orchestration-only metadata and owns validation separately.</p>
+		</div>
+
 		if len(review.ScopedFileChecks) > 0 {
 			<div class="mt-3 pt-3 border-t border-gray-800">
 				<h4 class="text-xs font-medium text-gray-400 mb-1.5">Scoped files</h4>
@@ -93,6 +97,7 @@ templ IntakeReviewPanel(run *store.Run, repo *store.Repo, review *pipeline.Intak
 		if len(review.Metadata.ValidationCommands) > 0 {
 			<div class="mt-3 pt-3 border-t border-gray-800">
 				<h4 class="text-xs font-medium text-gray-400 mb-1.5">Validation commands</h4>
+				<p class="text-xs text-gray-500 mb-1.5">Extracted for Relay to run locally after agent result. The running agent is instructed not to run them by default.</p>
 				<div class="space-y-1">
 					for _, cmd := range review.Metadata.ValidationCommands {
 						<div class="text-xs text-gray-300 font-mono">{ cmd.Command }</div>

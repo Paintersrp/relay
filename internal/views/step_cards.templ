@@ -53,7 +53,7 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 					<span class="text-xs font-bold text-gray-500 w-6">2</span>
 					<div>
 						<h3 class="font-medium">Agent Prompt</h3>
-						<p class="text-xs text-gray-500">Copy or download the handoff prompt for an external agent.</p>
+						<p class="text-xs text-gray-500">Transformed execution prompt for the running agent. Relay removes orchestration-only metadata and owns validation separately.</p>
 					</div>
 				</div>
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
@@ -68,11 +68,11 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 					</button>
 				</form>
 			</div>
-			if artifactExists(artifacts, "ready_prompt") {
+			if artifactExists(artifacts, "agent_prompt") {
 				<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/ready_prompt"}
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt"}
 						class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/ready_prompt/download"}
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
 						class="text-xs text-gray-500 hover:text-gray-300">Download</a>
 				</div>
 			}
@@ -87,7 +87,7 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 						<p class="text-xs text-gray-500">Metadata only. Relay does not execute this packet yet.</p>
 					</div>
 				</div>
-				if artifactExists(artifacts, "ready_prompt") {
+				if artifactExists(artifacts, "agent_prompt") {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 						hx-target="body"

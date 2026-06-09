@@ -11,7 +11,7 @@ import templruntime "github.com/a-h/templ/runtime"
 type RunPreviews struct {
 	OriginalHandoff string
 	ValidationJSON  string
-	ReadyPrompt     string
+	AgentPrompt     string
 }
 
 func RunPreviewPanels(previews RunPreviews) templ.Component {
@@ -47,7 +47,7 @@ func RunPreviewPanels(previews RunPreviews) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = previewPanel("Agent Prompt", "ready-prompt-preview", previews.ReadyPrompt, "No agent prompt generated yet.").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = previewPanel("Agent Prompt", "agent-prompt-preview", previews.AgentPrompt, "No agent prompt generated yet.").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

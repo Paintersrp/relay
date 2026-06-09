@@ -12,7 +12,7 @@ func TestNewOpenCodeHandoffPacket(t *testing.T) {
 		"feat/example",
 		"DeepSeek V4 Flash",
 		"DeepSeek V4 Pro",
-		"data/artifacts/runs/123/ready_prompt.txt",
+		"data/artifacts/runs/123/agent_prompt.txt",
 		"data/artifacts/runs/123",
 	)
 
@@ -31,11 +31,11 @@ func TestNewOpenCodeHandoffPacket(t *testing.T) {
 	if packet.RecommendedModel != "DeepSeek V4 Pro" {
 		t.Fatalf("expected RecommendedModel 'DeepSeek V4 Pro', got %q", packet.RecommendedModel)
 	}
-	if packet.PromptArtifactKind != "ready_prompt" {
-		t.Fatalf("expected PromptArtifactKind 'ready_prompt', got %q", packet.PromptArtifactKind)
+	if packet.PromptArtifactKind != "agent_prompt" {
+		t.Fatalf("expected PromptArtifactKind 'agent_prompt', got %q", packet.PromptArtifactKind)
 	}
-	if packet.PromptArtifactPath != "data/artifacts/runs/123/ready_prompt.txt" {
-		t.Fatalf("expected PromptArtifactPath 'data/artifacts/runs/123/ready_prompt.txt', got %q", packet.PromptArtifactPath)
+	if packet.PromptArtifactPath != "data/artifacts/runs/123/agent_prompt.txt" {
+		t.Fatalf("expected PromptArtifactPath 'data/artifacts/runs/123/agent_prompt.txt', got %q", packet.PromptArtifactPath)
 	}
 	if packet.ArtifactDir != "data/artifacts/runs/123" {
 		t.Fatalf("expected ArtifactDir 'data/artifacts/runs/123', got %q", packet.ArtifactDir)
@@ -52,7 +52,7 @@ func TestMarshalOpenCodeHandoffPacket(t *testing.T) {
 		"feat/example",
 		"DeepSeek V4 Flash",
 		"DeepSeek V4 Pro",
-		"data/artifacts/runs/123/ready_prompt.txt",
+		"data/artifacts/runs/123/agent_prompt.txt",
 		"data/artifacts/runs/123",
 	)
 
@@ -70,6 +70,9 @@ func TestMarshalOpenCodeHandoffPacket(t *testing.T) {
 	if !strings.Contains(string(data), `"selected_model": "DeepSeek V4 Flash"`) {
 		t.Fatal("expected JSON to contain selected_model")
 	}
+	if !strings.Contains(string(data), `"prompt_artifact_kind": "agent_prompt"`) {
+		t.Fatal("expected JSON to contain prompt_artifact_kind: agent_prompt")
+	}
 	if !strings.Contains(string(data), `"status": "not_implemented"`) {
 		t.Fatal("expected JSON to contain execution status")
 	}
@@ -85,7 +88,7 @@ func TestNewOpenCodeHandoffPacketEmptyOptionalFields(t *testing.T) {
 		"",
 		"DeepSeek V4 Flash",
 		"",
-		"data/artifacts/runs/456/ready_prompt.txt",
+		"data/artifacts/runs/456/agent_prompt.txt",
 		"data/artifacts/runs/456",
 	)
 

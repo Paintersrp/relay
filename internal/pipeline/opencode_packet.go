@@ -33,7 +33,7 @@ func NewOpenCodeHandoffPacket(
 		BranchName:         branchName,
 		SelectedModel:      selectedModel,
 		RecommendedModel:   recommendedModel,
-		PromptArtifactKind: "ready_prompt",
+		PromptArtifactKind: "agent_prompt",
 		PromptArtifactPath: promptArtifactPath,
 		ArtifactDir:        artifactDir,
 		Execution: OpenCodeExecutionPreview{

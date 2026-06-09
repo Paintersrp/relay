@@ -26,6 +26,25 @@ var knownCommandPrefixes = []string{
 	"rtk ", "rtk.exe ", "rtk.exe", "make ", "task ", "just ",
 }
 
+func canonicalValidationCommand(command string) string {
+	cmd := strings.TrimSpace(command)
+	if strings.HasPrefix(cmd, "rtk.exe test \"") && strings.HasSuffix(cmd, "\"") {
+		inner := cmd[len("rtk.exe test \"") : len(cmd)-1]
+		return strings.TrimSpace(inner)
+	}
+	if strings.HasPrefix(cmd, "rtk test \"") && strings.HasSuffix(cmd, "\"") {
+		inner := cmd[len("rtk test \"") : len(cmd)-1]
+		return strings.TrimSpace(inner)
+	}
+	if strings.HasPrefix(cmd, "rtk.exe ") {
+		return strings.TrimSpace(cmd[len("rtk.exe "):])
+	}
+	if strings.HasPrefix(cmd, "rtk ") {
+		return strings.TrimSpace(cmd[len("rtk "):])
+	}
+	return cmd
+}
+
 func hasKnownCommandPrefix(line string) bool {
 	lower := strings.ToLower(line)
 	for _, prefix := range knownCommandPrefixes {
@@ -140,11 +159,12 @@ func ExtractValidationCommands(handoffText string, repoDefaultCommandsJSON strin
 			continue
 		}
 
-		if !seen[trimmed] {
-			seen[trimmed] = true
+		canonical := canonicalValidationCommand(trimmed)
+		if !seen[canonical] {
+			seen[canonical] = true
 			commands = append(commands, ValidationCommand{
-				Label:   trimmed,
-				Command: trimmed,
+				Label:   canonical,
+				Command: canonical,
 				Source:  "handoff",
 			})
 		}
