@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -88,7 +90,7 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 	case "run-agent":
 		h.notImplemented(w, r, id, "Agent execution is not yet implemented")
 	case "run-validation":
-		h.notImplemented(w, r, id, "Validation command execution is not yet implemented")
+		h.runValidation(w, r, id)
 	case "inspect-diff":
 		h.notImplemented(w, r, id, "Git diff inspection is not yet implemented")
 	case "generate-audit-packet":
@@ -185,6 +187,141 @@ func (h *RunsHandler) markStatus(w http.ResponseWriter, r *http.Request, runID i
 	h.store.UpdateRunStatus(runID, status)
 
 	h.store.CreateEvent(runID, "info", "Run status changed to "+status)
+
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+}
+
+func (h *RunsHandler) runValidation(w http.ResponseWriter, r *http.Request, runID int64) {
+	run, err := h.store.GetRun(runID)
+	if err != nil {
+		h.log.Error("get run for validation", "error", err)
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	repo, err := h.store.GetRepo(run.RepoID)
+	if err != nil {
+		h.log.Error("get repo for validation", "error", err)
+		http.Error(w, "repo not found", http.StatusNotFound)
+		return
+	}
+
+	if repo.Path == "" {
+		h.store.CreateEvent(runID, "warn", "No repo path configured for validation commands")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+		return
+	}
+
+	info, err := os.Stat(repo.Path)
+	if err != nil || !info.IsDir() {
+		h.store.CreateEvent(runID, "warn", "Repo path does not exist or is not a directory: "+repo.Path)
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+		return
+	}
+
+	handoffData, err := artifacts.Read(runID, "original_handoff", pipeline.ArtifactFilename("original_handoff"))
+	if err != nil {
+		h.log.Error("read handoff for validation commands", "error", err)
+		handoffData = []byte{}
+	}
+
+	commands := pipeline.ExtractValidationCommands(string(handoffData), repo.DefaultValidationCommands)
+	if len(commands) == 0 {
+		h.store.CreateEvent(runID, "warn", "No validation commands found")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+		return
+	}
+
+	var results []pipeline.CommandRunResult
+	allPassed := true
+	var combinedStdout, combinedStderr strings.Builder
+
+	for _, cmd := range commands {
+		result := pipeline.RunValidationCommand(context.Background(), repo.Path, cmd, pipeline.DefaultValidationCommandTimeout)
+		results = append(results, result)
+
+		if combinedStdout.Len() > 0 {
+			combinedStdout.WriteString("\n---\n")
+		}
+		combinedStdout.WriteString("$ " + cmd.Command + "\n")
+		combinedStdout.WriteString(result.Stdout)
+
+		if combinedStderr.Len() > 0 {
+			combinedStderr.WriteString("\n---\n")
+		}
+		combinedStderr.WriteString("$ " + cmd.Command + "\n")
+		combinedStderr.WriteString(result.Stderr)
+
+		if result.ExitCode != 0 || result.TimedOut {
+			allPassed = false
+		}
+	}
+
+	aggregate := struct {
+		Status   string                      `json:"status"`
+		RepoPath string                      `json:"repo_path"`
+		Commands []pipeline.CommandRunResult `json:"commands"`
+	}{
+		Status:   "fail",
+		RepoPath: repo.Path,
+		Commands: results,
+	}
+	if allPassed {
+		aggregate.Status = "pass"
+	}
+
+	aggregateJSON, _ := json.MarshalIndent(aggregate, "", "  ")
+
+	jsonPath, err := artifacts.Write(runID, "validation_run_json", pipeline.ArtifactFilename("validation_run_json"), aggregateJSON)
+	if err != nil {
+		h.log.Error("write validation run json", "error", err)
+		http.Error(w, "failed to save validation result", http.StatusInternalServerError)
+		return
+	}
+	h.store.CreateArtifact(runID, "validation_run_json", jsonPath, "application/json")
+
+	stdoutPath, err := artifacts.Write(runID, "validation_stdout", pipeline.ArtifactFilename("validation_stdout"), []byte(combinedStdout.String()))
+	if err != nil {
+		h.log.Error("write validation stdout", "error", err)
+	} else {
+		h.store.CreateArtifact(runID, "validation_stdout", stdoutPath, "text/plain")
+	}
+
+	stderrPath, err := artifacts.Write(runID, "validation_stderr", pipeline.ArtifactFilename("validation_stderr"), []byte(combinedStderr.String()))
+	if err != nil {
+		h.log.Error("write validation stderr", "error", err)
+	} else {
+		h.store.CreateArtifact(runID, "validation_stderr", stderrPath, "text/plain")
+	}
+
+	h.store.DeleteChecksByRunKind(runID, "validation_run")
+
+	for _, result := range results {
+		status := "pass"
+		if result.ExitCode != 0 || result.TimedOut {
+			status = "fail"
+		}
+		summary := result.Label + " passed"
+		if status == "fail" {
+			if result.TimedOut {
+				summary = result.Label + " timed out"
+			} else {
+				summary = result.Label + " failed with exit code " + strconv.Itoa(result.ExitCode)
+			}
+		}
+		detailsJSON, _ := json.Marshal(result)
+		h.store.CreateCheck(runID, "validation_run", status, summary, string(detailsJSON))
+	}
+
+	if allPassed {
+		h.store.UpdateRunStatus(runID, "validation_passed")
+		h.store.CreateEvent(runID, "info", "Validation commands passed")
+	} else {
+		h.store.UpdateRunStatus(runID, "validation_failed")
+		h.store.CreateEvent(runID, "info", "Validation commands failed")
+	}
+
+	h.log.Info("validation commands executed", "run_id", runID, "status", aggregate.Status, "commands", len(commands))
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
 }

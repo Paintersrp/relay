@@ -17,6 +17,9 @@ var allowedKinds = map[string]bool{
 	"opencode_handoff_packet": true,
 	"agent_result_raw":        true,
 	"agent_result_json":       true,
+	"validation_run_json":     true,
+	"validation_stdout":       true,
+	"validation_stderr":       true,
 }
 
 func Dir(runID int64) string {

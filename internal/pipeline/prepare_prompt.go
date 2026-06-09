@@ -29,6 +29,12 @@ func ArtifactFilename(kind string) string {
 		return "agent_result.txt"
 	case "agent_result_json":
 		return "agent_result.json"
+	case "validation_run_json":
+		return "validation_run.json"
+	case "validation_stdout":
+		return "validation_stdout.txt"
+	case "validation_stderr":
+		return "validation_stderr.txt"
 	default:
 		return fmt.Sprintf("%s.txt", kind)
 	}
