@@ -43,7 +43,7 @@ func NewHandoff(repos []store.Repo) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-2xl\"><h1 class=\"text-2xl font-bold mb-2\">New Handoff</h1><p class=\"text-gray-500 text-sm mb-8\">Paste a surgical implementation handoff to start a new run.</p><form action=\"/handoffs\" method=\"POST\" class=\"space-y-6\"><div x-data=\"{ repoMode: 'select' }\" class=\"space-y-4\"><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Repository</label> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-2xl\"><h1 class=\"text-2xl font-bold mb-2\">New Handoff</h1><p class=\"text-gray-500 text-sm mb-8\">Paste a surgical implementation handoff to start a new run.</p><form action=\"/handoffs\" method=\"POST\" class=\"space-y-6\"><div x-data=\"{ repoMode: '' }\" class=\"space-y-4\"><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Repository</label> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

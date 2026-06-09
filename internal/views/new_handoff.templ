@@ -9,7 +9,7 @@ templ NewHandoff(repos []store.Repo) {
 			<p class="text-gray-500 text-sm mb-8">Paste a surgical implementation handoff to start a new run.</p>
 
 			<form action="/handoffs" method="POST" class="space-y-6">
-				<div x-data="{ repoMode: 'select' }" class="space-y-4">
+				<div x-data="{ repoMode: '' }" class="space-y-4">
 					<div>
 						<label class="block text-sm font-medium text-gray-400 mb-1">Repository</label>
 						if len(repos) == 0 {

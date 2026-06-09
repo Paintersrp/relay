@@ -23,6 +23,8 @@ func ArtifactFilename(kind string) string {
 		return "ready_prompt.txt"
 	case "audit_packet":
 		return "audit_packet.json"
+	case "opencode_handoff_packet":
+		return "opencode_handoff_packet.json"
 	default:
 		return fmt.Sprintf("%s.txt", kind)
 	}

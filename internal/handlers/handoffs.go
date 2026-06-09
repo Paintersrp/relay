@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -63,14 +64,10 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		repoName = strings.TrimSpace(repoName)
-		repoPath = repos.NormalizePath(repoPath)
-
-		if repoName == "" && repoPath != "" {
-			repoName = filepath.Base(repoPath)
-		}
-		if repoName == "" || repoPath == "" {
-			http.Error(w, "repo name and path are required for manual repo entry", http.StatusBadRequest)
+		var err error
+		repoName, repoPath, err = normalizeManualRepoInput(repoName, repoPath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -111,4 +108,26 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	h.log.Info("handoff created", "run_id", run.ID, "repo", repo.Name)
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(run.ID, 10), http.StatusSeeOther)
+}
+
+func normalizeManualRepoInput(repoName, repoPath string) (name string, path string, err error) {
+	repoName = strings.TrimSpace(repoName)
+	rawRepoPath := strings.TrimSpace(repoPath)
+	if rawRepoPath == "" {
+		return "", "", fmt.Errorf("repo path is required for manual repo entry")
+	}
+
+	path = repos.NormalizePath(rawRepoPath)
+	if path == "" || path == "." {
+		return "", "", fmt.Errorf("repo path is required for manual repo entry")
+	}
+
+	if repoName == "" {
+		repoName = filepath.Base(path)
+	}
+	if repoName == "" || repoName == "." {
+		return "", "", fmt.Errorf("repo name is required for manual repo entry")
+	}
+
+	return repoName, path, nil
 }

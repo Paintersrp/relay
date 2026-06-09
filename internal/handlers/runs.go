@@ -92,6 +92,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.notImplemented(w, r, id, "Git diff inspection is not yet implemented")
 	case "generate-audit-packet":
 		h.notImplemented(w, r, id, "Audit packet generation is not yet implemented")
+	case "generate-opencode-packet":
+		h.generateOpenCodePacket(w, r, id)
 	default:
 		http.Error(w, "unknown action", http.StatusBadRequest)
 	}
@@ -186,6 +188,70 @@ func (h *RunsHandler) markStatus(w http.ResponseWriter, r *http.Request, runID i
 
 func (h *RunsHandler) notImplemented(w http.ResponseWriter, r *http.Request, runID int64, msg string) {
 	h.store.CreateEvent(runID, "warn", msg)
+
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+}
+
+func (h *RunsHandler) generateOpenCodePacket(w http.ResponseWriter, r *http.Request, runID int64) {
+	run, err := h.store.GetRun(runID)
+	if err != nil {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	repo, err := h.store.GetRepo(run.RepoID)
+	if err != nil {
+		http.Error(w, "repo not found", http.StatusNotFound)
+		return
+	}
+
+	artifactsList, err := h.store.ListArtifactsByRun(runID)
+	if err != nil {
+		http.Error(w, "failed to list artifacts", http.StatusInternalServerError)
+		return
+	}
+
+	var readyPromptArtifact *store.Artifact
+	for i := range artifactsList {
+		if artifactsList[i].Kind == "ready_prompt" {
+			readyPromptArtifact = &artifactsList[i]
+			break
+		}
+	}
+	if readyPromptArtifact == nil {
+		http.Error(w, "generate ready prompt first", http.StatusBadRequest)
+		return
+	}
+
+	packet := pipeline.NewOpenCodeHandoffPacket(
+		run.ID,
+		repo.Path,
+		run.BranchName,
+		run.SelectedModel,
+		run.RecommendedModel,
+		readyPromptArtifact.Path,
+		artifacts.Dir(run.ID),
+	)
+
+	packetJSON, err := pipeline.MarshalOpenCodeHandoffPacket(packet)
+	if err != nil {
+		h.log.Error("marshal opencode packet", "error", err)
+		http.Error(w, "failed to marshal packet", http.StatusInternalServerError)
+		return
+	}
+
+	packetPath, err := artifacts.Write(runID, "opencode_handoff_packet", pipeline.ArtifactFilename("opencode_handoff_packet"), packetJSON)
+	if err != nil {
+		h.log.Error("write opencode packet", "error", err)
+		http.Error(w, "failed to save packet", http.StatusInternalServerError)
+		return
+	}
+
+	h.store.CreateArtifact(runID, "opencode_handoff_packet", packetPath, "application/json")
+
+	h.store.CreateEvent(runID, "info", "OpenCode handoff packet generated")
+
+	h.log.Info("opencode handoff packet generated", "run_id", runID)
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
 }

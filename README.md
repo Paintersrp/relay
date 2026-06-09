@@ -94,6 +94,7 @@ make test       # run tests
 | `prepare-prompt` | Implemented |
 | `mark-accepted` | Implemented |
 | `mark-needs-cleanup` | Implemented |
+| `generate-opencode-packet` | Implemented |
 | `run-agent` | Future |
 | `run-validation` | Future |
 | `inspect-diff` | Future |
@@ -126,7 +127,15 @@ When creating a handoff, Relay parses a recommended model from the pasted handof
 
 The New Handoff form provides a model dropdown for overrides and a Custom option for provider-specific model IDs.
 
-Relay currently shows an OpenCode handoff preview on run detail pages, but does not execute OpenCode yet.
+Relay shows an OpenCode handoff preview on run detail pages and can generate an `opencode_handoff_packet.json` artifact. Relay does not execute OpenCode yet.
+
+## OpenCode handoff packet
+
+Relay can generate an `opencode_handoff_packet.json` artifact after a ready prompt exists.
+
+The packet includes the run id, local repo path, branch/worktree metadata, selected model, recommended model, ready prompt artifact path, run artifact directory, and an execution status of `not_implemented`.
+
+Relay does not execute OpenCode yet.
 
 ## Local repository discovery
 
