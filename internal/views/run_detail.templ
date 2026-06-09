@@ -26,6 +26,8 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 
 		@StepCards(run, artifacts, checks)
 
+		@OpenCodePreview(run, repo, artifacts)
+
 		@RunPreviewPanels(previews)
 
 		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">

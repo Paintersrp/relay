@@ -41,14 +41,13 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	repoName := r.FormValue("repo_name")
 	repoPath := r.FormValue("repo_path")
 	title := r.FormValue("title")
-	recommendedModel := r.FormValue("recommended_model")
-	selectedModel := r.FormValue("selected_model")
+	selectedModelOption := r.FormValue("selected_model_option")
+	selectedModelCustom := r.FormValue("selected_model_custom")
 	branchName := r.FormValue("branch_name")
 	handoffText := r.FormValue("handoff_text")
 
-	if selectedModel == "" {
-		selectedModel = recommendedModel
-	}
+	recommendedModel, _ := pipeline.ParseRecommendedModel(handoffText)
+	selectedModel, _ := pipeline.ResolveSelectedModel(selectedModelOption, selectedModelCustom, recommendedModel)
 
 	var repo *store.Repo
 

@@ -1,0 +1,77 @@
+package views
+
+import "relay/internal/store"
+
+templ OpenCodePreview(run *store.Run, repo *store.Repo, artifacts []store.Artifact) {
+	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50 mt-8">
+		<h3 class="font-medium mb-3">OpenCode Handoff Preview</h3>
+		<table class="w-full text-xs">
+			<tbody class="divide-y divide-gray-800">
+				<tr>
+					<td class="py-2 pr-4 text-gray-500 w-40 align-top">Repo path</td>
+					<td class="py-2 text-gray-300 font-mono">
+						if repo != nil && repo.Path != "" {
+							{ repo.Path }
+						} else {
+							<span class="text-gray-600">-</span>
+						}
+					</td>
+				</tr>
+				<tr>
+					<td class="py-2 pr-4 text-gray-500 w-40 align-top">Branch / worktree</td>
+					<td class="py-2 text-gray-300 font-mono">
+						if run.BranchName != "" {
+							{ run.BranchName }
+						} else {
+							<span class="text-gray-600">-</span>
+						}
+					</td>
+				</tr>
+				<tr>
+					<td class="py-2 pr-4 text-gray-500 w-40 align-top">Selected model</td>
+					<td class="py-2 text-gray-300 font-mono">{ run.SelectedModel }</td>
+				</tr>
+				<tr>
+					<td class="py-2 pr-4 text-gray-500 w-40 align-top">Recommended model</td>
+					<td class="py-2 text-gray-300 font-mono">
+						if run.RecommendedModel != "" {
+							{ run.RecommendedModel }
+						} else {
+							<span class="text-gray-600">-</span>
+						}
+					</td>
+				</tr>
+				<tr>
+					<td class="py-2 pr-4 text-gray-500 w-40 align-top">Prompt artifact</td>
+					<td class="py-2">
+						if hasArtifact(artifacts, "ready_prompt") {
+							<div class="flex gap-2">
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/ready_prompt"}
+									class="text-indigo-400 hover:text-indigo-300">View</a>
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/ready_prompt/download"}
+									class="text-gray-500 hover:text-gray-300">Download</a>
+							</div>
+						} else {
+							<span class="text-yellow-400">Generate Ready Prompt first</span>
+						}
+					</td>
+				</tr>
+				<tr>
+					<td class="py-2 pr-4 text-gray-500 w-40 align-top">Execution</td>
+					<td class="py-2">
+						<span class="text-gray-600">Not implemented yet</span>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+}
+
+func hasArtifact(artifacts []store.Artifact, kind string) bool {
+	for _, a := range artifacts {
+		if a.Kind == kind {
+			return true
+		}
+	}
+	return false
+}

@@ -56,18 +56,27 @@ templ NewHandoff(repos []store.Repo) {
 						placeholder="Implementation handoff title"/>
 				</div>
 
-				<div class="grid grid-cols-2 gap-4">
-					<div>
-						<label class="block text-sm font-medium text-gray-400 mb-1">Recommended Model</label>
-						<input type="text" name="recommended_model"
+				<div x-data="{ selectedModelOption: '' }" class="space-y-2">
+					<label class="block text-sm font-medium text-gray-400 mb-1">Model</label>
+					<select name="selected_model_option" x-model="selectedModelOption"
+						class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+						<option value="">Auto from handoff, fallback DeepSeek V4 Flash</option>
+						<option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
+						<option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+						<option value="deepseek-v4-pro-max">DeepSeek V4 Pro Max</option>
+						<option value="qwen-3.7-max">Qwen3.7 Max</option>
+						<option value="kimi-k2.6">Kimi K2.6</option>
+						<option value="gpt-5.5-thinking">GPT-5.5 Thinking</option>
+						<option value="custom">Custom</option>
+					</select>
+					<p class="text-xs text-gray-500">
+						Relay parses Recommended Model or Model from the pasted handoff. Choose a model here only to override it.
+					</p>
+					<div x-show="selectedModelOption === 'custom'">
+						<label class="block text-sm font-medium text-gray-400 mb-1">Custom model</label>
+						<input type="text" name="selected_model_custom"
 							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-							placeholder="e.g. claude-sonnet-4-5"/>
-					</div>
-					<div>
-						<label class="block text-sm font-medium text-gray-400 mb-1">Selected Model</label>
-						<input type="text" name="selected_model"
-							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-							placeholder="Defaults to recommended"/>
+							placeholder="provider/model-id"/>
 					</div>
 				</div>
 

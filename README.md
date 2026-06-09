@@ -120,6 +120,14 @@ npm run dev
 
 The browser reloads when built frontend assets change or when the Go server restarts.
 
+## Model selection
+
+When creating a handoff, Relay parses a recommended model from the pasted handoff text using labels like `Recommended Model:` or `Model:`. If no model is found and no override is selected, Relay defaults the selected model to DeepSeek V4 Flash.
+
+The New Handoff form provides a model dropdown for overrides and a Custom option for provider-specific model IDs.
+
+Relay currently shows an OpenCode handoff preview on run detail pages, but does not execute OpenCode yet.
+
 ## Local repository discovery
 
 Relay discovers local Git repositories from configured scan roots.
