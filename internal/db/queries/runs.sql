@@ -8,6 +8,25 @@ SELECT * FROM runs WHERE id = ?;
 -- name: ListRecentRuns :many
 SELECT * FROM runs ORDER BY updated_at DESC LIMIT ?;
 
+-- name: ListRecentRunsWithRepo :many
+SELECT
+  runs.id,
+  runs.repo_id,
+  runs.title,
+  runs.status,
+  runs.recommended_model,
+  runs.selected_model,
+  runs.branch_name,
+  runs.base_commit,
+  runs.head_commit,
+  runs.created_at,
+  runs.updated_at,
+  repos.name AS repo_name
+FROM runs
+JOIN repos ON repos.id = runs.repo_id
+ORDER BY runs.updated_at DESC
+LIMIT ?;
+
 -- name: ListRunsByRepo :many
 SELECT * FROM runs WHERE repo_id = ? ORDER BY updated_at DESC;
 

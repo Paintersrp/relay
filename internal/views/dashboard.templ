@@ -18,7 +18,7 @@ func statusBadge(status string) string {
 	return "px-2 py-0.5 rounded text-xs font-medium " + c
 }
 
-templ Dashboard(runs []store.Run) {
+templ Dashboard(runs []store.DashboardRun) {
 	@Layout("Dashboard") {
 		<div class="flex items-center justify-between mb-8">
 			<div>
@@ -37,8 +37,10 @@ templ Dashboard(runs []store.Run) {
 					<thead>
 						<tr class="border-b border-gray-800 text-left text-gray-500 uppercase text-xs">
 							<th class="py-3 px-4">Title</th>
+							<th class="py-3 px-4">Repo</th>
 							<th class="py-3 px-4">Status</th>
-							<th class="py-3 px-4">Model</th>
+							<th class="py-3 px-4">Recommended</th>
+							<th class="py-3 px-4">Selected</th>
 							<th class="py-3 px-4">Updated</th>
 						</tr>
 					</thead>
@@ -50,8 +52,16 @@ templ Dashboard(runs []store.Run) {
 										{ run.Title }
 									</a>
 								</td>
+								<td class="py-3 px-4 text-gray-400">{ run.RepoName }</td>
 								<td class="py-3 px-4">
 									<span class={ statusBadge(run.Status) }>{ run.Status }</span>
+								</td>
+								<td class="py-3 px-4 text-gray-400">
+									if run.RecommendedModel != "" {
+										{ run.RecommendedModel }
+									} else {
+										<span class="text-gray-600">-</span>
+									}
 								</td>
 								<td class="py-3 px-4 text-gray-400">
 									if run.SelectedModel != "" {

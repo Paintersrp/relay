@@ -42,20 +42,46 @@ func ActionButtons(runID int64) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" method=\"POST\"><input type=\"hidden\" name=\"action\" value=\"mark-accepted\"> <button type=\"submit\" class=\"px-3 py-1.5 text-xs rounded border border-emerald-700 text-emerald-400 hover:bg-emerald-950 transition-colors font-medium\">Mark Accepted</button></form><form action=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" method=\"POST\" hx-post=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var3 templ.SafeURL
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/actions")
+		var templ_7745c5c3_Var3 string
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(runID) + "/actions")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/action_buttons.templ`, Line: 12, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/action_buttons.templ`, Line: 6, Col: 47}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" method=\"POST\"><input type=\"hidden\" name=\"action\" value=\"mark-needs-cleanup\"> <button type=\"submit\" class=\"px-3 py-1.5 text-xs rounded border border-red-700 text-red-400 hover:bg-red-950 transition-colors font-medium\">Mark Needs Cleanup</button></form></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" hx-target=\"body\" hx-swap=\"outerHTML\"><input type=\"hidden\" name=\"action\" value=\"mark-accepted\"> <button type=\"submit\" class=\"px-3 py-1.5 text-xs rounded border border-emerald-700 text-emerald-400 hover:bg-emerald-950 transition-colors font-medium\">Mark Accepted</button></form><form action=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var4 templ.SafeURL
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/actions")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/action_buttons.templ`, Line: 15, Col: 51}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" method=\"POST\" hx-post=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var5 string
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(runID) + "/actions")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/action_buttons.templ`, Line: 16, Col: 47}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" hx-target=\"body\" hx-swap=\"outerHTML\"><input type=\"hidden\" name=\"action\" value=\"mark-needs-cleanup\"> <button type=\"submit\" class=\"px-3 py-1.5 text-xs rounded border border-red-700 text-red-400 hover:bg-red-950 transition-colors font-medium\">Mark Needs Cleanup</button></form></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

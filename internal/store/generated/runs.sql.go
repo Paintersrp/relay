@@ -115,6 +115,77 @@ func (q *Queries) ListRecentRuns(ctx context.Context, limit int64) ([]Run, error
 	return items, nil
 }
 
+const listRecentRunsWithRepo = `-- name: ListRecentRunsWithRepo :many
+SELECT
+  runs.id,
+  runs.repo_id,
+  runs.title,
+  runs.status,
+  runs.recommended_model,
+  runs.selected_model,
+  runs.branch_name,
+  runs.base_commit,
+  runs.head_commit,
+  runs.created_at,
+  runs.updated_at,
+  repos.name AS repo_name
+FROM runs
+JOIN repos ON repos.id = runs.repo_id
+ORDER BY runs.updated_at DESC
+LIMIT ?
+`
+
+type ListRecentRunsWithRepoRow struct {
+	ID               int64  `json:"id"`
+	RepoID           int64  `json:"repo_id"`
+	Title            string `json:"title"`
+	Status           string `json:"status"`
+	RecommendedModel string `json:"recommended_model"`
+	SelectedModel    string `json:"selected_model"`
+	BranchName       string `json:"branch_name"`
+	BaseCommit       string `json:"base_commit"`
+	HeadCommit       string `json:"head_commit"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
+	RepoName         string `json:"repo_name"`
+}
+
+func (q *Queries) ListRecentRunsWithRepo(ctx context.Context, limit int64) ([]ListRecentRunsWithRepoRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRecentRunsWithRepo, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRecentRunsWithRepoRow{}
+	for rows.Next() {
+		var i ListRecentRunsWithRepoRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepoID,
+			&i.Title,
+			&i.Status,
+			&i.RecommendedModel,
+			&i.SelectedModel,
+			&i.BranchName,
+			&i.BaseCommit,
+			&i.HeadCommit,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.RepoName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRunsByRepo = `-- name: ListRunsByRepo :many
 SELECT id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at FROM runs WHERE repo_id = ? ORDER BY updated_at DESC
 `

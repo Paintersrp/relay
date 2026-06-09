@@ -2,14 +2,20 @@ package views
 
 templ ActionButtons(runID int64) {
 	<div class="flex gap-2 mt-4">
-		<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST">
+		<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+			hx-post={"/runs/" + Itoa(runID) + "/actions"}
+			hx-target="body"
+			hx-swap="outerHTML">
 			<input type="hidden" name="action" value="mark-accepted"/>
 			<button type="submit"
 				class="px-3 py-1.5 text-xs rounded border border-emerald-700 text-emerald-400 hover:bg-emerald-950 transition-colors font-medium">
 				Mark Accepted
 			</button>
 		</form>
-		<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST">
+		<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+			hx-post={"/runs/" + Itoa(runID) + "/actions"}
+			hx-target="body"
+			hx-swap="outerHTML">
 			<input type="hidden" name="action" value="mark-needs-cleanup"/>
 			<button type="submit"
 				class="px-3 py-1.5 text-xs rounded border border-red-700 text-red-400 hover:bg-red-950 transition-colors font-medium">

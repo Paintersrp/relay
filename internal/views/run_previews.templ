@@ -1,0 +1,35 @@
+package views
+
+type RunPreviews struct {
+	OriginalHandoff string
+	ValidationJSON  string
+	ReadyPrompt     string
+}
+
+templ RunPreviewPanels(previews RunPreviews) {
+	<div class="grid grid-cols-1 gap-4 mt-8">
+		@previewPanel("Original Handoff", "original-handoff-preview", previews.OriginalHandoff, "No original handoff artifact found yet.")
+		@previewPanel("Validation Report", "validation-report-preview", previews.ValidationJSON, "No validation report generated yet.")
+		@previewPanel("Ready Prompt", "ready-prompt-preview", previews.ReadyPrompt, "No ready prompt generated yet.")
+	</div>
+}
+
+templ previewPanel(title string, id string, content string, emptyText string) {
+	<section class="border border-gray-800 rounded-lg bg-gray-900/50">
+		<div class="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+			<h3 class="font-medium">{ title }</h3>
+			if content != "" {
+				<button type="button"
+					data-copy-target={ id }
+					class="text-xs text-indigo-400 hover:text-indigo-300">
+					Copy
+				</button>
+			}
+		</div>
+		if content == "" {
+			<p class="p-4 text-xs text-gray-600">{ emptyText }</p>
+		} else {
+			<pre id={ id } class="p-4 text-xs font-mono text-gray-300 overflow-x-auto max-h-80 overflow-y-auto whitespace-pre-wrap">{ content }</pre>
+		}
+	</section>
+}

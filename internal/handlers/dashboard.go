@@ -16,7 +16,7 @@ func NewDashboardHandler(s *store.Store) *DashboardHandler {
 }
 
 func (h *DashboardHandler) Get(w http.ResponseWriter, r *http.Request) {
-	runs, err := h.store.ListRecentRuns(20)
+	runs, err := h.store.ListRecentRunsWithRepo(20)
 	if err != nil {
 		http.Error(w, "failed to load runs", http.StatusInternalServerError)
 		return

@@ -5,7 +5,7 @@
   "scripts": {
     "build:css": "npx @tailwindcss/cli -i web/src/styles.css -o web/static/app.css",
     "build:js": "npx esbuild web/src/main.ts --bundle --outfile=web/static/app.js --format=iife --platform=browser --target=es2020",
-    "build": "npm run build:css ; if ($?) { npm run build:js }",
+    "build": "npm run build:css && npm run build:js",
     "watch:css": "npx @tailwindcss/cli -i web/src/styles.css -o web/static/app.css --watch",
     "watch:js": "npx esbuild web/src/main.ts --bundle --outfile=web/static/app.js --format=iife --platform=browser --target=es2020 --watch"
   },

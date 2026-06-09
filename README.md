@@ -17,7 +17,7 @@ Relay accepts surgical implementation handoffs, stores run metadata and artifact
 
 ## Prerequisites
 
-- Go 1.21+
+- Go 1.25+
 - Node.js 18+ with npm
 - `sqlc` CLI
 - `goose` CLI

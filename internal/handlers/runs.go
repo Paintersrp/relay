@@ -23,6 +23,14 @@ func NewRunsHandler(s *store.Store, log *slog.Logger) *RunsHandler {
 	return &RunsHandler{store: s, log: log}
 }
 
+func readArtifactPreview(runID int64, kind string) string {
+	data, err := artifacts.Read(runID, kind, pipeline.ArtifactFilename(kind))
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
 func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -43,7 +51,13 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	checksList, _ := h.store.ListChecksByRun(id)
 	eventsList, _ := h.store.ListEventsByRun(id)
 
-	views.RunDetail(run, repo, artifactsList, checksList, eventsList).Render(r.Context(), w)
+	previews := views.RunPreviews{
+		OriginalHandoff: readArtifactPreview(id, "original_handoff"),
+		ValidationJSON:  readArtifactPreview(id, "handoff_validation_json"),
+		ReadyPrompt:     readArtifactPreview(id, "ready_prompt"),
+	}
+
+	views.RunDetail(run, repo, artifactsList, checksList, eventsList, previews).Render(r.Context(), w)
 }
 
 func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {

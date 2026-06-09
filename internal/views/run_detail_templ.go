@@ -10,7 +10,7 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import "relay/internal/store"
 
-func RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event) templ.Component {
+func RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -141,7 +141,15 @@ func RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, " <div class=\"grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, " ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = RunPreviewPanels(previews).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, " <div class=\"grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -153,7 +161,7 @@ func RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

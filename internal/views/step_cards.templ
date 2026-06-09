@@ -13,7 +13,11 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 						<p class="text-xs text-gray-500">Validate handoff structure and completeness</p>
 					</div>
 				</div>
-				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST" class="flex gap-2">
+				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+					hx-target="body"
+					hx-swap="outerHTML"
+					class="flex gap-2">
 					<input type="hidden" name="action" value="validate-handoff"/>
 					<button type="submit"
 						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
@@ -52,7 +56,11 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 						<p class="text-xs text-gray-500">Generate agent-ready prompt from handoff</p>
 					</div>
 				</div>
-				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST" class="flex gap-2">
+				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+					hx-target="body"
+					hx-swap="outerHTML"
+					class="flex gap-2">
 					<input type="hidden" name="action" value="prepare-prompt"/>
 					<button type="submit"
 						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
@@ -89,7 +97,10 @@ templ futureStep(num int, title, desc string, runID int64, action string) {
 					<p class="text-xs text-gray-600">{ desc }</p>
 				</div>
 			</div>
-			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST">
+			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+				hx-post={"/runs/" + Itoa(runID) + "/actions"}
+				hx-target="body"
+				hx-swap="outerHTML">
 				<input type="hidden" name="action" value={ action }/>
 				<button type="submit"
 					class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 hover:border-gray-600 hover:text-gray-400 transition-colors">

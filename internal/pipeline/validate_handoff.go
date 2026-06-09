@@ -109,21 +109,27 @@ func ValidateHandoff(text string, recommendedModel string) *ValidationReport {
 	}
 
 	// validation commands
-	cmdPrefixRe := regexp.MustCompile(`^\s*(` + "`" + `{0,3})\s*(go |npm |cargo |make |pytest|python |zig |rustc )`)
-	inFence := false
+	fenceLang := ""
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
+
 		if strings.HasPrefix(trimmed, "```") {
-			inFence = !inFence
+			if fenceLang == "" {
+				fenceLang = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(trimmed, "```")))
+			} else {
+				fenceLang = ""
+			}
 			continue
 		}
-		if inFence {
-			if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+
+		if fenceLang != "" {
+			if isShellFenceLang(fenceLang) && looksLikeValidationCommand(trimmed) {
 				report.Detected.ValidationCommands = append(report.Detected.ValidationCommands, trimmed)
 			}
 			continue
 		}
-		if cmdPrefixRe.MatchString(line) {
+
+		if looksLikeValidationCommand(trimmed) {
 			report.Detected.ValidationCommands = append(report.Detected.ValidationCommands, trimmed)
 		}
 	}
@@ -181,6 +187,33 @@ func ValidateHandoff(text string, recommendedModel string) *ValidationReport {
 	}
 
 	return report
+}
+
+func isShellFenceLang(lang string) bool {
+	if lang == "" {
+		return false
+	}
+
+	fields := strings.Fields(lang)
+	if len(fields) > 0 {
+		lang = fields[0]
+	}
+
+	switch lang {
+	case "sh", "shell", "bash", "zsh", "fish", "powershell", "pwsh", "ps1", "cmd", "bat", "console", "terminal":
+		return true
+	default:
+		return false
+	}
+}
+
+func looksLikeValidationCommand(line string) bool {
+	if line == "" || strings.HasPrefix(line, "#") {
+		return false
+	}
+
+	commandRe := regexp.MustCompile(`^(go|npm|pnpm|yarn|bun|node|make|pytest|python|uv|ruff|mypy|cargo|zig|rustc|sqlc|goose|templ)\b`)
+	return commandRe.MatchString(line)
 }
 
 func (r *ValidationReport) JSON() ([]byte, error) {

@@ -1,5 +1,3 @@
-# AGENTS.md
-
 # Agent Instructions
 
 ## Project
@@ -43,7 +41,7 @@ Check availability with:
 rtk.exe --version || rtk --version
 ```
 
-Use RTK-wrapped commands for noisy inspection, search, diff, build, and test output.
+Use RTK-wrapped commands for noisy inspection, search, diff, generation, migration, build, and test output.
 
 Examples:
 
@@ -52,6 +50,8 @@ rtk.exe git status
 rtk.exe git diff
 rtk.exe grep "<pattern>" .
 rtk.exe find "*.go" .
+rtk.exe test "templ generate"
+rtk.exe test "sqlc generate"
 rtk.exe test "go test ./..."
 rtk.exe test "go vet ./..."
 rtk.exe test "npm run build"
@@ -62,6 +62,8 @@ If `rtk.exe` is unavailable, use the same commands with `rtk`:
 ```bash
 rtk git status
 rtk git diff
+rtk test "templ generate"
+rtk test "sqlc generate"
 rtk test "go test ./..."
 rtk test "npm run build"
 ```
@@ -73,8 +75,10 @@ Preserve full error detail when a build, typecheck, generation, migration, or te
 ## Repo hygiene rules
 
 - Work from source files, not generated output.
-- Do not edit generated assets, dependency output, coverage output, or build output unless explicitly requested.
-- Do not edit `node_modules/`, `coverage/`, `bin/`, `tmp/`, generated frontend assets, generated sqlc output, or local data artifacts unless the task explicitly requires it.
+- Do not edit dependency output, coverage output, local runtime data, or build output unless explicitly requested.
+- Do not edit `node_modules/`, `coverage/`, `bin/`, `tmp/`, generated frontend assets, or local data artifacts unless the task explicitly requires it.
+- Do not manually edit generated Go files from `templ` or `sqlc`. Update the source `.templ`, SQL query, or migration files, then regenerate.
+- Generated Go files from `templ` and `sqlc` may be committed after regeneration unless the repo later documents a different policy.
 - Make focused, surgical changes.
 - Preserve existing behavior unless the task explicitly asks to change it.
 - Avoid unrelated formatting churn.
@@ -86,10 +90,11 @@ Preserve full error detail when a build, typecheck, generation, migration, or te
 - Keep changes scoped to the requested task.
 - Do not add unrelated architecture or cleanup.
 - Do not implement future pipeline stages unless explicitly requested.
-- Use server-rendered HTML. Do not introduce a SPA framework.
-- Do not introduce React, Vue, Svelte, TanStack Start, Echo, Gin, Fiber, or templ unless explicitly requested.
+- Use server-rendered HTML through `templ`.
+- Do not use `html/template` unless explicitly requested.
+- Do not introduce a SPA framework.
+- Do not introduce React, Vue, Svelte, TanStack Start, Echo, Gin, or Fiber unless explicitly requested.
 - Keep large artifacts on disk and metadata in SQLite.
-- Use `html/template` for server-rendered views.
 - Use htmx for server-driven interactions.
 - Use Alpine only for local UI state such as tabs, collapsible panels, dropdowns, and small confirmation toggles.
 - Do not store run lifecycle state in Alpine.
@@ -104,12 +109,17 @@ When relevant, prioritize:
 
 ```bash
 go fmt ./...
+templ generate
+sqlc generate
 go test ./...
 go vet ./...
-sqlc generate
 goose -dir internal/db/migrations sqlite3 data/relay.sqlite up
 npm run build
 ```
+
+If the project uses `make`, prefer documented `make` targets when available.
+
+If `make` is unavailable, run the underlying direct commands instead and do not treat missing `make` as a blocker unless the task specifically requires Makefile validation.
 
 If the project uses different script names, run the documented equivalents.
 

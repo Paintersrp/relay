@@ -2,7 +2,7 @@ package views
 
 import "relay/internal/store"
 
-templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event) {
+templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews) {
 	@Layout(run.Title) {
 		<div class="mb-8">
 			<div class="flex items-start justify-between">
@@ -25,6 +25,8 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 		</div>
 
 		@StepCards(run, artifacts, checks)
+
+		@RunPreviewPanels(previews)
 
 		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
 			@ArtifactList(artifacts, run.ID)
