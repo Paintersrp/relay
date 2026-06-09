@@ -143,14 +143,14 @@ Relay should warn before validation when the selected repo does not appear to ma
 
 ## Model selection
 
-When creating a handoff, Relay parses a recommended model from the pasted handoff text. It supports:
+When creating a handoff, Relay parses a recommended model from the pasted handoff text automatically. It supports:
 
 - `## Execution model` / `Use:` section
 - Labels like `Recommended Model:`, `Model:`, `Use model:`, `Suggested model:`
 
 If no model is found and no override is selected, Relay defaults the selected model to DeepSeek V4 Flash.
 
-The New Handoff form provides a model dropdown for overrides and a Custom option for provider-specific model IDs.
+Model selection is automatic by default. The model override control is optional and should only be used when intentionally overriding the handoff's execution model. The New Handoff form provides a collapsible model override with a dropdown and a Custom option for provider-specific model IDs.
 
 ## Agent Prompt
 
@@ -207,7 +207,7 @@ Open `/settings/repos` to:
 - scan now
 - review discovered repositories
 
-The New Handoff page lets you select a discovered repo or use manual repo name/path entry.
+The New Handoff page lets you select a discovered repo or use manual repo name/path entry. The New Handoff form discovers local Git branches for discovered repositories. Branch selection is populated from the selected local repo. Manual repo entry keeps a manual branch/worktree field because branches cannot be discovered until the repo path is submitted.
 
 ## Project Structure
 

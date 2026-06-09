@@ -105,6 +105,109 @@ Return only:
 	}
 }
 
+func TestValidateHandoffAcceptsTestsValidationSection(t *testing.T) {
+	text := `# Example Surgical Implementation
+
+## Goal
+
+Do a thing.
+
+## Scope
+
+- ` + "`internal/foo.go`" + `
+
+## Do not change
+
+- Unrelated behavior.
+
+## Task checklist
+
+- [ ] Update code
+
+## Tests / validation
+
+` + "```bash" + `
+go test ./...
+` + "```" + `
+
+## Output
+
+Return DONE or BLOCKED.
+`
+
+	report := ValidateHandoff(text, "DeepSeek V4 Flash")
+
+	var validationSectionFail bool
+	var validationCommandsPass bool
+	for _, c := range report.Checks {
+		if c.Kind == "validation_section" && c.Status == "fail" {
+			validationSectionFail = true
+		}
+		if c.Kind == "validation_commands" && c.Status == "pass" {
+			validationCommandsPass = true
+		}
+	}
+	if validationSectionFail {
+		t.Fatal("validation_section check should not fail for ## Tests / validation")
+	}
+	if !validationCommandsPass {
+		t.Fatal("expected validation_commands to pass")
+	}
+	if len(report.Detected.ValidationCommands) != 1 {
+		t.Fatalf("expected 1 validation command, got %d: %#v", len(report.Detected.ValidationCommands), report.Detected.ValidationCommands)
+	}
+	if report.Detected.ValidationCommands[0] != "go test ./..." {
+		t.Errorf("expected 'go test ./...', got %q", report.Detected.ValidationCommands[0])
+	}
+}
+
+func TestValidateHandoffDoesNotDetectValidationProseAsCommand(t *testing.T) {
+	text := `# Example Surgical Implementation
+
+## Goal
+
+Do a thing.
+
+## Scope
+
+- ` + "`internal/foo.go`" + `
+
+## Do not change
+
+- Unrelated behavior.
+
+## Task checklist
+
+- [ ] Update code
+
+## Tests / validation
+
+` + "```bash" + `
+npm run build
+` + "```" + `
+
+If one command fails, fix it unless unrelated.
+
+## Output
+
+Return DONE or BLOCKED.
+`
+
+	report := ValidateHandoff(text, "DeepSeek V4 Flash")
+
+	if len(report.Detected.ValidationCommands) != 1 {
+		t.Fatalf("expected 1 validation command, got %d: %#v", len(report.Detected.ValidationCommands), report.Detected.ValidationCommands)
+	}
+	if report.Detected.ValidationCommands[0] != "npm run build" {
+		t.Errorf("expected 'npm run build', got %q", report.Detected.ValidationCommands[0])
+	}
+	for _, cmd := range report.Detected.ValidationCommands {
+		if len(cmd) >= 3 && cmd[:3] == "If " {
+			t.Fatalf("prose line detected as command: %q", cmd)
+		}
+	}
+}
+
 func TestValidateHandoffDetectsShellValidationCommands(t *testing.T) {
 	text := `# Example Surgical Implementation
 

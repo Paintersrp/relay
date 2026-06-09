@@ -29,7 +29,16 @@ func (h *HandoffsHandler) NewForm(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		reposList = nil
 	}
-	views.NewHandoff(reposList).Render(r.Context(), w)
+	var repoOptions []views.RepoOption
+	for _, repo := range reposList {
+		branches, err := repos.ListLocalBranches(repo.Path)
+		ro := views.RepoOption{Repo: repo}
+		if err == nil {
+			ro.Branches = branches
+		}
+		repoOptions = append(repoOptions, ro)
+	}
+	views.NewHandoff(repoOptions).Render(r.Context(), w)
 }
 
 func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +53,7 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	title := r.FormValue("title")
 	selectedModelOption := r.FormValue("selected_model_option")
 	selectedModelCustom := r.FormValue("selected_model_custom")
-	branchName := r.FormValue("branch_name")
+	branchName := strings.TrimSpace(r.FormValue("branch_name"))
 	handoffText := r.FormValue("handoff_text")
 
 	recommendedModel, _ := pipeline.ParseRecommendedModel(handoffText)

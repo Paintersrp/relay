@@ -8,9 +8,17 @@ package views
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "relay/internal/store"
+import (
+	"relay/internal/repos"
+	"relay/internal/store"
+)
 
-func NewHandoff(repos []store.Repo) templ.Component {
+type RepoOption struct {
+	Repo     store.Repo
+	Branches []repos.BranchInfo
+}
+
+func NewHandoff(repoOptions []RepoOption) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -47,7 +55,7 @@ func NewHandoff(repos []store.Repo) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if len(repos) == 0 {
+			if len(repoOptions) == 0 {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<p class=\"text-xs text-yellow-400 mb-2\">No repositories discovered yet. Add or scan roots in Repository Settings, or use manual entry below.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -57,15 +65,15 @@ func NewHandoff(repos []store.Repo) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			for _, repo := range repos {
+			for _, ro := range repoOptions {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<option value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var3 string
-				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(Itoa(repo.ID))
+				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(Itoa(ro.Repo.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 24, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 32, Col: 40}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 				if templ_7745c5c3_Err != nil {
@@ -76,9 +84,9 @@ func NewHandoff(repos []store.Repo) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var4 string
-				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(repo.Name)
+				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(ro.Repo.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 25, Col: 20}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 33, Col: 23}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -89,9 +97,9 @@ func NewHandoff(repos []store.Repo) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var5 string
-				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(repo.Path)
+				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(ro.Repo.Path)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 25, Col: 36}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 33, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -102,7 +110,145 @@ func NewHandoff(repos []store.Repo) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</select><div class=\"mt-2\"><a href=\"/settings/repos\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">Manage repository scan roots</a></div></div><div x-show=\"repoMode === ''\" class=\"grid grid-cols-2 gap-4\"><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Repo Name</label> <input type=\"text\" name=\"repo_name\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"relay\"></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Repo Path</label> <input type=\"text\" name=\"repo_path\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"D:/Code/relay\"></div></div></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Title</label> <input type=\"text\" name=\"title\" required class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"Implementation handoff title\"></div><div x-data=\"{ selectedModelOption: '' }\" class=\"space-y-2\"><label class=\"block text-sm font-medium text-gray-400 mb-1\">Model</label> <select name=\"selected_model_option\" x-model=\"selectedModelOption\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\"><option value=\"\">Auto from handoff, fallback DeepSeek V4 Flash</option> <option value=\"deepseek-v4-flash\">DeepSeek V4 Flash</option> <option value=\"deepseek-v4-pro\">DeepSeek V4 Pro</option> <option value=\"deepseek-v4-pro-max\">DeepSeek V4 Pro Max</option> <option value=\"qwen-3.7-max\">Qwen3.7 Max</option> <option value=\"kimi-k2.6\">Kimi K2.6</option> <option value=\"gpt-5.5-thinking\">GPT-5.5 Thinking</option> <option value=\"custom\">Custom</option></select><p class=\"text-xs text-gray-500\">Relay parses Recommended Model or Model from the pasted handoff. Choose a model here only to override it.</p><div x-show=\"selectedModelOption === 'custom'\"><label class=\"block text-sm font-medium text-gray-400 mb-1\">Custom model</label> <input type=\"text\" name=\"selected_model_custom\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"provider/model-id\"></div></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Branch / Worktree</label> <input type=\"text\" name=\"branch_name\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"main\"></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Handoff Text</label> <textarea name=\"handoff_text\" rows=\"20\" required class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 resize-y\" placeholder=\"Paste the full implementation handoff here...\"></textarea></div><div class=\"flex gap-3\"><button type=\"submit\" class=\"inline-flex items-center px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors\">Create Run</button> <a href=\"/\" class=\"inline-flex items-center px-4 py-2 rounded border border-gray-700 hover:border-gray-600 text-sm transition-colors\">Cancel</a></div></form></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</select><div class=\"mt-2\"><a href=\"/settings/repos\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">Manage repository scan roots</a></div></div><div x-show=\"repoMode === ''\" class=\"grid grid-cols-2 gap-4\"><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Repo Name</label> <input type=\"text\" name=\"repo_name\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"relay\"></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Repo Path</label> <input type=\"text\" name=\"repo_path\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"D:/Code/relay\"></div></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			for _, ro := range repoOptions {
+				if len(ro.Branches) > 0 {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div x-show=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var6 string
+					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue("repoMode === '" + Itoa(ro.Repo.ID) + "'")
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 61, Col: 62}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\"><label class=\"block text-sm font-medium text-gray-400 mb-1\">Branch / Worktree</label> <select name=\"branch_name\" :disabled=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var7 string
+					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue("repoMode !== '" + Itoa(ro.Repo.ID) + "'")
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 63, Col: 88}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					for _, b := range ro.Branches {
+						if b.IsCurrent {
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<option value=\"")
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							var templ_7745c5c3_Var8 string
+							templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(b.Name)
+							if templ_7745c5c3_Err != nil {
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 67, Col: 33}
+							}
+							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" selected>")
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							var templ_7745c5c3_Var9 string
+							templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(b.Name)
+							if templ_7745c5c3_Err != nil {
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 67, Col: 53}
+							}
+							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, " (current)</option>")
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+						} else {
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<option value=\"")
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							var templ_7745c5c3_Var10 string
+							templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(b.Name)
+							if templ_7745c5c3_Err != nil {
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 69, Col: 33}
+							}
+							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\">")
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							var templ_7745c5c3_Var11 string
+							templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(b.Name)
+							if templ_7745c5c3_Err != nil {
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 69, Col: 44}
+							}
+							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</option>")
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+						}
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</select></div>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div x-show=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var12 string
+					templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue("repoMode === '" + Itoa(ro.Repo.ID) + "'")
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 75, Col: 62}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\"><label class=\"block text-sm font-medium text-gray-400 mb-1\">Branch / Worktree</label> <input type=\"text\" name=\"branch_name\" :disabled=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var13 string
+					templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue("repoMode !== '" + Itoa(ro.Repo.ID) + "'")
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/new_handoff.templ`, Line: 77, Col: 99}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"branch-name\"><p class=\"text-xs text-gray-500 mt-1\">No local branches discovered. Enter a branch/worktree name manually.</p></div>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<div x-show=\"repoMode === ''\"><label class=\"block text-sm font-medium text-gray-400 mb-1\">Branch / Worktree</label> <input type=\"text\" name=\"branch_name\" :disabled=\"repoMode !== ''\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"branch-name\"></div></div><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Title</label> <input type=\"text\" name=\"title\" required class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"Implementation handoff title\"></div><details class=\"rounded border border-gray-800 bg-gray-900/30 p-3\"><summary class=\"cursor-pointer text-sm text-gray-400\">Optional model override</summary><div x-data=\"{ selectedModelOption: '' }\" class=\"mt-3 space-y-2\"><select name=\"selected_model_option\" x-model=\"selectedModelOption\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\"><option value=\"\">Auto from handoff, fallback DeepSeek V4 Flash</option> <option value=\"deepseek-v4-flash\">DeepSeek V4 Flash</option> <option value=\"deepseek-v4-pro\">DeepSeek V4 Pro</option> <option value=\"deepseek-v4-pro-max\">DeepSeek V4 Pro Max</option> <option value=\"qwen-3.7-max\">Qwen3.7 Max</option> <option value=\"kimi-k2.6\">Kimi K2.6</option> <option value=\"gpt-5.5-thinking\">GPT-5.5 Thinking</option> <option value=\"custom\">Custom</option></select><p class=\"text-xs text-gray-500\">Relay parses the execution model from the handoff. Override only when you intentionally want a different model.</p><div x-show=\"selectedModelOption === 'custom'\"><label class=\"block text-sm font-medium text-gray-400 mb-1\">Custom model</label> <input type=\"text\" name=\"selected_model_custom\" class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\" placeholder=\"provider/model-id\"></div></div></details><div><label class=\"block text-sm font-medium text-gray-400 mb-1\">Handoff Text</label> <textarea name=\"handoff_text\" rows=\"20\" required class=\"w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 resize-y\" placeholder=\"Paste the full implementation handoff here...\"></textarea></div><div class=\"flex gap-3\"><button type=\"submit\" class=\"inline-flex items-center px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors\">Create Run</button> <a href=\"/\" class=\"inline-flex items-center px-4 py-2 rounded border border-gray-700 hover:border-gray-600 text-sm transition-colors\">Cancel</a></div></form></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

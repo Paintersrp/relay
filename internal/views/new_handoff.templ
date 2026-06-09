@@ -1,8 +1,16 @@
 package views
 
-import "relay/internal/store"
+import (
+	"relay/internal/repos"
+	"relay/internal/store"
+)
 
-templ NewHandoff(repos []store.Repo) {
+type RepoOption struct {
+	Repo     store.Repo
+	Branches []repos.BranchInfo
+}
+
+templ NewHandoff(repoOptions []RepoOption) {
 	@Layout("New Handoff") {
 		<div class="max-w-2xl">
 			<h1 class="text-2xl font-bold mb-2">New Handoff</h1>
@@ -12,7 +20,7 @@ templ NewHandoff(repos []store.Repo) {
 				<div x-data="{ repoMode: '' }" class="space-y-4">
 					<div>
 						<label class="block text-sm font-medium text-gray-400 mb-1">Repository</label>
-						if len(repos) == 0 {
+						if len(repoOptions) == 0 {
 							<p class="text-xs text-yellow-400 mb-2">
 								No repositories discovered yet. Add or scan roots in Repository Settings, or use manual entry below.
 							</p>
@@ -20,9 +28,9 @@ templ NewHandoff(repos []store.Repo) {
 						<select name="repo_id" x-model="repoMode"
 							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
 							<option value="">Manual repository path</option>
-							for _, repo := range repos {
-								<option value={ Itoa(repo.ID) }>
-									{ repo.Name } - { repo.Path }
+							for _, ro := range repoOptions {
+								<option value={ Itoa(ro.Repo.ID) }>
+									{ ro.Repo.Name } - { ro.Repo.Path }
 								</option>
 							}
 						</select>
@@ -47,6 +55,39 @@ templ NewHandoff(repos []store.Repo) {
 								placeholder="D:/Code/relay"/>
 						</div>
 					</div>
+
+					for _, ro := range repoOptions {
+						if len(ro.Branches) > 0 {
+							<div x-show={ "repoMode === '" + Itoa(ro.Repo.ID) + "'" }>
+								<label class="block text-sm font-medium text-gray-400 mb-1">Branch / Worktree</label>
+								<select name="branch_name" :disabled={ "repoMode !== '" + Itoa(ro.Repo.ID) + "'" }
+									class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+									for _, b := range ro.Branches {
+										if b.IsCurrent {
+											<option value={ b.Name } selected>{ b.Name } (current)</option>
+										} else {
+											<option value={ b.Name }>{ b.Name }</option>
+										}
+									}
+								</select>
+							</div>
+						} else {
+							<div x-show={ "repoMode === '" + Itoa(ro.Repo.ID) + "'" }>
+								<label class="block text-sm font-medium text-gray-400 mb-1">Branch / Worktree</label>
+								<input type="text" name="branch_name" :disabled={ "repoMode !== '" + Itoa(ro.Repo.ID) + "'" }
+									class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+									placeholder="branch-name"/>
+								<p class="text-xs text-gray-500 mt-1">No local branches discovered. Enter a branch/worktree name manually.</p>
+							</div>
+						}
+					}
+
+					<div x-show="repoMode === ''">
+						<label class="block text-sm font-medium text-gray-400 mb-1">Branch / Worktree</label>
+						<input type="text" name="branch_name" :disabled="repoMode !== ''"
+							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+							placeholder="branch-name"/>
+					</div>
 				</div>
 
 				<div>
@@ -56,36 +97,31 @@ templ NewHandoff(repos []store.Repo) {
 						placeholder="Implementation handoff title"/>
 				</div>
 
-				<div x-data="{ selectedModelOption: '' }" class="space-y-2">
-					<label class="block text-sm font-medium text-gray-400 mb-1">Model</label>
-					<select name="selected_model_option" x-model="selectedModelOption"
-						class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
-						<option value="">Auto from handoff, fallback DeepSeek V4 Flash</option>
-						<option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
-						<option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
-						<option value="deepseek-v4-pro-max">DeepSeek V4 Pro Max</option>
-						<option value="qwen-3.7-max">Qwen3.7 Max</option>
-						<option value="kimi-k2.6">Kimi K2.6</option>
-						<option value="gpt-5.5-thinking">GPT-5.5 Thinking</option>
-						<option value="custom">Custom</option>
-					</select>
-					<p class="text-xs text-gray-500">
-						Relay parses Recommended Model or Model from the pasted handoff. Choose a model here only to override it.
-					</p>
-					<div x-show="selectedModelOption === 'custom'">
-						<label class="block text-sm font-medium text-gray-400 mb-1">Custom model</label>
-						<input type="text" name="selected_model_custom"
-							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-							placeholder="provider/model-id"/>
+				<details class="rounded border border-gray-800 bg-gray-900/30 p-3">
+					<summary class="cursor-pointer text-sm text-gray-400">Optional model override</summary>
+					<div x-data="{ selectedModelOption: '' }" class="mt-3 space-y-2">
+						<select name="selected_model_option" x-model="selectedModelOption"
+							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+							<option value="">Auto from handoff, fallback DeepSeek V4 Flash</option>
+							<option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
+							<option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+							<option value="deepseek-v4-pro-max">DeepSeek V4 Pro Max</option>
+							<option value="qwen-3.7-max">Qwen3.7 Max</option>
+							<option value="kimi-k2.6">Kimi K2.6</option>
+							<option value="gpt-5.5-thinking">GPT-5.5 Thinking</option>
+							<option value="custom">Custom</option>
+						</select>
+						<p class="text-xs text-gray-500">
+							Relay parses the execution model from the handoff. Override only when you intentionally want a different model.
+						</p>
+						<div x-show="selectedModelOption === 'custom'">
+							<label class="block text-sm font-medium text-gray-400 mb-1">Custom model</label>
+							<input type="text" name="selected_model_custom"
+								class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+								placeholder="provider/model-id"/>
+						</div>
 					</div>
-				</div>
-
-				<div>
-					<label class="block text-sm font-medium text-gray-400 mb-1">Branch / Worktree</label>
-					<input type="text" name="branch_name"
-						class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-						placeholder="main"/>
-				</div>
+				</details>
 
 				<div>
 					<label class="block text-sm font-medium text-gray-400 mb-1">Handoff Text</label>

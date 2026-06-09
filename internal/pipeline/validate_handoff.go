@@ -64,16 +64,19 @@ func ValidateHandoff(text string, recommendedModel string) *ValidationReport {
 		"scope":          "## Scope",
 		"do_not_change":  "## Do not change",
 		"task_checklist": "## Task checklist",
-		"validation":     "## Validation",
+		"validation":     "",
 		"output":         "## Output / Final output / Agent final output requirement",
 	}
 
 	allSectionsPresent := true
 	for key, heading := range requiredSections {
 		found := false
-		if key == "output" {
+		switch key {
+		case "output":
 			found = hasOutputSection(lines)
-		} else {
+		case "validation":
+			found = hasValidationSection(lines)
+		default:
 			for _, line := range lines {
 				if strings.HasPrefix(strings.TrimSpace(line), heading) {
 					found = true
@@ -82,9 +85,17 @@ func ValidateHandoff(text string, recommendedModel string) *ValidationReport {
 			}
 		}
 		if found {
-			check(key+"_section", "pass", heading+" section found")
+			summary := heading + " section found"
+			if key == "validation" {
+				summary = "Validation / Tests section found"
+			}
+			check(key+"_section", "pass", summary)
 		} else {
-			check(key+"_section", "fail", heading+" section missing")
+			summary := heading + " section missing"
+			if key == "validation" {
+				summary = "Validation / Tests section missing"
+			}
+			check(key+"_section", "fail", summary)
 			allSectionsPresent = false
 		}
 	}
@@ -113,31 +124,11 @@ func ValidateHandoff(text string, recommendedModel string) *ValidationReport {
 	}
 
 	// validation commands
-	fenceLang := ""
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.HasPrefix(trimmed, "```") {
-			if fenceLang == "" {
-				fenceLang = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(trimmed, "```")))
-			} else {
-				fenceLang = ""
-			}
-			continue
-		}
-
-		if fenceLang != "" {
-			if isShellFenceLang(fenceLang) && looksLikeValidationCommand(trimmed) {
-				report.Detected.ValidationCommands = append(report.Detected.ValidationCommands, trimmed)
-			}
-			continue
-		}
-
-		if looksLikeValidationCommand(trimmed) {
-			report.Detected.ValidationCommands = append(report.Detected.ValidationCommands, trimmed)
-		}
+	commands := ExtractValidationCommands(text, "")
+	for _, cmd := range commands {
+		report.Detected.ValidationCommands = append(report.Detected.ValidationCommands, cmd.Command)
 	}
-	if len(report.Detected.ValidationCommands) > 0 {
+	if len(commands) > 0 {
 		check("validation_commands", "pass", "Validation commands detected")
 	} else {
 		check("validation_commands", "warn", "No validation commands detected")
@@ -213,31 +204,14 @@ func hasOutputSection(lines []string) bool {
 	return false
 }
 
-func isShellFenceLang(lang string) bool {
-	if lang == "" {
-		return false
+func hasValidationSection(lines []string) bool {
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if validationSectionRe.MatchString(trimmed) {
+			return true
+		}
 	}
-
-	fields := strings.Fields(lang)
-	if len(fields) > 0 {
-		lang = fields[0]
-	}
-
-	switch lang {
-	case "sh", "shell", "bash", "zsh", "fish", "powershell", "pwsh", "ps1", "cmd", "bat", "console", "terminal":
-		return true
-	default:
-		return false
-	}
-}
-
-func looksLikeValidationCommand(line string) bool {
-	if line == "" || strings.HasPrefix(line, "#") {
-		return false
-	}
-
-	commandRe := regexp.MustCompile(`^(go|npm|pnpm|yarn|bun|node|make|pytest|python|uv|ruff|mypy|cargo|zig|rustc|sqlc|goose|templ)\b`)
-	return commandRe.MatchString(line)
+	return false
 }
 
 func (r *ValidationReport) JSON() ([]byte, error) {
