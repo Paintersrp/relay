@@ -54,6 +54,57 @@ Return DONE or BLOCKED.
 	}
 }
 
+func TestValidateHandoffAgentFinalOutputRequirement(t *testing.T) {
+	text := `# Example Surgical Implementation
+
+## Goal
+
+Do a thing.
+
+## Scope
+
+- ` + "`internal/foo.go`" + `
+
+## Do not change
+
+- Unrelated behavior.
+
+## Task checklist
+
+- [ ] Update code
+
+## Validation
+
+` + "```bash" + `
+go test ./...
+` + "```" + `
+
+## Agent final output requirement
+
+Return only:
+
+- DONE or BLOCKED
+- build status
+- test status
+- count of LOC changed
+`
+
+	report := ValidateHandoff(text, "DeepSeek V4 Flash")
+
+	var outputSectionFound bool
+	for _, c := range report.Checks {
+		if c.Kind == "output_section" {
+			outputSectionFound = true
+			if c.Status == "fail" {
+				t.Fatalf("output section check should not fail for ## Agent final output requirement, got %q", c.Status)
+			}
+		}
+	}
+	if !outputSectionFound {
+		t.Fatal("expected output_section check")
+	}
+}
+
 func TestValidateHandoffDetectsShellValidationCommands(t *testing.T) {
 	text := `# Example Surgical Implementation
 

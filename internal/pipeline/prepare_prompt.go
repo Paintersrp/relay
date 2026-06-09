@@ -6,11 +6,7 @@ import (
 )
 
 func PreparePrompt(originalHandoff string) string {
-	var b strings.Builder
-	b.WriteString("You are working in the selected repository for this run.\n\n")
-	b.WriteString("Follow the implementation handoff exactly. Do not perform unrelated cleanup.\n\n")
-	b.WriteString(originalHandoff)
-	return b.String()
+	return strings.TrimSpace(originalHandoff) + "\n"
 }
 
 func ArtifactFilename(kind string) string {

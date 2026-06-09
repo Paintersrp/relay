@@ -60,7 +60,22 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		ReadyPrompt:     readArtifactPreview(id, "ready_prompt"),
 	}
 
-	views.RunDetail(run, repo, artifactsList, checksList, eventsList, previews).Render(r.Context(), w)
+	// compute intake review
+	var intakeReview pipeline.IntakeReview
+	if handoffText := readArtifactPreview(id, "original_handoff"); handoffText != "" {
+		repoPath := ""
+		if repo != nil {
+			repoPath = repo.Path
+		}
+		repoDefaults := ""
+		if repo != nil {
+			repoDefaults = repo.DefaultValidationCommands
+		}
+		metadata := pipeline.ParseHandoffMetadata(handoffText, repoDefaults)
+		intakeReview = pipeline.BuildIntakeReview(metadata, repoPath)
+	}
+
+	views.RunDetail(run, repo, artifactsList, checksList, eventsList, previews, &intakeReview).Render(r.Context(), w)
 }
 
 func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
@@ -174,11 +189,28 @@ func (h *RunsHandler) preparePrompt(w http.ResponseWriter, r *http.Request, runI
 
 	h.store.CreateArtifact(runID, "ready_prompt", promptPath, "text/plain")
 
-	h.store.UpdateRunStatus(runID, "ready")
+	// Check intake blockers before marking ready
+	run, err := h.store.GetRun(runID)
+	if err == nil {
+		repo, _ := h.store.GetRepo(run.RepoID)
+		repoPath := ""
+		repoDefaults := ""
+		if repo != nil {
+			repoPath = repo.Path
+			repoDefaults = repo.DefaultValidationCommands
+		}
+		metadata := pipeline.ParseHandoffMetadata(string(handoffData), repoDefaults)
+		review := pipeline.BuildIntakeReview(metadata, repoPath)
+		if len(review.Blockers) > 0 {
+			h.store.UpdateRunStatus(runID, "needs_review")
+		} else {
+			h.store.UpdateRunStatus(runID, "ready")
+		}
+	}
 
-	h.store.CreateEvent(runID, "info", "Ready prompt generated")
+	h.store.CreateEvent(runID, "info", "Agent prompt generated")
 
-	h.log.Info("ready prompt prepared", "run_id", runID)
+	h.log.Info("agent prompt prepared", "run_id", runID)
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
 }

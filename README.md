@@ -122,21 +122,47 @@ npm run dev
 
 The browser reloads when built frontend assets change or when the Go server restarts.
 
+## Intake review
+
+Relay's first useful step is the intake review.
+
+The intake review parses the pasted handoff and shows:
+
+- detected model
+- selected model
+- selected repo
+- branch/worktree
+- scoped files
+- scoped file existence checks
+- validation commands
+- final output contract
+- suggested commit message
+- blockers and warnings
+
+Relay should warn before validation when the selected repo does not appear to match the handoff scope.
+
 ## Model selection
 
-When creating a handoff, Relay parses a recommended model from the pasted handoff text using labels like `Recommended Model:` or `Model:`. If no model is found and no override is selected, Relay defaults the selected model to DeepSeek V4 Flash.
+When creating a handoff, Relay parses a recommended model from the pasted handoff text. It supports:
+
+- `## Execution model` / `Use:` section
+- Labels like `Recommended Model:`, `Model:`, `Use model:`, `Suggested model:`
+
+If no model is found and no override is selected, Relay defaults the selected model to DeepSeek V4 Flash.
 
 The New Handoff form provides a model dropdown for overrides and a Custom option for provider-specific model IDs.
 
-Relay shows an OpenCode handoff preview on run detail pages and can generate an `opencode_handoff_packet.json` artifact. Relay does not execute OpenCode yet.
+## Agent Prompt
+
+The Agent Prompt artifact is currently the handoff text prepared for copying to an external agent. Relay does not execute OpenCode yet, and the OpenCode packet is metadata only until a future execution adapter consumes it.
 
 ## OpenCode handoff packet
 
-Relay can generate an `opencode_handoff_packet.json` artifact after a ready prompt exists.
+Relay can generate an `opencode_handoff_packet.json` artifact after an agent prompt exists.
 
-The packet includes the run id, local repo path, branch/worktree metadata, selected model, recommended model, ready prompt artifact path, run artifact directory, and an execution status of `not_implemented`.
+The packet includes the run id, local repo path, branch/worktree metadata, selected model, recommended model, agent prompt artifact path, run artifact directory, and an execution status of `not_implemented`.
 
-Relay does not execute OpenCode yet.
+Relay does not execute OpenCode yet. The packet is metadata only.
 
 ## Manual agent result intake
 

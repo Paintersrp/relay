@@ -75,9 +75,33 @@ func NormalizeModelLabel(raw string) (string, bool) {
 }
 
 var recommendedModelKeyRe = regexp.MustCompile(`(?i)^(?:\*\*)?(?:Recommended Model|Model|Use model|Suggested model)(?::\*\*|:\*|:|)\s*(.+)$`)
+var executionModelUseRe = regexp.MustCompile(`(?i)^Use:\s*(.+)$`)
 
 func ParseRecommendedModel(text string) (string, bool) {
 	lines := strings.Split(text, "\n")
+
+	// First pass: check for ## Execution model / Use: pattern
+	inExecModel := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !inExecModel {
+			if strings.EqualFold(trimmed, "## Execution model") {
+				inExecModel = true
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "## ") {
+			break
+		}
+		if m := executionModelUseRe.FindStringSubmatch(trimmed); len(m) > 1 {
+			val := strings.TrimSpace(m[1])
+			if val != "" {
+				return NormalizeModelLabel(val)
+			}
+		}
+	}
+
+	// Second pass: global scan for existing labels
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {

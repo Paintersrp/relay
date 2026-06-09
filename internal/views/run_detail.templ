@@ -1,8 +1,11 @@
 package views
 
-import "relay/internal/store"
+import (
+	"relay/internal/pipeline"
+	"relay/internal/store"
+)
 
-templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews) {
+templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews, intakeReview *pipeline.IntakeReview) {
 	@Layout(run.Title) {
 		<div class="mb-8">
 			<div class="flex items-start justify-between">
@@ -23,6 +26,10 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 				</div>
 			</div>
 		</div>
+
+		if intakeReview != nil {
+			@IntakeReviewPanel(run, repo, intakeReview)
+		}
 
 		@StepCards(run, artifacts, checks)
 

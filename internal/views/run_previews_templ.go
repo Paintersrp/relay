@@ -47,7 +47,7 @@ func RunPreviewPanels(previews RunPreviews) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = previewPanel("Ready Prompt", "ready-prompt-preview", previews.ReadyPrompt, "No ready prompt generated yet.").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = previewPanel("Agent Prompt", "ready-prompt-preview", previews.ReadyPrompt, "No agent prompt generated yet.").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

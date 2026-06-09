@@ -65,16 +65,20 @@ func ValidateHandoff(text string, recommendedModel string) *ValidationReport {
 		"do_not_change":  "## Do not change",
 		"task_checklist": "## Task checklist",
 		"validation":     "## Validation",
-		"output":         "## Output",
+		"output":         "## Output / Final output / Agent final output requirement",
 	}
 
 	allSectionsPresent := true
 	for key, heading := range requiredSections {
 		found := false
-		for _, line := range lines {
-			if strings.HasPrefix(strings.TrimSpace(line), heading) {
-				found = true
-				break
+		if key == "output" {
+			found = hasOutputSection(lines)
+		} else {
+			for _, line := range lines {
+				if strings.HasPrefix(strings.TrimSpace(line), heading) {
+					found = true
+					break
+				}
 			}
 		}
 		if found {
@@ -187,6 +191,26 @@ func ValidateHandoff(text string, recommendedModel string) *ValidationReport {
 	}
 
 	return report
+}
+
+var outputSectionHeadings = []string{
+	"## Output",
+	"## Final output",
+	"## Agent final output requirement",
+	"## Agent final response",
+	"## Agent final output",
+}
+
+func hasOutputSection(lines []string) bool {
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		for _, h := range outputSectionHeadings {
+			if strings.HasPrefix(trimmed, h) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isShellFenceLang(lang string) bool {

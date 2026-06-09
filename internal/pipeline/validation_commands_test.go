@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -169,6 +170,52 @@ go test ./...
 	}
 	if cmds[0].Command != "go test ./..." {
 		t.Errorf("expected 'go test ./...', got %q", cmds[0].Command)
+	}
+}
+
+func TestDoesNotExtractValidationProseAfterFence(t *testing.T) {
+	handoff := `# Test
+
+## Tests / validation
+
+` + "```bash" + `
+npm run typecheck
+npm test
+npm run build
+` + "```" + `
+
+If one command fails, fix it unless the failure is clearly unrelated and pre-existing.
+
+If blocked, report the exact command and exact error.
+`
+	cmds := ExtractValidationCommands(handoff, "[]")
+	if len(cmds) != 3 {
+		t.Fatalf("expected 3 commands, got %d: %#v", len(cmds), cmds)
+	}
+	for _, cmd := range cmds {
+		if strings.HasPrefix(cmd.Command, "If ") {
+			t.Fatalf("prose line extracted as command: %q", cmd.Command)
+		}
+	}
+}
+
+func TestExtractsKnownBareCommandPrefixesOnly(t *testing.T) {
+	handoff := `## Tests / validation
+
+Run:
+npm run build
+If one command fails, fix it.
+go test ./...
+`
+	cmds := ExtractValidationCommands(handoff, "[]")
+	if len(cmds) != 2 {
+		t.Fatalf("expected 2 commands, got %d: %#v", len(cmds), cmds)
+	}
+	if cmds[0].Command != "npm run build" {
+		t.Errorf("expected 'npm run build', got %q", cmds[0].Command)
+	}
+	if cmds[1].Command != "go test ./..." {
+		t.Errorf("expected 'go test ./...', got %q", cmds[1].Command)
 	}
 }
 

@@ -20,6 +20,27 @@ var destructiveRe = regexp.MustCompile(`(?i)\b(rm\s+\-rf|del\s+/s|remove-item|gi
 var agentRe = regexp.MustCompile(`(?i)\b(opencode|cline|codex)\b`)
 var chainedRe = regexp.MustCompile(`&&|\|\||;|\|`)
 
+var knownCommandPrefixes = []string{
+	"go ", "npm ", "pnpm ", "yarn ", "bun ", "node ", "npx ",
+	"templ ", "sqlc ", "goose ",
+	"rtk ", "rtk.exe ", "rtk.exe", "make ", "task ", "just ",
+}
+
+func hasKnownCommandPrefix(line string) bool {
+	lower := strings.ToLower(line)
+	for _, prefix := range knownCommandPrefixes {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	// also allow .exe as first token
+	fields := strings.Fields(line)
+	if len(fields) > 0 && strings.HasSuffix(strings.ToLower(fields[0]), ".exe") {
+		return true
+	}
+	return false
+}
+
 func isShellFenceOpener(line string) (string, bool) {
 	trimmed := strings.TrimSpace(line)
 	if !strings.HasPrefix(trimmed, "```") {
@@ -110,7 +131,7 @@ func ExtractValidationCommands(handoffText string, repoDefaultCommandsJSON strin
 				continue
 			}
 		} else {
-			if isCommentOrEmpty(trimmed) || isLikelyLabel(trimmed) {
+			if isCommentOrEmpty(trimmed) || isLikelyLabel(trimmed) || !hasKnownCommandPrefix(trimmed) {
 				continue
 			}
 		}

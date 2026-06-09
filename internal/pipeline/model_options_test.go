@@ -103,6 +103,48 @@ func TestModelLabelForIDEmpty(t *testing.T) {
 	}
 }
 
+func TestParseRecommendedModelFromExecutionModelUse(t *testing.T) {
+	text := "## Execution model\n\nUse: DeepSeek V4 Flash\n"
+	got, ok := ParseRecommendedModel(text)
+	if !ok {
+		t.Fatal("expected ok = true")
+	}
+	if got != "DeepSeek V4 Flash" {
+		t.Fatalf("expected 'DeepSeek V4 Flash', got %q", got)
+	}
+}
+
+func TestParseRecommendedModelFromExecutionModelUseMultipleModels(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"## Execution model\n\nUse: Qwen3.7 Max\n", "Qwen3.7 Max"},
+		{"## Execution model\n\nUse: Kimi K2.6\n", "Kimi K2.6"},
+		{"## Execution model\n\nUse: GPT-5.5 Thinking\n", "GPT-5.5 Thinking"},
+	}
+	for _, tc := range tests {
+		got, ok := ParseRecommendedModel(tc.input)
+		if !ok {
+			t.Fatalf("expected ok = true for %q", tc.input)
+		}
+		if got != tc.expected {
+			t.Fatalf("expected %q, got %q for input %q", tc.expected, got, tc.input)
+		}
+	}
+}
+
+func TestParseRecommendedModelUseOutsideExecModelSection(t *testing.T) {
+	text := "Use: DeepSeek V4 Flash\n"
+	got, ok := ParseRecommendedModel(text)
+	if ok {
+		t.Fatalf("expected ok = false for bare Use: outside ## Execution model, got %q", got)
+	}
+	if got != "" {
+		t.Fatalf("expected empty string, got %q", got)
+	}
+}
+
 func TestNormalizeModelLabel(t *testing.T) {
 	tests := []struct {
 		input    string

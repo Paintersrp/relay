@@ -52,8 +52,8 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 				<div class="flex items-center gap-3">
 					<span class="text-xs font-bold text-gray-500 w-6">2</span>
 					<div>
-						<h3 class="font-medium">Ready Prompt</h3>
-						<p class="text-xs text-gray-500">Generate agent-ready prompt from handoff</p>
+						<h3 class="font-medium">Agent Prompt</h3>
+						<p class="text-xs text-gray-500">Copy or download the handoff prompt for an external agent.</p>
 					</div>
 				</div>
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
@@ -64,7 +64,7 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 					<input type="hidden" name="action" value="prepare-prompt"/>
 					<button type="submit"
 						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-						Generate Prompt
+						Generate Agent Prompt
 					</button>
 				</form>
 			</div>
@@ -84,7 +84,7 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 					<span class="text-xs font-bold text-gray-500 w-6">3</span>
 					<div>
 						<h3 class="font-medium">OpenCode Packet</h3>
-						<p class="text-xs text-gray-500">Generate handoff packet for code agent</p>
+						<p class="text-xs text-gray-500">Metadata only. Relay does not execute this packet yet.</p>
 					</div>
 				</div>
 				if artifactExists(artifacts, "ready_prompt") {
@@ -95,13 +95,13 @@ templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check
 						class="flex gap-2">
 						<input type="hidden" name="action" value="generate-opencode-packet"/>
 						<button type="submit"
-							class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-							Generate Packet
+							class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors font-medium">
+							Generate Packet (preview)
 						</button>
 					</form>
 				} else {
 					<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600">
-						Generate Ready Prompt first
+						Generate Agent Prompt first
 					</span>
 				}
 			</div>

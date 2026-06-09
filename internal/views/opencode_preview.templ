@@ -4,7 +4,8 @@ import "relay/internal/store"
 
 templ OpenCodePreview(run *store.Run, repo *store.Repo, artifacts []store.Artifact) {
 	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50 mt-8">
-		<h3 class="font-medium mb-3">OpenCode Handoff Preview</h3>
+		<h3 class="font-medium mb-1">OpenCode Packet Preview</h3>
+		<p class="text-xs text-gray-500 mb-3">Relay does not execute this packet yet. It is currently metadata only.</p>
 		<table class="w-full text-xs">
 			<tbody class="divide-y divide-gray-800">
 				<tr>
@@ -52,7 +53,7 @@ templ OpenCodePreview(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 									class="text-gray-500 hover:text-gray-300">Download</a>
 							</div>
 						} else {
-							<span class="text-yellow-400">Generate Ready Prompt first</span>
+							<span class="text-yellow-400">Generate Agent Prompt first</span>
 						}
 					</td>
 				</tr>
@@ -67,7 +68,7 @@ templ OpenCodePreview(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 									class="text-gray-500 hover:text-gray-300">Download</a>
 							</div>
 						} else {
-							<span class="text-yellow-400">Generate OpenCode Packet after Ready Prompt</span>
+							<span class="text-yellow-400">Generate OpenCode Packet after Agent Prompt</span>
 						}
 					</td>
 				</tr>
