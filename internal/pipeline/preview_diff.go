@@ -12,9 +12,12 @@ type PreviewDiff struct {
 	Truncated bool
 }
 
+const DefaultPreviewDiffMaxLines = 300
+const DefaultPreviewDiffContextLines = 3
+
 func BuildPreviewDiff(original string, transformed string, maxLines int) PreviewDiff {
 	if maxLines <= 0 {
-		maxLines = 300
+		maxLines = DefaultPreviewDiffMaxLines
 	}
 
 	a := splitPreviewLines(original)
@@ -64,17 +67,69 @@ func BuildPreviewDiff(original string, transformed string, maxLines int) Preview
 		result[left], result[right] = result[right], result[left]
 	}
 
-	// Truncate if needed
+	return compactDiffHunks(result, DefaultPreviewDiffContextLines, maxLines)
+}
+
+type lineRange struct {
+	start, end int
+}
+
+func compactDiffHunks(lines []PreviewDiffLine, contextLines int, maxLines int) PreviewDiff {
+	if maxLines <= 0 {
+		maxLines = DefaultPreviewDiffMaxLines
+	}
+	if contextLines < 0 {
+		contextLines = 0
+	}
+
+	var ranges []lineRange
+	for i, line := range lines {
+		if line.Kind == "add" || line.Kind == "remove" {
+			start := i - contextLines
+			if start < 0 {
+				start = 0
+			}
+			end := i + contextLines
+			if end >= len(lines) {
+				end = len(lines) - 1
+			}
+			ranges = appendMerged(ranges, start, end)
+		}
+	}
+
+	if len(ranges) == 0 {
+		return PreviewDiff{}
+	}
+
+	var compact []PreviewDiffLine
+	for i, r := range ranges {
+		if i > 0 && r.start > ranges[i-1].end+1 {
+			compact = append(compact, PreviewDiffLine{Kind: "skip", Text: "... unchanged lines omitted ..."})
+		}
+		compact = append(compact, lines[r.start:r.end+1]...)
+	}
+
 	truncated := false
-	if len(result) > maxLines {
-		result = result[:maxLines]
+	if len(compact) > maxLines {
+		compact = compact[:maxLines]
 		truncated = true
 	}
 
-	return PreviewDiff{
-		Lines:     result,
-		Truncated: truncated,
+	return PreviewDiff{Lines: compact, Truncated: truncated}
+}
+
+func appendMerged(ranges []lineRange, start, end int) []lineRange {
+	if len(ranges) == 0 {
+		return append(ranges, lineRange{start, end})
 	}
+	last := &ranges[len(ranges)-1]
+	if start <= last.end+1 {
+		if end > last.end {
+			last.end = end
+		}
+		return ranges
+	}
+	return append(ranges, lineRange{start, end})
 }
 
 func splitPreviewLines(s string) []string {

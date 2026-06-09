@@ -69,6 +69,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		OriginalHandoff: originalPreview,
 		ValidationJSON:  readArtifactPreview(id, "handoff_validation_json"),
 		AgentPrompt:     agentPromptPreview,
+		OpenCodePacket:  readArtifactPreview(id, "opencode_handoff_packet"),
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {

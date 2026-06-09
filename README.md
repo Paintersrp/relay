@@ -191,7 +191,7 @@ Model selection is automatic by default. The model override control is optional 
 
 The Agent Prompt is a transformed execution prompt for the running repo agent. Relay parses the original handoff, removes orchestration-only metadata, strips raw validation command blocks, and appends validation responsibility and final output contract sections. The original handoff and transformed Agent Prompt are stored separately.
 
-Run detail shows an inline Original Handoff → Agent Prompt diff after the Agent Prompt is generated, while keeping View/Download links for full artifacts.
+Run detail shows an inline Original Handoff → Agent Prompt hunk diff after the Agent Prompt is generated, while keeping View/Download links for full artifacts.
 
 Relay does not execute OpenCode yet, and the OpenCode packet is metadata only until a future execution adapter consumes it.
 
@@ -201,7 +201,7 @@ Relay can generate an `opencode_handoff_packet.json` artifact after an Agent Pro
 
 The packet includes the run id, local repo path, branch/worktree metadata, selected model, recommended model, agent prompt artifact path, run artifact directory, and an execution status of `not_implemented`.
 
-Relay does not execute OpenCode yet. The packet is metadata only.
+When generated, the OpenCode packet JSON is previewed inline in the run workbench and remains metadata-only. Relay does not execute OpenCode yet. The packet is metadata only.
 
 ## Manual agent result intake
 
