@@ -125,6 +125,7 @@ func TestStartOpenCodeGoUsesArgsRunner(t *testing.T) {
 	hasDir := false
 	hasAgent := false
 	hasModel := false
+	hasThinking := false
 	for _, arg := range recordedArgs {
 		switch arg {
 		case "run":
@@ -137,6 +138,8 @@ func TestStartOpenCodeGoUsesArgsRunner(t *testing.T) {
 			hasAgent = true
 		case "--model":
 			hasModel = true
+		case "--thinking":
+			hasThinking = true
 		}
 	}
 	if !hasRun {
@@ -153,6 +156,9 @@ func TestStartOpenCodeGoUsesArgsRunner(t *testing.T) {
 	}
 	if !hasModel {
 		t.Fatal("expected '--model' in args")
+	}
+	if !hasThinking {
+		t.Fatal("expected '--thinking' in args")
 	}
 	if recordedWorkDir == "" {
 		t.Fatal("expected workDir to be set")

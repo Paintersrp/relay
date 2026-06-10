@@ -227,6 +227,7 @@ func TestBuildOpenCodeRunInvocation(t *testing.T) {
 	hasDir := false
 	hasAgent := false
 	hasModel := false
+	hasThinking := false
 	hasInteractive := false
 	for _, arg := range inv.Args {
 		if arg == "--format" {
@@ -240,6 +241,9 @@ func TestBuildOpenCodeRunInvocation(t *testing.T) {
 		}
 		if arg == "--model" {
 			hasModel = true
+		}
+		if arg == "--thinking" {
+			hasThinking = true
 		}
 		if arg == "--interactive" {
 			hasInteractive = true
@@ -256,6 +260,9 @@ func TestBuildOpenCodeRunInvocation(t *testing.T) {
 	}
 	if !hasModel {
 		t.Fatal("expected --model in args")
+	}
+	if !hasThinking {
+		t.Fatal("expected --thinking in args")
 	}
 	if hasInteractive {
 		t.Fatal("did not expect --interactive in args")
@@ -290,13 +297,20 @@ func TestBuildOpenCodeRunInvocationWithVariant(t *testing.T) {
 	}
 
 	hasVariant := false
+	hasThinking := false
 	for _, arg := range inv.Args {
 		if arg == "--variant" {
 			hasVariant = true
 		}
+		if arg == "--thinking" {
+			hasThinking = true
+		}
 	}
 	if !hasVariant {
 		t.Fatal("expected --variant in args")
+	}
+	if !hasThinking {
+		t.Fatal("expected --thinking in args")
 	}
 }
 
@@ -419,7 +433,7 @@ func TestDryRunJSONRoundTrip(t *testing.T) {
 		Preview         string   `json:"preview"`
 	}{
 		Binary:          "opencode",
-		Args:            []string{"run", "--format", "json"},
+		Args:            []string{"run", "--format", "json", "--thinking", "max"},
 		WorkDir:         "/repo",
 		StdinSource:     "/tmp/prompt.txt",
 		StdinBytes:      100,
@@ -427,7 +441,7 @@ func TestDryRunJSONRoundTrip(t *testing.T) {
 		PacketPath:      "/tmp/packet.json",
 		Model:           "anthropic/claude-sonnet-4-5",
 		Agent:           "build",
-		Preview:         "opencode run --format json --dir /repo --agent build --model anthropic/claude-sonnet-4-5",
+		Preview:         "opencode run --format json --dir /repo --agent build --model anthropic/claude-sonnet-4-5 --thinking max",
 	}
 
 	data, err := json.MarshalIndent(preview, "", "  ")
@@ -511,6 +525,10 @@ func TestBuildOpenCodeRunInvocationIncludesExpectedArgsValues(t *testing.T) {
 		case "--model":
 			if i+1 >= len(inv.Args) || inv.Args[i+1] != "anthropic/claude-sonnet-4-5" {
 				t.Fatal("expected --model to be followed by resolved model")
+			}
+		case "--thinking":
+			if i+1 >= len(inv.Args) || inv.Args[i+1] != "max" {
+				t.Fatal("expected --thinking to be followed by max")
 			}
 		}
 	}

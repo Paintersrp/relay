@@ -350,6 +350,7 @@ func BuildOpenCodeRunInvocation(cfg OpenCodeRunConfig, input OpenCodeRunInput) (
 		"--dir", input.RepoPath,
 		"--agent", agent,
 		"--model", model,
+		"--thinking", "max",
 	}
 	if strings.TrimSpace(cfg.Variant) != "" {
 		args = append(args, "--variant", strings.TrimSpace(cfg.Variant))

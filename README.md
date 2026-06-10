@@ -244,6 +244,8 @@ Relay has a built-in OpenCode adapter that invokes `opencode run` with explicit 
 
 Relay uses `opencode run` in non-interactive mode with `--format json`. The compact Agent Prompt is piped into stdin. The adapter parses JSONL text events from stdout to extract the final assistant text (DONE/BLOCKED).
 
+Relay always invokes OpenCode with max thinking (`--thinking max`). This is intentional so Relay handoffs use OpenCode's highest reasoning setting for implementation work. Thinking level is not configurable in this release.
+
 ### Local setup with `.env.local`
 
 Relay can load `.env` and `.env.local` from the working directory at startup.
@@ -333,7 +335,7 @@ Dry Run never calls the command runner.
 ### Start behavior
 
 - Execution is manual only. Relay never starts OpenCode automatically.
-- Relay invokes `opencode run --format json --dir <repo> --agent <agent> --model <model>` with the compact Agent Prompt piped into stdin.
+- Relay invokes `opencode run --format json --dir <repo> --agent <agent> --model <model> --thinking max` with the compact Agent Prompt piped into stdin.
 - Relay captures stdout and stderr as separate artifacts and a combined log.
 - Relay records execution status, exit code, start/end timestamps, and error messages in the `agent_executions` table.
 - Relay extracts assistant text from JSONL stdout events and persists DONE/BLOCKED results through the agent result path.
