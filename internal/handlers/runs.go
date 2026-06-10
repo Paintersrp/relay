@@ -99,11 +99,8 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		intakeReview = pipeline.BuildIntakeReview(metadata, repoPath)
 	}
 
-	// Determine active step
-	activeStep := defaultActiveRunStep(artifactsList, checksList)
-	if s := r.URL.Query().Get("step"); s != "" {
-		activeStep = s
-	}
+		// Determine active step — default to intake, override with valid ?step=
+	activeStep := normalizeRunStep(r.URL.Query().Get("step"))
 
 	views.RunDetail(run, repo, artifactsList, checksList, eventsList, previews, &intakeReview, activeStep).Render(r.Context(), w)
 }
@@ -197,7 +194,7 @@ func (h *RunsHandler) validateHandoff(w http.ResponseWriter, r *http.Request, ru
 
 	h.log.Info("handoff validated", "run_id", runID, "status", report.Status)
 
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
 }
 
 func (h *RunsHandler) preparePrompt(w http.ResponseWriter, r *http.Request, runID int64) {
@@ -249,7 +246,7 @@ func (h *RunsHandler) preparePrompt(w http.ResponseWriter, r *http.Request, runI
 
 	h.log.Info("agent prompt prepared", "run_id", runID)
 
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=prompt", http.StatusSeeOther)
 }
 
 func (h *RunsHandler) markStatus(w http.ResponseWriter, r *http.Request, runID int64, status string) {
@@ -257,7 +254,7 @@ func (h *RunsHandler) markStatus(w http.ResponseWriter, r *http.Request, runID i
 
 	h.store.CreateEvent(runID, "info", "Run status changed to "+status)
 
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
 }
 
 func (h *RunsHandler) runValidation(w http.ResponseWriter, r *http.Request, runID int64) {
@@ -392,7 +389,7 @@ func (h *RunsHandler) runValidation(w http.ResponseWriter, r *http.Request, runI
 
 	h.log.Info("validation commands executed", "run_id", runID, "status", aggregate.Status, "commands", len(commands))
 
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
 }
 
 func (h *RunsHandler) notImplemented(w http.ResponseWriter, r *http.Request, runID int64, msg string) {
@@ -470,7 +467,7 @@ func (h *RunsHandler) generateOpenCodePacket(w http.ResponseWriter, r *http.Requ
 
 	h.log.Info("opencode handoff packet generated", "run_id", runID)
 
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=packet", http.StatusSeeOther)
 }
 
 func hasArtifactKind(artifacts []store.Artifact, kind string) bool {
@@ -491,17 +488,20 @@ func hasCheckKind(checks []store.Check, kind string) bool {
 	return false
 }
 
-func defaultActiveRunStep(artifacts []store.Artifact, checks []store.Check) string {
-	// If a validation run result or agent result exists, the user is past the review phase.
-	if hasArtifactKind(artifacts, "validation_run_json") || hasCheckKind(checks, "validation_run") {
-		return "validation"
+// normalizeRunStep maps a step query value to a known step identifier.
+// Invalid or empty values default to "intake".
+func normalizeRunStep(step string) string {
+	switch step {
+	case "intake", "prompt", "packet", "result", "validation", "audit":
+		return step
+	case "handoff":
+		return "packet"
+	default:
+		return "intake"
 	}
-	if hasArtifactKind(artifacts, "agent_result_raw") {
-		return "validation"
-	}
+}
 
-	// All other states (including after auto-setup creates validation, prompt, and packet)
-	// default to Intake Review so the user intentionally navigates forward.
+func defaultActiveRunStep(_ []store.Artifact, _ []store.Check) string {
 	return "intake"
 }
 
@@ -563,5 +563,5 @@ func (h *RunsHandler) submitAgentResult(w http.ResponseWriter, r *http.Request, 
 
 	h.log.Info("agent result submitted", "run_id", runID, "status", result.Status)
 
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
 }

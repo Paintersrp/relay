@@ -48,9 +48,9 @@ func StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 templ.SafeURL
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/runs/" + Itoa(run.ID) + "?step=intake"))
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "?step=intake")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 12, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 12, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -83,9 +83,9 @@ func StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 templ.SafeURL
-		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/runs/" + Itoa(run.ID) + "?step=prompt"))
+		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "?step=prompt")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 16, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 16, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -118,9 +118,9 @@ func StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var9 templ.SafeURL
-		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/runs/" + Itoa(run.ID) + "?step=packet"))
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "?step=packet")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 20, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 20, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -153,9 +153,9 @@ func StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var12 templ.SafeURL
-		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/runs/" + Itoa(run.ID) + "?step=handoff"))
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "?step=handoff")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 24, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 24, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -188,9 +188,9 @@ func StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var15 templ.SafeURL
-		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/runs/" + Itoa(run.ID) + "?step=validation"))
+		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "?step=validation")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 28, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 28, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -223,9 +223,9 @@ func StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var18 templ.SafeURL
-		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/runs/" + Itoa(run.ID) + "?step=audit"))
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "?step=audit")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 32, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 32, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {

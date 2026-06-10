@@ -9,27 +9,27 @@ templ StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 	// Step navigation bar
 	<div class="mb-4">
 		<nav class="flex gap-1 bg-gray-900/80 border border-gray-800 rounded-lg p-1 text-xs">
-			<a href={ templ.URL("/runs/" + Itoa(run.ID) + "?step=intake") }
+			<a href={"/runs/" + Itoa(run.ID) + "?step=intake"}
 				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "intake") }>
 				1 Intake Review
 			</a>
-			<a href={ templ.URL("/runs/" + Itoa(run.ID) + "?step=prompt") }
+			<a href={"/runs/" + Itoa(run.ID) + "?step=prompt"}
 				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "prompt") }>
 				2 Agent Prompt
 			</a>
-			<a href={ templ.URL("/runs/" + Itoa(run.ID) + "?step=packet") }
+			<a href={"/runs/" + Itoa(run.ID) + "?step=packet"}
 				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "packet") }>
 				3 Agent Packet
 			</a>
-			<a href={ templ.URL("/runs/" + Itoa(run.ID) + "?step=handoff") }
+			<a href={"/runs/" + Itoa(run.ID) + "?step=handoff"}
 				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "handoff") }>
 				4 OpenCode Go Handoff
 			</a>
-			<a href={ templ.URL("/runs/" + Itoa(run.ID) + "?step=validation") }
+			<a href={"/runs/" + Itoa(run.ID) + "?step=validation"}
 				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "validation") }>
 				5 Relay Validation
 			</a>
-			<a href={ templ.URL("/runs/" + Itoa(run.ID) + "?step=audit") }
+			<a href={"/runs/" + Itoa(run.ID) + "?step=audit"}
 				class={ "px-3 py-1.5 rounded transition-colors opacity-50", stepNavClass(activeStep, "audit") }>
 				6 Diff / Audit
 			</a>

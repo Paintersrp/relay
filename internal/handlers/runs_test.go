@@ -39,7 +39,7 @@ func TestDefaultActiveRunStep_StartsAtIntakeForArtifactsOnly(t *testing.T) {
 	}
 }
 
-func TestDefaultActiveRunStep_MovesToValidationAfterAgentResult(t *testing.T) {
+func TestDefaultActiveRunStep_StartsAtIntakeAfterAgentResult(t *testing.T) {
 	artifacts := []store.Artifact{
 		{Kind: "handoff_validation_json"},
 		{Kind: "agent_prompt"},
@@ -48,12 +48,12 @@ func TestDefaultActiveRunStep_MovesToValidationAfterAgentResult(t *testing.T) {
 	}
 
 	got := defaultActiveRunStep(artifacts, nil)
-	if got != "validation" {
-		t.Fatalf("expected validation, got %q", got)
+	if got != "intake" {
+		t.Fatalf("expected intake, got %q", got)
 	}
 }
 
-func TestDefaultActiveRunStep_MovesToValidationAfterValidationRun(t *testing.T) {
+func TestDefaultActiveRunStep_StartsAtIntakeAfterValidationRun(t *testing.T) {
 	artifacts := []store.Artifact{
 		{Kind: "handoff_validation_json"},
 		{Kind: "agent_prompt"},
@@ -62,19 +62,63 @@ func TestDefaultActiveRunStep_MovesToValidationAfterValidationRun(t *testing.T) 
 	}
 
 	got := defaultActiveRunStep(artifacts, nil)
-	if got != "validation" {
-		t.Fatalf("expected validation, got %q", got)
+	if got != "intake" {
+		t.Fatalf("expected intake, got %q", got)
 	}
 }
 
-func TestDefaultActiveRunStep_MovesToValidationAfterValidationRunCheck(t *testing.T) {
+func TestDefaultActiveRunStep_StartsAtIntakeAfterValidationRunCheck(t *testing.T) {
 	checks := []store.Check{
 		{Kind: "validation_run", Status: "pass"},
 	}
 
 	got := defaultActiveRunStep(nil, checks)
-	if got != "validation" {
-		t.Fatalf("expected validation, got %q", got)
+	if got != "intake" {
+		t.Fatalf("expected intake, got %q", got)
+	}
+}
+
+func TestNormalizeRunStepAcceptsKnownSteps(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"intake", "intake"},
+		{"prompt", "prompt"},
+		{"packet", "packet"},
+		{"result", "result"},
+		{"validation", "validation"},
+		{"audit", "audit"},
+	}
+	for _, tt := range tests {
+		got := normalizeRunStep(tt.input)
+		if got != tt.expected {
+			t.Errorf("normalizeRunStep(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func TestNormalizeRunStepRejectsInvalidStep(t *testing.T) {
+	tests := []string{
+		"",
+		"nonsense",
+		"invalid",
+		"step",
+		"  ",
+		"intake ",
+	}
+	for _, input := range tests {
+		got := normalizeRunStep(input)
+		if got != "intake" {
+			t.Errorf("normalizeRunStep(%q) = %q, want %q", input, got, "intake")
+		}
+	}
+}
+
+func TestNormalizeRunStepHandoffAlias(t *testing.T) {
+	got := normalizeRunStep("handoff")
+	if got != "packet" {
+		t.Fatalf("normalizeRunStep(\"handoff\") = %q, want %q", got, "packet")
 	}
 }
 
