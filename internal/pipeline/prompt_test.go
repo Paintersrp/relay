@@ -659,6 +659,67 @@ Return only DONE or BLOCKED.
 	}
 }
 
+func TestBuildCompactAgentPromptPreservesFencedMarkdownExampleWithNestedBash(t *testing.T) {
+	handoff := `# Example
+
+## Surgical implementation details
+
+Keep this fixture intact:
+
+` + "```md" + `
+# Nested Example
+
+## Tests / validation
+
+` + "```bash" + `
+go test ./...
+` + "```" + `
+
+## Agent final output requirement
+
+Return DONE.
+` + "```" + `
+
+## Relay validation commands
+
+` + "```bash" + `
+go test ./...
+` + "```" + `
+`
+	prompt := BuildCompactAgentPrompt(handoff)
+
+	// The nested example heading inside the fenced markdown block must be preserved
+	if !strings.Contains(prompt, "# Nested Example") {
+		t.Error("prompt should preserve # Nested Example inside fenced markdown example")
+	}
+
+	// The Tests / validation heading inside the fenced markdown example must be preserved
+	if !strings.Contains(prompt, "## Tests / validation") {
+		t.Error("prompt should preserve ## Tests / validation heading inside fenced markdown example")
+	}
+
+	// The nested bash fence opener inside the md block must be preserved
+	if !strings.Contains(prompt, "```bash") {
+		t.Error("prompt should preserve nested bash fence opener inside fenced markdown example")
+	}
+
+	// The go test command inside the fenced markdown example must still be present
+	if !strings.Contains(prompt, "go test ./...") {
+		t.Error("prompt should preserve go test ./... inside the fenced markdown example")
+	}
+
+	// The real top-level Relay validation commands heading must be removed
+	if strings.Contains(prompt, "## Relay validation commands") {
+		t.Error("prompt should NOT contain real ## Relay validation commands heading")
+	}
+
+	// The go test command should appear exactly once (inside the fenced md example)
+	count := strings.Count(prompt, "go test ./...")
+	if count != 1 {
+		t.Errorf("expected 'go test ./...' to appear exactly 1 time, got %d", count)
+	}
+}
+
 func TestBuildAgentPromptStillRemovesRealValidationCommands(t *testing.T) {
 	handoff := `# Example
 

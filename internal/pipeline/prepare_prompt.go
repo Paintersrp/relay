@@ -551,7 +551,6 @@ func BuildCompactAgentPrompt(originalHandoff string) string {
 	handoff = stripSections(handoff, sectionsToStrip...)
 	handoff = cleanValidationExecutionMaterial(handoff)
 	handoff = stripRTKPreference(handoff)
-	handoff = stripValidationCommandFences(handoff)
 
 	var b strings.Builder
 	b.WriteString("# ")
@@ -586,33 +585,6 @@ func stripRTKPreference(text string) string {
 			continue
 		}
 		if strings.Contains(lower, "do not list") && strings.Contains(lower, "rtk") {
-			continue
-		}
-		result = append(result, line)
-	}
-	return strings.TrimSpace(strings.Join(result, "\n"))
-}
-
-// stripValidationCommandFences removes any remaining shell fenced code blocks
-// that were not caught by cleanValidationExecutionMaterial.
-func stripValidationCommandFences(text string) string {
-	lines := strings.Split(text, "\n")
-	var result []string
-	inShellFence := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") {
-			_, _, lang, ok := isFenceLine(trimmed)
-			if ok && isShellLang(lang) {
-				inShellFence = true
-				continue
-			}
-			inShellFence = false
-			result = append(result, line)
-			continue
-		}
-		if inShellFence {
 			continue
 		}
 		result = append(result, line)

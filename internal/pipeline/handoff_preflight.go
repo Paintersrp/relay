@@ -91,14 +91,14 @@ func BuildHandoffPreflight(repoPath, branchName, selectedModel, agentPromptPath,
 
 	// Repo git check
 	if repoPath != "" {
-		gitDir := filepath.Join(repoPath, ".git")
-		if info, err := os.Stat(gitDir); err != nil || !info.IsDir() {
+		gitPath := filepath.Join(repoPath, ".git")
+		if _, err := os.Stat(gitPath); err != nil {
 			checks = append(checks, HandoffPreflightCheck{
-				Key: "repo_git", Status: "block", Summary: ".git directory missing at " + gitDir,
+				Key: "repo_git", Status: "block", Summary: ".git metadata missing at " + gitPath,
 			})
 		} else {
 			checks = append(checks, HandoffPreflightCheck{
-				Key: "repo_git", Status: "pass", Summary: ".git directory present",
+				Key: "repo_git", Status: "pass", Summary: ".git metadata present",
 			})
 		}
 	} else {

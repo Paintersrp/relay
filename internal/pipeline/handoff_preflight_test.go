@@ -193,6 +193,46 @@ func TestBuildHandoffPreflightWarningEmptyBranch(t *testing.T) {
 	}
 }
 
+func TestBuildHandoffPreflightPassesGitFileWorktree(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: /tmp/worktree-git-dir\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	promptPath := filepath.Join(dir, "agent_prompt.txt")
+	if err := os.WriteFile(promptPath, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	packetPath := filepath.Join(dir, "opencode_handoff_packet.json")
+	if err := os.WriteFile(packetPath, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	preflight := BuildHandoffPreflight(
+		dir,
+		"feature/example",
+		"DeepSeek V4 Flash",
+		promptPath,
+		packetPath,
+		map[string]string{"agent_prompt": promptPath},
+	)
+
+	var found bool
+	for _, c := range preflight.Checks {
+		if c.Key == "repo_git" {
+			found = true
+			if c.Status != "pass" {
+				t.Fatalf("repo_git status = %q, want pass: %s", c.Status, c.Summary)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("repo_git check not found")
+	}
+}
+
 func TestBuildHandoffPreflightBlockedMissingGit(t *testing.T) {
 	dir := t.TempDir()
 	promptPath := filepath.Join(dir, "agent_prompt.txt")
