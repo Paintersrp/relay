@@ -292,6 +292,8 @@ func OpenCodeModelEnvSlug(label string) string {
 // ResolveOpenCodeModel resolves a selected model to a provider/model string.
 // If the model already contains "/", it is used directly.
 // Otherwise, the model label is slugified and looked up in RELAY_OPENCODE_MODEL_<SLUG>.
+// Human-friendly labels require RELAY_OPENCODE_MODEL_<SLUG> env mappings.
+// Direct provider/model values pass through unchanged.
 func ResolveOpenCodeModel(selectedModel string) (string, error) {
 	selectedModel = strings.TrimSpace(selectedModel)
 	if selectedModel == "" {

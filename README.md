@@ -292,18 +292,37 @@ Restart Relay after editing `.env.local`.
 
 ### Model resolution
 
-If the selected model contains a `/` (e.g., `anthropic/claude-sonnet-4-5`), it is used directly.
+Relay supports two model-selection paths:
 
-Otherwise, the model label is converted to an environment variable slug and looked up via `RELAY_OPENCODE_MODEL_<SLUG>`.
+1. **Direct OpenCode model ID** — if the selected model already contains `/`, Relay passes it through directly. Example:
 
-Examples:
+   ```text
+   opencode-go/deepseek-v4-flash
+   ```
 
-```text
-RELAY_OPENCODE_MODEL_DEEPSEEK_V4_FLASH=deepseek/deepseek-chat
-RELAY_OPENCODE_MODEL_QWEN3_CODER_NEXT=anthropic/claude-sonnet-4-5
-```
+   No `RELAY_OPENCODE_MODEL_*` mapping is required.
+
+2. **Friendly Relay model label** — if the selected model is a human label like `DeepSeek V4 Flash`, Relay converts it to a slug and looks for:
+
+   ```text
+   RELAY_OPENCODE_MODEL_DEEPSEEK_V4_FLASH
+   ```
+
+   This keeps Relay from guessing provider/model IDs incorrectly.
 
 Do not invent exact provider/model IDs. Mappings must be configured explicitly.
+
+Current tested OpenCode Go mapping:
+
+```env
+RELAY_OPENCODE_MODEL_DEEPSEEK_V4_FLASH=opencode-go/deepseek-v4-flash
+```
+
+You can confirm installed/available models with:
+
+```bash
+opencode models
+```
 
 ### Dry Run / Preview
 
