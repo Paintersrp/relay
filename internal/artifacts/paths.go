@@ -28,6 +28,11 @@ var allowedKinds = map[string]bool{
 	"opencode_cli_check_json":    true,
 	"intake_remediation_handoff": true,
 	"audit_handoff":              true,
+	"git_status_text":            true,
+	"git_diff_stat":              true,
+	"git_diff_numstat":           true,
+	"git_diff_patch":             true,
+	"git_diff_name_status":       true,
 }
 
 func Dir(runID int64) string {

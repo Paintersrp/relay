@@ -22,6 +22,12 @@ type AuditHandoffInput struct {
 	ValidationStatus   string
 	ValidationRepoPath string
 	ValidationCommands []CommandRunResult
+
+	GitStatusText     string
+	GitDiffStat       string
+	GitDiffNumstat    string
+	GitDiffNameStatus string
+	GitDiffPatch      string
 }
 
 func BuildAuditHandoff(input AuditHandoffInput) string {
@@ -101,6 +107,53 @@ func BuildAuditHandoff(input AuditHandoffInput) string {
 		b.WriteString("- opencode_stdout\n")
 		b.WriteString("- opencode_stderr\n")
 		b.WriteString("- opencode_combined_log\n")
+	}
+	if input.GitStatusText != "" {
+		b.WriteString("- git_status_text\n")
+	}
+	if input.GitDiffStat != "" {
+		b.WriteString("- git_diff_stat\n")
+	}
+	if input.GitDiffNumstat != "" {
+		b.WriteString("- git_diff_numstat\n")
+	}
+	if input.GitDiffNameStatus != "" {
+		b.WriteString("- git_diff_name_status\n")
+	}
+	if input.GitDiffPatch != "" {
+		b.WriteString("- git_diff_patch\n")
+	}
+
+	b.WriteString("\n## Git Diff Evidence\n\n")
+	if input.GitStatusText != "" || input.GitDiffStat != "" || input.GitDiffPatch != "" {
+		if input.GitStatusText != "" {
+			b.WriteString("### Git status\n\n```text\n")
+			b.WriteString(input.GitStatusText)
+			b.WriteString("\n```\n\n")
+		}
+		if input.GitDiffStat != "" {
+			b.WriteString("### Diff stat\n\n```text\n")
+			b.WriteString(input.GitDiffStat)
+			b.WriteString("\n```\n\n")
+		}
+		if input.GitDiffNameStatus != "" {
+			b.WriteString("### Changed files\n\n```text\n")
+			b.WriteString(input.GitDiffNameStatus)
+			b.WriteString("\n```\n\n")
+		}
+		if input.GitDiffPatch != "" {
+			b.WriteString("### Patch\n\n")
+			b.WriteString("Patch artifact: git_diff_patch\n\n")
+			excerpt := input.GitDiffPatch
+			if len(excerpt) > 4000 {
+				excerpt = excerpt[:4000] + "\n[truncated; full patch available in Relay artifacts]"
+			}
+			b.WriteString("Small excerpt:\n```diff\n")
+			b.WriteString(excerpt)
+			b.WriteString("\n```\n")
+		}
+	} else {
+		b.WriteString("No git diff evidence artifact was available. Run Inspect Git Diff in Step 7 before audit for stronger evidence.\n")
 	}
 
 	b.WriteString("\n## Review request\n\n")

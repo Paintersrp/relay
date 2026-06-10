@@ -121,6 +121,15 @@ type RunPreviews struct {
 
 	HasAuditHandoff bool
 	AuditHandoff    string
+
+	HasGitStatus        bool
+	GitStatusPreview    string
+	HasGitDiffStat      bool
+	GitDiffStatPreview  string
+	HasGitDiffPatch     bool
+	GitDiffPatchPreview string
+	GitChangedFileCount int64
+	GitDiffSummary      string
 }
 
 templ RunPreviewPanels(previews RunPreviews) {

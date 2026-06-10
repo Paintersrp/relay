@@ -1,22 +1,4 @@
-# Test Handoff
+# Test
 
 ## Goal
-Do something
-
-## Scope
-- README.md
-
-## Do not change
-Nothing
-
-## Task checklist
-- [ ] Do it
-
-## Tests / validation
-
-```bash
-go version
-```
-
-## Output
-DONE or BLOCKED
+Do something.

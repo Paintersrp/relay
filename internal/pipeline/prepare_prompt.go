@@ -516,6 +516,16 @@ func ArtifactFilename(kind string) string {
 		return "opencode_cli_check.json"
 	case "intake_remediation_handoff":
 		return "intake-remediation-handoff.md"
+	case "git_status_text":
+		return "git_status.txt"
+	case "git_diff_stat":
+		return "git_diff_stat.txt"
+	case "git_diff_numstat":
+		return "git_diff_numstat.txt"
+	case "git_diff_patch":
+		return "git_diff.patch"
+	case "git_diff_name_status":
+		return "git_diff_name_status.txt"
 	default:
 		return fmt.Sprintf("%s.txt", kind)
 	}

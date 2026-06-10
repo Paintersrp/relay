@@ -20,8 +20,8 @@ Relay's intended workflow is:
 7. Store manual agent result intake.
 8. Run validation commands locally after agent result.
 9. Store validation stdout/stderr/json artifacts.
-10. Generate audit handoff for GPT review after validation passes.
-11. Later: inspect git diff.
+10. Inspect git diff for local changes.
+11. Generate audit handoff for GPT review (includes validation evidence and git diff evidence).
 
 Key design points:
 
@@ -40,8 +40,7 @@ The current local-first flow does not yet implement:
 - automatic branch/worktree creation
 - automatic commits
 - automatic validation failure repair
-- git diff inspection
-- automatic diff-based audit
+- automatic diff-based audit / AI audit automation
 
 ## Stack
 
@@ -173,25 +172,43 @@ If RTK is available, Relay or the user may prefer `rtk.exe` first, then `rtk`, t
 
 ## Audit Handoff
 
-When Relay Validation passes, Step 6 shows an option to **Generate Audit Handoff**. This action creates a compact markdown artifact (`audit_handoff.md`) containing:
+When Relay Validation passes or after git diff evidence is collected, Step 7 provides actions to **Inspect Git Diff** and **Generate Audit Handoff**.
+
+**Git diff inspection** (`inspect-diff`) runs `git status --short`, `git diff --stat`, `git diff --numstat`, `git diff --name-status`, and `git diff --no-ext-diff --patch` in the selected repo path. All output is stored as run artifacts (`git_status_text`, `git_diff_stat`, `git_diff_numstat`, `git_diff_name_status`, `git_diff_patch`). The inspection does not modify the worktree.
+
+**Audit handoff** generates a compact markdown artifact (`audit_handoff.md`) containing:
 
 - Run metadata (ID, title, repo, branch, status)
 - Original handoff preview (truncated if large)
 - Agent result status, build/test results, LOC changed
 - Validation results with per-command status, exit code, and duration
+- **Git diff evidence** (status, diff stat, changed files, patch excerpt) when available
 - Artifact manifest
 - Review request for GPT
 
-The audit handoff is intended to be copied into GPT for audit/review. Step 7 becomes active once the handoff is generated.
+The audit handoff is intended to be copied into GPT for audit/review. Full AI audit/review is performed by pasting the audit handoff into GPT.
 
 To generate:
 
 1. Complete Step 6 Relay Validation successfully.
-2. Click **Generate Audit Handoff** in the validation passed section or from the Next Action card.
-3. View, download, or copy the handoff from Step 7.
-4. Paste the handoff into GPT for review.
+2. Optionally run **Inspect Git Diff** in Step 7 first for stronger evidence.
+3. Click **Generate Audit Handoff** in Step 7 or from the Next Action card.
+4. View, download, or copy the handoff from Step 7.
+5. Paste the handoff into GPT for review.
 
 The audit handoff is always available for view/download after generation, even after page reload.
+
+## Git Diff Evidence
+
+Step 7 can inspect the local git worktree at the selected repo path. When **Inspect Git Diff** is triggered:
+
+- `git status --short` is saved as `git_status_text`
+- `git diff --stat` is saved as `git_diff_stat`
+- `git diff --numstat` is saved as `git_diff_numstat`
+- `git diff --name-status` is saved as `git_diff_name_status`
+- `git diff --no-ext-diff --patch` is saved as `git_diff_patch`
+
+Diff evidence is displayed inline in Step 7 and included in the audit handoff when available. The patch is truncated in the handoff to avoid excessive size. Full patches remain accessible through artifact view/download links.
 
 ## Routes
 
@@ -226,7 +243,7 @@ The audit handoff is always available for view/download after generation, even a
 | `replace-original-handoff`            | Implemented                          |
 | `run-agent`                           | Future                               |
 | `run-validation`                      | Implemented                          |
-| `inspect-diff`                        | Future                               |
+| `inspect-diff`                        | Implemented                          |
 | `generate-audit-handoff`              | Implemented                          |
 | `generate-audit-packet`               | Future                               |
 
@@ -332,7 +349,7 @@ Run detail is organized as a guided step-by-step workbench with a single active 
 - **Step 4 — OpenCode Go Handoff**: Shows preflight readiness, OpenCode adapter configuration (binary, model, agent, working directory, command preview), and an explicit "Start OpenCode Go" button. Adapter readiness/blockers are visible at the top of the adapter section. If an execution exists, shows a notice linking to Step 5. Step 4 is handoff/preflight only; execution results appear in Step 5.
 - **Step 5 — Agent Run Monitor**: Shows the running or completed OpenCode execution. Displays command context, terminal-style output transcript, artifact links (stdout, stderr, combined log), and parsed final result (DONE/BLOCKED). Auto-refreshes via HTMX polling while running. When DONE/BLOCKED is parsed, a validation CTA appears. Manual result intake fallback is available and shown more prominently when no result was auto-parsed.
 - **Step 6 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Requires an agent result before the validation button is enabled. After a run, shows command-level results with status chips, exit codes, duration, and stdout/stderr indicators for each command. When validation passes, an audit handoff section appears. Stays on this step after run so the user can inspect pass/fail and output links.
-- **Step 7 — Diff/Audit**: Shows the generated audit handoff when available. The audit handoff is a compact markdown document intended to be copied into GPT for review. Step 7 is grayed out until an audit handoff is generated. Git diff inspection remains future.
+- **Step 7 — Diff/Audit**: Inspect the local git diff/status from the selected repo path and generate the audit handoff. Step 7 provides an "Inspect Git Diff" action that collects git status, diff stat, and patch artifacts. Diff evidence is displayed inline preview and included in the audit handoff. The audit handoff is a compact markdown document intended to be copied into GPT for review. Full AI audit/review is performed by pasting the audit handoff into GPT.
 
 Clarifications:
 
@@ -499,7 +516,7 @@ Dry Run never calls the command runner.
 - Relay extracts assistant text from JSONL stdout events and persists DONE/BLOCKED results through the agent result path.
 - Relay does not persist UNKNOWN results automatically from JSON noise.
 - Relay does not run validation commands automatically after OpenCode exits.
-- Relay does not inspect git diffs or create branches.
+- Relay does not create branches.
 - Manual result fallback remains available in Step 5.
 
 This adapter path is intended to be verified with a tiny first-run handoff before larger implementation passes.
@@ -542,7 +559,7 @@ Relay can run validation commands for a run from the selected local repository p
 
 Commands are extracted from the original handoff's Tests / validation section. If no handoff commands are found, Relay falls back to the selected repo's default validation commands.
 
-Validation command execution is user-triggered. Relay captures stdout, stderr, exit code, duration, and timeout state as run artifacts/checks. Relay can execute OpenCode only through the explicit Step 4 OpenCode adapter. Relay does not run validation automatically after OpenCode exits and does not inspect diffs.
+Validation command execution is user-triggered. Relay captures stdout, stderr, exit code, duration, and timeout state as run artifacts/checks. Relay can execute OpenCode only through the explicit Step 4 OpenCode adapter. Relay does not run validation automatically after OpenCode exits.
 
 ## Local repository discovery
 

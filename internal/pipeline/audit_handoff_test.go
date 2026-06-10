@@ -156,3 +156,51 @@ func TestBuildAuditHandoff_CommandStatuses(t *testing.T) {
 		t.Error("expected timed out status")
 	}
 }
+
+func TestBuildAuditHandoffIncludesGitDiffEvidence(t *testing.T) {
+	input := AuditHandoffInput{
+		RunID:              10,
+		Title:              "Diff evidence test",
+		ValidationStatus:   "pass",
+		ValidationRepoPath: "D:/Code/test",
+		GitStatusText:      " M README.md\n?? untracked.txt\n",
+		GitDiffStat:        " 1 file changed, 2 insertions(+)",
+		GitDiffNameStatus:  "M\tREADME.md",
+		GitDiffPatch:       "diff --git a/README.md b/README.md\nindex abc..def 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,3 @@\n-# Test\n+# Modified\n+\n+New line\n",
+	}
+
+	content := BuildAuditHandoff(input)
+
+	if !strings.Contains(content, "Git Diff Evidence") {
+		t.Error("expected Git Diff Evidence section")
+	}
+	if !strings.Contains(content, "README.md") {
+		t.Error("expected changed file reference in output")
+	}
+	if !strings.Contains(content, "git_diff_patch") {
+		t.Error("expected patch artifact reference")
+	}
+	if !strings.Contains(content, "git_status_text") {
+		t.Error("expected git_status_text in artifact list")
+	}
+	if !strings.Contains(content, "git_diff_stat") {
+		t.Error("expected git_diff_stat in artifact list")
+	}
+	if !strings.Contains(content, "git_diff_patch") {
+		t.Error("expected git_diff_patch in artifact list")
+	}
+}
+
+func TestBuildAuditHandoffNoGitDiffEvidence(t *testing.T) {
+	input := AuditHandoffInput{
+		RunID:            11,
+		Title:            "No diff",
+		ValidationStatus: "pass",
+	}
+
+	content := BuildAuditHandoff(input)
+
+	if !strings.Contains(content, "No git diff evidence artifact was available") {
+		t.Error("expected fallback message when no git diff evidence")
+	}
+}

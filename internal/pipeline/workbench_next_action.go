@@ -149,7 +149,7 @@ func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextActio
 			action := WorkbenchNextAction{
 				Kind:     WorkbenchNextActionReadyForAudit,
 				Title:    "Ready for audit",
-				Summary:  "Validation passed. Generate the audit handoff to review the run in GPT.",
+				Summary:  "Validation passed. Inspect git diff or generate the audit handoff.",
 				Step:     "audit",
 				Severity: "done",
 			}

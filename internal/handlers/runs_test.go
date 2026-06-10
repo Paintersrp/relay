@@ -1,8 +1,15 @@
 package handlers
 
 import (
+	"log/slog"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"relay/internal/artifacts"
 	"relay/internal/pipeline"
 	"relay/internal/store"
 )
@@ -271,5 +278,112 @@ func TestHasValidationCommandsForPreviewFallsBackToRepoDefaults(t *testing.T) {
 	}
 	if commands[0].Source != "repo_default" {
 		t.Fatalf("expected source 'repo_default', got %q", commands[0].Source)
+	}
+}
+
+func initGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	exec.Command("git", "-C", dir, "config", "user.email", "test@test.com").Run()
+	exec.Command("git", "-C", dir, "config", "user.name", "Test").Run()
+}
+
+func gitAddCommit(t *testing.T, dir string, msg string) {
+	t.Helper()
+	cmd := exec.Command("git", "-C", dir, "add", ".")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git add: %v\n%s", err, out)
+	}
+	cmd = exec.Command("git", "-C", dir, "commit", "-m", msg)
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git commit: %v\n%s", err, out)
+	}
+}
+
+func TestInspectDiffWritesArtifacts(t *testing.T) {
+	s := setupTestStore(t)
+	handoffText := "# Test\n\n## Goal\nDo something.\n"
+	runID := newTestHandoff(t, s, handoffText)
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	repo, err := s.GetRepo(run.RepoID)
+	if err != nil {
+		t.Fatalf("get repo: %v", err)
+	}
+
+	initGitRepo(t, repo.Path)
+
+	if err := os.WriteFile(filepath.Join(repo.Path, "README.md"), []byte("# Repo\n"), 0644); err != nil {
+		t.Fatalf("write readme: %v", err)
+	}
+	gitAddCommit(t, repo.Path, "initial commit")
+
+	if err := os.WriteFile(filepath.Join(repo.Path, "README.md"), []byte("# Modified\n\nChanged.\n"), 0644); err != nil {
+		t.Fatalf("modify readme: %v", err)
+	}
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.inspectDiff(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=audit") {
+		t.Fatalf("expected redirect to step=audit, got %s", loc)
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+
+	hasStatus := false
+	hasDiffStat := false
+	hasDiffNumstat := false
+	hasPatch := false
+	for _, a := range artifactsList {
+		switch a.Kind {
+		case "git_status_text":
+			hasStatus = true
+		case "git_diff_stat":
+			hasDiffStat = true
+		case "git_diff_numstat":
+			hasDiffNumstat = true
+		case "git_diff_patch":
+			hasPatch = true
+		}
+	}
+	if !hasStatus {
+		t.Error("expected git_status_text artifact")
+	}
+	if !hasDiffStat {
+		t.Error("expected git_diff_stat artifact")
+	}
+	if !hasDiffNumstat {
+		t.Error("expected git_diff_numstat artifact")
+	}
+	if !hasPatch {
+		t.Error("expected git_diff_patch artifact")
+	}
+
+	// Verify artifact files exist on disk
+	if !artifacts.Exists(runID, "git_status_text", pipeline.ArtifactFilename("git_status_text")) {
+		t.Error("expected git_status_text file on disk")
+	}
+	if !artifacts.Exists(runID, "git_diff_patch", pipeline.ArtifactFilename("git_diff_patch")) {
+		t.Error("expected git_diff_patch file on disk")
 	}
 }

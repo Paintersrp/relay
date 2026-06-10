@@ -1207,16 +1207,88 @@ func formatDuration(ms int64) string {
 }
 
 templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
-	if previews.HasAuditHandoff {
-		<div class="relay-card">
-			<div class="relay-card-header">
-				<div class="min-w-0">
-					<h3 class="font-medium text-base sm:text-lg">Step 7: Diff / Audit</h3>
-					<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Review the audit handoff and inspect git diff.</p>
-				</div>
-				<span class="relay-chip-green text-xs">ready</span>
+	<div class="relay-card">
+		<div class="relay-card-header">
+			<div class="min-w-0">
+				<h3 class="font-medium text-base sm:text-lg">Step 7: Diff / Audit</h3>
+				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Inspect git diff and generate the audit handoff for GPT review.</p>
 			</div>
-			<div class="px-4 pb-4 space-y-3">
+			if previews.HasAuditHandoff {
+				<span class="relay-chip-green text-xs">ready</span>
+			} else if previews.HasGitStatus {
+				<span class="relay-chip-blue text-xs">diff ready</span>
+			} else {
+				<span class="relay-chip-gray text-xs">pending</span>
+			}
+		</div>
+		<div class="px-4 pb-4 space-y-3">
+			<div class="flex flex-wrap items-center gap-2">
+				<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+					hx-post={"/runs/" + Itoa(runID) + "/actions"}
+					hx-target="body" hx-swap="outerHTML"
+					class="inline">
+					<input type="hidden" name="action" value="inspect-diff"/>
+					<button type="submit"
+						class="btn-primary text-xs sm:text-sm">
+						if previews.HasGitStatus {
+							Re-inspect Git Diff
+						} else {
+							Inspect Git Diff
+						}
+					</button>
+				</form>
+				<a href={"/runs/" + Itoa(runID) + "/artifacts"} class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">
+					View all artifacts
+				</a>
+			</div>
+			<p class="text-xs text-gray-500">
+				Collects git status and diff artifacts from the selected repo path. Does not modify the worktree.
+			</p>
+
+			if previews.HasGitStatus || previews.HasGitDiffStat || previews.HasGitDiffPatch {
+				<div class="rounded-xl border border-indigo-900/60 bg-indigo-950/30 p-3 sm:p-4">
+					<div class="text-sm font-medium text-indigo-300">Git diff evidence ready</div>
+					if previews.GitChangedFileCount > 0 {
+						<p class="mt-1 text-xs text-indigo-200">Changed files: { Itoa(previews.GitChangedFileCount) }</p>
+					}
+					if previews.GitDiffSummary != "" {
+						<p class="mt-1 text-xs text-indigo-200">Summary: { previews.GitDiffSummary }</p>
+					}
+					<div class="mt-2 flex flex-wrap items-center gap-2">
+						<a href={"/runs/" + Itoa(runID) + "/artifacts/git_status_text"}
+							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View status</a>
+						<a href={"/runs/" + Itoa(runID) + "/artifacts/git_diff_stat"}
+							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View diff stat</a>
+						<a href={"/runs/" + Itoa(runID) + "/artifacts/git_diff_patch"}
+							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View patch</a>
+						<a href={"/runs/" + Itoa(runID) + "/artifacts/git_diff_patch/download"}
+							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download patch</a>
+					</div>
+				</div>
+
+				if previews.GitStatusPreview != "" {
+					<div class="rounded-xl border border-gray-800 bg-gray-950/60 overflow-hidden min-w-0">
+						<div class="border-b border-gray-800 px-3 py-2">
+							<div class="text-sm font-medium text-gray-200">Git status preview</div>
+						</div>
+						<div class="max-h-40 overflow-auto min-w-0">
+							<pre class="text-xs leading-5 font-mono p-3 text-gray-300 whitespace-pre-wrap break-words">{ previews.GitStatusPreview }</pre>
+						</div>
+					</div>
+				}
+				if previews.GitDiffStatPreview != "" {
+					<div class="rounded-xl border border-gray-800 bg-gray-950/60 overflow-hidden min-w-0">
+						<div class="border-b border-gray-800 px-3 py-2">
+							<div class="text-sm font-medium text-gray-200">Diff stat preview</div>
+						</div>
+						<div class="max-h-40 overflow-auto min-w-0">
+							<pre class="text-xs leading-5 font-mono p-3 text-gray-300 whitespace-pre-wrap break-words">{ previews.GitDiffStatPreview }</pre>
+						</div>
+					</div>
+				}
+			}
+
+			if previews.HasAuditHandoff {
 				<div class="rounded-xl border border-green-900/60 bg-green-950/30 p-3 sm:p-4">
 					<div class="text-sm font-medium text-green-300">Audit handoff ready</div>
 					<p class="mt-1 text-xs text-green-200">
@@ -1240,27 +1312,22 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 						</div>
 					</div>
 				}
-				<div class="text-xs text-gray-500 border-t border-gray-800 pt-3">
-					Git diff inspection is not yet implemented.
-				</div>
-			</div>
+			}
+
+			if !previews.HasAuditHandoff {
+				<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+					hx-post={"/runs/" + Itoa(runID) + "/actions"}
+					hx-target="body" hx-swap="outerHTML"
+					class="inline">
+					<input type="hidden" name="action" value="generate-audit-handoff"/>
+					<button type="submit"
+						class="btn-primary text-xs sm:text-sm">
+						Generate Audit Handoff
+					</button>
+				</form>
+			}
 		</div>
-	} else {
-		<div class="relay-card opacity-70">
-			<div class="relay-card-header">
-				<div class="min-w-0">
-					<h3 class="font-medium text-base sm:text-lg text-gray-500">Step 7: Diff / Audit</h3>
-					<p class="text-xs sm:text-sm text-gray-600 mt-0.5">Later: inspect git diff and generate GPT audit packet.</p>
-					<div class="mt-2 text-xs text-gray-600">
-						Later: Relay will inspect git diff and generate a GPT audit packet. Not implemented yet.
-					</div>
-				</div>
-				<span class="relay-chip-gray text-xs">
-					Future
-				</span>
-			</div>
-		</div>
-	}
+	</div>
 }
 
 templ intakeStatusChip(checks []store.Check) {

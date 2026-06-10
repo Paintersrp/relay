@@ -309,6 +309,49 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	auditHandoffPreview := readArtifactPreview(id, "audit_handoff")
 	hasAuditHandoff := auditHandoffPreview != "" || hasArtifactKind(artifactsList, "audit_handoff")
 
+	// Compute git diff evidence preview
+	gitStatusPreview := readArtifactPreview(id, "git_status_text")
+	hasGitStatus := gitStatusPreview != ""
+	gitDiffStatPreview := readArtifactPreview(id, "git_diff_stat")
+	hasGitDiffStat := gitDiffStatPreview != ""
+	gitDiffPatchPreview := readArtifactPreview(id, "git_diff_patch")
+	hasGitDiffPatch := gitDiffPatchPreview != ""
+	gitDiffSummary := ""
+	gitChangedFileCount := int64(0)
+	if gitDiffStatPreview != "" {
+		lines := strings.Split(gitDiffStatPreview, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, " ") {
+				gitChangedFileCount++
+			}
+		}
+		maxLen := 200
+		if len(gitDiffStatPreview) > maxLen {
+			gitDiffSummary = gitDiffStatPreview[:maxLen] + "\n..."
+		} else {
+			gitDiffSummary = gitDiffStatPreview
+		}
+	}
+	if hasGitStatus {
+		maxLen := 300
+		if len(gitStatusPreview) > maxLen {
+			gitStatusPreview = gitStatusPreview[:maxLen] + "\n..."
+		}
+	}
+	if hasGitDiffStat {
+		maxLen := 200
+		if len(gitDiffStatPreview) > maxLen {
+			gitDiffStatPreview = gitDiffStatPreview[:maxLen] + "\n..."
+		}
+	}
+	if hasGitDiffPatch {
+		maxLen := 500
+		if len(gitDiffPatchPreview) > maxLen {
+			gitDiffPatchPreview = gitDiffPatchPreview[:maxLen] + "\n..."
+		}
+	}
+
 	// Compute next action
 	hasIntakeReview := len(intakeReview.Warnings) > 0 || len(intakeReview.Blockers) > 0 || originalPreview != ""
 	hasAgentResult := hasArtifactKind(artifactsList, "agent_result_raw")
@@ -417,6 +460,14 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		ValidationRun:                   validationRunPreview,
 		HasAuditHandoff:                 hasAuditHandoff,
 		AuditHandoff:                    auditHandoffPreview,
+		HasGitStatus:                    hasGitStatus,
+		GitStatusPreview:                gitStatusPreview,
+		HasGitDiffStat:                  hasGitDiffStat,
+		GitDiffStatPreview:              gitDiffStatPreview,
+		HasGitDiffPatch:                 hasGitDiffPatch,
+		GitDiffPatchPreview:             gitDiffPatchPreview,
+		GitChangedFileCount:             gitChangedFileCount,
+		GitDiffSummary:                  gitDiffSummary,
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {
@@ -466,7 +517,7 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 	case "run-validation":
 		h.runValidation(w, r, id)
 	case "inspect-diff":
-		h.notImplemented(w, r, id, "Git diff inspection is not yet implemented")
+		h.inspectDiff(w, r, id)
 	case "generate-audit-packet":
 		h.notImplemented(w, r, id, "Audit packet generation is not yet implemented")
 	case "generate-audit-handoff":
@@ -1219,6 +1270,13 @@ func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	// Load git diff evidence
+	gitStatusText := readArtifactPreview(runID, "git_status_text")
+	gitDiffStat := readArtifactPreview(runID, "git_diff_stat")
+	gitDiffNumstat := readArtifactPreview(runID, "git_diff_numstat")
+	gitDiffNameStatus := readArtifactPreview(runID, "git_diff_name_status")
+	gitDiffPatch := readArtifactPreview(runID, "git_diff_patch")
+
 	input := pipeline.AuditHandoffInput{
 		RunID:              runID,
 		Title:              run.Title,
@@ -1234,6 +1292,11 @@ func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Reques
 		ValidationStatus:   validationStatus,
 		ValidationRepoPath: validationRepoPath,
 		ValidationCommands: validationCommands,
+		GitStatusText:      gitStatusText,
+		GitDiffStat:        gitDiffStat,
+		GitDiffNumstat:     gitDiffNumstat,
+		GitDiffNameStatus:  gitDiffNameStatus,
+		GitDiffPatch:       gitDiffPatch,
 	}
 
 	content := pipeline.BuildAuditHandoff(input)
@@ -1247,6 +1310,76 @@ func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Reques
 	h.store.CreateArtifact(runID, "audit_handoff", artifactPath, "text/markdown")
 	h.store.CreateEvent(runID, "info", "Audit handoff generated")
 	h.log.Info("audit handoff generated", "run_id", runID)
+
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+}
+
+func (h *RunsHandler) inspectDiff(w http.ResponseWriter, r *http.Request, runID int64) {
+	run, err := h.store.GetRun(runID)
+	if err != nil {
+		h.log.Error("get run for inspect-diff", "error", err)
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	repo, err := h.store.GetRepo(run.RepoID)
+	if err != nil {
+		h.log.Error("get repo for inspect-diff", "error", err)
+		http.Error(w, "repo not found", http.StatusNotFound)
+		return
+	}
+
+	if repo.Path == "" {
+		h.store.CreateEvent(runID, "warn", "No repo path configured for git diff inspection")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+		return
+	}
+
+	info, err := os.Stat(repo.Path)
+	if err != nil || !info.IsDir() {
+		h.store.CreateEvent(runID, "warn", "Repo path does not exist or is not a directory: "+repo.Path)
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+		return
+	}
+
+	evidence, err := pipeline.CollectGitDiffEvidence(r.Context(), repo.Path, 30*time.Second)
+	if err != nil {
+		h.store.CreateEvent(runID, "warn", "Git diff inspection failed: "+err.Error())
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+		return
+	}
+
+	// Clear existing diff artifacts to avoid stale duplicates
+	for _, kind := range []string{"git_status_text", "git_diff_stat", "git_diff_numstat", "git_diff_name_status", "git_diff_patch"} {
+		h.store.DeleteArtifactsByRunKind(runID, kind)
+	}
+
+	// Write artifacts
+	writeGitArtifact := func(kind, content string, mimeType string) {
+		if content == "" {
+			return
+		}
+		path, err := artifacts.Write(runID, kind, pipeline.ArtifactFilename(kind), []byte(content))
+		if err != nil {
+			h.log.Error("write git diff artifact", "kind", kind, "error", err)
+			return
+		}
+		h.store.CreateArtifact(runID, kind, path, mimeType)
+	}
+
+	writeGitArtifact("git_status_text", evidence.StatusText, "text/plain")
+	writeGitArtifact("git_diff_stat", evidence.DiffStat, "text/plain")
+	writeGitArtifact("git_diff_numstat", evidence.DiffNumstat, "text/plain")
+	writeGitArtifact("git_diff_name_status", evidence.NameStatus, "text/plain")
+	writeGitArtifact("git_diff_patch", evidence.DiffPatch, "text/plain")
+
+	if evidence.HasChanges {
+		h.store.CreateEvent(runID, "info", "Git diff inspection completed: changes detected")
+	} else {
+		h.store.CreateEvent(runID, "info", "Git diff inspection completed: no changes detected")
+	}
+
+	h.log.Info("git diff inspection completed", "run_id", runID, "has_changes", evidence.HasChanges)
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
 }
