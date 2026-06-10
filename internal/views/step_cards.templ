@@ -47,7 +47,7 @@ templ StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 	case "handoff":
 		@OpenCodeGoHandoffStepPanel(run, artifacts, checks, previews)
 	case "validation":
-		@RelayValidationStepPanel(run, artifacts, checks)
+		@RelayValidationStepPanel(run, artifacts, checks, previews)
 	case "audit":
 		@DiffAuditStepPanel()
 	default:
@@ -92,18 +92,42 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 		</div>
 
 		if intakeReview != nil {
+			if len(intakeReview.Blockers) > 0 {
+				<div class="rounded-lg border border-red-900/60 bg-red-950/30 p-3 mb-3">
+					<div class="text-sm font-medium text-red-300">Blocking issues</div>
+					<ul class="mt-2 list-disc pl-5 text-xs text-red-200 space-y-1">
+						for _, blocker := range intakeReview.Blockers {
+							<li>{ blocker }</li>
+						}
+					</ul>
+					<p class="mt-2 text-xs text-red-300">Resolve these before generating the Agent Prompt.</p>
+				</div>
+			}
+			if len(intakeReview.Warnings) > 0 {
+				<div class="rounded-lg border border-yellow-900/60 bg-yellow-950/30 p-3 mb-3">
+					<div class="text-sm font-medium text-yellow-300">Warnings</div>
+					<ul class="mt-2 list-disc pl-5 text-xs text-yellow-100 space-y-1">
+						for _, warning := range intakeReview.Warnings {
+							<li>{ warning }</li>
+						}
+					</ul>
+					<p class="mt-2 text-xs text-yellow-300">You can continue to Agent Prompt/OpenCode, but Relay Validation will require validation commands later.</p>
+				</div>
+			}
 			@IntakeReviewPanel(run, repo, intakeReview)
 		}
 
-		if hasCheckKind(checks, "validation") {
-			<div class="mt-2 text-xs text-gray-500">
-				if hasCheckStatus(checks, "validation", "block") || hasCheckStatus(checks, "validation", "fail") {
-					Resolve Intake Review blockers before generating Agent Prompt.
-				} else if hasCheckStatus(checks, "validation", "warn") {
-					Intake Review has warnings. Agent Prompt can still be generated.
-				} else if hasCheckStatus(checks, "validation", "pass") {
-					Intake Review passed. Proceed to Agent Prompt step.
-				}
+		if len(intakeReview.Blockers) > 0 {
+			<div class="mt-2 text-xs text-red-400">
+				Resolve the blocking issues above before generating the Agent Prompt.
+			</div>
+		} else if len(intakeReview.Warnings) > 0 {
+			<div class="mt-2 text-xs text-yellow-300">
+				Warnings do not block Agent Prompt generation. You can continue, but Relay Validation may need setup later.
+			</div>
+		} else if hasCheckKind(checks, "validation") && hasCheckStatus(checks, "validation", "pass") {
+			<div class="mt-2 text-xs text-green-400">
+				Intake Review passed. Proceed to Agent Prompt step.
 			</div>
 		}
 
@@ -231,7 +255,7 @@ templ AgentPacketStepPanel(run *store.Run, artifacts []store.Artifact, previews 
 
 		if artifactExists(artifacts, "opencode_handoff_packet") {
 			<div class="mt-2 text-xs text-gray-500">
-				Relay has prepared metadata for external agent tooling. Review the packet before sending it to OpenCode Go. Relay does not execute OpenCode yet.
+				Relay has prepared metadata for external agent tooling. Review the packet before sending it to OpenCode Go. Relay does not auto-run OpenCode.
 			</div>
 			<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
 				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet"}
@@ -243,7 +267,7 @@ templ AgentPacketStepPanel(run *store.Run, artifacts []store.Artifact, previews 
 				<div class="mt-3 rounded-lg border border-gray-800 bg-gray-950/60 overflow-hidden">
 					<div class="border-b border-gray-800 px-3 py-2">
 						<div class="text-sm font-medium text-gray-200">Packet preview</div>
-						<div class="text-xs text-gray-500">Metadata only. Relay does not execute this packet.</div>
+						<div class="text-xs text-gray-500">Metadata only. Relay does not auto-execute this packet; use Step 4 to run OpenCode.</div>
 					</div>
 					<pre class="max-h-80 overflow-auto text-xs leading-5 font-mono p-3 text-gray-300 whitespace-pre-wrap">{ previews.OpenCodePacket }</pre>
 				</div>
@@ -553,7 +577,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 	</div>
 }
 
-templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check) {
+templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
 	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
 		<div class="flex items-center justify-between mb-3">
 			<div>
@@ -562,7 +586,7 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 			</div>
 			<div class="flex items-center gap-3">
 				@validationStatusChip(artifactExists(artifacts, "validation_run_json"), checks, artifactExists(artifacts, "agent_result_raw"))
-				if artifactExists(artifacts, "agent_result_raw") {
+				if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 						hx-target="body" hx-swap="outerHTML"
@@ -573,6 +597,11 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 							Run Validation Commands
 						</button>
 					</form>
+				} else if artifactExists(artifacts, "agent_result_raw") && !previews.HasValidationCommands {
+					<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed"
+						title="No validation commands available">
+						Run Validation (no commands)
+					</span>
 				} else {
 					<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed"
 						title="Submit an agent result first">
@@ -581,6 +610,16 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 				}
 			</div>
 		</div>
+
+		if !previews.HasValidationCommands && artifactExists(artifacts, "agent_result_raw") {
+			<div class="mt-2 rounded-lg border border-yellow-900/60 bg-yellow-950/30 p-3">
+				<div class="text-sm font-medium text-yellow-300">No validation commands</div>
+				<p class="mt-1 text-xs text-yellow-100">
+					No validation commands are available. Add a validation section to the handoff or configure default validation commands for this repo in repository settings.
+				</p>
+				<a href="/settings/repos" class="mt-2 inline-block text-xs text-indigo-400 hover:text-indigo-300">Repository settings</a>
+			</div>
+		}
 
 		if artifactExists(artifacts, "validation_run_json") {
 			<div class="mt-2">

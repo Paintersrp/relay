@@ -229,6 +229,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 		metadata := pipeline.ParseHandoffMetadata(handoffText, repoDefaults)
 		intakeReview = pipeline.BuildIntakeReview(metadata, repoPath)
+		previews.HasValidationCommands = len(metadata.ValidationCommands) > 0
 	}
 
 	// Determine active step — default to intake, override with valid ?step=
@@ -360,7 +361,7 @@ func (h *RunsHandler) preparePrompt(w http.ResponseWriter, r *http.Request, runI
 
 	if len(review.Blockers) > 0 {
 		h.store.CreateEvent(runID, "warn",
-			"Cannot generate Agent Prompt while Intake Review has blockers. Fix repo selection or handoff scope first.")
+			"Cannot generate Agent Prompt while Intake Review has blockers: "+strings.Join(review.Blockers, "; "))
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
 		return
 	}

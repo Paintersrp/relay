@@ -88,6 +88,9 @@ func TestBuildIntakeReviewAllFilesExist(t *testing.T) {
 			{Path: "foo.go", Source: "handoff"},
 			{Path: "bar.go", Source: "handoff"},
 		},
+		ValidationCommands: []ValidationCommand{
+			{Label: "go test ./...", Command: "go test ./...", Source: "handoff"},
+		},
 	}
 	review := BuildIntakeReview(meta, dir)
 	if len(review.Blockers) > 0 {

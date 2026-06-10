@@ -315,7 +315,7 @@ Blocker/error only if BLOCKED: ...
 
 Relay stores the raw pasted result, records parsed metadata as an agent result check, and updates the run status to `agent_done`, `agent_blocked`, or `agent_result_needs_review`.
 
-Relay still does not execute OpenCode or other agents in this phase.
+Relay can execute OpenCode only through the explicit Step 4 OpenCode adapter. Relay does not execute arbitrary agents, does not auto-run OpenCode, and does not run validation automatically after OpenCode exits.
 
 ## Validation command runner
 
@@ -323,7 +323,7 @@ Relay can run validation commands for a run from the selected local repository p
 
 Commands are extracted from the original handoff's Tests / validation section. If no handoff commands are found, Relay falls back to the selected repo's default validation commands.
 
-Validation command execution is user-triggered. Relay captures stdout, stderr, exit code, duration, and timeout state as run artifacts/checks. Relay does not execute OpenCode or inspect diffs in this phase.
+Validation command execution is user-triggered. Relay captures stdout, stderr, exit code, duration, and timeout state as run artifacts/checks. Relay can execute OpenCode only through the explicit Step 4 OpenCode adapter. Relay does not run validation automatically after OpenCode exits and does not inspect diffs.
 
 ## Local repository discovery
 

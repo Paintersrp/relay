@@ -1,18 +1,1 @@
-{
-  "run_id": 1,
-  "repo_path": "C:\\Users\\trist\\AppData\\Local\\Temp\\TestPrepareRunForReviewWithValidHandoff889429739\\002",
-  "branch_name": "main",
-  "selected_model": "test-model",
-  "recommended_model": "test-model",
-  "prompt_artifact_kind": "agent_prompt",
-  "prompt_artifact_path": "data\\artifacts\\1\\agent_prompt.txt",
-  "artifact_dir": "data\\artifacts\\1",
-  "execution": {
-    "status": "configured"
-  },
-  "artifacts": {
-    "dir": "data\\artifacts\\1",
-    "required": null,
-    "optional": null
-  }
-}
+{"run_id":1,"status":"configured"}

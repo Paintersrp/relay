@@ -76,6 +76,15 @@ func ValidateHandoff(text string, recommendedModel string) *ValidationReport {
 			found = hasOutputSection(lines)
 		case "validation":
 			found = hasValidationSection(lines)
+			if found {
+				summary := "Validation / Tests section found"
+				check(key+"_section", "pass", summary)
+			} else {
+				summary := "Validation / Tests section missing"
+				check(key+"_section", "warn", summary)
+				allSectionsPresent = false
+			}
+			continue
 		default:
 			for _, line := range lines {
 				if strings.HasPrefix(strings.TrimSpace(line), heading) {

@@ -80,5 +80,9 @@ func BuildIntakeReview(metadata HandoffMetadata, repoPath string) IntakeReview {
 		review.Warnings = append(review.Warnings, "Some scoped files were not found in the selected repo.")
 	}
 
+	if len(metadata.ValidationCommands) == 0 {
+		review.Warnings = append(review.Warnings, "No validation commands found. Agent execution can continue, but Relay Validation will be unavailable until validation commands are added to the handoff or repo defaults.")
+	}
+
 	return review
 }
