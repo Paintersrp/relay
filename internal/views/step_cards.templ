@@ -230,21 +230,19 @@ templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []
 								<div class="text-xs text-gray-500">Shows changed sections only, with nearby context.</div>
 							</div>
 						</div>
-						<div class="max-h-96 overflow-auto min-w-0">
-							<pre class="text-xs leading-5 font-mono p-3">
-								for _, line := range previews.AgentPromptDiff.Lines {
-									switch line.Kind {
-									case "add":
-										<div class="text-green-300 whitespace-pre-wrap break-words">+ { line.Text }</div>
-									case "remove":
-										<div class="text-red-300 whitespace-pre-wrap break-words">- { line.Text }</div>
-									case "skip":
-										<div class="text-gray-600 italic whitespace-pre-wrap break-words">{ line.Text }</div>
-									default:
-										<div class="text-gray-500 whitespace-pre-wrap break-words">  { line.Text }</div>
-									}
+						<div class="max-h-96 overflow-auto min-w-0 text-xs leading-5 font-mono p-3">
+							for _, line := range previews.AgentPromptDiff.Lines {
+								switch line.Kind {
+								case "add":
+									<div class="text-green-300 whitespace-pre-wrap break-words">+ { line.Text }</div>
+								case "remove":
+									<div class="text-red-300 whitespace-pre-wrap break-words">- { line.Text }</div>
+								case "skip":
+									<div class="text-gray-600 italic whitespace-pre-wrap break-words">{ line.Text }</div>
+								default:
+									<div class="text-gray-500 whitespace-pre-wrap break-words">  { line.Text }</div>
 								}
-							</pre>
+							}
 						</div>
 						if previews.AgentPromptDiff.Truncated {
 							<div class="border-t border-gray-800 px-3 py-2 text-xs text-yellow-300">

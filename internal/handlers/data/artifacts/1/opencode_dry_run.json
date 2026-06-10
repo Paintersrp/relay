@@ -5,7 +5,7 @@
     "--format",
     "json",
     "--dir",
-    "C:\\Users\\trist\\AppData\\Local\\Temp\\TestDryRunOpenCodeGoDoesNotCallCheckOpenCodeCLI2005072039\\002",
+    "C:\\Users\\trist\\AppData\\Local\\Temp\\TestDryRunOpenCodeGoDoesNotCallCheckOpenCodeCLI4059051460\\002",
     "--agent",
     "build",
     "--model",
@@ -13,12 +13,12 @@
     "--thinking",
     "max"
   ],
-  "work_dir": "C:\\Users\\trist\\AppData\\Local\\Temp\\TestDryRunOpenCodeGoDoesNotCallCheckOpenCodeCLI2005072039\\002",
+  "work_dir": "C:\\Users\\trist\\AppData\\Local\\Temp\\TestDryRunOpenCodeGoDoesNotCallCheckOpenCodeCLI4059051460\\002",
   "stdin_source": "data\\artifacts\\1\\agent_prompt.txt",
   "stdin_bytes": 24,
   "agent_prompt_path": "data\\artifacts\\1\\agent_prompt.txt",
   "packet_path": "data\\artifacts\\1\\opencode_handoff_packet.json",
   "model": "anthropic/claude-sonnet-4-5",
   "agent": "build",
-  "preview": "opencode run --format json --dir C:\\Users\\trist\\AppData\\Local\\Temp\\TestDryRunOpenCodeGoDoesNotCallCheckOpenCodeCLI2005072039\\002 --agent build --model anthropic/claude-sonnet-4-5 --thinking max \u003c data\\artifacts\\1\\agent_prompt.txt"
+  "preview": "opencode run --format json --dir C:\\Users\\trist\\AppData\\Local\\Temp\\TestDryRunOpenCodeGoDoesNotCallCheckOpenCodeCLI4059051460\\002 --agent build --model anthropic/claude-sonnet-4-5 --thinking max \u003c data\\artifacts\\1\\agent_prompt.txt"
 }
