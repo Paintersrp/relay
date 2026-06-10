@@ -609,10 +609,6 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 						<a href={"/runs/" + Itoa(run.ID) + "?step=run"}
 							class="inline-block mt-2 text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center">Monitor Agent Run</a>
 					</div>
-					<span class="relay-chip-gray text-xs cursor-not-allowed"
-						title="OpenCode execution is already running.">
-						Start OpenCode Go (already running)
-					</span>
 				} else if previews.HasOpenCodeExecution && !previews.HasOpenCodeRunning {
 					<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4 mb-3">
 						<div class="text-sm font-medium text-gray-200">Latest OpenCode execution is complete.</div>
@@ -621,7 +617,12 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 					</div>
 				}
 
-				if previews.OpenCodeAdapterError == "" && previews.HandoffPreflightStatus != "blocked" && previews.OpenCodeCommandPreview != "" {
+				if previews.HasOpenCodeRunning {
+					<span class="relay-chip-gray text-xs cursor-not-allowed"
+						title="OpenCode execution is already running.">
+						Start OpenCode Go (already running)
+					</span>
+				} else if previews.OpenCodeAdapterError == "" && previews.HandoffPreflightStatus != "blocked" && previews.OpenCodeCommandPreview != "" {
 					<div class="text-xs sm:text-sm text-yellow-400 mb-3">
 						This starts a local OpenCode command in the selected repo path. Relay will capture stdout/stderr as artifacts.
 					</div>
