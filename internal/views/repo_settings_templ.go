@@ -53,12 +53,12 @@ func RepoSettings(roots []store.RepoRoot, reposList []store.Repo, scanSummary *r
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-3xl\"><h1 class=\"text-2xl font-bold mb-2\">Repository Settings</h1><p class=\"text-gray-500 text-sm mb-8\">Configure local folders Relay scans for Git repositories.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"max-w-3xl\"><h1 class=\"text-xl sm:text-2xl font-bold mb-2\">Repository Settings</h1><p class=\"text-gray-500 text-sm mb-6 sm:mb-8\">Configure local folders Relay scans for Git repositories.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if scanSummary != nil {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"mb-6 p-4 rounded bg-gray-900 border border-gray-700\"><h2 class=\"text-sm font-medium text-gray-300 mb-2\">Scan Summary</h2><div class=\"text-xs text-gray-400 space-y-1\"><div>Roots scanned: ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"mb-6 p-4 rounded-xl bg-gray-900 border border-gray-700\"><h2 class=\"text-sm font-medium text-gray-300 mb-2\">Scan Summary</h2><div class=\"text-xs sm:text-sm text-gray-400 space-y-1\"><div>Roots scanned: ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -131,7 +131,7 @@ func RepoSettings(roots []store.RepoRoot, reposList []store.Repo, scanSummary *r
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div class=\"mb-8\"><h2 class=\"text-lg font-semibold mb-3\">Scan Roots</h2><form action=\"/settings/repos/roots\" method=\"POST\" class=\"flex gap-2 mb-4\"><input type=\"text\" name=\"path\" placeholder=\"D:/Code or C:/Users/you/source/repos\" class=\"flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500\"> <button type=\"submit\" class=\"inline-flex items-center px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors\">Add Root</button></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<div class=\"mb-8\"><h2 class=\"text-lg font-semibold mb-3\">Scan Roots</h2><form action=\"/settings/repos/roots\" method=\"POST\" class=\"flex flex-col sm:flex-row gap-2 mb-4\"><input type=\"text\" name=\"path\" placeholder=\"D:/Code or C:/Users/you/source/repos\" class=\"flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 min-h-[40px] min-w-0\"> <button type=\"submit\" class=\"btn-primary text-sm whitespace-nowrap\">Add Root</button></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -141,19 +141,19 @@ func RepoSettings(roots []store.RepoRoot, reposList []store.Repo, scanSummary *r
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"text-left text-gray-500 border-b border-gray-800\"><th class=\"py-2 pr-4\">Path</th><th class=\"py-2 px-4\">Enabled</th><th class=\"py-2 px-4\">Last Scanned</th><th class=\"py-2 px-4\"></th></tr></thead> <tbody>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0\"><table class=\"min-w-full text-sm\"><thead><tr class=\"text-left text-gray-500 border-b border-gray-800\"><th class=\"py-2 pr-4\">Path</th><th class=\"py-2 px-4\">Enabled</th><th class=\"py-2 px-4 hidden sm:table-cell\">Last Scanned</th><th class=\"py-2 px-4\"></th></tr></thead> <tbody>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, root := range roots {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<tr class=\"border-b border-gray-800/50\"><td class=\"py-2 pr-4 font-mono text-xs\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<tr class=\"border-b border-gray-800/50\"><td class=\"py-2 pr-4 font-mono text-xs break-all\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(root.Path)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/repo_settings.templ`, Line: 66, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/repo_settings.templ`, Line: 66, Col: 71}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
@@ -177,17 +177,17 @@ func RepoSettings(roots []store.RepoRoot, reposList []store.Repo, scanSummary *r
 						return templ_7745c5c3_Err
 					}
 					if root.Enabled == 1 {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<input type=\"hidden\" name=\"enabled\" value=\"0\"> <button type=\"submit\" class=\"text-xs text-green-400 hover:text-green-300\">enabled</button>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<input type=\"hidden\" name=\"enabled\" value=\"0\"> <button type=\"submit\" class=\"text-xs text-green-400 hover:text-green-300 min-h-[32px] inline-flex items-center\">enabled</button>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					} else {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<input type=\"hidden\" name=\"enabled\" value=\"1\"> <button type=\"submit\" class=\"text-xs text-gray-600 hover:text-gray-400\">disabled</button>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<input type=\"hidden\" name=\"enabled\" value=\"1\"> <button type=\"submit\" class=\"text-xs text-gray-600 hover:text-gray-400 min-h-[32px] inline-flex items-center\">disabled</button>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</form></td><td class=\"py-2 px-4 text-xs text-gray-500\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</form></td><td class=\"py-2 px-4 text-xs text-gray-500 hidden sm:table-cell\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -220,7 +220,7 @@ func RepoSettings(roots []store.RepoRoot, reposList []store.Repo, scanSummary *r
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" method=\"POST\" class=\"inline\" x-data=\"{ confirm: false }\" @submit.prevent=\"if (!confirm) { confirm = true; return; }\"><button type=\"submit\" x-text=\"confirm ? 'Confirm delete?' : 'Delete'\" class=\"text-xs text-red-400 hover:text-red-300\"></button></form></td></tr>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" method=\"POST\" class=\"inline\" x-data=\"{ confirm: false }\" @submit.prevent=\"if (!confirm) { confirm = true; return; }\"><button type=\"submit\" x-text=\"confirm ? 'Confirm delete?' : 'Delete'\" class=\"text-xs text-red-400 hover:text-red-300 min-h-[32px] inline-flex items-center\"></button></form></td></tr>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -230,7 +230,7 @@ func RepoSettings(roots []store.RepoRoot, reposList []store.Repo, scanSummary *r
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<form action=\"/settings/repos/scan\" method=\"POST\" class=\"mt-4\"><button type=\"submit\" class=\"inline-flex items-center px-4 py-2 rounded border border-gray-700 hover:border-gray-600 text-sm transition-colors\">Scan Now</button></form></div><div><h2 class=\"text-lg font-semibold mb-3\">Discovered Repositories</h2>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<form action=\"/settings/repos/scan\" method=\"POST\" class=\"mt-4\"><button type=\"submit\" class=\"btn-secondary text-sm\">Scan Now</button></form></div><div><h2 class=\"text-lg font-semibold mb-3\">Discovered Repositories</h2>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -240,7 +240,7 @@ func RepoSettings(roots []store.RepoRoot, reposList []store.Repo, scanSummary *r
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"text-left text-gray-500 border-b border-gray-800\"><th class=\"py-2 pr-4\">Name</th><th class=\"py-2 px-4\">Path</th><th class=\"py-2 px-4\">Source</th><th class=\"py-2 px-4\">Last Seen</th></tr></thead> <tbody>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<div class=\"overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0\"><table class=\"min-w-full text-sm\"><thead><tr class=\"text-left text-gray-500 border-b border-gray-800\"><th class=\"py-2 pr-4\">Name</th><th class=\"py-2 px-4 hidden sm:table-cell\">Path</th><th class=\"py-2 px-4\">Source</th><th class=\"py-2 px-4 hidden sm:table-cell\">Last Seen</th></tr></thead> <tbody>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -258,14 +258,14 @@ func RepoSettings(roots []store.RepoRoot, reposList []store.Repo, scanSummary *r
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</td><td class=\"py-2 px-4 font-mono text-xs\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</td><td class=\"py-2 px-4 font-mono text-xs break-all hidden sm:table-cell\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var12 string
 					templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(repo.Path)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/repo_settings.templ`, Line: 130, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/repo_settings.templ`, Line: 130, Col: 92}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 					if templ_7745c5c3_Err != nil {
@@ -276,7 +276,7 @@ func RepoSettings(roots []store.RepoRoot, reposList []store.Repo, scanSummary *r
 						return templ_7745c5c3_Err
 					}
 					if repo.Source == "discovered" {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<span class=\"text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-400\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<span class=\"text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -294,7 +294,7 @@ func RepoSettings(roots []store.RepoRoot, reposList []store.Repo, scanSummary *r
 							return templ_7745c5c3_Err
 						}
 					} else {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<span class=\"text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-500\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<span class=\"text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-500\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -312,7 +312,7 @@ func RepoSettings(roots []store.RepoRoot, reposList []store.Repo, scanSummary *r
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</td><td class=\"py-2 px-4 text-xs text-gray-500\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</td><td class=\"py-2 px-4 text-xs text-gray-500 hidden sm:table-cell\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}

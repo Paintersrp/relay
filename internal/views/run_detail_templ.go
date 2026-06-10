@@ -46,20 +46,20 @@ func RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"mb-8\"><div class=\"flex items-start justify-between\"><div><h1 class=\"text-2xl font-bold mb-1\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"mb-6 sm:mb-8\"><div class=\"flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between\"><div class=\"min-w-0\"><h1 class=\"text-xl sm:text-2xl font-bold mb-1 break-words\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(run.Title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_detail.templ`, Line: 13, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_detail.templ`, Line: 13, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h1><div class=\"flex items-center gap-3 text-sm text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h1><div class=\"flex flex-wrap items-center gap-2 sm:gap-3 text-sm text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -99,14 +99,14 @@ func RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 				return templ_7745c5c3_Err
 			}
 			if repo != nil {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<span class=\"truncate\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(repo.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_detail.templ`, Line: 17, Col: 24}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_detail.templ`, Line: 17, Col: 41}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -118,14 +118,14 @@ func RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 				}
 			}
 			if run.SelectedModel != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<span class=\"truncate\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(run.SelectedModel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_detail.templ`, Line: 20, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_detail.templ`, Line: 20, Col: 49}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {
@@ -136,7 +136,7 @@ func RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div><div class=\"flex gap-2\"><a href=\"/\" class=\"text-sm text-gray-500 hover:text-gray-300\">&larr; Dashboard</a></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</div></div><div class=\"flex flex-wrap gap-2 shrink-0\"><a href=\"/\" class=\"text-sm text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center\">&larr; Dashboard</a></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -144,7 +144,7 @@ func RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "  <details class=\"border border-gray-800 rounded-lg bg-gray-900/50 mt-8\"><summary class=\"px-4 py-3 cursor-pointer text-sm text-gray-400 hover:text-gray-300 list-none flex items-center justify-between\"><span>Artifact previews</span> <span class=\"text-xs text-gray-600\">Original Handoff &middot; Validation Report &middot; Agent Prompt</span></summary><div class=\"border-t border-gray-800\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, " <details class=\"relay-card mt-6 sm:mt-8\"><summary class=\"px-4 py-3 cursor-pointer text-sm text-gray-400 hover:text-gray-300 list-none flex items-center justify-between\"><span>Artifact previews</span> <span class=\"text-xs text-gray-600 hidden sm:inline\">Original Handoff &middot; Validation Report &middot; Agent Prompt</span></summary><div class=\"border-t border-gray-800\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -152,7 +152,7 @@ func RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></details><div class=\"grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></details><div class=\"grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mt-6 sm:mt-8\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

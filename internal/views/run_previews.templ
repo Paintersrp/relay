@@ -83,7 +83,7 @@ type RunPreviews struct {
 }
 
 templ RunPreviewPanels(previews RunPreviews) {
-	<div class="grid grid-cols-1 gap-4 mt-8">
+	<div class="grid grid-cols-1 gap-4 p-4">
 		@previewPanel("Original Handoff", "original-handoff-preview", previews.OriginalHandoff, "No original handoff artifact found yet.")
 		@previewPanel("Validation Report", "validation-report-preview", previews.ValidationJSON, "No validation report generated yet.")
 		@previewPanel("Agent Prompt", "agent-prompt-preview", previews.AgentPrompt, "No agent prompt generated yet.")
@@ -91,13 +91,13 @@ templ RunPreviewPanels(previews RunPreviews) {
 }
 
 templ previewPanel(title string, id string, content string, emptyText string) {
-	<section class="border border-gray-800 rounded-lg bg-gray-900/50">
+	<section class="relay-card min-w-0">
 		<div class="flex items-center justify-between border-b border-gray-800 px-4 py-3">
-			<h3 class="font-medium">{ title }</h3>
+			<h3 class="font-medium text-sm sm:text-base">{ title }</h3>
 			if content != "" {
 				<button type="button"
 					data-copy-target={ id }
-					class="text-xs text-indigo-400 hover:text-indigo-300">
+					class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">
 					Copy
 				</button>
 			}
@@ -105,7 +105,9 @@ templ previewPanel(title string, id string, content string, emptyText string) {
 		if content == "" {
 			<p class="p-4 text-xs text-gray-600">{ emptyText }</p>
 		} else {
-			<pre id={ id } class="p-4 text-xs font-mono text-gray-300 overflow-x-auto max-h-80 overflow-y-auto whitespace-pre-wrap">{ content }</pre>
+			<div class="p-4 max-h-80 overflow-y-auto overflow-x-auto min-w-0">
+				<pre id={ id } class="text-xs font-mono text-gray-300 whitespace-pre-wrap break-words">{ content }</pre>
+			</div>
 		}
 	</section>
 }

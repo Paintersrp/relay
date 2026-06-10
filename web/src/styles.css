@@ -8,12 +8,42 @@
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors;
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors min-h-[36px];
   }
   .btn-secondary {
-    @apply inline-flex items-center px-3 py-1.5 rounded border border-gray-700 hover:border-gray-600 text-sm transition-colors;
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg border border-gray-700 hover:border-gray-600 text-sm transition-colors min-h-[36px];
   }
   .btn-danger {
-    @apply inline-flex items-center px-3 py-1.5 rounded border border-red-700 text-red-400 hover:bg-red-950 text-sm font-medium transition-colors;
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg border border-red-700 text-red-400 hover:bg-red-950 text-sm font-medium transition-colors min-h-[36px];
+  }
+  .relay-card {
+    @apply rounded-xl border border-gray-800 bg-gray-900/50;
+  }
+  .relay-card-header {
+    @apply flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3;
+  }
+  .relay-chip {
+    @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium;
+  }
+  .relay-chip-green {
+    @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-green-900/50 text-green-400 border border-green-800;
+  }
+  .relay-chip-red {
+    @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-red-900/50 text-red-400 border border-red-800;
+  }
+  .relay-chip-yellow {
+    @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-yellow-900/50 text-yellow-400 border border-yellow-800;
+  }
+  .relay-chip-blue {
+    @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-blue-900/50 text-blue-400 border border-blue-800;
+  }
+  .relay-chip-gray {
+    @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-gray-800 text-gray-400 border border-gray-700;
+  }
+  .relay-scroll-panel {
+    @apply min-w-0 overflow-x-auto whitespace-pre-wrap break-words;
+  }
+  .relay-action-row {
+    @apply flex flex-wrap gap-2;
   }
 }

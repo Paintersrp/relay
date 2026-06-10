@@ -13,8 +13,8 @@ type RepoOption struct {
 templ NewHandoff(repoOptions []RepoOption) {
 	@Layout("New Handoff") {
 		<div class="max-w-2xl">
-			<h1 class="text-2xl font-bold mb-2">New Handoff</h1>
-			<p class="text-gray-500 text-sm mb-8">Paste or upload a surgical implementation handoff to start a new run.</p>
+			<h1 class="text-xl sm:text-2xl font-bold mb-2">New Handoff</h1>
+			<p class="text-gray-500 text-sm mb-6 sm:mb-8">Paste or upload a surgical implementation handoff to start a new run.</p>
 
 			<form action="/handoffs" method="POST" enctype="multipart/form-data" class="space-y-6">
 				<div x-data="{ repoMode: '' }" class="space-y-4">
@@ -26,7 +26,7 @@ templ NewHandoff(repoOptions []RepoOption) {
 							</p>
 						}
 						<select name="repo_id" x-model="repoMode"
-							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+							class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 min-h-[40px]">
 							<option value="">Manual repository path</option>
 							for _, ro := range repoOptions {
 								<option value={ Itoa(ro.Repo.ID) }>
@@ -35,23 +35,23 @@ templ NewHandoff(repoOptions []RepoOption) {
 							}
 						</select>
 						<div class="mt-2">
-							<a href="/settings/repos" class="text-xs text-indigo-400 hover:text-indigo-300">
+							<a href="/settings/repos" class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">
 								Manage repository scan roots
 							</a>
 						</div>
 					</div>
 
-					<div x-show="repoMode === ''" class="grid grid-cols-2 gap-4">
+					<div x-show="repoMode === ''" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 						<div>
 							<label class="block text-sm font-medium text-gray-400 mb-1">Repo Name</label>
 							<input type="text" name="repo_name"
-								class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+								class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 min-h-[40px]"
 								placeholder="relay"/>
 						</div>
 						<div>
 							<label class="block text-sm font-medium text-gray-400 mb-1">Repo Path</label>
 							<input type="text" name="repo_path"
-								class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+								class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 min-h-[40px]"
 								placeholder="D:/Code/relay"/>
 						</div>
 					</div>
@@ -61,7 +61,7 @@ templ NewHandoff(repoOptions []RepoOption) {
 							<div x-show={ "repoMode === '" + Itoa(ro.Repo.ID) + "'" }>
 								<label class="block text-sm font-medium text-gray-400 mb-1">Branch / Worktree</label>
 								<select name="branch_name" :disabled={ "repoMode !== '" + Itoa(ro.Repo.ID) + "'" }
-									class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+									class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 min-h-[40px]">
 									for _, b := range ro.Branches {
 										if b.IsCurrent {
 											<option value={ b.Name } selected>{ b.Name } (current)</option>
@@ -75,7 +75,7 @@ templ NewHandoff(repoOptions []RepoOption) {
 							<div x-show={ "repoMode === '" + Itoa(ro.Repo.ID) + "'" }>
 								<label class="block text-sm font-medium text-gray-400 mb-1">Branch / Worktree</label>
 								<input type="text" name="branch_name" :disabled={ "repoMode !== '" + Itoa(ro.Repo.ID) + "'" }
-									class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+									class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 min-h-[40px]"
 									placeholder="branch-name"/>
 								<p class="text-xs text-gray-500 mt-1">No local branches discovered. Enter a branch/worktree name manually.</p>
 							</div>
@@ -85,7 +85,7 @@ templ NewHandoff(repoOptions []RepoOption) {
 					<div x-show="repoMode === ''">
 						<label class="block text-sm font-medium text-gray-400 mb-1">Branch / Worktree</label>
 						<input type="text" name="branch_name" :disabled="repoMode !== ''"
-							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+							class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 min-h-[40px]"
 							placeholder="branch-name"/>
 					</div>
 				</div>
@@ -103,12 +103,12 @@ templ NewHandoff(repoOptions []RepoOption) {
 								fileName = files[0].name;
 							}
 						"
-						class="rounded-xl border border-dashed border-gray-700 bg-gray-900/40 p-8 text-center">
+						class="rounded-xl border border-dashed border-gray-700 bg-gray-900/40 p-6 sm:p-8 text-center">
 						<input id="handoff-file" type="file" name="handoff_file"
 							accept=".txt,.md,text/plain,text/markdown"
 							class="sr-only"
 							@change="fileName = $event.target.files?.[0]?.name || ''"/>
-						<label for="handoff-file" class="cursor-pointer block">
+						<label for="handoff-file" class="cursor-pointer block min-h-[80px] flex flex-col items-center justify-center">
 							<div class="text-2xl text-gray-500 mb-2">↥</div>
 							<div class="text-sm text-gray-200">Upload handoff file</div>
 							<div class="text-xs text-gray-500 mt-1">Drop or choose a .txt / .md file.</div>
@@ -119,20 +119,20 @@ templ NewHandoff(repoOptions []RepoOption) {
 					<div x-show="sourceMode === 'text'" class="space-y-1">
 						<label class="block text-sm font-medium text-gray-400">Text input</label>
 						<textarea name="handoff_text" rows="18"
-							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 resize-y"
+							class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-indigo-500 resize-y min-w-0"
 							placeholder="Paste the full implementation handoff here..."></textarea>
 					</div>
 
 					<div class="grid grid-cols-2 gap-2">
 						<button type="button"
 							@click="sourceMode = 'upload'"
-							class="rounded-lg border border-gray-700 bg-gray-900/60 p-3 text-sm hover:border-gray-500"
+							class="rounded-lg border border-gray-700 bg-gray-900/60 p-3 text-sm hover:border-gray-500 min-h-[44px] transition-colors"
 							:class="sourceMode === 'upload' ? 'border-indigo-500 text-white' : 'text-gray-400'">
 							Upload
 						</button>
 						<button type="button"
 							@click="sourceMode = 'text'"
-							class="rounded-lg border border-gray-700 bg-gray-900/60 p-3 text-sm hover:border-gray-500"
+							class="rounded-lg border border-gray-700 bg-gray-900/60 p-3 text-sm hover:border-gray-500 min-h-[44px] transition-colors"
 							:class="sourceMode === 'text' ? 'border-indigo-500 text-white' : 'text-gray-400'">
 							Text input
 						</button>
@@ -146,17 +146,17 @@ templ NewHandoff(repoOptions []RepoOption) {
 						<div class="mt-3 space-y-2">
 							<p class="text-xs text-yellow-400">JavaScript is disabled. Use either file upload or pasted text below.</p>
 							<textarea name="handoff_text" rows="12"
-								class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm font-mono"
+								class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm font-mono min-w-0"
 								placeholder="Paste the full implementation handoff here..."></textarea>
 						</div>
 					</noscript>
 				</div>
 
-				<details class="rounded border border-gray-800 bg-gray-900/30 p-3">
-					<summary class="cursor-pointer text-sm text-gray-400">Optional model override</summary>
-					<div x-data="{ selectedModelOption: '' }" class="mt-3 space-y-2">
+				<details class="rounded-xl border border-gray-800 bg-gray-900/30 p-3 sm:p-4">
+					<summary class="cursor-pointer text-sm text-gray-400 min-h-[36px] inline-flex items-center">Optional model override</summary>
+					<div x-data="{ selectedModelOption: '' }" class="mt-3 space-y-3">
 						<select name="selected_model_option" x-model="selectedModelOption"
-							class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+							class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 min-h-[40px]">
 							<option value="">Auto from handoff, fallback DeepSeek V4 Flash</option>
 							<option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
 							<option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
@@ -172,19 +172,19 @@ templ NewHandoff(repoOptions []RepoOption) {
 						<div x-show="selectedModelOption === 'custom'">
 							<label class="block text-sm font-medium text-gray-400 mb-1">Custom model</label>
 							<input type="text" name="selected_model_custom"
-								class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+								class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 min-h-[40px]"
 								placeholder="provider/model-id"/>
 						</div>
 					</div>
 				</details>
 
-				<div class="flex gap-3">
+				<div class="flex flex-col sm:flex-row gap-3">
 					<button type="submit"
-						class="inline-flex items-center px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors">
+						class="btn-primary text-sm sm:text-base w-full sm:w-auto">
 						Create Run
 					</button>
 					<a href="/"
-						class="inline-flex items-center px-4 py-2 rounded border border-gray-700 hover:border-gray-600 text-sm transition-colors">
+						class="btn-secondary text-sm sm:text-base w-full sm:w-auto inline-flex items-center justify-center">
 						Cancel
 					</a>
 				</div>

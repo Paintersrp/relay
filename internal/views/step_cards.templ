@@ -6,36 +6,35 @@ import (
 )
 
 templ StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
-	// Step navigation bar
-	<div class="mb-4">
-		<nav class="flex gap-1 bg-gray-900/80 border border-gray-800 rounded-lg p-1 text-xs">
+	<div class="mb-4 overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
+		<nav class="flex min-w-max gap-1 bg-gray-900/80 border border-gray-800 rounded-xl p-1 text-xs sm:text-sm">
 			<a href={"/runs/" + Itoa(run.ID) + "?step=intake"}
-				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "intake") }>
-				1 Intake Review
+				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center", stepNavClass(activeStep, "intake") }>
+				1 Intake
 			</a>
 			<a href={"/runs/" + Itoa(run.ID) + "?step=prompt"}
-				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "prompt") }>
-				2 Agent Prompt
+				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center", stepNavClass(activeStep, "prompt") }>
+				2 Prompt
 			</a>
 			<a href={"/runs/" + Itoa(run.ID) + "?step=packet"}
-				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "packet") }>
-				3 Agent Packet
+				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center", stepNavClass(activeStep, "packet") }>
+				3 Packet
 			</a>
 			<a href={"/runs/" + Itoa(run.ID) + "?step=handoff"}
-				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "handoff") }>
-				4 OpenCode Go Handoff
+				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center", stepNavClass(activeStep, "handoff") }>
+				4 Handoff
 			</a>
 			<a href={"/runs/" + Itoa(run.ID) + "?step=run"}
-				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "run") }>
-				5 Agent Run
+				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center", stepNavClass(activeStep, "run") }>
+				5 Run
 			</a>
 			<a href={"/runs/" + Itoa(run.ID) + "?step=validation"}
-				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "validation") }>
-				6 Relay Validation
+				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center", stepNavClass(activeStep, "validation") }>
+				6 Validation
 			</a>
 			<a href={"/runs/" + Itoa(run.ID) + "?step=audit"}
-				class={ "px-3 py-1.5 rounded transition-colors opacity-50", stepNavClass(activeStep, "audit") }>
-				7 Diff / Audit
+				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center opacity-50", stepNavClass(activeStep, "audit") }>
+				7 Audit
 			</a>
 		</nav>
 	</div>
@@ -72,21 +71,21 @@ func stepNavClass(activeStep, step string) string {
 }
 
 templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview, previews RunPreviews) {
-	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
-		<div class="flex items-center justify-between mb-3">
-			<div>
-				<h3 class="font-medium">Step 1: Intake Review</h3>
-				<p class="text-xs text-gray-500 mt-0.5">Parse and verify the original handoff before agent execution.</p>
+	<div class="relay-card">
+		<div class="relay-card-header">
+			<div class="min-w-0">
+				<h3 class="font-medium text-base sm:text-lg">Step 1: Intake Review</h3>
+				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Parse and verify the original handoff before agent execution.</p>
 			</div>
-			<div class="flex items-center gap-3">
+			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
 				@intakeStatusChip(checks)
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 					hx-target="body" hx-swap="outerHTML"
-					class="flex gap-2">
+					class="inline">
 					<input type="hidden" name="action" value="validate-handoff"/>
 					<button type="submit"
-						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+						class="btn-primary text-xs sm:text-sm">
 						if hasCheckKind(checks, "validation") {
 							Re-run Intake Review
 						} else {
@@ -97,109 +96,110 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 			</div>
 		</div>
 
-		if intakeReview != nil {
-			if len(intakeReview.Blockers) > 0 {
-				<div class="rounded-lg border border-red-900/60 bg-red-950/30 p-3 mb-3">
-					<div class="text-sm font-medium text-red-300">Blocking issues</div>
-					<ul class="mt-2 list-disc pl-5 text-xs text-red-200 space-y-1">
-						for _, blocker := range intakeReview.Blockers {
-							<li>{ blocker }</li>
+		<div class="px-4 pb-4 space-y-3">
+			if intakeReview != nil {
+				if len(intakeReview.Blockers) > 0 {
+					<div class="rounded-xl border border-red-900/60 bg-red-950/30 p-3 sm:p-4">
+						<div class="text-sm font-medium text-red-300">Blocking issues</div>
+						<ul class="mt-2 list-disc pl-5 text-xs sm:text-sm text-red-200 space-y-1">
+							for _, blocker := range intakeReview.Blockers {
+								<li>{ blocker }</li>
+							}
+						</ul>
+						<p class="mt-2 text-xs text-red-300">Resolve these before generating the Agent Prompt.</p>
+					</div>
+				}
+				if len(intakeReview.Warnings) > 0 {
+					<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-3 sm:p-4">
+						<div class="text-sm font-medium text-yellow-300">Warnings</div>
+						<ul class="mt-2 list-disc pl-5 text-xs sm:text-sm text-yellow-100 space-y-1">
+							for _, warning := range intakeReview.Warnings {
+								<li>{ warning }</li>
+							}
+						</ul>
+						<p class="mt-2 text-xs text-yellow-300">You can continue to Agent Prompt/OpenCode, but Relay Validation will require validation commands later.</p>
+					</div>
+				}
+				@IntakeReviewPanel(run, repo, intakeReview)
+
+				if len(intakeReview.Blockers) > 0 || len(intakeReview.Warnings) > 0 {
+					<div class="pt-3 border-t border-gray-800">
+						if previews.HasIntakeRemediationHandoff {
+							<div class="text-xs text-green-400 mb-2">Fix handoff generated.</div>
+							<div class="relay-action-row">
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/intake_remediation_handoff"}
+									class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View fix handoff</a>
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/intake_remediation_handoff/download"}
+									class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download fix handoff</a>
+							</div>
+							if previews.IntakeRemediationHandoff != "" {
+								<details class="mt-2">
+									<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none min-h-[36px] inline-flex items-center">
+										Preview fix handoff
+									</summary>
+									<div class="mt-2 relay-card p-3 max-h-60 overflow-auto min-w-0">
+										<pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap break-words">{ previews.IntakeRemediationHandoff }</pre>
+									</div>
+								</details>
+							}
+						} else {
+							<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+								hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+								hx-target="body" hx-swap="outerHTML"
+								class="inline">
+								<input type="hidden" name="action" value="generate-intake-remediation-handoff"/>
+								<button type="submit"
+									class="btn-primary text-xs sm:text-sm">
+									Generate Fix Handoff
+								</button>
+							</form>
 						}
-					</ul>
-					<p class="mt-2 text-xs text-red-300">Resolve these before generating the Agent Prompt.</p>
+					</div>
+				}
+			}
+
+			if intakeReview != nil && len(intakeReview.Blockers) > 0 {
+				<div class="text-xs text-red-400">
+					Resolve the blocking issues above before generating the Agent Prompt.
+				</div>
+			} else if intakeReview != nil && len(intakeReview.Warnings) > 0 {
+				<div class="text-xs text-yellow-300">
+					Warnings do not block Agent Prompt generation. You can continue, but Relay Validation may need setup later.
+				</div>
+			} else if hasCheckKind(checks, "validation") && hasCheckStatus(checks, "validation", "pass") {
+				<div class="text-xs text-green-400">
+					Intake Review passed. Proceed to Agent Prompt step.
 				</div>
 			}
-			if len(intakeReview.Warnings) > 0 {
-				<div class="rounded-lg border border-yellow-900/60 bg-yellow-950/30 p-3 mb-3">
-					<div class="text-sm font-medium text-yellow-300">Warnings</div>
-					<ul class="mt-2 list-disc pl-5 text-xs text-yellow-100 space-y-1">
-						for _, warning := range intakeReview.Warnings {
-							<li>{ warning }</li>
-						}
-					</ul>
-					<p class="mt-2 text-xs text-yellow-300">You can continue to Agent Prompt/OpenCode, but Relay Validation will require validation commands later.</p>
+
+			<details class="mt-3">
+				<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none min-h-[36px] inline-flex items-center">
+					Original handoff artifact
+				</summary>
+				<div class="mt-2 relay-card p-3 max-h-60 overflow-auto min-w-0">
+					<pre id="original-handoff-preview" class="text-xs font-mono text-gray-300 whitespace-pre-wrap break-words">{ previews.OriginalHandoff }</pre>
 				</div>
-			}
-			@IntakeReviewPanel(run, repo, intakeReview)
-
-			if len(intakeReview.Blockers) > 0 || len(intakeReview.Warnings) > 0 {
-				<div class="mt-3 pt-3 border-t border-gray-800">
-					if previews.HasIntakeRemediationHandoff {
-						<div class="text-xs text-green-400 mb-2">Fix handoff generated.</div>
-						<div class="flex gap-2">
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/intake_remediation_handoff"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">View fix handoff</a>
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/intake_remediation_handoff/download"}
-								class="text-xs text-gray-500 hover:text-gray-300">Download fix handoff</a>
-						</div>
-						if previews.IntakeRemediationHandoff != "" {
-							<details class="mt-2">
-								<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none">
-									Preview fix handoff
-								</summary>
-								<div class="mt-2 border border-gray-800 rounded bg-gray-950/60 p-3 max-h-60 overflow-auto">
-									<pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap">{ previews.IntakeRemediationHandoff }</pre>
-								</div>
-							</details>
-						}
-					} else {
-						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-							hx-target="body" hx-swap="outerHTML"
-							class="inline">
-							<input type="hidden" name="action" value="generate-intake-remediation-handoff"/>
-							<button type="submit"
-								class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-								Generate Fix Handoff
-							</button>
-						</form>
-					}
-				</div>
-			}
-		}
-
-		if intakeReview != nil && len(intakeReview.Blockers) > 0 {
-			<div class="mt-2 text-xs text-red-400">
-				Resolve the blocking issues above before generating the Agent Prompt.
-			</div>
-		} else if intakeReview != nil && len(intakeReview.Warnings) > 0 {
-			<div class="mt-2 text-xs text-yellow-300">
-				Warnings do not block Agent Prompt generation. You can continue, but Relay Validation may need setup later.
-			</div>
-		} else if hasCheckKind(checks, "validation") && hasCheckStatus(checks, "validation", "pass") {
-			<div class="mt-2 text-xs text-green-400">
-				Intake Review passed. Proceed to Agent Prompt step.
-			</div>
-		}
-
-		// Original handoff preview collapsed
-		<details class="mt-3">
-			<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none">
-				Original handoff artifact
-			</summary>
-			<div class="mt-2 border border-gray-800 rounded bg-gray-950/60 p-3 max-h-60 overflow-auto">
-				<pre id="original-handoff-preview" class="text-xs font-mono text-gray-300 whitespace-pre-wrap">{ previews.OriginalHandoff }</pre>
-			</div>
-		</details>
+			</details>
+		</div>
 	</div>
 }
 
 templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
-	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
-		<div class="flex items-center justify-between mb-3">
-			<div>
-				<h3 class="font-medium">Step 2: Agent Prompt</h3>
-				<p class="text-xs text-gray-500 mt-0.5">Review the compact prompt Relay will send to the running agent.</p>
+	<div class="relay-card">
+		<div class="relay-card-header">
+			<div class="min-w-0">
+				<h3 class="font-medium text-base sm:text-lg">Step 2: Agent Prompt</h3>
+				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Review the compact prompt Relay will send to the running agent.</p>
 			</div>
-			<div class="flex items-center gap-3">
+			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
 				@agentPromptStatusChip(artifactExists(artifacts, "agent_prompt"), checks)
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 					hx-target="body" hx-swap="outerHTML"
-					class="flex gap-2">
+					class="inline">
 					<input type="hidden" name="action" value="prepare-prompt"/>
 					<button type="submit"
-						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+						class="btn-primary text-xs sm:text-sm">
 						if artifactExists(artifacts, "agent_prompt") {
 							Regenerate Agent Prompt
 						} else {
@@ -210,75 +210,79 @@ templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []
 			</div>
 		</div>
 
-		if artifactExists(artifacts, "agent_prompt") {
-			<div class="mt-2 text-xs text-gray-500">
-				Agent Prompt generated. Review the hunk diff below.
-			</div>
-			<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
-				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt"}
-					class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
-				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
-					class="text-xs text-gray-500 hover:text-gray-300">Download</a>
-			</div>
+		<div class="px-4 pb-4 space-y-3">
+			if artifactExists(artifacts, "agent_prompt") {
+				<div class="text-xs text-gray-500">
+					Agent Prompt generated. Review the hunk diff below.
+				</div>
+				<div class="pt-3 border-t border-gray-800 relay-action-row">
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt"}
+						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
+						class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download</a>
+				</div>
 
-			if len(previews.AgentPromptDiff.Lines) > 0 {
-				<div class="mt-4 rounded-lg border border-gray-800 bg-gray-950/60 overflow-hidden">
-					<div class="flex items-center justify-between border-b border-gray-800 px-3 py-2">
-						<div>
-							<div class="text-sm font-medium text-gray-200">Original &rarr; Agent Prompt diff</div>
-							<div class="text-xs text-gray-500">Shows changed sections only, with nearby context.</div>
+				if len(previews.AgentPromptDiff.Lines) > 0 {
+					<div class="rounded-xl border border-gray-800 bg-gray-950/60 overflow-hidden min-w-0">
+						<div class="flex items-center justify-between border-b border-gray-800 px-3 py-2">
+							<div class="min-w-0">
+								<div class="text-sm font-medium text-gray-200">Original &rarr; Agent Prompt diff</div>
+								<div class="text-xs text-gray-500">Shows changed sections only, with nearby context.</div>
+							</div>
 						</div>
-					</div>
-					<pre class="max-h-96 overflow-auto text-xs leading-5 font-mono p-3">
-						for _, line := range previews.AgentPromptDiff.Lines {
-							switch line.Kind {
-							case "add":
-								<div class="text-green-300">+ { line.Text }</div>
-							case "remove":
-								<div class="text-red-300">- { line.Text }</div>
-							case "skip":
-								<div class="text-gray-600 italic">{ line.Text }</div>
-							default:
-								<div class="text-gray-500">  { line.Text }</div>
-							}
+						<div class="max-h-96 overflow-auto min-w-0">
+							<pre class="text-xs leading-5 font-mono p-3">
+								for _, line := range previews.AgentPromptDiff.Lines {
+									switch line.Kind {
+									case "add":
+										<div class="text-green-300 whitespace-pre-wrap break-words">+ { line.Text }</div>
+									case "remove":
+										<div class="text-red-300 whitespace-pre-wrap break-words">- { line.Text }</div>
+									case "skip":
+										<div class="text-gray-600 italic whitespace-pre-wrap break-words">{ line.Text }</div>
+									default:
+										<div class="text-gray-500 whitespace-pre-wrap break-words">  { line.Text }</div>
+									}
+								}
+							</pre>
+						</div>
+						if previews.AgentPromptDiff.Truncated {
+							<div class="border-t border-gray-800 px-3 py-2 text-xs text-yellow-300">
+								Diff preview truncated. Use View or Download for the full artifacts.
+							</div>
 						}
-					</pre>
-					if previews.AgentPromptDiff.Truncated {
-						<div class="border-t border-gray-800 px-3 py-2 text-xs text-yellow-300">
-							Diff preview truncated. Use View or Download for the full artifacts.
-						</div>
-					}
+					</div>
+				}
+			} else if hasCheckStatus(checks, "validation", "block") || hasCheckStatus(checks, "validation", "fail") {
+				<div class="text-xs text-red-400">
+					Intake Review has blockers. Resolve before generating Agent Prompt.
+				</div>
+			} else {
+				<div class="text-xs text-gray-500">
+					Run Intake Review first, then generate the Agent Prompt.
 				</div>
 			}
-		} else if hasCheckStatus(checks, "validation", "block") || hasCheckStatus(checks, "validation", "fail") {
-			<div class="mt-2 text-xs text-red-400">
-				Intake Review has blockers. Resolve before generating Agent Prompt.
-			</div>
-		} else {
-			<div class="mt-2 text-xs text-gray-500">
-				Run Intake Review first, then generate the Agent Prompt.
-			</div>
-		}
+		</div>
 	</div>
 }
 
 templ AgentPacketStepPanel(run *store.Run, artifacts []store.Artifact, previews RunPreviews) {
-	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
-		<div class="flex items-center justify-between mb-3">
-			<div>
-				<h3 class="font-medium">Step 3: Agent Packet</h3>
-				<p class="text-xs text-gray-500 mt-0.5">Prepare packet for OpenCode Go.</p>
+	<div class="relay-card">
+		<div class="relay-card-header">
+			<div class="min-w-0">
+				<h3 class="font-medium text-base sm:text-lg">Step 3: Agent Packet</h3>
+				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Prepare packet for OpenCode Go.</p>
 			</div>
-			<div class="flex items-center gap-3">
+			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
 				@agentPacketStatusChip(artifactExists(artifacts, "opencode_handoff_packet"), artifactExists(artifacts, "agent_prompt"))
 				if artifactExists(artifacts, "agent_prompt") {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 						hx-target="body" hx-swap="outerHTML"
-						class="flex gap-2">
+						class="inline">
 						<input type="hidden" name="action" value="generate-opencode-packet"/>
 						<button type="submit"
-							class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors font-medium">
+							class="btn-secondary text-xs sm:text-sm">
 							if artifactExists(artifacts, "opencode_handoff_packet") {
 								Regenerate Agent Packet
 							} else {
@@ -287,48 +291,52 @@ templ AgentPacketStepPanel(run *store.Run, artifacts []store.Artifact, previews 
 						</button>
 					</form>
 				} else {
-					<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600">
+					<span class="relay-chip-gray text-xs">
 						Generate Agent Prompt first
 					</span>
 				}
 			</div>
 		</div>
 
-		if artifactExists(artifacts, "opencode_handoff_packet") {
-			<div class="mt-2 text-xs text-gray-500">
-				Relay has prepared metadata for external agent tooling. Review the packet before sending it to OpenCode Go. Relay does not auto-run OpenCode.
-			</div>
-			<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
-				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet"}
-					class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
-				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet/download"}
-					class="text-xs text-gray-500 hover:text-gray-300">Download</a>
-			</div>
-			if previews.OpenCodePacket != "" {
-				<div class="mt-3 rounded-lg border border-gray-800 bg-gray-950/60 overflow-hidden">
-					<div class="border-b border-gray-800 px-3 py-2">
-						<div class="text-sm font-medium text-gray-200">Packet preview</div>
-						<div class="text-xs text-gray-500">Metadata only. Relay does not auto-execute this packet; use Step 4 to run OpenCode.</div>
+		<div class="px-4 pb-4 space-y-3">
+			if artifactExists(artifacts, "opencode_handoff_packet") {
+				<div class="text-xs text-gray-500">
+					Relay has prepared metadata for external agent tooling. Review the packet before sending it to OpenCode Go. Relay does not auto-run OpenCode.
+				</div>
+				<div class="pt-3 border-t border-gray-800 relay-action-row">
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet"}
+						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet/download"}
+						class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download</a>
+				</div>
+				if previews.OpenCodePacket != "" {
+					<div class="rounded-xl border border-gray-800 bg-gray-950/60 overflow-hidden min-w-0">
+						<div class="border-b border-gray-800 px-3 py-2">
+							<div class="text-sm font-medium text-gray-200">Packet preview</div>
+							<div class="text-xs text-gray-500">Metadata only. Relay does not auto-execute this packet; use Step 4 to run OpenCode.</div>
+						</div>
+						<div class="max-h-80 overflow-auto min-w-0">
+							<pre class="text-xs leading-5 font-mono p-3 text-gray-300 whitespace-pre-wrap break-words">{ previews.OpenCodePacket }</pre>
+						</div>
 					</div>
-					<pre class="max-h-80 overflow-auto text-xs leading-5 font-mono p-3 text-gray-300 whitespace-pre-wrap">{ previews.OpenCodePacket }</pre>
+				}
+			} else {
+				<div class="text-xs text-gray-500">
+					Generate the Agent Prompt first, then generate the Agent Packet.
 				</div>
 			}
-		} else {
-			<div class="mt-2 text-xs text-gray-500">
-				Generate the Agent Prompt first, then generate the Agent Packet.
-			</div>
-		}
+		</div>
 	</div>
 }
 
 templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
-	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
-		<div class="flex items-center justify-between mb-3">
-			<div>
-				<h3 class="font-medium">Step 4: OpenCode Go Handoff</h3>
-				<p class="text-xs text-gray-500 mt-0.5">Review the packet and artifacts, then start OpenCode Go execution.</p>
+	<div class="relay-card">
+		<div class="relay-card-header">
+			<div class="min-w-0">
+				<h3 class="font-medium text-base sm:text-lg">Step 4: OpenCode Go Handoff</h3>
+				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Review the packet and artifacts, then start OpenCode Go execution.</p>
 			</div>
-			<div class="flex items-center gap-3">
+			<div class="flex flex-wrap items-center gap-2">
 				@handoffStatusChip(artifactExists(artifacts, "opencode_handoff_packet"))
 				@handoffPreflightStatusChip(previews.HandoffPreflightStatus)
 				if previews.HasOpenCodeExecution {
@@ -337,163 +345,156 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 			</div>
 		</div>
 
-		// Preflight checklist
-		if len(previews.HandoffPreflightChecks) > 0 {
-			<div class="mt-3 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
-				<div class="border-b border-gray-800 px-3 py-2">
-					<div class="text-sm font-medium text-gray-200">Handoff readiness</div>
-					<div class="text-xs text-gray-500">Checks run at page load.</div>
+		<div class="px-4 pb-4 space-y-4">
+			if len(previews.HandoffPreflightChecks) > 0 {
+				<div class="rounded-xl border border-gray-800 bg-gray-950/40 overflow-hidden">
+					<div class="border-b border-gray-800 px-3 py-2">
+						<div class="text-sm font-medium text-gray-200">Handoff readiness</div>
+						<div class="text-xs text-gray-500">Checks run at page load.</div>
+					</div>
+					<div class="p-2 space-y-1 max-h-60 overflow-auto">
+						for _, c := range previews.HandoffPreflightChecks {
+							<div class="flex items-center justify-between text-xs sm:text-sm px-2 py-1.5 rounded">
+								<span class="text-gray-400 min-w-0 truncate">{ c.Key }</span>
+								if c.Status == "pass" {
+									<span class="text-green-400 shrink-0 ml-2">{ c.Status }</span>
+								} else if c.Status == "block" {
+									<span class="text-red-400 shrink-0 ml-2">{ c.Status }</span>
+								} else if c.Status == "warn" {
+									<span class="text-yellow-400 shrink-0 ml-2">{ c.Status }</span>
+								} else {
+									<span class="text-gray-500 shrink-0 ml-2">{ c.Status }</span>
+								}
+							</div>
+						}
+					</div>
 				</div>
-				<div class="p-2 space-y-1 max-h-60 overflow-auto">
-					for _, c := range previews.HandoffPreflightChecks {
-						<div class="flex items-center justify-between text-xs px-2 py-1 rounded">
-							<span class="text-gray-400">{ c.Key }</span>
-							if c.Status == "pass" {
-								<span class="text-green-400">{ c.Status }</span>
-							} else if c.Status == "block" {
-								<span class="text-red-400">{ c.Status }</span>
-							} else if c.Status == "warn" {
-								<span class="text-yellow-400">{ c.Status }</span>
-							} else {
-								<span class="text-gray-500">{ c.Status }</span>
-							}
-						</div>
+				if previews.HandoffPreflightStatus == "blocked" {
+					<div class="text-xs text-red-400">
+						Resolve blocked checks before handoff.
+					</div>
+				}
+			}
+
+			<div class="space-y-2 text-xs sm:text-sm">
+				<div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+					<span class="text-gray-400 shrink-0">Selected model:</span>
+					<span class="text-gray-200 font-mono break-all">{ run.SelectedModel }</span>
+				</div>
+				<div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+					<span class="text-gray-400 shrink-0">Branch / worktree:</span>
+					if run.BranchName != "" {
+						<span class="text-gray-200 font-mono break-all">{ run.BranchName }</span>
+					} else {
+						<span class="text-gray-600">not set</span>
 					}
 				</div>
 			</div>
-			if previews.HandoffPreflightStatus == "blocked" {
-				<div class="mt-2 text-xs text-red-400">
-					Resolve blocked checks before handoff.
+
+			if artifactExists(artifacts, "opencode_handoff_packet") {
+				<div class="pt-3 border-t border-gray-800 relay-action-row">
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet"}
+						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View Packet</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet/download"}
+						class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download Packet</a>
+					if artifactExists(artifacts, "agent_prompt") {
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt"}
+							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View Agent Prompt</a>
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
+							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download Agent Prompt</a>
+					}
 				</div>
 			}
-		}
 
-		// Handoff preparation section
-		<div class="mt-2 space-y-2">
-			<div class="text-xs text-gray-400">
-				<strong class="text-gray-300">Selected model:</strong> { run.SelectedModel }
-			</div>
-			<div class="text-xs text-gray-400">
-				<strong class="text-gray-300">Branch / worktree:</strong> 
-				if run.BranchName != "" {
-					{ run.BranchName }
-				} else {
-					<span class="text-gray-600">not set</span>
-				}
-			</div>
-		</div>
-
-		// Packet and prompt links
-		if artifactExists(artifacts, "opencode_handoff_packet") {
-			<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
-				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet"}
-					class="text-xs text-indigo-400 hover:text-indigo-300">View Packet</a>
-				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet/download"}
-					class="text-xs text-gray-500 hover:text-gray-300">Download Packet</a>
-				if artifactExists(artifacts, "agent_prompt") {
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt"}
-						class="text-xs text-indigo-400 hover:text-indigo-300">View Agent Prompt</a>
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
-						class="text-xs text-gray-500 hover:text-gray-300">Download Agent Prompt</a>
-				}
-			</div>
-		}
-
-		// Resolved OpenCode command panel
-		if previews.OpenCodeCommandPreview != "" {
-			<div class="mt-3 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
-				<div class="border-b border-gray-800 px-3 py-2">
-					<div class="text-sm font-medium text-gray-200">Resolved OpenCode command</div>
-					<div class="text-xs text-gray-500">The exact command Relay will use for execution.</div>
-				</div>
-				<div class="p-3 space-y-1.5 text-xs">
-					<div class="flex justify-between">
-						<span class="text-gray-400">Binary</span>
-						<span class="text-gray-300 font-mono">{ previews.OpenCodeBinary }</span>
+			if previews.OpenCodeCommandPreview != "" {
+				<div class="rounded-xl border border-gray-800 bg-gray-950/40 overflow-hidden min-w-0">
+					<div class="border-b border-gray-800 px-3 py-2">
+						<div class="text-sm font-medium text-gray-200">Resolved OpenCode command</div>
+						<div class="text-xs text-gray-500">The exact command Relay will use for execution.</div>
 					</div>
-					<div class="flex justify-between">
-						<span class="text-gray-400">Working directory</span>
-						<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeWorkDir }</span>
-					</div>
-					<div class="flex justify-between">
-						<span class="text-gray-400">Agent</span>
-						<span class="text-gray-300 font-mono">{ previews.OpenCodeAgent }</span>
-					</div>
-					<div class="flex justify-between">
-						<span class="text-gray-400">Model</span>
-						<span class="text-gray-300 font-mono">{ previews.OpenCodeModel }</span>
-					</div>
-					<div class="flex justify-between">
-						<span class="text-gray-400">Thinking</span>
-						<span class="text-gray-300 font-mono">{ previews.OpenCodeThinking }</span>
-					</div>
-					<div class="flex justify-between">
-						<span class="text-gray-400">Prompt stdin</span>
-						<span class="text-gray-300 font-mono">{ previews.OpenCodeStdinSource } ({ previews.OpenCodeStdinBytes } bytes)</span>
-					</div>
-					<div class="pt-2 border-t border-gray-800">
-						<div class="text-gray-400 mb-1">Command</div>
-						<textarea readonly rows="3"
-							class="w-full text-xs font-mono bg-gray-950 border border-gray-700 rounded p-2 text-gray-300 select-all"
-							onclick="this.select()">{ previews.OpenCodeCommandPreview }</textarea>
+					<div class="p-3 space-y-2 text-xs sm:text-sm">
+						<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+							<span class="text-gray-400 shrink-0">Binary</span>
+							<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeBinary }</span>
+						</div>
+						<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+							<span class="text-gray-400 shrink-0">Working directory</span>
+							<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeWorkDir }</span>
+						</div>
+						<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+							<span class="text-gray-400 shrink-0">Agent</span>
+							<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeAgent }</span>
+						</div>
+						<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+							<span class="text-gray-400 shrink-0">Model</span>
+							<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeModel }</span>
+						</div>
+						<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+							<span class="text-gray-400 shrink-0">Thinking</span>
+							<span class="text-gray-300 font-mono">{ previews.OpenCodeThinking }</span>
+						</div>
+						<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+							<span class="text-gray-400 shrink-0">Prompt stdin</span>
+							<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeStdinSource } ({ previews.OpenCodeStdinBytes } bytes)</span>
+						</div>
+						<div class="pt-2 border-t border-gray-800">
+							<div class="text-gray-400 mb-1">Command</div>
+							<textarea readonly rows="3"
+								class="w-full text-xs font-mono bg-gray-950 border border-gray-700 rounded-lg p-2 text-gray-300 select-all min-w-0 resize-y"
+								onclick="this.select()">{ previews.OpenCodeCommandPreview }</textarea>
+						</div>
 					</div>
 				</div>
-			</div>
-		}
+			}
 
-		// OpenCode Adapter section
-		<div class="mt-3 pt-3 border-t border-gray-800">
-			<div class="flex items-center gap-2 mb-2">
-				<div class="text-sm font-medium text-gray-200">OpenCode Adapter</div>
-				if previews.OpenCodeAdapterError == "" && previews.OpenCodeBinary != "" {
-					<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">ready</span>
-				} else if previews.OpenCodeAdapterError != "" {
-					<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">blocked</span>
-				} else {
-					<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">pending</span>
-				}
-			</div>
+			<div class="pt-3 border-t border-gray-800">
+				<div class="flex flex-wrap items-center gap-2 mb-3">
+					<div class="text-sm font-medium text-gray-200">OpenCode Adapter</div>
+					if previews.OpenCodeAdapterError == "" && previews.OpenCodeBinary != "" {
+						<span class="relay-chip-green">ready</span>
+					} else if previews.OpenCodeAdapterError != "" {
+						<span class="relay-chip-red">blocked</span>
+					} else {
+						<span class="relay-chip-gray">pending</span>
+					}
+				</div>
 
-			// OpenCode execution section
-			<div class="mt-3">
 				if previews.OpenCodeAdapterError != "" {
-					<div class="rounded-lg border border-red-900/60 bg-red-950/30 p-3 mb-3">
-						<div class="text-xs text-red-300 leading-relaxed">
+					<div class="rounded-xl border border-red-900/60 bg-red-950/30 p-3 sm:p-4 mb-3">
+						<div class="text-xs sm:text-sm text-red-300 leading-relaxed">
 							<strong>OpenCode adapter blocked:</strong> { previews.OpenCodeAdapterError }
 						</div>
 					</div>
 				} else if previews.HandoffPreflightStatus == "blocked" {
-					<div class="rounded-lg border border-red-900/60 bg-red-950/30 p-3 mb-3">
-						<div class="text-xs text-red-300">
+					<div class="rounded-xl border border-red-900/60 bg-red-950/30 p-3 sm:p-4 mb-3">
+						<div class="text-xs sm:text-sm text-red-300">
 							Resolve blocked checks before starting OpenCode Go.
 						</div>
 					</div>
 				}
 
-				// Failure hint after execution
 				if previews.HasOpenCodeExecution && previews.OpenCodeExecutionStatus == "failed" {
-					<div class="rounded-lg border border-red-900/60 bg-red-950/30 p-3 mb-3">
+					<div class="rounded-xl border border-red-900/60 bg-red-950/30 p-3 sm:p-4 mb-3">
 						<div class="text-sm font-medium text-red-300">OpenCode execution failed</div>
 						if previews.OpenCodeFailureHint != "" {
-							<div class="text-xs text-red-200 mt-1">{ previews.OpenCodeFailureHint }</div>
+							<div class="text-xs sm:text-sm text-red-200 mt-1">{ previews.OpenCodeFailureHint }</div>
 						} else if previews.OpenCodeExecutionExitCode != "" {
-							<div class="text-xs text-red-200 mt-1">
+							<div class="text-xs sm:text-sm text-red-200 mt-1">
 								OpenCode exited with code { previews.OpenCodeExecutionExitCode }.
 							</div>
 						}
-						// Log artifact links inline with failure
-						<div class="flex gap-2 mt-2">
+						<div class="relay-action-row mt-2">
 							if previews.HasOpenCodeStdout {
 								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout"}
-									class="text-xs text-red-300 hover:text-red-200 underline">stdout</a>
+									class="text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center">stdout</a>
 							}
 							if previews.HasOpenCodeStderr {
 								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr"}
-									class="text-xs text-red-300 hover:text-red-200 underline">stderr</a>
+									class="text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center">stderr</a>
 							}
 							if previews.HasOpenCodeCombinedLog {
 								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log"}
-									class="text-xs text-red-300 hover:text-red-200 underline">combined log</a>
+									class="text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center">combined log</a>
 							}
 						</div>
 						if !previews.HasOpenCodeCLICheck {
@@ -504,60 +505,58 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 					</div>
 				}
 
-				// CLI check result panel
 				if previews.HasOpenCodeCLICheck {
-					<div class="mb-3 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
+					<div class="mb-3 rounded-xl border border-gray-800 bg-gray-950/40 overflow-hidden">
 						<div class="border-b border-gray-800 px-3 py-2 flex items-center justify-between">
 							<div class="text-sm font-medium text-gray-200">OpenCode CLI Check</div>
 							<span class={ cliCheckStatusClass(previews.OpenCodeCLICheckStatus) }>{ previews.OpenCodeCLICheckStatus }</span>
 						</div>
-						<div class="p-2 space-y-1 text-xs">
-							<div class="flex justify-between">
-								<span class="text-gray-400">Binary</span>
-								<span class="text-gray-300 font-mono">{ previews.OpenCodeCLICheckBinary }</span>
+						<div class="p-2 space-y-1.5 text-xs sm:text-sm">
+							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+								<span class="text-gray-400 shrink-0">Binary</span>
+								<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeCLICheckBinary }</span>
 							</div>
 							if previews.OpenCodeCLICheckResolvedModel != "" {
-								<div class="flex justify-between">
-									<span class="text-gray-400">Resolved model</span>
-									<span class="text-gray-300 font-mono">{ previews.OpenCodeCLICheckResolvedModel }</span>
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Resolved model</span>
+									<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeCLICheckResolvedModel }</span>
 								</div>
 							}
-							<div class="flex justify-between">
-								<span class="text-gray-400">Model available</span>
+							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+								<span class="text-gray-400 shrink-0">Model available</span>
 								<span class={ cliCheckModelAvailableClass(previews.OpenCodeCLICheckModelAvailable) }>{ previews.OpenCodeCLICheckModelAvailable }</span>
 							</div>
-							<div class="flex justify-between">
-								<span class="text-gray-400">Version exit code</span>
+							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+								<span class="text-gray-400 shrink-0">Version exit code</span>
 								<span class="text-gray-300">{ previews.OpenCodeCLICheckVersionExitCode }</span>
 							</div>
-							<div class="flex justify-between">
-								<span class="text-gray-400">Models exit code</span>
+							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+								<span class="text-gray-400 shrink-0">Models exit code</span>
 								<span class="text-gray-300">{ previews.OpenCodeCLICheckModelsExitCode }</span>
 							</div>
 							if previews.OpenCodeCLICheckCheckedAt != "" {
-								<div class="flex justify-between">
-									<span class="text-gray-400">Checked at</span>
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Checked at</span>
 									<span class="text-gray-300">{ previews.OpenCodeCLICheckCheckedAt }</span>
 								</div>
 							}
 							if previews.OpenCodeCLICheckError != "" {
-								<div class="flex justify-between">
-									<span class="text-gray-400">Error</span>
-									<span class="text-red-400">{ previews.OpenCodeCLICheckError }</span>
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Error</span>
+									<span class="text-red-400 break-all">{ previews.OpenCodeCLICheckError }</span>
 								</div>
 							}
 						</div>
-						<div class="border-t border-gray-800 px-3 py-2 flex gap-2">
+						<div class="border-t border-gray-800 px-3 py-2 relay-action-row">
 							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_cli_check_json"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">View CLI check JSON</a>
+								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View CLI check JSON</a>
 							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_cli_check_json/download"}
-								class="text-xs text-gray-500 hover:text-gray-300">Download</a>
+								class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download</a>
 						</div>
 					</div>
 				}
 
-				// Dry Run and CLI Check buttons
-				<div class="flex gap-2 mb-3">
+				<div class="relay-action-row mb-3">
 					if previews.OpenCodeAdapterError == "" && previews.OpenCodeCommandPreview != "" {
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
@@ -565,12 +564,12 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 							class="inline">
 							<input type="hidden" name="action" value="dry-run-opencode-go"/>
 							<button type="submit"
-								class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors font-medium">
+								class="btn-secondary text-xs sm:text-sm">
 								Dry Run / Preview Command
 							</button>
 						</form>
 					} else {
-						<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed"
+						<span class="relay-chip-gray text-xs cursor-not-allowed"
 							title={ "Dry Run unavailable: " + dryRunDisabledReason(previews) }>
 							Dry Run / Preview Command (blocked)
 						</span>
@@ -582,143 +581,137 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 						class="inline">
 						<input type="hidden" name="action" value="check-opencode-cli"/>
 						<button type="submit"
-							class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors font-medium">
+							class="btn-secondary text-xs sm:text-sm">
 							Check OpenCode CLI
 						</button>
 					</form>
 				</div>
 
-				// Dry Run preview
 				if previews.HasOpenCodeDryRun {
-					<div class="mb-3 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
+					<div class="mb-3 rounded-xl border border-gray-800 bg-gray-950/40 overflow-hidden min-w-0">
 						<div class="border-b border-gray-800 px-3 py-2">
 							<div class="text-sm font-medium text-gray-200">Dry Run Preview</div>
 							<div class="text-xs text-gray-500">JSON summary. Does not execute OpenCode.</div>
 						</div>
-						<div class="p-2">
-							<pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap overflow-x-auto max-h-40">{ previews.OpenCodeDryRunPreview }</pre>
+						<div class="p-2 min-w-0 overflow-x-auto">
+							<pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap break-words max-h-40">{ previews.OpenCodeDryRunPreview }</pre>
 						</div>
 					</div>
-					<div class="mb-3 flex gap-2">
+					<div class="mb-3 relay-action-row">
 						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_dry_run_json"}
-							class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
+							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View</a>
 						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_dry_run_json/download"}
-							class="text-xs text-gray-500 hover:text-gray-300">Download</a>
+							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download</a>
 					</div>
 				}
 
-				// Start button
 				if previews.OpenCodeAdapterError == "" && previews.HandoffPreflightStatus != "blocked" && previews.OpenCodeCommandPreview != "" {
-					<div class="text-xs text-yellow-400 mb-2">
+					<div class="text-xs sm:text-sm text-yellow-400 mb-3">
 						This starts a local OpenCode command in the selected repo path. Relay will capture stdout/stderr as artifacts.
 					</div>
 
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="body" hx-swap="outerHTML"
-						class="inline">
+						hx-target="body" hx-swap="outerHTML">
 						<input type="hidden" name="action" value="start-opencode-go"/>
 						<button type="submit"
-							class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+							class="btn-primary text-sm sm:text-base w-full sm:w-auto">
 							Start OpenCode Go
 						</button>
 					</form>
 				} else {
-					<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed"
+					<span class="relay-chip-gray text-xs cursor-not-allowed"
 						title={ "Start unavailable: " + startDisabledReason(previews) }>
 						Start OpenCode Go (blocked)
 					</span>
 				}
 			</div>
+
+			if previews.HasOpenCodeExecution {
+				<div class="rounded-xl border border-gray-800 bg-gray-950/40 overflow-hidden">
+					<div class="border-b border-gray-800 px-3 py-2">
+						<div class="text-sm font-medium text-gray-200">Latest Execution</div>
+					</div>
+					<div class="p-2 space-y-1.5 text-xs sm:text-sm">
+						<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+							<span class="text-gray-400 shrink-0">Status</span>
+							<span class={ executionStatusClass(previews.OpenCodeExecutionStatus) }>{ previews.OpenCodeExecutionStatus }</span>
+						</div>
+						if previews.OpenCodeExecutionExitCode != "" {
+							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+								<span class="text-gray-400 shrink-0">Exit code</span>
+								<span class="text-gray-300">{ previews.OpenCodeExecutionExitCode }</span>
+							</div>
+						}
+						if previews.OpenCodeExecutionStarted != "" {
+							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+								<span class="text-gray-400 shrink-0">Started</span>
+								<span class="text-gray-300">{ previews.OpenCodeExecutionStarted }</span>
+							</div>
+						}
+						if previews.OpenCodeExecutionFinished != "" {
+							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+								<span class="text-gray-400 shrink-0">Finished</span>
+								<span class="text-gray-300">{ previews.OpenCodeExecutionFinished }</span>
+							</div>
+						}
+						<div class="relay-action-row pt-1">
+							if previews.HasOpenCodeStdout {
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout"}
+									class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">stdout</a>
+							}
+							if previews.HasOpenCodeStderr {
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr"}
+									class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">stderr</a>
+							}
+							if previews.HasOpenCodeCombinedLog {
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log"}
+									class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">combined log</a>
+							}
+						</div>
+					</div>
+				</div>
+			}
+
+			<details class="mt-4 relay-card p-3 sm:p-4">
+				<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none min-h-[36px] inline-flex items-center">
+					Manual result intake fallback
+				</summary>
+				<div class="mt-3">
+					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+						hx-target="body" hx-swap="outerHTML"
+						class="space-y-3">
+						<input type="hidden" name="action" value="submit-agent-result"/>
+						<textarea name="agent_result_text" rows="6"
+							class="w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded-lg p-2 text-gray-300 min-w-0 resize-y"
+							placeholder={"DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42"}></textarea>
+						<button type="submit"
+							class="btn-primary text-xs sm:text-sm">
+							Save Agent Result
+						</button>
+					</form>
+
+					if artifactExists(artifacts, "agent_result_raw") {
+						<div class="mt-2 text-xs text-gray-500">
+							Agent result received. Proceed to Relay Validation.
+						</div>
+						<div class="mt-2 pt-2 border-t border-gray-800 relay-action-row">
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw"}
+								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View raw result</a>
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw/download"}
+								class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download raw result</a>
+							if artifactExists(artifacts, "agent_result_json") {
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json"}
+									class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View parsed JSON</a>
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json/download"}
+									class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download parsed JSON</a>
+							}
+						</div>
+					}
+				</div>
+			</details>
 		</div>
-
-		// Execution results
-		if previews.HasOpenCodeExecution {
-			<div class="mt-3 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
-				<div class="border-b border-gray-800 px-3 py-2">
-					<div class="text-sm font-medium text-gray-200">Latest Execution</div>
-				</div>
-				<div class="p-2 space-y-1 text-xs">
-					<div class="flex justify-between">
-						<span class="text-gray-400">Status</span>
-						<span class={ executionStatusClass(previews.OpenCodeExecutionStatus) }>{ previews.OpenCodeExecutionStatus }</span>
-					</div>
-					if previews.OpenCodeExecutionExitCode != "" {
-						<div class="flex justify-between">
-							<span class="text-gray-400">Exit code</span>
-							<span class="text-gray-300">{ previews.OpenCodeExecutionExitCode }</span>
-						</div>
-					}
-					if previews.OpenCodeExecutionStarted != "" {
-						<div class="flex justify-between">
-							<span class="text-gray-400">Started</span>
-							<span class="text-gray-300">{ previews.OpenCodeExecutionStarted }</span>
-						</div>
-					}
-					if previews.OpenCodeExecutionFinished != "" {
-						<div class="flex justify-between">
-							<span class="text-gray-400">Finished</span>
-							<span class="text-gray-300">{ previews.OpenCodeExecutionFinished }</span>
-						</div>
-					}
-					// Execution artifact links using kinds, not IDs
-					<div class="flex gap-2 pt-1">
-						if previews.HasOpenCodeStdout {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">stdout</a>
-						}
-						if previews.HasOpenCodeStderr {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">stderr</a>
-						}
-						if previews.HasOpenCodeCombinedLog {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">combined log</a>
-						}
-					</div>
-				</div>
-			</div>
-		}
-
-		// Manual result paste as collapsed fallback
-		<details class="mt-4 border border-gray-800 rounded-lg p-3 bg-gray-950/40">
-			<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none">
-				Manual result intake fallback
-			</summary>
-			<div class="mt-3">
-				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-					hx-target="body" hx-swap="outerHTML"
-					class="space-y-2">
-					<input type="hidden" name="action" value="submit-agent-result"/>
-					<textarea name="agent_result_text" rows="6"
-						class="w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded p-2 text-gray-300"
-						placeholder={"DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42"}></textarea>
-					<button type="submit"
-						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-						Save Agent Result
-					</button>
-				</form>
-
-				if artifactExists(artifacts, "agent_result_raw") {
-					<div class="mt-2 text-xs text-gray-500">
-						Agent result received. Proceed to Relay Validation.
-					</div>
-					<div class="mt-2 pt-2 border-t border-gray-800 flex gap-3">
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw"}
-							class="text-xs text-indigo-400 hover:text-indigo-300">View raw result</a>
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw/download"}
-							class="text-xs text-gray-500 hover:text-gray-300">Download raw result</a>
-						if artifactExists(artifacts, "agent_result_json") {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">View parsed JSON</a>
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json/download"}
-								class="text-xs text-gray-500 hover:text-gray-300">Download parsed JSON</a>
-						}
-					</div>
-				}
-			</div>
-		</details>
 	</div>
 }
 
@@ -745,213 +738,230 @@ templ AgentRunMonitorStepPanel(run *store.Run, artifacts []store.Artifact, check
 			hx-get={"/runs/" + Itoa(run.ID) + "/agent-run-monitor"}
 			hx-trigger="every 2s"
 			hx-swap="outerHTML"
-			class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
+			class="relay-card">
 			@agentRunMonitorInner(run, artifacts, checks, previews, isExecutionRunning(previews.OpenCodeExecutionStatus))
 		</div>
 	} else {
-		<div id="agent-run-monitor" class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
+		<div id="agent-run-monitor" class="relay-card">
 			@agentRunMonitorInner(run, artifacts, checks, previews, isExecutionRunning(previews.OpenCodeExecutionStatus))
 		</div>
 	}
 }
 
 templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, isRunning bool) {
-	<div class="flex items-center justify-between mb-3">
-		<div>
-			<h3 class="font-medium">Step 5: Agent Run</h3>
-			<p class="text-xs text-gray-500 mt-0.5">Monitor the running OpenCode agent execution.</p>
+	<div class="relay-card-header">
+		<div class="min-w-0">
+			<h3 class="font-medium text-base sm:text-lg">Step 5: Agent Run</h3>
+			<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Monitor the running OpenCode agent execution.</p>
 		</div>
-		<div class="flex items-center gap-3">
+		<div class="flex flex-wrap items-center gap-2">
 			if previews.HasOpenCodeExecution {
 				@openCodeExecutionStatusChip(previews.OpenCodeExecutionStatus)
 			}
 		</div>
 	</div>
 
-	if !previews.HasOpenCodeExecution {
-		<div class="rounded-lg border border-yellow-900/60 bg-yellow-950/30 p-4 text-center">
-			<div class="text-sm text-yellow-300">No OpenCode run has started yet.</div>
-			<p class="text-xs text-yellow-100 mt-2">Return to Step 4 to launch OpenCode Go.</p>
-			<a href={"/runs/" + Itoa(run.ID) + "?step=handoff"}
-				class="inline-block mt-3 px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-				Back to OpenCode Go Handoff
-			</a>
-		</div>
-	}
-	if previews.HasOpenCodeExecution {
-		if previews.OpenCodeCommandPreview != "" {
-				<div class="rounded-lg border border-gray-800 bg-gray-950/40 p-3 mb-3">
-					<div class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-						<div class="text-gray-400">Command</div>
-						<div class="text-gray-300 font-mono break-all">{ previews.OpenCodeCommandPreview }</div>
-						<div class="text-gray-400">Working directory</div>
-						<div class="text-gray-300 font-mono break-all">{ previews.OpenCodeWorkDir }</div>
-						if previews.OpenCodeModel != "" {
-							<div class="text-gray-400">Model</div>
-							<div class="text-gray-300 font-mono">{ previews.OpenCodeModel }</div>
-						}
-						if previews.OpenCodeAgent != "" {
-							<div class="text-gray-400">Agent</div>
-							<div class="text-gray-300 font-mono">{ previews.OpenCodeAgent }</div>
-						}
-						<div class="text-gray-400">Thinking</div>
-						<div class="text-gray-300 font-mono">{ previews.OpenCodeThinking }</div>
-						if previews.OpenCodeExecutionStarted != "" {
-							<div class="text-gray-400">Started</div>
-							<div class="text-gray-300">{ previews.OpenCodeExecutionStarted }</div>
-						}
-						if previews.OpenCodeExecutionFinished != "" {
-							<div class="text-gray-400">Finished</div>
-							<div class="text-gray-300">{ previews.OpenCodeExecutionFinished }</div>
-						}
-						if previews.OpenCodeExecutionExitCode != "" {
-							<div class="text-gray-400">Exit code</div>
-							<div class="text-gray-300">{ previews.OpenCodeExecutionExitCode }</div>
-						}
-					</div>
-				</div>
-			}
-
-			// Running indicator
-			if isRunning {
-				<div class="text-xs text-blue-400 mb-2">
-					This run is still active. Status refreshes automatically. Captured output will appear here after OpenCode writes saved logs.
-				</div>
-			}
-
-			if len(previews.OpenCodeTranscript) > 0 {
-				<div class="rounded-lg border border-gray-800 bg-gray-950/60 overflow-hidden mb-3">
-					<div class="border-b border-gray-800 px-3 py-2">
-						<div class="text-sm font-medium text-gray-200">Output Transcript</div>
-					</div>
-					<div class="max-h-80 overflow-auto text-xs leading-5 font-mono p-3 whitespace-pre-wrap">
-						for _, ev := range previews.OpenCodeTranscript {
-							<div class={ transcriptEventClass(ev.Kind) }>
-								<span class="text-gray-600">{ "[" + ev.Kind + "]" }</span>
-								<span>{ " " + ev.Text }</span>
-							</div>
-						}
-					</div>
-				</div>
-			}
-
-			<div class="flex gap-2 mb-3">
-				if previews.HasOpenCodeStdout {
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout"}
-						class="text-xs text-indigo-400 hover:text-indigo-300">stdout</a>
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout/download"}
-						class="text-xs text-gray-500 hover:text-gray-300">download stdout</a>
-				}
-				if previews.HasOpenCodeStderr {
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr"}
-						class="text-xs text-indigo-400 hover:text-indigo-300">stderr</a>
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr/download"}
-						class="text-xs text-gray-500 hover:text-gray-300">download stderr</a>
-				}
-				if previews.HasOpenCodeCombinedLog {
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log"}
-						class="text-xs text-indigo-400 hover:text-indigo-300">combined log</a>
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log/download"}
-						class="text-xs text-gray-500 hover:text-gray-300">download combined log</a>
-				}
+	<div class="px-4 pb-4 space-y-4">
+		if !previews.HasOpenCodeExecution {
+			<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-4 sm:p-6 text-center">
+				<div class="text-sm sm:text-base text-yellow-300">No OpenCode run has started yet.</div>
+				<p class="text-xs sm:text-sm text-yellow-100 mt-2">Return to Step 4 to launch OpenCode Go.</p>
+				<a href={"/runs/" + Itoa(run.ID) + "?step=handoff"}
+					class="inline-block mt-3 btn-primary text-xs sm:text-sm">
+					Back to OpenCode Go Handoff
+				</a>
 			</div>
-
-			if previews.OpenCodeParsedResultStatus != "" {
-				<div class="rounded-lg border border-gray-800 bg-gray-950/40 p-3 mb-3">
-					<div class="text-sm font-medium text-gray-200">Parsed Result</div>
-					<div class="mt-1 text-xs space-y-1">
-						<div class="flex justify-between">
-							<span class="text-gray-400">Status</span>
-							<span class={ parsedResultStatusClass(previews.OpenCodeParsedResultStatus) }>{ previews.OpenCodeParsedResultStatus }</span>
+		}
+		if previews.HasOpenCodeExecution {
+			if previews.OpenCodeCommandPreview != "" {
+					<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4 min-w-0">
+						<div class="space-y-2 text-xs sm:text-sm">
+							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+								<span class="text-gray-400 shrink-0">Command</span>
+								<span class="text-gray-300 font-mono break-all min-w-0">{ previews.OpenCodeCommandPreview }</span>
+							</div>
+							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+								<span class="text-gray-400 shrink-0">Working directory</span>
+								<span class="text-gray-300 font-mono break-all min-w-0">{ previews.OpenCodeWorkDir }</span>
+							</div>
+							if previews.OpenCodeModel != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Model</span>
+									<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeModel }</span>
+								</div>
+							}
+							if previews.OpenCodeAgent != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Agent</span>
+									<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeAgent }</span>
+								</div>
+							}
+							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+								<span class="text-gray-400 shrink-0">Thinking</span>
+								<span class="text-gray-300 font-mono">{ previews.OpenCodeThinking }</span>
+							</div>
+							if previews.OpenCodeExecutionStarted != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Started</span>
+									<span class="text-gray-300">{ previews.OpenCodeExecutionStarted }</span>
+								</div>
+							}
+							if previews.OpenCodeExecutionFinished != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Finished</span>
+									<span class="text-gray-300">{ previews.OpenCodeExecutionFinished }</span>
+								</div>
+							}
+							if previews.OpenCodeExecutionExitCode != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Exit code</span>
+									<span class="text-gray-300">{ previews.OpenCodeExecutionExitCode }</span>
+								</div>
+							}
 						</div>
-						if previews.OpenCodeParsedBuildStatus != "" {
-							<div class="flex justify-between">
-								<span class="text-gray-400">Build</span>
-								<span class="text-gray-300">{ previews.OpenCodeParsedBuildStatus }</span>
+					</div>
+				}
+
+				if isRunning {
+					<div class="text-xs sm:text-sm text-blue-400">
+						Status refreshes automatically. Captured output appears after logs are saved.
+					</div>
+				}
+
+				if len(previews.OpenCodeTranscript) > 0 {
+					<div class="rounded-xl border border-gray-800 bg-gray-950/60 overflow-hidden min-w-0">
+						<div class="border-b border-gray-800 px-3 py-2">
+							<div class="text-sm font-medium text-gray-200">Output Transcript</div>
+						</div>
+						<div class="max-h-80 overflow-auto text-xs leading-5 font-mono p-3 min-w-0">
+							for _, ev := range previews.OpenCodeTranscript {
+								<div class={ transcriptEventClass(ev.Kind) }>
+									<span class="text-gray-600">{ "[" + ev.Kind + "]" }</span>
+									<span class="whitespace-pre-wrap break-words">{ " " + ev.Text }</span>
+								</div>
+							}
+						</div>
+					</div>
+				}
+
+				<div class="relay-action-row">
+					if previews.HasOpenCodeStdout {
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout"}
+							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">stdout</a>
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout/download"}
+							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">download stdout</a>
+					}
+					if previews.HasOpenCodeStderr {
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr"}
+							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">stderr</a>
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr/download"}
+							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">download stderr</a>
+					}
+					if previews.HasOpenCodeCombinedLog {
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log"}
+							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">combined log</a>
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log/download"}
+							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">download combined log</a>
+					}
+				</div>
+
+				if previews.OpenCodeParsedResultStatus != "" {
+					<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4">
+						<div class="text-sm font-medium text-gray-200 mb-2">Parsed Result</div>
+						<div class="space-y-2 text-xs sm:text-sm">
+							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+								<span class="text-gray-400 shrink-0">Status</span>
+								<span class={ parsedResultStatusClass(previews.OpenCodeParsedResultStatus) }>{ previews.OpenCodeParsedResultStatus }</span>
+							</div>
+							if previews.OpenCodeParsedBuildStatus != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Build</span>
+									<span class="text-gray-300">{ previews.OpenCodeParsedBuildStatus }</span>
+								</div>
+							}
+							if previews.OpenCodeParsedTestStatus != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Tests</span>
+									<span class="text-gray-300">{ previews.OpenCodeParsedTestStatus }</span>
+								</div>
+							}
+							if previews.OpenCodeParsedLOCChanged != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">LOC changed</span>
+									<span class="text-gray-300">{ previews.OpenCodeParsedLOCChanged }</span>
+								</div>
+							}
+						</div>
+						if previews.OpenCodeParsedResultRaw != "" {
+							<div class="mt-3 pt-3 border-t border-gray-800 relay-action-row">
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw"}
+									class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View raw result</a>
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw/download"}
+									class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download raw result</a>
 							</div>
 						}
-						if previews.OpenCodeParsedTestStatus != "" {
-							<div class="flex justify-between">
-								<span class="text-gray-400">Tests</span>
-								<span class="text-gray-300">{ previews.OpenCodeParsedTestStatus }</span>
-							</div>
-						}
-						if previews.OpenCodeParsedLOCChanged != "" {
-							<div class="flex justify-between">
-								<span class="text-gray-400">LOC changed</span>
-								<span class="text-gray-300">{ previews.OpenCodeParsedLOCChanged }</span>
+						if previews.OpenCodeParsedResultStatus == "DONE" || previews.OpenCodeParsedResultStatus == "BLOCKED" {
+							<div class="mt-3">
+								<a href={"/runs/" + Itoa(run.ID) + "?step=validation"}
+									class="btn-primary text-sm sm:text-base w-full sm:w-auto inline-flex items-center justify-center">
+									Proceed to Relay Validation
+								</a>
 							</div>
 						}
 					</div>
-					if previews.OpenCodeParsedResultRaw != "" {
-						<div class="mt-2 pt-2 border-t border-gray-800 flex gap-2">
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">View raw result</a>
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw/download"}
-								class="text-xs text-gray-500 hover:text-gray-300">Download raw result</a>
-						</div>
-					}
-					if previews.OpenCodeParsedResultStatus == "DONE" || previews.OpenCodeParsedResultStatus == "BLOCKED" {
-						<div class="mt-2">
-							<a href={"/runs/" + Itoa(run.ID) + "?step=validation"}
-								class="inline-block px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-								Proceed to Relay Validation
-							</a>
-						</div>
-					}
-				</div>
-			}
+				}
 
-			<details class="mt-3 border border-gray-800 rounded-lg p-3 bg-gray-950/40">
-				<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none">
-					Manual result intake fallback
-				</summary>
-				<div class="mt-3">
-					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="body" hx-swap="outerHTML"
-						class="space-y-2">
-						<input type="hidden" name="action" value="submit-agent-result"/>
-						<textarea name="agent_result_text" rows="6"
-							class="w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded p-2 text-gray-300"
-							placeholder={"DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42"}></textarea>
-						<button type="submit"
-							class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-							Save Agent Result
-						</button>
-					</form>
-				</div>
-			</details>
-	}
+				<details class="relay-card p-3 sm:p-4">
+					<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none min-h-[36px] inline-flex items-center">
+						Manual result intake fallback
+					</summary>
+					<div class="mt-3">
+						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+							hx-target="body" hx-swap="outerHTML"
+							class="space-y-3">
+							<input type="hidden" name="action" value="submit-agent-result"/>
+							<textarea name="agent_result_text" rows="6"
+								class="w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded-lg p-2 text-gray-300 min-w-0 resize-y"
+								placeholder={"DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42"}></textarea>
+							<button type="submit"
+								class="btn-primary text-xs sm:text-sm">
+								Save Agent Result
+							</button>
+						</form>
+					</div>
+				</details>
+		}
+	</div>
 }
 
 templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
-	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
-		<div class="flex items-center justify-between mb-3">
-			<div>
-				<h3 class="font-medium">Step 6: Relay Validation</h3>
-				<p class="text-xs text-gray-500 mt-0.5">Run Relay-extracted validation commands locally after agent result.</p>
+	<div class="relay-card">
+		<div class="relay-card-header">
+			<div class="min-w-0">
+				<h3 class="font-medium text-base sm:text-lg">Step 6: Relay Validation</h3>
+				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Run Relay-extracted validation commands locally after agent result.</p>
 			</div>
-			<div class="flex items-center gap-3">
+			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
 				@validationStatusChip(artifactExists(artifacts, "validation_run_json"), checks, artifactExists(artifacts, "agent_result_raw"))
 				if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 						hx-target="body" hx-swap="outerHTML"
-						class="flex gap-2">
+						class="inline">
 						<input type="hidden" name="action" value="run-validation"/>
 						<button type="submit"
-							class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+							class="btn-primary text-xs sm:text-sm">
 							Run Validation Commands
 						</button>
 					</form>
 				} else if artifactExists(artifacts, "agent_result_raw") && !previews.HasValidationCommands {
-					<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed"
+					<span class="relay-chip-gray text-xs cursor-not-allowed"
 						title="No validation commands available">
 						Run Validation (no commands)
 					</span>
 				} else {
-					<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed"
+					<span class="relay-chip-gray text-xs cursor-not-allowed"
 						title="Submit an agent result first">
 						Run Validation (no result)
 					</span>
@@ -959,62 +969,62 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 			</div>
 		</div>
 
-		if artifactExists(artifacts, "validation_run_json") {
-			<div class="mt-2">
-				if hasCheckStatus(checks, "validation_run", "pass") {
-					<div class="text-xs text-green-400">Validation passed.</div>
-				} else if hasCheckStatus(checks, "validation_run", "fail") {
-					<div class="text-xs text-red-400">Validation failed. Review stdout/stderr artifacts.</div>
-				} else {
-					<div class="text-xs text-gray-500">Validation completed. Check artifacts for details.</div>
-				}
-			</div>
-			<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
-				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json"}
-					class="text-xs text-indigo-400 hover:text-indigo-300">View validation JSON</a>
-				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json/download"}
-					class="text-xs text-gray-500 hover:text-gray-300">Download validation JSON</a>
-				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stdout"}
-					class="text-xs text-indigo-400 hover:text-indigo-300">View stdout</a>
-				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stderr"}
-					class="text-xs text-indigo-400 hover:text-indigo-300">View stderr</a>
-			</div>
-		} else if !artifactExists(artifacts, "agent_result_raw") {
-			<div class="mt-2 text-xs text-gray-500">
-				Submit an agent result first, then run validation commands.
-			</div>
-		} else if !previews.HasValidationCommands {
-			<div class="mt-2 rounded-lg border border-yellow-900/60 bg-yellow-950/30 p-3">
-				<div class="text-sm font-medium text-yellow-300">No validation commands</div>
-				<p class="mt-1 text-xs text-yellow-100">
-					No validation commands are available. Add a validation section to the handoff or configure default validation commands for this repo in repository settings.
-				</p>
-				<a href="/settings/repos" class="mt-2 inline-block text-xs text-indigo-400 hover:text-indigo-300">Repository settings</a>
-			</div>
-			<div class="mt-2 text-xs text-yellow-300">
-				Validation is waiting for commands. Add handoff validation commands or repo defaults.
-			</div>
-		} else {
-			<div class="mt-2 text-xs text-gray-500">
-				Agent result received. Run validation commands to verify the changes.
-			</div>
-		}
+		<div class="px-4 pb-4 space-y-3">
+			if artifactExists(artifacts, "validation_run_json") {
+				<div>
+					if hasCheckStatus(checks, "validation_run", "pass") {
+						<div class="text-xs sm:text-sm text-green-400">Validation passed.</div>
+					} else if hasCheckStatus(checks, "validation_run", "fail") {
+						<div class="text-xs sm:text-sm text-red-400">Validation failed. Review stdout/stderr artifacts.</div>
+					} else {
+						<div class="text-xs sm:text-sm text-gray-500">Validation completed. Check artifacts for details.</div>
+					}
+				</div>
+				<div class="pt-3 border-t border-gray-800 relay-action-row">
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json"}
+						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View validation JSON</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json/download"}
+						class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download validation JSON</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stdout"}
+						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View stdout</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stderr"}
+						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View stderr</a>
+				</div>
+			} else if !artifactExists(artifacts, "agent_result_raw") {
+				<div class="text-xs sm:text-sm text-gray-500">
+					Submit an agent result first, then run validation commands.
+				</div>
+			} else if !previews.HasValidationCommands {
+				<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-3 sm:p-4">
+					<div class="text-sm font-medium text-yellow-300">No validation commands</div>
+					<p class="mt-1 text-xs sm:text-sm text-yellow-100">
+						No validation commands are available. Add a validation section to the handoff or configure default validation commands for this repo in repository settings.
+					</p>
+					<a href="/settings/repos" class="mt-2 inline-block text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">Repository settings</a>
+				</div>
+				<div class="text-xs sm:text-sm text-yellow-300">
+					Validation is waiting for commands. Add handoff validation commands or repo defaults.
+				</div>
+			} else {
+				<div class="text-xs sm:text-sm text-gray-500">
+					Agent result received. Run validation commands to verify the changes.
+				</div>
+			}
+		</div>
 	</div>
 }
 
 templ DiffAuditStepPanel() {
-	<div class="border border-gray-800/50 rounded-lg p-4 bg-gray-900/30 opacity-70">
-		<div class="flex items-start justify-between">
-			<div class="flex items-start gap-3">
-				<div>
-					<h3 class="font-medium text-gray-500">Step 7: Diff / Audit</h3>
-					<p class="text-xs text-gray-600 mt-0.5">Later: inspect git diff and generate GPT audit packet.</p>
-					<div class="mt-2 text-xs text-gray-600">
-						Later: Relay will inspect git diff and generate a GPT audit packet. Not implemented yet.
-					</div>
+	<div class="relay-card opacity-70">
+		<div class="relay-card-header">
+			<div class="min-w-0">
+				<h3 class="font-medium text-base sm:text-lg text-gray-500">Step 7: Diff / Audit</h3>
+				<p class="text-xs sm:text-sm text-gray-600 mt-0.5">Later: inspect git diff and generate GPT audit packet.</p>
+				<div class="mt-2 text-xs text-gray-600">
+					Later: Relay will inspect git diff and generate a GPT audit packet. Not implemented yet.
 				</div>
 			</div>
-			<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600">
+			<span class="relay-chip-gray text-xs">
 				Future
 			</span>
 		</div>
@@ -1023,69 +1033,69 @@ templ DiffAuditStepPanel() {
 
 templ intakeStatusChip(checks []store.Check) {
 	if hasCheckStatus(checks, "validation", "block") {
-		<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">blocked</span>
+		<span class="relay-chip-red">blocked</span>
 	} else if hasCheckStatus(checks, "validation", "warn") {
-		<span class="px-2 py-0.5 text-xs rounded bg-yellow-900/50 text-yellow-400 border border-yellow-800">warn</span>
+		<span class="relay-chip-yellow">warn</span>
 	} else if hasCheckStatus(checks, "validation", "pass") {
-		<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">pass</span>
+		<span class="relay-chip-green">pass</span>
 	} else if hasCheckStatus(checks, "validation", "fail") {
-		<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">blocked</span>
+		<span class="relay-chip-red">blocked</span>
 	} else {
-		<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">pending</span>
+		<span class="relay-chip-gray">pending</span>
 	}
 }
 
 templ agentPromptStatusChip(hasAgentPrompt bool, checks []store.Check) {
 	if hasAgentPrompt {
-		<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">ready</span>
+		<span class="relay-chip-green">ready</span>
 	} else if hasCheckStatus(checks, "validation", "block") || hasCheckStatus(checks, "validation", "fail") {
-		<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">blocked</span>
+		<span class="relay-chip-red">blocked</span>
 	} else {
-		<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">pending</span>
+		<span class="relay-chip-gray">pending</span>
 	}
 }
 
 templ agentPacketStatusChip(hasPacket, hasPrompt bool) {
 	if hasPacket {
-		<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">ready</span>
+		<span class="relay-chip-green">ready</span>
 	} else if hasPrompt {
-		<span class="px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800">available</span>
+		<span class="relay-chip-blue">available</span>
 	} else {
-		<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">pending</span>
+		<span class="relay-chip-gray">pending</span>
 	}
 }
 
 templ handoffPreflightStatusChip(status string) {
 	if status == "ready" {
-		<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">ready</span>
+		<span class="relay-chip-green">ready</span>
 	} else if status == "blocked" {
-		<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">blocked</span>
+		<span class="relay-chip-red">blocked</span>
 	} else if status == "warning" {
-		<span class="px-2 py-0.5 text-xs rounded bg-yellow-900/50 text-yellow-400 border border-yellow-800">warning</span>
+		<span class="relay-chip-yellow">warning</span>
 	}
 }
 
 templ handoffStatusChip(hasPacket bool) {
 	if hasPacket {
-		<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">packet ready</span>
+		<span class="relay-chip-green">packet ready</span>
 	} else {
-		<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">no packet</span>
+		<span class="relay-chip-gray">no packet</span>
 	}
 }
 
 templ validationStatusChip(hasRun bool, checks []store.Check, hasAgentResult bool) {
 	if hasRun {
 		if hasCheckStatus(checks, "validation_run", "pass") {
-			<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">passed</span>
+			<span class="relay-chip-green">passed</span>
 		} else if hasCheckStatus(checks, "validation_run", "fail") {
-			<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">failed</span>
+			<span class="relay-chip-red">failed</span>
 		} else {
-			<span class="px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800">ran</span>
+			<span class="relay-chip-blue">ran</span>
 		}
 	} else if hasAgentResult {
-		<span class="px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800">available</span>
+		<span class="relay-chip-blue">available</span>
 	} else {
-		<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">pending</span>
+		<span class="relay-chip-gray">pending</span>
 	}
 }
 
@@ -1118,15 +1128,15 @@ func artifactExists(artifacts []store.Artifact, kind string) bool {
 
 templ openCodeExecutionStatusChip(status string) {
 	if status == "completed" {
-		<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">completed</span>
+		<span class="relay-chip-green">completed</span>
 	} else if status == "failed" {
-		<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">failed</span>
+		<span class="relay-chip-red">failed</span>
 	} else if status == "running" {
-		<span class="px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800">running</span>
+		<span class="relay-chip-blue">running</span>
 	} else if status == "blocked" {
-		<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">blocked</span>
+		<span class="relay-chip-red">blocked</span>
 	} else {
-		<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">{ status }</span>
+		<span class="relay-chip-gray">{ status }</span>
 	}
 }
 
@@ -1146,13 +1156,13 @@ func executionStatusClass(status string) string {
 func cliCheckStatusClass(status string) string {
 	switch status {
 	case "pass":
-		return "px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800"
+		return "relay-chip-green"
 	case "warn":
-		return "px-2 py-0.5 text-xs rounded bg-yellow-900/50 text-yellow-400 border border-yellow-800"
+		return "relay-chip-yellow"
 	case "fail":
-		return "px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800"
+		return "relay-chip-red"
 	default:
-		return "px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700"
+		return "relay-chip-gray"
 	}
 }
 

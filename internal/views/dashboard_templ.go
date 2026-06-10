@@ -59,7 +59,7 @@ func Dashboard(runs []store.DashboardRun) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"flex items-center justify-between mb-8\"><div><h1 class=\"text-2xl font-bold\">Runs</h1><p class=\"text-gray-500 text-sm mt-1\">Recent handoff runs</p></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8\"><div><h1 class=\"text-2xl font-bold\">Runs</h1><p class=\"text-gray-500 text-sm mt-1\">Recent handoff runs</p></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -69,7 +69,7 @@ func Dashboard(runs []store.DashboardRun) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"border-b border-gray-800 text-left text-gray-500 uppercase text-xs\"><th class=\"py-3 px-4\">Title</th><th class=\"py-3 px-4\">Repo</th><th class=\"py-3 px-4\">Status</th><th class=\"py-3 px-4\">Recommended</th><th class=\"py-3 px-4\">Selected</th><th class=\"py-3 px-4\">Updated</th></tr></thead> <tbody>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0\"><table class=\"min-w-full text-sm\"><thead><tr class=\"border-b border-gray-800 text-left text-gray-500 uppercase text-xs\"><th class=\"py-3 px-4\">Title</th><th class=\"py-3 px-4\">Repo</th><th class=\"py-3 px-4\">Status</th><th class=\"py-3 px-4 hidden md:table-cell\">Recommended</th><th class=\"py-3 px-4 hidden md:table-cell\">Selected</th><th class=\"py-3 px-4\">Updated</th></tr></thead> <tbody>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -148,7 +148,7 @@ func Dashboard(runs []store.DashboardRun) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</span></td><td class=\"py-3 px-4 text-gray-400\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</span></td><td class=\"py-3 px-4 text-gray-400 hidden md:table-cell\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -168,7 +168,7 @@ func Dashboard(runs []store.DashboardRun) templ.Component {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</td><td class=\"py-3 px-4 text-gray-400\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</td><td class=\"py-3 px-4 text-gray-400 hidden md:table-cell\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
