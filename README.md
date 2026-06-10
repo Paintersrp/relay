@@ -196,7 +196,9 @@ To generate:
 4. View, download, or copy the handoff from Step 7.
 5. Paste the handoff into GPT for review.
 
-The audit handoff is always available for view/download after generation, even after page reload.
+After collecting git diff evidence, commit the implementation, re-inspect the diff if needed, and regenerate the audit handoff to include the latest evidence.
+
+The audit handoff is always available for view/download after generation, even after page reload. Regenerating the audit handoff replaces the previous version so the latest handoff always reflects the most recent evidence.
 
 ## Git Diff Evidence
 

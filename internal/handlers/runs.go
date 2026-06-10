@@ -305,6 +305,12 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	// Parse validation run preview
 	validationRunPreview := parseValidationRunPreview(readArtifactPreview(id, "validation_run_json"))
 
+	// Compute repo path for previews
+	previewsRepoPath := ""
+	if repo != nil {
+		previewsRepoPath = repo.Path
+	}
+
 	// Compute audit handoff availability
 	auditHandoffPreview := readArtifactPreview(id, "audit_handoff")
 	hasAuditHandoff := auditHandoffPreview != "" || hasArtifactKind(artifactsList, "audit_handoff")
@@ -460,6 +466,8 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		ValidationRun:                   validationRunPreview,
 		HasAuditHandoff:                 hasAuditHandoff,
 		AuditHandoff:                    auditHandoffPreview,
+		RepoPath:                        previewsRepoPath,
+		SuggestedCommitMessage:          "feat: add audit diff evidence collection",
 		HasGitStatus:                    hasGitStatus,
 		GitStatusPreview:                gitStatusPreview,
 		HasGitDiffStat:                  hasGitDiffStat,
@@ -1306,6 +1314,10 @@ func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Reques
 		h.log.Error("write audit handoff", "error", err)
 		http.Error(w, "failed to save audit handoff", http.StatusInternalServerError)
 		return
+	}
+	// Delete existing audit handoff rows so the regenerated handoff replaces stale artifacts
+	if err := h.store.DeleteArtifactsByRunKind(runID, "audit_handoff"); err != nil {
+		h.log.Error("delete previous audit handoff artifact rows", "error", err)
 	}
 	h.store.CreateArtifact(runID, "audit_handoff", artifactPath, "text/markdown")
 	h.store.CreateEvent(runID, "info", "Audit handoff generated")

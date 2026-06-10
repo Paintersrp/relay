@@ -387,3 +387,73 @@ func TestInspectDiffWritesArtifacts(t *testing.T) {
 		t.Error("expected git_diff_patch file on disk")
 	}
 }
+
+func TestGenerateAuditHandoffReplacesExistingRow(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, "# Test\n\n## Goal\nDo something.\n")
+
+	// Create initial audit handoff to simulate prior generation
+	initialPath, err := artifacts.Write(runID, "audit_handoff", pipeline.ArtifactFilename("audit_handoff"), []byte("initial"))
+	if err != nil {
+		t.Fatalf("write initial audit handoff: %v", err)
+	}
+	s.CreateArtifact(runID, "audit_handoff", initialPath, "text/markdown")
+
+	// Confirm exactly one row exists before regeneration
+	artifactsBefore, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts before: %v", err)
+	}
+	beforeCount := 0
+	for _, a := range artifactsBefore {
+		if a.Kind == "audit_handoff" {
+			beforeCount++
+		}
+	}
+	if beforeCount != 1 {
+		t.Fatalf("expected 1 audit_handoff before, got %d", beforeCount)
+	}
+
+	// Regenerate
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.generateAuditHandoff(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=audit") {
+		t.Fatalf("expected redirect to step=audit, got %s", loc)
+	}
+
+	// Confirm exactly one row remains after regeneration
+	artifactsAfter, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts after: %v", err)
+	}
+	afterCount := 0
+	for _, a := range artifactsAfter {
+		if a.Kind == "audit_handoff" {
+			afterCount++
+		}
+	}
+	if afterCount != 1 {
+		t.Fatalf("expected exactly 1 audit_handoff after regeneration, got %d", afterCount)
+	}
+
+	// Confirm the artifact content changed (new content written)
+	for _, a := range artifactsAfter {
+		if a.Kind == "audit_handoff" {
+			data, err := artifacts.Read(runID, "audit_handoff", pipeline.ArtifactFilename("audit_handoff"))
+			if err != nil {
+				t.Fatalf("read regenerated audit handoff: %v", err)
+			}
+			if string(data) == "initial" {
+				t.Error("expected regenerated content to differ from initial")
+			}
+			break
+		}
+	}
+}
