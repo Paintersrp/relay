@@ -1,4 +1,4 @@
-# Blocked Handoff
+# Scope Mismatch Handoff
 
 ## Goal
 
@@ -6,8 +6,22 @@ Do a thing.
 
 ## Scope
 
-- foo.go
+- src/definitely-missing.ts
 
 ## Do not change
 
 - Nothing.
+
+## Task checklist
+
+- [ ] Do it
+
+## Tests / validation
+
+```bash
+go test ./...
+```
+
+## Agent final output requirement
+
+Return DONE or BLOCKED.

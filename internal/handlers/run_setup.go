@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"strings"
 
 	"relay/internal/artifacts"
 	"relay/internal/pipeline"
@@ -22,6 +23,13 @@ type RunSetupResult struct {
 	PacketGenerated  bool
 	Blocked          bool
 	Blockers         []string
+}
+
+// promptSetupResult describes the outcome of the prompt generation step.
+type promptSetupResult struct {
+	Generated bool
+	Blocked   bool
+	Blockers  []string
 }
 
 // prepareRunForReview runs the full setup pipeline: validate → prompt → packet.
@@ -49,9 +57,16 @@ func (h *RunsHandler) prepareRunForReview(runID int64) RunSetupResult {
 	}
 
 	// Step 2: Generate Agent Prompt
-	promptOK := h.runPreparePromptForSetup(runID)
-	result.PromptGenerated = promptOK
-	if !promptOK {
+	prompt := h.runPreparePromptForSetup(runID)
+	if prompt.Blocked {
+		result.Blocked = true
+		result.Blockers = prompt.Blockers
+		h.log.Info("setup: blocked by intake review", "run_id", runID, "blockers", prompt.Blockers)
+		return result
+	}
+
+	result.PromptGenerated = prompt.Generated
+	if !prompt.Generated {
 		h.log.Warn("setup: prompt generation failed, skipping packet", "run_id", runID)
 		return result
 	}
@@ -122,17 +137,18 @@ func (h *RunsHandler) runValidateForSetup(runID int64) (string, []string) {
 }
 
 // runPreparePromptForSetup reuses prompt generation logic without HTTP responses.
-// Returns true if the prompt was generated.
-func (h *RunsHandler) runPreparePromptForSetup(runID int64) bool {
+// Returns a promptSetupResult indicating whether the prompt was generated or
+// blocked.
+func (h *RunsHandler) runPreparePromptForSetup(runID int64) promptSetupResult {
 	handoffData, err := artifacts.Read(runID, "original_handoff", pipeline.ArtifactFilename("original_handoff"))
 	if err != nil {
 		h.log.Error("setup: read handoff for prompt", "run_id", runID, "error", err)
-		return false
+		return promptSetupResult{Generated: false}
 	}
 
 	run, err := h.store.GetRun(runID)
 	if err != nil {
-		return false
+		return promptSetupResult{Generated: false}
 	}
 
 	repo, _ := h.store.GetRepo(run.RepoID)
@@ -147,10 +163,15 @@ func (h *RunsHandler) runPreparePromptForSetup(runID int64) bool {
 	review := pipeline.BuildIntakeReview(metadata, repoPath)
 
 	if len(review.Blockers) > 0 {
-		h.store.CreateEvent(runID, "warn",
-			"[Auto] Cannot generate Agent Prompt while Intake Review has blockers. Fix repo selection or handoff scope first.")
+		h.store.UpdateRunStatus(runID, "needs_review")
+		h.store.CreateEvent(runID, "warn", "[Auto] Automatic setup stopped: Intake Review has blockers.")
+		h.store.CreateEvent(runID, "warn", "[Auto] "+strings.Join(review.Blockers, "; "))
 		h.log.Warn("setup: blocked from generating prompt by intake review blockers", "run_id", runID)
-		return false
+		return promptSetupResult{
+			Generated: false,
+			Blocked:   true,
+			Blockers:  review.Blockers,
+		}
 	}
 
 	prompt := pipeline.PreparePrompt(string(handoffData))
@@ -158,7 +179,7 @@ func (h *RunsHandler) runPreparePromptForSetup(runID int64) bool {
 	promptPath, err := artifacts.Write(runID, "agent_prompt", pipeline.ArtifactFilename("agent_prompt"), []byte(prompt))
 	if err != nil {
 		h.log.Error("setup: write agent prompt", "run_id", runID, "error", err)
-		return false
+		return promptSetupResult{Generated: false}
 	}
 
 	h.store.CreateArtifact(runID, "agent_prompt", promptPath, "text/plain")
@@ -166,7 +187,7 @@ func (h *RunsHandler) runPreparePromptForSetup(runID int64) bool {
 	h.store.CreateEvent(runID, "info", "[Auto] Agent prompt generated")
 
 	h.log.Info("setup: agent prompt generated", "run_id", runID)
-	return true
+	return promptSetupResult{Generated: true}
 }
 
 // runGeneratePacketForSetup reuses packet generation logic without HTTP responses.

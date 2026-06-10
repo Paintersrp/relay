@@ -1,5 +1,5 @@
 {
-  "status": "needs_fix",
+  "status": "ready",
   "checks": [
     {
       "kind": "title_line",
@@ -7,9 +7,14 @@
       "summary": "Title line found"
     },
     {
+      "kind": "validation_section",
+      "status": "pass",
+      "summary": "Validation / Tests section found"
+    },
+    {
       "kind": "output_section",
-      "status": "fail",
-      "summary": "## Output / Final output / Agent final output requirement section missing"
+      "status": "pass",
+      "summary": "## Output / Final output / Agent final output requirement section found"
     },
     {
       "kind": "goal_section",
@@ -28,28 +33,23 @@
     },
     {
       "kind": "task_checklist_section",
-      "status": "fail",
-      "summary": "## Task checklist section missing"
-    },
-    {
-      "kind": "validation_section",
-      "status": "fail",
-      "summary": "Validation / Tests section missing"
+      "status": "pass",
+      "summary": "## Task checklist section found"
     },
     {
       "kind": "checkbox_items",
-      "status": "fail",
-      "summary": "No markdown checkbox items found"
+      "status": "pass",
+      "summary": "Markdown checkbox items found"
     },
     {
       "kind": "output_terms",
-      "status": "warn",
-      "summary": "DONE or BLOCKED not clearly present"
+      "status": "pass",
+      "summary": "DONE and BLOCKED present in text"
     },
     {
       "kind": "validation_commands",
-      "status": "warn",
-      "summary": "No validation commands detected"
+      "status": "pass",
+      "summary": "Validation commands detected"
     },
     {
       "kind": "scope_paths",
@@ -64,11 +64,13 @@
   ],
   "warnings": [],
   "detected": {
-    "title": "Blocked Handoff",
+    "title": "Scope Mismatch Handoff",
     "scope_paths": [
-      "foo.go"
+      "src/definitely-missing.ts"
     ],
-    "validation_commands": [],
+    "validation_commands": [
+      "go test ./..."
+    ],
     "recommended_model": "test-model"
   }
 }
