@@ -2,26 +2,38 @@ import htmx from 'htmx.org';
 import Alpine from 'alpinejs';
 
 (window as any).htmx = htmx;
-
 (window as any).Alpine = Alpine;
 Alpine.start();
 
-document.addEventListener('DOMContentLoaded', () => {
-  document.querySelectorAll('[data-copy-target]').forEach((el) => {
-    el.addEventListener('click', () => {
-      const targetId = el.getAttribute('data-copy-target');
-      if (!targetId) return;
-      const target = document.getElementById(targetId);
-      if (!target) return;
-      const text = target.textContent || '';
-      navigator.clipboard.writeText(text).then(() => {
-        const orig = el.textContent || '';
-        el.textContent = 'Copied!';
-        setTimeout(() => { el.textContent = orig; }, 1500);
-      }).catch(() => {});
-    });
+function initDelegatedCopyControls(): void {
+  document.addEventListener('click', (event) => {
+    const trigger = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-copy-target]');
+    if (!trigger) return;
+    const targetId = trigger.getAttribute('data-copy-target');
+    if (!targetId) return;
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const text = target.textContent || '';
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = trigger.textContent || '';
+      trigger.textContent = 'Copied!';
+      setTimeout(() => { trigger.textContent = orig; }, 1500);
+    }).catch(() => {});
   });
-});
+}
+
+function initWorkbenchSwapFocus(): void {
+  document.body.addEventListener('htmx:afterSwap', (event) => {
+    const detail = (event as CustomEvent).detail;
+    const target = detail?.target as HTMLElement | undefined;
+    if (target?.id !== 'run-workbench-shell') return;
+    const heading = target.querySelector<HTMLElement>('[data-run-step-heading]');
+    heading?.focus({ preventScroll: true });
+  });
+}
+
+initDelegatedCopyControls();
+initWorkbenchSwapFocus();
 
 function initDevReload(): void {
   const marker = document.querySelector('meta[name="relay-dev-reload"][content="enabled"]');

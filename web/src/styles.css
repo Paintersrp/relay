@@ -49,4 +49,63 @@
   .relay-action-row {
     @apply flex flex-wrap gap-2;
   }
+
+  .relay-workbench-shell {
+    @apply space-y-4 sm:space-y-6;
+  }
+  .relay-workbench-grid {
+    @apply grid grid-cols-1 lg:grid-cols-[18rem_minmax(0,1fr)] gap-4 sm:gap-6;
+  }
+  .relay-step-rail {
+    @apply sticky top-4 self-start rounded-2xl border border-gray-800 bg-gray-950/70 p-3;
+  }
+  .relay-step-strip {
+    @apply overflow-x-auto -mx-3 px-3 pb-2 lg:hidden;
+  }
+  .relay-step-stage {
+    @apply min-w-0;
+  }
+  .relay-step-stage-card {
+    @apply rounded-xl border border-gray-800 bg-gray-900/50 min-w-0 overflow-hidden;
+  }
+  .relay-step-link {
+    @apply block rounded-lg px-3 py-2 transition-colors min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-950;
+  }
+  .relay-step-link-active {
+    @apply border border-indigo-700 bg-indigo-900/40 text-indigo-300;
+  }
+  .relay-step-link-done {
+    @apply border border-green-800 bg-green-900/30 text-green-400;
+  }
+  .relay-step-link-ready {
+    @apply border border-indigo-800 bg-indigo-900/30 text-indigo-400;
+  }
+  .relay-step-link-running {
+    @apply border border-blue-800 bg-blue-900/30 text-blue-400;
+  }
+  .relay-step-link-blocked {
+    @apply border border-red-800 bg-red-900/30 text-red-400;
+  }
+  .relay-step-link-pending {
+    @apply border border-gray-800 bg-gray-900/40 text-gray-500;
+  }
+  .relay-step-dot {
+    @apply inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-medium;
+  }
+  .relay-step-flow-footer {
+    @apply flex flex-wrap items-center justify-between gap-2 border-t border-gray-800 px-4 py-3;
+  }
+  .relay-workbench-secondary {
+    @apply space-y-2;
+  }
+  .relay-secondary-toggle {
+    @apply rounded-xl border border-gray-800 bg-gray-900/50 p-3;
+  }
+  .relay-workbench-loading {
+    @apply fixed top-4 right-4 z-50 inline-flex items-center px-3 py-1.5 rounded-full bg-gray-900 border border-gray-700 text-xs text-gray-300 shadow-lg;
+  }
+
+  .htmx-request .relay-step-stage-card {
+    @apply opacity-65;
+  }
 }

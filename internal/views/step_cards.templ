@@ -6,45 +6,234 @@ import (
 	"relay/internal/store"
 )
 
+type workflowStep struct {
+	Key        string
+	Number     string
+	Label      string
+	ShortLabel string
+	Helper     string
+}
+
+func workflowSteps() []workflowStep {
+	return []workflowStep{
+		{Key: "intake", Number: "1", Label: "Intake Review", ShortLabel: "Intake", Helper: "Validate handoff structure"},
+		{Key: "prompt", Number: "2", Label: "Agent Prompt", ShortLabel: "Prompt", Helper: "Generate compact repo-agent prompt"},
+		{Key: "packet", Number: "3", Label: "Agent Packet", ShortLabel: "Packet", Helper: "Bundle execution handoff"},
+		{Key: "handoff", Number: "4", Label: "OpenCode Handoff", ShortLabel: "Handoff", Helper: "Check CLI and command preview"},
+		{Key: "run", Number: "5", Label: "Agent Run", ShortLabel: "Run", Helper: "Execute or review agent output"},
+		{Key: "validation", Number: "6", Label: "Validation", ShortLabel: "Validation", Helper: "Run project validation commands"},
+		{Key: "audit", Number: "7", Label: "Diff / Audit", ShortLabel: "Audit", Helper: "Inspect diff and generate audit handoff"},
+		{Key: "commit", Number: "8", Label: "Git Commit", ShortLabel: "Commit", Helper: "Prepare manual commit command"},
+	}
+}
+
+func previousWorkflowStep(activeStep string) (workflowStep, bool) {
+	steps := workflowSteps()
+	for i, s := range steps {
+		if s.Key == activeStep && i > 0 {
+			return steps[i-1], true
+		}
+	}
+	return workflowStep{}, false
+}
+
+func nextWorkflowStep(activeStep string) (workflowStep, bool) {
+	steps := workflowSteps()
+	for i, s := range steps {
+		if s.Key == activeStep && i < len(steps)-1 {
+			return steps[i+1], true
+		}
+	}
+	return workflowStep{}, false
+}
+
+func workflowStepState(step string, activeStep string, previews RunPreviews, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview) string {
+	switch step {
+	case "intake":
+		if hasCheckKind(checks, "validation") {
+			return "done"
+		}
+		if activeStep == "intake" {
+			return "active"
+		}
+		if artifactExists(artifacts, "original_handoff") {
+			return "ready"
+		}
+		return "pending"
+	case "prompt":
+		if artifactExists(artifacts, "agent_prompt") {
+			return "done"
+		}
+		if intakeReview != nil && len(intakeReview.Blockers) > 0 {
+			return "blocked"
+		}
+		if intakeReview != nil {
+			return "ready"
+		}
+		return "pending"
+	case "packet":
+		if artifactExists(artifacts, "opencode_handoff_packet") {
+			return "done"
+		}
+		if artifactExists(artifacts, "agent_prompt") {
+			return "ready"
+		}
+		return "pending"
+	case "handoff":
+		if artifactExists(artifacts, "opencode_dry_run_json") && artifactExists(artifacts, "opencode_cli_check_json") {
+			return "done"
+		}
+		if artifactExists(artifacts, "opencode_handoff_packet") {
+			if previews.OpenCodeAdapterError != "" || previews.HandoffPreflightStatus == "blocked" {
+				return "blocked"
+			}
+			return "ready"
+		}
+		return "pending"
+	case "run":
+		if previews.HasOpenCodeRunning {
+			return "running"
+		}
+		if artifactExists(artifacts, "agent_result_raw") {
+			return "done"
+		}
+		if artifactExists(artifacts, "opencode_handoff_packet") {
+			if previews.OpenCodeAdapterError != "" || previews.HandoffPreflightStatus == "blocked" {
+				return "pending"
+			}
+			return "ready"
+		}
+		return "pending"
+	case "validation":
+		if previews.ValidationProgressRunning {
+			return "running"
+		}
+		if hasCheckStatus(checks, "validation_run", "pass") {
+			return "done"
+		}
+		if hasCheckStatus(checks, "validation_run", "fail") {
+			if previews.ValidationFailedAccepted {
+				return "done"
+			}
+			return "blocked"
+		}
+		if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
+			return "ready"
+		}
+		return "pending"
+	case "audit":
+		if artifactExists(artifacts, "audit_handoff") {
+			return "done"
+		}
+		if hasCheckStatus(checks, "validation_run", "pass") || previews.ValidationFailedAccepted {
+			return "ready"
+		}
+		return "pending"
+	case "commit":
+		if artifactExists(artifacts, "commit_message_text") {
+			return "done"
+		}
+		if artifactExists(artifacts, "audit_handoff") {
+			return "ready"
+		}
+		return "pending"
+	}
+	return "pending"
+}
+
+func workflowStepStateLabel(state string) string {
+	switch state {
+	case "active":
+		return "active"
+	case "done":
+		return "done"
+	case "ready":
+		return "ready"
+	case "running":
+		return "running"
+	case "blocked":
+		return "blocked"
+	case "pending":
+		return "pending"
+	default:
+		return state
+	}
+}
+
+func workflowStepLinkClass(step string, activeStep string, state string) string {
+	if activeStep == step {
+		return "relay-step-link relay-step-link-active"
+	}
+	switch state {
+	case "done":
+		return "relay-step-link relay-step-link-done"
+	case "ready":
+		return "relay-step-link relay-step-link-ready"
+	case "running":
+		return "relay-step-link relay-step-link-running"
+	case "blocked":
+		return "relay-step-link relay-step-link-blocked"
+	case "pending":
+		return "relay-step-link relay-step-link-pending"
+	default:
+		return "relay-step-link"
+	}
+}
+
 templ StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
-	<div class="mb-4 overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
-		<nav class="flex min-w-max gap-1 bg-gray-900/80 border border-gray-800 rounded-xl p-1 text-xs sm:text-sm">
-			<a href={"/runs/" + Itoa(run.ID) + "?step=intake"}
-				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center", stepNavClass(activeStep, "intake") }>
-				1 Intake
+	@WorkflowStepStrip(run.ID, previews, artifacts, checks, intakeReview, activeStep)
+	@ActiveStepPanel(run, repo, artifacts, checks, previews, intakeReview, activeStep)
+	@ActionButtons(run.ID)
+}
+
+templ WorkflowStepRail(runID int64, previews RunPreviews, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview, activeStep string) {
+	<nav class="space-y-1" aria-label="Workflow steps">
+		for _, step := range workflowSteps() {
+			{{ state := workflowStepState(step.Key, activeStep, previews, artifacts, checks, intakeReview) }}
+			<a href={"/runs/" + Itoa(runID) + "?step=" + step.Key}
+				hx-get={"/runs/" + Itoa(runID) + "?step=" + step.Key}
+				hx-target="#run-workbench-shell"
+				hx-select="#run-workbench-shell"
+				hx-swap="outerHTML show:#run-workbench-shell:top"
+				hx-push-url="true"
+				hx-indicator="#run-workbench-loading"
+				data-relay-workbench-link="true"
+				class={workflowStepLinkClass(step.Key, activeStep, state)}>
+				<div class="flex items-center gap-2">
+					<span class="relay-step-dot">{ step.Number }</span>
+					<span class="font-medium">{ step.ShortLabel }</span>
+					<span class="text-xs ml-auto">{ workflowStepStateLabel(state) }</span>
+				</div>
+				<div class="text-xs text-gray-500 mt-0.5">{ step.Helper }</div>
 			</a>
-			<a href={"/runs/" + Itoa(run.ID) + "?step=prompt"}
-				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center", stepNavClass(activeStep, "prompt") }>
-				2 Prompt
-			</a>
-			<a href={"/runs/" + Itoa(run.ID) + "?step=packet"}
-				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center", stepNavClass(activeStep, "packet") }>
-				3 Packet
-			</a>
-			<a href={"/runs/" + Itoa(run.ID) + "?step=handoff"}
-				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center", stepNavClass(activeStep, "handoff") }>
-				4 Handoff
-			</a>
-			<a href={"/runs/" + Itoa(run.ID) + "?step=run"}
-				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center", stepNavClass(activeStep, "run") }>
-				5 Run
-			</a>
-			<a href={"/runs/" + Itoa(run.ID) + "?step=validation"}
-				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center", stepNavClass(activeStep, "validation") }>
-				6 Validation
-			</a>
-			<a href={"/runs/" + Itoa(run.ID) + "?step=audit"}
-				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center opacity-50", stepNavClass(activeStep, "audit") }>
-				7 Audit
-			</a>
-			<a href={"/runs/" + Itoa(run.ID) + "?step=commit"}
-				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center opacity-50", stepNavClass(activeStep, "commit") }>
-				8 Commit
-			</a>
+		}
+	</nav>
+}
+
+templ WorkflowStepStrip(runID int64, previews RunPreviews, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview, activeStep string) {
+	<div class="relay-step-strip lg:hidden">
+		<nav class="flex gap-2" aria-label="Workflow steps">
+			for _, step := range workflowSteps() {
+				{{ state := workflowStepState(step.Key, activeStep, previews, artifacts, checks, intakeReview) }}
+				<a href={"/runs/" + Itoa(runID) + "?step=" + step.Key}
+					hx-get={"/runs/" + Itoa(runID) + "?step=" + step.Key}
+					hx-target="#run-workbench-shell"
+					hx-select="#run-workbench-shell"
+					hx-swap="outerHTML show:#run-workbench-shell:top"
+					hx-push-url="true"
+					hx-indicator="#run-workbench-loading"
+					data-relay-workbench-link="true"
+					class={workflowStepLinkClass(step.Key, activeStep, state) + " shrink-0"}>
+					<span class="relay-step-dot">{ step.Number }</span>
+					<span class="font-medium whitespace-nowrap">{ step.ShortLabel }</span>
+					<span class="text-xs">{ workflowStepStateLabel(state) }</span>
+				</a>
+			}
 		</nav>
 	</div>
+}
 
-	// Active step panel
+templ ActiveStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
 	switch activeStep {
 	case "intake":
 		@IntakeStepPanel(run, repo, artifacts, checks, intakeReview, previews)
@@ -65,16 +254,82 @@ templ StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 	default:
 		@IntakeStepPanel(run, repo, artifacts, checks, intakeReview, previews)
 	}
-
-	@ActionButtons(run.ID)
 }
 
-// stepNavClass returns the CSS class for a step navigation link.
-func stepNavClass(activeStep, step string) string {
-	if activeStep == step {
-		return "bg-indigo-600/30 text-indigo-300 font-medium"
-	}
-	return "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+templ ActiveStepHeader(activeStep string, previews RunPreviews) {
+	<div class="relay-card-header border-b border-gray-800">
+		<div class="min-w-0">
+			<h3 class="font-medium text-base sm:text-lg" tabindex="-1" data-run-step-heading>
+				{ stepDisplayLabel(activeStep) }
+			</h3>
+			<p class="text-xs sm:text-sm text-gray-500 mt-0.5">
+				{ stepDescription(activeStep) }
+			</p>
+		</div>
+	</div>
+}
+
+templ StepFlowFooter(runID int64, activeStep string) {
+	<footer class="relay-step-flow-footer">
+		if prev, ok := previousWorkflowStep(activeStep); ok {
+			<a href={"/runs/" + Itoa(runID) + "?step=" + prev.Key}
+				hx-get={"/runs/" + Itoa(runID) + "?step=" + prev.Key}
+				hx-target="#run-workbench-shell"
+				hx-select="#run-workbench-shell"
+				hx-swap="outerHTML show:#run-workbench-shell:top"
+				hx-push-url="true"
+				hx-indicator="#run-workbench-loading"
+				data-relay-workbench-link="true"
+				class="text-sm text-gray-400 hover:text-gray-300 min-h-[36px] inline-flex items-center">
+				&larr; Back: { prev.Label }
+			</a>
+		} else {
+			<span></span>
+		}
+		if next, ok := nextWorkflowStep(activeStep); ok {
+			<a href={"/runs/" + Itoa(runID) + "?step=" + next.Key}
+				hx-get={"/runs/" + Itoa(runID) + "?step=" + next.Key}
+				hx-target="#run-workbench-shell"
+				hx-select="#run-workbench-shell"
+				hx-swap="outerHTML show:#run-workbench-shell:top"
+				hx-push-url="true"
+				hx-indicator="#run-workbench-loading"
+				data-relay-workbench-link="true"
+				class="text-sm text-gray-400 hover:text-gray-300 min-h-[36px] inline-flex items-center">
+				Next: { next.Label } &rarr;
+			</a>
+		} else {
+			<span></span>
+		}
+	</footer>
+}
+
+templ WorkbenchStepLink(runID int64, step string, className string) {
+	<a href={"/runs/" + Itoa(runID) + "?step=" + step}
+		hx-get={"/runs/" + Itoa(runID) + "?step=" + step}
+		hx-target="#run-workbench-shell"
+		hx-select="#run-workbench-shell"
+		hx-swap="outerHTML show:#run-workbench-shell:top"
+		hx-push-url="true"
+		hx-indicator="#run-workbench-loading"
+		data-relay-workbench-link="true"
+		class={className}>
+		{ children... }
+	</a>
+}
+
+templ WorkbenchActionForm(runID int64, action string, className string) {
+	<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+		hx-post={"/runs/" + Itoa(runID) + "/actions"}
+		hx-target="#run-workbench-shell"
+		hx-select="#run-workbench-shell"
+		hx-swap="outerHTML show:#run-workbench-shell:top"
+		hx-indicator="#run-workbench-loading"
+		data-relay-workbench-action="true"
+		class={className}>
+		<input type="hidden" name="action" value={action}/>
+		{ children... }
+	</form>
 }
 
 templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview, previews RunPreviews) {
@@ -88,7 +343,7 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 				@intakeStatusChip(checks)
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-					hx-target="body" hx-swap="outerHTML"
+					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="inline">
 					<input type="hidden" name="action" value="validate-handoff"/>
 					<button type="submit"
@@ -152,7 +407,7 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 						} else {
 							<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 								hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-								hx-target="body" hx-swap="outerHTML"
+								hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 								class="inline">
 								<input type="hidden" name="action" value="generate-intake-remediation-handoff"/>
 								<button type="submit"
@@ -199,7 +454,7 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 					</p>
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="body" hx-swap="outerHTML"
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="space-y-3">
 						<input type="hidden" name="action" value="replace-original-handoff"/>
 						<textarea name="handoff_text" rows="10"
@@ -227,7 +482,7 @@ templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []
 				@agentPromptStatusChip(artifactExists(artifacts, "agent_prompt"), checks)
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-					hx-target="body" hx-swap="outerHTML"
+					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="inline">
 					<input type="hidden" name="action" value="prepare-prompt"/>
 					<button type="submit"
@@ -308,7 +563,7 @@ templ AgentPacketStepPanel(run *store.Run, artifacts []store.Artifact, previews 
 				if artifactExists(artifacts, "agent_prompt") {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="body" hx-swap="outerHTML"
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="generate-opencode-packet"/>
 						<button type="submit"
@@ -590,7 +845,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 					if previews.OpenCodeAdapterError == "" && previews.OpenCodeCommandPreview != "" {
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-							hx-target="body" hx-swap="outerHTML"
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="inline">
 							<input type="hidden" name="action" value="dry-run-opencode-go"/>
 							<button type="submit"
@@ -607,7 +862,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="body" hx-swap="outerHTML"
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="check-opencode-cli"/>
 						<button type="submit"
@@ -638,14 +893,16 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 				if previews.HasOpenCodeRunning {
 					<div class="rounded-xl border border-blue-900/60 bg-blue-950/30 p-3 sm:p-4 mb-3">
 						<div class="text-sm font-medium text-blue-300">OpenCode is currently running.</div>
-						<a href={"/runs/" + Itoa(run.ID) + "?step=run"}
-							class="inline-block mt-2 text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center">Monitor Agent Run</a>
+					@WorkbenchStepLink(run.ID, "run", "inline-block mt-2 text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+						Monitor Agent Run
+					}
 					</div>
 				} else if previews.HasOpenCodeExecution && !previews.HasOpenCodeRunning {
 					<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4 mb-3">
 						<div class="text-sm font-medium text-gray-200">Latest OpenCode execution is complete.</div>
-						<a href={"/runs/" + Itoa(run.ID) + "?step=run"}
-							class="inline-block mt-2 text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center">Review Agent Run</a>
+					@WorkbenchStepLink(run.ID, "run", "inline-block mt-2 text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+						Review Agent Run
+					}
 					</div>
 				}
 
@@ -661,7 +918,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="body" hx-swap="outerHTML">
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true">
 						<input type="hidden" name="action" value="start-opencode-go"/>
 						<button type="submit"
 							class="btn-primary text-sm sm:text-base w-full sm:w-auto">
@@ -729,7 +986,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 				<div class="mt-3">
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="body" hx-swap="outerHTML"
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="space-y-3">
 						<input type="hidden" name="action" value="submit-agent-result"/>
 						<textarea name="agent_result_text" rows="6"
@@ -815,10 +1072,9 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 			<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-4 sm:p-6 text-center">
 				<div class="text-sm sm:text-base text-yellow-300">No OpenCode run has started yet.</div>
 				<p class="text-xs sm:text-sm text-yellow-100 mt-2">Return to Step 4 to launch OpenCode Go.</p>
-				<a href={"/runs/" + Itoa(run.ID) + "?step=handoff"}
-					class="inline-block mt-3 btn-primary text-xs sm:text-sm">
-					Back to OpenCode Go Handoff
-				</a>
+			@WorkbenchStepLink(run.ID, "handoff", "inline-block mt-3 btn-primary text-xs sm:text-sm") {
+				Back to OpenCode Go Handoff
+			}
 			</div>
 		}
 		if previews.HasOpenCodeExecution {
@@ -951,10 +1207,9 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 						}
 						if previews.OpenCodeParsedResultStatus == "DONE" || previews.OpenCodeParsedResultStatus == "BLOCKED" {
 							<div class="mt-3">
-								<a href={"/runs/" + Itoa(run.ID) + "?step=validation"}
-									class="btn-primary text-sm sm:text-base w-full sm:w-auto inline-flex items-center justify-center">
-									Proceed to Relay Validation
-								</a>
+							@WorkbenchStepLink(run.ID, "validation", "btn-primary text-sm sm:text-base w-full sm:w-auto inline-flex items-center justify-center") {
+								Proceed to Relay Validation
+							}
 							</div>
 						}
 					</div>
@@ -969,7 +1224,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 						<div class="text-xs text-gray-500 mb-3 font-medium">Manual result intake fallback</div>
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-							hx-target="body" hx-swap="outerHTML"
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="space-y-3">
 							<input type="hidden" name="action" value="submit-agent-result"/>
 							<textarea name="agent_result_text" rows="6"
@@ -989,7 +1244,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 						<div class="mt-3">
 							<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 								hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-								hx-target="body" hx-swap="outerHTML"
+								hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 								class="space-y-3">
 								<input type="hidden" name="action" value="submit-agent-result"/>
 								<textarea name="agent_result_text" rows="6"
@@ -1012,8 +1267,10 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 		<div id="relay-validation-panel"
 			hx-get={"/runs/" + Itoa(run.ID) + "?step=validation"}
 			hx-trigger="every 2s"
-			hx-target="body"
-			hx-swap="outerHTML"
+			hx-target="#run-workbench-shell"
+			hx-select="#run-workbench-shell"
+			hx-swap="outerHTML show:#run-workbench-shell:top"
+			hx-indicator="#run-workbench-loading"
 			class="relay-card">
 			@relayValidationStepPanelInner(run, artifacts, checks, previews)
 		</div>
@@ -1037,7 +1294,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 				} else if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="body" hx-swap="outerHTML"
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="run-validation"/>
 						<button type="submit"
@@ -1069,7 +1326,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 					if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-							hx-target="body" hx-swap="outerHTML"
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="mt-2 inline">
 							<input type="hidden" name="action" value="run-validation"/>
 							<button type="submit" class="btn-primary text-xs sm:text-sm">Re-run Validation</button>
@@ -1089,7 +1346,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 				if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="body" hx-swap="outerHTML"
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="run-validation"/>
 						<button type="submit" class="btn-primary text-xs sm:text-sm">Retry Validation</button>
@@ -1162,7 +1419,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 							</p>
 							<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 								hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-								hx-target="body" hx-swap="outerHTML"
+								hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 								class="mt-3 inline">
 								<input type="hidden" name="action" value="accept-validation-failure"/>
 								<button type="submit" class="btn-secondary text-xs sm:text-sm">
@@ -1179,10 +1436,9 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 							<p class="mt-1 text-xs text-yellow-200">
 								Continue to Step 7: Diff / Audit.
 							</p>
-							<a href={"/runs/" + Itoa(run.ID) + "?step=audit"}
-								class="mt-2 inline-block btn-primary text-xs sm:text-sm">
-								Go to Step 7: Diff / Audit
-							</a>
+						@WorkbenchStepLink(run.ID, "audit", "mt-2 inline-block btn-primary text-xs sm:text-sm") {
+							Go to Step 7: Diff / Audit
+						}
 						</div>
 					</div>
 				}
@@ -1338,7 +1594,7 @@ templ auditHandoffSection(previews RunPreviews, runID int64) {
 			</p>
 			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
 				hx-post={"/runs/" + Itoa(runID) + "/actions"}
-				hx-target="body" hx-swap="outerHTML"
+				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 				class="mt-2">
 				<input type="hidden" name="action" value="generate-audit-handoff"/>
 				<button type="submit"
@@ -1382,7 +1638,7 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 			<div class="flex flex-wrap items-center gap-2">
 				<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
 					hx-post={"/runs/" + Itoa(runID) + "/actions"}
-					hx-target="body" hx-swap="outerHTML"
+					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="inline">
 					<input type="hidden" name="action" value="inspect-diff"/>
 					<button type="submit"
@@ -1487,7 +1743,7 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 				</div>
 				<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
 					hx-post={"/runs/" + Itoa(runID) + "/actions"}
-					hx-target="body" hx-swap="outerHTML"
+					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="inline">
 					<input type="hidden" name="action" value="generate-audit-handoff"/>
 					<button type="submit"
@@ -1525,10 +1781,9 @@ templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Ru
 					<p class="mt-1 text-xs text-yellow-200">
 						Run Relay Validation in Step 6 before preparing a commit suggestion.
 					</p>
-					<a href={"/runs/" + Itoa(run.ID) + "?step=validation"}
-						class="mt-2 inline-block btn-primary text-xs sm:text-sm">
-						Go to Step 6: Relay Validation
-					</a>
+				@WorkbenchStepLink(run.ID, "validation", "mt-2 inline-block btn-primary text-xs sm:text-sm") {
+					Go to Step 6: Relay Validation
+				}
 				</div>
 			} else if previews.ValidationRun.Status == "fail" && !previews.ValidationFailedAccepted {
 				<div class="rounded-xl border border-red-900/60 bg-red-950/30 p-3 sm:p-4">
@@ -1536,10 +1791,9 @@ templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Ru
 					<p class="mt-1 text-xs text-red-200">
 						Review the failed validation output in Step 6 or explicitly accept the failure before preparing a commit suggestion.
 					</p>
-					<a href={"/runs/" + Itoa(run.ID) + "?step=validation"}
-						class="mt-2 inline-block btn-primary text-xs sm:text-sm">
-						Review Validation Output
-					</a>
+				@WorkbenchStepLink(run.ID, "validation", "mt-2 inline-block btn-primary text-xs sm:text-sm") {
+					Review Validation Output
+				}
 				</div>
 			} else if !previews.HasGitStatus && !previews.HasGitDiffStat {
 				<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-3 sm:p-4">
@@ -1547,10 +1801,9 @@ templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Ru
 					<p class="mt-1 text-xs text-yellow-200">
 						Run Inspect Git Diff in Step 7 before preparing the commit suggestion.
 					</p>
-					<a href={"/runs/" + Itoa(run.ID) + "?step=audit"}
-						class="mt-2 inline-block btn-primary text-xs sm:text-sm">
-						Go to Step 7: Diff / Audit
-					</a>
+				@WorkbenchStepLink(run.ID, "audit", "mt-2 inline-block btn-primary text-xs sm:text-sm") {
+					Go to Step 7: Diff / Audit
+				}
 				</div>
 			} else if !previews.HasAuditHandoff {
 				<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-3 sm:p-4">
@@ -1558,10 +1811,9 @@ templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Ru
 					<p class="mt-1 text-xs text-yellow-200">
 						Generate the audit handoff in Step 7 before preparing the commit suggestion.
 					</p>
-					<a href={"/runs/" + Itoa(run.ID) + "?step=audit"}
-						class="mt-2 inline-block btn-primary text-xs sm:text-sm">
-						Go to Step 7: Diff / Audit
-					</a>
+				@WorkbenchStepLink(run.ID, "audit", "mt-2 inline-block btn-primary text-xs sm:text-sm") {
+					Go to Step 7: Diff / Audit
+				}
 				</div>
 			} else if previews.ValidationFailedAccepted {
 				<div class="rounded-xl border border-red-900/60 bg-red-950/30 p-3 sm:p-4">
@@ -1575,7 +1827,7 @@ templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Ru
 			if !previews.HasCommitSuggestion && previews.HasGitStatus && previews.HasAuditHandoff {
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-					hx-target="body" hx-swap="outerHTML"
+					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="inline">
 					<input type="hidden" name="action" value="prepare-git-commit"/>
 					<button type="submit"
