@@ -40,6 +40,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Package-local test artifact output
+internal/**/data/
+
 # Misc temporary files
 *.tmp
 *.bak

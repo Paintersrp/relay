@@ -25,6 +25,14 @@ Use:
 - TypeScript browser bundle
 - filesystem-backed run artifacts
 
+## Surgical implementation handoff source of truth
+
+For implementation handoffs, repo-agent handoffs, Cline/Codex/OpenCode/SWE prompts, and surgical implementation instructions, use:
+
+`docs/instructions/surgical-implementation-handoff-instructions.md`
+
+That file is the canonical format and precision standard. Do not rely on chat memory for the handoff structure.
+
 ## RTK shell command rule
 
 Use RTK for noisy shell commands when available.
@@ -87,11 +95,14 @@ Preserve full error detail when a build, typecheck, generation, migration, or te
 ## Working rules
 
 - Follow the current handoff exactly.
+- When creating or updating an implementation handoff, follow `docs/instructions/surgical-implementation-handoff-instructions.md`.
+- Handoffs should remove implementation decisions whenever the required behavior is known.
+- Do not invent exact file paths in handoffs; use known paths or mark proposed paths clearly.
 - Keep changes scoped to the requested task.
 - Do not add unrelated architecture or cleanup.
 - Do not implement future pipeline stages unless explicitly requested.
 - Use server-rendered HTML through `templ`.
-- Do not use `html/template` unless explicitly requested.
+- Use `templ` for server-rendered views.
 - Do not introduce a SPA framework.
 - Do not introduce React, Vue, Svelte, TanStack Start, Echo, Gin, or Fiber unless explicitly requested.
 - Keep large artifacts on disk and metadata in SQLite.

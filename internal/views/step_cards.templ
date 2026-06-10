@@ -1153,6 +1153,39 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 						@auditHandoffSection(previews, run.ID)
 					</div>
 				}
+				if previews.ValidationRun.Status == "fail" && !previews.ValidationFailedAccepted {
+					<div class="pt-3 border-t border-gray-800">
+						<div class="rounded-xl border border-red-900/60 bg-red-950/30 p-3 sm:p-4">
+							<div class="text-sm font-medium text-red-300">Validation failed</div>
+							<p class="mt-1 text-xs text-red-200">
+								Review the validation output above. Use the button below only when you intentionally want to continue with a failed validation result. Relay will preserve the failed validation evidence in the audit and commit suggestion.
+							</p>
+							<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+								hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+								hx-target="body" hx-swap="outerHTML"
+								class="mt-3 inline">
+								<input type="hidden" name="action" value="accept-validation-failure"/>
+								<button type="submit" class="btn-secondary text-xs sm:text-sm">
+									Accept Failed Validation and Continue to Diff / Audit
+								</button>
+							</form>
+						</div>
+					</div>
+				}
+				if previews.ValidationRun.Status == "fail" && previews.ValidationFailedAccepted {
+					<div class="pt-3 border-t border-gray-800">
+						<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-3 sm:p-4">
+							<div class="text-sm font-medium text-yellow-300">Validation failure accepted</div>
+							<p class="mt-1 text-xs text-yellow-200">
+								Continue to Step 7: Diff / Audit.
+							</p>
+							<a href={"/runs/" + Itoa(run.ID) + "?step=audit"}
+								class="mt-2 inline-block btn-primary text-xs sm:text-sm">
+								Go to Step 7: Diff / Audit
+							</a>
+						</div>
+					</div>
+				}
 			}
 		</div>
 }
@@ -1486,7 +1519,29 @@ templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Ru
 			}
 		</div>
 		<div class="px-4 pb-4 space-y-3">
-			if !previews.HasGitStatus && !previews.HasGitDiffStat {
+			if previews.ValidationRun.Status == "" {
+				<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-3 sm:p-4">
+					<div class="text-sm font-medium text-yellow-300">Validation not run</div>
+					<p class="mt-1 text-xs text-yellow-200">
+						Run Relay Validation in Step 6 before preparing a commit suggestion.
+					</p>
+					<a href={"/runs/" + Itoa(run.ID) + "?step=validation"}
+						class="mt-2 inline-block btn-primary text-xs sm:text-sm">
+						Go to Step 6: Relay Validation
+					</a>
+				</div>
+			} else if previews.ValidationRun.Status == "fail" && !previews.ValidationFailedAccepted {
+				<div class="rounded-xl border border-red-900/60 bg-red-950/30 p-3 sm:p-4">
+					<div class="text-sm font-medium text-red-300">Validation failed</div>
+					<p class="mt-1 text-xs text-red-200">
+						Review the failed validation output in Step 6 or explicitly accept the failure before preparing a commit suggestion.
+					</p>
+					<a href={"/runs/" + Itoa(run.ID) + "?step=validation"}
+						class="mt-2 inline-block btn-primary text-xs sm:text-sm">
+						Review Validation Output
+					</a>
+				</div>
+			} else if !previews.HasGitStatus && !previews.HasGitDiffStat {
 				<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-3 sm:p-4">
 					<div class="text-sm font-medium text-yellow-300">Git diff not inspected</div>
 					<p class="mt-1 text-xs text-yellow-200">

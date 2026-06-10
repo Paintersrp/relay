@@ -1,0 +1,364 @@
+# Surgical Implementation Handoff Instructions (5/5 Precision Edition)
+
+Use these instructions whenever I ask for implementation instructions, a surgical implementation handoff, a repo-agent handoff, or a Cline/Codex/OpenCode/SWE prompt for code changes.
+
+## Required output behavior
+
+When I ask for implementation instructions, do not only describe the idea in chat.
+
+You must:
+
+1. Create a context-named `.txt` file containing the full surgical implementation handoff.
+2. Link the `.txt` file in the response.
+3. Suggest one conventional commit message in a copyable code block.
+4. Keep the chat response short.
+
+The `.txt` file should be written for a repo agent working directly in the target codebase.
+
+The handoff must be precise enough that the agent can execute without making product, UX, architecture, state-management, naming, or workflow decisions that could have been specified by the handoff author.
+
+Do not put the full handoff only in the chat message unless I explicitly ask for inline-only output.
+
+## Decision removal requirement
+
+The purpose of the handoff is to remove implementation decisions whenever the information is known.
+
+When implementation details are known:
+
+- Specify exact functions to modify.
+- Specify exact state fields to add/change.
+- Specify exact UI sections/components to create/remove.
+- Specify exact control IDs/classes when relevant.
+- Specify exact enable/disable conditions.
+- Specify exact validation behavior.
+- Specify exact success/failure behavior.
+- Specify exact persistence behavior.
+- Specify exact routing/navigation behavior.
+- Specify exact command execution behavior.
+- Specify exact dependency wiring.
+
+Do not describe desired outcomes when implementation steps can be specified.
+
+Bad:
+
+```text
+Improve the workflow.
+```
+
+Good:
+
+```text
+Disable `#tm-generate-report` while `loadedRows.length === 0`.
+Enable after successful dwell load.
+Show helper text "Load dwell data before generating a report."
+```
+
+Bad:
+
+```text
+Make validation asynchronous.
+```
+
+Good:
+
+```text
+Replace `runValidation()` with `startValidationWorker()`.
+Persist `validation_progress_json`.
+Redirect immediately after worker launch.
+```
+
+## Precision scoring target
+
+Every handoff should target 5/5 precision.
+
+5/5 means:
+
+- An agent should not need to invent behavior.
+- An agent should not need to decide UX flow.
+- An agent should not need to decide enablement rules.
+- An agent should not need to decide persistence behavior.
+- An agent should not need to decide state transitions.
+- An agent should not need to decide which implementation approach is preferred.
+
+If multiple valid implementation approaches exist, specify the preferred approach.
+
+If a decision must be made by the implementer, explicitly label it:
+
+```text
+Implementation choice required:
+...
+```
+
+and minimize the number of such decisions.
+
+## File naming
+
+Use a descriptive, lowercase, hyphenated filename.
+
+Examples:
+
+- `async-validation-progress-ui-surgical-implementation.txt`
+- `settings-toggle-blocked-state-fix-surgical-implementation.txt`
+- `audit-diff-evidence-regeneration-surgical-implementation.txt`
+- `opencode-run-monitor-stale-state-fix-surgical-implementation.txt`
+
+Do not use vague names.
+
+## Chat response format
+
+After creating the file, respond with only this structure:
+
+    Created the surgical implementation handoff:
+
+    [<filename>.txt](sandbox:/mnt/data/<filename>.txt)
+
+    Suggested commit message:
+
+    ```text
+    <conventional commit message>
+    ```
+
+Do not summarize the handoff in chat unless explicitly requested.
+
+The suggested commit message belongs in the chat response after the file link, not inside the `.txt` handoff, unless I explicitly ask to include it in the handoff file.
+
+## Handoff file structure
+
+Use this structure for the `.txt` file.
+
+```markdown
+# <Context Name> Surgical Implementation
+
+## Execution model
+
+Use: <Model Name>
+
+Reason: <One-sentence reason this model is appropriate for this task.>
+
+## Goal
+
+Concrete user-visible behavior change.
+
+Describe the final behavior, not the intent.
+
+## Scope
+
+Existing files likely affected:
+
+- exact file paths, if known
+
+New files may be added for helpers/tests if needed.
+
+Generated files may change only through generation commands.
+
+Do not invent exact file paths when they are not known. Use known directories or clearly mark the path as proposed.
+
+## Do not change
+
+Explicit constraints and non-goals.
+
+## Task checklist
+
+Use checkbox items.
+
+The checklist should map directly to implementation work.
+
+## Direct files likely changed
+
+List expected edit targets, if known.
+
+Do not list new files as if they already exist.
+
+## Direct context files
+
+List supporting context files when useful and known.
+
+Omit this section or write `None known` when there are no known context files.
+
+## Current implementation facts to preserve
+
+List behavior that must remain unchanged.
+
+## Behavior changes
+
+Describe exact expected behavior.
+
+Include:
+
+- enablement rules
+- disablement rules
+- state transitions
+- validation rules
+- success paths
+- failure paths
+- edge cases
+
+## Tests to add/update
+
+List exact tests.
+
+Use test names whenever possible.
+
+## Validation commands
+
+Raw commands only.
+
+Use the project's known validation commands when available.
+
+Do not invent validation commands.
+
+## Agent final output requirement
+
+Return only:
+
+- DONE or BLOCKED
+- build status
+- test status
+- count of LOC changed
+- blocker/error only if BLOCKED
+
+## Surgical implementation details
+
+This is the most important section.
+
+Requirements:
+
+- Use exact function names when known.
+- Use exact component names when known.
+- Use exact state names when known.
+- Use exact artifact names when known.
+- Use exact route names when known.
+- Use exact selectors/IDs/classes when known.
+- Use exact storage keys when known.
+
+Whenever possible specify:
+
+```text
+Replace X with Y.
+```
+
+instead of:
+
+```text
+Improve X.
+```
+
+Whenever possible specify:
+
+```text
+Call A before B.
+```
+
+instead of:
+
+```text
+Handle initialization.
+```
+
+Whenever possible specify:
+
+```text
+Persist field Z.
+```
+
+instead of:
+
+```text
+Save progress.
+```
+
+### UI requirements
+
+For UI work:
+
+- Specify exact section hierarchy.
+- Specify exact button behavior.
+- Specify exact disabled states.
+- Specify exact helper text.
+- Specify exact visibility rules.
+- Specify exact responsive behavior if relevant.
+
+Avoid:
+
+```text
+Make the page cleaner.
+```
+
+Prefer:
+
+```text
+Replace the single-row command bar with:
+- Sources card
+- Data Load card
+- Report card
+- Filters card
+
+Generate Report remains disabled until loadedRows.length > 0.
+```
+
+### State requirements
+
+For state changes:
+
+Specify:
+
+- state field names
+- initialization values
+- update triggers
+- reset conditions
+- persistence rules
+
+### CSS requirements
+
+For style work:
+
+Specify:
+
+- exact selectors
+- exact scope boundaries
+- exact theme tokens
+- exact classes
+
+Do not write:
+
+```text
+Improve styling.
+```
+
+Write:
+
+```text
+Scope all modal controls beneath `.tm-root`.
+Remove unscoped `button`, `input`, and `table` selectors.
+```
+
+## Expected result
+
+Summarize the final observable outcome.
+
+The result should be testable and user-visible.
+```
+
+## Standing style rules
+
+- Keep the handoff direct, ordered, and implementation-focused.
+- Do not include generic "inspect the repo first" boilerplate.
+- Do not include context-size guidance unless requested.
+- Do not include assistant-facing reminders.
+- Do not over-explain the product background.
+- Do not list new files as if they already exist.
+- Do not list generated files as manual edit targets.
+- Put the task checklist near the top.
+- Prefer one cohesive pass over many tiny passes when the work is related.
+
+## Commit message guidance
+
+Suggest one conventional commit message after the file link.
+
+Examples:
+
+- `feat: add validation progress UI`
+- `fix: prevent stale running state`
+- `refactor: split action runner lifecycle`
+- `test: cover async worker finalization`
+- `docs: update validation workflow`

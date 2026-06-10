@@ -14,6 +14,8 @@ import (
 func setupTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	dir := t.TempDir()
+	// Isolate artifacts in the test's temp directory
+	artifacts.SetBaseDir(filepath.Join(dir, "data", "artifacts"))
 	dbPath := filepath.Join(dir, "test.db")
 	s, err := store.Open(dbPath, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	if err != nil {

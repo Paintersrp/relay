@@ -425,12 +425,16 @@ func (s *Store) TryCreateValidationExecution(runID int64) (int64, bool, error) {
 	if err != nil {
 		return 0, false, err
 	}
-	id, err := result.LastInsertId()
+	rows, err := result.RowsAffected()
 	if err != nil {
 		return 0, false, err
 	}
-	if id == 0 {
+	if rows == 0 {
 		return 0, false, nil
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, false, err
 	}
 	return id, true, nil
 }

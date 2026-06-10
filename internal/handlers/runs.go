@@ -416,6 +416,8 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	validationProgressRunning := isValidationRunning
 	validationProgressStatus := validationProgressPreview.Status
 
+	validationAcceptedWithFailure := run.Status == "validation_failed_accepted"
+
 	nextActionInput := pipeline.WorkbenchNextActionInput{
 		HasOriginalHandoff:            originalPreview != "" || hasArtifactKind(artifactsList, "original_handoff"),
 		HasIntakeReview:               hasIntakeReview,
@@ -447,7 +449,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		HasGitDiffPatch:               hasGitDiffPatch,
 		HasGitDiffNameStatus:          hasGitDiffNameStatus,
 		HasCommitSuggestion:           hasCommitSuggestion,
-		ValidationAcceptedWithFailure: false,
+		ValidationAcceptedWithFailure: validationAcceptedWithFailure,
 	}
 
 	nextAction := pipeline.BuildWorkbenchNextAction(nextActionInput)
@@ -523,6 +525,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		ValidationProgressRunning:       validationProgressRunning,
 		ValidationProgressStale:         validationProgressStale,
 		ValidationProgressPreview:       validationProgressPreview,
+		ValidationFailedAccepted:        validationAcceptedWithFailure,
 		HasAuditHandoff:                 hasAuditHandoff,
 		AuditHandoff:                    auditHandoffPreview,
 		RepoPath:                        previewsRepoPath,
@@ -608,6 +611,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.generateIntakeRemediationHandoff(w, r, id)
 	case "replace-original-handoff":
 		h.replaceOriginalHandoff(w, r, id)
+	case "accept-validation-failure":
+		h.acceptValidationFailure(w, r, id)
 	case "prepare-git-commit":
 		h.prepareGitCommit(w, r, id)
 	default:
@@ -1506,6 +1511,10 @@ func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Reques
 
 	content := pipeline.BuildAuditHandoff(input)
 
+	// Delete stale commit artifacts that depend on the audit handoff
+	h.store.DeleteArtifactsByRunKind(runID, "commit_message_text")
+	h.store.DeleteArtifactsByRunKind(runID, "commit_suggestion_json")
+
 	artifactPath, err := artifacts.Write(runID, "audit_handoff", pipeline.ArtifactFilename("audit_handoff"), []byte(content))
 	if err != nil {
 		h.log.Error("write audit handoff", "error", err)
@@ -1551,16 +1560,27 @@ func (h *RunsHandler) inspectDiff(w http.ResponseWriter, r *http.Request, runID 
 		return
 	}
 
+	// Clear existing diff artifacts and downstream stale audit/commit artifacts
+	// before collecting new evidence, so stale data is removed even if the
+	// git command fails.
+	for _, kind := range []string{
+		"git_status_text",
+		"git_diff_stat",
+		"git_diff_numstat",
+		"git_diff_name_status",
+		"git_diff_patch",
+		"audit_handoff",
+		"commit_message_text",
+		"commit_suggestion_json",
+	} {
+		h.store.DeleteArtifactsByRunKind(runID, kind)
+	}
+
 	evidence, err := pipeline.CollectGitDiffEvidence(r.Context(), repo.Path, 30*time.Second)
 	if err != nil {
 		h.store.CreateEvent(runID, "warn", "Git diff inspection failed: "+err.Error())
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
 		return
-	}
-
-	// Clear existing diff artifacts to avoid stale duplicates
-	for _, kind := range []string{"git_status_text", "git_diff_stat", "git_diff_numstat", "git_diff_name_status", "git_diff_patch"} {
-		h.store.DeleteArtifactsByRunKind(runID, kind)
 	}
 
 	// Write artifacts
@@ -1622,9 +1642,23 @@ func (h *RunsHandler) replaceOriginalHandoff(w http.ResponseWriter, r *http.Requ
 		"opencode_handoff_packet",
 		"opencode_dry_run_json",
 		"opencode_cli_check_json",
+		"validation_progress_json",
 		"validation_run_json",
 		"validation_stdout",
 		"validation_stderr",
+		"git_status_text",
+		"git_diff_stat",
+		"git_diff_numstat",
+		"git_diff_name_status",
+		"git_diff_patch",
+		"audit_handoff",
+		"commit_message_text",
+		"commit_suggestion_json",
+		"opencode_stdout",
+		"opencode_stderr",
+		"opencode_combined_log",
+		"agent_result_raw",
+		"agent_result_json",
 	}
 	for _, kind := range staleKinds {
 		h.store.DeleteArtifactsByRunKind(runID, kind)
@@ -1633,6 +1667,7 @@ func (h *RunsHandler) replaceOriginalHandoff(w http.ResponseWriter, r *http.Requ
 	// Clear stale checks
 	h.store.DeleteChecksByRunKind(runID, "validation")
 	h.store.DeleteChecksByRunKind(runID, "validation_run")
+	h.store.DeleteChecksByRunKind(runID, "agent_result")
 
 	// Reset run status to draft so validation can re-run
 	h.store.UpdateRunStatus(runID, "draft")
@@ -2018,6 +2053,33 @@ func parseValidationRunPreview(jsonData string) views.ValidationRunPreview {
 	return preview
 }
 
+func (h *RunsHandler) acceptValidationFailure(w http.ResponseWriter, r *http.Request, runID int64) {
+	checks, err := h.store.ListChecksByRun(runID)
+	if err != nil {
+		h.log.Error("list checks for accept-validation-failure", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	hasFailedCheck := false
+	for _, c := range checks {
+		if c.Kind == "validation_run" && c.Status == "fail" {
+			hasFailedCheck = true
+			break
+		}
+	}
+
+	if !hasFailedCheck {
+		h.store.CreateEvent(runID, "warn", "Cannot accept validation failure: no failed validation run found.")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
+		return
+	}
+
+	h.store.UpdateRunStatus(runID, "validation_failed_accepted")
+	h.store.CreateEvent(runID, "info", "Validation failure accepted; continuing to diff/audit.")
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+}
+
 func (h *RunsHandler) prepareGitCommit(w http.ResponseWriter, r *http.Request, runID int64) {
 	run, err := h.store.GetRun(runID)
 	if err != nil {
@@ -2038,40 +2100,55 @@ func (h *RunsHandler) prepareGitCommit(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 
-	// Verify git diff evidence exists
-	hasGitEvidence := artifacts.Exists(runID, "git_status_text", pipeline.ArtifactFilename("git_status_text"))
-	if !hasGitEvidence {
-		h.store.CreateEvent(runID, "warn", "Cannot prepare commit: run git diff inspection first (Inspect Git Diff).")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+	// Check validation status from artifact
+	validationJSON := readArtifactPreview(runID, "validation_run_json")
+	if validationJSON == "" {
+		h.store.CreateEvent(runID, "warn", "Prepare Git Commit blocked: run validation first.")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
+		return
+	}
+	var validationRaw struct {
+		Status string `json:"status"`
+	}
+	_ = json.Unmarshal([]byte(validationJSON), &validationRaw)
+	validationStatus := validationRaw.Status
+
+	validationAcceptedWithFailure := run.Status == "validation_failed_accepted"
+	if validationStatus == "fail" && !validationAcceptedWithFailure {
+		h.store.CreateEvent(runID, "warn", "Prepare Git Commit blocked: validation failed and has not been accepted.")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
 		return
 	}
 
-	// Verify audit handoff exists
-	hasAudit := artifacts.Exists(runID, "audit_handoff", pipeline.ArtifactFilename("audit_handoff"))
-	if !hasAudit {
-		h.store.CreateEvent(runID, "warn", "Cannot prepare commit: generate the audit handoff first.")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+	// Check artifact evidence lists for comprehensive checks
+	artifactsList, _ := h.store.ListArtifactsByRun(runID)
+
+	gitStatusText := readArtifactPreview(runID, "git_status_text")
+	gitDiffStat := readArtifactPreview(runID, "git_diff_stat")
+	gitDiffNameStatus := readArtifactPreview(runID, "git_diff_name_status")
+	gitDiffPatch := readArtifactPreview(runID, "git_diff_patch")
+	hasGitStatus := gitStatusText != ""
+	hasGitDiffStat := gitDiffStat != ""
+	hasGitDiffPatch := gitDiffPatch != ""
+	hasGitDiffNameStatus := hasArtifactKind(artifactsList, "git_diff_name_status") || gitDiffNameStatus != ""
+	hasGitDiffEvidence := hasGitStatus || hasGitDiffStat || hasGitDiffPatch || hasGitDiffNameStatus
+
+	if !hasGitDiffEvidence {
+		h.store.CreateEvent(runID, "warn", "Prepare Git Commit blocked: inspect git diff first.")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
 	}
 
-	// Check validation status
-	checksList, _ := h.store.ListChecksByRun(runID)
-	validationPassed := hasCheckKindWithStatus(checksList, "validation_run", "pass")
-	validationFailed := hasCheckKindWithStatus(checksList, "validation_run", "fail")
-	validationStatus := ""
-	if validationPassed {
-		validationStatus = "pass"
-	} else if validationFailed {
-		validationStatus = "fail"
-	} else {
-		validationStatus = "unknown"
+	auditHandoffPreview := readArtifactPreview(runID, "audit_handoff")
+	hasAuditHandoff := auditHandoffPreview != "" || hasArtifactKind(artifactsList, "audit_handoff")
+	if !hasAuditHandoff {
+		h.store.CreateEvent(runID, "warn", "Prepare Git Commit blocked: generate audit handoff first.")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
 	}
 
 	// Read input data for commit suggestion
 	originalHandoff := readArtifactPreview(runID, "original_handoff")
-	auditHandoff := readArtifactPreview(runID, "audit_handoff")
-	gitDiffStat := readArtifactPreview(runID, "git_diff_stat")
-	gitDiffNameStatus := readArtifactPreview(runID, "git_diff_name_status")
 
 	// Count changed files from diff stat
 	changedFileCount := int64(0)
@@ -2099,7 +2176,7 @@ func (h *RunsHandler) prepareGitCommit(w http.ResponseWriter, r *http.Request, r
 
 	input := pipeline.CommitSuggestionInput{
 		OriginalHandoff:          originalHandoff,
-		AuditHandoff:             auditHandoff,
+		AuditHandoff:             auditHandoffPreview,
 		GitDiffStat:              gitDiffStat,
 		GitDiffNameStatus:        gitDiffNameStatus,
 		AgentResultStatus:        agentResultStatus,
@@ -2108,9 +2185,9 @@ func (h *RunsHandler) prepareGitCommit(w http.ResponseWriter, r *http.Request, r
 		AgentLOCChanged:          agentLOCChanged,
 		RepoPath:                 repo.Path,
 		ValidationStatus:         validationStatus,
-		ValidationFailedAccepted: false,
-		DiffInspected:            true,
-		AuditHandoffPresent:      true,
+		ValidationFailedAccepted: validationAcceptedWithFailure,
+		DiffInspected:            hasGitDiffEvidence,
+		AuditHandoffPresent:      hasAuditHandoff,
 		ChangedFileCount:         changedFileCount,
 	}
 
