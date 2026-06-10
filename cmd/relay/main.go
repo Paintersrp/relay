@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"relay/internal/config"
 	"relay/internal/repos"
 	"relay/internal/server"
 	"relay/internal/store"
@@ -13,6 +14,10 @@ import (
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	if err := config.LoadDotenvFiles(".", ".env", ".env.local"); err != nil {
+		log.Warn("loading local env files", "error", err)
+	}
 
 	dbPath := "data/relay.sqlite"
 	if p := os.Getenv("RELAY_DB_PATH"); p != "" {

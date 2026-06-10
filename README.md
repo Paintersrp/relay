@@ -244,6 +244,44 @@ Relay has a built-in OpenCode adapter that invokes `opencode run` with explicit 
 
 Relay uses `opencode run` in non-interactive mode with `--format json`. The compact Agent Prompt is piped into stdin. The adapter parses JSONL text events from stdout to extract the final assistant text (DONE/BLOCKED).
 
+### Local setup with `.env.local`
+
+Relay can load `.env` and `.env.local` from the working directory at startup.
+
+Copy `.env.example` to `.env.local`:
+
+```bash
+cp .env.example .env.local
+```
+
+For Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+OpenCode auth is owned by OpenCode, not Relay. Connect OpenCode Go once through the OpenCode TUI:
+
+```text
+opencode
+/connect
+/models
+```
+
+After auth, confirm the CLI model list:
+
+```bash
+opencode models
+```
+
+For DeepSeek V4 Flash on OpenCode Go, `.env.local` should include:
+
+```env
+RELAY_OPENCODE_MODEL_DEEPSEEK_V4_FLASH=opencode-go/deepseek-v4-flash
+```
+
+Restart Relay after editing `.env.local`.
+
 ### Configuration
 
 | Env variable             | Default    | Description                               |
