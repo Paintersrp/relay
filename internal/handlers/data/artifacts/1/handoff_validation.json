@@ -7,16 +7,6 @@
       "summary": "Title line found"
     },
     {
-      "kind": "goal_section",
-      "status": "pass",
-      "summary": "## Goal section found"
-    },
-    {
-      "kind": "scope_section",
-      "status": "pass",
-      "summary": "## Scope section found"
-    },
-    {
       "kind": "do_not_change_section",
       "status": "pass",
       "summary": "## Do not change section found"
@@ -35,6 +25,16 @@
       "kind": "output_section",
       "status": "pass",
       "summary": "## Output / Final output / Agent final output requirement section found"
+    },
+    {
+      "kind": "goal_section",
+      "status": "pass",
+      "summary": "## Goal section found"
+    },
+    {
+      "kind": "scope_section",
+      "status": "pass",
+      "summary": "## Scope section found"
     },
     {
       "kind": "checkbox_items",

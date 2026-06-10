@@ -291,7 +291,69 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	intakeRemediationHandoffPreview := readArtifactPreview(id, "intake_remediation_handoff")
 	hasIntakeRemediationHandoff := intakeRemediationHandoffPreview != "" || hasArtifactKind(artifactsList, "intake_remediation_handoff")
 
+	// Compute intake review
+	var intakeReview pipeline.IntakeReview
+	if handoffText := readArtifactPreview(id, "original_handoff"); handoffText != "" {
+		repoPath := ""
+		if repo != nil {
+			repoPath = repo.Path
+		}
+		metadata := pipeline.ParseHandoffMetadata(handoffText, repoDefaults)
+		intakeReview = pipeline.BuildIntakeReview(metadata, repoPath)
+	}
+
+	// Compute next action
+	hasIntakeReview := len(intakeReview.Warnings) > 0 || len(intakeReview.Blockers) > 0 || originalPreview != ""
+	hasAgentResult := hasArtifactKind(artifactsList, "agent_result_raw")
+	agentResultStatus := ""
+	if hasAgentResult {
+		if c := findFirstCheckByKind(checksList, "agent_result"); c != nil {
+			agentResultStatus = c.Status
+		}
+	}
+	hasValidationRun := hasArtifactKind(artifactsList, "validation_run_json")
+	validationPassed := hasCheckKindWithStatus(checksList, "validation_run", "pass")
+	validationFailed := hasCheckKindWithStatus(checksList, "validation_run", "fail")
+
+	nextActionInput := pipeline.WorkbenchNextActionInput{
+		HasOriginalHandoff:          originalPreview != "" || hasArtifactKind(artifactsList, "original_handoff"),
+		HasIntakeReview:             hasIntakeReview,
+		IntakeHasBlockers:           len(intakeReview.Blockers) > 0,
+		IntakeHasWarnings:           len(intakeReview.Warnings) > 0,
+		HasIntakeRemediationHandoff: hasIntakeRemediationHandoff,
+		HasAgentPrompt:              hasArtifactKind(artifactsList, "agent_prompt"),
+		HasAgentPacket:              hasArtifactKind(artifactsList, "opencode_handoff_packet"),
+		HandoffPreflightStatus:      preflightStatus,
+		OpenCodeAdapterError:        openCodeAdapterError,
+		HasOpenCodeCLICheck:         hasCLICheck,
+		OpenCodeCLICheckStatus:      cliCheckStatus,
+		HasOpenCodeDryRun:           dryRunPreview != "",
+		HasOpenCodeExecution:        hasOpenCodeExecution,
+		OpenCodeExecutionStatus:     openCodeExecStatus,
+		HasAgentResult:              hasAgentResult,
+		AgentResultStatus:           agentResultStatus,
+		HasValidationCommands:       hasValidationCommands,
+		HasValidationRun:            hasValidationRun,
+		ValidationPassed:            validationPassed,
+		ValidationFailed:            validationFailed,
+	}
+
+	nextAction := pipeline.BuildWorkbenchNextAction(nextActionInput)
+	nextActionView := views.WorkbenchNextActionView{
+		Kind:              string(nextAction.Kind),
+		Title:             nextAction.Title,
+		Summary:           nextAction.Summary,
+		Step:              nextAction.Step,
+		PrimaryAction:     nextAction.PrimaryAction,
+		PrimaryFormAction: nextAction.PrimaryFormAction,
+		PrimaryHref:       nextAction.PrimaryHref,
+		Disabled:          nextAction.Disabled,
+		DisabledReason:    nextAction.DisabledReason,
+		Severity:          nextAction.Severity,
+	}
+
 	previews := views.RunPreviews{
+		NextAction:                      nextActionView,
 		OriginalHandoff:                 originalPreview,
 		ValidationJSON:                  readArtifactPreview(id, "handoff_validation_json"),
 		AgentPrompt:                     agentPromptPreview,
@@ -356,17 +418,6 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 			Lines:     diffLines,
 			Truncated: pipelineDiff.Truncated,
 		}
-	}
-
-	// compute intake review
-	var intakeReview pipeline.IntakeReview
-	if handoffText := readArtifactPreview(id, "original_handoff"); handoffText != "" {
-		repoPath := ""
-		if repo != nil {
-			repoPath = repo.Path
-		}
-		metadata := pipeline.ParseHandoffMetadata(handoffText, repoDefaults)
-		intakeReview = pipeline.BuildIntakeReview(metadata, repoPath)
 	}
 
 	// Determine active step — default to intake, override with valid ?step=
@@ -1347,6 +1398,24 @@ func formatPromptEstimate(est pipeline.PromptEstimate) string {
 func hasCheckKind(checks []store.Check, kind string) bool {
 	for _, c := range checks {
 		if c.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func findFirstCheckByKind(checks []store.Check, kind string) *store.Check {
+	for i := range checks {
+		if checks[i].Kind == kind {
+			return &checks[i]
+		}
+	}
+	return nil
+}
+
+func hasCheckKindWithStatus(checks []store.Check, kind string, status string) bool {
+	for _, c := range checks {
+		if c.Kind == kind && c.Status == status {
 			return true
 		}
 	}

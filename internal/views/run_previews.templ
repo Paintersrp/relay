@@ -21,7 +21,21 @@ type OpenCodeTranscriptEventView struct {
 	Text string
 }
 
+type WorkbenchNextActionView struct {
+	Kind              string
+	Title             string
+	Summary           string
+	Step              string
+	PrimaryAction     string
+	PrimaryFormAction string
+	PrimaryHref       string
+	Disabled          bool
+	DisabledReason    string
+	Severity          string
+}
+
 type RunPreviews struct {
+	NextAction                  WorkbenchNextActionView
 	OriginalHandoff             string
 	ValidationJSON              string
 	AgentPrompt                 string
