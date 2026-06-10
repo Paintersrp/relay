@@ -236,6 +236,13 @@ func (s *Store) CreateArtifact(runID int64, kind, path, mimeType string) (*Artif
 	return &a, nil
 }
 
+func (s *Store) DeleteArtifactsByRunKind(runID int64, kind string) error {
+	return s.queries.DeleteArtifactsByRunKind(context.Background(), generated.DeleteArtifactsByRunKindParams{
+		RunID: runID,
+		Kind:  kind,
+	})
+}
+
 func (s *Store) GetArtifact(id int64) (*Artifact, error) {
 	a, err := s.queries.GetArtifact(context.Background(), id)
 	if err != nil {

@@ -140,6 +140,22 @@ To generate:
 Missing validation commands produce a remediation handoff that includes an actual
 `## Relay validation commands` section with canonical command fences.
 
+## Replace Original Handoff
+
+If Intake Review finds issues, the original handoff can be replaced on the existing run from Step 1.
+Replacing the handoff clears generated prompt/packet artifacts so they can be regenerated from the
+corrected source.
+
+To replace:
+
+1. Open **Replace original handoff** in Step 1 Intake Review.
+2. Paste the corrected handoff text into the textarea.
+3. Click **Replace Handoff and Re-run Intake Review**.
+
+The action writes the new text to the `original_handoff` artifact, clears stale downstream artifacts
+(`agent_prompt`, `opencode_handoff_packet`, etc.) and stale checks, then immediately re-runs Intake
+Review against the corrected handoff.
+
 ## Relay validation commands
 
 Commands Relay should extract and run locally after agent result:
@@ -184,6 +200,7 @@ If RTK is available, Relay or the user may prefer `rtk.exe` first, then `rtk`, t
 | `check-opencode-cli`                  | Implemented                          |
 | `submit-agent-result`                 | Implemented                          |
 | `generate-intake-remediation-handoff` | Implemented                          |
+| `replace-original-handoff`            | Implemented                          |
 | `run-agent`                           | Future                               |
 | `run-validation`                      | Implemented                          |
 | `inspect-diff`                        | Future                               |

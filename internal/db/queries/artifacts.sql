@@ -12,3 +12,6 @@ SELECT * FROM artifacts WHERE run_id = ? ORDER BY created_at DESC;
 
 -- name: ListArtifactsByRunKind :many
 SELECT * FROM artifacts WHERE run_id = ? AND kind = ? ORDER BY created_at DESC;
+
+-- name: DeleteArtifactsByRunKind :exec
+DELETE FROM artifacts WHERE run_id = ? AND kind = ?;

@@ -39,6 +39,20 @@ func (q *Queries) CreateArtifact(ctx context.Context, arg CreateArtifactParams) 
 	return i, err
 }
 
+const deleteArtifactsByRunKind = `-- name: DeleteArtifactsByRunKind :exec
+DELETE FROM artifacts WHERE run_id = ? AND kind = ?
+`
+
+type DeleteArtifactsByRunKindParams struct {
+	RunID int64  `json:"run_id"`
+	Kind  string `json:"kind"`
+}
+
+func (q *Queries) DeleteArtifactsByRunKind(ctx context.Context, arg DeleteArtifactsByRunKindParams) error {
+	_, err := q.db.ExecContext(ctx, deleteArtifactsByRunKind, arg.RunID, arg.Kind)
+	return err
+}
+
 const getArtifact = `-- name: GetArtifact :one
 SELECT id, run_id, kind, path, mime_type, created_at FROM artifacts WHERE id = ?
 `

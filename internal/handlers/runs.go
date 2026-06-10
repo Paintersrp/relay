@@ -470,6 +470,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.checkOpenCodeCLI(w, r, id)
 	case "generate-intake-remediation-handoff":
 		h.generateIntakeRemediationHandoff(w, r, id)
+	case "replace-original-handoff":
+		h.replaceOriginalHandoff(w, r, id)
 	default:
 		http.Error(w, "unknown action", http.StatusBadRequest)
 	}
@@ -1155,6 +1157,58 @@ func (h *RunsHandler) runValidation(w http.ResponseWriter, r *http.Request, runI
 	h.log.Info("validation commands executed", "run_id", runID, "status", aggregate.Status, "commands", len(commands))
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
+}
+
+func (h *RunsHandler) replaceOriginalHandoff(w http.ResponseWriter, r *http.Request, runID int64) {
+	rawText := r.FormValue("handoff_text")
+	handoffText := strings.TrimSpace(rawText)
+	if handoffText == "" {
+		h.store.CreateEvent(runID, "warn", "Replace handoff skipped: handoff text is empty")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
+		return
+	}
+
+	// Write new handoff to disk (use raw text to preserve original content including trailing newline)
+	handoffPath, err := artifacts.Write(runID, "original_handoff", pipeline.ArtifactFilename("original_handoff"), []byte(rawText))
+	if err != nil {
+		h.log.Error("write replaced original handoff", "error", err)
+		http.Error(w, "failed to save handoff", http.StatusInternalServerError)
+		return
+	}
+
+	// Replace artifact record: delete existing original_handoff rows, create new one
+	h.store.DeleteArtifactsByRunKind(runID, "original_handoff")
+	h.store.CreateArtifact(runID, "original_handoff", handoffPath, "text/plain")
+
+	// Clear stale downstream artifacts that depend on the old handoff
+	staleKinds := []string{
+		"handoff_validation_json",
+		"agent_prompt",
+		"ready_prompt",
+		"opencode_handoff_packet",
+		"opencode_dry_run_json",
+		"opencode_cli_check_json",
+		"validation_run_json",
+		"validation_stdout",
+		"validation_stderr",
+	}
+	for _, kind := range staleKinds {
+		h.store.DeleteArtifactsByRunKind(runID, kind)
+	}
+
+	// Clear stale checks
+	h.store.DeleteChecksByRunKind(runID, "validation")
+	h.store.DeleteChecksByRunKind(runID, "validation_run")
+
+	// Reset run status to draft so validation can re-run
+	h.store.UpdateRunStatus(runID, "draft")
+
+	h.store.CreateEvent(runID, "info", "Original handoff replaced; re-running Intake Review")
+
+	h.log.Info("original handoff replaced", "run_id", runID)
+
+	// Re-run Intake Review using the new handoff text
+	h.validateHandoff(w, r, runID)
 }
 
 func (h *RunsHandler) notImplemented(w http.ResponseWriter, r *http.Request, runID int64, msg string) {
