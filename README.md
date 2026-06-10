@@ -36,13 +36,11 @@ Key design points:
 
 The current local-first flow does not yet implement:
 
-- direct OpenCode execution
 - automatic repo-agent execution
 - automatic branch/worktree creation
 - automatic commits
 - automatic validation failure repair
 - git diff inspection
-- audit packet generation
 
 ## Stack
 
@@ -135,6 +133,7 @@ make test       # run tests
 | `mark-accepted`            | Implemented                          |
 | `mark-needs-cleanup`       | Implemented                          |
 | `generate-opencode-packet` | Implemented                          |
+| `start-opencode-go`        | Implemented                          |
 | `submit-agent-result`      | Implemented                          |
 | `run-agent`                | Future                               |
 | `run-validation`           | Implemented                          |
@@ -221,28 +220,64 @@ Run detail is organized as a guided step-by-step workbench with a single active 
 - **Step 1 — Intake Review**: Default active step. Shows validation checks, warnings, blockers, and the Intake Review panel. The "Run Intake Review" button changes to "Re-run Intake Review" after first run. Original handoff is available collapsed.
 - **Step 2 — Agent Prompt**: Shows the Original → Agent Prompt hunk diff inline with View/Download links. Buttons toggle between "Generate Agent Prompt" and "Regenerate Agent Prompt".
 - **Step 3 — Agent Packet**: Shows packet preview, View/Download links. Buttons toggle between "Generate Agent Packet" and "Regenerate Agent Packet".
-- **Step 4 — OpenCode Go Handoff**: Prepares the packet and artifacts for OpenCode Go. Shows execution status, model selection, repo path, and branch/worktree info. Includes a disabled "Send to OpenCode Go" button (not implemented). Manual agent result intake is available as a collapsed fallback section.
+- **Step 4 — OpenCode Go Handoff**: Shows preflight readiness, command template configuration, a command preview, and an explicit "Start OpenCode Go" button. Execution status and captured artifacts (stdout, stderr, combined log) are displayed after a run. Manual agent result intake remains available as a collapsed fallback section.
 - **Step 5 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Requires an agent result before the validation button is enabled.
 - **Step 6 — Diff/Audit**: Future, grayed out.
 
 Clarifications:
 
-- Relay does not execute OpenCode automatically.
-- Step 4 prepares the packet and artifacts for OpenCode Go, but Relay does not execute OpenCode Go automatically yet. Manual result intake remains available as a fallback.
-- Relay does not run repo validation commands at handoff creation.
+- Relay does not execute OpenCode automatically. Execution only starts when the user explicitly clicks "Start OpenCode Go".
+- Step 4 shows the exact rendered command before execution in a collapsed preview.
+- If no command template is configured, Step 4 shows a blocked state with instructions to set `RELAY_OPENCODE_GO_COMMAND_TEMPLATE`.
+- If preflight checks are blocked, the Start button remains disabled.
+- Relay captures stdout, stderr, and a combined log as run artifacts after execution.
+- Relay attempts to parse DONE/BLOCKED final output from stdout automatically.
 - Relay Validation remains user-triggered after agent result.
+- Manual agent result intake remains available as a fallback.
 - Manual action buttons remain available as retry/regenerate controls for each step.
 - Artifact previews (Original Handoff, Validation Report, Agent Prompt) are available in a collapsed `<details>` element at the bottom of the run detail page, not expanded by default.
 
-Relay does not execute OpenCode yet, and the OpenCode packet is metadata only until a future execution adapter consumes it.
+## OpenCode Go execution
+
+Relay can execute a configured local command via the platform shell. The command template is configured through the environment variable `RELAY_OPENCODE_GO_COMMAND_TEMPLATE`.
+
+Relay does not hardcode OpenCode Go CLI syntax. The command template is entirely user-configured.
+
+Supported placeholders:
+
+- `{{repo_path}}` — local repository path
+- `{{branch_name}}` — selected branch/worktree
+- `{{selected_model}}` — user-selected model
+- `{{recommended_model}}` — handoff-recommended model
+- `{{agent_prompt_path}}` — path to the Agent Prompt artifact
+- `{{packet_path}}` — path to the OpenCode handoff packet artifact
+- `{{artifact_dir}}` — run artifact directory
+
+### Example command template
+
+```text
+RELAY_OPENCODE_GO_COMMAND_TEMPLATE=opencode-go --model "{{selected_model}}" --prompt-file "{{agent_prompt_path}}"
+```
+
+This is an example only. Adjust it to your installed OpenCode Go CLI.
+
+### Execution behavior
+
+- Execution is manual only. Relay never starts OpenCode Go automatically.
+- Relay runs the rendered command in the selected repo path.
+- Relay captures stdout and stderr as separate artifacts and a combined log.
+- Relay records execution status, exit code, start/end timestamps, and error messages in the `agent_executions` table.
+- Relay attempts to parse the final agent output contract (DONE/BLOCKED) from stdout and persists it through the existing agent result path.
+- Relay does not run validation commands after OpenCode Go exits.
+- Relay does not inspect git diffs or create branches.
 
 ## OpenCode handoff packet
 
 Relay can generate an `opencode_handoff_packet.json` artifact after an Agent Prompt exists.
 
-The packet includes the run id, local repo path, branch/worktree metadata, selected model, recommended model, agent prompt artifact path, run artifact directory, an explicit artifact manifest listing required and optional artifacts, and an execution status of `not_implemented`.
+The packet includes the run id, local repo path, branch/worktree metadata, selected model, recommended model, agent prompt artifact path, run artifact directory, an explicit artifact manifest listing required and optional artifacts, and an execution status of `configured`.
 
-When generated, the OpenCode packet JSON is previewed inline in the run workbench and remains metadata-only. Relay does not execute OpenCode yet. The packet is metadata only.
+When generated, the OpenCode packet JSON is previewed inline in the run workbench and remains metadata-only. The packet does not include execution results.
 
 ## Handoff preflight
 

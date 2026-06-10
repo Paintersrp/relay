@@ -21,6 +21,9 @@ var allowedKinds = map[string]bool{
 	"validation_run_json":     true,
 	"validation_stdout":       true,
 	"validation_stderr":       true,
+	"opencode_stdout":         true,
+	"opencode_stderr":         true,
+	"opencode_combined_log":   true,
 }
 
 func Dir(runID int64) string {

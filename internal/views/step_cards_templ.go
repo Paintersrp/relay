@@ -818,7 +818,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 			templ_7745c5c3_Var39 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<div class=\"border border-gray-800 rounded-lg p-4 bg-gray-900/50\"><div class=\"flex items-center justify-between mb-3\"><div><h3 class=\"font-medium\">Step 4: OpenCode Go Handoff</h3><p class=\"text-xs text-gray-500 mt-0.5\">Review the packet and artifacts before handing off to OpenCode Go. Relay does not execute this automatically yet.</p></div><div class=\"flex items-center gap-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<div class=\"border border-gray-800 rounded-lg p-4 bg-gray-900/50\"><div class=\"flex items-center justify-between mb-3\"><div><h3 class=\"font-medium\">Step 4: OpenCode Go Handoff</h3><p class=\"text-xs text-gray-500 mt-0.5\">Review the packet and artifacts, then start OpenCode Go execution.</p></div><div class=\"flex items-center gap-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -829,6 +829,12 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 		templ_7745c5c3_Err = handoffPreflightStatusChip(previews.HandoffPreflightStatus).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
+		}
+		if previews.HasOpenCodeExecution {
+			templ_7745c5c3_Err = openCodeExecutionStatusChip(previews.OpenCodeExecutionStatus).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "</div></div>")
 		if templ_7745c5c3_Err != nil {
@@ -847,7 +853,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 				var templ_7745c5c3_Var40 string
 				templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(c.Key)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 282, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 285, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 				if templ_7745c5c3_Err != nil {
@@ -865,7 +871,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 					var templ_7745c5c3_Var41 string
 					templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(c.Status)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 284, Col: 47}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 287, Col: 47}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 					if templ_7745c5c3_Err != nil {
@@ -883,7 +889,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 					var templ_7745c5c3_Var42 string
 					templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(c.Status)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 286, Col: 45}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 289, Col: 45}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 					if templ_7745c5c3_Err != nil {
@@ -901,7 +907,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 					var templ_7745c5c3_Var43 string
 					templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(c.Status)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 288, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 291, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 					if templ_7745c5c3_Err != nil {
@@ -919,7 +925,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 					var templ_7745c5c3_Var44 string
 					templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(c.Status)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 290, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 293, Col: 46}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 					if templ_7745c5c3_Err != nil {
@@ -953,7 +959,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(run.SelectedModel)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 306, Col: 78}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 309, Col: 78}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 		if templ_7745c5c3_Err != nil {
@@ -967,7 +973,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 			var templ_7745c5c3_Var46 string
 			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(run.BranchName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 311, Col: 21}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 314, Col: 21}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 			if templ_7745c5c3_Err != nil {
@@ -991,7 +997,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 			var templ_7745c5c3_Var47 templ.SafeURL
 			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 321, Col: 75}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 324, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 			if templ_7745c5c3_Err != nil {
@@ -1004,7 +1010,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 			var templ_7745c5c3_Var48 templ.SafeURL
 			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet/download")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 323, Col: 84}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 326, Col: 84}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 			if templ_7745c5c3_Err != nil {
@@ -1022,7 +1028,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 				var templ_7745c5c3_Var49 templ.SafeURL
 				templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 326, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 329, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 				if templ_7745c5c3_Err != nil {
@@ -1035,7 +1041,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 				var templ_7745c5c3_Var50 templ.SafeURL
 				templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 328, Col: 74}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 331, Col: 74}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 				if templ_7745c5c3_Err != nil {
@@ -1051,133 +1057,340 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "<div class=\"mt-3 pt-3 border-t border-gray-800\"><div class=\"text-xs text-gray-500\">Execution status</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "<div class=\"mt-3 pt-3 border-t border-gray-800\"><div class=\"text-sm font-medium text-gray-200 mb-2\">OpenCode Go Execution</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if artifactExists(artifacts, "agent_result_raw") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "<div class=\"mt-1 text-xs text-green-400\">Manual result received</div>")
+		if previews.OpenCodeCommandTemplate == "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "<div class=\"text-xs text-red-400 mb-2\">OpenCode Go command template is not configured.</div><div class=\"text-xs text-gray-500 mb-2\">Set the <code class=\"text-indigo-400\">RELAY_OPENCODE_GO_COMMAND_TEMPLATE</code> environment variable to enable execution.</div><button disabled class=\"px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed\">Start OpenCode Go</button> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else if previews.HandoffPreflightStatus == "blocked" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "<div class=\"text-xs text-red-400 mb-2\">Resolve blocked checks before starting OpenCode Go.</div><button disabled class=\"px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed\">Start OpenCode Go</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "<div class=\"mt-1 text-xs text-yellow-400\">Not started / not implemented</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "<details class=\"mb-2\"><summary class=\"cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none\">Command preview</summary><div class=\"mt-2 border border-gray-800 rounded bg-gray-950/60 p-2 overflow-x-auto\"><pre class=\"text-xs font-mono text-gray-300 whitespace-pre-wrap\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var51 string
+			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeCommandPreview)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 366, Col: 104}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "</pre></div></details><div class=\"text-xs text-yellow-400 mb-2\">This starts a local command in the selected repo path. Relay will capture stdout/stderr as artifacts.</div><form action=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var52 templ.SafeURL
+			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/actions")
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 374, Col: 54}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "\" method=\"POST\" hx-post=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var53 string
+			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(run.ID) + "/actions")
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 375, Col: 50}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "\" hx-target=\"body\" hx-swap=\"outerHTML\" class=\"inline\"><input type=\"hidden\" name=\"action\" value=\"start-opencode-go\"> <button type=\"submit\" class=\"px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium\">Start OpenCode Go</button></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "</div><div class=\"mt-3\"><button disabled class=\"px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed\">Send to OpenCode Go (not implemented)</button><p class=\"mt-1 text-xs text-gray-600\">This step is preparation only. Use the packet and Agent Prompt artifacts with OpenCode Go manually for now.</p></div><details class=\"mt-4 border border-gray-800 rounded-lg p-3 bg-gray-950/40\"><summary class=\"cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none\">Manual result intake fallback</summary><div class=\"mt-3\"><form action=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var51 templ.SafeURL
-		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/actions")
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 361, Col: 54}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "\" method=\"POST\" hx-post=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var52 string
-		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(run.ID) + "/actions")
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 362, Col: 50}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var52)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "\" hx-target=\"body\" hx-swap=\"outerHTML\" class=\"space-y-2\"><input type=\"hidden\" name=\"action\" value=\"submit-agent-result\"> <textarea name=\"agent_result_text\" rows=\"6\" class=\"w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded p-2 text-gray-300\" placeholder=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var53 string
-		templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.ResolveAttributeValue("DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42")
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 368, Col: 90}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var53)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "\"></textarea> <button type=\"submit\" class=\"px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium\">Save Agent Result</button></form>")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if artifactExists(artifacts, "agent_result_raw") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "<div class=\"mt-2 text-xs text-gray-500\">Agent result received. Proceed to Relay Validation.</div><div class=\"mt-2 pt-2 border-t border-gray-800 flex gap-3\"><a href=\"")
+		if previews.HasOpenCodeExecution {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "<div class=\"mt-3 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden\"><div class=\"border-b border-gray-800 px-3 py-2\"><div class=\"text-sm font-medium text-gray-200\">Latest Execution</div></div><div class=\"p-2 space-y-1 text-xs\"><div class=\"flex justify-between\"><span class=\"text-gray-400\">Status</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var54 templ.SafeURL
-			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw")
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 380, Col: 70}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
+			var templ_7745c5c3_Var54 = []any{executionStatusClass(previews.OpenCodeExecutionStatus)}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var54...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">View raw result</a> <a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "<span class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var55 templ.SafeURL
-			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw/download")
+			var templ_7745c5c3_Var55 string
+			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var54).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 382, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "\" class=\"text-xs text-gray-500 hover:text-gray-300\">Download raw result</a> ")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var55)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if artifactExists(artifacts, "agent_result_json") {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "<a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var56 string
+			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeExecutionStatus)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 394, Col: 112}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, "</span></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if previews.OpenCodeExecutionExitCode != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "<div class=\"flex justify-between\"><span class=\"text-gray-400\">Exit code</span> <span class=\"text-gray-300\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var56 templ.SafeURL
-				templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json")
+				var templ_7745c5c3_Var57 string
+				templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeExecutionExitCode)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 385, Col: 72}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">View parsed JSON</a> <a href=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var57 templ.SafeURL
-				templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json/download")
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 387, Col: 81}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 399, Col: 72}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "\" class=\"text-xs text-gray-500 hover:text-gray-300\">Download parsed JSON</a>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "</span></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "</div>")
+			if previews.OpenCodeExecutionStarted != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "<div class=\"flex justify-between\"><span class=\"text-gray-400\">Started</span> <span class=\"text-gray-300\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var58 string
+				templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeExecutionStarted)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 405, Col: 71}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "</span></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if previews.OpenCodeExecutionFinished != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "<div class=\"flex justify-between\"><span class=\"text-gray-400\">Finished</span> <span class=\"text-gray-300\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var59 string
+				templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeExecutionFinished)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 411, Col: 72}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "</span></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "<div class=\"flex gap-2 pt-1\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if previews.OpenCodeStdoutArtifactID > 0 {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "<a href=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var60 templ.SafeURL
+				templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/" + Itoa(previews.OpenCodeStdoutArtifactID))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 416, Col: 98}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">stdout</a> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if previews.OpenCodeStderrArtifactID > 0 {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "<a href=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var61 templ.SafeURL
+				templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/" + Itoa(previews.OpenCodeStderrArtifactID))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 420, Col: 98}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">stderr</a> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if previews.OpenCodeCombinedArtifactID > 0 {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "<a href=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var62 templ.SafeURL
+				templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/" + Itoa(previews.OpenCodeCombinedArtifactID))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 424, Col: 100}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">combined log</a>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "</div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "</div></details></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "</div><details class=\"mt-4 border border-gray-800 rounded-lg p-3 bg-gray-950/40\"><summary class=\"cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none\">Manual result intake fallback</summary><div class=\"mt-3\"><form action=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var63 templ.SafeURL
+		templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/actions")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 439, Col: 54}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "\" method=\"POST\" hx-post=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var64 string
+		templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(run.ID) + "/actions")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 440, Col: 50}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var64)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "\" hx-target=\"body\" hx-swap=\"outerHTML\" class=\"space-y-2\"><input type=\"hidden\" name=\"action\" value=\"submit-agent-result\"> <textarea name=\"agent_result_text\" rows=\"6\" class=\"w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded p-2 text-gray-300\" placeholder=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var65 string
+		templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.ResolveAttributeValue("DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 446, Col: 90}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var65)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "\"></textarea> <button type=\"submit\" class=\"px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium\">Save Agent Result</button></form>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if artifactExists(artifacts, "agent_result_raw") {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "<div class=\"mt-2 text-xs text-gray-500\">Agent result received. Proceed to Relay Validation.</div><div class=\"mt-2 pt-2 border-t border-gray-800 flex gap-3\"><a href=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var66 templ.SafeURL
+			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw")
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 458, Col: 70}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">View raw result</a> <a href=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var67 templ.SafeURL
+			templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw/download")
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 460, Col: 79}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "\" class=\"text-xs text-gray-500 hover:text-gray-300\">Download raw result</a> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if artifactExists(artifacts, "agent_result_json") {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "<a href=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var68 templ.SafeURL
+				templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json")
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 463, Col: 72}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">View parsed JSON</a> <a href=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var69 templ.SafeURL
+				templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json/download")
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 465, Col: 81}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "\" class=\"text-xs text-gray-500 hover:text-gray-300\">Download parsed JSON</a>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "</div></details></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1201,12 +1414,12 @@ func RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, checks
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var58 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var58 == nil {
-			templ_7745c5c3_Var58 = templ.NopComponent
+		templ_7745c5c3_Var70 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var70 == nil {
+			templ_7745c5c3_Var70 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "<div class=\"border border-gray-800 rounded-lg p-4 bg-gray-900/50\"><div class=\"flex items-center justify-between mb-3\"><div><h3 class=\"font-medium\">Step 5: Relay Validation</h3><p class=\"text-xs text-gray-500 mt-0.5\">Run Relay-extracted validation commands locally after agent result.</p></div><div class=\"flex items-center gap-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "<div class=\"border border-gray-800 rounded-lg p-4 bg-gray-900/50\"><div class=\"flex items-center justify-between mb-3\"><div><h3 class=\"font-medium\">Step 5: Relay Validation</h3><p class=\"text-xs text-gray-500 mt-0.5\">Run Relay-extracted validation commands locally after agent result.</p></div><div class=\"flex items-center gap-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1215,135 +1428,135 @@ func RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, checks
 			return templ_7745c5c3_Err
 		}
 		if artifactExists(artifacts, "agent_result_raw") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "<form action=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "<form action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var59 templ.SafeURL
-			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/actions")
+			var templ_7745c5c3_Var71 templ.SafeURL
+			templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/actions")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 407, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 485, Col: 55}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "\" method=\"POST\" hx-post=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var60 string
-			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(run.ID) + "/actions")
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 408, Col: 51}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var60)
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "\" method=\"POST\" hx-post=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "\" hx-target=\"body\" hx-swap=\"outerHTML\" class=\"flex gap-2\"><input type=\"hidden\" name=\"action\" value=\"run-validation\"> <button type=\"submit\" class=\"px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium\">Run Validation Commands</button></form>")
+			var templ_7745c5c3_Var72 string
+			templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(run.ID) + "/actions")
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 486, Col: 51}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var72)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, "\" hx-target=\"body\" hx-swap=\"outerHTML\" class=\"flex gap-2\"><input type=\"hidden\" name=\"action\" value=\"run-validation\"> <button type=\"submit\" class=\"px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium\">Run Validation Commands</button></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "<span class=\"px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed\" title=\"Submit an agent result first\">Run Validation (no result)</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "<span class=\"px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed\" title=\"Submit an agent result first\">Run Validation (no result)</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if artifactExists(artifacts, "validation_run_json") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "<div class=\"mt-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "<div class=\"mt-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if hasCheckStatus(checks, "validation_run", "pass") {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "<div class=\"text-xs text-green-400\">Validation passed.</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, "<div class=\"text-xs text-green-400\">Validation passed.</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else if hasCheckStatus(checks, "validation_run", "fail") {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "<div class=\"text-xs text-red-400\">Validation failed. Review stdout/stderr artifacts.</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 147, "<div class=\"text-xs text-red-400\">Validation failed. Review stdout/stderr artifacts.</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "<div class=\"text-xs text-gray-500\">Validation completed. Check artifacts for details.</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "<div class=\"text-xs text-gray-500\">Validation completed. Check artifacts for details.</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "</div><div class=\"mt-3 pt-3 border-t border-gray-800 flex gap-2\"><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 149, "</div><div class=\"mt-3 pt-3 border-t border-gray-800 flex gap-2\"><a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var61 templ.SafeURL
-			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json")
+			var templ_7745c5c3_Var73 templ.SafeURL
+			templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 437, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 515, Col: 71}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">View validation JSON</a> <a href=\"")
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var62 templ.SafeURL
-			templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json/download")
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 439, Col: 80}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 150, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">View validation JSON</a> <a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "\" class=\"text-xs text-gray-500 hover:text-gray-300\">Download validation JSON</a> <a href=\"")
+			var templ_7745c5c3_Var74 templ.SafeURL
+			templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json/download")
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 517, Col: 80}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var63 templ.SafeURL
-			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/validation_stdout")
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 441, Col: 69}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 151, "\" class=\"text-xs text-gray-500 hover:text-gray-300\">Download validation JSON</a> <a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">View stdout</a> <a href=\"")
+			var templ_7745c5c3_Var75 templ.SafeURL
+			templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/validation_stdout")
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 519, Col: 69}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var64 templ.SafeURL
-			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/validation_stderr")
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 443, Col: 69}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 152, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">View stdout</a> <a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">View stderr</a></div>")
+			var templ_7745c5c3_Var76 templ.SafeURL
+			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/validation_stderr")
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 521, Col: 69}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 153, "\" class=\"text-xs text-indigo-400 hover:text-indigo-300\">View stderr</a></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if !artifactExists(artifacts, "agent_result_raw") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "<div class=\"mt-2 text-xs text-gray-500\">Submit an agent result first, then run validation commands.</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 154, "<div class=\"mt-2 text-xs text-gray-500\">Submit an agent result first, then run validation commands.</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "<div class=\"mt-2 text-xs text-gray-500\">Agent result received. Run validation commands to verify the changes.</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 155, "<div class=\"mt-2 text-xs text-gray-500\">Agent result received. Run validation commands to verify the changes.</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 156, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1367,12 +1580,12 @@ func DiffAuditStepPanel() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var65 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var65 == nil {
-			templ_7745c5c3_Var65 = templ.NopComponent
+		templ_7745c5c3_Var77 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var77 == nil {
+			templ_7745c5c3_Var77 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "<div class=\"border border-gray-800/50 rounded-lg p-4 bg-gray-900/30 opacity-70\"><div class=\"flex items-start justify-between\"><div class=\"flex items-start gap-3\"><div><h3 class=\"font-medium text-gray-500\">Step 6: Diff / Audit</h3><p class=\"text-xs text-gray-600 mt-0.5\">Later: inspect git diff and generate GPT audit packet.</p><div class=\"mt-2 text-xs text-gray-600\">Later: Relay will inspect git diff and generate a GPT audit packet. Not implemented yet.</div></div></div><span class=\"px-3 py-1 text-xs rounded border border-gray-700 text-gray-600\">Future</span></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "<div class=\"border border-gray-800/50 rounded-lg p-4 bg-gray-900/30 opacity-70\"><div class=\"flex items-start justify-between\"><div class=\"flex items-start gap-3\"><div><h3 class=\"font-medium text-gray-500\">Step 6: Diff / Audit</h3><p class=\"text-xs text-gray-600 mt-0.5\">Later: inspect git diff and generate GPT audit packet.</p><div class=\"mt-2 text-xs text-gray-600\">Later: Relay will inspect git diff and generate a GPT audit packet. Not implemented yet.</div></div></div><span class=\"px-3 py-1 text-xs rounded border border-gray-700 text-gray-600\">Future</span></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1396,33 +1609,33 @@ func intakeStatusChip(checks []store.Check) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var66 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var66 == nil {
-			templ_7745c5c3_Var66 = templ.NopComponent
+		templ_7745c5c3_Var78 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var78 == nil {
+			templ_7745c5c3_Var78 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if hasCheckStatus(checks, "validation", "block") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "<span class=\"px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800\">blocked</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 158, "<span class=\"px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800\">blocked</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if hasCheckStatus(checks, "validation", "warn") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "<span class=\"px-2 py-0.5 text-xs rounded bg-yellow-900/50 text-yellow-400 border border-yellow-800\">warn</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 159, "<span class=\"px-2 py-0.5 text-xs rounded bg-yellow-900/50 text-yellow-400 border border-yellow-800\">warn</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if hasCheckStatus(checks, "validation", "pass") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">pass</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 160, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">pass</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if hasCheckStatus(checks, "validation", "fail") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "<span class=\"px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800\">blocked</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 161, "<span class=\"px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800\">blocked</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "<span class=\"px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700\">pending</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 162, "<span class=\"px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700\">pending</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1447,23 +1660,23 @@ func agentPromptStatusChip(hasAgentPrompt bool, checks []store.Check) templ.Comp
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var67 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var67 == nil {
-			templ_7745c5c3_Var67 = templ.NopComponent
+		templ_7745c5c3_Var79 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var79 == nil {
+			templ_7745c5c3_Var79 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if hasAgentPrompt {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">ready</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 163, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">ready</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if hasCheckStatus(checks, "validation", "block") || hasCheckStatus(checks, "validation", "fail") {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, "<span class=\"px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800\">blocked</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 164, "<span class=\"px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800\">blocked</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "<span class=\"px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700\">pending</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 165, "<span class=\"px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700\">pending</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1488,23 +1701,23 @@ func agentPacketStatusChip(hasPacket, hasPrompt bool) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var68 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var68 == nil {
-			templ_7745c5c3_Var68 = templ.NopComponent
+		templ_7745c5c3_Var80 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var80 == nil {
+			templ_7745c5c3_Var80 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if hasPacket {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">ready</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 166, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">ready</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if hasPrompt {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "<span class=\"px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800\">available</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 167, "<span class=\"px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800\">available</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, "<span class=\"px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700\">pending</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 168, "<span class=\"px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700\">pending</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1529,23 +1742,23 @@ func handoffPreflightStatusChip(status string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var69 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var69 == nil {
-			templ_7745c5c3_Var69 = templ.NopComponent
+		templ_7745c5c3_Var81 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var81 == nil {
+			templ_7745c5c3_Var81 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if status == "ready" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 147, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">ready</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 169, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">ready</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if status == "blocked" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "<span class=\"px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800\">blocked</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "<span class=\"px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800\">blocked</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if status == "warning" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 149, "<span class=\"px-2 py-0.5 text-xs rounded bg-yellow-900/50 text-yellow-400 border border-yellow-800\">warning</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, "<span class=\"px-2 py-0.5 text-xs rounded bg-yellow-900/50 text-yellow-400 border border-yellow-800\">warning</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1570,18 +1783,18 @@ func handoffStatusChip(hasPacket bool) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var70 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var70 == nil {
-			templ_7745c5c3_Var70 = templ.NopComponent
+		templ_7745c5c3_Var82 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var82 == nil {
+			templ_7745c5c3_Var82 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if hasPacket {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 150, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">packet ready</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 172, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">packet ready</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 151, "<span class=\"px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700\">no packet</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, "<span class=\"px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700\">no packet</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1606,35 +1819,35 @@ func validationStatusChip(hasRun bool, checks []store.Check, hasAgentResult bool
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var71 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var71 == nil {
-			templ_7745c5c3_Var71 = templ.NopComponent
+		templ_7745c5c3_Var83 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var83 == nil {
+			templ_7745c5c3_Var83 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if hasRun {
 			if hasCheckStatus(checks, "validation_run", "pass") {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 152, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">passed</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">passed</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else if hasCheckStatus(checks, "validation_run", "fail") {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 153, "<span class=\"px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800\">failed</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 175, "<span class=\"px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800\">failed</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 154, "<span class=\"px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800\">ran</span>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 176, "<span class=\"px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800\">ran</span>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
 		} else if hasAgentResult {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 155, "<span class=\"px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800\">available</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 177, "<span class=\"px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800\">available</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 156, "<span class=\"px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700\">pending</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 178, "<span class=\"px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700\">pending</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1668,6 +1881,83 @@ func artifactExists(artifacts []store.Artifact, kind string) bool {
 		}
 	}
 	return false
+}
+
+func openCodeExecutionStatusChip(status string) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var84 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var84 == nil {
+			templ_7745c5c3_Var84 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		if status == "completed" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 179, "<span class=\"px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800\">completed</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else if status == "failed" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 180, "<span class=\"px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800\">failed</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else if status == "running" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "<span class=\"px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800\">running</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else if status == "blocked" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "<span class=\"px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800\">blocked</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 183, "<span class=\"px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var85 string
+			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(status)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 660, Col: 101}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 184, "</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		return nil
+	})
+}
+
+func executionStatusClass(status string) string {
+	switch status {
+	case "completed":
+		return "text-green-400"
+	case "failed", "blocked":
+		return "text-red-400"
+	case "running", "starting":
+		return "text-blue-400"
+	default:
+		return "text-gray-400"
+	}
 }
 
 var _ = templruntime.GeneratedTemplate

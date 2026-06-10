@@ -40,8 +40,8 @@ func TestNewOpenCodeHandoffPacket(t *testing.T) {
 	if packet.ArtifactDir != "data/artifacts/runs/123" {
 		t.Fatalf("expected ArtifactDir 'data/artifacts/runs/123', got %q", packet.ArtifactDir)
 	}
-	if packet.Execution.Status != "not_implemented" {
-		t.Fatalf("expected Execution.Status 'not_implemented', got %q", packet.Execution.Status)
+	if packet.Execution.Status != "configured" {
+		t.Fatalf("expected Execution.Status 'configured', got %q", packet.Execution.Status)
 	}
 }
 
@@ -73,7 +73,7 @@ func TestMarshalOpenCodeHandoffPacket(t *testing.T) {
 	if !strings.Contains(string(data), `"prompt_artifact_kind": "agent_prompt"`) {
 		t.Fatal("expected JSON to contain prompt_artifact_kind: agent_prompt")
 	}
-	if !strings.Contains(string(data), `"status": "not_implemented"`) {
+	if !strings.Contains(string(data), `"status": "configured"`) {
 		t.Fatal("expected JSON to contain execution status")
 	}
 	if len(data) == 0 || data[len(data)-1] != '\n' {

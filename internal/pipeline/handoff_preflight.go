@@ -18,6 +18,17 @@ type HandoffPreflightCheck struct {
 	Summary string `json:"summary"`
 }
 
+// OpenCodeCommandTemplate returns the configured OpenCode Go command template.
+// It checks environment variable RELAY_OPENCODE_GO_COMMAND_TEMPLATE first,
+// then falls back to an empty string (not configured).
+func OpenCodeCommandTemplate() string {
+	tmpl := os.Getenv("RELAY_OPENCODE_GO_COMMAND_TEMPLATE")
+	if tmpl != "" {
+		return tmpl
+	}
+	return ""
+}
+
 // BuildArtifactManifest builds a HandoffArtifactManifest from an artifact dir
 // and a list of known artifact paths indexed by kind.
 func BuildArtifactManifest(artifactDir string, kindPaths map[string]string) HandoffArtifactManifest {

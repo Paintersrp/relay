@@ -17,14 +17,24 @@ type HandoffPreflightCheckView struct {
 }
 
 type RunPreviews struct {
-	OriginalHandoff      string
-	ValidationJSON       string
-	AgentPrompt          string
-	OpenCodePacket       string
-	AgentPromptDiff      PreviewDiff
-	AgentPromptEstimate  string
-	HandoffPreflightStatus   string
-	HandoffPreflightChecks   []HandoffPreflightCheckView
+	OriginalHandoff             string
+	ValidationJSON              string
+	AgentPrompt                 string
+	OpenCodePacket              string
+	AgentPromptDiff             PreviewDiff
+	AgentPromptEstimate         string
+	HandoffPreflightStatus      string
+	HandoffPreflightChecks      []HandoffPreflightCheckView
+	OpenCodeCommandTemplate     string
+	OpenCodeCommandPreview      string
+	OpenCodeExecutionStatus     string
+	OpenCodeExecutionExitCode   string
+	OpenCodeExecutionStarted    string
+	OpenCodeExecutionFinished   string
+	OpenCodeStdoutArtifactID    int64
+	OpenCodeStderrArtifactID    int64
+	OpenCodeCombinedArtifactID  int64
+	HasOpenCodeExecution        bool
 }
 
 templ RunPreviewPanels(previews RunPreviews) {

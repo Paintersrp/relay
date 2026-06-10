@@ -4,6 +4,28 @@
 
 package generated
 
+import (
+	"database/sql"
+)
+
+type AgentExecution struct {
+	ID                   int64          `json:"id"`
+	RunID                int64          `json:"run_id"`
+	Provider             string         `json:"provider"`
+	Status               string         `json:"status"`
+	CommandPreview       string         `json:"command_preview"`
+	ExitCode             sql.NullInt64  `json:"exit_code"`
+	StartedAt            sql.NullString `json:"started_at"`
+	FinishedAt           sql.NullString `json:"finished_at"`
+	StdoutArtifactPath   sql.NullString `json:"stdout_artifact_path"`
+	StderrArtifactPath   sql.NullString `json:"stderr_artifact_path"`
+	CombinedArtifactPath sql.NullString `json:"combined_artifact_path"`
+	ResultArtifactPath   sql.NullString `json:"result_artifact_path"`
+	Error                sql.NullString `json:"error"`
+	CreatedAt            string         `json:"created_at"`
+	UpdatedAt            string         `json:"updated_at"`
+}
+
 type Artifact struct {
 	ID        int64  `json:"id"`
 	RunID     int64  `json:"run_id"`

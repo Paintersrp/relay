@@ -20,6 +20,7 @@ type Run = generated.Run
 type Artifact = generated.Artifact
 type Event = generated.Event
 type Check = generated.Check
+type AgentExecution = generated.AgentExecution
 type DashboardRun = generated.ListRecentRunsWithRepoRow
 
 type Store struct {
@@ -293,4 +294,105 @@ func (s *Store) GetChecksByRunKind(runID int64, kind string) ([]Check, error) {
 		RunID: runID,
 		Kind:  kind,
 	})
+}
+
+// Agent Executions
+
+func (s *Store) CreateAgentExecution(runID int64, provider, status, commandPreview string) (*AgentExecution, error) {
+	exec, err := s.queries.CreateAgentExecution(context.Background(), generated.CreateAgentExecutionParams{
+		RunID:          runID,
+		Provider:       provider,
+		Status:         status,
+		CommandPreview: commandPreview,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &exec, nil
+}
+
+func (s *Store) GetAgentExecution(id int64) (*AgentExecution, error) {
+	exec, err := s.queries.GetAgentExecution(context.Background(), id)
+	if err != nil {
+		return nil, err
+	}
+	return &exec, nil
+}
+
+func (s *Store) ListAgentExecutionsByRun(runID int64) ([]AgentExecution, error) {
+	return s.queries.ListAgentExecutionsByRun(context.Background(), runID)
+}
+
+func (s *Store) GetLatestAgentExecutionByRun(runID int64) (*AgentExecution, error) {
+	exec, err := s.queries.GetLatestAgentExecutionByRun(context.Background(), runID)
+	if err != nil {
+		return nil, err
+	}
+	return &exec, nil
+}
+
+func (s *Store) UpdateAgentExecutionStatus(
+	id int64,
+	status string,
+	exitCode *int64,
+	startedAt, finishedAt *string,
+	stdoutPath, stderrPath, combinedPath, resultPath *string,
+	errMsg *string,
+) (*AgentExecution, error) {
+	exitCodeVal := sql.NullInt64{}
+	if exitCode != nil {
+		exitCodeVal = sql.NullInt64{Int64: *exitCode, Valid: true}
+	}
+
+	startedAtVal := sql.NullString{}
+	if startedAt != nil {
+		startedAtVal = sql.NullString{String: *startedAt, Valid: true}
+	}
+
+	finishedAtVal := sql.NullString{}
+	if finishedAt != nil {
+		finishedAtVal = sql.NullString{String: *finishedAt, Valid: true}
+	}
+
+	stdoutVal := sql.NullString{}
+	if stdoutPath != nil {
+		stdoutVal = sql.NullString{String: *stdoutPath, Valid: true}
+	}
+
+	stderrVal := sql.NullString{}
+	if stderrPath != nil {
+		stderrVal = sql.NullString{String: *stderrPath, Valid: true}
+	}
+
+	combinedVal := sql.NullString{}
+	if combinedPath != nil {
+		combinedVal = sql.NullString{String: *combinedPath, Valid: true}
+	}
+
+	resultVal := sql.NullString{}
+	if resultPath != nil {
+		resultVal = sql.NullString{String: *resultPath, Valid: true}
+	}
+
+	errorVal := sql.NullString{}
+	if errMsg != nil {
+		errorVal = sql.NullString{String: *errMsg, Valid: true}
+	}
+
+	exec, err := s.queries.UpdateAgentExecutionStatus(context.Background(), generated.UpdateAgentExecutionStatusParams{
+		ID:                   id,
+		Status:               status,
+		ExitCode:             exitCodeVal,
+		StartedAt:            startedAtVal,
+		FinishedAt:           finishedAtVal,
+		StdoutArtifactPath:   stdoutVal,
+		StderrArtifactPath:   stderrVal,
+		CombinedArtifactPath: combinedVal,
+		ResultArtifactPath:   resultVal,
+		Error:                errorVal,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &exec, nil
 }

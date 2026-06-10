@@ -52,7 +52,7 @@ func NewOpenCodeHandoffPacket(
 		PromptArtifactPath: promptArtifactPath,
 		ArtifactDir:        artifactDir,
 		Execution: OpenCodeExecutionPreview{
-			Status: "not_implemented",
+			Status: "configured",
 		},
 		Artifacts: HandoffArtifactManifest{
 			Dir:      artifactDir,

@@ -100,14 +100,83 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Build OpenCode execution preview data
+	openCodeCommandTemplate := pipeline.OpenCodeCommandTemplate()
+	openCodeCommandPreview := ""
+	hasOpenCodeExecution := false
+	openCodeExecStatus := ""
+	openCodeExecExitCode := ""
+	openCodeExecStarted := ""
+	openCodeExecFinished := ""
+	var openCodeStdoutID, openCodeStderrID, openCodeCombinedID int64
+
+	if openCodeCommandTemplate != "" && repo != nil {
+		// Try to render the command preview (best-effort)
+		agentPromptPath := ""
+		if a := findArtifactByKind(artifactsList, "agent_prompt"); a != nil {
+			agentPromptPath = a.Path
+		}
+		packetPath := ""
+		if a := findArtifactByKind(artifactsList, "opencode_handoff_packet"); a != nil {
+			packetPath = a.Path
+		}
+		cmdCtx := pipeline.AgentCommandContext{
+			RepoPath:         repo.Path,
+			BranchName:       run.BranchName,
+			SelectedModel:    run.SelectedModel,
+			RecommendedModel: run.RecommendedModel,
+			AgentPromptPath:  agentPromptPath,
+			PacketPath:       packetPath,
+			ArtifactDir:      artifacts.Dir(id),
+		}
+		if preview, err := pipeline.RenderAgentCommandTemplate(openCodeCommandTemplate, cmdCtx); err == nil {
+			openCodeCommandPreview = preview
+		}
+	}
+
+	// Load latest execution
+	if exec, err := h.store.GetLatestAgentExecutionByRun(id); err == nil {
+		hasOpenCodeExecution = true
+		openCodeExecStatus = exec.Status
+		if exec.ExitCode.Valid {
+			openCodeExecExitCode = strconv.FormatInt(exec.ExitCode.Int64, 10)
+		}
+		if exec.StartedAt.Valid {
+			openCodeExecStarted = exec.StartedAt.String
+		}
+		if exec.FinishedAt.Valid {
+			openCodeExecFinished = exec.FinishedAt.String
+		}
+		// Find artifact IDs for stdout/stderr/combined
+		for _, a := range artifactsList {
+			if a.Kind == "opencode_stdout" {
+				openCodeStdoutID = a.ID
+			} else if a.Kind == "opencode_stderr" {
+				openCodeStderrID = a.ID
+			} else if a.Kind == "opencode_combined_log" {
+				openCodeCombinedID = a.ID
+			}
+		}
+	}
+
 	previews := views.RunPreviews{
-		OriginalHandoff:        originalPreview,
-		ValidationJSON:         readArtifactPreview(id, "handoff_validation_json"),
-		AgentPrompt:            agentPromptPreview,
-		OpenCodePacket:         readArtifactPreview(id, "opencode_handoff_packet"),
-		AgentPromptEstimate:    agentPromptEstimate,
-		HandoffPreflightStatus: preflightStatus,
-		HandoffPreflightChecks: preflightChecks,
+		OriginalHandoff:             originalPreview,
+		ValidationJSON:              readArtifactPreview(id, "handoff_validation_json"),
+		AgentPrompt:                 agentPromptPreview,
+		OpenCodePacket:              readArtifactPreview(id, "opencode_handoff_packet"),
+		AgentPromptEstimate:         agentPromptEstimate,
+		HandoffPreflightStatus:      preflightStatus,
+		HandoffPreflightChecks:      preflightChecks,
+		OpenCodeCommandTemplate:     openCodeCommandTemplate,
+		OpenCodeCommandPreview:      openCodeCommandPreview,
+		OpenCodeExecutionStatus:     openCodeExecStatus,
+		OpenCodeExecutionExitCode:   openCodeExecExitCode,
+		OpenCodeExecutionStarted:    openCodeExecStarted,
+		OpenCodeExecutionFinished:   openCodeExecFinished,
+		OpenCodeStdoutArtifactID:    openCodeStdoutID,
+		OpenCodeStderrArtifactID:    openCodeStderrID,
+		OpenCodeCombinedArtifactID:  openCodeCombinedID,
+		HasOpenCodeExecution:        hasOpenCodeExecution,
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {
@@ -179,6 +248,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.submitAgentResult(w, r, id)
 	case "generate-opencode-packet":
 		h.generateOpenCodePacket(w, r, id)
+	case "start-opencode-go":
+		h.startOpenCodeGo(w, r, id)
 	default:
 		http.Error(w, "unknown action", http.StatusBadRequest)
 	}
@@ -293,6 +364,235 @@ func (h *RunsHandler) markStatus(w http.ResponseWriter, r *http.Request, runID i
 	h.store.CreateEvent(runID, "info", "Run status changed to "+status)
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
+}
+
+// persistAgentResult saves agent result artifacts and creates checks/events.
+// Used from both manual submission and OpenCode execution.
+func (h *RunsHandler) persistAgentResult(runID int64, raw string) error {
+	result := pipeline.ParseAgentResult(raw)
+
+	rawPath, err := artifacts.Write(runID, "agent_result_raw", pipeline.ArtifactFilename("agent_result_raw"), []byte(raw))
+	if err != nil {
+		return fmt.Errorf("write agent result raw: %w", err)
+	}
+	h.store.CreateArtifact(runID, "agent_result_raw", rawPath, "text/plain")
+
+	resultJSON, err := result.JSON()
+	if err != nil {
+		return fmt.Errorf("marshal agent result json: %w", err)
+	}
+	jsonPath, err := artifacts.Write(runID, "agent_result_json", pipeline.ArtifactFilename("agent_result_json"), resultJSON)
+	if err != nil {
+		return fmt.Errorf("write agent result json: %w", err)
+	}
+	h.store.CreateArtifact(runID, "agent_result_json", jsonPath, "application/json")
+
+	h.store.DeleteChecksByRunKind(runID, "agent_result")
+
+	var checkStatus, checkSummary, runStatus, eventMsg string
+	switch result.Status {
+	case pipeline.AgentResultDone:
+		checkStatus = "pass"
+		checkSummary = "Agent reported DONE"
+		runStatus = "agent_done"
+		eventMsg = "Agent result submitted: DONE"
+	case pipeline.AgentResultBlocked:
+		checkStatus = "fail"
+		checkSummary = "Agent reported BLOCKED"
+		runStatus = "agent_blocked"
+		eventMsg = "Agent result submitted: BLOCKED"
+	default:
+		checkStatus = "warn"
+		checkSummary = "Agent result status unknown"
+		runStatus = "agent_result_needs_review"
+		eventMsg = "Agent result submitted: UNKNOWN"
+	}
+
+	h.store.CreateCheck(runID, "agent_result", checkStatus, checkSummary, string(resultJSON))
+	h.store.UpdateRunStatus(runID, runStatus)
+	h.store.CreateEvent(runID, "info", eventMsg)
+	return nil
+}
+
+func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, runID int64) {
+	run, err := h.store.GetRun(runID)
+	if err != nil {
+		h.log.Error("get run for opencode execution", "error", err)
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	repo, err := h.store.GetRepo(run.RepoID)
+	if err != nil {
+		h.log.Error("get repo for opencode execution", "error", err)
+		http.Error(w, "repo not found", http.StatusNotFound)
+		return
+	}
+
+	// Get command template from env/config
+	commandTemplate := pipeline.OpenCodeCommandTemplate()
+	if commandTemplate == "" {
+		h.store.CreateEvent(runID, "warn", "OpenCode Go command template is not configured")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+		return
+	}
+
+	// Find agent prompt artifact path
+	artifactsList, err := h.store.ListArtifactsByRun(runID)
+	if err != nil {
+		http.Error(w, "failed to list artifacts", http.StatusInternalServerError)
+		return
+	}
+
+	agentPromptPath := ""
+	for _, a := range artifactsList {
+		if a.Kind == "agent_prompt" {
+			agentPromptPath = a.Path
+			break
+		}
+	}
+	if agentPromptPath == "" {
+		h.store.CreateEvent(runID, "warn", "Agent Prompt artifact not found; generate it first")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+		return
+	}
+
+	// Find opencode packet artifact path
+	packetPath := ""
+	for _, a := range artifactsList {
+		if a.Kind == "opencode_handoff_packet" {
+			packetPath = a.Path
+			break
+		}
+	}
+	if packetPath == "" {
+		h.store.CreateEvent(runID, "warn", "OpenCode handoff packet not found; generate it first")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+		return
+	}
+
+	// Confirm repo path exists
+	if repo.Path == "" {
+		h.store.CreateEvent(runID, "warn", "Repo path is not configured")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+		return
+	}
+	if info, err := os.Stat(repo.Path); err != nil || !info.IsDir() {
+		h.store.CreateEvent(runID, "warn", "Repo path does not exist: "+repo.Path)
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+		return
+	}
+
+	// Render command template
+	cmdCtx := pipeline.AgentCommandContext{
+		RepoPath:         repo.Path,
+		BranchName:       run.BranchName,
+		SelectedModel:    run.SelectedModel,
+		RecommendedModel: run.RecommendedModel,
+		AgentPromptPath:  agentPromptPath,
+		PacketPath:       packetPath,
+		ArtifactDir:      artifacts.Dir(runID),
+	}
+
+	renderedCommand, err := pipeline.RenderAgentCommandTemplate(commandTemplate, cmdCtx)
+	if err != nil {
+		h.log.Error("render command template", "error", err)
+		h.store.CreateEvent(runID, "warn", "Failed to render command template: "+err.Error())
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+		return
+	}
+
+	// Create execution record with status starting
+	exec, err := h.store.CreateAgentExecution(runID, "opencode_go", "starting", renderedCommand)
+	if err != nil {
+		h.log.Error("create agent execution record", "error", err)
+		http.Error(w, "failed to create execution record", http.StatusInternalServerError)
+		return
+	}
+
+	// Update to running
+	now := r.FormValue("t") // use request time as approximation
+	_ = now
+	startedAt := ""
+	h.store.UpdateAgentExecutionStatus(exec.ID, "running", nil, &startedAt, nil, nil, nil, nil, nil, nil)
+
+	h.store.CreateEvent(runID, "info", "OpenCode Go execution started")
+
+	// Run command synchronously with timeout
+	runResult := pipeline.RunLocalAgentCommand(r.Context(), repo.Path, renderedCommand, pipeline.DefaultAgentCommandTimeout)
+
+	// Write stdout/stderr/combined artifacts
+	stdoutPath := ""
+	if runResult.Stdout != "" {
+		p, err := artifacts.Write(runID, "opencode_stdout", pipeline.ArtifactFilename("opencode_stdout"), []byte(runResult.Stdout))
+		if err == nil {
+			h.store.CreateArtifact(runID, "opencode_stdout", p, "text/plain")
+			stdoutPath = p
+		}
+	}
+
+	stderrPath := ""
+	if runResult.Stderr != "" {
+		p, err := artifacts.Write(runID, "opencode_stderr", pipeline.ArtifactFilename("opencode_stderr"), []byte(runResult.Stderr))
+		if err == nil {
+			h.store.CreateArtifact(runID, "opencode_stderr", p, "text/plain")
+			stderrPath = p
+		}
+	}
+
+	combinedLog := runResult.Stdout
+	if runResult.Stderr != "" {
+		if combinedLog != "" {
+			combinedLog += "\n\n--- STDERR ---\n\n"
+		}
+		combinedLog += runResult.Stderr
+	}
+
+	combinedPath := ""
+	if combinedLog != "" {
+		p, err := artifacts.Write(runID, "opencode_combined_log", pipeline.ArtifactFilename("opencode_combined_log"), []byte(combinedLog))
+		if err == nil {
+			h.store.CreateArtifact(runID, "opencode_combined_log", p, "text/plain")
+			combinedPath = p
+		}
+	}
+
+	// Determine execution status
+	execStatus := "completed"
+	if runResult.TimedOut {
+		execStatus = "failed"
+	} else if runResult.ExitCode != 0 {
+		execStatus = "failed"
+	}
+
+	ec := int64(runResult.ExitCode)
+	startedStr := runResult.StartedAt.Format("2006-01-02 15:04:05")
+	finishedStr := runResult.FinishedAt.Format("2006-01-02 15:04:05")
+
+	var errPtr *string
+	if runResult.Error != "" {
+		errPtr = &runResult.Error
+	}
+
+	h.store.UpdateAgentExecutionStatus(exec.ID, execStatus, &ec, &startedStr, &finishedStr,
+		&stdoutPath, &stderrPath, &combinedPath, nil, errPtr)
+
+	// Try to parse agent result from stdout
+	if runResult.Stdout != "" {
+		if err := h.persistAgentResult(runID, runResult.Stdout); err != nil {
+			h.log.Warn("failed to persist agent result from stdout", "error", err)
+		}
+	}
+
+	eventMsg := "OpenCode Go execution completed with exit code " + strconv.Itoa(runResult.ExitCode)
+	if runResult.TimedOut {
+		eventMsg = "OpenCode Go execution timed out"
+	}
+	h.store.CreateEvent(runID, "info", eventMsg)
+
+	h.log.Info("opencode go execution completed", "run_id", runID, "exit_code", runResult.ExitCode)
+
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 }
 
 func (h *RunsHandler) runValidation(w http.ResponseWriter, r *http.Request, runID int64) {
@@ -571,56 +871,12 @@ func (h *RunsHandler) submitAgentResult(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	result := pipeline.ParseAgentResult(raw)
-
-	rawPath, err := artifacts.Write(runID, "agent_result_raw", pipeline.ArtifactFilename("agent_result_raw"), []byte(raw))
-	if err != nil {
-		h.log.Error("write agent result raw", "error", err)
+	if err := h.persistAgentResult(runID, raw); err != nil {
+		h.log.Error("submit agent result", "error", err)
 		http.Error(w, "failed to save agent result", http.StatusInternalServerError)
 		return
 	}
-	h.store.CreateArtifact(runID, "agent_result_raw", rawPath, "text/plain")
 
-	resultJSON, err := result.JSON()
-	if err != nil {
-		h.log.Error("marshal agent result json", "error", err)
-		http.Error(w, "failed to parse agent result", http.StatusInternalServerError)
-		return
-	}
-	jsonPath, err := artifacts.Write(runID, "agent_result_json", pipeline.ArtifactFilename("agent_result_json"), resultJSON)
-	if err != nil {
-		h.log.Error("write agent result json", "error", err)
-		http.Error(w, "failed to save agent result metadata", http.StatusInternalServerError)
-		return
-	}
-	h.store.CreateArtifact(runID, "agent_result_json", jsonPath, "application/json")
-
-	h.store.DeleteChecksByRunKind(runID, "agent_result")
-
-	var checkStatus, checkSummary, runStatus, eventMsg string
-	switch result.Status {
-	case pipeline.AgentResultDone:
-		checkStatus = "pass"
-		checkSummary = "Agent reported DONE"
-		runStatus = "agent_done"
-		eventMsg = "Agent result submitted: DONE"
-	case pipeline.AgentResultBlocked:
-		checkStatus = "fail"
-		checkSummary = "Agent reported BLOCKED"
-		runStatus = "agent_blocked"
-		eventMsg = "Agent result submitted: BLOCKED"
-	default:
-		checkStatus = "warn"
-		checkSummary = "Agent result status unknown"
-		runStatus = "agent_result_needs_review"
-		eventMsg = "Agent result submitted: UNKNOWN"
-	}
-
-	h.store.CreateCheck(runID, "agent_result", checkStatus, checkSummary, string(resultJSON))
-	h.store.UpdateRunStatus(runID, runStatus)
-	h.store.CreateEvent(runID, "info", eventMsg)
-
-	h.log.Info("agent result submitted", "run_id", runID, "status", result.Status)
-
+	h.log.Info("agent result submitted", "run_id", runID)
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
 }
