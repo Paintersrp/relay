@@ -140,6 +140,20 @@ To generate:
 Missing validation commands produce a remediation handoff that includes an actual
 `## Relay validation commands` section with canonical command fences.
 
+## Relay validation commands
+
+Commands Relay should extract and run locally after agent result:
+
+```bash
+go fmt ./...
+templ generate
+npm run build
+go test ./...
+go vet ./...
+```
+
+If RTK is available, Relay or the user may prefer `rtk.exe` first, then `rtk`, then the raw command.
+
 ## Routes
 
 | Method | Path                                   | Description                |
@@ -250,32 +264,49 @@ After handoff creation, Relay automatically runs Intake Review and, when there a
 
 Run detail now surfaces a top-level Next Action card. The seven-step navigation remains available for review/debugging, but the primary workflow is guided by the recommended next action.
 
+After each action completes, Relay redirects to the step where the next decision is most useful:
+
+- **Intake Review** (ready) &rarr; Step 2 Agent Prompt
+- **Intake Review** (blockers/warnings) &rarr; stays on Step 1
+- **Agent Prompt** generation &rarr; stays on Step 2 for review
+- **Agent Packet** generation &rarr; Step 4 OpenCode Handoff
+- **OpenCode start** &rarr; Step 5 Agent Run Monitor
+- **Agent result** &rarr; Step 6 Relay Validation
+- **Validation run** &rarr; stays on Step 6
+
+The Next Action card updates naturally after each redirect because the server owns state.
+
 The workbench is responsive for desktop and phone-sized devices. Long commands, JSON, and logs are contained inside scrollable panels so the page itself should not horizontally overflow.
 
 Run detail defaults to Step 1 Intake Review. The user intentionally reviews each step and navigates forward using the step navigation links. Explicit `?step=` query parameter navigation is also supported.
 
 Run detail is organized as a guided step-by-step workbench with a single active review step. Step navigation is server-rendered using query parameters (`?step=intake`, `?step=prompt`, `?step=handoff`, etc.). Each step panel includes a status chip, purpose description, and actionable controls based on current run state:
 
-- **Step 1 — Intake Review**: Default active step. Shows validation checks, warnings, blockers, and the Intake Review panel. The "Run Intake Review" button changes to "Re-run Intake Review" after first run. Original handoff is available collapsed.
-- **Step 2 — Agent Prompt**: Shows the Original → Agent Prompt hunk diff inline with View/Download links. Buttons toggle between "Generate Agent Prompt" and "Regenerate Agent Prompt".
-- **Step 3 — Agent Packet**: Shows packet preview, View/Download links. Buttons toggle between "Generate Agent Packet" and "Regenerate Agent Packet".
-- **Step 4 — OpenCode Go Handoff**: Shows preflight readiness, OpenCode adapter configuration (binary, model, agent, working directory, command preview), and an explicit "Start OpenCode Go" button. Adapter readiness/blockers are visible at the top of the adapter section. Step 4 is handoff/preflight only; execution results appear in Step 5.
-- **Step 5 — Agent Run Monitor**: Shows the running or completed OpenCode execution. Displays command context, terminal-style output transcript, artifact links (stdout, stderr, combined log), and parsed final result (DONE/BLOCKED). Auto-refreshes via HTMX polling while running. Manual result intake fallback is available here.
-- **Step 6 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Requires an agent result before the validation button is enabled.
+- **Step 1 — Intake Review**: Default active step. Shows validation checks, warnings, blockers, and the Intake Review panel. The "Run Intake Review" button changes to "Re-run Intake Review" after first run. Original handoff is available collapsed. After successful review with no blockers, redirects to Step 2.
+- **Step 2 — Agent Prompt**: Shows the Original → Agent Prompt hunk diff inline with View/Download links. Buttons toggle between "Generate Agent Prompt" and "Regenerate Agent Prompt". Stays on this step after generation so the user can review.
+- **Step 3 — Agent Packet**: Shows packet preview, View/Download links. Buttons toggle between "Generate Agent Packet" and "Regenerate Agent Packet". After generation, redirects to Step 4.
+- **Step 4 — OpenCode Go Handoff**: Shows preflight readiness, OpenCode adapter configuration (binary, model, agent, working directory, command preview), and an explicit "Start OpenCode Go" button. Adapter readiness/blockers are visible at the top of the adapter section. If an execution exists, shows a notice linking to Step 5. Step 4 is handoff/preflight only; execution results appear in Step 5.
+- **Step 5 — Agent Run Monitor**: Shows the running or completed OpenCode execution. Displays command context, terminal-style output transcript, artifact links (stdout, stderr, combined log), and parsed final result (DONE/BLOCKED). Auto-refreshes via HTMX polling while running. When DONE/BLOCKED is parsed, a validation CTA appears. Manual result intake fallback is available and shown more prominently when no result was auto-parsed.
+- **Step 6 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Requires an agent result before the validation button is enabled. Stays on this step after run so the user can inspect pass/fail and output links.
 - **Step 7 — Diff/Audit**: Future, grayed out.
 
 Clarifications:
 
+- The top-level Next Action card is the primary guide. The stepper remains for manual review/debugging.
+- After actions complete, Relay redirects to the step where the next decision is most useful.
 - Relay does not execute OpenCode automatically. Execution only starts when the user explicitly clicks "Start OpenCode Go".
 - Step 4 shows the OpenCode adapter configuration (binary, args, model, agent, working directory, command preview) in a details panel.
 - If the adapter is blocked (e.g., missing model mapping), an error message is shown with the specific env var to set.
 - If preflight checks are blocked, the Start button remains disabled.
+- If an OpenCode execution exists, Step 4 shows a notice linking to Step 5 for monitoring or review.
 - Starting OpenCode Go creates an execution record and returns immediately. The browser redirects to Step 5 Agent Run Monitor.
 - Step 5 shows running status with auto-refresh via HTMX polling every 2 seconds while the execution is active.
 - Relay captures stdout, stderr, and a combined log as run artifacts after execution.
 - Step 5 displays a terminal-style output transcript parsed from OpenCode JSONL events.
 - Relay extracts assistant text from JSONL stdout events and parses DONE/BLOCKED final output automatically.
 - Relay does not persist UNKNOWN results automatically from JSON noise.
+- When DONE/BLOCKED is parsed, Step 5 shows a prominent validation CTA.
+- When no result is auto-parsed, Step 5 shows a prominent manual fallback.
 - Relay Validation remains user-triggered after agent result. Step 5 does not auto-navigate to validation.
 - Manual agent result intake remains available as a fallback in Step 5.
 - Manual action buttons remain available as retry/regenerate controls for each step.

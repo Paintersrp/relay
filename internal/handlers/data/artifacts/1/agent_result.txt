@@ -1,4 +1,4 @@
 DONE
 Build status: PASS
 Test status: PASS
-Count of LOC changed: 5
+Count of LOC changed: 42

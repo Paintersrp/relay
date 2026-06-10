@@ -1,27 +1,22 @@
-# Scope Mismatch Handoff
+# Test Handoff
 
 ## Goal
-
-Do a thing.
+Do something
 
 ## Scope
-
-- src/definitely-missing.ts
+- README.md
 
 ## Do not change
-
-- Nothing.
+Nothing
 
 ## Task checklist
-
 - [ ] Do it
 
 ## Tests / validation
 
 ```bash
-go test ./...
+go version
 ```
 
-## Agent final output requirement
-
-Return DONE or BLOCKED.
+## Output
+DONE or BLOCKED

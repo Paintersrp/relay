@@ -932,6 +932,188 @@ func TestBuildOpenCodeTranscriptParsesRealSmokeOutput(t *testing.T) {
 	}
 }
 
+func TestValidateHandoffRedirectsToPromptWhenReady(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+
+	h.validateHandoff(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=prompt") {
+		t.Fatalf("expected redirect to step=prompt, got %s", loc)
+	}
+}
+
+func TestValidateHandoffRedirectsToIntakeWhenBlocked(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, blockedHandoff())
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+
+	h.validateHandoff(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=intake") {
+		t.Fatalf("expected redirect to step=intake, got %s", loc)
+	}
+}
+
+func TestPreparePromptRedirectsToPromptStep(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+
+	h.preparePrompt(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=prompt") {
+		t.Fatalf("expected redirect to step=prompt, got %s", loc)
+	}
+}
+
+func TestGenerateOpenCodePacketRedirectsToHandoffStep(t *testing.T) {
+	s := setupTestStore(t)
+	repoDir := t.TempDir()
+	os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("# repo"), 0644)
+	os.WriteFile(filepath.Join(repoDir, "go.mod"), []byte("module test"), 0644)
+	repo, err := s.CreateRepo("test-repo", repoDir)
+	if err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+	run, err := s.CreateRun(repo.ID, "Test Run", "ready", "test-model", "test-model", "main")
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	promptPath, err := artifacts.Write(run.ID, "agent_prompt", pipeline.ArtifactFilename("agent_prompt"), []byte("compact prompt"))
+	if err != nil {
+		t.Fatalf("write agent prompt: %v", err)
+	}
+	_, err = s.CreateArtifact(run.ID, "agent_prompt", promptPath, "text/plain")
+	if err != nil {
+		t.Fatalf("create agent prompt artifact: %v", err)
+	}
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+
+	h.generateOpenCodePacket(w, req, run.ID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=handoff") {
+		t.Fatalf("expected redirect to step=handoff, got %s", loc)
+	}
+}
+
+func TestDryRunOpenCodeGoRedirectsToHandoffStep(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+		return pipeline.AgentCommandRunResult{}
+	}
+	runID := setupOpenCodeRun(t, s)
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+
+	h.dryRunOpenCodeGo(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=handoff") {
+		t.Fatalf("expected redirect to step=handoff, got %s", loc)
+	}
+}
+
+func TestSubmitAgentResultRedirectsToValidationStep(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	body := "agent_result_text=DONE%0ABuild+status%3A+PASS%0ATest+status%3A+PASS%0ACount+of+LOC+changed%3A+42"
+	req := httptest.NewRequest("POST", "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	h.submitAgentResult(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=validation") {
+		t.Fatalf("expected redirect to step=validation, got %s", loc)
+	}
+}
+
+func TestRunValidationRedirectsToValidationStep(t *testing.T) {
+	s := setupTestStore(t)
+
+	handoffText := `# Test Handoff
+
+## Goal
+Do something
+
+## Scope
+- README.md
+
+## Do not change
+Nothing
+
+## Task checklist
+- [ ] Do it
+
+## Tests / validation
+
+` + "```bash" + `
+go version
+` + "```" + `
+
+## Output
+DONE or BLOCKED
+`
+	runID := newTestHandoffWithRepoFiles(t, s, handoffText, map[string]string{
+		"README.md": "# repo",
+	})
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+
+	h.runValidation(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=validation") {
+		t.Fatalf("expected redirect to step=validation, got %s", loc)
+	}
+}
+
 func TestBuildOpenCodeTranscriptMaxEvents(t *testing.T) {
 	stdout := `{"type":"text","part":{"type":"text","text":"line1"}}
 {"type":"text","part":{"type":"text","text":"line2"}}

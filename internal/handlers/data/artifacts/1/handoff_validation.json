@@ -1,10 +1,15 @@
 {
-  "status": "ready",
+  "status": "needs_fix",
   "checks": [
     {
       "kind": "title_line",
       "status": "pass",
       "summary": "Title line found"
+    },
+    {
+      "kind": "goal_section",
+      "status": "pass",
+      "summary": "## Goal section found"
     },
     {
       "kind": "scope_section",
@@ -18,38 +23,33 @@
     },
     {
       "kind": "task_checklist_section",
-      "status": "pass",
-      "summary": "## Task checklist section found"
+      "status": "fail",
+      "summary": "## Task checklist section missing"
     },
     {
       "kind": "validation_section",
-      "status": "pass",
-      "summary": "Validation / Tests section found"
+      "status": "warn",
+      "summary": "Validation / Tests section missing"
     },
     {
       "kind": "output_section",
-      "status": "pass",
-      "summary": "## Output / Final output / Agent final output requirement section found"
-    },
-    {
-      "kind": "goal_section",
-      "status": "pass",
-      "summary": "## Goal section found"
+      "status": "fail",
+      "summary": "## Output / Final output / Agent final output requirement section missing"
     },
     {
       "kind": "checkbox_items",
-      "status": "pass",
-      "summary": "Markdown checkbox items found"
+      "status": "fail",
+      "summary": "No markdown checkbox items found"
     },
     {
       "kind": "output_terms",
-      "status": "pass",
-      "summary": "DONE and BLOCKED present in text"
+      "status": "warn",
+      "summary": "DONE or BLOCKED not clearly present"
     },
     {
       "kind": "validation_commands",
-      "status": "pass",
-      "summary": "Validation commands detected"
+      "status": "warn",
+      "summary": "No validation commands detected"
     },
     {
       "kind": "scope_paths",
@@ -64,13 +64,11 @@
   ],
   "warnings": [],
   "detected": {
-    "title": "Scope Mismatch Handoff",
+    "title": "Blocked Handoff",
     "scope_paths": [
-      "src/definitely-missing.ts"
+      "foo.go"
     ],
-    "validation_commands": [
-      "go test ./..."
-    ],
+    "validation_commands": [],
     "recommended_model": "test-model"
   }
 }

@@ -603,6 +603,24 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 					</div>
 				}
 
+				if previews.HasOpenCodeRunning {
+					<div class="rounded-xl border border-blue-900/60 bg-blue-950/30 p-3 sm:p-4 mb-3">
+						<div class="text-sm font-medium text-blue-300">OpenCode is currently running.</div>
+						<a href={"/runs/" + Itoa(run.ID) + "?step=run"}
+							class="inline-block mt-2 text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center">Monitor Agent Run</a>
+					</div>
+					<span class="relay-chip-gray text-xs cursor-not-allowed"
+						title="OpenCode execution is already running.">
+						Start OpenCode Go (already running)
+					</span>
+				} else if previews.HasOpenCodeExecution && !previews.HasOpenCodeRunning {
+					<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4 mb-3">
+						<div class="text-sm font-medium text-gray-200">Latest OpenCode execution is complete.</div>
+						<a href={"/runs/" + Itoa(run.ID) + "?step=run"}
+							class="inline-block mt-2 text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center">Review Agent Run</a>
+					</div>
+				}
+
 				if previews.OpenCodeAdapterError == "" && previews.HandoffPreflightStatus != "blocked" && previews.OpenCodeCommandPreview != "" {
 					<div class="text-xs sm:text-sm text-yellow-400 mb-3">
 						This starts a local OpenCode command in the selected repo path. Relay will capture stdout/stderr as artifacts.
@@ -750,7 +768,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 	<div class="relay-card-header">
 		<div class="min-w-0">
 			<h3 class="font-medium text-base sm:text-lg">Step 5: Agent Run</h3>
-			<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Monitor the running OpenCode agent execution.</p>
+			<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Started from OpenCode Go Handoff. Monitor output and continue to validation when ready.</p>
 		</div>
 		<div class="flex flex-wrap items-center gap-2">
 			if previews.HasOpenCodeExecution {
@@ -909,11 +927,13 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 					</div>
 				}
 
-				<details class="relay-card p-3 sm:p-4">
-					<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none min-h-[36px] inline-flex items-center">
-						Manual result intake fallback
-					</summary>
-					<div class="mt-3">
+				if previews.HasOpenCodeExecution && !isExecutionRunning(previews.OpenCodeExecutionStatus) && previews.OpenCodeParsedResultStatus == "" {
+					<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-3 sm:p-4">
+						<div class="text-sm font-medium text-yellow-300">Relay could not parse DONE/BLOCKED</div>
+						<p class="text-xs sm:text-sm text-yellow-100 mt-1">Review the logs above or paste a manual result below.</p>
+					</div>
+					<div class="relay-card p-3 sm:p-4 mt-3">
+						<div class="text-xs text-gray-500 mb-3 font-medium">Manual result intake fallback</div>
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 							hx-target="body" hx-swap="outerHTML"
@@ -928,7 +948,28 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 							</button>
 						</form>
 					</div>
-				</details>
+				} else {
+					<details class="relay-card p-3 sm:p-4">
+						<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none min-h-[36px] inline-flex items-center">
+							Manual result intake fallback
+						</summary>
+						<div class="mt-3">
+							<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+								hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+								hx-target="body" hx-swap="outerHTML"
+								class="space-y-3">
+								<input type="hidden" name="action" value="submit-agent-result"/>
+								<textarea name="agent_result_text" rows="6"
+									class="w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded-lg p-2 text-gray-300 min-w-0 resize-y"
+									placeholder={"DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42"}></textarea>
+								<button type="submit"
+									class="btn-primary text-xs sm:text-sm">
+									Save Agent Result
+								</button>
+							</form>
+						</div>
+					</details>
+				}
 		}
 	</div>
 }

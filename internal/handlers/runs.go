@@ -523,7 +523,12 @@ func (h *RunsHandler) validateHandoff(w http.ResponseWriter, r *http.Request, ru
 
 	h.log.Info("handoff validated", "run_id", runID, "status", report.Status)
 
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
+	// If ready with no blockers or warnings, guide user to prompt generation
+	if report.Status == "ready" {
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=prompt", http.StatusSeeOther)
+	} else {
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
+	}
 }
 
 func (h *RunsHandler) preparePrompt(w http.ResponseWriter, r *http.Request, runID int64) {
@@ -1236,7 +1241,7 @@ func (h *RunsHandler) generateOpenCodePacket(w http.ResponseWriter, r *http.Requ
 
 	h.log.Info("opencode handoff packet generated", "run_id", runID)
 
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=packet", http.StatusSeeOther)
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 }
 
 func findArtifactByKind(artifacts []store.Artifact, kind string) *store.Artifact {
