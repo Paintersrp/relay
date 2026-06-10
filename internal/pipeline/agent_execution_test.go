@@ -590,6 +590,79 @@ func TestOpenCodeFailureHintTimeout(t *testing.T) {
 	}
 }
 
+func TestBuildOpenCodeTranscriptRealSmokeOutput(t *testing.T) {
+	stdout := `{"type":"reasoning","part":{"type":"reasoning","text":"Let me follow the implementation handoff exactly."}}
+{"type":"tool_use","part":{"type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"D:\\Code\\relay\\README.md"}}}}
+{"type":"text","part":{"type":"text","text":"DONE\nNo build changes (README-only)\nNo test changes\n1 LOC changed"}}
+`
+	events := BuildOpenCodeTranscript(stdout, "", 0)
+	if len(events) == 0 {
+		t.Fatal("expected at least one event")
+	}
+	hasReasoning := false
+	hasTool := false
+	hasText := false
+	for _, ev := range events {
+		switch ev.Kind {
+		case "reasoning":
+			hasReasoning = true
+			if !strings.Contains(ev.Text, "implementation handoff") {
+				t.Fatal("expected reasoning text to contain 'implementation handoff'")
+			}
+		case "tool":
+			hasTool = true
+			if !strings.Contains(ev.Text, "read") {
+				t.Fatal("expected tool event to contain 'read'")
+			}
+		case "text":
+			hasText = true
+			if !strings.Contains(ev.Text, "DONE") {
+				t.Fatal("expected text event to contain 'DONE'")
+			}
+		}
+	}
+	if !hasReasoning {
+		t.Fatal("expected reasoning event")
+	}
+	if !hasTool {
+		t.Fatal("expected tool event")
+	}
+	if !hasText {
+		t.Fatal("expected text event")
+	}
+}
+
+func TestBuildOpenCodeTranscriptMaxEvents(t *testing.T) {
+	events := BuildOpenCodeTranscript("line1\nline2\nline3\n", "", 2)
+	if len(events) > 2 {
+		t.Fatalf("expected at most 2 events with maxEvents=2, got %d", len(events))
+	}
+}
+
+func TestBuildOpenCodeTranscriptInvalidJSON(t *testing.T) {
+	events := BuildOpenCodeTranscript("not json\nstill not json\n", "", 0)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 raw events, got %d", len(events))
+	}
+	for _, ev := range events {
+		if ev.Kind != "raw" {
+			t.Fatalf("expected raw kind for invalid JSON, got %q", ev.Kind)
+		}
+	}
+}
+
+func TestBuildOpenCodeTranscriptStderrIncluded(t *testing.T) {
+	events := BuildOpenCodeTranscript("", "error line 1\nerror line 2\n", 0)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 stderr events, got %d", len(events))
+	}
+	for _, ev := range events {
+		if ev.Kind != "stderr" {
+			t.Fatalf("expected stderr kind, got %q", ev.Kind)
+		}
+	}
+}
+
 func TestOpenCodeFailureHintReturnsEmptyOnSuccess(t *testing.T) {
 	result := AgentCommandRunResult{
 		ExitCode: 0,

@@ -130,6 +130,9 @@ func TestBuildIntakeRemediationHandoffMissingValidationWarningAddsCommandsSectio
 	if !strings.Contains(output, "go vet ./...") {
 		t.Fatal("expected go vet ./... in remediation handoff")
 	}
+	if !strings.Contains(output, "npm run build") {
+		t.Fatal("expected npm run build in remediation handoff")
+	}
 }
 
 func TestBuildIntakeRemediationHandoffDoesNotOverwriteOriginal(t *testing.T) {

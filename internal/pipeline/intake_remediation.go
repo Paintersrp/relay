@@ -77,9 +77,11 @@ func BuildIntakeRemediationHandoff(input IntakeRemediationInput) string {
 	if hasMissingValidationWarning {
 		b.WriteString("If the only warning is missing validation commands, add a `## Relay validation commands` section with appropriate commands for the target repo.\n\n")
 		b.WriteString("Use this canonical format:\n\n")
+		b.WriteString("## Relay validation commands\n\n")
 		b.WriteString("```bash\n")
 		b.WriteString("go fmt ./...\n")
 		b.WriteString("templ generate\n")
+		b.WriteString("npm run build\n")
 		b.WriteString("go test ./...\n")
 		b.WriteString("go vet ./...\n")
 		b.WriteString("```\n\n")

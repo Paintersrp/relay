@@ -2,8 +2,12 @@ package pipeline
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 )
+
+var locChangedRe = regexp.MustCompile(`(?i)^\s*(\d+)\s+LOC changed\s*$`)
+var locChangedColonRe = regexp.MustCompile(`(?i)^\s*LOC changed:\s*(\d+)\s*$`)
 
 type AgentResultStatus string
 
@@ -108,6 +112,21 @@ func ParseAgentResult(raw string) AgentResult {
 		} else if strings.HasPrefix(lower, "error:") {
 			if v := valueAfterColon(trimmed); v != "" {
 				result.BlockerError = v
+			}
+		}
+
+		// Fallback parsing for non-canonical output
+		if result.BuildStatus == "" && strings.Contains(lower, "build") {
+			result.BuildStatus = trimmed
+		}
+		if result.TestStatus == "" && strings.Contains(lower, "test") {
+			result.TestStatus = trimmed
+		}
+		if result.LOCChanged == "" {
+			if m := locChangedRe.FindStringSubmatch(trimmed); len(m) > 1 {
+				result.LOCChanged = m[1]
+			} else if m := locChangedColonRe.FindStringSubmatch(trimmed); len(m) > 1 {
+				result.LOCChanged = m[1]
 			}
 		}
 	}

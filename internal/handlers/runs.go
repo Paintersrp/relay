@@ -22,9 +22,10 @@ import (
 type agentCommandRunner func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult
 
 type RunsHandler struct {
-	store               *store.Store
-	log                 *slog.Logger
-	runAgentCommandArgs agentCommandRunner
+	store                *store.Store
+	log                  *slog.Logger
+	runAgentCommandArgs  agentCommandRunner
+	launchAgentExecution func(func())
 }
 
 func NewRunsHandler(s *store.Store, log *slog.Logger) *RunsHandler {
@@ -32,6 +33,9 @@ func NewRunsHandler(s *store.Store, log *slog.Logger) *RunsHandler {
 		store:               s,
 		log:                 log,
 		runAgentCommandArgs: pipeline.RunLocalAgentCommandArgs,
+		launchAgentExecution: func(fn func()) {
+			go fn()
+		},
 	}
 }
 
@@ -193,6 +197,37 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Build transcript and parsed result for Step 5
+	var openCodeTranscript []views.OpenCodeTranscriptEventView
+	openCodeParsedResultStatus := ""
+	openCodeParsedBuildStatus := ""
+	openCodeParsedTestStatus := ""
+	openCodeParsedLOCChanged := ""
+	openCodeParsedResultRaw := ""
+
+	if hasOpenCodeExecution {
+		stdoutPreview := readArtifactPreview(id, "opencode_stdout")
+		stderrPreview := readArtifactPreview(id, "opencode_stderr")
+		if stdoutPreview != "" || stderrPreview != "" {
+			events := pipeline.BuildOpenCodeTranscript(stdoutPreview, stderrPreview, 200)
+			for _, ev := range events {
+				openCodeTranscript = append(openCodeTranscript, views.OpenCodeTranscriptEventView{
+					Kind: ev.Kind,
+					Text: ev.Text,
+				})
+			}
+		}
+		if stdoutPreview != "" {
+			assistantText := pipeline.ExtractOpenCodeAssistantText(stdoutPreview)
+			parsed := pipeline.ParseAgentResult(assistantText)
+			openCodeParsedResultStatus = string(parsed.Status)
+			openCodeParsedBuildStatus = parsed.BuildStatus
+			openCodeParsedTestStatus = parsed.TestStatus
+			openCodeParsedLOCChanged = parsed.LOCChanged
+			openCodeParsedResultRaw = parsed.Raw
+		}
+	}
+
 	dryRunPreview := readArtifactPreview(id, "opencode_dry_run_json")
 
 	// Parse CLI check artifact if present
@@ -302,6 +337,13 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		OpenCodeCLICheckStatus:          cliCheckStatus,
 		IntakeRemediationHandoff:        intakeRemediationHandoffPreview,
 		HasIntakeRemediationHandoff:     hasIntakeRemediationHandoff,
+		HasOpenCodeRunning:              openCodeExecStatus == "starting" || openCodeExecStatus == "running",
+		OpenCodeTranscript:              openCodeTranscript,
+		OpenCodeParsedResultStatus:      openCodeParsedResultStatus,
+		OpenCodeParsedBuildStatus:       openCodeParsedBuildStatus,
+		OpenCodeParsedTestStatus:        openCodeParsedTestStatus,
+		OpenCodeParsedLOCChanged:        openCodeParsedLOCChanged,
+		OpenCodeParsedResultRaw:         openCodeParsedResultRaw,
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {
@@ -641,44 +683,18 @@ func (h *RunsHandler) dryRunOpenCodeGo(w http.ResponseWriter, r *http.Request, r
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 }
 
-func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, runID int64) {
-	// Build the real OpenCode adapter invocation
-	invocation, err := h.buildOpenCodeInvocationForRun(runID)
-	if err != nil {
-		h.store.CreateEvent(runID, "warn", "OpenCode start blocked: "+err.Error())
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
-		return
-	}
-
-	// Confirm repo path exists
-	if info, err := os.Stat(invocation.WorkDir); err != nil || !info.IsDir() {
-		h.store.CreateEvent(runID, "warn", "Repo path does not exist: "+invocation.WorkDir)
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
-		return
-	}
-
-	// Create execution record with status starting
-	exec, err := h.store.CreateAgentExecution(runID, "opencode_go", "starting", invocation.Preview)
-	if err != nil {
-		if isMissingAgentExecutionsSchemaError(err) {
-			h.store.CreateEvent(runID, "warn", "Database schema is missing agent_executions. Run goose -dir internal/db/migrations sqlite3 data/relay.sqlite up and restart Relay.")
-			http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
-			return
-		}
-		h.log.Error("create agent execution record", "error", err)
-		http.Error(w, "failed to create execution record", http.StatusInternalServerError)
-		return
-	}
-
+// runOpenCodeExecution runs the OpenCode command in the background and persists results.
+// This method never writes an HTTP response or redirects.
+func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, execID int64, invocation pipeline.OpenCodeRunInvocation) {
 	// Update to running
 	startedAt := time.Now().Format("2006-01-02 15:04:05")
-	h.store.UpdateAgentExecutionStatus(exec.ID, "running", nil, &startedAt, nil, nil, nil, nil, nil, nil)
+	h.store.UpdateAgentExecutionStatus(execID, "running", nil, &startedAt, nil, nil, nil, nil, nil, nil)
 
 	h.store.CreateEvent(runID, "info", "OpenCode Go execution started")
 
-	// Run command synchronously with timeout using the real adapter
+	// Run command with timeout
 	runResult := h.runAgentCommandArgs(
-		r.Context(),
+		ctx,
 		invocation.WorkDir,
 		invocation.Binary,
 		invocation.Args,
@@ -739,7 +755,7 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 		errPtr = &runResult.Error
 	}
 
-	h.store.UpdateAgentExecutionStatus(exec.ID, execStatus, &ec, &startedStr, &finishedStr,
+	h.store.UpdateAgentExecutionStatus(execID, execStatus, &ec, &startedStr, &finishedStr,
 		&stdoutPath, &stderrPath, &combinedPath, nil, errPtr)
 
 	// Extract assistant text from JSONL stdout
@@ -752,7 +768,6 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 			}
 			h.store.CreateEvent(runID, "info", "OpenCode Go execution completed with result: "+string(parsed.Status))
 			h.log.Info("opencode go execution completed", "run_id", runID, "exit_code", runResult.ExitCode, "status", parsed.Status)
-			http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
 			return
 		}
 	}
@@ -762,10 +777,92 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 		eventMsg = "OpenCode Go execution timed out"
 	}
 	h.store.CreateEvent(runID, "info", eventMsg)
-
 	h.log.Info("opencode go execution completed", "run_id", runID, "exit_code", runResult.ExitCode)
+}
 
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, runID int64) {
+	// Build the real OpenCode adapter invocation
+	invocation, err := h.buildOpenCodeInvocationForRun(runID)
+	if err != nil {
+		h.store.CreateEvent(runID, "warn", "OpenCode start blocked: "+err.Error())
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+		return
+	}
+
+	// Confirm repo path exists
+	if info, err := os.Stat(invocation.WorkDir); err != nil || !info.IsDir() {
+		h.store.CreateEvent(runID, "warn", "Repo path does not exist: "+invocation.WorkDir)
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+		return
+	}
+
+	// Check if latest execution is already running
+	if exec, err := h.store.GetLatestAgentExecutionByRun(runID); err == nil {
+		if exec.Status == "starting" || exec.Status == "running" {
+			h.store.CreateEvent(runID, "warn", "OpenCode Go execution is already running.")
+			http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=run", http.StatusSeeOther)
+			return
+		}
+	}
+
+	// Create execution record with status starting
+	exec, err := h.store.CreateAgentExecution(runID, "opencode_go", "starting", invocation.Preview)
+	if err != nil {
+		if isMissingAgentExecutionsSchemaError(err) {
+			h.store.CreateEvent(runID, "warn", "Database schema is missing agent_executions. Run goose -dir internal/db/migrations sqlite3 data/relay.sqlite up and restart Relay.")
+			http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+			return
+		}
+		h.log.Error("create agent execution record", "error", err)
+		http.Error(w, "failed to create execution record", http.StatusInternalServerError)
+		return
+	}
+
+	h.store.CreateEvent(runID, "info", "OpenCode Go execution started")
+
+	// Launch background execution
+	h.launchAgentExecution(func() {
+		h.runOpenCodeExecution(context.Background(), runID, exec.ID, invocation)
+	})
+
+	// Redirect immediately to Step 5
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=run", http.StatusSeeOther)
+}
+
+func (h *RunsHandler) AgentRunMonitor(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid run id", http.StatusBadRequest)
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err != nil {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	artifactsList, _ := h.store.ListArtifactsByRun(id)
+	checksList, _ := h.store.ListChecksByRun(id)
+
+	// Build minimal previews for the monitor display
+	previews := h.buildExecutionPreviews(id, run, artifactsList)
+
+	// Populate adapter info for display from run data
+	repo, _ := h.store.GetRepo(run.RepoID)
+	if repo != nil {
+		if invocation, err := h.buildOpenCodeInvocationForRun(id); err == nil {
+			previews.OpenCodeBinary = invocation.Binary
+			previews.OpenCodeArgs = invocation.Args
+			previews.OpenCodeWorkDir = invocation.WorkDir
+			previews.OpenCodeModel = invocation.Model
+			previews.OpenCodeAgent = invocation.Agent
+			previews.OpenCodeThinking = "max"
+		}
+	}
+
+	views.AgentRunMonitorStepPanel(run, artifactsList, checksList, previews).Render(r.Context(), w)
 }
 
 func (h *RunsHandler) checkOpenCodeCLI(w http.ResponseWriter, r *http.Request, runID int64) {
@@ -1185,6 +1282,65 @@ func (h *RunsHandler) generateIntakeRemediationHandoff(w http.ResponseWriter, r 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
 }
 
+// buildExecutionPreviews populates transcript and parsed result previews from the latest execution.
+func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifactsList []store.Artifact) views.RunPreviews {
+	var previews views.RunPreviews
+
+	// Load latest execution
+	if exec, err := h.store.GetLatestAgentExecutionByRun(runID); err == nil {
+		previews.HasOpenCodeExecution = true
+		previews.OpenCodeExecutionStatus = exec.Status
+		if exec.ExitCode.Valid {
+			previews.OpenCodeExecutionExitCode = strconv.FormatInt(exec.ExitCode.Int64, 10)
+		}
+		if exec.StartedAt.Valid {
+			previews.OpenCodeExecutionStarted = exec.StartedAt.String
+		}
+		if exec.FinishedAt.Valid {
+			previews.OpenCodeExecutionFinished = exec.FinishedAt.String
+		}
+		previews.OpenCodeCommandPreview = exec.CommandPreview
+		previews.HasOpenCodeRunning = exec.Status == "starting" || exec.Status == "running"
+
+		for _, a := range artifactsList {
+			switch a.Kind {
+			case "opencode_stdout":
+				previews.HasOpenCodeStdout = true
+			case "opencode_stderr":
+				previews.HasOpenCodeStderr = true
+			case "opencode_combined_log":
+				previews.HasOpenCodeCombinedLog = true
+			}
+		}
+
+		// Build transcript from stdout/stderr
+		stdoutPreview := readArtifactPreview(runID, "opencode_stdout")
+		stderrPreview := readArtifactPreview(runID, "opencode_stderr")
+		events := pipeline.BuildOpenCodeTranscript(stdoutPreview, stderrPreview, 200)
+		for _, ev := range events {
+			previews.OpenCodeTranscript = append(previews.OpenCodeTranscript, views.OpenCodeTranscriptEventView{
+				Kind: ev.Kind,
+				Text: ev.Text,
+			})
+		}
+
+		// Parse final result if stdout exists
+		if stdoutPreview != "" {
+			assistantText := pipeline.ExtractOpenCodeAssistantText(stdoutPreview)
+			parsed := pipeline.ParseAgentResult(assistantText)
+			previews.OpenCodeParsedResultStatus = string(parsed.Status)
+			previews.OpenCodeParsedBuildStatus = parsed.BuildStatus
+			previews.OpenCodeParsedTestStatus = parsed.TestStatus
+			previews.OpenCodeParsedLOCChanged = parsed.LOCChanged
+			if parsed.Raw != "" {
+				previews.OpenCodeParsedResultRaw = parsed.Raw
+			}
+		}
+	}
+
+	return previews
+}
+
 func formatPromptEstimate(est pipeline.PromptEstimate) string {
 	kb := float64(est.Bytes) / 1024.0
 	return fmt.Sprintf("%.1f KB (~%d tokens, approximate)", kb, est.ApproxTokens)
@@ -1203,7 +1359,7 @@ func hasCheckKind(checks []store.Check, kind string) bool {
 // Invalid or empty values default to "intake".
 func normalizeRunStep(step string) string {
 	switch step {
-	case "intake", "prompt", "packet", "handoff", "result", "validation", "audit":
+	case "intake", "prompt", "packet", "handoff", "run", "validation", "audit":
 		return step
 	default:
 		return "intake"

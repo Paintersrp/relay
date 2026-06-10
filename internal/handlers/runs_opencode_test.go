@@ -94,9 +94,12 @@ func TestStartOpenCodeGoUsesArgsRunner(t *testing.T) {
 
 	var recordedWorkDir, recordedBinary, recordedStdin string
 	var recordedArgs []string
+	var runnerCalled bool
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) { fn() }
 	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+		runnerCalled = true
 		recordedWorkDir = workDir
 		recordedBinary = binary
 		recordedArgs = args
@@ -114,6 +117,9 @@ func TestStartOpenCodeGoUsesArgsRunner(t *testing.T) {
 
 	h.startOpenCodeGo(w, req, runID)
 
+	if !runnerCalled {
+		t.Fatal("expected runner to be called")
+	}
 	if recordedBinary == "" {
 		t.Fatal("expected runner to be called with a binary")
 	}
@@ -173,6 +179,7 @@ func TestStartOpenCodeGoPersistsDoneFromJSONL(t *testing.T) {
 	s := setupTestStore(t)
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) { fn() }
 	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 0,
@@ -220,6 +227,7 @@ func TestStartOpenCodeGoNonZeroExitPersistsArtifacts(t *testing.T) {
 	s := setupTestStore(t)
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) { fn() }
 	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 1,
@@ -278,6 +286,7 @@ func TestStartOpenCodeGoNonZeroExitWithUnknownOutputDoesNotPersistAgentResult(t 
 	s := setupTestStore(t)
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) { fn() }
 	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 1,
@@ -308,6 +317,7 @@ func TestStartOpenCodeGoNonZeroExitWithDoneStillPersistsResult(t *testing.T) {
 	s := setupTestStore(t)
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) { fn() }
 	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 1,
@@ -684,6 +694,7 @@ func TestStartOpenCodeGoNonZeroExitPersistsStdoutStderrCombined(t *testing.T) {
 	s := setupTestStore(t)
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) { fn() }
 	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 2,
@@ -720,6 +731,7 @@ func TestStartOpenCodeGoDoesNotPersistUnknownJSONNoise(t *testing.T) {
 	s := setupTestStore(t)
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) { fn() }
 	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 0,
@@ -748,5 +760,156 @@ func TestStartOpenCodeGoDoesNotPersistUnknownJSONNoise(t *testing.T) {
 		if a.Kind == "agent_result_json" {
 			t.Fatal("did not expect agent_result_json artifact for unknown JSON noise")
 		}
+	}
+}
+
+func TestStartOpenCodeGoLaunchesAsyncAndRedirectsToRunStep(t *testing.T) {
+	s := setupTestStore(t)
+
+	launched := false
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) {
+		launched = true
+		// do not execute fn for this test
+	}
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+		t.Fatal("runner should not be called in async test")
+		return pipeline.AgentCommandRunResult{}
+	}
+
+	runID := setupOpenCodeRun(t, s)
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+
+	h.startOpenCodeGo(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=run") {
+		t.Fatalf("expected redirect to step=run, got %s", loc)
+	}
+	if !launched {
+		t.Fatal("expected launchAgentExecution to be called")
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Status != "starting" {
+		t.Fatalf("expected execution status 'starting', got %q", exec.Status)
+	}
+}
+
+func TestStartOpenCodeGoDuplicateRunningRejected(t *testing.T) {
+	s := setupTestStore(t)
+
+	runID := setupOpenCodeRun(t, s)
+
+	// Create a running execution
+	exec, err := s.CreateAgentExecution(runID, "opencode_go", "running", "test command")
+	if err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	_ = exec
+
+	launchCalled := false
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) {
+		launchCalled = true
+	}
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+
+	h.startOpenCodeGo(w, req, runID)
+
+	if launchCalled {
+		t.Fatal("should not launch when execution is already running")
+	}
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=run") {
+		t.Fatalf("expected redirect to step=run, got %s", loc)
+	}
+
+	// Check that a "already running" event was created
+	events, err := s.ListEventsByRun(runID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	found := false
+	for _, ev := range events {
+		if strings.Contains(ev.Message, "already running") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected 'already running' event")
+	}
+}
+
+func TestBuildOpenCodeTranscriptParsesRealSmokeOutput(t *testing.T) {
+	stdout := `{"type":"reasoning","part":{"type":"reasoning","text":"Let me follow the implementation handoff exactly."}}
+{"type":"tool_use","part":{"type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"D:\\Code\\relay\\README.md"}}}}
+{"type":"text","part":{"type":"text","text":"DONE\nNo build changes (README-only)\nNo test changes\n1 LOC changed"}}
+`
+	events := pipeline.BuildOpenCodeTranscript(stdout, "", 0)
+	if len(events) == 0 {
+		t.Fatal("expected at least one event")
+	}
+	hasReasoning := false
+	hasTool := false
+	hasText := false
+	for _, ev := range events {
+		switch ev.Kind {
+		case "reasoning":
+			hasReasoning = true
+			if !strings.Contains(ev.Text, "implementation handoff") {
+				t.Fatal("expected reasoning text to contain 'implementation handoff'")
+			}
+		case "tool":
+			hasTool = true
+			if !strings.Contains(ev.Text, "read") {
+				t.Fatal("expected tool event to contain 'read'")
+			}
+		case "text":
+			hasText = true
+			if !strings.Contains(ev.Text, "DONE") {
+				t.Fatal("expected text event to contain 'DONE'")
+			}
+		}
+	}
+	if !hasReasoning {
+		t.Fatal("expected reasoning event")
+	}
+	if !hasTool {
+		t.Fatal("expected tool event")
+	}
+	if !hasText {
+		t.Fatal("expected text event")
+	}
+}
+
+func TestBuildOpenCodeTranscriptMaxEvents(t *testing.T) {
+	stdout := `{"type":"text","part":{"type":"text","text":"line1"}}
+{"type":"text","part":{"type":"text","text":"line2"}}
+{"type":"text","part":{"type":"text","text":"line3"}}
+`
+	events := pipeline.BuildOpenCodeTranscript(stdout, "", 2)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events with maxEvents=2, got %d", len(events))
+	}
+	if !strings.Contains(events[0].Text, "line2") {
+		t.Fatalf("expected first event to be line2, got %q", events[0].Text)
+	}
+	if !strings.Contains(events[1].Text, "line3") {
+		t.Fatalf("expected second event to be line3, got %q", events[1].Text)
 	}
 }

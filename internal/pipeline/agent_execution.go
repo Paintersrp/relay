@@ -445,6 +445,102 @@ func OpenCodeFailureHint(result AgentCommandRunResult, invocation OpenCodeRunInv
 
 // ExtractOpenCodeAssistantText extracts assistant text from OpenCode JSONL stdout.
 // It concatenates "text" type event parts. Falls back to raw stdout if no JSON events found.
+// OpenCodeTranscriptEvent represents a single parsed line from OpenCode JSONL output.
+type OpenCodeTranscriptEvent struct {
+	Kind string
+	Text string
+}
+
+// BuildOpenCodeTranscript parses OpenCode JSONL stdout into display events.
+// Known event types: reasoning, tool_use, tool, text, step_start, step_finish.
+// Invalid JSON lines become Kind "raw". Stderr lines become Kind "stderr".
+// If maxEvents > 0, returns the last maxEvents events.
+func BuildOpenCodeTranscript(stdout string, stderr string, maxEvents int) []OpenCodeTranscriptEvent {
+	var events []OpenCodeTranscriptEvent
+
+	// Parse stderr lines
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		events = append(events, OpenCodeTranscriptEvent{Kind: "stderr", Text: line})
+	}
+
+	// Parse stdout JSONL
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		var raw struct {
+			Type string `json:"type"`
+			Part struct {
+				Type  string `json:"type"`
+				Text  string `json:"text"`
+				Tool  string `json:"tool"`
+				Name  string `json:"name"`
+				State struct {
+					Status string `json:"status"`
+					Input  struct {
+						FilePath string `json:"filePath"`
+					} `json:"input"`
+				} `json:"state"`
+				Reason string `json:"reason"`
+			} `json:"part"`
+		}
+
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			events = append(events, OpenCodeTranscriptEvent{Kind: "raw", Text: line})
+			continue
+		}
+
+		switch raw.Type {
+		case "reasoning":
+			events = append(events, OpenCodeTranscriptEvent{Kind: "reasoning", Text: raw.Part.Text})
+		case "text":
+			events = append(events, OpenCodeTranscriptEvent{Kind: "text", Text: raw.Part.Text})
+		case "tool_use", "tool":
+			toolName := raw.Part.Tool
+			if toolName == "" {
+				toolName = raw.Part.Name
+			}
+			status := raw.Part.State.Status
+			filePath := raw.Part.State.Input.FilePath
+			var displayText string
+			if toolName != "" {
+				displayText = toolName
+				if filePath != "" {
+					displayText += " " + filePath
+				}
+				if status != "" {
+					displayText += " " + status
+				}
+			} else {
+				displayText = line
+			}
+			events = append(events, OpenCodeTranscriptEvent{Kind: "tool", Text: displayText})
+		case "step_start":
+			events = append(events, OpenCodeTranscriptEvent{Kind: "step", Text: "started"})
+		case "step_finish":
+			reason := raw.Part.Reason
+			text := "finished"
+			if reason != "" {
+				text += ": " + reason
+			}
+			events = append(events, OpenCodeTranscriptEvent{Kind: "step", Text: text})
+		default:
+			events = append(events, OpenCodeTranscriptEvent{Kind: "event", Text: raw.Type})
+		}
+	}
+
+	if maxEvents > 0 && len(events) > maxEvents {
+		events = events[len(events)-maxEvents:]
+	}
+	return events
+}
+
 func ExtractOpenCodeAssistantText(stdout string) string {
 	type event struct {
 		Type string `json:"type"`

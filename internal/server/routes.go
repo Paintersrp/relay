@@ -32,6 +32,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 
 	r.Get("/runs/{id}", runs.Get)
 	r.Post("/runs/{id}/actions", runs.Action)
+	r.Get("/runs/{id}/agent-run-monitor", runs.AgentRunMonitor)
 
 	r.Get("/runs/{id}/artifacts/{kind}", artifactsH.View)
 	r.Get("/runs/{id}/artifacts/{kind}/download", artifactsH.Download)

@@ -8,7 +8,7 @@ Fix the original handoff so Relay Intake Review warnings/blockers are resolved w
 
 Run ID: 1
 Repo: test-repo
-Repo path: C:\Users\trist\AppData\Local\Temp\TestGenerateIntakeRemediationHandoffMissingValidationWarningAdds2681879864\002
+Repo path: C:\Users\trist\AppData\Local\Temp\TestGenerateIntakeRemediationHandoffMissingValidationWarningAdds2083995717\002
 Branch/worktree: main
 Run status: needs_review
 
@@ -34,9 +34,12 @@ If the only warning is missing validation commands, add a `## Relay validation c
 
 Use this canonical format:
 
+## Relay validation commands
+
 ```bash
 go fmt ./...
 templ generate
+npm run build
 go test ./...
 go vet ./...
 ```

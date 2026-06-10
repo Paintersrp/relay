@@ -137,8 +137,8 @@ To generate:
 3. View, download, or copy the generated remediation handoff.
 4. Use the remediation handoff as a repair prompt for the original handoff.
 
-Missing validation commands produce a remediation handoff with a
-`## Relay validation commands` section template.
+Missing validation commands produce a remediation handoff that includes an actual
+`## Relay validation commands` section with canonical command fences.
 
 ## Routes
 
@@ -149,6 +149,7 @@ Missing validation commands produce a remediation handoff with a
 | POST   | `/handoffs`                            | Create handoff run         |
 | GET    | `/runs/{id}`                           | Run detail workbench       |
 | POST   | `/runs/{id}/actions`                   | Execute run action         |
+| GET    | `/runs/{id}/agent-run-monitor`         | Agent run monitor partial  |
 | GET    | `/runs/{id}/artifacts/{kind}`          | View artifact              |
 | GET    | `/runs/{id}/artifacts/{kind}/download` | Download artifact          |
 | GET    | `/settings/repos`                      | Repository settings        |
@@ -245,7 +246,7 @@ Run detail shows an inline Original Handoff → Agent Prompt hunk diff after the
 
 ## Run workbench workflow
 
-After handoff creation, Relay automatically runs Intake Review and, when there are no blockers, prepares the Agent Prompt and Agent Packet. The run workbench is then used for review: Intake Review → Agent Prompt → Agent Packet → OpenCode Go Handoff → Relay Validation.
+After handoff creation, Relay automatically runs Intake Review and, when there are no blockers, prepares the Agent Prompt and Agent Packet. The run workbench is then used for review: Intake Review → Agent Prompt → Agent Packet → OpenCode Go Handoff → Agent Run → Relay Validation.
 
 Run detail defaults to Step 1 Intake Review. The user intentionally reviews each step and navigates forward using the step navigation links. Explicit `?step=` query parameter navigation is also supported.
 
@@ -254,9 +255,10 @@ Run detail is organized as a guided step-by-step workbench with a single active 
 - **Step 1 — Intake Review**: Default active step. Shows validation checks, warnings, blockers, and the Intake Review panel. The "Run Intake Review" button changes to "Re-run Intake Review" after first run. Original handoff is available collapsed.
 - **Step 2 — Agent Prompt**: Shows the Original → Agent Prompt hunk diff inline with View/Download links. Buttons toggle between "Generate Agent Prompt" and "Regenerate Agent Prompt".
 - **Step 3 — Agent Packet**: Shows packet preview, View/Download links. Buttons toggle between "Generate Agent Packet" and "Regenerate Agent Packet".
-- **Step 4 — OpenCode Go Handoff**: Shows preflight readiness, OpenCode adapter configuration (binary, model, agent, working directory, command preview), and an explicit "Start OpenCode Go" button. Adapter readiness/blockers are visible at the top of the adapter section. Execution status and captured artifacts (stdout, stderr, combined log) are displayed after a run. Manual agent result intake remains available as a collapsed fallback section.
-- **Step 5 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Requires an agent result before the validation button is enabled.
-- **Step 6 — Diff/Audit**: Future, grayed out.
+- **Step 4 — OpenCode Go Handoff**: Shows preflight readiness, OpenCode adapter configuration (binary, model, agent, working directory, command preview), and an explicit "Start OpenCode Go" button. Adapter readiness/blockers are visible at the top of the adapter section. Step 4 is handoff/preflight only; execution results appear in Step 5.
+- **Step 5 — Agent Run Monitor**: Shows the running or completed OpenCode execution. Displays command context, terminal-style output transcript, artifact links (stdout, stderr, combined log), and parsed final result (DONE/BLOCKED). Auto-refreshes via HTMX polling while running. Manual result intake fallback is available here.
+- **Step 6 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Requires an agent result before the validation button is enabled.
+- **Step 7 — Diff/Audit**: Future, grayed out.
 
 Clarifications:
 
@@ -264,11 +266,14 @@ Clarifications:
 - Step 4 shows the OpenCode adapter configuration (binary, args, model, agent, working directory, command preview) in a details panel.
 - If the adapter is blocked (e.g., missing model mapping), an error message is shown with the specific env var to set.
 - If preflight checks are blocked, the Start button remains disabled.
+- Starting OpenCode Go creates an execution record and returns immediately. The browser redirects to Step 5 Agent Run Monitor.
+- Step 5 shows running status with auto-refresh via HTMX polling every 2 seconds while the execution is active.
 - Relay captures stdout, stderr, and a combined log as run artifacts after execution.
+- Step 5 displays a terminal-style output transcript parsed from OpenCode JSONL events.
 - Relay extracts assistant text from JSONL stdout events and parses DONE/BLOCKED final output automatically.
 - Relay does not persist UNKNOWN results automatically from JSON noise.
-- Relay Validation remains user-triggered after agent result.
-- Manual agent result intake remains available as a fallback.
+- Relay Validation remains user-triggered after agent result. Step 5 does not auto-navigate to validation.
+- Manual agent result intake remains available as a fallback in Step 5.
 - Manual action buttons remain available as retry/regenerate controls for each step.
 - Artifact previews (Original Handoff, Validation Report, Agent Prompt) are available in a collapsed `<details>` element at the bottom of the run detail page, not expanded by default.
 
@@ -292,6 +297,8 @@ Clarifications:
 8. Click **Dry Run / Preview Command** to confirm the full invocation.
 9. Confirm preview includes `--model opencode-go/deepseek-v4-flash --thinking max`.
 10. Click **Start OpenCode Go**.
+11. Review Step 5 Agent Run Monitor for status, transcript, and parsed result.
+12. When DONE/BLOCKED appears, proceed to Step 6 Relay Validation.
 
 ### Troubleshooting
 
@@ -404,14 +411,19 @@ Dry Run never calls the command runner.
 ### Start behavior
 
 - Execution is manual only. Relay never starts OpenCode automatically.
+- Clicking Start OpenCode Go returns immediately (303 redirect to Step 5). The command runs in a background goroutine.
+- Step 5 Agent Run Monitor shows running/completed status with auto-refresh via HTMX polling.
 - Relay invokes `opencode run --format json --dir <repo> --agent <agent> --model <model> --thinking max` with the compact Agent Prompt piped into stdin.
 - Relay captures stdout and stderr as separate artifacts and a combined log.
 - Relay records execution status, exit code, start/end timestamps, and error messages in the `agent_executions` table.
+- Relay builds a terminal-style output transcript from OpenCode JSONL stdout events (reasoning, tool_use, text, etc.).
 - Relay extracts assistant text from JSONL stdout events and persists DONE/BLOCKED results through the agent result path.
 - Relay does not persist UNKNOWN results automatically from JSON noise.
-- Relay does not run validation commands after OpenCode exits.
+- Relay does not run validation commands automatically after OpenCode exits.
 - Relay does not inspect git diffs or create branches.
-- Manual result fallback remains available.
+- Manual result fallback remains available in Step 5.
+
+This adapter path is intended to be verified with a tiny first-run handoff before larger implementation passes.
 
 ## OpenCode handoff packet
 

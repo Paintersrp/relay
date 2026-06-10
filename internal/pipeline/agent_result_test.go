@@ -82,6 +82,24 @@ func TestParseAgentResultUnknown(t *testing.T) {
 	}
 }
 
+func TestParseAgentResultNonCanonicalOutput(t *testing.T) {
+	input := "DONE\nNo build changes (README-only)\nNo test changes\n1 LOC changed"
+	result := ParseAgentResult(input)
+
+	if result.Status != AgentResultDone {
+		t.Errorf("expected status DONE, got %s", result.Status)
+	}
+	if result.BuildStatus != "No build changes (README-only)" {
+		t.Errorf("expected build status 'No build changes (README-only)', got %s", result.BuildStatus)
+	}
+	if result.TestStatus != "No test changes" {
+		t.Errorf("expected test status 'No test changes', got %s", result.TestStatus)
+	}
+	if result.LOCChanged != "1" {
+		t.Errorf("expected LOC changed '1', got %s", result.LOCChanged)
+	}
+}
+
 func TestAgentResultJSON(t *testing.T) {
 	r := AgentResult{
 		Status:      AgentResultDone,
