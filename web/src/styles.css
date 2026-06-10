@@ -37,6 +37,9 @@
   .relay-chip-blue {
     @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-blue-900/50 text-blue-400 border border-blue-800;
   }
+  .relay-chip-indigo {
+    @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-indigo-900/50 text-indigo-400 border border-indigo-800;
+  }
   .relay-chip-gray {
     @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-gray-800 text-gray-400 border border-gray-700;
   }

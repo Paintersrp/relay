@@ -248,6 +248,8 @@ Run detail shows an inline Original Handoff → Agent Prompt hunk diff after the
 
 After handoff creation, Relay automatically runs Intake Review and, when there are no blockers, prepares the Agent Prompt and Agent Packet. The run workbench is then used for review: Intake Review → Agent Prompt → Agent Packet → OpenCode Go Handoff → Agent Run → Relay Validation.
 
+Run detail now surfaces a top-level Next Action card. The seven-step navigation remains available for review/debugging, but the primary workflow is guided by the recommended next action.
+
 The workbench is responsive for desktop and phone-sized devices. Long commands, JSON, and logs are contained inside scrollable panels so the page itself should not horizontally overflow.
 
 Run detail defaults to Step 1 Intake Review. The user intentionally reviews each step and navigates forward using the step navigation links. Explicit `?step=` query parameter navigation is also supported.

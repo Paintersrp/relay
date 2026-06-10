@@ -27,6 +27,11 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 			</div>
 		</div>
 
+		@NextActionCard(run, previews)
+
+		<div class="mb-2">
+			<span class="text-xs font-medium text-gray-600 uppercase tracking-wider">Detailed workflow</span>
+		</div>
 		@StepCards(run, repo, artifacts, checks, previews, intakeReview, activeStep)
 
 		<details class="relay-card mt-6 sm:mt-8">
@@ -43,5 +48,142 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 			@ArtifactList(artifacts, run.ID)
 			@EventLog(events)
 		</div>
+	}
+}
+
+templ NextActionCard(run *store.Run, previews RunPreviews) {
+	if previews.NextAction.Kind != "" && previews.NextAction.Kind != "none" {
+		<div class={ "relay-card p-4 sm:p-6 mb-6 border", nextActionCardBorderClass(previews.NextAction.Severity) }>
+			<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+				<div class="min-w-0 flex-1">
+					<div class="flex items-center gap-2 mb-1.5">
+						<span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Next action</span>
+						<span class={ nextActionChipClass(previews.NextAction.Severity) }>{ previews.NextAction.Severity }</span>
+					</div>
+					<h2 class="text-lg sm:text-xl font-bold text-gray-100 mb-1 break-words">{ previews.NextAction.Title }</h2>
+					<p class="text-sm text-gray-400">{ previews.NextAction.Summary }</p>
+				</div>
+				<div class="flex flex-col gap-2 shrink-0 w-full sm:w-auto sm:min-w-[160px]">
+					if !previews.NextAction.Disabled && previews.NextAction.PrimaryFormAction != "" {
+						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+							hx-target="body" hx-swap="outerHTML"
+							class="w-full sm:w-auto">
+							<input type="hidden" name="action" value={ previews.NextAction.PrimaryFormAction }/>
+							<button type="submit"
+								class="btn-primary w-full sm:w-auto text-sm justify-center">
+								{ nextActionButtonLabel(previews.NextAction) }
+							</button>
+						</form>
+					} else if !previews.NextAction.Disabled && previews.NextAction.PrimaryHref != "" {
+						<a href={ previews.NextAction.PrimaryHref }
+							class="btn-primary w-full sm:w-auto text-sm inline-flex items-center justify-center">
+							{ nextActionButtonLabel(previews.NextAction) }
+						</a>
+					} else if previews.NextAction.Disabled {
+						<span class="relay-chip-gray text-xs cursor-not-allowed w-full sm:w-auto inline-flex items-center justify-center py-2 px-4"
+							title={ previews.NextAction.DisabledReason }>
+							{ nextActionButtonLabel(previews.NextAction) } (blocked)
+						</span>
+					}
+
+					if previews.NextAction.PrimaryFormAction != "" && !previews.NextAction.Disabled && previews.NextAction.Step != "" {
+						<a href={"/runs/" + Itoa(run.ID) + "?step=" + previews.NextAction.Step}
+							class="text-xs text-gray-500 hover:text-gray-300 text-center sm:text-left">
+							View { stepDisplayLabel(previews.NextAction.Step) }
+						</a>
+					}
+				</div>
+			</div>
+			if previews.NextAction.Disabled && previews.NextAction.DisabledReason != "" {
+				<div class="mt-3 pt-3 border-t border-gray-800 text-xs text-red-400">
+					{ previews.NextAction.DisabledReason }
+				</div>
+			}
+		</div>
+	}
+}
+
+func nextActionCardBorderClass(severity string) string {
+	switch severity {
+	case "ready":
+		return "border-indigo-800/50"
+	case "running":
+		return "border-blue-800/50"
+	case "warn":
+		return "border-yellow-800/50"
+	case "blocked":
+		return "border-red-800/50"
+	case "done":
+		return "border-green-800/50"
+	default:
+		return "border-gray-800"
+	}
+}
+
+func nextActionChipClass(severity string) string {
+	switch severity {
+	case "ready":
+		return "relay-chip-indigo"
+	case "running":
+		return "relay-chip-blue"
+	case "warn":
+		return "relay-chip-yellow"
+	case "blocked":
+		return "relay-chip-red"
+	case "done":
+		return "relay-chip-green"
+	default:
+		return "relay-chip-gray"
+	}
+}
+
+func nextActionButtonLabel(action WorkbenchNextActionView) string {
+	switch action.Kind {
+	case "generate_fix_handoff":
+		return "Generate Fix Handoff"
+	case "generate_agent_prompt":
+		return "Generate Agent Prompt"
+	case "generate_agent_packet":
+		return "Generate Agent Packet"
+	case "check_opencode_cli":
+		return "Check OpenCode CLI"
+	case "preview_opencode_command":
+		return "Preview Command"
+	case "start_opencode":
+		return "Start OpenCode Go"
+	case "monitor_agent_run":
+		return "Monitor Agent Run"
+	case "review_agent_result":
+		return "Review Agent Output"
+	case "run_validation":
+		return "Run Relay Validation"
+	case "review_validation_output":
+		return "Review Validation Output"
+	case "ready_for_audit":
+		return "Open Diff / Audit"
+	default:
+		return action.Title
+	}
+}
+
+func stepDisplayLabel(step string) string {
+	switch step {
+	case "intake":
+		return "Intake Review"
+	case "prompt":
+		return "Agent Prompt"
+	case "packet":
+		return "Agent Packet"
+	case "handoff":
+		return "OpenCode Go Handoff"
+	case "run":
+		return "Agent Run Monitor"
+	case "validation":
+		return "Relay Validation"
+	case "audit":
+		return "Diff / Audit"
+	default:
+		return step + " step"
 	}
 }
