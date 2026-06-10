@@ -195,6 +195,57 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	dryRunPreview := readArtifactPreview(id, "opencode_dry_run_json")
 
+	// Parse CLI check artifact if present
+	cliCheckPreview := readArtifactPreview(id, "opencode_cli_check_json")
+	hasCLICheck := cliCheckPreview != ""
+	cliCheckBinary := ""
+	cliCheckResolvedModel := ""
+	cliCheckModelAvailable := ""
+	cliCheckVersionExitCode := ""
+	cliCheckModelsExitCode := ""
+	cliCheckCheckedAt := ""
+	cliCheckError := ""
+	cliCheckStatus := ""
+
+	if hasCLICheck {
+		var cliResult struct {
+			Binary          string `json:"binary"`
+			VersionExitCode int    `json:"version_exit_code"`
+			ModelsExitCode  int    `json:"models_exit_code"`
+			ResolvedModel   string `json:"resolved_model"`
+			ModelAvailable  bool   `json:"model_available"`
+			CheckedAt       string `json:"checked_at"`
+			Error           string `json:"error,omitempty"`
+		}
+		if err := json.Unmarshal([]byte(cliCheckPreview), &cliResult); err == nil {
+			cliCheckBinary = cliResult.Binary
+			cliCheckResolvedModel = cliResult.ResolvedModel
+			cliCheckCheckedAt = cliResult.CheckedAt
+			cliCheckError = cliResult.Error
+			cliCheckVersionExitCode = strconv.Itoa(cliResult.VersionExitCode)
+			cliCheckModelsExitCode = strconv.Itoa(cliResult.ModelsExitCode)
+
+			if cliResult.ModelAvailable {
+				cliCheckModelAvailable = "yes"
+			} else if cliResult.ResolvedModel != "" {
+				cliCheckModelAvailable = "no"
+			} else {
+				cliCheckModelAvailable = "unknown"
+			}
+
+			// Compute display status
+			if cliResult.VersionExitCode != 0 || cliResult.ModelsExitCode != 0 || cliResult.Error != "" {
+				cliCheckStatus = "fail"
+			} else if cliResult.ResolvedModel != "" && cliResult.ModelAvailable {
+				cliCheckStatus = "pass"
+			} else {
+				cliCheckStatus = "warn"
+			}
+		} else {
+			hasCLICheck = false
+		}
+	}
+
 	// Compute validation command availability
 	repoDefaults := ""
 	if repo != nil {
@@ -203,39 +254,49 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	hasValidationCommands := hasValidationCommandsForPreview(originalPreview, repoDefaults)
 
 	previews := views.RunPreviews{
-		OriginalHandoff:            originalPreview,
-		ValidationJSON:             readArtifactPreview(id, "handoff_validation_json"),
-		AgentPrompt:                agentPromptPreview,
-		OpenCodePacket:             readArtifactPreview(id, "opencode_handoff_packet"),
-		AgentPromptEstimate:        agentPromptEstimate,
-		HandoffPreflightStatus:     preflightStatus,
-		HandoffPreflightChecks:     preflightChecks,
-		OpenCodeCommandPreview:     openCodeCommandPreview,
-		OpenCodeExecutionStatus:    openCodeExecStatus,
-		OpenCodeExecutionExitCode:  openCodeExecExitCode,
-		OpenCodeExecutionStarted:   openCodeExecStarted,
-		OpenCodeExecutionFinished:  openCodeExecFinished,
-		OpenCodeStdoutArtifactID:   0,
-		OpenCodeStderrArtifactID:   0,
-		OpenCodeCombinedArtifactID: 0,
-		HasOpenCodeExecution:       hasOpenCodeExecution,
-		OpenCodeBinary:             openCodeBinary,
-		OpenCodeArgs:               openCodeArgs,
-		OpenCodeWorkDir:            openCodeWorkDir,
-		OpenCodeModel:              openCodeModel,
-		OpenCodeAgent:              openCodeAgent,
-		OpenCodeVariant:            openCodeVariant,
-		OpenCodeThinking:           openCodeThinking,
-		OpenCodeStdinSource:        openCodeStdinSource,
-		OpenCodeStdinBytes:         openCodeStdinBytes,
-		OpenCodeAdapterError:       openCodeAdapterError,
-		OpenCodeFailureHint:        openCodeFailureHint,
-		OpenCodeDryRunPreview:      dryRunPreview,
-		HasOpenCodeDryRun:          dryRunPreview != "",
-		HasOpenCodeStdout:          hasOpenCodeStdout,
-		HasOpenCodeStderr:          hasOpenCodeStderr,
-		HasOpenCodeCombinedLog:     hasOpenCodeCombinedLog,
-		HasValidationCommands:      hasValidationCommands,
+		OriginalHandoff:                 originalPreview,
+		ValidationJSON:                  readArtifactPreview(id, "handoff_validation_json"),
+		AgentPrompt:                     agentPromptPreview,
+		OpenCodePacket:                  readArtifactPreview(id, "opencode_handoff_packet"),
+		AgentPromptEstimate:             agentPromptEstimate,
+		HandoffPreflightStatus:          preflightStatus,
+		HandoffPreflightChecks:          preflightChecks,
+		OpenCodeCommandPreview:          openCodeCommandPreview,
+		OpenCodeExecutionStatus:         openCodeExecStatus,
+		OpenCodeExecutionExitCode:       openCodeExecExitCode,
+		OpenCodeExecutionStarted:        openCodeExecStarted,
+		OpenCodeExecutionFinished:       openCodeExecFinished,
+		OpenCodeStdoutArtifactID:        0,
+		OpenCodeStderrArtifactID:        0,
+		OpenCodeCombinedArtifactID:      0,
+		HasOpenCodeExecution:            hasOpenCodeExecution,
+		OpenCodeBinary:                  openCodeBinary,
+		OpenCodeArgs:                    openCodeArgs,
+		OpenCodeWorkDir:                 openCodeWorkDir,
+		OpenCodeModel:                   openCodeModel,
+		OpenCodeAgent:                   openCodeAgent,
+		OpenCodeVariant:                 openCodeVariant,
+		OpenCodeThinking:                openCodeThinking,
+		OpenCodeStdinSource:             openCodeStdinSource,
+		OpenCodeStdinBytes:              openCodeStdinBytes,
+		OpenCodeAdapterError:            openCodeAdapterError,
+		OpenCodeFailureHint:             openCodeFailureHint,
+		OpenCodeDryRunPreview:           dryRunPreview,
+		HasOpenCodeDryRun:               dryRunPreview != "",
+		HasOpenCodeStdout:               hasOpenCodeStdout,
+		HasOpenCodeStderr:               hasOpenCodeStderr,
+		HasOpenCodeCombinedLog:          hasOpenCodeCombinedLog,
+		HasValidationCommands:           hasValidationCommands,
+		HasOpenCodeCLICheck:             hasCLICheck,
+		OpenCodeCLICheckPreview:         cliCheckPreview,
+		OpenCodeCLICheckBinary:          cliCheckBinary,
+		OpenCodeCLICheckResolvedModel:   cliCheckResolvedModel,
+		OpenCodeCLICheckModelAvailable:  cliCheckModelAvailable,
+		OpenCodeCLICheckVersionExitCode: cliCheckVersionExitCode,
+		OpenCodeCLICheckModelsExitCode:  cliCheckModelsExitCode,
+		OpenCodeCLICheckCheckedAt:       cliCheckCheckedAt,
+		OpenCodeCLICheckError:           cliCheckError,
+		OpenCodeCLICheckStatus:          cliCheckStatus,
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {
@@ -702,31 +763,36 @@ func (h *RunsHandler) checkOpenCodeCLI(w http.ResponseWriter, r *http.Request, r
 
 	// Get run to resolve its selected model
 	resolvedModel := ""
+	modelResolutionError := ""
 	run, runErr := h.store.GetRun(runID)
 	if runErr == nil && run.SelectedModel != "" {
 		if m, err := pipeline.ResolveOpenCodeModel(run.SelectedModel); err == nil {
 			resolvedModel = m
+		} else {
+			modelResolutionError = err.Error()
 		}
 	}
 
 	type cliCheckResult struct {
-		Binary          string `json:"binary"`
-		VersionExitCode int    `json:"version_exit_code"`
-		VersionStdout   string `json:"version_stdout,omitempty"`
-		VersionStderr   string `json:"version_stderr,omitempty"`
-		ModelsExitCode  int    `json:"models_exit_code"`
-		ModelsStdout    string `json:"models_stdout,omitempty"`
-		ModelsStderr    string `json:"models_stderr,omitempty"`
-		ResolvedModel   string `json:"resolved_model"`
-		ModelAvailable  bool   `json:"model_available"`
-		CheckedAt       string `json:"checked_at"`
-		Error           string `json:"error,omitempty"`
+		Binary               string `json:"binary"`
+		VersionExitCode      int    `json:"version_exit_code"`
+		VersionStdout        string `json:"version_stdout,omitempty"`
+		VersionStderr        string `json:"version_stderr,omitempty"`
+		ModelsExitCode       int    `json:"models_exit_code"`
+		ModelsStdout         string `json:"models_stdout,omitempty"`
+		ModelsStderr         string `json:"models_stderr,omitempty"`
+		ResolvedModel        string `json:"resolved_model"`
+		ModelAvailable       bool   `json:"model_available"`
+		CheckedAt            string `json:"checked_at"`
+		Error                string `json:"error,omitempty"`
+		ModelResolutionError string `json:"model_resolution_error,omitempty"`
 	}
 
 	result := cliCheckResult{
-		Binary:        binary,
-		ResolvedModel: resolvedModel,
-		CheckedAt:     now,
+		Binary:               binary,
+		ResolvedModel:        resolvedModel,
+		CheckedAt:            now,
+		ModelResolutionError: modelResolutionError,
 	}
 
 	// Run opencode --version

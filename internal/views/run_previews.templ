@@ -52,7 +52,17 @@ type RunPreviews struct {
 	HasOpenCodeStdout    bool
 	HasOpenCodeStderr    bool
 	HasOpenCodeCombinedLog bool
-	HasValidationCommands bool
+	HasValidationCommands    bool
+	HasOpenCodeCLICheck      bool
+	OpenCodeCLICheckPreview  string
+	OpenCodeCLICheckBinary   string
+	OpenCodeCLICheckResolvedModel string
+	OpenCodeCLICheckModelAvailable string
+	OpenCodeCLICheckVersionExitCode string
+	OpenCodeCLICheckModelsExitCode string
+	OpenCodeCLICheckCheckedAt string
+	OpenCodeCLICheckError    string
+	OpenCodeCLICheckStatus   string
 }
 
 templ RunPreviewPanels(previews RunPreviews) {

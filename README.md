@@ -359,6 +359,10 @@ You can confirm installed/available models with:
 opencode models
 ```
 
+### CLI Check
+
+The **Check OpenCode CLI** action records an `opencode_cli_check_json` artifact and shows the latest result inline in Step 4, including binary, resolved model, model availability, and exit codes.
+
 ### Dry Run / Preview
 
 Step 4 provides a **Dry Run / Preview Command** button that builds the same OpenCode invocation that Start will use, but does not execute it. The preview is saved as an `opencode_dry_run_json` artifact for review.

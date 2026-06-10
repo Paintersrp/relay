@@ -440,24 +440,100 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 								OpenCode exited with code { previews.OpenCodeExecutionExitCode }.
 							</div>
 						}
-						<div class="text-xs text-red-200 mt-2">
-							Review the artifacts below for details.
+						// Log artifact links inline with failure
+						<div class="flex gap-2 mt-2">
+							if previews.HasOpenCodeStdout {
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout"}
+									class="text-xs text-red-300 hover:text-red-200 underline">stdout</a>
+							}
+							if previews.HasOpenCodeStderr {
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr"}
+									class="text-xs text-red-300 hover:text-red-200 underline">stderr</a>
+							}
+							if previews.HasOpenCodeCombinedLog {
+								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log"}
+									class="text-xs text-red-300 hover:text-red-200 underline">combined log</a>
+							}
+						</div>
+						if !previews.HasOpenCodeCLICheck {
+							<div class="text-xs text-red-200 mt-2">
+								No OpenCode CLI check found. Run <strong>Check OpenCode CLI</strong> to verify the binary and model.
+							</div>
+						}
+					</div>
+				}
+
+				// CLI check result panel
+				if previews.HasOpenCodeCLICheck {
+					<div class="mb-3 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
+						<div class="border-b border-gray-800 px-3 py-2 flex items-center justify-between">
+							<div class="text-sm font-medium text-gray-200">OpenCode CLI Check</div>
+							<span class={ cliCheckStatusClass(previews.OpenCodeCLICheckStatus) }>{ previews.OpenCodeCLICheckStatus }</span>
+						</div>
+						<div class="p-2 space-y-1 text-xs">
+							<div class="flex justify-between">
+								<span class="text-gray-400">Binary</span>
+								<span class="text-gray-300 font-mono">{ previews.OpenCodeCLICheckBinary }</span>
+							</div>
+							if previews.OpenCodeCLICheckResolvedModel != "" {
+								<div class="flex justify-between">
+									<span class="text-gray-400">Resolved model</span>
+									<span class="text-gray-300 font-mono">{ previews.OpenCodeCLICheckResolvedModel }</span>
+								</div>
+							}
+							<div class="flex justify-between">
+								<span class="text-gray-400">Model available</span>
+								<span class={ cliCheckModelAvailableClass(previews.OpenCodeCLICheckModelAvailable) }>{ previews.OpenCodeCLICheckModelAvailable }</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-gray-400">Version exit code</span>
+								<span class="text-gray-300">{ previews.OpenCodeCLICheckVersionExitCode }</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-gray-400">Models exit code</span>
+								<span class="text-gray-300">{ previews.OpenCodeCLICheckModelsExitCode }</span>
+							</div>
+							if previews.OpenCodeCLICheckCheckedAt != "" {
+								<div class="flex justify-between">
+									<span class="text-gray-400">Checked at</span>
+									<span class="text-gray-300">{ previews.OpenCodeCLICheckCheckedAt }</span>
+								</div>
+							}
+							if previews.OpenCodeCLICheckError != "" {
+								<div class="flex justify-between">
+									<span class="text-gray-400">Error</span>
+									<span class="text-red-400">{ previews.OpenCodeCLICheckError }</span>
+								</div>
+							}
+						</div>
+						<div class="border-t border-gray-800 px-3 py-2 flex gap-2">
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_cli_check_json"}
+								class="text-xs text-indigo-400 hover:text-indigo-300">View CLI check JSON</a>
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_cli_check_json/download"}
+								class="text-xs text-gray-500 hover:text-gray-300">Download</a>
 						</div>
 					</div>
 				}
 
 				// Dry Run and CLI Check buttons
 				<div class="flex gap-2 mb-3">
-					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="body" hx-swap="outerHTML"
-						class="inline">
-						<input type="hidden" name="action" value="dry-run-opencode-go"/>
-						<button type="submit"
-							class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors font-medium">
-							Dry Run / Preview Command
-						</button>
-					</form>
+					if previews.OpenCodeAdapterError == "" && previews.OpenCodeCommandPreview != "" {
+						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+							hx-target="body" hx-swap="outerHTML"
+							class="inline">
+							<input type="hidden" name="action" value="dry-run-opencode-go"/>
+							<button type="submit"
+								class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors font-medium">
+								Dry Run / Preview Command
+							</button>
+						</form>
+					} else {
+						<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed"
+							title={ "Dry Run unavailable: " + dryRunDisabledReason(previews) }>
+							Dry Run / Preview Command (blocked)
+						</span>
+					}
 
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
@@ -491,7 +567,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 				}
 
 				// Start button
-				if previews.OpenCodeAdapterError == "" && previews.HandoffPreflightStatus != "blocked" {
+				if previews.OpenCodeAdapterError == "" && previews.HandoffPreflightStatus != "blocked" && previews.OpenCodeCommandPreview != "" {
 					<div class="text-xs text-yellow-400 mb-2">
 						This starts a local OpenCode command in the selected repo path. Relay will capture stdout/stderr as artifacts.
 					</div>
@@ -506,11 +582,11 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 							Start OpenCode Go
 						</button>
 					</form>
-				} else if previews.OpenCodeAdapterError != "" {
-					<button disabled
-						class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed">
+				} else {
+					<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed"
+						title={ "Start unavailable: " + startDisabledReason(previews) }>
 						Start OpenCode Go (blocked)
-					</button>
+					</span>
 				}
 			</div>
 		</div>
@@ -821,6 +897,53 @@ func executionStatusClass(status string) string {
 	default:
 		return "text-gray-400"
 	}
+}
+
+func cliCheckStatusClass(status string) string {
+	switch status {
+	case "pass":
+		return "px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800"
+	case "warn":
+		return "px-2 py-0.5 text-xs rounded bg-yellow-900/50 text-yellow-400 border border-yellow-800"
+	case "fail":
+		return "px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800"
+	default:
+		return "px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700"
+	}
+}
+
+func cliCheckModelAvailableClass(available string) string {
+	switch available {
+	case "yes":
+		return "text-green-400"
+	case "no":
+		return "text-red-400"
+	default:
+		return "text-gray-500"
+	}
+}
+
+func dryRunDisabledReason(previews RunPreviews) string {
+	if previews.OpenCodeAdapterError != "" {
+		return "adapter blocked: " + previews.OpenCodeAdapterError
+	}
+	if previews.OpenCodeCommandPreview == "" {
+		return "no command preview; complete earlier steps first"
+	}
+	return "not available"
+}
+
+func startDisabledReason(previews RunPreviews) string {
+	if previews.OpenCodeAdapterError != "" {
+		return "adapter blocked: " + previews.OpenCodeAdapterError
+	}
+	if previews.HandoffPreflightStatus == "blocked" {
+		return "handoff preflight checks are blocked"
+	}
+	if previews.OpenCodeCommandPreview == "" {
+		return "no command preview; complete earlier steps first"
+	}
+	return "not available"
 }
 
 type relayValidationUIState string

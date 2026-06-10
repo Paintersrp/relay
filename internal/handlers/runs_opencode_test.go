@@ -507,6 +507,157 @@ func TestCheckOpenCodeCLIFailsOnVersionError(t *testing.T) {
 	}
 }
 
+func TestCheckOpenCodeCLIPersistsAllFields(t *testing.T) {
+	s := setupTestStore(t)
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+		return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "opencode version 1.0.0"}
+	}
+
+	// Create a run with a friendly model label that we can map
+	repoDir := t.TempDir()
+	os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("# repo"), 0644)
+	os.WriteFile(filepath.Join(repoDir, "go.mod"), []byte("module test"), 0644)
+	repo, err := s.CreateRepo("test-repo", repoDir)
+	if err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+	run, err := s.CreateRun(repo.ID, "Test Run", "ready", "My Model", "my-model", "main")
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	agentPromptPath, err := artifacts.Write(run.ID, "agent_prompt", pipeline.ArtifactFilename("agent_prompt"), []byte("compact prompt"))
+	if err != nil {
+		t.Fatalf("write agent prompt: %v", err)
+	}
+	s.CreateArtifact(run.ID, "agent_prompt", agentPromptPath, "text/plain")
+	packetPath, err := artifacts.Write(run.ID, "opencode_handoff_packet", pipeline.ArtifactFilename("opencode_handoff_packet"), []byte(`{"status":"configured"}`))
+	if err != nil {
+		t.Fatalf("write packet: %v", err)
+	}
+	s.CreateArtifact(run.ID, "opencode_handoff_packet", packetPath, "application/json")
+
+	// Set model mapping so resolution succeeds
+	t.Setenv("RELAY_OPENCODE_MODEL_MY_MODEL", "opencode-go/my-model")
+
+	runID := run.ID
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.checkOpenCodeCLI(w, req, runID)
+
+	data, err := artifacts.Read(runID, "opencode_cli_check_json", pipeline.ArtifactFilename("opencode_cli_check_json"))
+	if err != nil {
+		t.Fatalf("read cli check json: %v", err)
+	}
+
+	type cliCheckResult struct {
+		Binary          string `json:"binary"`
+		VersionExitCode int    `json:"version_exit_code"`
+		ModelsExitCode  int    `json:"models_exit_code"`
+		ResolvedModel   string `json:"resolved_model"`
+		ModelAvailable  bool   `json:"model_available"`
+		CheckedAt       string `json:"checked_at"`
+		Error           string `json:"error,omitempty"`
+	}
+	var result cliCheckResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("unmarshal cli check: %v", err)
+	}
+
+	if result.Binary != "opencode" {
+		t.Fatalf("expected binary 'opencode', got %q", result.Binary)
+	}
+	if result.VersionExitCode != 0 {
+		t.Fatalf("expected version exit code 0, got %d", result.VersionExitCode)
+	}
+	if result.ModelsExitCode != 0 {
+		t.Fatalf("expected models exit code 0, got %d", result.ModelsExitCode)
+	}
+	if result.ResolvedModel != "opencode-go/my-model" {
+		t.Fatalf("expected resolved model 'opencode-go/my-model', got %q", result.ResolvedModel)
+	}
+	if result.ModelAvailable {
+		t.Fatal("expected model_available false since models output does not contain resolved model")
+	}
+	if result.CheckedAt == "" {
+		t.Fatal("expected non-empty checked_at")
+	}
+}
+
+func TestCheckOpenCodeCLIModelResolutionErrorPersisted(t *testing.T) {
+	s := setupTestStore(t)
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+		return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "opencode version 1.0.0"}
+	}
+
+	// Create a run with a friendly model label that has no env mapping
+	repoDir := t.TempDir()
+	os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("# repo"), 0644)
+	os.WriteFile(filepath.Join(repoDir, "go.mod"), []byte("module test"), 0644)
+	repo, err := s.CreateRepo("test-repo", repoDir)
+	if err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+	run, err := s.CreateRun(repo.ID, "Test Run", "ready", "Unmapped Model", "unmapped-model", "main")
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	agentPromptPath, err := artifacts.Write(run.ID, "agent_prompt", pipeline.ArtifactFilename("agent_prompt"), []byte("compact prompt"))
+	if err != nil {
+		t.Fatalf("write agent prompt: %v", err)
+	}
+	s.CreateArtifact(run.ID, "agent_prompt", agentPromptPath, "text/plain")
+	packetPath, err := artifacts.Write(run.ID, "opencode_handoff_packet", pipeline.ArtifactFilename("opencode_handoff_packet"), []byte(`{"status":"configured"}`))
+	if err != nil {
+		t.Fatalf("write packet: %v", err)
+	}
+	s.CreateArtifact(run.ID, "opencode_handoff_packet", packetPath, "application/json")
+
+	runID := run.ID
+	// Do NOT set model mapping so resolution fails
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.checkOpenCodeCLI(w, req, runID)
+
+	data, err := artifacts.Read(runID, "opencode_cli_check_json", pipeline.ArtifactFilename("opencode_cli_check_json"))
+	if err != nil {
+		t.Fatalf("read cli check json: %v", err)
+	}
+
+	type cliCheckResult struct {
+		Binary               string `json:"binary"`
+		VersionExitCode      int    `json:"version_exit_code"`
+		ModelsExitCode       int    `json:"models_exit_code"`
+		ResolvedModel        string `json:"resolved_model"`
+		ModelResolutionError string `json:"model_resolution_error,omitempty"`
+		VersionStdout        string `json:"version_stdout,omitempty"`
+	}
+	var result cliCheckResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("unmarshal cli check: %v", err)
+	}
+
+	if result.VersionExitCode != 0 {
+		t.Fatalf("expected version exit code 0 (still runs), got %d", result.VersionExitCode)
+	}
+	if result.ResolvedModel != "" {
+		t.Fatalf("expected empty resolved model when resolution fails, got %q", result.ResolvedModel)
+	}
+	if result.ModelResolutionError == "" {
+		t.Fatal("expected model_resolution_error to be set when resolution fails")
+	}
+	if !strings.Contains(result.ModelResolutionError, "RELAY_OPENCODE_MODEL_UNMAPPED_MODEL") {
+		t.Fatalf("expected model_resolution_error to mention the missing env var, got %q", result.ModelResolutionError)
+	}
+	// Version and models should still have run
+	if result.VersionStdout != "opencode version 1.0.0" {
+		t.Fatalf("expected version stdout to be captured, got %q", result.VersionStdout)
+	}
+}
+
 func TestDryRunOpenCodeGoDoesNotCallCheckOpenCodeCLI(t *testing.T) {
 	s := setupTestStore(t)
 
