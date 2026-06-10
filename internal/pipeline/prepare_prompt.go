@@ -510,6 +510,8 @@ func ArtifactFilename(kind string) string {
 		return "validation_stderr.txt"
 	case "opencode_dry_run_json":
 		return "opencode_dry_run.json"
+	case "opencode_cli_check_json":
+		return "opencode_cli_check.json"
 	default:
 		return fmt.Sprintf("%s.txt", kind)
 	}

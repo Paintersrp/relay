@@ -394,6 +394,55 @@ func quotePreview(s string) string {
 	return s
 }
 
+// OpenCodeFailureHint returns a user-facing hint string based on a failed run result.
+// It inspects stderr and stdout for common failure patterns and returns actionable messages.
+// Returns empty string if no specific hint applies.
+func OpenCodeFailureHint(result AgentCommandRunResult, invocation OpenCodeRunInvocation) string {
+	stderr := strings.ToLower(result.Stderr)
+	stdout := strings.ToLower(result.Stdout)
+	combined := stderr + " " + stdout
+
+	if result.TimedOut {
+		return "OpenCode timed out. The command may be taking longer than expected, or the model may be unavailable."
+	}
+
+	if result.Error != "" {
+		errLower := strings.ToLower(result.Error)
+		if strings.Contains(errLower, "executable file not found") ||
+			strings.Contains(errLower, "not recognized") ||
+			strings.Contains(errLower, "no such file") {
+			return "OpenCode binary not found. Check RELAY_OPENCODE_BIN or install opencode."
+		}
+	}
+
+	if strings.Contains(combined, "executable file not found") ||
+		strings.Contains(combined, "not recognized") ||
+		strings.Contains(combined, "no such file") {
+		return "OpenCode binary not found. Check RELAY_OPENCODE_BIN or install opencode."
+	}
+
+	if strings.Contains(combined, "auth") ||
+		strings.Contains(combined, "unauthorized") ||
+		strings.Contains(combined, "401") ||
+		strings.Contains(combined, "api key") ||
+		strings.Contains(combined, "connect") {
+		return "OpenCode auth may be missing or expired. Run `opencode`, then `/connect`, then `opencode models`."
+	}
+
+	if strings.Contains(combined, "model") &&
+		(strings.Contains(combined, "not found") ||
+			strings.Contains(combined, "unknown model") ||
+			strings.Contains(combined, "404")) {
+		return "OpenCode model may be unavailable. Run `opencode models` and confirm the resolved model appears."
+	}
+
+	if result.ExitCode > 0 {
+		return "OpenCode exited with code " + fmt.Sprintf("%d", result.ExitCode) + ". Review stderr and combined log artifacts."
+	}
+
+	return ""
+}
+
 // ExtractOpenCodeAssistantText extracts assistant text from OpenCode JSONL stdout.
 // It concatenates "text" type event parts. Falls back to raw stdout if no JSON events found.
 func ExtractOpenCodeAssistantText(stdout string) string {

@@ -358,6 +358,48 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 			</div>
 		}
 
+		// Resolved OpenCode command panel
+		if previews.OpenCodeCommandPreview != "" {
+			<div class="mt-3 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
+				<div class="border-b border-gray-800 px-3 py-2">
+					<div class="text-sm font-medium text-gray-200">Resolved OpenCode command</div>
+					<div class="text-xs text-gray-500">The exact command Relay will use for execution.</div>
+				</div>
+				<div class="p-3 space-y-1.5 text-xs">
+					<div class="flex justify-between">
+						<span class="text-gray-400">Binary</span>
+						<span class="text-gray-300 font-mono">{ previews.OpenCodeBinary }</span>
+					</div>
+					<div class="flex justify-between">
+						<span class="text-gray-400">Working directory</span>
+						<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeWorkDir }</span>
+					</div>
+					<div class="flex justify-between">
+						<span class="text-gray-400">Agent</span>
+						<span class="text-gray-300 font-mono">{ previews.OpenCodeAgent }</span>
+					</div>
+					<div class="flex justify-between">
+						<span class="text-gray-400">Model</span>
+						<span class="text-gray-300 font-mono">{ previews.OpenCodeModel }</span>
+					</div>
+					<div class="flex justify-between">
+						<span class="text-gray-400">Thinking</span>
+						<span class="text-gray-300 font-mono">{ previews.OpenCodeThinking }</span>
+					</div>
+					<div class="flex justify-between">
+						<span class="text-gray-400">Prompt stdin</span>
+						<span class="text-gray-300 font-mono">{ previews.OpenCodeStdinSource } ({ previews.OpenCodeStdinBytes } bytes)</span>
+					</div>
+					<div class="pt-2 border-t border-gray-800">
+						<div class="text-gray-400 mb-1">Command</div>
+						<textarea readonly rows="3"
+							class="w-full text-xs font-mono bg-gray-950 border border-gray-700 rounded p-2 text-gray-300 select-all"
+							onclick="this.select()">{ previews.OpenCodeCommandPreview }</textarea>
+					</div>
+				</div>
+			</div>
+		}
+
 		// OpenCode Adapter section
 		<div class="mt-3 pt-3 border-t border-gray-800">
 			<div class="flex items-center gap-2 mb-2">
@@ -371,67 +413,41 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 				}
 			</div>
 
-			<div class="rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
-				<div class="p-3 space-y-1 text-xs">
-					if previews.OpenCodeBinary != "" {
-						<div class="flex justify-between">
-							<span class="text-gray-400">Binary</span>
-							<span class="text-gray-300">{ previews.OpenCodeBinary }</span>
-						</div>
-					}
-					if previews.OpenCodeModel != "" {
-						<div class="flex justify-between">
-							<span class="text-gray-400">Model</span>
-							<span class="text-gray-300">{ previews.OpenCodeModel }</span>
-						</div>
-					}
-					if previews.OpenCodeAgent != "" {
-						<div class="flex justify-between">
-							<span class="text-gray-400">Agent</span>
-							<span class="text-gray-300">{ previews.OpenCodeAgent }</span>
-						</div>
-					}
-					if previews.OpenCodeVariant != "" {
-						<div class="flex justify-between">
-							<span class="text-gray-400">Variant</span>
-							<span class="text-gray-300">{ previews.OpenCodeVariant }</span>
-						</div>
-					}
-					if previews.OpenCodeCommandPreview != "" {
-						<div class="flex justify-between">
-							<span class="text-gray-400">Command</span>
-							<span class="text-gray-300 font-mono text-[11px] break-all">{ previews.OpenCodeCommandPreview }</span>
-						</div>
-					}
-					if previews.OpenCodeStdinSource != "" {
-						<div class="flex justify-between">
-							<span class="text-gray-400">Prompt input</span>
-							<span class="text-gray-300">stdin from { previews.OpenCodeStdinSource } ({ previews.OpenCodeStdinBytes } bytes)</span>
-						</div>
-					}
-					if previews.OpenCodeWorkDir != "" {
-						<div class="flex justify-between">
-							<span class="text-gray-400">Working directory</span>
-							<span class="text-gray-300 break-all">{ previews.OpenCodeWorkDir }</span>
-						</div>
-					}
-				</div>
-			</div>
-
 			// OpenCode execution section
-			<div class="mt-3 pt-3 border-t border-gray-800">
+			<div class="mt-3">
 				if previews.OpenCodeAdapterError != "" {
-					<div class="text-xs text-red-400 mb-2 leading-relaxed">
-						<strong>OpenCode adapter blocked:</strong> { previews.OpenCodeAdapterError }
+					<div class="rounded-lg border border-red-900/60 bg-red-950/30 p-3 mb-3">
+						<div class="text-xs text-red-300 leading-relaxed">
+							<strong>OpenCode adapter blocked:</strong> { previews.OpenCodeAdapterError }
+						</div>
 					</div>
 				} else if previews.HandoffPreflightStatus == "blocked" {
-					<div class="text-xs text-red-400 mb-2">
-						Resolve blocked checks before starting OpenCode Go.
+					<div class="rounded-lg border border-red-900/60 bg-red-950/30 p-3 mb-3">
+						<div class="text-xs text-red-300">
+							Resolve blocked checks before starting OpenCode Go.
+						</div>
 					</div>
 				}
 
-				// Dry Run button
-				<div class="mb-3">
+				// Failure hint after execution
+				if previews.HasOpenCodeExecution && previews.OpenCodeExecutionStatus == "failed" {
+					<div class="rounded-lg border border-red-900/60 bg-red-950/30 p-3 mb-3">
+						<div class="text-sm font-medium text-red-300">OpenCode execution failed</div>
+						if previews.OpenCodeFailureHint != "" {
+							<div class="text-xs text-red-200 mt-1">{ previews.OpenCodeFailureHint }</div>
+						} else if previews.OpenCodeExecutionExitCode != "" {
+							<div class="text-xs text-red-200 mt-1">
+								OpenCode exited with code { previews.OpenCodeExecutionExitCode }.
+							</div>
+						}
+						<div class="text-xs text-red-200 mt-2">
+							Review the artifacts below for details.
+						</div>
+					</div>
+				}
+
+				// Dry Run and CLI Check buttons
+				<div class="flex gap-2 mb-3">
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 						hx-target="body" hx-swap="outerHTML"
@@ -443,24 +459,36 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 						</button>
 					</form>
 
-					if previews.HasOpenCodeDryRun {
-						<div class="mt-2 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
-							<div class="border-b border-gray-800 px-3 py-2">
-								<div class="text-sm font-medium text-gray-200">Dry Run Preview</div>
-								<div class="text-xs text-gray-500">JSON summary. Does not execute OpenCode.</div>
-							</div>
-							<div class="p-2">
-								<pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap overflow-x-auto max-h-40">{ previews.OpenCodeDryRunPreview }</pre>
-							</div>
-						</div>
-						<div class="mt-2 flex gap-2">
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_dry_run_json"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_dry_run_json/download"}
-								class="text-xs text-gray-500 hover:text-gray-300">Download</a>
-						</div>
-					}
+					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+						hx-target="body" hx-swap="outerHTML"
+						class="inline">
+						<input type="hidden" name="action" value="check-opencode-cli"/>
+						<button type="submit"
+							class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors font-medium">
+							Check OpenCode CLI
+						</button>
+					</form>
 				</div>
+
+				// Dry Run preview
+				if previews.HasOpenCodeDryRun {
+					<div class="mb-3 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
+						<div class="border-b border-gray-800 px-3 py-2">
+							<div class="text-sm font-medium text-gray-200">Dry Run Preview</div>
+							<div class="text-xs text-gray-500">JSON summary. Does not execute OpenCode.</div>
+						</div>
+						<div class="p-2">
+							<pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap overflow-x-auto max-h-40">{ previews.OpenCodeDryRunPreview }</pre>
+						</div>
+					</div>
+					<div class="mb-3 flex gap-2">
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_dry_run_json"}
+							class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_dry_run_json/download"}
+							class="text-xs text-gray-500 hover:text-gray-300">Download</a>
+					</div>
+				}
 
 				// Start button
 				if previews.OpenCodeAdapterError == "" && previews.HandoffPreflightStatus != "blocked" {

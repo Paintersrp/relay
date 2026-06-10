@@ -36,17 +36,19 @@ type RunPreviews struct {
 	OpenCodeCombinedArtifactID  int64
 	HasOpenCodeExecution        bool
 	// OpenCode adapter fields
-	OpenCodeBinary       string
-	OpenCodeArgs         []string
-	OpenCodeWorkDir      string
-	OpenCodeModel        string
-	OpenCodeAgent        string
-	OpenCodeVariant      string
-	OpenCodeStdinSource  string
-	OpenCodeStdinBytes   int
-	OpenCodeAdapterError string
-	OpenCodeDryRunPreview string
-	HasOpenCodeDryRun    bool
+	OpenCodeBinary         string
+	OpenCodeArgs           []string
+	OpenCodeWorkDir        string
+	OpenCodeModel          string
+	OpenCodeAgent          string
+	OpenCodeVariant        string
+	OpenCodeThinking       string
+	OpenCodeStdinSource    string
+	OpenCodeStdinBytes     int
+	OpenCodeAdapterError   string
+	OpenCodeFailureHint    string
+	OpenCodeDryRunPreview  string
+	HasOpenCodeDryRun      bool
 	HasOpenCodeStdout    bool
 	HasOpenCodeStderr    bool
 	HasOpenCodeCombinedLog bool

@@ -119,6 +119,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	var openCodeArgs []string
 	openCodeCommandPreview := ""
 	openCodeAdapterError := ""
+	openCodeThinking := "max"
 
 	if repo != nil {
 		invocation, err := h.buildOpenCodeInvocationForRun(id)
@@ -145,6 +146,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	hasOpenCodeStdout := false
 	hasOpenCodeStderr := false
 	hasOpenCodeCombinedLog := false
+	openCodeFailureHint := ""
 
 	if exec, err := h.store.GetLatestAgentExecutionByRun(id); err == nil {
 		hasOpenCodeExecution = true
@@ -166,6 +168,28 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 			} else if a.Kind == "opencode_combined_log" {
 				hasOpenCodeCombinedLog = true
 			}
+		}
+		// Compute failure hint if execution failed
+		if exec.Status == "failed" && openCodeBinary != "" {
+			exitCode := 0
+			if exec.ExitCode.Valid {
+				exitCode = int(exec.ExitCode.Int64)
+			}
+			runResult := pipeline.AgentCommandRunResult{
+				ExitCode: exitCode,
+				Stderr:   readArtifactPreview(id, "opencode_stderr"),
+				Stdout:   readArtifactPreview(id, "opencode_stdout"),
+				TimedOut: exitCode == -2,
+				Error:    exec.Error.String,
+			}
+			invocation := pipeline.OpenCodeRunInvocation{
+				Binary:  openCodeBinary,
+				Args:    openCodeArgs,
+				WorkDir: openCodeWorkDir,
+				Model:   openCodeModel,
+				Agent:   openCodeAgent,
+			}
+			openCodeFailureHint = pipeline.OpenCodeFailureHint(runResult, invocation)
 		}
 	}
 
@@ -201,9 +225,11 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		OpenCodeModel:              openCodeModel,
 		OpenCodeAgent:              openCodeAgent,
 		OpenCodeVariant:            openCodeVariant,
+		OpenCodeThinking:           openCodeThinking,
 		OpenCodeStdinSource:        openCodeStdinSource,
 		OpenCodeStdinBytes:         openCodeStdinBytes,
 		OpenCodeAdapterError:       openCodeAdapterError,
+		OpenCodeFailureHint:        openCodeFailureHint,
 		OpenCodeDryRunPreview:      dryRunPreview,
 		HasOpenCodeDryRun:          dryRunPreview != "",
 		HasOpenCodeStdout:          hasOpenCodeStdout,
@@ -281,6 +307,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.dryRunOpenCodeGo(w, r, id)
 	case "start-opencode-go":
 		h.startOpenCodeGo(w, r, id)
+	case "check-opencode-cli":
+		h.checkOpenCodeCLI(w, r, id)
 	default:
 		http.Error(w, "unknown action", http.StatusBadRequest)
 	}
@@ -663,6 +691,104 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 	h.store.CreateEvent(runID, "info", eventMsg)
 
 	h.log.Info("opencode go execution completed", "run_id", runID, "exit_code", runResult.ExitCode)
+
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+}
+
+func (h *RunsHandler) checkOpenCodeCLI(w http.ResponseWriter, r *http.Request, runID int64) {
+	cfg := pipeline.OpenCodeRunConfigFromEnv()
+	binary := cfg.Binary
+	now := time.Now().Format(time.RFC3339)
+
+	// Get run to resolve its selected model
+	resolvedModel := ""
+	run, runErr := h.store.GetRun(runID)
+	if runErr == nil && run.SelectedModel != "" {
+		if m, err := pipeline.ResolveOpenCodeModel(run.SelectedModel); err == nil {
+			resolvedModel = m
+		}
+	}
+
+	type cliCheckResult struct {
+		Binary          string `json:"binary"`
+		VersionExitCode int    `json:"version_exit_code"`
+		VersionStdout   string `json:"version_stdout,omitempty"`
+		VersionStderr   string `json:"version_stderr,omitempty"`
+		ModelsExitCode  int    `json:"models_exit_code"`
+		ModelsStdout    string `json:"models_stdout,omitempty"`
+		ModelsStderr    string `json:"models_stderr,omitempty"`
+		ResolvedModel   string `json:"resolved_model"`
+		ModelAvailable  bool   `json:"model_available"`
+		CheckedAt       string `json:"checked_at"`
+		Error           string `json:"error,omitempty"`
+	}
+
+	result := cliCheckResult{
+		Binary:        binary,
+		ResolvedModel: resolvedModel,
+		CheckedAt:     now,
+	}
+
+	// Run opencode --version
+	verResult := h.runAgentCommandArgs(r.Context(), ".", binary, []string{"--version"}, "", 30*time.Second)
+	result.VersionExitCode = verResult.ExitCode
+	result.VersionStdout = verResult.Stdout
+	result.VersionStderr = verResult.Stderr
+
+	if verResult.ExitCode != 0 {
+		errMsg := "opencode --version failed"
+		if verResult.Stderr != "" {
+			errMsg += ": " + strings.TrimSpace(verResult.Stderr)
+		}
+		result.Error = errMsg
+		resultJSON, _ := json.MarshalIndent(result, "", "  ")
+		p, _ := artifacts.Write(runID, "opencode_cli_check_json", pipeline.ArtifactFilename("opencode_cli_check_json"), resultJSON)
+		if p != "" {
+			h.store.CreateArtifact(runID, "opencode_cli_check_json", p, "application/json")
+		}
+		h.store.CreateEvent(runID, "warn", "OpenCode CLI check failed: binary not found or not working")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+		return
+	}
+
+	// Run opencode models
+	modelsResult := h.runAgentCommandArgs(r.Context(), ".", binary, []string{"models"}, "", 30*time.Second)
+	result.ModelsExitCode = modelsResult.ExitCode
+	result.ModelsStdout = modelsResult.Stdout
+	result.ModelsStderr = modelsResult.Stderr
+
+	// Check if resolved model appears in models output
+	if resolvedModel != "" && modelsResult.ExitCode == 0 {
+		result.ModelAvailable = strings.Contains(modelsResult.Stdout, resolvedModel) ||
+			strings.Contains(modelsResult.Stdout, strings.Split(resolvedModel, "/")[1])
+	}
+
+	persistErr := ""
+	resultJSON, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		persistErr = err.Error()
+	} else {
+		p, err := artifacts.Write(runID, "opencode_cli_check_json", pipeline.ArtifactFilename("opencode_cli_check_json"), resultJSON)
+		if err != nil {
+			persistErr = err.Error()
+		} else {
+			h.store.CreateArtifact(runID, "opencode_cli_check_json", p, "application/json")
+		}
+	}
+
+	if persistErr != "" {
+		h.log.Error("persist opencode cli check result", "error", persistErr)
+	}
+
+	if modelsResult.ExitCode != 0 {
+		h.store.CreateEvent(runID, "warn", "OpenCode CLI check: `opencode models` failed")
+	} else if resolvedModel != "" && !result.ModelAvailable {
+		h.store.CreateEvent(runID, "warn", "OpenCode CLI check: model "+resolvedModel+" not found in `opencode models` output")
+	} else if resolvedModel != "" && result.ModelAvailable {
+		h.store.CreateEvent(runID, "info", "OpenCode CLI check: binary and model OK")
+	} else {
+		h.store.CreateEvent(runID, "info", "OpenCode CLI check: binary OK (model not resolved)")
+	}
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 }

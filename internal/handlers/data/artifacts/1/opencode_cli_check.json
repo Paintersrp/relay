@@ -1,0 +1,10 @@
+{
+  "binary": "opencode",
+  "version_exit_code": -1,
+  "version_stderr": "not recognized",
+  "models_exit_code": 0,
+  "resolved_model": "anthropic/claude-sonnet-4-5",
+  "model_available": false,
+  "checked_at": "2026-06-10T11:06:56-04:00",
+  "error": "opencode --version failed: not recognized"
+}

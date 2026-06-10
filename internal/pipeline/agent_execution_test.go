@@ -534,6 +534,84 @@ func TestBuildOpenCodeRunInvocationIncludesExpectedArgsValues(t *testing.T) {
 	}
 }
 
+func TestOpenCodeFailureHintBinaryNotFound(t *testing.T) {
+	result := AgentCommandRunResult{
+		ExitCode: -1,
+		Stderr:   "executable file not found",
+		Error:    "exec: \"opencode\": executable file not found",
+	}
+	hint := OpenCodeFailureHint(result, OpenCodeRunInvocation{Binary: "opencode"})
+	if !strings.Contains(hint, "binary not found") {
+		t.Fatalf("expected binary not found hint, got: %s", hint)
+	}
+}
+
+func TestOpenCodeFailureHintAuthMissing(t *testing.T) {
+	result := AgentCommandRunResult{
+		ExitCode: 1,
+		Stderr:   "error: unauthorized",
+	}
+	hint := OpenCodeFailureHint(result, OpenCodeRunInvocation{Binary: "opencode"})
+	if !strings.Contains(hint, "auth") {
+		t.Fatalf("expected auth hint, got: %s", hint)
+	}
+}
+
+func TestOpenCodeFailureHintModelUnavailable(t *testing.T) {
+	result := AgentCommandRunResult{
+		ExitCode: 1,
+		Stderr:   "model not found",
+	}
+	hint := OpenCodeFailureHint(result, OpenCodeRunInvocation{Binary: "opencode"})
+	if !strings.Contains(hint, "model") {
+		t.Fatalf("expected model hint, got: %s", hint)
+	}
+}
+
+func TestOpenCodeFailureHintGenericNonZero(t *testing.T) {
+	result := AgentCommandRunResult{
+		ExitCode: 42,
+		Stderr:   "some generic error",
+	}
+	hint := OpenCodeFailureHint(result, OpenCodeRunInvocation{Binary: "opencode"})
+	if !strings.Contains(hint, "42") {
+		t.Fatalf("expected exit code 42 in hint, got: %s", hint)
+	}
+}
+
+func TestOpenCodeFailureHintTimeout(t *testing.T) {
+	result := AgentCommandRunResult{
+		ExitCode: -2,
+		TimedOut: true,
+	}
+	hint := OpenCodeFailureHint(result, OpenCodeRunInvocation{Binary: "opencode"})
+	if !strings.Contains(hint, "timed out") {
+		t.Fatalf("expected timeout hint, got: %s", hint)
+	}
+}
+
+func TestOpenCodeFailureHintReturnsEmptyOnSuccess(t *testing.T) {
+	result := AgentCommandRunResult{
+		ExitCode: 0,
+		Stdout:   "DONE",
+	}
+	hint := OpenCodeFailureHint(result, OpenCodeRunInvocation{Binary: "opencode"})
+	if hint != "" {
+		t.Fatalf("expected empty hint for success, got: %s", hint)
+	}
+}
+
+func TestOpenCodeFailureHintUsesStdoutPatterns(t *testing.T) {
+	result := AgentCommandRunResult{
+		ExitCode: 1,
+		Stdout:   "401 unauthorized",
+	}
+	hint := OpenCodeFailureHint(result, OpenCodeRunInvocation{Binary: "opencode"})
+	if !strings.Contains(hint, "auth") {
+		t.Fatalf("expected auth hint from stdout, got: %s", hint)
+	}
+}
+
 func TestResolveOpenCodeModelMissingMappingIncludesEnvKey(t *testing.T) {
 	envKey := "RELAY_OPENCODE_MODEL_QWEN3_CODER_NEXT"
 	original := os.Getenv(envKey)

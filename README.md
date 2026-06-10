@@ -134,6 +134,8 @@ make test       # run tests
 | `mark-needs-cleanup`       | Implemented                          |
 | `generate-opencode-packet` | Implemented                          |
 | `start-opencode-go`        | Implemented                          |
+| `dry-run-opencode-go`      | Implemented                          |
+| `check-opencode-cli`       | Implemented                          |
 | `submit-agent-result`      | Implemented                          |
 | `run-agent`                | Future                               |
 | `run-validation`           | Implemented                          |
@@ -237,6 +239,37 @@ Clarifications:
 - Manual agent result intake remains available as a fallback.
 - Manual action buttons remain available as retry/regenerate controls for each step.
 - Artifact previews (Original Handoff, Validation Report, Agent Prompt) are available in a collapsed `<details>` element at the bottom of the run detail page, not expanded by default.
+
+### First-run checklist
+
+1. Install OpenCode.
+2. Connect OpenCode Go in the TUI:
+   ```text
+   opencode
+   /connect
+   /models
+   ```
+3. Confirm CLI models:
+   ```bash
+   opencode models
+   ```
+4. Fill `.env.local` (copy `.env.example` to `.env.local`).
+5. Restart Relay.
+6. Open Step 4 (OpenCode Go Handoff) for a run.
+7. Click **Check OpenCode CLI** to verify binary and model availability.
+8. Click **Dry Run / Preview Command** to confirm the full invocation.
+9. Confirm preview includes `--model opencode-go/deepseek-v4-flash --thinking max`.
+10. Click **Start OpenCode Go**.
+
+### Troubleshooting
+
+- **Binary missing**: Set `RELAY_OPENCODE_BIN` or ensure `opencode` is on PATH. Run `opencode --version` to verify.
+- **Auth missing/expired**: Run `opencode`, then `/connect`, then `opencode models` in the OpenCode TUI.
+- **Model mapping missing**: If using a friendly model label, set `RELAY_OPENCODE_MODEL_<SLUG>` in `.env.local`. For DeepSeek V4 Flash: `RELAY_OPENCODE_MODEL_DEEPSEEK_V4_FLASH=opencode-go/deepseek-v4-flash`.
+- **Model unavailable**: Run `opencode models` and confirm the resolved model ID appears in the list.
+- **Windows Git Bash TUI issue**: PowerShell is safer for `opencode`. If using Git Bash, the TUI may not render correctly.
+- **Shell/path/working-directory issue**: Check the "Resolved OpenCode command" panel in Step 4 for the exact working directory and binary.
+- **`opencode run` returns non-zero**: Review the stderr and combined log artifacts linked after failure. The failure hint in the Step 4 UI provides actionable guidance.
 
 ## OpenCode adapter
 
