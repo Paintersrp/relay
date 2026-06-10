@@ -220,18 +220,19 @@ Run detail is organized as a guided step-by-step workbench with a single active 
 - **Step 1 — Intake Review**: Default active step. Shows validation checks, warnings, blockers, and the Intake Review panel. The "Run Intake Review" button changes to "Re-run Intake Review" after first run. Original handoff is available collapsed.
 - **Step 2 — Agent Prompt**: Shows the Original → Agent Prompt hunk diff inline with View/Download links. Buttons toggle between "Generate Agent Prompt" and "Regenerate Agent Prompt".
 - **Step 3 — Agent Packet**: Shows packet preview, View/Download links. Buttons toggle between "Generate Agent Packet" and "Regenerate Agent Packet".
-- **Step 4 — OpenCode Go Handoff**: Shows preflight readiness, command template configuration, a command preview, and an explicit "Start OpenCode Go" button. Execution status and captured artifacts (stdout, stderr, combined log) are displayed after a run. Manual agent result intake remains available as a collapsed fallback section.
+- **Step 4 — OpenCode Go Handoff**: Shows preflight readiness, OpenCode adapter configuration (binary, model, agent, working directory, command preview), and an explicit "Start OpenCode Go" button. Adapter readiness/blockers are visible at the top of the adapter section. Execution status and captured artifacts (stdout, stderr, combined log) are displayed after a run. Manual agent result intake remains available as a collapsed fallback section.
 - **Step 5 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Requires an agent result before the validation button is enabled.
 - **Step 6 — Diff/Audit**: Future, grayed out.
 
 Clarifications:
 
 - Relay does not execute OpenCode automatically. Execution only starts when the user explicitly clicks "Start OpenCode Go".
-- Step 4 shows the exact rendered command before execution in a collapsed preview.
-- If no command template is configured, Step 4 shows a blocked state with instructions to set `RELAY_OPENCODE_GO_COMMAND_TEMPLATE`.
+- Step 4 shows the OpenCode adapter configuration (binary, args, model, agent, working directory, command preview) in a details panel.
+- If the adapter is blocked (e.g., missing model mapping), an error message is shown with the specific env var to set.
 - If preflight checks are blocked, the Start button remains disabled.
 - Relay captures stdout, stderr, and a combined log as run artifacts after execution.
-- Relay attempts to parse DONE/BLOCKED final output from stdout automatically.
+- Relay extracts assistant text from JSONL stdout events and parses DONE/BLOCKED final output automatically.
+- Relay does not persist UNKNOWN results automatically from JSON noise.
 - Relay Validation remains user-triggered after agent result.
 - Manual agent result intake remains available as a fallback.
 - Manual action buttons remain available as retry/regenerate controls for each step.

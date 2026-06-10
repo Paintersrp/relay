@@ -447,3 +447,86 @@ func TestDryRunJSONRoundTrip(t *testing.T) {
 		t.Fatalf("expected opencode, got %q", decoded.Binary)
 	}
 }
+
+func TestBuildOpenCodeRunInvocationPreviewDoesNotIncludePromptBody(t *testing.T) {
+	secret := "super-secret-prompt-body-do-not-leak"
+	cfg := OpenCodeRunConfig{
+		Binary: "opencode",
+		Agent:  "build",
+	}
+	input := OpenCodeRunInput{
+		RepoPath:        "/home/user/project",
+		SelectedModel:   "anthropic/claude-sonnet-4-5",
+		AgentPromptPath: "/tmp/agent_prompt.txt",
+		AgentPromptText: secret,
+		PacketPath:      "/tmp/packet.json",
+	}
+
+	inv, err := BuildOpenCodeRunInvocation(cfg, input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(inv.Preview, secret) {
+		t.Fatal("preview must not contain prompt body")
+	}
+	if !strings.Contains(inv.Preview, "/tmp/agent_prompt.txt") {
+		t.Fatal("preview must contain the prompt path")
+	}
+}
+
+func TestBuildOpenCodeRunInvocationIncludesExpectedArgsValues(t *testing.T) {
+	cfg := OpenCodeRunConfig{
+		Binary: "opencode",
+		Agent:  "build",
+	}
+	input := OpenCodeRunInput{
+		RepoPath:        "/home/user/project",
+		SelectedModel:   "anthropic/claude-sonnet-4-5",
+		AgentPromptPath: "/tmp/agent_prompt.txt",
+		AgentPromptText: "Do the thing",
+		PacketPath:      "/tmp/packet.json",
+	}
+
+	inv, err := BuildOpenCodeRunInvocation(cfg, input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Check positional args after flag names
+	for i, arg := range inv.Args {
+		switch arg {
+		case "--format":
+			if i+1 >= len(inv.Args) || inv.Args[i+1] != "json" {
+				t.Fatalf("expected --format json, got --format %v", map[bool]string{true: inv.Args[i+1]}[i+1 < len(inv.Args)])
+			}
+		case "--dir":
+			if i+1 >= len(inv.Args) || inv.Args[i+1] != "/home/user/project" {
+				t.Fatal("expected --dir to be followed by repo path")
+			}
+		case "--agent":
+			if i+1 >= len(inv.Args) || inv.Args[i+1] != "build" {
+				t.Fatal("expected --agent to be followed by build")
+			}
+		case "--model":
+			if i+1 >= len(inv.Args) || inv.Args[i+1] != "anthropic/claude-sonnet-4-5" {
+				t.Fatal("expected --model to be followed by resolved model")
+			}
+		}
+	}
+}
+
+func TestResolveOpenCodeModelMissingMappingIncludesEnvKey(t *testing.T) {
+	envKey := "RELAY_OPENCODE_MODEL_QWEN3_CODER_NEXT"
+	original := os.Getenv(envKey)
+	os.Unsetenv(envKey)
+	defer os.Setenv(envKey, original)
+
+	_, err := ResolveOpenCodeModel("Qwen3 Coder Next")
+	if err == nil {
+		t.Fatal("expected error for missing mapping, got nil")
+	}
+	if !strings.Contains(err.Error(), envKey) {
+		t.Fatalf("expected error to include env key %q, got: %v", envKey, err)
+	}
+}

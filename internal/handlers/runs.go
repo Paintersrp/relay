@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"relay/internal/artifacts"
 	"relay/internal/pipeline"
@@ -18,13 +19,20 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+type agentCommandRunner func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult
+
 type RunsHandler struct {
-	store *store.Store
-	log   *slog.Logger
+	store               *store.Store
+	log                 *slog.Logger
+	runAgentCommandArgs agentCommandRunner
 }
 
 func NewRunsHandler(s *store.Store, log *slog.Logger) *RunsHandler {
-	return &RunsHandler{store: s, log: log}
+	return &RunsHandler{
+		store:               s,
+		log:                 log,
+		runAgentCommandArgs: pipeline.RunLocalAgentCommandArgs,
+	}
 }
 
 func readArtifactPreview(runID int64, kind string) string {
@@ -107,6 +115,8 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	openCodeVariant := ""
 	openCodeStdinSource := ""
 	openCodeStdinBytes := 0
+	openCodeWorkDir := ""
+	var openCodeArgs []string
 	openCodeCommandPreview := ""
 	openCodeAdapterError := ""
 
@@ -114,6 +124,8 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		invocation, err := h.buildOpenCodeInvocationForRun(id)
 		if err == nil {
 			openCodeBinary = invocation.Binary
+			openCodeArgs = invocation.Args
+			openCodeWorkDir = invocation.WorkDir
 			openCodeModel = invocation.Model
 			openCodeAgent = invocation.Agent
 			openCodeVariant = invocation.Variant
@@ -124,8 +136,6 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 			openCodeAdapterError = err.Error()
 		}
 	}
-
-	openCodeCommandTemplate := pipeline.OpenCodeCommandTemplate()
 	// Load latest execution
 	hasOpenCodeExecution := false
 	openCodeExecStatus := ""
@@ -169,7 +179,6 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		AgentPromptEstimate:        agentPromptEstimate,
 		HandoffPreflightStatus:     preflightStatus,
 		HandoffPreflightChecks:     preflightChecks,
-		OpenCodeCommandTemplate:    openCodeCommandTemplate,
 		OpenCodeCommandPreview:     openCodeCommandPreview,
 		OpenCodeExecutionStatus:    openCodeExecStatus,
 		OpenCodeExecutionExitCode:  openCodeExecExitCode,
@@ -180,8 +189,8 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		OpenCodeCombinedArtifactID: 0,
 		HasOpenCodeExecution:       hasOpenCodeExecution,
 		OpenCodeBinary:             openCodeBinary,
-		OpenCodeArgs:               nil,
-		OpenCodeWorkDir:            openCodeBinary,
+		OpenCodeArgs:               openCodeArgs,
+		OpenCodeWorkDir:            openCodeWorkDir,
 		OpenCodeModel:              openCodeModel,
 		OpenCodeAgent:              openCodeAgent,
 		OpenCodeVariant:            openCodeVariant,
@@ -557,13 +566,13 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 	}
 
 	// Update to running
-	startedAt := ""
+	startedAt := time.Now().Format("2006-01-02 15:04:05")
 	h.store.UpdateAgentExecutionStatus(exec.ID, "running", nil, &startedAt, nil, nil, nil, nil, nil, nil)
 
 	h.store.CreateEvent(runID, "info", "OpenCode Go execution started")
 
 	// Run command synchronously with timeout using the real adapter
-	runResult := pipeline.RunLocalAgentCommandArgs(
+	runResult := h.runAgentCommandArgs(
 		r.Context(),
 		invocation.WorkDir,
 		invocation.Binary,
