@@ -10,3 +10,6 @@ var AgentsMD string
 
 //go:embed clinerules.md
 var ClineRules string
+
+//go:embed surgical_chat_instructions.txt
+var SurgicalChatInstructionsLegacy string

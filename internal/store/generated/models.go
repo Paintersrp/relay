@@ -88,3 +88,13 @@ type Run struct {
 	CreatedAt        string `json:"created_at"`
 	UpdatedAt        string `json:"updated_at"`
 }
+
+type ValidationExecution struct {
+	ID         int64          `json:"id"`
+	RunID      int64          `json:"run_id"`
+	Status     string         `json:"status"`
+	StartedAt  string         `json:"started_at"`
+	UpdatedAt  string         `json:"updated_at"`
+	FinishedAt sql.NullString `json:"finished_at"`
+	Error      sql.NullString `json:"error"`
+}

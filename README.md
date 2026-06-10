@@ -22,6 +22,8 @@ Relay's intended workflow is:
 9. Store validation stdout/stderr/json artifacts.
 10. Inspect git diff for local changes.
 11. Generate audit handoff for GPT review (includes validation evidence and git diff evidence).
+12. Prepare git commit message suggestion based on handoff, audit, and diff evidence.
+13. Review and manually run `git commit` in the repo (Relay does not commit on your behalf).
 
 Key design points:
 
@@ -38,7 +40,6 @@ The current local-first flow does not yet implement:
 
 - automatic repo-agent execution
 - automatic branch/worktree creation
-- automatic commits
 - automatic validation failure repair
 - automatic diff-based audit / AI audit automation
 
@@ -172,7 +173,7 @@ If RTK is available, Relay or the user may prefer `rtk.exe` first, then `rtk`, t
 
 ## Audit Handoff
 
-When Relay Validation passes or after git diff evidence is collected, Step 7 provides actions to **Inspect Git Diff** and **Generate Audit Handoff**.
+When Relay Validation passes or after git diff evidence is collected, Step 7 provides actions to **Inspect Git Diff**, **Generate Audit Handoff**, and then proceed to **Step 8: Git Commit**.
 
 **Git diff inspection** (`inspect-diff`) runs `git status --short`, `git diff --stat`, `git diff --numstat`, `git diff --name-status`, and `git diff --no-ext-diff --patch` in the selected repo path. All output is stored as run artifacts (`git_status_text`, `git_diff_stat`, `git_diff_numstat`, `git_diff_name_status`, `git_diff_patch`). The inspection does not modify the worktree.
 
@@ -196,7 +197,7 @@ To generate:
 4. View, download, or copy the handoff from Step 7.
 5. Paste the handoff into GPT for review.
 
-After collecting git diff evidence, commit the implementation, re-inspect the diff if needed, and regenerate the audit handoff to include the latest evidence.
+After collecting git diff evidence, proceed to Step 8 to prepare a commit suggestion, then manually commit the implementation, re-inspect the diff if needed, and regenerate the audit handoff to include the latest evidence.
 
 The audit handoff is always available for view/download after generation, even after page reload. Regenerating the audit handoff replaces the previous version so the latest handoff always reflects the most recent evidence.
 
@@ -224,6 +225,9 @@ Diff evidence is displayed inline in Step 7 and included in the audit handoff wh
 | GET    | `/runs/{id}/agent-run-monitor`         | Agent run monitor partial  |
 | GET    | `/runs/{id}/artifacts/{kind}`          | View artifact              |
 | GET    | `/runs/{id}/artifacts/{kind}/download` | Download artifact          |
+| GET    | `/instructions`                        | Instruction assets list    |
+| GET    | `/instructions/{kind}`                 | View instruction asset     |
+| GET    | `/instructions/{kind}/download`        | Download instruction asset |
 | GET    | `/settings/repos`                      | Repository settings        |
 | POST   | `/settings/repos/roots`                | Add scan root              |
 | POST   | `/settings/repos/scan`                 | Scan repos now             |
@@ -247,6 +251,7 @@ Diff evidence is displayed inline in Step 7 and included in the audit handoff wh
 | `run-validation`                      | Implemented                          |
 | `inspect-diff`                        | Implemented                          |
 | `generate-audit-handoff`              | Implemented                          |
+| `prepare-git-commit`                  | Implemented                          |
 | `generate-audit-packet`               | Future                               |
 
 ## Development live reload
@@ -322,7 +327,7 @@ Run detail shows an inline Original Handoff → Agent Prompt hunk diff after the
 
 After handoff creation, Relay automatically runs Intake Review and, when there are no blockers, prepares the Agent Prompt and Agent Packet. The run workbench is then used for review: Intake Review → Agent Prompt → Agent Packet → OpenCode Go Handoff → Agent Run → Relay Validation.
 
-Run detail now surfaces a top-level Next Action card. The seven-step navigation remains available for review/debugging, but the primary workflow is guided by the recommended next action.
+Run detail now surfaces a top-level Next Action card. The eight-step navigation remains available for review/debugging, but the primary workflow is guided by the recommended next action.
 
 After each action completes, Relay redirects to the step where the next decision is most useful:
 
@@ -334,6 +339,7 @@ After each action completes, Relay redirects to the step where the next decision
 - **Agent result** &rarr; Step 6 Relay Validation
 - **Validation run** &rarr; stays on Step 6
 - **Validation pass + audit handoff** &rarr; Step 7 Diff/Audit
+- **Commit suggestion prepared** &rarr; Step 8 Git Commit
 
 The Next Action card updates naturally after each redirect because the server owns state.
 
@@ -351,7 +357,8 @@ Run detail is organized as a guided step-by-step workbench with a single active 
 - **Step 4 — OpenCode Go Handoff**: Shows preflight readiness, OpenCode adapter configuration (binary, model, agent, working directory, command preview), and an explicit "Start OpenCode Go" button. Adapter readiness/blockers are visible at the top of the adapter section. If an execution exists, shows a notice linking to Step 5. Step 4 is handoff/preflight only; execution results appear in Step 5.
 - **Step 5 — Agent Run Monitor**: Shows the running or completed OpenCode execution. Displays command context, terminal-style output transcript, artifact links (stdout, stderr, combined log), and parsed final result (DONE/BLOCKED). Auto-refreshes via HTMX polling while running. When DONE/BLOCKED is parsed, a validation CTA appears. Manual result intake fallback is available and shown more prominently when no result was auto-parsed.
 - **Step 6 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Validation starts asynchronously — clicking **Run Validation Commands** returns immediately and Step 6 auto-refreshes via HTMX polling every 2 seconds while validation runs. Shows real-time progress (current command, completed commands with inline results, elapsed time). Requires an agent result before the validation button is enabled. After completion, shows command-level results with status chips, exit codes, duration, and stdout/stderr indicators for each command. When validation passes, an audit handoff section appears. Stays on this step after run so the user can inspect pass/fail and output links.
-- **Step 7 — Diff/Audit**: Inspect the local git diff/status from the selected repo path and generate the audit handoff. Step 7 provides an "Inspect Git Diff" action that collects git status, diff stat, and patch artifacts. Diff evidence is displayed inline preview and included in the audit handoff. The audit handoff is a compact markdown document intended to be copied into GPT for review. Full AI audit/review is performed by pasting the audit handoff into GPT.
+- **Step 7 — Diff/Audit**: Inspect the local git diff/status from the selected repo path and generate the audit handoff. Step 7 provides an "Inspect Git Diff" action that collects git status, diff stat, and patch artifacts. Diff evidence is displayed inline preview and included in the audit handoff. The audit handoff is a compact markdown document intended to be copied into GPT for review. Full AI audit/review is performed by pasting the audit handoff into GPT. After audit, proceed to Step 8 for commit preparation.
+- **Step 8 — Git Commit**: Prepare a suggested conventional commit message based on the handoff, audit handoff, and git diff evidence. Relay displays the suggested message and a copyable `git add -A && git commit -m "..."` command. Relay does not stage or commit on your behalf. The commit message is deterministic — no external API calls. Commit suggestion artifacts (`commit_message_text`, `commit_suggestion_json`) are created as run artifacts.
 
 Clarifications:
 
@@ -561,7 +568,7 @@ Relay can run validation commands for a run from the selected local repository p
 
 Commands are extracted from the original handoff's Tests / validation section. If no handoff commands are found, Relay falls back to the selected repo's default validation commands.
 
-Validation command execution is user-triggered and runs asynchronously. Clicking **Run Validation Commands** starts validation in the background and immediately redirects to Step 6, which auto-refreshes via HTMX polling every 2 seconds while validation is running.
+Validation command execution is user-triggered and runs asynchronously. Clicking **Run Validation Commands** starts validation in the background and immediately redirects to Step 6, which auto-refreshes via HTMX polling every 2 seconds while validation is running. Relay prevents duplicate validation starts with a DB-backed active execution lock, so rapid or simultaneous clicks cannot launch multiple workers for the same run.
 
 Relay captures stdout, stderr, exit code, duration, and timeout state as run artifacts/checks. Progress is stored as a `validation_progress_json` artifact that updates after each command. Final validation artifacts remain:
 
@@ -595,6 +602,33 @@ The New Handoff page lets you select a discovered repo or use manual repo name/p
 A run can be created from the New Handoff source picker by uploading a `.txt` / `.md` handoff file or switching to Text input to paste the handoff. Upload wins if both upload and text are submitted.
 
 Relay derives the run title from the handoff's first `#` heading. If no H1 heading exists, the run is named `Untitled handoff`.
+
+## Project Structure
+
+## Instruction Assets
+
+Relay exposes canonical project instruction files at `/instructions`:
+
+- **Surgical Chat Instructions** — Canonical handoff structure and rules (`surgical-chat-instructions.txt`)
+- **AGENTS.md** — Canonical agent instructions (`AGENTS.md`)
+- **.clinerules** — Canonical Cline rules (`.clinerules`)
+
+Each asset provides a View link and a Download link with stable filenames. The root `AGENTS.md` and `.clinerules` files are synchronized with the canonical assets. A test verifies they stay in sync.
+
+## Git Commit Step
+
+Step 8: Git Commit is the final workflow step after validation, diff inspection, and audit handoff generation.
+
+1. After validation passes (or validation failure is explicitly accepted), Relay recommends **Inspect Git Diff** in Step 7 if no diff evidence exists.
+2. After diff evidence exists, Relay recommends **Generate Audit Handoff**.
+3. After the audit handoff exists, Relay recommends **Prepare Git Commit**.
+4. After the commit suggestion is prepared, Relay shows Step 8 with a suggested conventional commit message and a copyable command.
+
+Relay does not stage files, does not run `git commit`, and does not execute any git mutating operations.
+
+The commit message is generated deterministically from the original handoff, audit handoff, and git diff evidence. No external API calls are made. The commit suggestion is stored as two artifacts:
+- `commit_message_text` → `commit-message.txt`
+- `commit_suggestion_json` → `commit-suggestion.json`
 
 ## Project Structure
 

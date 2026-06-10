@@ -34,6 +34,8 @@ var allowedKinds = map[string]bool{
 	"git_diff_numstat":           true,
 	"git_diff_patch":             true,
 	"git_diff_name_status":       true,
+	"commit_message_text":        true,
+	"commit_suggestion_json":     true,
 }
 
 func Dir(runID int64) string {

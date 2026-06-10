@@ -17,6 +17,10 @@ const (
 	WorkbenchNextActionMonitorValidation      WorkbenchNextActionKind = "monitor_validation"
 	WorkbenchNextActionReviewValidationOutput WorkbenchNextActionKind = "review_validation_output"
 	WorkbenchNextActionReadyForAudit          WorkbenchNextActionKind = "ready_for_audit"
+	WorkbenchNextActionInspectDiff            WorkbenchNextActionKind = "inspect_diff"
+	WorkbenchNextActionGenerateAuditHandoff   WorkbenchNextActionKind = "generate_audit_handoff"
+	WorkbenchNextActionPrepareGitCommit       WorkbenchNextActionKind = "prepare_git_commit"
+	WorkbenchNextActionReadyToCommit          WorkbenchNextActionKind = "ready_to_commit"
 )
 
 type WorkbenchNextAction struct {
@@ -63,6 +67,14 @@ type WorkbenchNextActionInput struct {
 	ValidationProgressStatus  string
 
 	HasAuditHandoff bool
+
+	HasGitDiffEvidence            bool
+	HasGitStatus                  bool
+	HasGitDiffStat                bool
+	HasGitDiffPatch               bool
+	HasGitDiffNameStatus          bool
+	HasCommitSuggestion           bool
+	ValidationAcceptedWithFailure bool
 }
 
 func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextAction {
@@ -153,7 +165,7 @@ func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextActio
 
 	// If validation has been run, skip CLI/preflight/start checks.
 	if input.HasValidationRun {
-		if input.ValidationFailed {
+		if input.ValidationFailed && !input.ValidationAcceptedWithFailure {
 			return WorkbenchNextAction{
 				Kind:     WorkbenchNextActionReviewValidationOutput,
 				Title:    "Review validation failure",
@@ -162,19 +174,67 @@ func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextActio
 				Severity: "blocked",
 			}
 		}
-		if input.ValidationPassed {
-			action := WorkbenchNextAction{
-				Kind:     WorkbenchNextActionReadyForAudit,
-				Title:    "Ready for audit",
-				Summary:  "Validation passed. Inspect git diff or generate the audit handoff.",
-				Step:     "audit",
+		if input.ValidationPassed || input.ValidationAcceptedWithFailure {
+			// Gate: require diff inspection before audit
+			if !input.HasGitDiffEvidence {
+				action := WorkbenchNextAction{
+					Kind:              WorkbenchNextActionInspectDiff,
+					Title:             "Inspect git diff",
+					Summary:           "Validation passed. Collect git diff evidence before audit.",
+					Step:              "audit",
+					PrimaryFormAction: "inspect-diff",
+					PrimaryAction:     "inspect-diff",
+					Severity:          "ready",
+				}
+				if input.ValidationFailed && input.ValidationAcceptedWithFailure {
+					action.Summary = "Validation failed but accepted. Collect git diff evidence before audit."
+				}
+				return action
+			}
+			// Gate: require audit handoff before commit prep
+			if !input.HasAuditHandoff {
+				action := WorkbenchNextAction{
+					Kind:              WorkbenchNextActionGenerateAuditHandoff,
+					Title:             "Generate audit handoff",
+					Summary:           "Diff evidence collected. Generate the audit handoff for review.",
+					Step:              "audit",
+					PrimaryFormAction: "generate-audit-handoff",
+					PrimaryAction:     "generate-audit-handoff",
+					Severity:          "ready",
+				}
+				if input.ValidationFailed && input.ValidationAcceptedWithFailure {
+					action.Summary = "Diff evidence collected. Generate audit handoff (validation failed but accepted)."
+				}
+				return action
+			}
+			// Audit handoff exists: gate commit prep
+			if !input.HasCommitSuggestion {
+				action := WorkbenchNextAction{
+					Kind:              WorkbenchNextActionPrepareGitCommit,
+					Title:             "Prepare Git Commit",
+					Summary:           "Audit handoff ready. Prepare a suggested commit message.",
+					Step:              "commit",
+					PrimaryFormAction: "prepare-git-commit",
+					PrimaryAction:     "prepare-git-commit",
+					Severity:          "ready",
+				}
+				if input.ValidationFailed && input.ValidationAcceptedWithFailure {
+					action.Summary = "Audit handoff ready. Prepare commit suggestion (validation failed but accepted)."
+				}
+				return action
+			}
+			// Commit suggestion exists: ready to commit
+			summary := "Review the suggested commit message, then run git add and git commit manually."
+			if input.ValidationFailed && input.ValidationAcceptedWithFailure {
+				summary = "Validation failed but accepted. Review the suggested commit message, then commit manually."
+			}
+			return WorkbenchNextAction{
+				Kind:     WorkbenchNextActionReadyToCommit,
+				Title:    "Ready to commit",
+				Summary:  summary,
+				Step:     "commit",
 				Severity: "done",
 			}
-			if !input.HasAuditHandoff {
-				action.PrimaryFormAction = "generate-audit-handoff"
-				action.PrimaryAction = "generate-audit-handoff"
-			}
-			return action
 		}
 	}
 

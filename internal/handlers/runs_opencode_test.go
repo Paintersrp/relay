@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1112,6 +1113,18 @@ DONE or BLOCKED
 	if !strings.Contains(loc, "?step=validation") {
 		t.Fatalf("expected redirect to step=validation, got %s", loc)
 	}
+
+	// DB-backed execution should exist in starting/running state
+	exec, err := s.GetActiveValidationExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get active execution: %v", err)
+	}
+	if exec == nil {
+		t.Fatal("expected a DB-backed validation execution to exist")
+	}
+	if exec.Status != "starting" && exec.Status != "running" {
+		t.Errorf("expected execution status starting or running, got %s", exec.Status)
+	}
 }
 
 func TestStartValidationRedirectsImmediately(t *testing.T) {
@@ -1179,6 +1192,15 @@ DONE or BLOCKED
 	}
 	if vp.TotalCommands != 1 {
 		t.Errorf("expected 1 total command, got %d", vp.TotalCommands)
+	}
+
+	// Check DB-backed execution was finalized
+	exec, err := s.GetActiveValidationExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get active execution: %v", err)
+	}
+	if exec != nil {
+		t.Errorf("expected no active execution after worker completed, got status %s", exec.Status)
 	}
 }
 
@@ -1259,6 +1281,26 @@ DONE or BLOCKED
 	if !hasRunCheck {
 		t.Error("expected validation_run check to exist")
 	}
+
+	// Check DB execution was finalized (pass or fail)
+	execs, err := s.DB().Query("SELECT status FROM validation_executions WHERE run_id = ?", runID)
+	if err != nil {
+		t.Fatalf("query executions: %v", err)
+	}
+	defer execs.Close()
+	hasFinal := false
+	for execs.Next() {
+		var status string
+		if err := execs.Scan(&status); err != nil {
+			t.Fatalf("scan status: %v", err)
+		}
+		if status == "pass" || status == "fail" || status == "error" {
+			hasFinal = true
+		}
+	}
+	if !hasFinal {
+		t.Error("expected DB execution to have terminal status (pass/fail/error)")
+	}
 }
 
 func TestStartValidationDoesNotDoubleStart(t *testing.T) {
@@ -1276,25 +1318,11 @@ go version
 		"README.md": "# repo",
 	})
 
-	// Seed progress artifact as running
-	progress := pipeline.ValidationProgress{
-		Status:         "running",
-		RepoPath:       "",
-		StartedAt:      "2026-01-01T00:00:00Z",
-		UpdatedAt:      "2026-01-01T00:00:01Z",
-		FinishedAt:     "",
-		CurrentIndex:   1,
-		CurrentCommand: "go version",
-		TotalCommands:  1,
-		Commands:       nil,
-		Error:          "",
-	}
-	progressData, _ := json.MarshalIndent(progress, "", "  ")
-	path, err := artifacts.Write(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"), progressData)
-	if err != nil {
-		t.Fatalf("write seed progress: %v", err)
-	}
-	s.CreateArtifact(runID, "validation_progress_json", path, "application/json")
+	// Seed an active DB-backed validation execution (not stale)
+	s.DB().Exec(
+		`INSERT INTO validation_executions (run_id, status, started_at, updated_at) VALUES (?, 'running', datetime('now'), datetime('now'))`,
+		runID,
+	)
 
 	launchCount := 0
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
@@ -1362,6 +1390,15 @@ go version
 	initPath, _ := artifacts.Write(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"), initData)
 	s.CreateArtifact(runID, "validation_progress_json", initPath, "application/json")
 
+	// Create a DB-backed execution (as startValidation would)
+	execID, acquired, err := s.TryCreateValidationExecution(runID)
+	if err != nil {
+		t.Fatalf("try create validation execution: %v", err)
+	}
+	if !acquired {
+		t.Fatal("expected to acquire execution")
+	}
+
 	writeProgress := func(p pipeline.ValidationProgress) {
 		data, _ := json.MarshalIndent(p, "", "  ")
 		h.store.DeleteArtifactsByRunKind(runID, "validation_progress_json")
@@ -1371,7 +1408,7 @@ go version
 		}
 	}
 
-	h.executeValidation(runID, repo.Path, commands, writeProgress)
+	h.executeValidation(runID, execID, repo.Path, commands, writeProgress)
 
 	// Verify progress final status is not stuck running
 	progressData, err := artifacts.Read(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"))
@@ -1390,6 +1427,305 @@ go version
 	}
 	if finalProgress.Status != "pass" && finalProgress.Status != "fail" {
 		t.Errorf("expected pass or fail, got %s", finalProgress.Status)
+	}
+}
+
+func TestStartValidationAcquiresExecutionLockAndRedirectsImmediately(t *testing.T) {
+	s := setupTestStore(t)
+
+	handoffText := `# Test
+
+## Goal
+Test
+
+## Scope
+- README.md
+
+## Tests / validation
+
+` + "```bash" + `
+go version
+` + "```" + `
+
+## Output
+DONE or BLOCKED
+`
+	runID := newTestHandoffWithRepoFiles(t, s, handoffText, map[string]string{
+		"README.md": "# repo",
+	})
+
+	launchRecorded := false
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchValidation = func(fn func()) {
+		launchRecorded = true
+		// Do NOT run the worker — just record the launch
+	}
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.startValidation(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=validation") {
+		t.Fatalf("expected redirect to step=validation, got %s", loc)
+	}
+
+	if !launchRecorded {
+		t.Fatal("expected worker launch to be recorded")
+	}
+
+	// DB-backed execution should exist
+	exec, err := s.GetActiveValidationExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get active execution: %v", err)
+	}
+	if exec == nil {
+		t.Fatal("expected a DB-backed validation execution to exist")
+	}
+	if exec.Status != "starting" && exec.Status != "running" {
+		t.Errorf("expected execution status starting or running, got %s", exec.Status)
+	}
+
+	// Progress artifact should exist
+	progressData, err := artifacts.Read(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"))
+	if err != nil {
+		t.Fatalf("read validation progress: %v", err)
+	}
+	if len(progressData) == 0 {
+		t.Fatal("expected validation_progress_json to exist")
+	}
+}
+
+func TestStartValidationConcurrentDoubleStartLaunchesOnce(t *testing.T) {
+	s := setupTestStore(t)
+
+	handoffText := `# Test
+
+## Goal
+Test
+
+## Scope
+- README.md
+
+## Tests / validation
+
+` + "```bash" + `
+go version
+` + "```" + `
+
+## Output
+DONE or BLOCKED
+`
+	runID := newTestHandoffWithRepoFiles(t, s, handoffText, map[string]string{
+		"README.md": "# repo",
+	})
+
+	launchCount := 0
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchValidation = func(fn func()) {
+		launchCount++
+	}
+
+	// First call
+	req1 := httptest.NewRequest("POST", "/", nil)
+	w1 := httptest.NewRecorder()
+	h.startValidation(w1, req1, runID)
+
+	if w1.Code != 303 {
+		t.Fatalf("first call expected 303, got %d", w1.Code)
+	}
+
+	// Second call (simulating rapid duplicate)
+	req2 := httptest.NewRequest("POST", "/", nil)
+	w2 := httptest.NewRecorder()
+	h.startValidation(w2, req2, runID)
+
+	if w2.Code != 303 {
+		t.Fatalf("second call expected 303, got %d", w2.Code)
+	}
+
+	if launchCount != 1 {
+		t.Errorf("expected exactly 1 worker launch, got %d", launchCount)
+	}
+}
+
+func TestStartValidationActiveExecutionBlocksEvenWithoutProgressArtifact(t *testing.T) {
+	s := setupTestStore(t)
+
+	handoffText := `# Test
+
+## Goal
+Test
+
+## Scope
+- README.md
+
+## Tests / validation
+
+` + "```bash" + `
+go version
+` + "```" + `
+
+## Output
+DONE or BLOCKED
+`
+	runID := newTestHandoffWithRepoFiles(t, s, handoffText, map[string]string{
+		"README.md": "# repo",
+	})
+
+	// Seed an active DB-backed validation execution WITHOUT progress artifact
+	s.DB().Exec(
+		`INSERT INTO validation_executions (run_id, status, started_at, updated_at) VALUES (?, 'running', datetime('now'), datetime('now'))`,
+		runID,
+	)
+
+	launchCount := 0
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchValidation = func(fn func()) {
+		launchCount++
+	}
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.startValidation(w, req, runID)
+
+	if launchCount != 0 {
+		t.Errorf("expected 0 worker launches (active DB execution blocked), got %d", launchCount)
+	}
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=validation") {
+		t.Fatalf("expected redirect to step=validation, got %s", loc)
+	}
+}
+
+func TestValidationWorkerFinalizesExecutionOnPanic(t *testing.T) {
+	s := setupTestStore(t)
+
+	handoffText := `# Test
+
+## Goal
+Test
+
+## Scope
+- README.md
+
+## Tests / validation
+
+` + "```bash" + `
+go version
+` + "```" + `
+
+## Output
+DONE or BLOCKED
+`
+	runID := newTestHandoffWithRepoFiles(t, s, handoffText, map[string]string{
+		"README.md": "# repo",
+	})
+
+	// Create a DB execution and progress artifact (as startValidation would)
+	execID, acquired, err := s.TryCreateValidationExecution(runID)
+	if err != nil {
+		t.Fatalf("try create execution: %v", err)
+	}
+	if !acquired {
+		t.Fatal("expected to acquire execution")
+	}
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	repo, err := s.GetRepo(run.RepoID)
+	if err != nil {
+		t.Fatalf("get repo: %v", err)
+	}
+	handoffData, _ := artifacts.Read(runID, "original_handoff", pipeline.ArtifactFilename("original_handoff"))
+	commands := pipeline.ExtractValidationCommands(string(handoffData), "")
+
+	initialProgress := pipeline.NewValidationProgress(repo.Path, len(commands))
+	initData, _ := json.MarshalIndent(initialProgress, "", "  ")
+	initPath, _ := artifacts.Write(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"), initData)
+	s.CreateArtifact(runID, "validation_progress_json", initPath, "application/json")
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchValidation = func(fn func()) { fn() }
+
+	// writeProgress that panics only once to simulate a worker panic
+	// (the defer recovery will call writeProgress again, which must succeed)
+	var panicOnce sync.Once
+	writeProgress := func(p pipeline.ValidationProgress) {
+		panicOnce.Do(func() {
+			panic("simulated worker panic")
+		})
+		data, _ := json.MarshalIndent(p, "", "  ")
+		h.store.DeleteArtifactsByRunKind(runID, "validation_progress_json")
+		pth, _ := artifacts.Write(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"), data)
+		if pth != "" {
+			s.CreateArtifact(runID, "validation_progress_json", pth, "application/json")
+		}
+	}
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Log("panic caught by executeValidation defer as expected")
+			}
+		}()
+		h.executeValidation(runID, execID, repo.Path, commands, writeProgress)
+	}()
+
+	// After the panic, the DB execution should be finalized as 'error'
+	exec, err := s.GetActiveValidationExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get active execution: %v", err)
+	}
+	if exec != nil {
+		t.Errorf("expected no active execution after panic, got status %s", exec.Status)
+	}
+
+	// The old execution should now be in 'error' state
+	var errStatus string
+	err = s.DB().QueryRow("SELECT status FROM validation_executions WHERE id = ?", execID).Scan(&errStatus)
+	if err != nil {
+		t.Fatalf("query execution status: %v", err)
+	}
+	if errStatus != "error" {
+		t.Errorf("expected execution status error after panic, got %s", errStatus)
+	}
+
+	// Progress should be marked as error
+	progressData, err := artifacts.Read(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"))
+	if err != nil {
+		t.Fatalf("read progress: %v", err)
+	}
+	var vp pipeline.ValidationProgress
+	if err := json.Unmarshal(progressData, &vp); err != nil {
+		t.Fatalf("unmarshal progress: %v", err)
+	}
+	if vp.Status != "error" {
+		t.Errorf("expected progress status error after panic, got %s", vp.Status)
+	}
+
+	// A subsequent startValidation should succeed (can acquire new execution)
+	launchCount := 0
+	h2 := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h2.launchValidation = func(fn func()) {
+		launchCount++
+	}
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h2.startValidation(w, req, runID)
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect after retry, got %d", w.Code)
+	}
+	if launchCount != 1 {
+		t.Errorf("expected 1 worker launch after retry, got %d", launchCount)
 	}
 }
 

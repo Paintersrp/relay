@@ -37,6 +37,11 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	r.Get("/runs/{id}/artifacts/{kind}", artifactsH.View)
 	r.Get("/runs/{id}/artifacts/{kind}/download", artifactsH.Download)
 
+	instructionH := handlers.NewInstructionsHandler()
+	r.Get("/instructions", instructionH.List)
+	r.Get("/instructions/{kind}", instructionH.View)
+	r.Get("/instructions/{kind}/download", instructionH.Download)
+
 	repoSettings := handlers.NewRepoSettingsHandler(s, rs, log)
 	r.Get("/settings/repos", repoSettings.Get)
 	r.Post("/settings/repos/roots", repoSettings.AddRoot)

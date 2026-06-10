@@ -37,6 +37,10 @@ templ StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center opacity-50", stepNavClass(activeStep, "audit") }>
 				7 Audit
 			</a>
+			<a href={"/runs/" + Itoa(run.ID) + "?step=commit"}
+				class={ "px-2.5 sm:px-3 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[36px] inline-flex items-center opacity-50", stepNavClass(activeStep, "commit") }>
+				8 Commit
+			</a>
 		</nav>
 	</div>
 
@@ -56,6 +60,8 @@ templ StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 		@RelayValidationStepPanel(run, artifacts, checks, previews)
 	case "audit":
 		@DiffAuditStepPanel(previews, run.ID)
+	case "commit":
+		@GitCommitStepPanel(run, artifacts, previews)
 	default:
 		@IntakeStepPanel(run, repo, artifacts, checks, intakeReview, previews)
 	}
@@ -1329,7 +1335,7 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 		<div class="relay-card-header">
 			<div class="min-w-0">
 				<h3 class="font-medium text-base sm:text-lg">Step 7: Diff / Audit</h3>
-				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Inspect git diff and generate the audit handoff for GPT review.</p>
+				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Inspect git diff and generate the audit handoff for GPT review. Proceed to Step 8 when ready to commit.</p>
 			</div>
 			if previews.HasAuditHandoff {
 				<span class="relay-chip-green text-xs">ready</span>
@@ -1462,18 +1468,123 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 				</form>
 			</div>
 
-			if previews.RepoPath != "" {
-				<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4">
-					<div class="text-sm font-medium text-gray-200 mb-2">Commit before audit</div>
-					<p class="text-xs text-gray-500 mb-2">
-						Relay does not commit automatically. Run these commands in the repo after reviewing the diff, then regenerate the audit handoff so GPT can audit the committed state.
+		</div>
+	</div>
+}
+
+templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews RunPreviews) {
+	<div class="relay-card">
+		<div class="relay-card-header">
+			<div class="min-w-0">
+				<h3 class="font-medium text-base sm:text-lg">Step 8: Git Commit</h3>
+				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Review the suggested commit message and run the commit command manually. Relay does not commit on your behalf.</p>
+			</div>
+			if previews.HasCommitSuggestion {
+				<span class="relay-chip-green text-xs">ready</span>
+			} else {
+				<span class="relay-chip-gray text-xs">pending</span>
+			}
+		</div>
+		<div class="px-4 pb-4 space-y-3">
+			if !previews.HasGitStatus && !previews.HasGitDiffStat {
+				<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-3 sm:p-4">
+					<div class="text-sm font-medium text-yellow-300">Git diff not inspected</div>
+					<p class="mt-1 text-xs text-yellow-200">
+						Run Inspect Git Diff in Step 7 before preparing the commit suggestion.
 					</p>
-					<div class="text-xs text-gray-400 mb-1">Repo path: <span class="text-gray-300 font-mono">{ previews.RepoPath }</span></div>
-					<textarea readonly rows="6"
+					<a href={"/runs/" + Itoa(run.ID) + "?step=audit"}
+						class="mt-2 inline-block btn-primary text-xs sm:text-sm">
+						Go to Step 7: Diff / Audit
+					</a>
+				</div>
+			} else if !previews.HasAuditHandoff {
+				<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-3 sm:p-4">
+					<div class="text-sm font-medium text-yellow-300">Audit handoff not generated</div>
+					<p class="mt-1 text-xs text-yellow-200">
+						Generate the audit handoff in Step 7 before preparing the commit suggestion.
+					</p>
+					<a href={"/runs/" + Itoa(run.ID) + "?step=audit"}
+						class="mt-2 inline-block btn-primary text-xs sm:text-sm">
+						Go to Step 7: Diff / Audit
+					</a>
+				</div>
+			} else if previews.ValidationFailedAccepted {
+				<div class="rounded-xl border border-red-900/60 bg-red-950/30 p-3 sm:p-4">
+					<div class="text-sm font-medium text-red-300">Validation failed (accepted)</div>
+					<p class="mt-1 text-xs text-red-200">
+						Validation failed but you accepted proceeding. Review changes carefully before committing.
+					</p>
+				</div>
+			}
+
+			if !previews.HasCommitSuggestion && previews.HasGitStatus && previews.HasAuditHandoff {
+				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+					hx-target="body" hx-swap="outerHTML"
+					class="inline">
+					<input type="hidden" name="action" value="prepare-git-commit"/>
+					<button type="submit"
+						class="btn-primary text-xs sm:text-sm">
+						Prepare Git Commit
+					</button>
+				</form>
+				<p class="text-xs text-gray-500 mt-2">
+					Reviews the handoff, audit handoff, and git diff evidence, then generates a suggested commit message.
+				</p>
+			}
+
+			if previews.HasCommitSuggestion && previews.CommitMessage != "" {
+				<div class="rounded-xl border border-green-900/60 bg-green-950/30 p-3 sm:p-4">
+					<div class="text-sm font-medium text-green-300">Suggested commit message</div>
+					<div class="mt-2">
+						<textarea readonly rows="2"
+							class="w-full text-xs font-mono bg-gray-950 border border-gray-700 rounded-lg p-2 text-gray-300 select-all min-w-0 resize-y"
+							onclick="this.select()">{ previews.CommitMessage }</textarea>
+					</div>
+				</div>
+
+				<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4">
+					<div class="text-sm font-medium text-gray-200 mb-2">Manual commit command</div>
+					<p class="text-xs text-gray-500 mb-2">
+						Review the changes and run this command in the repo to commit:
+					</p>
+					if previews.RepoPath != "" {
+						<div class="text-xs text-gray-400 mb-1">Repo path: <span class="text-gray-300 font-mono">{ previews.RepoPath }</span></div>
+					}
+					<textarea readonly rows="4"
 						class="w-full text-xs font-mono bg-gray-950 border border-gray-700 rounded-lg p-2 text-gray-300 select-all min-w-0 resize-y"
-						onclick="this.select()">git status --short
-git add -A
-git commit -m "{ previews.SuggestedCommitMessage }"</textarea>
+						onclick="this.select()">git add -A
+git commit -m "{ previews.CommitMessage }"</textarea>
+				</div>
+
+				if previews.GitChangedFileCount > 0 {
+					<div class="text-xs text-gray-500">
+						Changed files: { Itoa(previews.GitChangedFileCount) }
+					</div>
+				}
+				if previews.GitDiffSummary != "" {
+					<div class="text-xs text-gray-500 whitespace-pre-wrap break-words">Diff summary: { previews.GitDiffSummary }</div>
+				}
+
+				<div class="pt-3 border-t border-gray-800 relay-action-row">
+					if previews.HasGitStatus {
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/git_status_text"}
+							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View git status</a>
+					}
+					if previews.HasGitDiffStat {
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/git_diff_stat"}
+							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View diff stat</a>
+					}
+					if previews.HasGitDiffPatch {
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/git_diff_patch"}
+							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View patch</a>
+					}
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/audit_handoff"}
+						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View audit handoff</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/commit_message_text"}
+						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View commit message</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/commit_suggestion_json"}
+						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View commit JSON</a>
 				</div>
 			}
 		</div>

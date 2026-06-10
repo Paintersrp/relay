@@ -389,14 +389,14 @@ func TestNextAction_ValidationPassedNoCLICheck(t *testing.T) {
 		ValidationFailed:      false,
 	}
 	action := BuildWorkbenchNextAction(input)
-	if action.Kind != WorkbenchNextActionReadyForAudit {
-		t.Errorf("expected ready_for_audit, got %s (should not fall back to CLI check)", action.Kind)
+	if action.Kind != WorkbenchNextActionInspectDiff {
+		t.Errorf("expected inspect_diff, got %s (should not skip to ready_for_audit)", action.Kind)
 	}
-	if action.Severity != "done" {
-		t.Errorf("expected done severity, got %s", action.Severity)
+	if action.Severity != "ready" {
+		t.Errorf("expected ready severity, got %s", action.Severity)
 	}
-	if action.PrimaryFormAction != "generate-audit-handoff" {
-		t.Errorf("expected generate-audit-handoff form action, got %s", action.PrimaryFormAction)
+	if action.PrimaryFormAction != "inspect-diff" {
+		t.Errorf("expected inspect-diff form action, got %s", action.PrimaryFormAction)
 	}
 }
 
@@ -436,14 +436,15 @@ func TestNextAction_ValidationPassedWithAuditHandoff(t *testing.T) {
 		HasValidationRun:      true,
 		ValidationPassed:      true,
 		ValidationFailed:      false,
+		HasGitDiffEvidence:    true,
 		HasAuditHandoff:       true,
 	}
 	action := BuildWorkbenchNextAction(input)
-	if action.Kind != WorkbenchNextActionReadyForAudit {
-		t.Errorf("expected ready_for_audit, got %s", action.Kind)
+	if action.Kind != WorkbenchNextActionPrepareGitCommit {
+		t.Errorf("expected prepare_git_commit, got %s", action.Kind)
 	}
-	if action.PrimaryFormAction != "" {
-		t.Errorf("expected no primary form action when audit handoff exists, got %s", action.PrimaryFormAction)
+	if action.PrimaryFormAction != "prepare-git-commit" {
+		t.Errorf("expected prepare-git-commit form action, got %s", action.PrimaryFormAction)
 	}
 }
 
@@ -487,11 +488,11 @@ func TestNextAction_ValidationPassed(t *testing.T) {
 		ValidationFailed:       false,
 	}
 	action := BuildWorkbenchNextAction(input)
-	if action.Kind != WorkbenchNextActionReadyForAudit {
-		t.Errorf("expected ready_for_audit, got %s", action.Kind)
+	if action.Kind != WorkbenchNextActionInspectDiff {
+		t.Errorf("expected inspect_diff, got %s", action.Kind)
 	}
-	if action.Severity != "done" {
-		t.Errorf("expected done severity, got %s", action.Severity)
+	if action.Severity != "ready" {
+		t.Errorf("expected ready severity, got %s", action.Severity)
 	}
 }
 
@@ -583,11 +584,11 @@ func TestNextAction_ValidationPassedStillReadyForAudit(t *testing.T) {
 		ValidationProgressStatus:  "pass",
 	}
 	action := BuildWorkbenchNextAction(input)
-	if action.Kind != WorkbenchNextActionReadyForAudit {
-		t.Errorf("expected ready_for_audit after validation passed, got %s", action.Kind)
+	if action.Kind != WorkbenchNextActionInspectDiff {
+		t.Errorf("expected inspect_diff after validation passed, got %s", action.Kind)
 	}
-	if action.Severity != "done" {
-		t.Errorf("expected done severity, got %s", action.Severity)
+	if action.Severity != "ready" {
+		t.Errorf("expected ready severity, got %s", action.Severity)
 	}
 }
 
@@ -610,5 +611,148 @@ func TestNextAction_Fallback(t *testing.T) {
 	}
 	if action.Severity != "neutral" {
 		t.Errorf("expected neutral severity, got %s", action.Severity)
+	}
+}
+
+func TestNextAction_ValidationPassedNeedsDiffInspection(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:     true,
+		HasAgentPrompt:         true,
+		HasAgentPacket:         true,
+		HasOpenCodeCLICheck:    true,
+		OpenCodeCLICheckStatus: "pass",
+		HasOpenCodeDryRun:      true,
+		HasOpenCodeExecution:   true,
+		HasAgentResult:         true,
+		HasValidationCommands:  true,
+		HasValidationRun:       true,
+		ValidationPassed:       true,
+		ValidationFailed:       false,
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionInspectDiff {
+		t.Errorf("expected inspect_diff, got %s", action.Kind)
+	}
+	if action.PrimaryFormAction != "inspect-diff" {
+		t.Errorf("expected inspect-diff form action, got %s", action.PrimaryFormAction)
+	}
+	if action.Step != "audit" {
+		t.Errorf("expected step audit, got %s", action.Step)
+	}
+}
+
+func TestNextAction_DiffInspectedNeedsAuditHandoff(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:     true,
+		HasAgentPrompt:         true,
+		HasAgentPacket:         true,
+		HasOpenCodeCLICheck:    true,
+		OpenCodeCLICheckStatus: "pass",
+		HasOpenCodeDryRun:      true,
+		HasOpenCodeExecution:   true,
+		HasAgentResult:         true,
+		HasValidationCommands:  true,
+		HasValidationRun:       true,
+		ValidationPassed:       true,
+		ValidationFailed:       false,
+		HasGitDiffEvidence:     true,
+		HasAuditHandoff:        false,
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionGenerateAuditHandoff {
+		t.Errorf("expected generate_audit_handoff, got %s", action.Kind)
+	}
+	if action.PrimaryFormAction != "generate-audit-handoff" {
+		t.Errorf("expected generate-audit-handoff form action, got %s", action.PrimaryFormAction)
+	}
+	if action.Step != "audit" {
+		t.Errorf("expected step audit, got %s", action.Step)
+	}
+}
+
+func TestNextAction_AuditHandoffNeedsCommitPreparation(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:     true,
+		HasAgentPrompt:         true,
+		HasAgentPacket:         true,
+		HasOpenCodeCLICheck:    true,
+		OpenCodeCLICheckStatus: "pass",
+		HasOpenCodeDryRun:      true,
+		HasOpenCodeExecution:   true,
+		HasAgentResult:         true,
+		HasValidationCommands:  true,
+		HasValidationRun:       true,
+		ValidationPassed:       true,
+		ValidationFailed:       false,
+		HasGitDiffEvidence:     true,
+		HasAuditHandoff:        true,
+		HasCommitSuggestion:    false,
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionPrepareGitCommit {
+		t.Errorf("expected prepare_git_commit, got %s", action.Kind)
+	}
+	if action.PrimaryFormAction != "prepare-git-commit" {
+		t.Errorf("expected prepare-git-commit form action, got %s", action.PrimaryFormAction)
+	}
+	if action.Step != "commit" {
+		t.Errorf("expected step commit, got %s", action.Step)
+	}
+}
+
+func TestNextAction_CommitSuggestionReady(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:     true,
+		HasAgentPrompt:         true,
+		HasAgentPacket:         true,
+		HasOpenCodeCLICheck:    true,
+		OpenCodeCLICheckStatus: "pass",
+		HasOpenCodeDryRun:      true,
+		HasOpenCodeExecution:   true,
+		HasAgentResult:         true,
+		HasValidationCommands:  true,
+		HasValidationRun:       true,
+		ValidationPassed:       true,
+		ValidationFailed:       false,
+		HasGitDiffEvidence:     true,
+		HasAuditHandoff:        true,
+		HasCommitSuggestion:    true,
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionReadyToCommit {
+		t.Errorf("expected ready_to_commit, got %s", action.Kind)
+	}
+	if action.Severity != "done" {
+		t.Errorf("expected done severity, got %s", action.Severity)
+	}
+	if action.Step != "commit" {
+		t.Errorf("expected step commit, got %s", action.Step)
+	}
+}
+
+func TestNextAction_ValidationAcceptedFailureBlockedByDiff(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:            true,
+		HasAgentPrompt:                true,
+		HasAgentPacket:                true,
+		HasOpenCodeCLICheck:           true,
+		OpenCodeCLICheckStatus:        "pass",
+		HasOpenCodeDryRun:             true,
+		HasOpenCodeExecution:          true,
+		HasAgentResult:                true,
+		HasValidationCommands:         true,
+		HasValidationRun:              true,
+		ValidationPassed:              false,
+		ValidationFailed:              true,
+		ValidationAcceptedWithFailure: true,
+		HasGitDiffEvidence:            false,
+		HasAuditHandoff:               false,
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionInspectDiff {
+		t.Errorf("expected inspect_diff, got %s", action.Kind)
+	}
+	if action.Severity != "ready" {
+		t.Errorf("expected ready severity, got %s", action.Severity)
 	}
 }

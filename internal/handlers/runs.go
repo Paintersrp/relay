@@ -336,10 +336,12 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	// Compute git diff evidence preview
 	gitStatusPreview := readArtifactPreview(id, "git_status_text")
 	hasGitStatus := gitStatusPreview != ""
+	hasGitDiffNameStatus := hasArtifactKind(artifactsList, "git_diff_name_status")
 	gitDiffStatPreview := readArtifactPreview(id, "git_diff_stat")
 	hasGitDiffStat := gitDiffStatPreview != ""
 	gitDiffPatchPreview := readArtifactPreview(id, "git_diff_patch")
 	hasGitDiffPatch := gitDiffPatchPreview != ""
+	hasGitDiffEvidence := hasGitStatus || hasGitDiffStat || hasGitDiffPatch || hasGitDiffNameStatus
 	gitDiffSummary := ""
 	gitChangedFileCount := int64(0)
 	if gitDiffStatPreview != "" {
@@ -376,6 +378,27 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Compute commit suggestion preview
+	commitMessagePreview := readArtifactPreview(id, "commit_message_text")
+	commitSuggestionJSONStr := readArtifactPreview(id, "commit_suggestion_json")
+	hasCommitSuggestion := commitMessagePreview != "" || hasArtifactKind(artifactsList, "commit_message_text")
+	commitSuggestionStatus := ""
+	commitSuggestionGeneratedAt := ""
+	if commitSuggestionJSONStr != "" {
+		var cs struct {
+			Status      string `json:"status"`
+			Message     string `json:"message"`
+			GeneratedAt string `json:"generated_at"`
+		}
+		if err := json.Unmarshal([]byte(commitSuggestionJSONStr), &cs); err == nil {
+			commitSuggestionStatus = cs.Status
+			commitSuggestionGeneratedAt = cs.GeneratedAt
+			if commitMessagePreview == "" {
+				commitMessagePreview = cs.Message
+			}
+		}
+	}
+
 	// Compute next action
 	hasIntakeReview := len(intakeReview.Warnings) > 0 || len(intakeReview.Blockers) > 0 || originalPreview != ""
 	hasAgentResult := hasArtifactKind(artifactsList, "agent_result_raw")
@@ -394,30 +417,37 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	validationProgressStatus := validationProgressPreview.Status
 
 	nextActionInput := pipeline.WorkbenchNextActionInput{
-		HasOriginalHandoff:          originalPreview != "" || hasArtifactKind(artifactsList, "original_handoff"),
-		HasIntakeReview:             hasIntakeReview,
-		IntakeHasBlockers:           len(intakeReview.Blockers) > 0,
-		IntakeHasWarnings:           len(intakeReview.Warnings) > 0,
-		HasIntakeRemediationHandoff: hasIntakeRemediationHandoff,
-		HasAgentPrompt:              hasArtifactKind(artifactsList, "agent_prompt"),
-		HasAgentPacket:              hasArtifactKind(artifactsList, "opencode_handoff_packet"),
-		HandoffPreflightStatus:      preflightStatus,
-		OpenCodeAdapterError:        openCodeAdapterError,
-		HasOpenCodeCLICheck:         hasCLICheck,
-		OpenCodeCLICheckStatus:      cliCheckStatus,
-		HasOpenCodeDryRun:           dryRunPreview != "",
-		HasOpenCodeExecution:        hasOpenCodeExecution,
-		OpenCodeExecutionStatus:     openCodeExecStatus,
-		HasAgentResult:              hasAgentResult,
-		AgentResultStatus:           agentResultStatus,
-		HasValidationCommands:       hasValidationCommands,
-		HasValidationRun:            hasValidationRun,
-		ValidationPassed:            validationPassed,
-		ValidationFailed:            validationFailed,
-		HasValidationProgress:       hasValidationProgress,
-		ValidationProgressRunning:   validationProgressRunning,
-		ValidationProgressStatus:    validationProgressStatus,
-		HasAuditHandoff:             hasAuditHandoff,
+		HasOriginalHandoff:            originalPreview != "" || hasArtifactKind(artifactsList, "original_handoff"),
+		HasIntakeReview:               hasIntakeReview,
+		IntakeHasBlockers:             len(intakeReview.Blockers) > 0,
+		IntakeHasWarnings:             len(intakeReview.Warnings) > 0,
+		HasIntakeRemediationHandoff:   hasIntakeRemediationHandoff,
+		HasAgentPrompt:                hasArtifactKind(artifactsList, "agent_prompt"),
+		HasAgentPacket:                hasArtifactKind(artifactsList, "opencode_handoff_packet"),
+		HandoffPreflightStatus:        preflightStatus,
+		OpenCodeAdapterError:          openCodeAdapterError,
+		HasOpenCodeCLICheck:           hasCLICheck,
+		OpenCodeCLICheckStatus:        cliCheckStatus,
+		HasOpenCodeDryRun:             dryRunPreview != "",
+		HasOpenCodeExecution:          hasOpenCodeExecution,
+		OpenCodeExecutionStatus:       openCodeExecStatus,
+		HasAgentResult:                hasAgentResult,
+		AgentResultStatus:             agentResultStatus,
+		HasValidationCommands:         hasValidationCommands,
+		HasValidationRun:              hasValidationRun,
+		ValidationPassed:              validationPassed,
+		ValidationFailed:              validationFailed,
+		HasValidationProgress:         hasValidationProgress,
+		ValidationProgressRunning:     validationProgressRunning,
+		ValidationProgressStatus:      validationProgressStatus,
+		HasAuditHandoff:               hasAuditHandoff,
+		HasGitDiffEvidence:            hasGitDiffEvidence,
+		HasGitStatus:                  hasGitStatus,
+		HasGitDiffStat:                hasGitDiffStat,
+		HasGitDiffPatch:               hasGitDiffPatch,
+		HasGitDiffNameStatus:          hasGitDiffNameStatus,
+		HasCommitSuggestion:           hasCommitSuggestion,
+		ValidationAcceptedWithFailure: false,
 	}
 
 	nextAction := pipeline.BuildWorkbenchNextAction(nextActionInput)
@@ -496,7 +526,12 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		HasAuditHandoff:                 hasAuditHandoff,
 		AuditHandoff:                    auditHandoffPreview,
 		RepoPath:                        previewsRepoPath,
-		SuggestedCommitMessage:          "feat: add audit diff evidence collection",
+		SuggestedCommitMessage:          commitMessagePreview,
+		HasCommitSuggestion:             hasCommitSuggestion,
+		CommitMessage:                   commitMessagePreview,
+		CommitSuggestionJSON:            commitSuggestionJSONStr,
+		CommitSuggestionStatus:          commitSuggestionStatus,
+		CommitSuggestionGeneratedAt:     commitSuggestionGeneratedAt,
 		HasGitStatus:                    hasGitStatus,
 		GitStatusPreview:                gitStatusPreview,
 		HasGitDiffStat:                  hasGitDiffStat,
@@ -573,6 +608,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.generateIntakeRemediationHandoff(w, r, id)
 	case "replace-original-handoff":
 		h.replaceOriginalHandoff(w, r, id)
+	case "prepare-git-commit":
+		h.prepareGitCommit(w, r, id)
 	default:
 		http.Error(w, "unknown action", http.StatusBadRequest)
 	}
@@ -1166,15 +1203,31 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 		return
 	}
 
-	// Check if validation is already running
-	existingProgress := readArtifactPreview(runID, "validation_progress_json")
-	if existingProgress != "" {
-		var vp pipeline.ValidationProgress
-		if err := json.Unmarshal([]byte(existingProgress), &vp); err == nil && vp.IsRunning() {
+	// Check for existing active or stale DB-backed execution
+	if active, checkErr := h.store.GetActiveValidationExecutionByRun(runID); checkErr == nil && active != nil {
+		if isValidationExecutionStale(active) {
+			if err := h.store.MarkStaleValidationExecutionError(runID, time.Now().Add(-30*time.Minute)); err != nil {
+				h.log.Error("mark stale validation execution error", "error", err)
+			}
+			h.store.CreateEvent(runID, "info", "Stale validation execution cleared.")
+		} else {
 			h.store.CreateEvent(runID, "warn", "Validation commands are already running.")
 			http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
 			return
 		}
+	}
+
+	// Atomically acquire DB-backed validation execution
+	executionID, acquired, err := h.store.TryCreateValidationExecution(runID)
+	if err != nil {
+		h.log.Error("try create validation execution", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if !acquired {
+		h.store.CreateEvent(runID, "warn", "Validation commands are already running.")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
+		return
 	}
 
 	// Write initial progress artifact
@@ -1193,19 +1246,20 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 
 	h.store.CreateEvent(runID, "info", "Validation commands started")
 
-	// Launch background worker
+	// Launch background worker with executionID
 	h.launchValidation(func() {
-		h.executeValidation(runID, repo.Path, commands, writeProgress)
+		h.executeValidation(runID, executionID, repo.Path, commands, writeProgress)
 	})
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
 }
 
 // executeValidation runs validation commands in the background and persists results.
-func (h *RunsHandler) executeValidation(runID int64, repoPath string, commands []pipeline.ValidationCommand, writeProgress func(pipeline.ValidationProgress)) {
-	// Ensure progress gets finalized on any exit path
+func (h *RunsHandler) executeValidation(runID int64, validationExecutionID int64, repoPath string, commands []pipeline.ValidationCommand, writeProgress func(pipeline.ValidationProgress)) {
+	// Ensure execution state and progress get finalized on any exit path
 	defer func() {
 		if r := recover(); r != nil {
+			h.store.FinishValidationExecution(validationExecutionID, "error", "worker panic")
 			vp := pipeline.NewValidationProgress(repoPath, len(commands))
 			vp.MarkError("worker panic")
 			writeProgress(vp)
@@ -1214,10 +1268,14 @@ func (h *RunsHandler) executeValidation(runID int64, repoPath string, commands [
 		}
 	}()
 
+	// Mark DB execution running
+	if err := h.store.MarkValidationExecutionRunning(validationExecutionID); err != nil {
+		h.log.Error("mark validation execution running", "error", err)
+	}
+
 	// Load progress, mark running
 	progressData := readArtifactPreview(runID, "validation_progress_json")
 	if progressData == "" {
-		// No progress artifact; create a minimal one
 		vp := pipeline.NewValidationProgress(repoPath, len(commands))
 		vp.MarkRunning()
 		writeProgress(vp)
@@ -1237,7 +1295,6 @@ func (h *RunsHandler) executeValidation(runID int64, repoPath string, commands [
 	var combinedStdout, combinedStderr strings.Builder
 
 	for i, cmd := range commands {
-		// Update progress: current command running
 		vp.MarkCommandRunning(i+1, cmd.Command)
 		writeProgress(vp)
 
@@ -1260,7 +1317,6 @@ func (h *RunsHandler) executeValidation(runID int64, repoPath string, commands [
 			allPassed = false
 		}
 
-		// Append to progress
 		pc := pipeline.ValidationProgressCommand{
 			Label:      result.Label,
 			Command:    result.Command,
@@ -1281,7 +1337,7 @@ func (h *RunsHandler) executeValidation(runID int64, repoPath string, commands [
 		writeProgress(vp)
 	}
 
-	// Write final run JSON artifact (same schema as before)
+	// Write final run JSON artifact
 	aggregate := struct {
 		Status   string                      `json:"status"`
 		RepoPath string                      `json:"repo_path"`
@@ -1297,7 +1353,6 @@ func (h *RunsHandler) executeValidation(runID int64, repoPath string, commands [
 
 	aggregateJSON, _ := json.MarshalIndent(aggregate, "", "  ")
 
-	// Delete stale progress and final artifact rows, then create fresh ones
 	h.store.DeleteArtifactsByRunKind(runID, "validation_run_json")
 	h.store.DeleteArtifactsByRunKind(runID, "validation_stdout")
 	h.store.DeleteArtifactsByRunKind(runID, "validation_stderr")
@@ -1307,6 +1362,7 @@ func (h *RunsHandler) executeValidation(runID int64, repoPath string, commands [
 		h.log.Error("write validation run json", "error", err)
 		vp.MarkError("failed to write validation_run_json: " + err.Error())
 		writeProgress(vp)
+		h.store.FinishValidationExecution(validationExecutionID, "error", "failed to write validation_run_json: "+err.Error())
 		return
 	}
 	h.store.CreateArtifact(runID, "validation_run_json", jsonPath, "application/json")
@@ -1347,18 +1403,29 @@ func (h *RunsHandler) executeValidation(runID int64, repoPath string, commands [
 	if allPassed {
 		h.store.UpdateRunStatus(runID, "validation_passed")
 		h.store.CreateEvent(runID, "info", "Validation commands passed")
-		finalStatus := "pass"
-		vp.MarkFinished(finalStatus)
+		vp.MarkFinished("pass")
+		h.store.FinishValidationExecution(validationExecutionID, "pass", "")
 	} else {
 		h.store.UpdateRunStatus(runID, "validation_failed")
 		h.store.CreateEvent(runID, "info", "Validation commands failed")
-		finalStatus := "fail"
-		vp.MarkFinished(finalStatus)
+		vp.MarkFinished("fail")
+		h.store.FinishValidationExecution(validationExecutionID, "fail", "")
 	}
 
 	writeProgress(vp)
 
 	h.log.Info("validation commands executed", "run_id", runID, "status", aggregate.Status, "commands", len(commands))
+}
+
+func isValidationExecutionStale(exec *store.ValidationExecution) bool {
+	if exec.Status != "starting" && exec.Status != "running" {
+		return false
+	}
+	updated, err := time.Parse("2006-01-02 15:04:05", exec.UpdatedAt)
+	if err != nil {
+		return true
+	}
+	return time.Since(updated) > 30*time.Minute
 }
 
 func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Request, runID int64) {
@@ -1852,7 +1919,7 @@ func hasCheckKindWithStatus(checks []store.Check, kind string, status string) bo
 // Invalid or empty values default to "intake".
 func normalizeRunStep(step string) string {
 	switch step {
-	case "intake", "prompt", "packet", "handoff", "run", "validation", "audit":
+	case "intake", "prompt", "packet", "handoff", "run", "validation", "audit", "commit":
 		return step
 	default:
 		return "intake"
@@ -1949,6 +2016,134 @@ func parseValidationRunPreview(jsonData string) views.ValidationRunPreview {
 	}
 
 	return preview
+}
+
+func (h *RunsHandler) prepareGitCommit(w http.ResponseWriter, r *http.Request, runID int64) {
+	run, err := h.store.GetRun(runID)
+	if err != nil {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	repo, _ := h.store.GetRepo(run.RepoID)
+	if repo == nil {
+		h.store.CreateEvent(runID, "warn", "Cannot prepare commit: no repo configured for this run.")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+		return
+	}
+
+	if repo.Path == "" {
+		h.store.CreateEvent(runID, "warn", "Cannot prepare commit: repo path is empty.")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+		return
+	}
+
+	// Verify git diff evidence exists
+	hasGitEvidence := artifacts.Exists(runID, "git_status_text", pipeline.ArtifactFilename("git_status_text"))
+	if !hasGitEvidence {
+		h.store.CreateEvent(runID, "warn", "Cannot prepare commit: run git diff inspection first (Inspect Git Diff).")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+		return
+	}
+
+	// Verify audit handoff exists
+	hasAudit := artifacts.Exists(runID, "audit_handoff", pipeline.ArtifactFilename("audit_handoff"))
+	if !hasAudit {
+		h.store.CreateEvent(runID, "warn", "Cannot prepare commit: generate the audit handoff first.")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+		return
+	}
+
+	// Check validation status
+	checksList, _ := h.store.ListChecksByRun(runID)
+	validationPassed := hasCheckKindWithStatus(checksList, "validation_run", "pass")
+	validationFailed := hasCheckKindWithStatus(checksList, "validation_run", "fail")
+	validationStatus := ""
+	if validationPassed {
+		validationStatus = "pass"
+	} else if validationFailed {
+		validationStatus = "fail"
+	} else {
+		validationStatus = "unknown"
+	}
+
+	// Read input data for commit suggestion
+	originalHandoff := readArtifactPreview(runID, "original_handoff")
+	auditHandoff := readArtifactPreview(runID, "audit_handoff")
+	gitDiffStat := readArtifactPreview(runID, "git_diff_stat")
+	gitDiffNameStatus := readArtifactPreview(runID, "git_diff_name_status")
+
+	// Count changed files from diff stat
+	changedFileCount := int64(0)
+	if gitDiffStat != "" {
+		for _, line := range strings.Split(gitDiffStat, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, " ") {
+				changedFileCount++
+			}
+		}
+	}
+
+	// Parse agent result for status info
+	agentResultStatus := ""
+	agentBuildStatus := ""
+	agentTestStatus := ""
+	agentLOCChanged := ""
+	if agentRaw := readArtifactPreview(runID, "agent_result_raw"); agentRaw != "" {
+		parsed := pipeline.ParseAgentResult(agentRaw)
+		agentResultStatus = string(parsed.Status)
+		agentBuildStatus = parsed.BuildStatus
+		agentTestStatus = parsed.TestStatus
+		agentLOCChanged = parsed.LOCChanged
+	}
+
+	input := pipeline.CommitSuggestionInput{
+		OriginalHandoff:          originalHandoff,
+		AuditHandoff:             auditHandoff,
+		GitDiffStat:              gitDiffStat,
+		GitDiffNameStatus:        gitDiffNameStatus,
+		AgentResultStatus:        agentResultStatus,
+		AgentBuildStatus:         agentBuildStatus,
+		AgentTestStatus:          agentTestStatus,
+		AgentLOCChanged:          agentLOCChanged,
+		RepoPath:                 repo.Path,
+		ValidationStatus:         validationStatus,
+		ValidationFailedAccepted: false,
+		DiffInspected:            true,
+		AuditHandoffPresent:      true,
+		ChangedFileCount:         changedFileCount,
+	}
+
+	suggestion := pipeline.BuildCommitSuggestion(input)
+
+	// Delete stale commit suggestion artifacts
+	h.store.DeleteArtifactsByRunKind(runID, "commit_message_text")
+	h.store.DeleteArtifactsByRunKind(runID, "commit_suggestion_json")
+
+	// Write commit message text artifact
+	msgPath, err := artifacts.Write(runID, "commit_message_text", pipeline.ArtifactFilename("commit_message_text"), []byte(suggestion.Message))
+	if err != nil {
+		h.log.Error("write commit message artifact", "error", err)
+		http.Error(w, "failed to save commit message", http.StatusInternalServerError)
+		return
+	}
+	h.store.CreateArtifact(runID, "commit_message_text", msgPath, "text/plain")
+
+	// Write commit suggestion JSON artifact
+	suggestionJSON, _ := json.MarshalIndent(suggestion, "", "  ")
+	jsonPath, err := artifacts.Write(runID, "commit_suggestion_json", pipeline.ArtifactFilename("commit_suggestion_json"), suggestionJSON)
+	if err != nil {
+		h.log.Error("write commit suggestion json", "error", err)
+		http.Error(w, "failed to save commit suggestion", http.StatusInternalServerError)
+		return
+	}
+	h.store.CreateArtifact(runID, "commit_suggestion_json", jsonPath, "application/json")
+
+	h.store.CreateEvent(runID, "info", "Git commit suggestion prepared")
+
+	h.log.Info("git commit suggestion prepared", "run_id", runID, "message", suggestion.Message)
+
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 }
 
 func (h *RunsHandler) submitAgentResult(w http.ResponseWriter, r *http.Request, runID int64) {

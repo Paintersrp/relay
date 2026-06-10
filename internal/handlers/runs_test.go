@@ -184,6 +184,7 @@ func TestNormalizeRunStepAcceptsKnownSteps(t *testing.T) {
 		{"run", "run"},
 		{"validation", "validation"},
 		{"audit", "audit"},
+		{"commit", "commit"},
 	}
 	for _, tt := range tests {
 		got := normalizeRunStep(tt.input)

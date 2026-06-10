@@ -3,11 +3,13 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	relaydb "relay/internal/db"
 	"relay/internal/store/generated"
@@ -22,6 +24,7 @@ type Artifact = generated.Artifact
 type Event = generated.Event
 type Check = generated.Check
 type AgentExecution = generated.AgentExecution
+type ValidationExecution = generated.ValidationExecution
 type DashboardRun = generated.ListRecentRunsWithRepoRow
 
 type Store struct {
@@ -407,4 +410,63 @@ func (s *Store) UpdateAgentExecutionStatus(
 		return nil, err
 	}
 	return &exec, nil
+}
+
+// Validation Executions
+
+func (s *Store) TryCreateValidationExecution(runID int64) (int64, bool, error) {
+	result, err := s.db.ExecContext(context.Background(),
+		`INSERT INTO validation_executions (run_id, status, started_at, updated_at)
+		 SELECT ?, 'starting', datetime('now'), datetime('now')
+		 WHERE NOT EXISTS (
+		     SELECT 1 FROM validation_executions
+		     WHERE run_id = ? AND status IN ('starting', 'running')
+		 )`, runID, runID)
+	if err != nil {
+		return 0, false, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, false, err
+	}
+	if id == 0 {
+		return 0, false, nil
+	}
+	return id, true, nil
+}
+
+func (s *Store) MarkValidationExecutionRunning(id int64) error {
+	return s.queries.MarkValidationExecutionRunning(context.Background(), id)
+}
+
+func (s *Store) FinishValidationExecution(id int64, status string, errText string) error {
+	errVal := sql.NullString{}
+	if errText != "" {
+		errVal = sql.NullString{String: errText, Valid: true}
+	}
+	return s.queries.UpdateValidationExecutionStatus(context.Background(), generated.UpdateValidationExecutionStatusParams{
+		ID:     id,
+		Status: status,
+		Error:  errVal,
+	})
+}
+
+func (s *Store) GetActiveValidationExecutionByRun(runID int64) (*ValidationExecution, error) {
+	exec, err := s.queries.GetActiveValidationExecutionByRun(context.Background(), runID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &exec, nil
+}
+
+func (s *Store) MarkStaleValidationExecutionError(runID int64, cutoff time.Time) error {
+	cutoffStr := cutoff.UTC().Format("2006-01-02 15:04:05")
+	return s.queries.MarkStaleValidationExecutionsError(context.Background(), generated.MarkStaleValidationExecutionsErrorParams{
+		RunID:     runID,
+		UpdatedAt: cutoffStr,
+		Error:     sql.NullString{String: "stale: execution exceeded time limit", Valid: true},
+	})
 }

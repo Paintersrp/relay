@@ -528,6 +528,10 @@ func ArtifactFilename(kind string) string {
 		return "git_diff.patch"
 	case "git_diff_name_status":
 		return "git_diff_name_status.txt"
+	case "commit_message_text":
+		return "commit-message.txt"
+	case "commit_suggestion_json":
+		return "commit-suggestion.json"
 	default:
 		return fmt.Sprintf("%s.txt", kind)
 	}

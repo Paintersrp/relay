@@ -1,0 +1,1 @@
+compact prompt for agent
