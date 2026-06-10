@@ -5,18 +5,18 @@
     "--format",
     "json",
     "--dir",
-    "C:\\Users\\trist\\AppData\\Local\\Temp\\TestDryRunOpenCodeGoDoesNotExecuteRunner2495299787\\002",
+    "C:\\Users\\trist\\AppData\\Local\\Temp\\TestDryRunOpenCodeGoDoesNotExecuteRunner3483726805\\002",
     "--agent",
     "build",
     "--model",
     "anthropic/claude-sonnet-4-5"
   ],
-  "work_dir": "C:\\Users\\trist\\AppData\\Local\\Temp\\TestDryRunOpenCodeGoDoesNotExecuteRunner2495299787\\002",
+  "work_dir": "C:\\Users\\trist\\AppData\\Local\\Temp\\TestDryRunOpenCodeGoDoesNotExecuteRunner3483726805\\002",
   "stdin_source": "data\\artifacts\\1\\agent_prompt.txt",
   "stdin_bytes": 24,
   "agent_prompt_path": "data\\artifacts\\1\\agent_prompt.txt",
   "packet_path": "data\\artifacts\\1\\opencode_handoff_packet.json",
   "model": "anthropic/claude-sonnet-4-5",
   "agent": "build",
-  "preview": "opencode run --format json --dir C:\\Users\\trist\\AppData\\Local\\Temp\\TestDryRunOpenCodeGoDoesNotExecuteRunner2495299787\\002 --agent build --model anthropic/claude-sonnet-4-5 \u003c data\\artifacts\\1\\agent_prompt.txt"
+  "preview": "opencode run --format json --dir C:\\Users\\trist\\AppData\\Local\\Temp\\TestDryRunOpenCodeGoDoesNotExecuteRunner3483726805\\002 --agent build --model anthropic/claude-sonnet-4-5 \u003c data\\artifacts\\1\\agent_prompt.txt"
 }

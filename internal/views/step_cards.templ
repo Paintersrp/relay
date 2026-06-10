@@ -611,16 +611,6 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 			</div>
 		</div>
 
-		if !previews.HasValidationCommands && artifactExists(artifacts, "agent_result_raw") {
-			<div class="mt-2 rounded-lg border border-yellow-900/60 bg-yellow-950/30 p-3">
-				<div class="text-sm font-medium text-yellow-300">No validation commands</div>
-				<p class="mt-1 text-xs text-yellow-100">
-					No validation commands are available. Add a validation section to the handoff or configure default validation commands for this repo in repository settings.
-				</p>
-				<a href="/settings/repos" class="mt-2 inline-block text-xs text-indigo-400 hover:text-indigo-300">Repository settings</a>
-			</div>
-		}
-
 		if artifactExists(artifacts, "validation_run_json") {
 			<div class="mt-2">
 				if hasCheckStatus(checks, "validation_run", "pass") {
@@ -644,6 +634,17 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 		} else if !artifactExists(artifacts, "agent_result_raw") {
 			<div class="mt-2 text-xs text-gray-500">
 				Submit an agent result first, then run validation commands.
+			</div>
+		} else if !previews.HasValidationCommands {
+			<div class="mt-2 rounded-lg border border-yellow-900/60 bg-yellow-950/30 p-3">
+				<div class="text-sm font-medium text-yellow-300">No validation commands</div>
+				<p class="mt-1 text-xs text-yellow-100">
+					No validation commands are available. Add a validation section to the handoff or configure default validation commands for this repo in repository settings.
+				</p>
+				<a href="/settings/repos" class="mt-2 inline-block text-xs text-indigo-400 hover:text-indigo-300">Repository settings</a>
+			</div>
+			<div class="mt-2 text-xs text-yellow-300">
+				Validation is waiting for commands. Add handoff validation commands or repo defaults.
 			</div>
 		} else {
 			<div class="mt-2 text-xs text-gray-500">
@@ -792,4 +793,26 @@ func executionStatusClass(status string) string {
 	default:
 		return "text-gray-400"
 	}
+}
+
+type relayValidationUIState string
+
+const (
+	relayValidationNoResult   relayValidationUIState = "no_result"
+	relayValidationNoCommands relayValidationUIState = "no_commands"
+	relayValidationReady      relayValidationUIState = "ready"
+	relayValidationCompleted  relayValidationUIState = "completed"
+)
+
+func relayValidationUIStateFor(hasAgentResult bool, hasValidationCommands bool, hasValidationRun bool) relayValidationUIState {
+	if hasValidationRun {
+		return relayValidationCompleted
+	}
+	if !hasAgentResult {
+		return relayValidationNoResult
+	}
+	if !hasValidationCommands {
+		return relayValidationNoCommands
+	}
+	return relayValidationReady
 }
