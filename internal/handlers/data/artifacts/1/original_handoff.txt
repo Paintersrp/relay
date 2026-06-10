@@ -1,0 +1,13 @@
+# Blocked Handoff
+
+## Goal
+
+Do a thing.
+
+## Scope
+
+- foo.go
+
+## Do not change
+
+- Nothing.

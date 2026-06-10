@@ -78,9 +78,10 @@ func BuildAgentPrompt(originalHandoff string) string {
 	return b.String()
 }
 
-// cleanValidationExecutionMaterial removes shell command fences and
-// command-like lines from test/validation sections while preserving
-// test implementation instructions (prose, bullets, checklists).
+// cleanValidationExecutionMaterial removes shell command fences,
+// command-like lines, validation-wrapper labels and prose from
+// test/validation sections while preserving test implementation
+// instructions (prose, bullets, checklists, expected results).
 //
 // Sections cleaned:
 //   - ## Tests / validation
@@ -195,6 +196,12 @@ func cleanValidationExecutionMaterial(markdown string) string {
 			continue
 		}
 
+		// Remove validation wrapper prose unconditionally
+		if isValidationWrapperLine(trimmed) {
+			sectionRemovedCount++
+			continue
+		}
+
 		// Check if line is an orphaned label that directly introduced command material
 		if isOrphanedCommandLabel(trimmed) {
 			// Peek ahead: if the next non-empty line is also command-like, skip this label
@@ -246,6 +253,41 @@ func isOrphanedCommandLabel(line string) bool {
 		if lower == label || strings.HasPrefix(lower, label) {
 			return true
 		}
+	}
+	return false
+}
+
+// isValidationWrapperLine returns true when a line is validation-specific
+// wrapper prose that should be removed from the Agent Prompt. These are
+// lines that refer to RTK preference, command execution for Relay, or
+// other validation infrastructure not useful to the acting agent.
+func isValidationWrapperLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	// Remove lines that are exact labels for validation command material
+	wrapperTexts := []string{
+		"validation commands:",
+		"validation commands :",
+		"run:",
+		"run :",
+		"rtk preference:",
+		"rtk preference :",
+	}
+	for _, w := range wrapperTexts {
+		if lower == w {
+			return true
+		}
+	}
+	// Remove lines about RTK preference / RTK-wrapped commands
+	if strings.Contains(lower, "rtk") && (strings.Contains(lower, "prefer") || strings.Contains(lower, "available") || strings.Contains(lower, "wrapped") || strings.Contains(lower, "wrappers")) {
+		return true
+	}
+	// Remove lines that explicitly refer to commands being for Relay, not agent execution
+	if strings.Contains(lower, "relay") && strings.Contains(lower, "command") && strings.Contains(lower, "agent") {
+		return true
+	}
+	// Remove lines about not listing RTK-wrapped commands separately
+	if strings.Contains(lower, "do not list") && strings.Contains(lower, "rtk") {
+		return true
 	}
 	return false
 }

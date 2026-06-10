@@ -23,6 +23,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	dashboard := handlers.NewDashboardHandler(s)
 	handoffs := handlers.NewHandoffsHandler(s, log)
 	runs := handlers.NewRunsHandler(s, log)
+	handoffs.SetRunsHandler(runs)
 	artifactsH := handlers.NewArtifactsHandler(s)
 
 	r.Get("/", dashboard.Get)

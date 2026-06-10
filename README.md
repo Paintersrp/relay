@@ -209,7 +209,23 @@ Run detail shows an inline Original Handoff → Agent Prompt hunk diff after the
 
 ## Run workbench workflow
 
-Run detail is organized as a guided workflow: Intake Review → Agent Prompt → Agent Packet → Agent Result → Relay Validation → later Diff/Audit. Each step includes a status chip, purpose description, and next-action guidance based on current run state.
+After handoff creation, Relay automatically runs Intake Review and, when there are no blockers, prepares the Agent Prompt and Agent Packet. The run workbench is then used for review: Intake Review → Agent Prompt → Agent Packet / OpenCode Go prep → Agent Result → Relay Validation.
+
+Run detail is organized as a guided step-by-step workbench with collapsible panels. Each step includes a status chip, purpose description, and next-action guidance based on current run state:
+
+- **Step 1 — Intake Review**: Open by default. Shows validation checks, warnings, and blockers. The "Run Intake Review" button changes to "Re-run Intake Review" after first run.
+- **Step 2 — Agent Prompt**: Opens automatically when the Agent Prompt exists. Shows the Original → Agent Prompt hunk diff inline. Buttons toggle between "Generate Agent Prompt" and "Regenerate Agent Prompt".
+- **Step 3 — Agent Packet**: Opens when the packet exists. Focuses on preparing/reviewing the packet for OpenCode Go. Buttons toggle between "Generate Agent Packet" and "Regenerate Agent Packet".
+- **Step 4 — Agent Result**: Opens when a packet exists but no agent result has been submitted. Accepts the external agent's final DONE/BLOCKED response.
+- **Step 5 — Relay Validation**: Opens when an agent result exists. Relay still runs validation locally from the selected repo when explicitly triggered.
+- **Step 6 — Diff/Audit**: Future, collapsed by default.
+
+Clarifications:
+
+- Relay still does not execute OpenCode.
+- Relay does not run repo validation commands at handoff creation.
+- Relay Validation remains user-triggered after agent result.
+- Manual action buttons remain available as retry/regenerate controls for each step.
 
 Relay does not execute OpenCode yet, and the OpenCode packet is metadata only until a future execution adapter consumes it.
 

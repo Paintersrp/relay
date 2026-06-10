@@ -16,12 +16,18 @@ import (
 )
 
 type HandoffsHandler struct {
-	store *store.Store
-	log   *slog.Logger
+	store       *store.Store
+	log         *slog.Logger
+	runsHandler *RunsHandler
 }
 
 func NewHandoffsHandler(s *store.Store, log *slog.Logger) *HandoffsHandler {
 	return &HandoffsHandler{store: s, log: log}
+}
+
+// SetRunsHandler provides access to run-level operations for auto-setup.
+func (h *HandoffsHandler) SetRunsHandler(rh *RunsHandler) {
+	h.runsHandler = rh
 }
 
 func (h *HandoffsHandler) NewForm(w http.ResponseWriter, r *http.Request) {
@@ -115,6 +121,19 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	h.store.CreateEvent(run.ID, "info", "Handoff created from "+handoffSource)
 
 	h.log.Info("handoff created", "run_id", run.ID, "repo", repo.Name)
+
+	// Auto-run setup pipeline
+	if h.runsHandler != nil {
+		result := h.runsHandler.prepareRunForReview(run.ID)
+		if result.Blocked {
+			h.log.Info("auto-setup blocked by intake review", "run_id", run.ID, "blockers", result.Blockers)
+		} else {
+			h.log.Info("auto-setup complete", "run_id", run.ID,
+				"prompt", result.PromptGenerated, "packet", result.PacketGenerated)
+		}
+	} else {
+		h.log.Warn("auto-setup skipped: runsHandler not set", "run_id", run.ID)
+	}
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(run.ID, 10), http.StatusSeeOther)
 }

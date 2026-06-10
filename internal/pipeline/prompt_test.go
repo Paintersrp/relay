@@ -441,6 +441,87 @@ go test ./...
 	}
 }
 
+func TestBuildAgentPromptRemovesValidationWrapperText(t *testing.T) {
+	handoff := `# Example
+
+## Goal
+
+Do a thing.
+
+## Tests / validation
+
+Validation commands:
+
+` + "```bash" + `
+npm run typecheck
+npm test
+` + "```" + `
+
+If RTK is available in the environment, Relay or the user may prefer ` + "`rtk.exe`" + ` first, then ` + "`rtk`" + `, then the raw command.
+
+Do not list RTK-wrapped commands as separate validation commands.
+
+## Expected result
+
+- Typecheck and tests pass.
+`
+	prompt := BuildAgentPrompt(handoff)
+
+	validationSection := "## Tests / validation"
+	extracted := prompt[strings.Index(prompt, validationSection):]
+	if strings.Index(extracted, "\n## ") > 0 {
+		extracted = extracted[:strings.Index(extracted, "\n## ")]
+	}
+
+	if strings.Contains(prompt, "Validation commands:") {
+		t.Error("prompt should not contain 'Validation commands:' label")
+	}
+	if strings.Contains(prompt, "If RTK is available") {
+		t.Error("prompt should not contain 'If RTK is available' wrapper text")
+	}
+	if strings.Contains(prompt, "Do not list RTK-wrapped") {
+		t.Error("prompt should not contain 'Do not list RTK-wrapped' wrapper text")
+	}
+	if strings.Contains(prompt, "npm run typecheck") {
+		t.Error("prompt should not contain raw command 'npm run typecheck'")
+	}
+	if strings.Contains(prompt, "npm test") {
+		t.Error("prompt should not contain raw command 'npm test'")
+	}
+	if !strings.Contains(prompt, "Relay validation commands were extracted") {
+		t.Error("prompt should contain Relay validation removed note")
+	}
+	if !strings.Contains(prompt, "- Typecheck and tests pass") {
+		t.Error("prompt should preserve expected result line: '- Typecheck and tests pass'")
+	}
+}
+
+func TestBuildAgentPromptKeepsExpectedResultValidationOutcome(t *testing.T) {
+	handoff := `# Example
+
+## Goal
+
+Do a thing.
+
+## Tests / validation
+
+` + "```bash" + `
+go test ./...
+` + "```" + `
+
+## Expected result
+
+Typecheck, tests, production build, and local build pass.
+`
+	prompt := BuildAgentPrompt(handoff)
+	if !strings.Contains(prompt, "Typecheck, tests, production build, and local build pass.") {
+		t.Error("prompt should preserve expected result validation outcome")
+	}
+	if !strings.Contains(prompt, "Relay validation commands were extracted") {
+		t.Error("prompt should contain Relay validation removed note")
+	}
+}
+
 func TestBuildAgentPromptNoRelayNoteWhenNoCommandsRemoved(t *testing.T) {
 	handoff := `## Tests
 
