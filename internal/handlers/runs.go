@@ -99,7 +99,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		intakeReview = pipeline.BuildIntakeReview(metadata, repoPath)
 	}
 
-		// Determine active step — default to intake, override with valid ?step=
+	// Determine active step — default to intake, override with valid ?step=
 	activeStep := normalizeRunStep(r.URL.Query().Get("step"))
 
 	views.RunDetail(run, repo, artifactsList, checksList, eventsList, previews, &intakeReview, activeStep).Render(r.Context(), w)
@@ -492,10 +492,8 @@ func hasCheckKind(checks []store.Check, kind string) bool {
 // Invalid or empty values default to "intake".
 func normalizeRunStep(step string) string {
 	switch step {
-	case "intake", "prompt", "packet", "result", "validation", "audit":
+	case "intake", "prompt", "packet", "handoff", "result", "validation", "audit":
 		return step
-	case "handoff":
-		return "packet"
 	default:
 		return "intake"
 	}

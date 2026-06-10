@@ -86,6 +86,7 @@ func TestNormalizeRunStepAcceptsKnownSteps(t *testing.T) {
 		{"intake", "intake"},
 		{"prompt", "prompt"},
 		{"packet", "packet"},
+		{"handoff", "handoff"},
 		{"result", "result"},
 		{"validation", "validation"},
 		{"audit", "audit"},
@@ -115,10 +116,10 @@ func TestNormalizeRunStepRejectsInvalidStep(t *testing.T) {
 	}
 }
 
-func TestNormalizeRunStepHandoffAlias(t *testing.T) {
+func TestNormalizeRunStepHandoffIsRealStep(t *testing.T) {
 	got := normalizeRunStep("handoff")
-	if got != "packet" {
-		t.Fatalf("normalizeRunStep(\"handoff\") = %q, want %q", got, "packet")
+	if got != "handoff" {
+		t.Fatalf("normalizeRunStep(%q) = %q, want %q", "handoff", got, "handoff")
 	}
 }
 
