@@ -3,6 +3,7 @@ package handlers
 import (
 	"testing"
 
+	"relay/internal/pipeline"
 	"relay/internal/store"
 )
 
@@ -150,5 +151,39 @@ func TestHasCheckKind_ReturnsTrueWhenFound(t *testing.T) {
 func TestHasCheckKind_ReturnsFalseWhenNotFound(t *testing.T) {
 	if hasCheckKind(nil, "validation_run") {
 		t.Error("expected false for nil slice")
+	}
+}
+
+func TestHasValidationCommandsForPreviewFromHandoff(t *testing.T) {
+	// Verify that an unwrapped command in a bash fence under "## Tests / validation" is detected
+	handoff := "# Test\n\n## Tests / validation\n\n" + "```bash\n" + "go test ./...\n" + "```\n"
+	if !hasValidationCommandsForPreview(handoff, "") {
+		t.Fatal("expected validation commands from handoff")
+	}
+}
+
+func TestHasValidationCommandsForPreviewFromRepoDefaults(t *testing.T) {
+	// When handoff has no commands, repo defaults should be used
+	if !hasValidationCommandsForPreview("# Test", "[\"go test ./...\"]") {
+		t.Fatal("expected validation commands from repo defaults")
+	}
+}
+
+func TestHasValidationCommandsForPreviewMissing(t *testing.T) {
+	if hasValidationCommandsForPreview("# Test", "") {
+		t.Fatal("expected no validation commands")
+	}
+}
+
+func TestHasValidationCommandsForPreviewFallsBackToRepoDefaults(t *testing.T) {
+	// Full integration-style test that handoff metadata parsing falls back to defaults
+	handoff := "# Test\n\nNo validation section here.\n"
+	repoDefaults := "[\"npm run build\"]"
+	commands := pipeline.ExtractValidationCommands(handoff, repoDefaults)
+	if len(commands) != 1 {
+		t.Fatalf("expected 1 command from repo defaults, got %d", len(commands))
+	}
+	if commands[0].Source != "repo_default" {
+		t.Fatalf("expected source 'repo_default', got %q", commands[0].Source)
 	}
 }

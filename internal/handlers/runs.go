@@ -171,6 +171,13 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	dryRunPreview := readArtifactPreview(id, "opencode_dry_run_json")
 
+	// Compute validation command availability
+	repoDefaults := ""
+	if repo != nil {
+		repoDefaults = repo.DefaultValidationCommands
+	}
+	hasValidationCommands := hasValidationCommandsForPreview(originalPreview, repoDefaults)
+
 	previews := views.RunPreviews{
 		OriginalHandoff:            originalPreview,
 		ValidationJSON:             readArtifactPreview(id, "handoff_validation_json"),
@@ -202,6 +209,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		HasOpenCodeStdout:          hasOpenCodeStdout,
 		HasOpenCodeStderr:          hasOpenCodeStderr,
 		HasOpenCodeCombinedLog:     hasOpenCodeCombinedLog,
+		HasValidationCommands:      hasValidationCommands,
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {
@@ -223,13 +231,8 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		if repo != nil {
 			repoPath = repo.Path
 		}
-		repoDefaults := ""
-		if repo != nil {
-			repoDefaults = repo.DefaultValidationCommands
-		}
 		metadata := pipeline.ParseHandoffMetadata(handoffText, repoDefaults)
 		intakeReview = pipeline.BuildIntakeReview(metadata, repoPath)
-		previews.HasValidationCommands = len(metadata.ValidationCommands) > 0
 	}
 
 	// Determine active step — default to intake, override with valid ?step=
@@ -927,6 +930,10 @@ func normalizeRunStep(step string) string {
 	default:
 		return "intake"
 	}
+}
+
+func hasValidationCommandsForPreview(handoffText string, repoDefaults string) bool {
+	return len(pipeline.ExtractValidationCommands(handoffText, repoDefaults)) > 0
 }
 
 func defaultActiveRunStep(_ []store.Artifact, _ []store.Check) string {
