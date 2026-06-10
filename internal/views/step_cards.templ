@@ -1,6 +1,7 @@
 package views
 
 import (
+	"fmt"
 	"relay/internal/pipeline"
 	"relay/internal/store"
 )
@@ -54,7 +55,7 @@ templ StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 	case "validation":
 		@RelayValidationStepPanel(run, artifacts, checks, previews)
 	case "audit":
-		@DiffAuditStepPanel()
+		@DiffAuditStepPanel(previews, run.ID)
 	default:
 		@IntakeStepPanel(run, repo, artifacts, checks, intakeReview, previews)
 	}
@@ -1035,26 +1036,18 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 		</div>
 
 		<div class="px-4 pb-4 space-y-3">
-			if artifactExists(artifacts, "validation_run_json") {
-				<div>
-					if hasCheckStatus(checks, "validation_run", "pass") {
-						<div class="text-xs sm:text-sm text-green-400">Validation passed.</div>
-					} else if hasCheckStatus(checks, "validation_run", "fail") {
-						<div class="text-xs sm:text-sm text-red-400">Validation failed. Review stdout/stderr artifacts.</div>
-					} else {
-						<div class="text-xs sm:text-sm text-gray-500">Validation completed. Check artifacts for details.</div>
-					}
-				</div>
-				<div class="pt-3 border-t border-gray-800 relay-action-row">
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json"}
-						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View validation JSON</a>
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json/download"}
-						class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download validation JSON</a>
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stdout"}
-						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View stdout</a>
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stderr"}
-						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View stderr</a>
-				</div>
+			if artifactExists(artifacts, "validation_run_json") && previews.ValidationRun.CommandCount > 0 {
+				@validationResultsSummary(previews.ValidationRun, run.ID, artifacts)
+			} else if artifactExists(artifacts, "validation_run_json") {
+				// JSON exists but couldn't be parsed into preview
+				if hasCheckStatus(checks, "validation_run", "pass") {
+					<div class="text-xs sm:text-sm text-green-400">Validation passed.</div>
+				} else if hasCheckStatus(checks, "validation_run", "fail") {
+					<div class="text-xs sm:text-sm text-red-400">Validation failed. Review stdout/stderr artifacts.</div>
+				} else {
+					<div class="text-xs sm:text-sm text-gray-500">Validation completed. Check artifacts for details.</div>
+				}
+				<div class="mt-2 text-xs text-yellow-400">Validation result artifact could not be parsed. Use View validation JSON.</div>
 			} else if !artifactExists(artifacts, "agent_result_raw") {
 				<div class="text-xs sm:text-sm text-gray-500">
 					Submit an agent result first, then run validation commands.
@@ -1075,25 +1068,199 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 					Agent result received. Run validation commands to verify the changes.
 				</div>
 			}
+			if artifactExists(artifacts, "validation_run_json") {
+				<div class="pt-3 border-t border-gray-800 relay-action-row">
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json"}
+						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View validation JSON</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json/download"}
+						class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download validation JSON</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stdout"}
+						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View stdout</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stderr"}
+						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View stderr</a>
+				</div>
+
+				if previews.ValidationRun.Status == "pass" {
+					<div class="pt-3 border-t border-gray-800">
+						@auditHandoffSection(previews, run.ID)
+					</div>
+				}
+			}
 		</div>
 	</div>
 }
 
-templ DiffAuditStepPanel() {
-	<div class="relay-card opacity-70">
-		<div class="relay-card-header">
+templ validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []store.Artifact) {
+	<div class="rounded-xl border border-gray-800 bg-gray-950/40 overflow-hidden">
+		<div class="border-b border-gray-800 px-3 py-2 flex items-center justify-between">
 			<div class="min-w-0">
-				<h3 class="font-medium text-base sm:text-lg text-gray-500">Step 7: Diff / Audit</h3>
-				<p class="text-xs sm:text-sm text-gray-600 mt-0.5">Later: inspect git diff and generate GPT audit packet.</p>
-				<div class="mt-2 text-xs text-gray-600">
-					Later: Relay will inspect git diff and generate a GPT audit packet. Not implemented yet.
+				<div class="text-sm font-medium">
+					if v.Status == "pass" {
+						<span class="text-green-400">Validation passed</span>
+					} else {
+						<span class="text-red-400">Validation failed</span>
+					}
+				</div>
+				<div class="text-xs text-gray-500">
+					{ Itoa(int64(v.CommandCount)) } commands
+					&middot; { Itoa(int64(v.PassedCount)) } passed
+					&middot; { Itoa(int64(v.FailedCount)) } failed
+					&middot; { formatDuration(v.TotalDurationMs) }
 				</div>
 			</div>
-			<span class="relay-chip-gray text-xs">
-				Future
-			</span>
+		</div>
+		<div class="divide-y divide-gray-800">
+			for _, cmd := range v.Commands {
+				<div class="px-3 py-2 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-xs">
+					<div class="flex items-center gap-2 min-w-0 flex-1">
+						@validationCommandStatusChip(cmd.Status)
+						<span class="text-gray-200 font-mono truncate min-w-0">{ cmd.Command }</span>
+					</div>
+					<div class="flex items-center gap-2 sm:gap-3 text-gray-500 shrink-0 ml-0 sm:ml-auto">
+						if cmd.Source != "" {
+							<span class="hidden sm:inline">{ cmd.Source }</span>
+						}
+						<span>exit { Itoa(int64(cmd.ExitCode)) }</span>
+						<span class="tabular-nums">{ Itoa(cmd.DurationMs) }ms</span>
+						if cmd.HasStdout {
+							<a href={"/runs/" + Itoa(runID) + "/artifacts/validation_stdout"}
+								class="text-indigo-400 hover:text-indigo-300 underline">stdout</a>
+						}
+						if cmd.HasStderr {
+							<a href={"/runs/" + Itoa(runID) + "/artifacts/validation_stderr"}
+								class="text-red-400 hover:text-red-300 underline">stderr</a>
+						}
+					</div>
+				</div>
+			}
 		</div>
 	</div>
+}
+
+templ validationCommandStatusChip(status string) {
+	if status == "pass" {
+		<span class="relay-chip-green shrink-0">passed</span>
+	} else if status == "fail" {
+		<span class="relay-chip-red shrink-0">failed</span>
+	} else if status == "timed_out" {
+		<span class="relay-chip-yellow shrink-0">timed out</span>
+	} else {
+		<span class="relay-chip-gray shrink-0">{ status }</span>
+	}
+}
+
+templ auditHandoffSection(previews RunPreviews, runID int64) {
+	if previews.HasAuditHandoff {
+		<div class="rounded-xl border border-green-900/60 bg-green-950/30 p-3 sm:p-4">
+			<div class="text-sm font-medium text-green-300">Audit handoff ready</div>
+			<p class="mt-1 text-xs text-green-200">
+				Copy the audit handoff into GPT for review.
+			</p>
+			<div class="mt-2 flex flex-wrap items-center gap-2">
+				<a href={"/runs/" + Itoa(runID) + "/artifacts/audit_handoff"}
+					class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View audit handoff</a>
+				<a href={"/runs/" + Itoa(runID) + "/artifacts/audit_handoff/download"}
+					class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download audit handoff</a>
+			</div>
+			if previews.AuditHandoff != "" {
+				<details class="mt-2">
+					<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none min-h-[36px] inline-flex items-center">
+						Preview audit handoff
+					</summary>
+					<div class="mt-2 relay-card p-3 max-h-60 overflow-auto min-w-0">
+						<pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap break-words">{ previews.AuditHandoff }</pre>
+					</div>
+				</details>
+			}
+		</div>
+	} else {
+		<div class="rounded-xl border border-indigo-900/60 bg-indigo-950/30 p-3 sm:p-4">
+			<div class="text-sm font-medium text-indigo-300">Validation passed</div>
+			<p class="mt-1 text-xs text-indigo-200">
+				Validation passed. Generate an audit handoff to review this run in GPT.
+			</p>
+			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+				hx-post={"/runs/" + Itoa(runID) + "/actions"}
+				hx-target="body" hx-swap="outerHTML"
+				class="mt-2">
+				<input type="hidden" name="action" value="generate-audit-handoff"/>
+				<button type="submit"
+					class="btn-primary text-xs sm:text-sm">
+					Generate Audit Handoff
+				</button>
+			</form>
+		</div>
+	}
+}
+
+func formatDuration(ms int64) string {
+	if ms < 1000 {
+		return Itoa(ms) + "ms"
+	}
+	sec := float64(ms) / 1000.0
+	if sec < 60 {
+		return fmt.Sprintf("%.1fs", sec)
+	}
+	min := int64(sec) / 60
+	rem := int64(sec) % 60
+	return Itoa(min) + "m " + Itoa(rem) + "s"
+}
+
+templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
+	if previews.HasAuditHandoff {
+		<div class="relay-card">
+			<div class="relay-card-header">
+				<div class="min-w-0">
+					<h3 class="font-medium text-base sm:text-lg">Step 7: Diff / Audit</h3>
+					<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Review the audit handoff and inspect git diff.</p>
+				</div>
+				<span class="relay-chip-green text-xs">ready</span>
+			</div>
+			<div class="px-4 pb-4 space-y-3">
+				<div class="rounded-xl border border-green-900/60 bg-green-950/30 p-3 sm:p-4">
+					<div class="text-sm font-medium text-green-300">Audit handoff ready</div>
+					<p class="mt-1 text-xs text-green-200">
+						Copy the audit handoff into GPT for review.
+					</p>
+					<div class="mt-2 flex flex-wrap items-center gap-2">
+						<a href={"/runs/" + Itoa(runID) + "/artifacts/audit_handoff"}
+							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View audit handoff</a>
+						<a href={"/runs/" + Itoa(runID) + "/artifacts/audit_handoff/download"}
+							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download audit handoff</a>
+					</div>
+				</div>
+				if previews.AuditHandoff != "" {
+					<div class="rounded-xl border border-gray-800 bg-gray-950/60 overflow-hidden min-w-0">
+						<div class="border-b border-gray-800 px-3 py-2">
+							<div class="text-sm font-medium text-gray-200">Audit handoff preview</div>
+							<div class="text-xs text-gray-500">Copy the content below and paste it into GPT for review.</div>
+						</div>
+						<div class="max-h-80 overflow-auto min-w-0">
+							<pre class="text-xs leading-5 font-mono p-3 text-gray-300 whitespace-pre-wrap break-words select-all">{ previews.AuditHandoff }</pre>
+						</div>
+					</div>
+				}
+				<div class="text-xs text-gray-500 border-t border-gray-800 pt-3">
+					Git diff inspection is not yet implemented.
+				</div>
+			</div>
+		</div>
+	} else {
+		<div class="relay-card opacity-70">
+			<div class="relay-card-header">
+				<div class="min-w-0">
+					<h3 class="font-medium text-base sm:text-lg text-gray-500">Step 7: Diff / Audit</h3>
+					<p class="text-xs sm:text-sm text-gray-600 mt-0.5">Later: inspect git diff and generate GPT audit packet.</p>
+					<div class="mt-2 text-xs text-gray-600">
+						Later: Relay will inspect git diff and generate a GPT audit packet. Not implemented yet.
+					</div>
+				</div>
+				<span class="relay-chip-gray text-xs">
+					Future
+				</span>
+			</div>
+		</div>
+	}
 }
 
 templ intakeStatusChip(checks []store.Check) {

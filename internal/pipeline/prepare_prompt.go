@@ -496,6 +496,8 @@ func ArtifactFilename(kind string) string {
 		return "agent_prompt.txt"
 	case "audit_packet":
 		return "audit_packet.json"
+	case "audit_handoff":
+		return "audit_handoff.md"
 	case "opencode_handoff_packet":
 		return "opencode_handoff_packet.json"
 	case "agent_result_raw":

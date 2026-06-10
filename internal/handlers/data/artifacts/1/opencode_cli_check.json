@@ -6,6 +6,6 @@
   "models_stdout": "opencode version 1.0.0",
   "resolved_model": "",
   "model_available": false,
-  "checked_at": "2026-06-10T14:31:42-04:00",
+  "checked_at": "2026-06-10T15:01:53-04:00",
   "model_resolution_error": "OpenCode model mapping required for selected model \"unmapped-model\"; set RELAY_OPENCODE_MODEL_UNMAPPED_MODEL=\u003cprovider/model\u003e"
 }

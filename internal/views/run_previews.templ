@@ -21,6 +21,29 @@ type OpenCodeTranscriptEventView struct {
 	Text string
 }
 
+type ValidationCommandPreview struct {
+	Label      string
+	Command    string
+	Source     string
+	ExitCode   int
+	TimedOut   bool
+	DurationMs int64
+	HasStdout  bool
+	HasStderr  bool
+	Status     string
+}
+
+type ValidationRunPreview struct {
+	Status         string
+	RepoPath       string
+	Commands       []ValidationCommandPreview
+	CommandCount   int
+	PassedCount    int
+	FailedCount    int
+	TimedOutCount  int
+	TotalDurationMs int64
+}
+
 type WorkbenchNextActionView struct {
 	Kind              string
 	Title             string
@@ -71,6 +94,7 @@ type RunPreviews struct {
 	HasOpenCodeStdout    bool
 	HasOpenCodeStderr    bool
 	HasOpenCodeCombinedLog bool
+	ValidationRun           ValidationRunPreview
 	HasValidationCommands    bool
 	HasOpenCodeCLICheck      bool
 	OpenCodeCLICheckPreview  string
@@ -94,6 +118,9 @@ type RunPreviews struct {
 	OpenCodeParsedTestStatus   string
 	OpenCodeParsedLOCChanged   string
 	OpenCodeParsedResultRaw    string
+
+	HasAuditHandoff bool
+	AuditHandoff    string
 }
 
 templ RunPreviewPanels(previews RunPreviews) {

@@ -79,6 +79,92 @@ func TestDefaultActiveRunStep_StartsAtIntakeAfterValidationRunCheck(t *testing.T
 	}
 }
 
+func TestParseValidationRunPreview_Pass(t *testing.T) {
+	jsonData := `{
+		"status": "pass",
+		"repo_path": "D:/Code/relay",
+		"commands": [
+			{"label": "go fmt", "command": "go fmt ./...", "source": "handoff", "exit_code": 0, "stdout": "", "stderr": "", "timed_out": false, "duration_ms": 1500},
+			{"label": "go test", "command": "go test ./...", "source": "handoff", "exit_code": 0, "stdout": "ok", "stderr": "", "timed_out": false, "duration_ms": 5000}
+		]
+	}`
+
+	preview := parseValidationRunPreview(jsonData)
+	if preview.Status != "pass" {
+		t.Errorf("expected pass, got %s", preview.Status)
+	}
+	if preview.CommandCount != 2 {
+		t.Errorf("expected 2 commands, got %d", preview.CommandCount)
+	}
+	if preview.PassedCount != 2 {
+		t.Errorf("expected 2 passed, got %d", preview.PassedCount)
+	}
+	if preview.FailedCount != 0 {
+		t.Errorf("expected 0 failed, got %d", preview.FailedCount)
+	}
+	if len(preview.Commands) != 2 {
+		t.Errorf("expected 2 command previews, got %d", len(preview.Commands))
+	}
+	if preview.Commands[0].Status != "pass" {
+		t.Errorf("expected pass status for first command, got %s", preview.Commands[0].Status)
+	}
+	if !preview.Commands[1].HasStdout {
+		t.Error("expected hasStdout for second command")
+	}
+	if preview.TotalDurationMs != 6500 {
+		t.Errorf("expected total 6500ms, got %d", preview.TotalDurationMs)
+	}
+}
+
+func TestParseValidationRunPreview_FailAndTimeout(t *testing.T) {
+	jsonData := `{
+		"status": "fail",
+		"repo_path": "D:/Code/test",
+		"commands": [
+			{"label": "passing", "command": "passing", "source": "handoff", "exit_code": 0, "stdout": "", "stderr": "", "timed_out": false, "duration_ms": 100},
+			{"label": "failing", "command": "failing", "source": "handoff", "exit_code": 1, "stdout": "", "stderr": "error", "timed_out": false, "duration_ms": 200},
+			{"label": "timedout", "command": "timedout", "source": "handoff", "exit_code": -2, "stdout": "", "stderr": "", "timed_out": true, "duration_ms": 300}
+		]
+	}`
+
+	preview := parseValidationRunPreview(jsonData)
+	if preview.Status != "fail" {
+		t.Errorf("expected fail, got %s", preview.Status)
+	}
+	if preview.CommandCount != 3 {
+		t.Errorf("expected 3 commands, got %d", preview.CommandCount)
+	}
+	if preview.PassedCount != 1 {
+		t.Errorf("expected 1 passed, got %d", preview.PassedCount)
+	}
+	if preview.FailedCount != 1 {
+		t.Errorf("expected 1 failed, got %d", preview.FailedCount)
+	}
+	if preview.TimedOutCount != 1 {
+		t.Errorf("expected 1 timed out, got %d", preview.TimedOutCount)
+	}
+	if preview.Commands[2].Status != "timed_out" {
+		t.Errorf("expected timed_out status, got %s", preview.Commands[2].Status)
+	}
+	if !preview.Commands[1].HasStderr {
+		t.Error("expected HasStderr for failing command")
+	}
+}
+
+func TestParseValidationRunPreview_EmptyJSON(t *testing.T) {
+	preview := parseValidationRunPreview("")
+	if preview.CommandCount != 0 {
+		t.Errorf("expected 0 commands for empty, got %d", preview.CommandCount)
+	}
+}
+
+func TestParseValidationRunPreview_InvalidJSON(t *testing.T) {
+	preview := parseValidationRunPreview("not json")
+	if preview.CommandCount != 0 {
+		t.Errorf("expected 0 commands for invalid json, got %d", preview.CommandCount)
+	}
+}
+
 func TestNormalizeRunStepAcceptsKnownSteps(t *testing.T) {
 	tests := []struct {
 		input    string

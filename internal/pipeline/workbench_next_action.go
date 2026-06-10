@@ -56,6 +56,7 @@ type WorkbenchNextActionInput struct {
 	HasValidationRun      bool
 	ValidationPassed      bool
 	ValidationFailed      bool
+	HasAuditHandoff       bool
 }
 
 func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextAction {
@@ -130,6 +131,33 @@ func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextActio
 			Summary:  "Monitor the current agent execution.",
 			Step:     "run",
 			Severity: "running",
+		}
+	}
+
+	// If validation has been run, skip CLI/preflight/start checks.
+	if input.HasValidationRun {
+		if input.ValidationFailed {
+			return WorkbenchNextAction{
+				Kind:     WorkbenchNextActionReviewValidationOutput,
+				Title:    "Review validation failure",
+				Summary:  "Validation failed. Review stdout/stderr before marking cleanup or creating a follow-up handoff.",
+				Step:     "validation",
+				Severity: "blocked",
+			}
+		}
+		if input.ValidationPassed {
+			action := WorkbenchNextAction{
+				Kind:     WorkbenchNextActionReadyForAudit,
+				Title:    "Ready for audit",
+				Summary:  "Validation passed. Generate the audit handoff to review the run in GPT.",
+				Step:     "audit",
+				Severity: "done",
+			}
+			if !input.HasAuditHandoff {
+				action.PrimaryFormAction = "generate-audit-handoff"
+				action.PrimaryAction = "generate-audit-handoff"
+			}
+			return action
 		}
 	}
 
@@ -227,26 +255,6 @@ func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextActio
 			Step:              "validation",
 			PrimaryFormAction: "run-validation",
 			Severity:          "ready",
-		}
-	}
-
-	if input.ValidationFailed {
-		return WorkbenchNextAction{
-			Kind:     WorkbenchNextActionReviewValidationOutput,
-			Title:    "Validation failed",
-			Summary:  "Review stdout and stderr artifacts before continuing.",
-			Step:     "validation",
-			Severity: "blocked",
-		}
-	}
-
-	if input.ValidationPassed {
-		return WorkbenchNextAction{
-			Kind:     WorkbenchNextActionReadyForAudit,
-			Title:    "Ready for Diff / Audit",
-			Summary:  "Validation passed. Diff inspection and audit packet generation are the next workflow stage.",
-			Step:     "audit",
-			Severity: "done",
 		}
 	}
 

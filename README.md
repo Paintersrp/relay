@@ -20,8 +20,8 @@ Relay's intended workflow is:
 7. Store manual agent result intake.
 8. Run validation commands locally after agent result.
 9. Store validation stdout/stderr/json artifacts.
-10. Later: inspect git diff.
-11. Later: generate audit packet for GPT review.
+10. Generate audit handoff for GPT review after validation passes.
+11. Later: inspect git diff.
 
 Key design points:
 
@@ -41,6 +41,7 @@ The current local-first flow does not yet implement:
 - automatic commits
 - automatic validation failure repair
 - git diff inspection
+- automatic diff-based audit
 
 ## Stack
 
@@ -170,6 +171,28 @@ go vet ./...
 
 If RTK is available, Relay or the user may prefer `rtk.exe` first, then `rtk`, then the raw command.
 
+## Audit Handoff
+
+When Relay Validation passes, Step 6 shows an option to **Generate Audit Handoff**. This action creates a compact markdown artifact (`audit_handoff.md`) containing:
+
+- Run metadata (ID, title, repo, branch, status)
+- Original handoff preview (truncated if large)
+- Agent result status, build/test results, LOC changed
+- Validation results with per-command status, exit code, and duration
+- Artifact manifest
+- Review request for GPT
+
+The audit handoff is intended to be copied into GPT for audit/review. Step 7 becomes active once the handoff is generated.
+
+To generate:
+
+1. Complete Step 6 Relay Validation successfully.
+2. Click **Generate Audit Handoff** in the validation passed section or from the Next Action card.
+3. View, download, or copy the handoff from Step 7.
+4. Paste the handoff into GPT for review.
+
+The audit handoff is always available for view/download after generation, even after page reload.
+
 ## Routes
 
 | Method | Path                                   | Description                |
@@ -204,6 +227,7 @@ If RTK is available, Relay or the user may prefer `rtk.exe` first, then `rtk`, t
 | `run-agent`                           | Future                               |
 | `run-validation`                      | Implemented                          |
 | `inspect-diff`                        | Future                               |
+| `generate-audit-handoff`              | Implemented                          |
 | `generate-audit-packet`               | Future                               |
 
 ## Development live reload
@@ -290,8 +314,11 @@ After each action completes, Relay redirects to the step where the next decision
 - **OpenCode start** &rarr; Step 5 Agent Run Monitor
 - **Agent result** &rarr; Step 6 Relay Validation
 - **Validation run** &rarr; stays on Step 6
+- **Validation pass + audit handoff** &rarr; Step 7 Diff/Audit
 
 The Next Action card updates naturally after each redirect because the server owns state.
+
+Guided workbench smoke test: the next-action flow can launch, monitor, and validate a small OpenCode run.
 
 The workbench is responsive for desktop and phone-sized devices. Long commands, JSON, and logs are contained inside scrollable panels so the page itself should not horizontally overflow.
 
@@ -304,8 +331,8 @@ Run detail is organized as a guided step-by-step workbench with a single active 
 - **Step 3 — Agent Packet**: Shows packet preview, View/Download links. Buttons toggle between "Generate Agent Packet" and "Regenerate Agent Packet". After generation, redirects to Step 4.
 - **Step 4 — OpenCode Go Handoff**: Shows preflight readiness, OpenCode adapter configuration (binary, model, agent, working directory, command preview), and an explicit "Start OpenCode Go" button. Adapter readiness/blockers are visible at the top of the adapter section. If an execution exists, shows a notice linking to Step 5. Step 4 is handoff/preflight only; execution results appear in Step 5.
 - **Step 5 — Agent Run Monitor**: Shows the running or completed OpenCode execution. Displays command context, terminal-style output transcript, artifact links (stdout, stderr, combined log), and parsed final result (DONE/BLOCKED). Auto-refreshes via HTMX polling while running. When DONE/BLOCKED is parsed, a validation CTA appears. Manual result intake fallback is available and shown more prominently when no result was auto-parsed.
-- **Step 6 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Requires an agent result before the validation button is enabled. Stays on this step after run so the user can inspect pass/fail and output links.
-- **Step 7 — Diff/Audit**: Future, grayed out.
+- **Step 6 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Requires an agent result before the validation button is enabled. After a run, shows command-level results with status chips, exit codes, duration, and stdout/stderr indicators for each command. When validation passes, an audit handoff section appears. Stays on this step after run so the user can inspect pass/fail and output links.
+- **Step 7 — Diff/Audit**: Shows the generated audit handoff when available. The audit handoff is a compact markdown document intended to be copied into GPT for review. Step 7 is grayed out until an audit handoff is generated. Git diff inspection remains future.
 
 Clarifications:
 

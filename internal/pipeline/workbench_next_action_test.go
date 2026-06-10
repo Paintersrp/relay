@@ -374,6 +374,79 @@ func TestNextAction_AgentResultAndValidationCommandsNoRun(t *testing.T) {
 	}
 }
 
+func TestNextAction_ValidationPassedNoCLICheck(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:    true,
+		HasAgentPrompt:        true,
+		HasAgentPacket:        true,
+		HasOpenCodeCLICheck:   false,
+		HasOpenCodeDryRun:     false,
+		HasOpenCodeExecution:  true,
+		HasAgentResult:        true,
+		HasValidationCommands: true,
+		HasValidationRun:      true,
+		ValidationPassed:      true,
+		ValidationFailed:      false,
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionReadyForAudit {
+		t.Errorf("expected ready_for_audit, got %s (should not fall back to CLI check)", action.Kind)
+	}
+	if action.Severity != "done" {
+		t.Errorf("expected done severity, got %s", action.Severity)
+	}
+	if action.PrimaryFormAction != "generate-audit-handoff" {
+		t.Errorf("expected generate-audit-handoff form action, got %s", action.PrimaryFormAction)
+	}
+}
+
+func TestNextAction_ValidationFailedNoCLICheck(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:    true,
+		HasAgentPrompt:        true,
+		HasAgentPacket:        true,
+		HasOpenCodeCLICheck:   false,
+		HasOpenCodeDryRun:     false,
+		HasOpenCodeExecution:  true,
+		HasAgentResult:        true,
+		HasValidationCommands: true,
+		HasValidationRun:      true,
+		ValidationPassed:      false,
+		ValidationFailed:      true,
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionReviewValidationOutput {
+		t.Errorf("expected review_validation_output, got %s (should not fall back to CLI check)", action.Kind)
+	}
+	if action.Severity != "blocked" {
+		t.Errorf("expected blocked severity, got %s", action.Severity)
+	}
+}
+
+func TestNextAction_ValidationPassedWithAuditHandoff(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:    true,
+		HasAgentPrompt:        true,
+		HasAgentPacket:        true,
+		HasOpenCodeCLICheck:   false,
+		HasOpenCodeDryRun:     false,
+		HasOpenCodeExecution:  true,
+		HasAgentResult:        true,
+		HasValidationCommands: true,
+		HasValidationRun:      true,
+		ValidationPassed:      true,
+		ValidationFailed:      false,
+		HasAuditHandoff:       true,
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionReadyForAudit {
+		t.Errorf("expected ready_for_audit, got %s", action.Kind)
+	}
+	if action.PrimaryFormAction != "" {
+		t.Errorf("expected no primary form action when audit handoff exists, got %s", action.PrimaryFormAction)
+	}
+}
+
 func TestNextAction_ValidationFailed(t *testing.T) {
 	input := WorkbenchNextActionInput{
 		HasOriginalHandoff:     true,

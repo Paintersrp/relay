@@ -27,6 +27,7 @@ var allowedKinds = map[string]bool{
 	"opencode_dry_run_json":      true,
 	"opencode_cli_check_json":    true,
 	"intake_remediation_handoff": true,
+	"audit_handoff":              true,
 }
 
 func Dir(runID int64) string {

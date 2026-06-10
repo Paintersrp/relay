@@ -302,6 +302,13 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		intakeReview = pipeline.BuildIntakeReview(metadata, repoPath)
 	}
 
+	// Parse validation run preview
+	validationRunPreview := parseValidationRunPreview(readArtifactPreview(id, "validation_run_json"))
+
+	// Compute audit handoff availability
+	auditHandoffPreview := readArtifactPreview(id, "audit_handoff")
+	hasAuditHandoff := auditHandoffPreview != "" || hasArtifactKind(artifactsList, "audit_handoff")
+
 	// Compute next action
 	hasIntakeReview := len(intakeReview.Warnings) > 0 || len(intakeReview.Blockers) > 0 || originalPreview != ""
 	hasAgentResult := hasArtifactKind(artifactsList, "agent_result_raw")
@@ -336,6 +343,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		HasValidationRun:            hasValidationRun,
 		ValidationPassed:            validationPassed,
 		ValidationFailed:            validationFailed,
+		HasAuditHandoff:             hasAuditHandoff,
 	}
 
 	nextAction := pipeline.BuildWorkbenchNextAction(nextActionInput)
@@ -406,6 +414,9 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		OpenCodeParsedTestStatus:        openCodeParsedTestStatus,
 		OpenCodeParsedLOCChanged:        openCodeParsedLOCChanged,
 		OpenCodeParsedResultRaw:         openCodeParsedResultRaw,
+		ValidationRun:                   validationRunPreview,
+		HasAuditHandoff:                 hasAuditHandoff,
+		AuditHandoff:                    auditHandoffPreview,
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {
@@ -458,6 +469,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.notImplemented(w, r, id, "Git diff inspection is not yet implemented")
 	case "generate-audit-packet":
 		h.notImplemented(w, r, id, "Audit packet generation is not yet implemented")
+	case "generate-audit-handoff":
+		h.generateAuditHandoff(w, r, id)
 	case "submit-agent-result":
 		h.submitAgentResult(w, r, id)
 	case "generate-opencode-packet":
@@ -1159,6 +1172,85 @@ func (h *RunsHandler) runValidation(w http.ResponseWriter, r *http.Request, runI
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
 }
 
+func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Request, runID int64) {
+	run, err := h.store.GetRun(runID)
+	if err != nil {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	repo, _ := h.store.GetRepo(run.RepoID)
+	repoName := ""
+	if repo != nil {
+		repoName = repo.Name
+	}
+
+	originalHandoff := readArtifactPreview(runID, "original_handoff")
+	agentResultRaw := readArtifactPreview(runID, "agent_result_raw")
+
+	// Parse agent result
+	agentResultStatus := ""
+	buildStatus := ""
+	testStatus := ""
+	locChanged := ""
+	if agentResultRaw != "" {
+		parsed := pipeline.ParseAgentResult(agentResultRaw)
+		agentResultStatus = string(parsed.Status)
+		buildStatus = parsed.BuildStatus
+		testStatus = parsed.TestStatus
+		locChanged = parsed.LOCChanged
+	}
+
+	// Parse validation commands from artifact
+	validationJSON := readArtifactPreview(runID, "validation_run_json")
+	validationStatus := ""
+	validationRepoPath := ""
+	var validationCommands []pipeline.CommandRunResult
+	if validationJSON != "" {
+		var raw struct {
+			Status   string                      `json:"status"`
+			RepoPath string                      `json:"repo_path"`
+			Commands []pipeline.CommandRunResult `json:"commands"`
+		}
+		if err := json.Unmarshal([]byte(validationJSON), &raw); err == nil {
+			validationStatus = raw.Status
+			validationRepoPath = raw.RepoPath
+			validationCommands = raw.Commands
+		}
+	}
+
+	input := pipeline.AuditHandoffInput{
+		RunID:              runID,
+		Title:              run.Title,
+		RepoName:           repoName,
+		BranchName:         run.BranchName,
+		Status:             run.Status,
+		OriginalHandoff:    originalHandoff,
+		AgentResultStatus:  agentResultStatus,
+		BuildStatus:        buildStatus,
+		TestStatus:         testStatus,
+		LOCChanged:         locChanged,
+		ResultRaw:          agentResultRaw,
+		ValidationStatus:   validationStatus,
+		ValidationRepoPath: validationRepoPath,
+		ValidationCommands: validationCommands,
+	}
+
+	content := pipeline.BuildAuditHandoff(input)
+
+	artifactPath, err := artifacts.Write(runID, "audit_handoff", pipeline.ArtifactFilename("audit_handoff"), []byte(content))
+	if err != nil {
+		h.log.Error("write audit handoff", "error", err)
+		http.Error(w, "failed to save audit handoff", http.StatusInternalServerError)
+		return
+	}
+	h.store.CreateArtifact(runID, "audit_handoff", artifactPath, "text/markdown")
+	h.store.CreateEvent(runID, "info", "Audit handoff generated")
+	h.log.Info("audit handoff generated", "run_id", runID)
+
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+}
+
 func (h *RunsHandler) replaceOriginalHandoff(w http.ResponseWriter, r *http.Request, runID int64) {
 	rawText := r.FormValue("handoff_text")
 	handoffText := strings.TrimSpace(rawText)
@@ -1498,6 +1590,55 @@ func hasValidationCommandsForPreview(handoffText string, repoDefaults string) bo
 
 func defaultActiveRunStep(_ []store.Artifact, _ []store.Check) string {
 	return "intake"
+}
+
+func parseValidationRunPreview(jsonData string) views.ValidationRunPreview {
+	if jsonData == "" {
+		return views.ValidationRunPreview{}
+	}
+
+	var raw struct {
+		Status   string                      `json:"status"`
+		RepoPath string                      `json:"repo_path"`
+		Commands []pipeline.CommandRunResult `json:"commands"`
+	}
+	if err := json.Unmarshal([]byte(jsonData), &raw); err != nil {
+		return views.ValidationRunPreview{}
+	}
+
+	preview := views.ValidationRunPreview{
+		Status:          raw.Status,
+		RepoPath:        raw.RepoPath,
+		CommandCount:    len(raw.Commands),
+		TotalDurationMs: 0,
+	}
+
+	for _, cmd := range raw.Commands {
+		vcmd := views.ValidationCommandPreview{
+			Label:      cmd.Label,
+			Command:    cmd.Command,
+			Source:     cmd.Source,
+			ExitCode:   cmd.ExitCode,
+			TimedOut:   cmd.TimedOut,
+			DurationMs: cmd.DurationMS,
+			HasStdout:  cmd.Stdout != "",
+			HasStderr:  cmd.Stderr != "",
+		}
+		preview.TotalDurationMs += cmd.DurationMS
+		if cmd.TimedOut {
+			vcmd.Status = "timed_out"
+			preview.TimedOutCount++
+		} else if cmd.ExitCode != 0 {
+			vcmd.Status = "fail"
+			preview.FailedCount++
+		} else {
+			vcmd.Status = "pass"
+			preview.PassedCount++
+		}
+		preview.Commands = append(preview.Commands, vcmd)
+	}
+
+	return preview
 }
 
 func (h *RunsHandler) submitAgentResult(w http.ResponseWriter, r *http.Request, runID int64) {

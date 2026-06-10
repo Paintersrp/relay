@@ -532,7 +532,10 @@ func nextActionButtonLabel(action WorkbenchNextActionView) string {
 	case "review_validation_output":
 		return "Review Validation Output"
 	case "ready_for_audit":
-		return "Open Diff / Audit"
+		if action.PrimaryAction == "generate-audit-handoff" {
+			return "Generate Audit Handoff"
+		}
+		return "View Audit Handoff"
 	default:
 		return action.Title
 	}
