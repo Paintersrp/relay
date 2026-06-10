@@ -350,7 +350,7 @@ Run detail is organized as a guided step-by-step workbench with a single active 
 - **Step 3 — Agent Packet**: Shows packet preview, View/Download links. Buttons toggle between "Generate Agent Packet" and "Regenerate Agent Packet". After generation, redirects to Step 4.
 - **Step 4 — OpenCode Go Handoff**: Shows preflight readiness, OpenCode adapter configuration (binary, model, agent, working directory, command preview), and an explicit "Start OpenCode Go" button. Adapter readiness/blockers are visible at the top of the adapter section. If an execution exists, shows a notice linking to Step 5. Step 4 is handoff/preflight only; execution results appear in Step 5.
 - **Step 5 — Agent Run Monitor**: Shows the running or completed OpenCode execution. Displays command context, terminal-style output transcript, artifact links (stdout, stderr, combined log), and parsed final result (DONE/BLOCKED). Auto-refreshes via HTMX polling while running. When DONE/BLOCKED is parsed, a validation CTA appears. Manual result intake fallback is available and shown more prominently when no result was auto-parsed.
-- **Step 6 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Requires an agent result before the validation button is enabled. After a run, shows command-level results with status chips, exit codes, duration, and stdout/stderr indicators for each command. When validation passes, an audit handoff section appears. Stays on this step after run so the user can inspect pass/fail and output links.
+- **Step 6 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Validation starts asynchronously — clicking **Run Validation Commands** returns immediately and Step 6 auto-refreshes via HTMX polling every 2 seconds while validation runs. Shows real-time progress (current command, completed commands with inline results, elapsed time). Requires an agent result before the validation button is enabled. After completion, shows command-level results with status chips, exit codes, duration, and stdout/stderr indicators for each command. When validation passes, an audit handoff section appears. Stays on this step after run so the user can inspect pass/fail and output links.
 - **Step 7 — Diff/Audit**: Inspect the local git diff/status from the selected repo path and generate the audit handoff. Step 7 provides an "Inspect Git Diff" action that collects git status, diff stat, and patch artifacts. Diff evidence is displayed inline preview and included in the audit handoff. The audit handoff is a compact markdown document intended to be copied into GPT for review. Full AI audit/review is performed by pasting the audit handoff into GPT.
 
 Clarifications:
@@ -561,7 +561,15 @@ Relay can run validation commands for a run from the selected local repository p
 
 Commands are extracted from the original handoff's Tests / validation section. If no handoff commands are found, Relay falls back to the selected repo's default validation commands.
 
-Validation command execution is user-triggered. Relay captures stdout, stderr, exit code, duration, and timeout state as run artifacts/checks. Relay can execute OpenCode only through the explicit Step 4 OpenCode adapter. Relay does not run validation automatically after OpenCode exits.
+Validation command execution is user-triggered and runs asynchronously. Clicking **Run Validation Commands** starts validation in the background and immediately redirects to Step 6, which auto-refreshes via HTMX polling every 2 seconds while validation is running.
+
+Relay captures stdout, stderr, exit code, duration, and timeout state as run artifacts/checks. Progress is stored as a `validation_progress_json` artifact that updates after each command. Final validation artifacts remain:
+
+- `validation_run_json` — aggregate command results
+- `validation_stdout` — combined stdout output
+- `validation_stderr` — combined stderr output
+
+Relay does not run validation automatically after OpenCode exits.
 
 ## Local repository discovery
 

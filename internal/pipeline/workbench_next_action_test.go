@@ -495,6 +495,102 @@ func TestNextAction_ValidationPassed(t *testing.T) {
 	}
 }
 
+func TestNextAction_ValidationRunningWinsOverCLICheck(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:        true,
+		HasAgentPrompt:            true,
+		HasAgentPacket:            true,
+		HasOpenCodeCLICheck:       false,
+		HasOpenCodeDryRun:         false,
+		HasAgentResult:            true,
+		HasValidationCommands:     true,
+		HasValidationRun:          false,
+		HasValidationProgress:     true,
+		ValidationProgressRunning: true,
+		ValidationProgressStatus:  "running",
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionMonitorValidation {
+		t.Errorf("expected monitor_validation, got %s", action.Kind)
+	}
+	if action.Severity != "running" {
+		t.Errorf("expected running severity, got %s", action.Severity)
+	}
+	if action.Step != "validation" {
+		t.Errorf("expected step validation, got %s", action.Step)
+	}
+}
+
+func TestNextAction_ValidationRunningWinsOverReadyForAudit(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:        true,
+		HasAgentPrompt:            true,
+		HasAgentPacket:            true,
+		HasOpenCodeCLICheck:       false,
+		HasOpenCodeDryRun:         false,
+		HasAgentResult:            true,
+		HasValidationCommands:     true,
+		HasValidationRun:          true,
+		ValidationPassed:          false,
+		ValidationFailed:          false,
+		HasValidationProgress:     true,
+		ValidationProgressRunning: true,
+		ValidationProgressStatus:  "running",
+		HasAuditHandoff:           false,
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionMonitorValidation {
+		t.Errorf("expected monitor_validation, got %s (should not be ready_for_audit)", action.Kind)
+	}
+}
+
+func TestNextAction_ValidationRunningStopsAtMonitor(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:        true,
+		HasAgentPrompt:            true,
+		HasAgentPacket:            true,
+		HasOpenCodeCLICheck:       false,
+		HasOpenCodeDryRun:         false,
+		HasAgentResult:            true,
+		HasValidationCommands:     true,
+		HasValidationProgress:     true,
+		ValidationProgressRunning: true,
+		ValidationProgressStatus:  "running",
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionMonitorValidation {
+		t.Errorf("expected monitor_validation, got %s", action.Kind)
+	}
+	if action.PrimaryFormAction != "" {
+		t.Errorf("expected no primary form action for running validation, got %s", action.PrimaryFormAction)
+	}
+}
+
+func TestNextAction_ValidationPassedStillReadyForAudit(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:        true,
+		HasAgentPrompt:            true,
+		HasAgentPacket:            true,
+		HasOpenCodeCLICheck:       false,
+		HasOpenCodeDryRun:         false,
+		HasAgentResult:            true,
+		HasValidationCommands:     true,
+		HasValidationRun:          true,
+		ValidationPassed:          true,
+		ValidationFailed:          false,
+		HasValidationProgress:     true,
+		ValidationProgressRunning: false,
+		ValidationProgressStatus:  "pass",
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionReadyForAudit {
+		t.Errorf("expected ready_for_audit after validation passed, got %s", action.Kind)
+	}
+	if action.Severity != "done" {
+		t.Errorf("expected done severity, got %s", action.Severity)
+	}
+}
+
 func TestNextAction_Fallback(t *testing.T) {
 	input := WorkbenchNextActionInput{
 		HasOriginalHandoff:     true,

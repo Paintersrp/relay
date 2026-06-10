@@ -21,6 +21,31 @@ type OpenCodeTranscriptEventView struct {
 	Text string
 }
 
+type ValidationProgressCommandView struct {
+	Label      string
+	Command    string
+	Source     string
+	Status     string
+	ExitCode   int
+	TimedOut   bool
+	DurationMs int64
+	HasStdout  bool
+	HasStderr  bool
+}
+
+type ValidationProgressPreview struct {
+	Status         string
+	RepoPath       string
+	StartedAt      string
+	UpdatedAt      string
+	FinishedAt     string
+	CurrentIndex   int
+	CurrentCommand string
+	TotalCommands  int
+	Commands       []ValidationProgressCommandView
+	Error          string
+}
+
 type ValidationCommandPreview struct {
 	Label      string
 	Command    string
@@ -118,6 +143,11 @@ type RunPreviews struct {
 	OpenCodeParsedTestStatus   string
 	OpenCodeParsedLOCChanged   string
 	OpenCodeParsedResultRaw    string
+
+	HasValidationProgress      bool
+	ValidationProgressRunning bool
+	ValidationProgressStale   bool
+	ValidationProgressPreview ValidationProgressPreview
 
 	HasAuditHandoff bool
 	AuditHandoff    string

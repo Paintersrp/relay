@@ -506,6 +506,8 @@ func ArtifactFilename(kind string) string {
 		return "agent_result.json"
 	case "validation_run_json":
 		return "validation_run.json"
+	case "validation_progress_json":
+		return "validation_progress.json"
 	case "validation_stdout":
 		return "validation_stdout.txt"
 	case "validation_stderr":

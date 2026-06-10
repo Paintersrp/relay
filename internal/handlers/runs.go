@@ -26,6 +26,7 @@ type RunsHandler struct {
 	log                  *slog.Logger
 	runAgentCommandArgs  agentCommandRunner
 	launchAgentExecution func(func())
+	launchValidation     func(func())
 }
 
 func NewRunsHandler(s *store.Store, log *slog.Logger) *RunsHandler {
@@ -34,6 +35,9 @@ func NewRunsHandler(s *store.Store, log *slog.Logger) *RunsHandler {
 		log:                 log,
 		runAgentCommandArgs: pipeline.RunLocalAgentCommandArgs,
 		launchAgentExecution: func(fn func()) {
+			go fn()
+		},
+		launchValidation: func(fn func()) {
 			go fn()
 		},
 	}
@@ -305,6 +309,20 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	// Parse validation run preview
 	validationRunPreview := parseValidationRunPreview(readArtifactPreview(id, "validation_run_json"))
 
+	// Parse validation progress
+	validationProgressPreview := parseValidationProgressPreview(readArtifactPreview(id, "validation_progress_json"))
+	isValidationRunning := validationProgressPreview.Status == "starting" || validationProgressPreview.Status == "running"
+
+	// Stale guard: if progress is running but updated >30 min ago, mark stale
+	validationProgressStale := false
+	if isValidationRunning && validationProgressPreview.UpdatedAt != "" {
+		if updated, err := time.Parse(time.RFC3339, validationProgressPreview.UpdatedAt); err == nil {
+			if time.Since(updated) > 30*time.Minute {
+				validationProgressStale = true
+			}
+		}
+	}
+
 	// Compute repo path for previews
 	previewsRepoPath := ""
 	if repo != nil {
@@ -371,6 +389,10 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	validationPassed := hasCheckKindWithStatus(checksList, "validation_run", "pass")
 	validationFailed := hasCheckKindWithStatus(checksList, "validation_run", "fail")
 
+	hasValidationProgress := validationProgressPreview.Status != ""
+	validationProgressRunning := isValidationRunning
+	validationProgressStatus := validationProgressPreview.Status
+
 	nextActionInput := pipeline.WorkbenchNextActionInput{
 		HasOriginalHandoff:          originalPreview != "" || hasArtifactKind(artifactsList, "original_handoff"),
 		HasIntakeReview:             hasIntakeReview,
@@ -392,6 +414,9 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		HasValidationRun:            hasValidationRun,
 		ValidationPassed:            validationPassed,
 		ValidationFailed:            validationFailed,
+		HasValidationProgress:       hasValidationProgress,
+		ValidationProgressRunning:   validationProgressRunning,
+		ValidationProgressStatus:    validationProgressStatus,
 		HasAuditHandoff:             hasAuditHandoff,
 	}
 
@@ -464,6 +489,10 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		OpenCodeParsedLOCChanged:        openCodeParsedLOCChanged,
 		OpenCodeParsedResultRaw:         openCodeParsedResultRaw,
 		ValidationRun:                   validationRunPreview,
+		HasValidationProgress:           hasValidationProgress,
+		ValidationProgressRunning:       validationProgressRunning,
+		ValidationProgressStale:         validationProgressStale,
+		ValidationProgressPreview:       validationProgressPreview,
 		HasAuditHandoff:                 hasAuditHandoff,
 		AuditHandoff:                    auditHandoffPreview,
 		RepoPath:                        previewsRepoPath,
@@ -523,7 +552,7 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 	case "run-agent":
 		h.notImplemented(w, r, id, "Agent execution is not yet implemented")
 	case "run-validation":
-		h.runValidation(w, r, id)
+		h.startValidation(w, r, id)
 	case "inspect-diff":
 		h.inspectDiff(w, r, id)
 	case "generate-audit-packet":
@@ -1096,7 +1125,7 @@ func (h *RunsHandler) checkOpenCodeCLI(w http.ResponseWriter, r *http.Request, r
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 }
 
-func (h *RunsHandler) runValidation(w http.ResponseWriter, r *http.Request, runID int64) {
+func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, runID int64) {
 	run, err := h.store.GetRun(runID)
 	if err != nil {
 		h.log.Error("get run for validation", "error", err)
@@ -1137,12 +1166,82 @@ func (h *RunsHandler) runValidation(w http.ResponseWriter, r *http.Request, runI
 		return
 	}
 
+	// Check if validation is already running
+	existingProgress := readArtifactPreview(runID, "validation_progress_json")
+	if existingProgress != "" {
+		var vp pipeline.ValidationProgress
+		if err := json.Unmarshal([]byte(existingProgress), &vp); err == nil && vp.IsRunning() {
+			h.store.CreateEvent(runID, "warn", "Validation commands are already running.")
+			http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
+			return
+		}
+	}
+
+	// Write initial progress artifact
+	vp := pipeline.NewValidationProgress(repo.Path, len(commands))
+	writeProgress := func(p pipeline.ValidationProgress) {
+		data, _ := json.MarshalIndent(p, "", "  ")
+		h.store.DeleteArtifactsByRunKind(runID, "validation_progress_json")
+		path, err := artifacts.Write(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"), data)
+		if err != nil {
+			h.log.Error("write validation progress", "error", err)
+			return
+		}
+		h.store.CreateArtifact(runID, "validation_progress_json", path, "application/json")
+	}
+	writeProgress(vp)
+
+	h.store.CreateEvent(runID, "info", "Validation commands started")
+
+	// Launch background worker
+	h.launchValidation(func() {
+		h.executeValidation(runID, repo.Path, commands, writeProgress)
+	})
+
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
+}
+
+// executeValidation runs validation commands in the background and persists results.
+func (h *RunsHandler) executeValidation(runID int64, repoPath string, commands []pipeline.ValidationCommand, writeProgress func(pipeline.ValidationProgress)) {
+	// Ensure progress gets finalized on any exit path
+	defer func() {
+		if r := recover(); r != nil {
+			vp := pipeline.NewValidationProgress(repoPath, len(commands))
+			vp.MarkError("worker panic")
+			writeProgress(vp)
+			h.store.CreateEvent(runID, "warn", "Validation worker failed unexpectedly")
+			h.log.Error("validation worker panic", "run_id", runID, "recover", r)
+		}
+	}()
+
+	// Load progress, mark running
+	progressData := readArtifactPreview(runID, "validation_progress_json")
+	if progressData == "" {
+		// No progress artifact; create a minimal one
+		vp := pipeline.NewValidationProgress(repoPath, len(commands))
+		vp.MarkRunning()
+		writeProgress(vp)
+		progressBytes, _ := json.Marshal(vp)
+		progressData = string(progressBytes)
+	}
+
+	var vp pipeline.ValidationProgress
+	if err := json.Unmarshal([]byte(progressData), &vp); err != nil {
+		vp = pipeline.NewValidationProgress(repoPath, len(commands))
+	}
+	vp.MarkRunning()
+	writeProgress(vp)
+
 	var results []pipeline.CommandRunResult
 	allPassed := true
 	var combinedStdout, combinedStderr strings.Builder
 
-	for _, cmd := range commands {
-		result := pipeline.RunValidationCommand(context.Background(), repo.Path, cmd, pipeline.DefaultValidationCommandTimeout)
+	for i, cmd := range commands {
+		// Update progress: current command running
+		vp.MarkCommandRunning(i+1, cmd.Command)
+		writeProgress(vp)
+
+		result := pipeline.RunValidationCommand(context.Background(), repoPath, cmd, pipeline.DefaultValidationCommandTimeout)
 		results = append(results, result)
 
 		if combinedStdout.Len() > 0 {
@@ -1160,15 +1259,36 @@ func (h *RunsHandler) runValidation(w http.ResponseWriter, r *http.Request, runI
 		if result.ExitCode != 0 || result.TimedOut {
 			allPassed = false
 		}
+
+		// Append to progress
+		pc := pipeline.ValidationProgressCommand{
+			Label:      result.Label,
+			Command:    result.Command,
+			Source:     result.Source,
+			Status:     "pass",
+			ExitCode:   result.ExitCode,
+			TimedOut:   result.TimedOut,
+			DurationMs: result.DurationMS,
+			HasStdout:  result.Stdout != "",
+			HasStderr:  result.Stderr != "",
+		}
+		if result.TimedOut {
+			pc.Status = "timed_out"
+		} else if result.ExitCode != 0 {
+			pc.Status = "fail"
+		}
+		vp.AppendCommandResult(pc)
+		writeProgress(vp)
 	}
 
+	// Write final run JSON artifact (same schema as before)
 	aggregate := struct {
 		Status   string                      `json:"status"`
 		RepoPath string                      `json:"repo_path"`
 		Commands []pipeline.CommandRunResult `json:"commands"`
 	}{
 		Status:   "fail",
-		RepoPath: repo.Path,
+		RepoPath: repoPath,
 		Commands: results,
 	}
 	if allPassed {
@@ -1177,10 +1297,16 @@ func (h *RunsHandler) runValidation(w http.ResponseWriter, r *http.Request, runI
 
 	aggregateJSON, _ := json.MarshalIndent(aggregate, "", "  ")
 
+	// Delete stale progress and final artifact rows, then create fresh ones
+	h.store.DeleteArtifactsByRunKind(runID, "validation_run_json")
+	h.store.DeleteArtifactsByRunKind(runID, "validation_stdout")
+	h.store.DeleteArtifactsByRunKind(runID, "validation_stderr")
+
 	jsonPath, err := artifacts.Write(runID, "validation_run_json", pipeline.ArtifactFilename("validation_run_json"), aggregateJSON)
 	if err != nil {
 		h.log.Error("write validation run json", "error", err)
-		http.Error(w, "failed to save validation result", http.StatusInternalServerError)
+		vp.MarkError("failed to write validation_run_json: " + err.Error())
+		writeProgress(vp)
 		return
 	}
 	h.store.CreateArtifact(runID, "validation_run_json", jsonPath, "application/json")
@@ -1221,14 +1347,18 @@ func (h *RunsHandler) runValidation(w http.ResponseWriter, r *http.Request, runI
 	if allPassed {
 		h.store.UpdateRunStatus(runID, "validation_passed")
 		h.store.CreateEvent(runID, "info", "Validation commands passed")
+		finalStatus := "pass"
+		vp.MarkFinished(finalStatus)
 	} else {
 		h.store.UpdateRunStatus(runID, "validation_failed")
 		h.store.CreateEvent(runID, "info", "Validation commands failed")
+		finalStatus := "fail"
+		vp.MarkFinished(finalStatus)
 	}
 
-	h.log.Info("validation commands executed", "run_id", runID, "status", aggregate.Status, "commands", len(commands))
+	writeProgress(vp)
 
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
+	h.log.Info("validation commands executed", "run_id", runID, "status", aggregate.Status, "commands", len(commands))
 }
 
 func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Request, runID int64) {
@@ -1727,6 +1857,41 @@ func normalizeRunStep(step string) string {
 	default:
 		return "intake"
 	}
+}
+
+func parseValidationProgressPreview(jsonData string) views.ValidationProgressPreview {
+	if jsonData == "" {
+		return views.ValidationProgressPreview{}
+	}
+	var vp pipeline.ValidationProgress
+	if err := json.Unmarshal([]byte(jsonData), &vp); err != nil {
+		return views.ValidationProgressPreview{}
+	}
+	preview := views.ValidationProgressPreview{
+		Status:         vp.Status,
+		RepoPath:       vp.RepoPath,
+		StartedAt:      vp.StartedAt,
+		UpdatedAt:      vp.UpdatedAt,
+		FinishedAt:     vp.FinishedAt,
+		CurrentIndex:   vp.CurrentIndex,
+		CurrentCommand: vp.CurrentCommand,
+		TotalCommands:  vp.TotalCommands,
+		Error:          vp.Error,
+	}
+	for _, pc := range vp.Commands {
+		preview.Commands = append(preview.Commands, views.ValidationProgressCommandView{
+			Label:      pc.Label,
+			Command:    pc.Command,
+			Source:     pc.Source,
+			Status:     pc.Status,
+			ExitCode:   pc.ExitCode,
+			TimedOut:   pc.TimedOut,
+			DurationMs: pc.DurationMs,
+			HasStdout:  pc.HasStdout,
+			HasStderr:  pc.HasStderr,
+		})
+	}
+	return preview
 }
 
 func hasValidationCommandsForPreview(handoffText string, repoDefaults string) bool {

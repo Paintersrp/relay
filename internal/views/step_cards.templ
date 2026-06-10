@@ -1002,15 +1002,33 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 }
 
 templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
-	<div class="relay-card">
-		<div class="relay-card-header">
+	if previews.ValidationProgressRunning {
+		<div id="relay-validation-panel"
+			hx-get={"/runs/" + Itoa(run.ID) + "?step=validation"}
+			hx-trigger="every 2s"
+			hx-target="body"
+			hx-swap="outerHTML"
+			class="relay-card">
+			@relayValidationStepPanelInner(run, artifacts, checks, previews)
+		</div>
+	} else {
+		<div id="relay-validation-panel" class="relay-card">
+			@relayValidationStepPanelInner(run, artifacts, checks, previews)
+		</div>
+	}
+}
+
+templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
+	<div class="relay-card-header">
 			<div class="min-w-0">
 				<h3 class="font-medium text-base sm:text-lg">Step 6: Relay Validation</h3>
 				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Run Relay-extracted validation commands locally after agent result.</p>
 			</div>
 			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
-				@validationStatusChip(artifactExists(artifacts, "validation_run_json"), checks, artifactExists(artifacts, "agent_result_raw"))
-				if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
+				@validationStatusChip(artifactExists(artifacts, "validation_run_json"), checks, artifactExists(artifacts, "agent_result_raw"), previews.ValidationProgressRunning)
+				if previews.ValidationProgressRunning {
+					<span class="relay-chip-blue text-xs">running</span>
+				} else if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 						hx-target="body" hx-swap="outerHTML"
@@ -1036,7 +1054,42 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 		</div>
 
 		<div class="px-4 pb-4 space-y-3">
-			if artifactExists(artifacts, "validation_run_json") && previews.ValidationRun.CommandCount > 0 {
+			if previews.ValidationProgressStale {
+				<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-3 sm:p-4">
+					<div class="text-sm font-medium text-yellow-300">Validation may be stale</div>
+					<p class="mt-1 text-xs text-yellow-200">
+						Last update was { previews.ValidationProgressPreview.UpdatedAt }. If validation appears stuck, check events/logs and re-run.
+					</p>
+					if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
+						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+							hx-target="body" hx-swap="outerHTML"
+							class="mt-2 inline">
+							<input type="hidden" name="action" value="run-validation"/>
+							<button type="submit" class="btn-primary text-xs sm:text-sm">Re-run Validation</button>
+						</form>
+					}
+				</div>
+			}
+			if previews.ValidationProgressRunning {
+				@validationProgressDisplay(previews.ValidationProgressPreview, run.ID)
+			} else if previews.ValidationProgressPreview.Status == "error" {
+				<div class="rounded-xl border border-red-900/60 bg-red-950/30 p-3 sm:p-4">
+					<div class="text-sm font-medium text-red-300">Validation error</div>
+					if previews.ValidationProgressPreview.Error != "" {
+						<p class="mt-1 text-xs text-red-200">{ previews.ValidationProgressPreview.Error }</p>
+					}
+				</div>
+				if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
+					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+						hx-target="body" hx-swap="outerHTML"
+						class="inline">
+						<input type="hidden" name="action" value="run-validation"/>
+						<button type="submit" class="btn-primary text-xs sm:text-sm">Retry Validation</button>
+					</form>
+				}
+			} else if artifactExists(artifacts, "validation_run_json") && previews.ValidationRun.CommandCount > 0 {
 				@validationResultsSummary(previews.ValidationRun, run.ID, artifacts)
 			} else if artifactExists(artifacts, "validation_run_json") {
 				// JSON exists but couldn't be parsed into preview
@@ -1048,6 +1101,15 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 					<div class="text-xs sm:text-sm text-gray-500">Validation completed. Check artifacts for details.</div>
 				}
 				<div class="mt-2 text-xs text-yellow-400">Validation result artifact could not be parsed. Use View validation JSON.</div>
+			} else if validationProgressFinished(previews) {
+				if previews.ValidationProgressPreview.Status == "pass" {
+					<div class="text-xs sm:text-sm text-green-400">Validation passed.</div>
+				} else {
+					<div class="text-xs sm:text-sm text-red-400">Validation failed. Review stdout/stderr artifacts.</div>
+				}
+				if !artifactExists(artifacts, "validation_run_json") {
+					<div class="mt-2 text-xs text-yellow-400">Validation finished but final result artifact is missing. Check events/logs.</div>
+				}
 			} else if !artifactExists(artifacts, "agent_result_raw") {
 				<div class="text-xs sm:text-sm text-gray-500">
 					Submit an agent result first, then run validation commands.
@@ -1087,9 +1149,7 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 				}
 			}
 		</div>
-	</div>
 }
-
 templ validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []store.Artifact) {
 	<div class="rounded-xl border border-gray-800 bg-gray-950/40 overflow-hidden">
 		<div class="border-b border-gray-800 px-3 py-2 flex items-center justify-between">
@@ -1146,6 +1206,64 @@ templ validationCommandStatusChip(status string) {
 		<span class="relay-chip-yellow shrink-0">timed out</span>
 	} else {
 		<span class="relay-chip-gray shrink-0">{ status }</span>
+	}
+}
+
+templ validationProgressDisplay(progress ValidationProgressPreview, runID int64) {
+	<div class="rounded-xl border border-blue-900/60 bg-blue-950/30 p-3 sm:p-4">
+		<div class="text-sm font-medium text-blue-300 mb-2">Validation is running</div>
+		<div class="text-xs text-blue-200 mb-2">
+			Validation is running. This page refreshes automatically.
+		</div>
+		<div class="space-y-1 text-xs text-gray-400">
+			<div class="flex gap-2">
+				<span class="shrink-0">Started:</span>
+				<span class="text-gray-300">{ progress.StartedAt }</span>
+			</div>
+			<div class="flex gap-2">
+				<span class="shrink-0">Updated:</span>
+				<span class="text-gray-300">{ progress.UpdatedAt }</span>
+			</div>
+			if progress.CurrentCommand != "" {
+				<div class="flex gap-2">
+					<span class="shrink-0">Current:</span>
+					<span class="text-blue-300 font-mono break-all">{ progress.CurrentCommand }</span>
+				</div>
+			}
+			<div class="flex gap-2">
+				<span class="shrink-0">Progress:</span>
+				<span class="text-gray-300">{ Itoa(int64(progress.CurrentIndex)) } / { Itoa(int64(progress.TotalCommands)) } commands</span>
+			</div>
+		</div>
+	</div>
+	if len(progress.Commands) > 0 {
+		<div class="rounded-xl border border-gray-800 bg-gray-950/40 overflow-hidden">
+			<div class="border-b border-gray-800 px-3 py-2">
+				<div class="text-sm font-medium text-gray-200">Completed commands</div>
+			</div>
+			<div class="divide-y divide-gray-800">
+				for _, cmd := range progress.Commands {
+					<div class="px-3 py-2 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-xs">
+						<div class="flex items-center gap-2 min-w-0 flex-1">
+							@validationCommandStatusChip(cmd.Status)
+							<span class="text-gray-200 font-mono truncate min-w-0">{ cmd.Command }</span>
+						</div>
+						<div class="flex items-center gap-2 sm:gap-3 text-gray-500 shrink-0 ml-0 sm:ml-auto">
+							<span>exit { Itoa(int64(cmd.ExitCode)) }</span>
+							<span class="tabular-nums">{ Itoa(cmd.DurationMs) }ms</span>
+							if cmd.HasStdout {
+								<a href={"/runs/" + Itoa(runID) + "/artifacts/validation_stdout"}
+									class="text-indigo-400 hover:text-indigo-300 underline">stdout</a>
+							}
+							if cmd.HasStderr {
+								<a href={"/runs/" + Itoa(runID) + "/artifacts/validation_stderr"}
+									class="text-red-400 hover:text-red-300 underline">stderr</a>
+							}
+						</div>
+					</div>
+				}
+			</div>
+		</div>
 	}
 }
 
@@ -1414,8 +1532,10 @@ templ handoffStatusChip(hasPacket bool) {
 	}
 }
 
-templ validationStatusChip(hasRun bool, checks []store.Check, hasAgentResult bool) {
-	if hasRun {
+templ validationStatusChip(hasRun bool, checks []store.Check, hasAgentResult bool, isRunning bool) {
+	if isRunning {
+		<span class="relay-chip-blue">running</span>
+	} else if hasRun {
 		if hasCheckStatus(checks, "validation_run", "pass") {
 			<span class="relay-chip-green">passed</span>
 		} else if hasCheckStatus(checks, "validation_run", "fail") {
@@ -1554,6 +1674,10 @@ const (
 	relayValidationReady      relayValidationUIState = "ready"
 	relayValidationCompleted  relayValidationUIState = "completed"
 )
+
+func validationProgressFinished(previews RunPreviews) bool {
+	return previews.HasValidationProgress && (previews.ValidationProgressPreview.Status == "pass" || previews.ValidationProgressPreview.Status == "fail")
+}
 
 func relayValidationUIStateFor(hasAgentResult bool, hasValidationCommands bool, hasValidationRun bool) relayValidationUIState {
 	if hasValidationRun {

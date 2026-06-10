@@ -14,6 +14,7 @@ const (
 	WorkbenchNextActionMonitorAgentRun        WorkbenchNextActionKind = "monitor_agent_run"
 	WorkbenchNextActionReviewAgentResult      WorkbenchNextActionKind = "review_agent_result"
 	WorkbenchNextActionRunValidation          WorkbenchNextActionKind = "run_validation"
+	WorkbenchNextActionMonitorValidation      WorkbenchNextActionKind = "monitor_validation"
 	WorkbenchNextActionReviewValidationOutput WorkbenchNextActionKind = "review_validation_output"
 	WorkbenchNextActionReadyForAudit          WorkbenchNextActionKind = "ready_for_audit"
 )
@@ -56,7 +57,12 @@ type WorkbenchNextActionInput struct {
 	HasValidationRun      bool
 	ValidationPassed      bool
 	ValidationFailed      bool
-	HasAuditHandoff       bool
+
+	HasValidationProgress     bool
+	ValidationProgressRunning bool
+	ValidationProgressStatus  string
+
+	HasAuditHandoff bool
 }
 
 func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextAction {
@@ -130,6 +136,17 @@ func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextActio
 			Title:    "OpenCode is running",
 			Summary:  "Monitor the current agent execution.",
 			Step:     "run",
+			Severity: "running",
+		}
+	}
+
+	// If validation is running, show monitor action
+	if input.HasValidationProgress && input.ValidationProgressRunning {
+		return WorkbenchNextAction{
+			Kind:     WorkbenchNextActionMonitorValidation,
+			Title:    "Validation is running",
+			Summary:  "Relay is running validation commands. Watch Step 6 for progress.",
+			Step:     "validation",
 			Severity: "running",
 		}
 	}

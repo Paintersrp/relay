@@ -1103,7 +1103,7 @@ DONE or BLOCKED
 	req := httptest.NewRequest("POST", "/", nil)
 	w := httptest.NewRecorder()
 
-	h.runValidation(w, req, runID)
+	h.startValidation(w, req, runID)
 
 	if w.Code != 303 {
 		t.Fatalf("expected 303 redirect, got %d", w.Code)
@@ -1111,6 +1111,285 @@ DONE or BLOCKED
 	loc := w.Header().Get("Location")
 	if !strings.Contains(loc, "?step=validation") {
 		t.Fatalf("expected redirect to step=validation, got %s", loc)
+	}
+}
+
+func TestStartValidationRedirectsImmediately(t *testing.T) {
+	s := setupTestStore(t)
+
+	handoffText := `# Test
+
+## Goal
+Test
+
+## Scope
+- README.md
+
+## Tests / validation
+
+` + "```bash" + `
+go version
+` + "```" + `
+
+## Output
+DONE or BLOCKED
+`
+	runID := newTestHandoffWithRepoFiles(t, s, handoffText, map[string]string{
+		"README.md": "# repo",
+	})
+
+	// Submit agent result so validation is ready
+	agentResultPath, err := artifacts.Write(runID, "agent_result_raw", pipeline.ArtifactFilename("agent_result_raw"), []byte("DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 1"))
+	if err != nil {
+		t.Fatalf("write agent result: %v", err)
+	}
+	s.CreateArtifact(runID, "agent_result_raw", agentResultPath, "text/plain")
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	// Use synchronous launcher so the background worker completes before the test assertions
+	h.launchValidation = func(fn func()) {
+		fn()
+	}
+
+	req := httptest.NewRequest("POST", "/", nil)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	h.startValidation(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=validation") {
+		t.Fatalf("expected redirect to step=validation, got %s", loc)
+	}
+
+	// Check progress artifact exists with a final status (not stuck running)
+	progressData, err := artifacts.Read(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"))
+	if err != nil {
+		t.Fatalf("read validation progress: %v", err)
+	}
+	var vp pipeline.ValidationProgress
+	if err := json.Unmarshal(progressData, &vp); err != nil {
+		t.Fatalf("unmarshal progress: %v", err)
+	}
+	if vp.Status != "pass" && vp.Status != "fail" && vp.Status != "error" {
+		t.Fatalf("expected progress final status (pass/fail/error), got %s", vp.Status)
+	}
+	if vp.TotalCommands != 1 {
+		t.Errorf("expected 1 total command, got %d", vp.TotalCommands)
+	}
+}
+
+func TestValidationWorkerWritesProgressAndFinalArtifacts(t *testing.T) {
+	s := setupTestStore(t)
+
+	handoffText := `# Test
+
+## Goal
+Test
+
+## Scope
+- README.md
+
+## Tests / validation
+
+` + "```bash" + `
+go version
+` + "```" + `
+
+## Output
+DONE or BLOCKED
+`
+	runID := newTestHandoffWithRepoFiles(t, s, handoffText, map[string]string{
+		"README.md": "# repo",
+	})
+
+	// Submit agent result so validation is ready
+	agentResultPath, err := artifacts.Write(runID, "agent_result_raw", pipeline.ArtifactFilename("agent_result_raw"), []byte("DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 1"))
+	if err != nil {
+		t.Fatalf("write agent result: %v", err)
+	}
+	s.CreateArtifact(runID, "agent_result_raw", agentResultPath, "text/plain")
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchValidation = func(fn func()) {
+		fn()
+	}
+
+	// Run startValidation synchronously (the worker will also run synchronously)
+	req := httptest.NewRequest("POST", "/", nil)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.startValidation(w, req, runID)
+
+	// Check final validation artifacts exist
+	if !artifacts.Exists(runID, "validation_run_json", pipeline.ArtifactFilename("validation_run_json")) {
+		t.Error("expected validation_run_json artifact to exist")
+	}
+	if !artifacts.Exists(runID, "validation_stdout", pipeline.ArtifactFilename("validation_stdout")) {
+		t.Error("expected validation_stdout artifact to exist")
+	}
+	if !artifacts.Exists(runID, "validation_stderr", pipeline.ArtifactFilename("validation_stderr")) {
+		t.Error("expected validation_stderr artifact to exist")
+	}
+
+	// Check run status updated
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status != "validation_passed" && run.Status != "validation_failed" {
+		t.Errorf("expected validation_passed or validation_failed, got %s", run.Status)
+	}
+
+	// Check validation_run checks exist
+	checks, err := s.ListChecksByRun(runID)
+	if err != nil {
+		t.Fatalf("list checks: %v", err)
+	}
+	hasRunCheck := false
+	for _, c := range checks {
+		if c.Kind == "validation_run" {
+			hasRunCheck = true
+			break
+		}
+	}
+	if !hasRunCheck {
+		t.Error("expected validation_run check to exist")
+	}
+}
+
+func TestStartValidationDoesNotDoubleStart(t *testing.T) {
+	s := setupTestStore(t)
+
+	handoffText := `# Test
+
+## Tests / validation
+
+` + "```bash" + `
+go version
+` + "```" + `
+`
+	runID := newTestHandoffWithRepoFiles(t, s, handoffText, map[string]string{
+		"README.md": "# repo",
+	})
+
+	// Seed progress artifact as running
+	progress := pipeline.ValidationProgress{
+		Status:         "running",
+		RepoPath:       "",
+		StartedAt:      "2026-01-01T00:00:00Z",
+		UpdatedAt:      "2026-01-01T00:00:01Z",
+		FinishedAt:     "",
+		CurrentIndex:   1,
+		CurrentCommand: "go version",
+		TotalCommands:  1,
+		Commands:       nil,
+		Error:          "",
+	}
+	progressData, _ := json.MarshalIndent(progress, "", "  ")
+	path, err := artifacts.Write(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"), progressData)
+	if err != nil {
+		t.Fatalf("write seed progress: %v", err)
+	}
+	s.CreateArtifact(runID, "validation_progress_json", path, "application/json")
+
+	launchCount := 0
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchValidation = func(fn func()) {
+		launchCount++
+	}
+
+	req := httptest.NewRequest("POST", "/", nil)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.startValidation(w, req, runID)
+
+	if launchCount != 0 {
+		t.Errorf("expected 0 worker launches (double-start prevented), got %d", launchCount)
+	}
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=validation") {
+		t.Fatalf("expected redirect to step=validation, got %s", loc)
+	}
+}
+
+func TestValidationWorkerErrorFinalizesProgress(t *testing.T) {
+	s := setupTestStore(t)
+
+	handoffText := `# Test
+
+## Tests / validation
+
+` + "```bash" + `
+go version
+` + "```" + `
+`
+	runID := newTestHandoffWithRepoFiles(t, s, handoffText, map[string]string{
+		"README.md": "# repo",
+	})
+
+	agentResultPath, err := artifacts.Write(runID, "agent_result_raw", pipeline.ArtifactFilename("agent_result_raw"), []byte("DONE"))
+	if err != nil {
+		t.Fatalf("write agent result: %v", err)
+	}
+	s.CreateArtifact(runID, "agent_result_raw", agentResultPath, "text/plain")
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchValidation = func(fn func()) {
+		fn()
+	}
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	repo, err := s.GetRepo(run.RepoID)
+	if err != nil {
+		t.Fatalf("get repo: %v", err)
+	}
+	handoffData, _ := artifacts.Read(runID, "original_handoff", pipeline.ArtifactFilename("original_handoff"))
+	commands := pipeline.ExtractValidationCommands(string(handoffData), "")
+
+	// Write initial progress first (as startValidation would)
+	initialProgress := pipeline.NewValidationProgress(repo.Path, len(commands))
+	initData, _ := json.MarshalIndent(initialProgress, "", "  ")
+	initPath, _ := artifacts.Write(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"), initData)
+	s.CreateArtifact(runID, "validation_progress_json", initPath, "application/json")
+
+	writeProgress := func(p pipeline.ValidationProgress) {
+		data, _ := json.MarshalIndent(p, "", "  ")
+		h.store.DeleteArtifactsByRunKind(runID, "validation_progress_json")
+		pth, _ := artifacts.Write(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"), data)
+		if pth != "" {
+			s.CreateArtifact(runID, "validation_progress_json", pth, "application/json")
+		}
+	}
+
+	h.executeValidation(runID, repo.Path, commands, writeProgress)
+
+	// Verify progress final status is not stuck running
+	progressData, err := artifacts.Read(runID, "validation_progress_json", pipeline.ArtifactFilename("validation_progress_json"))
+	if err != nil {
+		t.Fatalf("read progress: %v", err)
+	}
+	var finalProgress pipeline.ValidationProgress
+	if err := json.Unmarshal(progressData, &finalProgress); err != nil {
+		t.Fatalf("unmarshal progress: %v", err)
+	}
+	if finalProgress.Status == "starting" || finalProgress.Status == "running" {
+		t.Errorf("progress should not be stuck running, got %s", finalProgress.Status)
+	}
+	if finalProgress.FinishedAt == "" {
+		t.Error("expected finished_at to be set")
+	}
+	if finalProgress.Status != "pass" && finalProgress.Status != "fail" {
+		t.Errorf("expected pass or fail, got %s", finalProgress.Status)
 	}
 }
 
