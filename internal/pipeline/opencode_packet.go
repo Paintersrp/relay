@@ -12,10 +12,25 @@ type OpenCodeHandoffPacket struct {
 	PromptArtifactPath string                   `json:"prompt_artifact_path"`
 	ArtifactDir        string                   `json:"artifact_dir"`
 	Execution          OpenCodeExecutionPreview `json:"execution"`
+	Artifacts          HandoffArtifactManifest  `json:"artifacts"`
 }
 
 type OpenCodeExecutionPreview struct {
 	Status string `json:"status"`
+}
+
+type HandoffArtifactManifest struct {
+	Dir      string                `json:"dir"`
+	Required []HandoffArtifactItem `json:"required"`
+	Optional []HandoffArtifactItem `json:"optional"`
+}
+
+type HandoffArtifactItem struct {
+	Kind        string `json:"kind"`
+	Path        string `json:"path"`
+	Filename    string `json:"filename,omitempty"`
+	MediaType   string `json:"media_type,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 func NewOpenCodeHandoffPacket(
@@ -38,6 +53,11 @@ func NewOpenCodeHandoffPacket(
 		ArtifactDir:        artifactDir,
 		Execution: OpenCodeExecutionPreview{
 			Status: "not_implemented",
+		},
+		Artifacts: HandoffArtifactManifest{
+			Dir:      artifactDir,
+			Required: nil,
+			Optional: nil,
 		},
 	}
 }

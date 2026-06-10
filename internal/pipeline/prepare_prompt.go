@@ -5,6 +5,14 @@ import (
 	"strings"
 )
 
+// AgentPromptMode controls whether the prompt is full (orchestration) or compact (execution).
+type AgentPromptMode string
+
+const (
+	AgentPromptModeFull    AgentPromptMode = "full"
+	AgentPromptModeCompact AgentPromptMode = "compact"
+)
+
 func PreparePrompt(originalHandoff string) string {
 	return BuildAgentPrompt(originalHandoff)
 }
@@ -502,5 +510,128 @@ func ArtifactFilename(kind string) string {
 		return "validation_stderr.txt"
 	default:
 		return fmt.Sprintf("%s.txt", kind)
+	}
+}
+
+// BuildAgentPromptWithMode generates an Agent Prompt using the given mode.
+// Full mode preserves the current full prompt behavior.
+// Compact mode produces a shorter execution-focused prompt without orchestration text.
+func BuildAgentPromptWithMode(originalHandoff string, mode AgentPromptMode) string {
+	if mode == AgentPromptModeCompact {
+		return BuildCompactAgentPrompt(originalHandoff)
+	}
+	return BuildAgentPrompt(originalHandoff)
+}
+
+// BuildCompactAgentPrompt generates a compact execution prompt for the repo agent.
+// It preserves Goal, Scope, Do not change, Task checklist, Direct files, Context files,
+// Current behavior, Tests, and Surgical implementation details.
+// It removes Execution model, Relay validation commands, RTK preference, and
+// appends a clean final output contract.
+func BuildCompactAgentPrompt(originalHandoff string) string {
+	meta := ParseHandoffMetadata(originalHandoff, "")
+	title := meta.Title
+	if title == "" {
+		title = "Implementation Handoff"
+	}
+
+	// Sections to strip entirely
+	sectionsToStrip := []string{
+		"execution model",
+		"relay validation commands",
+		"agent final output requirement",
+		"agent final output",
+		"agent final response",
+		"final output",
+		"output",
+	}
+
+	handoff := originalHandoff
+	handoff = stripH1Title(handoff)
+	handoff = stripSections(handoff, sectionsToStrip...)
+	handoff = cleanValidationExecutionMaterial(handoff)
+	handoff = stripRTKPreference(handoff)
+	handoff = stripValidationCommandFences(handoff)
+
+	var b strings.Builder
+	b.WriteString("# ")
+	b.WriteString(title)
+	b.WriteString(" Agent Execution Prompt\n\n")
+	b.WriteString("You are working from a Relay implementation handoff.\n\n")
+	b.WriteString(handoff)
+	if !strings.HasSuffix(handoff, "\n") {
+		b.WriteString("\n")
+	}
+	b.WriteString("\n## Validation responsibility\n\n")
+	b.WriteString("Relay will run validation after your implementation.\n")
+	b.WriteString("Do not run validation commands unless explicitly instructed by the user or unless a command is required to generate source files before editing can continue.\n\n")
+	b.WriteString("## Agent final output requirement\n\n")
+	b.WriteString("Return only:\n\n")
+	b.WriteString("- DONE or BLOCKED\n")
+	b.WriteString("- build status\n")
+	b.WriteString("- test status\n")
+	b.WriteString("- count of LOC changed\n")
+	b.WriteString("- blocker/error only if BLOCKED\n")
+
+	return b.String()
+}
+
+// stripRTKPreference removes lines about RTK preference from the text.
+func stripRTKPreference(text string) string {
+	lines := strings.Split(text, "\n")
+	var result []string
+	for _, line := range lines {
+		lower := strings.ToLower(strings.TrimSpace(line))
+		if strings.Contains(lower, "rtk") && (strings.Contains(lower, "prefer") || strings.Contains(lower, "available") || strings.Contains(lower, "wrapped") || strings.Contains(lower, "wrappers")) {
+			continue
+		}
+		if strings.Contains(lower, "do not list") && strings.Contains(lower, "rtk") {
+			continue
+		}
+		result = append(result, line)
+	}
+	return strings.TrimSpace(strings.Join(result, "\n"))
+}
+
+// stripValidationCommandFences removes any remaining shell fenced code blocks
+// that were not caught by cleanValidationExecutionMaterial.
+func stripValidationCommandFences(text string) string {
+	lines := strings.Split(text, "\n")
+	var result []string
+	inShellFence := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			_, _, lang, ok := isFenceLine(trimmed)
+			if ok && isShellLang(lang) {
+				inShellFence = true
+				continue
+			}
+			inShellFence = false
+			result = append(result, line)
+			continue
+		}
+		if inShellFence {
+			continue
+		}
+		result = append(result, line)
+	}
+	return strings.TrimSpace(strings.Join(result, "\n"))
+}
+
+// PromptEstimate holds byte count and an approximate token count for a prompt.
+type PromptEstimate struct {
+	Bytes        int
+	ApproxTokens int
+}
+
+// EstimateTokens returns a PromptEstimate from a text.
+// The token estimate is approximate and uses the heuristic: runes / 4.
+func EstimateTokens(text string) PromptEstimate {
+	runes := len([]rune(text))
+	return PromptEstimate{
+		Bytes:        len(text),
+		ApproxTokens: (runes + 3) / 4,
 	}
 }

@@ -194,16 +194,19 @@ Model selection is automatic by default. The model override control is optional 
 
 ## Agent Prompt
 
-The Agent Prompt is a transformed execution prompt for the running repo agent. Relay parses the original handoff, removes orchestration-only metadata, strips validation command execution material (shell fences and command lines), and appends validation responsibility and final output contract sections.
+The Agent Prompt is a compact execution prompt for the running repo agent. Relay parses the original handoff, removes orchestration-only metadata (Execution model, RTK preference, Relay validation commands), strips validation command execution material (shell fences and command lines), and appends validation responsibility and final output contract sections.
 
 Key behaviors:
 
+- Relay stores the verbose original handoff as a source/orchestration artifact.
+- The Agent Prompt (`agent_prompt`) is compact for repo-agent execution.
+- Relay validation commands stay out of the Agent Prompt.
 - Agent Prompt preserves test implementation instructions (prose, bullets, checklists) under `## Tests / validation`, `## Tests`, `## Validation`, and `## Tests to add or update` sections.
 - Relay removes only command execution material (shell fenced blocks, bare command lines) from test/validation sections.
 - Relay runs validation separately after agent result — the agent is told not to run validation commands by default.
 - Validation commands remain in the original handoff for Relay extraction only.
 
-The original handoff and transformed Agent Prompt are stored separately.
+The original handoff and compact Agent Prompt are stored separately.
 
 Run detail shows an inline Original Handoff → Agent Prompt hunk diff after the Agent Prompt is generated, while keeping View/Download links for full artifacts.
 
@@ -237,9 +240,15 @@ Relay does not execute OpenCode yet, and the OpenCode packet is metadata only un
 
 Relay can generate an `opencode_handoff_packet.json` artifact after an Agent Prompt exists.
 
-The packet includes the run id, local repo path, branch/worktree metadata, selected model, recommended model, agent prompt artifact path, run artifact directory, and an execution status of `not_implemented`.
+The packet includes the run id, local repo path, branch/worktree metadata, selected model, recommended model, agent prompt artifact path, run artifact directory, an explicit artifact manifest listing required and optional artifacts, and an execution status of `not_implemented`.
 
 When generated, the OpenCode packet JSON is previewed inline in the run workbench and remains metadata-only. Relay does not execute OpenCode yet. The packet is metadata only.
+
+## Handoff preflight
+
+Step 4 (OpenCode Go Handoff) shows a preflight readiness checklist with checks for repo path, .git directory, branch/worktree, selected model, Agent Prompt artifact, Agent Packet artifact, and required artifact readability.
+
+Each check shows pass/warn/block. The handoff readiness status chip reflects the overall result (ready, blocked, or warning). When blocked, a message advises to resolve blocked checks before handoff.
 
 ## Manual agent result intake
 

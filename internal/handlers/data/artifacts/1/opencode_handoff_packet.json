@@ -1,6 +1,6 @@
 {
   "run_id": 1,
-  "repo_path": "C:\\Users\\trist\\AppData\\Local\\Temp\\TestPrepareRunForReviewWithValidHandoff744198149\\002",
+  "repo_path": "C:\\Users\\trist\\AppData\\Local\\Temp\\TestPrepareRunForReviewWithValidHandoff1843116562\\002",
   "branch_name": "main",
   "selected_model": "test-model",
   "recommended_model": "test-model",
@@ -9,5 +9,10 @@
   "artifact_dir": "data\\artifacts\\1",
   "execution": {
     "status": "not_implemented"
+  },
+  "artifacts": {
+    "dir": "data\\artifacts\\1",
+    "required": null,
+    "optional": null
   }
 }

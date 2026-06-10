@@ -10,12 +10,21 @@ type PreviewDiff struct {
 	Truncated bool
 }
 
+type HandoffPreflightCheckView struct {
+	Key     string
+	Status  string
+	Summary string
+}
+
 type RunPreviews struct {
-	OriginalHandoff string
-	ValidationJSON  string
-	AgentPrompt     string
-	OpenCodePacket  string
-	AgentPromptDiff PreviewDiff
+	OriginalHandoff      string
+	ValidationJSON       string
+	AgentPrompt          string
+	OpenCodePacket       string
+	AgentPromptDiff      PreviewDiff
+	AgentPromptEstimate  string
+	HandoffPreflightStatus   string
+	HandoffPreflightChecks   []HandoffPreflightCheckView
 }
 
 templ RunPreviewPanels(previews RunPreviews) {

@@ -45,7 +45,7 @@ templ StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 	case "packet":
 		@AgentPacketStepPanel(run, artifacts, previews)
 	case "handoff":
-		@OpenCodeGoHandoffStepPanel(run, artifacts, checks)
+		@OpenCodeGoHandoffStepPanel(run, artifacts, checks, previews)
 	case "validation":
 		@RelayValidationStepPanel(run, artifacts, checks)
 	case "audit":
@@ -124,7 +124,7 @@ templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []
 		<div class="flex items-center justify-between mb-3">
 			<div>
 				<h3 class="font-medium">Step 2: Agent Prompt</h3>
-				<p class="text-xs text-gray-500 mt-0.5">Review the transformed prompt for the running agent.</p>
+				<p class="text-xs text-gray-500 mt-0.5">Review the compact prompt Relay will send to the running agent.</p>
 			</div>
 			<div class="flex items-center gap-3">
 				@agentPromptStatusChip(artifactExists(artifacts, "agent_prompt"), checks)
@@ -256,7 +256,7 @@ templ AgentPacketStepPanel(run *store.Run, artifacts []store.Artifact, previews 
 	</div>
 }
 
-templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check) {
+templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
 	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
 		<div class="flex items-center justify-between mb-3">
 			<div>
@@ -265,8 +265,40 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 			</div>
 			<div class="flex items-center gap-3">
 				@handoffStatusChip(artifactExists(artifacts, "opencode_handoff_packet"))
+				@handoffPreflightStatusChip(previews.HandoffPreflightStatus)
 			</div>
 		</div>
+
+		// Preflight checklist
+		if len(previews.HandoffPreflightChecks) > 0 {
+			<div class="mt-3 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
+				<div class="border-b border-gray-800 px-3 py-2">
+					<div class="text-sm font-medium text-gray-200">Handoff readiness</div>
+					<div class="text-xs text-gray-500">Checks run at page load.</div>
+				</div>
+				<div class="p-2 space-y-1 max-h-60 overflow-auto">
+					for _, c := range previews.HandoffPreflightChecks {
+						<div class="flex items-center justify-between text-xs px-2 py-1 rounded">
+							<span class="text-gray-400">{ c.Key }</span>
+							if c.Status == "pass" {
+								<span class="text-green-400">{ c.Status }</span>
+							} else if c.Status == "block" {
+								<span class="text-red-400">{ c.Status }</span>
+							} else if c.Status == "warn" {
+								<span class="text-yellow-400">{ c.Status }</span>
+							} else {
+								<span class="text-gray-500">{ c.Status }</span>
+							}
+						</div>
+					}
+				</div>
+			</div>
+			if previews.HandoffPreflightStatus == "blocked" {
+				<div class="mt-2 text-xs text-red-400">
+					Resolve blocked checks before handoff.
+				</div>
+			}
+		}
 
 		// Handoff preparation section
 		<div class="mt-2 space-y-2">
@@ -473,6 +505,16 @@ templ agentPacketStatusChip(hasPacket, hasPrompt bool) {
 		<span class="px-2 py-0.5 text-xs rounded bg-blue-900/50 text-blue-400 border border-blue-800">available</span>
 	} else {
 		<span class="px-2 py-0.5 text-xs rounded bg-gray-800 text-gray-400 border border-gray-700">pending</span>
+	}
+}
+
+templ handoffPreflightStatusChip(status string) {
+	if status == "ready" {
+		<span class="px-2 py-0.5 text-xs rounded bg-green-900/50 text-green-400 border border-green-800">ready</span>
+	} else if status == "blocked" {
+		<span class="px-2 py-0.5 text-xs rounded bg-red-900/50 text-red-400 border border-red-800">blocked</span>
+	} else if status == "warning" {
+		<span class="px-2 py-0.5 text-xs rounded bg-yellow-900/50 text-yellow-400 border border-yellow-800">warning</span>
 	}
 }
 

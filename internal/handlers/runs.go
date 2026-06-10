@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -65,11 +66,48 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	originalPreview := readArtifactPreview(id, "original_handoff")
 	agentPromptPreview := readAgentPromptPreview(id)
 
+	// Compute prompt size estimate
+	agentPromptEstimate := ""
+	if agentPromptPreview != "" {
+		est := pipeline.EstimateTokens(agentPromptPreview)
+		agentPromptEstimate = formatPromptEstimate(est)
+	}
+
+	// Compute handoff preflight
+	preflightStatus := ""
+	var preflightChecks []views.HandoffPreflightCheckView
+	if repo != nil && run != nil {
+		agentPromptPath := ""
+		if a := findArtifactByKind(artifactsList, "agent_prompt"); a != nil {
+			agentPromptPath = a.Path
+		}
+		opencodePacketPath := ""
+		if a := findArtifactByKind(artifactsList, "opencode_handoff_packet"); a != nil {
+			opencodePacketPath = a.Path
+		}
+		requiredPaths := make(map[string]string)
+		if agentPromptPath != "" {
+			requiredPaths["agent_prompt"] = agentPromptPath
+		}
+		preflight := pipeline.BuildHandoffPreflight(repo.Path, run.BranchName, run.SelectedModel, agentPromptPath, opencodePacketPath, requiredPaths)
+		preflightStatus = preflight.Status
+		for _, c := range preflight.Checks {
+			preflightChecks = append(preflightChecks, views.HandoffPreflightCheckView{
+				Key:     c.Key,
+				Status:  c.Status,
+				Summary: c.Summary,
+			})
+		}
+	}
+
 	previews := views.RunPreviews{
-		OriginalHandoff: originalPreview,
-		ValidationJSON:  readArtifactPreview(id, "handoff_validation_json"),
-		AgentPrompt:     agentPromptPreview,
-		OpenCodePacket:  readArtifactPreview(id, "opencode_handoff_packet"),
+		OriginalHandoff:        originalPreview,
+		ValidationJSON:         readArtifactPreview(id, "handoff_validation_json"),
+		AgentPrompt:            agentPromptPreview,
+		OpenCodePacket:         readArtifactPreview(id, "opencode_handoff_packet"),
+		AgentPromptEstimate:    agentPromptEstimate,
+		HandoffPreflightStatus: preflightStatus,
+		HandoffPreflightChecks: preflightChecks,
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {
@@ -229,7 +267,7 @@ func (h *RunsHandler) preparePrompt(w http.ResponseWriter, r *http.Request, runI
 		return
 	}
 
-	prompt := pipeline.PreparePrompt(string(handoffData))
+	prompt := pipeline.BuildCompactAgentPrompt(string(handoffData))
 
 	promptPath, err := artifacts.Write(runID, "agent_prompt", pipeline.ArtifactFilename("agent_prompt"), []byte(prompt))
 	if err != nil {
@@ -447,6 +485,15 @@ func (h *RunsHandler) generateOpenCodePacket(w http.ResponseWriter, r *http.Requ
 		artifacts.Dir(run.ID),
 	)
 
+	// Build artifact manifest from stored artifacts
+	kindPaths := make(map[string]string)
+	for _, a := range artifactsList {
+		if a.Kind == "agent_prompt" || a.Kind == "original_handoff" || a.Kind == "handoff_validation_json" {
+			kindPaths[a.Kind] = a.Path
+		}
+	}
+	packet.Artifacts = pipeline.BuildArtifactManifest(artifacts.Dir(run.ID), kindPaths)
+
 	packetJSON, err := pipeline.MarshalOpenCodeHandoffPacket(packet)
 	if err != nil {
 		h.log.Error("marshal opencode packet", "error", err)
@@ -470,6 +517,15 @@ func (h *RunsHandler) generateOpenCodePacket(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=packet", http.StatusSeeOther)
 }
 
+func findArtifactByKind(artifacts []store.Artifact, kind string) *store.Artifact {
+	for i := range artifacts {
+		if artifacts[i].Kind == kind {
+			return &artifacts[i]
+		}
+	}
+	return nil
+}
+
 func hasArtifactKind(artifacts []store.Artifact, kind string) bool {
 	for _, a := range artifacts {
 		if a.Kind == kind {
@@ -477,6 +533,11 @@ func hasArtifactKind(artifacts []store.Artifact, kind string) bool {
 		}
 	}
 	return false
+}
+
+func formatPromptEstimate(est pipeline.PromptEstimate) string {
+	kb := float64(est.Bytes) / 1024.0
+	return fmt.Sprintf("%.1f KB (~%d tokens, approximate)", kb, est.ApproxTokens)
 }
 
 func hasCheckKind(checks []store.Check, kind string) bool {
