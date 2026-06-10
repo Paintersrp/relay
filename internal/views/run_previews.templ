@@ -35,6 +35,21 @@ type RunPreviews struct {
 	OpenCodeStderrArtifactID    int64
 	OpenCodeCombinedArtifactID  int64
 	HasOpenCodeExecution        bool
+	// OpenCode adapter fields
+	OpenCodeBinary       string
+	OpenCodeArgs         []string
+	OpenCodeWorkDir      string
+	OpenCodeModel        string
+	OpenCodeAgent        string
+	OpenCodeVariant      string
+	OpenCodeStdinSource  string
+	OpenCodeStdinBytes   int
+	OpenCodeAdapterError string
+	OpenCodeDryRunPreview string
+	HasOpenCodeDryRun    bool
+	HasOpenCodeStdout    bool
+	HasOpenCodeStderr    bool
+	HasOpenCodeCombinedLog bool
 }
 
 templ RunPreviewPanels(previews RunPreviews) {

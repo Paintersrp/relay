@@ -334,101 +334,167 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 			</div>
 		}
 
-		// OpenCode Go execution section
+		// OpenCode Adapter section
 		<div class="mt-3 pt-3 border-t border-gray-800">
-			<div class="text-sm font-medium text-gray-200 mb-2">OpenCode Go Execution</div>
+			<div class="text-sm font-medium text-gray-200 mb-2">OpenCode Adapter</div>
 
-			if previews.OpenCodeCommandTemplate == "" {
-				<div class="text-xs text-red-400 mb-2">
-					OpenCode Go command template is not configured.
-				</div>
-				<div class="text-xs text-gray-500 mb-2">
-					Set the <code class="text-indigo-400">RELAY_OPENCODE_GO_COMMAND_TEMPLATE</code> environment variable to enable execution.
-				</div>
-				<button disabled
-					class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed">
-					Start OpenCode Go
-				</button>
-			} else if previews.HandoffPreflightStatus == "blocked" {
-				<div class="text-xs text-red-400 mb-2">
-					Resolve blocked checks before starting OpenCode Go.
-				</div>
-				<button disabled
-					class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed">
-					Start OpenCode Go
-				</button>
-			} else {
-				<details class="mb-2">
-					<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none">
-						Command preview
-					</summary>
-					<div class="mt-2 border border-gray-800 rounded bg-gray-950/60 p-2 overflow-x-auto">
-						<pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap">{ previews.OpenCodeCommandPreview }</pre>
-					</div>
-				</details>
-
-				<div class="text-xs text-yellow-400 mb-2">
-					This starts a local command in the selected repo path. Relay will capture stdout/stderr as artifacts.
-				</div>
-
-				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-					hx-target="body" hx-swap="outerHTML"
-					class="inline">
-					<input type="hidden" name="action" value="start-opencode-go"/>
-					<button type="submit"
-						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-						Start OpenCode Go
-					</button>
-				</form>
-			}
-
-			if previews.HasOpenCodeExecution {
-				<div class="mt-3 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
-					<div class="border-b border-gray-800 px-3 py-2">
-						<div class="text-sm font-medium text-gray-200">Latest Execution</div>
-					</div>
-					<div class="p-2 space-y-1 text-xs">
+			<div class="rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
+				<div class="p-3 space-y-1 text-xs">
+					if previews.OpenCodeBinary != "" {
 						<div class="flex justify-between">
-							<span class="text-gray-400">Status</span>
-							<span class={ executionStatusClass(previews.OpenCodeExecutionStatus) }>{ previews.OpenCodeExecutionStatus }</span>
+							<span class="text-gray-400">Binary</span>
+							<span class="text-gray-300">{ previews.OpenCodeBinary }</span>
 						</div>
-						if previews.OpenCodeExecutionExitCode != "" {
-							<div class="flex justify-between">
-								<span class="text-gray-400">Exit code</span>
-								<span class="text-gray-300">{ previews.OpenCodeExecutionExitCode }</span>
-							</div>
-						}
-						if previews.OpenCodeExecutionStarted != "" {
-							<div class="flex justify-between">
-								<span class="text-gray-400">Started</span>
-								<span class="text-gray-300">{ previews.OpenCodeExecutionStarted }</span>
-							</div>
-						}
-						if previews.OpenCodeExecutionFinished != "" {
-							<div class="flex justify-between">
-								<span class="text-gray-400">Finished</span>
-								<span class="text-gray-300">{ previews.OpenCodeExecutionFinished }</span>
-							</div>
-						}
-						<div class="flex gap-2 pt-1">
-							if previews.OpenCodeStdoutArtifactID > 0 {
-								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/" + Itoa(previews.OpenCodeStdoutArtifactID)}
-									class="text-xs text-indigo-400 hover:text-indigo-300">stdout</a>
-							}
-							if previews.OpenCodeStderrArtifactID > 0 {
-								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/" + Itoa(previews.OpenCodeStderrArtifactID)}
-									class="text-xs text-indigo-400 hover:text-indigo-300">stderr</a>
-							}
-							if previews.OpenCodeCombinedArtifactID > 0 {
-								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/" + Itoa(previews.OpenCodeCombinedArtifactID)}
-									class="text-xs text-indigo-400 hover:text-indigo-300">combined log</a>
-							}
+					}
+					if previews.OpenCodeModel != "" {
+						<div class="flex justify-between">
+							<span class="text-gray-400">Model</span>
+							<span class="text-gray-300">{ previews.OpenCodeModel }</span>
 						</div>
+					}
+					if previews.OpenCodeAgent != "" {
+						<div class="flex justify-between">
+							<span class="text-gray-400">Agent</span>
+							<span class="text-gray-300">{ previews.OpenCodeAgent }</span>
+						</div>
+					}
+					if previews.OpenCodeVariant != "" {
+						<div class="flex justify-between">
+							<span class="text-gray-400">Variant</span>
+							<span class="text-gray-300">{ previews.OpenCodeVariant }</span>
+						</div>
+					}
+					if previews.OpenCodeStdinSource != "" {
+						<div class="flex justify-between">
+							<span class="text-gray-400">Prompt input</span>
+							<span class="text-gray-300">stdin from { previews.OpenCodeStdinSource } ({ previews.OpenCodeStdinBytes } bytes)</span>
+						</div>
+					}
+					if previews.OpenCodeWorkDir != "" {
+						<div class="flex justify-between">
+							<span class="text-gray-400">Working directory</span>
+							<span class="text-gray-300 break-all">{ previews.OpenCodeWorkDir }</span>
+						</div>
+					}
+				</div>
+			</div>
+
+			// OpenCode execution section
+			<div class="mt-3 pt-3 border-t border-gray-800">
+				if previews.OpenCodeAdapterError != "" {
+					<div class="text-xs text-red-400 mb-2">
+						{ previews.OpenCodeAdapterError }
+					</div>
+				} else if previews.HandoffPreflightStatus == "blocked" {
+					<div class="text-xs text-red-400 mb-2">
+						Resolve blocked checks before starting OpenCode Go.
+					</div>
+				}
+
+				// Dry Run button
+				<div class="mb-3">
+					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+						hx-target="body" hx-swap="outerHTML"
+						class="inline">
+						<input type="hidden" name="action" value="dry-run-opencode-go"/>
+						<button type="submit"
+							class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors font-medium">
+							Dry Run / Preview Command
+						</button>
+					</form>
+
+					if previews.HasOpenCodeDryRun {
+						<div class="mt-2 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
+							<div class="border-b border-gray-800 px-3 py-2">
+								<div class="text-sm font-medium text-gray-200">Dry Run Preview</div>
+								<div class="text-xs text-gray-500">JSON summary. Does not execute OpenCode.</div>
+							</div>
+							<div class="p-2">
+								<pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap overflow-x-auto max-h-40">{ previews.OpenCodeDryRunPreview }</pre>
+							</div>
+						</div>
+						<div class="mt-2 flex gap-2">
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_dry_run_json"}
+								class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_dry_run_json/download"}
+								class="text-xs text-gray-500 hover:text-gray-300">Download</a>
+						</div>
+					}
+				</div>
+
+				// Start button
+				if previews.OpenCodeAdapterError == "" && previews.HandoffPreflightStatus != "blocked" {
+					<div class="text-xs text-yellow-400 mb-2">
+						This starts a local OpenCode command in the selected repo path. Relay will capture stdout/stderr as artifacts.
+					</div>
+
+					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+						hx-target="body" hx-swap="outerHTML"
+						class="inline">
+						<input type="hidden" name="action" value="start-opencode-go"/>
+						<button type="submit"
+							class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+							Start OpenCode Go
+						</button>
+					</form>
+				} else if previews.OpenCodeAdapterError != "" {
+					<button disabled
+						class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600 cursor-not-allowed">
+						Start OpenCode Go (blocked)
+					</button>
+				}
+			</div>
+		</div>
+
+		// Execution results
+		if previews.HasOpenCodeExecution {
+			<div class="mt-3 rounded-lg border border-gray-800 bg-gray-950/40 overflow-hidden">
+				<div class="border-b border-gray-800 px-3 py-2">
+					<div class="text-sm font-medium text-gray-200">Latest Execution</div>
+				</div>
+				<div class="p-2 space-y-1 text-xs">
+					<div class="flex justify-between">
+						<span class="text-gray-400">Status</span>
+						<span class={ executionStatusClass(previews.OpenCodeExecutionStatus) }>{ previews.OpenCodeExecutionStatus }</span>
+					</div>
+					if previews.OpenCodeExecutionExitCode != "" {
+						<div class="flex justify-between">
+							<span class="text-gray-400">Exit code</span>
+							<span class="text-gray-300">{ previews.OpenCodeExecutionExitCode }</span>
+						</div>
+					}
+					if previews.OpenCodeExecutionStarted != "" {
+						<div class="flex justify-between">
+							<span class="text-gray-400">Started</span>
+							<span class="text-gray-300">{ previews.OpenCodeExecutionStarted }</span>
+						</div>
+					}
+					if previews.OpenCodeExecutionFinished != "" {
+						<div class="flex justify-between">
+							<span class="text-gray-400">Finished</span>
+							<span class="text-gray-300">{ previews.OpenCodeExecutionFinished }</span>
+						</div>
+					}
+					// Execution artifact links using kinds, not IDs
+					<div class="flex gap-2 pt-1">
+						if previews.HasOpenCodeStdout {
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout"}
+								class="text-xs text-indigo-400 hover:text-indigo-300">stdout</a>
+						}
+						if previews.HasOpenCodeStderr {
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr"}
+								class="text-xs text-indigo-400 hover:text-indigo-300">stderr</a>
+						}
+						if previews.HasOpenCodeCombinedLog {
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log"}
+								class="text-xs text-indigo-400 hover:text-indigo-300">combined log</a>
+						}
 					</div>
 				</div>
-			}
-		</div>
+			</div>
+		}
 
 		// Manual result paste as collapsed fallback
 		<details class="mt-4 border border-gray-800 rounded-lg p-3 bg-gray-950/40">

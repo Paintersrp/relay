@@ -100,41 +100,42 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build OpenCode execution preview data
-	openCodeCommandTemplate := pipeline.OpenCodeCommandTemplate()
+	// Build OpenCode adapter preview (best-effort)
+	openCodeBinary := ""
+	openCodeModel := ""
+	openCodeAgent := ""
+	openCodeVariant := ""
+	openCodeStdinSource := ""
+	openCodeStdinBytes := 0
 	openCodeCommandPreview := ""
+	openCodeAdapterError := ""
+
+	if repo != nil {
+		invocation, err := h.buildOpenCodeInvocationForRun(id)
+		if err == nil {
+			openCodeBinary = invocation.Binary
+			openCodeModel = invocation.Model
+			openCodeAgent = invocation.Agent
+			openCodeVariant = invocation.Variant
+			openCodeStdinSource = invocation.StdinSource
+			openCodeStdinBytes = invocation.StdinBytes
+			openCodeCommandPreview = invocation.Preview
+		} else {
+			openCodeAdapterError = err.Error()
+		}
+	}
+
+	openCodeCommandTemplate := pipeline.OpenCodeCommandTemplate()
+	// Load latest execution
 	hasOpenCodeExecution := false
 	openCodeExecStatus := ""
 	openCodeExecExitCode := ""
 	openCodeExecStarted := ""
 	openCodeExecFinished := ""
-	var openCodeStdoutID, openCodeStderrID, openCodeCombinedID int64
+	hasOpenCodeStdout := false
+	hasOpenCodeStderr := false
+	hasOpenCodeCombinedLog := false
 
-	if openCodeCommandTemplate != "" && repo != nil {
-		// Try to render the command preview (best-effort)
-		agentPromptPath := ""
-		if a := findArtifactByKind(artifactsList, "agent_prompt"); a != nil {
-			agentPromptPath = a.Path
-		}
-		packetPath := ""
-		if a := findArtifactByKind(artifactsList, "opencode_handoff_packet"); a != nil {
-			packetPath = a.Path
-		}
-		cmdCtx := pipeline.AgentCommandContext{
-			RepoPath:         repo.Path,
-			BranchName:       run.BranchName,
-			SelectedModel:    run.SelectedModel,
-			RecommendedModel: run.RecommendedModel,
-			AgentPromptPath:  agentPromptPath,
-			PacketPath:       packetPath,
-			ArtifactDir:      artifacts.Dir(id),
-		}
-		if preview, err := pipeline.RenderAgentCommandTemplate(openCodeCommandTemplate, cmdCtx); err == nil {
-			openCodeCommandPreview = preview
-		}
-	}
-
-	// Load latest execution
 	if exec, err := h.store.GetLatestAgentExecutionByRun(id); err == nil {
 		hasOpenCodeExecution = true
 		openCodeExecStatus = exec.Status
@@ -147,36 +148,51 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		if exec.FinishedAt.Valid {
 			openCodeExecFinished = exec.FinishedAt.String
 		}
-		// Find artifact IDs for stdout/stderr/combined
 		for _, a := range artifactsList {
 			if a.Kind == "opencode_stdout" {
-				openCodeStdoutID = a.ID
+				hasOpenCodeStdout = true
 			} else if a.Kind == "opencode_stderr" {
-				openCodeStderrID = a.ID
+				hasOpenCodeStderr = true
 			} else if a.Kind == "opencode_combined_log" {
-				openCodeCombinedID = a.ID
+				hasOpenCodeCombinedLog = true
 			}
 		}
 	}
 
+	dryRunPreview := readArtifactPreview(id, "opencode_dry_run_json")
+
 	previews := views.RunPreviews{
-		OriginalHandoff:             originalPreview,
-		ValidationJSON:              readArtifactPreview(id, "handoff_validation_json"),
-		AgentPrompt:                 agentPromptPreview,
-		OpenCodePacket:              readArtifactPreview(id, "opencode_handoff_packet"),
-		AgentPromptEstimate:         agentPromptEstimate,
-		HandoffPreflightStatus:      preflightStatus,
-		HandoffPreflightChecks:      preflightChecks,
-		OpenCodeCommandTemplate:     openCodeCommandTemplate,
-		OpenCodeCommandPreview:      openCodeCommandPreview,
-		OpenCodeExecutionStatus:     openCodeExecStatus,
-		OpenCodeExecutionExitCode:   openCodeExecExitCode,
-		OpenCodeExecutionStarted:    openCodeExecStarted,
-		OpenCodeExecutionFinished:   openCodeExecFinished,
-		OpenCodeStdoutArtifactID:    openCodeStdoutID,
-		OpenCodeStderrArtifactID:    openCodeStderrID,
-		OpenCodeCombinedArtifactID:  openCodeCombinedID,
-		HasOpenCodeExecution:        hasOpenCodeExecution,
+		OriginalHandoff:            originalPreview,
+		ValidationJSON:             readArtifactPreview(id, "handoff_validation_json"),
+		AgentPrompt:                agentPromptPreview,
+		OpenCodePacket:             readArtifactPreview(id, "opencode_handoff_packet"),
+		AgentPromptEstimate:        agentPromptEstimate,
+		HandoffPreflightStatus:     preflightStatus,
+		HandoffPreflightChecks:     preflightChecks,
+		OpenCodeCommandTemplate:    openCodeCommandTemplate,
+		OpenCodeCommandPreview:     openCodeCommandPreview,
+		OpenCodeExecutionStatus:    openCodeExecStatus,
+		OpenCodeExecutionExitCode:  openCodeExecExitCode,
+		OpenCodeExecutionStarted:   openCodeExecStarted,
+		OpenCodeExecutionFinished:  openCodeExecFinished,
+		OpenCodeStdoutArtifactID:   0,
+		OpenCodeStderrArtifactID:   0,
+		OpenCodeCombinedArtifactID: 0,
+		HasOpenCodeExecution:       hasOpenCodeExecution,
+		OpenCodeBinary:             openCodeBinary,
+		OpenCodeArgs:               nil,
+		OpenCodeWorkDir:            openCodeBinary,
+		OpenCodeModel:              openCodeModel,
+		OpenCodeAgent:              openCodeAgent,
+		OpenCodeVariant:            openCodeVariant,
+		OpenCodeStdinSource:        openCodeStdinSource,
+		OpenCodeStdinBytes:         openCodeStdinBytes,
+		OpenCodeAdapterError:       openCodeAdapterError,
+		OpenCodeDryRunPreview:      dryRunPreview,
+		HasOpenCodeDryRun:          dryRunPreview != "",
+		HasOpenCodeStdout:          hasOpenCodeStdout,
+		HasOpenCodeStderr:          hasOpenCodeStderr,
+		HasOpenCodeCombinedLog:     hasOpenCodeCombinedLog,
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {
@@ -248,6 +264,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.submitAgentResult(w, r, id)
 	case "generate-opencode-packet":
 		h.generateOpenCodePacket(w, r, id)
+	case "dry-run-opencode-go":
+		h.dryRunOpenCodeGo(w, r, id)
 	case "start-opencode-go":
 		h.startOpenCodeGo(w, r, id)
 	default:
@@ -414,96 +432,124 @@ func (h *RunsHandler) persistAgentResult(runID int64, raw string) error {
 	return nil
 }
 
-func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, runID int64) {
+// buildOpenCodeInvocationForRun builds the OpenCode invocation from run data.
+// Shared between Dry Run and Start to avoid drift.
+func (h *RunsHandler) buildOpenCodeInvocationForRun(runID int64) (pipeline.OpenCodeRunInvocation, error) {
 	run, err := h.store.GetRun(runID)
 	if err != nil {
-		h.log.Error("get run for opencode execution", "error", err)
-		http.Error(w, "run not found", http.StatusNotFound)
-		return
+		return pipeline.OpenCodeRunInvocation{}, err
 	}
 
 	repo, err := h.store.GetRepo(run.RepoID)
 	if err != nil {
-		h.log.Error("get repo for opencode execution", "error", err)
-		http.Error(w, "repo not found", http.StatusNotFound)
-		return
+		return pipeline.OpenCodeRunInvocation{}, err
 	}
 
-	// Get command template from env/config
-	commandTemplate := pipeline.OpenCodeCommandTemplate()
-	if commandTemplate == "" {
-		h.store.CreateEvent(runID, "warn", "OpenCode Go command template is not configured")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
-		return
-	}
-
-	// Find agent prompt artifact path
 	artifactsList, err := h.store.ListArtifactsByRun(runID)
 	if err != nil {
-		http.Error(w, "failed to list artifacts", http.StatusInternalServerError)
-		return
+		return pipeline.OpenCodeRunInvocation{}, err
 	}
 
 	agentPromptPath := ""
+	packetPath := ""
 	for _, a := range artifactsList {
-		if a.Kind == "agent_prompt" {
+		switch a.Kind {
+		case "agent_prompt":
 			agentPromptPath = a.Path
-			break
+		case "opencode_handoff_packet":
+			packetPath = a.Path
 		}
 	}
+
 	if agentPromptPath == "" {
-		h.store.CreateEvent(runID, "warn", "Agent Prompt artifact not found; generate it first")
+		return pipeline.OpenCodeRunInvocation{}, fmt.Errorf("Agent Prompt artifact not found; generate it first")
+	}
+	if packetPath == "" {
+		return pipeline.OpenCodeRunInvocation{}, fmt.Errorf("OpenCode handoff packet not found; generate it first")
+	}
+
+	promptData, err := os.ReadFile(agentPromptPath)
+	if err != nil {
+		return pipeline.OpenCodeRunInvocation{}, fmt.Errorf("read agent prompt artifact: %w", err)
+	}
+
+	cfg := pipeline.OpenCodeRunConfigFromEnv()
+
+	return pipeline.BuildOpenCodeRunInvocation(cfg, pipeline.OpenCodeRunInput{
+		RepoPath:        repo.Path,
+		BranchName:      run.BranchName,
+		SelectedModel:   run.SelectedModel,
+		AgentPromptPath: agentPromptPath,
+		AgentPromptText: string(promptData),
+		PacketPath:      packetPath,
+		ArtifactDir:     artifacts.Dir(runID),
+	})
+}
+
+func (h *RunsHandler) dryRunOpenCodeGo(w http.ResponseWriter, r *http.Request, runID int64) {
+	invocation, err := h.buildOpenCodeInvocationForRun(runID)
+	if err != nil {
+		h.store.CreateEvent(runID, "warn", "OpenCode dry run failed: "+err.Error())
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 		return
 	}
 
-	// Find opencode packet artifact path
-	packetPath := ""
-	for _, a := range artifactsList {
-		if a.Kind == "opencode_handoff_packet" {
-			packetPath = a.Path
-			break
-		}
+	preview := struct {
+		Binary          string   `json:"binary"`
+		Args            []string `json:"args"`
+		WorkDir         string   `json:"work_dir"`
+		StdinSource     string   `json:"stdin_source"`
+		StdinBytes      int      `json:"stdin_bytes"`
+		AgentPromptPath string   `json:"agent_prompt_path"`
+		PacketPath      string   `json:"packet_path"`
+		Model           string   `json:"model"`
+		Agent           string   `json:"agent"`
+		Variant         string   `json:"variant,omitempty"`
+		Preview         string   `json:"preview"`
+	}{
+		Binary:          invocation.Binary,
+		Args:            invocation.Args,
+		WorkDir:         invocation.WorkDir,
+		StdinSource:     invocation.StdinSource,
+		StdinBytes:      invocation.StdinBytes,
+		AgentPromptPath: invocation.AgentPromptPath,
+		PacketPath:      invocation.PacketPath,
+		Model:           invocation.Model,
+		Agent:           invocation.Agent,
+		Variant:         invocation.Variant,
+		Preview:         invocation.Preview,
 	}
-	if packetPath == "" {
-		h.store.CreateEvent(runID, "warn", "OpenCode handoff packet not found; generate it first")
+
+	data, _ := json.MarshalIndent(preview, "", "  ")
+	p, err := artifacts.Write(runID, "opencode_dry_run_json", pipeline.ArtifactFilename("opencode_dry_run_json"), data)
+	if err != nil {
+		h.log.Error("write opencode dry run preview", "error", err)
+		http.Error(w, "failed to save dry run preview", http.StatusInternalServerError)
+		return
+	}
+	h.store.CreateArtifact(runID, "opencode_dry_run_json", p, "application/json")
+	h.store.CreateEvent(runID, "info", "OpenCode dry run preview prepared")
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+}
+
+func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, runID int64) {
+	// Build the real OpenCode adapter invocation
+	invocation, err := h.buildOpenCodeInvocationForRun(runID)
+	if err != nil {
+		h.store.CreateEvent(runID, "warn", "OpenCode start blocked: "+err.Error())
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 		return
 	}
 
 	// Confirm repo path exists
-	if repo.Path == "" {
-		h.store.CreateEvent(runID, "warn", "Repo path is not configured")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
-		return
-	}
-	if info, err := os.Stat(repo.Path); err != nil || !info.IsDir() {
-		h.store.CreateEvent(runID, "warn", "Repo path does not exist: "+repo.Path)
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
-		return
-	}
-
-	// Render command template
-	cmdCtx := pipeline.AgentCommandContext{
-		RepoPath:         repo.Path,
-		BranchName:       run.BranchName,
-		SelectedModel:    run.SelectedModel,
-		RecommendedModel: run.RecommendedModel,
-		AgentPromptPath:  agentPromptPath,
-		PacketPath:       packetPath,
-		ArtifactDir:      artifacts.Dir(runID),
-	}
-
-	renderedCommand, err := pipeline.RenderAgentCommandTemplate(commandTemplate, cmdCtx)
-	if err != nil {
-		h.log.Error("render command template", "error", err)
-		h.store.CreateEvent(runID, "warn", "Failed to render command template: "+err.Error())
+	if info, err := os.Stat(invocation.WorkDir); err != nil || !info.IsDir() {
+		h.store.CreateEvent(runID, "warn", "Repo path does not exist: "+invocation.WorkDir)
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 		return
 	}
 
 	// Create execution record with status starting
-	exec, err := h.store.CreateAgentExecution(runID, "opencode_go", "starting", renderedCommand)
+	exec, err := h.store.CreateAgentExecution(runID, "opencode_go", "starting", invocation.Preview)
 	if err != nil {
 		h.log.Error("create agent execution record", "error", err)
 		http.Error(w, "failed to create execution record", http.StatusInternalServerError)
@@ -511,15 +557,20 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 	}
 
 	// Update to running
-	now := r.FormValue("t") // use request time as approximation
-	_ = now
 	startedAt := ""
 	h.store.UpdateAgentExecutionStatus(exec.ID, "running", nil, &startedAt, nil, nil, nil, nil, nil, nil)
 
 	h.store.CreateEvent(runID, "info", "OpenCode Go execution started")
 
-	// Run command synchronously with timeout
-	runResult := pipeline.RunLocalAgentCommand(r.Context(), repo.Path, renderedCommand, pipeline.DefaultAgentCommandTimeout)
+	// Run command synchronously with timeout using the real adapter
+	runResult := pipeline.RunLocalAgentCommandArgs(
+		r.Context(),
+		invocation.WorkDir,
+		invocation.Binary,
+		invocation.Args,
+		invocation.Stdin,
+		pipeline.DefaultAgentCommandTimeout,
+	)
 
 	// Write stdout/stderr/combined artifacts
 	stdoutPath := ""
@@ -577,10 +628,18 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 	h.store.UpdateAgentExecutionStatus(exec.ID, execStatus, &ec, &startedStr, &finishedStr,
 		&stdoutPath, &stderrPath, &combinedPath, nil, errPtr)
 
-	// Try to parse agent result from stdout
+	// Extract assistant text from JSONL stdout
 	if runResult.Stdout != "" {
-		if err := h.persistAgentResult(runID, runResult.Stdout); err != nil {
-			h.log.Warn("failed to persist agent result from stdout", "error", err)
+		assistantText := pipeline.ExtractOpenCodeAssistantText(runResult.Stdout)
+		parsed := pipeline.ParseAgentResult(assistantText)
+		if parsed.Status == pipeline.AgentResultDone || parsed.Status == pipeline.AgentResultBlocked {
+			if err := h.persistAgentResult(runID, assistantText); err != nil {
+				h.log.Warn("failed to persist opencode agent result", "error", err)
+			}
+			h.store.CreateEvent(runID, "info", "OpenCode Go execution completed with result: "+string(parsed.Status))
+			h.log.Info("opencode go execution completed", "run_id", runID, "exit_code", runResult.ExitCode, "status", parsed.Status)
+			http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
+			return
 		}
 	}
 

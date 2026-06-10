@@ -237,39 +237,52 @@ Clarifications:
 - Manual action buttons remain available as retry/regenerate controls for each step.
 - Artifact previews (Original Handoff, Validation Report, Agent Prompt) are available in a collapsed `<details>` element at the bottom of the run detail page, not expanded by default.
 
-## OpenCode Go execution
+## OpenCode adapter
 
-Relay can execute a configured local command via the platform shell. The command template is configured through the environment variable `RELAY_OPENCODE_GO_COMMAND_TEMPLATE`.
+Relay has a built-in OpenCode adapter that invokes `opencode run` with explicit arguments rather than relying on a generic shell command template.
 
-Relay does not hardcode OpenCode Go CLI syntax. The command template is entirely user-configured.
+Relay uses `opencode run` in non-interactive mode with `--format json`. The compact Agent Prompt is piped into stdin. The adapter parses JSONL text events from stdout to extract the final assistant text (DONE/BLOCKED).
 
-Supported placeholders:
+### Configuration
 
-- `{{repo_path}}` — local repository path
-- `{{branch_name}}` — selected branch/worktree
-- `{{selected_model}}` — user-selected model
-- `{{recommended_model}}` — handoff-recommended model
-- `{{agent_prompt_path}}` — path to the Agent Prompt artifact
-- `{{packet_path}}` — path to the OpenCode handoff packet artifact
-- `{{artifact_dir}}` — run artifact directory
+| Env variable             | Default    | Description                               |
+| ------------------------ | ---------- | ----------------------------------------- |
+| `RELAY_OPENCODE_BIN`     | `opencode` | Path or name of the OpenCode binary       |
+| `RELAY_OPENCODE_AGENT`   | `build`    | Agent to use (`build`, `architect`, etc.) |
+| `RELAY_OPENCODE_VARIANT` | (none)     | Optional variant (e.g. `high`)            |
 
-### Example command template
+### Model resolution
+
+If the selected model contains a `/` (e.g., `anthropic/claude-sonnet-4-5`), it is used directly.
+
+Otherwise, the model label is converted to an environment variable slug and looked up via `RELAY_OPENCODE_MODEL_<SLUG>`.
+
+Examples:
 
 ```text
-RELAY_OPENCODE_GO_COMMAND_TEMPLATE=opencode-go --model "{{selected_model}}" --prompt-file "{{agent_prompt_path}}"
+RELAY_OPENCODE_MODEL_DEEPSEEK_V4_FLASH=deepseek/deepseek-chat
+RELAY_OPENCODE_MODEL_QWEN3_CODER_NEXT=anthropic/claude-sonnet-4-5
 ```
 
-This is an example only. Adjust it to your installed OpenCode Go CLI.
+Do not invent exact provider/model IDs. Mappings must be configured explicitly.
 
-### Execution behavior
+### Dry Run / Preview
 
-- Execution is manual only. Relay never starts OpenCode Go automatically.
-- Relay runs the rendered command in the selected repo path.
+Step 4 provides a **Dry Run / Preview Command** button that builds the same OpenCode invocation that Start will use, but does not execute it. The preview is saved as an `opencode_dry_run_json` artifact for review.
+
+Dry Run never calls the command runner.
+
+### Start behavior
+
+- Execution is manual only. Relay never starts OpenCode automatically.
+- Relay invokes `opencode run --format json --dir <repo> --agent <agent> --model <model>` with the compact Agent Prompt piped into stdin.
 - Relay captures stdout and stderr as separate artifacts and a combined log.
 - Relay records execution status, exit code, start/end timestamps, and error messages in the `agent_executions` table.
-- Relay attempts to parse the final agent output contract (DONE/BLOCKED) from stdout and persists it through the existing agent result path.
-- Relay does not run validation commands after OpenCode Go exits.
+- Relay extracts assistant text from JSONL stdout events and persists DONE/BLOCKED results through the agent result path.
+- Relay does not persist UNKNOWN results automatically from JSON noise.
+- Relay does not run validation commands after OpenCode exits.
 - Relay does not inspect git diffs or create branches.
+- Manual result fallback remains available.
 
 ## OpenCode handoff packet
 

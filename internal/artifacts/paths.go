@@ -24,6 +24,7 @@ var allowedKinds = map[string]bool{
 	"opencode_stdout":         true,
 	"opencode_stderr":         true,
 	"opencode_combined_log":   true,
+	"opencode_dry_run_json":   true,
 }
 
 func Dir(runID int64) string {
