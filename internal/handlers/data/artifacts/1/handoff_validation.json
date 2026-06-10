@@ -7,6 +7,11 @@
       "summary": "Title line found"
     },
     {
+      "kind": "output_section",
+      "status": "pass",
+      "summary": "## Output / Final output / Agent final output requirement section found"
+    },
+    {
       "kind": "goal_section",
       "status": "pass",
       "summary": "## Goal section found"
@@ -30,11 +35,6 @@
       "kind": "validation_section",
       "status": "pass",
       "summary": "Validation / Tests section found"
-    },
-    {
-      "kind": "output_section",
-      "status": "pass",
-      "summary": "## Output / Final output / Agent final output requirement section found"
     },
     {
       "kind": "checkbox_items",

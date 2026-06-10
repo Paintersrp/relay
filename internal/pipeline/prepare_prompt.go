@@ -512,6 +512,8 @@ func ArtifactFilename(kind string) string {
 		return "opencode_dry_run.json"
 	case "opencode_cli_check_json":
 		return "opencode_cli_check.json"
+	case "intake_remediation_handoff":
+		return "intake-remediation-handoff.md"
 	default:
 		return fmt.Sprintf("%s.txt", kind)
 	}

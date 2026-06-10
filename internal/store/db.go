@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	relaydb "relay/internal/db"
 	"relay/internal/store/generated"
 
 	_ "modernc.org/sqlite"
@@ -41,6 +42,10 @@ func Open(dbPath string, log *slog.Logger) (*Store, error) {
 
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("ping db: %w", err)
+	}
+
+	if err := relaydb.AutoMigrate(db); err != nil {
+		return nil, fmt.Errorf("auto-migrate: %w", err)
 	}
 
 	db.SetMaxOpenConns(1)

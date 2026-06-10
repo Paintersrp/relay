@@ -109,6 +109,37 @@ make build      # full build
 make test       # run tests
 ```
 
+## Database
+
+Relay uses a local SQLite database at `data/relay.sqlite` by default.
+
+Relay applies bundled SQLite migrations on startup automatically. The `goose` CLI
+command remains useful for manual repair/debugging, but normal local startup does
+not require running it separately.
+
+If Relay reports a stale database schema error at startup, the embedded
+auto-migration may have failed. Run:
+
+```bash
+goose -dir internal/db/migrations sqlite3 data/relay.sqlite up
+```
+
+## Intake Remediation Handoff
+
+When Intake Review reports warnings or blockers, Step 1 can generate an
+`intake_remediation_handoff` artifact. This artifact is a copyable repair prompt
+for revising the original handoff and resolving intake issues.
+
+To generate:
+
+1. Complete Intake Review on Step 1.
+2. Click **Generate Fix Handoff** when warnings or blockers are present.
+3. View, download, or copy the generated remediation handoff.
+4. Use the remediation handoff as a repair prompt for the original handoff.
+
+Missing validation commands produce a remediation handoff with a
+`## Relay validation commands` section template.
+
 ## Routes
 
 | Method | Path                                   | Description                |
@@ -126,21 +157,22 @@ make test       # run tests
 
 ## Run Actions
 
-| Action                     | Status                               |
-| -------------------------- | ------------------------------------ |
-| `validate-handoff`         | Implemented                          |
-| `prepare-prompt`           | Implemented (generates Agent Prompt) |
-| `mark-accepted`            | Implemented                          |
-| `mark-needs-cleanup`       | Implemented                          |
-| `generate-opencode-packet` | Implemented                          |
-| `start-opencode-go`        | Implemented                          |
-| `dry-run-opencode-go`      | Implemented                          |
-| `check-opencode-cli`       | Implemented                          |
-| `submit-agent-result`      | Implemented                          |
-| `run-agent`                | Future                               |
-| `run-validation`           | Implemented                          |
-| `inspect-diff`             | Future                               |
-| `generate-audit-packet`    | Future                               |
+| Action                                | Status                               |
+| ------------------------------------- | ------------------------------------ |
+| `validate-handoff`                    | Implemented                          |
+| `prepare-prompt`                      | Implemented (generates Agent Prompt) |
+| `mark-accepted`                       | Implemented                          |
+| `mark-needs-cleanup`                  | Implemented                          |
+| `generate-opencode-packet`            | Implemented                          |
+| `start-opencode-go`                   | Implemented                          |
+| `dry-run-opencode-go`                 | Implemented                          |
+| `check-opencode-cli`                  | Implemented                          |
+| `submit-agent-result`                 | Implemented                          |
+| `generate-intake-remediation-handoff` | Implemented                          |
+| `run-agent`                           | Future                               |
+| `run-validation`                      | Implemented                          |
+| `inspect-diff`                        | Future                               |
+| `generate-audit-packet`               | Future                               |
 
 ## Development live reload
 

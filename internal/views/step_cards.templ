@@ -115,13 +115,48 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 				</div>
 			}
 			@IntakeReviewPanel(run, repo, intakeReview)
+
+			if len(intakeReview.Blockers) > 0 || len(intakeReview.Warnings) > 0 {
+				<div class="mt-3 pt-3 border-t border-gray-800">
+					if previews.HasIntakeRemediationHandoff {
+						<div class="text-xs text-green-400 mb-2">Fix handoff generated.</div>
+						<div class="flex gap-2">
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/intake_remediation_handoff"}
+								class="text-xs text-indigo-400 hover:text-indigo-300">View fix handoff</a>
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/intake_remediation_handoff/download"}
+								class="text-xs text-gray-500 hover:text-gray-300">Download fix handoff</a>
+						</div>
+						if previews.IntakeRemediationHandoff != "" {
+							<details class="mt-2">
+								<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none">
+									Preview fix handoff
+								</summary>
+								<div class="mt-2 border border-gray-800 rounded bg-gray-950/60 p-3 max-h-60 overflow-auto">
+									<pre class="text-xs font-mono text-gray-300 whitespace-pre-wrap">{ previews.IntakeRemediationHandoff }</pre>
+								</div>
+							</details>
+						}
+					} else {
+						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+							hx-target="body" hx-swap="outerHTML"
+							class="inline">
+							<input type="hidden" name="action" value="generate-intake-remediation-handoff"/>
+							<button type="submit"
+								class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+								Generate Fix Handoff
+							</button>
+						</form>
+					}
+				</div>
+			}
 		}
 
-		if len(intakeReview.Blockers) > 0 {
+		if intakeReview != nil && len(intakeReview.Blockers) > 0 {
 			<div class="mt-2 text-xs text-red-400">
 				Resolve the blocking issues above before generating the Agent Prompt.
 			</div>
-		} else if len(intakeReview.Warnings) > 0 {
+		} else if intakeReview != nil && len(intakeReview.Warnings) > 0 {
 			<div class="mt-2 text-xs text-yellow-300">
 				Warnings do not block Agent Prompt generation. You can continue, but Relay Validation may need setup later.
 			</div>

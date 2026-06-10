@@ -253,6 +253,9 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	hasValidationCommands := hasValidationCommandsForPreview(originalPreview, repoDefaults)
 
+	intakeRemediationHandoffPreview := readArtifactPreview(id, "intake_remediation_handoff")
+	hasIntakeRemediationHandoff := intakeRemediationHandoffPreview != "" || hasArtifactKind(artifactsList, "intake_remediation_handoff")
+
 	previews := views.RunPreviews{
 		OriginalHandoff:                 originalPreview,
 		ValidationJSON:                  readArtifactPreview(id, "handoff_validation_json"),
@@ -297,6 +300,8 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		OpenCodeCLICheckCheckedAt:       cliCheckCheckedAt,
 		OpenCodeCLICheckError:           cliCheckError,
 		OpenCodeCLICheckStatus:          cliCheckStatus,
+		IntakeRemediationHandoff:        intakeRemediationHandoffPreview,
+		HasIntakeRemediationHandoff:     hasIntakeRemediationHandoff,
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {
@@ -370,6 +375,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.startOpenCodeGo(w, r, id)
 	case "check-opencode-cli":
 		h.checkOpenCodeCLI(w, r, id)
+	case "generate-intake-remediation-handoff":
+		h.generateIntakeRemediationHandoff(w, r, id)
 	default:
 		http.Error(w, "unknown action", http.StatusBadRequest)
 	}
@@ -653,6 +660,11 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 	// Create execution record with status starting
 	exec, err := h.store.CreateAgentExecution(runID, "opencode_go", "starting", invocation.Preview)
 	if err != nil {
+		if isMissingAgentExecutionsSchemaError(err) {
+			h.store.CreateEvent(runID, "warn", "Database schema is missing agent_executions. Run goose -dir internal/db/migrations sqlite3 data/relay.sqlite up and restart Relay.")
+			http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
+			return
+		}
 		h.log.Error("create agent execution record", "error", err)
 		http.Error(w, "failed to create execution record", http.StatusInternalServerError)
 		return
@@ -1097,6 +1109,80 @@ func hasArtifactKind(artifacts []store.Artifact, kind string) bool {
 		}
 	}
 	return false
+}
+
+func isMissingAgentExecutionsSchemaError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "no such table: agent_executions")
+}
+
+func (h *RunsHandler) generateIntakeRemediationHandoff(w http.ResponseWriter, r *http.Request, runID int64) {
+	run, err := h.store.GetRun(runID)
+	if err != nil {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	repo, _ := h.store.GetRepo(run.RepoID)
+	repoName := ""
+	repoPath := ""
+	repoDefaults := ""
+	if repo != nil {
+		repoName = repo.Name
+		repoPath = repo.Path
+		repoDefaults = repo.DefaultValidationCommands
+	}
+
+	handoffData, err := artifacts.Read(runID, "original_handoff", pipeline.ArtifactFilename("original_handoff"))
+	if err != nil {
+		h.log.Error("read handoff for remediation", "error", err)
+		h.store.CreateEvent(runID, "warn", "Cannot generate fix handoff: original handoff not found.")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
+		return
+	}
+
+	metadata := pipeline.ParseHandoffMetadata(string(handoffData), repoDefaults)
+	review := pipeline.BuildIntakeReview(metadata, repoPath)
+
+	if len(review.Warnings) == 0 && len(review.Blockers) == 0 {
+		h.store.CreateEvent(runID, "info", "No intake review warnings or blockers found; no fix handoff needed.")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
+		return
+	}
+
+	scopedFiles := make([]string, len(metadata.ScopedFiles))
+	for i, sf := range metadata.ScopedFiles {
+		scopedFiles[i] = sf.Path
+	}
+
+	input := pipeline.IntakeRemediationInput{
+		RunID:       run.ID,
+		RepoName:    repoName,
+		RepoPath:    repoPath,
+		BranchName:  run.BranchName,
+		RunStatus:   run.Status,
+		Warnings:    review.Warnings,
+		Blockers:    review.Blockers,
+		ScopedFiles: scopedFiles,
+	}
+
+	content := pipeline.BuildIntakeRemediationHandoff(input)
+
+	artifactPath, err := artifacts.Write(runID, "intake_remediation_handoff", pipeline.ArtifactFilename("intake_remediation_handoff"), []byte(content))
+	if err != nil {
+		h.log.Error("write intake remediation handoff", "error", err)
+		http.Error(w, "failed to save fix handoff", http.StatusInternalServerError)
+		return
+	}
+
+	h.store.CreateArtifact(runID, "intake_remediation_handoff", artifactPath, "text/markdown")
+	h.store.CreateEvent(runID, "info", "Intake remediation handoff generated")
+
+	h.log.Info("intake remediation handoff generated", "run_id", runID, "warnings", len(review.Warnings), "blockers", len(review.Blockers))
+
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
 }
 
 func formatPromptEstimate(est pipeline.PromptEstimate) string {
