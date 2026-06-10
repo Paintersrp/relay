@@ -12,7 +12,7 @@ type ValidationCommand struct {
 	Source  string `json:"source"`
 }
 
-var validationSectionRe = regexp.MustCompile(`(?i)^##\s+(?:tests\s*/\s*validation|validation|tests)\s*$`)
+var validationSectionRe = regexp.MustCompile(`(?i)^#{2,3}\s+(?:relay\s+validation\s+commands|validation\s+commands|tests\s*/\s*validation|validation|tests)\s*$`)
 var shellFenceRe = regexp.MustCompile("```")
 var shellLangRe = regexp.MustCompile(`(?i)^(sh|shell|bash|zsh|fish|powershell|pwsh|ps1|cmd|bat|console|terminal)$`)
 
@@ -89,6 +89,19 @@ func isDestructiveOrAgentOrChained(cmd string) bool {
 	return false
 }
 
+// headingLevel returns the markdown heading level of a line (0 if not a heading).
+func headingLevel(line string) int {
+	for i, ch := range line {
+		if ch != '#' {
+			if ch == ' ' && i >= 1 && i <= 6 {
+				return i
+			}
+			return 0
+		}
+	}
+	return 0
+}
+
 func isCommentOrEmpty(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	return trimmed == "" || strings.HasPrefix(trimmed, "#")
@@ -105,6 +118,7 @@ func ExtractValidationCommands(handoffText string, repoDefaultCommandsJSON strin
 	// Extract from handoff
 	lines := strings.Split(handoffText, "\n")
 	inValidationSection := false
+	validationSectionLevel := 0
 	inFence := false
 	fenceIsShell := false
 
@@ -112,13 +126,16 @@ func ExtractValidationCommands(handoffText string, repoDefaultCommandsJSON strin
 		trimmed := strings.TrimSpace(line)
 
 		if !inFence && validationSectionRe.MatchString(trimmed) {
+			validationSectionLevel = headingLevel(trimmed)
 			inValidationSection = true
 			continue
 		}
 
-		if inValidationSection && !inFence && strings.HasPrefix(trimmed, "## ") {
-			inValidationSection = false
-			continue
+		if inValidationSection && !inFence {
+			if level := headingLevel(trimmed); level > 0 && level <= validationSectionLevel {
+				inValidationSection = false
+				continue
+			}
 		}
 
 		if !inValidationSection {

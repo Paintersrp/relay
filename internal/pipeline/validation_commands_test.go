@@ -232,6 +232,147 @@ func TestIgnoresNonShellFenceInValidationSection(t *testing.T) {
 	}
 }
 
+func TestExtractValidationCommandsRelayValidationCommandsSection(t *testing.T) {
+	handoff := `# Relay Guided Workbench Smoke Test Surgical Implementation
+
+## Execution model
+
+Use: DeepSeek V4 Flash
+
+## Goal
+
+Run a smoke test.
+
+## Scope
+
+- README.md
+
+## Do not change
+
+- Do not change unrelated files.
+
+## Task checklist
+
+- [ ] Inspect README.md
+- [ ] Make the tiny smoke change if missing
+
+## Relay validation commands
+
+` + "```bash" + `
+go fmt ./...
+templ generate
+npm run build
+go test ./...
+go vet ./...
+` + "```" + `
+
+## Agent final output requirement
+
+Return only:
+
+- DONE or BLOCKED
+- Build status: <status>
+- Test status: <status>
+- Count of LOC changed: <count>
+`
+	cmds := ExtractValidationCommands(handoff, "[]")
+	expected := []string{
+		"go fmt ./...",
+		"templ generate",
+		"npm run build",
+		"go test ./...",
+		"go vet ./...",
+	}
+	if len(cmds) != len(expected) {
+		t.Fatalf("expected %d commands, got %d: %#v", len(expected), len(cmds), cmds)
+	}
+	for i, cmd := range cmds {
+		if cmd.Command != expected[i] {
+			t.Errorf("command %d: expected %q, got %q", i, expected[i], cmd.Command)
+		}
+		if cmd.Source != "handoff" {
+			t.Errorf("command %d: expected source handoff, got %q", i, cmd.Source)
+		}
+	}
+}
+
+func TestExtractValidationCommandsValidationCommandsSection(t *testing.T) {
+	handoff := `# Test
+
+## Goal
+
+Do something.
+
+## Validation commands
+
+` + "```bash" + `
+go test ./...
+go vet ./...
+` + "```" + `
+
+## Agent final output
+
+DONE or BLOCKED
+`
+	cmds := ExtractValidationCommands(handoff, "[]")
+	if len(cmds) != 2 {
+		t.Fatalf("expected 2 commands, got %d: %#v", len(cmds), cmds)
+	}
+	if cmds[0].Command != "go test ./..." {
+		t.Errorf("expected 'go test ./...', got %q", cmds[0].Command)
+	}
+	if cmds[1].Command != "go vet ./..." {
+		t.Errorf("expected 'go vet ./...', got %q", cmds[1].Command)
+	}
+}
+
+func TestExtractValidationCommandsH3RelayValidationCommands(t *testing.T) {
+	handoff := `# Test
+
+### Relay validation commands
+
+` + "```bash" + `
+go fmt ./...
+` + "```" + `
+
+### Some other subsection
+
+This should not be extracted.
+`
+	cmds := ExtractValidationCommands(handoff, "[]")
+	if len(cmds) != 1 {
+		t.Fatalf("expected 1 command, got %d: %#v", len(cmds), cmds)
+	}
+	if cmds[0].Command != "go fmt ./..." {
+		t.Errorf("expected 'go fmt ./...', got %q", cmds[0].Command)
+	}
+}
+
+func TestFinalOutputBulletsNotTreatedAsValidationCommands(t *testing.T) {
+	handoff := `## Relay validation commands
+
+` + "```bash" + `
+go test ./...
+` + "```" + `
+
+## Agent final output requirement
+
+Return only:
+
+- DONE or BLOCKED
+- Build status: <status>
+- Test status: <status>
+- Count of LOC changed: <count>
+`
+	cmds := ExtractValidationCommands(handoff, "[]")
+	if len(cmds) != 1 {
+		t.Fatalf("expected 1 command from relay validation section, got %d: %#v", len(cmds), cmds)
+	}
+	if cmds[0].Command != "go test ./..." {
+		t.Errorf("expected 'go test ./...', got %q", cmds[0].Command)
+	}
+}
+
 func TestExtractValidationCommandsNormalizesRTKDuplicates(t *testing.T) {
 	handoff := `## Tests / validation
 

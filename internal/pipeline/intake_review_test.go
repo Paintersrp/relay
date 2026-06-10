@@ -178,6 +178,55 @@ Do a thing.
 	}
 }
 
+func TestIntakeReviewAcceptsRelayValidationCommandsSection(t *testing.T) {
+	repoDir := setupRepoWithFiles(t)
+	handoff := `# Test Handoff
+
+## Goal
+
+Do a thing.
+
+## Scope
+
+- README.md
+- foo.go
+
+## Do not change
+
+Nothing.
+
+## Task checklist
+
+- [ ] Do it
+
+## Relay validation commands
+
+` + "```bash" + `
+go fmt ./...
+templ generate
+npm run build
+go test ./...
+go vet ./...
+` + "```" + `
+
+## Agent final output requirement
+
+Return DONE or BLOCKED.
+`
+	metadata := ParseHandoffMetadata(handoff, "")
+	if len(metadata.ValidationCommands) == 0 {
+		t.Fatal("expected validation commands from relay validation commands section, got none")
+	}
+
+	review := BuildIntakeReview(metadata, repoDir)
+
+	for _, w := range review.Warnings {
+		if contains(w, "validation") || contains(w, "validation commands") {
+			t.Fatalf("unexpected validation warning when relay validation commands section exists: %s", w)
+		}
+	}
+}
+
 func TestBuildIntakeReviewWithRepoDefaultsNoWarning(t *testing.T) {
 	repoDir := setupRepoWithFiles(t)
 	repoDefaults := `["go test ./..."]`

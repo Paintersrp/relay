@@ -1,6 +1,6 @@
 {
   "status": "pass",
-  "repo_path": "C:\\Users\\trist\\AppData\\Local\\Temp\\TestRunValidationRedirectsToValidationStep3854273054\\002",
+  "repo_path": "C:\\Users\\trist\\AppData\\Local\\Temp\\TestRunValidationRedirectsToValidationStep1316630399\\002",
   "commands": [
     {
       "label": "go version",
@@ -10,7 +10,7 @@
       "stdout": "go version go1.26.4 windows/amd64\n",
       "stderr": "",
       "timed_out": false,
-      "duration_ms": 44
+      "duration_ms": 51
     }
   ]
 }
