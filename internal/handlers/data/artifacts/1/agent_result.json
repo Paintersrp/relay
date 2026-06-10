@@ -1,6 +1,6 @@
 {
   "status": "DONE",
   "build_status": "PASS",
-  "test_status": "",
-  "loc_changed": ""
+  "test_status": "PASS",
+  "loc_changed": "5"
 }

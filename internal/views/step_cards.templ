@@ -815,7 +815,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 			// Running indicator
 			if isRunning {
 				<div class="text-xs text-blue-400 mb-2">
-					This run is still active. Output refreshes automatically.
+					This run is still active. Status refreshes automatically. Captured output will appear here after OpenCode writes saved logs.
 				</div>
 			}
 
@@ -824,11 +824,14 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 					<div class="border-b border-gray-800 px-3 py-2">
 						<div class="text-sm font-medium text-gray-200">Output Transcript</div>
 					</div>
-					<pre class="max-h-80 overflow-auto text-xs leading-5 font-mono p-3 whitespace-pre-wrap">
+					<div class="max-h-80 overflow-auto text-xs leading-5 font-mono p-3 whitespace-pre-wrap">
 						for _, ev := range previews.OpenCodeTranscript {
-							<div class={ transcriptEventClass(ev.Kind) }>{ "[" + ev.Kind + "]" } { ev.Text }</div>
+							<div class={ transcriptEventClass(ev.Kind) }>
+								<span class="text-gray-600">{ "[" + ev.Kind + "]" }</span>
+								<span>{ " " + ev.Text }</span>
+							</div>
 						}
-					</pre>
+					</div>
 				</div>
 			}
 

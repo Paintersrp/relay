@@ -855,6 +855,41 @@ func TestStartOpenCodeGoDuplicateRunningRejected(t *testing.T) {
 	}
 }
 
+func TestStartOpenCodeGoCreatesSingleStartedEvent(t *testing.T) {
+	s := setupTestStore(t)
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) { fn() }
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+		return pipeline.AgentCommandRunResult{
+			ExitCode: 0,
+			Stdout:   "DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 5\n",
+		}
+	}
+
+	runID := setupOpenCodeRun(t, s)
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+
+	h.startOpenCodeGo(w, req, runID)
+
+	events, err := s.ListEventsByRun(runID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+
+	count := 0
+	for _, ev := range events {
+		if strings.Contains(ev.Message, "OpenCode Go execution started") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 'OpenCode Go execution started' event, got %d", count)
+	}
+}
+
 func TestBuildOpenCodeTranscriptParsesRealSmokeOutput(t *testing.T) {
 	stdout := `{"type":"reasoning","part":{"type":"reasoning","text":"Let me follow the implementation handoff exactly."}}
 {"type":"tool_use","part":{"type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"D:\\Code\\relay\\README.md"}}}}

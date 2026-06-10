@@ -690,8 +690,6 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 	startedAt := time.Now().Format("2006-01-02 15:04:05")
 	h.store.UpdateAgentExecutionStatus(execID, "running", nil, &startedAt, nil, nil, nil, nil, nil, nil)
 
-	h.store.CreateEvent(runID, "info", "OpenCode Go execution started")
-
 	// Run command with timeout
 	runResult := h.runAgentCommandArgs(
 		ctx,
