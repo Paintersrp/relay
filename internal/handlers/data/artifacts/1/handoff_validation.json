@@ -7,16 +7,6 @@
       "summary": "Title line found"
     },
     {
-      "kind": "task_checklist_section",
-      "status": "fail",
-      "summary": "## Task checklist section missing"
-    },
-    {
-      "kind": "validation_section",
-      "status": "warn",
-      "summary": "Validation / Tests section missing"
-    },
-    {
       "kind": "output_section",
       "status": "fail",
       "summary": "## Output / Final output / Agent final output requirement section missing"
@@ -35,6 +25,16 @@
       "kind": "do_not_change_section",
       "status": "pass",
       "summary": "## Do not change section found"
+    },
+    {
+      "kind": "task_checklist_section",
+      "status": "fail",
+      "summary": "## Task checklist section missing"
+    },
+    {
+      "kind": "validation_section",
+      "status": "warn",
+      "summary": "Validation / Tests section missing"
     },
     {
       "kind": "checkbox_items",

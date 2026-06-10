@@ -75,19 +75,29 @@ templ NextActionCard(run *store.Run, previews RunPreviews) {
 								{ nextActionButtonLabel(previews.NextAction) }
 							</button>
 						</form>
-					} else if !previews.NextAction.Disabled && previews.NextAction.PrimaryHref != "" {
-						<a href={ previews.NextAction.PrimaryHref }
-							class="btn-primary w-full sm:w-auto text-sm inline-flex items-center justify-center">
-							{ nextActionButtonLabel(previews.NextAction) }
-						</a>
-					} else if previews.NextAction.Disabled {
+				} else if !previews.NextAction.Disabled && previews.NextAction.PrimaryHref != "" {
+					<a href={ previews.NextAction.PrimaryHref }
+						class="btn-primary w-full sm:w-auto text-sm inline-flex items-center justify-center">
+						{ nextActionButtonLabel(previews.NextAction) }
+					</a>
+				} else if !previews.NextAction.Disabled &&
+					previews.NextAction.PrimaryFormAction == "" &&
+					previews.NextAction.PrimaryHref == "" &&
+					previews.NextAction.Step != "" {
+					<a href={"/runs/" + Itoa(run.ID) + "?step=" + previews.NextAction.Step}
+						class="btn-primary w-full sm:w-auto text-sm inline-flex items-center justify-center">
+						{ nextActionButtonLabel(previews.NextAction) }
+					</a>
+				} else if previews.NextAction.Disabled {
 						<span class="relay-chip-gray text-xs cursor-not-allowed w-full sm:w-auto inline-flex items-center justify-center py-2 px-4"
 							title={ previews.NextAction.DisabledReason }>
 							{ nextActionButtonLabel(previews.NextAction) } (blocked)
 						</span>
 					}
 
-					if previews.NextAction.PrimaryFormAction != "" && !previews.NextAction.Disabled && previews.NextAction.Step != "" {
+					if !previews.NextAction.Disabled &&
+					previews.NextAction.Step != "" &&
+					(previews.NextAction.PrimaryFormAction != "" || previews.NextAction.PrimaryHref != "") {
 						<a href={"/runs/" + Itoa(run.ID) + "?step=" + previews.NextAction.Step}
 							class="text-xs text-gray-500 hover:text-gray-300 text-center sm:text-left">
 							View { stepDisplayLabel(previews.NextAction.Step) }
