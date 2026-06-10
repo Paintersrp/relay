@@ -537,3 +537,175 @@ func TestBuildAgentPromptNoRelayNoteWhenNoCommandsRemoved(t *testing.T) {
 		t.Error("prompt should preserve test instruction")
 	}
 }
+
+func TestBuildAgentPromptPreservesFencedMarkdownHandoffExample(t *testing.T) {
+	handoff := `# Example Surgical Implementation
+
+## Goal
+
+Fix setup.
+
+## Surgical implementation details
+
+### Task 5 — Add repo/scope mismatch auto-setup test
+
+Example handoff:
+
+` + "```md" + `
+# Scope Mismatch Handoff
+
+## Goal
+
+Do a thing.
+
+## Scope
+
+- src/definitely-missing.ts
+
+## Do not change
+
+- Nothing.
+
+## Task checklist
+
+- [ ] Do it
+
+## Tests / validation
+
+` + "```bash" + `
+go test ./...
+` + "```" + `
+
+## Agent final output requirement
+
+Return DONE or BLOCKED.
+` + "```" + `
+
+## Tests / validation
+
+` + "```bash" + `
+go test ./...
+` + "```" + `
+
+## Agent final output requirement
+
+Return only DONE or BLOCKED.
+`
+	prompt := BuildAgentPrompt(handoff)
+
+	// The fenced markdown example should be preserved
+	if !strings.Contains(prompt, "# Scope Mismatch Handoff") {
+		t.Error("prompt should preserve # Scope Mismatch Handoff inside fenced markdown example")
+	}
+	if !strings.Contains(prompt, "src/definitely-missing.ts") {
+		t.Error("prompt should preserve scoped file path inside fenced markdown example")
+	}
+	if !strings.Contains(prompt, "## Tests / validation") {
+		t.Error("prompt should preserve ## Tests / validation heading (including inside fenced example)")
+	}
+
+	// The fenced markdown example's inner content should be preserved
+	// Including the go test command (it's part of the example, not real validation)
+	if !strings.Contains(prompt, "go test ./...") {
+		t.Error("prompt should preserve go test ./... inside the fenced markdown example")
+	}
+
+	// The fenced markdown example's headings should be preserved inside the example
+	if !strings.Contains(prompt, "## Agent final output requirement") {
+		t.Error("prompt should contain ## Agent final output requirement (from appended contract or example)")
+	}
+
+	// The prompt has one appended contract heading + one preserved inside the md example
+	// (the real top-level one was stripped by stripSections)
+	count := strings.Count(prompt, "## Agent final output requirement")
+	if count < 2 {
+		t.Errorf("expected at least 2 '## Agent final output requirement' (1 from md example + 1 appended), got %d", count)
+	}
+}
+
+func TestBuildAgentPromptDoesNotStripHeadingsInsideCodeFence(t *testing.T) {
+	handoff := `## Surgical implementation details
+
+` + "```go" + `
+// This string is part of a test fixture:
+const text = "` + "`" + `
+## Execution model
+Use: DeepSeek V4 Flash
+
+## Agent final output requirement
+Return DONE.
+` + "`" + `
+` + "```" + `
+
+## Agent final output requirement
+
+Return only DONE or BLOCKED.
+`
+	prompt := BuildAgentPrompt(handoff)
+
+	// Headings inside Go code fence should be preserved
+	if !strings.Contains(prompt, "## Execution model") {
+		t.Error("prompt should preserve ## Execution model inside Go code fence")
+	}
+	if !strings.Contains(prompt, "## Agent final output requirement") {
+		t.Error("prompt should preserve ## Agent final output requirement inside Go code fence")
+	}
+
+	// There are 2 occurrences: 1 preserved inside the Go code fence + 1 appended contract.
+	// The original top-level heading after the Go fence was stripped by stripSections.
+	count := strings.Count(prompt, "## Agent final output requirement")
+	if count != 2 {
+		t.Errorf("expected exactly 2 '## Agent final output requirement' (1 inside Go fence + 1 appended), got %d", count)
+	}
+}
+
+func TestBuildAgentPromptStillRemovesRealValidationCommands(t *testing.T) {
+	handoff := `# Example
+
+## Goal
+
+Do a thing.
+
+## Tests / validation
+
+` + "```bash" + `
+go test ./...
+npm run build
+` + "```" + `
+
+If RTK is available in the environment, Relay or the user may prefer ` + "`rtk.exe`" + ` first, then ` + "`rtk`" + `, then the raw command.
+
+Do not list RTK-wrapped commands as separate validation commands.
+
+## Expected result
+
+- Tests pass.
+`
+	prompt := BuildAgentPrompt(handoff)
+
+	// Real shell command block should be removed
+	if strings.Contains(prompt, "go test ./...") {
+		t.Error("prompt should not contain go test command")
+	}
+	if strings.Contains(prompt, "npm run build") {
+		t.Error("prompt should not contain npm run build command")
+	}
+
+	// RTK wrapper text should be removed
+	if strings.Contains(prompt, "If RTK is available") {
+		t.Error("prompt should not contain RTK wrapper text")
+	}
+	if strings.Contains(prompt, "Do not list RTK-wrapped") {
+		t.Error("prompt should not contain 'Do not list RTK-wrapped'")
+	}
+
+	// Relay validation removed note should be present
+	if !strings.Contains(prompt, "Relay validation commands were extracted") {
+		t.Error("prompt should contain Relay validation removed note")
+	}
+
+	// Expected result should be preserved
+	if !strings.Contains(prompt, "- Tests pass.") {
+		t.Error("prompt should preserve expected result")
+	}
+}

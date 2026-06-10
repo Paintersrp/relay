@@ -5,7 +5,7 @@ import (
 	"relay/internal/store"
 )
 
-templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews, intakeReview *pipeline.IntakeReview) {
+templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
 	@Layout(run.Title) {
 		<div class="mb-8">
 			<div class="flex items-start justify-between">
@@ -27,19 +27,18 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 			</div>
 		</div>
 
-		if intakeReview != nil {
-			@IntakeReviewPanel(run, repo, intakeReview)
-		}
+		@StepCards(run, repo, artifacts, checks, previews, intakeReview, activeStep)
 
-		@StepCards(run, artifacts, checks, previews)
-
-		@OpenCodePreview(run, repo, artifacts)
-
-		@AgentResultSummary(run, artifacts, checks)
-
-		@ValidationResultsSummary(run, artifacts, checks)
-
-		@RunPreviewPanels(previews)
+		// Artifact previews collapsed by default (accessible via step panels)
+		<details class="border border-gray-800 rounded-lg bg-gray-900/50 mt-8">
+			<summary class="px-4 py-3 cursor-pointer text-sm text-gray-400 hover:text-gray-300 list-none flex items-center justify-between">
+				<span>Artifact previews</span>
+				<span class="text-xs text-gray-600">Original Handoff &middot; Validation Report &middot; Agent Prompt</span>
+			</summary>
+			<div class="border-t border-gray-800">
+				@RunPreviewPanels(previews)
+			</div>
+		</details>
 
 		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
 			@ArtifactList(artifacts, run.ID)

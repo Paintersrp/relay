@@ -99,7 +99,13 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		intakeReview = pipeline.BuildIntakeReview(metadata, repoPath)
 	}
 
-	views.RunDetail(run, repo, artifactsList, checksList, eventsList, previews, &intakeReview).Render(r.Context(), w)
+	// Determine active step
+	activeStep := defaultActiveRunStep(artifactsList, checksList)
+	if s := r.URL.Query().Get("step"); s != "" {
+		activeStep = s
+	}
+
+	views.RunDetail(run, repo, artifactsList, checksList, eventsList, previews, &intakeReview, activeStep).Render(r.Context(), w)
 }
 
 func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
@@ -465,6 +471,63 @@ func (h *RunsHandler) generateOpenCodePacket(w http.ResponseWriter, r *http.Requ
 	h.log.Info("opencode handoff packet generated", "run_id", runID)
 
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+}
+
+func defaultActiveRunStep(artifacts []store.Artifact, checks []store.Check) string {
+	hasValidation := false
+	hasValidationPass := false
+	hasValidationBlock := false
+	for _, c := range checks {
+		if c.Kind == "validation" {
+			hasValidation = true
+			if c.Status == "pass" {
+				hasValidationPass = true
+			}
+			if c.Status == "block" || c.Status == "fail" {
+				hasValidationBlock = true
+			}
+		}
+	}
+
+	hasAgentPrompt := false
+	hasPacket := false
+	hasAgentResult := false
+	for _, a := range artifacts {
+		switch a.Kind {
+		case "agent_prompt":
+			hasAgentPrompt = true
+		case "opencode_handoff_packet":
+			hasPacket = true
+		case "agent_result_raw":
+			hasAgentResult = true
+		}
+	}
+
+	// Default to intake if:
+	// - no validation has run
+	// - validation has blockers/failures
+	// - no validation has run yet
+	if !hasValidation || hasValidationBlock {
+		return "intake"
+	}
+
+	if hasAgentResult {
+		return "validation"
+	}
+
+	if hasPacket {
+		return "result"
+	}
+
+	if hasAgentPrompt {
+		return "packet"
+	}
+
+	if hasValidationPass {
+		return "prompt"
+	}
+
+	return "intake"
 }
 
 func (h *RunsHandler) submitAgentResult(w http.ResponseWriter, r *http.Request, runID int64) {

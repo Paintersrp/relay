@@ -11,6 +11,110 @@ func PreparePrompt(originalHandoff string) string {
 
 const relayValidationRemovedNote = "> Relay validation commands were extracted from the original handoff and removed from this Agent Prompt. Relay will run validation separately."
 
+// fenceState tracks whether we are inside a fenced code block.
+// For md/markdown fences, it tracks nesting depth to allow
+// inner fences (```bash, ```go) without closing the outer md fence.
+type fenceState struct {
+	inFence bool
+	marker  byte
+	length  int
+	lang    string
+	// depth tracks nesting for md/markdown fences only.
+	// depth=1 means inside the md fence, depth=2 means inside a nested fence.
+	depth int
+}
+
+// isFenceLine checks if a trimmed line is a fence opener/closer.
+// Returns the fence character, length, language (if opening), and whether it's a fence.
+func isFenceLine(trimmed string) (char byte, length int, lang string, ok bool) {
+	if len(trimmed) < 3 {
+		return 0, 0, "", false
+	}
+	first := trimmed[0]
+	if first != '`' && first != '~' {
+		return 0, 0, "", false
+	}
+	// Count consecutive same characters
+	count := 0
+	for i := 0; i < len(trimmed); i++ {
+		if trimmed[i] == first {
+			count++
+		} else {
+			break
+		}
+	}
+	if count < 3 {
+		return 0, 0, "", false
+	}
+	rest := strings.TrimSpace(trimmed[count:])
+	return first, count, rest, true
+}
+
+// updateFenceState updates fence state given a line.
+func updateFenceState(line string, state fenceState) fenceState {
+	trimmed := strings.TrimSpace(line)
+	char, length, lang, ok := isFenceLine(trimmed)
+	if !ok {
+		return state
+	}
+
+	if !state.inFence {
+		// Opening a new fence
+		return fenceState{
+			inFence: true,
+			marker:  char,
+			length:  length,
+			lang:    lang,
+			depth:   1,
+		}
+	}
+
+	// Inside a fence; only same marker char can close it
+	if char != state.marker {
+		return state
+	}
+	if length < state.length {
+		return state
+	}
+
+	// Handle md/markdown fence nesting: inner language fences should not
+	// close the outer md fence.
+	if state.lang == "md" || state.lang == "markdown" {
+		rest := strings.TrimSpace(trimmed[length:])
+		if state.depth == 1 {
+			if rest != "" {
+				// ```bash or ```go inside md fence -> open nested fence
+				return fenceState{
+					inFence: true,
+					marker:  state.marker,
+					length:  state.length,
+					lang:    state.lang,
+					depth:   2,
+				}
+			}
+			// Plain ``` closes the md fence
+			return fenceState{}
+		} else {
+			// depth == 2, inside a nested fence
+			if rest != "" {
+				// Another non-plain fence inside nested fence? Stay at depth 2.
+				return state
+			}
+			// Plain ``` closes nested fence, back to md fence
+			return fenceState{
+				inFence: true,
+				marker:  state.marker,
+				length:  state.length,
+				lang:    state.lang,
+				depth:   1,
+			}
+		}
+	}
+
+	// Normal fence closing
+	return fenceState{}
+}
+
 func BuildAgentPrompt(originalHandoff string) string {
 	meta := ParseHandoffMetadata(originalHandoff, "")
 	title := meta.Title
@@ -89,6 +193,10 @@ func BuildAgentPrompt(originalHandoff string) string {
 //   - ## Validation
 //   - ## Relay validation commands
 //   - ## Tests to add or update
+//
+// Only headings OUTSIDE fenced blocks activate cleanup mode.
+// Only shell fences inside cleanup sections are removed.
+// Non-shell fences (md, go, etc.) are preserved entirely.
 func cleanValidationExecutionMaterial(markdown string) string {
 	cleanupHeadings := map[string]bool{
 		"tests / validation":        true,
@@ -104,12 +212,16 @@ func cleanValidationExecutionMaterial(markdown string) string {
 	inFence := false
 	fenceIsShell := false
 	sectionRemovedCount := 0
+	fs := fenceState{}
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		// Detect section heading transitions
-		if !inFence && strings.HasPrefix(trimmed, "## ") {
+		// Track overall fence state (independent from shell-fence tracking)
+		fs = updateFenceState(line, fs)
+
+		// Detect section heading transitions (only outside fenced blocks)
+		if !fs.inFence && strings.HasPrefix(trimmed, "## ") {
 			heading := strings.ToLower(strings.TrimSpace(trimmed[3:]))
 
 			// Finalize previous section if we were in one
@@ -134,8 +246,8 @@ func cleanValidationExecutionMaterial(markdown string) string {
 			continue
 		}
 
-		// Non-heading line transitions out of cleanup section
-		if inCleanupSection && !inFence && strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "## ") {
+		// Non-heading line transitions out of cleanup section (only outside fences)
+		if inCleanupSection && !fs.inFence && strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "## ") {
 			if sectionRemovedCount > 0 {
 				if !strings.HasSuffix(strings.TrimSpace(strings.Join(result, "\n")), relayValidationRemovedNote) {
 					result = append(result, "", relayValidationRemovedNote)
@@ -152,25 +264,29 @@ func cleanValidationExecutionMaterial(markdown string) string {
 			continue
 		}
 
-		// Handle fenced code blocks inside cleanup sections
-		if strings.HasPrefix(trimmed, "```") {
+		// Inside a cleanup section: handle fenced code blocks
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
 			if !inFence {
-				lang, ok := isShellFenceOpener(line)
-				if ok && lang != "" {
-					fenceIsShell = true
+				// Opening fence - determine if it's a shell fence
+				_, _, lang, ok := isFenceLine(trimmed)
+				if ok {
+					fenceIsShell = isShellLang(lang)
+					inFence = true
+					if fenceIsShell {
+						// Skip shell fence opener
+						sectionRemovedCount++
+					} else {
+						// Preserve non-shell fence opener
+						result = append(result, line)
+					}
 				} else {
-					fenceIsShell = false
-				}
-				inFence = true
-				if fenceIsShell {
-					sectionRemovedCount++
-				} else {
+					// Not a valid fence line, treat as content
 					result = append(result, line)
 				}
 			} else {
 				// Closing fence
 				if fenceIsShell {
-					// Don't emit the closing fence for shell blocks
+					// Don't emit closing fence for shell blocks
 				} else {
 					result = append(result, line)
 				}
@@ -186,6 +302,7 @@ func cleanValidationExecutionMaterial(markdown string) string {
 				sectionRemovedCount++
 				continue
 			}
+			// Preserve lines inside non-shell fences
 			result = append(result, line)
 			continue
 		}
@@ -225,6 +342,16 @@ func cleanValidationExecutionMaterial(markdown string) string {
 	}
 
 	return strings.TrimSpace(strings.Join(result, "\n"))
+}
+
+// isShellLang returns true if the language identifier is a shell language.
+func isShellLang(lang string) bool {
+	shellLangs := map[string]bool{
+		"sh": true, "shell": true, "bash": true, "zsh": true,
+		"fish": true, "powershell": true, "pwsh": true, "ps1": true,
+		"cmd": true, "bat": true, "console": true, "terminal": true,
+	}
+	return shellLangs[strings.ToLower(lang)]
 }
 
 // isValidationCommandLineForPromptCleanup returns true when line looks like a
@@ -295,8 +422,10 @@ func isValidationWrapperLine(line string) bool {
 func stripH1Title(text string) string {
 	lines := strings.Split(text, "\n")
 	var result []string
+	fs := fenceState{}
 	for _, line := range lines {
-		if strings.HasPrefix(line, "# ") && !strings.HasPrefix(line, "## ") {
+		fs = updateFenceState(line, fs)
+		if !fs.inFence && strings.HasPrefix(line, "# ") && !strings.HasPrefix(line, "## ") {
 			continue
 		}
 		result = append(result, line)
@@ -304,6 +433,8 @@ func stripH1Title(text string) string {
 	return strings.TrimSpace(strings.Join(result, "\n"))
 }
 
+// stripSections removes sections whose headings match the given list.
+// It is fence-aware: headings inside fenced blocks are not treated as real headings.
 func stripSections(markdown string, headings ...string) string {
 	lowerHeadings := make([]string, len(headings))
 	for i, h := range headings {
@@ -313,10 +444,16 @@ func stripSections(markdown string, headings ...string) string {
 	lines := strings.Split(markdown, "\n")
 	var result []string
 	skipping := false
+	fs := fenceState{}
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "## ") {
+
+		// Track fence state
+		fs = updateFenceState(line, fs)
+
+		// Only recognize headings outside fenced blocks
+		if !fs.inFence && strings.HasPrefix(trimmed, "## ") {
 			heading := strings.ToLower(strings.TrimSpace(trimmed[3:]))
 			shouldSkip := false
 			for _, h := range lowerHeadings {

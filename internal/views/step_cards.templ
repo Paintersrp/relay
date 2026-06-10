@@ -1,340 +1,371 @@
 package views
 
-import "relay/internal/store"
+import (
+	"relay/internal/pipeline"
+	"relay/internal/store"
+)
 
-templ StepCards(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
-	<div class="space-y-3">
-		// Step 1 — Intake Review
-		<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
-			<details class="group" { openAttr(shouldOpenStep("validation", artifacts, checks, 1)) }>
-				<summary class="cursor-pointer list-none">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-3">
-							<span class="text-xs font-bold text-gray-500 w-6">1</span>
-							<div>
-								<h3 class="font-medium">Intake Review</h3>
-								<p class="text-xs text-gray-500">Parse and verify the original handoff before agent execution.</p>
-							</div>
-						</div>
-						<div class="flex items-center gap-3">
-							@intakeStatusChip(checks)
-							<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-								hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-								hx-target="body"
-								hx-swap="outerHTML"
-								class="flex gap-2">
-								<input type="hidden" name="action" value="validate-handoff"/>
-								<button type="submit"
-									class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-									if hasCheckKind(checks, "validation") {
-										Re-run Intake Review
-									} else {
-										Run Intake Review
-									}
-								</button>
-							</form>
-						</div>
-					</div>
-				</summary>
-				<div class="mt-3 pt-3 border-t border-gray-800">
-					if len(checks) > 0 {
-						for _, c := range checks {
-							if c.Kind == "validation" {
-								<div class="flex items-center gap-2 text-xs py-1">
-									if c.Status == "pass" {
-										<span class="text-green-400 font-mono">{ c.Status }</span>
-									} else if c.Status == "fail" {
-										<span class="text-red-400 font-mono">{ c.Status }</span>
-									} else if c.Status == "warn" {
-										<span class="text-yellow-400 font-mono">{ c.Status }</span>
-									} else {
-										<span class="text-gray-400 font-mono">{ c.Status }</span>
-									}
-									<span class="text-gray-300">{ c.Summary }</span>
-								</div>
-							}
+templ StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
+	// Step navigation bar
+	<div class="mb-4">
+		<nav class="flex gap-1 bg-gray-900/80 border border-gray-800 rounded-lg p-1 text-xs">
+			<a href={ templ.URL("/runs/" + Itoa(run.ID) + "?step=intake") }
+				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "intake") }>
+				1 Intake Review
+			</a>
+			<a href={ templ.URL("/runs/" + Itoa(run.ID) + "?step=prompt") }
+				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "prompt") }>
+				2 Agent Prompt
+			</a>
+			<a href={ templ.URL("/runs/" + Itoa(run.ID) + "?step=packet") }
+				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "packet") }>
+				3 Agent Packet
+			</a>
+			<a href={ templ.URL("/runs/" + Itoa(run.ID) + "?step=result") }
+				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "result") }>
+				4 Agent Result
+			</a>
+			<a href={ templ.URL("/runs/" + Itoa(run.ID) + "?step=validation") }
+				class={ "px-3 py-1.5 rounded transition-colors", stepNavClass(activeStep, "validation") }>
+				5 Relay Validation
+			</a>
+			<a href={ templ.URL("/runs/" + Itoa(run.ID) + "?step=audit") }
+				class={ "px-3 py-1.5 rounded transition-colors opacity-50", stepNavClass(activeStep, "audit") }>
+				6 Diff / Audit
+			</a>
+		</nav>
+	</div>
+
+	// Active step panel
+	switch activeStep {
+	case "intake":
+		@IntakeStepPanel(run, repo, artifacts, checks, intakeReview, previews)
+	case "prompt":
+		@AgentPromptStepPanel(run, artifacts, checks, previews)
+	case "packet":
+		@AgentPacketStepPanel(run, artifacts, previews)
+	case "result":
+		@AgentResultStepPanel(run, artifacts, checks)
+	case "validation":
+		@RelayValidationStepPanel(run, artifacts, checks)
+	case "audit":
+		@DiffAuditStepPanel()
+	default:
+		@IntakeStepPanel(run, repo, artifacts, checks, intakeReview, previews)
+	}
+
+	@ActionButtons(run.ID)
+}
+
+// stepNavClass returns the CSS class for a step navigation link.
+func stepNavClass(activeStep, step string) string {
+	if activeStep == step {
+		return "bg-indigo-600/30 text-indigo-300 font-medium"
+	}
+	return "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+}
+
+templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview, previews RunPreviews) {
+	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
+		<div class="flex items-center justify-between mb-3">
+			<div>
+				<h3 class="font-medium">Step 1: Intake Review</h3>
+				<p class="text-xs text-gray-500 mt-0.5">Parse and verify the original handoff before agent execution.</p>
+			</div>
+			<div class="flex items-center gap-3">
+				@intakeStatusChip(checks)
+				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+					hx-target="body" hx-swap="outerHTML"
+					class="flex gap-2">
+					<input type="hidden" name="action" value="validate-handoff"/>
+					<button type="submit"
+						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+						if hasCheckKind(checks, "validation") {
+							Re-run Intake Review
+						} else {
+							Run Intake Review
 						}
-					}
-					if hasCheckKind(checks, "validation") {
-						<div class="mt-2 text-xs text-gray-500">
-							if hasCheckStatus(checks, "validation", "block") || hasCheckStatus(checks, "validation", "fail") {
-								Resolve Intake Review blockers before generating Agent Prompt.
-							} else if hasCheckStatus(checks, "validation", "warn") {
-								Intake Review has warnings. Agent Prompt can still be generated.
-							} else if hasCheckStatus(checks, "validation", "pass") {
-								Intake Review passed. Ready to generate Agent Prompt.
-							}
-						</div>
-					}
-				</div>
-			</details>
-		</div>
-
-		// Step 2 — Agent Prompt
-		<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
-			<details class="group" { openAttr(shouldOpenStep("agent_prompt", artifacts, checks, 2)) }>
-				<summary class="cursor-pointer list-none">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-3">
-							<span class="text-xs font-bold text-gray-500 w-6">2</span>
-							<div>
-								<h3 class="font-medium">Agent Prompt</h3>
-								<p class="text-xs text-gray-500">Review the transformed prompt for the running agent.</p>
-							</div>
-						</div>
-						<div class="flex items-center gap-3">
-							@agentPromptStatusChip(artifactExists(artifacts, "agent_prompt"), checks)
-							<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-								hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-								hx-target="body"
-								hx-swap="outerHTML"
-								class="flex gap-2">
-								<input type="hidden" name="action" value="prepare-prompt"/>
-								<button type="submit"
-									class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-									if artifactExists(artifacts, "agent_prompt") {
-										Regenerate Agent Prompt
-									} else {
-										Generate Agent Prompt
-									}
-								</button>
-							</form>
-						</div>
-					</div>
-				</summary>
-				<div class="mt-3 pt-3 border-t border-gray-800">
-					if artifactExists(artifacts, "agent_prompt") {
-						<div class="mt-2 text-xs text-gray-500">
-							Agent Prompt generated. Review the hunk diff below.
-						</div>
-						<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
-								class="text-xs text-gray-500 hover:text-gray-300">Download</a>
-						</div>
-						if len(previews.AgentPromptDiff.Lines) > 0 {
-							<div class="mt-4 rounded-lg border border-gray-800 bg-gray-950/60 overflow-hidden">
-								<div class="flex items-center justify-between border-b border-gray-800 px-3 py-2">
-									<div>
-										<div class="text-sm font-medium text-gray-200">Original → Agent Prompt diff</div>
-										<div class="text-xs text-gray-500">Shows changed sections only, with nearby context.</div>
-									</div>
-								</div>
-								<pre class="max-h-96 overflow-auto text-xs leading-5 font-mono p-3">
-									for _, line := range previews.AgentPromptDiff.Lines {
-										switch line.Kind {
-										case "add":
-											<div class="text-green-300">+ { line.Text }</div>
-										case "remove":
-											<div class="text-red-300">- { line.Text }</div>
-										case "skip":
-											<div class="text-gray-600 italic">{ line.Text }</div>
-										default:
-											<div class="text-gray-500">  { line.Text }</div>
-										}
-									}
-								</pre>
-								if previews.AgentPromptDiff.Truncated {
-									<div class="border-t border-gray-800 px-3 py-2 text-xs text-yellow-300">
-										Diff preview truncated. Use View or Download for the full artifacts.
-									</div>
-								}
-							</div>
-						}
-					}
-				</div>
-			</details>
-		</div>
-
-		// Step 3 — Agent Packet
-		<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
-			<details class="group" { openAttr(shouldOpenStep("opencode_handoff_packet", artifacts, checks, 3)) }>
-				<summary class="cursor-pointer list-none">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-3">
-							<span class="text-xs font-bold text-gray-500 w-6">3</span>
-							<div>
-								<h3 class="font-medium">Agent Packet</h3>
-								<p class="text-xs text-gray-500">Prepare packet for OpenCode Go.</p>
-							</div>
-						</div>
-						<div class="flex items-center gap-3">
-							@agentPacketStatusChip(artifactExists(artifacts, "opencode_handoff_packet"), artifactExists(artifacts, "agent_prompt"))
-							if artifactExists(artifacts, "agent_prompt") {
-								<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-									hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-									hx-target="body"
-									hx-swap="outerHTML"
-									class="flex gap-2">
-									<input type="hidden" name="action" value="generate-opencode-packet"/>
-									<button type="submit"
-										class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors font-medium">
-										if artifactExists(artifacts, "opencode_handoff_packet") {
-											Regenerate Agent Packet
-										} else {
-											Generate Agent Packet
-										}
-									</button>
-								</form>
-							} else {
-								<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600">
-									Generate Agent Prompt first
-								</span>
-							}
-						</div>
-					</div>
-				</summary>
-				<div class="mt-3 pt-3 border-t border-gray-800">
-					if artifactExists(artifacts, "opencode_handoff_packet") {
-						<div class="mt-2 text-xs text-gray-500">
-							Relay has prepared metadata for external agent tooling. Review the packet before sending it to OpenCode Go. Relay does not execute OpenCode yet.
-						</div>
-						<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet/download"}
-								class="text-xs text-gray-500 hover:text-gray-300">Download</a>
-						</div>
-						if previews.OpenCodePacket != "" {
-							<div class="mt-3 rounded-lg border border-gray-800 bg-gray-950/60 overflow-hidden">
-								<div class="border-b border-gray-800 px-3 py-2">
-									<div class="text-sm font-medium text-gray-200">Packet preview</div>
-									<div class="text-xs text-gray-500">Metadata only. Relay does not execute this packet.</div>
-								</div>
-								<pre class="max-h-80 overflow-auto text-xs leading-5 font-mono p-3 text-gray-300 whitespace-pre-wrap">{ previews.OpenCodePacket }</pre>
-							</div>
-						}
-					}
-				</div>
-			</details>
-		</div>
-
-		// Step 4 — Agent Result
-		<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
-			<details class="group" { openAttr(shouldOpenStep("agent_result_raw", artifacts, checks, 4)) }>
-				<summary class="cursor-pointer list-none">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-3">
-							<span class="text-xs font-bold text-gray-500 w-6">4</span>
-							<div>
-								<h3 class="font-medium">Agent Result</h3>
-								<p class="text-xs text-gray-500">Paste the external agent's final DONE/BLOCKED response.</p>
-							</div>
-						</div>
-						@agentResultStatusChip(artifactExists(artifacts, "agent_result_raw"))
-					</div>
-				</summary>
-				<div class="mt-3 pt-3 border-t border-gray-800">
-					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="body"
-						hx-swap="outerHTML"
-						class="space-y-2 mt-3">
-						<input type="hidden" name="action" value="submit-agent-result"/>
-						<textarea name="agent_result_text" rows="6"
-							class="w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded p-2 text-gray-300"
-							placeholder={"DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42"}></textarea>
-						<button type="submit"
-							class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-							Save Agent Result
-						</button>
-					</form>
-					if artifactExists(artifacts, "agent_result_raw") {
-						<div class="mt-2 text-xs text-gray-500">
-							Agent result received. Run Relay Validation next.
-						</div>
-						<div class="mt-3 pt-3 border-t border-gray-800 flex gap-3">
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">View raw result</a>
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw/download"}
-								class="text-xs text-gray-500 hover:text-gray-300">Download raw result</a>
-							if artifactExists(artifacts, "agent_result_json") {
-								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json"}
-									class="text-xs text-indigo-400 hover:text-indigo-300">View parsed JSON</a>
-								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json/download"}
-									class="text-xs text-gray-500 hover:text-gray-300">Download parsed JSON</a>
-							}
-						</div>
-					}
-				</div>
-			</details>
-		</div>
-
-		// Step 5 — Relay Validation
-		<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
-			<details class="group" { openAttr(shouldOpenStep("validation_run_json", artifacts, checks, 5)) }>
-				<summary class="cursor-pointer list-none">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-3">
-							<span class="text-xs font-bold text-gray-500 w-6">5</span>
-							<div>
-								<h3 class="font-medium">Relay Validation</h3>
-								<p class="text-xs text-gray-500">Run Relay-extracted validation commands locally after agent result.</p>
-							</div>
-						</div>
-						<div class="flex items-center gap-3">
-							@validationStatusChip(artifactExists(artifacts, "validation_run_json"), checks, artifactExists(artifacts, "agent_result_raw"))
-							<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-								hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-								hx-target="body"
-								hx-swap="outerHTML"
-								class="flex gap-2">
-								<input type="hidden" name="action" value="run-validation"/>
-								<button type="submit"
-									class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
-									Run Validation Commands
-								</button>
-							</form>
-						</div>
-					</div>
-				</summary>
-				<div class="mt-3 pt-3 border-t border-gray-800">
-					if artifactExists(artifacts, "validation_run_json") {
-						<div class="mt-2">
-							if hasCheckStatus(checks, "validation_run", "pass") {
-								<div class="text-xs text-green-400">Validation passed.</div>
-							} else if hasCheckStatus(checks, "validation_run", "fail") {
-								<div class="text-xs text-red-400">Validation failed. Review stdout/stderr artifacts.</div>
-							} else {
-								<div class="text-xs text-gray-500">Validation completed. Check artifacts for details.</div>
-							}
-						</div>
-						<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">View validation JSON</a>
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json/download"}
-								class="text-xs text-gray-500 hover:text-gray-300">Download validation JSON</a>
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stdout"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">View stdout</a>
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stderr"}
-								class="text-xs text-indigo-400 hover:text-indigo-300">View stderr</a>
-						</div>
-					}
-				</div>
-			</details>
-		</div>
-
-		// Step 6 — Diff / Audit (future)
-		<div class="border border-gray-800/50 rounded-lg p-4 bg-gray-900/30 opacity-70">
-			<div class="flex items-start justify-between">
-				<div class="flex items-start gap-3">
-					<span class="text-xs font-bold text-gray-600 w-6">6</span>
-					<div>
-						<h3 class="font-medium text-gray-500">Diff / Audit</h3>
-						<p class="text-xs text-gray-600">Later: inspect git diff and generate GPT audit packet.</p>
-						<div class="mt-2 text-xs text-gray-600">
-							Later: Relay will inspect git diff and generate a GPT audit packet. Not implemented yet.
-						</div>
-					</div>
-				</div>
-				<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600">
-					Future
-				</span>
+					</button>
+				</form>
 			</div>
 		</div>
 
-		@ActionButtons(run.ID)
+		if intakeReview != nil {
+			@IntakeReviewPanel(run, repo, intakeReview)
+		}
+
+		if hasCheckKind(checks, "validation") {
+			<div class="mt-2 text-xs text-gray-500">
+				if hasCheckStatus(checks, "validation", "block") || hasCheckStatus(checks, "validation", "fail") {
+					Resolve Intake Review blockers before generating Agent Prompt.
+				} else if hasCheckStatus(checks, "validation", "warn") {
+					Intake Review has warnings. Agent Prompt can still be generated.
+				} else if hasCheckStatus(checks, "validation", "pass") {
+					Intake Review passed. Proceed to Agent Prompt step.
+				}
+			</div>
+		}
+
+		// Original handoff preview collapsed
+		<details class="mt-3">
+			<summary class="cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none">
+				Original handoff artifact
+			</summary>
+			<div class="mt-2 border border-gray-800 rounded bg-gray-950/60 p-3 max-h-60 overflow-auto">
+				<pre id="original-handoff-preview" class="text-xs font-mono text-gray-300 whitespace-pre-wrap">{ previews.OriginalHandoff }</pre>
+			</div>
+		</details>
+	</div>
+}
+
+templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
+	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
+		<div class="flex items-center justify-between mb-3">
+			<div>
+				<h3 class="font-medium">Step 2: Agent Prompt</h3>
+				<p class="text-xs text-gray-500 mt-0.5">Review the transformed prompt for the running agent.</p>
+			</div>
+			<div class="flex items-center gap-3">
+				@agentPromptStatusChip(artifactExists(artifacts, "agent_prompt"), checks)
+				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+					hx-target="body" hx-swap="outerHTML"
+					class="flex gap-2">
+					<input type="hidden" name="action" value="prepare-prompt"/>
+					<button type="submit"
+						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+						if artifactExists(artifacts, "agent_prompt") {
+							Regenerate Agent Prompt
+						} else {
+							Generate Agent Prompt
+						}
+					</button>
+				</form>
+			</div>
+		</div>
+
+		if artifactExists(artifacts, "agent_prompt") {
+			<div class="mt-2 text-xs text-gray-500">
+				Agent Prompt generated. Review the hunk diff below.
+			</div>
+			<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
+				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt"}
+					class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
+				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
+					class="text-xs text-gray-500 hover:text-gray-300">Download</a>
+			</div>
+
+			if len(previews.AgentPromptDiff.Lines) > 0 {
+				<div class="mt-4 rounded-lg border border-gray-800 bg-gray-950/60 overflow-hidden">
+					<div class="flex items-center justify-between border-b border-gray-800 px-3 py-2">
+						<div>
+							<div class="text-sm font-medium text-gray-200">Original &rarr; Agent Prompt diff</div>
+							<div class="text-xs text-gray-500">Shows changed sections only, with nearby context.</div>
+						</div>
+					</div>
+					<pre class="max-h-96 overflow-auto text-xs leading-5 font-mono p-3">
+						for _, line := range previews.AgentPromptDiff.Lines {
+							switch line.Kind {
+							case "add":
+								<div class="text-green-300">+ { line.Text }</div>
+							case "remove":
+								<div class="text-red-300">- { line.Text }</div>
+							case "skip":
+								<div class="text-gray-600 italic">{ line.Text }</div>
+							default:
+								<div class="text-gray-500">  { line.Text }</div>
+							}
+						}
+					</pre>
+					if previews.AgentPromptDiff.Truncated {
+						<div class="border-t border-gray-800 px-3 py-2 text-xs text-yellow-300">
+							Diff preview truncated. Use View or Download for the full artifacts.
+						</div>
+					}
+				</div>
+			}
+		} else if hasCheckStatus(checks, "validation", "block") || hasCheckStatus(checks, "validation", "fail") {
+			<div class="mt-2 text-xs text-red-400">
+				Intake Review has blockers. Resolve before generating Agent Prompt.
+			</div>
+		} else {
+			<div class="mt-2 text-xs text-gray-500">
+				Run Intake Review first, then generate the Agent Prompt.
+			</div>
+		}
+	</div>
+}
+
+templ AgentPacketStepPanel(run *store.Run, artifacts []store.Artifact, previews RunPreviews) {
+	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
+		<div class="flex items-center justify-between mb-3">
+			<div>
+				<h3 class="font-medium">Step 3: Agent Packet</h3>
+				<p class="text-xs text-gray-500 mt-0.5">Prepare packet for OpenCode Go.</p>
+			</div>
+			<div class="flex items-center gap-3">
+				@agentPacketStatusChip(artifactExists(artifacts, "opencode_handoff_packet"), artifactExists(artifacts, "agent_prompt"))
+				if artifactExists(artifacts, "agent_prompt") {
+					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+						hx-target="body" hx-swap="outerHTML"
+						class="flex gap-2">
+						<input type="hidden" name="action" value="generate-opencode-packet"/>
+						<button type="submit"
+							class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors font-medium">
+							if artifactExists(artifacts, "opencode_handoff_packet") {
+								Regenerate Agent Packet
+							} else {
+								Generate Agent Packet
+							}
+						</button>
+					</form>
+				} else {
+					<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600">
+						Generate Agent Prompt first
+					</span>
+				}
+			</div>
+		</div>
+
+		if artifactExists(artifacts, "opencode_handoff_packet") {
+			<div class="mt-2 text-xs text-gray-500">
+				Relay has prepared metadata for external agent tooling. Review the packet before sending it to OpenCode Go. Relay does not execute OpenCode yet.
+			</div>
+			<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
+				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet"}
+					class="text-xs text-indigo-400 hover:text-indigo-300">View</a>
+				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet/download"}
+					class="text-xs text-gray-500 hover:text-gray-300">Download</a>
+			</div>
+			if previews.OpenCodePacket != "" {
+				<div class="mt-3 rounded-lg border border-gray-800 bg-gray-950/60 overflow-hidden">
+					<div class="border-b border-gray-800 px-3 py-2">
+						<div class="text-sm font-medium text-gray-200">Packet preview</div>
+						<div class="text-xs text-gray-500">Metadata only. Relay does not execute this packet.</div>
+					</div>
+					<pre class="max-h-80 overflow-auto text-xs leading-5 font-mono p-3 text-gray-300 whitespace-pre-wrap">{ previews.OpenCodePacket }</pre>
+				</div>
+			}
+		} else {
+			<div class="mt-2 text-xs text-gray-500">
+				Generate the Agent Prompt first, then generate the Agent Packet.
+			</div>
+		}
+	</div>
+}
+
+templ AgentResultStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check) {
+	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
+		<div class="flex items-center justify-between mb-3">
+			<div>
+				<h3 class="font-medium">Step 4: Agent Result</h3>
+				<p class="text-xs text-gray-500 mt-0.5">Paste the external agent's final DONE/BLOCKED response.</p>
+			</div>
+			@agentResultStatusChip(artifactExists(artifacts, "agent_result_raw"))
+		</div>
+
+		<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+			hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+			hx-target="body" hx-swap="outerHTML"
+			class="space-y-2 mt-3">
+			<input type="hidden" name="action" value="submit-agent-result"/>
+			<textarea name="agent_result_text" rows="6"
+				class="w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded p-2 text-gray-300"
+				placeholder={"DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42"}></textarea>
+			<button type="submit"
+				class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+				Save Agent Result
+			</button>
+		</form>
+
+		if artifactExists(artifacts, "agent_result_raw") {
+			<div class="mt-2 text-xs text-gray-500">
+				Agent result received. Run Relay Validation next.
+			</div>
+			<div class="mt-3 pt-3 border-t border-gray-800 flex gap-3">
+				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw"}
+					class="text-xs text-indigo-400 hover:text-indigo-300">View raw result</a>
+				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw/download"}
+					class="text-xs text-gray-500 hover:text-gray-300">Download raw result</a>
+				if artifactExists(artifacts, "agent_result_json") {
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json"}
+						class="text-xs text-indigo-400 hover:text-indigo-300">View parsed JSON</a>
+					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json/download"}
+						class="text-xs text-gray-500 hover:text-gray-300">Download parsed JSON</a>
+				}
+			</div>
+		}
+	</div>
+}
+
+templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check) {
+	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50">
+		<div class="flex items-center justify-between mb-3">
+			<div>
+				<h3 class="font-medium">Step 5: Relay Validation</h3>
+				<p class="text-xs text-gray-500 mt-0.5">Run Relay-extracted validation commands locally after agent result.</p>
+			</div>
+			<div class="flex items-center gap-3">
+				@validationStatusChip(artifactExists(artifacts, "validation_run_json"), checks, artifactExists(artifacts, "agent_result_raw"))
+				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+					hx-target="body" hx-swap="outerHTML"
+					class="flex gap-2">
+					<input type="hidden" name="action" value="run-validation"/>
+					<button type="submit"
+						class="px-3 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-500 transition-colors font-medium">
+						Run Validation Commands
+					</button>
+				</form>
+			</div>
+		</div>
+
+		if artifactExists(artifacts, "validation_run_json") {
+			<div class="mt-2">
+				if hasCheckStatus(checks, "validation_run", "pass") {
+					<div class="text-xs text-green-400">Validation passed.</div>
+				} else if hasCheckStatus(checks, "validation_run", "fail") {
+					<div class="text-xs text-red-400">Validation failed. Review stdout/stderr artifacts.</div>
+				} else {
+					<div class="text-xs text-gray-500">Validation completed. Check artifacts for details.</div>
+				}
+			</div>
+			<div class="mt-3 pt-3 border-t border-gray-800 flex gap-2">
+				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json"}
+					class="text-xs text-indigo-400 hover:text-indigo-300">View validation JSON</a>
+				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json/download"}
+					class="text-xs text-gray-500 hover:text-gray-300">Download validation JSON</a>
+				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stdout"}
+					class="text-xs text-indigo-400 hover:text-indigo-300">View stdout</a>
+				<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stderr"}
+					class="text-xs text-indigo-400 hover:text-indigo-300">View stderr</a>
+			</div>
+		} else {
+			<div class="mt-2 text-xs text-gray-500">
+				Submit an agent result first, then run validation commands.
+			</div>
+		}
+	</div>
+}
+
+templ DiffAuditStepPanel() {
+	<div class="border border-gray-800/50 rounded-lg p-4 bg-gray-900/30 opacity-70">
+		<div class="flex items-start justify-between">
+			<div class="flex items-start gap-3">
+				<div>
+					<h3 class="font-medium text-gray-500">Step 6: Diff / Audit</h3>
+					<p class="text-xs text-gray-600 mt-0.5">Later: inspect git diff and generate GPT audit packet.</p>
+					<div class="mt-2 text-xs text-gray-600">
+						Later: Relay will inspect git diff and generate a GPT audit packet. Not implemented yet.
+					</div>
+				</div>
+			</div>
+			<span class="px-3 py-1 text-xs rounded border border-gray-700 text-gray-600">
+				Future
+			</span>
+		</div>
 	</div>
 }
 
@@ -421,33 +452,4 @@ func artifactExists(artifacts []store.Artifact, kind string) bool {
 		}
 	}
 	return false
-}
-
-func openAttr(cond bool) string {
-	if cond {
-		return "open"
-	}
-	return ""
-}
-
-func shouldOpenStep(artifactKind string, artifacts []store.Artifact, checks []store.Check, step int) bool {
-	switch step {
-	case 1:
-		// Step 1: open if there are blockers/warnings, or if validation hasn't run
-		return !hasCheckKind(checks, "validation") || hasCheckStatus(checks, "validation", "block") || hasCheckStatus(checks, "validation", "fail") || hasCheckStatus(checks, "validation", "warn")
-	case 2:
-		// Step 2: open if Agent Prompt exists
-		return artifactExists(artifacts, "agent_prompt")
-	case 3:
-		// Step 3: open if packet exists
-		return artifactExists(artifacts, "opencode_handoff_packet")
-	case 4:
-		// Step 4: open if packet exists and no agent result
-		return artifactExists(artifacts, "opencode_handoff_packet") && !artifactExists(artifacts, "agent_result_raw")
-	case 5:
-		// Step 5: open if agent result exists
-		return artifactExists(artifacts, "agent_result_raw")
-	default:
-		return false
-	}
 }
