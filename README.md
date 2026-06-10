@@ -209,20 +209,23 @@ Run detail shows an inline Original Handoff → Agent Prompt hunk diff after the
 
 ## Run workbench workflow
 
-After handoff creation, Relay automatically runs Intake Review and, when there are no blockers, prepares the Agent Prompt and Agent Packet. The run workbench is then used for review: Intake Review → Agent Prompt → Agent Packet / OpenCode Go prep → Agent Result → Relay Validation.
+After handoff creation, Relay automatically runs Intake Review and, when there are no blockers, prepares the Agent Prompt and Agent Packet. The run workbench is then used for review: Intake Review → Agent Prompt → Agent Packet → OpenCode Go Handoff → Relay Validation.
 
-Run detail is organized as a guided step-by-step workbench with a single active review step. Step navigation is server-rendered using query parameters (`?step=intake`, `?step=prompt`, etc.). Each step panel includes a status chip, purpose description, and actionable controls based on current run state:
+Run detail defaults to Step 1 Intake Review. The user intentionally reviews each step and navigates forward using the step navigation links. Explicit `?step=` query parameter navigation is also supported.
+
+Run detail is organized as a guided step-by-step workbench with a single active review step. Step navigation is server-rendered using query parameters (`?step=intake`, `?step=prompt`, `?step=handoff`, etc.). Each step panel includes a status chip, purpose description, and actionable controls based on current run state:
 
 - **Step 1 — Intake Review**: Default active step. Shows validation checks, warnings, blockers, and the Intake Review panel. The "Run Intake Review" button changes to "Re-run Intake Review" after first run. Original handoff is available collapsed.
 - **Step 2 — Agent Prompt**: Shows the Original → Agent Prompt hunk diff inline with View/Download links. Buttons toggle between "Generate Agent Prompt" and "Regenerate Agent Prompt".
 - **Step 3 — Agent Packet**: Shows packet preview, View/Download links. Buttons toggle between "Generate Agent Packet" and "Regenerate Agent Packet".
-- **Step 4 — Agent Result**: Accepts the external agent's final DONE/BLOCKED response via textarea.
-- **Step 5 — Relay Validation**: Runs Relay-extracted validation commands locally when triggered.
+- **Step 4 — OpenCode Go Handoff**: Prepares the packet and artifacts for OpenCode Go. Shows execution status, model selection, repo path, and branch/worktree info. Includes a disabled "Send to OpenCode Go" button (not implemented). Manual agent result intake is available as a collapsed fallback section.
+- **Step 5 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Requires an agent result before the validation button is enabled.
 - **Step 6 — Diff/Audit**: Future, grayed out.
 
 Clarifications:
 
-- Relay still does not execute OpenCode.
+- Relay does not execute OpenCode automatically.
+- Step 4 prepares the packet and artifacts for OpenCode Go, but Relay does not execute OpenCode Go automatically yet. Manual result intake remains available as a fallback.
 - Relay does not run repo validation commands at handoff creation.
 - Relay Validation remains user-triggered after agent result.
 - Manual action buttons remain available as retry/regenerate controls for each step.

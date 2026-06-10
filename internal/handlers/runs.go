@@ -473,60 +473,35 @@ func (h *RunsHandler) generateOpenCodePacket(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
 }
 
-func defaultActiveRunStep(artifacts []store.Artifact, checks []store.Check) string {
-	hasValidation := false
-	hasValidationPass := false
-	hasValidationBlock := false
-	for _, c := range checks {
-		if c.Kind == "validation" {
-			hasValidation = true
-			if c.Status == "pass" {
-				hasValidationPass = true
-			}
-			if c.Status == "block" || c.Status == "fail" {
-				hasValidationBlock = true
-			}
-		}
-	}
-
-	hasAgentPrompt := false
-	hasPacket := false
-	hasAgentResult := false
+func hasArtifactKind(artifacts []store.Artifact, kind string) bool {
 	for _, a := range artifacts {
-		switch a.Kind {
-		case "agent_prompt":
-			hasAgentPrompt = true
-		case "opencode_handoff_packet":
-			hasPacket = true
-		case "agent_result_raw":
-			hasAgentResult = true
+		if a.Kind == kind {
+			return true
 		}
 	}
+	return false
+}
 
-	// Default to intake if:
-	// - no validation has run
-	// - validation has blockers/failures
-	// - no validation has run yet
-	if !hasValidation || hasValidationBlock {
-		return "intake"
+func hasCheckKind(checks []store.Check, kind string) bool {
+	for _, c := range checks {
+		if c.Kind == kind {
+			return true
+		}
 	}
+	return false
+}
 
-	if hasAgentResult {
+func defaultActiveRunStep(artifacts []store.Artifact, checks []store.Check) string {
+	// If a validation run result or agent result exists, the user is past the review phase.
+	if hasArtifactKind(artifacts, "validation_run_json") || hasCheckKind(checks, "validation_run") {
+		return "validation"
+	}
+	if hasArtifactKind(artifacts, "agent_result_raw") {
 		return "validation"
 	}
 
-	if hasPacket {
-		return "result"
-	}
-
-	if hasAgentPrompt {
-		return "packet"
-	}
-
-	if hasValidationPass {
-		return "prompt"
-	}
-
+	// All other states (including after auto-setup creates validation, prompt, and packet)
+	// default to Intake Review so the user intentionally navigates forward.
 	return "intake"
 }
 
