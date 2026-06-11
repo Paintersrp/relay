@@ -407,13 +407,13 @@ func PipelineStageStrip(runID int64, previews RunPreviews, artifacts []store.Art
 			templ_7745c5c3_Var11 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"relay-stage-strip lg:hidden\"><nav class=\"flex gap-2\" aria-label=\"Pipeline stages\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"relay-stage-strip\" data-pipeline-stage-strip><nav class=\"relay-stage-strip-row\" aria-label=\"Pipeline stages\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		for _, step := range pipelineStages() {
 			state := pipelineStageState(step.Key, activeStep, previews, artifacts, checks, intakeReview)
-			var templ_7745c5c3_Var12 = []any{pipelineStageLinkClass(step.Key, activeStep, state) + " shrink-0"}
+			var templ_7745c5c3_Var12 = []any{pipelineStageLinkClass(step.Key, activeStep, state) + " shrink-0 min-w-[8.5rem] max-w-[12rem] snap-start"}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var12...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err

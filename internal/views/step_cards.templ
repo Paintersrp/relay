@@ -230,8 +230,8 @@ templ PipelineStageRail(runID int64, previews RunPreviews, artifacts []store.Art
 }
 
 templ PipelineStageStrip(runID int64, previews RunPreviews, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview, activeStep string) {
-	<div class="relay-stage-strip lg:hidden">
-		<nav class="flex gap-2" aria-label="Pipeline stages">
+	<div class="relay-stage-strip" data-pipeline-stage-strip>
+		<nav class="relay-stage-strip-row" aria-label="Pipeline stages">
 			for _, step := range pipelineStages() {
 				{{ state := pipelineStageState(step.Key, activeStep, previews, artifacts, checks, intakeReview) }}
 				<a href={"/runs/" + Itoa(runID) + "?step=" + step.Key}
@@ -242,7 +242,7 @@ templ PipelineStageStrip(runID int64, previews RunPreviews, artifacts []store.Ar
 					hx-push-url="true"
 					hx-indicator="#run-workbench-loading"
 					data-relay-workbench-link="true"
-					class={pipelineStageLinkClass(step.Key, activeStep, state) + " shrink-0"}>
+					class={pipelineStageLinkClass(step.Key, activeStep, state) + " shrink-0 min-w-[8.5rem] max-w-[12rem] snap-start"}>
 					<span class="relay-stage-symbol">{ pipelineStageSymbol(state) }</span>
 					<span class="font-medium whitespace-nowrap">{ step.ShortLabel }</span>
 					<span class="text-xs">{ pipelineStageStateLabel(state) }</span>

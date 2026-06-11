@@ -1203,3 +1203,94 @@ func TestEvidenceRowsUseMobileSafeClasses(t *testing.T) {
 		t.Errorf("expected relay-action-row for wrapping actions")
 	}
 }
+
+func TestPipelineStageStripHasDataMarker(t *testing.T) {
+	var buf strings.Builder
+	err := PipelineStageStrip(1, RunPreviews{}, nil, nil, nil, "intake").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render PipelineStageStrip: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `data-pipeline-stage-strip`) {
+		t.Errorf("expected data-pipeline-stage-strip marker on stage strip")
+	}
+	if !strings.Contains(html, `relay-stage-strip-row`) {
+		t.Errorf("expected relay-stage-strip-row class on nav")
+	}
+}
+
+func TestPipelineStageStripHasMobileWidthBounds(t *testing.T) {
+	var buf strings.Builder
+	err := PipelineStageStrip(1, RunPreviews{}, nil, nil, nil, "intake").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render PipelineStageStrip: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `min-w-[8.5rem]`) {
+		t.Errorf("expected min-w-[8.5rem] on stage strip items for mobile width")
+	}
+	if !strings.Contains(html, `max-w-[12rem]`) {
+		t.Errorf("expected max-w-[12rem] on stage strip items for mobile width")
+	}
+	if !strings.Contains(html, `snap-start`) {
+		t.Errorf("expected snap-start on stage strip items for scroll snapping")
+	}
+}
+
+func TestRunInspectorSummaryHasMobileFlexLayout(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	previews := RunPreviews{
+		NextAction: WorkbenchNextActionView{
+			Kind:              "generate_agent_prompt",
+			Title:             "Generate the Agent Prompt",
+			Summary:           "Ready",
+			Step:              "prompt",
+			PrimaryFormAction: "prepare-prompt",
+			Severity:          "ready",
+		},
+	}
+	err := RunInspectorSummary(run, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunInspectorSummary: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `flex-row flex-wrap`) {
+		t.Errorf("expected flex-row flex-wrap for mobile-safe action layout")
+	}
+	if !strings.Contains(html, `sm:flex-col sm:items-end`) {
+		t.Errorf("expected sm:flex-col sm:items-end for desktop action layout")
+	}
+}
+
+func TestRunDetailsRailHasMobileSpacingClass(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	err := RunDetailsRail(run, nil, nil, nil, nil, RunPreviews{}).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunDetailsRail: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `relay-details-rail`) {
+		t.Errorf("expected relay-details-rail class")
+	}
+}
+
+func TestRunInspectorShellRendersDetailsRail(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	err := RunInspectorShell(run, nil, nil, nil, nil, RunPreviews{}, nil, "intake").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunInspectorShell: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `relay-details-rail`) {
+		t.Errorf("expected relay-details-rail in inspector shell")
+	}
+	if !strings.Contains(html, `relay-stage-strip`) {
+		t.Errorf("expected relay-stage-strip in inspector shell")
+	}
+	if !strings.Contains(html, `data-pipeline-stage-strip`) {
+		t.Errorf("expected data-pipeline-stage-strip in inspector shell")
+	}
+}

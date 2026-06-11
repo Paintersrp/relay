@@ -75,7 +75,20 @@
     @apply sticky top-4 self-start rounded-2xl border border-gray-800 bg-gray-950/70 p-3;
   }
   .relay-stage-strip {
-    @apply overflow-x-auto -mx-3 px-3 pb-2 lg:hidden;
+    @apply lg:hidden;
+  }
+  .relay-stage-strip-row {
+    @apply overflow-x-auto flex gap-2 pb-2 snap-x snap-mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .relay-stage-strip-row::-webkit-scrollbar {
+    display: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .relay-stage-strip-row {
+      scroll-behavior: auto;
+    }
   }
   .relay-stage-panel {
     @apply min-w-0;
@@ -238,7 +251,7 @@
   }
 
   .relay-details-rail {
-    @apply min-w-0 break-words space-y-3;
+    @apply min-w-0 break-words space-y-3 mt-4 lg:mt-0;
   }
 
   .relay-detail-card {

@@ -259,7 +259,7 @@ func RunInspectorSummary(run *store.Run, previews RunPreviews) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\"><div class=\"flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between\"><div class=\"min-w-0 flex-1\"><div class=\"flex items-center gap-2 mb-1.5\"><span class=\"text-xs font-medium text-gray-500 uppercase tracking-wider\">Current gate</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\"><div class=\"flex flex-col gap-2 sm:gap-4 sm:flex-row sm:items-start sm:justify-between\"><div class=\"min-w-0 flex-1\"><div class=\"flex items-center gap-2 mb-1.5\"><span class=\"text-xs font-medium text-gray-500 uppercase tracking-wider\">Current gate</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -320,7 +320,7 @@ func RunInspectorSummary(run *store.Run, previews RunPreviews) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</p></div><div class=\"flex flex-col gap-2 shrink-0 w-full sm:w-auto sm:min-w-[160px]\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</p></div><div class=\"flex flex-row flex-wrap items-center gap-1.5 sm:flex-col sm:items-end shrink-0 w-full sm:w-auto sm:min-w-[160px]\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -351,7 +351,7 @@ func RunInspectorSummary(run *store.Run, previews RunPreviews) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" hx-target=\"#run-workbench-shell\" hx-select=\"#run-workbench-shell\" hx-swap=\"outerHTML show:#run-workbench-shell:top settle:120ms\" hx-indicator=\"#run-workbench-loading\" data-relay-workbench-action=\"true\" class=\"w-full sm:w-auto\"><input type=\"hidden\" name=\"action\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" hx-target=\"#run-workbench-shell\" hx-select=\"#run-workbench-shell\" hx-swap=\"outerHTML show:#run-workbench-shell:top settle:120ms\" hx-indicator=\"#run-workbench-loading\" data-relay-workbench-action=\"true\" class=\"sm:w-auto\"><input type=\"hidden\" name=\"action\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -364,7 +364,7 @@ func RunInspectorSummary(run *store.Run, previews RunPreviews) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"> <button type=\"submit\" class=\"btn-primary w-full sm:w-auto text-sm justify-center\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"> <button type=\"submit\" class=\"btn-primary text-sm justify-center\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -395,7 +395,7 @@ func RunInspectorSummary(run *store.Run, previews RunPreviews) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" class=\"btn-primary w-full sm:w-auto text-sm inline-flex items-center justify-center\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" class=\"btn-primary text-sm inline-flex items-center justify-center\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -442,7 +442,7 @@ func RunInspectorSummary(run *store.Run, previews RunPreviews) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" hx-target=\"#run-workbench-shell\" hx-select=\"#run-workbench-shell\" hx-swap=\"outerHTML show:#run-workbench-shell:top settle:120ms\" hx-push-url=\"true\" hx-indicator=\"#run-workbench-loading\" data-relay-workbench-link=\"true\" class=\"btn-primary w-full sm:w-auto text-sm inline-flex items-center justify-center\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" hx-target=\"#run-workbench-shell\" hx-select=\"#run-workbench-shell\" hx-swap=\"outerHTML show:#run-workbench-shell:top settle:120ms\" hx-push-url=\"true\" hx-indicator=\"#run-workbench-loading\" data-relay-workbench-link=\"true\" class=\"btn-primary text-sm inline-flex items-center justify-center\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -460,7 +460,7 @@ func RunInspectorSummary(run *store.Run, previews RunPreviews) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else if previews.NextAction.Disabled {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<span class=\"relay-chip-gray text-xs cursor-not-allowed w-full sm:w-auto inline-flex items-center justify-center py-2 px-4\" title=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<span class=\"relay-chip-gray text-xs cursor-not-allowed inline-flex items-center justify-center py-2 px-4\" title=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -520,7 +520,7 @@ func RunInspectorSummary(run *store.Run, previews RunPreviews) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\" hx-target=\"#run-workbench-shell\" hx-select=\"#run-workbench-shell\" hx-swap=\"outerHTML show:#run-workbench-shell:top settle:120ms\" hx-push-url=\"true\" hx-indicator=\"#run-workbench-loading\" data-relay-workbench-link=\"true\" class=\"text-xs text-gray-500 hover:text-gray-300 text-center sm:text-left\">View ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\" hx-target=\"#run-workbench-shell\" hx-select=\"#run-workbench-shell\" hx-swap=\"outerHTML show:#run-workbench-shell:top settle:120ms\" hx-push-url=\"true\" hx-indicator=\"#run-workbench-loading\" data-relay-workbench-link=\"true\" class=\"text-xs text-gray-500 hover:text-gray-300\">View ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

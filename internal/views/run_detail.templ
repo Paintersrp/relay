@@ -55,7 +55,7 @@ templ RunInspectorShell(run *store.Run, repo *store.Repo, artifacts []store.Arti
 templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 	if previews.NextAction.Kind != "" && previews.NextAction.Kind != "none" {
 		<div class={ "relay-inspector-summary p-3 sm:p-4 border", nextActionCardBorderClass(previews.NextAction.Severity) }>
-			<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+			<div class="flex flex-col gap-2 sm:gap-4 sm:flex-row sm:items-start sm:justify-between">
 				<div class="min-w-0 flex-1">
 					<div class="flex items-center gap-2 mb-1.5">
 						<span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Current gate</span>
@@ -64,7 +64,7 @@ templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 					<h2 class="text-base sm:text-lg font-bold text-gray-100 mb-1 break-words">{ previews.NextAction.Title }</h2>
 					<p class="text-sm text-gray-400">{ previews.NextAction.Summary }</p>
 				</div>
-				<div class="flex flex-col gap-2 shrink-0 w-full sm:w-auto sm:min-w-[160px]">
+				<div class="flex flex-row flex-wrap items-center gap-1.5 sm:flex-col sm:items-end shrink-0 w-full sm:w-auto sm:min-w-[160px]">
 					if !previews.NextAction.Disabled && previews.NextAction.PrimaryFormAction != "" {
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
@@ -73,16 +73,16 @@ templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 							hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
 							hx-indicator="#run-workbench-loading"
 							data-relay-workbench-action="true"
-							class="w-full sm:w-auto">
+							class="sm:w-auto">
 							<input type="hidden" name="action" value={ previews.NextAction.PrimaryFormAction }/>
 							<button type="submit"
-								class="btn-primary w-full sm:w-auto text-sm justify-center">
+								class="btn-primary text-sm justify-center">
 								{ nextActionButtonLabel(previews.NextAction) }
 							</button>
 						</form>
 					} else if !previews.NextAction.Disabled && previews.NextAction.PrimaryHref != "" {
 						<a href={ previews.NextAction.PrimaryHref }
-							class="btn-primary w-full sm:w-auto text-sm inline-flex items-center justify-center">
+							class="btn-primary text-sm inline-flex items-center justify-center">
 							{ nextActionButtonLabel(previews.NextAction) }
 						</a>
 					} else if !previews.NextAction.Disabled &&
@@ -97,11 +97,11 @@ templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 							hx-push-url="true"
 							hx-indicator="#run-workbench-loading"
 							data-relay-workbench-link="true"
-							class="btn-primary w-full sm:w-auto text-sm inline-flex items-center justify-center">
+							class="btn-primary text-sm inline-flex items-center justify-center">
 							{ nextActionButtonLabel(previews.NextAction) }
 						</a>
 					} else if previews.NextAction.Disabled {
-						<span class="relay-chip-gray text-xs cursor-not-allowed w-full sm:w-auto inline-flex items-center justify-center py-2 px-4"
+						<span class="relay-chip-gray text-xs cursor-not-allowed inline-flex items-center justify-center py-2 px-4"
 							title={ previews.NextAction.DisabledReason }>
 							{ nextActionButtonLabel(previews.NextAction) } (blocked)
 						</span>
@@ -118,7 +118,7 @@ templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 							hx-push-url="true"
 							hx-indicator="#run-workbench-loading"
 							data-relay-workbench-link="true"
-							class="text-xs text-gray-500 hover:text-gray-300 text-center sm:text-left">
+							class="text-xs text-gray-500 hover:text-gray-300">
 							View { stepDisplayLabel(previews.NextAction.Step) }
 						</a>
 					}
