@@ -27,7 +27,7 @@ function initWorkbenchSwapFocus(): void {
     const detail = (event as CustomEvent).detail;
     const target = detail?.target as HTMLElement | undefined;
     if (target?.id !== 'run-workbench-shell') return;
-    const heading = target.querySelector<HTMLElement>('[data-run-step-heading]');
+    const heading = target.querySelector<HTMLElement>('[data-run-stage-heading]');
     heading?.focus({ preventScroll: true });
   });
 }

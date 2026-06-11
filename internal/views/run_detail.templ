@@ -31,25 +31,22 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 			<div id="run-workbench-loading" class="htmx-indicator relay-workbench-loading">
 				Updating workbench...
 			</div>
-			@RunWorkbenchShell(run, repo, artifacts, checks, events, previews, intakeReview, activeStep)
+			@RunInspectorShell(run, repo, artifacts, checks, events, previews, intakeReview, activeStep)
 		</section>
 	}
 }
 
-templ RunWorkbenchShell(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
-	@WorkflowStepStrip(run.ID, previews, artifacts, checks, intakeReview, activeStep)
+templ RunInspectorShell(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
+	@RunInspectorSummary(run, previews)
+	@PipelineStageStrip(run.ID, previews, artifacts, checks, intakeReview, activeStep)
 
-	<div class="relay-workbench-grid">
-		<aside class="relay-step-rail hidden lg:block">
-			@WorkflowStepRail(run.ID, previews, artifacts, checks, intakeReview, activeStep)
+	<div class="relay-inspector-grid">
+		<aside class="relay-stage-rail hidden lg:block">
+			<div class="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wider">Pipeline</div>
+			@PipelineStageRail(run.ID, previews, artifacts, checks, intakeReview, activeStep)
 		</aside>
-		<main class="relay-step-stage" aria-live="polite">
-			@NextActionCard(run, previews)
-			<div class="relay-step-stage-card">
-				@ActiveStepHeader(activeStep, previews)
-				@ActiveStepPanel(run, repo, artifacts, checks, previews, intakeReview, activeStep)
-				@StepFlowFooter(run.ID, activeStep)
-			</div>
+		<main class="relay-stage-panel" aria-live="polite">
+			@SelectedStagePanel(run, repo, artifacts, checks, previews, intakeReview, activeStep)
 		</main>
 	</div>
 
@@ -116,13 +113,13 @@ templ RunWorkbenchShell(run *store.Run, repo *store.Repo, artifacts []store.Arti
 	</div>
 }
 
-templ NextActionCard(run *store.Run, previews RunPreviews) {
+templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 	if previews.NextAction.Kind != "" && previews.NextAction.Kind != "none" {
-		<div class={ "relay-card p-3 sm:p-4 mb-4 border", nextActionCardBorderClass(previews.NextAction.Severity) }>
+		<div class={ "relay-inspector-summary p-3 sm:p-4 border", nextActionCardBorderClass(previews.NextAction.Severity) }>
 			<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 				<div class="min-w-0 flex-1">
 					<div class="flex items-center gap-2 mb-1.5">
-						<span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Next action</span>
+						<span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Current gate</span>
 						<span class={ nextActionChipClass(previews.NextAction.Severity) }>{ previews.NextAction.Severity }</span>
 					</div>
 					<h2 class="text-base sm:text-lg font-bold text-gray-100 mb-1 break-words">{ previews.NextAction.Title }</h2>
@@ -266,21 +263,21 @@ func nextActionButtonLabel(action WorkbenchNextActionView) string {
 func stepDisplayLabel(step string) string {
 	switch step {
 	case "intake":
-		return "Intake Review"
+		return "Intake"
 	case "prompt":
-		return "Agent Prompt"
+		return "Prompt"
 	case "packet":
-		return "Agent Packet"
+		return "Packet"
 	case "handoff":
-		return "OpenCode Go Handoff"
+		return "OpenCode"
 	case "run":
-		return "Agent Run Monitor"
+		return "Agent Run"
 	case "validation":
-		return "Relay Validation"
+		return "Validation"
 	case "audit":
 		return "Diff / Audit"
 	default:
-		return step + " step"
+		return step
 	}
 }
 
@@ -299,7 +296,7 @@ func stepDescription(step string) string {
 	case "validation":
 		return "Run Relay-extracted validation commands locally after agent result."
 	case "audit":
-		return "Inspect git diff and generate the audit handoff for GPT review. Proceed to Step 8 when ready to commit."
+		return "Inspect git diff and generate the audit handoff for GPT review. Proceed to Commit when ready."
 	case "commit":
 		return "Review the suggested commit message and run the commit command manually. Relay does not commit on your behalf."
 	default:

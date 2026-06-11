@@ -6,7 +6,7 @@ import (
 	"relay/internal/store"
 )
 
-type workflowStep struct {
+type pipelineStage struct {
 	Key        string
 	Number     string
 	Label      string
@@ -14,40 +14,40 @@ type workflowStep struct {
 	Helper     string
 }
 
-func workflowSteps() []workflowStep {
-	return []workflowStep{
-		{Key: "intake", Number: "1", Label: "Intake Review", ShortLabel: "Intake", Helper: "Validate handoff structure"},
-		{Key: "prompt", Number: "2", Label: "Agent Prompt", ShortLabel: "Prompt", Helper: "Generate compact repo-agent prompt"},
-		{Key: "packet", Number: "3", Label: "Agent Packet", ShortLabel: "Packet", Helper: "Bundle execution handoff"},
-		{Key: "handoff", Number: "4", Label: "OpenCode Handoff", ShortLabel: "Handoff", Helper: "Check CLI and command preview"},
+func pipelineStages() []pipelineStage {
+	return []pipelineStage{
+		{Key: "intake", Number: "1", Label: "Intake", ShortLabel: "Intake", Helper: "Validate handoff structure"},
+		{Key: "prompt", Number: "2", Label: "Prompt", ShortLabel: "Prompt", Helper: "Generate compact repo-agent prompt"},
+		{Key: "packet", Number: "3", Label: "Packet", ShortLabel: "Packet", Helper: "Bundle execution handoff"},
+		{Key: "handoff", Number: "4", Label: "OpenCode", ShortLabel: "OpenCode", Helper: "Check CLI and command preview"},
 		{Key: "run", Number: "5", Label: "Agent Run", ShortLabel: "Run", Helper: "Execute or review agent output"},
 		{Key: "validation", Number: "6", Label: "Validation", ShortLabel: "Validation", Helper: "Run project validation commands"},
 		{Key: "audit", Number: "7", Label: "Diff / Audit", ShortLabel: "Audit", Helper: "Inspect diff and generate audit handoff"},
-		{Key: "commit", Number: "8", Label: "Git Commit", ShortLabel: "Commit", Helper: "Prepare manual commit command"},
+		{Key: "commit", Number: "8", Label: "Commit", ShortLabel: "Commit", Helper: "Prepare manual commit command"},
 	}
 }
 
-func previousWorkflowStep(activeStep string) (workflowStep, bool) {
-	steps := workflowSteps()
+func previousPipelineStage(activeStep string) (pipelineStage, bool) {
+	steps := pipelineStages()
 	for i, s := range steps {
 		if s.Key == activeStep && i > 0 {
 			return steps[i-1], true
 		}
 	}
-	return workflowStep{}, false
+	return pipelineStage{}, false
 }
 
-func nextWorkflowStep(activeStep string) (workflowStep, bool) {
-	steps := workflowSteps()
+func nextPipelineStage(activeStep string) (pipelineStage, bool) {
+	steps := pipelineStages()
 	for i, s := range steps {
 		if s.Key == activeStep && i < len(steps)-1 {
 			return steps[i+1], true
 		}
 	}
-	return workflowStep{}, false
+	return pipelineStage{}, false
 }
 
-func workflowStepState(step string, activeStep string, previews RunPreviews, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview) string {
+func pipelineStageState(step string, activeStep string, previews RunPreviews, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview) string {
 	switch step {
 	case "intake":
 		if hasCheckKind(checks, "validation") {
@@ -141,7 +141,7 @@ func workflowStepState(step string, activeStep string, previews RunPreviews, art
 	return "pending"
 }
 
-func workflowStepStateLabel(state string) string {
+func pipelineStageStateLabel(state string) string {
 	switch state {
 	case "active":
 		return "active"
@@ -160,36 +160,55 @@ func workflowStepStateLabel(state string) string {
 	}
 }
 
-func workflowStepLinkClass(step string, activeStep string, state string) string {
+func pipelineStageSymbol(state string) string {
+	switch state {
+	case "done":
+		return "✓"
+	case "active":
+		return "▶"
+	case "running":
+		return "▶"
+	case "ready":
+		return "●"
+	case "blocked":
+		return "✗"
+	default:
+		return "○"
+	}
+}
+
+func pipelineStageLinkClass(step string, activeStep string, state string) string {
 	if activeStep == step {
-		return "relay-step-link relay-step-link-active"
+		return "relay-stage-link relay-stage-link-active"
 	}
 	switch state {
 	case "done":
-		return "relay-step-link relay-step-link-done"
+		return "relay-stage-link relay-stage-link-done"
 	case "ready":
-		return "relay-step-link relay-step-link-ready"
+		return "relay-stage-link relay-stage-link-ready"
 	case "running":
-		return "relay-step-link relay-step-link-running"
+		return "relay-stage-link relay-stage-link-running"
 	case "blocked":
-		return "relay-step-link relay-step-link-blocked"
+		return "relay-stage-link relay-stage-link-blocked"
 	case "pending":
-		return "relay-step-link relay-step-link-pending"
+		return "relay-stage-link relay-stage-link-pending"
 	default:
-		return "relay-step-link"
+		return "relay-stage-link"
 	}
 }
 
-templ StepCards(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
-	@WorkflowStepStrip(run.ID, previews, artifacts, checks, intakeReview, activeStep)
-	@ActiveStepPanel(run, repo, artifacts, checks, previews, intakeReview, activeStep)
-	@ActionButtons(run.ID)
+templ SelectedStagePanel(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
+	<div class="relay-stage-panel-card">
+		@SelectedStageHeader(activeStep, previews)
+		@SelectedStageBody(run, repo, artifacts, checks, previews, intakeReview, activeStep)
+		@StepFlowFooter(run.ID, activeStep)
+	</div>
 }
 
-templ WorkflowStepRail(runID int64, previews RunPreviews, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview, activeStep string) {
-	<nav class="space-y-1" aria-label="Workflow steps">
-		for _, step := range workflowSteps() {
-			{{ state := workflowStepState(step.Key, activeStep, previews, artifacts, checks, intakeReview) }}
+templ PipelineStageRail(runID int64, previews RunPreviews, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview, activeStep string) {
+	<nav class="space-y-1" aria-label="Pipeline stages">
+		for _, step := range pipelineStages() {
+			{{ state := pipelineStageState(step.Key, activeStep, previews, artifacts, checks, intakeReview) }}
 			<a href={"/runs/" + Itoa(runID) + "?step=" + step.Key}
 				hx-get={"/runs/" + Itoa(runID) + "?step=" + step.Key}
 				hx-target="#run-workbench-shell"
@@ -198,11 +217,11 @@ templ WorkflowStepRail(runID int64, previews RunPreviews, artifacts []store.Arti
 				hx-push-url="true"
 				hx-indicator="#run-workbench-loading"
 				data-relay-workbench-link="true"
-				class={workflowStepLinkClass(step.Key, activeStep, state)}>
+				class={pipelineStageLinkClass(step.Key, activeStep, state)}>
 				<div class="flex items-center gap-2">
-					<span class="relay-step-dot">{ step.Number }</span>
+					<span class="relay-stage-symbol">{ pipelineStageSymbol(state) }</span>
 					<span class="font-medium">{ step.ShortLabel }</span>
-					<span class="text-xs ml-auto">{ workflowStepStateLabel(state) }</span>
+					<span class="text-xs ml-auto">{ pipelineStageStateLabel(state) }</span>
 				</div>
 				<div class="text-xs text-gray-500 mt-0.5">{ step.Helper }</div>
 			</a>
@@ -210,11 +229,11 @@ templ WorkflowStepRail(runID int64, previews RunPreviews, artifacts []store.Arti
 	</nav>
 }
 
-templ WorkflowStepStrip(runID int64, previews RunPreviews, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview, activeStep string) {
-	<div class="relay-step-strip lg:hidden">
-		<nav class="flex gap-2" aria-label="Workflow steps">
-			for _, step := range workflowSteps() {
-				{{ state := workflowStepState(step.Key, activeStep, previews, artifacts, checks, intakeReview) }}
+templ PipelineStageStrip(runID int64, previews RunPreviews, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview, activeStep string) {
+	<div class="relay-stage-strip lg:hidden">
+		<nav class="flex gap-2" aria-label="Pipeline stages">
+			for _, step := range pipelineStages() {
+				{{ state := pipelineStageState(step.Key, activeStep, previews, artifacts, checks, intakeReview) }}
 				<a href={"/runs/" + Itoa(runID) + "?step=" + step.Key}
 					hx-get={"/runs/" + Itoa(runID) + "?step=" + step.Key}
 					hx-target="#run-workbench-shell"
@@ -223,17 +242,17 @@ templ WorkflowStepStrip(runID int64, previews RunPreviews, artifacts []store.Art
 					hx-push-url="true"
 					hx-indicator="#run-workbench-loading"
 					data-relay-workbench-link="true"
-					class={workflowStepLinkClass(step.Key, activeStep, state) + " shrink-0"}>
-					<span class="relay-step-dot">{ step.Number }</span>
+					class={pipelineStageLinkClass(step.Key, activeStep, state) + " shrink-0"}>
+					<span class="relay-stage-symbol">{ pipelineStageSymbol(state) }</span>
 					<span class="font-medium whitespace-nowrap">{ step.ShortLabel }</span>
-					<span class="text-xs">{ workflowStepStateLabel(state) }</span>
+					<span class="text-xs">{ pipelineStageStateLabel(state) }</span>
 				</a>
 			}
 		</nav>
 	</div>
 }
 
-templ ActiveStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
+templ SelectedStageBody(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
 	switch activeStep {
 	case "intake":
 		@IntakeStepPanel(run, repo, artifacts, checks, intakeReview, previews)
@@ -256,10 +275,10 @@ templ ActiveStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 	}
 }
 
-templ ActiveStepHeader(activeStep string, previews RunPreviews) {
+templ SelectedStageHeader(activeStep string, previews RunPreviews) {
 	<div class="relay-card-header border-b border-gray-800">
 		<div class="min-w-0">
-			<h3 class="font-medium text-base sm:text-lg" tabindex="-1" data-run-step-heading>
+			<h3 class="font-medium text-base sm:text-lg" tabindex="-1" data-run-stage-heading>
 				{ stepDisplayLabel(activeStep) }
 			</h3>
 			<p class="text-xs sm:text-sm text-gray-500 mt-0.5">
@@ -270,8 +289,8 @@ templ ActiveStepHeader(activeStep string, previews RunPreviews) {
 }
 
 templ StepFlowFooter(runID int64, activeStep string) {
-	<footer class="relay-step-flow-footer">
-		if prev, ok := previousWorkflowStep(activeStep); ok {
+	<footer class="relay-stage-footer">
+		if prev, ok := previousPipelineStage(activeStep); ok {
 			<a href={"/runs/" + Itoa(runID) + "?step=" + prev.Key}
 				hx-get={"/runs/" + Itoa(runID) + "?step=" + prev.Key}
 				hx-target="#run-workbench-shell"
@@ -286,7 +305,7 @@ templ StepFlowFooter(runID int64, activeStep string) {
 		} else {
 			<span></span>
 		}
-		if next, ok := nextWorkflowStep(activeStep); ok {
+		if next, ok := nextPipelineStage(activeStep); ok {
 			<a href={"/runs/" + Itoa(runID) + "?step=" + next.Key}
 				hx-get={"/runs/" + Itoa(runID) + "?step=" + next.Key}
 				hx-target="#run-workbench-shell"
@@ -335,10 +354,6 @@ templ WorkbenchActionForm(runID int64, action string, className string) {
 templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, intakeReview *pipeline.IntakeReview, previews RunPreviews) {
 	<div class="relay-card">
 		<div class="relay-card-header">
-			<div class="min-w-0">
-				<h3 class="font-medium text-base sm:text-lg">Step 1: Intake Review</h3>
-				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Parse and verify the original handoff before agent execution.</p>
-			</div>
 			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
 				@intakeStatusChip(checks)
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
@@ -474,10 +489,6 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
 	<div class="relay-card">
 		<div class="relay-card-header">
-			<div class="min-w-0">
-				<h3 class="font-medium text-base sm:text-lg">Step 2: Agent Prompt</h3>
-				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Review the compact prompt Relay will send to the running agent.</p>
-			</div>
 			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
 				@agentPromptStatusChip(artifactExists(artifacts, "agent_prompt"), checks)
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
@@ -554,10 +565,6 @@ templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []
 templ AgentPacketStepPanel(run *store.Run, artifacts []store.Artifact, previews RunPreviews) {
 	<div class="relay-card">
 		<div class="relay-card-header">
-			<div class="min-w-0">
-				<h3 class="font-medium text-base sm:text-lg">Step 3: Agent Packet</h3>
-				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Prepare packet for OpenCode Go.</p>
-			</div>
 			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
 				@agentPacketStatusChip(artifactExists(artifacts, "opencode_handoff_packet"), artifactExists(artifacts, "agent_prompt"))
 				if artifactExists(artifacts, "agent_prompt") {
@@ -617,10 +624,6 @@ templ AgentPacketStepPanel(run *store.Run, artifacts []store.Artifact, previews 
 templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
 	<div class="relay-card">
 		<div class="relay-card-header">
-			<div class="min-w-0">
-				<h3 class="font-medium text-base sm:text-lg">Step 4: OpenCode Go Handoff</h3>
-				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Review the packet and artifacts, then start OpenCode Go execution.</p>
-			</div>
 			<div class="flex flex-wrap items-center gap-2">
 				@handoffStatusChip(artifactExists(artifacts, "opencode_handoff_packet"))
 				@handoffPreflightStatusChip(previews.HandoffPreflightStatus)
@@ -1056,10 +1059,6 @@ templ AgentRunMonitorStepPanel(run *store.Run, artifacts []store.Artifact, check
 
 templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, isRunning bool) {
 	<div class="relay-card-header">
-		<div class="min-w-0">
-			<h3 class="font-medium text-base sm:text-lg">Step 5: Agent Run</h3>
-			<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Started from OpenCode Go Handoff. Monitor output and continue to validation when ready.</p>
-		</div>
 		<div class="flex flex-wrap items-center gap-2">
 			if previews.HasOpenCodeExecution {
 				@openCodeExecutionStatusChip(previews.OpenCodeExecutionStatus)
@@ -1071,9 +1070,9 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 		if !previews.HasOpenCodeExecution {
 			<div class="rounded-xl border border-yellow-900/60 bg-yellow-950/30 p-4 sm:p-6 text-center">
 				<div class="text-sm sm:text-base text-yellow-300">No OpenCode run has started yet.</div>
-				<p class="text-xs sm:text-sm text-yellow-100 mt-2">Return to Step 4 to launch OpenCode Go.</p>
+				<p class="text-xs sm:text-sm text-yellow-100 mt-2">Return to OpenCode to launch OpenCode Go.</p>
 			@WorkbenchStepLink(run.ID, "handoff", "inline-block mt-3 btn-primary text-xs sm:text-sm") {
-				Back to OpenCode Go Handoff
+				Back to OpenCode
 			}
 			</div>
 		}
@@ -1283,10 +1282,6 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 
 templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
 	<div class="relay-card-header">
-			<div class="min-w-0">
-				<h3 class="font-medium text-base sm:text-lg">Step 6: Relay Validation</h3>
-				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Run Relay-extracted validation commands locally after agent result.</p>
-			</div>
 			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
 				@validationStatusChip(artifactExists(artifacts, "validation_run_json"), checks, artifactExists(artifacts, "agent_result_raw"), previews.ValidationProgressRunning)
 				if previews.ValidationProgressRunning {
@@ -1622,10 +1617,6 @@ func formatDuration(ms int64) string {
 templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 	<div class="relay-card">
 		<div class="relay-card-header">
-			<div class="min-w-0">
-				<h3 class="font-medium text-base sm:text-lg">Step 7: Diff / Audit</h3>
-				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Inspect git diff and generate the audit handoff for GPT review. Proceed to Step 8 when ready to commit.</p>
-			</div>
 			if previews.HasAuditHandoff {
 				<span class="relay-chip-green text-xs">ready</span>
 			} else if previews.HasGitStatus {
@@ -1764,10 +1755,6 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews RunPreviews) {
 	<div class="relay-card">
 		<div class="relay-card-header">
-			<div class="min-w-0">
-				<h3 class="font-medium text-base sm:text-lg">Step 8: Git Commit</h3>
-				<p class="text-xs sm:text-sm text-gray-500 mt-0.5">Review the suggested commit message and run the commit command manually. Relay does not commit on your behalf.</p>
-			</div>
 			if previews.HasCommitSuggestion {
 				<span class="relay-chip-green text-xs">ready</span>
 			} else {
