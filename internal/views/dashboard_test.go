@@ -186,6 +186,46 @@ func TestLayoutMobileSafeClasses(t *testing.T) {
 	}
 }
 
+func TestLayoutHTMXErrorHostRendered(t *testing.T) {
+	var buf strings.Builder
+	err := Layout("Test").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render Layout: %v", err)
+	}
+	html := buf.String()
+
+	if !strings.Contains(html, `id="relay-htmx-error"`) {
+		t.Errorf("expected id=relay-htmx-error in layout")
+	}
+	if !strings.Contains(html, `data-relay-htmx-error`) {
+		t.Errorf("expected data-relay-htmx-error attribute")
+	}
+	if !strings.Contains(html, `data-relay-htmx-error-message`) {
+		t.Errorf("expected data-relay-htmx-error-message attribute")
+	}
+	if !strings.Contains(html, `data-relay-dismiss-htmx-error="true"`) {
+		t.Errorf("expected dismiss button with data-relay-dismiss-htmx-error")
+	}
+	if !strings.Contains(html, `role="alert"`) {
+		t.Errorf("expected role=alert on error host")
+	}
+	if !strings.Contains(html, `aria-live="assertive"`) {
+		t.Errorf("expected aria-live=assertive on error host")
+	}
+	if !strings.Contains(html, `relay-htmx-error hidden`) {
+		t.Errorf("expected error host to have hidden class initially")
+	}
+	if !strings.Contains(html, `relay-htmx-error-dismiss`) {
+		t.Errorf("expected dismiss button with relay-htmx-error-dismiss class")
+	}
+	if !strings.Contains(html, `relay-htmx-error-title`) {
+		t.Errorf("expected error title with relay-htmx-error-title class")
+	}
+	if !strings.Contains(html, `relay-htmx-error-message`) {
+		t.Errorf("expected error message with relay-htmx-error-message class")
+	}
+}
+
 func TestLayoutNavHasMobileSafeClasses(t *testing.T) {
 	var buf strings.Builder
 	err := Layout("Test").Render(context.Background(), &buf)

@@ -106,11 +106,67 @@ function initArtifactPreviewControls(): void {
   });
 }
 
+function initHTMXErrorBanner(): void {
+  const host = document.querySelector<HTMLElement>('[data-relay-htmx-error]');
+  const message = document.querySelector<HTMLElement>('[data-relay-htmx-error-message]');
+  if (!host || !message) return;
+
+  const show = (text: string): void => {
+    message.textContent = text;
+    host.classList.remove('hidden');
+    host.setAttribute('data-relay-visible', 'true');
+  };
+
+  const hide = (): void => {
+    message.textContent = '';
+    host.classList.add('hidden');
+    host.removeAttribute('data-relay-visible');
+  };
+
+  document.addEventListener('click', (event) => {
+    const trigger = (event.target as HTMLElement | null)?.closest('[data-relay-dismiss-htmx-error="true"]');
+    if (!trigger) return;
+    hide();
+  });
+
+  document.body.addEventListener('htmx:responseError', (event) => {
+    const detail = (event as CustomEvent).detail;
+    const xhr = detail?.xhr as XMLHttpRequest | undefined;
+    const status = xhr?.status;
+    const statusText = xhr?.statusText || 'request failed';
+
+    let text = 'Relay could not update this section. Try again or open the full page.';
+    if (status === 404) {
+      text = 'Relay could not find the requested content.';
+    } else if (status === 400) {
+      const responseText = (xhr?.responseText || '').trim();
+      text = responseText || 'Relay rejected the request.';
+    } else if (status && status >= 500) {
+      text = 'Relay hit a server error while updating this section.';
+    } else if (status) {
+      text = `Relay request failed (${status} ${statusText}).`;
+    }
+
+    show(text);
+  });
+
+  document.body.addEventListener('htmx:sendError', () => {
+    show('Relay could not reach the local server. Check that the app is still running.');
+  });
+
+  document.body.addEventListener('htmx:afterSwap', (event) => {
+    const detail = (event as CustomEvent).detail;
+    if (detail?.successful === false) return;
+    hide();
+  });
+}
+
 initDelegatedCopyControls();
 initWorkbenchSwapFocus();
 initWorkbenchBusyIndicator();
 initRelayActionSubmitState();
 initArtifactPreviewControls();
+initHTMXErrorBanner();
 
 function initDevReload(): void {
   const marker = document.querySelector('meta[name="relay-dev-reload"][content="enabled"]');

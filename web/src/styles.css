@@ -306,6 +306,26 @@
     display: none;
   }
 
+  .relay-htmx-error {
+    @apply fixed top-4 left-1/2 z-[60] w-[calc(100%-1.5rem)] max-w-xl -translate-x-1/2 rounded-xl border border-red-800 bg-red-950/95 text-red-100 shadow-xl;
+  }
+
+  .relay-htmx-error-body {
+    @apply flex flex-col gap-3 p-3 sm:flex-row sm:items-start sm:justify-between;
+  }
+
+  .relay-htmx-error-title {
+    @apply text-sm font-semibold text-red-200;
+  }
+
+  .relay-htmx-error-message {
+    @apply mt-1 text-xs text-red-100/90;
+  }
+
+  .relay-htmx-error-dismiss {
+    @apply inline-flex min-h-[32px] shrink-0 items-center justify-center rounded-lg border border-red-800 px-2.5 py-1 text-xs text-red-100 hover:bg-red-900/70;
+  }
+
   .relay-artifact-preview-slot {
     @apply min-w-0;
   }
