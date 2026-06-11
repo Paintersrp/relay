@@ -111,4 +111,62 @@
   .htmx-request .relay-stage-panel-card {
     @apply opacity-65;
   }
+
+  .relay-stage-evidence-list {
+    @apply space-y-1;
+  }
+  .relay-stage-evidence-row {
+    @apply flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between px-4 py-2.5 min-w-0;
+  }
+  .relay-stage-evidence-row-passed {
+    @apply border-l-2 border-green-700/50;
+  }
+  .relay-stage-evidence-row-failed {
+    @apply border-l-2 border-red-700/50;
+  }
+  .relay-stage-evidence-row-blocked {
+    @apply border-l-2 border-red-700/50;
+  }
+  .relay-stage-evidence-row-warning {
+    @apply border-l-2 border-yellow-700/50;
+  }
+  .relay-stage-evidence-row-running {
+    @apply border-l-2 border-blue-700/50;
+  }
+  .relay-stage-evidence-row-ready {
+    @apply border-l-2 border-indigo-700/50;
+  }
+  .relay-stage-evidence-symbol {
+    @apply inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-medium shrink-0 mt-0.5;
+  }
+  .relay-stage-evidence-symbol-passed {
+    @apply text-green-400 bg-green-900/30;
+  }
+  .relay-stage-evidence-symbol-failed {
+    @apply text-red-400 bg-red-900/30;
+  }
+  .relay-stage-evidence-symbol-blocked {
+    @apply text-red-400 bg-red-900/30;
+  }
+  .relay-stage-evidence-symbol-warning {
+    @apply text-yellow-400 bg-yellow-900/30;
+  }
+  .relay-stage-evidence-symbol-running {
+    @apply text-blue-400 bg-blue-900/30;
+  }
+  .relay-stage-evidence-symbol-ready {
+    @apply text-indigo-400 bg-indigo-900/30;
+  }
+  .relay-stage-evidence-symbol-pending {
+    @apply text-gray-500 bg-gray-800;
+  }
+  .relay-stage-failure-panel {
+    @apply rounded-xl border border-red-900/60 bg-red-950/30 p-3 sm:p-4 m-4;
+  }
+  .relay-stage-output-preview {
+    @apply rounded-xl border border-gray-800 bg-gray-950/60 overflow-hidden min-w-0;
+  }
+  .relay-stage-meta {
+    @apply text-xs text-gray-500;
+  }
 }

@@ -402,4 +402,258 @@ func TestStepDisplayLabelReturnsStageNames(t *testing.T) {
 	if stepDisplayLabel("audit") != "Diff / Audit" {
 		t.Errorf("expected Diff / Audit")
 	}
+	if stepDisplayLabel("commit") != "Commit" {
+		t.Errorf("expected Commit for commit step")
+	}
+}
+
+func TestStageEvidenceRowRendersStatusLabelSummaryAndActions(t *testing.T) {
+	var buf strings.Builder
+	err := StageEvidenceRow("passed", "Intake Review", "Review passed", "2 blockers").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render StageEvidenceRow: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `data-stage-evidence-row`) {
+		t.Errorf("expected data-stage-evidence-row attribute")
+	}
+	if !strings.Contains(html, "relay-stage-evidence-row-passed") {
+		t.Errorf("expected passed variant class")
+	}
+	if !strings.Contains(html, "Intake Review") {
+		t.Errorf("expected title text")
+	}
+	if !strings.Contains(html, "Review passed") {
+		t.Errorf("expected summary text")
+	}
+	if !strings.Contains(html, "2 blockers") {
+		t.Errorf("expected meta text")
+	}
+}
+
+func TestStageFailurePanelRendersPrimaryFailureAndActions(t *testing.T) {
+	var buf strings.Builder
+	err := StageFailurePanel("OpenCode adapter blocked", "Adapter error text").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render StageFailurePanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `data-stage-failure-panel`) {
+		t.Errorf("expected data-stage-failure-panel attribute")
+	}
+	if !strings.Contains(html, "OpenCode adapter blocked") {
+		t.Errorf("expected title text")
+	}
+	if !strings.Contains(html, "Adapter error text") {
+		t.Errorf("expected summary text")
+	}
+}
+
+func TestValidationStagePrioritizesFailedCommandEvidence(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	artifacts := []store.Artifact{{Kind: "validation_run_json"}}
+	previews := RunPreviews{
+		HasValidationCommands: true,
+		HasGitStatus:          true,
+		HasAuditHandoff:       true,
+		ValidationRun: ValidationRunPreview{
+			Status:       "fail",
+			CommandCount: 1,
+			PassedCount:  0,
+			FailedCount:  1,
+			Commands: []ValidationCommandPreview{
+				{Command: "go test", Status: "fail", ExitCode: 1, DurationMs: 500, HasStdout: true},
+			},
+		},
+	}
+	checks := []store.Check{{Kind: "validation_run", Status: "fail"}}
+	err := RelayValidationStepPanel(run, artifacts, checks, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RelayValidationStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `data-stage-failure-panel`) {
+		t.Errorf("expected failure panel for failed command")
+	}
+	if !strings.Contains(html, "go test") {
+		t.Errorf("expected failed command to be visible")
+	}
+}
+
+func TestValidationStageShowsMissingCommandsEvidence(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	artifacts := []store.Artifact{{Kind: "agent_result_raw"}}
+	previews := RunPreviews{
+		HasValidationCommands: false,
+	}
+	err := RelayValidationStepPanel(run, artifacts, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RelayValidationStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `data-stage-failure-panel`) {
+		t.Errorf("expected failure panel for missing commands")
+	}
+	if !strings.Contains(html, "No validation commands") {
+		t.Errorf("expected no commands message")
+	}
+}
+
+func TestValidationStageShowsRunningProgressEvidence(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1}
+	artifacts := []store.Artifact{}
+	previews := RunPreviews{
+		ValidationProgressRunning: true,
+		HasValidationCommands:     true,
+		ValidationProgressPreview: ValidationProgressPreview{
+			Status:        "running",
+			StartedAt:     "2024-01-01T00:00:00Z",
+			UpdatedAt:     "2024-01-01T00:00:10Z",
+			TotalCommands: 3,
+			CurrentIndex:  1,
+		},
+	}
+	err := RelayValidationStepPanel(run, artifacts, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RelayValidationStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Validation is running") {
+		t.Errorf("expected running message")
+	}
+	if !strings.Contains(html, "1 / 3") {
+		t.Errorf("expected progress indicator")
+	}
+}
+
+func TestAgentRunStageShowsExecutionFailureEvidence(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	artifacts := []store.Artifact{}
+	previews := RunPreviews{
+		HasOpenCodeExecution:    true,
+		OpenCodeExecutionStatus: "failed",
+		OpenCodeFailureHint:     "OpenCode timed out",
+		HasOpenCodeStdout:       true,
+		HasOpenCodeStderr:       true,
+	}
+	err := AgentRunMonitorStepPanel(run, artifacts, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `data-stage-failure-panel`) {
+		t.Errorf("expected failure panel for execution failure")
+	}
+	if !strings.Contains(html, "Execution failed") {
+		t.Errorf("expected Execution failed title")
+	}
+	if !strings.Contains(html, "OpenCode timed out") {
+		t.Errorf("expected failure hint")
+	}
+}
+
+func TestOpenCodeHandoffStageShowsBlockedAdapterEvidence(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft", SelectedModel: "gpt-4"}
+	artifacts := []store.Artifact{{Kind: "opencode_handoff_packet"}}
+	previews := RunPreviews{
+		OpenCodeAdapterError: "Binary not found in PATH",
+	}
+	err := OpenCodeGoHandoffStepPanel(run, artifacts, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render OpenCodeGoHandoffStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `data-stage-failure-panel`) {
+		t.Errorf("expected failure panel for blocked adapter")
+	}
+	if !strings.Contains(html, "OpenCode adapter blocked") {
+		t.Errorf("expected adapter blocked title")
+	}
+	if !strings.Contains(html, "Binary not found in PATH") {
+		t.Errorf("expected adapter error text")
+	}
+}
+
+func TestDiffAuditStageShowsGitEvidenceRows(t *testing.T) {
+	var buf strings.Builder
+	previews := RunPreviews{
+		HasGitStatus:        true,
+		HasGitDiffStat:      true,
+		HasGitDiffPatch:     true,
+		GitChangedFileCount: 3,
+		GitDiffSummary:      "Modified 3 files",
+	}
+	err := DiffAuditStepPanel(previews, 1).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render DiffAuditStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `data-stage-evidence-row`) {
+		t.Errorf("expected evidence rows")
+	}
+	if !strings.Contains(html, "Git diff evidence ready") {
+		t.Errorf("expected git diff ready title")
+	}
+	if !strings.Contains(html, "Changed files: 3") {
+		t.Errorf("expected changed file count")
+	}
+	if !strings.Contains(html, "View status") {
+		t.Errorf("expected git status artifact link")
+	}
+	if !strings.Contains(html, "View diff stat") {
+		t.Errorf("expected diff stat artifact link")
+	}
+}
+
+func TestCommitStageShowsCommitSuggestionEvidence(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	artifacts := []store.Artifact{}
+	previews := RunPreviews{
+		HasCommitSuggestion: true,
+		CommitMessage:       "feat: add new feature",
+	}
+	err := GitCommitStepPanel(run, artifacts, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render GitCommitStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `data-stage-evidence-row`) {
+		t.Errorf("expected evidence rows")
+	}
+	if !strings.Contains(html, "Commit suggestion ready") {
+		t.Errorf("expected commit suggestion title")
+	}
+	if !strings.Contains(html, "Suggested commit message") {
+		t.Errorf("expected commit message section")
+	}
+	if !strings.Contains(html, "feat: add new feature") {
+		t.Errorf("expected commit message text")
+	}
+	if !strings.Contains(html, "Manual commit reminder") {
+		t.Errorf("expected manual commit reminder")
+	}
+}
+
+func TestEvidenceRowsUseMobileSafeClasses(t *testing.T) {
+	var buf strings.Builder
+	err := StageEvidenceRow("passed", "Test", "Summary", "meta").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render StageEvidenceRow: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "min-w-0") {
+		t.Errorf("expected min-w-0 for mobile safety")
+	}
+	if !strings.Contains(html, "break-words") {
+		t.Errorf("expected break-words for mobile safety")
+	}
+	if !strings.Contains(html, "relay-action-row") {
+		t.Errorf("expected relay-action-row for wrapping actions")
+	}
 }
