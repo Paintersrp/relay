@@ -1072,8 +1072,6 @@ func TestSubmitAgentResultRedirectsToValidationStep(t *testing.T) {
 
 func TestRunValidationRedirectsToValidationStep(t *testing.T) {
 	s := setupTestStore(t)
-	// Ensure async worker completes before TempDir cleanup
-	defer time.Sleep(50 * time.Millisecond)
 
 	handoffText := `# Test Handoff
 
@@ -1103,6 +1101,12 @@ DONE or BLOCKED
 	})
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	// Verify redirect behavior only; do not run the background worker
+	launched := false
+	h.launchValidation = func(fn func()) {
+		launched = true
+	}
+
 	req := httptest.NewRequest("POST", "/", nil)
 	w := httptest.NewRecorder()
 
@@ -1115,8 +1119,11 @@ DONE or BLOCKED
 	if !strings.Contains(loc, "?step=validation") {
 		t.Fatalf("expected redirect to step=validation, got %s", loc)
 	}
+	if !launched {
+		t.Fatal("expected validation worker to be scheduled")
+	}
 
-	// DB-backed execution should exist in starting/running state
+	// DB-backed execution should exist in starting state
 	exec, err := s.GetActiveValidationExecutionByRun(runID)
 	if err != nil {
 		t.Fatalf("get active execution: %v", err)
@@ -1124,8 +1131,8 @@ DONE or BLOCKED
 	if exec == nil {
 		t.Fatal("expected a DB-backed validation execution to exist")
 	}
-	if exec.Status != "starting" && exec.Status != "running" {
-		t.Errorf("expected execution status starting or running, got %s", exec.Status)
+	if exec.Status != "starting" {
+		t.Errorf("expected execution status starting, got %s", exec.Status)
 	}
 }
 
