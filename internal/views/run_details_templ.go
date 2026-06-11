@@ -529,35 +529,8 @@ func LatestEventsSummary(events []store.Event, runID int64) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if len(events) > 3 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<details class=\"relay-detail-disclosure border-t border-gray-800/50\"><summary class=\"relay-detail-summary px-3 py-1.5\"><span class=\"text-xs text-indigo-400 hover:text-indigo-300\">View all ")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var21 string
-				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(len(events))))
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 199, Col: 102}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, " events</span></summary><div class=\"max-h-48 overflow-y-auto\">")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = EventLog(events).Render(ctx, templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</div></details>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -581,12 +554,12 @@ func RunMaterialsDisclosure(previews RunPreviews) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var22 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var22 == nil {
-			templ_7745c5c3_Var22 = templ.NopComponent
+		templ_7745c5c3_Var21 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var21 == nil {
+			templ_7745c5c3_Var21 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<details class=\"relay-detail-card relay-detail-disclosure\"><summary class=\"relay-detail-summary\"><div class=\"flex items-center justify-between w-full\"><span class=\"font-medium text-sm\">Raw Run Materials</span> <span class=\"text-xs text-gray-500\">collapsed</span></div></summary><p class=\"text-xs text-gray-500 mt-1 mb-2\">Original handoff, validation report, and agent prompt previews.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "<details class=\"relay-detail-card relay-detail-disclosure\"><summary class=\"relay-detail-summary\"><div class=\"flex items-center justify-between w-full\"><span class=\"font-medium text-sm\">Raw Run Materials</span> <span class=\"text-xs text-gray-500\">collapsed</span></div></summary><p class=\"text-xs text-gray-500 mt-1 mb-2\">Original handoff, validation report, and agent prompt previews.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -594,7 +567,7 @@ func RunMaterialsDisclosure(previews RunPreviews) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</details>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</details>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -651,7 +624,7 @@ func latestEvents(events []store.Event, n int) []store.Event {
 	if len(events) <= n {
 		return events
 	}
-	return events[len(events)-n:]
+	return events[:n]
 }
 
 var _ = templruntime.GeneratedTemplate

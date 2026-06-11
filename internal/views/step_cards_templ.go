@@ -1309,7 +1309,7 @@ func IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifac
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = StageEvidenceRow("not available", "Original handoff artifact", "", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var56), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = StageEvidenceRow("not-available", "Original handoff artifact", "", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var56), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1370,7 +1370,7 @@ func IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifac
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = StageEvidenceRow("not available", "Replace original handoff", "Use this when Intake Review produced a fix handoff or when validation commands need to be added. Replacing clears downstream artifacts.", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var58), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = StageEvidenceRow("not-available", "Replace original handoff", "Use this when Intake Review produced a fix handoff or when validation commands need to be added. Replacing clears downstream artifacts.", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var58), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2291,7 +2291,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = StageEvidenceRow("not available", "Branch / worktree", "", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var101), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = StageEvidenceRow("not-available", "Branch / worktree", "", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var101), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2754,7 +2754,7 @@ func OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, chec
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = StageEvidenceRow("not available", "CLI Check details", "", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var122), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = StageEvidenceRow("not-available", "CLI Check details", "", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var122), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -5807,7 +5807,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if previews.GitDiffSummary != "" {
-				templ_7745c5c3_Err = StageEvidenceRow("not available", "Diff summary", previews.GitDiffSummary, "").Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = StageEvidenceRow("not-available", "Diff summary", previews.GitDiffSummary, "").Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -5948,7 +5948,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = StageEvidenceRow("not available", "Git status preview", "", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var287), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = StageEvidenceRow("not-available", "Git status preview", "", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var287), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -5989,7 +5989,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = StageEvidenceRow("not available", "Diff stat preview", "", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var289), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = StageEvidenceRow("not-available", "Diff stat preview", "", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var289), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -6085,7 +6085,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = StageEvidenceRow("not available", "Audit handoff preview", "Copy the content below and paste it into GPT for review.", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var294), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = StageEvidenceRow("not-available", "Audit handoff preview", "Copy the content below and paste it into GPT for review.", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var294), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -6577,7 +6577,7 @@ func GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Run
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = StageEvidenceRow("not available", "Manual commit reminder", "Relay does not commit on your behalf. Review the changes and run the commit command in the repo.", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var316), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = StageEvidenceRow("not-available", "Manual commit reminder", "Relay does not commit on your behalf. Review the changes and run the commit command in the repo.", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var316), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -7190,7 +7190,7 @@ func stageEvidenceSymbol(status string) string {
 		return "●"
 	case "pending":
 		return "○"
-	case "not available":
+	case "not-available":
 		return "—"
 	default:
 		return "○"

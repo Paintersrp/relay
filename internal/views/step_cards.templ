@@ -448,7 +448,7 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 				</div>
 			}
 
-			@StageEvidenceRow("not available", "Original handoff artifact", "", "") {
+			@StageEvidenceRow("not-available", "Original handoff artifact", "", "") {
 				<div class="relay-stage-output-preview">
 					<div class="max-h-60 overflow-auto min-w-0">
 						<pre id="original-handoff-preview" class="text-xs font-mono text-gray-300 whitespace-pre-wrap break-words p-3">{ previews.OriginalHandoff }</pre>
@@ -456,7 +456,7 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 				</div>
 			}
 
-			@StageEvidenceRow("not available", "Replace original handoff", "Use this when Intake Review produced a fix handoff or when validation commands need to be added. Replacing clears downstream artifacts.", "") {
+			@StageEvidenceRow("not-available", "Replace original handoff", "Use this when Intake Review produced a fix handoff or when validation commands need to be added. Replacing clears downstream artifacts.", "") {
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
@@ -674,7 +674,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 			@StageEvidenceRow("ready", "Selected model", "", "") {
 				<span class="text-gray-200 font-mono break-all">{ run.SelectedModel }</span>
 			}
-			@StageEvidenceRow("not available", "Branch / worktree", "", "") {
+			@StageEvidenceRow("not-available", "Branch / worktree", "", "") {
 				if run.BranchName != "" {
 					<span class="text-gray-200 font-mono break-all">{ run.BranchName }</span>
 				} else {
@@ -750,7 +750,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 				@StageEvidenceRow("passed", "OpenCode CLI Check", "", "") {
 					<span class={ cliCheckStatusClass(previews.OpenCodeCLICheckStatus) }>{ previews.OpenCodeCLICheckStatus }</span>
 				}
-				@StageEvidenceRow("not available", "CLI Check details", "", "") {
+				@StageEvidenceRow("not-available", "CLI Check details", "", "") {
 					<div class="space-y-1.5 text-xs sm:text-sm">
 						<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
 							<span class="text-gray-400 shrink-0">Binary</span>
@@ -1590,7 +1590,7 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 					}
 				}
 				if previews.GitDiffSummary != "" {
-					@StageEvidenceRow("not available", "Diff summary", previews.GitDiffSummary, "")
+					@StageEvidenceRow("not-available", "Diff summary", previews.GitDiffSummary, "")
 				}
 				@StageEvidenceRow("passed", "Git artifacts", "", "") {
 					<div class="relay-action-row">
@@ -1612,7 +1612,7 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 				}
 
 				if previews.GitStatusPreview != "" {
-					@StageEvidenceRow("not available", "Git status preview", "", "") {
+					@StageEvidenceRow("not-available", "Git status preview", "", "") {
 						<div class="relay-stage-output-preview">
 							<div class="max-h-40 overflow-auto min-w-0">
 								<pre class="text-xs leading-5 font-mono p-3 text-gray-300 whitespace-pre-wrap break-words">{ previews.GitStatusPreview }</pre>
@@ -1621,7 +1621,7 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 					}
 				}
 				if previews.GitDiffStatPreview != "" {
-					@StageEvidenceRow("not available", "Diff stat preview", "", "") {
+					@StageEvidenceRow("not-available", "Diff stat preview", "", "") {
 						<div class="relay-stage-output-preview">
 							<div class="max-h-40 overflow-auto min-w-0">
 								<pre class="text-xs leading-5 font-mono p-3 text-gray-300 whitespace-pre-wrap break-words">{ previews.GitDiffStatPreview }</pre>
@@ -1641,7 +1641,7 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 						class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download audit handoff</a>
 				}
 				if previews.AuditHandoff != "" {
-					@StageEvidenceRow("not available", "Audit handoff preview", "Copy the content below and paste it into GPT for review.", "") {
+					@StageEvidenceRow("not-available", "Audit handoff preview", "Copy the content below and paste it into GPT for review.", "") {
 						<div class="relay-stage-output-preview">
 							<div class="max-h-80 overflow-auto min-w-0">
 								<pre class="text-xs leading-5 font-mono p-3 text-gray-300 whitespace-pre-wrap break-words select-all">{ previews.AuditHandoff }</pre>
@@ -1743,7 +1743,7 @@ templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Ru
 						onclick="this.select()">{ previews.CommitMessage }</textarea>
 				}
 
-				@StageEvidenceRow("not available", "Manual commit reminder", "Relay does not commit on your behalf. Review the changes and run the commit command in the repo.", "") {
+				@StageEvidenceRow("not-available", "Manual commit reminder", "Relay does not commit on your behalf. Review the changes and run the commit command in the repo.", "") {
 					if previews.RepoPath != "" {
 						<div class="text-xs text-gray-400 mb-1">Repo path: <span class="text-gray-300 font-mono">{ previews.RepoPath }</span></div>
 					}
@@ -2006,7 +2006,7 @@ func stageEvidenceSymbol(status string) string {
 		return "●"
 	case "pending":
 		return "○"
-	case "not available":
+	case "not-available":
 		return "—"
 	default:
 		return "○"

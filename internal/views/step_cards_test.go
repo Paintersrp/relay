@@ -431,6 +431,33 @@ func TestStageEvidenceRowRendersStatusLabelSummaryAndActions(t *testing.T) {
 	}
 }
 
+func TestStageEvidenceSymbolNotAvailable(t *testing.T) {
+	if stageEvidenceSymbol("not-available") != "—" {
+		t.Errorf("expected — for not-available")
+	}
+}
+
+func TestStageEvidenceRowNotAvailableRendersValidCSS(t *testing.T) {
+	var buf strings.Builder
+	err := StageEvidenceRow("not-available", "Test", "Summary", "").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render StageEvidenceRow: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "relay-stage-evidence-row-not-available") {
+		t.Errorf("expected relay-stage-evidence-row-not-available class")
+	}
+	if !strings.Contains(html, "relay-stage-evidence-symbol-not-available") {
+		t.Errorf("expected relay-stage-evidence-symbol-not-available class")
+	}
+	if strings.Contains(html, `relay-stage-evidence-row-not available`) {
+		t.Errorf("should not contain space-separated not available class")
+	}
+	if strings.Contains(html, `relay-stage-evidence-symbol-not available`) {
+		t.Errorf("should not contain space-separated not available symbol class")
+	}
+}
+
 func TestStageFailurePanelRendersPrimaryFailureAndActions(t *testing.T) {
 	var buf strings.Builder
 	err := StageFailurePanel("OpenCode adapter blocked", "Adapter error text").Render(context.Background(), &buf)
@@ -785,19 +812,9 @@ func TestLatestEventsSummaryRendersCompact(t *testing.T) {
 	if !strings.Contains(html, "Event 3") {
 		t.Errorf("expected event 3")
 	}
+	// The nested disclosure was removed; only the compact preview remains
 	if strings.Contains(html, "View all") {
-		t.Errorf("should not show view all when exactly 3 events")
-	}
-	// Add a 4th event to trigger the disclosure
-	var buf2 strings.Builder
-	events4 := append(events, store.Event{Level: "info", Message: "Event 4", CreatedAt: "2024-01-01"})
-	err = LatestEventsSummary(events4, 1).Render(context.Background(), &buf2)
-	if err != nil {
-		t.Fatalf("render LatestEventsSummary with 4 events: %v", err)
-	}
-	html2 := buf2.String()
-	if !strings.Contains(html2, "View all 4 events") {
-		t.Errorf("expected View all link with count")
+		t.Errorf("LatestEventsSummary no longer has a nested View all disclosure")
 	}
 }
 
@@ -810,6 +827,47 @@ func TestLatestEventsSummaryShowsEmptyState(t *testing.T) {
 	html := buf.String()
 	if !strings.Contains(html, "No events yet.") {
 		t.Errorf("expected empty state")
+	}
+}
+
+func TestLatestEventsSummaryNoLongerHasNestedDisclosure(t *testing.T) {
+	var buf strings.Builder
+	events := []store.Event{
+		{Level: "info", Message: "E1", CreatedAt: "2024-01-01"},
+		{Level: "info", Message: "E2", CreatedAt: "2024-01-01"},
+		{Level: "info", Message: "E3", CreatedAt: "2024-01-01"},
+		{Level: "info", Message: "E4", CreatedAt: "2024-01-01"},
+	}
+	err := LatestEventsSummary(events, 1).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render LatestEventsSummary: %v", err)
+	}
+	html := buf.String()
+	// Should show the compact preview (5 checkpoints)
+	if !strings.Contains(html, "Latest Events") {
+		t.Errorf("expected Latest Events header")
+	}
+	// Must NOT contain a nested disclosure for full event log
+	if strings.Contains(html, "View all") {
+		t.Errorf("LatestEventsSummary should not contain a nested full event log disclosure")
+	}
+}
+
+func TestRunDetailsRailHasExactlyOneFullEventLogDisclosure(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	events := []store.Event{
+		{Level: "info", Message: "E1", CreatedAt: "2024-01-01"},
+		{Level: "info", Message: "E2", CreatedAt: "2024-01-01"},
+	}
+	err := RunDetailsRail(run, nil, nil, nil, events, RunPreviews{}).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunDetailsRail: %v", err)
+	}
+	html := buf.String()
+	count := strings.Count(html, "Full Event Log")
+	if count != 1 {
+		t.Errorf("expected exactly 1 Full Event Log disclosure, got %d", count)
 	}
 }
 
@@ -961,6 +1019,7 @@ func TestShortArtifactLabel(t *testing.T) {
 }
 
 func TestLatestEvents(t *testing.T) {
+	// Events arrive newest-to-oldest (ORDER BY created_at DESC)
 	events := make([]store.Event, 5)
 	for i := 0; i < 5; i++ {
 		events[i] = store.Event{Message: Itoa(int64(i))}
@@ -969,11 +1028,12 @@ func TestLatestEvents(t *testing.T) {
 	if len(result) != 3 {
 		t.Errorf("expected 3 events, got %d", len(result))
 	}
-	if result[0].Message != "2" {
-		t.Errorf("expected first to be index 2, got %s", result[0].Message)
+	// newest first — index 0 is the most recent
+	if result[0].Message != "0" {
+		t.Errorf("expected first to be index 0 (newest), got %s", result[0].Message)
 	}
-	if result[2].Message != "4" {
-		t.Errorf("expected last to be index 4, got %s", result[2].Message)
+	if result[2].Message != "2" {
+		t.Errorf("expected last to be index 2, got %s", result[2].Message)
 	}
 	// Test when fewer events than n
 	short := make([]store.Event, 2)
