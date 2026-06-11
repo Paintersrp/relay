@@ -358,7 +358,7 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 				@intakeStatusChip(checks)
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="inline">
 					<input type="hidden" name="action" value="validate-handoff"/>
 					<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
@@ -423,7 +423,7 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 					@StageEvidenceRow("warning", "Fix handoff needed", "Generate a fix handoff to address issues.", "") {
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="inline">
 							<input type="hidden" name="action" value="generate-intake-remediation-handoff"/>
 							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
@@ -459,7 +459,7 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 			@StageEvidenceRow("not-available", "Replace original handoff", "Use this when Intake Review produced a fix handoff or when validation commands need to be added. Replacing clears downstream artifacts.", "") {
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="space-y-3 w-full">
 					<input type="hidden" name="action" value="replace-original-handoff"/>
 					<textarea name="handoff_text" rows="6"
@@ -481,7 +481,7 @@ templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []
 				@agentPromptStatusChip(artifactExists(artifacts, "agent_prompt"), checks)
 				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="inline">
 					<input type="hidden" name="action" value="prepare-prompt"/>
 					<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
@@ -546,7 +546,7 @@ templ AgentPacketStepPanel(run *store.Run, artifacts []store.Artifact, previews 
 				if artifactExists(artifacts, "agent_prompt") {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="generate-opencode-packet"/>
 						<button type="submit" class="btn-secondary text-xs sm:text-sm" data-stage-primary-action>
@@ -793,7 +793,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 					if previews.OpenCodeAdapterError == "" && previews.OpenCodeCommandPreview != "" {
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="inline">
 							<input type="hidden" name="action" value="dry-run-opencode-go"/>
 							<button type="submit" class="btn-secondary text-xs sm:text-sm" data-stage-primary-action>
@@ -808,7 +808,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 					}
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="check-opencode-cli"/>
 						<button type="submit" class="btn-secondary text-xs sm:text-sm" data-stage-primary-action>
@@ -845,7 +845,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 				@StageEvidenceRow("ready", "Start OpenCode Go", "This starts a local OpenCode command. Relay will capture stdout/stderr as artifacts.", "") {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true">
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true">
 						<input type="hidden" name="action" value="start-opencode-go"/>
 						<button type="submit" class="btn-primary text-sm sm:text-base w-full sm:w-auto" data-stage-primary-action>
 							Start OpenCode Go
@@ -915,7 +915,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 				<div class="mt-3">
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="space-y-3">
 						<input type="hidden" name="action" value="submit-agent-result"/>
 						<textarea name="agent_result_text" rows="6"
@@ -1174,7 +1174,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 						<div class="text-xs text-gray-500 mb-3 font-medium">Manual result intake fallback</div>
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="space-y-3">
 							<input type="hidden" name="action" value="submit-agent-result"/>
 							<textarea name="agent_result_text" rows="6"
@@ -1194,7 +1194,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 					<div class="mt-3">
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="space-y-3">
 							<input type="hidden" name="action" value="submit-agent-result"/>
 							<textarea name="agent_result_text" rows="6"
@@ -1239,7 +1239,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 				} else if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="run-validation"/>
 						<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
@@ -1266,7 +1266,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 					if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="inline">
 							<input type="hidden" name="action" value="run-validation"/>
 							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>Re-run Validation</button>
@@ -1283,7 +1283,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 					if artifactExists(artifacts, "agent_result_raw") && previews.HasValidationCommands {
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="inline">
 							<input type="hidden" name="action" value="run-validation"/>
 							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>Retry Validation</button>
@@ -1367,7 +1367,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 					@StageFailurePanel("Validation failed", "Review the validation output. Use accept only when you intentionally want to continue with a failed validation.") {
 						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="inline">
 							<input type="hidden" name="action" value="accept-validation-failure"/>
 							<button type="submit" class="btn-secondary text-xs sm:text-sm" data-stage-primary-action>
@@ -1535,7 +1535,7 @@ templ auditHandoffSection(previews RunPreviews, runID int64) {
 			</p>
 			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
 				hx-post={"/runs/" + Itoa(runID) + "/actions"}
-				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 				class="mt-2">
 				<input type="hidden" name="action" value="generate-audit-handoff"/>
 				<button type="submit"
@@ -1572,7 +1572,7 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 			}
 			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
 				hx-post={"/runs/" + Itoa(runID) + "/actions"}
-				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 				class="inline">
 				<input type="hidden" name="action" value="inspect-diff"/>
 				<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
@@ -1661,7 +1661,7 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 			@StageEvidenceRow("ready", "Audit action", auditSummary, "") {
 				<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
 					hx-post={"/runs/" + Itoa(runID) + "/actions"}
-					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="inline">
 					<input type="hidden" name="action" value="generate-audit-handoff"/>
 					<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
@@ -1720,7 +1720,7 @@ templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Ru
 				@StageEvidenceRow("ready", "Prepare Git Commit", "Reviews the handoff, audit handoff, and git diff evidence, then generates a suggested commit message.", "") {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="prepare-git-commit"/>
 						<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>

@@ -22,18 +22,33 @@ func NewRepoSettingsHandler(s *store.Store, rs *repos.Service, log *slog.Logger)
 	return &RepoSettingsHandler{store: s, repoService: rs, log: log}
 }
 
-func (h *RepoSettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
+func isHXRequest(r *http.Request) bool {
+	return r.Header.Get("HX-Request") == "true"
+}
+
+func (h *RepoSettingsHandler) renderSettings(w http.ResponseWriter, r *http.Request, scanSummary *repos.ScanSummary) {
 	roots, err := h.store.ListRepoRoots()
 	if err != nil {
 		h.log.Error("list repo roots", "error", err)
 		roots = nil
 	}
+
 	reposList, err := h.store.ListReposByName()
 	if err != nil {
 		h.log.Error("list repos", "error", err)
 		reposList = nil
 	}
-	views.RepoSettings(roots, reposList, nil).Render(r.Context(), w)
+
+	if isHXRequest(r) {
+		views.RepoSettingsShell(roots, reposList, scanSummary).Render(r.Context(), w)
+		return
+	}
+
+	views.RepoSettings(roots, reposList, scanSummary).Render(r.Context(), w)
+}
+
+func (h *RepoSettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
+	h.renderSettings(w, r, nil)
 }
 
 func (h *RepoSettingsHandler) AddRoot(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +69,10 @@ func (h *RepoSettingsHandler) AddRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isHXRequest(r) {
+		h.renderSettings(w, r, nil)
+		return
+	}
 	http.Redirect(w, r, "/settings/repos", http.StatusSeeOther)
 }
 
@@ -77,6 +96,10 @@ func (h *RepoSettingsHandler) ToggleRoot(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if isHXRequest(r) {
+		h.renderSettings(w, r, nil)
+		return
+	}
 	http.Redirect(w, r, "/settings/repos", http.StatusSeeOther)
 }
 
@@ -93,20 +116,14 @@ func (h *RepoSettingsHandler) DeleteRoot(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if isHXRequest(r) {
+		h.renderSettings(w, r, nil)
+		return
+	}
 	http.Redirect(w, r, "/settings/repos", http.StatusSeeOther)
 }
 
 func (h *RepoSettingsHandler) Scan(w http.ResponseWriter, r *http.Request) {
 	summary := h.repoService.ScanEnabledRoots(r.Context())
-
-	roots, err := h.store.ListRepoRoots()
-	if err != nil {
-		roots = nil
-	}
-	reposList, err := h.store.ListReposByName()
-	if err != nil {
-		reposList = nil
-	}
-
-	views.RepoSettings(roots, reposList, &summary).Render(r.Context(), w)
+	h.renderSettings(w, r, &summary)
 }

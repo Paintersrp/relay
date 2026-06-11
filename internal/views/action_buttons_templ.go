@@ -55,7 +55,7 @@ func ActionButtons(runID int64) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" hx-target=\"#run-workbench-shell\" hx-select=\"#run-workbench-shell\" hx-swap=\"outerHTML show:#run-workbench-shell:top\" hx-indicator=\"#run-workbench-loading\" data-relay-workbench-action=\"true\" class=\"inline\"><input type=\"hidden\" name=\"action\" value=\"mark-accepted\"> <button type=\"submit\" class=\"inline-flex items-center justify-center px-4 py-2 text-xs sm:text-sm rounded-lg border border-emerald-700 text-emerald-400 hover:bg-emerald-950 transition-colors font-medium min-h-[36px]\">Mark Accepted</button></form><form action=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" hx-target=\"#run-workbench-shell\" hx-select=\"#run-workbench-shell\" hx-swap=\"outerHTML show:#run-workbench-shell:top settle:120ms\" hx-indicator=\"#run-workbench-loading\" data-relay-workbench-action=\"true\" class=\"inline\"><input type=\"hidden\" name=\"action\" value=\"mark-accepted\"> <button type=\"submit\" class=\"inline-flex items-center justify-center px-4 py-2 text-xs sm:text-sm rounded-lg border border-emerald-700 text-emerald-400 hover:bg-emerald-950 transition-colors font-medium min-h-[36px]\">Mark Accepted</button></form><form action=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -81,7 +81,7 @@ func ActionButtons(runID int64) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" hx-target=\"#run-workbench-shell\" hx-select=\"#run-workbench-shell\" hx-swap=\"outerHTML show:#run-workbench-shell:top\" hx-indicator=\"#run-workbench-loading\" data-relay-workbench-action=\"true\" class=\"inline\"><input type=\"hidden\" name=\"action\" value=\"mark-needs-cleanup\"> <button type=\"submit\" class=\"inline-flex items-center justify-center px-4 py-2 text-xs sm:text-sm rounded-lg border border-red-700 text-red-400 hover:bg-red-950 transition-colors font-medium min-h-[36px]\">Mark Needs Cleanup</button></form></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" hx-target=\"#run-workbench-shell\" hx-select=\"#run-workbench-shell\" hx-swap=\"outerHTML show:#run-workbench-shell:top settle:120ms\" hx-indicator=\"#run-workbench-loading\" data-relay-workbench-action=\"true\" class=\"inline\"><input type=\"hidden\" name=\"action\" value=\"mark-needs-cleanup\"> <button type=\"submit\" class=\"inline-flex items-center justify-center px-4 py-2 text-xs sm:text-sm rounded-lg border border-red-700 text-red-400 hover:bg-red-950 transition-colors font-medium min-h-[36px]\">Mark Needs Cleanup</button></form></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

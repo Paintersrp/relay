@@ -47,14 +47,16 @@ function initWorkbenchBusyIndicator(): void {
   });
 }
 
-function initWorkbenchActionSubmitState(): void {
+const RELAY_ACTION_FORM_SELECTOR = 'form[data-relay-workbench-action="true"], form[data-relay-settings-action="true"]';
+
+function initRelayActionSubmitState(): void {
   document.body.addEventListener('htmx:beforeRequest', (event) => {
     const detail = (event as CustomEvent).detail;
     const elt = detail?.elt as HTMLElement | undefined;
     if (!elt) return;
-    const form = elt instanceof HTMLFormElement && elt.matches('form[data-relay-workbench-action="true"]')
+    const form = elt instanceof HTMLFormElement && elt.matches(RELAY_ACTION_FORM_SELECTOR)
       ? elt
-      : elt.closest('form[data-relay-workbench-action="true"]');
+      : elt.closest(RELAY_ACTION_FORM_SELECTOR);
     if (!form) return;
     form.setAttribute('data-relay-submitting', 'true');
     form.setAttribute('aria-busy', 'true');
@@ -72,9 +74,9 @@ function initWorkbenchActionSubmitState(): void {
     const detail = (event as CustomEvent).detail;
     const elt = detail?.elt as HTMLElement | undefined;
     if (!elt) return;
-    const form = elt instanceof HTMLFormElement && elt.matches('form[data-relay-workbench-action="true"]')
+    const form = elt instanceof HTMLFormElement && elt.matches(RELAY_ACTION_FORM_SELECTOR)
       ? elt
-      : elt.closest('form[data-relay-workbench-action="true"]');
+      : elt.closest(RELAY_ACTION_FORM_SELECTOR);
     if (!form) return;
     form.removeAttribute('data-relay-submitting');
     form.removeAttribute('aria-busy');
@@ -93,7 +95,7 @@ function initWorkbenchActionSubmitState(): void {
 initDelegatedCopyControls();
 initWorkbenchSwapFocus();
 initWorkbenchBusyIndicator();
-initWorkbenchActionSubmitState();
+initRelayActionSubmitState();
 
 function initDevReload(): void {
   const marker = document.querySelector('meta[name="relay-dev-reload"][content="enabled"]');

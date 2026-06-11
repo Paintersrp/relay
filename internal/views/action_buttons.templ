@@ -6,7 +6,7 @@ templ ActionButtons(runID int64) {
 			hx-post={"/runs/" + Itoa(runID) + "/actions"}
 			hx-target="#run-workbench-shell"
 			hx-select="#run-workbench-shell"
-			hx-swap="outerHTML show:#run-workbench-shell:top"
+			hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
 			hx-indicator="#run-workbench-loading"
 			data-relay-workbench-action="true"
 			class="inline">
@@ -20,7 +20,7 @@ templ ActionButtons(runID int64) {
 			hx-post={"/runs/" + Itoa(runID) + "/actions"}
 			hx-target="#run-workbench-shell"
 			hx-select="#run-workbench-shell"
-			hx-swap="outerHTML show:#run-workbench-shell:top"
+			hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
 			hx-indicator="#run-workbench-loading"
 			data-relay-workbench-action="true"
 			class="inline">
