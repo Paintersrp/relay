@@ -92,10 +92,25 @@ function initRelayActionSubmitState(): void {
   });
 }
 
+function initArtifactPreviewControls(): void {
+  document.addEventListener('click', (event) => {
+    const trigger = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-relay-clear-artifact-preview="true"]');
+    if (!trigger) return;
+    const preview = document.getElementById('run-artifact-preview');
+    if (!preview) return;
+    const empty = document.createElement('section');
+    empty.id = 'run-artifact-preview';
+    empty.className = 'relay-artifact-preview-slot';
+    empty.setAttribute('aria-live', 'polite');
+    preview.replaceWith(empty);
+  });
+}
+
 initDelegatedCopyControls();
 initWorkbenchSwapFocus();
 initWorkbenchBusyIndicator();
 initRelayActionSubmitState();
+initArtifactPreviewControls();
 
 function initDevReload(): void {
   const marker = document.querySelector('meta[name="relay-dev-reload"][content="enabled"]');

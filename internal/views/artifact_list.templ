@@ -16,8 +16,9 @@ templ ArtifactList(artifacts []store.Artifact, runID int64) {
 							<span class="text-gray-600 sm:ml-2 block sm:inline">{ a.CreatedAt }</span>
 						</div>
 						<div class="relay-action-row shrink-0">
-							<a href={"/runs/" + Itoa(runID) + "/artifacts/" + a.Kind}
-								class="text-indigo-400 hover:text-indigo-300 min-h-[32px] inline-flex items-center">View</a>
+							@ArtifactPreviewLink(runID, a.Kind, "text-indigo-400 hover:text-indigo-300 min-h-[32px] inline-flex items-center") {
+								View
+							}
 							<a href={"/runs/" + Itoa(runID) + "/artifacts/" + a.Kind + "/download"}
 								class="text-gray-500 hover:text-gray-300 min-h-[32px] inline-flex items-center">Download</a>
 						</div>

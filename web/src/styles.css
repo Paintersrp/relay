@@ -305,4 +305,16 @@
   .relay-detail-summary::-webkit-details-marker {
     display: none;
   }
+
+  .relay-artifact-preview-slot {
+    @apply min-w-0;
+  }
+
+  .relay-artifact-preview-card {
+    @apply min-w-0 overflow-hidden;
+  }
+
+  .relay-artifact-preview-pre {
+    @apply max-h-96 overflow-auto whitespace-pre-wrap break-words bg-gray-950/70 p-3 text-xs leading-5 font-mono text-gray-300;
+  }
 }

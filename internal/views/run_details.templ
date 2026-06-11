@@ -18,10 +18,47 @@ var artifactGroups = []artifactGroupDef{
 	{Label: "Commit", Kinds: []string{"commit_message_text", "commit_suggestion_json"}},
 }
 
+templ ArtifactPreviewSlot() {
+	<section id="run-artifact-preview" class="relay-artifact-preview-slot" aria-live="polite"></section>
+}
+
+templ ArtifactInlinePreview(runID int64, kind string, content string, truncated bool) {
+	<section id="run-artifact-preview" class="relay-detail-card relay-artifact-preview-card" aria-live="polite">
+		<div class="relay-detail-card-header flex items-center justify-between gap-2">
+			<span>Artifact Preview</span>
+			<button type="button" data-relay-clear-artifact-preview="true" class="text-xs text-gray-500 hover:text-gray-300 min-h-[32px] inline-flex items-center">Close</button>
+		</div>
+		<div class="px-3 py-2 border-b border-gray-800/70 space-y-1">
+			<div class="text-xs font-mono text-indigo-300 break-all">{ kind }</div>
+			<div class="relay-action-row text-xs">
+				<a href={ "/runs/" + Itoa(runID) + "/artifacts/" + kind } class="text-indigo-400 hover:text-indigo-300 min-h-[32px] inline-flex items-center">Open full</a>
+				<a href={ "/runs/" + Itoa(runID) + "/artifacts/" + kind + "/download" } class="text-gray-500 hover:text-gray-300 min-h-[32px] inline-flex items-center">Download</a>
+			</div>
+			if truncated {
+				<p class="text-xs text-yellow-400">Preview truncated to the first 64 KB. Open full or download for the complete artifact.</p>
+			}
+		</div>
+		<pre class="relay-artifact-preview-pre">{ content }</pre>
+	</section>
+}
+
+templ ArtifactPreviewLink(runID int64, kind string, className string) {
+	<a href={ "/runs/" + Itoa(runID) + "/artifacts/" + kind }
+		hx-get={ "/runs/" + Itoa(runID) + "/artifacts/" + kind + "/preview" }
+		hx-target="#run-artifact-preview"
+		hx-swap="outerHTML settle:120ms"
+		hx-indicator="#run-workbench-loading"
+		data-relay-artifact-preview-link="true"
+		class={ className }>
+		{ children... }
+	</a>
+}
+
 templ RunDetailsRail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews) {
 	<aside class="relay-details-rail" aria-label="Run details">
 		@RunDetailsSummary(run, repo, previews, artifacts, checks)
 		@ArtifactShortcutGroups(run.ID, artifacts)
+		@ArtifactPreviewSlot()
 		@LatestEventsSummary(events, run.ID)
 		@RunMaterialsDisclosure(previews)
 
@@ -161,10 +198,9 @@ templ ArtifactShortcutGroups(runID int64, artifacts []store.Artifact) {
 						<div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">{ group.Label }</div>
 						<div class="flex flex-wrap gap-1.5">
 							for _, kind := range kinds {
-								<a href={"/runs/" + Itoa(runID) + "/artifacts/" + kind}
-									class="inline-flex items-center px-2 py-1 text-xs rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors break-all">
+								@ArtifactPreviewLink(runID, kind, "inline-flex items-center px-2 py-1 text-xs rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors break-all") {
 									{ shortArtifactLabel(kind) }
-								</a>
+								}
 							}
 						</div>
 					</div>

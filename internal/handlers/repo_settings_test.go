@@ -181,8 +181,6 @@ func TestRepoSettingsAddRootInvalidPathReturns400(t *testing.T) {
 	}
 }
 
-
-
 func TestRepoSettingsAddRootNonHTMXStillCreatesRoot(t *testing.T) {
 	s, h := setupRepoSettingsTest(t)
 
@@ -225,8 +223,6 @@ func TestRepoSettingsDeleteRootNonHTMXStillDeletesRoot(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	h.DeleteRoot(w, r)
-
-	_ = w
 
 	// Root should no longer exist
 	roots, err := s.ListRepoRoots()
@@ -295,5 +291,3 @@ func TestRepoSettingsDeleteRootNonHTMXStillRedirects(t *testing.T) {
 		t.Errorf("expected Location /settings/repos, got %q", loc)
 	}
 }
-
-

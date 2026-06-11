@@ -856,8 +856,17 @@ func TestArtifactShortcutGroupsRenderNormalLinks(t *testing.T) {
 	if strings.Contains(html, `hx-target="#run-workbench-shell"`) {
 		t.Errorf("artifact shortcut links should not have shell hx-target")
 	}
-	if strings.Contains(html, `hx-get`) {
-		t.Errorf("artifact shortcut links should not have hx-get")
+	if !strings.Contains(html, `hx-target="#run-artifact-preview"`) {
+		t.Errorf("artifact shortcut links should target #run-artifact-preview")
+	}
+	if !strings.Contains(html, `hx-get="/runs/1/artifacts/original_handoff/preview"`) {
+		t.Errorf("artifact shortcut links should have hx-get with preview URL")
+	}
+	if strings.Contains(html, `hx-push-url`) {
+		t.Errorf("artifact shortcut links should not have hx-push-url")
+	}
+	if !strings.Contains(html, `data-relay-artifact-preview-link="true"`) {
+		t.Errorf("artifact shortcut links should have data-relay-artifact-preview-link")
 	}
 }
 

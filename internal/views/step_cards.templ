@@ -404,8 +404,9 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 			if intakeReview != nil && (len(intakeReview.Blockers) > 0 || len(intakeReview.Warnings) > 0) {
 				if previews.HasIntakeRemediationHandoff {
 					@StageEvidenceRow("ready", "Fix handoff generated", "", "") {
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/intake_remediation_handoff"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View fix handoff</a>
+						@ArtifactPreviewLink(run.ID, "intake_remediation_handoff", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							View fix handoff
+						}
 						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/intake_remediation_handoff/download"}
 							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download fix handoff</a>
 						if previews.IntakeRemediationHandoff != "" {
@@ -498,8 +499,9 @@ templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []
 		<div class="relay-stage-evidence-list">
 			if artifactExists(artifacts, "agent_prompt") {
 				@StageEvidenceRow("ready", "Agent Prompt generated", "Review the hunk diff below.", "") {
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt"}
-						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View</a>
+					@ArtifactPreviewLink(run.ID, "agent_prompt", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+						View
+					}
 					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
 						class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download</a>
 				}
@@ -568,8 +570,9 @@ templ AgentPacketStepPanel(run *store.Run, artifacts []store.Artifact, previews 
 		<div class="relay-stage-evidence-list">
 			if artifactExists(artifacts, "opencode_handoff_packet") {
 				@StageEvidenceRow("ready", "Agent Packet generated", "Relay has prepared metadata for external agent tooling. Relay does not auto-run OpenCode.", "") {
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet"}
-						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View</a>
+					@ArtifactPreviewLink(run.ID, "opencode_handoff_packet", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+						View
+					}
 					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet/download"}
 						class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download</a>
 				}
@@ -602,11 +605,12 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 		</div>
 
 		<div class="relay-stage-evidence-list">
-			if previews.OpenCodeAdapterError != "" {
+				if previews.OpenCodeAdapterError != "" {
 				@StageFailurePanel("OpenCode adapter blocked", previews.OpenCodeAdapterError) {
 					if previews.HasOpenCodeCLICheck {
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_cli_check_json"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View CLI check</a>
+						@ArtifactPreviewLink(run.ID, "opencode_cli_check_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							View CLI check
+						}
 					}
 				}
 			} else if previews.HandoffPreflightStatus == "blocked" {
@@ -619,7 +623,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 				}
 			}
 
-			if previews.HasOpenCodeExecution && previews.OpenCodeExecutionStatus == "failed" {
+				if previews.HasOpenCodeExecution && previews.OpenCodeExecutionStatus == "failed" {
 				@StageFailurePanel("OpenCode execution failed", "") {
 					if previews.OpenCodeFailureHint != "" {
 						<div class="text-xs sm:text-sm text-red-200 mt-1">{ previews.OpenCodeFailureHint }</div>
@@ -630,16 +634,19 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 					}
 					<div class="relay-action-row">
 						if previews.HasOpenCodeStdout {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout"}
-								class="text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center" data-stage-artifact-link>stdout</a>
+							@ArtifactPreviewLink(run.ID, "opencode_stdout", "text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center") {
+								stdout
+							}
 						}
 						if previews.HasOpenCodeStderr {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr"}
-								class="text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center" data-stage-artifact-link>stderr</a>
+							@ArtifactPreviewLink(run.ID, "opencode_stderr", "text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center") {
+								stderr
+							}
 						}
 						if previews.HasOpenCodeCombinedLog {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log"}
-								class="text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center" data-stage-artifact-link>combined log</a>
+							@ArtifactPreviewLink(run.ID, "opencode_combined_log", "text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center") {
+								combined log
+							}
 						}
 				</div>
 				if !previews.HasOpenCodeCLICheck {
@@ -684,13 +691,15 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 
 			if artifactExists(artifacts, "opencode_handoff_packet") {
 				@StageEvidenceRow("passed", "Packet artifacts", "", "") {
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet"}
-						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View Packet</a>
+					@ArtifactPreviewLink(run.ID, "opencode_handoff_packet", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+						View Packet
+					}
 					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet/download"}
 						class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download Packet</a>
 					if artifactExists(artifacts, "agent_prompt") {
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View Agent Prompt</a>
+						@ArtifactPreviewLink(run.ID, "agent_prompt", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							View Agent Prompt
+						}
 						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
 							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download Agent Prompt</a>
 					}
@@ -780,8 +789,9 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 						}
 					</div>
 					<div class="relay-action-row mt-2">
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_cli_check_json"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View CLI check JSON</a>
+						@ArtifactPreviewLink(run.ID, "opencode_cli_check_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							View CLI check JSON
+						}
 						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_cli_check_json/download"}
 							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download</a>
 					</div>
@@ -826,8 +836,9 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 						</div>
 					</div>
 					<div class="relay-action-row mt-2">
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_dry_run_json"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View</a>
+						@ArtifactPreviewLink(run.ID, "opencode_dry_run_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							View
+						}
 						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_dry_run_json/download"}
 							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download</a>
 					</div>
@@ -893,16 +904,19 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 					</div>
 					<div class="relay-action-row mt-2">
 						if previews.HasOpenCodeStdout {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout"}
-								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>stdout</a>
+							@ArtifactPreviewLink(run.ID, "opencode_stdout", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								stdout
+							}
 						}
 						if previews.HasOpenCodeStderr {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr"}
-								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>stderr</a>
+							@ArtifactPreviewLink(run.ID, "opencode_stderr", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								stderr
+							}
 						}
 						if previews.HasOpenCodeCombinedLog {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log"}
-								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>combined log</a>
+							@ArtifactPreviewLink(run.ID, "opencode_combined_log", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								combined log
+							}
 						}
 					</div>
 				}
@@ -931,13 +945,15 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 							Agent result received. Proceed to Relay Validation.
 						</div>
 						<div class="mt-2 pt-2 border-t border-gray-800 relay-action-row">
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw"}
-								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View raw result</a>
+							@ArtifactPreviewLink(run.ID, "agent_result_raw", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								View raw result
+							}
 							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw/download"}
 								class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download raw result</a>
 							if artifactExists(artifacts, "agent_result_json") {
-								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json"}
-									class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View parsed JSON</a>
+								@ArtifactPreviewLink(run.ID, "agent_result_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+									View parsed JSON
+								}
 								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_json/download"}
 									class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download parsed JSON</a>
 							}
@@ -1069,16 +1085,19 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 					}
 					<div class="relay-action-row">
 						if previews.HasOpenCodeStdout {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout"}
-								class="text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center" data-stage-artifact-link>stdout</a>
+							@ArtifactPreviewLink(run.ID, "opencode_stdout", "text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center") {
+								stdout
+							}
 						}
 						if previews.HasOpenCodeStderr {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr"}
-								class="text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center" data-stage-artifact-link>stderr</a>
+							@ArtifactPreviewLink(run.ID, "opencode_stderr", "text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center") {
+								stderr
+							}
 						}
 						if previews.HasOpenCodeCombinedLog {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log"}
-								class="text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center" data-stage-artifact-link>combined log</a>
+							@ArtifactPreviewLink(run.ID, "opencode_combined_log", "text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center") {
+								combined log
+							}
 						}
 					</div>
 				}
@@ -1102,20 +1121,23 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 			@StageEvidenceRow("passed", "Log artifacts", "", "") {
 				<div class="relay-action-row">
 					if previews.HasOpenCodeStdout {
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>stdout</a>
+						@ArtifactPreviewLink(run.ID, "opencode_stdout", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							stdout
+						}
 						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout/download"}
 							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>download stdout</a>
 					}
 					if previews.HasOpenCodeStderr {
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>stderr</a>
+						@ArtifactPreviewLink(run.ID, "opencode_stderr", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							stderr
+						}
 						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr/download"}
 							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>download stderr</a>
 					}
 					if previews.HasOpenCodeCombinedLog {
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>combined log</a>
+						@ArtifactPreviewLink(run.ID, "opencode_combined_log", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							combined log
+						}
 						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log/download"}
 							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>download combined log</a>
 					}
@@ -1152,8 +1174,9 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 					</div>
 					if previews.OpenCodeParsedResultRaw != "" {
 						<div class="relay-action-row mt-2">
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw"}
-								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View raw result</a>
+							@ArtifactPreviewLink(run.ID, "agent_result_raw", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								View raw result
+							}
 							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw/download"}
 								class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download raw result</a>
 						</div>
@@ -1302,12 +1325,14 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 								</div>
 								<div class="relay-action-row mt-2">
 									if cmd.HasStdout {
-										<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stdout"}
-											class="text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center" data-stage-artifact-link>stdout</a>
+										@ArtifactPreviewLink(run.ID, "validation_stdout", "text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center") {
+											stdout
+										}
 									}
 									if cmd.HasStderr {
-										<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stderr"}
-											class="text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center" data-stage-artifact-link>stderr</a>
+										@ArtifactPreviewLink(run.ID, "validation_stderr", "text-xs text-red-300 hover:text-red-200 underline min-h-[36px] inline-flex items-center") {
+											stderr
+										}
 									}
 								</div>
 							}
@@ -1349,14 +1374,17 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 			if artifactExists(artifacts, "validation_run_json") {
 				@StageEvidenceRow("passed", "Validation artifacts", "", "") {
 					<div class="relay-action-row">
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View validation JSON</a>
+						@ArtifactPreviewLink(run.ID, "validation_run_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							View validation JSON
+						}
 						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json/download"}
 							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download validation JSON</a>
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stdout"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View stdout</a>
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/validation_stderr"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View stderr</a>
+						@ArtifactPreviewLink(run.ID, "validation_stdout", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							View stdout
+						}
+						@ArtifactPreviewLink(run.ID, "validation_stderr", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							View stderr
+						}
 					</div>
 				}
 
@@ -1419,12 +1447,14 @@ templ validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []
 						<span>exit { Itoa(int64(cmd.ExitCode)) }</span>
 						<span class="tabular-nums">{ Itoa(cmd.DurationMs) }ms</span>
 						if cmd.HasStdout {
-							<a href={"/runs/" + Itoa(runID) + "/artifacts/validation_stdout"}
-								class="text-indigo-400 hover:text-indigo-300 underline">stdout</a>
+							@ArtifactPreviewLink(runID, "validation_stdout", "text-indigo-400 hover:text-indigo-300 underline") {
+								stdout
+							}
 						}
 						if cmd.HasStderr {
-							<a href={"/runs/" + Itoa(runID) + "/artifacts/validation_stderr"}
-								class="text-red-400 hover:text-red-300 underline">stderr</a>
+							@ArtifactPreviewLink(runID, "validation_stderr", "text-red-400 hover:text-red-300 underline") {
+								stderr
+							}
 						}
 					</div>
 				</div>
@@ -1488,12 +1518,14 @@ templ validationProgressDisplay(progress ValidationProgressPreview, runID int64)
 							<span>exit { Itoa(int64(cmd.ExitCode)) }</span>
 							<span class="tabular-nums">{ Itoa(cmd.DurationMs) }ms</span>
 							if cmd.HasStdout {
-								<a href={"/runs/" + Itoa(runID) + "/artifacts/validation_stdout"}
-									class="text-indigo-400 hover:text-indigo-300 underline">stdout</a>
+								@ArtifactPreviewLink(runID, "validation_stdout", "text-indigo-400 hover:text-indigo-300 underline") {
+									stdout
+								}
 							}
 							if cmd.HasStderr {
-								<a href={"/runs/" + Itoa(runID) + "/artifacts/validation_stderr"}
-									class="text-red-400 hover:text-red-300 underline">stderr</a>
+								@ArtifactPreviewLink(runID, "validation_stderr", "text-red-400 hover:text-red-300 underline") {
+									stderr
+								}
 							}
 						</div>
 					</div>
@@ -1511,8 +1543,9 @@ templ auditHandoffSection(previews RunPreviews, runID int64) {
 				Copy the audit handoff into GPT for review.
 			</p>
 			<div class="mt-2 flex flex-wrap items-center gap-2">
-				<a href={"/runs/" + Itoa(runID) + "/artifacts/audit_handoff"}
-					class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">View audit handoff</a>
+				@ArtifactPreviewLink(runID, "audit_handoff", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+					View audit handoff
+				}
 				<a href={"/runs/" + Itoa(runID) + "/artifacts/audit_handoff/download"}
 					class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">Download audit handoff</a>
 			</div>
@@ -1598,16 +1631,19 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 				@StageEvidenceRow("passed", "Git artifacts", "", "") {
 					<div class="relay-action-row">
 						if previews.HasGitStatus {
-							<a href={"/runs/" + Itoa(runID) + "/artifacts/git_status_text"}
-								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View status</a>
+							@ArtifactPreviewLink(runID, "git_status_text", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								View status
+							}
 						}
 						if previews.HasGitDiffStat {
-							<a href={"/runs/" + Itoa(runID) + "/artifacts/git_diff_stat"}
-								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View diff stat</a>
+							@ArtifactPreviewLink(runID, "git_diff_stat", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								View diff stat
+							}
 						}
 						if previews.HasGitDiffPatch {
-							<a href={"/runs/" + Itoa(runID) + "/artifacts/git_diff_patch"}
-								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View patch</a>
+							@ArtifactPreviewLink(runID, "git_diff_patch", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								View patch
+							}
 							<a href={"/runs/" + Itoa(runID) + "/artifacts/git_diff_patch/download"}
 								class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download patch</a>
 						}
@@ -1638,8 +1674,9 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 
 			if previews.HasAuditHandoff {
 				@StageEvidenceRow("ready", "Audit handoff ready", "Copy the audit handoff into GPT for review.", "") {
-					<a href={"/runs/" + Itoa(runID) + "/artifacts/audit_handoff"}
-						class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View audit handoff</a>
+					@ArtifactPreviewLink(runID, "audit_handoff", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+						View audit handoff
+					}
 					<a href={"/runs/" + Itoa(runID) + "/artifacts/audit_handoff/download"}
 						class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download audit handoff</a>
 				}
@@ -1759,23 +1796,29 @@ git commit -m "{ previews.CommitMessage }"</textarea>
 				@StageEvidenceRow("passed", "Commit related artifacts", "", "") {
 					<div class="relay-action-row">
 						if previews.HasGitStatus {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/git_status_text"}
-								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View git status</a>
+							@ArtifactPreviewLink(run.ID, "git_status_text", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								View git status
+							}
 						}
 						if previews.HasGitDiffStat {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/git_diff_stat"}
-								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View diff stat</a>
+							@ArtifactPreviewLink(run.ID, "git_diff_stat", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								View diff stat
+							}
 						}
 						if previews.HasGitDiffPatch {
-							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/git_diff_patch"}
-								class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View patch</a>
+							@ArtifactPreviewLink(run.ID, "git_diff_patch", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								View patch
+							}
 						}
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/audit_handoff"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View audit handoff</a>
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/commit_message_text"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View commit message</a>
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/commit_suggestion_json"}
-							class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>View commit JSON</a>
+						@ArtifactPreviewLink(run.ID, "audit_handoff", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							View audit handoff
+						}
+						@ArtifactPreviewLink(run.ID, "commit_message_text", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							View commit message
+						}
+						@ArtifactPreviewLink(run.ID, "commit_suggestion_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							View commit JSON
+						}
 					</div>
 				}
 			}
