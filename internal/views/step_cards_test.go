@@ -1305,6 +1305,15 @@ func TestRunDetailsRailCSSHasMobileSpacingRule(t *testing.T) {
 	if !strings.Contains(ruleSection, "lg:mt-0") {
 		t.Errorf(".relay-details-rail rule should contain lg:mt-0 for desktop reset")
 	}
+	if !strings.Contains(ruleSection, "lg:sticky") {
+		t.Errorf(".relay-details-rail rule should contain lg:sticky")
+	}
+	if !strings.Contains(ruleSection, "lg:top-4") {
+		t.Errorf(".relay-details-rail rule should contain lg:top-4")
+	}
+	if !strings.Contains(ruleSection, "lg:self-start") {
+		t.Errorf(".relay-details-rail rule should contain lg:self-start")
+	}
 }
 
 func TestStep5RunningMonitorHasCorrectPollingAttributes(t *testing.T) {
@@ -1431,6 +1440,99 @@ func TestStep6ValidationRunningPollWrapperOmitsShowTop(t *testing.T) {
 	swapVal := remainder[:endIdx]
 	if strings.Contains(swapVal, `show:`) {
 		t.Errorf("Step 6 validation poll hx-swap should not include show: directive, got %q", swapVal)
+	}
+}
+
+func TestArtifactPreviewSlotHasCorrectID(t *testing.T) {
+	var buf strings.Builder
+	err := ArtifactPreviewSlot().Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render ArtifactPreviewSlot: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `id="run-artifact-preview"`) {
+		t.Errorf("expected id=run-artifact-preview on preview slot")
+	}
+	if !strings.Contains(html, `relay-artifact-preview-slot`) {
+		t.Errorf("expected relay-artifact-preview-slot class on preview slot")
+	}
+}
+
+func TestArtifactInlinePreviewContainsExpectedElements(t *testing.T) {
+	var buf strings.Builder
+	err := ArtifactInlinePreview(1, "agent_prompt", "test content", false).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render ArtifactInlinePreview: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `id="run-artifact-preview"`) {
+		t.Errorf("expected id=run-artifact-preview on preview card")
+	}
+	if !strings.Contains(html, `relay-artifact-preview-card`) {
+		t.Errorf("expected relay-artifact-preview-card class")
+	}
+	if !strings.Contains(html, `relay-artifact-preview-pre`) {
+		t.Errorf("expected relay-artifact-preview-pre class on pre element")
+	}
+	if !strings.Contains(html, `data-relay-clear-artifact-preview="true"`) {
+		t.Errorf("expected close button with data-relay-clear-artifact-preview")
+	}
+	if !strings.Contains(html, "Open full") {
+		t.Errorf("expected Open full link")
+	}
+	if !strings.Contains(html, "Download") {
+		t.Errorf("expected Download link")
+	}
+	if !strings.Contains(html, `href="/runs/1/artifacts/agent_prompt"`) {
+		t.Errorf("expected Open full href to artifact")
+	}
+	if !strings.Contains(html, `href="/runs/1/artifacts/agent_prompt/download"`) {
+		t.Errorf("expected Download href to artifact download")
+	}
+}
+
+func TestArtifactInlinePreviewTruncatedMessage(t *testing.T) {
+	var buf strings.Builder
+	err := ArtifactInlinePreview(1, "agent_prompt", "content", true).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render ArtifactInlinePreview truncated: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Preview truncated") {
+		t.Errorf("expected truncation notice when truncated=true")
+	}
+}
+
+func TestArtifactInlinePreviewOmitsTruncatedMessageWhenNotTruncated(t *testing.T) {
+	var buf strings.Builder
+	err := ArtifactInlinePreview(1, "agent_prompt", "content", false).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render ArtifactInlinePreview not truncated: %v", err)
+	}
+	html := buf.String()
+	if strings.Contains(html, "Preview truncated") {
+		t.Errorf("should not contain truncation notice when truncated=false")
+	}
+}
+
+func TestArtifactPreviewLinkRetainsHrefAndHXGet(t *testing.T) {
+	var buf strings.Builder
+	err := ArtifactPreviewLink(1, "agent_prompt", "text-xs").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render ArtifactPreviewLink: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `href="/runs/1/artifacts/agent_prompt"`) {
+		t.Errorf("expected full href fallback")
+	}
+	if !strings.Contains(html, `hx-get="/runs/1/artifacts/agent_prompt/preview"`) {
+		t.Errorf("expected hx-get for preview")
+	}
+	if !strings.Contains(html, `hx-target="#run-artifact-preview"`) {
+		t.Errorf("expected hx-target pointing to run-artifact-preview")
+	}
+	if !strings.Contains(html, `data-relay-artifact-preview-link="true"`) {
+		t.Errorf("expected data-relay-artifact-preview-link attribute")
 	}
 }
 

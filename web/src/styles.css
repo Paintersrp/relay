@@ -69,7 +69,7 @@
     @apply rounded-xl border border-gray-800 bg-gray-900/50 mb-3;
   }
   .relay-inspector-grid {
-    @apply grid grid-cols-1 lg:grid-cols-[18rem_minmax(0,1fr)_20rem] gap-4 sm:gap-6;
+    @apply grid grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)_minmax(22rem,26rem)] gap-4 sm:gap-6;
   }
   .relay-stage-rail {
     @apply sticky top-4 self-start rounded-2xl border border-gray-800 bg-gray-950/70 p-3;
@@ -267,7 +267,7 @@
   }
 
   .relay-details-rail {
-    @apply min-w-0 break-words space-y-3 mt-4 lg:mt-0;
+    @apply min-w-0 break-words space-y-3 mt-4 lg:mt-0 lg:sticky lg:top-4 lg:self-start;
   }
 
   .relay-detail-card {
@@ -335,6 +335,6 @@
   }
 
   .relay-artifact-preview-pre {
-    @apply max-h-96 overflow-auto whitespace-pre-wrap break-words bg-gray-950/70 p-3 text-xs leading-5 font-mono text-gray-300;
+    @apply max-h-[55vh] overflow-auto whitespace-pre-wrap break-words bg-gray-950/70 p-3 text-xs leading-5 font-mono text-gray-300;
   }
 }
