@@ -618,3 +618,151 @@ func TestGenerateAuditHandoffReplacesExistingRow(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdateSelectedModelPersistsAndPreservesRecommended(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	form := url.Values{
+		"selected_model_option": {"deepseek-v4-pro"},
+		"selected_model_custom": {""},
+	}
+	req := httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.updateSelectedModel(w, req, runID)
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.SelectedModel != "DeepSeek V4 Pro" {
+		t.Errorf("expected SelectedModel 'DeepSeek V4 Pro', got %q", run.SelectedModel)
+	}
+	if run.RecommendedModel != "test-model" {
+		t.Errorf("expected RecommendedModel unchanged 'test-model', got %q", run.RecommendedModel)
+	}
+}
+
+func TestUpdateSelectedModelCustomModel(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	form := url.Values{
+		"selected_model_option": {"custom"},
+		"selected_model_custom": {"my-custom-model"},
+	}
+	req := httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.updateSelectedModel(w, req, runID)
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.SelectedModel != "my-custom-model" {
+		t.Errorf("expected SelectedModel 'my-custom-model', got %q", run.SelectedModel)
+	}
+	if run.RecommendedModel != "test-model" {
+		t.Errorf("expected RecommendedModel unchanged 'test-model', got %q", run.RecommendedModel)
+	}
+}
+
+func TestUpdateSelectedModelRedirectsToHandoffStep(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	form := url.Values{
+		"selected_model_option": {"deepseek-v4-flash"},
+	}
+	req := httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.updateSelectedModel(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasSuffix(loc, "?step=handoff") {
+		t.Errorf("expected redirect to step=handoff, got %s", loc)
+	}
+	pus := w.Header().Get("HX-Push-Url")
+	if pus != "/runs/"+itoa(runID)+"?step=handoff" {
+		t.Errorf("expected HX-Push-Url /runs/%d?step=handoff, got %q", runID, pus)
+	}
+}
+
+func TestUpdateSelectedModelDeletesStaleArtifacts(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	// Create stale artifacts
+	for _, kind := range []string{"opencode_handoff_packet", "opencode_cli_check_json", "opencode_dry_run_json"} {
+		p, err := artifacts.Write(runID, kind, pipeline.ArtifactFilename(kind), []byte("stale"))
+		if err != nil {
+			t.Fatalf("write artifact %s: %v", kind, err)
+		}
+		s.CreateArtifact(runID, kind, p, "application/json")
+	}
+
+	form := url.Values{
+		"selected_model_option": {"deepseek-v4-flash"},
+	}
+	req := httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.updateSelectedModel(w, req, runID)
+
+	artifacts, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	for _, a := range artifacts {
+		if a.Kind == "opencode_handoff_packet" || a.Kind == "opencode_cli_check_json" || a.Kind == "opencode_dry_run_json" {
+			t.Errorf("stale artifact %s was not deleted", a.Kind)
+		}
+	}
+}
+
+func TestUpdateSelectedModelRegeneratesPacketWhenAgentPromptExists(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	// Create agent prompt (required for packet regeneration)
+	promptPath, err := artifacts.Write(runID, "agent_prompt", pipeline.ArtifactFilename("agent_prompt"), []byte("test prompt"))
+	if err != nil {
+		t.Fatalf("write agent prompt: %v", err)
+	}
+	s.CreateArtifact(runID, "agent_prompt", promptPath, "text/plain")
+
+	form := url.Values{
+		"selected_model_option": {"deepseek-v4-pro"},
+	}
+	req := httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.updateSelectedModel(w, req, runID)
+
+	// Packet should have been regenerated
+	artifacts, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	found := false
+	for _, a := range artifacts {
+		if a.Kind == "opencode_handoff_packet" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected opencode_handoff_packet to be regenerated")
+	}
+}

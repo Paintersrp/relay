@@ -679,7 +679,29 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 			}
 
 			@StageEvidenceRow("ready", "Selected model", "", "") {
-				<span class="text-gray-200 font-mono break-all">{ run.SelectedModel }</span>
+				<div class="flex flex-col gap-2">
+					<span class="text-gray-200 font-mono break-all">{ run.SelectedModel }</span>
+					<details class="text-sm">
+						<summary class="cursor-pointer text-indigo-400 hover:text-indigo-300">Change selected model</summary>
+						<div class="mt-2 space-y-2">
+							@WorkbenchActionForm(run.ID, "update-selected-model", "") {
+								<select name="selected_model_option" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200">
+									<option value="">Auto from handoff / current</option>
+									<option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
+									<option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+									<option value="deepseek-v4-pro-max">DeepSeek V4 Pro Max</option>
+									<option value="qwen-3.7-max">Qwen3.7 Max</option>
+									<option value="kimi-k2.6">Kimi K2.6</option>
+									<option value="gpt-5.5-thinking">GPT-5.5 Thinking</option>
+									<option value="custom">Custom</option>
+								</select>
+								<input type="text" name="selected_model_custom" placeholder="provider/model-id (used when Custom is selected)" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200"/>
+								<p class="text-xs text-gray-500">Custom model input is used only when <strong>Custom</strong> is selected above.</p>
+								<button type="submit" class="btn-primary text-xs">Update Model</button>
+							}
+						</div>
+					</details>
+				</div>
 			}
 			@StageEvidenceRow("not-available", "Branch / worktree", "", "") {
 				if run.BranchName != "" {

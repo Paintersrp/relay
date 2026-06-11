@@ -615,6 +615,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.acceptValidationFailure(w, r, id)
 	case "prepare-git-commit":
 		h.prepareGitCommit(w, r, id)
+	case "update-selected-model":
+		h.updateSelectedModel(w, r, id)
 	default:
 		http.Error(w, "unknown action", http.StatusBadRequest)
 	}
@@ -1703,6 +1705,47 @@ func (h *RunsHandler) replaceOriginalHandoff(w http.ResponseWriter, r *http.Requ
 
 	// Re-run Intake Review using the new handoff text
 	h.validateHandoff(w, r, runID)
+}
+
+func (h *RunsHandler) updateSelectedModel(w http.ResponseWriter, r *http.Request, runID int64) {
+	run, err := h.store.GetRun(runID)
+	if err != nil {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	selectedModelOption := r.FormValue("selected_model_option")
+	selectedModelCustom := r.FormValue("selected_model_custom")
+
+	newSelectedModel, _ := pipeline.ResolveSelectedModel(selectedModelOption, selectedModelCustom, run.RecommendedModel)
+
+	_, err = h.store.UpdateRunModel(runID, run.RecommendedModel, newSelectedModel)
+	if err != nil {
+		h.log.Error("update run model", "error", err)
+		http.Error(w, "failed to update model", http.StatusInternalServerError)
+		return
+	}
+
+	h.store.CreateEvent(runID, "info", "Selected model updated to "+newSelectedModel)
+
+	// Delete stale OpenCode artifacts that encode the old selected model
+	for _, kind := range []string{"opencode_handoff_packet", "opencode_cli_check_json", "opencode_dry_run_json"} {
+		h.store.DeleteArtifactsByRunKind(runID, kind)
+	}
+
+	// Regenerate the OpenCode packet if agent_prompt exists
+	artifacts, artErr := h.store.ListArtifactsByRun(runID)
+	if artErr == nil {
+		for _, a := range artifacts {
+			if a.Kind == "agent_prompt" {
+				h.generateOpenCodePacket(w, r, runID)
+				return
+			}
+		}
+	}
+
+	setHXPushURL(w, runID, "handoff")
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 }
 
 func (h *RunsHandler) notImplemented(w http.ResponseWriter, r *http.Request, runID int64, msg string) {

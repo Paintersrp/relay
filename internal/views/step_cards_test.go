@@ -1554,3 +1554,52 @@ func TestRunInspectorShellRendersDetailsRail(t *testing.T) {
 		t.Errorf("expected data-pipeline-stage-strip in inspector shell")
 	}
 }
+
+func TestOpenCodeHandoffStageShowsSelectedModel(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft", SelectedModel: "DeepSeek V4 Pro"}
+	previews := RunPreviews{}
+	err := OpenCodeGoHandoffStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render OpenCodeGoHandoffStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "DeepSeek V4 Pro") {
+		t.Errorf("expected selected model text in output")
+	}
+}
+
+func TestOpenCodeHandoffStageShowsModelOverrideForm(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft", SelectedModel: "gpt-4"}
+	previews := RunPreviews{}
+	err := OpenCodeGoHandoffStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render OpenCodeGoHandoffStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Change selected model") {
+		t.Errorf("expected 'Change selected model' summary text")
+	}
+	if !strings.Contains(html, "update-selected-model") {
+		t.Errorf("expected hidden action input with update-selected-model")
+	}
+	if !strings.Contains(html, `name="selected_model_option"`) {
+		t.Errorf("expected select with name selected_model_option")
+	}
+	if !strings.Contains(html, `name="selected_model_custom"`) {
+		t.Errorf("expected input with name selected_model_custom")
+	}
+	if !strings.Contains(html, `data-relay-workbench-action`) {
+		t.Errorf("expected data-relay-workbench-action attribute on form")
+	}
+	if !strings.Contains(html, `hx-target="#run-workbench-shell"`) {
+		t.Errorf("expected hx-target on form")
+	}
+	if !strings.Contains(html, `hx-select="#run-workbench-shell"`) {
+		t.Errorf("expected hx-select on form")
+	}
+	if !strings.Contains(html, `settle:120ms`) {
+		t.Errorf("expected settle:120ms in hx-swap on form")
+	}
+}
