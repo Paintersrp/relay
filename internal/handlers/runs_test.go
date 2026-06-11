@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http/httptest"
 	"net/url"
@@ -697,7 +698,7 @@ func TestUpdateSelectedModelRedirectsToHandoffStep(t *testing.T) {
 	}
 }
 
-func TestUpdateSelectedModelDeletesStaleArtifacts(t *testing.T) {
+func TestUpdateSelectedModelDeletesStaleArtifactRows(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	runID := newTestHandoff(t, s, validHandoff())
@@ -719,18 +720,65 @@ func TestUpdateSelectedModelDeletesStaleArtifacts(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.updateSelectedModel(w, req, runID)
 
-	artifacts, err := s.ListArtifactsByRun(runID)
+	artifactsList, err := s.ListArtifactsByRun(runID)
 	if err != nil {
 		t.Fatalf("list artifacts: %v", err)
 	}
-	for _, a := range artifacts {
+	for _, a := range artifactsList {
 		if a.Kind == "opencode_handoff_packet" || a.Kind == "opencode_cli_check_json" || a.Kind == "opencode_dry_run_json" {
-			t.Errorf("stale artifact %s was not deleted", a.Kind)
+			t.Errorf("stale artifact row %s was not deleted", a.Kind)
+		}
+	}
+
+	// Confirm disk files are also removed
+	for _, kind := range []string{"opencode_handoff_packet", "opencode_cli_check_json", "opencode_dry_run_json"} {
+		if artifacts.Exists(runID, kind, pipeline.ArtifactFilename(kind)) {
+			t.Errorf("stale artifact file %s still exists on disk", kind)
 		}
 	}
 }
 
-func TestUpdateSelectedModelRegeneratesPacketWhenAgentPromptExists(t *testing.T) {
+func TestUpdateSelectedModelDeletesStaleArtifactFiles(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	// Create stale artifact files on disk (with matching DB rows)
+	for _, kind := range []string{"opencode_cli_check_json", "opencode_dry_run_json"} {
+		p, err := artifacts.Write(runID, kind, pipeline.ArtifactFilename(kind), []byte("stale"))
+		if err != nil {
+			t.Fatalf("write artifact %s: %v", kind, err)
+		}
+		s.CreateArtifact(runID, kind, p, "application/json")
+	}
+
+	// Verify files exist before update
+	for _, kind := range []string{"opencode_cli_check_json", "opencode_dry_run_json"} {
+		if !artifacts.Exists(runID, kind, pipeline.ArtifactFilename(kind)) {
+			t.Fatalf("expected stale %s file to exist before update", kind)
+		}
+	}
+
+	form := url.Values{
+		"selected_model_option": {"deepseek-v4-flash"},
+	}
+	req := httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.updateSelectedModel(w, req, runID)
+
+	// Assert stale files are gone
+	for _, kind := range []string{"opencode_cli_check_json", "opencode_dry_run_json"} {
+		if artifacts.Exists(runID, kind, pipeline.ArtifactFilename(kind)) {
+			t.Errorf("stale artifact file %s still exists on disk after model change", kind)
+		}
+		if data, err := artifacts.Read(runID, kind, pipeline.ArtifactFilename(kind)); err == nil {
+			t.Errorf("expected empty read for stale %s, got %q", kind, string(data))
+		}
+	}
+}
+
+func TestUpdateSelectedModelRegeneratesPacketWithNewSelectedModel(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	runID := newTestHandoff(t, s, validHandoff())
@@ -750,15 +798,30 @@ func TestUpdateSelectedModelRegeneratesPacketWhenAgentPromptExists(t *testing.T)
 	w := httptest.NewRecorder()
 	h.updateSelectedModel(w, req, runID)
 
-	// Packet should have been regenerated
-	artifacts, err := s.ListArtifactsByRun(runID)
+	// Packet should have been regenerated with new selected model
+	artifactsList, err := s.ListArtifactsByRun(runID)
 	if err != nil {
 		t.Fatalf("list artifacts: %v", err)
 	}
 	found := false
-	for _, a := range artifacts {
+	for _, a := range artifactsList {
 		if a.Kind == "opencode_handoff_packet" {
 			found = true
+
+			// Read the regenerated packet file and verify it contains the new model
+			data, err := artifacts.Read(runID, "opencode_handoff_packet", pipeline.ArtifactFilename("opencode_handoff_packet"))
+			if err != nil {
+				t.Fatalf("read regenerated packet: %v", err)
+			}
+			var packet struct {
+				SelectedModel string `json:"selected_model"`
+			}
+			if err := json.Unmarshal(data, &packet); err != nil {
+				t.Fatalf("unmarshal regenerated packet: %v", err)
+			}
+			if packet.SelectedModel != "DeepSeek V4 Pro" {
+				t.Errorf("expected regenerated packet selected_model 'DeepSeek V4 Pro', got %q", packet.SelectedModel)
+			}
 			break
 		}
 	}

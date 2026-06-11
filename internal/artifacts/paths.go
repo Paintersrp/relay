@@ -92,3 +92,11 @@ func Exists(runID int64, kind, filename string) bool {
 	_, err = os.Stat(p)
 	return err == nil
 }
+
+func Delete(runID int64, kind, filename string) error {
+	p, err := Path(runID, kind, filename)
+	if err != nil {
+		return err
+	}
+	return os.Remove(p)
+}

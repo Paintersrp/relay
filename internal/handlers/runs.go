@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -1707,6 +1708,13 @@ func (h *RunsHandler) replaceOriginalHandoff(w http.ResponseWriter, r *http.Requ
 	h.validateHandoff(w, r, runID)
 }
 
+func (h *RunsHandler) deleteRunArtifactKind(runID int64, kind string) {
+	_ = h.store.DeleteArtifactsByRunKind(runID, kind)
+	if err := artifacts.Delete(runID, kind, pipeline.ArtifactFilename(kind)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		h.log.Warn("delete stale artifact file", "run_id", runID, "kind", kind, "error", err)
+	}
+}
+
 func (h *RunsHandler) updateSelectedModel(w http.ResponseWriter, r *http.Request, runID int64) {
 	run, err := h.store.GetRun(runID)
 	if err != nil {
@@ -1728,9 +1736,9 @@ func (h *RunsHandler) updateSelectedModel(w http.ResponseWriter, r *http.Request
 
 	h.store.CreateEvent(runID, "info", "Selected model updated to "+newSelectedModel)
 
-	// Delete stale OpenCode artifacts that encode the old selected model
+	// Delete stale OpenCode artifacts (DB rows + disk files) that encode the old selected model
 	for _, kind := range []string{"opencode_handoff_packet", "opencode_cli_check_json", "opencode_dry_run_json"} {
-		h.store.DeleteArtifactsByRunKind(runID, kind)
+		h.deleteRunArtifactKind(runID, kind)
 	}
 
 	// Regenerate the OpenCode packet if agent_prompt exists
