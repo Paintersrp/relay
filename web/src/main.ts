@@ -47,9 +47,53 @@ function initWorkbenchBusyIndicator(): void {
   });
 }
 
+function initWorkbenchActionSubmitState(): void {
+  document.body.addEventListener('htmx:beforeRequest', (event) => {
+    const detail = (event as CustomEvent).detail;
+    const elt = detail?.elt as HTMLElement | undefined;
+    if (!elt) return;
+    const form = elt instanceof HTMLFormElement && elt.matches('form[data-relay-workbench-action="true"]')
+      ? elt
+      : elt.closest('form[data-relay-workbench-action="true"]');
+    if (!form) return;
+    form.setAttribute('data-relay-submitting', 'true');
+    form.setAttribute('aria-busy', 'true');
+    const controls = form.querySelectorAll<HTMLButtonElement | HTMLInputElement>(
+      'button[type="submit"], button:not([type]), input[type="submit"], input[type="button"]'
+    );
+    controls.forEach((ctrl) => {
+      if (!ctrl.disabled) {
+        ctrl.setAttribute('data-relay-submit-was-enabled', 'true');
+        ctrl.disabled = true;
+      }
+    });
+  });
+  document.body.addEventListener('htmx:afterRequest', (event) => {
+    const detail = (event as CustomEvent).detail;
+    const elt = detail?.elt as HTMLElement | undefined;
+    if (!elt) return;
+    const form = elt instanceof HTMLFormElement && elt.matches('form[data-relay-workbench-action="true"]')
+      ? elt
+      : elt.closest('form[data-relay-workbench-action="true"]');
+    if (!form) return;
+    form.removeAttribute('data-relay-submitting');
+    form.removeAttribute('aria-busy');
+    const controls = form.querySelectorAll<HTMLElement>(
+      '[data-relay-submit-was-enabled="true"]'
+    );
+    controls.forEach((ctrl) => {
+      if (ctrl instanceof HTMLButtonElement || ctrl instanceof HTMLInputElement) {
+        ctrl.disabled = false;
+      }
+      ctrl.removeAttribute('data-relay-submit-was-enabled');
+    });
+  });
+}
+
 initDelegatedCopyControls();
 initWorkbenchSwapFocus();
 initWorkbenchBusyIndicator();
+initWorkbenchActionSubmitState();
 
 function initDevReload(): void {
   const marker = document.querySelector('meta[name="relay-dev-reload"][content="enabled"]');

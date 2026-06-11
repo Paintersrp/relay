@@ -1059,13 +1059,6 @@ func (h *RunsHandler) AgentRunMonitor(w http.ResponseWriter, r *http.Request) {
 	// Build minimal previews for the monitor display
 	previews := h.buildExecutionPreviews(id, run, artifactsList)
 
-	// When execution reaches a terminal state, redirect to full page to refresh
-	// current gate, pipeline rail, selected stage, and details rail.
-	if !previews.HasOpenCodeRunning && previews.HasOpenCodeExecution {
-		w.Header().Set("HX-Redirect", "/runs/"+strconv.FormatInt(id, 10)+"?step=run")
-		return
-	}
-
 	// Populate adapter info for display from run data
 	repo, _ := h.store.GetRepo(run.RepoID)
 	if repo != nil {

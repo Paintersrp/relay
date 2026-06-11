@@ -969,9 +969,12 @@ func transcriptEventClass(kind string) string {
 templ AgentRunMonitorStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
 	if isExecutionRunning(previews.OpenCodeExecutionStatus) {
 		<div id="agent-run-monitor"
-			hx-get={"/runs/" + Itoa(run.ID) + "/agent-run-monitor"}
+			hx-get={"/runs/" + Itoa(run.ID) + "?step=run"}
 			hx-trigger="every 2s"
-			hx-swap="outerHTML"
+			hx-target="#run-workbench-shell"
+			hx-select="#run-workbench-shell"
+			hx-swap="outerHTML settle:120ms"
+			hx-indicator="#run-workbench-loading"
 			class="relay-card">
 			@agentRunMonitorInner(run, artifacts, checks, previews, isExecutionRunning(previews.OpenCodeExecutionStatus))
 		</div>
@@ -1215,7 +1218,7 @@ templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, check
 			hx-trigger="every 2s"
 			hx-target="#run-workbench-shell"
 			hx-select="#run-workbench-shell"
-			hx-swap="outerHTML show:#run-workbench-shell:top"
+			hx-swap="outerHTML settle:120ms"
 			hx-indicator="#run-workbench-loading"
 			class="relay-card">
 			@relayValidationStepPanelInner(run, artifacts, checks, previews)

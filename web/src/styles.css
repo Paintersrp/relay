@@ -166,6 +166,13 @@
     transition: opacity 200ms ease-out;
   }
 
+  form[data-relay-workbench-action="true"][data-relay-submitting="true"] button,
+  form[data-relay-workbench-action="true"] button:disabled,
+  form[data-relay-workbench-action="true"] input[type="submit"]:disabled,
+  form[data-relay-workbench-action="true"] input[type="button"]:disabled {
+    @apply opacity-50 cursor-not-allowed pointer-events-none;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .relay-stage-panel-card,
     .relay-details-rail,

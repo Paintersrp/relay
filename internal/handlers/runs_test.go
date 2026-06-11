@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"log/slog"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,8 @@ import (
 	"relay/internal/artifacts"
 	"relay/internal/pipeline"
 	"relay/internal/store"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func itoa(v int64) string {
@@ -507,6 +510,42 @@ func TestInspectDiffWritesArtifacts(t *testing.T) {
 	}
 	if !artifacts.Exists(runID, "git_diff_patch", pipeline.ArtifactFilename("git_diff_patch")) {
 		t.Error("expected git_diff_patch file on disk")
+	}
+}
+
+func TestAgentRunMonitorDoesNotSetHXRedirectForTerminalExecution(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	// Create a terminal (completed) agent execution
+	exec, err := s.CreateAgentExecution(runID, "opencode_go", "starting", "test command")
+	if err != nil {
+		t.Fatalf("create agent execution: %v", err)
+	}
+	finishedAt := "2024-01-01 00:00:00"
+	ec := int64(0)
+	_, err = s.UpdateAgentExecutionStatus(exec.ID, "completed", &ec, nil, &finishedAt, nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("update agent execution: %v", err)
+	}
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"/agent-run-monitor", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+	h.AgentRunMonitor(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if w.Header().Get("HX-Redirect") != "" {
+		t.Errorf("expected no HX-Redirect header for terminal execution, got %q", w.Header().Get("HX-Redirect"))
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="agent-run-monitor"`) {
+		t.Errorf("expected agent-run-monitor in response body")
 	}
 }
 

@@ -2,6 +2,8 @@ package views
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -1263,16 +1265,163 @@ func TestRunInspectorSummaryHasMobileFlexLayout(t *testing.T) {
 	}
 }
 
-func TestRunDetailsRailHasMobileSpacingClass(t *testing.T) {
+func TestRunDetailsRailCSSHasMobileSpacingRule(t *testing.T) {
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("could not find go.mod from %s", dir)
+		}
+		dir = parent
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "web", "src", "styles.css"))
+	if err != nil {
+		t.Fatalf("read styles.css: %v", err)
+	}
+	content := string(data)
+	idx := strings.LastIndex(content, ".relay-details-rail")
+	if idx < 0 {
+		t.Fatalf("styles.css missing .relay-details-rail rule")
+	}
+	ruleSection := content[idx:]
+	if !strings.Contains(ruleSection, "mt-4") {
+		t.Errorf(".relay-details-rail rule should contain mt-4 for mobile spacing")
+	}
+	if !strings.Contains(ruleSection, "lg:mt-0") {
+		t.Errorf(".relay-details-rail rule should contain lg:mt-0 for desktop reset")
+	}
+}
+
+func TestStep5RunningMonitorHasCorrectPollingAttributes(t *testing.T) {
 	var buf strings.Builder
 	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
-	err := RunDetailsRail(run, nil, nil, nil, nil, RunPreviews{}).Render(context.Background(), &buf)
+	previews := RunPreviews{
+		HasOpenCodeExecution:    true,
+		OpenCodeExecutionStatus: "running",
+	}
+	err := AgentRunMonitorStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
 	if err != nil {
-		t.Fatalf("render RunDetailsRail: %v", err)
+		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
 	}
 	html := buf.String()
-	if !strings.Contains(html, `relay-details-rail`) {
-		t.Errorf("expected relay-details-rail class")
+	if !strings.Contains(html, `hx-get="/runs/1?step=run"`) {
+		t.Errorf("expected hx-get to Step 5 run URL, got: %s", html)
+	}
+	if !strings.Contains(html, `hx-target="#run-workbench-shell"`) {
+		t.Errorf("expected hx-target on Step 5 running monitor")
+	}
+	if !strings.Contains(html, `hx-select="#run-workbench-shell"`) {
+		t.Errorf("expected hx-select on Step 5 running monitor")
+	}
+	if !strings.Contains(html, `hx-indicator="#run-workbench-loading"`) {
+		t.Errorf("expected hx-indicator on Step 5 running monitor")
+	}
+	if strings.Contains(html, `/agent-run-monitor`) {
+		t.Errorf("Step 5 running monitor should not poll /agent-run-monitor")
+	}
+}
+
+func TestStep5RunningMonitorPollWrapperOmitsShowTop(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	previews := RunPreviews{
+		HasOpenCodeExecution:    true,
+		OpenCodeExecutionStatus: "running",
+	}
+	err := AgentRunMonitorStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
+	}
+	html := buf.String()
+	// Extract the hx-swap value from the outer polling wrapper (first occurrence)
+	idx := strings.Index(html, `hx-swap="`)
+	if idx < 0 {
+		t.Fatal("expected hx-swap attribute in Step 5 running monitor")
+	}
+	swapStart := idx + len(`hx-swap="`)
+	remainder := html[swapStart:]
+	endIdx := strings.Index(remainder, `"`)
+	if endIdx < 0 {
+		t.Fatal("malformed hx-swap attribute")
+	}
+	swapVal := remainder[:endIdx]
+	if strings.Contains(swapVal, `show:`) {
+		t.Errorf("Step 5 running monitor hx-swap should not include show: directive, got %q", swapVal)
+	}
+}
+
+func TestStep6ValidationRunningPollHasCorrectAttributes(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	previews := RunPreviews{
+		ValidationProgressRunning: true,
+		HasValidationCommands:     true,
+		ValidationProgressPreview: ValidationProgressPreview{
+			Status:        "running",
+			StartedAt:     "2024-01-01T00:00:00Z",
+			UpdatedAt:     "2024-01-01T00:00:10Z",
+			TotalCommands: 3,
+			CurrentIndex:  1,
+		},
+	}
+	err := RelayValidationStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RelayValidationStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `hx-get="/runs/1?step=validation"`) {
+		t.Errorf("expected hx-get to Step 6 validation URL, got: %s", html)
+	}
+	if !strings.Contains(html, `hx-target="#run-workbench-shell"`) {
+		t.Errorf("expected hx-target on Step 6 validation poll")
+	}
+	if !strings.Contains(html, `hx-select="#run-workbench-shell"`) {
+		t.Errorf("expected hx-select on Step 6 validation poll")
+	}
+	if !strings.Contains(html, `hx-indicator="#run-workbench-loading"`) {
+		t.Errorf("expected hx-indicator on Step 6 validation poll")
+	}
+}
+
+func TestStep6ValidationRunningPollWrapperOmitsShowTop(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	previews := RunPreviews{
+		ValidationProgressRunning: true,
+		HasValidationCommands:     true,
+		ValidationProgressPreview: ValidationProgressPreview{
+			Status:        "running",
+			StartedAt:     "2024-01-01T00:00:00Z",
+			UpdatedAt:     "2024-01-01T00:00:10Z",
+			TotalCommands: 3,
+			CurrentIndex:  1,
+		},
+	}
+	err := RelayValidationStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RelayValidationStepPanel: %v", err)
+	}
+	html := buf.String()
+	// Extract the hx-swap value from the outer polling wrapper (first occurrence)
+	idx := strings.Index(html, `hx-swap="`)
+	if idx < 0 {
+		t.Fatal("expected hx-swap attribute in Step 6 validation poll")
+	}
+	swapStart := idx + len(`hx-swap="`)
+	remainder := html[swapStart:]
+	endIdx := strings.Index(remainder, `"`)
+	if endIdx < 0 {
+		t.Fatal("malformed hx-swap attribute")
+	}
+	swapVal := remainder[:endIdx]
+	if strings.Contains(swapVal, `show:`) {
+		t.Errorf("Step 6 validation poll hx-swap should not include show: directive, got %q", swapVal)
 	}
 }
 
