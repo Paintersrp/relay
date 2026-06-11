@@ -1,6 +1,9 @@
 package views
 
-import "relay/internal/store"
+import (
+	"relay/internal/store"
+	"sort"
+)
 
 type artifactGroupDef struct {
 	Label string
@@ -258,8 +261,41 @@ func shortArtifactLabel(kind string) string {
 }
 
 func latestEvents(events []store.Event, n int) []store.Event {
-	if len(events) <= n {
-		return events
+	if len(events) == 0 {
+		return nil
 	}
-	return events[:n]
+	sorted := make([]store.Event, len(events))
+	copy(sorted, events)
+
+	hasTimestamps := false
+	for _, e := range sorted {
+		if e.CreatedAt != "" {
+			hasTimestamps = true
+			break
+		}
+	}
+
+	if hasTimestamps {
+		sort.SliceStable(sorted, func(i, j int) bool {
+			if sorted[i].CreatedAt == "" {
+				return false
+			}
+			if sorted[j].CreatedAt == "" {
+				return true
+			}
+			return sorted[i].CreatedAt > sorted[j].CreatedAt
+		})
+	}
+
+	if hasTimestamps {
+		if len(sorted) <= n {
+			return sorted
+		}
+		return sorted[:n]
+	}
+	// No timestamps: preserve order, take last n as fallback for newest
+	if len(sorted) <= n {
+		return sorted
+	}
+	return sorted[len(sorted)-n:]
 }

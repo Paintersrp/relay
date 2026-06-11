@@ -213,7 +213,7 @@ templ PipelineStageRail(runID int64, previews RunPreviews, artifacts []store.Art
 				hx-get={"/runs/" + Itoa(runID) + "?step=" + step.Key}
 				hx-target="#run-workbench-shell"
 				hx-select="#run-workbench-shell"
-				hx-swap="outerHTML show:#run-workbench-shell:top"
+				hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
 				hx-push-url="true"
 				hx-indicator="#run-workbench-loading"
 				data-relay-workbench-link="true"
@@ -238,7 +238,7 @@ templ PipelineStageStrip(runID int64, previews RunPreviews, artifacts []store.Ar
 					hx-get={"/runs/" + Itoa(runID) + "?step=" + step.Key}
 					hx-target="#run-workbench-shell"
 					hx-select="#run-workbench-shell"
-					hx-swap="outerHTML show:#run-workbench-shell:top"
+					hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
 					hx-push-url="true"
 					hx-indicator="#run-workbench-loading"
 					data-relay-workbench-link="true"
@@ -295,7 +295,7 @@ templ StepFlowFooter(runID int64, activeStep string) {
 				hx-get={"/runs/" + Itoa(runID) + "?step=" + prev.Key}
 				hx-target="#run-workbench-shell"
 				hx-select="#run-workbench-shell"
-				hx-swap="outerHTML show:#run-workbench-shell:top"
+				hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
 				hx-push-url="true"
 				hx-indicator="#run-workbench-loading"
 				data-relay-workbench-link="true"
@@ -310,7 +310,7 @@ templ StepFlowFooter(runID int64, activeStep string) {
 				hx-get={"/runs/" + Itoa(runID) + "?step=" + next.Key}
 				hx-target="#run-workbench-shell"
 				hx-select="#run-workbench-shell"
-				hx-swap="outerHTML show:#run-workbench-shell:top"
+				hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
 				hx-push-url="true"
 				hx-indicator="#run-workbench-loading"
 				data-relay-workbench-link="true"
@@ -328,7 +328,7 @@ templ WorkbenchStepLink(runID int64, step string, className string) {
 		hx-get={"/runs/" + Itoa(runID) + "?step=" + step}
 		hx-target="#run-workbench-shell"
 		hx-select="#run-workbench-shell"
-		hx-swap="outerHTML show:#run-workbench-shell:top"
+		hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
 		hx-push-url="true"
 		hx-indicator="#run-workbench-loading"
 		data-relay-workbench-link="true"
@@ -342,7 +342,7 @@ templ WorkbenchActionForm(runID int64, action string, className string) {
 		hx-post={"/runs/" + Itoa(runID) + "/actions"}
 		hx-target="#run-workbench-shell"
 		hx-select="#run-workbench-shell"
-		hx-swap="outerHTML show:#run-workbench-shell:top"
+		hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
 		hx-indicator="#run-workbench-loading"
 		data-relay-workbench-action="true"
 		class={className}>

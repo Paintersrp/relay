@@ -8,7 +8,10 @@ package views
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-import "relay/internal/store"
+import (
+	"relay/internal/store"
+	"sort"
+)
 
 type artifactGroupDef struct {
 	Label string
@@ -71,7 +74,7 @@ func RunDetailsRail(run *store.Run, repo *store.Repo, artifacts []store.Artifact
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(len(artifacts))))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 29, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 32, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -92,7 +95,7 @@ func RunDetailsRail(run *store.Run, repo *store.Repo, artifacts []store.Artifact
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(len(events))))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 41, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 44, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -151,7 +154,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(repo.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 70, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 73, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -171,7 +174,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(run.BranchName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 80, Col: 22}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 83, Col: 22}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
@@ -191,7 +194,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(run.SelectedModel)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 90, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 93, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -232,7 +235,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(run.Status)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 98, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 101, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -272,7 +275,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(previews.NextAction.Title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 104, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 107, Col: 99}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -290,7 +293,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(len(artifacts))))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 110, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 113, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -394,7 +397,7 @@ func ArtifactShortcutGroups(runID int64, artifacts []store.Artifact) templ.Compo
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(group.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 158, Col: 96}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 161, Col: 96}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
@@ -412,7 +415,7 @@ func ArtifactShortcutGroups(runID int64, artifacts []store.Artifact) templ.Compo
 					var templ_7745c5c3_Var17 templ.SafeURL
 					templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/artifacts/" + kind)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 161, Col: 62}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 164, Col: 62}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 					if templ_7745c5c3_Err != nil {
@@ -425,7 +428,7 @@ func ArtifactShortcutGroups(runID int64, artifacts []store.Artifact) templ.Compo
 					var templ_7745c5c3_Var18 string
 					templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(shortArtifactLabel(kind))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 163, Col: 35}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 166, Col: 35}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 					if templ_7745c5c3_Err != nil {
@@ -514,7 +517,7 @@ func LatestEventsSummary(events []store.Event, runID int64) templ.Component {
 				var templ_7745c5c3_Var20 string
 				templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(e.Message)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 192, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 195, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 				if templ_7745c5c3_Err != nil {
@@ -621,10 +624,43 @@ func shortArtifactLabel(kind string) string {
 }
 
 func latestEvents(events []store.Event, n int) []store.Event {
-	if len(events) <= n {
-		return events
+	if len(events) == 0 {
+		return nil
 	}
-	return events[:n]
+	sorted := make([]store.Event, len(events))
+	copy(sorted, events)
+
+	hasTimestamps := false
+	for _, e := range sorted {
+		if e.CreatedAt != "" {
+			hasTimestamps = true
+			break
+		}
+	}
+
+	if hasTimestamps {
+		sort.SliceStable(sorted, func(i, j int) bool {
+			if sorted[i].CreatedAt == "" {
+				return false
+			}
+			if sorted[j].CreatedAt == "" {
+				return true
+			}
+			return sorted[i].CreatedAt > sorted[j].CreatedAt
+		})
+	}
+
+	if hasTimestamps {
+		if len(sorted) <= n {
+			return sorted
+		}
+		return sorted[:n]
+	}
+	// No timestamps: preserve order, take last n as fallback for newest
+	if len(sorted) <= n {
+		return sorted
+	}
+	return sorted[len(sorted)-n:]
 }
 
 var _ = templruntime.GeneratedTemplate

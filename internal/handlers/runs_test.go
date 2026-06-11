@@ -3,9 +3,11 @@ package handlers
 import (
 	"log/slog"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -13,6 +15,10 @@ import (
 	"relay/internal/pipeline"
 	"relay/internal/store"
 )
+
+func itoa(v int64) string {
+	return strconv.FormatInt(v, 10)
+}
 
 func TestDefaultActiveRunStep_StartsAtIntakeAfterAutoSetup(t *testing.T) {
 	artifacts := []store.Artifact{
@@ -305,6 +311,121 @@ func gitAddCommit(t *testing.T, dir string, msg string) {
 	out, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git commit: %v\n%s", err, out)
+	}
+}
+
+func TestValidateHandoffReadySetsHXPushURLToStepPrompt(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.validateHandoff(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasSuffix(loc, "?step=prompt") {
+		t.Errorf("expected redirect to step=prompt, got %s", loc)
+	}
+	pus := w.Header().Get("HX-Push-Url")
+	if pus != "/runs/"+itoa(runID)+"?step=prompt" {
+		t.Errorf("expected HX-Push-Url /runs/%d?step=prompt, got %q", runID, pus)
+	}
+}
+
+func TestValidateHandoffBlockedSetsHXPushURLToStepIntake(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, blockedHandoff())
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.validateHandoff(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasSuffix(loc, "?step=intake") {
+		t.Errorf("expected redirect to step=intake, got %s", loc)
+	}
+	pus := w.Header().Get("HX-Push-Url")
+	if pus != "/runs/"+itoa(runID)+"?step=intake" {
+		t.Errorf("expected HX-Push-Url /runs/%d?step=intake, got %q", runID, pus)
+	}
+}
+
+func TestAcceptValidationFailureSuccessSetsHXPushURLToStepAudit(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	s.CreateCheck(runID, "validation_run", "fail", "Failed validation", "{}")
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.acceptValidationFailure(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasSuffix(loc, "?step=audit") {
+		t.Errorf("expected redirect to step=audit, got %s", loc)
+	}
+	pus := w.Header().Get("HX-Push-Url")
+	if pus != "/runs/"+itoa(runID)+"?step=audit" {
+		t.Errorf("expected HX-Push-Url /runs/%d?step=audit, got %q", runID, pus)
+	}
+}
+
+func TestAcceptValidationFailureNoFailedCheckSetsHXPushURLToStepValidation(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.acceptValidationFailure(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasSuffix(loc, "?step=validation") {
+		t.Errorf("expected redirect to step=validation, got %s", loc)
+	}
+	pus := w.Header().Get("HX-Push-Url")
+	if pus != "/runs/"+itoa(runID)+"?step=validation" {
+		t.Errorf("expected HX-Push-Url /runs/%d?step=validation, got %q", runID, pus)
+	}
+}
+
+func TestSubmitAgentResultSuccessSetsHXPushURLToStepValidation(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	form := url.Values{}
+	form.Set("agent_result_text", "DONE\nStatus: pass\nBuild: pass\nTests: pass\n")
+	req := httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.submitAgentResult(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasSuffix(loc, "?step=validation") {
+		t.Errorf("expected redirect to step=validation, got %s", loc)
+	}
+	pus := w.Header().Get("HX-Push-Url")
+	if pus != "/runs/"+itoa(runID)+"?step=validation" {
+		t.Errorf("expected HX-Push-Url /runs/%d?step=validation, got %q", runID, pus)
 	}
 }
 

@@ -105,6 +105,61 @@
   .htmx-request .relay-stage-panel-card {
     @apply opacity-65;
   }
+  .htmx-request .relay-details-rail {
+    @apply opacity-70;
+  }
+  .htmx-request .relay-inspector-summary {
+    @apply opacity-70;
+  }
+
+  .htmx-settling .relay-stage-panel-card {
+    @apply opacity-90;
+    transition: opacity 150ms ease-out;
+  }
+  .htmx-settling .relay-details-rail {
+    @apply opacity-90;
+    transition: opacity 150ms ease-out;
+  }
+
+  .relay-stage-panel-card {
+    transition: opacity 150ms ease-out;
+  }
+  .relay-details-rail {
+    transition: opacity 150ms ease-out;
+  }
+  .relay-stage-evidence-row {
+    transition: opacity 120ms ease-out, border-color 200ms ease-out;
+  }
+  .relay-detail-card {
+    transition: opacity 120ms ease-out;
+  }
+  .relay-inspector-summary {
+    transition: opacity 150ms ease-out;
+  }
+
+  .relay-workbench-loading {
+    transition: opacity 200ms ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .relay-stage-panel-card,
+    .relay-details-rail,
+    .relay-stage-evidence-row,
+    .relay-detail-card,
+    .relay-inspector-summary {
+      transition: none;
+    }
+    .htmx-request .relay-stage-panel-card,
+    .htmx-request .relay-details-rail,
+    .htmx-request .relay-inspector-summary {
+      @apply opacity-100;
+    }
+    .htmx-settling .relay-stage-panel-card,
+    .htmx-settling .relay-details-rail {
+      @apply opacity-100;
+      transition: none;
+    }
+  }
 
   .relay-stage-evidence-list {
     @apply space-y-1;

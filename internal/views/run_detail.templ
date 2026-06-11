@@ -70,7 +70,7 @@ templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 							hx-target="#run-workbench-shell"
 							hx-select="#run-workbench-shell"
-							hx-swap="outerHTML show:#run-workbench-shell:top"
+							hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
 							hx-indicator="#run-workbench-loading"
 							data-relay-workbench-action="true"
 							class="w-full sm:w-auto">
@@ -93,7 +93,7 @@ templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 							hx-get={"/runs/" + Itoa(run.ID) + "?step=" + previews.NextAction.Step}
 							hx-target="#run-workbench-shell"
 							hx-select="#run-workbench-shell"
-							hx-swap="outerHTML show:#run-workbench-shell:top"
+							hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
 							hx-push-url="true"
 							hx-indicator="#run-workbench-loading"
 							data-relay-workbench-link="true"
@@ -114,7 +114,7 @@ templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 							hx-get={"/runs/" + Itoa(run.ID) + "?step=" + previews.NextAction.Step}
 							hx-target="#run-workbench-shell"
 							hx-select="#run-workbench-shell"
-							hx-swap="outerHTML show:#run-workbench-shell:top"
+							hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
 							hx-push-url="true"
 							hx-indicator="#run-workbench-loading"
 							data-relay-workbench-link="true"

@@ -32,8 +32,24 @@ function initWorkbenchSwapFocus(): void {
   });
 }
 
+function initWorkbenchBusyIndicator(): void {
+  document.body.addEventListener('htmx:beforeRequest', (event) => {
+    const detail = (event as CustomEvent).detail;
+    const target = detail?.target as HTMLElement | undefined;
+    if (target?.id !== 'run-workbench-shell') return;
+    target.setAttribute('aria-busy', 'true');
+  });
+  document.body.addEventListener('htmx:afterSettle', (event) => {
+    const detail = (event as CustomEvent).detail;
+    const target = detail?.target as HTMLElement | undefined;
+    if (target?.id !== 'run-workbench-shell') return;
+    target.removeAttribute('aria-busy');
+  });
+}
+
 initDelegatedCopyControls();
 initWorkbenchSwapFocus();
+initWorkbenchBusyIndicator();
 
 function initDevReload(): void {
   const marker = document.querySelector('meta[name="relay-dev-reload"][content="enabled"]');

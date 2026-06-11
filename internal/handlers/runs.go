@@ -707,7 +707,7 @@ func (h *RunsHandler) preparePrompt(w http.ResponseWriter, r *http.Request, runI
 		h.store.CreateEvent(runID, "warn",
 			"Cannot generate Agent Prompt while Intake Review has blockers: "+strings.Join(review.Blockers, "; "))
 		setHXPushURL(w, runID, "intake")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
 		return
 	}
 
@@ -1205,7 +1205,7 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 	if repo.Path == "" {
 		h.store.CreateEvent(runID, "warn", "No repo path configured for validation commands")
 		setHXPushURL(w, runID, "intake")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
 		return
 	}
 
@@ -1213,7 +1213,7 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 	if err != nil || !info.IsDir() {
 		h.store.CreateEvent(runID, "warn", "Repo path does not exist or is not a directory: "+repo.Path)
 		setHXPushURL(w, runID, "intake")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
 		return
 	}
 
@@ -1227,7 +1227,7 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 	if len(commands) == 0 {
 		h.store.CreateEvent(runID, "warn", "No validation commands found")
 		setHXPushURL(w, runID, "intake")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10), http.StatusSeeOther)
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
 		return
 	}
 

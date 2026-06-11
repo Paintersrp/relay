@@ -58,6 +58,77 @@ func TestRelayValidationUIStateCompletedRegardlessOfAgentResult(t *testing.T) {
 	}
 }
 
+func TestStageNavigationLinksIncludeSettleTiming(t *testing.T) {
+	var buf strings.Builder
+	err := PipelineStageRail(1, RunPreviews{}, nil, nil, nil, "intake").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render PipelineStageRail: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `settle:120ms`) {
+		t.Errorf("expected settle:120ms in hx-swap on stage rail links, got: %s", html)
+	}
+}
+
+func TestStageStripLinksIncludeSettleTiming(t *testing.T) {
+	var buf strings.Builder
+	err := PipelineStageStrip(1, RunPreviews{}, nil, nil, nil, "intake").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render PipelineStageStrip: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `settle:120ms`) {
+		t.Errorf("expected settle:120ms in hx-swap on stage strip links, got: %s", html)
+	}
+}
+
+func TestStepFlowFooterLinksIncludeSettleTiming(t *testing.T) {
+	var buf strings.Builder
+	err := StepFlowFooter(1, "validation").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render StepFlowFooter: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `settle:120ms`) {
+		t.Errorf("expected settle:120ms in hx-swap on footer links, got: %s", html)
+	}
+}
+
+func TestWorkbenchActionFormIncludesSettleTiming(t *testing.T) {
+	var buf strings.Builder
+	err := WorkbenchActionForm(1, "test-action", "w-full").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render WorkbenchActionForm: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `settle:120ms`) {
+		t.Errorf("expected settle:120ms in hx-swap on action form, got: %s", html)
+	}
+}
+
+func TestRunInspectorActionFormIncludesSettleTiming(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	previews := RunPreviews{
+		NextAction: WorkbenchNextActionView{
+			Kind:              "generate_agent_prompt",
+			Title:             "Generate the Agent Prompt",
+			Summary:           "Ready",
+			Step:              "prompt",
+			PrimaryFormAction: "prepare-prompt",
+			Severity:          "ready",
+		},
+	}
+	err := RunInspectorSummary(run, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunInspectorSummary: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `settle:120ms`) {
+		t.Errorf("expected settle:120ms in hx-swap on inspector summary, got: %s", html)
+	}
+}
+
 func TestRunDetailRendersWorkbenchShell(t *testing.T) {
 	var buf strings.Builder
 	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
@@ -1018,31 +1089,100 @@ func TestShortArtifactLabel(t *testing.T) {
 	}
 }
 
-func TestLatestEvents(t *testing.T) {
-	// Events arrive newest-to-oldest (ORDER BY created_at DESC)
-	events := make([]store.Event, 5)
-	for i := 0; i < 5; i++ {
-		events[i] = store.Event{Message: Itoa(int64(i))}
+func TestLatestEventsDeterministicWithTimestampsNewestFirst(t *testing.T) {
+	events := []store.Event{
+		{CreatedAt: "2024-01-03T00:00:00Z", Message: "oldest"},
+		{CreatedAt: "2024-01-05T00:00:00Z", Message: "newest"},
+		{CreatedAt: "2024-01-04T00:00:00Z", Message: "middle"},
 	}
 	result := latestEvents(events, 3)
 	if len(result) != 3 {
-		t.Errorf("expected 3 events, got %d", len(result))
+		t.Fatalf("expected 3 events, got %d", len(result))
 	}
-	// newest first — index 0 is the most recent
-	if result[0].Message != "0" {
-		t.Errorf("expected first to be index 0 (newest), got %s", result[0].Message)
+	if result[0].Message != "newest" {
+		t.Errorf("expected newest first, got %s", result[0].Message)
 	}
-	if result[2].Message != "2" {
-		t.Errorf("expected last to be index 2, got %s", result[2].Message)
+	if result[1].Message != "middle" {
+		t.Errorf("expected middle second, got %s", result[1].Message)
 	}
-	// Test when fewer events than n
-	short := make([]store.Event, 2)
-	for i := 0; i < 2; i++ {
-		short[i] = store.Event{Message: Itoa(int64(i))}
+	if result[2].Message != "oldest" {
+		t.Errorf("expected oldest last, got %s", result[2].Message)
 	}
-	result2 := latestEvents(short, 3)
-	if len(result2) != 2 {
-		t.Errorf("expected 2 events when only 2 available, got %d", len(result2))
+}
+
+func TestLatestEventsDeterministicWithTimestampsOldestFirst(t *testing.T) {
+	events := []store.Event{
+		{CreatedAt: "2024-01-01T00:00:00Z", Message: "first"},
+		{CreatedAt: "2024-01-02T00:00:00Z", Message: "second"},
+		{CreatedAt: "2024-01-03T00:00:00Z", Message: "third"},
+	}
+	result := latestEvents(events, 2)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(result))
+	}
+	if result[0].Message != "third" {
+		t.Errorf("expected third (newest) first, got %s", result[0].Message)
+	}
+	if result[1].Message != "second" {
+		t.Errorf("expected second second, got %s", result[1].Message)
+	}
+}
+
+func TestLatestEventsNoTimestampsTakesLastN(t *testing.T) {
+	events := []store.Event{
+		{Message: "first"},
+		{Message: "second"},
+		{Message: "third"},
+		{Message: "fourth"},
+		{Message: "fifth"},
+	}
+	result := latestEvents(events, 3)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(result))
+	}
+	if result[0].Message != "third" {
+		t.Errorf("expected third (last-2) first, got %s", result[0].Message)
+	}
+	if result[1].Message != "fourth" {
+		t.Errorf("expected fourth (last-1) second, got %s", result[1].Message)
+	}
+	if result[2].Message != "fifth" {
+		t.Errorf("expected fifth (last) third, got %s", result[2].Message)
+	}
+}
+
+func TestLatestEventsEmptyReturnsNil(t *testing.T) {
+	result := latestEvents(nil, 3)
+	if result != nil {
+		t.Errorf("expected nil for empty input")
+	}
+}
+
+func TestLatestEventsFewerThanN(t *testing.T) {
+	events := []store.Event{
+		{CreatedAt: "2024-01-02T00:00:00Z", Message: "b"},
+		{CreatedAt: "2024-01-01T00:00:00Z", Message: "a"},
+	}
+	result := latestEvents(events, 5)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(result))
+	}
+	if result[0].Message != "b" {
+		t.Errorf("expected b (newest) first, got %s", result[0].Message)
+	}
+}
+
+func TestLatestEventsDoesNotMutateOriginal(t *testing.T) {
+	original := []store.Event{
+		{CreatedAt: "2024-01-01T00:00:00Z", Message: "first"},
+		{CreatedAt: "2024-01-02T00:00:00Z", Message: "second"},
+	}
+	_ = latestEvents(original, 1)
+	if original[0].Message != "first" {
+		t.Errorf("original should not be mutated, got %s", original[0].Message)
+	}
+	if original[1].Message != "second" {
+		t.Errorf("original should not be mutated, got %s", original[1].Message)
 	}
 }
 
