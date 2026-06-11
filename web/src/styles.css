@@ -22,6 +22,18 @@
   .relay-card-header {
     @apply flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3;
   }
+  .relay-dashboard-run-card {
+    @apply rounded-xl border border-gray-800 bg-gray-900/50 p-4 min-w-0 break-words space-y-2;
+  }
+  .relay-dashboard-run-card-title {
+    @apply text-indigo-400 hover:text-indigo-300 font-medium break-words leading-snug;
+  }
+  .relay-dashboard-run-meta {
+    @apply text-xs text-gray-500 space-y-1;
+  }
+  .relay-dashboard-run-meta-row {
+    @apply flex flex-wrap items-center gap-x-3 min-w-0;
+  }
   .relay-chip {
     @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium;
   }
