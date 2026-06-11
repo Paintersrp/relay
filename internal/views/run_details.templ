@@ -1,0 +1,274 @@
+package views
+
+import "relay/internal/store"
+
+type artifactGroupDef struct {
+	Label string
+	Kinds []string
+}
+
+var artifactGroups = []artifactGroupDef{
+	{Label: "Intake / Prompt", Kinds: []string{"original_handoff", "intake_remediation_handoff", "agent_prompt"}},
+	{Label: "Agent / OpenCode", Kinds: []string{"opencode_handoff_packet", "opencode_cli_check_json", "opencode_dry_run_json", "opencode_stdout", "opencode_stderr", "opencode_combined_log", "agent_result_raw", "agent_result_json"}},
+	{Label: "Validation", Kinds: []string{"validation_progress_json", "validation_run_json", "validation_stdout", "validation_stderr"}},
+	{Label: "Diff / Audit", Kinds: []string{"git_status_text", "git_diff_name_status", "git_diff_stat", "git_diff_patch", "audit_handoff"}},
+	{Label: "Commit", Kinds: []string{"commit_message_text", "commit_suggestion_json"}},
+}
+
+templ RunDetailsRail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews) {
+	<aside class="relay-details-rail" aria-label="Run details">
+		@RunDetailsSummary(run, repo, previews, artifacts, checks)
+		@ArtifactShortcutGroups(run.ID, artifacts)
+		@LatestEventsSummary(events, run.ID)
+		@RunMaterialsDisclosure(previews)
+
+		<details class="relay-detail-card relay-detail-disclosure">
+			<summary class="relay-detail-summary">
+				<div class="flex items-center justify-between w-full">
+					<span class="font-medium text-sm">All Artifacts</span>
+					<span class="text-xs text-gray-500">{ Itoa(int64(len(artifacts))) } files</span>
+				</div>
+			</summary>
+			<div class="mt-2">
+				@ArtifactList(artifacts, run.ID)
+			</div>
+		</details>
+
+		<details class="relay-detail-card relay-detail-disclosure">
+			<summary class="relay-detail-summary">
+				<div class="flex items-center justify-between w-full">
+					<span class="font-medium text-sm">Full Event Log</span>
+					<span class="text-xs text-gray-500">{ Itoa(int64(len(events))) } events</span>
+				</div>
+			</summary>
+			<div class="mt-2">
+				@EventLog(events)
+			</div>
+		</details>
+
+		<details class="relay-detail-card relay-detail-disclosure">
+			<summary class="relay-detail-summary">
+				<div class="flex items-center justify-between w-full">
+					<span class="font-medium text-sm">Manual Status Controls</span>
+					<span class="text-xs text-gray-500">low priority</span>
+				</div>
+			</summary>
+			<p class="text-xs text-gray-500 mt-1 mb-2">Mark accepted and mark needs cleanup are manual overrides for run completion status.</p>
+			@ActionButtons(run.ID)
+		</details>
+	</aside>
+}
+
+templ RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, artifacts []store.Artifact, checks []store.Check) {
+	<div class="relay-detail-card">
+		<div class="relay-detail-card-header">Run Details</div>
+		<div class="relay-detail-list">
+			<div class="relay-detail-row">
+				<span class="relay-detail-label">Repo</span>
+				<span class="relay-detail-value">
+					if repo != nil && repo.Name != "" {
+						{ repo.Name }
+					} else {
+						<span class="text-gray-600">not set</span>
+					}
+				</span>
+			</div>
+			<div class="relay-detail-row">
+				<span class="relay-detail-label">Branch</span>
+				<span class="relay-detail-value">
+					if run.BranchName != "" {
+						{ run.BranchName }
+					} else {
+						<span class="text-gray-600">not set</span>
+					}
+				</span>
+			</div>
+			<div class="relay-detail-row">
+				<span class="relay-detail-label">Model</span>
+				<span class="relay-detail-value">
+					if run.SelectedModel != "" {
+						{ run.SelectedModel }
+					} else {
+						<span class="text-gray-600">not set</span>
+					}
+				</span>
+			</div>
+			<div class="relay-detail-row">
+				<span class="relay-detail-label">Status</span>
+				<span class={ statusBadge(run.Status) }>{ run.Status }</span>
+			</div>
+			if previews.NextAction.Kind != "" && previews.NextAction.Kind != "none" {
+				<div class="relay-detail-row">
+					<span class="relay-detail-label">Current Gate</span>
+					<span>
+						<span class={ nextActionChipClass(previews.NextAction.Severity) }>{ previews.NextAction.Title }</span>
+					</span>
+				</div>
+			}
+			<div class="relay-detail-row">
+				<span class="relay-detail-label">Artifacts</span>
+				<span class="relay-detail-value">{ Itoa(int64(len(artifacts))) }</span>
+			</div>
+			<div class="relay-detail-row">
+				<span class="relay-detail-label">Validation</span>
+				<span class="relay-detail-value">
+					if hasCheckStatus(checks, "validation_run", "pass") {
+						<span class="text-green-400">passed</span>
+					} else if hasCheckStatus(checks, "validation_run", "fail") {
+						<span class="text-red-400">failed</span>
+					} else if artifactExists(artifacts, "validation_run_json") {
+						<span class="text-blue-400">ran</span>
+					} else {
+						<span class="text-gray-600">pending</span>
+					}
+				</span>
+			</div>
+			<div class="relay-detail-row">
+				<span class="relay-detail-label">Audit</span>
+				<span class="relay-detail-value">
+					if previews.HasAuditHandoff {
+						<span class="text-green-400">ready</span>
+					} else {
+						<span class="text-gray-600">pending</span>
+					}
+				</span>
+			</div>
+			<div class="relay-detail-row">
+				<span class="relay-detail-label">Commit</span>
+				<span class="relay-detail-value">
+					if previews.HasCommitSuggestion {
+						<span class="text-green-400">ready</span>
+					} else {
+						<span class="text-gray-600">pending</span>
+					}
+				</span>
+			</div>
+		</div>
+	</div>
+}
+
+templ ArtifactShortcutGroups(runID int64, artifacts []store.Artifact) {
+	<div class="relay-detail-card">
+		<div class="relay-detail-card-header">Artifact Shortcuts</div>
+		<div class="relay-detail-list">
+			for _, group := range artifactGroups {
+				{{ kinds := filterArtifactKinds(artifacts, group.Kinds) }}
+				if len(kinds) > 0 {
+					<div class="px-3 py-2">
+						<div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">{ group.Label }</div>
+						<div class="flex flex-wrap gap-1.5">
+							for _, kind := range kinds {
+								<a href={"/runs/" + Itoa(runID) + "/artifacts/" + kind}
+									class="inline-flex items-center px-2 py-1 text-xs rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors break-all">
+									{ shortArtifactLabel(kind) }
+								</a>
+							}
+						</div>
+					</div>
+				}
+			}
+		</div>
+	</div>
+}
+
+templ LatestEventsSummary(events []store.Event, runID int64) {
+	<div class="relay-detail-card">
+		<div class="relay-detail-card-header">Latest Events</div>
+		<div class="relay-detail-list">
+			if len(events) == 0 {
+				<p class="text-xs text-gray-600 px-3 py-2">No events yet.</p>
+			} else {
+				<div class="space-y-0 divide-y divide-gray-800/50">
+					{{ display := latestEvents(events, 3) }}
+					for _, e := range display {
+						<div class="px-3 py-1.5 text-xs flex items-start gap-2 min-w-0">
+							if e.Level == "warn" {
+								<span class="text-yellow-400 font-mono text-[10px] shrink-0 mt-0.5">WARN</span>
+							} else if e.Level == "error" {
+								<span class="text-red-400 font-mono text-[10px] shrink-0 mt-0.5">ERR</span>
+							} else {
+								<span class="text-gray-500 font-mono text-[10px] shrink-0 mt-0.5">INFO</span>
+							}
+							<span class="text-gray-400 min-w-0 break-words">{ e.Message }</span>
+						</div>
+					}
+				</div>
+				if len(events) > 3 {
+					<details class="relay-detail-disclosure border-t border-gray-800/50">
+						<summary class="relay-detail-summary px-3 py-1.5">
+							<span class="text-xs text-indigo-400 hover:text-indigo-300">View all { Itoa(int64(len(events))) } events</span>
+						</summary>
+						<div class="max-h-48 overflow-y-auto">
+							@EventLog(events)
+						</div>
+					</details>
+				}
+			}
+		</div>
+	</div>
+}
+
+templ RunMaterialsDisclosure(previews RunPreviews) {
+	<details class="relay-detail-card relay-detail-disclosure">
+		<summary class="relay-detail-summary">
+			<div class="flex items-center justify-between w-full">
+				<span class="font-medium text-sm">Raw Run Materials</span>
+				<span class="text-xs text-gray-500">collapsed</span>
+			</div>
+		</summary>
+		<p class="text-xs text-gray-500 mt-1 mb-2">Original handoff, validation report, and agent prompt previews.</p>
+		@RunPreviewPanels(previews)
+	</details>
+}
+
+func filterArtifactKinds(artifacts []store.Artifact, kinds []string) []string {
+	exists := make(map[string]bool)
+	for _, a := range artifacts {
+		exists[a.Kind] = true
+	}
+	var result []string
+	for _, k := range kinds {
+		if exists[k] {
+			result = append(result, k)
+		}
+	}
+	return result
+}
+
+func shortArtifactLabel(kind string) string {
+	labels := map[string]string{
+		"original_handoff":          "handoff",
+		"intake_remediation_handoff": "fix handoff",
+		"agent_prompt":              "prompt",
+		"opencode_handoff_packet":   "packet",
+		"opencode_cli_check_json":   "CLI check",
+		"opencode_dry_run_json":     "dry run",
+		"opencode_stdout":           "stdout",
+		"opencode_stderr":           "stderr",
+		"opencode_combined_log":     "combined log",
+		"agent_result_raw":          "result raw",
+		"agent_result_json":         "result JSON",
+		"validation_progress_json":  "progress",
+		"validation_run_json":       "run JSON",
+		"validation_stdout":         "val stdout",
+		"validation_stderr":         "val stderr",
+		"git_status_text":           "git status",
+		"git_diff_name_status":      "diff names",
+		"git_diff_stat":             "diff stat",
+		"git_diff_patch":            "diff patch",
+		"audit_handoff":             "audit",
+		"commit_message_text":       "commit msg",
+		"commit_suggestion_json":    "commit JSON",
+	}
+	if l, ok := labels[kind]; ok {
+		return l
+	}
+	return kind
+}
+
+func latestEvents(events []store.Event, n int) []store.Event {
+	if len(events) <= n {
+		return events
+	}
+	return events[len(events)-n:]
+}

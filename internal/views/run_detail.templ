@@ -48,68 +48,7 @@ templ RunInspectorShell(run *store.Run, repo *store.Repo, artifacts []store.Arti
 		<main class="relay-stage-panel" aria-live="polite">
 			@SelectedStagePanel(run, repo, artifacts, checks, previews, intakeReview, activeStep)
 		</main>
-	</div>
-
-	<div class="relay-workbench-secondary" x-data="{ materialsOpen: false, artifactsOpen: false, eventsOpen: false, legacyOpen: false }">
-		<div class="relay-secondary-toggle">
-			<button type="button"
-				@click="materialsOpen = !materialsOpen"
-				class="w-full text-left">
-				<div class="flex items-center justify-between">
-					<span class="font-medium text-sm">Run materials</span>
-					<span class="text-xs text-gray-500" x-text="materialsOpen ? 'Hide' : 'Show'"></span>
-				</div>
-				<p class="text-xs text-gray-500 mt-0.5">Original handoff, validation report, and agent prompt previews.</p>
-			</button>
-			<div x-show="materialsOpen" class="mt-2">
-				@RunPreviewPanels(previews)
-			</div>
-		</div>
-
-		<div class="relay-secondary-toggle">
-			<button type="button"
-				@click="artifactsOpen = !artifactsOpen"
-				class="w-full text-left">
-				<div class="flex items-center justify-between">
-					<span class="font-medium text-sm">Artifacts</span>
-					<span class="text-xs text-gray-500" x-text="artifactsOpen ? 'Hide' : 'Show'"></span>
-				</div>
-				<p class="text-xs text-gray-500 mt-0.5">Generated files and downloadable run outputs.</p>
-			</button>
-			<div x-show="artifactsOpen" class="mt-2">
-				@ArtifactList(artifacts, run.ID)
-			</div>
-		</div>
-
-		<div class="relay-secondary-toggle">
-			<button type="button"
-				@click="eventsOpen = !eventsOpen"
-				class="w-full text-left">
-				<div class="flex items-center justify-between">
-					<span class="font-medium text-sm">Events</span>
-					<span class="text-xs text-gray-500" x-text="eventsOpen ? 'Hide' : 'Show'"></span>
-				</div>
-				<p class="text-xs text-gray-500 mt-0.5">Chronological run activity and warnings.</p>
-			</button>
-			<div x-show="eventsOpen" class="mt-2">
-				@EventLog(events)
-			</div>
-		</div>
-
-		<div class="relay-secondary-toggle">
-			<button type="button"
-				@click="legacyOpen = !legacyOpen"
-				class="w-full text-left">
-				<div class="flex items-center justify-between">
-					<span class="font-medium text-sm">Legacy actions</span>
-					<span class="text-xs text-gray-500" x-text="legacyOpen ? 'Hide' : 'Show'"></span>
-				</div>
-				<p class="text-xs text-gray-500 mt-0.5">Mark accepted and mark needs cleanup.</p>
-			</button>
-			<div x-show="legacyOpen" class="mt-2">
-				@ActionButtons(run.ID)
-			</div>
-		</div>
+		@RunDetailsRail(run, repo, artifacts, checks, events, previews)
 	</div>
 }
 

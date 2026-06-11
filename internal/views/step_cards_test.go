@@ -640,6 +640,352 @@ func TestCommitStageShowsCommitSuggestionEvidence(t *testing.T) {
 	}
 }
 
+func TestRunDetailsRailRendersOnDesktop(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft", BranchName: "main", SelectedModel: "gpt-4"}
+	repo := &store.Repo{Name: "test-repo"}
+	artifacts := []store.Artifact{
+		{Kind: "original_handoff", CreatedAt: "2024-01-01"},
+		{Kind: "agent_prompt", CreatedAt: "2024-01-01"},
+	}
+	checks := []store.Check{
+		{Kind: "validation_run", Status: "pass"},
+	}
+	previews := RunPreviews{
+		NextAction: WorkbenchNextActionView{
+			Kind:     "generate_agent_prompt",
+			Title:    "Generate Agent Prompt",
+			Severity: "ready",
+		},
+		HasAuditHandoff:     true,
+		HasCommitSuggestion: true,
+	}
+	err := RunDetailsRail(run, repo, artifacts, checks, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunDetailsRail: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `aria-label="Run details"`) {
+		t.Errorf("expected Run details aria-label")
+	}
+	if !strings.Contains(html, "relay-details-rail") {
+		t.Errorf("expected relay-details-rail class")
+	}
+	if !strings.Contains(html, "test-repo") {
+		t.Errorf("expected repo name")
+	}
+	if !strings.Contains(html, "main") {
+		t.Errorf("expected branch name")
+	}
+	if !strings.Contains(html, "gpt-4") {
+		t.Errorf("expected model name")
+	}
+	if !strings.Contains(html, "draft") {
+		t.Errorf("expected run status")
+	}
+	if !strings.Contains(html, "Generate Agent Prompt") {
+		t.Errorf("expected current gate title")
+	}
+	// artifact count
+	if !strings.Contains(html, "2") {
+		t.Errorf("expected artifact count 2")
+	}
+	if !strings.Contains(html, "passed") {
+		t.Errorf("expected validation status passed")
+	}
+	if !strings.Contains(html, "ready") {
+		t.Errorf("expected ready status for audit")
+	}
+	if !strings.Contains(html, "Manual Status Controls") {
+		t.Errorf("expected legacy actions section")
+	}
+}
+
+func TestRunDetailsSummaryRendersLabels(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	err := RunDetailsSummary(run, nil, RunPreviews{}, nil, nil).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunDetailsSummary: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Repo") {
+		t.Errorf("expected Repo label")
+	}
+	if !strings.Contains(html, "Branch") {
+		t.Errorf("expected Branch label")
+	}
+	if !strings.Contains(html, "Model") {
+		t.Errorf("expected Model label")
+	}
+	if !strings.Contains(html, "Status") {
+		t.Errorf("expected Status label")
+	}
+	if !strings.Contains(html, "not set") {
+		t.Errorf("expected not set for missing values")
+	}
+}
+
+func TestArtifactShortcutGroupsRenderNormalLinks(t *testing.T) {
+	var buf strings.Builder
+	artifacts := []store.Artifact{
+		{Kind: "original_handoff", CreatedAt: "2024-01-01"},
+		{Kind: "agent_prompt", CreatedAt: "2024-01-01"},
+		{Kind: "audit_handoff", CreatedAt: "2024-01-01"},
+	}
+	err := ArtifactShortcutGroups(1, artifacts).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render ArtifactShortcutGroups: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Intake / Prompt") {
+		t.Errorf("expected Intake / Prompt group label")
+	}
+	if !strings.Contains(html, "Diff / Audit") {
+		t.Errorf("expected Diff / Audit group label")
+	}
+	if !strings.Contains(html, `/artifacts/original_handoff`) {
+		t.Errorf("expected artifact href")
+	}
+	if !strings.Contains(html, `/artifacts/agent_prompt`) {
+		t.Errorf("expected artifact href for prompt")
+	}
+	if !strings.Contains(html, `/artifacts/audit_handoff`) {
+		t.Errorf("expected artifact href for audit")
+	}
+	if strings.Contains(html, `hx-target="#run-workbench-shell"`) {
+		t.Errorf("artifact shortcut links should not have shell hx-target")
+	}
+	if strings.Contains(html, `hx-get`) {
+		t.Errorf("artifact shortcut links should not have hx-get")
+	}
+}
+
+func TestLatestEventsSummaryRendersCompact(t *testing.T) {
+	var buf strings.Builder
+	events := []store.Event{
+		{Level: "info", Message: "Event 1", CreatedAt: "2024-01-01"},
+		{Level: "warn", Message: "Event 2", CreatedAt: "2024-01-01"},
+		{Level: "error", Message: "Event 3", CreatedAt: "2024-01-01"},
+	}
+	err := LatestEventsSummary(events, 1).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render LatestEventsSummary: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Latest Events") {
+		t.Errorf("expected Latest Events header")
+	}
+	if !strings.Contains(html, "Event 1") {
+		t.Errorf("expected event 1")
+	}
+	if !strings.Contains(html, "Event 2") {
+		t.Errorf("expected event 2")
+	}
+	if !strings.Contains(html, "Event 3") {
+		t.Errorf("expected event 3")
+	}
+	if strings.Contains(html, "View all") {
+		t.Errorf("should not show view all when exactly 3 events")
+	}
+	// Add a 4th event to trigger the disclosure
+	var buf2 strings.Builder
+	events4 := append(events, store.Event{Level: "info", Message: "Event 4", CreatedAt: "2024-01-01"})
+	err = LatestEventsSummary(events4, 1).Render(context.Background(), &buf2)
+	if err != nil {
+		t.Fatalf("render LatestEventsSummary with 4 events: %v", err)
+	}
+	html2 := buf2.String()
+	if !strings.Contains(html2, "View all 4 events") {
+		t.Errorf("expected View all link with count")
+	}
+}
+
+func TestLatestEventsSummaryShowsEmptyState(t *testing.T) {
+	var buf strings.Builder
+	err := LatestEventsSummary(nil, 1).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render LatestEventsSummary empty: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "No events yet.") {
+		t.Errorf("expected empty state")
+	}
+}
+
+func TestRunMaterialsDisclosureRemainsAvailable(t *testing.T) {
+	var buf strings.Builder
+	err := RunMaterialsDisclosure(RunPreviews{}).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunMaterialsDisclosure: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Raw Run Materials") {
+		t.Errorf("expected Raw Run Materials label")
+	}
+	if !strings.Contains(html, "Original Handoff") {
+		t.Errorf("expected Original Handoff preview reference")
+	}
+}
+
+func TestLegacyActionsRemainAvailableInRail(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	err := RunDetailsRail(run, nil, nil, nil, nil, RunPreviews{}).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunDetailsRail for legacy: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Manual Status Controls") {
+		t.Errorf("expected Manual Status Controls label")
+	}
+	if !strings.Contains(html, "Mark Accepted") {
+		t.Errorf("expected Mark Accepted button")
+	}
+	if !strings.Contains(html, "Mark Needs Cleanup") {
+		t.Errorf("expected Mark Needs Cleanup button")
+	}
+}
+
+func TestRunDetailsRailUsesMobileSafeClasses(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft", BranchName: "main", SelectedModel: "gpt-4"}
+	repo := &store.Repo{Name: "test-repo"}
+	artifacts := []store.Artifact{
+		{Kind: "original_handoff", CreatedAt: "2024-01-01"},
+	}
+	err := RunDetailsRail(run, repo, artifacts, nil, nil, RunPreviews{}).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunDetailsRail mobile: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "relay-details-rail") {
+		t.Errorf("expected relay-details-rail container")
+	}
+	if !strings.Contains(html, "relay-detail-value") {
+		t.Errorf("expected relay-detail-value class for break-all/min-w-0")
+	}
+	if !strings.Contains(html, "relay-detail-row") {
+		t.Errorf("expected relay-detail-row class for wrapping details")
+	}
+}
+
+func TestRunDetailsRailFullArtifactListAvailable(t *testing.T) {
+	var buf strings.Builder
+	artifacts := []store.Artifact{
+		{Kind: "original_handoff", CreatedAt: "2024-01-01"},
+	}
+	err := RunDetailsRail(&store.Run{ID: 1}, nil, artifacts, nil, nil, RunPreviews{}).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunDetailsRail full artifacts: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "All Artifacts") {
+		t.Errorf("expected All Artifacts disclosure")
+	}
+	if !strings.Contains(html, "1 files") {
+		t.Errorf("expected file count in disclosure header")
+	}
+	if !strings.Contains(html, `/artifacts/original_handoff`) {
+		t.Errorf("expected full artifact list to include artifact links")
+	}
+}
+
+func TestRunDetailRendersDetailsRailInInspectorShell(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	err := RunDetail(run, nil, nil, nil, nil, RunPreviews{}, nil, "intake").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunDetail for rail: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "relay-details-rail") {
+		t.Errorf("expected relay-details-rail class in RunDetail output")
+	}
+	if !strings.Contains(html, "aria-label=\"Run details\"") {
+		t.Errorf("expected Run details aria-label in RunDetail output")
+	}
+	if !strings.Contains(html, "Run Details") {
+		t.Errorf("expected Run Details card header")
+	}
+}
+
+func TestRunDetailGridIncludesRightRail(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	err := RunDetail(run, nil, nil, nil, nil, RunPreviews{}, nil, "intake").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunDetail for grid: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "relay-inspector-grid") {
+		t.Errorf("expected relay-inspector-grid class")
+	}
+	if !strings.Contains(html, "relay-details-rail") {
+		t.Errorf("expected details rail in run detail output")
+	}
+	if !strings.Contains(html, "run-workbench-shell") {
+		t.Errorf("expected workbench shell")
+	}
+}
+
+func TestFilterArtifactKinds(t *testing.T) {
+	artifacts := []store.Artifact{
+		{Kind: "original_handoff"},
+		{Kind: "agent_prompt"},
+		{Kind: "audit_handoff"},
+	}
+	kinds := []string{"original_handoff", "agent_prompt", "nonexistent"}
+	result := filterArtifactKinds(artifacts, kinds)
+	if len(result) != 2 {
+		t.Errorf("expected 2 matching kinds, got %d", len(result))
+	}
+	if result[0] != "original_handoff" {
+		t.Errorf("expected original_handoff first")
+	}
+	if result[1] != "agent_prompt" {
+		t.Errorf("expected agent_prompt second")
+	}
+}
+
+func TestShortArtifactLabel(t *testing.T) {
+	if shortArtifactLabel("original_handoff") != "handoff" {
+		t.Errorf("expected handoff")
+	}
+	if shortArtifactLabel("agent_prompt") != "prompt" {
+		t.Errorf("expected prompt")
+	}
+	if shortArtifactLabel("unknown_kind") != "unknown_kind" {
+		t.Errorf("expected passthrough for unknown kinds")
+	}
+}
+
+func TestLatestEvents(t *testing.T) {
+	events := make([]store.Event, 5)
+	for i := 0; i < 5; i++ {
+		events[i] = store.Event{Message: Itoa(int64(i))}
+	}
+	result := latestEvents(events, 3)
+	if len(result) != 3 {
+		t.Errorf("expected 3 events, got %d", len(result))
+	}
+	if result[0].Message != "2" {
+		t.Errorf("expected first to be index 2, got %s", result[0].Message)
+	}
+	if result[2].Message != "4" {
+		t.Errorf("expected last to be index 4, got %s", result[2].Message)
+	}
+	// Test when fewer events than n
+	short := make([]store.Event, 2)
+	for i := 0; i < 2; i++ {
+		short[i] = store.Event{Message: Itoa(int64(i))}
+	}
+	result2 := latestEvents(short, 3)
+	if len(result2) != 2 {
+		t.Errorf("expected 2 events when only 2 available, got %d", len(result2))
+	}
+}
+
 func TestEvidenceRowsUseMobileSafeClasses(t *testing.T) {
 	var buf strings.Builder
 	err := StageEvidenceRow("passed", "Test", "Summary", "meta").Render(context.Background(), &buf)
