@@ -1005,7 +1005,7 @@ func transcriptEventClass(kind string) string {
 }
 
 templ AgentRunMonitorStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
-	if isExecutionRunning(previews.OpenCodeExecutionStatus) {
+	if isExecutionRunning(previews.OpenCodeExecutionStatus) && !previews.HasOpenCodeStaleRunning {
 		<div id="agent-run-monitor"
 			hx-get={"/runs/" + Itoa(run.ID) + "?step=run"}
 			hx-trigger="every 2s"
@@ -1092,8 +1092,20 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 				}
 			}
 
-			if isRunning {
-				@StageEvidenceRow("running", "Status refreshes automatically", "Captured output appears after logs are saved.", "")
+			if isRunning && previews.HasOpenCodeStaleRunning {
+				@StageEvidenceRow("warning", "OpenCode output captured but execution still marked running", "Relay can reconcile the captured output and finish this step.", "") {
+					@WorkbenchActionForm(run.ID, "reconcile-opencode-result", "inline") {
+						<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+							Reconcile OpenCode Result
+						</button>
+					}
+				}
+			} else if isRunning {
+				if previews.HasOpenCodeStdout || previews.HasOpenCodeCombinedLog {
+					@StageEvidenceRow("running", "OpenCode is running — output captured", "Captured output and logs are available below.", "")
+				} else {
+					@StageEvidenceRow("running", "Status refreshes automatically", "Captured output appears after logs are saved.", "")
+				}
 			}
 
 			if previews.OpenCodeExecutionStatus == "failed" {

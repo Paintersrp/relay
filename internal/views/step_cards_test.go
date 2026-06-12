@@ -1603,3 +1603,69 @@ func TestOpenCodeHandoffStageShowsModelOverrideForm(t *testing.T) {
 		t.Errorf("expected settle:120ms in hx-swap on form")
 	}
 }
+
+func TestAgentRunTerminalStateDoesNotPoll(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	previews := RunPreviews{
+		HasOpenCodeExecution:    true,
+		OpenCodeExecutionStatus: "completed",
+		HasOpenCodeStdout:       true,
+		HasOpenCodeStderr:       true,
+	}
+	err := AgentRunMonitorStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
+	}
+	html := buf.String()
+	if strings.Contains(html, `hx-trigger="every 2s"`) {
+		t.Errorf("terminal execution should not have hx-trigger polling")
+	}
+	// stdout and combined log links should be present
+	if !strings.Contains(html, `download stdout`) {
+		t.Errorf("expected stdout download link for terminal execution")
+	}
+	if !strings.Contains(html, `download stderr`) {
+		t.Errorf("expected stderr download link for terminal execution")
+	}
+}
+
+func TestAgentRunStaleRunningWithCapturedOutputShowsRecoveryAction(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	previews := RunPreviews{
+		HasOpenCodeExecution:    true,
+		OpenCodeExecutionStatus: "running",
+		HasOpenCodeRunning:      true,
+		HasOpenCodeStaleRunning: true,
+		HasOpenCodeStdout:       true,
+		HasOpenCodeCombinedLog:  true,
+	}
+	err := AgentRunMonitorStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
+	}
+	html := buf.String()
+	// Should show recovery action
+	if !strings.Contains(html, "Reconcile OpenCode Result") {
+		t.Errorf("expected recovery action for stale running state, got: %s", html)
+	}
+	if !strings.Contains(html, "reconcile-opencode-result") {
+		t.Errorf("expected reconcile-opencode-result action input")
+	}
+	// Should NOT have hx-trigger polling for stale execution
+	if strings.Contains(html, `hx-trigger="every 2s"`) {
+		t.Errorf("stale running execution should not have hx-trigger polling, got: %s", html)
+	}
+	// Should show warning about captured output
+	if !strings.Contains(html, "output captured but execution still marked running") {
+		t.Errorf("expected warning about captured output, got: %s", html)
+	}
+	// Log artifact links should be present
+	if !strings.Contains(html, "download stdout") {
+		t.Errorf("expected stdout download link for stale running")
+	}
+	if !strings.Contains(html, "download combined log") {
+		t.Errorf("expected combined log download link for stale running")
+	}
+}

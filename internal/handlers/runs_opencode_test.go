@@ -2293,3 +2293,351 @@ func TestBuildOpenCodeTranscriptMaxEvents(t *testing.T) {
 		t.Fatalf("expected second event to be line3, got %q", events[1].Text)
 	}
 }
+
+// Helper to seed captured output artifacts with JSONL content.
+func seedOpenCodeOutputArtifacts(t *testing.T, s *store.Store, runID int64, stdout, stderr string) {
+	t.Helper()
+	if stdout != "" {
+		p, err := artifacts.Write(runID, "opencode_stdout", pipeline.ArtifactFilename("opencode_stdout"), []byte(stdout))
+		if err != nil {
+			t.Fatalf("write stdout artifact: %v", err)
+		}
+		s.CreateArtifact(runID, "opencode_stdout", p, "text/plain")
+	}
+	if stderr != "" {
+		p, err := artifacts.Write(runID, "opencode_stderr", pipeline.ArtifactFilename("opencode_stderr"), []byte(stderr))
+		if err != nil {
+			t.Fatalf("write stderr artifact: %v", err)
+		}
+		s.CreateArtifact(runID, "opencode_stderr", p, "text/plain")
+	}
+	combined := stdout
+	if stderr != "" {
+		if combined != "" {
+			combined += "\n\n--- STDERR ---\n\n"
+		}
+		combined += stderr
+	}
+	if combined != "" {
+		p, err := artifacts.Write(runID, "opencode_combined_log", pipeline.ArtifactFilename("opencode_combined_log"), []byte(combined))
+		if err != nil {
+			t.Fatalf("write combined log artifact: %v", err)
+		}
+		s.CreateArtifact(runID, "opencode_combined_log", p, "text/plain")
+	}
+}
+
+// Helper to create a running execution for a run.
+func seedRunningExecution(t *testing.T, s *store.Store, runID int64) int64 {
+	t.Helper()
+	exec, err := s.CreateAgentExecution(runID, "opencode_go", "running", "test command")
+	if err != nil {
+		t.Fatalf("create running execution: %v", err)
+	}
+	return exec.ID
+}
+
+func TestReconcileOpenCodeExecutionPersistsDoneFromCapturedStdout(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`{"type":"text","part":{"type":"text","text":"DONE"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Build status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Test status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Count of LOC changed: 12"}}
+`,
+		"")
+
+	result, err := h.reconcileOpenCodeExecution(runID)
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if !result.Changed {
+		t.Fatal("expected reconciliation to change state")
+	}
+	if !result.ParsedAgentResult {
+		t.Fatal("expected agent result to be parsed")
+	}
+	if result.FinalStatus != "completed" {
+		t.Fatalf("expected final status 'completed', got %q", result.FinalStatus)
+	}
+
+	// Verify execution is no longer running
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Status == "running" || exec.Status == "starting" {
+		t.Fatalf("execution should no longer be running, got %q", exec.Status)
+	}
+
+	// Verify agent_result_raw and agent_result_json exist
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	hasRaw := false
+	hasJSON := false
+	for _, a := range artifactsList {
+		if a.Kind == "agent_result_raw" {
+			hasRaw = true
+		}
+		if a.Kind == "agent_result_json" {
+			hasJSON = true
+		}
+	}
+	if !hasRaw {
+		t.Fatal("expected agent_result_raw artifact after reconcile")
+	}
+	if !hasJSON {
+		t.Fatal("expected agent_result_json artifact after reconcile")
+	}
+
+	// Verify run status reflects DONE
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status != "agent_done" {
+		t.Fatalf("expected run status 'agent_done', got %q", run.Status)
+	}
+
+	// Verify check exists
+	checks, err := s.ListChecksByRun(runID)
+	if err != nil {
+		t.Fatalf("list checks: %v", err)
+	}
+	hasAgentCheck := false
+	for _, c := range checks {
+		if c.Kind == "agent_result" && c.Status == "pass" {
+			hasAgentCheck = true
+			break
+		}
+	}
+	if !hasAgentCheck {
+		t.Fatal("expected agent_result check with status pass")
+	}
+}
+
+func TestReconcileOpenCodeExecutionPersistsBlockedFromCapturedStdout(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`{"type":"text","part":{"type":"text","text":"BLOCKED"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Build status: FAIL"}}
+{"type":"text","part":{"type":"text","text":"Test status: FAIL"}}
+{"type":"text","part":{"type":"text","text":"Count of LOC changed: 2"}}
+`,
+		"")
+
+	result, err := h.reconcileOpenCodeExecution(runID)
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if !result.Changed {
+		t.Fatal("expected reconciliation to change state")
+	}
+	if !result.ParsedAgentResult {
+		t.Fatal("expected agent result to be parsed")
+	}
+	if result.FinalStatus != "failed" {
+		t.Fatalf("expected final status 'failed' for BLOCKED, got %q", result.FinalStatus)
+	}
+
+	// Verify execution is terminal
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Status == "running" || exec.Status == "starting" {
+		t.Fatalf("execution should be terminal, got %q", exec.Status)
+	}
+
+	// Verify agent_result_raw exists
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	hasRaw := false
+	for _, a := range artifactsList {
+		if a.Kind == "agent_result_raw" {
+			hasRaw = true
+			break
+		}
+	}
+	if !hasRaw {
+		t.Fatal("expected agent_result_raw artifact after BLOCKED reconcile")
+	}
+
+	// Verify run status reflects BLOCKED
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status != "agent_blocked" {
+		t.Fatalf("expected run status 'agent_blocked', got %q", run.Status)
+	}
+}
+
+func TestReconcileOpenCodeExecutionWithOutputButNoAgentResultMarksFailed(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	// Stdout has output but no DONE/BLOCKED
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`some tool output line
+another line
+`,
+		"error: something went wrong")
+
+	result, err := h.reconcileOpenCodeExecution(runID)
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if !result.Changed {
+		t.Fatal("expected reconciliation to change state")
+	}
+	if result.ParsedAgentResult {
+		t.Fatal("expected no agent result to be parsed")
+	}
+	if result.FinalStatus != "failed" {
+		t.Fatalf("expected final status 'failed', got %q", result.FinalStatus)
+	}
+
+	// Verify execution is terminal and failed
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Status != "failed" {
+		t.Fatalf("expected execution status 'failed', got %q", exec.Status)
+	}
+
+	// Verify agent_result_raw does NOT exist
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	for _, a := range artifactsList {
+		if a.Kind == "agent_result_raw" {
+			t.Fatal("did not expect agent_result_raw when no DONE/BLOCKED")
+		}
+	}
+
+	// Verify warning event was created
+	events, err := s.ListEventsByRun(runID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	found := false
+	for _, ev := range events {
+		if strings.Contains(ev.Message, "without DONE/BLOCKED") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected warning event about missing DONE/BLOCKED")
+	}
+}
+
+func TestReconcileOpenCodeResultActionRedirectsToRunStep(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID, "some output", "")
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.reconcileOpenCodeResult(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "?step=run") {
+		t.Fatalf("expected redirect to step=run, got %s", loc)
+	}
+	// Verify HX-Push-Url is set
+	pushURL := w.Header().Get("HX-Push-Url")
+	if !strings.Contains(pushURL, "?step=run") {
+		t.Fatalf("expected HX-Push-Url to step=run, got %s", pushURL)
+	}
+}
+
+func TestStartOpenCodeGoPersistsDoneFromRealSmokeJSONL(t *testing.T) {
+	s := setupTestStore(t)
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) { fn() }
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+		return pipeline.AgentCommandRunResult{
+			ExitCode: 0,
+			Stdout: `{"type":"step_start","part":{"type":"step","reason":"Starting the implementation"}}
+{"type":"reasoning","part":{"type":"reasoning","text":"Let me follow the implementation handoff exactly."}}
+{"type":"tool_use","part":{"type":"tool","tool":"read_file","state":{"status":"completed","input":{"filePath":"D:\\Code\\relay\\README.md"}}}}
+{"type":"text","part":{"type":"text","text":"DONE"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Build status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Test status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Count of LOC changed: 12"}}
+`,
+		}
+	}
+
+	runID := setupOpenCodeRun(t, s)
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+
+	h.startOpenCodeGo(w, req, runID)
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	hasRaw := false
+	hasJSON := false
+	for _, a := range artifactsList {
+		if a.Kind == "agent_result_raw" {
+			hasRaw = true
+		}
+		if a.Kind == "agent_result_json" {
+			hasJSON = true
+		}
+	}
+	if !hasRaw {
+		t.Fatal("expected agent_result_raw artifact after DONE from real smoke JSONL")
+	}
+	if !hasJSON {
+		t.Fatal("expected agent_result_json artifact after DONE from real smoke JSONL")
+	}
+
+	// Verify the agent_result_raw contains the parsed assistant text (not raw JSONL)
+	rawData, err := artifacts.Read(runID, "agent_result_raw", pipeline.ArtifactFilename("agent_result_raw"))
+	if err != nil {
+		t.Fatalf("read agent_result_raw: %v", err)
+	}
+	if !strings.Contains(string(rawData), "DONE") {
+		t.Fatalf("expected agent_result_raw to contain 'DONE', got %q", string(rawData))
+	}
+	if !strings.Contains(string(rawData), "Build status: PASS") {
+		t.Fatalf("expected agent_result_raw to contain 'Build status: PASS', got %q", string(rawData))
+	}
+}

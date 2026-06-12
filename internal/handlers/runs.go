@@ -515,6 +515,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		IntakeRemediationHandoff:        intakeRemediationHandoffPreview,
 		HasIntakeRemediationHandoff:     hasIntakeRemediationHandoff,
 		HasOpenCodeRunning:              openCodeExecStatus == "starting" || openCodeExecStatus == "running",
+		HasOpenCodeStaleRunning:         (openCodeExecStatus == "starting" || openCodeExecStatus == "running") && (hasOpenCodeStdout || hasOpenCodeStderr || hasOpenCodeCombinedLog) && openCodeParsedResultStatus == "",
 		OpenCodeTranscript:              openCodeTranscript,
 		OpenCodeParsedResultStatus:      openCodeParsedResultStatus,
 		OpenCodeParsedBuildStatus:       openCodeParsedBuildStatus,
@@ -616,6 +617,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.acceptValidationFailure(w, r, id)
 	case "prepare-git-commit":
 		h.prepareGitCommit(w, r, id)
+	case "reconcile-opencode-result":
+		h.reconcileOpenCodeResult(w, r, id)
 	case "update-selected-model":
 		h.updateSelectedModel(w, r, id)
 	default:
@@ -893,6 +896,130 @@ func (h *RunsHandler) dryRunOpenCodeGo(w http.ResponseWriter, r *http.Request, r
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 }
 
+// openCodeReconcileResult describes what the reconciliation helper did.
+type openCodeReconcileResult struct {
+	Changed           bool
+	ParsedAgentResult bool
+	FinalStatus       string
+	Message           string
+}
+
+// reconcileOpenCodeExecution reconciles a stale/running OpenCode execution from captured output artifacts.
+// It is idempotent: running it twice will not duplicate agent result artifacts or corrupt terminal state.
+func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcileResult, error) {
+	exec, err := h.store.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		return openCodeReconcileResult{}, fmt.Errorf("get latest execution: %w", err)
+	}
+
+	// If execution is already terminal, check if we can recover agent_result_raw from stdout
+	terminal := exec.Status != "starting" && exec.Status != "running"
+	if terminal {
+		// Check if agent_result_raw is missing but stdout has DONE/BLOCKED
+		artifactsList, err := h.store.ListArtifactsByRun(runID)
+		if err != nil {
+			return openCodeReconcileResult{}, fmt.Errorf("list artifacts: %w", err)
+		}
+		hasRaw := false
+		for _, a := range artifactsList {
+			if a.Kind == "agent_result_raw" {
+				hasRaw = true
+				break
+			}
+		}
+		if hasRaw {
+			return openCodeReconcileResult{Changed: false, Message: "Execution is already terminal with agent result."}, nil
+		}
+
+		// Try to recover from stdout
+		stdoutData, err := artifacts.Read(runID, "opencode_stdout", pipeline.ArtifactFilename("opencode_stdout"))
+		if err != nil || len(stdoutData) == 0 {
+			return openCodeReconcileResult{Changed: false, Message: "Execution is terminal but no stdout to recover from."}, nil
+		}
+		assistantText := pipeline.ExtractOpenCodeAssistantText(string(stdoutData))
+		parsed := pipeline.ParseAgentResult(assistantText)
+		if parsed.Status == pipeline.AgentResultDone || parsed.Status == pipeline.AgentResultBlocked {
+			if err := h.persistAgentResult(runID, assistantText); err != nil {
+				return openCodeReconcileResult{}, fmt.Errorf("persist recovered agent result: %w", err)
+			}
+			return openCodeReconcileResult{
+				Changed:           true,
+				ParsedAgentResult: true,
+				FinalStatus:       string(parsed.Status),
+				Message:           "Recovered missing agent result from captured stdout.",
+			}, nil
+		}
+		return openCodeReconcileResult{Changed: false, Message: "Execution is terminal but stdout has no DONE/BLOCKED result."}, nil
+	}
+
+	// Execution is starting or running — check for captured output artifacts
+	stdoutData, err := artifacts.Read(runID, "opencode_stdout", pipeline.ArtifactFilename("opencode_stdout"))
+	hasStdout := err == nil && len(stdoutData) > 0
+
+	combinedData, err := artifacts.Read(runID, "opencode_combined_log", pipeline.ArtifactFilename("opencode_combined_log"))
+	hasCombined := err == nil && len(combinedData) > 0
+
+	if !hasStdout && !hasCombined {
+		return openCodeReconcileResult{Changed: false, Message: "Execution is running but no captured output artifacts exist yet."}, nil
+	}
+
+	// Try to parse agent result from stdout
+	now := time.Now().Format("2006-01-02 15:04:05")
+	finishedAt := now
+	errorMsg := ""
+	if hasStdout {
+		assistantText := pipeline.ExtractOpenCodeAssistantText(string(stdoutData))
+		parsed := pipeline.ParseAgentResult(assistantText)
+		if parsed.Status == pipeline.AgentResultDone || parsed.Status == pipeline.AgentResultBlocked {
+			// Persist the agent result
+			if err := h.persistAgentResult(runID, assistantText); err != nil {
+				h.log.Warn("reconcile: failed to persist agent result from captured stdout", "error", err)
+			}
+			// Mark execution completed/failed based on parsed result
+			execStatus := "completed"
+			if parsed.Status == pipeline.AgentResultBlocked {
+				execStatus = "failed"
+				errorMsg = "Agent reported BLOCKED"
+			}
+			if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, execStatus, nil, nil, &finishedAt, nil, nil, nil, nil, &errorMsg); err != nil {
+				h.log.Error("reconcile: update execution status", "error", err)
+			}
+			h.store.CreateEvent(runID, "info", "OpenCode execution reconciled from captured output: "+string(parsed.Status))
+			return openCodeReconcileResult{
+				Changed:           true,
+				ParsedAgentResult: true,
+				FinalStatus:       execStatus,
+				Message:           "Reconciled execution with captured result: " + string(parsed.Status),
+			}, nil
+		}
+	}
+
+	// No DONE/BLOCKED found — mark execution as failed with a useful message
+	errorMsg = "Reconciled: OpenCode produced output but no DONE/BLOCKED result was found. Review stdout/stderr artifacts."
+	if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, "failed", nil, nil, &finishedAt, nil, nil, nil, nil, &errorMsg); err != nil {
+		h.log.Error("reconcile: update execution status to failed", "error", err)
+	}
+	h.store.CreateEvent(runID, "warn", "OpenCode execution reconciled from captured output without DONE/BLOCKED result — marked failed.")
+	return openCodeReconcileResult{
+		Changed:     true,
+		FinalStatus: "failed",
+		Message:     errorMsg,
+	}, nil
+}
+
+// reconcileOpenCodeResult is the HTTP action handler for reconciling a stale/running execution.
+func (h *RunsHandler) reconcileOpenCodeResult(w http.ResponseWriter, r *http.Request, runID int64) {
+	result, err := h.reconcileOpenCodeExecution(runID)
+	if err != nil {
+		h.log.Error("reconcile opencode result", "error", err)
+		h.store.CreateEvent(runID, "warn", "OpenCode reconciliation failed: "+err.Error())
+	} else if result.Changed {
+		h.store.CreateEvent(runID, "info", result.Message)
+	}
+	setHXPushURL(w, runID, "run")
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=run", http.StatusSeeOther)
+}
+
 // runOpenCodeExecution runs the OpenCode command in the background and persists results.
 // This method never writes an HTTP response or redirects.
 func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, execID int64, invocation pipeline.OpenCodeRunInvocation) {
@@ -910,13 +1037,17 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		pipeline.DefaultAgentCommandTimeout,
 	)
 
-	// Write stdout/stderr/combined artifacts
+	// Write stdout/stderr/combined artifacts, tracking write errors
+	var writeErrors []string
+
 	stdoutPath := ""
 	if runResult.Stdout != "" {
 		p, err := artifacts.Write(runID, "opencode_stdout", pipeline.ArtifactFilename("opencode_stdout"), []byte(runResult.Stdout))
 		if err == nil {
 			h.store.CreateArtifact(runID, "opencode_stdout", p, "text/plain")
 			stdoutPath = p
+		} else {
+			writeErrors = append(writeErrors, "stdout: "+err.Error())
 		}
 	}
 
@@ -926,6 +1057,8 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		if err == nil {
 			h.store.CreateArtifact(runID, "opencode_stderr", p, "text/plain")
 			stderrPath = p
+		} else {
+			writeErrors = append(writeErrors, "stderr: "+err.Error())
 		}
 	}
 
@@ -943,6 +1076,8 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		if err == nil {
 			h.store.CreateArtifact(runID, "opencode_combined_log", p, "text/plain")
 			combinedPath = p
+		} else {
+			writeErrors = append(writeErrors, "combined_log: "+err.Error())
 		}
 	}
 
@@ -962,9 +1097,21 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 	if runResult.Error != "" {
 		errPtr = &runResult.Error
 	}
+	// Include write errors in the execution error field
+	if len(writeErrors) > 0 {
+		errSummary := "artifact write errors: " + strings.Join(writeErrors, "; ")
+		if errPtr != nil {
+			combined := *errPtr + "; " + errSummary
+			errPtr = &combined
+		} else {
+			errPtr = &errSummary
+		}
+	}
 
-	h.store.UpdateAgentExecutionStatus(execID, execStatus, &ec, &startedStr, &finishedStr,
-		&stdoutPath, &stderrPath, &combinedPath, nil, errPtr)
+	if _, err := h.store.UpdateAgentExecutionStatus(execID, execStatus, &ec, &startedStr, &finishedStr,
+		&stdoutPath, &stderrPath, &combinedPath, nil, errPtr); err != nil {
+		h.log.Error("finalize agent execution status", "exec_id", execID, "error", err)
+	}
 
 	// Extract assistant text from JSONL stdout
 	if runResult.Stdout != "" {
@@ -1957,7 +2104,51 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 			previews.OpenCodeExecutionFinished = exec.FinishedAt.String
 		}
 		previews.OpenCodeCommandPreview = exec.CommandPreview
-		previews.HasOpenCodeRunning = exec.Status == "starting" || exec.Status == "running"
+		isRunning := exec.Status == "starting" || exec.Status == "running"
+		previews.HasOpenCodeRunning = isRunning
+
+		// Check for stale running state: running but output artifacts exist
+		if isRunning {
+			hasAnyOutput := false
+			for _, a := range artifactsList {
+				if a.Kind == "opencode_stdout" || a.Kind == "opencode_stderr" || a.Kind == "opencode_combined_log" {
+					hasAnyOutput = true
+					break
+				}
+			}
+			if hasAnyOutput {
+				// Try safe auto-reconciliation if stdout contains DONE/BLOCKED
+				stdoutData, err := artifacts.Read(runID, "opencode_stdout", pipeline.ArtifactFilename("opencode_stdout"))
+				if err == nil && len(stdoutData) > 0 {
+					assistantText := pipeline.ExtractOpenCodeAssistantText(string(stdoutData))
+					parsed := pipeline.ParseAgentResult(assistantText)
+					if parsed.Status == pipeline.AgentResultDone || parsed.Status == pipeline.AgentResultBlocked {
+						// Safe to auto-reconcile — execution is stale with a parseable result
+						if _, reconcileErr := h.reconcileOpenCodeExecution(runID); reconcileErr == nil {
+							h.log.Info("auto-reconciled stale opencode execution from GET path", "run_id", runID)
+							// Reload execution after reconciliation
+							if exec2, err2 := h.store.GetLatestAgentExecutionByRun(runID); err2 == nil {
+								previews.HasOpenCodeRunning = false
+								previews.OpenCodeExecutionStatus = exec2.Status
+								if exec2.FinishedAt.Valid {
+									previews.OpenCodeExecutionFinished = exec2.FinishedAt.String
+								}
+								if exec2.ExitCode.Valid {
+									previews.OpenCodeExecutionExitCode = strconv.FormatInt(exec2.ExitCode.Int64, 10)
+								}
+							}
+						} else {
+							h.log.Warn("auto-reconcile opencode execution failed", "run_id", runID, "error", reconcileErr)
+							previews.HasOpenCodeStaleRunning = true
+						}
+					} else {
+						previews.HasOpenCodeStaleRunning = true
+					}
+				} else {
+					previews.HasOpenCodeStaleRunning = true
+				}
+			}
+		}
 
 		for _, a := range artifactsList {
 			switch a.Kind {
