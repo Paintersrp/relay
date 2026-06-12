@@ -556,6 +556,47 @@ func OpenCodeFailureHint(result AgentCommandRunResult, invocation OpenCodeRunInv
 	return ""
 }
 
+// StreamProgress tracks the live streaming activity from stdout/stderr callbacks.
+type StreamProgress struct {
+	StdoutChunks  int64     `json:"stdout_chunks"`
+	StderrChunks  int64     `json:"stderr_chunks"`
+	StdoutBytes   int64     `json:"stdout_bytes"`
+	StderrBytes   int64     `json:"stderr_bytes"`
+	LastStdoutAt  string    `json:"last_stdout_at,omitempty"`
+	LastStderrAt  string    `json:"last_stderr_at,omitempty"`
+	LastChunkAt   string    `json:"last_chunk_at,omitempty"`
+	lastChunkTime time.Time `json:"-"`
+}
+
+// UpdateStreamProgressFromStdout records a stdout chunk in the progress tracker.
+func (sp *StreamProgress) UpdateStreamProgressFromStdout(chunk []byte) {
+	sp.StdoutChunks++
+	sp.StdoutBytes += int64(len(chunk))
+	sp.lastChunkTime = time.Now()
+	now := sp.lastChunkTime.Format(time.RFC3339Nano)
+	sp.LastStdoutAt = now
+	sp.LastChunkAt = now
+}
+
+// UpdateStreamProgressFromStderr records a stderr chunk in the progress tracker.
+func (sp *StreamProgress) UpdateStreamProgressFromStderr(chunk []byte) {
+	sp.StderrChunks++
+	sp.StderrBytes += int64(len(chunk))
+	sp.lastChunkTime = time.Now()
+	now := sp.lastChunkTime.Format(time.RFC3339Nano)
+	sp.LastStderrAt = now
+	sp.LastChunkAt = now
+}
+
+// StreamProgressLastChunkAge returns the duration since the last chunk was received.
+// Returns -1 if no chunks have been received.
+func (sp *StreamProgress) StreamProgressLastChunkAge() time.Duration {
+	if sp.lastChunkTime.IsZero() {
+		return -1
+	}
+	return time.Since(sp.lastChunkTime)
+}
+
 func OpenCodePermissionWarning(stderr string) string {
 	lower := strings.ToLower(stderr)
 	if strings.Contains(lower, "permission requested:") ||
@@ -655,7 +696,32 @@ func BuildOpenCodeTranscript(stdout string, stderr string, maxEvents int) []Open
 			}
 			events = append(events, OpenCodeTranscriptEvent{Kind: "step", Text: text})
 		default:
-			events = append(events, OpenCodeTranscriptEvent{Kind: "event", Text: raw.Type})
+			// Show unknown event types with as much context as possible
+			extra := ""
+			if raw.Part.Tool != "" {
+				extra = " tool=" + raw.Part.Tool
+			}
+			if raw.Part.Name != "" {
+				extra += " name=" + raw.Part.Name
+			}
+			if raw.Part.Reason != "" {
+				extra += " reason=" + raw.Part.Reason
+			}
+			if raw.Part.Text != "" {
+				text := raw.Part.Text
+				if len(text) > 120 {
+					text = text[:120] + "..."
+				}
+				extra += " text=" + text
+			}
+			if raw.Part.State.Status != "" {
+				extra += " status=" + raw.Part.State.Status
+			}
+			if extra != "" {
+				events = append(events, OpenCodeTranscriptEvent{Kind: "event", Text: raw.Type + extra})
+			} else {
+				events = append(events, OpenCodeTranscriptEvent{Kind: "event", Text: raw.Type})
+			}
 		}
 	}
 

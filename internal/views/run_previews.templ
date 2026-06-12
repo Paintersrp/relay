@@ -140,15 +140,22 @@ type RunPreviews struct {
 	HasIntakeRemediationHandoff bool
 
 	// Agent Run Monitor fields
-	HasOpenCodeRunning         bool
-	HasOpenCodeStaleRunning    bool
-	HasOpenCodeOutput          bool
-	OpenCodeTranscript         []OpenCodeTranscriptEventView
-	OpenCodeParsedResultStatus string
-	OpenCodeParsedBuildStatus  string
-	OpenCodeParsedTestStatus   string
-	OpenCodeParsedLOCChanged   string
-	OpenCodeParsedResultRaw    string
+	HasOpenCodeRunning              bool
+	HasOpenCodeStaleRunning         bool
+	HasOpenCodeOutput               bool
+	OpenCodeTranscript              []OpenCodeTranscriptEventView
+	OpenCodeParsedResultStatus      string
+	OpenCodeParsedBuildStatus       string
+	OpenCodeParsedTestStatus        string
+	OpenCodeParsedLOCChanged        string
+	OpenCodeParsedResultRaw         string
+	OpenCodeStreamStdoutChunks      int64
+	OpenCodeStreamStderrChunks      int64
+	OpenCodeStreamStdoutBytes       int64
+	OpenCodeStreamStderrBytes       int64
+	OpenCodeStreamLastChunkAt       string
+	OpenCodeStreamLastChunkAge      string
+	HasOpenCodeStreamActivity       bool
 
 	HasValidationProgress      bool
 	ValidationProgressRunning bool

@@ -1125,10 +1125,26 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 					}
 				}
 			} else if isRunning {
-				if previews.HasOpenCodeOutput {
-					@StageEvidenceRow("running", "OpenCode is running — live output detected", "Relay is polling and showing partial stdout/stderr as they arrive.", "")
+				if previews.HasOpenCodeStreamActivity {
+					@StageEvidenceRow("running", "OpenCode is running — streaming chunks received", "Relay is polling and showing partial stdout/stderr as they arrive.", "") {
+						<div class="text-xs text-blue-200 space-y-1">
+							<div class="flex flex-wrap gap-x-4 gap-y-1">
+								if previews.OpenCodeStreamStdoutChunks > 0 {
+									<span>{ "stdout: " + Itoa(previews.OpenCodeStreamStdoutChunks) + " chunks (" + Itoa(previews.OpenCodeStreamStdoutBytes) + " bytes)" }</span>
+								}
+								if previews.OpenCodeStreamStderrChunks > 0 {
+									<span>{ "stderr: " + Itoa(previews.OpenCodeStreamStderrChunks) + " chunks (" + Itoa(previews.OpenCodeStreamStderrBytes) + " bytes)" }</span>
+								}
+							</div>
+							if previews.OpenCodeStreamLastChunkAge != "" {
+								<div class="text-gray-400">Last chunk: { previews.OpenCodeStreamLastChunkAge }</div>
+							}
+						</div>
+					}
+				} else if previews.HasOpenCodeOutput {
+					@StageEvidenceRow("running", "OpenCode is running — artifacts present", "Streaming progress data not available, but artifact files exist.", "")
 				} else {
-					@StageEvidenceRow("running", "OpenCode is running", "No output captured yet. Relay keeps polling for updates.", "")
+					@StageEvidenceRow("running", "OpenCode is running — no output yet", "No stdout/stderr chunks received yet. OpenCode may be initializing or buffering output.", "")
 				}
 			}
 

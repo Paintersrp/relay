@@ -567,6 +567,13 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		OpenCodeParsedTestStatus:        openCodePreviews.OpenCodeParsedTestStatus,
 		OpenCodeParsedLOCChanged:        openCodePreviews.OpenCodeParsedLOCChanged,
 		OpenCodeParsedResultRaw:         openCodePreviews.OpenCodeParsedResultRaw,
+		OpenCodeStreamStdoutChunks:      openCodePreviews.OpenCodeStreamStdoutChunks,
+		OpenCodeStreamStderrChunks:      openCodePreviews.OpenCodeStreamStderrChunks,
+		OpenCodeStreamStdoutBytes:       openCodePreviews.OpenCodeStreamStdoutBytes,
+		OpenCodeStreamStderrBytes:       openCodePreviews.OpenCodeStreamStderrBytes,
+		OpenCodeStreamLastChunkAt:       openCodePreviews.OpenCodeStreamLastChunkAt,
+		OpenCodeStreamLastChunkAge:      openCodePreviews.OpenCodeStreamLastChunkAge,
+		HasOpenCodeStreamActivity:       openCodePreviews.HasOpenCodeStreamActivity,
 		ValidationRun:                   validationRunPreview,
 		HasValidationProgress:           hasValidationProgress,
 		ValidationProgressRunning:       validationProgressRunning,
@@ -1076,6 +1083,7 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		"opencode_stdout",
 		"opencode_stderr",
 		"opencode_combined_log",
+		"opencode_stream_progress_json",
 		"agent_result_raw",
 		"agent_result_json",
 	} {
@@ -1087,6 +1095,8 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 	var streamedStderr strings.Builder
 	artifactRecorded := map[string]bool{}
 	writeErrors := map[string]string{}
+	streamProgress := pipeline.StreamProgress{}
+	lastProgressWrite := time.Time{}
 
 	recordWriteError := func(key string, err error) {
 		if err == nil {
@@ -1172,6 +1182,21 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		return writeArtifactSnapshotLocked("opencode_combined_log", combined)
 	}
 
+	writeStreamProgressLocked := func() {
+		data, err := json.MarshalIndent(streamProgress, "", "  ")
+		if err != nil {
+			recordWriteError("stream_progress_marshal", err)
+			return
+		}
+		path, err := artifacts.Write(runID, "opencode_stream_progress_json", pipeline.ArtifactFilename("opencode_stream_progress_json"), data)
+		if err != nil {
+			recordWriteError("stream_progress_write", err)
+			return
+		}
+		ensureArtifactRecordedLocked("opencode_stream_progress_json", path, "application/json")
+		lastProgressWrite = time.Now()
+	}
+
 	if err := artifacts.EnsureDir(runID); err != nil {
 		streamMu.Lock()
 		recordWriteError("dir_init", err)
@@ -1197,6 +1222,10 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 				streamedStdout.Write(chunk)
 				appendArtifactLocked("opencode_stdout", chunk)
 				writeCombinedSnapshotLocked(streamedStdout.String(), streamedStderr.String())
+				streamProgress.UpdateStreamProgressFromStdout(chunk)
+				if time.Since(lastProgressWrite) > 500*time.Millisecond {
+					writeStreamProgressLocked()
+				}
 			},
 			OnStderr: func(chunk []byte) {
 				if len(chunk) == 0 {
@@ -1208,6 +1237,10 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 				streamedStderr.Write(chunk)
 				appendArtifactLocked("opencode_stderr", chunk)
 				writeCombinedSnapshotLocked(streamedStdout.String(), streamedStderr.String())
+				streamProgress.UpdateStreamProgressFromStderr(chunk)
+				if time.Since(lastProgressWrite) > 500*time.Millisecond {
+					writeStreamProgressLocked()
+				}
 			},
 		},
 	)
@@ -1216,6 +1249,7 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 	stdoutPath := writeArtifactSnapshotLocked("opencode_stdout", runResult.Stdout)
 	stderrPath := writeArtifactSnapshotLocked("opencode_stderr", runResult.Stderr)
 	combinedPath := writeCombinedSnapshotLocked(runResult.Stdout, runResult.Stderr)
+	writeStreamProgressLocked()
 	streamMu.Unlock()
 
 	// Determine execution status
@@ -2336,6 +2370,25 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 			previews.OpenCodeLastOutputAt = lastOutputAt.Local().Format("2006-01-02 15:04:05")
 			previews.OpenCodeLastOutputAge = formatDurationCompact(now.Sub(lastOutputAt)) + " ago"
 		}
+
+		// Load streaming progress
+		if progressData := readArtifactPreview(runID, "opencode_stream_progress_json"); progressData != "" {
+			var sp pipeline.StreamProgress
+			if err := json.Unmarshal([]byte(progressData), &sp); err == nil {
+				previews.OpenCodeStreamStdoutChunks = sp.StdoutChunks
+				previews.OpenCodeStreamStderrChunks = sp.StderrChunks
+				previews.OpenCodeStreamStdoutBytes = sp.StdoutBytes
+				previews.OpenCodeStreamStderrBytes = sp.StderrBytes
+				previews.OpenCodeStreamLastChunkAt = sp.LastChunkAt
+				if sp.LastChunkAt != "" {
+					if t, err := time.Parse(time.RFC3339Nano, sp.LastChunkAt); err == nil {
+						previews.OpenCodeStreamLastChunkAge = formatDurationCompact(now.Sub(t)) + " ago"
+					}
+				}
+				previews.HasOpenCodeStreamActivity = sp.StdoutChunks > 0 || sp.StderrChunks > 0
+			}
+		}
+
 		events := pipeline.BuildOpenCodeTranscript(stdoutPreview, stderrPreview, 200)
 		for _, ev := range events {
 			previews.OpenCodeTranscript = append(previews.OpenCodeTranscript, views.OpenCodeTranscriptEventView{

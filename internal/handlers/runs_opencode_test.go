@@ -2879,7 +2879,7 @@ func TestRunGetKeepsPollingWhenOpenCodeRunningWithFreshOutput(t *testing.T) {
 	if strings.Contains(body, "Reconcile OpenCode Result") {
 		t.Fatal("did not expect recovery action for fresh OpenCode output")
 	}
-	if !strings.Contains(body, "live output detected") {
+	if !strings.Contains(body, "artifacts present") {
 		t.Fatal("expected live output running message")
 	}
 	if !strings.Contains(body, "download combined log") {
@@ -2954,7 +2954,7 @@ func TestRunGetKeepsPollingWhenOpenCodeRunningWithoutOutput(t *testing.T) {
 	if strings.Contains(body, "Reconcile OpenCode Result") {
 		t.Fatal("did not expect recovery action when no output exists")
 	}
-	if !strings.Contains(body, "No output captured yet. Relay keeps polling for updates.") {
+	if !strings.Contains(body, "no output yet") {
 		t.Fatal("expected no-output running message")
 	}
 }
@@ -3019,5 +3019,192 @@ func TestStartOpenCodeGoPersistsDoneFromRealSmokeJSONL(t *testing.T) {
 	}
 	if !strings.Contains(string(rawData), "Build status: PASS") {
 		t.Fatalf("expected agent_result_raw to contain 'Build status: PASS', got %q", string(rawData))
+	}
+}
+
+func seedStreamProgressArtifact(t *testing.T, s *store.Store, runID int64, stdoutChunks, stderrChunks int64, stdoutBytes, stderrBytes int64) {
+	t.Helper()
+	sp := pipeline.StreamProgress{
+		StdoutChunks: stdoutChunks,
+		StderrChunks: stderrChunks,
+		StdoutBytes:  stdoutBytes,
+		StderrBytes:  stderrBytes,
+		LastChunkAt:  time.Now().Format(time.RFC3339Nano),
+	}
+	data, err := json.MarshalIndent(sp, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal stream progress: %v", err)
+	}
+	p, err := artifacts.Write(runID, "opencode_stream_progress_json", pipeline.ArtifactFilename("opencode_stream_progress_json"), data)
+	if err != nil {
+		t.Fatalf("write stream progress: %v", err)
+	}
+	s.CreateArtifact(runID, "opencode_stream_progress_json", p, "application/json")
+}
+
+func TestRunGetShowsLiveOpenCodeStreamActivityWhileRunning(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`{"type":"text","part":{"type":"text","text":"partial"}}
+`,
+		"")
+	seedStreamProgressArtifact(t, s, runID, 3, 0, 45, 0)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling to continue when OpenCode is still running")
+	}
+	if !strings.Contains(body, "streaming chunks received") {
+		t.Fatal("expected streaming activity message")
+	}
+	if !strings.Contains(body, "3 chunks") || !strings.Contains(body, "45 bytes") {
+		t.Fatal("expected streamed chunk count and byte count in body")
+	}
+	if strings.Contains(body, "Reconcile OpenCode Result") {
+		t.Fatal("did not expect reconcile action for non-stale running execution")
+	}
+}
+
+func TestRunGetShowsNoChunksYetWhenRunningWithoutOutput(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.Status != "running" && exec.Status != "starting" {
+		t.Fatalf("expected execution to remain running, got %q", exec.Status)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling when OpenCode is still running without output")
+	}
+	if !strings.Contains(body, "no output yet") {
+		t.Fatal("expected no-output running message")
+	}
+	if strings.Contains(body, "Reconcile OpenCode Result") {
+		t.Fatal("did not expect recovery action when no output exists")
+	}
+}
+
+func TestRunGetShowsOpenCodePermissionWarningFromStderr(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`{"type":"text","part":{"type":"text","text":"still working"}}
+`,
+		"permission requested:\nauto-rejecting\nexternal_directory\npermission denied\n",
+	)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "OpenCode requested a permission that was denied") {
+		t.Fatal("expected permission warning for denied OpenCode request")
+	}
+	if !strings.Contains(body, "download stderr") {
+		t.Fatal("expected stderr artifact link alongside permission warning")
+	}
+}
+
+func TestRunGetCompletedOpenCodeStillShowsFinalArtifactsAndParsedResult(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	exec, err := s.CreateAgentExecution(runID, "opencode_go", "completed", "test command")
+	if err != nil {
+		t.Fatalf("create completed execution: %v", err)
+	}
+	ec := int64(0)
+	started := "2026-01-01 12:00:00"
+	finished := "2026-01-01 12:05:00"
+	h.store.UpdateAgentExecutionStatus(exec.ID, "completed", &ec, &started, &finished, nil, nil, nil, nil, nil)
+
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`{"type":"text","part":{"type":"text","text":"DONE"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Build status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Test status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Count of LOC changed: 12"}}
+`,
+		"",
+	)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling to stop when execution is completed")
+	}
+	if !strings.Contains(body, "completed") {
+		t.Fatal("expected completed status indicator")
+	}
+	if !strings.Contains(body, "download combined log") {
+		t.Fatal("expected log artifact links for completed execution")
+	}
+	if !strings.Contains(body, "DONE") {
+		t.Fatal("expected parsed result to appear in completed execution view")
+	}
+	if !strings.Contains(body, "Proceed to Relay Validation") {
+		t.Fatal("expected validation-ready progression link for DONE result")
 	}
 }

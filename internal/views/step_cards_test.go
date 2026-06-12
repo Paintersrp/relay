@@ -1686,7 +1686,7 @@ func TestAgentRunRunningWithoutOutputShowsNoOutputYet(t *testing.T) {
 	if !strings.Contains(html, `hx-trigger="every 2s"`) {
 		t.Errorf("expected polling while execution is running without output")
 	}
-	if !strings.Contains(html, "No output captured yet. Relay keeps polling for updates.") {
+	if !strings.Contains(html, "no output yet") {
 		t.Errorf("expected no-output running message, got: %s", html)
 	}
 	if strings.Contains(html, "Log artifacts") {
