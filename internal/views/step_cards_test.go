@@ -1669,3 +1669,62 @@ func TestAgentRunStaleRunningWithCapturedOutputShowsRecoveryAction(t *testing.T)
 		t.Errorf("expected combined log download link for stale running")
 	}
 }
+
+func TestAgentRunRunningWithoutOutputShowsNoOutputYet(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	previews := RunPreviews{
+		HasOpenCodeExecution:    true,
+		OpenCodeExecutionStatus: "running",
+		HasOpenCodeRunning:      true,
+	}
+	err := AgentRunMonitorStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `hx-trigger="every 2s"`) {
+		t.Errorf("expected polling while execution is running without output")
+	}
+	if !strings.Contains(html, "No output captured yet. Relay keeps polling for updates.") {
+		t.Errorf("expected no-output running message, got: %s", html)
+	}
+	if strings.Contains(html, "Log artifacts") {
+		t.Errorf("did not expect log artifacts row before any output exists")
+	}
+}
+
+func TestAgentRunRunningWithPermissionWarningShowsWarningAndTiming(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	previews := RunPreviews{
+		HasOpenCodeExecution:      true,
+		OpenCodeExecutionStatus:   "running",
+		HasOpenCodeRunning:        true,
+		HasOpenCodeOutput:         true,
+		HasOpenCodeStderr:         true,
+		HasOpenCodeCombinedLog:    true,
+		OpenCodeCommandPreview:    "opencode run",
+		OpenCodeExecutionStarted:  "2026-06-11 21:00:00",
+		OpenCodeRuntime:           "14s",
+		OpenCodeLastOutputAge:     "2s ago",
+		OpenCodePermissionWarning: "OpenCode requested a permission that was denied. Review stderr or the combined log.",
+	}
+	err := AgentRunMonitorStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "OpenCode requested a permission that was denied") {
+		t.Errorf("expected permission warning in running monitor, got: %s", html)
+	}
+	if !strings.Contains(html, "Runtime") || !strings.Contains(html, "14s") {
+		t.Errorf("expected runtime metadata, got: %s", html)
+	}
+	if !strings.Contains(html, "Last output") || !strings.Contains(html, "2s ago") {
+		t.Errorf("expected last output timing metadata, got: %s", html)
+	}
+	if !strings.Contains(html, "download combined log") {
+		t.Errorf("expected combined log link when output exists")
+	}
+}

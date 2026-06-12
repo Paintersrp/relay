@@ -1,14 +1,17 @@
 package pipeline
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -81,6 +84,11 @@ type AgentCommandRunResult struct {
 	Error      string    `json:"error,omitempty"`
 	StartedAt  time.Time `json:"started_at"`
 	FinishedAt time.Time `json:"finished_at"`
+}
+
+type AgentCommandStreamCallbacks struct {
+	OnStdout func(chunk []byte)
+	OnStderr func(chunk []byte)
 }
 
 const DefaultAgentCommandTimeout = 30 * time.Minute
@@ -156,7 +164,25 @@ func RunLocalAgentCommandArgs(
 	stdin string,
 	timeout time.Duration,
 ) AgentCommandRunResult {
+	return RunLocalAgentCommandArgsStreaming(ctx, workDir, binary, args, stdin, timeout, AgentCommandStreamCallbacks{})
+}
+
+// RunLocalAgentCommandArgsStreaming executes a binary with args in workDir and streams stdout/stderr chunks.
+// The timeout context is created before the command, ensuring the timeout kills the child process.
+func RunLocalAgentCommandArgsStreaming(
+	ctx context.Context,
+	workDir string,
+	binary string,
+	args []string,
+	stdin string,
+	timeout time.Duration,
+	callbacks AgentCommandStreamCallbacks,
+) AgentCommandRunResult {
 	start := time.Now()
+	commandPreview := binary
+	if len(args) > 0 {
+		commandPreview += " " + strings.Join(args, " ")
+	}
 
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -167,17 +193,93 @@ func RunLocalAgentCommandArgs(
 		cmd.Stdin = strings.NewReader(stdin)
 	}
 
-	var stdoutBuf, stderrBuf bytes.Buffer
-	cmd.Stdout = &stdoutBuf
-	cmd.Stderr = &stderrBuf
-
-	err := cmd.Run()
-	finished := time.Now()
-
-	commandPreview := binary
-	if len(args) > 0 {
-		commandPreview += " " + strings.Join(args, " ")
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		finished := time.Now()
+		return AgentCommandRunResult{
+			Command:    commandPreview,
+			WorkDir:    workDir,
+			ExitCode:   -1,
+			Error:      err.Error(),
+			StartedAt:  start,
+			FinishedAt: finished,
+		}
 	}
+
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		finished := time.Now()
+		return AgentCommandRunResult{
+			Command:    commandPreview,
+			WorkDir:    workDir,
+			ExitCode:   -1,
+			Error:      err.Error(),
+			StartedAt:  start,
+			FinishedAt: finished,
+		}
+	}
+
+	if err := cmd.Start(); err != nil {
+		finished := time.Now()
+		return AgentCommandRunResult{
+			Command:    commandPreview,
+			WorkDir:    workDir,
+			ExitCode:   -1,
+			Error:      err.Error(),
+			StartedAt:  start,
+			FinishedAt: finished,
+		}
+	}
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+
+	type streamReadResult struct {
+		err error
+	}
+
+	streamResults := make(chan streamReadResult, 2)
+	var wg sync.WaitGroup
+
+	readStream := func(pipe io.Reader, buf *bytes.Buffer, callback func([]byte)) {
+		defer wg.Done()
+
+		reader := bufio.NewReader(pipe)
+		for {
+			chunk, err := reader.ReadBytes('\n')
+			if len(chunk) > 0 {
+				buf.Write(chunk)
+				if callback != nil {
+					callback(append([]byte(nil), chunk...))
+				}
+			}
+			if err != nil {
+				if err == io.EOF {
+					streamResults <- streamReadResult{}
+				} else {
+					streamResults <- streamReadResult{err: err}
+				}
+				return
+			}
+		}
+	}
+
+	wg.Add(2)
+	go readStream(stdoutPipe, &stdoutBuf, callbacks.OnStdout)
+	go readStream(stderrPipe, &stderrBuf, callbacks.OnStderr)
+
+	waitErr := cmd.Wait()
+	wg.Wait()
+	close(streamResults)
+
+	var readErrors []string
+	for result := range streamResults {
+		if result.err != nil {
+			readErrors = append(readErrors, result.err.Error())
+		}
+	}
+
+	finished := time.Now()
 
 	if runCtx.Err() == context.DeadlineExceeded {
 		return AgentCommandRunResult{
@@ -194,12 +296,23 @@ func RunLocalAgentCommandArgs(
 
 	exitCode := 0
 	errMsg := ""
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+	if waitErr != nil {
+		if exitErr, ok := waitErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
 			exitCode = -1
-			errMsg = err.Error()
+			errMsg = waitErr.Error()
+		}
+	}
+	if len(readErrors) > 0 {
+		readErrMsg := "stream read errors: " + strings.Join(readErrors, "; ")
+		if errMsg != "" {
+			errMsg += "; " + readErrMsg
+		} else {
+			errMsg = readErrMsg
+			if exitCode == 0 {
+				exitCode = -1
+			}
 		}
 	}
 
@@ -440,6 +553,17 @@ func OpenCodeFailureHint(result AgentCommandRunResult, invocation OpenCodeRunInv
 		return "OpenCode exited with code " + fmt.Sprintf("%d", result.ExitCode) + ". Review stderr and combined log artifacts."
 	}
 
+	return ""
+}
+
+func OpenCodePermissionWarning(stderr string) string {
+	lower := strings.ToLower(stderr)
+	if strings.Contains(lower, "permission requested:") ||
+		strings.Contains(lower, "auto-rejecting") ||
+		strings.Contains(lower, "external_directory") ||
+		strings.Contains(lower, "permission denied") {
+		return "OpenCode requested a permission that was denied. Review stderr or the combined log."
+	}
 	return ""
 }
 

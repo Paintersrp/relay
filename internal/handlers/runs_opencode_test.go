@@ -60,7 +60,7 @@ func TestDryRunOpenCodeGoDoesNotExecuteRunner(t *testing.T) {
 	runnerCalled := false
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		runnerCalled = true
 		return pipeline.AgentCommandRunResult{}
 	}
@@ -101,7 +101,7 @@ func TestStartOpenCodeGoUsesArgsRunner(t *testing.T) {
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	h.launchAgentExecution = func(fn func()) { fn() }
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		runnerCalled = true
 		recordedWorkDir = workDir
 		recordedBinary = binary
@@ -183,7 +183,7 @@ func TestStartOpenCodeGoPersistsDoneFromJSONL(t *testing.T) {
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	h.launchAgentExecution = func(fn func()) { fn() }
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 0,
 			Stdout: `{"type":"text","part":{"type":"text","text":"DONE"}}
@@ -231,7 +231,7 @@ func TestStartOpenCodeGoNonZeroExitPersistsArtifacts(t *testing.T) {
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	h.launchAgentExecution = func(fn func()) { fn() }
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 1,
 			Stdout:   "some output",
@@ -290,7 +290,7 @@ func TestStartOpenCodeGoNonZeroExitWithUnknownOutputDoesNotPersistAgentResult(t 
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	h.launchAgentExecution = func(fn func()) { fn() }
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 1,
 			Stdout:   "some unexpected output without DONE or BLOCKED",
@@ -321,7 +321,7 @@ func TestStartOpenCodeGoNonZeroExitWithDoneStillPersistsResult(t *testing.T) {
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	h.launchAgentExecution = func(fn func()) { fn() }
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 1,
 			Stdout:   `{"type":"text","part":{"type":"text","text":"DONE\nBuild status: PASS"}}`,
@@ -356,7 +356,7 @@ func TestDryRunOpenCodeGoPersistsAllFields(t *testing.T) {
 	s := setupTestStore(t)
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		t.Fatal("runner should not be called during dry run")
 		return pipeline.AgentCommandRunResult{}
 	}
@@ -430,7 +430,7 @@ func TestCheckOpenCodeCLIRunsVersionAndModels(t *testing.T) {
 	var callCount int
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		callCount++
 		// Return success for both version and models
 		return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "opencode version 1.0.0"}
@@ -481,7 +481,7 @@ func TestCheckOpenCodeCLIFailsOnVersionError(t *testing.T) {
 	var callCount int
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		callCount++
 		return pipeline.AgentCommandRunResult{
 			ExitCode: -1,
@@ -524,7 +524,7 @@ func TestCheckOpenCodeCLIPersistsAllFields(t *testing.T) {
 	s := setupTestStore(t)
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "opencode version 1.0.0"}
 	}
 
@@ -602,7 +602,7 @@ func TestCheckOpenCodeCLIModelResolutionErrorPersisted(t *testing.T) {
 	s := setupTestStore(t)
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "opencode version 1.0.0"}
 	}
 
@@ -676,7 +676,7 @@ func TestDryRunOpenCodeGoDoesNotCallCheckOpenCodeCLI(t *testing.T) {
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	runnerCalled := false
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		runnerCalled = true
 		return pipeline.AgentCommandRunResult{}
 	}
@@ -698,7 +698,7 @@ func TestStartOpenCodeGoNonZeroExitPersistsStdoutStderrCombined(t *testing.T) {
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	h.launchAgentExecution = func(fn func()) { fn() }
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 2,
 			Stdout:   "stdout content",
@@ -730,12 +730,122 @@ func TestStartOpenCodeGoNonZeroExitPersistsStdoutStderrCombined(t *testing.T) {
 	}
 }
 
+func TestRunOpenCodeExecutionStreamsArtifactsWhileRunning(t *testing.T) {
+	s := setupTestStore(t)
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	partialReady := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+
+	fullStdout := `{"type":"text","part":{"type":"text","text":"DONE"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Build status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Test status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Count of LOC changed: 9"}}
+`
+	fullStderr := "permission requested:\nauto-rejecting\npermission denied\n"
+
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+		if callbacks.OnStdout != nil {
+			callbacks.OnStdout([]byte(`{"type":"text","part":{"type":"text","text":"DONE"}}
+`))
+		}
+		if callbacks.OnStderr != nil {
+			callbacks.OnStderr([]byte(fullStderr))
+		}
+		close(partialReady)
+		<-release
+		return pipeline.AgentCommandRunResult{
+			ExitCode: 0,
+			Stdout:   fullStdout,
+			Stderr:   fullStderr,
+		}
+	}
+
+	runID := setupOpenCodeRun(t, s)
+	exec, err := s.CreateAgentExecution(runID, "opencode_go", "starting", "test command")
+	if err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+
+	go func() {
+		h.runOpenCodeExecution(context.Background(), runID, exec.ID, pipeline.OpenCodeRunInvocation{
+			Binary:  "opencode",
+			Args:    []string{"run"},
+			WorkDir: t.TempDir(),
+			Stdin:   "prompt",
+		})
+		close(done)
+	}()
+
+	<-partialReady
+
+	execRow, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution while running: %v", err)
+	}
+	if execRow.Status != "running" {
+		t.Fatalf("expected running status while stream is blocked, got %q", execRow.Status)
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts while running: %v", err)
+	}
+	hasStdout := false
+	hasStderr := false
+	hasCombined := false
+	for _, a := range artifactsList {
+		switch a.Kind {
+		case "opencode_stdout":
+			hasStdout = true
+		case "opencode_stderr":
+			hasStderr = true
+		case "opencode_combined_log":
+			hasCombined = true
+		}
+	}
+	if !hasStdout || !hasStderr || !hasCombined {
+		t.Fatalf("expected stdout/stderr/combined artifacts while running, got stdout=%v stderr=%v combined=%v", hasStdout, hasStderr, hasCombined)
+	}
+
+	stdoutData, err := artifacts.Read(runID, "opencode_stdout", pipeline.ArtifactFilename("opencode_stdout"))
+	if err != nil {
+		t.Fatalf("read stdout while running: %v", err)
+	}
+	if !strings.Contains(string(stdoutData), "DONE") {
+		t.Fatalf("expected partial stdout while running, got %q", string(stdoutData))
+	}
+
+	stderrData, err := artifacts.Read(runID, "opencode_stderr", pipeline.ArtifactFilename("opencode_stderr"))
+	if err != nil {
+		t.Fatalf("read stderr while running: %v", err)
+	}
+	if !strings.Contains(string(stderrData), "permission denied") {
+		t.Fatalf("expected partial stderr while running, got %q", string(stderrData))
+	}
+
+	close(release)
+	<-done
+
+	rawData, err := artifacts.Read(runID, "agent_result_raw", pipeline.ArtifactFilename("agent_result_raw"))
+	if err != nil {
+		t.Fatalf("read final agent result: %v", err)
+	}
+	if !strings.Contains(string(rawData), "Build status: PASS") {
+		t.Fatalf("expected persisted DONE result after stream completion, got %q", string(rawData))
+	}
+}
+
 func TestStartOpenCodeGoDoesNotPersistUnknownJSONNoise(t *testing.T) {
 	s := setupTestStore(t)
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	h.launchAgentExecution = func(fn func()) { fn() }
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 0,
 			Stdout: `{"type":"tool","part":{"type":"tool","name":"read_file"}}
@@ -775,7 +885,7 @@ func TestStartOpenCodeGoLaunchesAsyncAndRedirectsToRunStep(t *testing.T) {
 		launched = true
 		// do not execute fn for this test
 	}
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		t.Fatal("runner should not be called in async test")
 		return pipeline.AgentCommandRunResult{}
 	}
@@ -863,7 +973,7 @@ func TestStartOpenCodeGoCreatesSingleStartedEvent(t *testing.T) {
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	h.launchAgentExecution = func(fn func()) { fn() }
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 0,
 			Stdout:   "DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 5\n",
@@ -1032,7 +1142,7 @@ func TestGenerateOpenCodePacketRedirectsToHandoffStep(t *testing.T) {
 func TestDryRunOpenCodeGoRedirectsToHandoffStep(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{}
 	}
 	runID := setupOpenCodeRun(t, s)
@@ -2329,6 +2439,21 @@ func seedOpenCodeOutputArtifacts(t *testing.T, s *store.Store, runID int64, stdo
 	}
 }
 
+func touchOpenCodeOutputArtifacts(t *testing.T, runID int64, modTime time.Time) {
+	t.Helper()
+	for _, kind := range []string{"opencode_stdout", "opencode_stderr", "opencode_combined_log"} {
+		path, err := artifacts.Path(runID, kind, pipeline.ArtifactFilename(kind))
+		if err != nil {
+			t.Fatalf("artifact path for %s: %v", kind, err)
+		}
+		if _, err := os.Stat(path); err == nil {
+			if err := os.Chtimes(path, modTime, modTime); err != nil {
+				t.Fatalf("touch %s: %v", kind, err)
+			}
+		}
+	}
+}
+
 // Helper to create a running execution for a run.
 func seedRunningExecution(t *testing.T, s *store.Store, runID int64) int64 {
 	t.Helper()
@@ -2688,6 +2813,7 @@ another line
 		`stderr line
 `,
 	)
+	touchOpenCodeOutputArtifacts(t, runID, time.Now().Add(-3*time.Minute))
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", itoa(runID))
@@ -2718,6 +2844,79 @@ another line
 	}
 	if !strings.Contains(body, "download combined log") {
 		t.Fatal("expected combined log link for stale OpenCode output")
+	}
+}
+
+func TestRunGetKeepsPollingWhenOpenCodeRunningWithFreshOutput(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`{"type":"text","part":{"type":"text","text":"partial transcript"}}
+`,
+		`stderr line
+`,
+	)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling to continue for fresh OpenCode output")
+	}
+	if strings.Contains(body, "Reconcile OpenCode Result") {
+		t.Fatal("did not expect recovery action for fresh OpenCode output")
+	}
+	if !strings.Contains(body, "live output detected") {
+		t.Fatal("expected live output running message")
+	}
+	if !strings.Contains(body, "download combined log") {
+		t.Fatal("expected combined log link for fresh output")
+	}
+}
+
+func TestRunGetShowsPermissionWarningForDeniedOpenCodeRequest(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`{"type":"text","part":{"type":"text","text":"still working"}}
+`,
+		"permission requested:\nauto-rejecting\nexternal_directory\npermission denied\n",
+	)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "OpenCode requested a permission that was denied") {
+		t.Fatal("expected permission warning for denied OpenCode request")
+	}
+	if !strings.Contains(body, "download stderr") {
+		t.Fatal("expected stderr artifact link alongside permission warning")
 	}
 }
 
@@ -2755,6 +2954,9 @@ func TestRunGetKeepsPollingWhenOpenCodeRunningWithoutOutput(t *testing.T) {
 	if strings.Contains(body, "Reconcile OpenCode Result") {
 		t.Fatal("did not expect recovery action when no output exists")
 	}
+	if !strings.Contains(body, "No output captured yet. Relay keeps polling for updates.") {
+		t.Fatal("expected no-output running message")
+	}
 }
 
 func TestStartOpenCodeGoPersistsDoneFromRealSmokeJSONL(t *testing.T) {
@@ -2762,7 +2964,7 @@ func TestStartOpenCodeGoPersistsDoneFromRealSmokeJSONL(t *testing.T) {
 
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	h.launchAgentExecution = func(fn func()) { fn() }
-	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult {
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 		return pipeline.AgentCommandRunResult{
 			ExitCode: 0,
 			Stdout: `{"type":"step_start","part":{"type":"step","reason":"Starting the implementation"}}

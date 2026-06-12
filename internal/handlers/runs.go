@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"relay/internal/artifacts"
@@ -20,7 +21,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-type agentCommandRunner func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration) pipeline.AgentCommandRunResult
+type agentCommandRunner func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult
 
 type RunsHandler struct {
 	store                *store.Store
@@ -34,7 +35,7 @@ func NewRunsHandler(s *store.Store, log *slog.Logger) *RunsHandler {
 	return &RunsHandler{
 		store:               s,
 		log:                 log,
-		runAgentCommandArgs: pipeline.RunLocalAgentCommandArgs,
+		runAgentCommandArgs: pipeline.RunLocalAgentCommandArgsStreaming,
 		launchAgentExecution: func(fn func()) {
 			go fn()
 		},
@@ -58,6 +59,84 @@ func readAgentPromptPreview(runID int64) string {
 		return data
 	}
 	return readArtifactPreview(runID, "ready_prompt")
+}
+
+const openCodeStaleOutputThreshold = 2 * time.Minute
+
+func parseExecutionTimestamp(value string) (time.Time, bool) {
+	if strings.TrimSpace(value) == "" {
+		return time.Time{}, false
+	}
+	if parsed, err := time.Parse("2006-01-02 15:04:05", value); err == nil {
+		return parsed, true
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed, true
+	}
+	return time.Time{}, false
+}
+
+func formatDurationCompact(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	seconds := int(d.Round(time.Second) / time.Second)
+	if seconds <= 0 {
+		return "0s"
+	}
+	hours := seconds / 3600
+	minutes := (seconds % 3600) / 60
+	secs := seconds % 60
+
+	switch {
+	case hours > 0:
+		return fmt.Sprintf("%dh %dm", hours, minutes)
+	case minutes > 0:
+		return fmt.Sprintf("%dm %ds", minutes, secs)
+	default:
+		return fmt.Sprintf("%ds", secs)
+	}
+}
+
+func formatOpenCodeRuntime(startedAt string, finishedAt string, now time.Time) string {
+	started, ok := parseExecutionTimestamp(startedAt)
+	if !ok {
+		return ""
+	}
+	end := now
+	if finished, ok := parseExecutionTimestamp(finishedAt); ok {
+		end = finished
+	}
+	return formatDurationCompact(end.Sub(started))
+}
+
+func openCodeArtifactModTime(runID int64, kind string) (time.Time, bool) {
+	path, err := artifacts.Path(runID, kind, pipeline.ArtifactFilename(kind))
+	if err != nil {
+		return time.Time{}, false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return info.ModTime(), true
+}
+
+func latestOpenCodeOutputTime(runID int64) (time.Time, bool) {
+	kinds := []string{"opencode_stdout", "opencode_stderr", "opencode_combined_log"}
+	var latest time.Time
+	found := false
+	for _, kind := range kinds {
+		modTime, ok := openCodeArtifactModTime(runID, kind)
+		if !ok {
+			continue
+		}
+		if !found || modTime.After(latest) {
+			latest = modTime
+			found = true
+		}
+	}
+	return latest, found
 }
 
 func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -442,6 +521,10 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		OpenCodeExecutionExitCode:       openCodePreviews.OpenCodeExecutionExitCode,
 		OpenCodeExecutionStarted:        openCodePreviews.OpenCodeExecutionStarted,
 		OpenCodeExecutionFinished:       openCodePreviews.OpenCodeExecutionFinished,
+		OpenCodeRuntime:                 openCodePreviews.OpenCodeRuntime,
+		OpenCodeLastOutputAt:            openCodePreviews.OpenCodeLastOutputAt,
+		OpenCodeLastOutputAge:           openCodePreviews.OpenCodeLastOutputAge,
+		OpenCodePermissionWarning:       openCodePreviews.OpenCodePermissionWarning,
 		OpenCodeStdoutArtifactID:        0,
 		OpenCodeStderrArtifactID:        0,
 		OpenCodeCombinedArtifactID:      0,
@@ -477,6 +560,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		HasIntakeRemediationHandoff:     hasIntakeRemediationHandoff,
 		HasOpenCodeRunning:              openCodePreviews.HasOpenCodeRunning,
 		HasOpenCodeStaleRunning:         openCodePreviews.HasOpenCodeStaleRunning,
+		HasOpenCodeOutput:               openCodePreviews.HasOpenCodeOutput,
 		OpenCodeTranscript:              openCodePreviews.OpenCodeTranscript,
 		OpenCodeParsedResultStatus:      openCodePreviews.OpenCodeParsedResultStatus,
 		OpenCodeParsedBuildStatus:       openCodePreviews.OpenCodeParsedBuildStatus,
@@ -988,6 +1072,112 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 	startedAt := time.Now().Format("2006-01-02 15:04:05")
 	h.store.UpdateAgentExecutionStatus(execID, "running", nil, &startedAt, nil, nil, nil, nil, nil, nil)
 
+	for _, kind := range []string{
+		"opencode_stdout",
+		"opencode_stderr",
+		"opencode_combined_log",
+		"agent_result_raw",
+		"agent_result_json",
+	} {
+		h.deleteRunArtifactKind(runID, kind)
+	}
+
+	var streamMu sync.Mutex
+	var streamedStdout strings.Builder
+	var streamedStderr strings.Builder
+	artifactRecorded := map[string]bool{}
+	writeErrors := map[string]string{}
+
+	recordWriteError := func(key string, err error) {
+		if err == nil {
+			return
+		}
+		if _, exists := writeErrors[key]; !exists {
+			writeErrors[key] = err.Error()
+		}
+	}
+
+	ensureArtifactRecordedLocked := func(kind, path, mimeType string) {
+		if artifactRecorded[kind] {
+			return
+		}
+		if _, err := h.store.CreateArtifact(runID, kind, path, mimeType); err != nil {
+			recordWriteError("record_"+kind, err)
+			return
+		}
+		artifactRecorded[kind] = true
+	}
+
+	appendArtifactLocked := func(kind string, chunk []byte) string {
+		if len(chunk) == 0 {
+			return ""
+		}
+
+		if err := artifacts.EnsureDir(runID); err != nil {
+			recordWriteError("dir_"+kind, err)
+			return ""
+		}
+
+		path, err := artifacts.Path(runID, kind, pipeline.ArtifactFilename(kind))
+		if err != nil {
+			recordWriteError("path_"+kind, err)
+			return ""
+		}
+
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			recordWriteError("append_"+kind, err)
+			return ""
+		}
+		if _, err := f.Write(chunk); err != nil {
+			recordWriteError("append_"+kind, err)
+		}
+		if err := f.Close(); err != nil {
+			recordWriteError("close_"+kind, err)
+		}
+
+		ensureArtifactRecordedLocked(kind, path, "text/plain")
+		return path
+	}
+
+	writeArtifactSnapshotLocked := func(kind string, data string) string {
+		if data == "" {
+			return ""
+		}
+		path, err := artifacts.Write(runID, kind, pipeline.ArtifactFilename(kind), []byte(data))
+		if err != nil {
+			recordWriteError("write_"+kind, err)
+			return ""
+		}
+		ensureArtifactRecordedLocked(kind, path, "text/plain")
+		return path
+	}
+
+	combinedLogText := func(stdout, stderr string) string {
+		combined := stdout
+		if stderr != "" {
+			if combined != "" {
+				combined += "\n\n--- STDERR ---\n\n"
+			}
+			combined += stderr
+		}
+		return combined
+	}
+
+	writeCombinedSnapshotLocked := func(stdout, stderr string) string {
+		combined := combinedLogText(stdout, stderr)
+		if combined == "" {
+			return ""
+		}
+		return writeArtifactSnapshotLocked("opencode_combined_log", combined)
+	}
+
+	if err := artifacts.EnsureDir(runID); err != nil {
+		streamMu.Lock()
+		recordWriteError("dir_init", err)
+		streamMu.Unlock()
+	}
+
 	// Run command with timeout
 	runResult := h.runAgentCommandArgs(
 		ctx,
@@ -996,51 +1186,37 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		invocation.Args,
 		invocation.Stdin,
 		pipeline.DefaultAgentCommandTimeout,
+		pipeline.AgentCommandStreamCallbacks{
+			OnStdout: func(chunk []byte) {
+				if len(chunk) == 0 {
+					return
+				}
+				streamMu.Lock()
+				defer streamMu.Unlock()
+
+				streamedStdout.Write(chunk)
+				appendArtifactLocked("opencode_stdout", chunk)
+				writeCombinedSnapshotLocked(streamedStdout.String(), streamedStderr.String())
+			},
+			OnStderr: func(chunk []byte) {
+				if len(chunk) == 0 {
+					return
+				}
+				streamMu.Lock()
+				defer streamMu.Unlock()
+
+				streamedStderr.Write(chunk)
+				appendArtifactLocked("opencode_stderr", chunk)
+				writeCombinedSnapshotLocked(streamedStdout.String(), streamedStderr.String())
+			},
+		},
 	)
 
-	// Write stdout/stderr/combined artifacts, tracking write errors
-	var writeErrors []string
-
-	stdoutPath := ""
-	if runResult.Stdout != "" {
-		p, err := artifacts.Write(runID, "opencode_stdout", pipeline.ArtifactFilename("opencode_stdout"), []byte(runResult.Stdout))
-		if err == nil {
-			h.store.CreateArtifact(runID, "opencode_stdout", p, "text/plain")
-			stdoutPath = p
-		} else {
-			writeErrors = append(writeErrors, "stdout: "+err.Error())
-		}
-	}
-
-	stderrPath := ""
-	if runResult.Stderr != "" {
-		p, err := artifacts.Write(runID, "opencode_stderr", pipeline.ArtifactFilename("opencode_stderr"), []byte(runResult.Stderr))
-		if err == nil {
-			h.store.CreateArtifact(runID, "opencode_stderr", p, "text/plain")
-			stderrPath = p
-		} else {
-			writeErrors = append(writeErrors, "stderr: "+err.Error())
-		}
-	}
-
-	combinedLog := runResult.Stdout
-	if runResult.Stderr != "" {
-		if combinedLog != "" {
-			combinedLog += "\n\n--- STDERR ---\n\n"
-		}
-		combinedLog += runResult.Stderr
-	}
-
-	combinedPath := ""
-	if combinedLog != "" {
-		p, err := artifacts.Write(runID, "opencode_combined_log", pipeline.ArtifactFilename("opencode_combined_log"), []byte(combinedLog))
-		if err == nil {
-			h.store.CreateArtifact(runID, "opencode_combined_log", p, "text/plain")
-			combinedPath = p
-		} else {
-			writeErrors = append(writeErrors, "combined_log: "+err.Error())
-		}
-	}
+	streamMu.Lock()
+	stdoutPath := writeArtifactSnapshotLocked("opencode_stdout", runResult.Stdout)
+	stderrPath := writeArtifactSnapshotLocked("opencode_stderr", runResult.Stderr)
+	combinedPath := writeCombinedSnapshotLocked(runResult.Stdout, runResult.Stderr)
+	streamMu.Unlock()
 
 	// Determine execution status
 	execStatus := "completed"
@@ -1059,8 +1235,14 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		errPtr = &runResult.Error
 	}
 	// Include write errors in the execution error field
-	if len(writeErrors) > 0 {
-		errSummary := "artifact write errors: " + strings.Join(writeErrors, "; ")
+	streamMu.Lock()
+	var writeErrorList []string
+	for key, msg := range writeErrors {
+		writeErrorList = append(writeErrorList, key+": "+msg)
+	}
+	streamMu.Unlock()
+	if len(writeErrorList) > 0 {
+		errSummary := "artifact write errors: " + strings.Join(writeErrorList, "; ")
 		if errPtr != nil {
 			combined := *errPtr + "; " + errSummary
 			errPtr = &combined
@@ -1237,7 +1419,7 @@ func (h *RunsHandler) checkOpenCodeCLI(w http.ResponseWriter, r *http.Request, r
 	}
 
 	// Run opencode --version
-	verResult := h.runAgentCommandArgs(r.Context(), ".", binary, []string{"--version"}, "", 30*time.Second)
+	verResult := h.runAgentCommandArgs(r.Context(), ".", binary, []string{"--version"}, "", 30*time.Second, pipeline.AgentCommandStreamCallbacks{})
 	result.VersionExitCode = verResult.ExitCode
 	result.VersionStdout = verResult.Stdout
 	result.VersionStderr = verResult.Stderr
@@ -1260,7 +1442,7 @@ func (h *RunsHandler) checkOpenCodeCLI(w http.ResponseWriter, r *http.Request, r
 	}
 
 	// Run opencode models
-	modelsResult := h.runAgentCommandArgs(r.Context(), ".", binary, []string{"models"}, "", 30*time.Second)
+	modelsResult := h.runAgentCommandArgs(r.Context(), ".", binary, []string{"models"}, "", 30*time.Second, pipeline.AgentCommandStreamCallbacks{})
 	result.ModelsExitCode = modelsResult.ExitCode
 	result.ModelsStdout = modelsResult.Stdout
 	result.ModelsStderr = modelsResult.Stderr
@@ -2064,6 +2246,7 @@ func (h *RunsHandler) generateIntakeRemediationHandoff(w http.ResponseWriter, r 
 func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifactsList []store.Artifact) (views.RunPreviews, bool) {
 	var previews views.RunPreviews
 	changed := false
+	now := time.Now()
 
 	// Load latest execution
 	if exec, err := h.store.GetLatestAgentExecutionByRun(runID); err == nil {
@@ -2081,9 +2264,9 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 		previews.OpenCodeCommandPreview = exec.CommandPreview
 		isRunning := exec.Status == "starting" || exec.Status == "running"
 		previews.HasOpenCodeRunning = isRunning
+		previews.OpenCodeRuntime = formatOpenCodeRuntime(previews.OpenCodeExecutionStarted, previews.OpenCodeExecutionFinished, now)
 
-		// Check for stale running state: running but output artifacts exist
-		if isRunning {
+		if false {
 			hasAnyOutput := false
 			for _, a := range artifactsList {
 				if a.Kind == "opencode_stdout" || a.Kind == "opencode_stderr" || a.Kind == "opencode_combined_log" {
@@ -2146,6 +2329,13 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 		// Build transcript from stdout/stderr
 		stdoutPreview := readArtifactPreview(runID, "opencode_stdout")
 		stderrPreview := readArtifactPreview(runID, "opencode_stderr")
+		previews.HasOpenCodeOutput = stdoutPreview != "" || stderrPreview != ""
+		previews.OpenCodePermissionWarning = pipeline.OpenCodePermissionWarning(stderrPreview)
+		if lastOutputAt, ok := latestOpenCodeOutputTime(runID); ok {
+			previews.HasOpenCodeOutput = true
+			previews.OpenCodeLastOutputAt = lastOutputAt.Local().Format("2006-01-02 15:04:05")
+			previews.OpenCodeLastOutputAge = formatDurationCompact(now.Sub(lastOutputAt)) + " ago"
+		}
 		events := pipeline.BuildOpenCodeTranscript(stdoutPreview, stderrPreview, 200)
 		for _, ev := range events {
 			previews.OpenCodeTranscript = append(previews.OpenCodeTranscript, views.OpenCodeTranscriptEventView{
@@ -2164,6 +2354,43 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 			previews.OpenCodeParsedLOCChanged = parsed.LOCChanged
 			if parsed.Raw != "" {
 				previews.OpenCodeParsedResultRaw = parsed.Raw
+			}
+
+			if previews.HasOpenCodeRunning && (parsed.Status == pipeline.AgentResultDone || parsed.Status == pipeline.AgentResultBlocked) {
+				result, reconcileErr := h.reconcileOpenCodeExecution(runID)
+				if reconcileErr == nil {
+					changed = result.Changed
+					h.log.Info("auto-reconciled stale opencode execution from GET path", "run_id", runID)
+					previews.HasOpenCodeRunning = false
+					previews.HasOpenCodeStaleRunning = false
+					if result.FinalStatus != "" {
+						previews.OpenCodeExecutionStatus = result.FinalStatus
+					}
+					if exec2, err2 := h.store.GetLatestAgentExecutionByRun(runID); err2 == nil {
+						previews.OpenCodeExecutionStatus = exec2.Status
+						if exec2.FinishedAt.Valid {
+							previews.OpenCodeExecutionFinished = exec2.FinishedAt.String
+						}
+						if exec2.ExitCode.Valid {
+							previews.OpenCodeExecutionExitCode = strconv.FormatInt(exec2.ExitCode.Int64, 10)
+						}
+						previews.OpenCodeRuntime = formatOpenCodeRuntime(previews.OpenCodeExecutionStarted, previews.OpenCodeExecutionFinished, now)
+					}
+				} else {
+					h.log.Warn("auto-reconcile opencode execution failed", "run_id", runID, "error", reconcileErr)
+				}
+			}
+		}
+
+		if isRunning && previews.HasOpenCodeOutput && previews.HasOpenCodeRunning {
+			lastActivity := time.Time{}
+			if lastOutputAt, ok := latestOpenCodeOutputTime(runID); ok {
+				lastActivity = lastOutputAt
+			} else if updatedAt, ok := parseExecutionTimestamp(exec.UpdatedAt); ok {
+				lastActivity = updatedAt
+			}
+			if !lastActivity.IsZero() && now.Sub(lastActivity) > openCodeStaleOutputThreshold {
+				previews.HasOpenCodeStaleRunning = true
 			}
 		}
 	}

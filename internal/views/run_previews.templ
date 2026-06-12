@@ -98,6 +98,10 @@ type RunPreviews struct {
 	OpenCodeExecutionExitCode   string
 	OpenCodeExecutionStarted    string
 	OpenCodeExecutionFinished   string
+	OpenCodeRuntime             string
+	OpenCodeLastOutputAt        string
+	OpenCodeLastOutputAge       string
+	OpenCodePermissionWarning   string
 	OpenCodeStdoutArtifactID    int64
 	OpenCodeStderrArtifactID    int64
 	OpenCodeCombinedArtifactID  int64
@@ -138,6 +142,7 @@ type RunPreviews struct {
 	// Agent Run Monitor fields
 	HasOpenCodeRunning         bool
 	HasOpenCodeStaleRunning    bool
+	HasOpenCodeOutput          bool
 	OpenCodeTranscript         []OpenCodeTranscriptEventView
 	OpenCodeParsedResultStatus string
 	OpenCodeParsedBuildStatus  string

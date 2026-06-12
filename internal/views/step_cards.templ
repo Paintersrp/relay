@@ -916,6 +916,12 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 									<span class="text-gray-300">{ previews.OpenCodeExecutionStarted }</span>
 								</div>
 							}
+							if previews.OpenCodeRuntime != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Runtime</span>
+									<span class="text-gray-300">{ previews.OpenCodeRuntime }</span>
+								</div>
+							}
 							if previews.OpenCodeExecutionFinished != "" {
 								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
 									<span class="text-gray-400 shrink-0">Finished</span>
@@ -1075,6 +1081,12 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 									<span class="text-gray-300">{ previews.OpenCodeExecutionStarted }</span>
 								</div>
 							}
+							if previews.OpenCodeRuntime != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Runtime</span>
+									<span class="text-gray-300">{ previews.OpenCodeRuntime }</span>
+								</div>
+							}
 							if previews.OpenCodeExecutionFinished != "" {
 								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
 									<span class="text-gray-400 shrink-0">Finished</span>
@@ -1085,6 +1097,18 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
 									<span class="text-gray-400 shrink-0">Exit code</span>
 									<span class="text-gray-300">{ previews.OpenCodeExecutionExitCode }</span>
+								</div>
+							}
+							if previews.OpenCodeLastOutputAge != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Last output</span>
+									<span class="text-gray-300">{ previews.OpenCodeLastOutputAge }</span>
+								</div>
+							}
+							if previews.OpenCodeLastOutputAt != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Last output at</span>
+									<span class="text-gray-300">{ previews.OpenCodeLastOutputAt }</span>
 								</div>
 							}
 						</div>
@@ -1101,11 +1125,15 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 					}
 				}
 			} else if isRunning {
-				if previews.HasOpenCodeStdout || previews.HasOpenCodeCombinedLog {
-					@StageEvidenceRow("running", "OpenCode is running — output captured", "Captured output and logs are available below.", "")
+				if previews.HasOpenCodeOutput {
+					@StageEvidenceRow("running", "OpenCode is running — live output detected", "Relay is polling and showing partial stdout/stderr as they arrive.", "")
 				} else {
-					@StageEvidenceRow("running", "Status refreshes automatically", "Captured output appears after logs are saved.", "")
+					@StageEvidenceRow("running", "OpenCode is running", "No output captured yet. Relay keeps polling for updates.", "")
 				}
+			}
+
+			if previews.OpenCodePermissionWarning != "" {
+				@StageEvidenceRow("warning", previews.OpenCodePermissionWarning, "Review stderr or the combined log for the rejected request.", "")
 			}
 
 			if previews.OpenCodeExecutionStatus == "failed" {
@@ -1152,30 +1180,32 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 				}
 			}
 
-			@StageEvidenceRow("passed", "Log artifacts", "", "") {
-				<div class="relay-action-row">
-					if previews.HasOpenCodeStdout {
-						@ArtifactPreviewLink(run.ID, "opencode_stdout", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
-							stdout
+			if previews.HasOpenCodeStdout || previews.HasOpenCodeStderr || previews.HasOpenCodeCombinedLog {
+				@StageEvidenceRow("passed", "Log artifacts", "", "") {
+					<div class="relay-action-row">
+						if previews.HasOpenCodeStdout {
+							@ArtifactPreviewLink(run.ID, "opencode_stdout", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								stdout
+							}
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout/download"}
+								class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>download stdout</a>
 						}
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout/download"}
-							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>download stdout</a>
-					}
-					if previews.HasOpenCodeStderr {
-						@ArtifactPreviewLink(run.ID, "opencode_stderr", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
-							stderr
+						if previews.HasOpenCodeStderr {
+							@ArtifactPreviewLink(run.ID, "opencode_stderr", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								stderr
+							}
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr/download"}
+								class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>download stderr</a>
 						}
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr/download"}
-							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>download stderr</a>
-					}
-					if previews.HasOpenCodeCombinedLog {
-						@ArtifactPreviewLink(run.ID, "opencode_combined_log", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
-							combined log
+						if previews.HasOpenCodeCombinedLog {
+							@ArtifactPreviewLink(run.ID, "opencode_combined_log", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+								combined log
+							}
+							<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log/download"}
+								class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>download combined log</a>
 						}
-						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log/download"}
-							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>download combined log</a>
-					}
-				</div>
+					</div>
+				}
 			}
 
 			if previews.OpenCodeParsedResultStatus != "" {

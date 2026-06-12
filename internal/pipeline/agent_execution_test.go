@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"runtime"
 	"strings"
@@ -362,6 +363,125 @@ func TestRunLocalAgentCommandTimeoutUsesTimeoutContext(t *testing.T) {
 	}
 }
 
+func TestAgentCommandStreamingHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_AGENT_STREAM_HELPER") != "1" {
+		return
+	}
+
+	scenario := ""
+	for i, arg := range os.Args {
+		if arg == "--" && i+1 < len(os.Args) {
+			scenario = os.Args[i+1]
+			break
+		}
+	}
+
+	switch scenario {
+	case "stream":
+		fmt.Fprint(os.Stdout, "stdout-one\n")
+		time.Sleep(250 * time.Millisecond)
+		fmt.Fprint(os.Stderr, "stderr-one\n")
+		time.Sleep(250 * time.Millisecond)
+		fmt.Fprint(os.Stdout, "stdout-two\n")
+		os.Exit(0)
+	case "timeout":
+		fmt.Fprint(os.Stdout, "partial-before-timeout\n")
+		time.Sleep(2 * time.Second)
+		fmt.Fprint(os.Stdout, "late-output\n")
+		os.Exit(0)
+	default:
+		fmt.Fprint(os.Stderr, "unknown helper scenario\n")
+		os.Exit(2)
+	}
+}
+
+func TestRunLocalAgentCommandArgsStreamingStreamsOutputBeforeExit(t *testing.T) {
+	t.Setenv("GO_WANT_AGENT_STREAM_HELPER", "1")
+
+	stdoutChunks := make(chan string, 4)
+	stderrChunks := make(chan string, 4)
+	resultCh := make(chan AgentCommandRunResult, 1)
+
+	go func() {
+		resultCh <- RunLocalAgentCommandArgsStreaming(
+			context.Background(),
+			".",
+			os.Args[0],
+			[]string{"-test.run=TestAgentCommandStreamingHelperProcess", "--", "stream"},
+			"",
+			5*time.Second,
+			AgentCommandStreamCallbacks{
+				OnStdout: func(chunk []byte) { stdoutChunks <- string(chunk) },
+				OnStderr: func(chunk []byte) { stderrChunks <- string(chunk) },
+			},
+		)
+	}()
+
+	select {
+	case result := <-resultCh:
+		t.Fatalf("expected streaming callback before process exit, got final result early: %+v", result)
+	case chunk := <-stdoutChunks:
+		if !strings.Contains(chunk, "stdout-one") {
+			t.Fatalf("expected first stdout chunk, got %q", chunk)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first stdout chunk")
+	}
+
+	select {
+	case chunk := <-stderrChunks:
+		if !strings.Contains(chunk, "stderr-one") {
+			t.Fatalf("expected stderr chunk, got %q", chunk)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for stderr chunk")
+	}
+
+	result := <-resultCh
+	if result.TimedOut {
+		t.Fatal("did not expect streaming test command to time out")
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d (stderr=%q)", result.ExitCode, result.Stderr)
+	}
+	if !strings.Contains(result.Stdout, "stdout-one") || !strings.Contains(result.Stdout, "stdout-two") {
+		t.Fatalf("expected full stdout in final result, got %q", result.Stdout)
+	}
+	if !strings.Contains(result.Stderr, "stderr-one") {
+		t.Fatalf("expected full stderr in final result, got %q", result.Stderr)
+	}
+}
+
+func TestRunLocalAgentCommandArgsStreamingTimeoutCapturesPartialOutput(t *testing.T) {
+	t.Setenv("GO_WANT_AGENT_STREAM_HELPER", "1")
+
+	var streamedStdout strings.Builder
+	result := RunLocalAgentCommandArgsStreaming(
+		context.Background(),
+		".",
+		os.Args[0],
+		[]string{"-test.run=TestAgentCommandStreamingHelperProcess", "--", "timeout"},
+		"",
+		200*time.Millisecond,
+		AgentCommandStreamCallbacks{
+			OnStdout: func(chunk []byte) { streamedStdout.Write(chunk) },
+		},
+	)
+
+	if !result.TimedOut {
+		t.Fatalf("expected timeout result, got exit code=%d stderr=%q", result.ExitCode, result.Stderr)
+	}
+	if result.ExitCode != -2 {
+		t.Fatalf("expected timeout exit code -2, got %d", result.ExitCode)
+	}
+	if !strings.Contains(result.Stdout, "partial-before-timeout") {
+		t.Fatalf("expected partial stdout in final result, got %q", result.Stdout)
+	}
+	if !strings.Contains(streamedStdout.String(), "partial-before-timeout") {
+		t.Fatalf("expected timeout callback to receive partial stdout, got %q", streamedStdout.String())
+	}
+}
+
 func TestOpenCodeModelUsesEnvMapping(t *testing.T) {
 	envKey := "RELAY_OPENCODE_MODEL_DEEPSEEK_V4_FLASH"
 	original := os.Getenv(envKey)
@@ -587,6 +707,20 @@ func TestOpenCodeFailureHintTimeout(t *testing.T) {
 	hint := OpenCodeFailureHint(result, OpenCodeRunInvocation{Binary: "opencode"})
 	if !strings.Contains(hint, "timed out") {
 		t.Fatalf("expected timeout hint, got: %s", hint)
+	}
+}
+
+func TestOpenCodePermissionWarningDetectsDeniedPermission(t *testing.T) {
+	warning := OpenCodePermissionWarning("permission requested:\nauto-rejecting\nexternal_directory\npermission denied\n")
+	if warning == "" {
+		t.Fatal("expected permission warning for denied permission stderr")
+	}
+}
+
+func TestOpenCodePermissionWarningIgnoresModelErrors(t *testing.T) {
+	warning := OpenCodePermissionWarning("model not found")
+	if warning != "" {
+		t.Fatalf("expected no permission warning for model error, got %q", warning)
 	}
 }
 
