@@ -91,11 +91,17 @@ func pipelineStageState(step string, activeStep string, previews RunPreviews, ar
 		}
 		return "pending"
 	case "run":
+		if previews.HasOpenCodeStaleRunning {
+			return "blocked"
+		}
 		if previews.HasOpenCodeRunning {
 			return "running"
 		}
 		if artifactExists(artifacts, "agent_result_raw") {
 			return "done"
+		}
+		if previews.OpenCodeExecutionStatus == "failed" || previews.OpenCodeExecutionStatus == "completed" {
+			return "blocked"
 		}
 		if artifactExists(artifacts, "opencode_handoff_packet") {
 			if previews.OpenCodeAdapterError != "" || previews.HandoffPreflightStatus == "blocked" {
@@ -874,6 +880,23 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 					}
 				}
 				@StageEvidenceRow("blocked", "Start OpenCode Go", "Already running.", "blocked")
+			} else if previews.HasOpenCodeStaleRunning {
+				{{ staleTitle := "OpenCode output stopped while execution is still marked running" }}
+				{{ staleSummary := previews.OpenCodeStaleReason }}
+				if previews.OpenCodeLifecycleState == "stale_timeout" {
+					{{ staleTitle = "OpenCode execution exceeded timeout or Relay lost the worker" }}
+					if staleSummary == "" {
+						{{ staleSummary = "OpenCode is no longer plausibly active." }}
+					}
+				} else if staleSummary == "" {
+					{{ staleSummary = "OpenCode stopped producing output while still marked running." }}
+				}
+				@StageEvidenceRow("warning", staleTitle, staleSummary, "") {
+					@WorkbenchStepLink(run.ID, "run", "text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+						Review Agent Run
+					}
+				}
+				@StageEvidenceRow("blocked", "Start OpenCode Go", "Recover the stale run in Step 5 before starting a new one.", "blocked")
 			} else if previews.OpenCodeAdapterError == "" && previews.HandoffPreflightStatus != "blocked" && previews.OpenCodeCommandPreview != "" {
 				@StageEvidenceRow("ready", "Start OpenCode Go", "This starts a local OpenCode command. Relay will capture stdout/stderr as artifacts.", "") {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
@@ -1011,7 +1034,7 @@ func transcriptEventClass(kind string) string {
 }
 
 templ AgentRunMonitorStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
-	if isExecutionRunning(previews.OpenCodeExecutionStatus) && !previews.HasOpenCodeStaleRunning {
+	if isExecutionRunning(previews.OpenCodeExecutionStatus) && previews.HasOpenCodeRunning && !previews.HasOpenCodeStaleRunning {
 		<div id="agent-run-monitor"
 			hx-get={"/runs/" + Itoa(run.ID) + "?step=run"}
 			hx-trigger="every 2s"
@@ -1111,22 +1134,54 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 									<span class="text-gray-300">{ previews.OpenCodeLastOutputAt }</span>
 								</div>
 							}
+							if previews.HasOpenCodeStaleRunning && previews.OpenCodeStreamLastChunkAge != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Last chunk</span>
+									<span class="text-gray-300">{ previews.OpenCodeStreamLastChunkAge }</span>
+								</div>
+							}
+							if previews.HasOpenCodeStaleRunning && previews.OpenCodeStreamLastChunkAt != "" {
+								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
+									<span class="text-gray-400 shrink-0">Last chunk at</span>
+									<span class="text-gray-300">{ previews.OpenCodeStreamLastChunkAt }</span>
+								</div>
+							}
 						</div>
 					</div>
 				}
 			}
 
 			if isRunning && previews.HasOpenCodeStaleRunning {
-				@StageEvidenceRow("warning", "OpenCode output captured but execution still marked running", "Relay can reconcile the captured output and finish this step.", "") {
-					@WorkbenchActionForm(run.ID, "reconcile-opencode-result", "inline") {
-						<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
-							Reconcile OpenCode Result
-						</button>
+				{{ staleTitle := "OpenCode output stopped while execution is still marked running" }}
+				{{ staleSummary := previews.OpenCodeStaleReason }}
+				if previews.OpenCodeLifecycleState == "stale_timeout" {
+					{{ staleTitle = "OpenCode execution exceeded timeout or Relay lost the worker" }}
+					if staleSummary == "" {
+						{{ staleSummary = "OpenCode is no longer plausibly active." }}
 					}
+				} else if staleSummary == "" {
+					{{ staleSummary = "OpenCode stopped producing output while still marked running." }}
+				}
+				{{ recoveryLabel := previews.OpenCodeRecoveryActionLabel }}
+				if recoveryLabel == "" {
+					{{ recoveryLabel = "Recover Stale OpenCode Run" }}
+				}
+				@StageEvidenceRow("warning", staleTitle, staleSummary, "") {
+					<div class="space-y-2">
+						<div class="text-xs text-amber-200/90">
+							Review stdout, stderr, and the combined log, then recover this run.
+						</div>
+						@WorkbenchActionForm(run.ID, "recover-stale-opencode-execution", "inline") {
+							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+								{ recoveryLabel }
+							</button>
+						}
+					</div>
 				}
 			} else if isRunning {
-				if previews.HasOpenCodeStreamActivity {
-					@StageEvidenceRow("running", "OpenCode is running — streaming chunks received", "Relay is polling and showing partial stdout/stderr as they arrive.", "") {
+				switch previews.OpenCodeLifecycleState {
+				case "active_streaming":
+					@StageEvidenceRow("running", "OpenCode is running - streaming chunks received", "Relay is polling and showing partial stdout/stderr as they arrive.", "") {
 						<div class="text-xs text-blue-200 space-y-1">
 							<div class="flex flex-wrap gap-x-4 gap-y-1">
 								if previews.OpenCodeStreamStdoutChunks > 0 {
@@ -1141,10 +1196,14 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 							}
 						</div>
 					}
-				} else if previews.HasOpenCodeOutput {
-					@StageEvidenceRow("running", "OpenCode is running — artifacts present", "Streaming progress data not available, but artifact files exist.", "")
-				} else {
-					@StageEvidenceRow("running", "OpenCode is running — no output yet", "No stdout/stderr chunks received yet. OpenCode may be initializing or buffering output.", "")
+				case "active_output":
+					@StageEvidenceRow("running", "OpenCode is running - artifacts present", "Streaming progress data not available, but artifact files exist.", "")
+				case "running_no_output":
+					@StageEvidenceRow("running", "OpenCode is running - no output yet", "OpenCode is still inside the startup grace period and has not emitted output yet.", "")
+				case "waiting_output":
+					@StageEvidenceRow("running", "OpenCode is running - waiting for first output", "OpenCode is still plausibly active, but Relay has not seen stdout or stderr yet.", "")
+				default:
+					@StageEvidenceRow("running", "OpenCode is running", "Relay is monitoring the execution.", "")
 				}
 			}
 
@@ -2008,6 +2067,8 @@ templ openCodeExecutionStatusChip(status string) {
 		<span class="relay-chip-green">completed</span>
 	} else if status == "failed" {
 		<span class="relay-chip-red">failed</span>
+	} else if status == "starting" {
+		<span class="relay-chip-blue">starting</span>
 	} else if status == "running" {
 		<span class="relay-chip-blue">running</span>
 	} else if status == "blocked" {

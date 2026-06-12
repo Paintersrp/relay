@@ -679,6 +679,36 @@ func TestOpenCodeHandoffStageShowsBlockedAdapterEvidence(t *testing.T) {
 	}
 }
 
+func TestOpenCodeHandoffStageShowsStaleRecoveryEvidence(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft", SelectedModel: "gpt-4"}
+	artifacts := []store.Artifact{{Kind: "opencode_handoff_packet"}}
+	previews := RunPreviews{
+		HasOpenCodeExecution:        true,
+		OpenCodeExecutionStatus:     "running",
+		HasOpenCodeRunning:          false,
+		HasOpenCodeStaleRunning:     true,
+		OpenCodeLifecycleState:      "stale_timeout",
+		OpenCodeStaleReason:         "OpenCode runtime 4h 21m exceeded the timeout window.",
+		OpenCodeCanRecover:          true,
+		OpenCodeRecoveryActionLabel: "Recover Stale OpenCode Run",
+	}
+	err := OpenCodeGoHandoffStepPanel(run, artifacts, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render OpenCodeGoHandoffStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "OpenCode execution exceeded timeout or Relay lost the worker") {
+		t.Errorf("expected stale timeout warning, got: %s", html)
+	}
+	if !strings.Contains(html, "Review Agent Run") {
+		t.Errorf("expected link back to the run monitor")
+	}
+	if !strings.Contains(html, "Recover the stale run in Step 5 before starting a new one.") {
+		t.Errorf("expected blocked start copy for stale recovery")
+	}
+}
+
 func TestDiffAuditStageShowsGitEvidenceRows(t *testing.T) {
 	var buf strings.Builder
 	previews := RunPreviews{
@@ -1322,6 +1352,8 @@ func TestStep5RunningMonitorHasCorrectPollingAttributes(t *testing.T) {
 	previews := RunPreviews{
 		HasOpenCodeExecution:    true,
 		OpenCodeExecutionStatus: "running",
+		HasOpenCodeRunning:      true,
+		OpenCodeLifecycleState:  "running_no_output",
 	}
 	err := AgentRunMonitorStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
 	if err != nil {
@@ -1351,6 +1383,8 @@ func TestStep5RunningMonitorPollWrapperOmitsShowTop(t *testing.T) {
 	previews := RunPreviews{
 		HasOpenCodeExecution:    true,
 		OpenCodeExecutionStatus: "running",
+		HasOpenCodeRunning:      true,
+		OpenCodeLifecycleState:  "running_no_output",
 	}
 	err := AgentRunMonitorStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
 	if err != nil {
@@ -1634,12 +1668,15 @@ func TestAgentRunStaleRunningWithCapturedOutputShowsRecoveryAction(t *testing.T)
 	var buf strings.Builder
 	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
 	previews := RunPreviews{
-		HasOpenCodeExecution:    true,
-		OpenCodeExecutionStatus: "running",
-		HasOpenCodeRunning:      true,
-		HasOpenCodeStaleRunning: true,
-		HasOpenCodeStdout:       true,
-		HasOpenCodeCombinedLog:  true,
+		HasOpenCodeExecution:        true,
+		OpenCodeExecutionStatus:     "running",
+		HasOpenCodeRunning:          false,
+		HasOpenCodeStaleRunning:     true,
+		OpenCodeLifecycleState:      "stale_output",
+		OpenCodeStaleReason:         "OpenCode output stopped 20m ago.",
+		OpenCodeRecoveryActionLabel: "Recover Stale OpenCode Run",
+		HasOpenCodeStdout:           true,
+		HasOpenCodeCombinedLog:      true,
 	}
 	err := AgentRunMonitorStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
 	if err != nil {
@@ -1647,18 +1684,18 @@ func TestAgentRunStaleRunningWithCapturedOutputShowsRecoveryAction(t *testing.T)
 	}
 	html := buf.String()
 	// Should show recovery action
-	if !strings.Contains(html, "Reconcile OpenCode Result") {
+	if !strings.Contains(html, "Recover Stale OpenCode Run") {
 		t.Errorf("expected recovery action for stale running state, got: %s", html)
 	}
-	if !strings.Contains(html, "reconcile-opencode-result") {
-		t.Errorf("expected reconcile-opencode-result action input")
+	if !strings.Contains(html, "recover-stale-opencode-execution") {
+		t.Errorf("expected recover-stale-opencode-execution action input")
 	}
 	// Should NOT have hx-trigger polling for stale execution
 	if strings.Contains(html, `hx-trigger="every 2s"`) {
 		t.Errorf("stale running execution should not have hx-trigger polling, got: %s", html)
 	}
 	// Should show warning about captured output
-	if !strings.Contains(html, "output captured but execution still marked running") {
+	if !strings.Contains(html, "OpenCode output stopped while execution is still marked running") {
 		t.Errorf("expected warning about captured output, got: %s", html)
 	}
 	// Log artifact links should be present
@@ -1677,6 +1714,7 @@ func TestAgentRunRunningWithoutOutputShowsNoOutputYet(t *testing.T) {
 		HasOpenCodeExecution:    true,
 		OpenCodeExecutionStatus: "running",
 		HasOpenCodeRunning:      true,
+		OpenCodeLifecycleState:  "running_no_output",
 	}
 	err := AgentRunMonitorStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
 	if err != nil {
@@ -1702,6 +1740,7 @@ func TestAgentRunRunningWithPermissionWarningShowsWarningAndTiming(t *testing.T)
 		OpenCodeExecutionStatus:   "running",
 		HasOpenCodeRunning:        true,
 		HasOpenCodeOutput:         true,
+		OpenCodeLifecycleState:    "active_output",
 		HasOpenCodeStderr:         true,
 		HasOpenCodeCombinedLog:    true,
 		OpenCodeCommandPreview:    "opencode run",

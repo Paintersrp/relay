@@ -2670,7 +2670,7 @@ another line
 	}
 	found := false
 	for _, ev := range events {
-		if strings.Contains(ev.Message, "without DONE/BLOCKED") {
+		if strings.Contains(ev.Message, "no DONE/BLOCKED final result was found") {
 			found = true
 			break
 		}
@@ -2800,7 +2800,7 @@ func TestRunGetAutoReconcilesRunningOpenCodeDoneOutput(t *testing.T) {
 	}
 }
 
-func TestRunGetShowsRecoverableStaleOpenCodeOutputWithoutResult(t *testing.T) {
+func TestRunGetShowsStaleOpenCodeWhenOutputStopped(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	runID := setupOpenCodeRun(t, s)
@@ -2813,7 +2813,9 @@ another line
 		`stderr line
 `,
 	)
-	touchOpenCodeOutputArtifacts(t, runID, time.Now().Add(-3*time.Minute))
+	seedStreamProgressArtifactAt(t, s, runID, 4, 1, 128, 32, time.Now().Add(-5*time.Minute))
+	touchOpenCodeOutputArtifacts(t, runID, time.Now().Add(-5*time.Minute))
+	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-5*time.Minute), time.Now().Add(-5*time.Minute))
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", itoa(runID))
@@ -2836,14 +2838,52 @@ another line
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "Reconcile OpenCode Result") {
+	if !strings.Contains(body, "OpenCode output stopped while execution is still marked running") {
+		t.Fatal("expected stale OpenCode output warning")
+	}
+	if !strings.Contains(body, "Recover Stale OpenCode Run") {
 		t.Fatal("expected recovery action for stale OpenCode output")
 	}
 	if strings.Contains(body, `hx-trigger="every 2s"`) {
 		t.Fatal("expected polling to stop for stale OpenCode output")
 	}
+	if !strings.Contains(body, "Last chunk") {
+		t.Fatal("expected last chunk age for stale OpenCode output")
+	}
 	if !strings.Contains(body, "download combined log") {
 		t.Fatal("expected combined log link for stale OpenCode output")
+	}
+}
+
+func TestRunGetShowsStaleOpenCodeWhenRuntimeExceedsTimeoutWithoutOutput(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-40*time.Minute), time.Now().Add(-40*time.Minute))
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "OpenCode execution exceeded timeout or Relay lost the worker") {
+		t.Fatal("expected timeout-orphan warning")
+	}
+	if !strings.Contains(body, "Recover Stale OpenCode Run") {
+		t.Fatal("expected recovery action for timeout-orphan stale state")
+	}
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling to stop for timeout-orphan stale state")
 	}
 }
 
@@ -2876,7 +2916,7 @@ func TestRunGetKeepsPollingWhenOpenCodeRunningWithFreshOutput(t *testing.T) {
 	if !strings.Contains(body, `hx-trigger="every 2s"`) {
 		t.Fatal("expected polling to continue for fresh OpenCode output")
 	}
-	if strings.Contains(body, "Reconcile OpenCode Result") {
+	if strings.Contains(body, "Recover Stale OpenCode Run") {
 		t.Fatal("did not expect recovery action for fresh OpenCode output")
 	}
 	if !strings.Contains(body, "artifacts present") {
@@ -2951,7 +2991,7 @@ func TestRunGetKeepsPollingWhenOpenCodeRunningWithoutOutput(t *testing.T) {
 	if !strings.Contains(body, `hx-trigger="every 2s"`) {
 		t.Fatal("expected polling when OpenCode is still running without output")
 	}
-	if strings.Contains(body, "Reconcile OpenCode Result") {
+	if strings.Contains(body, "Recover Stale OpenCode Run") {
 		t.Fatal("did not expect recovery action when no output exists")
 	}
 	if !strings.Contains(body, "no output yet") {
@@ -3042,7 +3082,40 @@ func seedStreamProgressArtifact(t *testing.T, s *store.Store, runID int64, stdou
 	s.CreateArtifact(runID, "opencode_stream_progress_json", p, "application/json")
 }
 
-func TestRunGetShowsLiveOpenCodeStreamActivityWhileRunning(t *testing.T) {
+func seedStreamProgressArtifactAt(t *testing.T, s *store.Store, runID int64, stdoutChunks, stderrChunks int64, stdoutBytes, stderrBytes int64, lastChunkAt time.Time) {
+	t.Helper()
+	sp := pipeline.StreamProgress{
+		StdoutChunks: stdoutChunks,
+		StderrChunks: stderrChunks,
+		StdoutBytes:  stdoutBytes,
+		StderrBytes:  stderrBytes,
+		LastChunkAt:  lastChunkAt.UTC().Format(time.RFC3339Nano),
+	}
+	data, err := json.MarshalIndent(sp, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal stream progress: %v", err)
+	}
+	p, err := artifacts.Write(runID, "opencode_stream_progress_json", pipeline.ArtifactFilename("opencode_stream_progress_json"), data)
+	if err != nil {
+		t.Fatalf("write stream progress: %v", err)
+	}
+	s.CreateArtifact(runID, "opencode_stream_progress_json", p, "application/json")
+}
+
+func ageLatestOpenCodeExecution(t *testing.T, s *store.Store, runID int64, startedAt, updatedAt time.Time) {
+	t.Helper()
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest agent execution: %v", err)
+	}
+	started := startedAt.UTC().Format(time.RFC3339Nano)
+	updated := updatedAt.UTC().Format(time.RFC3339Nano)
+	if _, err := s.DB().Exec(`UPDATE agent_executions SET started_at = ?, updated_at = ? WHERE id = ?`, started, updated, exec.ID); err != nil {
+		t.Fatalf("age latest agent execution: %v", err)
+	}
+}
+
+func TestRunGetShowsActiveOpenCodeRunningWithRecentStreamProgress(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	runID := setupOpenCodeRun(t, s)
@@ -3076,8 +3149,8 @@ func TestRunGetShowsLiveOpenCodeStreamActivityWhileRunning(t *testing.T) {
 	if !strings.Contains(body, "3 chunks") || !strings.Contains(body, "45 bytes") {
 		t.Fatal("expected streamed chunk count and byte count in body")
 	}
-	if strings.Contains(body, "Reconcile OpenCode Result") {
-		t.Fatal("did not expect reconcile action for non-stale running execution")
+	if strings.Contains(body, "Recover Stale OpenCode Run") {
+		t.Fatal("did not expect recovery action for non-stale running execution")
 	}
 }
 
@@ -3115,7 +3188,7 @@ func TestRunGetShowsNoChunksYetWhenRunningWithoutOutput(t *testing.T) {
 	if !strings.Contains(body, "no output yet") {
 		t.Fatal("expected no-output running message")
 	}
-	if strings.Contains(body, "Reconcile OpenCode Result") {
+	if strings.Contains(body, "Recover Stale OpenCode Run") {
 		t.Fatal("did not expect recovery action when no output exists")
 	}
 }
@@ -3206,5 +3279,187 @@ func TestRunGetCompletedOpenCodeStillShowsFinalArtifactsAndParsedResult(t *testi
 	}
 	if !strings.Contains(body, "Proceed to Relay Validation") {
 		t.Fatal("expected validation-ready progression link for DONE result")
+	}
+}
+
+func TestRecoverStaleOpenCodeWithDoneOutputPersistsResult(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`{"type":"text","part":{"type":"text","text":"DONE"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Build status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Test status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Count of LOC changed: 12"}}
+`,
+		"",
+	)
+	touchOpenCodeOutputArtifacts(t, runID, time.Now().Add(-5*time.Minute))
+	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-5*time.Minute), time.Now().Add(-5*time.Minute))
+
+	req := httptest.NewRequest("POST", "/runs/"+itoa(runID)+"/actions", strings.NewReader("action=recover-stale-opencode-execution"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Action(w, req)
+
+	if w.Code != 303 {
+		t.Fatalf("expected recovery action redirect, got %d", w.Code)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.Status != "completed" {
+		t.Fatalf("expected execution to be completed after recovery, got %q", exec.Status)
+	}
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status != "agent_done" {
+		t.Fatalf("expected run status agent_done after recovery, got %q", run.Status)
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	hasRaw := false
+	hasJSON := false
+	for _, a := range artifactsList {
+		if a.Kind == "agent_result_raw" {
+			hasRaw = true
+		}
+		if a.Kind == "agent_result_json" {
+			hasJSON = true
+		}
+	}
+	if !hasRaw {
+		t.Fatal("expected agent_result_raw after recovery")
+	}
+	if !hasJSON {
+		t.Fatal("expected agent_result_json after recovery")
+	}
+
+	getCtx := chi.NewRouteContext()
+	getCtx.URLParams.Add("id", itoa(runID))
+	getReq := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	getReq = getReq.WithContext(context.WithValue(getReq.Context(), chi.RouteCtxKey, getCtx))
+	getW := httptest.NewRecorder()
+
+	h.Get(getW, getReq)
+
+	if getW.Code != 200 {
+		t.Fatalf("expected 200 from GET render after recovery, got %d", getW.Code)
+	}
+	body := getW.Body.String()
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling to stop after recovery")
+	}
+	if !strings.Contains(body, "Proceed to Relay Validation") {
+		t.Fatal("expected validation-ready progression link after recovery")
+	}
+}
+
+func TestRecoverStaleOpenCodeWithoutFinalResultMarksFailed(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`some tool output line
+another line
+`,
+		`stderr line
+`,
+	)
+	touchOpenCodeOutputArtifacts(t, runID, time.Now().Add(-5*time.Minute))
+	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-5*time.Minute), time.Now().Add(-5*time.Minute))
+
+	req := httptest.NewRequest("POST", "/runs/"+itoa(runID)+"/actions", strings.NewReader("action=recover-stale-opencode-execution"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Action(w, req)
+
+	if w.Code != 303 {
+		t.Fatalf("expected recovery action redirect, got %d", w.Code)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.Status != "failed" {
+		t.Fatalf("expected execution to be failed after recovery, got %q", exec.Status)
+	}
+	if !exec.FinishedAt.Valid {
+		t.Fatal("expected finished_at to be set after failed recovery")
+	}
+	if !exec.Error.Valid || !strings.Contains(exec.Error.String, "no DONE/BLOCKED") {
+		t.Fatalf("expected failed recovery error to mention missing DONE/BLOCKED, got %q", exec.Error.String)
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	hasStdout := false
+	hasStderr := false
+	hasCombined := false
+	for _, a := range artifactsList {
+		switch a.Kind {
+		case "opencode_stdout":
+			hasStdout = true
+		case "opencode_stderr":
+			hasStderr = true
+		case "opencode_combined_log":
+			hasCombined = true
+		}
+	}
+	if !hasStdout || !hasStderr || !hasCombined {
+		t.Fatal("expected stdout, stderr, and combined log artifacts to remain after failed recovery")
+	}
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status == "agent_done" {
+		t.Fatal("did not expect failed recovery to advance the run to agent_done")
+	}
+
+	getCtx := chi.NewRouteContext()
+	getCtx.URLParams.Add("id", itoa(runID))
+	getReq := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	getReq = getReq.WithContext(context.WithValue(getReq.Context(), chi.RouteCtxKey, getCtx))
+	getW := httptest.NewRecorder()
+
+	h.Get(getW, getReq)
+
+	if getW.Code != 200 {
+		t.Fatalf("expected 200 from GET render after failed recovery, got %d", getW.Code)
+	}
+	body := getW.Body.String()
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling to stop after failed recovery")
+	}
+	if strings.Contains(body, "Proceed to Relay Validation") {
+		t.Fatal("did not expect validation-ready progression after failed recovery")
 	}
 }

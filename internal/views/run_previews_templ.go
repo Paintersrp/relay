@@ -91,29 +91,33 @@ type WorkbenchNextActionView struct {
 }
 
 type RunPreviews struct {
-	NextAction                 WorkbenchNextActionView
-	OriginalHandoff            string
-	ValidationJSON             string
-	AgentPrompt                string
-	OpenCodePacket             string
-	AgentPromptDiff            PreviewDiff
-	AgentPromptEstimate        string
-	HandoffPreflightStatus     string
-	HandoffPreflightChecks     []HandoffPreflightCheckView
-	OpenCodeCommandTemplate    string
-	OpenCodeCommandPreview     string
-	OpenCodeExecutionStatus    string
-	OpenCodeExecutionExitCode  string
-	OpenCodeExecutionStarted   string
-	OpenCodeExecutionFinished  string
-	OpenCodeRuntime            string
-	OpenCodeLastOutputAt       string
-	OpenCodeLastOutputAge      string
-	OpenCodePermissionWarning  string
-	OpenCodeStdoutArtifactID   int64
-	OpenCodeStderrArtifactID   int64
-	OpenCodeCombinedArtifactID int64
-	HasOpenCodeExecution       bool
+	NextAction                  WorkbenchNextActionView
+	OriginalHandoff             string
+	ValidationJSON              string
+	AgentPrompt                 string
+	OpenCodePacket              string
+	AgentPromptDiff             PreviewDiff
+	AgentPromptEstimate         string
+	HandoffPreflightStatus      string
+	HandoffPreflightChecks      []HandoffPreflightCheckView
+	OpenCodeCommandTemplate     string
+	OpenCodeCommandPreview      string
+	OpenCodeExecutionStatus     string
+	OpenCodeExecutionExitCode   string
+	OpenCodeExecutionStarted    string
+	OpenCodeExecutionFinished   string
+	OpenCodeRuntime             string
+	OpenCodeLastOutputAt        string
+	OpenCodeLastOutputAge       string
+	OpenCodeLifecycleState      string
+	OpenCodeStaleReason         string
+	OpenCodeCanRecover          bool
+	OpenCodeRecoveryActionLabel string
+	OpenCodePermissionWarning   string
+	OpenCodeStdoutArtifactID    int64
+	OpenCodeStderrArtifactID    int64
+	OpenCodeCombinedArtifactID  int64
+	HasOpenCodeExecution        bool
 	// OpenCode adapter fields
 	OpenCodeBinary                  string
 	OpenCodeArgs                    []string
@@ -266,7 +270,7 @@ func previewPanel(title string, id string, content string, emptyText string) tem
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 199, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 203, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -284,7 +288,7 @@ func previewPanel(title string, id string, content string, emptyText string) tem
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 202, Col: 26}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 206, Col: 26}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 			if templ_7745c5c3_Err != nil {
@@ -307,7 +311,7 @@ func previewPanel(title string, id string, content string, emptyText string) tem
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(emptyText)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 209, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 213, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -325,7 +329,7 @@ func previewPanel(title string, id string, content string, emptyText string) tem
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 212, Col: 16}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 216, Col: 16}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 			if templ_7745c5c3_Err != nil {
@@ -338,7 +342,7 @@ func previewPanel(title string, id string, content string, emptyText string) tem
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(content)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 212, Col: 100}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 216, Col: 100}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
