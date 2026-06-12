@@ -35,6 +35,20 @@ func valueAfterColon(line string) string {
 	return strings.TrimSpace(line[idx+1:])
 }
 
+// standaloneAgentStatus matches exact standalone status lines after trimming wrapper punctuation.
+func standaloneAgentStatus(line string) AgentResultStatus {
+	trimmed := strings.TrimSpace(line)
+	normalized := strings.Trim(trimmed, "`*_[](){}:.- ")
+	switch strings.ToLower(normalized) {
+	case "done":
+		return AgentResultDone
+	case "blocked":
+		return AgentResultBlocked
+	default:
+		return AgentResultUnknown
+	}
+}
+
 func ParseAgentResult(raw string) AgentResult {
 	result := AgentResult{
 		Status: AgentResultUnknown,
@@ -73,6 +87,10 @@ func ParseAgentResult(raw string) AgentResult {
 			} else if valLower == "blocked" || strings.HasPrefix(valLower, "blocked") {
 				result.Status = AgentResultBlocked
 			}
+		}
+
+		if status := standaloneAgentStatus(trimmed); status != AgentResultUnknown {
+			result.Status = status
 		}
 
 		if strings.HasPrefix(lower, "build status:") {

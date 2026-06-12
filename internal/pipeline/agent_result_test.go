@@ -52,6 +52,51 @@ func TestParseAgentResultBlocked(t *testing.T) {
 	}
 }
 
+func TestParseAgentResultDoneStandaloneAfterPreamble(t *testing.T) {
+	input := "final result. There were no concrete blockers found - the entire workflow passed.\n" +
+		"Let me provide the final DONE report.\n\n" +
+		"DONE\n" +
+		"Build status: PASS (go vet ./..., go test ./... both exit 0)\n" +
+		"Test status: PASS (go test ./... passed, 24048ms)\n" +
+		"Count of LOC changed: 0\n"
+	result := ParseAgentResult(input)
+
+	if result.Status != AgentResultDone {
+		t.Fatalf("expected status DONE, got %s", result.Status)
+	}
+	if result.BuildStatus != "PASS (go vet ./..., go test ./... both exit 0)" {
+		t.Fatalf("expected build status with details, got %s", result.BuildStatus)
+	}
+	if result.TestStatus != "PASS (go test ./... passed, 24048ms)" {
+		t.Fatalf("expected test status with details, got %s", result.TestStatus)
+	}
+	if result.LOCChanged != "0" {
+		t.Fatalf("expected LOC changed 0, got %s", result.LOCChanged)
+	}
+}
+
+func TestParseAgentResultBlockedStandaloneAfterPreamble(t *testing.T) {
+	input := "I could not safely finish the task.\nHere is the final report.\n\n" +
+		"BLOCKED\n" +
+		"Build status: PASS\n" +
+		"Test status: FAIL\n" +
+		"Blocker/error only if blocked: validation command failed\n"
+	result := ParseAgentResult(input)
+
+	if result.Status != AgentResultBlocked {
+		t.Fatalf("expected status BLOCKED, got %s", result.Status)
+	}
+	if result.BuildStatus != "PASS" {
+		t.Fatalf("expected build status PASS, got %s", result.BuildStatus)
+	}
+	if result.TestStatus != "FAIL" {
+		t.Fatalf("expected test status FAIL, got %s", result.TestStatus)
+	}
+	if result.BlockerError != "validation command failed" {
+		t.Fatalf("expected blocker error to be preserved, got %s", result.BlockerError)
+	}
+}
+
 func TestParseAgentResultStatusPrefix(t *testing.T) {
 	input := "Status: DONE\nBuild: pass\nTests: pass\nLOC changed: 7"
 	result := ParseAgentResult(input)
@@ -70,6 +115,40 @@ func TestParseAgentResultStatusPrefix(t *testing.T) {
 	}
 }
 
+func TestParseAgentResultDoesNotTreatProseDoneAsDone(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "mentions not done",
+			input: "The task is not done yet.\nBuild status: PASS",
+		},
+		{
+			name:  "done in prose",
+			input: "I am done reviewing the files, now continuing implementation.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ParseAgentResult(tt.input)
+			if result.Status != AgentResultUnknown {
+				t.Fatalf("expected status UNKNOWN, got %s", result.Status)
+			}
+		})
+	}
+}
+
+func TestParseAgentResultDoesNotTreatProseBlockedAsBlocked(t *testing.T) {
+	input := "No blockers were found and nothing is blocked.\nTest status: PASS"
+	result := ParseAgentResult(input)
+
+	if result.Status != AgentResultUnknown {
+		t.Fatalf("expected status UNKNOWN, got %s", result.Status)
+	}
+}
+
 func TestParseAgentResultUnknown(t *testing.T) {
 	input := "I changed some files and everything seems fine."
 	result := ParseAgentResult(input)
@@ -79,6 +158,21 @@ func TestParseAgentResultUnknown(t *testing.T) {
 	}
 	if result.Raw != input {
 		t.Errorf("raw not preserved")
+	}
+}
+
+func TestParseAgentResultLatestStandaloneStatusWins(t *testing.T) {
+	input := "Initial notes.\nDONE\nBuild status: PASS\n\nLater report.\nBLOCKED\nTest status: FAIL"
+	result := ParseAgentResult(input)
+
+	if result.Status != AgentResultBlocked {
+		t.Fatalf("expected latest standalone status BLOCKED, got %s", result.Status)
+	}
+	if result.BuildStatus != "PASS" {
+		t.Fatalf("expected build status PASS, got %s", result.BuildStatus)
+	}
+	if result.TestStatus != "FAIL" {
+		t.Fatalf("expected test status FAIL, got %s", result.TestStatus)
 	}
 }
 
