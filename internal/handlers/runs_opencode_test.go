@@ -15,6 +15,8 @@ import (
 	"relay/internal/artifacts"
 	"relay/internal/pipeline"
 	"relay/internal/store"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func setupOpenCodeRun(t *testing.T, s *store.Store) int64 {
@@ -2576,6 +2578,182 @@ func TestReconcileOpenCodeResultActionRedirectsToRunStep(t *testing.T) {
 	pushURL := w.Header().Get("HX-Push-Url")
 	if !strings.Contains(pushURL, "?step=run") {
 		t.Fatalf("expected HX-Push-Url to step=run, got %s", pushURL)
+	}
+}
+
+func TestRunGetAutoReconcilesRunningOpenCodeDoneOutput(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`{"type":"text","part":{"type":"text","text":"DONE"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Build status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Test status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Count of LOC changed: 12"}}
+`,
+		"",
+	)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.Status == "running" || exec.Status == "starting" {
+		t.Fatalf("expected execution to be terminal after GET reconcile, got %q", exec.Status)
+	}
+	if exec.Status != "completed" {
+		t.Fatalf("expected execution status completed after DONE reconcile, got %q", exec.Status)
+	}
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status != "agent_done" {
+		t.Fatalf("expected run status agent_done, got %q", run.Status)
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	hasRaw := false
+	hasJSON := false
+	for _, a := range artifactsList {
+		switch a.Kind {
+		case "agent_result_raw":
+			hasRaw = true
+		case "agent_result_json":
+			hasJSON = true
+		}
+	}
+	if !hasRaw {
+		t.Fatal("expected agent_result_raw artifact after GET reconcile")
+	}
+	if !hasJSON {
+		t.Fatal("expected agent_result_json artifact after GET reconcile")
+	}
+
+	checks, err := s.ListChecksByRun(runID)
+	if err != nil {
+		t.Fatalf("list checks: %v", err)
+	}
+	hasAgentCheck := false
+	for _, c := range checks {
+		if c.Kind == "agent_result" && c.Status == "pass" {
+			hasAgentCheck = true
+			break
+		}
+	}
+	if !hasAgentCheck {
+		t.Fatal("expected agent_result pass check after GET reconcile")
+	}
+
+	body := w.Body.String()
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling to stop after GET reconcile")
+	}
+	if !strings.Contains(body, "download stdout") {
+		t.Fatal("expected stdout log link after GET reconcile")
+	}
+}
+
+func TestRunGetShowsRecoverableStaleOpenCodeOutputWithoutResult(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`some tool output line
+another line
+`,
+		`stderr line
+`,
+	)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.Status != "running" && exec.Status != "starting" {
+		t.Fatalf("expected execution to remain running, got %q", exec.Status)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "Reconcile OpenCode Result") {
+		t.Fatal("expected recovery action for stale OpenCode output")
+	}
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling to stop for stale OpenCode output")
+	}
+	if !strings.Contains(body, "download combined log") {
+		t.Fatal("expected combined log link for stale OpenCode output")
+	}
+}
+
+func TestRunGetKeepsPollingWhenOpenCodeRunningWithoutOutput(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.Status != "running" && exec.Status != "starting" {
+		t.Fatalf("expected execution to remain running, got %q", exec.Status)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling when OpenCode is still running without output")
+	}
+	if strings.Contains(body, "Reconcile OpenCode Result") {
+		t.Fatal("did not expect recovery action when no output exists")
 	}
 }
 

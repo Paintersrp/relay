@@ -80,6 +80,22 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	checksList, _ := h.store.ListChecksByRun(id)
 	eventsList, _ := h.store.ListEventsByRun(id)
 
+	openCodePreviews, openCodeChanged := h.buildExecutionPreviews(id, run, artifactsList)
+	if openCodeChanged {
+		if refreshedRun, err := h.store.GetRun(id); err == nil {
+			run = refreshedRun
+		}
+		if refreshedArtifacts, err := h.store.ListArtifactsByRun(id); err == nil {
+			artifactsList = refreshedArtifacts
+		}
+		if refreshedChecks, err := h.store.ListChecksByRun(id); err == nil {
+			checksList = refreshedChecks
+		}
+		if refreshedEvents, err := h.store.ListEventsByRun(id); err == nil {
+			eventsList = refreshedEvents
+		}
+	}
+
 	originalPreview := readArtifactPreview(id, "original_handoff")
 	agentPromptPreview := readAgentPromptPreview(id)
 
@@ -126,7 +142,6 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	openCodeStdinBytes := 0
 	openCodeWorkDir := ""
 	var openCodeArgs []string
-	openCodeCommandPreview := ""
 	openCodeAdapterError := ""
 	openCodeThinking := "max"
 
@@ -141,96 +156,42 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 			openCodeVariant = invocation.Variant
 			openCodeStdinSource = invocation.StdinSource
 			openCodeStdinBytes = invocation.StdinBytes
-			openCodeCommandPreview = invocation.Preview
 		} else {
 			openCodeAdapterError = err.Error()
 		}
 	}
-	// Load latest execution
-	hasOpenCodeExecution := false
-	openCodeExecStatus := ""
-	openCodeExecExitCode := ""
-	openCodeExecStarted := ""
-	openCodeExecFinished := ""
-	hasOpenCodeStdout := false
-	hasOpenCodeStderr := false
-	hasOpenCodeCombinedLog := false
+	// OpenCode execution preview fields come from the shared helper so the full render
+	// and the monitor path stay in sync.
+	hasOpenCodeExecution := openCodePreviews.HasOpenCodeExecution
+	openCodeExecStatus := openCodePreviews.OpenCodeExecutionStatus
+	openCodeExecExitCode := openCodePreviews.OpenCodeExecutionExitCode
 	openCodeFailureHint := ""
-
-	if exec, err := h.store.GetLatestAgentExecutionByRun(id); err == nil {
-		hasOpenCodeExecution = true
-		openCodeExecStatus = exec.Status
-		if exec.ExitCode.Valid {
-			openCodeExecExitCode = strconv.FormatInt(exec.ExitCode.Int64, 10)
-		}
-		if exec.StartedAt.Valid {
-			openCodeExecStarted = exec.StartedAt.String
-		}
-		if exec.FinishedAt.Valid {
-			openCodeExecFinished = exec.FinishedAt.String
-		}
-		for _, a := range artifactsList {
-			if a.Kind == "opencode_stdout" {
-				hasOpenCodeStdout = true
-			} else if a.Kind == "opencode_stderr" {
-				hasOpenCodeStderr = true
-			} else if a.Kind == "opencode_combined_log" {
-				hasOpenCodeCombinedLog = true
+	if openCodeExecStatus == "failed" && openCodeBinary != "" {
+		exitCode := 0
+		if openCodeExecExitCode != "" {
+			if parsedExitCode, err := strconv.Atoi(openCodeExecExitCode); err == nil {
+				exitCode = parsedExitCode
 			}
 		}
-		// Compute failure hint if execution failed
-		if exec.Status == "failed" && openCodeBinary != "" {
-			exitCode := 0
-			if exec.ExitCode.Valid {
-				exitCode = int(exec.ExitCode.Int64)
-			}
-			runResult := pipeline.AgentCommandRunResult{
-				ExitCode: exitCode,
-				Stderr:   readArtifactPreview(id, "opencode_stderr"),
-				Stdout:   readArtifactPreview(id, "opencode_stdout"),
-				TimedOut: exitCode == -2,
-				Error:    exec.Error.String,
-			}
-			invocation := pipeline.OpenCodeRunInvocation{
-				Binary:  openCodeBinary,
-				Args:    openCodeArgs,
-				WorkDir: openCodeWorkDir,
-				Model:   openCodeModel,
-				Agent:   openCodeAgent,
-			}
-			openCodeFailureHint = pipeline.OpenCodeFailureHint(runResult, invocation)
+		execError := ""
+		if exec, err := h.store.GetLatestAgentExecutionByRun(id); err == nil && exec.Error.Valid {
+			execError = exec.Error.String
 		}
-	}
-
-	// Build transcript and parsed result for Step 5
-	var openCodeTranscript []views.OpenCodeTranscriptEventView
-	openCodeParsedResultStatus := ""
-	openCodeParsedBuildStatus := ""
-	openCodeParsedTestStatus := ""
-	openCodeParsedLOCChanged := ""
-	openCodeParsedResultRaw := ""
-
-	if hasOpenCodeExecution {
-		stdoutPreview := readArtifactPreview(id, "opencode_stdout")
-		stderrPreview := readArtifactPreview(id, "opencode_stderr")
-		if stdoutPreview != "" || stderrPreview != "" {
-			events := pipeline.BuildOpenCodeTranscript(stdoutPreview, stderrPreview, 200)
-			for _, ev := range events {
-				openCodeTranscript = append(openCodeTranscript, views.OpenCodeTranscriptEventView{
-					Kind: ev.Kind,
-					Text: ev.Text,
-				})
-			}
+		runResult := pipeline.AgentCommandRunResult{
+			ExitCode: exitCode,
+			Stderr:   readArtifactPreview(id, "opencode_stderr"),
+			Stdout:   readArtifactPreview(id, "opencode_stdout"),
+			TimedOut: exitCode == -2,
+			Error:    execError,
 		}
-		if stdoutPreview != "" {
-			assistantText := pipeline.ExtractOpenCodeAssistantText(stdoutPreview)
-			parsed := pipeline.ParseAgentResult(assistantText)
-			openCodeParsedResultStatus = string(parsed.Status)
-			openCodeParsedBuildStatus = parsed.BuildStatus
-			openCodeParsedTestStatus = parsed.TestStatus
-			openCodeParsedLOCChanged = parsed.LOCChanged
-			openCodeParsedResultRaw = parsed.Raw
+		invocation := pipeline.OpenCodeRunInvocation{
+			Binary:  openCodeBinary,
+			Args:    openCodeArgs,
+			WorkDir: openCodeWorkDir,
+			Model:   openCodeModel,
+			Agent:   openCodeAgent,
 		}
+		openCodeFailureHint = pipeline.OpenCodeFailureHint(runResult, invocation)
 	}
 
 	dryRunPreview := readArtifactPreview(id, "opencode_dry_run_json")
@@ -476,15 +437,15 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		AgentPromptEstimate:             agentPromptEstimate,
 		HandoffPreflightStatus:          preflightStatus,
 		HandoffPreflightChecks:          preflightChecks,
-		OpenCodeCommandPreview:          openCodeCommandPreview,
-		OpenCodeExecutionStatus:         openCodeExecStatus,
-		OpenCodeExecutionExitCode:       openCodeExecExitCode,
-		OpenCodeExecutionStarted:        openCodeExecStarted,
-		OpenCodeExecutionFinished:       openCodeExecFinished,
+		OpenCodeCommandPreview:          openCodePreviews.OpenCodeCommandPreview,
+		OpenCodeExecutionStatus:         openCodePreviews.OpenCodeExecutionStatus,
+		OpenCodeExecutionExitCode:       openCodePreviews.OpenCodeExecutionExitCode,
+		OpenCodeExecutionStarted:        openCodePreviews.OpenCodeExecutionStarted,
+		OpenCodeExecutionFinished:       openCodePreviews.OpenCodeExecutionFinished,
 		OpenCodeStdoutArtifactID:        0,
 		OpenCodeStderrArtifactID:        0,
 		OpenCodeCombinedArtifactID:      0,
-		HasOpenCodeExecution:            hasOpenCodeExecution,
+		HasOpenCodeExecution:            openCodePreviews.HasOpenCodeExecution,
 		OpenCodeBinary:                  openCodeBinary,
 		OpenCodeArgs:                    openCodeArgs,
 		OpenCodeWorkDir:                 openCodeWorkDir,
@@ -498,9 +459,9 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		OpenCodeFailureHint:             openCodeFailureHint,
 		OpenCodeDryRunPreview:           dryRunPreview,
 		HasOpenCodeDryRun:               dryRunPreview != "",
-		HasOpenCodeStdout:               hasOpenCodeStdout,
-		HasOpenCodeStderr:               hasOpenCodeStderr,
-		HasOpenCodeCombinedLog:          hasOpenCodeCombinedLog,
+		HasOpenCodeStdout:               openCodePreviews.HasOpenCodeStdout,
+		HasOpenCodeStderr:               openCodePreviews.HasOpenCodeStderr,
+		HasOpenCodeCombinedLog:          openCodePreviews.HasOpenCodeCombinedLog,
 		HasValidationCommands:           hasValidationCommands,
 		HasOpenCodeCLICheck:             hasCLICheck,
 		OpenCodeCLICheckPreview:         cliCheckPreview,
@@ -514,14 +475,14 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		OpenCodeCLICheckStatus:          cliCheckStatus,
 		IntakeRemediationHandoff:        intakeRemediationHandoffPreview,
 		HasIntakeRemediationHandoff:     hasIntakeRemediationHandoff,
-		HasOpenCodeRunning:              openCodeExecStatus == "starting" || openCodeExecStatus == "running",
-		HasOpenCodeStaleRunning:         (openCodeExecStatus == "starting" || openCodeExecStatus == "running") && (hasOpenCodeStdout || hasOpenCodeStderr || hasOpenCodeCombinedLog) && openCodeParsedResultStatus == "",
-		OpenCodeTranscript:              openCodeTranscript,
-		OpenCodeParsedResultStatus:      openCodeParsedResultStatus,
-		OpenCodeParsedBuildStatus:       openCodeParsedBuildStatus,
-		OpenCodeParsedTestStatus:        openCodeParsedTestStatus,
-		OpenCodeParsedLOCChanged:        openCodeParsedLOCChanged,
-		OpenCodeParsedResultRaw:         openCodeParsedResultRaw,
+		HasOpenCodeRunning:              openCodePreviews.HasOpenCodeRunning,
+		HasOpenCodeStaleRunning:         openCodePreviews.HasOpenCodeStaleRunning,
+		OpenCodeTranscript:              openCodePreviews.OpenCodeTranscript,
+		OpenCodeParsedResultStatus:      openCodePreviews.OpenCodeParsedResultStatus,
+		OpenCodeParsedBuildStatus:       openCodePreviews.OpenCodeParsedBuildStatus,
+		OpenCodeParsedTestStatus:        openCodePreviews.OpenCodeParsedTestStatus,
+		OpenCodeParsedLOCChanged:        openCodePreviews.OpenCodeParsedLOCChanged,
+		OpenCodeParsedResultRaw:         openCodePreviews.OpenCodeParsedResultRaw,
 		ValidationRun:                   validationRunPreview,
 		HasValidationProgress:           hasValidationProgress,
 		ValidationProgressRunning:       validationProgressRunning,
@@ -1206,8 +1167,19 @@ func (h *RunsHandler) AgentRunMonitor(w http.ResponseWriter, r *http.Request) {
 	artifactsList, _ := h.store.ListArtifactsByRun(id)
 	checksList, _ := h.store.ListChecksByRun(id)
 
-	// Build minimal previews for the monitor display
-	previews := h.buildExecutionPreviews(id, run, artifactsList)
+	// Build minimal previews for the monitor display.
+	previews, changed := h.buildExecutionPreviews(id, run, artifactsList)
+	if changed {
+		if refreshedRun, err := h.store.GetRun(id); err == nil {
+			run = refreshedRun
+		}
+		if refreshedArtifacts, err := h.store.ListArtifactsByRun(id); err == nil {
+			artifactsList = refreshedArtifacts
+		}
+		if refreshedChecks, err := h.store.ListChecksByRun(id); err == nil {
+			checksList = refreshedChecks
+		}
+	}
 
 	// Populate adapter info for display from run data
 	repo, _ := h.store.GetRepo(run.RepoID)
@@ -2087,8 +2059,11 @@ func (h *RunsHandler) generateIntakeRemediationHandoff(w http.ResponseWriter, r 
 }
 
 // buildExecutionPreviews populates transcript and parsed result previews from the latest execution.
-func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifactsList []store.Artifact) views.RunPreviews {
+// It also auto-reconciles a running OpenCode execution when safe to do so and returns whether
+// that reconciliation changed persisted state.
+func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifactsList []store.Artifact) (views.RunPreviews, bool) {
 	var previews views.RunPreviews
+	changed := false
 
 	// Load latest execution
 	if exec, err := h.store.GetLatestAgentExecutionByRun(runID); err == nil {
@@ -2124,11 +2099,18 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 					parsed := pipeline.ParseAgentResult(assistantText)
 					if parsed.Status == pipeline.AgentResultDone || parsed.Status == pipeline.AgentResultBlocked {
 						// Safe to auto-reconcile — execution is stale with a parseable result
-						if _, reconcileErr := h.reconcileOpenCodeExecution(runID); reconcileErr == nil {
+						result, reconcileErr := h.reconcileOpenCodeExecution(runID)
+						if reconcileErr == nil {
+							changed = result.Changed
 							h.log.Info("auto-reconciled stale opencode execution from GET path", "run_id", runID)
-							// Reload execution after reconciliation
+							previews.HasOpenCodeRunning = false
+							previews.HasOpenCodeStaleRunning = false
+							if result.FinalStatus != "" {
+								previews.OpenCodeExecutionStatus = result.FinalStatus
+							}
+							// Reload execution after reconciliation when possible so the preview
+							// reflects the persisted terminal row.
 							if exec2, err2 := h.store.GetLatestAgentExecutionByRun(runID); err2 == nil {
-								previews.HasOpenCodeRunning = false
 								previews.OpenCodeExecutionStatus = exec2.Status
 								if exec2.FinishedAt.Valid {
 									previews.OpenCodeExecutionFinished = exec2.FinishedAt.String
@@ -2186,7 +2168,7 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 		}
 	}
 
-	return previews
+	return previews, changed
 }
 
 func formatPromptEstimate(est pipeline.PromptEstimate) string {
