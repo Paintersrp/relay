@@ -79,13 +79,17 @@ func parseExecutionTimestamp(value string) (time.Time, bool) {
 	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
 		return parsed, true
 	}
-	if parsed, err := time.Parse("2006-01-02 15:04:05", value); err == nil {
-		return parsed, true
-	}
 	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
 		return parsed, true
 	}
+	if parsed, err := time.ParseInLocation("2006-01-02 15:04:05", value, time.Local); err == nil {
+		return parsed, true
+	}
 	return time.Time{}, false
+}
+
+func executionTimestampNow() string {
+	return time.Now().Format(time.RFC3339Nano)
 }
 
 func formatDurationCompact(d time.Duration) string {
@@ -1253,7 +1257,7 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 			return openCodeReconcileResult{Changed: false, Message: "Execution is running but no captured output artifacts exist yet."}, nil
 		}
 
-		finishedAt := now.Format("2006-01-02 15:04:05")
+		finishedAt := now.Format(time.RFC3339Nano)
 		errorMsg := "OpenCode execution recovered as failed: runtime exceeded the timeout window and no stdout/stderr artifacts were captured. Relay may have restarted, lost the worker, or OpenCode exited before producing output."
 		if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, "failed", preserved.exitCode, preserved.startedAt, &finishedAt, preserved.stdoutPath, preserved.stderrPath, preserved.combinedPath, preserved.resultPath, &errorMsg); err != nil {
 			h.log.Error("recover stale no-output opencode execution", "error", err)
@@ -1268,7 +1272,7 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 	}
 
 	// Try to parse agent result from stdout
-	finishedAt := now.Format("2006-01-02 15:04:05")
+	finishedAt := now.Format(time.RFC3339Nano)
 	errorMsg := ""
 	if hasStdout {
 		assistantText := pipeline.ExtractOpenCodeAssistantText(string(stdoutData))
@@ -1327,7 +1331,7 @@ func (h *RunsHandler) reconcileOpenCodeResult(w http.ResponseWriter, r *http.Req
 // This method never writes an HTTP response or redirects.
 func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, execID int64, invocation pipeline.OpenCodeRunInvocation) {
 	// Update to running
-	startedAt := time.Now().Format("2006-01-02 15:04:05")
+	startedAt := executionTimestampNow()
 	h.store.UpdateAgentExecutionStatus(execID, "running", nil, &startedAt, nil, nil, nil, nil, nil, nil)
 
 	for _, kind := range []string{
@@ -1512,8 +1516,8 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 	}
 
 	ec := int64(runResult.ExitCode)
-	startedStr := runResult.StartedAt.Format("2006-01-02 15:04:05")
-	finishedStr := runResult.FinishedAt.Format("2006-01-02 15:04:05")
+	startedStr := runResult.StartedAt.Format(time.RFC3339Nano)
+	finishedStr := runResult.FinishedAt.Format(time.RFC3339Nano)
 
 	var errPtr *string
 	if runResult.Error != "" {

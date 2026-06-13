@@ -2464,6 +2464,55 @@ func seedRunningExecution(t *testing.T, s *store.Store, runID int64) int64 {
 	return exec.ID
 }
 
+func setLatestOpenCodeExecutionTimestamps(t *testing.T, s *store.Store, runID int64, startedAt, updatedAt string) {
+	t.Helper()
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest agent execution: %v", err)
+	}
+	if _, err := s.DB().Exec(`UPDATE agent_executions SET started_at = ?, updated_at = ? WHERE id = ?`, startedAt, updatedAt, exec.ID); err != nil {
+		t.Fatalf("update latest agent execution timestamps: %v", err)
+	}
+}
+
+func TestParseExecutionTimestampSupportsAbsoluteAndLegacyLocalFormats(t *testing.T) {
+	t.Run("RFC3339Nano", func(t *testing.T) {
+		want := time.Date(2026, time.June, 13, 7, 14, 14, 123456789, time.FixedZone("EDT", -4*60*60))
+		parsed, ok := parseExecutionTimestamp(want.Format(time.RFC3339Nano))
+		if !ok {
+			t.Fatal("expected RFC3339Nano timestamp to parse")
+		}
+		if !parsed.Equal(want) {
+			t.Fatalf("expected parsed time %v, got %v", want, parsed)
+		}
+	})
+
+	t.Run("RFC3339", func(t *testing.T) {
+		want := time.Date(2026, time.June, 13, 7, 14, 14, 0, time.FixedZone("EDT", -4*60*60))
+		parsed, ok := parseExecutionTimestamp(want.Format(time.RFC3339))
+		if !ok {
+			t.Fatal("expected RFC3339 timestamp to parse")
+		}
+		if !parsed.Equal(want) {
+			t.Fatalf("expected parsed time %v, got %v", want, parsed)
+		}
+	})
+
+	t.Run("LegacyLocal", func(t *testing.T) {
+		want := time.Date(2026, time.June, 13, 7, 14, 14, 0, time.Local)
+		parsed, ok := parseExecutionTimestamp(want.Format("2006-01-02 15:04:05"))
+		if !ok {
+			t.Fatal("expected legacy local timestamp to parse")
+		}
+		if parsed.Location() != time.Local {
+			t.Fatalf("expected parsed location %v, got %v", time.Local, parsed.Location())
+		}
+		if !parsed.Equal(want) {
+			t.Fatalf("expected parsed time %v, got %v", want, parsed)
+		}
+	})
+}
+
 func TestReconcileOpenCodeExecutionPersistsDoneFromCapturedStdout(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
@@ -3101,12 +3150,14 @@ func TestRunGetShowsPermissionWarningForDeniedOpenCodeRequest(t *testing.T) {
 	}
 }
 
-func TestRunGetKeepsPollingWhenOpenCodeRunningWithoutOutput(t *testing.T) {
+func TestRunGetKeepsPollingWhenOpenCodeRunningWithFreshRFC3339NanoTimestamp(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	runID := setupOpenCodeRun(t, s)
 
 	seedRunningExecution(t, s, runID)
+	now := time.Now().Format(time.RFC3339Nano)
+	setLatestOpenCodeExecutionTimestamps(t, s, runID, now, now)
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", itoa(runID))
@@ -3301,6 +3352,47 @@ func TestRunGetShowsNoChunksYetWhenRunningWithoutOutput(t *testing.T) {
 	runID := setupOpenCodeRun(t, s)
 
 	seedRunningExecution(t, s, runID)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.Status != "running" && exec.Status != "starting" {
+		t.Fatalf("expected execution to remain running, got %q", exec.Status)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling when OpenCode is still running without output")
+	}
+	if !strings.Contains(body, "no output yet") {
+		t.Fatal("expected no-output running message")
+	}
+	if strings.Contains(body, "Recover Stale OpenCode Run") {
+		t.Fatal("did not expect recovery action when no output exists")
+	}
+}
+
+func TestRunGetKeepsPollingWhenOpenCodeRunningWithLegacyLocalTimestamp(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	now := time.Now().Format("2006-01-02 15:04:05")
+	setLatestOpenCodeExecutionTimestamps(t, s, runID, now, now)
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", itoa(runID))
