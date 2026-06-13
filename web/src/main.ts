@@ -251,6 +251,12 @@ function flushWorkbenchRefreshQueue(): void {
   queueWorkbenchRefresh();
 }
 
+function hasReusableRunEventSource(url: string): boolean {
+  return relayRunEventSource !== null
+    && relayRunEventSourceUrl === url
+    && relayRunEventSource.readyState !== EventSource.CLOSED;
+}
+
 function initRunEventStream(): void {
   const shell = currentWorkbenchShell();
   if (!shell) {
@@ -266,7 +272,9 @@ function initRunEventStream(): void {
     return;
   }
 
-  if (relayRunEventSource && relayRunEventSourceUrl === url && relayRunEventShell === shell) {
+  // HTMX replaces the shell element during a refresh, so keep the stream if the URL is unchanged.
+  if (hasReusableRunEventSource(url)) {
+    relayRunEventShell = shell;
     return;
   }
 
@@ -283,13 +291,20 @@ function initRunEventStream(): void {
   const source = new EventSource(url);
   relayRunEventSource = source;
 
-  const semanticEvents = ['run.summary', 'step.agent', 'step.validation', 'step.audit', 'step.commit', 'step.artifacts', 'toast'];
+  const connectionEvents = ['run.connected'];
+  const refreshEvents = ['run.summary', 'step.agent', 'step.validation', 'step.audit', 'step.commit', 'step.artifacts', 'toast'];
 
   source.onopen = () => {
     setLiveUpdatesIndicator('connected');
   };
 
-  semanticEvents.forEach((name) => {
+  connectionEvents.forEach((name) => {
+    source.addEventListener(name, () => {
+      setLiveUpdatesIndicator('connected');
+    });
+  });
+
+  refreshEvents.forEach((name) => {
     source.addEventListener(name, () => {
       queueWorkbenchRefresh();
     });

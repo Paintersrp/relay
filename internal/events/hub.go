@@ -7,6 +7,7 @@ import (
 )
 
 const (
+	KindRunConnected   = "run.connected"
 	KindRunSummary     = "run.summary"
 	KindStepAgent      = "step.agent"
 	KindStepValidation = "step.validation"

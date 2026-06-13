@@ -1075,7 +1075,7 @@ func (h *RunsHandler) Events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := h.store.GetRun(id)
+	_, err = h.store.GetRun(id)
 	if err != nil {
 		http.Error(w, "run not found", http.StatusNotFound)
 		return
@@ -1101,9 +1101,9 @@ func (h *RunsHandler) Events(w http.ResponseWriter, r *http.Request) {
 
 	if err := writeRunEventSSE(w, flusher, events.RunEvent{
 		RunID:  id,
-		Kind:   events.KindRunSummary,
-		Source: "summary",
-		Status: run.Status,
+		Kind:   events.KindRunConnected,
+		Source: "events",
+		Status: "connected",
 		At:     time.Now().UTC().Format(time.RFC3339Nano),
 	}); err != nil {
 		return
