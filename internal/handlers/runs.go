@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"relay/internal/artifacts"
+	"relay/internal/events"
 	"relay/internal/pipeline"
 	"relay/internal/repos"
 	"relay/internal/store"
@@ -27,15 +29,21 @@ type agentCommandRunner func(ctx context.Context, workDir, binary string, args [
 type RunsHandler struct {
 	store                *store.Store
 	log                  *slog.Logger
+	eventHub             *events.Hub
 	runAgentCommandArgs  agentCommandRunner
 	launchAgentExecution func(func())
 	launchValidation     func(func())
 }
 
-func NewRunsHandler(s *store.Store, log *slog.Logger) *RunsHandler {
+func NewRunsHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *RunsHandler {
+	var eventHub *events.Hub
+	if len(hub) > 0 {
+		eventHub = hub[0]
+	}
 	return &RunsHandler{
 		store:               s,
 		log:                 log,
+		eventHub:            eventHub,
 		runAgentCommandArgs: pipeline.RunLocalAgentCommandArgsStreaming,
 		launchAgentExecution: func(fn func()) {
 			go fn()
@@ -44,6 +52,18 @@ func NewRunsHandler(s *store.Store, log *slog.Logger) *RunsHandler {
 			go fn()
 		},
 	}
+}
+
+func (h *RunsHandler) publishRunEvent(runID int64, kind, source, status string) {
+	if h == nil || h.eventHub == nil {
+		return
+	}
+	h.eventHub.Publish(events.RunEvent{
+		RunID:  runID,
+		Kind:   kind,
+		Source: source,
+		Status: status,
+	})
 }
 
 func readArtifactPreview(runID int64, kind string) string {
@@ -68,6 +88,8 @@ const (
 	openCodeTimeoutGrace         = 1 * time.Minute
 	openCodeRecoveryActionLabel  = "Recover Stale OpenCode Run"
 )
+
+var runEventHeartbeatInterval = 20 * time.Second
 
 func isOpenCodeExecutionRunning(status string) bool {
 	return status == "starting" || status == "running"
@@ -1005,6 +1027,13 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		PushResultSuccess:               pushResultSuccess,
 	}
 
+	if validationStdout := readArtifactPreview(id, "validation_stdout"); validationStdout != "" {
+		previews.ValidationStdoutPreview = truncatePreviewText(validationStdout, 1200)
+	}
+	if validationStderr := readArtifactPreview(id, "validation_stderr"); validationStderr != "" {
+		previews.ValidationStderrPreview = truncatePreviewText(validationStderr, 1200)
+	}
+
 	if originalPreview != "" && agentPromptPreview != "" {
 		pipelineDiff := pipeline.BuildPreviewDiff(originalPreview, agentPromptPreview, 300)
 		var diffLines []views.PreviewDiffLine
@@ -1021,6 +1050,86 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	activeStep := normalizeRunStep(r.URL.Query().Get("step"))
 
 	views.RunDetail(run, repo, artifactsList, checksList, eventsList, previews, &intakeReview, activeStep).Render(r.Context(), w)
+}
+
+func writeRunEventSSE(w io.Writer, flusher http.Flusher, event events.RunEvent) error {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\n", event.Kind); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+		return err
+	}
+	flusher.Flush()
+	return nil
+}
+
+func (h *RunsHandler) Events(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid run id", http.StatusBadRequest)
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err != nil {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	var eventCh <-chan events.RunEvent
+	unsubscribe := func() {}
+	if h.eventHub != nil {
+		eventCh, unsubscribe = h.eventHub.Subscribe(id)
+	}
+	defer unsubscribe()
+
+	if err := writeRunEventSSE(w, flusher, events.RunEvent{
+		RunID:  id,
+		Kind:   events.KindRunSummary,
+		Source: "summary",
+		Status: run.Status,
+		At:     time.Now().UTC().Format(time.RFC3339Nano),
+	}); err != nil {
+		return
+	}
+
+	heartbeat := time.NewTicker(runEventHeartbeatInterval)
+	defer heartbeat.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev, ok := <-eventCh:
+			if !ok {
+				return
+			}
+			if err := writeRunEventSSE(w, flusher, ev); err != nil {
+				return
+			}
+		case <-heartbeat.C:
+			if _, err := io.WriteString(w, ": heartbeat\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
@@ -1139,6 +1248,7 @@ func (h *RunsHandler) validateHandoff(w http.ResponseWriter, r *http.Request, ru
 	h.store.UpdateRunStatus(runID, newStatus)
 
 	h.store.CreateEvent(runID, "info", "Handoff validation completed: "+report.Status)
+	h.publishRunEvent(runID, events.KindRunSummary, "intake", report.Status)
 
 	h.log.Info("handoff validated", "run_id", runID, "status", report.Status)
 
@@ -1199,6 +1309,7 @@ func (h *RunsHandler) preparePrompt(w http.ResponseWriter, r *http.Request, runI
 	h.store.UpdateRunStatus(runID, "ready")
 
 	h.store.CreateEvent(runID, "info", "Agent prompt generated")
+	h.publishRunEvent(runID, events.KindStepArtifacts, "prompt", "ready")
 
 	h.log.Info("agent prompt prepared", "run_id", runID)
 
@@ -1210,6 +1321,7 @@ func (h *RunsHandler) markStatus(w http.ResponseWriter, r *http.Request, runID i
 	h.store.UpdateRunStatus(runID, status)
 
 	h.store.CreateEvent(runID, "info", "Run status changed to "+status)
+	h.publishRunEvent(runID, events.KindRunSummary, "status", status)
 
 	setHXPushURL(w, runID, "validation")
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
@@ -1260,6 +1372,7 @@ func (h *RunsHandler) persistAgentResult(runID int64, raw string) error {
 	h.store.CreateCheck(runID, "agent_result", checkStatus, checkSummary, string(resultJSON))
 	h.store.UpdateRunStatus(runID, runStatus)
 	h.store.CreateEvent(runID, "info", eventMsg)
+	h.publishRunEvent(runID, events.KindStepAgent, "agent_result", runStatus)
 	return nil
 }
 
@@ -1360,6 +1473,7 @@ func (h *RunsHandler) dryRunOpenCodeGo(w http.ResponseWriter, r *http.Request, r
 	}
 	h.store.CreateArtifact(runID, "opencode_dry_run_json", p, "application/json")
 	h.store.CreateEvent(runID, "info", "OpenCode dry run preview prepared")
+	h.publishRunEvent(runID, events.KindStepArtifacts, "opencode", "dry_run")
 	setHXPushURL(w, runID, "handoff")
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 }
@@ -1495,6 +1609,7 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 				h.log.Error("reconcile: update execution status", "error", err)
 			}
 			h.store.CreateEvent(runID, "info", "OpenCode execution reconciled from captured output: "+string(parsed.Status))
+			h.publishRunEvent(runID, events.KindStepAgent, "opencode", execStatus)
 			return openCodeReconcileResult{
 				Changed:           true,
 				ParsedAgentResult: true,
@@ -1517,6 +1632,7 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 			return openCodeReconcileResult{}, err
 		}
 		h.store.CreateEvent(runID, "warn", "OpenCode execution recovered as failed: timeout exceeded with no captured output.")
+		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "failed")
 		return openCodeReconcileResult{
 			Changed:     true,
 			FinalStatus: "failed",
@@ -1533,6 +1649,7 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 		h.log.Error("reconcile: update execution status to failed", "error", err)
 	}
 	h.store.CreateEvent(runID, "warn", errorMsg)
+	h.publishRunEvent(runID, events.KindStepAgent, "opencode", "failed")
 	return openCodeReconcileResult{
 		Changed:     true,
 		FinalStatus: "failed",
@@ -1546,8 +1663,10 @@ func (h *RunsHandler) reconcileOpenCodeResult(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		h.log.Error("reconcile opencode result", "error", err)
 		h.store.CreateEvent(runID, "warn", "OpenCode reconciliation failed: "+err.Error())
+		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "error")
 	} else if !result.Changed {
 		h.store.CreateEvent(runID, "info", result.Message)
+		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "noop")
 	}
 	setHXPushURL(w, runID, "run")
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=run", http.StatusSeeOther)
@@ -1559,6 +1678,7 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 	// Update to running
 	startedAt := executionTimestampNow()
 	h.store.UpdateAgentExecutionStatus(execID, "running", nil, &startedAt, nil, nil, nil, nil, nil, nil)
+	h.publishRunEvent(runID, events.KindStepAgent, "opencode", "running")
 
 	for _, kind := range []string{
 		"opencode_stdout",
@@ -1676,6 +1796,7 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		}
 		ensureArtifactRecordedLocked("opencode_stream_progress_json", path, "application/json")
 		lastProgressWrite = time.Now()
+		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "running")
 	}
 
 	if err := artifacts.EnsureDir(runID); err != nil {
@@ -1780,6 +1901,7 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 				h.log.Warn("failed to persist opencode agent result", "error", err)
 			}
 			h.store.CreateEvent(runID, "info", "OpenCode Go execution completed with result: "+string(parsed.Status))
+			h.publishRunEvent(runID, events.KindStepAgent, "opencode", string(parsed.Status))
 			h.log.Info("opencode go execution completed", "run_id", runID, "exit_code", runResult.ExitCode, "status", parsed.Status)
 			return
 		}
@@ -1790,6 +1912,11 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		eventMsg = "OpenCode Go execution timed out"
 	}
 	h.store.CreateEvent(runID, "info", eventMsg)
+	finalStatus := "completed"
+	if runResult.TimedOut || runResult.ExitCode != 0 {
+		finalStatus = "failed"
+	}
+	h.publishRunEvent(runID, events.KindStepAgent, "opencode", finalStatus)
 	h.log.Info("opencode go execution completed", "run_id", runID, "exit_code", runResult.ExitCode)
 }
 
@@ -1798,6 +1925,7 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 	invocation, err := h.buildOpenCodeInvocationForRun(runID)
 	if err != nil {
 		h.store.CreateEvent(runID, "warn", "OpenCode start blocked: "+err.Error())
+		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "blocked")
 		setHXPushURL(w, runID, "handoff")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 		return
@@ -1806,6 +1934,7 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 	// Confirm repo path exists
 	if info, err := os.Stat(invocation.WorkDir); err != nil || !info.IsDir() {
 		h.store.CreateEvent(runID, "warn", "Repo path does not exist: "+invocation.WorkDir)
+		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "blocked")
 		setHXPushURL(w, runID, "handoff")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 		return
@@ -1815,6 +1944,7 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 	if exec, err := h.store.GetLatestAgentExecutionByRun(runID); err == nil {
 		if exec.Status == "starting" || exec.Status == "running" {
 			h.store.CreateEvent(runID, "warn", "OpenCode Go execution is already running.")
+			h.publishRunEvent(runID, events.KindStepAgent, "opencode", "running")
 			setHXPushURL(w, runID, "run")
 			http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=run", http.StatusSeeOther)
 			return
@@ -1839,6 +1969,7 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 	}
 
 	h.store.CreateEvent(runID, "info", "OpenCode Go execution started")
+	h.publishRunEvent(runID, events.KindStepAgent, "opencode", "starting")
 
 	// Launch background execution
 	h.launchAgentExecution(func() {
@@ -2019,6 +2150,7 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 
 	if repo.Path == "" {
 		h.store.CreateEvent(runID, "warn", "No repo path configured for validation commands")
+		h.publishRunEvent(runID, events.KindStepValidation, "validation", "blocked")
 		setHXPushURL(w, runID, "intake")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
 		return
@@ -2027,6 +2159,7 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 	info, err := os.Stat(repo.Path)
 	if err != nil || !info.IsDir() {
 		h.store.CreateEvent(runID, "warn", "Repo path does not exist or is not a directory: "+repo.Path)
+		h.publishRunEvent(runID, events.KindStepValidation, "validation", "blocked")
 		setHXPushURL(w, runID, "intake")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
 		return
@@ -2041,6 +2174,7 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 	commands := pipeline.ExtractValidationCommands(string(handoffData), repo.DefaultValidationCommands)
 	if len(commands) == 0 {
 		h.store.CreateEvent(runID, "warn", "No validation commands found")
+		h.publishRunEvent(runID, events.KindStepValidation, "validation", "blocked")
 		setHXPushURL(w, runID, "intake")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=intake", http.StatusSeeOther)
 		return
@@ -2053,8 +2187,10 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 				h.log.Error("mark stale validation execution error", "error", err)
 			}
 			h.store.CreateEvent(runID, "info", "Stale validation execution cleared.")
+			h.publishRunEvent(runID, events.KindStepValidation, "validation", "recovered")
 		} else {
 			h.store.CreateEvent(runID, "warn", "Validation commands are already running.")
+			h.publishRunEvent(runID, events.KindStepValidation, "validation", "running")
 			setHXPushURL(w, runID, "validation")
 			http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
 			return
@@ -2070,6 +2206,7 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 	}
 	if !acquired {
 		h.store.CreateEvent(runID, "warn", "Validation commands are already running.")
+		h.publishRunEvent(runID, events.KindStepValidation, "validation", "running")
 		setHXPushURL(w, runID, "validation")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=validation", http.StatusSeeOther)
 		return
@@ -2088,6 +2225,7 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 		h.store.CreateArtifact(runID, "validation_progress_json", path, "application/json")
 	}
 	writeProgress(vp)
+	h.publishRunEvent(runID, events.KindStepValidation, "validation", "starting")
 
 	h.store.CreateEvent(runID, "info", "Validation commands started")
 
@@ -2149,6 +2287,7 @@ func (h *RunsHandler) executeValidation(runID int64, validationExecutionID int64
 			h.store.FinishValidationExecution(validationExecutionID, "error", "worker panic")
 			writeProgress(vp)
 			h.store.CreateEvent(runID, "warn", "Validation worker failed unexpectedly")
+			h.publishRunEvent(runID, events.KindStepValidation, "validation", "error")
 			h.log.Error("validation worker panic", "run_id", runID, "recover", r)
 		}
 	}()
@@ -2160,6 +2299,7 @@ func (h *RunsHandler) executeValidation(runID int64, validationExecutionID int64
 
 	vp.MarkRunning()
 	writeProgress(vp)
+	h.publishRunEvent(runID, events.KindStepValidation, "validation", "running")
 
 	var results []pipeline.CommandRunResult
 	allPassed := true
@@ -2168,6 +2308,7 @@ func (h *RunsHandler) executeValidation(runID int64, validationExecutionID int64
 	for i, cmd := range commands {
 		vp.MarkCommandRunning(i + 1)
 		writeProgress(vp)
+		h.publishRunEvent(runID, events.KindStepValidation, "validation", "running")
 
 		result := pipeline.RunValidationCommand(context.Background(), repoPath, cmd, pipeline.DefaultValidationCommandTimeout)
 		results = append(results, result)
@@ -2190,6 +2331,7 @@ func (h *RunsHandler) executeValidation(runID int64, validationExecutionID int64
 
 		vp.MarkCommandResult(i+1, result)
 		writeProgress(vp)
+		h.publishRunEvent(runID, events.KindStepValidation, "validation", "running")
 	}
 
 	// Write final run JSON artifact
@@ -2260,11 +2402,13 @@ func (h *RunsHandler) executeValidation(runID int64, validationExecutionID int64
 		h.store.CreateEvent(runID, "info", "Validation commands passed")
 		vp.MarkFinished("pass")
 		h.store.FinishValidationExecution(validationExecutionID, "pass", "")
+		h.publishRunEvent(runID, events.KindStepValidation, "validation", "pass")
 	} else {
 		h.store.UpdateRunStatus(runID, "validation_failed")
 		h.store.CreateEvent(runID, "info", "Validation commands failed")
 		vp.MarkFinished("fail")
 		h.store.FinishValidationExecution(validationExecutionID, "fail", "")
+		h.publishRunEvent(runID, events.KindStepValidation, "validation", "fail")
 	}
 
 	writeProgress(vp)
@@ -2431,6 +2575,7 @@ func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Reques
 	}
 	h.store.CreateArtifact(runID, "audit_handoff", artifactPath, "text/markdown")
 	h.store.CreateEvent(runID, "info", "Audit handoff generated")
+	h.publishRunEvent(runID, events.KindStepAudit, "audit", "generated")
 	h.log.Info("audit handoff generated", "run_id", runID)
 
 	setHXPushURL(w, runID, "audit")
@@ -2539,6 +2684,7 @@ func (h *RunsHandler) inspectDiff(w http.ResponseWriter, r *http.Request, runID 
 		eventMsg += ": baseline unavailable, no working tree changes"
 	}
 	h.store.CreateEvent(runID, "info", eventMsg)
+	h.publishRunEvent(runID, events.KindStepAudit, "audit", evidence.Mode)
 
 	h.log.Info("git diff inspection completed", "run_id", runID, "mode", evidence.Mode)
 
@@ -2644,6 +2790,7 @@ func (h *RunsHandler) replaceOriginalHandoff(w http.ResponseWriter, r *http.Requ
 	h.store.UpdateRunStatus(runID, "draft")
 
 	h.store.CreateEvent(runID, "info", "Original handoff replaced; re-running Intake Review")
+	h.publishRunEvent(runID, events.KindRunSummary, "intake", "updated")
 
 	h.log.Info("original handoff replaced", "run_id", runID)
 
@@ -2678,6 +2825,7 @@ func (h *RunsHandler) updateSelectedModel(w http.ResponseWriter, r *http.Request
 	}
 
 	h.store.CreateEvent(runID, "info", "Selected model updated to "+newSelectedModel)
+	h.publishRunEvent(runID, events.KindRunSummary, "handoff", "model_updated")
 
 	// Delete stale OpenCode artifacts (DB rows + disk files) that encode the old selected model
 	for _, kind := range []string{"opencode_handoff_packet", "opencode_cli_check_json", "opencode_dry_run_json"} {
@@ -2703,6 +2851,7 @@ func (h *RunsHandler) acceptAuditClearance(w http.ResponseWriter, r *http.Reques
 	artList, err := h.store.ListArtifactsByRun(runID)
 	if err != nil {
 		h.store.CreateEvent(runID, "warn", "Accept audit clearance failed: cannot list artifacts.")
+		h.publishRunEvent(runID, events.KindStepAudit, "audit", "blocked")
 		setHXPushURL(w, runID, "audit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
 		return
@@ -2716,6 +2865,7 @@ func (h *RunsHandler) acceptAuditClearance(w http.ResponseWriter, r *http.Reques
 	}
 	if auditHandoffArtifactID == 0 {
 		h.store.CreateEvent(runID, "warn", "Accept audit clearance failed: no audit handoff found.")
+		h.publishRunEvent(runID, events.KindStepAudit, "audit", "blocked")
 		setHXPushURL(w, runID, "audit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
 		return
@@ -2738,6 +2888,7 @@ func (h *RunsHandler) acceptAuditClearance(w http.ResponseWriter, r *http.Reques
 	}
 	h.store.CreateArtifact(runID, "audit_clearance_json", p, "application/json")
 	h.store.CreateEvent(runID, "info", "Audit clearance accepted")
+	h.publishRunEvent(runID, events.KindStepAudit, "audit", "accepted")
 
 	setHXPushURL(w, runID, "audit")
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
@@ -2746,6 +2897,7 @@ func (h *RunsHandler) acceptAuditClearance(w http.ResponseWriter, r *http.Reques
 func (h *RunsHandler) revokeAuditClearance(w http.ResponseWriter, r *http.Request, runID int64) {
 	h.deleteRunArtifactKind(runID, "audit_clearance_json")
 	h.store.CreateEvent(runID, "info", "Audit clearance revoked")
+	h.publishRunEvent(runID, events.KindStepAudit, "audit", "revoked")
 
 	setHXPushURL(w, runID, "audit")
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
@@ -2809,6 +2961,7 @@ func (h *RunsHandler) createGitCommit(w http.ResponseWriter, r *http.Request, ru
 	repo, _ := h.store.GetRepo(run.RepoID)
 	if repo == nil || repo.Path == "" {
 		h.store.CreateEvent(runID, "warn", "Create commit blocked: no repo path configured.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2818,6 +2971,7 @@ func (h *RunsHandler) createGitCommit(w http.ResponseWriter, r *http.Request, ru
 	validationJSON := readArtifactPreview(runID, "validation_run_json")
 	if validationJSON == "" {
 		h.store.CreateEvent(runID, "warn", "Create commit blocked: run validation first.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2828,6 +2982,7 @@ func (h *RunsHandler) createGitCommit(w http.ResponseWriter, r *http.Request, ru
 	validationAccepted := run.Status == "validation_failed_accepted"
 	if !validationPassed && !validationAccepted {
 		h.store.CreateEvent(runID, "warn", "Create commit blocked: validation did not pass.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2837,6 +2992,7 @@ func (h *RunsHandler) createGitCommit(w http.ResponseWriter, r *http.Request, ru
 	clearanceData := readArtifactPreview(runID, "audit_clearance_json")
 	if clearanceData == "" {
 		h.store.CreateEvent(runID, "warn", "Create commit blocked: audit clearance not accepted.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2844,6 +3000,7 @@ func (h *RunsHandler) createGitCommit(w http.ResponseWriter, r *http.Request, ru
 	var clearance repos.AuditClearance
 	if err := json.Unmarshal([]byte(clearanceData), &clearance); err != nil || clearance.Status != "accepted" {
 		h.store.CreateEvent(runID, "warn", "Create commit blocked: audit clearance not accepted.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2853,6 +3010,7 @@ func (h *RunsHandler) createGitCommit(w http.ResponseWriter, r *http.Request, ru
 	evidenceJSON := readArtifactPreview(runID, "git_change_evidence_json")
 	if evidenceJSON == "" {
 		h.store.CreateEvent(runID, "warn", "Create commit blocked: inspect git diff first.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2863,6 +3021,7 @@ func (h *RunsHandler) createGitCommit(w http.ResponseWriter, r *http.Request, ru
 	json.Unmarshal([]byte(evidenceJSON), &ev)
 	if ev.Mode != repos.EvidenceModeUncommittedWorktree && ev.Mode != repos.EvidenceModeBaselineUnavailableDirty {
 		h.store.CreateEvent(runID, "warn", "Create commit blocked: evidence mode is "+ev.Mode+". Only uncommitted worktree can be committed via UI.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2881,6 +3040,7 @@ func (h *RunsHandler) createGitCommit(w http.ResponseWriter, r *http.Request, ru
 	}
 	if message == "" {
 		h.store.CreateEvent(runID, "warn", "Create commit blocked: no commit message. Prepare Git Commit first.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2918,9 +3078,11 @@ func (h *RunsHandler) createGitCommit(w http.ResponseWriter, r *http.Request, ru
 
 	if result.Success {
 		h.store.CreateEvent(runID, "info", "Git commit created: "+result.ShortSHA+" "+result.Subject)
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "created")
 		h.log.Info("git commit created", "run_id", runID, "sha", result.SHA, "subject", result.Subject)
 	} else {
 		h.store.CreateEvent(runID, "warn", "Git commit failed: "+result.Error)
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "failed")
 	}
 
 	setHXPushURL(w, runID, "commit")
@@ -2937,6 +3099,7 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 	repo, _ := h.store.GetRepo(run.RepoID)
 	if repo == nil || repo.Path == "" {
 		h.store.CreateEvent(runID, "warn", "Push blocked: no repo path configured.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2946,6 +3109,7 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 	validationJSON := readArtifactPreview(runID, "validation_run_json")
 	if validationJSON == "" {
 		h.store.CreateEvent(runID, "warn", "Push blocked: run validation first.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2956,6 +3120,7 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 	validationAccepted := run.Status == "validation_failed_accepted"
 	if !validationPassed && !validationAccepted {
 		h.store.CreateEvent(runID, "warn", "Push blocked: validation did not pass.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2965,6 +3130,7 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 	clearanceData := readArtifactPreview(runID, "audit_clearance_json")
 	if clearanceData == "" {
 		h.store.CreateEvent(runID, "warn", "Push blocked: audit clearance not accepted.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2972,6 +3138,7 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 	var clearance repos.AuditClearance
 	if err := json.Unmarshal([]byte(clearanceData), &clearance); err != nil || clearance.Status != "accepted" {
 		h.store.CreateEvent(runID, "warn", "Push blocked: audit clearance not accepted.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -2983,6 +3150,7 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 	evidenceJSON := readArtifactPreview(runID, "git_change_evidence_json")
 	if evidenceJSON == "" {
 		h.store.CreateEvent(runID, "warn", "Push blocked: inspect git diff first.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -3015,6 +3183,7 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 
 	if !evidenceOK {
 		h.store.CreateEvent(runID, "warn", "Push blocked: evidence mode is "+ev.Mode+". Only committed range can be pushed.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -3024,6 +3193,7 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 	snap := repos.CaptureGitSnapshot(repo.Path, "push_preflight")
 	if snap.Error != "" || snap.Dirty {
 		h.store.CreateEvent(runID, "warn", "Push blocked: working tree is dirty. Commit or stash changes first.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -3033,6 +3203,7 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 	upstream, err := repos.GetUpstreamInfo(repo.Path)
 	if err != nil {
 		h.store.CreateEvent(runID, "warn", "Push blocked: no upstream configured. "+err.Error())
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -3047,9 +3218,11 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 	if err == nil {
 		h.store.CreateArtifact(runID, "git_push_dry_run_json", dryRunPath, "application/json")
 	}
+	h.publishRunEvent(runID, events.KindStepCommit, "commit", "dry_run")
 
 	if !dryRunResult.DryRunPass {
 		h.store.CreateEvent(runID, "warn", "Push dry run failed. Check git_push_dry_run_json artifact for details.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "blocked")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 		return
@@ -3068,9 +3241,11 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 
 	if result.Success {
 		h.store.CreateEvent(runID, "info", "Git push succeeded.")
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "pushed")
 		h.log.Info("git push succeeded", "run_id", runID)
 	} else {
 		h.store.CreateEvent(runID, "warn", "Git push failed: "+result.Error)
+		h.publishRunEvent(runID, events.KindStepCommit, "commit", "failed")
 	}
 
 	setHXPushURL(w, runID, "commit")
@@ -3158,6 +3333,7 @@ func (h *RunsHandler) generateOpenCodePacket(w http.ResponseWriter, r *http.Requ
 	h.store.CreateArtifact(runID, "opencode_handoff_packet", packetPath, "application/json")
 
 	h.store.CreateEvent(runID, "info", "OpenCode handoff packet generated")
+	h.publishRunEvent(runID, events.KindStepArtifacts, "opencode", "packet")
 
 	h.log.Info("opencode handoff packet generated", "run_id", runID)
 
@@ -3432,6 +3608,13 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 func formatPromptEstimate(est pipeline.PromptEstimate) string {
 	kb := float64(est.Bytes) / 1024.0
 	return fmt.Sprintf("%.1f KB (~%d tokens, approximate)", kb, est.ApproxTokens)
+}
+
+func truncatePreviewText(text string, max int) string {
+	if max <= 0 || len(text) <= max {
+		return text
+	}
+	return text[:max] + "\n..."
 }
 
 func hasCheckKind(checks []store.Check, kind string) bool {

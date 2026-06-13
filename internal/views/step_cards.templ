@@ -1052,34 +1052,228 @@ func transcriptEventClass(kind string) string {
 	}
 }
 
-templ AgentRunMonitorStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
-	if previews.HasOpenCodeRunning {
-		<div id="agent-run-monitor"
-			hx-get={"/runs/" + Itoa(run.ID) + "?step=run"}
-			hx-trigger="every 2s"
-			hx-target="#run-workbench-shell"
-			hx-select="#run-workbench-shell"
-			hx-swap="outerHTML settle:120ms"
-			hx-indicator="#run-workbench-loading"
-			class="relay-card">
-			@agentRunMonitorInner(run, artifacts, checks, previews, isExecutionRunning(previews.OpenCodeExecutionStatus))
-		</div>
-	} else {
-		<div id="agent-run-monitor" class="relay-card">
-			@agentRunMonitorInner(run, artifacts, checks, previews, isExecutionRunning(previews.OpenCodeExecutionStatus))
-		</div>
+func openCodeLifecycleLabel(state string) string {
+	switch state {
+	case "active_streaming":
+		return "streaming"
+	case "active_output":
+		return "output captured"
+	case "running_no_output":
+		return "starting"
+	case "waiting_output":
+		return "waiting for output"
+	case "stale_output":
+		return "stale output"
+	case "stale_timeout":
+		return "timed out"
+	case "completed":
+		return "completed"
+	case "failed":
+		return "failed"
+	default:
+		return "monitoring"
 	}
 }
 
-templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, isRunning bool) {
-	<div class="relay-card-header">
+func openCodeLifecycleDescription(previews RunPreviews) string {
+	switch previews.OpenCodeLifecycleState {
+	case "active_streaming":
+		return "OpenCode is running and Relay is receiving streamed chunks."
+	case "active_output":
+		return "OpenCode is running and output artifacts are being updated."
+	case "running_no_output":
+		return "OpenCode is still inside the startup grace period and has not emitted output yet."
+	case "waiting_output":
+		return "OpenCode is running, but Relay has not seen output yet."
+	case "stale_output":
+		return "OpenCode stopped emitting output and may need recovery."
+	case "stale_timeout":
+		return "OpenCode exceeded the timeout window and may need recovery."
+	case "completed":
+		return "OpenCode finished and Relay will show the parsed result."
+	case "failed":
+		return "OpenCode ended with a failure; review logs and artifacts."
+	default:
+		return "Relay is monitoring the execution."
+	}
+}
+
+func openCodeTranscriptTail(events []OpenCodeTranscriptEventView, n int) []OpenCodeTranscriptEventView {
+	if len(events) == 0 {
+		return nil
+	}
+	if len(events) <= n {
+		return events
+	}
+	return events[len(events)-n:]
+}
+
+func openCodeTrimEventText(text string, max int) string {
+	if max <= 0 || len(text) <= max {
+		return text
+	}
+	return text[:max] + "..."
+}
+
+func openCodeActivityLabel(kind string) string {
+	switch kind {
+	case "reasoning":
+		return "agent internal update"
+	case "tool":
+		return "tool call"
+	case "text":
+		return "assistant output"
+	case "stderr":
+		return "stderr"
+	case "step":
+		return "step update"
+	case "event":
+		return "event"
+	case "raw":
+		return "raw output"
+	default:
+		return kind
+	}
+}
+
+func openCodeCurrentActivity(events []OpenCodeTranscriptEventView) string {
+	if len(events) == 0 {
+		return ""
+	}
+	last := events[len(events)-1]
+	label := openCodeActivityLabel(last.Kind)
+	if label == "" {
+		label = "activity"
+	}
+	detail := openCodeTrimEventText(last.Text, 120)
+	if detail == "" {
+		return label
+	}
+	return label + ": " + detail
+}
+
+templ openCodeStatusSummary(previews RunPreviews) {
+	<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4">
 		<div class="flex flex-wrap items-center gap-2">
 			if previews.HasOpenCodeExecution {
 				@openCodeExecutionStatusChip(previews.OpenCodeExecutionStatus)
 			}
+			<div class="text-sm font-medium text-gray-100">OpenCode status</div>
+			if previews.OpenCodeLifecycleState != "" {
+				<span class="relay-chip-gray text-[11px]">{ openCodeLifecycleLabel(previews.OpenCodeLifecycleState) }</span>
+			}
+		</div>
+		<div class="mt-3 grid gap-2 text-xs text-gray-300 sm:grid-cols-2 xl:grid-cols-3">
+			if previews.OpenCodeCommandPreview != "" {
+				<div class="flex gap-2">
+					<span class="text-gray-500 shrink-0">Command:</span>
+					<span class="font-mono break-all">{ previews.OpenCodeCommandPreview }</span>
+				</div>
+			}
+			if previews.OpenCodeWorkDir != "" {
+				<div class="flex gap-2">
+					<span class="text-gray-500 shrink-0">Work dir:</span>
+					<span class="font-mono break-all">{ previews.OpenCodeWorkDir }</span>
+				</div>
+			}
+			if previews.OpenCodeModel != "" {
+				<div class="flex gap-2">
+					<span class="text-gray-500 shrink-0">Model:</span>
+					<span class="font-mono break-all">{ previews.OpenCodeModel }</span>
+				</div>
+			}
+			if previews.OpenCodeAgent != "" {
+				<div class="flex gap-2">
+					<span class="text-gray-500 shrink-0">Agent:</span>
+					<span class="font-mono break-all">{ previews.OpenCodeAgent }</span>
+				</div>
+			}
+			if previews.OpenCodeExecutionStarted != "" {
+				<div class="flex gap-2">
+					<span class="text-gray-500 shrink-0">Started:</span>
+					<span>{ previews.OpenCodeExecutionStarted }</span>
+				</div>
+			}
+			if previews.OpenCodeRuntime != "" {
+				<div class="flex gap-2">
+					<span class="text-gray-500 shrink-0">Runtime:</span>
+					<span>{ previews.OpenCodeRuntime }</span>
+				</div>
+			}
+			if previews.OpenCodeLastOutputAge != "" {
+				<div class="flex gap-2">
+					<span class="text-gray-500 shrink-0">Last output:</span>
+					<span>{ previews.OpenCodeLastOutputAge }</span>
+				</div>
+			}
+			if previews.OpenCodeStreamStdoutChunks > 0 || previews.OpenCodeStreamStderrChunks > 0 {
+				<div class="flex gap-2">
+					<span class="text-gray-500 shrink-0">Chunks:</span>
+					<span>
+						if previews.OpenCodeStreamStdoutChunks > 0 {
+							{"stdout " + Itoa(previews.OpenCodeStreamStdoutChunks)}
+						}
+						if previews.OpenCodeStreamStdoutChunks > 0 && previews.OpenCodeStreamStderrChunks > 0 {
+							{" / "}
+						}
+						if previews.OpenCodeStreamStderrChunks > 0 {
+							{"stderr " + Itoa(previews.OpenCodeStreamStderrChunks)}
+						}
+					</span>
+				</div>
+			}
+			{{ activity := openCodeCurrentActivity(previews.OpenCodeTranscript) }}
+			if activity != "" {
+				<div class="flex gap-2 sm:col-span-2 xl:col-span-3">
+					<span class="text-gray-500 shrink-0">Current activity:</span>
+					<span class="text-gray-200">{ activity }</span>
+				</div>
+			}
 		</div>
 	</div>
+}
 
+templ openCodeActivityTimeline(events []OpenCodeTranscriptEventView) {
+	{{ rows := openCodeTranscriptTail(events, 12) }}
+	if len(rows) > 0 {
+		<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4">
+			<div class="text-sm font-medium text-gray-200 mb-2">Recent activity / timeline</div>
+			<div class="space-y-0.5 text-xs leading-5 font-mono">
+				for _, ev := range rows {
+					<div class={ transcriptEventClass(ev.Kind) }>
+						<span class="text-gray-600">{ "[" + openCodeActivityLabel(ev.Kind) + "]" }</span>
+						<span class="whitespace-pre-wrap break-words">{ " " + openCodeTrimEventText(ev.Text, 180) }</span>
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ openCodeRecentOutput(events []OpenCodeTranscriptEventView) {
+	{{ rows := openCodeTranscriptTail(events, 6) }}
+	if len(rows) > 0 {
+		<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4">
+			<div class="text-sm font-medium text-gray-200 mb-2">Recent output</div>
+			<div class="space-y-0.5 text-xs leading-5 font-mono">
+				for _, ev := range rows {
+					<div class={ transcriptEventClass(ev.Kind) }>
+						<span class="text-gray-600">{ "[" + ev.Kind + "]" }</span>
+						<span class="whitespace-pre-wrap break-words">{ " " + openCodeTrimEventText(ev.Text, 220) }</span>
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ AgentRunMonitorStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
+	<div id="agent-run-monitor" class="relay-card">
+		@agentRunMonitorInner(run, artifacts, checks, previews, isExecutionRunning(previews.OpenCodeExecutionStatus))
+	</div>
+}
+
+templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, isRunning bool) {
 	<div class="relay-stage-evidence-list">
 		if !previews.HasOpenCodeExecution {
 			@StageEvidenceRow("warning", "No OpenCode run started yet", "Return to OpenCode to launch OpenCode Go.", "") {
@@ -1089,86 +1283,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 			}
 		}
 		if previews.HasOpenCodeExecution {
-			if previews.OpenCodeCommandPreview != "" {
-				@StageEvidenceRow("ready", "Execution metadata", "", "") {
-					<div class="relay-stage-output-preview">
-						<div class="p-3 space-y-2 text-xs sm:text-sm">
-							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-								<span class="text-gray-400 shrink-0">Command</span>
-								<span class="text-gray-300 font-mono break-all min-w-0">{ previews.OpenCodeCommandPreview }</span>
-							</div>
-							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-								<span class="text-gray-400 shrink-0">Working directory</span>
-								<span class="text-gray-300 font-mono break-all min-w-0">{ previews.OpenCodeWorkDir }</span>
-							</div>
-							if previews.OpenCodeModel != "" {
-								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-									<span class="text-gray-400 shrink-0">Model</span>
-									<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeModel }</span>
-								</div>
-							}
-							if previews.OpenCodeAgent != "" {
-								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-									<span class="text-gray-400 shrink-0">Agent</span>
-									<span class="text-gray-300 font-mono break-all">{ previews.OpenCodeAgent }</span>
-								</div>
-							}
-							<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-								<span class="text-gray-400 shrink-0">Thinking</span>
-								<span class="text-gray-300 font-mono">{ previews.OpenCodeThinking }</span>
-							</div>
-							if previews.OpenCodeExecutionStarted != "" {
-								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-									<span class="text-gray-400 shrink-0">Started</span>
-									<span class="text-gray-300">{ previews.OpenCodeExecutionStarted }</span>
-								</div>
-							}
-							if previews.OpenCodeRuntime != "" {
-								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-									<span class="text-gray-400 shrink-0">Runtime</span>
-									<span class="text-gray-300">{ previews.OpenCodeRuntime }</span>
-								</div>
-							}
-							if previews.OpenCodeExecutionFinished != "" {
-								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-									<span class="text-gray-400 shrink-0">Finished</span>
-									<span class="text-gray-300">{ previews.OpenCodeExecutionFinished }</span>
-								</div>
-							}
-							if previews.OpenCodeExecutionExitCode != "" {
-								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-									<span class="text-gray-400 shrink-0">Exit code</span>
-									<span class="text-gray-300">{ previews.OpenCodeExecutionExitCode }</span>
-								</div>
-							}
-							if previews.OpenCodeLastOutputAge != "" {
-								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-									<span class="text-gray-400 shrink-0">Last output</span>
-									<span class="text-gray-300">{ previews.OpenCodeLastOutputAge }</span>
-								</div>
-							}
-							if previews.OpenCodeLastOutputAt != "" {
-								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-									<span class="text-gray-400 shrink-0">Last output at</span>
-									<span class="text-gray-300">{ previews.OpenCodeLastOutputAt }</span>
-								</div>
-							}
-							if previews.OpenCodeStreamLastChunkAge != "" {
-								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-									<span class="text-gray-400 shrink-0">Last chunk</span>
-									<span class="text-gray-300">{ previews.OpenCodeStreamLastChunkAge }</span>
-								</div>
-							}
-							if previews.OpenCodeStreamLastChunkAt != "" {
-								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
-									<span class="text-gray-400 shrink-0">Last chunk at</span>
-									<span class="text-gray-300">{ previews.OpenCodeStreamLastChunkAt }</span>
-								</div>
-							}
-						</div>
-					</div>
-				}
-			}
+			@openCodeStatusSummary(previews)
 
 			if isRunning && previews.HasOpenCodeStaleRunning {
 				{{ staleTitle := "OpenCode output stopped before a final result" }}
@@ -1203,31 +1318,20 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 					</div>
 				}
 			} else if isRunning {
-				switch previews.OpenCodeLifecycleState {
-				case "active_streaming":
-					@StageEvidenceRow("running", "OpenCode is running - streaming chunks received", "Relay is polling and showing partial stdout/stderr as they arrive.", "") {
-						<div class="text-xs text-blue-200 space-y-1">
-							<div class="flex flex-wrap gap-x-4 gap-y-1">
-								if previews.OpenCodeStreamStdoutChunks > 0 {
-									<span>{ "stdout: " + Itoa(previews.OpenCodeStreamStdoutChunks) + " chunks (" + Itoa(previews.OpenCodeStreamStdoutBytes) + " bytes)" }</span>
-								}
-								if previews.OpenCodeStreamStderrChunks > 0 {
-									<span>{ "stderr: " + Itoa(previews.OpenCodeStreamStderrChunks) + " chunks (" + Itoa(previews.OpenCodeStreamStderrBytes) + " bytes)" }</span>
-								}
-							</div>
-							if previews.OpenCodeStreamLastChunkAge != "" {
-								<div class="text-gray-400">Last chunk: { previews.OpenCodeStreamLastChunkAge }</div>
+				@StageEvidenceRow("running", "OpenCode activity", openCodeLifecycleDescription(previews), "") {
+					<div class="text-xs text-blue-200 space-y-1">
+						<div class="flex flex-wrap gap-x-4 gap-y-1">
+							if previews.OpenCodeStreamStdoutChunks > 0 {
+								<span>{ "stdout: " + Itoa(previews.OpenCodeStreamStdoutChunks) + " chunks (" + Itoa(previews.OpenCodeStreamStdoutBytes) + " bytes)" }</span>
+							}
+							if previews.OpenCodeStreamStderrChunks > 0 {
+								<span>{ "stderr: " + Itoa(previews.OpenCodeStreamStderrChunks) + " chunks (" + Itoa(previews.OpenCodeStreamStderrBytes) + " bytes)" }</span>
 							}
 						</div>
-					}
-				case "active_output":
-					@StageEvidenceRow("running", "OpenCode is running - artifacts present", "Streaming progress data not available, but artifact files exist.", "")
-				case "running_no_output":
-					@StageEvidenceRow("running", "OpenCode is running - no output yet", "OpenCode is still inside the startup grace period and has not emitted output yet.", "")
-				case "waiting_output":
-					@StageEvidenceRow("running", "OpenCode is running - waiting for first output", "OpenCode is still plausibly active, but Relay has not seen stdout or stderr yet.", "")
-				default:
-					@StageEvidenceRow("running", "OpenCode is running", "Relay is monitoring the execution.", "")
+						if previews.OpenCodeStreamLastChunkAge != "" {
+							<div class="text-gray-400">Last chunk: { previews.OpenCodeStreamLastChunkAge }</div>
+						}
+					</div>
 				}
 			}
 
@@ -1269,18 +1373,8 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 			}
 
 			if len(previews.OpenCodeTranscript) > 0 {
-				@StageEvidenceRow("passed", "Output Transcript", "", "") {
-					<div class="relay-stage-output-preview">
-						<div class="max-h-80 overflow-auto text-xs leading-5 font-mono p-3 min-w-0">
-							for _, ev := range previews.OpenCodeTranscript {
-								<div class={ transcriptEventClass(ev.Kind) }>
-									<span class="text-gray-600">{ "[" + ev.Kind + "]" }</span>
-									<span class="whitespace-pre-wrap break-words">{ " " + ev.Text }</span>
-								</div>
-							}
-						</div>
-					</div>
-				}
+				@openCodeActivityTimeline(previews.OpenCodeTranscript)
+				@openCodeRecentOutput(previews.OpenCodeTranscript)
 			}
 
 			if previews.HasOpenCodeStdout || previews.HasOpenCodeStderr || previews.HasOpenCodeCombinedLog {
@@ -1402,22 +1496,9 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 }
 
 templ RelayValidationStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
-	if previews.ValidationProgressRunning {
-		<div id="relay-validation-panel"
-			hx-get={"/runs/" + Itoa(run.ID) + "?step=validation"}
-			hx-trigger="every 2s"
-			hx-target="#run-workbench-shell"
-			hx-select="#run-workbench-shell"
-			hx-swap="outerHTML settle:120ms"
-			hx-indicator="#run-workbench-loading"
-			class="relay-card">
-			@relayValidationStepPanelInner(run, artifacts, checks, previews)
-		</div>
-	} else {
-		<div id="relay-validation-panel" class="relay-card">
-			@relayValidationStepPanelInner(run, artifacts, checks, previews)
-		</div>
-	}
+	<div id="relay-validation-panel" class="relay-card">
+		@relayValidationStepPanelInner(run, artifacts, checks, previews)
+	</div>
 }
 
 templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
@@ -1466,7 +1547,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 			}
 			if previews.ValidationProgressRunning {
 				@StageEvidenceRow("running", "Validation live progress", "This page refreshes automatically while validation commands are active.", "") {
-					@validationProgressDisplay(previews.ValidationProgressPreview, run.ID, artifacts)
+					@validationProgressDisplay(previews.ValidationProgressPreview, run.ID, artifacts, previews)
 				}
 			} else if previews.ValidationProgressPreview.Status == "error" {
 				@StageFailurePanel("Validation error", previews.ValidationProgressPreview.Error) {
@@ -1509,6 +1590,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 				@StageEvidenceRow("passed", "Validation results", "", "") {
 					@validationResultsSummary(previews.ValidationRun, run.ID, artifacts)
 				}
+				@validationRecentOutput(previews, run.ID, artifacts)
 			} else if artifactExists(artifacts, "validation_run_json") {
 				@StageEvidenceRow("passed", "Validation completed", "", "") {
 					if hasCheckStatus(checks, "validation_run", "pass") {
@@ -1520,6 +1602,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 					}
 					<div class="mt-2 text-xs text-yellow-400">Validation result artifact could not be parsed. Use View validation JSON.</div>
 				}
+				@validationRecentOutput(previews, run.ID, artifacts)
 			} else if validationProgressFinished(previews) {
 				if previews.ValidationProgressPreview.Status == "pass" {
 					@StageEvidenceRow("passed", "Validation passed", "", "")
@@ -1651,7 +1734,7 @@ templ validationCommandStatusChip(status string) {
 	}
 }
 
-templ validationProgressDisplay(progress ValidationProgressPreview, runID int64, artifacts []store.Artifact) {
+templ validationProgressDisplay(progress ValidationProgressPreview, runID int64, artifacts []store.Artifact, previews RunPreviews) {
 	<div class="rounded-xl border border-blue-900/60 bg-blue-950/30 p-3 sm:p-4">
 		<div class="flex flex-wrap items-center gap-2 sm:gap-3">
 			<span class="relay-chip-blue text-xs">running</span>
@@ -1697,6 +1780,42 @@ templ validationProgressDisplay(progress ValidationProgressPreview, runID int64,
 			}
 		</div>
 	</div>
+	if previews.ValidationStdoutPreview != "" || previews.ValidationStderrPreview != "" {
+		<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4">
+			<div class="text-sm font-medium text-gray-200 mb-2">Recent output</div>
+			<div class="space-y-3 text-xs leading-5">
+				if previews.ValidationStdoutPreview != "" {
+					<div class="space-y-1">
+						<div class="text-gray-500 uppercase tracking-wide">stdout</div>
+						<pre class="text-gray-300 whitespace-pre-wrap break-words max-h-48 overflow-auto">{ previews.ValidationStdoutPreview }</pre>
+					</div>
+				}
+				if previews.ValidationStderrPreview != "" {
+					<div class="space-y-1">
+						<div class="text-gray-500 uppercase tracking-wide">stderr</div>
+						<pre class="text-gray-300 whitespace-pre-wrap break-words max-h-48 overflow-auto">{ previews.ValidationStderrPreview }</pre>
+					</div>
+				}
+			</div>
+			<div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+				if artifactExists(artifacts, "validation_run_json") {
+					@ArtifactPreviewLink(runID, "validation_run_json", "text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+						validation JSON
+					}
+				}
+				if artifactExists(artifacts, "validation_stdout") {
+					@ArtifactPreviewLink(runID, "validation_stdout", "text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+						stdout
+					}
+				}
+				if artifactExists(artifacts, "validation_stderr") {
+					@ArtifactPreviewLink(runID, "validation_stderr", "text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+						stderr
+					}
+				}
+			</div>
+		</div>
+	}
 	if len(progress.Commands) > 0 {
 		<div class="rounded-xl border border-gray-800 bg-gray-950/40 overflow-hidden">
 			<div class="border-b border-gray-800 px-3 py-2 flex items-center justify-between">
@@ -1752,6 +1871,45 @@ templ validationProgressDisplay(progress ValidationProgressPreview, runID int64,
 		<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3">
 			<div class="text-xs text-gray-500 uppercase tracking-wide mb-2">Artifacts</div>
 			<div class="flex flex-wrap items-center gap-2 text-xs">
+				if artifactExists(artifacts, "validation_run_json") {
+					@ArtifactPreviewLink(runID, "validation_run_json", "text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+						validation JSON
+					}
+				}
+				if artifactExists(artifacts, "validation_stdout") {
+					@ArtifactPreviewLink(runID, "validation_stdout", "text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+						stdout
+					}
+				}
+				if artifactExists(artifacts, "validation_stderr") {
+					@ArtifactPreviewLink(runID, "validation_stderr", "text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+						stderr
+					}
+				}
+			</div>
+		</div>
+	}
+}
+
+templ validationRecentOutput(previews RunPreviews, runID int64, artifacts []store.Artifact) {
+	if previews.ValidationStdoutPreview != "" || previews.ValidationStderrPreview != "" {
+		<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4">
+			<div class="text-sm font-medium text-gray-200 mb-2">Recent output</div>
+			<div class="space-y-3 text-xs leading-5">
+				if previews.ValidationStdoutPreview != "" {
+					<div class="space-y-1">
+						<div class="text-gray-500 uppercase tracking-wide">stdout</div>
+						<pre class="text-gray-300 whitespace-pre-wrap break-words max-h-48 overflow-auto">{ previews.ValidationStdoutPreview }</pre>
+					</div>
+				}
+				if previews.ValidationStderrPreview != "" {
+					<div class="space-y-1">
+						<div class="text-gray-500 uppercase tracking-wide">stderr</div>
+						<pre class="text-gray-300 whitespace-pre-wrap break-words max-h-48 overflow-auto">{ previews.ValidationStderrPreview }</pre>
+					</div>
+				}
+			</div>
+			<div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
 				if artifactExists(artifacts, "validation_run_json") {
 					@ArtifactPreviewLink(runID, "validation_run_json", "text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
 						validation JSON

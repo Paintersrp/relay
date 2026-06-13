@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"relay/internal/devreload"
+	"relay/internal/events"
 	"relay/internal/handlers"
 	"relay/internal/repos"
 	"relay/internal/store"
@@ -20,9 +21,10 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
 
+	eventHub := events.NewHub(log)
 	dashboard := handlers.NewDashboardHandler(s)
-	handoffs := handlers.NewHandoffsHandler(s, log)
-	runs := handlers.NewRunsHandler(s, log)
+	handoffs := handlers.NewHandoffsHandler(s, log, eventHub)
+	runs := handlers.NewRunsHandler(s, log, eventHub)
 	handoffs.SetRunsHandler(runs)
 	artifactsH := handlers.NewArtifactsHandler(s)
 
@@ -31,6 +33,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	r.Post("/handoffs", handoffs.Create)
 
 	r.Get("/runs/{id}", runs.Get)
+	r.Get("/runs/{id}/events", runs.Events)
 	r.Post("/runs/{id}/actions", runs.Action)
 	r.Get("/runs/{id}/agent-run-monitor", runs.AgentRunMonitor)
 

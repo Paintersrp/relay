@@ -2899,8 +2899,8 @@ another line
 	if strings.Contains(body, `hx-trigger="every 2s"`) {
 		t.Fatal("expected polling to stop for stale OpenCode output")
 	}
-	if !strings.Contains(body, "Last chunk") {
-		t.Fatal("expected last chunk age for stale OpenCode output")
+	if !strings.Contains(body, "Last streamed chunk") {
+		t.Fatal("expected last streamed chunk age for stale OpenCode output")
 	}
 	if !strings.Contains(body, "download combined log") {
 		t.Fatal("expected combined log link for stale OpenCode output")
@@ -3106,13 +3106,13 @@ func TestRunGetKeepsPollingWhenOpenCodeRunningWithFreshOutput(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, `hx-trigger="every 2s"`) {
-		t.Fatal("expected polling to continue for fresh OpenCode output")
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("did not expect polling for fresh OpenCode output")
 	}
 	if strings.Contains(body, "Recover Stale OpenCode Run") {
 		t.Fatal("did not expect recovery action for fresh OpenCode output")
 	}
-	if !strings.Contains(body, "artifacts present") {
+	if !strings.Contains(body, "OpenCode is running and output artifacts are being updated.") {
 		t.Fatal("expected live output running message")
 	}
 	if !strings.Contains(body, "download combined log") {
@@ -3183,13 +3183,13 @@ func TestRunGetKeepsPollingWhenOpenCodeRunningWithFreshRFC3339NanoTimestamp(t *t
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, `hx-trigger="every 2s"`) {
-		t.Fatal("expected polling when OpenCode is still running without output")
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("did not expect polling when OpenCode is still running without output")
 	}
 	if strings.Contains(body, "Recover Stale OpenCode Run") {
 		t.Fatal("did not expect recovery action when no output exists")
 	}
-	if !strings.Contains(body, "no output yet") {
+	if !strings.Contains(body, "OpenCode is still inside the startup grace period and has not emitted output yet.") {
 		t.Fatal("expected no-output running message")
 	}
 }
@@ -3335,10 +3335,10 @@ func TestRunGetShowsActiveOpenCodeRunningWithRecentStreamProgress(t *testing.T) 
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, `hx-trigger="every 2s"`) {
-		t.Fatal("expected polling to continue when OpenCode is still running")
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("did not expect polling when OpenCode is still running")
 	}
-	if !strings.Contains(body, "streaming chunks received") {
+	if !strings.Contains(body, "OpenCode is running and Relay is receiving streamed chunks.") {
 		t.Fatal("expected streaming activity message")
 	}
 	if !strings.Contains(body, "3 chunks") || !strings.Contains(body, "45 bytes") {
@@ -3377,10 +3377,10 @@ func TestRunGetShowsNoChunksYetWhenRunningWithoutOutput(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, `hx-trigger="every 2s"`) {
-		t.Fatal("expected polling when OpenCode is still running without output")
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("did not expect polling when OpenCode is still running without output")
 	}
-	if !strings.Contains(body, "no output yet") {
+	if !strings.Contains(body, "OpenCode is still inside the startup grace period and has not emitted output yet.") {
 		t.Fatal("expected no-output running message")
 	}
 	if strings.Contains(body, "Recover Stale OpenCode Run") {
@@ -3418,10 +3418,10 @@ func TestRunGetKeepsPollingWhenOpenCodeRunningWithLegacyLocalTimestamp(t *testin
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, `hx-trigger="every 2s"`) {
-		t.Fatal("expected polling when OpenCode is still running without output")
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("did not expect polling when OpenCode is still running without output")
 	}
-	if !strings.Contains(body, "no output yet") {
+	if !strings.Contains(body, "OpenCode is still inside the startup grace period and has not emitted output yet.") {
 		t.Fatal("expected no-output running message")
 	}
 	if strings.Contains(body, "Recover Stale OpenCode Run") {

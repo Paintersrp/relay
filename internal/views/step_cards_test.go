@@ -687,8 +687,8 @@ func TestValidationStageShowsRunningProgressEvidence(t *testing.T) {
 		t.Fatalf("render RelayValidationStepPanel: %v", err)
 	}
 	html := buf.String()
-	if !strings.Contains(html, `hx-trigger="every 2s"`) {
-		t.Errorf("expected active polling wrapper")
+	if strings.Contains(html, `hx-trigger="every 2s"`) {
+		t.Errorf("did not expect polling wrapper")
 	}
 	if !strings.Contains(html, "Validation live progress") {
 		t.Errorf("expected live progress title")
@@ -1586,20 +1586,14 @@ func TestStep5RunningMonitorHasCorrectPollingAttributes(t *testing.T) {
 		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
 	}
 	html := buf.String()
-	if !strings.Contains(html, `hx-get="/runs/1?step=run"`) {
-		t.Errorf("expected hx-get to Step 5 run URL, got: %s", html)
+	if strings.Contains(html, `hx-get="/runs/1?step=run"`) {
+		t.Errorf("did not expect Step 5 self-refresh hx-get, got: %s", html)
 	}
-	if !strings.Contains(html, `hx-target="#run-workbench-shell"`) {
-		t.Errorf("expected hx-target on Step 5 running monitor")
+	if strings.Contains(html, `hx-trigger="every 2s"`) {
+		t.Errorf("did not expect Step 5 polling wrapper")
 	}
-	if !strings.Contains(html, `hx-select="#run-workbench-shell"`) {
-		t.Errorf("expected hx-select on Step 5 running monitor")
-	}
-	if !strings.Contains(html, `hx-indicator="#run-workbench-loading"`) {
-		t.Errorf("expected hx-indicator on Step 5 running monitor")
-	}
-	if strings.Contains(html, `/agent-run-monitor`) {
-		t.Errorf("Step 5 running monitor should not poll /agent-run-monitor")
+	if !strings.Contains(html, "OpenCode activity") {
+		t.Errorf("expected OpenCode activity block")
 	}
 }
 
@@ -1617,20 +1611,11 @@ func TestStep5RunningMonitorPollWrapperOmitsShowTop(t *testing.T) {
 		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
 	}
 	html := buf.String()
-	// Extract the hx-swap value from the outer polling wrapper (first occurrence)
-	idx := strings.Index(html, `hx-swap="`)
-	if idx < 0 {
-		t.Fatal("expected hx-swap attribute in Step 5 running monitor")
+	if strings.Contains(html, `hx-get="/runs/1?step=run"`) {
+		t.Fatal("did not expect Step 5 polling wrapper")
 	}
-	swapStart := idx + len(`hx-swap="`)
-	remainder := html[swapStart:]
-	endIdx := strings.Index(remainder, `"`)
-	if endIdx < 0 {
-		t.Fatal("malformed hx-swap attribute")
-	}
-	swapVal := remainder[:endIdx]
-	if strings.Contains(swapVal, `show:`) {
-		t.Errorf("Step 5 running monitor hx-swap should not include show: directive, got %q", swapVal)
+	if strings.Contains(html, `hx-trigger="every 2s"`) {
+		t.Fatal("did not expect Step 5 polling trigger")
 	}
 }
 
@@ -1653,17 +1638,14 @@ func TestStep6ValidationRunningPollHasCorrectAttributes(t *testing.T) {
 		t.Fatalf("render RelayValidationStepPanel: %v", err)
 	}
 	html := buf.String()
-	if !strings.Contains(html, `hx-get="/runs/1?step=validation"`) {
-		t.Errorf("expected hx-get to Step 6 validation URL, got: %s", html)
+	if strings.Contains(html, `hx-get="/runs/1?step=validation"`) {
+		t.Errorf("did not expect Step 6 self-refresh hx-get, got: %s", html)
 	}
-	if !strings.Contains(html, `hx-target="#run-workbench-shell"`) {
-		t.Errorf("expected hx-target on Step 6 validation poll")
+	if strings.Contains(html, `hx-trigger="every 2s"`) {
+		t.Errorf("did not expect Step 6 polling wrapper")
 	}
-	if !strings.Contains(html, `hx-select="#run-workbench-shell"`) {
-		t.Errorf("expected hx-select on Step 6 validation poll")
-	}
-	if !strings.Contains(html, `hx-indicator="#run-workbench-loading"`) {
-		t.Errorf("expected hx-indicator on Step 6 validation poll")
+	if !strings.Contains(html, "Validation live progress") {
+		t.Errorf("expected validation live progress block")
 	}
 }
 
@@ -1686,20 +1668,11 @@ func TestStep6ValidationRunningPollWrapperOmitsShowTop(t *testing.T) {
 		t.Fatalf("render RelayValidationStepPanel: %v", err)
 	}
 	html := buf.String()
-	// Extract the hx-swap value from the outer polling wrapper (first occurrence)
-	idx := strings.Index(html, `hx-swap="`)
-	if idx < 0 {
-		t.Fatal("expected hx-swap attribute in Step 6 validation poll")
+	if strings.Contains(html, `hx-get="/runs/1?step=validation"`) {
+		t.Fatal("did not expect Step 6 polling wrapper")
 	}
-	swapStart := idx + len(`hx-swap="`)
-	remainder := html[swapStart:]
-	endIdx := strings.Index(remainder, `"`)
-	if endIdx < 0 {
-		t.Fatal("malformed hx-swap attribute")
-	}
-	swapVal := remainder[:endIdx]
-	if strings.Contains(swapVal, `show:`) {
-		t.Errorf("Step 6 validation poll hx-swap should not include show: directive, got %q", swapVal)
+	if strings.Contains(html, `hx-trigger="every 2s"`) {
+		t.Fatal("did not expect Step 6 polling trigger")
 	}
 }
 
@@ -1947,10 +1920,10 @@ func TestAgentRunRunningWithoutOutputShowsNoOutputYet(t *testing.T) {
 		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
 	}
 	html := buf.String()
-	if !strings.Contains(html, `hx-trigger="every 2s"`) {
-		t.Errorf("expected polling while execution is running without output")
+	if strings.Contains(html, `hx-trigger="every 2s"`) {
+		t.Errorf("did not expect polling while execution is running without output")
 	}
-	if !strings.Contains(html, "no output yet") {
+	if !strings.Contains(html, "OpenCode is still inside the startup grace period and has not emitted output yet.") {
 		t.Errorf("expected no-output running message, got: %s", html)
 	}
 	if strings.Contains(html, "Log artifacts") {

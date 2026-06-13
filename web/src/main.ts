@@ -29,6 +29,7 @@ function initWorkbenchSwapFocus(): void {
     if (target?.id !== 'run-workbench-shell') return;
     const heading = target.querySelector<HTMLElement>('[data-run-stage-heading]');
     heading?.focus({ preventScroll: true });
+    initRunEventStream();
   });
 }
 
@@ -38,12 +39,15 @@ function initWorkbenchBusyIndicator(): void {
     const target = detail?.target as HTMLElement | undefined;
     if (target?.id !== 'run-workbench-shell') return;
     target.setAttribute('aria-busy', 'true');
+    relayRunRefreshInFlight = true;
   });
   document.body.addEventListener('htmx:afterSettle', (event) => {
     const detail = (event as CustomEvent).detail;
     const target = detail?.target as HTMLElement | undefined;
     if (target?.id !== 'run-workbench-shell') return;
     target.removeAttribute('aria-busy');
+    relayRunRefreshInFlight = false;
+    flushWorkbenchRefreshQueue();
   });
 }
 
@@ -161,12 +165,155 @@ function initHTMXErrorBanner(): void {
   });
 }
 
+type LiveUpdateState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+
+let relayRunEventSource: EventSource | null = null;
+let relayRunEventSourceUrl = '';
+let relayRunEventShell: HTMLElement | null = null;
+let relayRunRefreshTimer: number | undefined;
+let relayRunRefreshInFlight = false;
+let relayRunRefreshPending = false;
+
+function currentWorkbenchShell(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-relay-workbench][data-relay-run-events]');
+}
+
+function liveUpdatesIndicator(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-relay-live-updates-indicator]');
+}
+
+function setLiveUpdatesIndicator(state: LiveUpdateState): void {
+  const indicator = liveUpdatesIndicator();
+  if (!indicator) return;
+
+  indicator.dataset.relayLiveUpdatesState = state;
+  indicator.classList.remove('border-green-700', 'border-yellow-700', 'border-red-700', 'text-green-300', 'text-yellow-300', 'text-red-300', 'bg-green-950/60', 'bg-yellow-950/60', 'bg-red-950/60');
+
+  switch (state) {
+    case 'connected':
+      indicator.textContent = 'Live updates connected';
+      indicator.classList.add('border-green-700', 'text-green-300', 'bg-green-950/60');
+      break;
+    case 'reconnecting':
+      indicator.textContent = 'Live updates reconnecting';
+      indicator.classList.add('border-yellow-700', 'text-yellow-300', 'bg-yellow-950/60');
+      break;
+    case 'disconnected':
+      indicator.textContent = 'Live updates disconnected - refresh manually';
+      indicator.classList.add('border-red-700', 'text-red-300', 'bg-red-950/60');
+      break;
+    default:
+      indicator.textContent = 'Live updates connecting';
+      indicator.classList.add('border-gray-700', 'text-gray-400', 'bg-gray-950/70');
+      break;
+  }
+}
+
+function closeRunEventSource(): void {
+  if (relayRunEventSource) {
+    relayRunEventSource.close();
+  }
+  relayRunEventSource = null;
+  relayRunEventSourceUrl = '';
+  relayRunEventShell = null;
+}
+
+function queueWorkbenchRefresh(): void {
+  if (relayRunRefreshTimer != null) return;
+  relayRunRefreshTimer = window.setTimeout(() => {
+    relayRunRefreshTimer = undefined;
+    if (relayRunRefreshInFlight) {
+      relayRunRefreshPending = true;
+      return;
+    }
+
+    const shell = currentWorkbenchShell();
+    const url = shell?.getAttribute('data-relay-run-url') || '';
+    if (!shell || !url) {
+      relayRunRefreshPending = false;
+      return;
+    }
+
+    relayRunRefreshInFlight = true;
+    relayRunRefreshPending = false;
+
+    htmx.ajax('GET', url, {
+      target: '#run-workbench-shell',
+      select: '#run-workbench-shell',
+      swap: 'outerHTML show:#run-workbench-shell:top settle:120ms',
+    });
+  }, 250);
+}
+
+function flushWorkbenchRefreshQueue(): void {
+  if (!relayRunRefreshPending || relayRunRefreshInFlight) return;
+  relayRunRefreshPending = false;
+  queueWorkbenchRefresh();
+}
+
+function initRunEventStream(): void {
+  const shell = currentWorkbenchShell();
+  if (!shell) {
+    closeRunEventSource();
+    setLiveUpdatesIndicator('disconnected');
+    return;
+  }
+
+  const url = shell.getAttribute('data-relay-run-events') || '';
+  if (!url) {
+    closeRunEventSource();
+    setLiveUpdatesIndicator('disconnected');
+    return;
+  }
+
+  if (relayRunEventSource && relayRunEventSourceUrl === url && relayRunEventShell === shell) {
+    return;
+  }
+
+  closeRunEventSource();
+  relayRunEventShell = shell;
+  relayRunEventSourceUrl = url;
+  setLiveUpdatesIndicator('connecting');
+
+  if (typeof EventSource === 'undefined') {
+    setLiveUpdatesIndicator('disconnected');
+    return;
+  }
+
+  const source = new EventSource(url);
+  relayRunEventSource = source;
+
+  const semanticEvents = ['run.summary', 'step.agent', 'step.validation', 'step.audit', 'step.commit', 'step.artifacts', 'toast'];
+
+  source.onopen = () => {
+    setLiveUpdatesIndicator('connected');
+  };
+
+  semanticEvents.forEach((name) => {
+    source.addEventListener(name, () => {
+      queueWorkbenchRefresh();
+    });
+  });
+
+  source.onerror = () => {
+    if (!relayRunEventSource) {
+      return;
+    }
+    if (source.readyState === EventSource.CLOSED) {
+      setLiveUpdatesIndicator('disconnected');
+    } else {
+      setLiveUpdatesIndicator('reconnecting');
+    }
+  };
+}
+
 initDelegatedCopyControls();
 initWorkbenchSwapFocus();
 initWorkbenchBusyIndicator();
 initRelayActionSubmitState();
 initArtifactPreviewControls();
 initHTMXErrorBanner();
+initRunEventStream();
 
 function initDevReload(): void {
   const marker = document.querySelector('meta[name="relay-dev-reload"][content="enabled"]');

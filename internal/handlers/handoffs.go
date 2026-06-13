@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"relay/internal/artifacts"
+	"relay/internal/events"
 	"relay/internal/pipeline"
 	"relay/internal/repos"
 	"relay/internal/store"
@@ -19,16 +20,33 @@ import (
 type HandoffsHandler struct {
 	store       *store.Store
 	log         *slog.Logger
+	eventHub    *events.Hub
 	runsHandler *RunsHandler
 }
 
-func NewHandoffsHandler(s *store.Store, log *slog.Logger) *HandoffsHandler {
-	return &HandoffsHandler{store: s, log: log}
+func NewHandoffsHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *HandoffsHandler {
+	var eventHub *events.Hub
+	if len(hub) > 0 {
+		eventHub = hub[0]
+	}
+	return &HandoffsHandler{store: s, log: log, eventHub: eventHub}
 }
 
 // SetRunsHandler provides access to run-level operations for auto-setup.
 func (h *HandoffsHandler) SetRunsHandler(rh *RunsHandler) {
 	h.runsHandler = rh
+}
+
+func (h *HandoffsHandler) publishRunEvent(runID int64, kind, source, status string) {
+	if h == nil || h.eventHub == nil {
+		return
+	}
+	h.eventHub.Publish(events.RunEvent{
+		RunID:  runID,
+		Kind:   kind,
+		Source: source,
+		Status: status,
+	})
 }
 
 func (h *HandoffsHandler) NewForm(w http.ResponseWriter, r *http.Request) {
@@ -123,8 +141,10 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 			h.log.Warn("update run branch with baseline", "run_id", run.ID, "error", err)
 		}
 		h.store.CreateEvent(run.ID, "info", "Git baseline captured at run creation: "+shortSHA(gitSnap.HeadSHA)+" on "+gitSnap.Branch)
+		h.publishRunEvent(run.ID, events.KindRunSummary, "handoff", "baseline")
 	} else {
 		h.store.CreateEvent(run.ID, "warn", "Git baseline unavailable: "+gitSnap.Error)
+		h.publishRunEvent(run.ID, events.KindRunSummary, "handoff", "warning")
 	}
 
 	if baselineJSON != nil {
@@ -148,6 +168,7 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.store.CreateEvent(run.ID, "info", "Handoff created from "+handoffSource)
+	h.publishRunEvent(run.ID, events.KindRunSummary, "handoff", "created")
 
 	h.log.Info("handoff created", "run_id", run.ID, "repo", repo.Name)
 

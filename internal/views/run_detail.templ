@@ -27,7 +27,16 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 			</div>
 		</div>
 
-		<section id="run-workbench-shell" class="relay-workbench-shell" data-relay-workbench>
+		<section id="run-workbench-shell"
+			class="relay-workbench-shell"
+			data-relay-workbench
+			data-relay-run-events={"/runs/" + Itoa(run.ID) + "/events"}
+			data-relay-run-url={"/runs/" + Itoa(run.ID) + "?step=" + activeStep}>
+			<div class="flex justify-end mb-2">
+				<span data-relay-live-updates-indicator class="inline-flex items-center rounded-full border border-gray-700 bg-gray-950/70 px-2 py-1 text-[11px] text-gray-400">
+					Live updates connecting
+				</span>
+			</div>
 			<div id="run-workbench-loading" class="htmx-indicator relay-workbench-loading">
 				Updating workbench...
 			</div>

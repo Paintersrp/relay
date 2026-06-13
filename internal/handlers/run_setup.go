@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"relay/internal/artifacts"
+	"relay/internal/events"
 	"relay/internal/pipeline"
 	"relay/internal/store"
 )
@@ -131,6 +132,7 @@ func (h *RunsHandler) runValidateForSetup(runID int64) (string, []string) {
 	}
 
 	h.store.CreateEvent(runID, "info", "[Auto] Handoff validation completed: "+report.Status)
+	h.publishRunEvent(runID, events.KindRunSummary, "setup", report.Status)
 	h.log.Info("setup: handoff validated", "run_id", runID, "status", report.Status)
 
 	return report.Status, blockers
@@ -166,6 +168,7 @@ func (h *RunsHandler) runPreparePromptForSetup(runID int64) promptSetupResult {
 		h.store.UpdateRunStatus(runID, "needs_review")
 		h.store.CreateEvent(runID, "warn", "[Auto] Automatic setup stopped: Intake Review has blockers.")
 		h.store.CreateEvent(runID, "warn", "[Auto] "+strings.Join(review.Blockers, "; "))
+		h.publishRunEvent(runID, events.KindRunSummary, "setup", "blocked")
 		h.log.Warn("setup: blocked from generating prompt by intake review blockers", "run_id", runID)
 		return promptSetupResult{
 			Generated: false,
@@ -185,6 +188,7 @@ func (h *RunsHandler) runPreparePromptForSetup(runID int64) promptSetupResult {
 	h.store.CreateArtifact(runID, "agent_prompt", promptPath, "text/plain")
 	h.store.UpdateRunStatus(runID, "ready")
 	h.store.CreateEvent(runID, "info", "[Auto] Agent prompt generated")
+	h.publishRunEvent(runID, events.KindStepArtifacts, "setup", "ready")
 
 	h.log.Info("setup: agent prompt generated", "run_id", runID)
 	return promptSetupResult{Generated: true}
@@ -255,6 +259,7 @@ func (h *RunsHandler) runGeneratePacketForSetup(runID int64) bool {
 
 	h.store.CreateArtifact(runID, "opencode_handoff_packet", packetPath, "application/json")
 	h.store.CreateEvent(runID, "info", "[Auto] OpenCode handoff packet generated")
+	h.publishRunEvent(runID, events.KindStepArtifacts, "setup", "packet")
 
 	h.log.Info("setup: opencode packet generated", "run_id", runID)
 	return true
