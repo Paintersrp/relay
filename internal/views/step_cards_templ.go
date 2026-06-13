@@ -6568,7 +6568,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 481, "<span>running</span></span><div class=\"text-sm font-medium text-blue-300\">Validation live progress</div></div><div class=\"mt-2 grid gap-2 text-xs text-gray-300 sm:grid-cols-2 lg:grid-cols-4\"><div class=\"flex gap-2\"><span class=\"text-gray-500 shrink-0\">Started:</span> <span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 481, "<span>running</span></span><div class=\"text-sm font-medium text-blue-300\">Validation live progress</div></div><div class=\"mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-300\"><div class=\"flex gap-2\"><span class=\"text-gray-500 shrink-0\">Started:</span> <span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

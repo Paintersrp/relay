@@ -46,8 +46,14 @@ function initWorkbenchBusyIndicator(): void {
     const target = detail?.target as HTMLElement | undefined;
     if (target?.id !== 'run-workbench-shell') return;
     target.removeAttribute('aria-busy');
-    relayRunRefreshInFlight = false;
-    flushWorkbenchRefreshQueue();
+    finishWorkbenchRefresh();
+  });
+  document.body.addEventListener('htmx:afterRequest', (event) => {
+    if (!relayRunRefreshInFlight) return;
+    const detail = (event as CustomEvent).detail;
+    const target = detail?.target as HTMLElement | undefined;
+    if (target?.id !== 'run-workbench-shell') return;
+    finishWorkbenchRefresh();
   });
 }
 
@@ -175,7 +181,7 @@ let relayRunRefreshInFlight = false;
 let relayRunRefreshPending = false;
 
 function currentWorkbenchShell(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('[data-relay-workbench][data-relay-run-events]');
+  return document.querySelector<HTMLElement>('#run-workbench-shell[data-relay-workbench]');
 }
 
 function liveUpdatesIndicator(): HTMLElement | null {
@@ -233,6 +239,14 @@ function closeRunEventSource(): void {
   relayRunEventShell = null;
 }
 
+function finishWorkbenchRefresh(): void {
+  relayRunRefreshInFlight = false;
+  if (relayRunRefreshPending) {
+    relayRunRefreshPending = false;
+    queueWorkbenchRefresh();
+  }
+}
+
 function queueWorkbenchRefresh(): void {
   if (relayRunRefreshTimer != null) return;
   relayRunRefreshTimer = window.setTimeout(() => {
@@ -243,8 +257,18 @@ function queueWorkbenchRefresh(): void {
     }
 
     const shell = currentWorkbenchShell();
-    const url = shell?.getAttribute('data-relay-run-url') || '';
-    if (!shell || !url) {
+    if (!shell || !document.documentElement.contains(shell)) {
+      relayRunRefreshPending = false;
+      return;
+    }
+
+    const url = shell.getAttribute('data-relay-run-url') || '';
+    if (!url) {
+      relayRunRefreshPending = false;
+      return;
+    }
+
+    if (!window.htmx || typeof window.htmx.ajax !== 'function') {
       relayRunRefreshPending = false;
       return;
     }
@@ -253,7 +277,7 @@ function queueWorkbenchRefresh(): void {
     relayRunRefreshPending = false;
 
     htmx.ajax('GET', url, {
-      target: '#run-workbench-shell',
+      target: shell,
       select: '#run-workbench-shell',
       swap: 'outerHTML show:#run-workbench-shell:top settle:120ms',
     });
