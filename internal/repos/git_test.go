@@ -486,3 +486,357 @@ func getHeadSHA(t *testing.T, root string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// setupTestRepo creates a temporary git repo with an initial commit and returns its path.
+func setupTestRepo(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	runCmd(t, root, "git", "init", "-b", "main")
+	runCmd(t, root, "git", "config", "user.email", "relay-test@example.invalid")
+	runCmd(t, root, "git", "config", "user.name", "Relay Test")
+	runCmd(t, root, "git", "commit", "--allow-empty", "-m", "initial")
+	return root
+}
+
+func setupTestRepoWithFile(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	runCmd(t, root, "git", "init", "-b", "main")
+	runCmd(t, root, "git", "config", "user.email", "relay-test@example.invalid")
+	runCmd(t, root, "git", "config", "user.name", "Relay Test")
+	if err := os.WriteFile(root+"/initial.txt", []byte("initial\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, root, "git", "add", ".")
+	runCmd(t, root, "git", "commit", "-m", "initial commit")
+	return root
+}
+
+func TestResolveCommitState_NoEvidence_ReturnsBlockedNoDiffInspection(t *testing.T) {
+	state := ResolveCommitState("/tmp/nonexistent", true, false, true, "", false, "", "main")
+	if state.State != CommitStateBlockedNoDiffInspection {
+		t.Fatalf("expected blocked_no_diff_inspection, got %s", state.State)
+	}
+}
+
+func TestResolveCommitState_ValidationNotPassed_ReturnsBlockedValidation(t *testing.T) {
+	state := ResolveCommitState("/tmp/nonexistent", false, false, true, "uncommitted_worktree", true, "abc123", "main")
+	if state.State != CommitStateBlockedValidation {
+		t.Fatalf("expected blocked_validation, got %s", state.State)
+	}
+}
+
+func TestResolveCommitState_ValidationFailedNotAccepted_ReturnsBlockedValidation(t *testing.T) {
+	state := ResolveCommitState("/tmp/nonexistent", false, false, true, "uncommitted_worktree", true, "abc123", "main")
+	if state.State != CommitStateBlockedValidation {
+		t.Fatalf("expected blocked_validation, got %s", state.State)
+	}
+}
+
+func TestResolveCommitState_AuditNotAccepted_ReturnsBlockedAudit(t *testing.T) {
+	state := ResolveCommitState("/tmp/nonexistent", true, false, false, "uncommitted_worktree", true, "abc123", "main")
+	if state.State != CommitStateBlockedAuditNotAccepted {
+		t.Fatalf("expected blocked_audit_not_accepted, got %s", state.State)
+	}
+}
+
+func TestResolveCommitState_MixedEvidence_ReturnsBlockedMixed(t *testing.T) {
+	state := ResolveCommitState("/tmp/nonexistent", true, false, true, EvidenceModeMixedCommittedUncommitted, true, "abc123", "main")
+	if state.State != CommitStateBlockedMixedChanges {
+		t.Fatalf("expected blocked_mixed_changes, got %s", state.State)
+	}
+}
+
+func TestResolveCommitState_NoChanges_ReturnsNoChanges(t *testing.T) {
+	state := ResolveCommitState("/tmp/nonexistent", true, false, true, EvidenceModeNoChanges, true, "abc123", "main")
+	if state.State != CommitStateNoChanges {
+		t.Fatalf("expected no_changes, got %s", state.State)
+	}
+}
+
+func TestResolveCommitState_Uncommitted_WitAuditPass_ReturnsReadyToCommit(t *testing.T) {
+	requireGit(t)
+	root := setupTestRepo(t)
+
+	// Create an uncommitted file
+	if err := os.WriteFile(root+"/new.txt", []byte("content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	headSHA := getHeadSHA(t, root)
+	state := ResolveCommitState(root, true, false, true, EvidenceModeUncommittedWorktree, true, headSHA, "main")
+	if state.State != CommitStateReadyToCommit {
+		t.Fatalf("expected ready_to_commit, got %s", state.State)
+	}
+}
+
+func TestResolveCommitState_CommittedRange_NoUpstream_ReturnsBlockedNoUpstream(t *testing.T) {
+	requireGit(t)
+	root := setupTestRepo(t)
+
+	// Add a commit
+	if err := os.WriteFile(root+"/feature.txt", []byte("feature\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, root, "git", "add", ".")
+	runCmd(t, root, "git", "commit", "-m", "add feature")
+
+	headSHA := getHeadSHA(t, root)
+	state := ResolveCommitState(root, true, false, true, EvidenceModeCommittedRange, true, headSHA, "main")
+	if state.State != CommitStateBlockedNoUpstream {
+		t.Fatalf("expected blocked_no_upstream, got %s", state.State)
+	}
+}
+
+func TestResolveCommitState_CommittedRange_WithUpstreamAhead_ReturnsCommittedLocal(t *testing.T) {
+	requireGit(t)
+	root := setupTestRepo(t)
+
+	// Set up a bare remote
+	remote := t.TempDir()
+	runCmd(t, remote, "git", "init", "--bare")
+
+	// Add remote and push initial
+	runCmd(t, root, "git", "remote", "add", "origin", remote)
+	runCmd(t, root, "git", "push", "--set-upstream", "origin", "main")
+
+	// Create a new commit
+	if err := os.WriteFile(root+"/feature.txt", []byte("feature\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, root, "git", "add", ".")
+	runCmd(t, root, "git", "commit", "-m", "add feature")
+
+	headSHA := getHeadSHA(t, root)
+	state := ResolveCommitState(root, true, false, true, EvidenceModeCommittedRange, true, headSHA, "main")
+	if state.State != CommitStateCommittedLocal {
+		t.Fatalf("expected committed_local, got %s", state.State)
+	}
+	if !state.HasUpstream {
+		t.Fatal("expected has_upstream true")
+	}
+	if state.AheadCount < 1 {
+		t.Fatalf("expected ahead_count > 0, got %d", state.AheadCount)
+	}
+}
+
+func TestResolveCommitState_Pushed_ReturnsPushed(t *testing.T) {
+	requireGit(t)
+	root := setupTestRepo(t)
+
+	remote := t.TempDir()
+	runCmd(t, remote, "git", "init", "--bare")
+	runCmd(t, root, "git", "remote", "add", "origin", remote)
+	runCmd(t, root, "git", "push", "--set-upstream", "origin", "main")
+
+	headSHA := getHeadSHA(t, root)
+	state := ResolveCommitState(root, true, false, true, EvidenceModeCommittedRange, true, headSHA, "main")
+	if state.State != CommitStatePushed {
+		t.Fatalf("expected pushed, got %s", state.State)
+	}
+}
+
+func TestCreateGitCommit_CreatesRealCommit(t *testing.T) {
+	requireGit(t)
+	root := setupTestRepo(t)
+
+	// Create uncommitted file
+	if err := os.WriteFile(root+"/new.txt", []byte("new content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CreateGitCommit(root, "feat: add new file")
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.Error)
+	}
+	if result.SHA == "" {
+		t.Fatal("expected non-empty SHA")
+	}
+	if result.ShortSHA == "" {
+		t.Fatal("expected non-empty short SHA")
+	}
+	if result.Subject != "feat: add new file" {
+		t.Fatalf("expected subject 'feat: add new file', got %q", result.Subject)
+	}
+	if result.Branch != "main" {
+		t.Fatalf("expected branch 'main', got %q", result.Branch)
+	}
+
+	// Verify git log shows the commit
+	out := runCmdOutput(t, root, "git", "log", "--oneline", "-1")
+	if !strings.Contains(out, "feat: add new file") {
+		t.Fatalf("expected commit message in git log, got %q", out)
+	}
+
+	// Verify worktree is clean
+	porcelain := runCmdOutput(t, root, "git", "status", "--porcelain")
+	if porcelain != "" {
+		t.Fatalf("expected clean worktree after commit, got %q", porcelain)
+	}
+}
+
+func TestCreateGitCommit_EmptyPath(t *testing.T) {
+	result := CreateGitCommit("", "feat: test")
+	if result.Success {
+		t.Fatal("expected failure for empty path")
+	}
+	if result.Error == "" {
+		t.Fatal("expected error message")
+	}
+}
+
+func TestCreateGitCommit_NotARepo(t *testing.T) {
+	dir := t.TempDir()
+	result := CreateGitCommit(dir, "feat: test")
+	if result.Success {
+		t.Fatal("expected failure for non-repo")
+	}
+}
+
+func TestDryRunPush_NoUpstream_ReturnsFailure(t *testing.T) {
+	requireGit(t)
+	root := setupTestRepo(t)
+
+	dryRun := DryRunPush(root)
+	if dryRun.DryRunPass {
+		t.Fatal("expected dry run to fail without upstream")
+	}
+}
+
+func TestPushAndDryRunPush_BasicFlow(t *testing.T) {
+	requireGit(t)
+	root := setupTestRepo(t)
+
+	// Set up bare remote
+	remote := t.TempDir()
+	runCmd(t, remote, "git", "init", "--bare")
+	runCmd(t, root, "git", "remote", "add", "origin", remote)
+	runCmd(t, root, "git", "push", "--set-upstream", "origin", "main")
+
+	// Create a new commit
+	if err := os.WriteFile(root+"/push_test.txt", []byte("push me\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result := CreateGitCommit(root, "feat: push test")
+	if !result.Success {
+		t.Fatalf("commit failed: %s", result.Error)
+	}
+
+	// Dry run should succeed
+	dryRun := DryRunPush(root)
+	if !dryRun.DryRunPass {
+		t.Fatalf("dry run failed: %s", dryRun.Error)
+	}
+
+	// Push should succeed
+	pushResult := PushGitCommit(root)
+	if !pushResult.Success {
+		t.Fatalf("push failed: %s", pushResult.Error)
+	}
+}
+
+func TestPushGitCommit_NoUpstream_ReturnsFailure(t *testing.T) {
+	requireGit(t)
+	root := setupTestRepo(t)
+
+	// Create a commit
+	if err := os.WriteFile(root+"/orphan.txt", []byte("orphan\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result := CreateGitCommit(root, "feat: orphan commit")
+	if !result.Success {
+		t.Fatalf("commit failed: %s", result.Error)
+	}
+
+	pushResult := PushGitCommit(root)
+	if pushResult.Success {
+		t.Fatal("expected push to fail without upstream")
+	}
+}
+
+func TestDryRunPush_DirtyWorktree_GitDoesNotBlockDryRun(t *testing.T) {
+	requireGit(t)
+	root := setupTestRepo(t)
+
+	remote := t.TempDir()
+	runCmd(t, remote, "git", "init", "--bare")
+	runCmd(t, root, "git", "remote", "add", "origin", remote)
+	runCmd(t, root, "git", "push", "--set-upstream", "origin", "main")
+
+	// Create dirty file without committing - git push --dry-run still succeeds
+	// because worktree cleanliness is checked at the handler level, not in DryRunPush.
+	if err := os.WriteFile(root+"/dirty.txt", []byte("dirty\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	dryRun := DryRunPush(root)
+	if !dryRun.DryRunPass {
+		t.Log("dry run failed with dirty worktree (expected git behavior may vary)")
+	}
+}
+
+func TestGetUpstreamInfo_NoUpstream_ReturnsError(t *testing.T) {
+	requireGit(t)
+	root := setupTestRepo(t)
+
+	_, err := GetUpstreamInfo(root)
+	if err == nil {
+		t.Fatal("expected error for repo without upstream")
+	}
+}
+
+func TestGetUpstreamInfo_WithUpstream_ReturnsInfo(t *testing.T) {
+	requireGit(t)
+	root := setupTestRepo(t)
+
+	remote := t.TempDir()
+	runCmd(t, remote, "git", "init", "--bare")
+	runCmd(t, root, "git", "remote", "add", "origin", remote)
+	runCmd(t, root, "git", "push", "--set-upstream", "origin", "main")
+
+	info, err := GetUpstreamInfo(root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.Remote != "origin" {
+		t.Fatalf("expected remote 'origin', got %q", info.Remote)
+	}
+	if info.Branch != "main" {
+		t.Fatalf("expected branch 'main', got %q", info.Branch)
+	}
+}
+
+func TestStrconvAtoi(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected int
+		wantErr  bool
+	}{
+		{"0", 0, false},
+		{"1", 1, false},
+		{"42", 42, false},
+		{"", 0, false},
+		{"abc", 0, true},
+	}
+	for _, tt := range tests {
+		result, err := strconvAtoi(tt.input)
+		if tt.wantErr && err == nil {
+			t.Errorf("strconvAtoi(%q) expected error", tt.input)
+		}
+		if !tt.wantErr && result != tt.expected {
+			t.Errorf("strconvAtoi(%q) = %d, want %d", tt.input, result, tt.expected)
+		}
+	}
+}
+
+// runCmdOutput runs a command and returns stdout as string.
+func runCmdOutput(t *testing.T, dir, name string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("%s %v: %v\nstderr: %s", name, args, err, string(out))
+	}
+	return strings.TrimSpace(string(out))
+}

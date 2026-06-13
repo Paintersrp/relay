@@ -23,7 +23,7 @@ var artifactGroups = []artifactGroupDef{
 	{Label: "Agent / OpenCode", Kinds: []string{"opencode_handoff_packet", "opencode_cli_check_json", "opencode_dry_run_json", "opencode_stdout", "opencode_stderr", "opencode_combined_log", "agent_result_raw", "agent_result_json"}},
 	{Label: "Validation", Kinds: []string{"validation_progress_json", "validation_run_json", "validation_stdout", "validation_stderr"}},
 	{Label: "Diff / Audit", Kinds: []string{"git_status_text", "git_diff_name_status", "git_diff_stat", "git_diff_patch", "audit_handoff"}},
-	{Label: "Commit", Kinds: []string{"commit_message_text", "commit_suggestion_json"}},
+	{Label: "Commit / Push", Kinds: []string{"commit_message_text", "commit_suggestion_json", "git_commit_state_json", "git_commit_result_json", "git_push_dry_run_json", "git_push_result_json"}},
 }
 
 func ArtifactPreviewSlot() templ.Component {
@@ -907,6 +907,10 @@ func shortArtifactLabel(kind string) string {
 		"audit_handoff":              "audit",
 		"commit_message_text":        "commit msg",
 		"commit_suggestion_json":     "commit JSON",
+		"git_commit_state_json":      "commit state",
+		"git_commit_result_json":     "commit result",
+		"git_push_dry_run_json":      "push dry run",
+		"git_push_result_json":       "push result",
 	}
 	if l, ok := labels[kind]; ok {
 		return l

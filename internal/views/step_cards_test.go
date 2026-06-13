@@ -770,8 +770,10 @@ func TestCommitStageShowsCommitSuggestionEvidence(t *testing.T) {
 	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
 	artifacts := []store.Artifact{}
 	previews := RunPreviews{
-		HasCommitSuggestion: true,
-		CommitMessage:       "feat: add new feature",
+		HasCommitSuggestion:        true,
+		CommitSuggestionSelected:   "feat: add new feature",
+		CommitSuggestionSource:     "diff_summary",
+		CommitSuggestionConfidence: "medium",
 	}
 	err := GitCommitStepPanel(run, artifacts, previews).Render(context.Background(), &buf)
 	if err != nil {
@@ -781,17 +783,11 @@ func TestCommitStageShowsCommitSuggestionEvidence(t *testing.T) {
 	if !strings.Contains(html, `data-stage-evidence-row`) {
 		t.Errorf("expected evidence rows")
 	}
-	if !strings.Contains(html, "Commit suggestion ready") {
-		t.Errorf("expected commit suggestion title")
-	}
-	if !strings.Contains(html, "Suggested commit message") {
+	if !strings.Contains(html, "Selected commit message") {
 		t.Errorf("expected commit message section")
 	}
 	if !strings.Contains(html, "feat: add new feature") {
 		t.Errorf("expected commit message text")
-	}
-	if !strings.Contains(html, "Manual commit reminder") {
-		t.Errorf("expected manual commit reminder")
 	}
 }
 

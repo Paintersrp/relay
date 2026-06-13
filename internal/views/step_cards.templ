@@ -23,7 +23,7 @@ func pipelineStages() []pipelineStage {
 		{Key: "run", Number: "5", Label: "Agent Run", ShortLabel: "Run", Helper: "Execute or review agent output"},
 		{Key: "validation", Number: "6", Label: "Validation", ShortLabel: "Validation", Helper: "Run project validation commands"},
 		{Key: "audit", Number: "7", Label: "Diff / Audit", ShortLabel: "Audit", Helper: "Inspect diff and generate audit handoff"},
-		{Key: "commit", Number: "8", Label: "Commit", ShortLabel: "Commit", Helper: "Prepare manual commit command"},
+		{Key: "commit", Number: "8", Label: "Git Commit / Push", ShortLabel: "Commit", Helper: "Review state, commit, and push changes"},
 	}
 }
 
@@ -136,8 +136,14 @@ func pipelineStageState(step string, activeStep string, previews RunPreviews, ar
 		}
 		return "pending"
 	case "commit":
-		if artifactExists(artifacts, "commit_message_text") {
+		if previews.CommitState == "pushed" || previews.HasPushResult && previews.PushResultSuccess {
 			return "done"
+		}
+		if previews.CommitState == "committed_local" || previews.HasCommitResult && previews.CommitResultSuccess {
+			return "done"
+		}
+		if artifactExists(artifacts, "commit_message_text") || previews.CommitSuggestionSelected != "" {
+			return "ready"
 		}
 		if artifactExists(artifacts, "audit_handoff") {
 			return "ready"
@@ -1939,113 +1945,436 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews RunPreviews) {
 	<div class="relay-card">
 		<div class="relay-card-header">
-			if previews.HasCommitSuggestion {
-				<span class="relay-chip-green text-xs">ready</span>
-			} else {
-				<span class="relay-chip-gray text-xs">pending</span>
-			}
+			@commitStatusChip(previews)
 		</div>
 
 		<div class="relay-stage-evidence-list">
-			if previews.ValidationRun.Status == "" {
-				@StageEvidenceRow("warning", "Validation not run", "Run Relay Validation in Step 6 before preparing a commit suggestion.", "") {
+			@commitStateSummary(previews)
+
+			if previews.CommitState == "blocked_validation" {
+				@StageEvidenceRow("blocked", "Validation required", "Run Relay Validation in Step 6 before committing or pushing.", "") {
 					@WorkbenchStepLink(run.ID, "validation", "btn-primary text-xs sm:text-sm") {
 						Go to Step 6: Relay Validation
 					}
 				}
-			} else if previews.ValidationRun.Status == "fail" && !previews.ValidationFailedAccepted {
-				@StageEvidenceRow("blocked", "Validation failed", "Review the failed validation output or explicitly accept the failure.", "") {
-					@WorkbenchStepLink(run.ID, "validation", "btn-primary text-xs sm:text-sm") {
-						Review Validation Output
-					}
-				}
-			} else if !previews.HasGitStatus && !previews.HasGitDiffStat {
-				@StageEvidenceRow("warning", "Git diff not inspected", "Run Inspect Git Diff in Step 7 before preparing the commit suggestion.", "") {
-					@WorkbenchStepLink(run.ID, "audit", "btn-primary text-xs sm:text-sm") {
-						Go to Step 7: Diff / Audit
-					}
-				}
-			} else if !previews.HasAuditHandoff {
-				@StageEvidenceRow("warning", "Audit handoff not generated", "Generate the audit handoff in Step 7 before preparing the commit suggestion.", "") {
-					@WorkbenchStepLink(run.ID, "audit", "btn-primary text-xs sm:text-sm") {
-						Go to Step 7: Diff / Audit
-					}
-				}
-			} else if previews.ValidationFailedAccepted {
-				@StageEvidenceRow("warning", "Validation failed (accepted)", "Review changes carefully before committing.", "")
 			}
 
-			if !previews.HasCommitSuggestion && previews.HasGitStatus && previews.HasAuditHandoff {
-				@StageEvidenceRow("ready", "Prepare Git Commit", "Reviews the handoff, audit handoff, and git diff evidence, then generates a suggested commit message.", "") {
+			if previews.CommitState == "blocked_no_diff_inspection" {
+				@StageEvidenceRow("warning", "Git diff not inspected", "Run Inspect Git Diff in Step 7 before committing.", "") {
+					@WorkbenchStepLink(run.ID, "audit", "btn-primary text-xs sm:text-sm") {
+						Go to Step 7: Diff / Audit
+					}
+				}
+			}
+
+			if previews.CommitState == "blocked_audit_not_accepted" {
+				@StageEvidenceRow("warning", "Audit clearance needed", "Mark the audit as accepted to enable commit and push.", "") {
+					if previews.HasAuditHandoff {
+						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+							class="inline">
+							<input type="hidden" name="action" value="accept-audit-clearance"/>
+							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+								Mark Audit Accepted
+							</button>
+						</form>
+					}
+				}
+			}
+
+			if previews.AuditClearanceStatus == "accepted" {
+				@StageEvidenceRow("passed", "Audit accepted", "Audit clearance has been granted.", "") {
 					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
-						<input type="hidden" name="action" value="prepare-git-commit"/>
+						<input type="hidden" name="action" value="revoke-audit-clearance"/>
+						<button type="submit" class="btn-secondary text-xs sm:text-sm" data-stage-primary-action>
+							Revoke Audit Acceptance
+						</button>
+					</form>
+				}
+			} else if previews.HasAuditHandoff {
+				@StageEvidenceRow("warning", "Audit clearance pending", "Review the audit handoff and mark it as accepted to continue.", "") {
+					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+						class="inline">
+						<input type="hidden" name="action" value="accept-audit-clearance"/>
 						<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
-							Prepare Git Commit
+							Mark Audit Accepted
 						</button>
 					</form>
 				}
 			}
 
-			if previews.HasCommitSuggestion && previews.CommitMessage != "" {
-				@StageEvidenceRow("ready", "Commit suggestion ready", "", "") {
-					<div class="text-xs text-gray-500 relay-stage-meta">
-						Changed files: { Itoa(previews.GitChangedFileCount) }
-						if previews.GitDiffSummary != "" {
-							&middot; { previews.GitDiffSummary }
-						}
-					</div>
-				}
-
-				@StageEvidenceRow("passed", "Suggested commit message", "", "") {
-					<textarea readonly rows="2"
-						class="w-full text-xs font-mono bg-gray-950 border border-gray-700 rounded-lg p-2 text-gray-300 select-all min-w-0 resize-y"
-						onclick="this.select()">{ previews.CommitMessage }</textarea>
-				}
-
-				@StageEvidenceRow("not-available", "Manual commit reminder", "Relay does not commit on your behalf. Review the changes and run the commit command in the repo.", "") {
-					if previews.RepoPath != "" {
-						<div class="text-xs text-gray-400 mb-1">Repo path: <span class="text-gray-300 font-mono">{ previews.RepoPath }</span></div>
-					}
-					<textarea readonly rows="3"
-						class="w-full text-xs font-mono bg-gray-950 border border-gray-700 rounded-lg p-2 text-gray-300 select-all min-w-0 resize-y"
-						onclick="this.select()">git add -A
-git commit -m "{ previews.CommitMessage }"</textarea>
-				}
-
-				@StageEvidenceRow("passed", "Commit related artifacts", "", "") {
-					<div class="relay-action-row">
-						if previews.HasGitStatus {
-							@ArtifactPreviewLink(run.ID, "git_status_text", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
-								View git status
-							}
-						}
-						if previews.HasGitDiffStat {
-							@ArtifactPreviewLink(run.ID, "git_diff_stat", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
-								View diff stat
-							}
-						}
-						if previews.HasGitDiffPatch {
-							@ArtifactPreviewLink(run.ID, "git_diff_patch", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
-								View patch
-							}
-						}
-						@ArtifactPreviewLink(run.ID, "audit_handoff", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
-							View audit handoff
-						}
-						@ArtifactPreviewLink(run.ID, "commit_message_text", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
-							View commit message
-						}
-						@ArtifactPreviewLink(run.ID, "commit_suggestion_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
-							View commit JSON
-						}
+			if previews.CommitState == "blocked_mixed_changes" {
+				@StageFailurePanel("Mixed committed and uncommitted changes", "") {
+					<div class="text-xs text-amber-200">
+						Committed changes exist since the baseline, but the working tree is also dirty.
+						Commit, stash, or discard uncommitted changes, then rerun Inspect Git Diff in Step 7.
 					</div>
 				}
 			}
+
+			if previews.CommitState == "blocked_no_upstream" {
+				@StageEvidenceRow("blocked", "No upstream configured", "Set an upstream branch to enable push.", "") {
+					<div class="text-xs text-gray-400">
+						Run <code class="text-gray-300">git push -u origin { previews.CommitBranch }</code> in the repo to set an upstream, then return here.
+					</div>
+				}
+			}
+
+			if previews.CommitState == "no_changes" {
+				@StageEvidenceRow("warning", "No changes to commit", "No git diff evidence detected. Run Inspect Git Diff in Step 7.", "")
+			}
+
+			@commitEvidenceDetails(previews, run.ID)
+
+			@commitMessageSuggestion(previews, run.ID)
+
+			@commitActions(previews, run.ID)
+
+			@pushActions(previews, run.ID)
+
+			@commitPushResults(previews, run.ID)
+
+			@commitArtifactLinks(previews, run.ID)
 		</div>
 	</div>
+}
+
+templ commitStatusChip(previews RunPreviews) {
+	switch previews.CommitState {
+	case "pushed":
+		<span class="relay-chip-green text-xs">pushed</span>
+	case "committed_local":
+		<span class="relay-chip-blue text-xs">committed</span>
+	case "ready_to_commit":
+		<span class="relay-chip-indigo text-xs">ready</span>
+	case "commit_failed":
+		<span class="relay-chip-red text-xs">failed</span>
+	case "push_failed":
+		<span class="relay-chip-red text-xs">push failed</span>
+	case "blocked_validation", "blocked_audit_not_accepted", "blocked_no_diff_inspection", "blocked_mixed_changes", "blocked_no_upstream":
+		<span class="relay-chip-gray text-xs">blocked</span>
+	case "no_changes":
+		<span class="relay-chip-gray text-xs">no changes</span>
+	default:
+		if previews.HasCommitSuggestion {
+			<span class="relay-chip-green text-xs">ready</span>
+		} else {
+			<span class="relay-chip-gray text-xs">pending</span>
+		}
+	}
+}
+
+templ commitStateSummary(previews RunPreviews) {
+	<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 space-y-1.5 text-xs">
+		<div class="flex gap-2">
+			<span class="text-gray-500 shrink-0">Commit state:</span>
+			<span class={ commitStateClass(previews.CommitState) }>{ commitStateLabel(previews.CommitState) }</span>
+		</div>
+		<div class="flex gap-2">
+			<span class="text-gray-500 shrink-0">Validation:</span>
+			if previews.CommitValidationPassed || previews.ValidationFailedAccepted {
+				<span class="text-green-400">passed</span>
+			} else if previews.ValidationRun.Status == "fail" {
+				<span class="text-red-400">failed</span>
+			} else {
+				<span class="text-gray-500">pending</span>
+			}
+		</div>
+		<div class="flex gap-2">
+			<span class="text-gray-500 shrink-0">Audit clearance:</span>
+			if previews.AuditClearanceStatus == "accepted" {
+				<span class="text-green-400">accepted</span>
+			} else if previews.HasAuditHandoff {
+				<span class="text-yellow-300">pending</span>
+			} else {
+				<span class="text-gray-500">no audit handoff</span>
+			}
+		</div>
+		<div class="flex gap-2">
+			<span class="text-gray-500 shrink-0">Change evidence:</span>
+			<span class={ changeEvidenceModeClass(previews.CommitEvidenceMode) }>{ formattedEvidenceMode(previews.CommitEvidenceMode) }</span>
+		</div>
+		if previews.CommitUpstreamRemote != "" && previews.CommitUpstreamBranch != "" {
+			<div class="flex gap-2">
+				<span class="text-gray-500 shrink-0">Upstream:</span>
+				<span class="text-gray-300">{ previews.CommitUpstreamRemote }/{ previews.CommitUpstreamBranch }</span>
+			</div>
+		}
+		if previews.CommitAheadCount > 0 {
+			<div class="flex gap-2">
+				<span class="text-gray-500 shrink-0">Ahead:</span>
+				<span class="text-gray-300">{ Itoa(int64(previews.CommitAheadCount)) } commit(s)</span>
+			</div>
+		}
+		if previews.CommitBehindCount > 0 {
+			<div class="flex gap-2">
+				<span class="text-gray-500 shrink-0">Behind:</span>
+				<span class="text-yellow-300">{ Itoa(int64(previews.CommitBehindCount)) } commit(s)</span>
+			</div>
+		}
+		if previews.CommitBranch != "" {
+			<div class="flex gap-2">
+				<span class="text-gray-500 shrink-0">Branch:</span>
+				<span class="text-gray-300 font-mono">{ previews.CommitBranch }</span>
+			</div>
+		}
+		if previews.CommitHeadSHA != "" {
+			<div class="flex gap-2">
+				<span class="text-gray-500 shrink-0">HEAD:</span>
+				<span class="text-gray-300 font-mono">{ shortSHA(previews.CommitHeadSHA) }</span>
+			</div>
+		}
+		if previews.CommitSHA != "" {
+			<div class="flex gap-2">
+				<span class="text-gray-500 shrink-0">Commit:</span>
+				<span class="text-gray-300 font-mono">{ shortSHA(previews.CommitSHA) }</span>
+			</div>
+		}
+		if previews.CommitSubject != "" {
+			<div class="flex gap-2">
+				<span class="text-gray-500 shrink-0">Subject:</span>
+				<span class="text-gray-300">{ previews.CommitSubject }</span>
+			</div>
+		}
+	</div>
+}
+
+templ commitEvidenceDetails(previews RunPreviews, runID int64) {
+	if previews.HasGitChangeEvidence {
+		@changeEvidenceDisplay(previews)
+	}
+}
+
+templ commitMessageSuggestion(previews RunPreviews, runID int64) {
+	if previews.CommitSuggestionSelected != "" {
+		@StageEvidenceRow("passed", "Selected commit message", "Source: " + previews.CommitSuggestionSource + " (confidence: " + previews.CommitSuggestionConfidence + ")", "") {
+			<textarea readonly rows="2"
+				class="w-full text-xs font-mono bg-gray-950 border border-gray-700 rounded-lg p-2 text-gray-300 select-all min-w-0 resize-y"
+				onclick="this.select()">{ previews.CommitSuggestionSelected }</textarea>
+		}
+
+		if len(previews.CommitWarnings) > 0 {
+			for _, w := range previews.CommitWarnings {
+				@StageEvidenceRow("warning", w, "", "")
+			}
+		}
+	} else if previews.HasGitStatus && previews.HasAuditHandoff {
+		@StageEvidenceRow("ready", "Prepare Git Commit", "Reviews the handoff, audit handoff, and git diff evidence, then generates a suggested commit message.", "") {
+			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+				hx-post={"/runs/" + Itoa(runID) + "/actions"}
+				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+				class="inline">
+				<input type="hidden" name="action" value="prepare-git-commit"/>
+				<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+					Prepare Git Commit
+				</button>
+			</form>
+		}
+	}
+}
+
+templ commitActions(previews RunPreviews, runID int64) {
+	if previews.CommitState == "ready_to_commit" && previews.CommitSuggestionSelected != "" {
+		@StageEvidenceRow("ready", "Create Commit", "Creates a commit with the selected message. Relay runs `git add -A && git commit`.", "") {
+			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+				hx-post={"/runs/" + Itoa(runID) + "/actions"}
+				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+				class="inline">
+				<input type="hidden" name="action" value="create-git-commit"/>
+				<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+					Create Commit
+				</button>
+			</form>
+			@manualCommitCommand(previews)
+		}
+	} else if previews.CommitState == "ready_to_commit" && previews.CommitSuggestionSelected == "" {
+		@StageEvidenceRow("ready", "Manual commit", "Prepare a commit suggestion first, or run the commands manually.", "") {
+			@manualCommitCommand(previews)
+		}
+	} else if previews.CommitState == "committed_local" || previews.CommitState == "pushed" {
+		@manualCommitCopyCommand(previews)
+	}
+}
+
+templ manualCommitCommand(previews RunPreviews) {
+	<div class="mt-2">
+		<div class="text-xs text-gray-400 mb-1">Manual commit command:</div>
+		<textarea readonly rows="3"
+			class="w-full text-xs font-mono bg-gray-950 border border-gray-700 rounded-lg p-2 text-gray-300 select-all min-w-0 resize-y"
+			onclick="this.select()">git add -A
+git commit -m "{ previews.CommitSuggestionSelected }"</textarea>
+	</div>
+}
+
+templ manualCommitCopyCommand(previews RunPreviews) {
+	@StageEvidenceRow("not-available", "Manual commit fallback", "Use these commands to commit from the repo directly.", "") {
+		if previews.RepoPath != "" {
+			<div class="text-xs text-gray-400 mb-1">Repo path: <span class="text-gray-300 font-mono">{ previews.RepoPath }</span></div>
+		}
+		<textarea readonly rows="3"
+			class="w-full text-xs font-mono bg-gray-950 border border-gray-700 rounded-lg p-2 text-gray-300 select-all min-w-0 resize-y"
+			onclick="this.select()">git add -A
+git commit -m "{ previews.CommitSuggestionSelected }"</textarea>
+	}
+}
+
+templ pushActions(previews RunPreviews, runID int64) {
+	if previews.CommitState == "committed_local" && previews.CommitHasUpstream {
+		@StageEvidenceRow("ready", "Push Commit", "Pushes the local commit to the upstream branch.", "") {
+			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+				hx-post={"/runs/" + Itoa(runID) + "/actions"}
+				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+				class="inline">
+				<input type="hidden" name="action" value="push-git-commit"/>
+				<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+					Push Commit
+				</button>
+			</form>
+		}
+	} else if previews.CommitState == "committed_local" && !previews.CommitHasUpstream {
+		@StageEvidenceRow("blocked", "Push blocked", "No upstream configured for this branch.", "") {
+			<div class="text-xs text-gray-400">
+				Run <code class="text-gray-300">git push -u origin { previews.CommitBranch }</code> in the repo to set an upstream.
+			</div>
+		}
+	}
+}
+
+templ commitPushResults(previews RunPreviews, runID int64) {
+	if previews.HasCommitResult {
+		if previews.CommitResultSuccess {
+			@StageEvidenceRow("passed", "Commit created", "SHA: " + shortSHA(previews.CommitResultSHA) + " - " + previews.CommitResultSubject, "") {
+				@ArtifactPreviewLink(runID, "git_commit_result_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+					View commit result
+				}
+			}
+		} else {
+			@StageEvidenceRow("failed", "Commit failed", "Review the commit result artifact for details.", "") {
+				@ArtifactPreviewLink(runID, "git_commit_result_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+					View commit result
+				}
+			}
+		}
+	}
+
+	if previews.HasPushDryRun {
+		if previews.PushDryRunPass {
+			@StageEvidenceRow("passed", "Push dry run passed", "", "")
+		} else {
+			@StageEvidenceRow("warning", "Push dry run failed", "Review push result artifact for details.", "") {
+				@ArtifactPreviewLink(runID, "git_push_dry_run_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+					View dry run
+				}
+			}
+		}
+	}
+
+	if previews.HasPushResult {
+		if previews.PushResultSuccess {
+			@StageEvidenceRow("passed", "Push succeeded", "Changes pushed to upstream.", "") {
+				@ArtifactPreviewLink(runID, "git_push_result_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+					View push result
+				}
+			}
+		} else {
+			@StageEvidenceRow("failed", "Push failed", "Review the push result artifact for details.", "") {
+				@ArtifactPreviewLink(runID, "git_push_result_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+					View push result
+				}
+			}
+		}
+	}
+}
+
+templ commitArtifactLinks(previews RunPreviews, runID int64) {
+	if previews.HasCommitSuggestion || previews.HasCommitResult || previews.HasPushResult {
+		@StageEvidenceRow("passed", "Commit / Push artifacts", "", "") {
+			<div class="relay-action-row">
+				if previews.HasGitStatus {
+					@ArtifactPreviewLink(runID, "git_status_text", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+						Git status
+					}
+				}
+				if previews.HasGitDiffStat {
+					@ArtifactPreviewLink(runID, "git_diff_stat", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+						Diff stat
+					}
+				}
+				@ArtifactPreviewLink(runID, "audit_handoff", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+					Audit handoff
+				}
+				if previews.HasCommitSuggestion {
+					@ArtifactPreviewLink(runID, "commit_suggestion_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+						Commit suggestion
+					}
+				}
+				if previews.HasCommitResult {
+					@ArtifactPreviewLink(runID, "git_commit_result_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+						Commit result
+					}
+				}
+				if previews.HasPushResult {
+					@ArtifactPreviewLink(runID, "git_push_result_json", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+						Push result
+					}
+				}
+			</div>
+		}
+	}
+}
+
+func commitStateClass(state string) string {
+	switch state {
+	case "pushed":
+		return "text-green-400"
+	case "committed_local":
+		return "text-blue-300"
+	case "ready_to_commit":
+		return "text-indigo-300"
+	case "commit_failed", "push_failed":
+		return "text-red-400"
+	case "blocked_validation", "blocked_audit_not_accepted", "blocked_no_diff_inspection", "blocked_mixed_changes", "blocked_no_upstream":
+		return "text-red-300"
+	case "no_changes":
+		return "text-yellow-300"
+	default:
+		return "text-gray-400"
+	}
+}
+
+func commitStateLabel(state string) string {
+	switch state {
+	case "blocked_validation":
+		return "Blocked: validation required"
+	case "blocked_audit_not_accepted":
+		return "Blocked: audit not accepted"
+	case "blocked_no_diff_inspection":
+		return "Blocked: inspect git diff first"
+	case "blocked_mixed_changes":
+		return "Blocked: mixed committed + uncommitted"
+	case "blocked_no_upstream":
+		return "Blocked: no upstream configured"
+	case "no_changes":
+		return "No changes"
+	case "ready_to_commit":
+		return "Ready to commit"
+	case "committed_local":
+		return "Committed locally"
+	case "pushed":
+		return "Pushed"
+	case "push_failed":
+		return "Push failed"
+	case "commit_failed":
+		return "Commit failed"
+	default:
+		return state
+	}
 }
 
 templ intakeStatusChip(checks []store.Check) {

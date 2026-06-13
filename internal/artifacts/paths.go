@@ -39,6 +39,11 @@ var allowedKinds = map[string]bool{
 	"commit_suggestion_json":        true,
 	"git_baseline_json":             true,
 	"git_change_evidence_json":      true,
+	"audit_clearance_json":          true,
+	"git_commit_state_json":         true,
+	"git_commit_result_json":        true,
+	"git_push_dry_run_json":         true,
+	"git_push_result_json":          true,
 }
 
 func SetBaseDir(dir string) {

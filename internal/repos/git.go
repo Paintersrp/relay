@@ -253,6 +253,355 @@ func collectCommittedRangeEvidence(ev *GitChangeEvidence, repoPath, baselineSHA,
 	ev.CommitCount = len(ev.Commits)
 }
 
+// CommitState describes the step 8 commit/finalization state.
+type CommitState string
+
+const (
+	CommitStateBlockedValidation       CommitState = "blocked_validation"
+	CommitStateBlockedAuditNotAccepted CommitState = "blocked_audit_not_accepted"
+	CommitStateBlockedNoDiffInspection CommitState = "blocked_no_diff_inspection"
+	CommitStateBlockedMixedChanges     CommitState = "blocked_mixed_changes"
+	CommitStateBlockedNoUpstream       CommitState = "blocked_no_upstream"
+	CommitStateNoChanges               CommitState = "no_changes"
+	CommitStateReadyToCommit           CommitState = "ready_to_commit"
+	CommitStateCommittedLocal          CommitState = "committed_local"
+	CommitStatePushed                  CommitState = "pushed"
+	CommitStatePushFailed              CommitState = "push_failed"
+	CommitStateCommitFailed            CommitState = "commit_failed"
+	CommitStateUnknown                 CommitState = "unknown"
+)
+
+type AuditClearance struct {
+	Status                 string `json:"status"`
+	AcceptedAt             string `json:"accepted_at,omitempty"`
+	Source                 string `json:"source,omitempty"`
+	AuditHandoffArtifactID int64  `json:"audit_handoff_artifact_id,omitempty"`
+}
+
+type GitCommitState struct {
+	State                    CommitState `json:"state"`
+	ValidationPassed         bool        `json:"validation_passed"`
+	ValidationFailedAccepted bool        `json:"validation_failed_accepted"`
+	AuditAccepted            bool        `json:"audit_accepted"`
+	EvidenceMode             string      `json:"evidence_mode,omitempty"`
+	HasGitDiffEvidence       bool        `json:"has_git_diff_evidence"`
+	Branch                   string      `json:"branch,omitempty"`
+	HeadSHA                  string      `json:"head_sha,omitempty"`
+	UpstreamRemote           string      `json:"upstream_remote,omitempty"`
+	UpstreamBranch           string      `json:"upstream_branch,omitempty"`
+	AheadCount               int         `json:"ahead_count"`
+	BehindCount              int         `json:"behind_count"`
+	HasUpstream              bool        `json:"has_upstream"`
+	WorktreeClean            bool        `json:"worktree_clean"`
+	CommitMessage            string      `json:"commit_message,omitempty"`
+	CommitSHA                string      `json:"commit_sha,omitempty"`
+	CommitSubject            string      `json:"commit_subject,omitempty"`
+	Warnings                 []string    `json:"warnings,omitempty"`
+	Error                    string      `json:"error,omitempty"`
+}
+
+type GitUpstreamInfo struct {
+	Remote string `json:"remote"`
+	Branch string `json:"branch"`
+}
+
+type GitCommitResult struct {
+	SHA       string `json:"sha,omitempty"`
+	ShortSHA  string `json:"short_sha,omitempty"`
+	Subject   string `json:"subject,omitempty"`
+	Branch    string `json:"branch,omitempty"`
+	Timestamp string `json:"timestamp,omitempty"`
+	Success   bool   `json:"success"`
+	Error     string `json:"error,omitempty"`
+}
+
+type GitPushResult struct {
+	Success    bool   `json:"success"`
+	DryRunPass bool   `json:"dry_run_pass,omitempty"`
+	Stdout     string `json:"stdout,omitempty"`
+	Stderr     string `json:"stderr,omitempty"`
+	ExitCode   int    `json:"exit_code"`
+	DurationMs int64  `json:"duration_ms"`
+	Timestamp  string `json:"timestamp,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+func ResolveCommitState(
+	repoPath string,
+	validationPassed bool,
+	validationFailedAccepted bool,
+	auditAccepted bool,
+	evidenceMode string,
+	hasGitDiffEvidence bool,
+	headSHA string,
+	branch string,
+) GitCommitState {
+	state := GitCommitState{
+		ValidationPassed:         validationPassed,
+		ValidationFailedAccepted: validationFailedAccepted,
+		AuditAccepted:            auditAccepted,
+		EvidenceMode:             evidenceMode,
+		HasGitDiffEvidence:       hasGitDiffEvidence,
+		HeadSHA:                  headSHA,
+		Branch:                   branch,
+	}
+
+	if !validationPassed && !validationFailedAccepted {
+		state.State = CommitStateBlockedValidation
+		return state
+	}
+
+	if !auditAccepted {
+		state.State = CommitStateBlockedAuditNotAccepted
+		return state
+	}
+
+	if !hasGitDiffEvidence {
+		state.State = CommitStateBlockedNoDiffInspection
+		return state
+	}
+
+	if evidenceMode == EvidenceModeMixedCommittedUncommitted {
+		state.State = CommitStateBlockedMixedChanges
+		state.Warnings = append(state.Warnings, "Mixed committed and uncommitted changes detected. Resolve before committing or pushing.")
+		return state
+	}
+
+	if evidenceMode == EvidenceModeNoChanges || evidenceMode == EvidenceModeBaselineUnavailableClean || evidenceMode == EvidenceModeBaselineUnavailableDirty {
+		state.State = CommitStateNoChanges
+		return state
+	}
+
+	// Check actual Git state
+	ctx, cancel := context.WithTimeout(context.Background(), gitEvidenceTimeout)
+	defer cancel()
+
+	if repoPath == "" {
+		state.State = CommitStateUnknown
+		state.Error = "repo path is empty"
+		return state
+	}
+
+	// Check if worktree is clean
+	porcelain, err := gitCommandOutput(ctx, repoPath, "status", "--porcelain=v1")
+	if err != nil {
+		state.State = CommitStateUnknown
+		state.Error = fmt.Sprintf("git status failed: %v", err)
+		return state
+	}
+	state.WorktreeClean = strings.TrimSpace(porcelain) == ""
+
+	// Resolve upstream info
+	upstream, err := gitCommandOutput(ctx, repoPath, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if err == nil && upstream != "" {
+		parts := strings.SplitN(upstream, "/", 2)
+		if len(parts) == 2 {
+			state.UpstreamRemote = parts[0]
+			state.UpstreamBranch = parts[1]
+			state.HasUpstream = true
+		}
+	}
+
+	if state.HasUpstream {
+		// Get ahead/behind counts
+		counts, err := gitCommandOutput(ctx, repoPath, "rev-list", "--left-right", "--count", "@{u}...HEAD")
+		if err == nil {
+			parts := strings.Fields(counts)
+			if len(parts) == 2 {
+				state.BehindCount, _ = strconvAtoi(parts[0])
+				state.AheadCount, _ = strconvAtoi(parts[1])
+			}
+		}
+
+		// Check if HEAD is contained in upstream (pushed)
+		if state.AheadCount == 0 && state.BehindCount == 0 {
+			state.State = CommitStatePushed
+			return state
+		}
+	}
+
+	// Determine commit state based on evidence mode and worktree
+	switch evidenceMode {
+	case EvidenceModeUncommittedWorktree, EvidenceModeBaselineUnavailableDirty:
+		state.State = CommitStateReadyToCommit
+		return state
+
+	case EvidenceModeCommittedRange:
+		if state.HasUpstream && state.AheadCount > 0 {
+			state.State = CommitStateCommittedLocal
+			return state
+		} else if state.HasUpstream && state.AheadCount == 0 {
+			// Might have been pushed since evidence was captured
+			state.State = CommitStatePushed
+			return state
+		} else {
+			// committed range but no upstream — ready for push if upstream configured
+			state.State = CommitStateCommittedLocal
+			if !state.HasUpstream {
+				state.State = CommitStateBlockedNoUpstream
+			}
+			return state
+		}
+	}
+
+	// If we have evidence but nothing matched, check if HEAD moved
+	if evidenceMode != "" && headSHA != "" {
+		state.State = CommitStateCommittedLocal
+		return state
+	}
+
+	state.State = CommitStateUnknown
+	return state
+}
+
+func GetUpstreamInfo(repoPath string) (*GitUpstreamInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitCaptureTimeout)
+	defer cancel()
+
+	upstream, err := gitCommandOutput(ctx, repoPath, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if err != nil {
+		return nil, err
+	}
+	parts := strings.SplitN(upstream, "/", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("unexpected upstream format: %s", upstream)
+	}
+	return &GitUpstreamInfo{Remote: parts[0], Branch: parts[1]}, nil
+}
+
+func CreateGitCommit(repoPath, message string) *GitCommitResult {
+	result := &GitCommitResult{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	if strings.TrimSpace(repoPath) == "" {
+		result.Error = "repo path is empty"
+		return result
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), gitEvidenceTimeout)
+	defer cancel()
+
+	// git add -A
+	if _, err := gitCommandOutput(ctx, repoPath, "add", "-A"); err != nil {
+		result.Error = fmt.Sprintf("git add failed: %v", err)
+		return result
+	}
+
+	// git commit -m "<message>"
+	if _, err := gitCommandOutput(ctx, repoPath, "commit", "-m", message); err != nil {
+		result.Error = fmt.Sprintf("git commit failed: %v", err)
+		return result
+	}
+
+	// Capture result
+	sha, err := gitCommandOutput(ctx, repoPath, "rev-parse", "HEAD")
+	if err != nil {
+		result.Error = fmt.Sprintf("commit succeeded but rev-parse failed: %v", err)
+		result.Success = true
+		return result
+	}
+	result.SHA = sha
+	if len(sha) > 7 {
+		result.ShortSHA = sha[:7]
+	} else {
+		result.ShortSHA = sha
+	}
+
+	subject, err := gitCommandOutput(ctx, repoPath, "log", "--format=%s", "-1")
+	if err == nil {
+		result.Subject = subject
+	}
+
+	branch, err := gitCommandOutput(ctx, repoPath, "branch", "--show-current")
+	if err == nil {
+		result.Branch = branch
+	}
+
+	result.Success = true
+	return result
+}
+
+func DryRunPush(repoPath string) *GitPushResult {
+	result := &GitPushResult{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmdArgs := append([]string{"-C", repoPath}, "push", "--porcelain", "--dry-run")
+	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
+	out, err := cmd.Output()
+	result.DurationMs = time.Since(start).Milliseconds()
+
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			result.ExitCode = exitErr.ExitCode()
+			result.Stderr = string(exitErr.Stderr)
+		} else {
+			result.ExitCode = -1
+			result.Error = err.Error()
+		}
+		result.DryRunPass = false
+		return result
+	}
+
+	result.Stdout = strings.TrimSpace(string(out))
+	result.ExitCode = 0
+	result.DryRunPass = true
+	return result
+}
+
+func PushGitCommit(repoPath string) *GitPushResult {
+	result := &GitPushResult{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cmdArgs := append([]string{"-C", repoPath}, "push", "--porcelain")
+	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
+	out, err := cmd.Output()
+	result.DurationMs = time.Since(start).Milliseconds()
+
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			result.ExitCode = exitErr.ExitCode()
+			result.Stderr = string(exitErr.Stderr)
+		} else {
+			result.ExitCode = -1
+			result.Error = err.Error()
+		}
+		result.Success = false
+		return result
+	}
+
+	result.Stdout = strings.TrimSpace(string(out))
+	result.ExitCode = 0
+	result.Success = true
+	return result
+}
+
+// strconvAtoi is a non-import version of strconv.Atoi for use in this file.
+func strconvAtoi(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("not a number: %s", s)
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, nil
+}
+
 func gitCommandOutput(ctx context.Context, repoPath string, args ...string) (string, error) {
 	cmdArgs := append([]string{"-C", repoPath}, args...)
 	cmd := exec.CommandContext(ctx, "git", cmdArgs...)

@@ -522,6 +522,16 @@ func ArtifactFilename(kind string) string {
 		return "git_baseline.json"
 	case "git_change_evidence_json":
 		return "git_change_evidence.json"
+	case "audit_clearance_json":
+		return "audit-clearance.json"
+	case "git_commit_state_json":
+		return "git-commit-state.json"
+	case "git_commit_result_json":
+		return "git-commit-result.json"
+	case "git_push_dry_run_json":
+		return "git-push-dry-run.json"
+	case "git_push_result_json":
+		return "git-push-result.json"
 	default:
 		return fmt.Sprintf("%s.txt", kind)
 	}

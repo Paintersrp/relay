@@ -239,7 +239,7 @@ func stepDescription(step string) string {
 	case "audit":
 		return "Inspect git diff and generate the audit handoff for GPT review. Proceed to Commit when ready."
 	case "commit":
-		return "Review the suggested commit message and run the commit command manually. Relay does not commit on your behalf."
+		return "Review git commit state, accept audit clearance, create a commit, and push to upstream."
 	default:
 		return ""
 	}

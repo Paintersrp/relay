@@ -758,6 +758,92 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Compute commit state for Step 8
+	auditClearanceData := readArtifactPreview(id, "audit_clearance_json")
+	hasAuditClearance := auditClearanceData != ""
+	auditClearanceStatus := ""
+	if hasAuditClearance {
+		var ac repos.AuditClearance
+		if err := json.Unmarshal([]byte(auditClearanceData), &ac); err == nil {
+			auditClearanceStatus = ac.Status
+		}
+	}
+
+	commitStateResult := repos.ResolveCommitState(
+		previewsRepoPath,
+		validationPassed,
+		validationAcceptedWithFailure,
+		auditClearanceStatus == "accepted",
+		gitChangeEvidenceMode,
+		hasGitChangeEvidence,
+		gitChangeEvidenceHead,
+		gitChangeEvidenceBranch,
+	)
+
+	// Write commit state artifact
+	commitStateJSON, _ := json.MarshalIndent(commitStateResult, "", "  ")
+	h.store.DeleteArtifactsByRunKind(id, "git_commit_state_json")
+	if csp, err := artifacts.Write(id, "git_commit_state_json", pipeline.ArtifactFilename("git_commit_state_json"), commitStateJSON); err == nil {
+		h.store.CreateArtifact(id, "git_commit_state_json", csp, "application/json")
+	}
+
+	// Parse commit suggestion for selected message
+	commitSuggestionSelected := ""
+	commitSuggestionSource := ""
+	commitSuggestionConfidence := ""
+	var commitWarnings []string
+	if commitSuggestionJSONStr != "" {
+		var cs struct {
+			Selected   string   `json:"selected"`
+			Source     string   `json:"source"`
+			Confidence string   `json:"confidence"`
+			Warnings   []string `json:"warnings"`
+		}
+		if err := json.Unmarshal([]byte(commitSuggestionJSONStr), &cs); err == nil {
+			commitSuggestionSelected = cs.Selected
+			commitSuggestionSource = cs.Source
+			commitSuggestionConfidence = cs.Confidence
+			commitWarnings = cs.Warnings
+		}
+	}
+
+	// Parse commit result
+	commitResultData := readArtifactPreview(id, "git_commit_result_json")
+	hasCommitResult := commitResultData != ""
+	commitResultSuccess := false
+	commitResultSHA := ""
+	commitResultSubject := ""
+	if hasCommitResult {
+		var cr repos.GitCommitResult
+		if err := json.Unmarshal([]byte(commitResultData), &cr); err == nil {
+			commitResultSuccess = cr.Success
+			commitResultSHA = cr.SHA
+			commitResultSubject = cr.Subject
+		}
+	}
+
+	// Parse push dry run
+	pushDryRunData := readArtifactPreview(id, "git_push_dry_run_json")
+	hasPushDryRun := pushDryRunData != ""
+	pushDryRunPass := false
+	if hasPushDryRun {
+		var pr repos.GitPushResult
+		if err := json.Unmarshal([]byte(pushDryRunData), &pr); err == nil {
+			pushDryRunPass = pr.DryRunPass
+		}
+	}
+
+	// Parse push result
+	pushResultData := readArtifactPreview(id, "git_push_result_json")
+	hasPushResult := pushResultData != ""
+	pushResultSuccess := false
+	if hasPushResult {
+		var pr repos.GitPushResult
+		if err := json.Unmarshal([]byte(pushResultData), &pr); err == nil {
+			pushResultSuccess = pr.Success
+		}
+	}
+
 	previews := views.RunPreviews{
 		NextAction:                      nextActionView,
 		OriginalHandoff:                 originalPreview,
@@ -865,6 +951,35 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		GitChangeEvidenceBranch:         gitChangeEvidenceBranch,
 		GitChangeEvidenceCommitCnt:      gitChangeEvidenceCommitCnt,
 		GitChangeEvidenceWarning:        gitChangeEvidenceWarning,
+		CommitState:                     string(commitStateResult.State),
+		CommitStateMsg:                  commitStateResult.Error,
+		CommitValidationPassed:          commitStateResult.ValidationPassed || commitStateResult.ValidationFailedAccepted,
+		CommitAuditAccepted:             commitStateResult.AuditAccepted,
+		CommitEvidenceMode:              commitStateResult.EvidenceMode,
+		CommitBranch:                    commitStateResult.Branch,
+		CommitHeadSHA:                   commitStateResult.HeadSHA,
+		CommitUpstreamRemote:            commitStateResult.UpstreamRemote,
+		CommitUpstreamBranch:            commitStateResult.UpstreamBranch,
+		CommitAheadCount:                commitStateResult.AheadCount,
+		CommitBehindCount:               commitStateResult.BehindCount,
+		CommitHasUpstream:               commitStateResult.HasUpstream,
+		CommitWorktreeClean:             commitStateResult.WorktreeClean,
+		CommitSHA:                       commitStateResult.CommitSHA,
+		CommitSubject:                   commitStateResult.CommitSubject,
+		CommitSuggestionSelected:        commitSuggestionSelected,
+		CommitSuggestionSource:          commitSuggestionSource,
+		CommitSuggestionConfidence:      commitSuggestionConfidence,
+		CommitWarnings:                  commitWarnings,
+		HasAuditClearance:               hasAuditClearance,
+		AuditClearanceStatus:            auditClearanceStatus,
+		HasCommitResult:                 hasCommitResult,
+		CommitResultSuccess:             commitResultSuccess,
+		CommitResultSHA:                 commitResultSHA,
+		CommitResultSubject:             commitResultSubject,
+		HasPushDryRun:                   hasPushDryRun,
+		PushDryRunPass:                  pushDryRunPass,
+		HasPushResult:                   hasPushResult,
+		PushResultSuccess:               pushResultSuccess,
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {
@@ -943,6 +1058,14 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.reconcileOpenCodeResult(w, r, id)
 	case "update-selected-model":
 		h.updateSelectedModel(w, r, id)
+	case "accept-audit-clearance":
+		h.acceptAuditClearance(w, r, id)
+	case "revoke-audit-clearance":
+		h.revokeAuditClearance(w, r, id)
+	case "create-git-commit":
+		h.createGitCommit(w, r, id)
+	case "push-git-commit":
+		h.pushGitCommit(w, r, id)
 	default:
 		http.Error(w, "unknown action", http.StatusBadRequest)
 	}
@@ -2539,6 +2662,309 @@ func (h *RunsHandler) updateSelectedModel(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=handoff", http.StatusSeeOther)
 }
 
+func (h *RunsHandler) acceptAuditClearance(w http.ResponseWriter, r *http.Request, runID int64) {
+	artList, err := h.store.ListArtifactsByRun(runID)
+	if err != nil {
+		h.store.CreateEvent(runID, "warn", "Accept audit clearance failed: cannot list artifacts.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+	auditHandoffArtifactID := int64(0)
+	for _, a := range artList {
+		if a.Kind == "audit_handoff" {
+			auditHandoffArtifactID = a.ID
+			break
+		}
+	}
+	if auditHandoffArtifactID == 0 {
+		h.store.CreateEvent(runID, "warn", "Accept audit clearance failed: no audit handoff found.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+
+	clearance := repos.AuditClearance{
+		Status:                 "accepted",
+		AcceptedAt:             time.Now().UTC().Format(time.RFC3339),
+		Source:                 "manual_ui",
+		AuditHandoffArtifactID: auditHandoffArtifactID,
+	}
+	clearanceJSON, _ := json.MarshalIndent(clearance, "", "  ")
+
+	h.store.DeleteArtifactsByRunKind(runID, "audit_clearance_json")
+	p, err := artifacts.Write(runID, "audit_clearance_json", pipeline.ArtifactFilename("audit_clearance_json"), clearanceJSON)
+	if err != nil {
+		h.log.Error("write audit clearance", "error", err)
+		http.Error(w, "failed to save audit clearance", http.StatusInternalServerError)
+		return
+	}
+	h.store.CreateArtifact(runID, "audit_clearance_json", p, "application/json")
+	h.store.CreateEvent(runID, "info", "Audit clearance accepted")
+
+	setHXPushURL(w, runID, "commit")
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+}
+
+func (h *RunsHandler) revokeAuditClearance(w http.ResponseWriter, r *http.Request, runID int64) {
+	h.store.DeleteArtifactsByRunKind(runID, "audit_clearance_json")
+	_ = artifacts.Delete(runID, "audit_clearance_json", pipeline.ArtifactFilename("audit_clearance_json"))
+	h.store.CreateEvent(runID, "info", "Audit clearance revoked")
+
+	setHXPushURL(w, runID, "commit")
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+}
+
+func (h *RunsHandler) createGitCommit(w http.ResponseWriter, r *http.Request, runID int64) {
+	run, err := h.store.GetRun(runID)
+	if err != nil {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	repo, _ := h.store.GetRepo(run.RepoID)
+	if repo == nil || repo.Path == "" {
+		h.store.CreateEvent(runID, "warn", "Create commit blocked: no repo path configured.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+
+	// Check validation
+	validationJSON := readArtifactPreview(runID, "validation_run_json")
+	if validationJSON == "" {
+		h.store.CreateEvent(runID, "warn", "Create commit blocked: run validation first.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+	var v struct{ Status string }
+	json.Unmarshal([]byte(validationJSON), &v)
+	validationPassed := v.Status == "pass"
+	validationAccepted := run.Status == "validation_failed_accepted"
+	if !validationPassed && !validationAccepted {
+		h.store.CreateEvent(runID, "warn", "Create commit blocked: validation did not pass.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+
+	// Check audit clearance
+	clearanceData := readArtifactPreview(runID, "audit_clearance_json")
+	if clearanceData == "" {
+		h.store.CreateEvent(runID, "warn", "Create commit blocked: audit clearance not accepted.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+	var clearance repos.AuditClearance
+	if err := json.Unmarshal([]byte(clearanceData), &clearance); err != nil || clearance.Status != "accepted" {
+		h.store.CreateEvent(runID, "warn", "Create commit blocked: audit clearance not accepted.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+
+	// Load evidence mode
+	evidenceJSON := readArtifactPreview(runID, "git_change_evidence_json")
+	if evidenceJSON == "" {
+		h.store.CreateEvent(runID, "warn", "Create commit blocked: inspect git diff first.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+	var ev struct {
+		Mode string `json:"mode"`
+	}
+	json.Unmarshal([]byte(evidenceJSON), &ev)
+	if ev.Mode != repos.EvidenceModeUncommittedWorktree && ev.Mode != repos.EvidenceModeBaselineUnavailableDirty {
+		h.store.CreateEvent(runID, "warn", "Create commit blocked: evidence mode is "+ev.Mode+". Only uncommitted worktree can be committed via UI.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+
+	// Get commit message
+	suggestionJSON := readArtifactPreview(runID, "commit_suggestion_json")
+	var message string
+	if suggestionJSON != "" {
+		var sugg struct {
+			Selected string `json:"selected"`
+		}
+		if err := json.Unmarshal([]byte(suggestionJSON), &sugg); err == nil && sugg.Selected != "" {
+			message = sugg.Selected
+		}
+	}
+	if message == "" {
+		h.store.CreateEvent(runID, "warn", "Create commit blocked: no commit message. Prepare Git Commit first.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+
+	// Execute commit
+	result := repos.CreateGitCommit(repo.Path, message)
+
+	// Store result artifact
+	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	h.store.DeleteArtifactsByRunKind(runID, "git_commit_result_json")
+	p, err := artifacts.Write(runID, "git_commit_result_json", pipeline.ArtifactFilename("git_commit_result_json"), resultJSON)
+	if err != nil {
+		h.log.Error("write git commit result", "error", err)
+	} else {
+		h.store.CreateArtifact(runID, "git_commit_result_json", p, "application/json")
+	}
+
+	// Also store readable text artifact
+	if result.Success {
+		textContent := "Commit created successfully.\nSHA: " + result.SHA + "\nSubject: " + result.Subject + "\nBranch: " + result.Branch + "\nTimestamp: " + result.Timestamp
+		textPath, _ := artifacts.Write(runID, "commit_message_text", pipeline.ArtifactFilename("commit_message_text"), []byte(textContent))
+		if textPath != "" {
+			h.store.CreateArtifact(runID, "commit_message_text", textPath, "text/plain")
+		}
+
+		// Update run head_commit if a commit was created
+		if result.SHA != "" {
+			h.store.UpdateRunBranch(runID, result.Branch, run.BaseCommit, result.SHA)
+		}
+	}
+
+	if result.Success {
+		h.store.CreateEvent(runID, "info", "Git commit created: "+result.ShortSHA+" "+result.Subject)
+		h.log.Info("git commit created", "run_id", runID, "sha", result.SHA, "subject", result.Subject)
+	} else {
+		h.store.CreateEvent(runID, "warn", "Git commit failed: "+result.Error)
+	}
+
+	setHXPushURL(w, runID, "commit")
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+}
+
+func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runID int64) {
+	run, err := h.store.GetRun(runID)
+	if err != nil {
+		http.Error(w, "run not found", http.StatusNotFound)
+		return
+	}
+
+	repo, _ := h.store.GetRepo(run.RepoID)
+	if repo == nil || repo.Path == "" {
+		h.store.CreateEvent(runID, "warn", "Push blocked: no repo path configured.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+
+	// Check validation
+	validationJSON := readArtifactPreview(runID, "validation_run_json")
+	if validationJSON == "" {
+		h.store.CreateEvent(runID, "warn", "Push blocked: run validation first.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+	var v struct{ Status string }
+	json.Unmarshal([]byte(validationJSON), &v)
+	validationPassed := v.Status == "pass"
+	validationAccepted := run.Status == "validation_failed_accepted"
+	if !validationPassed && !validationAccepted {
+		h.store.CreateEvent(runID, "warn", "Push blocked: validation did not pass.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+
+	// Check audit clearance
+	clearanceData := readArtifactPreview(runID, "audit_clearance_json")
+	if clearanceData == "" {
+		h.store.CreateEvent(runID, "warn", "Push blocked: audit clearance not accepted.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+	var clearance repos.AuditClearance
+	if err := json.Unmarshal([]byte(clearanceData), &clearance); err != nil || clearance.Status != "accepted" {
+		h.store.CreateEvent(runID, "warn", "Push blocked: audit clearance not accepted.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+
+	// Check evidence mode - only committed_range or committed_local are pushable
+	evidenceJSON := readArtifactPreview(runID, "git_change_evidence_json")
+	if evidenceJSON == "" {
+		h.store.CreateEvent(runID, "warn", "Push blocked: inspect git diff first.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+	var ev struct{ Mode string }
+	json.Unmarshal([]byte(evidenceJSON), &ev)
+
+	if ev.Mode != repos.EvidenceModeCommittedRange {
+		h.store.CreateEvent(runID, "warn", "Push blocked: evidence mode is "+ev.Mode+". Only committed range can be pushed.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+
+	// Worktree must be clean
+	snap := repos.CaptureGitSnapshot(repo.Path, "push_preflight")
+	if snap.Error != "" || snap.Dirty {
+		h.store.CreateEvent(runID, "warn", "Push blocked: working tree is dirty. Commit or stash changes first.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+
+	// Check upstream exists
+	upstream, err := repos.GetUpstreamInfo(repo.Path)
+	if err != nil {
+		h.store.CreateEvent(runID, "warn", "Push blocked: no upstream configured. "+err.Error())
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+	_ = upstream
+
+	// Dry run first
+	dryRunResult := repos.DryRunPush(repo.Path)
+	dryRunJSON, _ := json.MarshalIndent(dryRunResult, "", "  ")
+	h.store.DeleteArtifactsByRunKind(runID, "git_push_dry_run_json")
+	dryRunPath, err := artifacts.Write(runID, "git_push_dry_run_json", pipeline.ArtifactFilename("git_push_dry_run_json"), dryRunJSON)
+	if err == nil {
+		h.store.CreateArtifact(runID, "git_push_dry_run_json", dryRunPath, "application/json")
+	}
+
+	if !dryRunResult.DryRunPass {
+		h.store.CreateEvent(runID, "warn", "Push dry run failed. Check git_push_dry_run_json artifact for details.")
+		setHXPushURL(w, runID, "commit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		return
+	}
+
+	// Execute push
+	result := repos.PushGitCommit(repo.Path)
+	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	h.store.DeleteArtifactsByRunKind(runID, "git_push_result_json")
+	p, err := artifacts.Write(runID, "git_push_result_json", pipeline.ArtifactFilename("git_push_result_json"), resultJSON)
+	if err != nil {
+		h.log.Error("write push result", "error", err)
+	} else {
+		h.store.CreateArtifact(runID, "git_push_result_json", p, "application/json")
+	}
+
+	if result.Success {
+		h.store.CreateEvent(runID, "info", "Git push succeeded.")
+		h.log.Info("git push succeeded", "run_id", runID)
+	} else {
+		h.store.CreateEvent(runID, "warn", "Git push failed: "+result.Error)
+	}
+
+	setHXPushURL(w, runID, "commit")
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+}
+
 func (h *RunsHandler) notImplemented(w http.ResponseWriter, r *http.Request, runID int64, msg string) {
 	h.store.CreateEvent(runID, "warn", msg)
 
@@ -3155,11 +3581,28 @@ func (h *RunsHandler) prepareGitCommit(w http.ResponseWriter, r *http.Request, r
 		agentLOCChanged = parsed.LOCChanged
 	}
 
+	// Load evidence mode and commits for better commit message
+	evidenceMode := ""
+	var evidenceCommits []string
+	if evidenceJSON := readArtifactPreview(runID, "git_change_evidence_json"); evidenceJSON != "" {
+		var ev struct {
+			Mode    string                   `json:"mode"`
+			Commits []repos.GitCommitSummary `json:"commits"`
+		}
+		if err := json.Unmarshal([]byte(evidenceJSON), &ev); err == nil {
+			evidenceMode = ev.Mode
+			for _, c := range ev.Commits {
+				evidenceCommits = append(evidenceCommits, c.Subject)
+			}
+		}
+	}
+
 	input := pipeline.CommitSuggestionInput{
 		OriginalHandoff:          originalHandoff,
 		AuditHandoff:             auditHandoffPreview,
 		GitDiffStat:              gitDiffStat,
 		GitDiffNameStatus:        gitDiffNameStatus,
+		GitChangeEvidenceJSON:    readArtifactPreview(runID, "git_change_evidence_json"),
 		AgentResultStatus:        agentResultStatus,
 		AgentBuildStatus:         agentBuildStatus,
 		AgentTestStatus:          agentTestStatus,
@@ -3170,6 +3613,8 @@ func (h *RunsHandler) prepareGitCommit(w http.ResponseWriter, r *http.Request, r
 		DiffInspected:            hasGitDiffEvidence,
 		AuditHandoffPresent:      hasAuditHandoff,
 		ChangedFileCount:         changedFileCount,
+		EvidenceMode:             evidenceMode,
+		EvidenceCommits:          evidenceCommits,
 	}
 
 	suggestion := pipeline.BuildCommitSuggestion(input)
@@ -3179,7 +3624,7 @@ func (h *RunsHandler) prepareGitCommit(w http.ResponseWriter, r *http.Request, r
 	h.store.DeleteArtifactsByRunKind(runID, "commit_suggestion_json")
 
 	// Write commit message text artifact
-	msgPath, err := artifacts.Write(runID, "commit_message_text", pipeline.ArtifactFilename("commit_message_text"), []byte(suggestion.Message))
+	msgPath, err := artifacts.Write(runID, "commit_message_text", pipeline.ArtifactFilename("commit_message_text"), []byte(suggestion.Selected))
 	if err != nil {
 		h.log.Error("write commit message artifact", "error", err)
 		http.Error(w, "failed to save commit message", http.StatusInternalServerError)
@@ -3199,7 +3644,7 @@ func (h *RunsHandler) prepareGitCommit(w http.ResponseWriter, r *http.Request, r
 
 	h.store.CreateEvent(runID, "info", "Git commit suggestion prepared")
 
-	h.log.Info("git commit suggestion prepared", "run_id", runID, "message", suggestion.Message)
+	h.log.Info("git commit suggestion prepared", "run_id", runID, "message", suggestion.Selected)
 
 	setHXPushURL(w, runID, "commit")
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)

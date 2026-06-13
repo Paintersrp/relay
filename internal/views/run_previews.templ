@@ -204,6 +204,38 @@ type RunPreviews struct {
 	GitChangeEvidenceCommitCnt int
 	GitChangeEvidenceWarning   string
 	HasGitChangeEvidence       bool
+
+	// Step 8: Commit/Finalization state
+	CommitState              string
+	CommitStateDisplay       string
+	CommitStateMsg           string
+	CommitValidationPassed   bool
+	CommitAuditAccepted      bool
+	CommitEvidenceMode       string
+	CommitBranch             string
+	CommitHeadSHA            string
+	CommitUpstreamRemote     string
+	CommitUpstreamBranch     string
+	CommitAheadCount         int
+	CommitBehindCount        int
+	CommitHasUpstream        bool
+	CommitWorktreeClean      bool
+	CommitSHA                string
+	CommitSubject            string
+	CommitSuggestionSelected string
+	CommitSuggestionSource   string
+	CommitSuggestionConfidence string
+	CommitWarnings           []string
+	HasAuditClearance        bool
+	AuditClearanceStatus     string
+	HasCommitResult          bool
+	CommitResultSuccess      bool
+	CommitResultSHA          string
+	CommitResultSubject      string
+	HasPushDryRun            bool
+	PushDryRunPass           bool
+	HasPushResult            bool
+	PushResultSuccess        bool
 }
 
 templ RunPreviewPanels(previews RunPreviews) {
