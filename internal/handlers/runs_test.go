@@ -318,6 +318,17 @@ func gitAddCommit(t *testing.T, dir string, msg string) {
 	}
 }
 
+func createTestArtifact(t *testing.T, s *store.Store, runID int64, kind, mimeType, content string) {
+	t.Helper()
+	path, err := artifacts.Write(runID, kind, pipeline.ArtifactFilename(kind), []byte(content))
+	if err != nil {
+		t.Fatalf("write %s artifact: %v", kind, err)
+	}
+	if _, err := s.CreateArtifact(runID, kind, path, mimeType); err != nil {
+		t.Fatalf("create %s artifact record: %v", kind, err)
+	}
+}
+
 func TestValidateHandoffReadySetsHXPushURLToStepPrompt(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
@@ -511,6 +522,195 @@ func TestInspectDiffWritesArtifacts(t *testing.T) {
 	}
 	if !artifacts.Exists(runID, "git_diff_patch", pipeline.ArtifactFilename("git_diff_patch")) {
 		t.Error("expected git_diff_patch file on disk")
+	}
+}
+
+func TestAcceptAuditClearanceRedirectsToStepAuditAndWritesArtifact(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	createTestArtifact(t, s, runID, "audit_handoff", "text/markdown", "# Audit handoff\n")
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.acceptAuditClearance(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasSuffix(loc, "?step=audit") {
+		t.Fatalf("expected redirect to step=audit, got %s", loc)
+	}
+	pus := w.Header().Get("HX-Push-Url")
+	if pus != "/runs/"+itoa(runID)+"?step=audit" {
+		t.Fatalf("expected HX-Push-Url /runs/%d?step=audit, got %q", runID, pus)
+	}
+
+	data, err := artifacts.Read(runID, "audit_clearance_json", pipeline.ArtifactFilename("audit_clearance_json"))
+	if err != nil {
+		t.Fatalf("read audit clearance artifact: %v", err)
+	}
+	var clearance struct {
+		Status     string `json:"status"`
+		AcceptedAt string `json:"accepted_at"`
+		Source     string `json:"source"`
+	}
+	if err := json.Unmarshal(data, &clearance); err != nil {
+		t.Fatalf("unmarshal audit clearance artifact: %v", err)
+	}
+	if clearance.Status != "accepted" {
+		t.Fatalf("expected accepted status, got %q", clearance.Status)
+	}
+	if clearance.Source != "manual_ui" {
+		t.Fatalf("expected manual_ui source, got %q", clearance.Source)
+	}
+	if clearance.AcceptedAt == "" {
+		t.Fatal("expected accepted_at to be populated")
+	}
+}
+
+func TestRevokeAuditClearanceRedirectsToStepAuditAndDeletesArtifact(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	createTestArtifact(t, s, runID, "audit_clearance_json", "application/json", `{
+  "status": "accepted",
+  "accepted_at": "2026-06-13T10:00:00Z",
+  "source": "manual_ui",
+  "audit_handoff_artifact_id": 1
+}`)
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.revokeAuditClearance(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasSuffix(loc, "?step=audit") {
+		t.Fatalf("expected redirect to step=audit, got %s", loc)
+	}
+	pus := w.Header().Get("HX-Push-Url")
+	if pus != "/runs/"+itoa(runID)+"?step=audit" {
+		t.Fatalf("expected HX-Push-Url /runs/%d?step=audit, got %q", runID, pus)
+	}
+	if artifacts.Exists(runID, "audit_clearance_json", pipeline.ArtifactFilename("audit_clearance_json")) {
+		t.Fatal("expected audit_clearance_json artifact file to be deleted")
+	}
+}
+
+func TestInspectDiffClearsAuditClearanceArtifact(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	handoffText := validHandoff()
+	runID := newTestHandoff(t, s, handoffText)
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	repo, err := s.GetRepo(run.RepoID)
+	if err != nil {
+		t.Fatalf("get repo: %v", err)
+	}
+
+	initGitRepo(t, repo.Path)
+
+	if err := os.WriteFile(filepath.Join(repo.Path, "README.md"), []byte("# Repo\n"), 0644); err != nil {
+		t.Fatalf("write readme: %v", err)
+	}
+	gitAddCommit(t, repo.Path, "initial commit")
+
+	if err := os.WriteFile(filepath.Join(repo.Path, "README.md"), []byte("# Modified\n\nChanged.\n"), 0644); err != nil {
+		t.Fatalf("modify readme: %v", err)
+	}
+
+	createTestArtifact(t, s, runID, "audit_clearance_json", "application/json", `{
+  "status": "accepted",
+  "accepted_at": "2026-06-13T10:00:00Z",
+  "source": "manual_ui",
+  "audit_handoff_artifact_id": 1
+}`)
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.inspectDiff(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	if artifacts.Exists(runID, "audit_clearance_json", pipeline.ArtifactFilename("audit_clearance_json")) {
+		t.Fatal("expected inspectDiff to clear audit_clearance_json artifact file")
+	}
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	for _, a := range artifactsList {
+		if a.Kind == "audit_clearance_json" {
+			t.Fatal("expected inspectDiff to clear audit_clearance_json artifact record")
+		}
+	}
+}
+
+func TestGenerateAuditHandoffClearsAuditClearanceArtifact(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	handoffText := validHandoff()
+	runID := newTestHandoff(t, s, handoffText)
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	repo, err := s.GetRepo(run.RepoID)
+	if err != nil {
+		t.Fatalf("get repo: %v", err)
+	}
+
+	initGitRepo(t, repo.Path)
+
+	if err := os.WriteFile(filepath.Join(repo.Path, "README.md"), []byte("# Repo\n"), 0644); err != nil {
+		t.Fatalf("write readme: %v", err)
+	}
+	gitAddCommit(t, repo.Path, "initial commit")
+
+	if err := os.WriteFile(filepath.Join(repo.Path, "README.md"), []byte("# Modified\n\nChanged.\n"), 0644); err != nil {
+		t.Fatalf("modify readme: %v", err)
+	}
+
+	h.validateHandoff(httptest.NewRecorder(), httptest.NewRequest("POST", "/", nil), runID)
+	h.inspectDiff(httptest.NewRecorder(), httptest.NewRequest("POST", "/", nil), runID)
+
+	createTestArtifact(t, s, runID, "audit_clearance_json", "application/json", `{
+  "status": "accepted",
+  "accepted_at": "2026-06-13T10:00:00Z",
+  "source": "manual_ui",
+  "audit_handoff_artifact_id": 1
+}`)
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.generateAuditHandoff(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	if artifacts.Exists(runID, "audit_clearance_json", pipeline.ArtifactFilename("audit_clearance_json")) {
+		t.Fatal("expected generateAuditHandoff to clear audit_clearance_json artifact file")
+	}
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	for _, a := range artifactsList {
+		if a.Kind == "audit_clearance_json" {
+			t.Fatal("expected generateAuditHandoff to clear audit_clearance_json artifact record")
+		}
 	}
 }
 

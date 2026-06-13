@@ -2009,8 +2009,53 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 					</form>
 				}
 			}
+
+			@auditDecisionSection(previews, runID)
 		</div>
 	</div>
+}
+
+templ auditDecisionSection(previews RunPreviews, runID int64) {
+	if previews.HasAuditHandoff {
+		if previews.AuditClearanceStatus == "accepted" {
+			@StageEvidenceRow("passed", "Audit accepted", "External audit clearance is recorded.", "") {
+				if previews.AuditClearanceSource != "" || previews.AuditClearanceAcceptedAt != "" {
+					<span class="text-xs text-gray-400 relay-stage-meta">
+						if previews.AuditClearanceSource != "" {
+							Source: { previews.AuditClearanceSource }
+						}
+					if previews.AuditClearanceSource != "" && previews.AuditClearanceAcceptedAt != "" {
+						{" | "}
+					}
+						if previews.AuditClearanceAcceptedAt != "" {
+							Accepted at { previews.AuditClearanceAcceptedAt }
+						}
+					</span>
+				}
+				<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+					hx-post={"/runs/" + Itoa(runID) + "/actions"}
+					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+					class="inline">
+					<input type="hidden" name="action" value="revoke-audit-clearance"/>
+					<button type="submit" class="btn-secondary text-xs sm:text-sm" data-stage-primary-action>
+						Revoke Audit Acceptance
+					</button>
+				</form>
+			}
+		} else {
+			@StageEvidenceRow("warning", "Audit clearance pending", "Review the audit handoff and mark the decision here before continuing.", "") {
+				<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+					hx-post={"/runs/" + Itoa(runID) + "/actions"}
+					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+					class="inline">
+					<input type="hidden" name="action" value="accept-audit-clearance"/>
+					<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+						Mark Audit Accepted
+					</button>
+				</form>
+			}
+		}
+	}
 }
 
 templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews RunPreviews) {
@@ -2039,44 +2084,36 @@ templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Ru
 			}
 
 			if previews.CommitState == "blocked_audit_not_accepted" {
-				@StageEvidenceRow("warning", "Audit clearance needed", "Mark the audit as accepted to enable commit and push.", "") {
-					if previews.HasAuditHandoff {
-						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
-							class="inline">
-							<input type="hidden" name="action" value="accept-audit-clearance"/>
-							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
-								Mark Audit Accepted
-							</button>
-						</form>
+				@StageEvidenceRow("warning", "Audit clearance needed", "Review the audit handoff in Step 7 and mark the decision there before commit or push.", "") {
+					@WorkbenchStepLink(run.ID, "audit", "btn-primary text-xs sm:text-sm") {
+						Go to Step 7: Diff / Audit
 					}
 				}
 			}
 
 			if previews.AuditClearanceStatus == "accepted" {
 				@StageEvidenceRow("passed", "Audit accepted", "Audit clearance has been granted.", "") {
-					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
-						class="inline">
-						<input type="hidden" name="action" value="revoke-audit-clearance"/>
-						<button type="submit" class="btn-secondary text-xs sm:text-sm" data-stage-primary-action>
-							Revoke Audit Acceptance
-						</button>
-					</form>
+					if previews.AuditClearanceSource != "" || previews.AuditClearanceAcceptedAt != "" {
+						<span class="text-xs text-gray-400 relay-stage-meta">
+							if previews.AuditClearanceSource != "" {
+								Source: { previews.AuditClearanceSource }
+							}
+							if previews.AuditClearanceSource != "" && previews.AuditClearanceAcceptedAt != "" {
+								{" | "}
+							}
+							if previews.AuditClearanceAcceptedAt != "" {
+								Accepted at { previews.AuditClearanceAcceptedAt }
+							}
+						</span>
+					}
 				}
-			} else if previews.HasAuditHandoff {
-				@StageEvidenceRow("warning", "Audit clearance pending", "Review the audit handoff and mark it as accepted to continue.", "") {
-					<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
-						class="inline">
-						<input type="hidden" name="action" value="accept-audit-clearance"/>
-						<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
-							Mark Audit Accepted
-						</button>
-					</form>
+			} else {
+				@StageEvidenceRow("warning", "Audit clearance pending", "Review the audit handoff in Step 7 before committing or pushing.", "") {
+					if previews.HasAuditHandoff {
+						<span class="text-xs text-gray-400 relay-stage-meta">Audit handoff is ready. Complete the decision in Step 7.</span>
+					} else {
+						<span class="text-xs text-gray-400 relay-stage-meta">Generate the audit handoff in Step 7 before continuing.</span>
+					}
 				}
 			}
 
@@ -2161,10 +2198,13 @@ templ commitStateSummary(previews RunPreviews) {
 			<span class="text-gray-500 shrink-0">Audit clearance:</span>
 			if previews.AuditClearanceStatus == "accepted" {
 				<span class="text-green-400">accepted</span>
-			} else if previews.HasAuditHandoff {
-				<span class="text-yellow-300">pending</span>
 			} else {
-				<span class="text-gray-500">no audit handoff</span>
+				<span class="text-yellow-300">pending</span>
+				if previews.HasAuditHandoff {
+					<span class="text-gray-400">review the audit handoff in Step 7.</span>
+				} else {
+					<span class="text-gray-400">generate the audit handoff in Step 7.</span>
+				}
 			}
 		</div>
 		<div class="flex gap-2">

@@ -837,6 +837,86 @@ func TestDiffAuditStageShowsGitEvidenceRows(t *testing.T) {
 	}
 }
 
+func TestAuditDecisionStageRendersSingleAcceptButtonInStep7Only(t *testing.T) {
+	var step7 strings.Builder
+	var step8 strings.Builder
+
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	pending := RunPreviews{HasAuditHandoff: true}
+	blocked := RunPreviews{CommitState: "blocked_audit_not_accepted", HasAuditHandoff: true}
+
+	if err := DiffAuditStepPanel(pending, 1).Render(context.Background(), &step7); err != nil {
+		t.Fatalf("render DiffAuditStepPanel: %v", err)
+	}
+	if err := GitCommitStepPanel(run, nil, blocked).Render(context.Background(), &step8); err != nil {
+		t.Fatalf("render GitCommitStepPanel: %v", err)
+	}
+
+	step7HTML := step7.String()
+	step8HTML := step8.String()
+	combined := step7HTML + step8HTML
+
+	if count := strings.Count(combined, "Mark Audit Accepted"); count != 1 {
+		t.Fatalf("expected one Mark Audit Accepted button across Step 7 and Step 8, got %d\nStep 7:\n%s\nStep 8:\n%s", count, step7HTML, step8HTML)
+	}
+	if !strings.Contains(step7HTML, "Mark Audit Accepted") {
+		t.Fatalf("expected Step 7 to render Mark Audit Accepted, got:\n%s", step7HTML)
+	}
+	if strings.Contains(step8HTML, "Mark Audit Accepted") {
+		t.Fatalf("expected Step 8 not to render Mark Audit Accepted, got:\n%s", step8HTML)
+	}
+	if !strings.Contains(step8HTML, "Go to Step 7: Diff / Audit") {
+		t.Fatalf("expected Step 8 to link back to Step 7, got:\n%s", step8HTML)
+	}
+}
+
+func TestAuditDecisionStageRendersAcceptedReadOnlyState(t *testing.T) {
+	var step7 strings.Builder
+	var step8 strings.Builder
+
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	accepted := RunPreviews{
+		HasAuditHandoff:          true,
+		AuditClearanceStatus:     "accepted",
+		AuditClearanceAcceptedAt: "2026-06-13T10:00:00Z",
+		AuditClearanceSource:     "manual_ui",
+		CommitState:              "ready_to_commit",
+	}
+
+	if err := DiffAuditStepPanel(accepted, 1).Render(context.Background(), &step7); err != nil {
+		t.Fatalf("render DiffAuditStepPanel: %v", err)
+	}
+	if err := GitCommitStepPanel(run, nil, accepted).Render(context.Background(), &step8); err != nil {
+		t.Fatalf("render GitCommitStepPanel: %v", err)
+	}
+
+	step7HTML := step7.String()
+	step8HTML := step8.String()
+
+	if !strings.Contains(step7HTML, "Audit accepted") {
+		t.Fatalf("expected Step 7 accepted state, got:\n%s", step7HTML)
+	}
+	if !strings.Contains(step7HTML, "Revoke Audit Acceptance") {
+		t.Fatalf("expected Step 7 revoke action, got:\n%s", step7HTML)
+	}
+	if !strings.Contains(step7HTML, "manual_ui") || !strings.Contains(step7HTML, "2026-06-13T10:00:00Z") {
+		t.Fatalf("expected Step 7 to show accepted metadata, got:\n%s", step7HTML)
+	}
+
+	if !strings.Contains(step8HTML, "Audit accepted") {
+		t.Fatalf("expected Step 8 read-only accepted state, got:\n%s", step8HTML)
+	}
+	if strings.Contains(step8HTML, "Mark Audit Accepted") {
+		t.Fatalf("expected Step 8 not to render accept action, got:\n%s", step8HTML)
+	}
+	if strings.Contains(step8HTML, "Revoke Audit Acceptance") {
+		t.Fatalf("expected Step 8 not to render revoke action, got:\n%s", step8HTML)
+	}
+	if !strings.Contains(step8HTML, "manual_ui") || !strings.Contains(step8HTML, "2026-06-13T10:00:00Z") {
+		t.Fatalf("expected Step 8 to show accepted metadata, got:\n%s", step8HTML)
+	}
+}
+
 func TestCommitStageShowsCommitSuggestionEvidence(t *testing.T) {
 	var buf strings.Builder
 	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}

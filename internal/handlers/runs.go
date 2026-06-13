@@ -762,10 +762,14 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	auditClearanceData := readArtifactPreview(id, "audit_clearance_json")
 	hasAuditClearance := auditClearanceData != ""
 	auditClearanceStatus := ""
+	auditClearanceAcceptedAt := ""
+	auditClearanceSource := ""
 	if hasAuditClearance {
 		var ac repos.AuditClearance
 		if err := json.Unmarshal([]byte(auditClearanceData), &ac); err == nil {
 			auditClearanceStatus = ac.Status
+			auditClearanceAcceptedAt = ac.AcceptedAt
+			auditClearanceSource = ac.Source
 		}
 	}
 
@@ -975,6 +979,8 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		CommitWarnings:                  commitWarnings,
 		HasAuditClearance:               hasAuditClearance,
 		AuditClearanceStatus:            auditClearanceStatus,
+		AuditClearanceAcceptedAt:        auditClearanceAcceptedAt,
+		AuditClearanceSource:            auditClearanceSource,
 		HasCommitResult:                 hasCommitResult,
 		CommitResultSuccess:             commitResultSuccess,
 		CommitResultSHA:                 commitResultSHA,
@@ -2392,6 +2398,9 @@ func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Reques
 
 	content := pipeline.BuildAuditHandoff(input)
 
+	// Clear stale audit clearance before replacing the handoff packet.
+	h.deleteRunArtifactKind(runID, "audit_clearance_json")
+
 	// Delete stale commit artifacts that depend on the audit handoff
 	h.store.DeleteArtifactsByRunKind(runID, "commit_message_text")
 	h.store.DeleteArtifactsByRunKind(runID, "commit_suggestion_json")
@@ -2454,12 +2463,14 @@ func (h *RunsHandler) inspectDiff(w http.ResponseWriter, r *http.Request, runID 
 		"git_diff_name_status",
 		"git_diff_patch",
 		"git_change_evidence_json",
+		"audit_clearance_json",
 		"audit_handoff",
 		"commit_message_text",
 		"commit_suggestion_json",
 	} {
 		h.store.DeleteArtifactsByRunKind(runID, kind)
 	}
+	h.deleteRunArtifactKind(runID, "audit_clearance_json")
 
 	// Resolve authoritative baseline
 	baselineSHA := h.resolveRunGitBaseline(runID, run)
@@ -2678,8 +2689,8 @@ func (h *RunsHandler) acceptAuditClearance(w http.ResponseWriter, r *http.Reques
 	artList, err := h.store.ListArtifactsByRun(runID)
 	if err != nil {
 		h.store.CreateEvent(runID, "warn", "Accept audit clearance failed: cannot list artifacts.")
-		setHXPushURL(w, runID, "commit")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		setHXPushURL(w, runID, "audit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
 		return
 	}
 	auditHandoffArtifactID := int64(0)
@@ -2691,8 +2702,8 @@ func (h *RunsHandler) acceptAuditClearance(w http.ResponseWriter, r *http.Reques
 	}
 	if auditHandoffArtifactID == 0 {
 		h.store.CreateEvent(runID, "warn", "Accept audit clearance failed: no audit handoff found.")
-		setHXPushURL(w, runID, "commit")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+		setHXPushURL(w, runID, "audit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
 		return
 	}
 
@@ -2704,7 +2715,7 @@ func (h *RunsHandler) acceptAuditClearance(w http.ResponseWriter, r *http.Reques
 	}
 	clearanceJSON, _ := json.MarshalIndent(clearance, "", "  ")
 
-	h.store.DeleteArtifactsByRunKind(runID, "audit_clearance_json")
+	h.deleteRunArtifactKind(runID, "audit_clearance_json")
 	p, err := artifacts.Write(runID, "audit_clearance_json", pipeline.ArtifactFilename("audit_clearance_json"), clearanceJSON)
 	if err != nil {
 		h.log.Error("write audit clearance", "error", err)
@@ -2714,17 +2725,16 @@ func (h *RunsHandler) acceptAuditClearance(w http.ResponseWriter, r *http.Reques
 	h.store.CreateArtifact(runID, "audit_clearance_json", p, "application/json")
 	h.store.CreateEvent(runID, "info", "Audit clearance accepted")
 
-	setHXPushURL(w, runID, "commit")
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+	setHXPushURL(w, runID, "audit")
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
 }
 
 func (h *RunsHandler) revokeAuditClearance(w http.ResponseWriter, r *http.Request, runID int64) {
-	h.store.DeleteArtifactsByRunKind(runID, "audit_clearance_json")
-	_ = artifacts.Delete(runID, "audit_clearance_json", pipeline.ArtifactFilename("audit_clearance_json"))
+	h.deleteRunArtifactKind(runID, "audit_clearance_json")
 	h.store.CreateEvent(runID, "info", "Audit clearance revoked")
 
-	setHXPushURL(w, runID, "commit")
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
+	setHXPushURL(w, runID, "audit")
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
 }
 
 // refreshGitChangeEvidenceArtifacts re-resolves the git baseline, re-captures change evidence,
