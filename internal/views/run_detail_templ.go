@@ -178,7 +178,7 @@ func RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</span> <span data-relay-live-updates-text>Live updates connecting</span></span></div><div id=\"run-workbench-loading\" class=\"htmx-indicator relay-workbench-loading\">Updating workbench...</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</span> <span data-relay-live-updates-text>Live updates connecting</span></span></div><div id=\"run-workbench-loading\" class=\"htmx-indicator relay-workbench-loading\">Refreshing workbench...</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

@@ -172,7 +172,7 @@ func liveUpdateIconName(state string) string {
 	case "connecting":
 		return "loader-circle"
 	case "reconnecting":
-		return "rotate-ccw"
+		return "loader-circle"
 	case "disconnected":
 		return "wifi-off"
 	default:
@@ -487,13 +487,13 @@ templ LiveUpdateIconSet(className string) {
 	<span data-relay-live-updates-state-icon="connecting" class="inline-flex items-center justify-center">
 		@LiveUpdateIcon("connecting", className)
 	</span>
-	<span data-relay-live-updates-state-icon="connected" class="hidden inline-flex items-center justify-center">
+	<span data-relay-live-updates-state-icon="connected" hidden class="inline-flex items-center justify-center">
 		@LiveUpdateIcon("connected", className)
 	</span>
-	<span data-relay-live-updates-state-icon="reconnecting" class="hidden inline-flex items-center justify-center">
+	<span data-relay-live-updates-state-icon="reconnecting" hidden class="inline-flex items-center justify-center">
 		@LiveUpdateIcon("reconnecting", className)
 	</span>
-	<span data-relay-live-updates-state-icon="disconnected" class="hidden inline-flex items-center justify-center">
+	<span data-relay-live-updates-state-icon="disconnected" hidden class="inline-flex items-center justify-center">
 		@LiveUpdateIcon("disconnected", className)
 	</span>
 }

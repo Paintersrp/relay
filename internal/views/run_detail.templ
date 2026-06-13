@@ -44,7 +44,7 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 				</span>
 			</div>
 			<div id="run-workbench-loading" class="htmx-indicator relay-workbench-loading">
-				Updating workbench...
+				Refreshing workbench...
 			</div>
 			@RunInspectorShell(run, repo, artifacts, checks, events, previews, intakeReview, activeStep)
 		</section>

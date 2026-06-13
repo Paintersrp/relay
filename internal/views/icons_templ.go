@@ -183,7 +183,7 @@ func liveUpdateIconName(state string) string {
 	case "connecting":
 		return "loader-circle"
 	case "reconnecting":
-		return "rotate-ccw"
+		return "loader-circle"
 	case "disconnected":
 		return "wifi-off"
 	default:
@@ -1320,7 +1320,7 @@ func LiveUpdateIconSet(className string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</span> <span data-relay-live-updates-state-icon=\"connected\" class=\"hidden inline-flex items-center justify-center\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</span> <span data-relay-live-updates-state-icon=\"connected\" hidden class=\"inline-flex items-center justify-center\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1328,7 +1328,7 @@ func LiveUpdateIconSet(className string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</span> <span data-relay-live-updates-state-icon=\"reconnecting\" class=\"hidden inline-flex items-center justify-center\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</span> <span data-relay-live-updates-state-icon=\"reconnecting\" hidden class=\"inline-flex items-center justify-center\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1336,7 +1336,7 @@ func LiveUpdateIconSet(className string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</span> <span data-relay-live-updates-state-icon=\"disconnected\" class=\"hidden inline-flex items-center justify-center\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</span> <span data-relay-live-updates-state-icon=\"disconnected\" hidden class=\"inline-flex items-center justify-center\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

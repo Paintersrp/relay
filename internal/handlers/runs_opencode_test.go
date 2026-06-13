@@ -2677,9 +2677,9 @@ func TestReconcileOpenCodeExecutionWithOutputButNoAgentResultMarksFailed(t *test
 another line
 `,
 		"error: something went wrong")
-	seedStreamProgressArtifactAt(t, s, runID, 2, 1, 32, 18, time.Now().Add(-5*time.Minute))
-	touchOpenCodeOutputArtifacts(t, runID, time.Now())
-	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-5*time.Minute), time.Now())
+	seedStreamProgressArtifactAt(t, s, runID, 2, 1, 32, 18, time.Now().Add(-11*time.Minute))
+	touchOpenCodeOutputArtifacts(t, runID, time.Now().Add(-11*time.Minute))
+	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-11*time.Minute), time.Now())
 
 	result, err := h.reconcileOpenCodeExecution(runID)
 	if err != nil {
@@ -2865,9 +2865,9 @@ another line
 		`stderr line
 `,
 	)
-	seedStreamProgressArtifactAt(t, s, runID, 4, 1, 128, 32, time.Now().Add(-5*time.Minute))
-	touchOpenCodeOutputArtifacts(t, runID, time.Now())
-	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-5*time.Minute), time.Now())
+	seedStreamProgressArtifactAt(t, s, runID, 4, 1, 128, 32, time.Now().Add(-11*time.Minute))
+	touchOpenCodeOutputArtifacts(t, runID, time.Now().Add(-11*time.Minute))
+	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-11*time.Minute), time.Now())
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", itoa(runID))
@@ -3622,9 +3622,9 @@ another line
 		`stderr line
 `,
 	)
-	seedStreamProgressArtifactAt(t, s, runID, 3, 1, 96, 18, time.Now().Add(-5*time.Minute))
-	touchOpenCodeOutputArtifacts(t, runID, time.Now())
-	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-5*time.Minute), time.Now())
+	seedStreamProgressArtifactAt(t, s, runID, 3, 1, 96, 18, time.Now().Add(-11*time.Minute))
+	touchOpenCodeOutputArtifacts(t, runID, time.Now().Add(-11*time.Minute))
+	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-11*time.Minute), time.Now())
 
 	req := httptest.NewRequest("POST", "/runs/"+itoa(runID)+"/actions", strings.NewReader("action=recover-stale-opencode-execution"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -3712,9 +3712,9 @@ func TestRecoverStaleOpenCodeWithStderrOnlyStreamMarksFailed(t *testing.T) {
 
 	seedRunningExecution(t, s, runID)
 	seedOpenCodeOutputArtifacts(t, s, runID, "", "stderr-only failure trail\n")
-	seedStreamProgressArtifactAt(t, s, runID, 0, 2, 0, 42, time.Now().Add(-5*time.Minute))
-	touchOpenCodeOutputArtifacts(t, runID, time.Now())
-	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-5*time.Minute), time.Now())
+	seedStreamProgressArtifactAt(t, s, runID, 0, 2, 0, 42, time.Now().Add(-11*time.Minute))
+	touchOpenCodeOutputArtifacts(t, runID, time.Now().Add(-11*time.Minute))
+	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-11*time.Minute), time.Now())
 
 	req := httptest.NewRequest("POST", "/runs/"+itoa(runID)+"/actions", strings.NewReader("action=recover-stale-opencode-execution"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

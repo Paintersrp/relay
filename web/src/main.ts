@@ -195,7 +195,7 @@ function setLiveUpdatesIndicator(state: LiveUpdateState): void {
   indicator.classList.remove('border-green-700', 'border-yellow-700', 'border-red-700', 'text-green-300', 'text-yellow-300', 'text-red-300', 'bg-green-950/60', 'bg-yellow-950/60', 'bg-red-950/60');
 
   indicator.querySelectorAll<HTMLElement>('[data-relay-live-updates-state-icon]').forEach((icon) => {
-    icon.classList.toggle('hidden', icon.dataset.relayLiveUpdatesStateIcon !== state);
+    icon.hidden = icon.dataset.relayLiveUpdatesStateIcon !== state;
   });
 
   switch (state) {
@@ -208,7 +208,7 @@ function setLiveUpdatesIndicator(state: LiveUpdateState): void {
       indicator.classList.add('border-yellow-700', 'text-yellow-300', 'bg-yellow-950/60');
       break;
     case 'disconnected':
-      if (text) text.textContent = 'Live updates disconnected - refresh manually';
+      if (text) text.textContent = 'Live updates disconnected - refresh to resync';
       indicator.classList.add('border-red-700', 'text-red-300', 'bg-red-950/60');
       break;
     default:

@@ -1971,20 +1971,18 @@ func TestLiveUpdateIconSetConnectingVisibleByDefault(t *testing.T) {
 		t.Errorf("expected connecting icon wrapper")
 	}
 
-	if !strings.Contains(html, `data-relay-live-updates-state-icon="connecting" class="inline-flex items-center justify-center"`) {
-		if strings.Contains(html, `data-relay-live-updates-state-icon="connecting" class="`) {
-			t.Errorf("connecting icon should not have hidden class in its class attribute")
-		}
+	if strings.Contains(html, `data-relay-live-updates-state-icon="connecting" hidden`) {
+		t.Errorf("connecting icon should not have hidden attribute")
 	}
 
-	if !strings.Contains(html, `data-relay-live-updates-state-icon="connected" class="hidden inline-flex items-center justify-center"`) {
-		t.Errorf("connected icon should have hidden class in initial state")
+	if !strings.Contains(html, `data-relay-live-updates-state-icon="connected" hidden`) {
+		t.Errorf("connected icon should have hidden attribute in initial state")
 	}
-	if !strings.Contains(html, `data-relay-live-updates-state-icon="reconnecting" class="hidden inline-flex items-center justify-center"`) {
-		t.Errorf("reconnecting icon should have hidden class in initial state")
+	if !strings.Contains(html, `data-relay-live-updates-state-icon="reconnecting" hidden`) {
+		t.Errorf("reconnecting icon should have hidden attribute in initial state")
 	}
-	if !strings.Contains(html, `data-relay-live-updates-state-icon="disconnected" class="hidden inline-flex items-center justify-center"`) {
-		t.Errorf("disconnected icon should have hidden class in initial state")
+	if !strings.Contains(html, `data-relay-live-updates-state-icon="disconnected" hidden`) {
+		t.Errorf("disconnected icon should have hidden attribute in initial state")
 	}
 }
 

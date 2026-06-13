@@ -83,10 +83,11 @@ func readAgentPromptPreview(runID int64) string {
 }
 
 const (
-	openCodeStaleOutputThreshold = 2 * time.Minute
-	openCodeStartupNoOutputGrace = 2 * time.Minute
-	openCodeTimeoutGrace         = 1 * time.Minute
-	openCodeRecoveryActionLabel  = "Recover Stale OpenCode Run"
+	openCodeStaleOutputThreshold     = 10 * time.Minute
+	openCodeWaitingResponseThreshold = 2 * time.Minute
+	openCodeStartupNoOutputGrace     = 2 * time.Minute
+	openCodeTimeoutGrace             = 1 * time.Minute
+	openCodeRecoveryActionLabel      = "Recover Stale OpenCode Run"
 )
 
 var runEventHeartbeatInterval = 20 * time.Second
@@ -300,6 +301,19 @@ func evaluateOpenCodeExecutionLiveness(runID int64, exec *store.AgentExecution, 
 		}
 		liveness.CanRecover = true
 		liveness.RecoveryActionLabel = openCodeRecoveryActionLabel
+		return liveness
+	}
+
+	if !latestActivity.IsZero() && now.Sub(latestActivity) > openCodeWaitingResponseThreshold {
+		liveness.State = "waiting_response"
+		switch {
+		case liveness.LastChunkAge != "":
+			liveness.Reason = "Last streamed chunk: " + liveness.LastChunkAge + ". OpenCode may be thinking or preparing a final response."
+		case liveness.LastOutputAge != "":
+			liveness.Reason = "Last output: " + liveness.LastOutputAge + ". OpenCode may be thinking or preparing a final response."
+		default:
+			liveness.Reason = "Waiting for final agent response after recent activity."
+		}
 		return liveness
 	}
 
