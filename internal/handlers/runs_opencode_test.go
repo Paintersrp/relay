@@ -2855,13 +2855,14 @@ another line
 	}
 }
 
-func TestRunGetShowsStaleOpenCodeWhenRuntimeExceedsTimeoutWithoutOutput(t *testing.T) {
+func TestRunGetShowsStaleTimeoutRecoveryForNoOutputOpenCodeExecution(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	runID := setupOpenCodeRun(t, s)
 
 	seedRunningExecution(t, s, runID)
-	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-40*time.Minute), time.Now().Add(-40*time.Minute))
+	staleAt := time.Now().Add(-(pipeline.DefaultAgentCommandTimeout + openCodeTimeoutGrace + time.Minute))
+	ageLatestOpenCodeExecution(t, s, runID, staleAt, staleAt)
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", itoa(runID))
@@ -2882,8 +2883,148 @@ func TestRunGetShowsStaleOpenCodeWhenRuntimeExceedsTimeoutWithoutOutput(t *testi
 	if !strings.Contains(body, "Recover Stale OpenCode Run") {
 		t.Fatal("expected recovery action for timeout-orphan stale state")
 	}
+	if strings.Contains(body, "no output yet") {
+		t.Fatal("did not expect active no-output wording in stale timeout state")
+	}
 	if strings.Contains(body, `hx-trigger="every 2s"`) {
 		t.Fatal("expected polling to stop for timeout-orphan stale state")
+	}
+}
+
+func TestRecoverStaleTimeoutNoOutputOpenCodeMarksFailed(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	staleAt := time.Now().Add(-(pipeline.DefaultAgentCommandTimeout + openCodeTimeoutGrace + time.Minute))
+	ageLatestOpenCodeExecution(t, s, runID, staleAt, staleAt)
+
+	req := httptest.NewRequest("POST", "/runs/"+itoa(runID)+"/actions", strings.NewReader("action=recover-stale-opencode-execution"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Action(w, req)
+
+	if w.Code != 303 {
+		t.Fatalf("expected recovery action redirect, got %d", w.Code)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.Status != "failed" {
+		t.Fatalf("expected execution to be failed after timeout recovery, got %q", exec.Status)
+	}
+	if !exec.FinishedAt.Valid {
+		t.Fatal("expected finished_at to be set after timeout recovery")
+	}
+	if !exec.Error.Valid || !strings.Contains(exec.Error.String, "runtime exceeded the timeout window") {
+		t.Fatalf("expected timeout recovery error to mention timeout window, got %q", exec.Error.String)
+	}
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status == "agent_done" {
+		t.Fatal("did not expect no-output timeout recovery to advance the run to agent_done")
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	for _, a := range artifactsList {
+		switch a.Kind {
+		case "agent_result_raw", "agent_result_json":
+			t.Fatalf("did not expect %s artifact for no-output timeout recovery", a.Kind)
+		}
+	}
+
+	getCtx := chi.NewRouteContext()
+	getCtx.URLParams.Add("id", itoa(runID))
+	getReq := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	getReq = getReq.WithContext(context.WithValue(getReq.Context(), chi.RouteCtxKey, getCtx))
+	getW := httptest.NewRecorder()
+
+	h.Get(getW, getReq)
+
+	if getW.Code != 200 {
+		t.Fatalf("expected 200 from GET render after timeout recovery, got %d", getW.Code)
+	}
+	body := getW.Body.String()
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling to stop after timeout recovery")
+	}
+	if strings.Contains(body, "Recover Stale OpenCode Run") {
+		t.Fatal("did not expect recovery action after timeout recovery")
+	}
+	if !strings.Contains(body, "runtime exceeded the timeout window") {
+		t.Fatal("expected timeout recovery error text in the run view")
+	}
+	if strings.Contains(body, "Proceed to Relay Validation") {
+		t.Fatal("did not expect validation-ready progression after timeout recovery")
+	}
+}
+
+func TestRecoverActiveNoOutputOpenCodeDoesNotMarkFailed(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	activeAt := time.Now().Add(-(openCodeStartupNoOutputGrace / 2))
+	ageLatestOpenCodeExecution(t, s, runID, activeAt, activeAt)
+
+	req := httptest.NewRequest("POST", "/runs/"+itoa(runID)+"/actions", strings.NewReader("action=recover-stale-opencode-execution"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Action(w, req)
+
+	if w.Code != 303 {
+		t.Fatalf("expected recovery action redirect, got %d", w.Code)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.Status != "running" && exec.Status != "starting" {
+		t.Fatalf("expected execution to remain running inside the active no-output window, got %q", exec.Status)
+	}
+	if exec.FinishedAt.Valid {
+		t.Fatal("did not expect finished_at to be set for active no-output recovery")
+	}
+	if exec.Error.Valid {
+		t.Fatalf("did not expect an execution error for active no-output recovery, got %q", exec.Error.String)
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	for _, a := range artifactsList {
+		switch a.Kind {
+		case "agent_result_raw", "agent_result_json":
+			t.Fatalf("did not expect %s artifact for active no-output recovery", a.Kind)
+		}
+	}
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status == "agent_done" {
+		t.Fatal("did not expect active no-output recovery to advance the run to agent_done")
 	}
 }
 
@@ -3461,5 +3602,8 @@ another line
 	}
 	if strings.Contains(body, "Proceed to Relay Validation") {
 		t.Fatal("did not expect validation-ready progression after failed recovery")
+	}
+	if !strings.Contains(body, "output stopped or Relay lost the worker") {
+		t.Fatal("expected recovered failure text in the run view")
 	}
 }

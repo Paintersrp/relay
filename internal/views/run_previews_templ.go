@@ -130,6 +130,7 @@ type RunPreviews struct {
 	OpenCodeStdinBytes              int
 	OpenCodeAdapterError            string
 	OpenCodeFailureHint             string
+	OpenCodeExecutionError          string
 	OpenCodeDryRunPreview           string
 	HasOpenCodeDryRun               bool
 	HasOpenCodeStdout               bool
@@ -270,7 +271,7 @@ func previewPanel(title string, id string, content string, emptyText string) tem
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 203, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 204, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -288,7 +289,7 @@ func previewPanel(title string, id string, content string, emptyText string) tem
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 206, Col: 26}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 207, Col: 26}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 			if templ_7745c5c3_Err != nil {
@@ -311,7 +312,7 @@ func previewPanel(title string, id string, content string, emptyText string) tem
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(emptyText)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 213, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 214, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -329,7 +330,7 @@ func previewPanel(title string, id string, content string, emptyText string) tem
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 216, Col: 16}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 217, Col: 16}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 			if templ_7745c5c3_Err != nil {
@@ -342,7 +343,7 @@ func previewPanel(title string, id string, content string, emptyText string) tem
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(content)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 216, Col: 100}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_previews.templ`, Line: 217, Col: 100}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {

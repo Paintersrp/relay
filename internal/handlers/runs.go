@@ -1148,6 +1148,48 @@ type openCodeReconcileResult struct {
 	Message           string
 }
 
+type agentExecutionPreservedFields struct {
+	exitCode     *int64
+	startedAt    *string
+	stdoutPath   *string
+	stderrPath   *string
+	combinedPath *string
+	resultPath   *string
+}
+
+func preservedAgentExecutionFields(exec *store.AgentExecution) agentExecutionPreservedFields {
+	if exec == nil {
+		return agentExecutionPreservedFields{}
+	}
+
+	var preserved agentExecutionPreservedFields
+	if exec.ExitCode.Valid {
+		exitCode := exec.ExitCode.Int64
+		preserved.exitCode = &exitCode
+	}
+	if exec.StartedAt.Valid {
+		startedAt := exec.StartedAt.String
+		preserved.startedAt = &startedAt
+	}
+	if exec.StdoutArtifactPath.Valid {
+		stdoutPath := exec.StdoutArtifactPath.String
+		preserved.stdoutPath = &stdoutPath
+	}
+	if exec.StderrArtifactPath.Valid {
+		stderrPath := exec.StderrArtifactPath.String
+		preserved.stderrPath = &stderrPath
+	}
+	if exec.CombinedArtifactPath.Valid {
+		combinedPath := exec.CombinedArtifactPath.String
+		preserved.combinedPath = &combinedPath
+	}
+	if exec.ResultArtifactPath.Valid {
+		resultPath := exec.ResultArtifactPath.String
+		preserved.resultPath = &resultPath
+	}
+	return preserved
+}
+
 // reconcileOpenCodeExecution reconciles a stale/running OpenCode execution from captured output artifacts.
 // It is idempotent: running it twice will not duplicate agent result artifacts or corrupt terminal state.
 func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcileResult, error) {
@@ -1155,36 +1197,8 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 	if err != nil {
 		return openCodeReconcileResult{}, fmt.Errorf("get latest execution: %w", err)
 	}
-
-	var exitCodePtr *int64
-	if exec.ExitCode.Valid {
-		exitCodePtr = &exec.ExitCode.Int64
-	}
-	var startedAtPtr *string
-	if exec.StartedAt.Valid {
-		startedAt := exec.StartedAt.String
-		startedAtPtr = &startedAt
-	}
-	var stdoutPathPtr *string
-	if exec.StdoutArtifactPath.Valid {
-		stdoutPath := exec.StdoutArtifactPath.String
-		stdoutPathPtr = &stdoutPath
-	}
-	var stderrPathPtr *string
-	if exec.StderrArtifactPath.Valid {
-		stderrPath := exec.StderrArtifactPath.String
-		stderrPathPtr = &stderrPath
-	}
-	var combinedPathPtr *string
-	if exec.CombinedArtifactPath.Valid {
-		combinedPath := exec.CombinedArtifactPath.String
-		combinedPathPtr = &combinedPath
-	}
-	var resultPathPtr *string
-	if exec.ResultArtifactPath.Valid {
-		resultPath := exec.ResultArtifactPath.String
-		resultPathPtr = &resultPath
-	}
+	preserved := preservedAgentExecutionFields(exec)
+	now := time.Now()
 
 	// If execution is already terminal, check if we can recover agent_result_raw from stdout
 	terminal := exec.Status != "starting" && exec.Status != "running"
@@ -1234,12 +1248,27 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 	hasCombined := err == nil && len(combinedData) > 0
 
 	if !hasStdout && !hasCombined {
-		return openCodeReconcileResult{Changed: false, Message: "Execution is running but no captured output artifacts exist yet."}, nil
+		liveness := evaluateOpenCodeExecutionLiveness(runID, exec, now)
+		if !liveness.Stale || liveness.State != "stale_timeout" {
+			return openCodeReconcileResult{Changed: false, Message: "Execution is running but no captured output artifacts exist yet."}, nil
+		}
+
+		finishedAt := now.Format("2006-01-02 15:04:05")
+		errorMsg := "OpenCode execution recovered as failed: runtime exceeded the timeout window and no stdout/stderr artifacts were captured. Relay may have restarted, lost the worker, or OpenCode exited before producing output."
+		if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, "failed", preserved.exitCode, preserved.startedAt, &finishedAt, preserved.stdoutPath, preserved.stderrPath, preserved.combinedPath, preserved.resultPath, &errorMsg); err != nil {
+			h.log.Error("recover stale no-output opencode execution", "error", err)
+			return openCodeReconcileResult{}, err
+		}
+		h.store.CreateEvent(runID, "warn", "OpenCode execution recovered as failed: timeout exceeded with no captured output.")
+		return openCodeReconcileResult{
+			Changed:     true,
+			FinalStatus: "failed",
+			Message:     errorMsg,
+		}, nil
 	}
 
 	// Try to parse agent result from stdout
-	now := time.Now().Format("2006-01-02 15:04:05")
-	finishedAt := now
+	finishedAt := now.Format("2006-01-02 15:04:05")
 	errorMsg := ""
 	if hasStdout {
 		assistantText := pipeline.ExtractOpenCodeAssistantText(string(stdoutData))
@@ -1255,7 +1284,7 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 				execStatus = "failed"
 				errorMsg = "Agent reported BLOCKED"
 			}
-			if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, execStatus, exitCodePtr, startedAtPtr, &finishedAt, stdoutPathPtr, stderrPathPtr, combinedPathPtr, resultPathPtr, &errorMsg); err != nil {
+			if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, execStatus, preserved.exitCode, preserved.startedAt, &finishedAt, preserved.stdoutPath, preserved.stderrPath, preserved.combinedPath, preserved.resultPath, &errorMsg); err != nil {
 				h.log.Error("reconcile: update execution status", "error", err)
 			}
 			h.store.CreateEvent(runID, "info", "OpenCode execution reconciled from captured output: "+string(parsed.Status))
@@ -1270,7 +1299,7 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 
 	// No DONE/BLOCKED found — mark execution as failed with a useful message
 	errorMsg = "OpenCode execution recovered as failed: output stopped or Relay lost the worker, and no DONE/BLOCKED final result was found. Review stdout/stderr artifacts, then retry if needed."
-	if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, "failed", exitCodePtr, startedAtPtr, &finishedAt, stdoutPathPtr, stderrPathPtr, combinedPathPtr, resultPathPtr, &errorMsg); err != nil {
+	if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, "failed", preserved.exitCode, preserved.startedAt, &finishedAt, preserved.stdoutPath, preserved.stderrPath, preserved.combinedPath, preserved.resultPath, &errorMsg); err != nil {
 		h.log.Error("reconcile: update execution status to failed", "error", err)
 	}
 	h.store.CreateEvent(runID, "warn", "OpenCode execution recovered as failed: no DONE/BLOCKED final result was found.")
@@ -2519,6 +2548,9 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 	}
 	if exec.FinishedAt.Valid {
 		previews.OpenCodeExecutionFinished = exec.FinishedAt.String
+	}
+	if exec.Error.Valid {
+		previews.OpenCodeExecutionError = exec.Error.String
 	}
 	previews.OpenCodeCommandPreview = exec.CommandPreview
 

@@ -629,14 +629,18 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 				}
 			}
 
-				if previews.HasOpenCodeExecution && previews.OpenCodeExecutionStatus == "failed" {
+			if previews.HasOpenCodeExecution && previews.OpenCodeExecutionStatus == "failed" {
 				@StageFailurePanel("OpenCode execution failed", "") {
 					if previews.OpenCodeFailureHint != "" {
 						<div class="text-xs sm:text-sm text-red-200 mt-1">{ previews.OpenCodeFailureHint }</div>
+					} else if previews.OpenCodeExecutionError != "" {
+						<div class="text-xs sm:text-sm text-red-200 mt-1">{ previews.OpenCodeExecutionError }</div>
 					} else if previews.OpenCodeExecutionExitCode != "" {
 						<div class="text-xs sm:text-sm text-red-200 mt-1">
 							OpenCode exited with code { previews.OpenCodeExecutionExitCode }.
 						</div>
+					} else {
+						<div class="text-xs sm:text-sm text-red-200 mt-1">OpenCode failed. Review execution metadata.</div>
 					}
 					<div class="relay-action-row">
 						if previews.HasOpenCodeStdout {
@@ -1215,10 +1219,14 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 				@StageFailurePanel("Execution failed", "") {
 					if previews.OpenCodeFailureHint != "" {
 						<div class="text-xs sm:text-sm text-red-200 mt-1">{ previews.OpenCodeFailureHint }</div>
+					} else if previews.OpenCodeExecutionError != "" {
+						<div class="text-xs sm:text-sm text-red-200 mt-1">{ previews.OpenCodeExecutionError }</div>
 					} else if previews.OpenCodeExecutionExitCode != "" {
 						<div class="text-xs sm:text-sm text-red-200 mt-1">
 							OpenCode exited with code { previews.OpenCodeExecutionExitCode }.
 						</div>
+					} else {
+						<div class="text-xs sm:text-sm text-red-200 mt-1">OpenCode failed. Review execution metadata.</div>
 					}
 					<div class="relay-action-row">
 						if previews.HasOpenCodeStdout {

@@ -656,6 +656,31 @@ func TestAgentRunStageShowsExecutionFailureEvidence(t *testing.T) {
 	}
 }
 
+func TestAgentRunStageShowsExecutionErrorFallback(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	artifacts := []store.Artifact{}
+	previews := RunPreviews{
+		HasOpenCodeExecution:    true,
+		OpenCodeExecutionStatus: "failed",
+		OpenCodeExecutionError:  "OpenCode execution recovered as failed: runtime exceeded the timeout window and no stdout/stderr artifacts were captured. Relay may have restarted, lost the worker, or OpenCode exited before producing output.",
+	}
+	err := AgentRunMonitorStepPanel(run, artifacts, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `data-stage-failure-panel`) {
+		t.Errorf("expected failure panel for execution failure")
+	}
+	if !strings.Contains(html, "runtime exceeded the timeout window") {
+		t.Errorf("expected execution error fallback")
+	}
+	if strings.Contains(html, "OpenCode exited with code") {
+		t.Errorf("did not expect exit code fallback when execution error is present")
+	}
+}
+
 func TestOpenCodeHandoffStageShowsBlockedAdapterEvidence(t *testing.T) {
 	var buf strings.Builder
 	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft", SelectedModel: "gpt-4"}
