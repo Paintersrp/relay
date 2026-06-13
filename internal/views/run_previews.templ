@@ -195,6 +195,15 @@ type RunPreviews struct {
 	GitBaselineBranch      string
 	GitBaselineState       string
 	GitBaselineAvailable   bool
+
+	// Git change evidence
+	GitChangeEvidenceMode      string
+	GitChangeEvidenceBaseline  string
+	GitChangeEvidenceHead      string
+	GitChangeEvidenceBranch    string
+	GitChangeEvidenceCommitCnt int
+	GitChangeEvidenceWarning   string
+	HasGitChangeEvidence       bool
 }
 
 templ RunPreviewPanels(previews RunPreviews) {

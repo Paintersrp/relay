@@ -39,6 +39,15 @@ type AuditHandoffInput struct {
 	GitDiffNumstat    string
 	GitDiffNameStatus string
 	GitDiffPatch      string
+
+	// Change evidence fields
+	EvidenceMode    string `json:"evidence_mode,omitempty"`
+	BaselineSHA     string `json:"baseline_sha,omitempty"`
+	CurrentHeadSHA  string `json:"current_head_sha,omitempty"`
+	EvidenceBranch  string `json:"evidence_branch,omitempty"`
+	CommitCount     int    `json:"commit_count"`
+	Commits         string `json:"commits,omitempty"`
+	EvidenceWarning string `json:"evidence_warning,omitempty"`
 }
 
 func BuildAuditHandoff(input AuditHandoffInput) string {
@@ -106,7 +115,58 @@ func BuildAuditHandoff(input AuditHandoffInput) string {
 		}
 	}
 
-	b.WriteString("## Changed Files\n\n")
+	b.WriteString("## Change Evidence\n\n")
+	switch input.EvidenceMode {
+	case "committed_range":
+		b.WriteString(fmt.Sprintf("- Mode: %s\n", input.EvidenceMode))
+		b.WriteString(fmt.Sprintf("- Baseline: %s\n", input.BaselineSHA))
+		b.WriteString(fmt.Sprintf("- Current HEAD: %s\n", input.CurrentHeadSHA))
+		b.WriteString(fmt.Sprintf("- Branch: %s\n", orEmpty(input.EvidenceBranch, "N/A")))
+		b.WriteString(fmt.Sprintf("- Commit count: %d\n", input.CommitCount))
+		if input.Commits != "" {
+			b.WriteString("\n### Commits Included\n\n")
+			b.WriteString(input.Commits)
+			if !strings.HasSuffix(input.Commits, "\n") {
+				b.WriteString("\n")
+			}
+		}
+	case "uncommitted_worktree", "baseline_unavailable_uncommitted":
+		b.WriteString(fmt.Sprintf("- Mode: %s\n", input.EvidenceMode))
+		b.WriteString(fmt.Sprintf("- Baseline: %s\n", orEmpty(input.BaselineSHA, "unavailable")))
+		b.WriteString(fmt.Sprintf("- Current HEAD: %s\n", orEmpty(input.CurrentHeadSHA, "N/A")))
+		b.WriteString(fmt.Sprintf("- Branch: %s\n", orEmpty(input.EvidenceBranch, "N/A")))
+		b.WriteString("- Working tree dirty: true\n")
+	case "no_changes":
+		b.WriteString(fmt.Sprintf("- Mode: %s\n", input.EvidenceMode))
+		b.WriteString(fmt.Sprintf("- Baseline: %s\n", orEmpty(input.BaselineSHA, "unavailable")))
+		b.WriteString("- No changes detected.\n")
+	case "baseline_unavailable_no_changes":
+		b.WriteString(fmt.Sprintf("- Mode: %s\n", input.EvidenceMode))
+		b.WriteString("- Baseline: unavailable\n")
+		b.WriteString("- No working tree changes detected.\n")
+	case "mixed_committed_and_uncommitted":
+		b.WriteString(fmt.Sprintf("- Mode: %s\n", input.EvidenceMode))
+		b.WriteString(fmt.Sprintf("- Baseline: %s\n", input.BaselineSHA))
+		b.WriteString(fmt.Sprintf("- Current HEAD: %s\n", input.CurrentHeadSHA))
+		b.WriteString(fmt.Sprintf("- Branch: %s\n", orEmpty(input.EvidenceBranch, "N/A")))
+		b.WriteString(fmt.Sprintf("- Commit count: %d\n", input.CommitCount))
+		b.WriteString("\n**WARNING: Mixed committed and uncommitted changes detected.**\n\n")
+		b.WriteString("This run has both committed changes since the baseline AND uncommitted working tree changes.\n")
+		b.WriteString("The audit evidence below reflects the committed range only.\n")
+		b.WriteString("Review the uncommitted changes separately before generating a final audit packet.\n\n")
+		if input.EvidenceWarning != "" {
+			b.WriteString(input.EvidenceWarning)
+			if !strings.HasSuffix(input.EvidenceWarning, "\n") {
+				b.WriteString("\n")
+			}
+		}
+	default:
+		b.WriteString(fmt.Sprintf("- Mode: %s\n", orEmpty(input.EvidenceMode, "unknown")))
+		b.WriteString(fmt.Sprintf("- Baseline: %s\n", orEmpty(input.BaselineSHA, "N/A")))
+		b.WriteString(fmt.Sprintf("- Current HEAD: %s\n", orEmpty(input.CurrentHeadSHA, "N/A")))
+	}
+
+	b.WriteString("\n## Changed Files\n\n")
 	writeArtifactSection(&b, "git status --short", input.GitStatusText)
 	writeArtifactSection(&b, "git diff --name-status", input.GitDiffNameStatus)
 	writeArtifactSection(&b, "git diff --stat", input.GitDiffStat)

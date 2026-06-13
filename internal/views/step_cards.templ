@@ -1745,6 +1745,47 @@ func formatDuration(ms int64) string {
 	return Itoa(min) + "m " + Itoa(rem) + "s"
 }
 
+templ changeEvidenceDisplay(previews RunPreviews) {
+	<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 sm:p-4">
+		<div class="text-sm font-medium text-indigo-300 mb-2">Change evidence</div>
+		<div class="space-y-1.5 text-xs">
+			<div class="flex gap-2">
+				<span class="text-gray-500 shrink-0">Mode:</span>
+				<span class={ changeEvidenceModeClass(previews.GitChangeEvidenceMode) }>{ formattedEvidenceMode(previews.GitChangeEvidenceMode) }</span>
+			</div>
+			if previews.GitChangeEvidenceBaseline != "" {
+				<div class="flex gap-2">
+					<span class="text-gray-500 shrink-0">Baseline:</span>
+					<span class="text-gray-300 font-mono">{ shortSHA(previews.GitChangeEvidenceBaseline) }</span>
+				</div>
+			}
+			if previews.GitChangeEvidenceHead != "" {
+				<div class="flex gap-2">
+					<span class="text-gray-500 shrink-0">Current HEAD:</span>
+					<span class="text-gray-300 font-mono">{ shortSHA(previews.GitChangeEvidenceHead) }</span>
+				</div>
+			}
+			if previews.GitChangeEvidenceBranch != "" {
+				<div class="flex gap-2">
+					<span class="text-gray-500 shrink-0">Branch:</span>
+					<span class="text-gray-300 font-mono">{ previews.GitChangeEvidenceBranch }</span>
+				</div>
+			}
+			if previews.GitChangeEvidenceCommitCnt > 0 {
+				<div class="flex gap-2">
+					<span class="text-gray-500 shrink-0">Commits:</span>
+					<span class="text-gray-300">{ Itoa(int64(previews.GitChangeEvidenceCommitCnt)) }</span>
+				</div>
+			}
+			if previews.GitChangeEvidenceWarning != "" {
+				<div class="mt-2 text-xs text-amber-200 bg-amber-950/30 rounded-lg p-2">
+					{ previews.GitChangeEvidenceWarning }
+				</div>
+			}
+		</div>
+	</div>
+}
+
 templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 	<div class="relay-card">
 		<div class="relay-card-header">
@@ -1771,6 +1812,10 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 		</div>
 
 		<div class="relay-stage-evidence-list">
+			if previews.HasGitChangeEvidence {
+				@changeEvidenceDisplay(previews)
+			}
+
 			if previews.HasGitStatus || previews.HasGitDiffStat || previews.HasGitDiffPatch {
 				@StageEvidenceRow("ready", "Git diff evidence ready", "Collects git status and diff artifacts. Does not modify the worktree.", "") {
 					if previews.GitChangedFileCount > 0 {
@@ -2174,6 +2219,40 @@ const (
 	relayValidationReady      relayValidationUIState = "ready"
 	relayValidationCompleted  relayValidationUIState = "completed"
 )
+
+func changeEvidenceModeClass(mode string) string {
+	switch mode {
+	case "no_changes":
+		return "text-gray-500"
+	case "uncommitted_worktree", "baseline_unavailable_uncommitted":
+		return "text-yellow-300"
+	case "committed_range":
+		return "text-green-300"
+	case "mixed_committed_and_uncommitted":
+		return "text-red-300"
+	default:
+		return "text-gray-400"
+	}
+}
+
+func formattedEvidenceMode(mode string) string {
+	switch mode {
+	case "no_changes":
+		return "No changes"
+	case "uncommitted_worktree":
+		return "Uncommitted worktree"
+	case "committed_range":
+		return "Committed range"
+	case "mixed_committed_and_uncommitted":
+		return "Mixed: committed + uncommitted"
+	case "baseline_unavailable_uncommitted":
+		return "Baseline unavailable (uncommitted)"
+	case "baseline_unavailable_no_changes":
+		return "Baseline unavailable (no changes)"
+	default:
+		return mode
+	}
+}
 
 func validationProgressFinished(previews RunPreviews) bool {
 	return previews.HasValidationProgress && (previews.ValidationProgressPreview.Status == "pass" || previews.ValidationProgressPreview.Status == "fail")

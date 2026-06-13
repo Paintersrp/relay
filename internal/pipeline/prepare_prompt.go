@@ -520,6 +520,8 @@ func ArtifactFilename(kind string) string {
 		return "commit-suggestion.json"
 	case "git_baseline_json":
 		return "git_baseline.json"
+	case "git_change_evidence_json":
+		return "git_change_evidence.json"
 	default:
 		return fmt.Sprintf("%s.txt", kind)
 	}

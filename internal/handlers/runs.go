@@ -729,6 +729,35 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Parse change evidence JSON if available
+	changeEvidenceData := readArtifactPreview(id, "git_change_evidence_json")
+	hasGitChangeEvidence := changeEvidenceData != ""
+	gitChangeEvidenceMode := ""
+	gitChangeEvidenceBaseline := ""
+	gitChangeEvidenceHead := ""
+	gitChangeEvidenceBranch := ""
+	gitChangeEvidenceCommitCnt := 0
+	gitChangeEvidenceWarning := ""
+	if hasGitChangeEvidence {
+		type gitChangeEvidencePreview struct {
+			Mode           string `json:"mode"`
+			BaselineSHA    string `json:"baseline_sha,omitempty"`
+			CurrentHeadSHA string `json:"current_head_sha,omitempty"`
+			Branch         string `json:"branch,omitempty"`
+			CommitCount    int    `json:"commit_count"`
+			Warning        string `json:"warning,omitempty"`
+		}
+		var gce gitChangeEvidencePreview
+		if err := json.Unmarshal([]byte(changeEvidenceData), &gce); err == nil {
+			gitChangeEvidenceMode = gce.Mode
+			gitChangeEvidenceBaseline = gce.BaselineSHA
+			gitChangeEvidenceHead = gce.CurrentHeadSHA
+			gitChangeEvidenceBranch = gce.Branch
+			gitChangeEvidenceCommitCnt = gce.CommitCount
+			gitChangeEvidenceWarning = gce.Warning
+		}
+	}
+
 	previews := views.RunPreviews{
 		NextAction:                      nextActionView,
 		OriginalHandoff:                 originalPreview,
@@ -829,6 +858,13 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		GitBaselineBranch:               gitBaselineBranch,
 		GitBaselineState:                gitBaselineState,
 		GitBaselineAvailable:            gitBaselineAvailable,
+		HasGitChangeEvidence:            hasGitChangeEvidence,
+		GitChangeEvidenceMode:           gitChangeEvidenceMode,
+		GitChangeEvidenceBaseline:       gitChangeEvidenceBaseline,
+		GitChangeEvidenceHead:           gitChangeEvidenceHead,
+		GitChangeEvidenceBranch:         gitChangeEvidenceBranch,
+		GitChangeEvidenceCommitCnt:      gitChangeEvidenceCommitCnt,
+		GitChangeEvidenceWarning:        gitChangeEvidenceWarning,
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {
@@ -2146,6 +2182,35 @@ func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Reques
 	gitDiffNameStatus := readArtifactPreview(runID, "git_diff_name_status")
 	gitDiffPatch := readArtifactPreview(runID, "git_diff_patch")
 
+	// Load change evidence JSON
+	evidenceMode := ""
+	evidenceBaseline := ""
+	evidenceHead := ""
+	evidenceBranch := ""
+	evidenceCommitCnt := 0
+	evidenceCommits := ""
+	evidenceWarning := ""
+	if evidenceJSON := readArtifactPreview(runID, "git_change_evidence_json"); evidenceJSON != "" {
+		var ev repos.GitChangeEvidence
+		if err := json.Unmarshal([]byte(evidenceJSON), &ev); err == nil {
+			evidenceMode = ev.Mode
+			evidenceBaseline = ev.BaselineSHA
+			evidenceHead = ev.CurrentHeadSHA
+			evidenceBranch = ev.Branch
+			evidenceCommitCnt = ev.CommitCount
+			if len(ev.Commits) > 0 {
+				var commitLines []string
+				for _, c := range ev.Commits {
+					commitLines = append(commitLines, "- "+c.ShortSHA+" "+c.Subject)
+				}
+				evidenceCommits = strings.Join(commitLines, "\n")
+			}
+			if ev.Mode == repos.EvidenceModeMixedCommittedUncommitted && ev.StatusPorcelain != "" {
+				evidenceWarning = "Uncommitted status:\n" + ev.StatusPorcelain
+			}
+		}
+	}
+
 	input := pipeline.AuditHandoffInput{
 		RunID:              runID,
 		Title:              run.Title,
@@ -2168,6 +2233,13 @@ func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Reques
 		GitDiffNumstat:     gitDiffNumstat,
 		GitDiffNameStatus:  gitDiffNameStatus,
 		GitDiffPatch:       gitDiffPatch,
+		EvidenceMode:       evidenceMode,
+		BaselineSHA:        evidenceBaseline,
+		CurrentHeadSHA:     evidenceHead,
+		EvidenceBranch:     evidenceBranch,
+		CommitCount:        evidenceCommitCnt,
+		Commits:            evidenceCommits,
+		EvidenceWarning:    evidenceWarning,
 	}
 
 	content := pipeline.BuildAuditHandoff(input)
@@ -2233,6 +2305,7 @@ func (h *RunsHandler) inspectDiff(w http.ResponseWriter, r *http.Request, runID 
 		"git_diff_numstat",
 		"git_diff_name_status",
 		"git_diff_patch",
+		"git_change_evidence_json",
 		"audit_handoff",
 		"commit_message_text",
 		"commit_suggestion_json",
@@ -2240,15 +2313,20 @@ func (h *RunsHandler) inspectDiff(w http.ResponseWriter, r *http.Request, runID 
 		h.store.DeleteArtifactsByRunKind(runID, kind)
 	}
 
-	evidence, err := pipeline.CollectGitDiffEvidence(r.Context(), repo.Path, 30*time.Second)
-	if err != nil {
-		h.store.CreateEvent(runID, "warn", "Git diff inspection failed: "+err.Error())
-		setHXPushURL(w, runID, "audit")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
-		return
+	// Resolve authoritative baseline
+	baselineSHA := h.resolveRunGitBaseline(runID, run)
+
+	// Capture change evidence using the new repos-level function
+	evidence := repos.CaptureGitChangeEvidence(repo.Path, baselineSHA)
+
+	// Write git_change_evidence_json artifact
+	if evidenceJSON, err := json.MarshalIndent(evidence, "", "  "); err == nil {
+		if p, err := artifacts.Write(runID, "git_change_evidence_json", pipeline.ArtifactFilename("git_change_evidence_json"), evidenceJSON); err == nil {
+			h.store.CreateArtifact(runID, "git_change_evidence_json", p, "application/json")
+		}
 	}
 
-	// Write artifacts
+	// Write artifacts using selected evidence source
 	writeGitArtifact := func(kind, content string, mimeType string) {
 		if content == "" {
 			return
@@ -2261,22 +2339,75 @@ func (h *RunsHandler) inspectDiff(w http.ResponseWriter, r *http.Request, runID 
 		h.store.CreateArtifact(runID, kind, path, mimeType)
 	}
 
-	writeGitArtifact("git_status_text", evidence.StatusText, "text/plain")
-	writeGitArtifact("git_diff_stat", evidence.DiffStat, "text/plain")
-	writeGitArtifact("git_diff_numstat", evidence.DiffNumstat, "text/plain")
+	writeGitArtifact("git_status_text", evidence.StatusPorcelain, "text/plain")
+	writeGitArtifact("git_diff_stat", evidence.Stat, "text/plain")
+	writeGitArtifact("git_diff_numstat", evidence.Numstat, "text/plain")
 	writeGitArtifact("git_diff_name_status", evidence.NameStatus, "text/plain")
-	writeGitArtifact("git_diff_patch", evidence.DiffPatch, "text/plain")
+	writeGitArtifact("git_diff_patch", evidence.Patch, "text/plain")
 
-	if evidence.HasChanges {
-		h.store.CreateEvent(runID, "info", "Git diff inspection completed: changes detected")
-	} else {
-		h.store.CreateEvent(runID, "info", "Git diff inspection completed: no changes detected")
+	// For committed-range mode, update runs.head_commit to current HEAD
+	if evidence.Mode == repos.EvidenceModeCommittedRange && evidence.CurrentHeadSHA != "" {
+		if _, err := h.store.UpdateRunBranch(runID, evidence.Branch, run.BaseCommit, evidence.CurrentHeadSHA); err != nil {
+			h.log.Warn("update run head_commit for committed range", "run_id", runID, "error", err)
+		}
 	}
 
-	h.log.Info("git diff inspection completed", "run_id", runID, "has_changes", evidence.HasChanges)
+	eventMsg := "Git diff inspection completed"
+	switch evidence.Mode {
+	case repos.EvidenceModeNoChanges:
+		eventMsg += ": no changes detected"
+	case repos.EvidenceModeUncommittedWorktree, repos.EvidenceModeBaselineUnavailableDirty:
+		eventMsg += ": uncommitted changes"
+	case repos.EvidenceModeCommittedRange:
+		eventMsg += ": " + strconv.Itoa(evidence.CommitCount) + " commit(s) detected in range"
+	case repos.EvidenceModeMixedCommittedUncommitted:
+		eventMsg += ": mixed committed + uncommitted changes detected (caution)"
+	case repos.EvidenceModeBaselineUnavailableClean:
+		eventMsg += ": baseline unavailable, no working tree changes"
+	}
+	h.store.CreateEvent(runID, "info", eventMsg)
+
+	h.log.Info("git diff inspection completed", "run_id", runID, "mode", evidence.Mode)
 
 	setHXPushURL(w, runID, "audit")
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+}
+
+// resolveRunGitBaseline resolves the authoritative baseline SHA from artifacts and DB.
+// Resolution order:
+// 1. git_baseline_json.authoritative_baseline_sha
+// 2. git_baseline_json.agent_start.head_sha
+// 3. git_baseline_json.run_created.head_sha
+// 4. runs.base_commit
+func (h *RunsHandler) resolveRunGitBaseline(runID int64, run *store.Run) string {
+	data, err := artifacts.Read(runID, "git_baseline_json", pipeline.ArtifactFilename("git_baseline_json"))
+	if err != nil {
+		// Fallback to DB field
+		return run.BaseCommit
+	}
+
+	var baseline repos.GitBaselineArtifact
+	if err := json.Unmarshal(data, &baseline); err != nil {
+		return run.BaseCommit
+	}
+
+	// Check authoritative baseline first
+	if baseline.AuthoritativeBaselineSHA != "" {
+		return baseline.AuthoritativeBaselineSHA
+	}
+
+	// Check agent_start head_sha
+	if baseline.AgentStart != nil && baseline.AgentStart.HeadSHA != "" {
+		return baseline.AgentStart.HeadSHA
+	}
+
+	// Check run_created head_sha
+	if baseline.RunCreated != nil && baseline.RunCreated.HeadSHA != "" {
+		return baseline.RunCreated.HeadSHA
+	}
+
+	// Fallback to DB field
+	return run.BaseCommit
 }
 
 func (h *RunsHandler) replaceOriginalHandoff(w http.ResponseWriter, r *http.Request, runID int64) {
