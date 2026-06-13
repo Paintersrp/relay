@@ -186,6 +186,14 @@ function liveUpdatesIndicatorText(): HTMLElement | null {
   return document.querySelector<HTMLElement>('[data-relay-live-updates-text]');
 }
 
+function setLiveUpdatesIconState(indicator: HTMLElement, state: LiveUpdateState): void {
+  indicator.querySelectorAll<HTMLElement>('[data-relay-live-updates-state-icon]').forEach((icon) => {
+    const active = icon.dataset.relayLiveUpdatesStateIcon === state;
+    icon.hidden = !active;
+    icon.classList.toggle('hidden', !active);
+  });
+}
+
 function setLiveUpdatesIndicator(state: LiveUpdateState): void {
   const indicator = liveUpdatesIndicator();
   if (!indicator) return;
@@ -194,9 +202,7 @@ function setLiveUpdatesIndicator(state: LiveUpdateState): void {
   indicator.dataset.relayLiveUpdatesState = state;
   indicator.classList.remove('border-green-700', 'border-yellow-700', 'border-red-700', 'text-green-300', 'text-yellow-300', 'text-red-300', 'bg-green-950/60', 'bg-yellow-950/60', 'bg-red-950/60');
 
-  indicator.querySelectorAll<HTMLElement>('[data-relay-live-updates-state-icon]').forEach((icon) => {
-    icon.hidden = icon.dataset.relayLiveUpdatesStateIcon !== state;
-  });
+  setLiveUpdatesIconState(indicator, state);
 
   switch (state) {
     case 'connected':
