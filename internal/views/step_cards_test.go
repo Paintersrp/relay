@@ -70,6 +70,12 @@ func TestStageNavigationLinksIncludeSettleTiming(t *testing.T) {
 	if !strings.Contains(html, `settle:120ms`) {
 		t.Errorf("expected settle:120ms in hx-swap on stage rail links, got: %s", html)
 	}
+	if !strings.Contains(html, `aria-hidden="true"`) {
+		t.Errorf("expected stage rail icons to be decorative, got: %s", html)
+	}
+	if strings.Contains(html, `relay-stage-symbol`) {
+		t.Errorf("did not expect old stage symbol markup, got: %s", html)
+	}
 }
 
 func TestStageStripLinksIncludeSettleTiming(t *testing.T) {
@@ -81,6 +87,9 @@ func TestStageStripLinksIncludeSettleTiming(t *testing.T) {
 	html := buf.String()
 	if !strings.Contains(html, `settle:120ms`) {
 		t.Errorf("expected settle:120ms in hx-swap on stage strip links, got: %s", html)
+	}
+	if !strings.Contains(html, `aria-hidden="true"`) {
+		t.Errorf("expected stage strip icons to be decorative, got: %s", html)
 	}
 }
 
@@ -455,24 +464,24 @@ func TestValidationStageRendersValidationControls(t *testing.T) {
 	}
 }
 
-func TestPipelineStageSymbol(t *testing.T) {
-	if pipelineStageSymbol("done") != "✓" {
-		t.Errorf("expected ✓ for done")
+func TestIconHelperRendersKnownIcon(t *testing.T) {
+	var buf strings.Builder
+	err := Icon("check-circle", "relay-icon-sm").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render Icon: %v", err)
 	}
-	if pipelineStageSymbol("active") != "▶" {
-		t.Errorf("expected ▶ for active")
+	html := buf.String()
+	if !strings.Contains(html, `<svg`) {
+		t.Fatalf("expected svg output, got:\n%s", html)
 	}
-	if pipelineStageSymbol("running") != "▶" {
-		t.Errorf("expected ▶ for running")
+	if !strings.Contains(html, `aria-hidden="true"`) {
+		t.Errorf("expected decorative icon to be hidden from assistive tech")
 	}
-	if pipelineStageSymbol("ready") != "●" {
-		t.Errorf("expected ● for ready")
+	if !strings.Contains(html, `focusable="false"`) {
+		t.Errorf("expected decorative icon to be unfocusable")
 	}
-	if pipelineStageSymbol("blocked") != "✗" {
-		t.Errorf("expected ✗ for blocked")
-	}
-	if pipelineStageSymbol("pending") != "○" {
-		t.Errorf("expected ○ for pending")
+	if !strings.Contains(html, `relay-icon-sm`) {
+		t.Errorf("expected icon size class")
 	}
 }
 
@@ -555,11 +564,23 @@ func TestStageEvidenceRowRendersStatusLabelSummaryAndActions(t *testing.T) {
 	if !strings.Contains(html, "2 blockers") {
 		t.Errorf("expected meta text")
 	}
+	if !strings.Contains(html, `aria-hidden="true"`) {
+		t.Errorf("expected status icon to be decorative")
+	}
 }
 
-func TestStageEvidenceSymbolNotAvailable(t *testing.T) {
-	if stageEvidenceSymbol("not-available") != "—" {
-		t.Errorf("expected — for not-available")
+func TestIconHelperFallsBackForUnknownIcon(t *testing.T) {
+	var buf strings.Builder
+	err := Icon("definitely-not-real", "relay-icon-sm").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render fallback icon: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, `<svg`) {
+		t.Fatalf("expected svg output for fallback icon, got:\n%s", html)
+	}
+	if !strings.Contains(html, `aria-hidden="true"`) {
+		t.Errorf("expected fallback icon to be decorative")
 	}
 }
 
@@ -582,6 +603,9 @@ func TestStageEvidenceRowNotAvailableRendersValidCSS(t *testing.T) {
 	if strings.Contains(html, `relay-stage-evidence-symbol-not available`) {
 		t.Errorf("should not contain space-separated not available symbol class")
 	}
+	if !strings.Contains(html, `aria-hidden="true"`) {
+		t.Errorf("expected stage evidence icon to be decorative")
+	}
 }
 
 func TestStageFailurePanelRendersPrimaryFailureAndActions(t *testing.T) {
@@ -599,6 +623,9 @@ func TestStageFailurePanelRendersPrimaryFailureAndActions(t *testing.T) {
 	}
 	if !strings.Contains(html, "Adapter error text") {
 		t.Errorf("expected summary text")
+	}
+	if !strings.Contains(html, `aria-hidden="true"`) {
+		t.Errorf("expected failure icon to be decorative")
 	}
 }
 
@@ -1766,6 +1793,9 @@ func TestArtifactPreviewLinkRetainsHrefAndHXGet(t *testing.T) {
 	}
 	if !strings.Contains(html, `data-relay-artifact-preview-link="true"`) {
 		t.Errorf("expected data-relay-artifact-preview-link attribute")
+	}
+	if !strings.Contains(html, `aria-hidden="true"`) {
+		t.Errorf("expected artifact preview icon to be decorative")
 	}
 }
 

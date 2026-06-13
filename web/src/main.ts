@@ -182,28 +182,55 @@ function liveUpdatesIndicator(): HTMLElement | null {
   return document.querySelector<HTMLElement>('[data-relay-live-updates-indicator]');
 }
 
+function liveUpdatesIndicatorIcon(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-relay-live-updates-icon]');
+}
+
+function liveUpdatesIndicatorText(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-relay-live-updates-text]');
+}
+
+function liveUpdatesIndicatorSvg(state: LiveUpdateState): string {
+  const common = 'xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" class="relay-icon relay-icon-sm"';
+  switch (state) {
+    case 'connected':
+      return `<svg ${common}><path d="M5 12.55a11 11 0 0 1 14 0"></path><path d="M8.5 16.5a6 6 0 0 1 7 0"></path><path d="M12 20h.01"></path></svg>`;
+    case 'reconnecting':
+      return `<svg ${common}><path d="M3 2v6h6"></path><path d="M3.05 13a9 9 0 1 0 .95-6.9L3 8"></path></svg>`;
+    case 'disconnected':
+      return `<svg ${common}><path d="M2 2l20 20"></path><path d="M5 12.55a11 11 0 0 1 6.5-2.45"></path><path d="M8.5 16.5a6 6 0 0 1 2.5-.55"></path><path d="M12 20h.01"></path></svg>`;
+    default:
+      return `<svg ${common}><path d="M21 12a9 9 0 1 1-6.22-8.56"></path><path d="M21 3v6h-6"></path></svg>`;
+  }
+}
+
 function setLiveUpdatesIndicator(state: LiveUpdateState): void {
   const indicator = liveUpdatesIndicator();
   if (!indicator) return;
+  const icon = liveUpdatesIndicatorIcon();
+  const text = liveUpdatesIndicatorText();
 
   indicator.dataset.relayLiveUpdatesState = state;
   indicator.classList.remove('border-green-700', 'border-yellow-700', 'border-red-700', 'text-green-300', 'text-yellow-300', 'text-red-300', 'bg-green-950/60', 'bg-yellow-950/60', 'bg-red-950/60');
+  if (icon) {
+    icon.innerHTML = liveUpdatesIndicatorSvg(state);
+  }
 
   switch (state) {
     case 'connected':
-      indicator.textContent = 'Live updates connected';
+      if (text) text.textContent = 'Live updates connected';
       indicator.classList.add('border-green-700', 'text-green-300', 'bg-green-950/60');
       break;
     case 'reconnecting':
-      indicator.textContent = 'Live updates reconnecting';
+      if (text) text.textContent = 'Live updates reconnecting';
       indicator.classList.add('border-yellow-700', 'text-yellow-300', 'bg-yellow-950/60');
       break;
     case 'disconnected':
-      indicator.textContent = 'Live updates disconnected - refresh manually';
+      if (text) text.textContent = 'Live updates disconnected - refresh manually';
       indicator.classList.add('border-red-700', 'text-red-300', 'bg-red-950/60');
       break;
     default:
-      indicator.textContent = 'Live updates connecting';
+      if (text) text.textContent = 'Live updates connecting';
       indicator.classList.add('border-gray-700', 'text-gray-400', 'bg-gray-950/70');
       break;
   }

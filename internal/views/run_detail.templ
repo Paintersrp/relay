@@ -22,7 +22,10 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 					</div>
 				</div>
 				<div class="flex flex-wrap gap-2 shrink-0">
-					<a href="/" class="text-sm text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center">&larr; Dashboard</a>
+					<a href="/" class="text-sm text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center gap-1.5">
+						@ActionIcon("chevron-left", "relay-icon-sm")
+						<span>Dashboard</span>
+					</a>
 				</div>
 			</div>
 		</div>
@@ -33,8 +36,11 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 			data-relay-run-events={"/runs/" + Itoa(run.ID) + "/events"}
 			data-relay-run-url={"/runs/" + Itoa(run.ID) + "?step=" + activeStep}>
 			<div class="flex justify-end mb-2">
-				<span data-relay-live-updates-indicator class="inline-flex items-center rounded-full border border-gray-700 bg-gray-950/70 px-2 py-1 text-[11px] text-gray-400">
-					Live updates connecting
+				<span data-relay-live-updates-indicator class="inline-flex items-center gap-1.5 rounded-full border border-gray-700 bg-gray-950/70 px-2 py-1 text-[11px] text-gray-400">
+					<span data-relay-live-updates-icon aria-hidden="true" class="inline-flex items-center justify-center">
+						@LiveUpdateIcon("connecting", "relay-icon-sm")
+					</span>
+					<span data-relay-live-updates-text>Live updates connecting</span>
 				</span>
 			</div>
 			<div id="run-workbench-loading" class="htmx-indicator relay-workbench-loading">
@@ -66,8 +72,9 @@ templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 		<div class={ "relay-inspector-summary p-3 sm:p-4 border", nextActionCardBorderClass(previews.NextAction.Severity) }>
 			<div class="flex flex-col gap-2 sm:gap-4 sm:flex-row sm:items-start sm:justify-between">
 				<div class="min-w-0 flex-1">
-					<div class="flex items-center gap-2 mb-1.5">
+					<div class="flex flex-wrap items-center gap-2 mb-1.5">
 						<span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Current gate</span>
+						@ActionIcon(nextActionIconName(previews.NextAction), "relay-icon-sm")
 						<span class={ nextActionChipClass(previews.NextAction.Severity) }>{ previews.NextAction.Severity }</span>
 					</div>
 					<h2 class="text-base sm:text-lg font-bold text-gray-100 mb-1 break-words">{ previews.NextAction.Title }</h2>
@@ -85,13 +92,15 @@ templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 							class="sm:w-auto">
 							<input type="hidden" name="action" value={ previews.NextAction.PrimaryFormAction }/>
 							<button type="submit"
-								class="btn-primary text-sm justify-center">
+								class="btn-primary text-sm justify-center gap-2">
+								@ActionIcon(nextActionIconName(previews.NextAction), "relay-icon-sm")
 								{ nextActionButtonLabel(previews.NextAction) }
 							</button>
 						</form>
 					} else if !previews.NextAction.Disabled && previews.NextAction.PrimaryHref != "" {
 						<a href={ previews.NextAction.PrimaryHref }
-							class="btn-primary text-sm inline-flex items-center justify-center">
+							class="btn-primary text-sm inline-flex items-center justify-center gap-2">
+							@ActionIcon(nextActionIconName(previews.NextAction), "relay-icon-sm")
 							{ nextActionButtonLabel(previews.NextAction) }
 						</a>
 					} else if !previews.NextAction.Disabled &&
@@ -106,7 +115,8 @@ templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 							hx-push-url="true"
 							hx-indicator="#run-workbench-loading"
 							data-relay-workbench-link="true"
-							class="btn-primary text-sm inline-flex items-center justify-center">
+							class="btn-primary text-sm inline-flex items-center justify-center gap-2">
+							@ActionIcon(nextActionIconName(previews.NextAction), "relay-icon-sm")
 							{ nextActionButtonLabel(previews.NextAction) }
 						</a>
 					} else if previews.NextAction.Disabled {
@@ -127,8 +137,9 @@ templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 							hx-push-url="true"
 							hx-indicator="#run-workbench-loading"
 							data-relay-workbench-link="true"
-							class="text-xs text-gray-500 hover:text-gray-300">
-							View { stepDisplayLabel(previews.NextAction.Step) }
+							class="text-xs text-gray-500 hover:text-gray-300 inline-flex items-center gap-1.5">
+							@ActionIcon("chevron-right", "relay-icon-sm")
+							<span>View { stepDisplayLabel(previews.NextAction.Step) }</span>
 						</a>
 					}
 				</div>

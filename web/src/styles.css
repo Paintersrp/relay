@@ -55,6 +55,15 @@
   .relay-chip-gray {
     @apply inline-flex items-center px-2.5 py-1 text-xs rounded-full font-medium bg-gray-800 text-gray-400 border border-gray-700;
   }
+  .relay-icon {
+    @apply inline-block h-4 w-4 shrink-0 align-middle;
+  }
+  .relay-icon-sm {
+    @apply h-3.5 w-3.5;
+  }
+  .relay-icon-lg {
+    @apply h-5 w-5;
+  }
   .relay-scroll-panel {
     @apply min-w-0 overflow-x-auto whitespace-pre-wrap break-words;
   }

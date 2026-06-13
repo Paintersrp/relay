@@ -4,7 +4,10 @@ import "relay/internal/store"
 
 templ OpenCodePreview(run *store.Run, repo *store.Repo, artifacts []store.Artifact) {
 	<div class="border border-gray-800 rounded-lg p-4 bg-gray-900/50 mt-8">
-		<h3 class="font-medium mb-1">OpenCode Packet Preview</h3>
+		<h3 class="font-medium mb-1 inline-flex items-center gap-2">
+			@ActionIcon("package", "relay-icon-sm")
+			<span>OpenCode Packet Preview</span>
+		</h3>
 		<p class="text-xs text-gray-500 mb-3">Relay does not execute this packet yet. It is currently metadata only.</p>
 		<table class="w-full text-xs">
 			<tbody class="divide-y divide-gray-800">
@@ -48,9 +51,15 @@ templ OpenCodePreview(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 						if hasArtifact(artifacts, "agent_prompt") {
 							<div class="flex gap-2">
 								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt"}
-									class="text-indigo-400 hover:text-indigo-300">View</a>
+									class="text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1.5">
+									@ActionIcon("external-link", "relay-icon-sm")
+									<span>View</span>
+								</a>
 								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
-									class="text-gray-500 hover:text-gray-300">Download</a>
+									class="text-gray-500 hover:text-gray-300 inline-flex items-center gap-1.5">
+									@ActionIcon("download", "relay-icon-sm")
+									<span>Download</span>
+								</a>
 							</div>
 						} else {
 							<span class="text-yellow-400">Generate Agent Prompt first</span>
@@ -63,9 +72,15 @@ templ OpenCodePreview(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 						if hasArtifact(artifacts, "opencode_handoff_packet") {
 							<div class="flex gap-2">
 								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet"}
-									class="text-indigo-400 hover:text-indigo-300">View</a>
+									class="text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1.5">
+									@ActionIcon("external-link", "relay-icon-sm")
+									<span>View</span>
+								</a>
 								<a href={"/runs/" + Itoa(run.ID) + "/artifacts/opencode_handoff_packet/download"}
-									class="text-gray-500 hover:text-gray-300">Download</a>
+									class="text-gray-500 hover:text-gray-300 inline-flex items-center gap-1.5">
+									@ActionIcon("download", "relay-icon-sm")
+									<span>Download</span>
+								</a>
 							</div>
 						} else {
 							<span class="text-yellow-400">Generate OpenCode Packet after Agent Prompt</span>

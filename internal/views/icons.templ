@@ -1,0 +1,481 @@
+package views
+
+func iconClassName(className string) string {
+	if className == "" {
+		return "relay-icon"
+	}
+	return "relay-icon " + className
+}
+
+func statusIconName(state string) string {
+	switch state {
+	case "done", "passed", "pass", "completed", "accepted", "pushed":
+		return "check-circle"
+	case "committed_local":
+		return "git-commit"
+	case "ready_to_commit":
+		return "circle"
+	case "commit_failed", "push_failed":
+		return "x-circle"
+	case "blocked_validation", "blocked_audit_not_accepted", "blocked_no_diff_inspection", "blocked_mixed_changes", "blocked_no_upstream":
+		return "x-circle"
+	case "no_changes":
+		return "circle"
+	case "active", "running", "connecting":
+		return "loader-circle"
+	case "ready":
+		return "circle"
+	case "blocked", "failed", "fail", "error", "stale":
+		return "x-circle"
+	case "warning", "warn", "timed_out":
+		return "alert-triangle"
+	case "pending":
+		return "circle"
+	case "stale_output", "stale_timeout":
+		return "clock"
+	case "disconnected":
+		return "wifi-off"
+	default:
+		return "circle"
+	}
+}
+
+func statusIconClass(state string, className string) string {
+	if className == "" {
+		className = ""
+	}
+	if state == "active" || state == "running" || state == "connecting" {
+		if className == "" {
+			return "animate-spin"
+		}
+		return className + " animate-spin"
+	}
+	return className
+}
+
+func stageIconName(step string) string {
+	switch step {
+	case "intake":
+		return "file-input"
+	case "prompt":
+		return "scroll-text"
+	case "packet":
+		return "package"
+	case "handoff":
+		return "terminal"
+	case "run":
+		return "bot"
+	case "validation":
+		return "clipboard-check"
+	case "audit":
+		return "file-search"
+	case "commit":
+		return "git-commit"
+	default:
+		return "circle"
+	}
+}
+
+func actionIconName(action string) string {
+	switch action {
+	case "play", "run-validation", "run", "start-opencode-go":
+		return "play"
+	case "rotate-ccw", "retry", "re-run", "refresh":
+		return "rotate-ccw"
+	case "copy":
+		return "copy"
+	case "external-link", "view":
+		return "external-link"
+	case "download":
+		return "download"
+	case "file-input":
+		return "file-input"
+	case "scroll-text":
+		return "scroll-text"
+	case "package":
+		return "package"
+	case "terminal":
+		return "terminal"
+	case "bot":
+		return "bot"
+	case "clipboard-check":
+		return "clipboard-check"
+	case "file-search":
+		return "file-search"
+	case "file-text":
+		return "file-text"
+	case "file-diff":
+		return "file-diff"
+	case "braces":
+		return "braces"
+	case "git-branch":
+		return "git-branch"
+	case "git-commit":
+		return "git-commit"
+	case "upload-cloud", "push", "push-to-upstream":
+		return "upload-cloud"
+	case "settings":
+		return "settings"
+	case "database":
+		return "database"
+	case "folder-git":
+		return "folder-git"
+	case "life-buoy":
+		return "life-buoy"
+	case "badge-check":
+		return "badge-check"
+	case "message-square":
+		return "message-square"
+	case "wifi":
+		return "wifi"
+	case "wifi-off":
+		return "wifi-off"
+	case "chevron-left":
+		return "chevron-left"
+	case "chevron-right":
+		return "chevron-right"
+	default:
+		return action
+	}
+}
+
+func artifactIconName(kind string) string {
+	switch kind {
+	case "agent_prompt", "validation_progress_json", "commit_message_text":
+		return "scroll-text"
+	case "intake_remediation_handoff", "audit_handoff":
+		return "file-text"
+	case "opencode_handoff_packet":
+		return "package"
+	case "opencode_cli_check_json", "opencode_dry_run_json", "agent_result_json", "validation_run_json", "git_commit_state_json", "git_push_dry_run_json", "commit_suggestion_json":
+		return "braces"
+	case "opencode_stdout", "opencode_stderr", "opencode_combined_log", "agent_result_raw", "validation_stdout", "validation_stderr":
+		return "terminal"
+	case "git_status_text", "git_diff_name_status", "git_diff_stat", "git_diff_patch":
+		return "file-diff"
+	case "git_commit_result_json":
+		return "git-commit"
+	case "git_push_result_json":
+		return "upload-cloud"
+	default:
+		return "file-text"
+	}
+}
+
+func liveUpdateIconName(state string) string {
+	switch state {
+	case "connected":
+		return "wifi"
+	case "connecting":
+		return "loader-circle"
+	case "reconnecting":
+		return "rotate-ccw"
+	case "disconnected":
+		return "wifi-off"
+	default:
+		return "wifi"
+	}
+}
+
+func liveUpdateIconClass(state string, className string) string {
+	switch state {
+	case "connecting", "reconnecting":
+		if className == "" {
+			return "animate-spin"
+		}
+		return className + " animate-spin"
+	default:
+		return className
+	}
+}
+
+func nextActionIconName(action WorkbenchNextActionView) string {
+	switch action.Kind {
+	case "generate_fix_handoff":
+		return "file-text"
+	case "generate_agent_prompt":
+		return "scroll-text"
+	case "generate_agent_packet":
+		return "package"
+	case "check_opencode_cli":
+		return "terminal"
+	case "preview_opencode_command":
+		return "play"
+	case "start_opencode":
+		return "bot"
+	case "monitor_agent_run":
+		return "bot"
+	case "review_agent_result":
+		return "clipboard-check"
+	case "run_validation":
+		return "play"
+	case "review_validation_output":
+		return "file-search"
+	case "ready_for_audit":
+		return "file-search"
+	case "committed_local":
+		return "git-commit"
+	case "pushed":
+		return "upload-cloud"
+	default:
+		return actionIconName(action.Kind)
+	}
+}
+
+templ iconBase(className string) {
+	<svg
+		xmlns="http://www.w3.org/2000/svg"
+		viewBox="0 0 24 24"
+		fill="none"
+		stroke="currentColor"
+		stroke-width="2"
+		stroke-linecap="round"
+		stroke-linejoin="round"
+		aria-hidden="true"
+		focusable="false"
+		class={ iconClassName(className) }>
+		{ children... }
+	</svg>
+}
+
+templ Icon(name string, className string) {
+	switch name {
+	case "check-circle":
+		@iconBase(className) {
+			<circle cx="12" cy="12" r="10"></circle>
+			<path d="m9 12 2 2 4-4"></path>
+		}
+	case "x-circle":
+		@iconBase(className) {
+			<circle cx="12" cy="12" r="10"></circle>
+			<path d="m15 9-6 6"></path>
+			<path d="m9 9 6 6"></path>
+		}
+	case "alert-triangle":
+		@iconBase(className) {
+			<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"></path>
+			<path d="M12 9v4"></path>
+			<path d="M12 17h.01"></path>
+		}
+	case "octagon-alert":
+		@iconBase(className) {
+			<path d="M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86L7.86 2Z"></path>
+			<path d="M12 8v5"></path>
+			<path d="M12 17h.01"></path>
+		}
+	case "clock":
+		@iconBase(className) {
+			<circle cx="12" cy="12" r="10"></circle>
+			<path d="M12 6v6l4 2"></path>
+		}
+	case "loader-circle":
+		@iconBase(className) {
+			<path d="M21 12a9 9 0 1 1-6.22-8.56"></path>
+			<path d="M21 3v6h-6"></path>
+		}
+	case "play":
+		@iconBase(className) {
+			<path d="M8 5v14l11-7Z"></path>
+		}
+	case "rotate-ccw":
+		@iconBase(className) {
+			<path d="M3 2v6h6"></path>
+			<path d="M3.05 13a9 9 0 1 0 .95-6.9L3 8"></path>
+		}
+	case "copy":
+		@iconBase(className) {
+			<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+			<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+		}
+	case "external-link":
+		@iconBase(className) {
+			<path d="M15 3h6v6"></path>
+			<path d="M10 14 21 3"></path>
+			<path d="M21 14v7h-7"></path>
+			<path d="M14 21H3V10"></path>
+		}
+	case "download":
+		@iconBase(className) {
+			<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+			<path d="M7 10l5 5 5-5"></path>
+			<path d="M12 15V3"></path>
+		}
+	case "file-input":
+		@iconBase(className) {
+			<path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z"></path>
+			<path d="M14 2v5h5"></path>
+			<path d="M12 16V8"></path>
+			<path d="m8 12 4-4 4 4"></path>
+		}
+	case "scroll-text":
+		@iconBase(className) {
+			<path d="M8 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4Z"></path>
+			<path d="M9 8h6"></path>
+			<path d="M9 12h6"></path>
+			<path d="M9 16h4"></path>
+		}
+	case "package":
+		@iconBase(className) {
+			<path d="M16.5 9.4 7.5 4.2"></path>
+			<path d="m3 7 9 5.2 9-5.2"></path>
+			<path d="M12 22V12"></path>
+			<path d="M21 7v10l-9 5-9-5V7l9-5 9 5Z"></path>
+		}
+	case "terminal":
+		@iconBase(className) {
+			<path d="M4 5h16v14H4z"></path>
+			<path d="m8 9 3 3-3 3"></path>
+			<path d="M12 15h4"></path>
+		}
+	case "bot":
+		@iconBase(className) {
+			<path d="M12 8V4"></path>
+			<path d="M8 2h8"></path>
+			<rect x="4" y="9" width="16" height="11" rx="2"></rect>
+			<path d="M9 13h.01"></path>
+			<path d="M15 13h.01"></path>
+			<path d="M8 17h8"></path>
+		}
+	case "clipboard-check":
+		@iconBase(className) {
+			<rect x="8" y="2" width="8" height="4" rx="1"></rect>
+			<path d="M9 4H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"></path>
+			<path d="m9 14 2 2 4-4"></path>
+		}
+	case "file-search":
+		@iconBase(className) {
+			<path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z"></path>
+			<path d="M14 2v5h5"></path>
+			<circle cx="11" cy="14" r="2.5"></circle>
+			<path d="m13 16 2 2"></path>
+		}
+	case "file-text":
+		@iconBase(className) {
+			<path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z"></path>
+			<path d="M14 2v5h5"></path>
+			<path d="M9 13h6"></path>
+			<path d="M9 17h6"></path>
+			<path d="M9 9h2"></path>
+		}
+	case "file-diff":
+		@iconBase(className) {
+			<path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z"></path>
+			<path d="M14 2v5h5"></path>
+			<path d="M9 13h6"></path>
+			<path d="M12 10v6"></path>
+		}
+	case "braces":
+		@iconBase(className) {
+			<path d="M9 4c-1.1 0-2 .9-2 2v2c0 1.1-.9 2-2 2 1.1 0 2 .9 2 2v2c0 1.1.9 2 2 2"></path>
+			<path d="M15 4c1.1 0 2 .9 2 2v2c0 1.1.9 2 2 2-1.1 0-2 .9-2 2v2c0 1.1-.9 2-2 2"></path>
+		}
+	case "git-branch":
+		@iconBase(className) {
+			<path d="M6 3v12"></path>
+			<circle cx="6" cy="5" r="2"></circle>
+			<circle cx="18" cy="5" r="2"></circle>
+			<circle cx="18" cy="19" r="2"></circle>
+			<path d="M6 15c0 2.2 1.8 4 4 4h6"></path>
+			<path d="M6 5c0 2.2 1.8 4 4 4h8"></path>
+		}
+	case "git-commit":
+		@iconBase(className) {
+			<circle cx="12" cy="12" r="3.5"></circle>
+			<path d="M3 12h5"></path>
+			<path d="M16 12h5"></path>
+			<path d="M12 3v5"></path>
+			<path d="M12 16v5"></path>
+		}
+	case "upload-cloud":
+		@iconBase(className) {
+			<path d="M16 16l-4-4-4 4"></path>
+			<path d="M12 12v8"></path>
+			<path d="M20 16.6A5 5 0 0 0 18 7h-1.3A7 7 0 1 0 6 14"></path>
+		}
+	case "settings":
+		@iconBase(className) {
+			<circle cx="12" cy="12" r="3"></circle>
+			<path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-1.4 3.4 2 2 0 0 1-1.4-.6l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8 0 2 2 0 0 1 0-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 0-2.8 2 2 0 0 1 2.8 0l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 0 1 2.8 0 2 2 0 0 1 0 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c0 .7.4 1.3 1 1.5H21a2 2 0 0 1 0 4h-.2a1.7 1.7 0 0 0-1.4 1Z"></path>
+		}
+	case "database":
+		@iconBase(className) {
+			<ellipse cx="12" cy="5" rx="8" ry="3"></ellipse>
+			<path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path>
+			<path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"></path>
+		}
+	case "folder-git":
+		@iconBase(className) {
+			<path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-8l-2-3Z"></path>
+			<circle cx="14" cy="13" r="2"></circle>
+			<path d="M14 11v-2"></path>
+			<path d="M14 15v2"></path>
+		}
+	case "life-buoy":
+		@iconBase(className) {
+			<circle cx="12" cy="12" r="10"></circle>
+			<circle cx="12" cy="12" r="4"></circle>
+			<path d="m4.93 4.93 2.83 2.83"></path>
+			<path d="m16.24 16.24 2.83 2.83"></path>
+			<path d="m4.93 19.07 2.83-2.83"></path>
+			<path d="m16.24 7.76 2.83-2.83"></path>
+		}
+	case "badge-check":
+		@iconBase(className) {
+			<path d="M12 2 5 5v6c0 5 3.5 8.5 7 11 3.5-2.5 7-6 7-11V5Z"></path>
+			<path d="m9 12 2 2 4-4"></path>
+		}
+	case "message-square":
+		@iconBase(className) {
+			<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"></path>
+		}
+	case "wifi":
+		@iconBase(className) {
+			<path d="M5 12.55a11 11 0 0 1 14 0"></path>
+			<path d="M8.5 16.5a6 6 0 0 1 7 0"></path>
+			<path d="M12 20h.01"></path>
+		}
+	case "wifi-off":
+		@iconBase(className) {
+			<path d="M2 2l20 20"></path>
+			<path d="M5 12.55a11 11 0 0 1 6.5-2.45"></path>
+			<path d="M8.5 16.5a6 6 0 0 1 2.5-.55"></path>
+			<path d="M12 20h.01"></path>
+		}
+	case "chevron-left":
+		@iconBase(className) {
+			<path d="m15 18-6-6 6-6"></path>
+		}
+	case "chevron-right":
+		@iconBase(className) {
+			<path d="m9 18 6-6-6-6"></path>
+		}
+	case "circle":
+		@iconBase(className) {
+			<circle cx="12" cy="12" r="8"></circle>
+		}
+	default:
+		@iconBase(className) {
+			<circle cx="12" cy="12" r="8"></circle>
+		}
+	}
+}
+
+templ StatusIcon(state string, className string) {
+	@Icon(statusIconName(state), statusIconClass(state, className))
+}
+
+templ StageIcon(step string, className string) {
+	@Icon(stageIconName(step), className)
+}
+
+templ ActionIcon(action string, className string) {
+	@Icon(actionIconName(action), className)
+}
+
+templ ArtifactIcon(kind string, className string) {
+	@Icon(artifactIconName(kind), className)
+}
+
+templ LiveUpdateIcon(state string, className string) {
+	@Icon(liveUpdateIconName(state), liveUpdateIconClass(state, className))
+}

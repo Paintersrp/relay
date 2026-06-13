@@ -181,23 +181,6 @@ func pipelineStageStateLabel(state string) string {
 	}
 }
 
-func pipelineStageSymbol(state string) string {
-	switch state {
-	case "done":
-		return "✓"
-	case "active":
-		return "▶"
-	case "running":
-		return "▶"
-	case "ready":
-		return "●"
-	case "blocked":
-		return "✗"
-	default:
-		return "○"
-	}
-}
-
 func pipelineStageLinkClass(step string, activeStep string, state string) string {
 	if activeStep == step {
 		return "relay-stage-link relay-stage-link-active"
@@ -240,7 +223,7 @@ templ PipelineStageRail(runID int64, previews RunPreviews, artifacts []store.Art
 				data-relay-workbench-link="true"
 				class={pipelineStageLinkClass(step.Key, activeStep, state)}>
 				<div class="flex items-center gap-2">
-					<span class="relay-stage-symbol">{ pipelineStageSymbol(state) }</span>
+					@StageIcon(step.Key, "relay-icon-sm")
 					<span class="font-medium">{ step.ShortLabel }</span>
 					<span class="text-xs ml-auto">{ pipelineStageStateLabel(state) }</span>
 				</div>
@@ -264,7 +247,7 @@ templ PipelineStageStrip(runID int64, previews RunPreviews, artifacts []store.Ar
 					hx-indicator="#run-workbench-loading"
 					data-relay-workbench-link="true"
 					class={pipelineStageLinkClass(step.Key, activeStep, state) + " shrink-0 min-w-[8.5rem] max-w-[12rem] snap-start"}>
-					<span class="relay-stage-symbol">{ pipelineStageSymbol(state) }</span>
+					@StageIcon(step.Key, "relay-icon-sm")
 					<span class="font-medium whitespace-nowrap">{ step.ShortLabel }</span>
 					<span class="text-xs">{ pipelineStageStateLabel(state) }</span>
 				</a>
@@ -299,7 +282,8 @@ templ SelectedStageBody(run *store.Run, repo *store.Repo, artifacts []store.Arti
 templ SelectedStageHeader(activeStep string, previews RunPreviews) {
 	<div class="relay-card-header border-b border-gray-800">
 		<div class="min-w-0">
-			<h3 class="font-medium text-base sm:text-lg" tabindex="-1" data-run-stage-heading>
+			<h3 class="font-medium text-base sm:text-lg inline-flex items-center gap-2" tabindex="-1" data-run-stage-heading>
+				@StageIcon(activeStep, "relay-icon")
 				{ stepDisplayLabel(activeStep) }
 			</h3>
 			<p class="text-xs sm:text-sm text-gray-500 mt-0.5">
@@ -320,8 +304,9 @@ templ StepFlowFooter(runID int64, activeStep string) {
 				hx-push-url="true"
 				hx-indicator="#run-workbench-loading"
 				data-relay-workbench-link="true"
-				class="text-sm text-gray-400 hover:text-gray-300 min-h-[36px] inline-flex items-center">
-				&larr; Back: { prev.Label }
+				class="text-sm text-gray-400 hover:text-gray-300 min-h-[36px] inline-flex items-center gap-1.5">
+				@ActionIcon("chevron-left", "relay-icon-sm")
+				<span>Back: { prev.Label }</span>
 			</a>
 		} else {
 			<span></span>
@@ -335,8 +320,9 @@ templ StepFlowFooter(runID int64, activeStep string) {
 				hx-push-url="true"
 				hx-indicator="#run-workbench-loading"
 				data-relay-workbench-link="true"
-				class="text-sm text-gray-400 hover:text-gray-300 min-h-[36px] inline-flex items-center">
-				Next: { next.Label } &rarr;
+				class="text-sm text-gray-400 hover:text-gray-300 min-h-[36px] inline-flex items-center gap-1.5">
+				<span>Next: { next.Label }</span>
+				@ActionIcon("chevron-right", "relay-icon-sm")
 			</a>
 		} else {
 			<span></span>
@@ -344,7 +330,7 @@ templ StepFlowFooter(runID int64, activeStep string) {
 	</footer>
 }
 
-templ WorkbenchStepLink(runID int64, step string, className string) {
+templ WorkbenchStepLink(runID int64, step string, iconName string, className string) {
 	<a href={"/runs/" + Itoa(runID) + "?step=" + step}
 		hx-get={"/runs/" + Itoa(runID) + "?step=" + step}
 		hx-target="#run-workbench-shell"
@@ -353,7 +339,10 @@ templ WorkbenchStepLink(runID int64, step string, className string) {
 		hx-push-url="true"
 		hx-indicator="#run-workbench-loading"
 		data-relay-workbench-link="true"
-		class={className}>
+		class={className + " inline-flex items-center gap-1.5"}>
+		if iconName != "" {
+			@ActionIcon(iconName, "relay-icon-sm")
+		}
 		{ children... }
 	</a>
 }
@@ -382,7 +371,8 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="inline">
 					<input type="hidden" name="action" value="validate-handoff"/>
-					<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+					<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+						@ActionIcon("clipboard-check", "relay-icon-sm")
 						if hasCheckKind(checks, "validation") {
 							Re-run Intake Review
 						} else {
@@ -448,7 +438,8 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="inline">
 							<input type="hidden" name="action" value="generate-intake-remediation-handoff"/>
-							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+							<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+								@ActionIcon("file-text", "relay-icon-sm")
 								Generate Fix Handoff
 							</button>
 						</form>
@@ -506,7 +497,8 @@ templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []
 					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="inline">
 					<input type="hidden" name="action" value="prepare-prompt"/>
-					<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+					<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+						@ActionIcon("scroll-text", "relay-icon-sm")
 						if artifactExists(artifacts, "agent_prompt") {
 							Regenerate Agent Prompt
 						} else {
@@ -572,10 +564,11 @@ templ AgentPacketStepPanel(run *store.Run, artifacts []store.Artifact, previews 
 						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="generate-opencode-packet"/>
-						<button type="submit" class="btn-secondary text-xs sm:text-sm" data-stage-primary-action>
-							if artifactExists(artifacts, "opencode_handoff_packet") {
-								Regenerate Agent Packet
-							} else {
+					<button type="submit" class="btn-secondary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+						@ActionIcon("package", "relay-icon-sm")
+						if artifactExists(artifacts, "opencode_handoff_packet") {
+							Regenerate Agent Packet
+						} else {
 								Generate Agent Packet
 							}
 						</button>
@@ -722,7 +715,10 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 								</select>
 								<input type="text" name="selected_model_custom" placeholder="provider/model-id (used when Custom is selected)" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200"/>
 								<p class="text-xs text-gray-500">Custom model input is used only when <strong>Custom</strong> is selected above.</p>
-								<button type="submit" class="btn-primary text-xs">Update Model</button>
+								<button type="submit" class="btn-primary text-xs gap-1.5">
+									@ActionIcon("settings", "relay-icon-sm")
+									<span>Update Model</span>
+								</button>
 							}
 						</div>
 					</details>
@@ -853,7 +849,8 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="inline">
 							<input type="hidden" name="action" value="dry-run-opencode-go"/>
-							<button type="submit" class="btn-secondary text-xs sm:text-sm" data-stage-primary-action>
+							<button type="submit" class="btn-secondary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+								@ActionIcon("play", "relay-icon-sm")
 								Dry Run / Preview Command
 							</button>
 						</form>
@@ -868,7 +865,8 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="check-opencode-cli"/>
-						<button type="submit" class="btn-secondary text-xs sm:text-sm" data-stage-primary-action>
+						<button type="submit" class="btn-secondary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+							@ActionIcon("terminal", "relay-icon-sm")
 							Check OpenCode CLI
 						</button>
 					</form>
@@ -894,7 +892,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 
 			if previews.HasOpenCodeRunning {
 				@StageEvidenceRow("running", "OpenCode is running", "", "") {
-					@WorkbenchStepLink(run.ID, "run", "text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+					@WorkbenchStepLink(run.ID, "run", "bot", "text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
 						Monitor Agent Run
 					}
 				}
@@ -911,7 +909,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 					{{ staleSummary = "OpenCode stopped producing output before a final result." }}
 				}
 				@StageEvidenceRow("warning", staleTitle, staleSummary, "") {
-					@WorkbenchStepLink(run.ID, "run", "text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+					@WorkbenchStepLink(run.ID, "run", "bot", "text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
 						Review Agent Run
 					}
 				}
@@ -922,14 +920,15 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 						hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
 						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true">
 						<input type="hidden" name="action" value="start-opencode-go"/>
-						<button type="submit" class="btn-primary text-sm sm:text-base w-full sm:w-auto" data-stage-primary-action>
+						<button type="submit" class="btn-primary text-sm sm:text-base w-full sm:w-auto gap-1.5" data-stage-primary-action>
+							@ActionIcon("bot", "relay-icon-sm")
 							Start OpenCode Go
 						</button>
 					</form>
 				}
 			} else if previews.HasOpenCodeExecution && !previews.HasOpenCodeRunning {
 				@StageEvidenceRow("passed", "Latest OpenCode execution complete", "", "") {
-					@WorkbenchStepLink(run.ID, "run", "text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+					@WorkbenchStepLink(run.ID, "run", "bot", "text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
 						Review Agent Run
 					}
 				}
@@ -1158,9 +1157,15 @@ templ openCodeStatusSummary(previews RunPreviews) {
 			if previews.HasOpenCodeExecution {
 				@openCodeExecutionStatusChip(previews.OpenCodeExecutionStatus)
 			}
-			<div class="text-sm font-medium text-gray-100">OpenCode status</div>
+			<div class="text-sm font-medium text-gray-100 inline-flex items-center gap-1.5">
+				@ActionIcon("bot", "relay-icon-sm")
+				<span>OpenCode status</span>
+			</div>
 			if previews.OpenCodeLifecycleState != "" {
-				<span class="relay-chip-gray text-[11px]">{ openCodeLifecycleLabel(previews.OpenCodeLifecycleState) }</span>
+				<span class="relay-chip-gray text-[11px] gap-1.5">
+					@StatusIcon("pending", "relay-icon-sm")
+					<span>{ openCodeLifecycleLabel(previews.OpenCodeLifecycleState) }</span>
+				</span>
 			}
 		</div>
 		<div class="mt-3 grid gap-2 text-xs text-gray-300 sm:grid-cols-2 xl:grid-cols-3">
@@ -1277,7 +1282,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 	<div class="relay-stage-evidence-list">
 		if !previews.HasOpenCodeExecution {
 			@StageEvidenceRow("warning", "No OpenCode run started yet", "Return to OpenCode to launch OpenCode Go.", "") {
-				@WorkbenchStepLink(run.ID, "handoff", "btn-primary text-xs sm:text-sm") {
+				@WorkbenchStepLink(run.ID, "handoff", "terminal", "btn-primary text-xs sm:text-sm") {
 					Back to OpenCode
 				}
 			}
@@ -1311,7 +1316,8 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 							Review stdout, stderr, and the combined log, then recover this run if the agent is no longer active.
 						</div>
 						@WorkbenchActionForm(run.ID, "recover-stale-opencode-execution", "inline") {
-							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+							<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+								@ActionIcon("life-buoy", "relay-icon-sm")
 								{ recoveryLabel }
 							</button>
 						}
@@ -1444,7 +1450,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 					}
 					if previews.OpenCodeParsedResultStatus == "DONE" || previews.OpenCodeParsedResultStatus == "BLOCKED" {
 						<div class="mt-3">
-						@WorkbenchStepLink(run.ID, "validation", "btn-primary text-sm sm:text-base w-full sm:w-auto inline-flex items-center justify-center") {
+						@WorkbenchStepLink(run.ID, "validation", "clipboard-check", "btn-primary text-sm sm:text-base w-full sm:w-auto inline-flex items-center justify-center") {
 							Proceed to Relay Validation
 						}
 						</div>
@@ -1464,9 +1470,10 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 							<textarea name="agent_result_text" rows="6"
 								class="w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded-lg p-2 text-gray-300 min-w-0 resize-y"
 								placeholder={"DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42"}></textarea>
-							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
-								Save Agent Result
-							</button>
+						<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+							@ActionIcon("play", "relay-icon-sm")
+							Save Agent Result
+						</button>
 						</form>
 					</div>
 				}
@@ -1484,7 +1491,8 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 							<textarea name="agent_result_text" rows="6"
 								class="w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded-lg p-2 text-gray-300 min-w-0 resize-y"
 								placeholder={"DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42"}></textarea>
-							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+							<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+								@ActionIcon("play", "relay-icon-sm")
 								Save Agent Result
 							</button>
 						</form>
@@ -1513,7 +1521,8 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="run-validation"/>
-						<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+						<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+							@ActionIcon("play", "relay-icon-sm")
 							Run Validation Commands
 						</button>
 					</form>
@@ -1540,7 +1549,10 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="inline">
 							<input type="hidden" name="action" value="run-validation"/>
-							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>Re-run Validation</button>
+							<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+								@ActionIcon("rotate-ccw", "relay-icon-sm")
+								Re-run Validation
+							</button>
 						</form>
 					}
 				}
@@ -1557,7 +1569,10 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="inline">
 							<input type="hidden" name="action" value="run-validation"/>
-							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>Retry Validation</button>
+							<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+								@ActionIcon("rotate-ccw", "relay-icon-sm")
+								Retry Validation
+							</button>
 						</form>
 					}
 				}
@@ -1648,7 +1663,8 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 							class="inline">
 							<input type="hidden" name="action" value="accept-validation-failure"/>
-							<button type="submit" class="btn-secondary text-xs sm:text-sm" data-stage-primary-action>
+							<button type="submit" class="btn-secondary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+								@ActionIcon("badge-check", "relay-icon-sm")
 								Accept Failed Validation and Continue to Diff / Audit
 							</button>
 						</form>
@@ -1656,7 +1672,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 				}
 				if previews.ValidationRun.Status == "fail" && previews.ValidationFailedAccepted {
 					@StageEvidenceRow("warning", "Validation failure accepted", "Continue to Step 7: Diff / Audit.", "") {
-						@WorkbenchStepLink(run.ID, "audit", "btn-primary text-xs sm:text-sm") {
+						@WorkbenchStepLink(run.ID, "audit", "file-search", "btn-primary text-xs sm:text-sm") {
 							Go to Step 7: Diff / Audit
 						}
 					}
@@ -1716,28 +1732,55 @@ templ validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []
 
 templ validationCommandStatusChip(status string) {
 	if status == "pass" {
-		<span class="relay-chip-green shrink-0">passed</span>
+		<span class="relay-chip-green shrink-0 gap-1.5">
+			@StatusIcon("passed", "relay-icon-sm")
+			<span>passed</span>
+		</span>
 	} else if status == "fail" {
-		<span class="relay-chip-red shrink-0">failed</span>
+		<span class="relay-chip-red shrink-0 gap-1.5">
+			@StatusIcon("failed", "relay-icon-sm")
+			<span>failed</span>
+		</span>
 	} else if status == "timed_out" {
-		<span class="relay-chip-yellow shrink-0">timed out</span>
+		<span class="relay-chip-yellow shrink-0 gap-1.5">
+			@StatusIcon("warning", "relay-icon-sm")
+			<span>timed out</span>
+		</span>
 	} else if status == "running" {
-		<span class="relay-chip-blue shrink-0">running</span>
+		<span class="relay-chip-blue shrink-0 gap-1.5">
+			@StatusIcon("running", "relay-icon-sm")
+			<span>running</span>
+		</span>
 	} else if status == "pending" {
-		<span class="relay-chip-gray shrink-0">pending</span>
+		<span class="relay-chip-gray shrink-0 gap-1.5">
+			@StatusIcon("pending", "relay-icon-sm")
+			<span>pending</span>
+		</span>
 	} else if status == "skipped" {
-		<span class="relay-chip-gray shrink-0">skipped</span>
+		<span class="relay-chip-gray shrink-0 gap-1.5">
+			@StatusIcon("pending", "relay-icon-sm")
+			<span>skipped</span>
+		</span>
 	} else if status == "error" {
-		<span class="relay-chip-red shrink-0">error</span>
+		<span class="relay-chip-red shrink-0 gap-1.5">
+			@StatusIcon("failed", "relay-icon-sm")
+			<span>error</span>
+		</span>
 	} else {
-		<span class="relay-chip-gray shrink-0">{ status }</span>
+		<span class="relay-chip-gray shrink-0 gap-1.5">
+			@StatusIcon("pending", "relay-icon-sm")
+			<span>{ status }</span>
+		</span>
 	}
 }
 
 templ validationProgressDisplay(progress ValidationProgressPreview, runID int64, artifacts []store.Artifact, previews RunPreviews) {
 	<div class="rounded-xl border border-blue-900/60 bg-blue-950/30 p-3 sm:p-4">
 		<div class="flex flex-wrap items-center gap-2 sm:gap-3">
-			<span class="relay-chip-blue text-xs">running</span>
+			<span class="relay-chip-blue text-xs gap-1.5">
+				@StatusIcon("running", "relay-icon-sm")
+				<span>running</span>
+			</span>
 			<div class="text-sm font-medium text-blue-300">Validation live progress</div>
 		</div>
 		<div class="mt-2 grid gap-2 text-xs text-gray-300 sm:grid-cols-2 lg:grid-cols-4">
@@ -1966,8 +2009,9 @@ templ auditHandoffSection(previews RunPreviews, runID int64) {
 				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 				class="mt-2">
 				<input type="hidden" name="action" value="generate-audit-handoff"/>
-				<button type="submit"
-					class="btn-primary text-xs sm:text-sm">
+						<button type="submit"
+					class="btn-primary text-xs sm:text-sm gap-1.5">
+						@ActionIcon("scroll-text", "relay-icon-sm")
 					Generate Audit Handoff
 				</button>
 			</form>
@@ -2044,7 +2088,8 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 				class="inline">
 				<input type="hidden" name="action" value="inspect-diff"/>
-				<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+				<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+					@ActionIcon("file-search", "relay-icon-sm")
 					if previews.HasGitStatus {
 						Re-inspect Git Diff
 					} else {
@@ -2149,7 +2194,8 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="generate-audit-handoff"/>
-						<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+						<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+							@ActionIcon("scroll-text", "relay-icon-sm")
 							{ btnLabel }
 						</button>
 					</form>
@@ -2165,7 +2211,8 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 						class="inline">
 						<input type="hidden" name="action" value="generate-audit-handoff"/>
-						<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+						<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+							@ActionIcon("scroll-text", "relay-icon-sm")
 							if previews.HasAuditHandoff {
 								Regenerate Audit Handoff
 							} else {
@@ -2203,7 +2250,8 @@ templ auditDecisionSection(previews RunPreviews, runID int64) {
 					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="inline">
 					<input type="hidden" name="action" value="revoke-audit-clearance"/>
-					<button type="submit" class="btn-secondary text-xs sm:text-sm" data-stage-primary-action>
+					<button type="submit" class="btn-secondary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+						@ActionIcon("rotate-ccw", "relay-icon-sm")
 						Revoke Audit Acceptance
 					</button>
 				</form>
@@ -2215,7 +2263,8 @@ templ auditDecisionSection(previews RunPreviews, runID int64) {
 					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 					class="inline">
 					<input type="hidden" name="action" value="accept-audit-clearance"/>
-					<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+					<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+						@ActionIcon("badge-check", "relay-icon-sm")
 						Mark Audit Accepted
 					</button>
 				</form>
@@ -2235,25 +2284,25 @@ templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Ru
 
 			if previews.CommitState == "blocked_validation" {
 				@StageEvidenceRow("blocked", "Validation required", "Run Relay Validation in Step 6 before committing or pushing.", "") {
-					@WorkbenchStepLink(run.ID, "validation", "btn-primary text-xs sm:text-sm") {
-						Go to Step 6: Relay Validation
-					}
+						@WorkbenchStepLink(run.ID, "validation", "clipboard-check", "btn-primary text-xs sm:text-sm") {
+							Go to Step 6: Relay Validation
+						}
 				}
 			}
 
 			if previews.CommitState == "blocked_no_diff_inspection" {
 				@StageEvidenceRow("warning", "Git diff not inspected", "Run Inspect Git Diff in Step 7 before committing.", "") {
-					@WorkbenchStepLink(run.ID, "audit", "btn-primary text-xs sm:text-sm") {
-						Go to Step 7: Diff / Audit
-					}
+						@WorkbenchStepLink(run.ID, "audit", "file-search", "btn-primary text-xs sm:text-sm") {
+							Go to Step 7: Diff / Audit
+						}
 				}
 			}
 
 			if previews.CommitState == "blocked_audit_not_accepted" {
 				@StageEvidenceRow("warning", "Audit clearance needed", "Review the audit handoff in Step 7 and mark the decision there before commit or push.", "") {
-					@WorkbenchStepLink(run.ID, "audit", "btn-primary text-xs sm:text-sm") {
-						Go to Step 7: Diff / Audit
-					}
+						@WorkbenchStepLink(run.ID, "audit", "file-search", "btn-primary text-xs sm:text-sm") {
+							Go to Step 7: Diff / Audit
+						}
 				}
 			}
 
@@ -2322,26 +2371,56 @@ templ GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Ru
 templ commitStatusChip(previews RunPreviews) {
 	switch previews.CommitState {
 	case "pushed":
-		<span class="relay-chip-green text-xs">pushed</span>
+		<span class="relay-chip-green text-xs gap-1.5">
+			@StatusIcon("done", "relay-icon-sm")
+			<span>pushed</span>
+		</span>
 	case "committed_local":
-		<span class="relay-chip-blue text-xs">committed</span>
+		<span class="relay-chip-blue text-xs gap-1.5">
+			@StatusIcon("done", "relay-icon-sm")
+			<span>committed</span>
+		</span>
 	case "ready_to_commit":
-		<span class="relay-chip-indigo text-xs">ready</span>
+		<span class="relay-chip-indigo text-xs gap-1.5">
+			@StatusIcon("ready", "relay-icon-sm")
+			<span>ready</span>
+		</span>
 	case "commit_failed":
-		<span class="relay-chip-red text-xs">failed</span>
+		<span class="relay-chip-red text-xs gap-1.5">
+			@StatusIcon("failed", "relay-icon-sm")
+			<span>failed</span>
+		</span>
 	case "push_failed":
-		<span class="relay-chip-red text-xs">push failed</span>
+		<span class="relay-chip-red text-xs gap-1.5">
+			@StatusIcon("failed", "relay-icon-sm")
+			<span>push failed</span>
+		</span>
 	case "blocked_validation", "blocked_audit_not_accepted", "blocked_no_diff_inspection", "blocked_mixed_changes", "blocked_no_upstream":
-		<span class="relay-chip-gray text-xs">blocked</span>
+		<span class="relay-chip-gray text-xs gap-1.5">
+			@StatusIcon("blocked", "relay-icon-sm")
+			<span>blocked</span>
+		</span>
 	case "no_changes":
-		<span class="relay-chip-gray text-xs">no changes</span>
+		<span class="relay-chip-gray text-xs gap-1.5">
+			@StatusIcon("pending", "relay-icon-sm")
+			<span>no changes</span>
+		</span>
 	case "unknown":
-		<span class="relay-chip-gray text-xs">unknown</span>
+		<span class="relay-chip-gray text-xs gap-1.5">
+			@StatusIcon("pending", "relay-icon-sm")
+			<span>unknown</span>
+		</span>
 	default:
 		if previews.HasCommitSuggestion {
-			<span class="relay-chip-green text-xs">ready</span>
+			<span class="relay-chip-green text-xs gap-1.5">
+				@StatusIcon("ready", "relay-icon-sm")
+				<span>ready</span>
+			</span>
 		} else {
-			<span class="relay-chip-gray text-xs">pending</span>
+			<span class="relay-chip-gray text-xs gap-1.5">
+				@StatusIcon("pending", "relay-icon-sm")
+				<span>pending</span>
+			</span>
 		}
 	}
 }
@@ -2350,7 +2429,10 @@ templ commitStateSummary(previews RunPreviews) {
 	<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3 space-y-1.5 text-xs">
 		<div class="flex gap-2">
 			<span class="text-gray-500 shrink-0">Commit state:</span>
-			<span class={ commitStateClass(previews.CommitState) }>{ commitStateLabel(previews.CommitState) }</span>
+			<span class={ commitStateClass(previews.CommitState) + " inline-flex items-center gap-1.5" }>
+				@StatusIcon(previews.CommitState, "relay-icon-sm")
+				<span>{ commitStateLabel(previews.CommitState) }</span>
+			</span>
 		</div>
 		if previews.CommitStateMsg != "" {
 			<div class="flex gap-2">
@@ -2361,19 +2443,34 @@ templ commitStateSummary(previews RunPreviews) {
 		<div class="flex gap-2">
 			<span class="text-gray-500 shrink-0">Validation:</span>
 			if previews.CommitValidationPassed || previews.ValidationFailedAccepted {
-				<span class="text-green-400">passed</span>
+				<span class="inline-flex items-center gap-1.5 text-green-400">
+					@StatusIcon("passed", "relay-icon-sm")
+					<span>passed</span>
+				</span>
 			} else if previews.ValidationRun.Status == "fail" {
-				<span class="text-red-400">failed</span>
+				<span class="inline-flex items-center gap-1.5 text-red-400">
+					@StatusIcon("failed", "relay-icon-sm")
+					<span>failed</span>
+				</span>
 			} else {
-				<span class="text-gray-500">pending</span>
+				<span class="inline-flex items-center gap-1.5 text-gray-500">
+					@StatusIcon("pending", "relay-icon-sm")
+					<span>pending</span>
+				</span>
 			}
 		</div>
 		<div class="flex gap-2">
 			<span class="text-gray-500 shrink-0">Audit clearance:</span>
 			if previews.AuditClearanceStatus == "accepted" {
-				<span class="text-green-400">accepted</span>
+				<span class="inline-flex items-center gap-1.5 text-green-400">
+					@StatusIcon("passed", "relay-icon-sm")
+					<span>accepted</span>
+				</span>
 			} else {
-				<span class="text-yellow-300">pending</span>
+				<span class="inline-flex items-center gap-1.5 text-yellow-300">
+					@StatusIcon("warning", "relay-icon-sm")
+					<span>pending</span>
+				</span>
 				if previews.HasAuditHandoff {
 					<span class="text-gray-400">review the audit handoff in Step 7.</span>
 				} else {
@@ -2383,12 +2480,18 @@ templ commitStateSummary(previews RunPreviews) {
 		</div>
 		<div class="flex gap-2">
 			<span class="text-gray-500 shrink-0">Change evidence:</span>
-			<span class={ changeEvidenceModeClass(previews.CommitEvidenceMode) }>{ formattedEvidenceMode(previews.CommitEvidenceMode) }</span>
+			<span class={ changeEvidenceModeClass(previews.CommitEvidenceMode) + " inline-flex items-center gap-1.5" }>
+				@ActionIcon("file-diff", "relay-icon-sm")
+				<span>{ formattedEvidenceMode(previews.CommitEvidenceMode) }</span>
+			</span>
 		</div>
 		if previews.CommitUpstreamRemote != "" && previews.CommitUpstreamBranch != "" {
 			<div class="flex gap-2">
 				<span class="text-gray-500 shrink-0">Upstream:</span>
-				<span class="text-gray-300">{ previews.CommitUpstreamRemote }/{ previews.CommitUpstreamBranch }</span>
+				<span class="inline-flex items-center gap-1.5 text-gray-300">
+					@ActionIcon("git-branch", "relay-icon-sm")
+					<span>{ previews.CommitUpstreamRemote }/{ previews.CommitUpstreamBranch }</span>
+				</span>
 			</div>
 		}
 		if previews.CommitAheadCount > 0 {
@@ -2456,7 +2559,8 @@ templ commitMessageSuggestion(previews RunPreviews, runID int64) {
 				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 				class="inline">
 				<input type="hidden" name="action" value="prepare-git-commit"/>
-				<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+				<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+					@ActionIcon("file-search", "relay-icon-sm")
 					Prepare Git Commit
 				</button>
 			</form>
@@ -2472,7 +2576,8 @@ templ commitActions(previews RunPreviews, runID int64) {
 				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 				class="inline">
 				<input type="hidden" name="action" value="create-git-commit"/>
-				<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+				<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+					@ActionIcon("git-commit", "relay-icon-sm")
 					Create Commit
 				</button>
 			</form>
@@ -2524,7 +2629,8 @@ templ pushActions(previews RunPreviews, runID int64) {
 				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 				class="inline">
 				<input type="hidden" name="action" value="push-git-commit"/>
-				<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+				<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+					@ActionIcon("upload-cloud", "relay-icon-sm")
 					Push to Upstream
 				</button>
 			</form>
@@ -2675,71 +2781,137 @@ func commitStateLabel(state string) string {
 
 templ intakeStatusChip(checks []store.Check) {
 	if hasCheckStatus(checks, "validation", "block") {
-		<span class="relay-chip-red">blocked</span>
+		<span class="relay-chip-red gap-1.5">
+			@StatusIcon("blocked", "relay-icon-sm")
+			<span>blocked</span>
+		</span>
 	} else if hasCheckStatus(checks, "validation", "warn") {
-		<span class="relay-chip-yellow">warn</span>
+		<span class="relay-chip-yellow gap-1.5">
+			@StatusIcon("warning", "relay-icon-sm")
+			<span>warn</span>
+		</span>
 	} else if hasCheckStatus(checks, "validation", "pass") {
-		<span class="relay-chip-green">pass</span>
+		<span class="relay-chip-green gap-1.5">
+			@StatusIcon("passed", "relay-icon-sm")
+			<span>pass</span>
+		</span>
 	} else if hasCheckStatus(checks, "validation", "fail") {
-		<span class="relay-chip-red">blocked</span>
+		<span class="relay-chip-red gap-1.5">
+			@StatusIcon("failed", "relay-icon-sm")
+			<span>blocked</span>
+		</span>
 	} else {
-		<span class="relay-chip-gray">pending</span>
+		<span class="relay-chip-gray gap-1.5">
+			@StatusIcon("pending", "relay-icon-sm")
+			<span>pending</span>
+		</span>
 	}
 }
 
 templ agentPromptStatusChip(hasAgentPrompt bool, checks []store.Check) {
 	if hasAgentPrompt {
-		<span class="relay-chip-green">ready</span>
+		<span class="relay-chip-green gap-1.5">
+			@StatusIcon("ready", "relay-icon-sm")
+			<span>ready</span>
+		</span>
 	} else if hasCheckStatus(checks, "validation", "block") || hasCheckStatus(checks, "validation", "fail") {
-		<span class="relay-chip-red">blocked</span>
+		<span class="relay-chip-red gap-1.5">
+			@StatusIcon("blocked", "relay-icon-sm")
+			<span>blocked</span>
+		</span>
 	} else {
-		<span class="relay-chip-gray">pending</span>
+		<span class="relay-chip-gray gap-1.5">
+			@StatusIcon("pending", "relay-icon-sm")
+			<span>pending</span>
+		</span>
 	}
 }
 
 templ agentPacketStatusChip(hasPacket, hasPrompt bool) {
 	if hasPacket {
-		<span class="relay-chip-green">ready</span>
+		<span class="relay-chip-green gap-1.5">
+			@StatusIcon("ready", "relay-icon-sm")
+			<span>ready</span>
+		</span>
 	} else if hasPrompt {
-		<span class="relay-chip-blue">available</span>
+		<span class="relay-chip-blue gap-1.5">
+			@StatusIcon("ready", "relay-icon-sm")
+			<span>available</span>
+		</span>
 	} else {
-		<span class="relay-chip-gray">pending</span>
+		<span class="relay-chip-gray gap-1.5">
+			@StatusIcon("pending", "relay-icon-sm")
+			<span>pending</span>
+		</span>
 	}
 }
 
 templ handoffPreflightStatusChip(status string) {
 	if status == "ready" {
-		<span class="relay-chip-green">ready</span>
+		<span class="relay-chip-green gap-1.5">
+			@StatusIcon("ready", "relay-icon-sm")
+			<span>ready</span>
+		</span>
 	} else if status == "blocked" {
-		<span class="relay-chip-red">blocked</span>
+		<span class="relay-chip-red gap-1.5">
+			@StatusIcon("blocked", "relay-icon-sm")
+			<span>blocked</span>
+		</span>
 	} else if status == "warning" {
-		<span class="relay-chip-yellow">warning</span>
+		<span class="relay-chip-yellow gap-1.5">
+			@StatusIcon("warning", "relay-icon-sm")
+			<span>warning</span>
+		</span>
 	}
 }
 
 templ handoffStatusChip(hasPacket bool) {
 	if hasPacket {
-		<span class="relay-chip-green">packet ready</span>
+		<span class="relay-chip-green gap-1.5">
+			@StatusIcon("ready", "relay-icon-sm")
+			<span>packet ready</span>
+		</span>
 	} else {
-		<span class="relay-chip-gray">no packet</span>
+		<span class="relay-chip-gray gap-1.5">
+			@StatusIcon("pending", "relay-icon-sm")
+			<span>no packet</span>
+		</span>
 	}
 }
 
 templ validationStatusChip(hasRun bool, checks []store.Check, hasAgentResult bool, isRunning bool) {
 	if isRunning {
-		<span class="relay-chip-blue">running</span>
+		<span class="relay-chip-blue gap-1.5">
+			@StatusIcon("running", "relay-icon-sm")
+			<span>running</span>
+		</span>
 	} else if hasRun {
 		if hasCheckStatus(checks, "validation_run", "pass") {
-			<span class="relay-chip-green">passed</span>
+			<span class="relay-chip-green gap-1.5">
+				@StatusIcon("passed", "relay-icon-sm")
+				<span>passed</span>
+			</span>
 		} else if hasCheckStatus(checks, "validation_run", "fail") {
-			<span class="relay-chip-red">failed</span>
+			<span class="relay-chip-red gap-1.5">
+				@StatusIcon("failed", "relay-icon-sm")
+				<span>failed</span>
+			</span>
 		} else {
-			<span class="relay-chip-blue">ran</span>
+			<span class="relay-chip-blue gap-1.5">
+				@StatusIcon("done", "relay-icon-sm")
+				<span>ran</span>
+			</span>
 		}
 	} else if hasAgentResult {
-		<span class="relay-chip-blue">available</span>
+		<span class="relay-chip-blue gap-1.5">
+			@StatusIcon("ready", "relay-icon-sm")
+			<span>available</span>
+		</span>
 	} else {
-		<span class="relay-chip-gray">pending</span>
+		<span class="relay-chip-gray gap-1.5">
+			@StatusIcon("pending", "relay-icon-sm")
+			<span>pending</span>
+		</span>
 	}
 }
 
@@ -2772,17 +2944,35 @@ func artifactExists(artifacts []store.Artifact, kind string) bool {
 
 templ openCodeExecutionStatusChip(status string) {
 	if status == "completed" {
-		<span class="relay-chip-green">completed</span>
+		<span class="relay-chip-green gap-1.5">
+			@StatusIcon("done", "relay-icon-sm")
+			<span>completed</span>
+		</span>
 	} else if status == "failed" {
-		<span class="relay-chip-red">failed</span>
+		<span class="relay-chip-red gap-1.5">
+			@StatusIcon("failed", "relay-icon-sm")
+			<span>failed</span>
+		</span>
 	} else if status == "starting" {
-		<span class="relay-chip-blue">starting</span>
+		<span class="relay-chip-blue gap-1.5">
+			@StatusIcon("active", "relay-icon-sm")
+			<span>starting</span>
+		</span>
 	} else if status == "running" {
-		<span class="relay-chip-blue">running</span>
+		<span class="relay-chip-blue gap-1.5">
+			@StatusIcon("running", "relay-icon-sm")
+			<span>running</span>
+		</span>
 	} else if status == "blocked" {
-		<span class="relay-chip-red">blocked</span>
+		<span class="relay-chip-red gap-1.5">
+			@StatusIcon("blocked", "relay-icon-sm")
+			<span>blocked</span>
+		</span>
 	} else {
-		<span class="relay-chip-gray">{ status }</span>
+		<span class="relay-chip-gray gap-1.5">
+			@StatusIcon("pending", "relay-icon-sm")
+			<span>{ status }</span>
+		</span>
 	}
 }
 
@@ -2975,27 +3165,6 @@ func relayValidationUIStateFor(hasAgentResult bool, hasValidationCommands bool, 
 	return relayValidationReady
 }
 
-func stageEvidenceSymbol(status string) string {
-	switch status {
-	case "passed":
-		return "✓"
-	case "failed", "blocked":
-		return "✗"
-	case "warning":
-		return "!"
-	case "running":
-		return "▶"
-	case "ready":
-		return "●"
-	case "pending":
-		return "○"
-	case "not-available":
-		return "—"
-	default:
-		return "○"
-	}
-}
-
 func stageEvidenceTitleClass(status string) string {
 	switch status {
 	case "passed":
@@ -3018,7 +3187,9 @@ func stageEvidenceTitleClass(status string) string {
 templ StageEvidenceRow(status string, title string, summary string, meta string) {
 	<div class={"relay-stage-evidence-row relay-stage-evidence-row-" + status} data-stage-evidence-row>
 		<div class="flex items-start gap-2 sm:gap-3 min-w-0 w-full">
-			<span class={"relay-stage-evidence-symbol relay-stage-evidence-symbol-" + status}>{ stageEvidenceSymbol(status) }</span>
+			<span class={"relay-stage-evidence-symbol relay-stage-evidence-symbol-" + status}>
+				@StatusIcon(status, "relay-icon-sm")
+			</span>
 			<div class="min-w-0 flex-1">
 				<div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
 					<span class={"text-sm font-medium " + stageEvidenceTitleClass(status)}>{ title }</span>
@@ -3040,7 +3211,9 @@ templ StageEvidenceRow(status string, title string, summary string, meta string)
 templ StageFailurePanel(title string, summary string) {
 	<div class="relay-stage-failure-panel" data-stage-failure-panel>
 		<div class="flex items-start gap-2">
-			<span class="relay-stage-evidence-symbol relay-stage-evidence-symbol-blocked shrink-0 mt-0.5">✗</span>
+						<span class="relay-stage-evidence-symbol relay-stage-evidence-symbol-blocked shrink-0 mt-0.5">
+				@StatusIcon("blocked", "relay-icon-sm")
+			</span>
 			<div class="min-w-0 flex-1">
 				<div class="text-sm font-medium text-red-300">{ title }</div>
 				if summary != "" {
@@ -3053,3 +3226,5 @@ templ StageFailurePanel(title string, summary string) {
 		</div>
 	</div>
 }
+
+

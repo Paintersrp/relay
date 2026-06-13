@@ -268,7 +268,8 @@ templ previewPanel(title string, id string, content string, emptyText string) {
 			if content != "" {
 				<button type="button"
 					data-copy-target={ id }
-					class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center">
+					class="text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center gap-1.5">
+					@ActionIcon("copy", "relay-icon-sm")
 					Copy
 				</button>
 			}

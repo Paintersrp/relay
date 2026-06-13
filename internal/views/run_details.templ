@@ -31,8 +31,14 @@ templ ArtifactInlinePreview(runID int64, kind string, content string, truncated 
 		<div class="px-3 py-2 border-b border-gray-800/70 space-y-1">
 			<div class="text-xs font-mono text-indigo-300 break-all">{ kind }</div>
 			<div class="relay-action-row text-xs">
-				<a href={ "/runs/" + Itoa(runID) + "/artifacts/" + kind } class="text-indigo-400 hover:text-indigo-300 min-h-[32px] inline-flex items-center">Open full</a>
-				<a href={ "/runs/" + Itoa(runID) + "/artifacts/" + kind + "/download" } class="text-gray-500 hover:text-gray-300 min-h-[32px] inline-flex items-center">Download</a>
+				<a href={ "/runs/" + Itoa(runID) + "/artifacts/" + kind } class="text-indigo-400 hover:text-indigo-300 min-h-[32px] inline-flex items-center gap-1.5">
+					@ActionIcon("external-link", "relay-icon-sm")
+					<span>Open full</span>
+				</a>
+				<a href={ "/runs/" + Itoa(runID) + "/artifacts/" + kind + "/download" } class="text-gray-500 hover:text-gray-300 min-h-[32px] inline-flex items-center gap-1.5">
+					@ActionIcon("download", "relay-icon-sm")
+					<span>Download</span>
+				</a>
 			</div>
 			if truncated {
 				<p class="text-xs text-yellow-400">Preview truncated to the first 64 KB. Open full or download for the complete artifact.</p>
@@ -49,7 +55,8 @@ templ ArtifactPreviewLink(runID int64, kind string, className string) {
 		hx-swap="outerHTML settle:120ms"
 		hx-indicator="#run-workbench-loading"
 		data-relay-artifact-preview-link="true"
-		class={ className }>
+		class={ className + " inline-flex items-center gap-1.5" }>
+		@ArtifactIcon(kind, "relay-icon-sm")
 		{ children... }
 	</a>
 }
@@ -105,7 +112,8 @@ templ RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, 
 		<div class="relay-detail-list">
 			<div class="relay-detail-row">
 				<span class="relay-detail-label">Repo</span>
-				<span class="relay-detail-value">
+				<span class="relay-detail-value inline-flex items-center justify-end gap-1.5">
+					@ActionIcon("folder-git", "relay-icon-sm")
 					if repo != nil && repo.Name != "" {
 						{ repo.Name }
 					} else {
@@ -115,7 +123,8 @@ templ RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, 
 			</div>
 			<div class="relay-detail-row">
 				<span class="relay-detail-label">Branch</span>
-				<span class="relay-detail-value">
+				<span class="relay-detail-value inline-flex items-center justify-end gap-1.5">
+					@ActionIcon("git-branch", "relay-icon-sm")
 					if run.BranchName != "" {
 						{ run.BranchName }
 					} else {
@@ -152,12 +161,16 @@ templ RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, 
 			</div>
 			<div class="relay-detail-row">
 				<span class="relay-detail-label">Status</span>
-				<span class={ statusBadge(run.Status) }>{ run.Status }</span>
+				<span class={ statusBadge(run.Status) + " inline-flex items-center gap-1.5" }>
+					@StatusIcon(run.Status, "relay-icon-sm")
+					<span>{ run.Status }</span>
+				</span>
 			</div>
 			if previews.NextAction.Kind != "" && previews.NextAction.Kind != "none" {
 				<div class="relay-detail-row">
 					<span class="relay-detail-label">Current Gate</span>
-					<span>
+					<span class="inline-flex items-center gap-1.5">
+						@ActionIcon(nextActionIconName(previews.NextAction), "relay-icon-sm")
 						<span class={ nextActionChipClass(previews.NextAction.Severity) }>{ previews.NextAction.Title }</span>
 					</span>
 				</div>
@@ -168,34 +181,42 @@ templ RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, 
 			</div>
 			<div class="relay-detail-row">
 				<span class="relay-detail-label">Validation</span>
-				<span class="relay-detail-value">
+				<span class="relay-detail-value inline-flex items-center justify-end gap-1.5">
 					if hasCheckStatus(checks, "validation_run", "pass") {
+						@StatusIcon("passed", "relay-icon-sm")
 						<span class="text-green-400">passed</span>
 					} else if hasCheckStatus(checks, "validation_run", "fail") {
+						@StatusIcon("failed", "relay-icon-sm")
 						<span class="text-red-400">failed</span>
 					} else if artifactExists(artifacts, "validation_run_json") {
+						@StatusIcon("done", "relay-icon-sm")
 						<span class="text-blue-400">ran</span>
 					} else {
+						@StatusIcon("pending", "relay-icon-sm")
 						<span class="text-gray-600">pending</span>
 					}
 				</span>
 			</div>
 			<div class="relay-detail-row">
 				<span class="relay-detail-label">Audit</span>
-				<span class="relay-detail-value">
+				<span class="relay-detail-value inline-flex items-center justify-end gap-1.5">
 					if previews.HasAuditHandoff {
+						@StatusIcon("ready", "relay-icon-sm")
 						<span class="text-green-400">ready</span>
 					} else {
+						@StatusIcon("pending", "relay-icon-sm")
 						<span class="text-gray-600">pending</span>
 					}
 				</span>
 			</div>
 			<div class="relay-detail-row">
 				<span class="relay-detail-label">Commit</span>
-				<span class="relay-detail-value">
+				<span class="relay-detail-value inline-flex items-center justify-end gap-1.5">
 					if previews.HasCommitSuggestion {
+						@StatusIcon("ready", "relay-icon-sm")
 						<span class="text-green-400">ready</span>
 					} else {
+						@StatusIcon("pending", "relay-icon-sm")
 						<span class="text-gray-600">pending</span>
 					}
 				</span>
@@ -239,11 +260,20 @@ templ LatestEventsSummary(events []store.Event, runID int64) {
 					for _, e := range display {
 						<div class="px-3 py-1.5 text-xs flex items-start gap-2 min-w-0">
 							if e.Level == "warn" {
-								<span class="text-yellow-400 font-mono text-[10px] shrink-0 mt-0.5">WARN</span>
+								<span class="inline-flex items-center gap-1.5 text-yellow-400 font-mono text-[10px] shrink-0 mt-0.5">
+									@StatusIcon("warning", "relay-icon-sm")
+									<span>WARN</span>
+								</span>
 							} else if e.Level == "error" {
-								<span class="text-red-400 font-mono text-[10px] shrink-0 mt-0.5">ERR</span>
+								<span class="inline-flex items-center gap-1.5 text-red-400 font-mono text-[10px] shrink-0 mt-0.5">
+									@StatusIcon("failed", "relay-icon-sm")
+									<span>ERR</span>
+								</span>
 							} else {
-								<span class="text-gray-500 font-mono text-[10px] shrink-0 mt-0.5">INFO</span>
+								<span class="inline-flex items-center gap-1.5 text-gray-500 font-mono text-[10px] shrink-0 mt-0.5">
+									@StatusIcon("pending", "relay-icon-sm")
+									<span>INFO</span>
+								</span>
 							}
 							<span class="text-gray-400 min-w-0 break-words">{ e.Message }</span>
 						</div>

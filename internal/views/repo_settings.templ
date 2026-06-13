@@ -29,18 +29,27 @@ templ RepoSettingsShell(roots []store.RepoRoot, reposList []store.Repo, scanSumm
 }
 
 templ RepoSettingsHeader() {
-	<h1 class="text-xl sm:text-2xl font-bold mb-2">Repository Settings</h1>
+	<h1 class="text-xl sm:text-2xl font-bold mb-2 inline-flex items-center gap-2">
+		@ActionIcon("settings", "relay-icon")
+		<span>Repository Settings</span>
+	</h1>
 	<p class="text-gray-500 text-sm mb-6 sm:mb-8">Configure local folders Relay scans for Git repositories.</p>
 }
 
 templ RepoSettingsLoadingIndicator() {
-	<div id="repo-settings-loading" class="relay-settings-loading htmx-indicator">Updating repository settings...</div>
+	<div id="repo-settings-loading" class="relay-settings-loading htmx-indicator inline-flex items-center gap-1.5">
+		@ActionIcon("settings", "relay-icon-sm animate-spin")
+		<span>Updating repository settings...</span>
+	</div>
 }
 
 templ RepoSettingsScanSummary(scanSummary *repos.ScanSummary) {
 	if scanSummary != nil {
 		<div class="mb-6 p-4 rounded-xl bg-gray-900 border border-gray-700">
-			<h2 class="text-sm font-medium text-gray-300 mb-2">Scan Summary</h2>
+			<h2 class="text-sm font-medium text-gray-300 mb-2 inline-flex items-center gap-1.5">
+				@ActionIcon("database", "relay-icon-sm")
+				<span>Scan Summary</span>
+			</h2>
 			<div class="text-xs sm:text-sm text-gray-400 space-y-1">
 				<div>Roots scanned: { Fmt("%d", scanSummary.RootsScanned) }</div>
 				<div>Repos found: { Fmt("%d", scanSummary.ReposFound) }</div>
@@ -71,7 +80,8 @@ templ RepoSettingsRoots(roots []store.RepoRoot) {
 			<input type="text" name="path" placeholder="D:/Code or C:/Users/you/source/repos"
 				class="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 min-h-[40px] min-w-0"/>
 			<button type="submit"
-				class="btn-primary text-sm whitespace-nowrap">
+				class="btn-primary text-sm whitespace-nowrap gap-1.5">
+				@ActionIcon("folder-git", "relay-icon-sm")
 				Add Root
 			</button>
 		</form>
@@ -104,10 +114,16 @@ templ RepoSettingsRoots(roots []store.RepoRoot) {
 										class="inline">
 										if root.Enabled == 1 {
 											<input type="hidden" name="enabled" value="0"/>
-											<button type="submit" class="text-xs text-green-400 hover:text-green-300 min-h-[32px] inline-flex items-center">enabled</button>
+											<button type="submit" class="text-xs text-green-400 hover:text-green-300 min-h-[32px] inline-flex items-center gap-1.5">
+												@ActionIcon("check-circle", "relay-icon-sm")
+												<span>enabled</span>
+											</button>
 										} else {
 											<input type="hidden" name="enabled" value="1"/>
-											<button type="submit" class="text-xs text-gray-600 hover:text-gray-400 min-h-[32px] inline-flex items-center">disabled</button>
+											<button type="submit" class="text-xs text-gray-600 hover:text-gray-400 min-h-[32px] inline-flex items-center gap-1.5">
+												@ActionIcon("circle", "relay-icon-sm")
+												<span>disabled</span>
+											</button>
 										}
 									</form>
 								</td>
@@ -129,7 +145,8 @@ templ RepoSettingsRoots(roots []store.RepoRoot) {
 										hx-confirm="Delete this scan root?"
 										class="inline">
 										<button type="submit"
-											class="text-xs text-red-400 hover:text-red-300 min-h-[32px] inline-flex items-center">
+											class="text-xs text-red-400 hover:text-red-300 min-h-[32px] inline-flex items-center gap-1.5">
+											@ActionIcon("x-circle", "relay-icon-sm")
 											Delete
 										</button>
 									</form>
@@ -150,7 +167,8 @@ templ RepoSettingsRoots(roots []store.RepoRoot) {
 			data-relay-settings-action="true"
 			class="mt-4">
 			<button type="submit"
-				class="btn-secondary text-sm">
+				class="btn-secondary text-sm gap-1.5">
+				@ActionIcon("play", "relay-icon-sm")
 				Scan Now
 			</button>
 		</form>
