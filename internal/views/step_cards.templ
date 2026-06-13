@@ -137,10 +137,18 @@ func pipelineStageState(step string, activeStep string, previews RunPreviews, ar
 		}
 		return "pending"
 	case "commit":
-		if previews.CommitState == "pushed" || previews.HasPushResult && previews.PushResultSuccess {
+		switch previews.CommitState {
+		case "pushed", "committed_local", "no_changes":
+			return "done"
+		case "push_failed", "commit_failed", "blocked_validation", "blocked_audit_not_accepted", "blocked_no_diff_inspection", "blocked_mixed_changes", "blocked_no_upstream", "unknown":
+			return "blocked"
+		case "ready_to_commit":
+			return "ready"
+		}
+		if previews.HasPushResult && previews.PushResultSuccess {
 			return "done"
 		}
-		if previews.CommitState == "committed_local" || previews.HasCommitResult && previews.CommitResultSuccess {
+		if previews.HasCommitResult && previews.CommitResultSuccess {
 			return "done"
 		}
 		if artifactExists(artifacts, "commit_message_text") || previews.CommitSuggestionSelected != "" {
@@ -2169,6 +2177,8 @@ templ commitStatusChip(previews RunPreviews) {
 		<span class="relay-chip-gray text-xs">blocked</span>
 	case "no_changes":
 		<span class="relay-chip-gray text-xs">no changes</span>
+	case "unknown":
+		<span class="relay-chip-gray text-xs">unknown</span>
 	default:
 		if previews.HasCommitSuggestion {
 			<span class="relay-chip-green text-xs">ready</span>
@@ -2184,6 +2194,12 @@ templ commitStateSummary(previews RunPreviews) {
 			<span class="text-gray-500 shrink-0">Commit state:</span>
 			<span class={ commitStateClass(previews.CommitState) }>{ commitStateLabel(previews.CommitState) }</span>
 		</div>
+		if previews.CommitStateMsg != "" {
+			<div class="flex gap-2">
+				<span class="text-gray-500 shrink-0">State detail:</span>
+				<span class="text-red-300">{ previews.CommitStateMsg }</span>
+			</div>
+		}
 		<div class="flex gap-2">
 			<span class="text-gray-500 shrink-0">Validation:</span>
 			if previews.CommitValidationPassed || previews.ValidationFailedAccepted {
@@ -2275,7 +2291,7 @@ templ commitMessageSuggestion(previews RunPreviews, runID int64) {
 				@StageEvidenceRow("warning", w, "", "")
 			}
 		}
-	} else if previews.HasGitStatus && previews.HasAuditHandoff {
+	} else if (previews.CommitState == "ready_to_commit" || previews.CommitState == "") && previews.HasGitStatus && previews.HasAuditHandoff {
 		@StageEvidenceRow("ready", "Prepare Git Commit", "Reviews the handoff, audit handoff, and git diff evidence, then generates a suggested commit message.", "") {
 			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
 				hx-post={"/runs/" + Itoa(runID) + "/actions"}
@@ -2461,6 +2477,8 @@ func commitStateClass(state string) string {
 		return "text-red-300"
 	case "no_changes":
 		return "text-yellow-300"
+	case "unknown":
+		return "text-gray-500"
 	default:
 		return "text-gray-400"
 	}
@@ -2480,6 +2498,8 @@ func commitStateLabel(state string) string {
 		return "Blocked: no upstream configured"
 	case "no_changes":
 		return "No changes"
+	case "unknown":
+		return "Commit state unavailable"
 	case "ready_to_commit":
 		return "Ready to commit"
 	case "committed_local":

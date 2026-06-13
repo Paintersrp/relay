@@ -5,6 +5,25 @@ import (
 	"testing"
 )
 
+func nextActionCommitBaseInput() WorkbenchNextActionInput {
+	return WorkbenchNextActionInput{
+		HasOriginalHandoff:     true,
+		HasAgentPrompt:         true,
+		HasAgentPacket:         true,
+		HasOpenCodeCLICheck:    true,
+		OpenCodeCLICheckStatus: "pass",
+		HasOpenCodeDryRun:      true,
+		HasOpenCodeExecution:   true,
+		HasAgentResult:         true,
+		HasValidationCommands:  true,
+		HasValidationRun:       true,
+		ValidationPassed:       true,
+		HasGitDiffEvidence:     true,
+		HasAuditHandoff:        true,
+		AuditClearanceStatus:   "accepted",
+	}
+}
+
 func TestNextAction_NoOriginalHandoff(t *testing.T) {
 	input := WorkbenchNextActionInput{
 		HasOriginalHandoff: false,
@@ -757,6 +776,122 @@ func TestNextAction_CommitSuggestionReady(t *testing.T) {
 	}
 	if action.Step != "commit" {
 		t.Errorf("expected step commit, got %s", action.Step)
+	}
+}
+
+func TestNextAction_CommittedLocalBeatsCommitSuggestion(t *testing.T) {
+	input := nextActionCommitBaseInput()
+	input.CommitState = "committed_local"
+	input.CommitHasUpstream = true
+	input.CommitAheadCount = 1
+	input.HasCommitSuggestion = true
+
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionCommittedLocal {
+		t.Fatalf("expected committed_local, got %s", action.Kind)
+	}
+	if action.Title != "Committed locally" {
+		t.Fatalf("expected committed locally title, got %q", action.Title)
+	}
+	if action.PrimaryFormAction != "push-git-commit" {
+		t.Fatalf("expected push-git-commit form action, got %q", action.PrimaryFormAction)
+	}
+	if action.Severity != "ready" {
+		t.Fatalf("expected ready severity, got %s", action.Severity)
+	}
+}
+
+func TestNextAction_PushedBeatsCommitSuggestion(t *testing.T) {
+	input := nextActionCommitBaseInput()
+	input.CommitState = "pushed"
+	input.HasCommitSuggestion = true
+
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionPushed {
+		t.Fatalf("expected pushed, got %s", action.Kind)
+	}
+	if action.Title != "Pushed" {
+		t.Fatalf("expected pushed title, got %q", action.Title)
+	}
+	if action.Severity != "done" {
+		t.Fatalf("expected done severity, got %s", action.Severity)
+	}
+}
+
+func TestNextAction_PushFailedBeatsReadyStates(t *testing.T) {
+	input := nextActionCommitBaseInput()
+	input.CommitState = "push_failed"
+	input.HasCommitSuggestion = true
+
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionPushFailed {
+		t.Fatalf("expected push_failed, got %s", action.Kind)
+	}
+	if action.Title != "Push failed" {
+		t.Fatalf("expected push failed title, got %q", action.Title)
+	}
+	if action.Severity != "blocked" {
+		t.Fatalf("expected blocked severity, got %s", action.Severity)
+	}
+}
+
+func TestNextAction_CommitFailedBeatsReadyStates(t *testing.T) {
+	input := nextActionCommitBaseInput()
+	input.CommitState = "commit_failed"
+	input.HasCommitSuggestion = true
+
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionCommitFailed {
+		t.Fatalf("expected commit_failed, got %s", action.Kind)
+	}
+	if action.Title != "Commit failed" {
+		t.Fatalf("expected commit failed title, got %q", action.Title)
+	}
+	if action.Severity != "blocked" {
+		t.Fatalf("expected blocked severity, got %s", action.Severity)
+	}
+}
+
+func TestNextAction_BlockedNoUpstreamShowsCommittedLocalCopy(t *testing.T) {
+	input := nextActionCommitBaseInput()
+	input.CommitState = "blocked_no_upstream"
+	input.CommitHasUpstream = false
+	input.CommitAheadCount = 0
+	input.HasCommitSuggestion = true
+
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionCommittedLocal {
+		t.Fatalf("expected committed_local kind for no-upstream state, got %s", action.Kind)
+	}
+	if action.Title != "Committed locally" {
+		t.Fatalf("expected committed locally title, got %q", action.Title)
+	}
+	if !strings.Contains(action.Summary, "no upstream branch") {
+		t.Fatalf("expected no-upstream summary, got %q", action.Summary)
+	}
+	if action.Severity != "blocked" {
+		t.Fatalf("expected blocked severity, got %s", action.Severity)
+	}
+}
+
+func TestNextAction_BlockedAuditNotAcceptedPointsToAuditStep(t *testing.T) {
+	input := nextActionCommitBaseInput()
+	input.CommitState = "blocked_audit_not_accepted"
+	input.AuditClearanceStatus = "pending"
+	input.HasCommitSuggestion = true
+
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionResolveCommitBlocker {
+		t.Fatalf("expected resolve_commit_blocker, got %s", action.Kind)
+	}
+	if action.Step != "audit" {
+		t.Fatalf("expected audit step, got %s", action.Step)
+	}
+	if action.Disabled != true {
+		t.Fatalf("expected disabled blocked state")
+	}
+	if action.Title != "Audit clearance needed" {
+		t.Fatalf("expected audit clearance title, got %q", action.Title)
 	}
 }
 

@@ -335,8 +335,10 @@ type CommitStateInput struct {
 	HasGitDiffEvidence       bool
 	EvidenceHeadSHA          string
 	EvidenceBranch           string
+	HasCommitResult          bool
 	CommitResultSuccess      bool
 	CommitResultSHA          string
+	HasPushResult            bool
 	PushResultSuccess        bool
 }
 
@@ -363,6 +365,16 @@ func ResolveCommitState(input CommitStateInput) GitCommitState {
 
 	if !input.HasGitDiffEvidence {
 		state.State = CommitStateBlockedNoDiffInspection
+		return state
+	}
+
+	if input.HasPushResult && !input.PushResultSuccess {
+		state.State = CommitStatePushFailed
+		return state
+	}
+
+	if input.HasCommitResult && !input.CommitResultSuccess {
+		state.State = CommitStateCommitFailed
 		return state
 	}
 
@@ -423,6 +435,11 @@ func ResolveCommitState(input CommitStateInput) GitCommitState {
 
 	// Dirty worktree: uncommitted changes exist → ready_to_commit
 	if !state.WorktreeClean {
+		if input.EvidenceMode == EvidenceModeCommittedRange || input.CommitResultSuccess || input.PushResultSuccess {
+			state.State = CommitStateBlockedMixedChanges
+			state.Warnings = append(state.Warnings, "Committed changes exist since the run baseline, but the working tree is also dirty. Resolve uncommitted changes before committing or pushing.")
+			return state
+		}
 		state.State = CommitStateReadyToCommit
 		return state
 	}
@@ -430,8 +447,14 @@ func ResolveCommitState(input CommitStateInput) GitCommitState {
 	// Clean worktree: classify based on committed evidence or commit result
 	hasCommittedEvidence := input.EvidenceMode == EvidenceModeCommittedRange
 	hasCommitResult := input.CommitResultSuccess
+	hasPushResult := input.PushResultSuccess
 	isNoChanges := input.EvidenceMode == EvidenceModeNoChanges || input.EvidenceMode == EvidenceModeBaselineUnavailableClean
 	isUncommittedEvidence := input.EvidenceMode == EvidenceModeUncommittedWorktree || input.EvidenceMode == EvidenceModeBaselineUnavailableDirty
+
+	if hasPushResult {
+		state.State = CommitStatePushed
+		return state
+	}
 
 	if hasCommittedEvidence || hasCommitResult {
 		if input.CommitResultSHA != "" {

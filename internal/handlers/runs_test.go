@@ -15,6 +15,7 @@ import (
 
 	"relay/internal/artifacts"
 	"relay/internal/pipeline"
+	"relay/internal/repos"
 	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -711,6 +712,121 @@ func TestGenerateAuditHandoffClearsAuditClearanceArtifact(t *testing.T) {
 		if a.Kind == "audit_clearance_json" {
 			t.Fatal("expected generateAuditHandoff to clear audit_clearance_json artifact record")
 		}
+	}
+}
+
+func TestGetRunInspectorSummaryUsesCommitAndPushState(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	repo, err := s.GetRepo(run.RepoID)
+	if err != nil {
+		t.Fatalf("get repo: %v", err)
+	}
+
+	initGitRepo(t, repo.Path)
+	if err := os.WriteFile(filepath.Join(repo.Path, "README.md"), []byte("# Repo\n"), 0644); err != nil {
+		t.Fatalf("write readme: %v", err)
+	}
+	gitAddCommit(t, repo.Path, "initial commit")
+	cmd := exec.Command("git", "-C", repo.Path, "branch", "-M", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git branch main: %v\n%s", err, out)
+	}
+
+	remote := t.TempDir()
+	cmd = exec.Command("git", "-C", remote, "init", "--bare")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init bare remote: %v\n%s", err, out)
+	}
+	cmd = exec.Command("git", "-C", repo.Path, "remote", "add", "origin", remote)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %v\n%s", err, out)
+	}
+	cmd = exec.Command("git", "-C", repo.Path, "push", "--set-upstream", "origin", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git push upstream: %v\n%s", err, out)
+	}
+
+	baselineSHABytes, err := exec.Command("git", "-C", repo.Path, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("read baseline head: %v", err)
+	}
+	baselineSHA := strings.TrimSpace(string(baselineSHABytes))
+
+	if err := os.WriteFile(filepath.Join(repo.Path, "feature.txt"), []byte("feature\n"), 0644); err != nil {
+		t.Fatalf("write feature file: %v", err)
+	}
+	commitResult := repos.CreateGitCommit(repo.Path, "feat: add feature")
+	if !commitResult.Success {
+		t.Fatalf("create commit: %s", commitResult.Error)
+	}
+
+	validationJSON := `{"status":"pass","repo_path":"` + repo.Path + `","commands":[]}`
+	createTestArtifact(t, s, runID, "validation_run_json", "application/json", validationJSON)
+	if _, err := s.CreateCheck(runID, "validation_run", "pass", "Validation passed", "{}"); err != nil {
+		t.Fatalf("create validation check: %v", err)
+	}
+	createTestArtifact(t, s, runID, "git_status_text", "text/plain", " M feature.txt\n")
+	createTestArtifact(t, s, runID, "git_diff_stat", "text/plain", " feature.txt | 1 +\n 1 file changed, 1 insertion(+)\n")
+	createTestArtifact(t, s, runID, "audit_handoff", "text/markdown", "# Audit handoff\n")
+	createTestArtifact(t, s, runID, "audit_clearance_json", "application/json", `{"status":"accepted","accepted_at":"2026-06-13T10:00:00Z","source":"manual_ui"}`)
+
+	evidenceJSON := `{"mode":"committed_range","baseline_sha":"` + baselineSHA + `","current_head_sha":"` + commitResult.SHA + `","branch":"main","commit_count":1}`
+	createTestArtifact(t, s, runID, "git_change_evidence_json", "application/json", evidenceJSON)
+	commitResultJSON, err := json.MarshalIndent(commitResult, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal commit result: %v", err)
+	}
+	createTestArtifact(t, s, runID, "git_commit_result_json", "application/json", string(commitResultJSON))
+
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=commit", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	html := w.Body.String()
+	if !strings.Contains(html, "Committed locally") {
+		t.Fatalf("expected committed locally gate, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Push to Upstream") {
+		t.Fatalf("expected push button, got:\n%s", html)
+	}
+	if strings.Contains(html, "Ready to commit") {
+		t.Fatalf("expected no stale ready-to-commit text, got:\n%s", html)
+	}
+
+	pushResult := repos.PushGitCommit(repo.Path)
+	if !pushResult.Success {
+		t.Fatalf("push commit: %s", pushResult.Error)
+	}
+	pushResultJSON, err := json.MarshalIndent(pushResult, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal push result: %v", err)
+	}
+	createTestArtifact(t, s, runID, "git_push_result_json", "application/json", string(pushResultJSON))
+
+	w2 := httptest.NewRecorder()
+	h.Get(w2, req)
+	if w2.Code != 200 {
+		t.Fatalf("expected 200 after push, got %d", w2.Code)
+	}
+	html2 := w2.Body.String()
+	if !strings.Contains(html2, "Pushed") {
+		t.Fatalf("expected pushed gate, got:\n%s", html2)
+	}
+	if strings.Contains(html2, "Ready to commit") {
+		t.Fatalf("expected no stale ready-to-commit text after push, got:\n%s", html2)
 	}
 }
 

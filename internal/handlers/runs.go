@@ -642,76 +642,6 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Compute next action
-	hasIntakeReview := len(intakeReview.Warnings) > 0 || len(intakeReview.Blockers) > 0 || originalPreview != ""
-	hasAgentResult := hasArtifactKind(artifactsList, "agent_result_raw")
-	agentResultStatus := ""
-	if hasAgentResult {
-		if c := findFirstCheckByKind(checksList, "agent_result"); c != nil {
-			agentResultStatus = c.Status
-		}
-	}
-	hasValidationRun := hasArtifactKind(artifactsList, "validation_run_json")
-	validationPassed := hasCheckKindWithStatus(checksList, "validation_run", "pass")
-	validationFailed := hasCheckKindWithStatus(checksList, "validation_run", "fail")
-
-	hasValidationProgress := validationProgressPreview.Status != ""
-	validationProgressRunning := isValidationRunning
-	validationProgressStatus := validationProgressPreview.Status
-
-	validationAcceptedWithFailure := run.Status == "validation_failed_accepted"
-
-	nextActionInput := pipeline.WorkbenchNextActionInput{
-		HasOriginalHandoff:            originalPreview != "" || hasArtifactKind(artifactsList, "original_handoff"),
-		HasIntakeReview:               hasIntakeReview,
-		IntakeHasBlockers:             len(intakeReview.Blockers) > 0,
-		IntakeHasWarnings:             len(intakeReview.Warnings) > 0,
-		HasIntakeRemediationHandoff:   hasIntakeRemediationHandoff,
-		HasAgentPrompt:                hasArtifactKind(artifactsList, "agent_prompt"),
-		HasAgentPacket:                hasArtifactKind(artifactsList, "opencode_handoff_packet"),
-		HandoffPreflightStatus:        preflightStatus,
-		OpenCodeAdapterError:          openCodeAdapterError,
-		HasOpenCodeCLICheck:           hasCLICheck,
-		OpenCodeCLICheckStatus:        cliCheckStatus,
-		HasOpenCodeDryRun:             dryRunPreview != "",
-		HasOpenCodeExecution:          hasOpenCodeExecution,
-		OpenCodeExecutionStatus:       openCodeExecStatus,
-		HasOpenCodeStaleRunning:       openCodePreviews.HasOpenCodeStaleRunning,
-		OpenCodeLifecycleState:        openCodePreviews.OpenCodeLifecycleState,
-		OpenCodeCanRecover:            openCodePreviews.OpenCodeCanRecover,
-		HasAgentResult:                hasAgentResult,
-		AgentResultStatus:             agentResultStatus,
-		HasValidationCommands:         hasValidationCommands,
-		HasValidationRun:              hasValidationRun,
-		ValidationPassed:              validationPassed,
-		ValidationFailed:              validationFailed,
-		HasValidationProgress:         hasValidationProgress,
-		ValidationProgressRunning:     validationProgressRunning,
-		ValidationProgressStatus:      validationProgressStatus,
-		HasAuditHandoff:               hasAuditHandoff,
-		HasGitDiffEvidence:            hasGitDiffEvidence,
-		HasGitStatus:                  hasGitStatus,
-		HasGitDiffStat:                hasGitDiffStat,
-		HasGitDiffPatch:               hasGitDiffPatch,
-		HasGitDiffNameStatus:          hasGitDiffNameStatus,
-		HasCommitSuggestion:           hasCommitSuggestion,
-		ValidationAcceptedWithFailure: validationAcceptedWithFailure,
-	}
-
-	nextAction := pipeline.BuildWorkbenchNextAction(nextActionInput)
-	nextActionView := views.WorkbenchNextActionView{
-		Kind:              string(nextAction.Kind),
-		Title:             nextAction.Title,
-		Summary:           nextAction.Summary,
-		Step:              nextAction.Step,
-		PrimaryAction:     nextAction.PrimaryAction,
-		PrimaryFormAction: nextAction.PrimaryFormAction,
-		PrimaryHref:       nextAction.PrimaryHref,
-		Disabled:          nextAction.Disabled,
-		DisabledReason:    nextAction.DisabledReason,
-		Severity:          nextAction.Severity,
-	}
-
 	// Compute git baseline state for display
 	gitBaselineBaselineSHA := run.BaseCommit
 	gitBaselineHeadSHA := run.HeadCommit
@@ -799,6 +729,24 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	hasIntakeReview := len(intakeReview.Warnings) > 0 || len(intakeReview.Blockers) > 0 || originalPreview != ""
+	hasAgentResult := hasArtifactKind(artifactsList, "agent_result_raw")
+	agentResultStatus := ""
+	if hasAgentResult {
+		if c := findFirstCheckByKind(checksList, "agent_result"); c != nil {
+			agentResultStatus = c.Status
+		}
+	}
+	hasValidationRun := hasArtifactKind(artifactsList, "validation_run_json")
+	validationPassed := hasCheckKindWithStatus(checksList, "validation_run", "pass")
+	validationFailed := hasCheckKindWithStatus(checksList, "validation_run", "fail")
+
+	hasValidationProgress := validationProgressPreview.Status != ""
+	validationProgressRunning := isValidationRunning
+	validationProgressStatus := validationProgressPreview.Status
+
+	validationAcceptedWithFailure := run.Status == "validation_failed_accepted"
+
 	commitStateResult := repos.ResolveCommitState(repos.CommitStateInput{
 		RepoPath:                 previewsRepoPath,
 		ValidationPassed:         validationPassed,
@@ -808,10 +756,76 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		HasGitDiffEvidence:       hasGitChangeEvidence,
 		EvidenceHeadSHA:          gitChangeEvidenceHead,
 		EvidenceBranch:           gitChangeEvidenceBranch,
+		HasCommitResult:          hasCommitResult,
 		CommitResultSuccess:      commitResultSuccess,
 		CommitResultSHA:          commitResultSHA,
+		HasPushResult:            hasPushResult,
 		PushResultSuccess:        pushResultSuccess,
 	})
+
+	// Compute next action
+	nextActionInput := pipeline.WorkbenchNextActionInput{
+		HasOriginalHandoff:            originalPreview != "" || hasArtifactKind(artifactsList, "original_handoff"),
+		HasIntakeReview:               hasIntakeReview,
+		IntakeHasBlockers:             len(intakeReview.Blockers) > 0,
+		IntakeHasWarnings:             len(intakeReview.Warnings) > 0,
+		HasIntakeRemediationHandoff:   hasIntakeRemediationHandoff,
+		HasAgentPrompt:                hasArtifactKind(artifactsList, "agent_prompt"),
+		HasAgentPacket:                hasArtifactKind(artifactsList, "opencode_handoff_packet"),
+		HandoffPreflightStatus:        preflightStatus,
+		OpenCodeAdapterError:          openCodeAdapterError,
+		HasOpenCodeCLICheck:           hasCLICheck,
+		OpenCodeCLICheckStatus:        cliCheckStatus,
+		HasOpenCodeDryRun:             dryRunPreview != "",
+		HasOpenCodeExecution:          hasOpenCodeExecution,
+		OpenCodeExecutionStatus:       openCodeExecStatus,
+		HasOpenCodeStaleRunning:       openCodePreviews.HasOpenCodeStaleRunning,
+		OpenCodeLifecycleState:        openCodePreviews.OpenCodeLifecycleState,
+		OpenCodeCanRecover:            openCodePreviews.OpenCodeCanRecover,
+		HasAgentResult:                hasAgentResult,
+		AgentResultStatus:             agentResultStatus,
+		HasValidationCommands:         hasValidationCommands,
+		HasValidationRun:              hasValidationRun,
+		ValidationPassed:              validationPassed,
+		ValidationFailed:              validationFailed,
+		HasValidationProgress:         hasValidationProgress,
+		ValidationProgressRunning:     validationProgressRunning,
+		ValidationProgressStatus:      validationProgressStatus,
+		HasAuditHandoff:               hasAuditHandoff,
+		HasGitDiffEvidence:            hasGitDiffEvidence,
+		HasGitStatus:                  hasGitStatus,
+		HasGitDiffStat:                hasGitDiffStat,
+		HasGitDiffPatch:               hasGitDiffPatch,
+		HasGitDiffNameStatus:          hasGitDiffNameStatus,
+		HasCommitSuggestion:           hasCommitSuggestion,
+		ValidationAcceptedWithFailure: validationAcceptedWithFailure,
+		CommitState:                   string(commitStateResult.State),
+		CommitStateMsg:                commitStateResult.Error,
+		CommitHasUpstream:             commitStateResult.HasUpstream,
+		CommitAheadCount:              commitStateResult.AheadCount,
+		CommitBehindCount:             commitStateResult.BehindCount,
+		CommitSHA:                     commitStateResult.CommitSHA,
+		CommitSubject:                 commitStateResult.CommitSubject,
+		HasCommitResult:               hasCommitResult,
+		CommitResultSuccess:           commitResultSuccess,
+		HasPushResult:                 hasPushResult,
+		PushResultSuccess:             pushResultSuccess,
+		AuditClearanceStatus:          auditClearanceStatus,
+	}
+
+	nextAction := pipeline.BuildWorkbenchNextAction(nextActionInput)
+	nextActionView := views.WorkbenchNextActionView{
+		Kind:              string(nextAction.Kind),
+		Title:             nextAction.Title,
+		Summary:           nextAction.Summary,
+		Step:              nextAction.Step,
+		PrimaryAction:     nextAction.PrimaryAction,
+		PrimaryFormAction: nextAction.PrimaryFormAction,
+		PrimaryHref:       nextAction.PrimaryHref,
+		Disabled:          nextAction.Disabled,
+		DisabledReason:    nextAction.DisabledReason,
+		Severity:          nextAction.Severity,
+	}
 
 	// Write commit state artifact
 	commitStateJSON, _ := json.MarshalIndent(commitStateResult, "", "  ")

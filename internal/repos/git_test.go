@@ -569,6 +569,7 @@ func TestResolveCommitState_CommitResultWithUpstreamEven_ReturnsPushed(t *testin
 		HasGitDiffEvidence:  true,
 		EvidenceHeadSHA:     headSHA,
 		EvidenceBranch:      "main",
+		HasCommitResult:     true,
 		CommitResultSuccess: true,
 		CommitResultSHA:     headSHA,
 	})
@@ -605,6 +606,7 @@ func TestResolveCommitState_CommitResultWithUpstreamAhead_ReturnsCommittedLocal(
 		HasGitDiffEvidence:  true,
 		EvidenceHeadSHA:     headSHA,
 		EvidenceBranch:      "main",
+		HasCommitResult:     true,
 		CommitResultSuccess: true,
 		CommitResultSHA:     headSHA,
 	})
@@ -802,6 +804,66 @@ func TestResolveCommitState_Pushed_ReturnsPushed(t *testing.T) {
 	state := ResolveCommitState(CommitStateInput{RepoPath: root, ValidationPassed: true, AuditAccepted: true, EvidenceMode: EvidenceModeCommittedRange, HasGitDiffEvidence: true, EvidenceHeadSHA: headSHA, EvidenceBranch: "main"})
 	if state.State != CommitStatePushed {
 		t.Fatalf("expected pushed, got %s", state.State)
+	}
+}
+
+func TestResolveCommitState_CommitFailure_ReturnsCommitFailed(t *testing.T) {
+	state := ResolveCommitState(CommitStateInput{
+		RepoPath:            "/tmp/nonexistent",
+		ValidationPassed:    true,
+		AuditAccepted:       true,
+		EvidenceMode:        EvidenceModeUncommittedWorktree,
+		HasGitDiffEvidence:  true,
+		EvidenceHeadSHA:     "abc123",
+		EvidenceBranch:      "main",
+		HasCommitResult:     true,
+		CommitResultSuccess: false,
+	})
+	if state.State != CommitStateCommitFailed {
+		t.Fatalf("expected commit_failed, got %s", state.State)
+	}
+}
+
+func TestResolveCommitState_PushFailure_ReturnsPushFailed(t *testing.T) {
+	state := ResolveCommitState(CommitStateInput{
+		RepoPath:           "/tmp/nonexistent",
+		ValidationPassed:   true,
+		AuditAccepted:      true,
+		EvidenceMode:       EvidenceModeCommittedRange,
+		HasGitDiffEvidence: true,
+		EvidenceHeadSHA:    "abc123",
+		EvidenceBranch:     "main",
+		HasPushResult:      true,
+		PushResultSuccess:  false,
+	})
+	if state.State != CommitStatePushFailed {
+		t.Fatalf("expected push_failed, got %s", state.State)
+	}
+}
+
+func TestResolveCommitState_DirtyAfterCommit_ReturnsMixedChanges(t *testing.T) {
+	requireGit(t)
+	root := setupTestRepoWithFile(t)
+
+	headSHA := getHeadSHA(t, root)
+	if err := os.WriteFile(root+"/dirty.txt", []byte("dirty\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	state := ResolveCommitState(CommitStateInput{
+		RepoPath:            root,
+		ValidationPassed:    true,
+		AuditAccepted:       true,
+		EvidenceMode:        EvidenceModeCommittedRange,
+		HasGitDiffEvidence:  true,
+		EvidenceHeadSHA:     headSHA,
+		EvidenceBranch:      "main",
+		HasCommitResult:     true,
+		CommitResultSuccess: true,
+		CommitResultSHA:     headSHA,
+	})
+	if state.State != CommitStateBlockedMixedChanges {
+		t.Fatalf("expected blocked_mixed_changes, got %s", state.State)
 	}
 }
 

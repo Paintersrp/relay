@@ -631,6 +631,11 @@ func nextActionButtonLabel(action WorkbenchNextActionView) string {
 			return "Generate Audit Handoff"
 		}
 		return "View Audit Handoff"
+	case "committed_local":
+		if action.PrimaryFormAction == "push-git-commit" {
+			return "Push to Upstream"
+		}
+		return action.Title
 	default:
 		return action.Title
 	}

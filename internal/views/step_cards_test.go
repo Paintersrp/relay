@@ -195,6 +195,59 @@ func TestNextActionFormTargetsWorkbenchShell(t *testing.T) {
 	}
 }
 
+func TestRunInspectorSummaryShowsPushToUpstreamForCommittedLocal(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	previews := RunPreviews{
+		NextAction: WorkbenchNextActionView{
+			Kind:              "committed_local",
+			Title:             "Committed locally",
+			Summary:           "Commit created and ready to push upstream.",
+			Step:              "commit",
+			PrimaryFormAction: "push-git-commit",
+			Severity:          "ready",
+		},
+	}
+	err := RunInspectorSummary(run, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunInspectorSummary: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Committed locally") {
+		t.Fatalf("expected committed locally title, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Push to Upstream") {
+		t.Fatalf("expected push button label, got:\n%s", html)
+	}
+	if strings.Contains(html, "Ready to commit") {
+		t.Fatalf("expected not to show stale ready-to-commit text, got:\n%s", html)
+	}
+}
+
+func TestRunInspectorSummaryShowsPushedForPushedState(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	previews := RunPreviews{
+		NextAction: WorkbenchNextActionView{
+			Kind:     "pushed",
+			Title:    "Pushed",
+			Summary:  "Commit has been pushed to the upstream branch.",
+			Severity: "done",
+		},
+	}
+	err := RunInspectorSummary(run, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunInspectorSummary: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Pushed") {
+		t.Fatalf("expected pushed title, got:\n%s", html)
+	}
+	if strings.Contains(html, "Ready to commit") {
+		t.Fatalf("expected not to show ready-to-commit text, got:\n%s", html)
+	}
+}
+
 func TestStepFlowFooterRendersPreviousAndNextLinks(t *testing.T) {
 	var buf strings.Builder
 	err := StepFlowFooter(1, "validation").Render(context.Background(), &buf)

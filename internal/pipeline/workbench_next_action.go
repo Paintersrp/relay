@@ -21,6 +21,12 @@ const (
 	WorkbenchNextActionGenerateAuditHandoff   WorkbenchNextActionKind = "generate_audit_handoff"
 	WorkbenchNextActionPrepareGitCommit       WorkbenchNextActionKind = "prepare_git_commit"
 	WorkbenchNextActionReadyToCommit          WorkbenchNextActionKind = "ready_to_commit"
+	WorkbenchNextActionCommittedLocal         WorkbenchNextActionKind = "committed_local"
+	WorkbenchNextActionPushed                 WorkbenchNextActionKind = "pushed"
+	WorkbenchNextActionPushFailed             WorkbenchNextActionKind = "push_failed"
+	WorkbenchNextActionCommitFailed           WorkbenchNextActionKind = "commit_failed"
+	WorkbenchNextActionResolveCommitBlocker   WorkbenchNextActionKind = "resolve_commit_blocker"
+	WorkbenchNextActionNoChanges              WorkbenchNextActionKind = "no_changes"
 )
 
 type WorkbenchNextAction struct {
@@ -78,6 +84,18 @@ type WorkbenchNextActionInput struct {
 	HasGitDiffNameStatus          bool
 	HasCommitSuggestion           bool
 	ValidationAcceptedWithFailure bool
+	CommitState                   string
+	CommitStateMsg                string
+	CommitHasUpstream             bool
+	CommitAheadCount              int
+	CommitBehindCount             int
+	CommitSHA                     string
+	CommitSubject                 string
+	HasCommitResult               bool
+	CommitResultSuccess           bool
+	HasPushResult                 bool
+	PushResultSuccess             bool
+	AuditClearanceStatus          string
 }
 
 func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextAction {
@@ -228,7 +246,9 @@ func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextActio
 				}
 				return action
 			}
-			// Audit handoff exists: gate commit prep
+			if action, ok := commitWorkflowNextAction(input); ok {
+				return action
+			}
 			if !input.HasCommitSuggestion {
 				action := WorkbenchNextAction{
 					Kind:              WorkbenchNextActionPrepareGitCommit,
@@ -363,4 +383,112 @@ func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextActio
 		Step:     "intake",
 		Severity: "neutral",
 	}
+}
+
+func commitWorkflowNextAction(input WorkbenchNextActionInput) (WorkbenchNextAction, bool) {
+	switch input.CommitState {
+	case "push_failed":
+		return WorkbenchNextAction{
+			Kind:     WorkbenchNextActionPushFailed,
+			Title:    "Push failed",
+			Summary:  "Review Step 8 push artifacts before retrying.",
+			Step:     "commit",
+			Disabled: true,
+			Severity: "blocked",
+		}, true
+	case "commit_failed":
+		return WorkbenchNextAction{
+			Kind:     WorkbenchNextActionCommitFailed,
+			Title:    "Commit failed",
+			Summary:  "Review Step 8 commit result before retrying.",
+			Step:     "commit",
+			Disabled: true,
+			Severity: "blocked",
+		}, true
+	case "pushed":
+		return WorkbenchNextAction{
+			Kind:     WorkbenchNextActionPushed,
+			Title:    "Pushed",
+			Summary:  "Commit has been pushed to the upstream branch.",
+			Severity: "done",
+		}, true
+	case "committed_local":
+		action := WorkbenchNextAction{
+			Kind:     WorkbenchNextActionCommittedLocal,
+			Title:    "Committed locally",
+			Summary:  "Commit created and ready to push upstream.",
+			Step:     "commit",
+			Severity: "done",
+		}
+		if !input.CommitHasUpstream {
+			action.Summary = "Commit exists, but no upstream branch is configured. Set an upstream before pushing from Relay."
+			action.Severity = "blocked"
+			action.Disabled = true
+			return action, true
+		}
+		if input.CommitAheadCount > 0 {
+			action.PrimaryFormAction = "push-git-commit"
+			action.PrimaryAction = "push-git-commit"
+			action.Severity = "ready"
+		}
+		return action, true
+	case "blocked_no_upstream":
+		return WorkbenchNextAction{
+			Kind:     WorkbenchNextActionCommittedLocal,
+			Title:    "Committed locally",
+			Summary:  "Commit exists, but no upstream branch is configured. Set an upstream before pushing from Relay.",
+			Step:     "commit",
+			Disabled: true,
+			Severity: "blocked",
+		}, true
+	case "blocked_mixed_changes":
+		return WorkbenchNextAction{
+			Kind:     WorkbenchNextActionResolveCommitBlocker,
+			Title:    "Mixed changes detected",
+			Summary:  "Committed changes exist, but the working tree is dirty. Resolve the dirty changes, then rerun Step 7 before pushing.",
+			Step:     "audit",
+			Disabled: true,
+			Severity: "blocked",
+		}, true
+	case "blocked_audit_not_accepted":
+		return WorkbenchNextAction{
+			Kind:     WorkbenchNextActionResolveCommitBlocker,
+			Title:    "Audit clearance needed",
+			Summary:  "Review the audit handoff and mark the decision in Step 7 before committing.",
+			Step:     "audit",
+			Disabled: true,
+			Severity: "blocked",
+		}, true
+	case "blocked_no_diff_inspection":
+		return WorkbenchNextAction{
+			Kind:     WorkbenchNextActionResolveCommitBlocker,
+			Title:    "Inspect git diff",
+			Summary:  "Run Step 7 diff inspection before committing or pushing.",
+			Step:     "audit",
+			Disabled: true,
+			Severity: "blocked",
+		}, true
+	case "no_changes":
+		return WorkbenchNextAction{
+			Kind:     WorkbenchNextActionNoChanges,
+			Title:    "No changes",
+			Summary:  "No git diff evidence detected.",
+			Severity: "done",
+		}, true
+	case "unknown":
+		summary := "Relay could not resolve the current commit state."
+		if input.CommitStateMsg != "" {
+			summary = input.CommitStateMsg
+		}
+		return WorkbenchNextAction{
+			Kind:     WorkbenchNextActionResolveCommitBlocker,
+			Title:    "Commit state unavailable",
+			Summary:  summary,
+			Step:     "commit",
+			Disabled: true,
+			Severity: "blocked",
+		}, true
+	}
+
+	return WorkbenchNextAction{}, false
 }
