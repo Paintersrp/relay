@@ -2213,14 +2213,21 @@ git commit -m "{ previews.CommitSuggestionSelected }"</textarea>
 }
 
 templ manualCommitCopyCommand(previews RunPreviews) {
-	@StageEvidenceRow("not-available", "Manual commit fallback", "Use these commands to commit from the repo directly.", "") {
+	@StageEvidenceRow("not-available", "Manual fallback", "Commit verified in worktree.", "") {
 		if previews.RepoPath != "" {
 			<div class="text-xs text-gray-400 mb-1">Repo path: <span class="text-gray-300 font-mono">{ previews.RepoPath }</span></div>
 		}
-		<textarea readonly rows="3"
-			class="w-full text-xs font-mono bg-gray-950 border border-gray-700 rounded-lg p-2 text-gray-300 select-all min-w-0 resize-y"
-			onclick="this.select()">git add -A
-git commit -m "{ previews.CommitSuggestionSelected }"</textarea>
+		if previews.CommitResultSHA != "" {
+			<div class="text-xs text-gray-400 mb-1">Commit: <span class="text-gray-300 font-mono">{ shortSHA(previews.CommitResultSHA) }</span></div>
+		}
+		if previews.CommitResultSubject != "" {
+			<div class="text-xs text-gray-400 mb-1">Subject: <span class="text-gray-300">{ previews.CommitResultSubject }</span></div>
+		}
+		if previews.CommitState == "committed_local" {
+			<div class="text-xs text-blue-300">Use <strong>Push Commit</strong> above or run <code class="text-gray-300">git push</code> from the repo.</div>
+		} else if previews.CommitState == "pushed" {
+			<div class="text-xs text-green-400">Changes have been pushed.</div>
+		}
 	}
 }
 

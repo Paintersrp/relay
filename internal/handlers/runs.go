@@ -769,16 +769,45 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	commitStateResult := repos.ResolveCommitState(
-		previewsRepoPath,
-		validationPassed,
-		validationAcceptedWithFailure,
-		auditClearanceStatus == "accepted",
-		gitChangeEvidenceMode,
-		hasGitChangeEvidence,
-		gitChangeEvidenceHead,
-		gitChangeEvidenceBranch,
-	)
+	// Parse commit result (needed before ResolveCommitState)
+	commitResultData := readArtifactPreview(id, "git_commit_result_json")
+	hasCommitResult := commitResultData != ""
+	commitResultSuccess := false
+	commitResultSHA := ""
+	commitResultSubject := ""
+	if hasCommitResult {
+		var cr repos.GitCommitResult
+		if err := json.Unmarshal([]byte(commitResultData), &cr); err == nil {
+			commitResultSuccess = cr.Success
+			commitResultSHA = cr.SHA
+			commitResultSubject = cr.Subject
+		}
+	}
+
+	// Parse push result (needed before ResolveCommitState)
+	pushResultData := readArtifactPreview(id, "git_push_result_json")
+	hasPushResult := pushResultData != ""
+	pushResultSuccess := false
+	if hasPushResult {
+		var pr repos.GitPushResult
+		if err := json.Unmarshal([]byte(pushResultData), &pr); err == nil {
+			pushResultSuccess = pr.Success
+		}
+	}
+
+	commitStateResult := repos.ResolveCommitState(repos.CommitStateInput{
+		RepoPath:                 previewsRepoPath,
+		ValidationPassed:         validationPassed,
+		ValidationFailedAccepted: validationAcceptedWithFailure,
+		AuditAccepted:            auditClearanceStatus == "accepted",
+		EvidenceMode:             gitChangeEvidenceMode,
+		HasGitDiffEvidence:       hasGitChangeEvidence,
+		EvidenceHeadSHA:          gitChangeEvidenceHead,
+		EvidenceBranch:           gitChangeEvidenceBranch,
+		CommitResultSuccess:      commitResultSuccess,
+		CommitResultSHA:          commitResultSHA,
+		PushResultSuccess:        pushResultSuccess,
+	})
 
 	// Write commit state artifact
 	commitStateJSON, _ := json.MarshalIndent(commitStateResult, "", "  ")
@@ -807,21 +836,6 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Parse commit result
-	commitResultData := readArtifactPreview(id, "git_commit_result_json")
-	hasCommitResult := commitResultData != ""
-	commitResultSuccess := false
-	commitResultSHA := ""
-	commitResultSubject := ""
-	if hasCommitResult {
-		var cr repos.GitCommitResult
-		if err := json.Unmarshal([]byte(commitResultData), &cr); err == nil {
-			commitResultSuccess = cr.Success
-			commitResultSHA = cr.SHA
-			commitResultSubject = cr.Subject
-		}
-	}
-
 	// Parse push dry run
 	pushDryRunData := readArtifactPreview(id, "git_push_dry_run_json")
 	hasPushDryRun := pushDryRunData != ""
@@ -830,17 +844,6 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		var pr repos.GitPushResult
 		if err := json.Unmarshal([]byte(pushDryRunData), &pr); err == nil {
 			pushDryRunPass = pr.DryRunPass
-		}
-	}
-
-	// Parse push result
-	pushResultData := readArtifactPreview(id, "git_push_result_json")
-	hasPushResult := pushResultData != ""
-	pushResultSuccess := false
-	if hasPushResult {
-		var pr repos.GitPushResult
-		if err := json.Unmarshal([]byte(pushResultData), &pr); err == nil {
-			pushResultSuccess = pr.Success
 		}
 	}
 
@@ -2715,6 +2718,54 @@ func (h *RunsHandler) revokeAuditClearance(w http.ResponseWriter, r *http.Reques
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)
 }
 
+// refreshGitChangeEvidenceArtifacts re-resolves the git baseline, re-captures change evidence,
+// and rewrites git evidence artifacts. It returns the fresh evidence or nil on failure.
+func (h *RunsHandler) refreshGitChangeEvidenceArtifacts(runID int64, run *store.Run, repoPath string) *repos.GitChangeEvidence {
+	baselineSHA := h.resolveRunGitBaseline(runID, run)
+	evidence := repos.CaptureGitChangeEvidence(repoPath, baselineSHA)
+	if evidence.Error != "" {
+		h.log.Warn("refresh git change evidence failed", "run_id", runID, "error", evidence.Error)
+		return evidence
+	}
+
+	// Write git_change_evidence_json artifact
+	if evidenceJSON, err := json.MarshalIndent(evidence, "", "  "); err == nil {
+		h.store.DeleteArtifactsByRunKind(runID, "git_change_evidence_json")
+		if p, err := artifacts.Write(runID, "git_change_evidence_json", pipeline.ArtifactFilename("git_change_evidence_json"), evidenceJSON); err == nil {
+			h.store.CreateArtifact(runID, "git_change_evidence_json", p, "application/json")
+		}
+	}
+
+	// Write artifact files
+	writeGitArtifact := func(kind, content string, mimeType string) {
+		if content == "" {
+			return
+		}
+		h.store.DeleteArtifactsByRunKind(runID, kind)
+		path, err := artifacts.Write(runID, kind, pipeline.ArtifactFilename(kind), []byte(content))
+		if err != nil {
+			h.log.Error("refresh: write git artifact", "kind", kind, "error", err)
+			return
+		}
+		h.store.CreateArtifact(runID, kind, path, mimeType)
+	}
+
+	writeGitArtifact("git_status_text", evidence.StatusPorcelain, "text/plain")
+	writeGitArtifact("git_diff_stat", evidence.Stat, "text/plain")
+	writeGitArtifact("git_diff_numstat", evidence.Numstat, "text/plain")
+	writeGitArtifact("git_diff_name_status", evidence.NameStatus, "text/plain")
+	writeGitArtifact("git_diff_patch", evidence.Patch, "text/plain")
+
+	// Update runs.head_commit when current HEAD is available
+	if evidence.CurrentHeadSHA != "" {
+		if _, err := h.store.UpdateRunBranch(runID, evidence.Branch, run.BaseCommit, evidence.CurrentHeadSHA); err != nil {
+			h.log.Warn("refresh: update run branch after evidence refresh", "run_id", runID, "error", err)
+		}
+	}
+
+	return evidence
+}
+
 func (h *RunsHandler) createGitCommit(w http.ResponseWriter, r *http.Request, runID int64) {
 	run, err := h.store.GetRun(runID)
 	if err != nil {
@@ -2827,6 +2878,9 @@ func (h *RunsHandler) createGitCommit(w http.ResponseWriter, r *http.Request, ru
 		if result.SHA != "" {
 			h.store.UpdateRunBranch(runID, result.Branch, run.BaseCommit, result.SHA)
 		}
+
+		// Refresh git change evidence so the downstream state reflects the committed state
+		h.refreshGitChangeEvidenceArtifacts(runID, run, repo.Path)
 	}
 
 	if result.Success {
@@ -2890,7 +2944,9 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 		return
 	}
 
-	// Check evidence mode - only committed_range or committed_local are pushable
+	// Allow push when:
+	// - evidence mode is committed_range, OR
+	// - a successful commit result exists and HEAD matches that commit SHA
 	evidenceJSON := readArtifactPreview(runID, "git_change_evidence_json")
 	if evidenceJSON == "" {
 		h.store.CreateEvent(runID, "warn", "Push blocked: inspect git diff first.")
@@ -2901,7 +2957,30 @@ func (h *RunsHandler) pushGitCommit(w http.ResponseWriter, r *http.Request, runI
 	var ev struct{ Mode string }
 	json.Unmarshal([]byte(evidenceJSON), &ev)
 
-	if ev.Mode != repos.EvidenceModeCommittedRange {
+	// Check commit result as an alternative to committed_range evidence
+	commitResultData := readArtifactPreview(runID, "git_commit_result_json")
+	hasCommitResult := false
+	commitResultSuccess := false
+	commitResultSHA := ""
+	if commitResultData != "" {
+		var cr repos.GitCommitResult
+		if err := json.Unmarshal([]byte(commitResultData), &cr); err == nil {
+			hasCommitResult = true
+			commitResultSuccess = cr.Success
+			commitResultSHA = cr.SHA
+		}
+	}
+
+	evidenceOK := ev.Mode == repos.EvidenceModeCommittedRange
+	if !evidenceOK && hasCommitResult && commitResultSuccess {
+		// Also accept if commit result SHA matches current HEAD
+		snap := repos.CaptureGitSnapshot(repo.Path, "push_preflight_commit_check")
+		if snap.Error == "" && snap.HeadSHA == commitResultSHA {
+			evidenceOK = true
+		}
+	}
+
+	if !evidenceOK {
 		h.store.CreateEvent(runID, "warn", "Push blocked: evidence mode is "+ev.Mode+". Only committed range can be pushed.")
 		setHXPushURL(w, runID, "commit")
 		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=commit", http.StatusSeeOther)

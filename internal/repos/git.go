@@ -326,64 +326,72 @@ type GitPushResult struct {
 	Error      string `json:"error,omitempty"`
 }
 
-func ResolveCommitState(
-	repoPath string,
-	validationPassed bool,
-	validationFailedAccepted bool,
-	auditAccepted bool,
-	evidenceMode string,
-	hasGitDiffEvidence bool,
-	headSHA string,
-	branch string,
-) GitCommitState {
+type CommitStateInput struct {
+	RepoPath                 string
+	ValidationPassed         bool
+	ValidationFailedAccepted bool
+	AuditAccepted            bool
+	EvidenceMode             string
+	HasGitDiffEvidence       bool
+	EvidenceHeadSHA          string
+	EvidenceBranch           string
+	CommitResultSuccess      bool
+	CommitResultSHA          string
+	PushResultSuccess        bool
+}
+
+func ResolveCommitState(input CommitStateInput) GitCommitState {
 	state := GitCommitState{
-		ValidationPassed:         validationPassed,
-		ValidationFailedAccepted: validationFailedAccepted,
-		AuditAccepted:            auditAccepted,
-		EvidenceMode:             evidenceMode,
-		HasGitDiffEvidence:       hasGitDiffEvidence,
-		HeadSHA:                  headSHA,
-		Branch:                   branch,
+		ValidationPassed:         input.ValidationPassed,
+		ValidationFailedAccepted: input.ValidationFailedAccepted,
+		AuditAccepted:            input.AuditAccepted,
+		EvidenceMode:             input.EvidenceMode,
+		HasGitDiffEvidence:       input.HasGitDiffEvidence,
+		HeadSHA:                  input.EvidenceHeadSHA,
+		Branch:                   input.EvidenceBranch,
 	}
 
-	if !validationPassed && !validationFailedAccepted {
+	if !input.ValidationPassed && !input.ValidationFailedAccepted {
 		state.State = CommitStateBlockedValidation
 		return state
 	}
 
-	if !auditAccepted {
+	if !input.AuditAccepted {
 		state.State = CommitStateBlockedAuditNotAccepted
 		return state
 	}
 
-	if !hasGitDiffEvidence {
+	if !input.HasGitDiffEvidence {
 		state.State = CommitStateBlockedNoDiffInspection
 		return state
 	}
 
-	if evidenceMode == EvidenceModeMixedCommittedUncommitted {
+	if input.EvidenceMode == EvidenceModeMixedCommittedUncommitted {
 		state.State = CommitStateBlockedMixedChanges
 		state.Warnings = append(state.Warnings, "Mixed committed and uncommitted changes detected. Resolve before committing or pushing.")
 		return state
 	}
 
-	if evidenceMode == EvidenceModeNoChanges || evidenceMode == EvidenceModeBaselineUnavailableClean || evidenceMode == EvidenceModeBaselineUnavailableDirty {
-		state.State = CommitStateNoChanges
-		return state
+	// no_changes and baseline_unavailable_clean without commit result: return early, no git needed
+	if !input.CommitResultSuccess {
+		if input.EvidenceMode == EvidenceModeNoChanges || input.EvidenceMode == EvidenceModeBaselineUnavailableClean {
+			state.State = CommitStateNoChanges
+			return state
+		}
 	}
 
 	// Check actual Git state
 	ctx, cancel := context.WithTimeout(context.Background(), gitEvidenceTimeout)
 	defer cancel()
 
-	if repoPath == "" {
+	if input.RepoPath == "" {
 		state.State = CommitStateUnknown
 		state.Error = "repo path is empty"
 		return state
 	}
 
 	// Check if worktree is clean
-	porcelain, err := gitCommandOutput(ctx, repoPath, "status", "--porcelain=v1")
+	porcelain, err := gitCommandOutput(ctx, input.RepoPath, "status", "--porcelain=v1")
 	if err != nil {
 		state.State = CommitStateUnknown
 		state.Error = fmt.Sprintf("git status failed: %v", err)
@@ -392,7 +400,7 @@ func ResolveCommitState(
 	state.WorktreeClean = strings.TrimSpace(porcelain) == ""
 
 	// Resolve upstream info
-	upstream, err := gitCommandOutput(ctx, repoPath, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	upstream, err := gitCommandOutput(ctx, input.RepoPath, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
 	if err == nil && upstream != "" {
 		parts := strings.SplitN(upstream, "/", 2)
 		if len(parts) == 2 {
@@ -403,8 +411,7 @@ func ResolveCommitState(
 	}
 
 	if state.HasUpstream {
-		// Get ahead/behind counts
-		counts, err := gitCommandOutput(ctx, repoPath, "rev-list", "--left-right", "--count", "@{u}...HEAD")
+		counts, err := gitCommandOutput(ctx, input.RepoPath, "rev-list", "--left-right", "--count", "@{u}...HEAD")
 		if err == nil {
 			parts := strings.Fields(counts)
 			if len(parts) == 2 {
@@ -412,41 +419,45 @@ func ResolveCommitState(
 				state.AheadCount, _ = strconvAtoi(parts[1])
 			}
 		}
-
-		// Check if HEAD is contained in upstream (pushed)
-		if state.AheadCount == 0 && state.BehindCount == 0 {
-			state.State = CommitStatePushed
-			return state
-		}
 	}
 
-	// Determine commit state based on evidence mode and worktree
-	switch evidenceMode {
-	case EvidenceModeUncommittedWorktree, EvidenceModeBaselineUnavailableDirty:
+	// Dirty worktree: uncommitted changes exist → ready_to_commit
+	if !state.WorktreeClean {
 		state.State = CommitStateReadyToCommit
 		return state
+	}
 
-	case EvidenceModeCommittedRange:
-		if state.HasUpstream && state.AheadCount > 0 {
-			state.State = CommitStateCommittedLocal
-			return state
-		} else if state.HasUpstream && state.AheadCount == 0 {
-			// Might have been pushed since evidence was captured
-			state.State = CommitStatePushed
-			return state
-		} else {
-			// committed range but no upstream — ready for push if upstream configured
-			state.State = CommitStateCommittedLocal
-			if !state.HasUpstream {
-				state.State = CommitStateBlockedNoUpstream
+	// Clean worktree: classify based on committed evidence or commit result
+	hasCommittedEvidence := input.EvidenceMode == EvidenceModeCommittedRange
+	hasCommitResult := input.CommitResultSuccess
+	isNoChanges := input.EvidenceMode == EvidenceModeNoChanges || input.EvidenceMode == EvidenceModeBaselineUnavailableClean
+	isUncommittedEvidence := input.EvidenceMode == EvidenceModeUncommittedWorktree || input.EvidenceMode == EvidenceModeBaselineUnavailableDirty
+
+	if hasCommittedEvidence || hasCommitResult {
+		if input.CommitResultSHA != "" {
+			state.CommitSHA = input.CommitResultSHA
+		}
+		if state.HasUpstream {
+			if state.AheadCount > 0 {
+				state.State = CommitStateCommittedLocal
+			} else if state.AheadCount == 0 {
+				state.State = CommitStatePushed
+			} else {
+				state.State = CommitStateCommittedLocal
 			}
 			return state
 		}
+		state.State = CommitStateBlockedNoUpstream
+		return state
 	}
 
-	// If we have evidence but nothing matched, check if HEAD moved
-	if evidenceMode != "" && headSHA != "" {
-		state.State = CommitStateCommittedLocal
+	if isNoChanges {
+		state.State = CommitStateNoChanges
+		return state
+	}
+
+	if isUncommittedEvidence {
+		state.State = CommitStateReadyToCommit
 		return state
 	}
 
