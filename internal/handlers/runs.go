@@ -2055,8 +2055,8 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 		return
 	}
 
-	// Write initial progress artifact
-	vp := pipeline.NewValidationProgress(repo.Path, len(commands))
+	// Write initial progress artifact with the full planned command list.
+	vp := pipeline.NewValidationProgressFromCommands(repo.Path, commands)
 	writeProgress := func(p pipeline.ValidationProgress) {
 		data, _ := json.MarshalIndent(p, "", "  ")
 		h.store.DeleteArtifactsByRunKind(runID, "validation_progress_json")
@@ -2082,12 +2082,51 @@ func (h *RunsHandler) startValidation(w http.ResponseWriter, r *http.Request, ru
 
 // executeValidation runs validation commands in the background and persists results.
 func (h *RunsHandler) executeValidation(runID int64, validationExecutionID int64, repoPath string, commands []pipeline.ValidationCommand, writeProgress func(pipeline.ValidationProgress)) {
+	vp := pipeline.NewValidationProgressFromCommands(repoPath, commands)
+	progressData := readArtifactPreview(runID, "validation_progress_json")
+	if progressData != "" {
+		var loaded pipeline.ValidationProgress
+		if err := json.Unmarshal([]byte(progressData), &loaded); err == nil {
+			if len(loaded.Commands) == len(commands) {
+				vp = loaded
+			}
+		}
+	}
+	if len(vp.Commands) != len(commands) {
+		vp = pipeline.NewValidationProgressFromCommands(repoPath, commands)
+	}
+	vp.RepoPath = repoPath
+	vp.TotalCommands = len(commands)
+	for i, cmd := range commands {
+		if i >= len(vp.Commands) {
+			break
+		}
+		if vp.Commands[i].Index == 0 {
+			vp.Commands[i].Index = i + 1
+		}
+		if vp.Commands[i].Label == "" {
+			vp.Commands[i].Label = cmd.Label
+		}
+		if vp.Commands[i].Command == "" {
+			vp.Commands[i].Command = cmd.Command
+		}
+		if vp.Commands[i].Source == "" {
+			vp.Commands[i].Source = cmd.Source
+		}
+		if vp.Commands[i].Status == "" {
+			vp.Commands[i].Status = "pending"
+		}
+	}
+
 	// Ensure execution state and progress get finalized on any exit path
 	defer func() {
 		if r := recover(); r != nil {
-			h.store.FinishValidationExecution(validationExecutionID, "error", "worker panic")
-			vp := pipeline.NewValidationProgress(repoPath, len(commands))
+			if vp.CurrentIndex > 0 && vp.CurrentIndex <= len(vp.Commands) && vp.Commands[vp.CurrentIndex-1].Status == "running" {
+				vp.MarkCommandError(vp.CurrentIndex, "worker panic")
+			}
+			vp.MarkRemainingSkipped()
 			vp.MarkError("worker panic")
+			h.store.FinishValidationExecution(validationExecutionID, "error", "worker panic")
 			writeProgress(vp)
 			h.store.CreateEvent(runID, "warn", "Validation worker failed unexpectedly")
 			h.log.Error("validation worker panic", "run_id", runID, "recover", r)
@@ -2099,20 +2138,6 @@ func (h *RunsHandler) executeValidation(runID int64, validationExecutionID int64
 		h.log.Error("mark validation execution running", "error", err)
 	}
 
-	// Load progress, mark running
-	progressData := readArtifactPreview(runID, "validation_progress_json")
-	if progressData == "" {
-		vp := pipeline.NewValidationProgress(repoPath, len(commands))
-		vp.MarkRunning()
-		writeProgress(vp)
-		progressBytes, _ := json.Marshal(vp)
-		progressData = string(progressBytes)
-	}
-
-	var vp pipeline.ValidationProgress
-	if err := json.Unmarshal([]byte(progressData), &vp); err != nil {
-		vp = pipeline.NewValidationProgress(repoPath, len(commands))
-	}
 	vp.MarkRunning()
 	writeProgress(vp)
 
@@ -2121,7 +2146,7 @@ func (h *RunsHandler) executeValidation(runID int64, validationExecutionID int64
 	var combinedStdout, combinedStderr strings.Builder
 
 	for i, cmd := range commands {
-		vp.MarkCommandRunning(i+1, cmd.Command)
+		vp.MarkCommandRunning(i + 1)
 		writeProgress(vp)
 
 		result := pipeline.RunValidationCommand(context.Background(), repoPath, cmd, pipeline.DefaultValidationCommandTimeout)
@@ -2143,23 +2168,7 @@ func (h *RunsHandler) executeValidation(runID int64, validationExecutionID int64
 			allPassed = false
 		}
 
-		pc := pipeline.ValidationProgressCommand{
-			Label:      result.Label,
-			Command:    result.Command,
-			Source:     result.Source,
-			Status:     "pass",
-			ExitCode:   result.ExitCode,
-			TimedOut:   result.TimedOut,
-			DurationMs: result.DurationMS,
-			HasStdout:  result.Stdout != "",
-			HasStderr:  result.Stderr != "",
-		}
-		if result.TimedOut {
-			pc.Status = "timed_out"
-		} else if result.ExitCode != 0 {
-			pc.Status = "fail"
-		}
-		vp.AppendCommandResult(pc)
+		vp.MarkCommandResult(i+1, result)
 		writeProgress(vp)
 	}
 
@@ -3458,18 +3467,52 @@ func parseValidationProgressPreview(jsonData string) views.ValidationProgressPre
 		TotalCommands:  vp.TotalCommands,
 		Error:          vp.Error,
 	}
-	for _, pc := range vp.Commands {
+	for i, pc := range vp.Commands {
+		if pc.Index == 0 {
+			pc.Index = i + 1
+		}
 		preview.Commands = append(preview.Commands, views.ValidationProgressCommandView{
-			Label:      pc.Label,
-			Command:    pc.Command,
-			Source:     pc.Source,
-			Status:     pc.Status,
-			ExitCode:   pc.ExitCode,
-			TimedOut:   pc.TimedOut,
-			DurationMs: pc.DurationMs,
-			HasStdout:  pc.HasStdout,
-			HasStderr:  pc.HasStderr,
+			Index:       pc.Index,
+			Label:       pc.Label,
+			Command:     pc.Command,
+			Source:      pc.Source,
+			Status:      pc.Status,
+			StartedAt:   pc.StartedAt,
+			CompletedAt: pc.CompletedAt,
+			ExitCode:    pc.ExitCode,
+			TimedOut:    pc.TimedOut,
+			DurationMs:  pc.DurationMs,
+			HasStdout:   pc.HasStdout,
+			HasStderr:   pc.HasStderr,
 		})
+		switch pc.Status {
+		case "pass":
+			preview.PassedCount++
+			preview.CompletedCount++
+		case "fail":
+			preview.FailedCount++
+			preview.CompletedCount++
+		case "timed_out":
+			preview.TimedOutCount++
+			preview.CompletedCount++
+		case "skipped":
+			preview.SkippedCount++
+			preview.CompletedCount++
+		case "running":
+			preview.RunningCount++
+		case "error":
+			preview.ErrorCount++
+			preview.CompletedCount++
+		default:
+			preview.PendingCount++
+		}
+	}
+	if preview.TotalCommands == 0 {
+		preview.TotalCommands = len(preview.Commands)
+	}
+	observed := preview.CompletedCount + preview.RunningCount + preview.PendingCount
+	if preview.TotalCommands > observed {
+		preview.PendingCount += preview.TotalCommands - observed
 	}
 	return preview
 }

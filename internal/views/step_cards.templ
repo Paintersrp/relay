@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"relay/internal/pipeline"
 	"relay/internal/store"
+	"time"
 )
 
 type pipelineStage struct {
@@ -1456,8 +1457,8 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 				}
 			}
 			if previews.ValidationProgressRunning {
-				@StageEvidenceRow("running", "Validation is running", "This page refreshes automatically.", "") {
-					@validationProgressDisplay(previews.ValidationProgressPreview, run.ID)
+				@StageEvidenceRow("running", "Validation live progress", "This page refreshes automatically while validation commands are active.", "") {
+					@validationProgressDisplay(previews.ValidationProgressPreview, run.ID, artifacts)
 				}
 			} else if previews.ValidationProgressPreview.Status == "error" {
 				@StageFailurePanel("Validation error", previews.ValidationProgressPreview.Error) {
@@ -1587,6 +1588,7 @@ templ validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []
 					{ Itoa(int64(v.CommandCount)) } commands
 					&middot; { Itoa(int64(v.PassedCount)) } passed
 					&middot; { Itoa(int64(v.FailedCount)) } failed
+					&middot; { Itoa(int64(v.TimedOutCount)) } timed out
 					&middot; { formatDuration(v.TotalDurationMs) }
 				</div>
 			</div>
@@ -1603,7 +1605,7 @@ templ validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []
 							<span class="hidden sm:inline">{ cmd.Source }</span>
 						}
 						<span>exit { Itoa(int64(cmd.ExitCode)) }</span>
-						<span class="tabular-nums">{ Itoa(cmd.DurationMs) }ms</span>
+						<span class="tabular-nums">{ formatDuration(cmd.DurationMs) }</span>
 						if cmd.HasStdout {
 							@ArtifactPreviewLink(runID, "validation_stdout", "text-indigo-400 hover:text-indigo-300 underline") {
 								stdout
@@ -1628,65 +1630,134 @@ templ validationCommandStatusChip(status string) {
 		<span class="relay-chip-red shrink-0">failed</span>
 	} else if status == "timed_out" {
 		<span class="relay-chip-yellow shrink-0">timed out</span>
+	} else if status == "running" {
+		<span class="relay-chip-blue shrink-0">running</span>
+	} else if status == "pending" {
+		<span class="relay-chip-gray shrink-0">pending</span>
+	} else if status == "skipped" {
+		<span class="relay-chip-gray shrink-0">skipped</span>
+	} else if status == "error" {
+		<span class="relay-chip-red shrink-0">error</span>
 	} else {
 		<span class="relay-chip-gray shrink-0">{ status }</span>
 	}
 }
 
-templ validationProgressDisplay(progress ValidationProgressPreview, runID int64) {
+templ validationProgressDisplay(progress ValidationProgressPreview, runID int64, artifacts []store.Artifact) {
 	<div class="rounded-xl border border-blue-900/60 bg-blue-950/30 p-3 sm:p-4">
-		<div class="text-sm font-medium text-blue-300 mb-2">Validation is running</div>
-		<div class="text-xs text-blue-200 mb-2">
-			Validation is running. This page refreshes automatically.
+		<div class="flex flex-wrap items-center gap-2 sm:gap-3">
+			<span class="relay-chip-blue text-xs">running</span>
+			<div class="text-sm font-medium text-blue-300">Validation live progress</div>
 		</div>
-		<div class="space-y-1 text-xs text-gray-400">
+		<div class="mt-2 grid gap-2 text-xs text-gray-300 sm:grid-cols-2 lg:grid-cols-4">
 			<div class="flex gap-2">
-				<span class="shrink-0">Started:</span>
-				<span class="text-gray-300">{ progress.StartedAt }</span>
+				<span class="text-gray-500 shrink-0">Started:</span>
+				<span>{ progress.StartedAt }</span>
 			</div>
 			<div class="flex gap-2">
-				<span class="shrink-0">Updated:</span>
-				<span class="text-gray-300">{ progress.UpdatedAt }</span>
+				<span class="text-gray-500 shrink-0">Updated:</span>
+				<span>{ progress.UpdatedAt }</span>
 			</div>
-			if progress.CurrentCommand != "" {
-				<div class="flex gap-2">
-					<span class="shrink-0">Current:</span>
-					<span class="text-blue-300 font-mono break-all">{ progress.CurrentCommand }</span>
-				</div>
+			<div class="flex gap-2">
+				<span class="text-gray-500 shrink-0">Elapsed:</span>
+				<span>{ validationProgressElapsed(progress) }</span>
+			</div>
+			<div class="flex gap-2">
+				<span class="text-gray-500 shrink-0">Current:</span>
+				if progress.CurrentCommand != "" {
+					<span class="text-blue-200 font-mono break-all">{ progress.CurrentCommand }</span>
+				} else {
+					<span class="text-gray-500">Waiting</span>
+				}
+			</div>
+		</div>
+		<div class="mt-3 text-xs text-gray-400">
+			{ Itoa(int64(progress.TotalCommands)) } commands
+			&middot; { Itoa(int64(progress.CompletedCount)) } completed
+			&middot; { Itoa(int64(progress.RunningCount)) } running
+			&middot; { Itoa(int64(progress.PendingCount)) } pending
+		</div>
+		<div class="mt-2 text-xs text-gray-400">
+			{ Itoa(int64(progress.PassedCount)) } passed
+			&middot; { Itoa(int64(progress.FailedCount)) } failed
+			&middot; { Itoa(int64(progress.TimedOutCount)) } timed out
+			if progress.SkippedCount > 0 {
+				&middot; { Itoa(int64(progress.SkippedCount)) } skipped
 			}
-			<div class="flex gap-2">
-				<span class="shrink-0">Progress:</span>
-				<span class="text-gray-300">{ Itoa(int64(progress.CurrentIndex)) } / { Itoa(int64(progress.TotalCommands)) } commands</span>
-			</div>
+			if progress.ErrorCount > 0 {
+				&middot; { Itoa(int64(progress.ErrorCount)) } error
+			}
 		</div>
 	</div>
 	if len(progress.Commands) > 0 {
 		<div class="rounded-xl border border-gray-800 bg-gray-950/40 overflow-hidden">
-			<div class="border-b border-gray-800 px-3 py-2">
-				<div class="text-sm font-medium text-gray-200">Completed commands</div>
+			<div class="border-b border-gray-800 px-3 py-2 flex items-center justify-between">
+				<div class="text-sm font-medium text-gray-200">Commands</div>
+				if progress.CurrentIndex > 0 {
+					<div class="text-xs text-gray-500">
+						Step { Itoa(int64(progress.CurrentIndex)) } of { Itoa(int64(progress.TotalCommands)) }
+					</div>
+				}
 			</div>
 			<div class="divide-y divide-gray-800">
 				for _, cmd := range progress.Commands {
 					<div class="px-3 py-2 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-xs">
 						<div class="flex items-center gap-2 min-w-0 flex-1">
 							@validationCommandStatusChip(cmd.Status)
-							<span class="text-gray-200 font-mono truncate min-w-0">{ cmd.Command }</span>
+							<div class="min-w-0">
+								<div class="font-mono text-gray-200 truncate min-w-0">{ cmd.Command }</div>
+								if cmd.Label != "" && cmd.Label != cmd.Command {
+									<div class="text-[11px] text-gray-500 truncate">{ cmd.Label }</div>
+								}
+							</div>
 						</div>
-						<div class="flex items-center gap-2 sm:gap-3 text-gray-500 shrink-0 ml-0 sm:ml-auto">
-							<span>exit { Itoa(int64(cmd.ExitCode)) }</span>
-							<span class="tabular-nums">{ Itoa(cmd.DurationMs) }ms</span>
-							if cmd.HasStdout {
+						<div class="flex flex-wrap items-center gap-2 sm:gap-3 text-gray-500 shrink-0 ml-0 sm:ml-auto">
+							if cmd.Source != "" {
+								<span>{ cmd.Source }</span>
+							}
+							if cmd.StartedAt != "" {
+								<span class="hidden xl:inline">{ cmd.StartedAt }</span>
+							}
+							if cmd.Status != "pending" && cmd.Status != "running" {
+								<span>exit { Itoa(int64(cmd.ExitCode)) }</span>
+							}
+							if validationProgressCommandDuration(cmd) != "" {
+								<span class="tabular-nums">{ validationProgressCommandDuration(cmd) }</span>
+							}
+							if cmd.HasStdout && artifactExists(artifacts, "validation_stdout") {
 								@ArtifactPreviewLink(runID, "validation_stdout", "text-indigo-400 hover:text-indigo-300 underline") {
 									stdout
 								}
 							}
-							if cmd.HasStderr {
+							if cmd.HasStderr && artifactExists(artifacts, "validation_stderr") {
 								@ArtifactPreviewLink(runID, "validation_stderr", "text-red-400 hover:text-red-300 underline") {
 									stderr
 								}
 							}
 						</div>
 					</div>
+				}
+			</div>
+		</div>
+	}
+	if artifactExists(artifacts, "validation_run_json") || artifactExists(artifacts, "validation_stdout") || artifactExists(artifacts, "validation_stderr") {
+		<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-3">
+			<div class="text-xs text-gray-500 uppercase tracking-wide mb-2">Artifacts</div>
+			<div class="flex flex-wrap items-center gap-2 text-xs">
+				if artifactExists(artifacts, "validation_run_json") {
+					@ArtifactPreviewLink(runID, "validation_run_json", "text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+						validation JSON
+					}
+				}
+				if artifactExists(artifacts, "validation_stdout") {
+					@ArtifactPreviewLink(runID, "validation_stdout", "text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+						stdout
+					}
+				}
+				if artifactExists(artifacts, "validation_stderr") {
+					@ArtifactPreviewLink(runID, "validation_stderr", "text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+						stderr
+					}
 				}
 			</div>
 		</div>
@@ -2617,6 +2688,60 @@ func formattedEvidenceMode(mode string) string {
 
 func validationProgressFinished(previews RunPreviews) bool {
 	return previews.HasValidationProgress && (previews.ValidationProgressPreview.Status == "pass" || previews.ValidationProgressPreview.Status == "fail")
+}
+
+func validationProgressElapsed(progress ValidationProgressPreview) string {
+	startedAt, err := time.Parse(time.RFC3339, progress.StartedAt)
+	if err != nil || startedAt.IsZero() {
+		return ""
+	}
+	endValue := progress.UpdatedAt
+	if progress.FinishedAt != "" {
+		endValue = progress.FinishedAt
+	}
+	if endValue == "" {
+		endValue = time.Now().UTC().Format(time.RFC3339)
+	}
+	endedAt, err := time.Parse(time.RFC3339, endValue)
+	if err != nil || endedAt.IsZero() {
+		return ""
+	}
+	if endedAt.Before(startedAt) {
+		return ""
+	}
+	return formatDuration(endedAt.Sub(startedAt).Milliseconds())
+}
+
+func validationProgressCommandDuration(cmd ValidationProgressCommandView) string {
+	if cmd.DurationMs > 0 {
+		return formatDuration(cmd.DurationMs)
+	}
+	if cmd.Status == "running" && cmd.StartedAt != "" {
+		startedAt, err := time.Parse(time.RFC3339, cmd.StartedAt)
+		if err != nil || startedAt.IsZero() {
+			return ""
+		}
+		elapsed := time.Since(startedAt.UTC()).Milliseconds()
+		if elapsed < 0 {
+			return ""
+		}
+		return formatDuration(elapsed)
+	}
+	if cmd.StartedAt != "" && cmd.CompletedAt != "" {
+		startedAt, err := time.Parse(time.RFC3339, cmd.StartedAt)
+		if err != nil || startedAt.IsZero() {
+			return ""
+		}
+		completedAt, err := time.Parse(time.RFC3339, cmd.CompletedAt)
+		if err != nil || completedAt.IsZero() {
+			return ""
+		}
+		if completedAt.Before(startedAt) {
+			return ""
+		}
+		return formatDuration(completedAt.Sub(startedAt).Milliseconds())
+	}
+	return ""
 }
 
 func relayValidationUIStateFor(hasAgentResult bool, hasValidationCommands bool, hasValidationRun bool) relayValidationUIState {

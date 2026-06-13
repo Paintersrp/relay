@@ -22,10 +22,13 @@ type OpenCodeTranscriptEventView struct {
 }
 
 type ValidationProgressCommandView struct {
+	Index      int
 	Label      string
 	Command    string
 	Source     string
 	Status     string
+	StartedAt  string
+	CompletedAt string
 	ExitCode   int
 	TimedOut   bool
 	DurationMs int64
@@ -43,6 +46,14 @@ type ValidationProgressPreview struct {
 	CurrentCommand string
 	TotalCommands  int
 	Commands       []ValidationProgressCommandView
+	PendingCount   int
+	RunningCount   int
+	PassedCount    int
+	FailedCount    int
+	TimedOutCount  int
+	SkippedCount   int
+	ErrorCount     int
+	CompletedCount int
 	Error          string
 }
 

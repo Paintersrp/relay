@@ -604,16 +604,29 @@ func TestValidationStageShowsMissingCommandsEvidence(t *testing.T) {
 func TestValidationStageShowsRunningProgressEvidence(t *testing.T) {
 	var buf strings.Builder
 	run := &store.Run{ID: 1}
-	artifacts := []store.Artifact{}
+	artifacts := []store.Artifact{
+		{Kind: "validation_stdout"},
+		{Kind: "validation_stderr"},
+	}
 	previews := RunPreviews{
 		ValidationProgressRunning: true,
 		HasValidationCommands:     true,
 		ValidationProgressPreview: ValidationProgressPreview{
-			Status:        "running",
-			StartedAt:     "2024-01-01T00:00:00Z",
-			UpdatedAt:     "2024-01-01T00:00:10Z",
-			TotalCommands: 3,
-			CurrentIndex:  1,
+			Status:         "running",
+			StartedAt:      "2024-01-01T00:00:00Z",
+			UpdatedAt:      "2024-01-01T00:00:10Z",
+			TotalCommands:  3,
+			CurrentIndex:   2,
+			CurrentCommand: "go test ./...",
+			PendingCount:   1,
+			RunningCount:   1,
+			PassedCount:    1,
+			CompletedCount: 1,
+			Commands: []ValidationProgressCommandView{
+				{Index: 1, Command: "templ generate", Status: "pass", DurationMs: 1500, HasStdout: true},
+				{Index: 2, Command: "go test ./...", Status: "running", StartedAt: "2024-01-01T00:00:10Z", HasStdout: true, HasStderr: true},
+				{Index: 3, Command: "go vet ./...", Status: "pending"},
+			},
 		},
 	}
 	err := RelayValidationStepPanel(run, artifacts, nil, previews).Render(context.Background(), &buf)
@@ -621,11 +634,70 @@ func TestValidationStageShowsRunningProgressEvidence(t *testing.T) {
 		t.Fatalf("render RelayValidationStepPanel: %v", err)
 	}
 	html := buf.String()
-	if !strings.Contains(html, "Validation is running") {
-		t.Errorf("expected running message")
+	if !strings.Contains(html, `hx-trigger="every 2s"`) {
+		t.Errorf("expected active polling wrapper")
 	}
-	if !strings.Contains(html, "1 / 3") {
-		t.Errorf("expected progress indicator")
+	if !strings.Contains(html, "Validation live progress") {
+		t.Errorf("expected live progress title")
+	}
+	if !strings.Contains(html, "go test ./...") {
+		t.Errorf("expected current command to render")
+	}
+	if !strings.Contains(html, "templ generate") || !strings.Contains(html, "go vet ./...") {
+		t.Errorf("expected planned commands to render")
+	}
+	if !strings.Contains(html, "pending") || !strings.Contains(html, "running") || !strings.Contains(html, "passed") {
+		t.Errorf("expected command status chips to render")
+	}
+	if !strings.Contains(html, "stdout") || !strings.Contains(html, "stderr") {
+		t.Errorf("expected artifact links to render")
+	}
+}
+
+func TestValidationStageDoesNotPollAfterTerminalProgress(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1}
+	artifacts := []store.Artifact{
+		{Kind: "validation_run_json"},
+		{Kind: "validation_stdout"},
+		{Kind: "validation_stderr"},
+	}
+	previews := RunPreviews{
+		ValidationProgressRunning: false,
+		HasValidationCommands:     true,
+		ValidationProgressPreview: ValidationProgressPreview{
+			Status:         "pass",
+			StartedAt:      "2024-01-01T00:00:00Z",
+			UpdatedAt:      "2024-01-01T00:01:00Z",
+			FinishedAt:     "2024-01-01T00:01:00Z",
+			TotalCommands:  2,
+			PassedCount:    2,
+			CompletedCount: 2,
+		},
+		ValidationRun: ValidationRunPreview{
+			Status:        "pass",
+			CommandCount:  2,
+			PassedCount:   2,
+			TimedOutCount: 0,
+			Commands: []ValidationCommandPreview{
+				{Command: "templ generate", Status: "pass", DurationMs: 1500, HasStdout: true},
+				{Command: "go test ./...", Status: "pass", DurationMs: 5000, HasStderr: true},
+			},
+		},
+	}
+	err := RelayValidationStepPanel(run, artifacts, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RelayValidationStepPanel: %v", err)
+	}
+	html := buf.String()
+	if strings.Contains(html, `hx-trigger="every 2s"`) {
+		t.Errorf("did not expect polling wrapper after terminal progress")
+	}
+	if !strings.Contains(html, "Validation results") {
+		t.Errorf("expected validation results card")
+	}
+	if !strings.Contains(html, "View validation JSON") || !strings.Contains(html, "View stdout") || !strings.Contains(html, "View stderr") {
+		t.Errorf("expected validation artifact links")
 	}
 }
 
