@@ -69,7 +69,7 @@
     @apply rounded-xl border border-gray-800 bg-gray-900/50 mb-3;
   }
   .relay-inspector-grid {
-    @apply grid grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)_minmax(22rem,26rem)] gap-4 sm:gap-6;
+    @apply grid grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)_minmax(19rem,23rem)] gap-4 sm:gap-5;
   }
   .relay-stage-rail {
     @apply sticky top-4 self-start rounded-2xl border border-gray-800 bg-gray-950/70 p-3;
