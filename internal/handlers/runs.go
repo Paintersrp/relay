@@ -15,6 +15,7 @@ import (
 
 	"relay/internal/artifacts"
 	"relay/internal/pipeline"
+	"relay/internal/repos"
 	"relay/internal/store"
 	"relay/internal/views"
 
@@ -711,6 +712,23 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		Severity:          nextAction.Severity,
 	}
 
+	// Compute git baseline state for display
+	gitBaselineBaselineSHA := run.BaseCommit
+	gitBaselineHeadSHA := run.HeadCommit
+	gitBaselineBranch := run.BranchName
+	gitBaselineState := ""
+	gitBaselineAvailable := false
+	if run.BaseCommit != "" {
+		gitBaselineAvailable = true
+		if run.BaseCommit == run.HeadCommit {
+			gitBaselineState = "head unchanged"
+		} else if run.HeadCommit != "" {
+			gitBaselineState = "head moved since baseline"
+		} else {
+			gitBaselineState = "baseline captured"
+		}
+	}
+
 	previews := views.RunPreviews{
 		NextAction:                      nextActionView,
 		OriginalHandoff:                 originalPreview,
@@ -806,6 +824,11 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		GitDiffPatchPreview:             gitDiffPatchPreview,
 		GitChangedFileCount:             gitChangedFileCount,
 		GitDiffSummary:                  gitDiffSummary,
+		GitBaselineBaselineSHA:          gitBaselineBaselineSHA,
+		GitBaselineHeadSHA:              gitBaselineHeadSHA,
+		GitBaselineBranch:               gitBaselineBranch,
+		GitBaselineState:                gitBaselineState,
+		GitBaselineAvailable:            gitBaselineAvailable,
 	}
 
 	if originalPreview != "" && agentPromptPreview != "" {
@@ -1615,6 +1638,9 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 			return
 		}
 	}
+
+	// Capture authoritative agent-start baseline immediately before execution
+	h.captureAgentStartBaseline(runID, invocation.WorkDir)
 
 	// Create execution record with status starting
 	exec, err := h.store.CreateAgentExecution(runID, "opencode_go", "starting", invocation.Preview)
@@ -3055,4 +3081,46 @@ func (h *RunsHandler) submitAgentResult(w http.ResponseWriter, r *http.Request, 
 
 func setHXPushURL(w http.ResponseWriter, runID int64, step string) {
 	w.Header().Set("HX-Push-Url", "/runs/"+strconv.FormatInt(runID, 10)+"?step="+step)
+}
+
+func (h *RunsHandler) captureAgentStartBaseline(runID int64, repoPath string) {
+	snap := repos.CaptureGitSnapshot(repoPath, "agent_start")
+	if !snap.IsGitRepo || snap.HeadSHA == "" {
+		h.store.CreateEvent(runID, "warn", "Git baseline unavailable at agent start: "+snap.Error)
+		return
+	}
+
+	// Update DB fields with authoritative baseline
+	if _, err := h.store.UpdateRunBranch(runID, snap.Branch, snap.HeadSHA, snap.HeadSHA); err != nil {
+		h.log.Warn("update run branch with agent-start baseline", "run_id", runID, "error", err)
+	}
+
+	// Read existing baseline artifact and merge or create new one
+	existingJSON, err := artifacts.Read(runID, "git_baseline_json", pipeline.ArtifactFilename("git_baseline_json"))
+	baseline := repos.GitBaselineArtifact{
+		AuthoritativeBaselineStage: "agent_start",
+		AuthoritativeBaselineSHA:   snap.HeadSHA,
+	}
+	if err == nil {
+		json.Unmarshal(existingJSON, &baseline)
+	}
+	baseline.AgentStart = snap
+	baseline.AuthoritativeBaselineStage = "agent_start"
+	baseline.AuthoritativeBaselineSHA = snap.HeadSHA
+
+	baselineJSON, err := json.MarshalIndent(baseline, "", "  ")
+	if err != nil {
+		h.log.Warn("marshal git baseline artifact", "run_id", runID, "error", err)
+		return
+	}
+
+	// Delete stale artifact and write new one
+	h.store.DeleteArtifactsByRunKind(runID, "git_baseline_json")
+	if bp, err := artifacts.Write(runID, "git_baseline_json", pipeline.ArtifactFilename("git_baseline_json"), baselineJSON); err == nil {
+		h.store.CreateArtifact(runID, "git_baseline_json", bp, "application/json")
+	} else {
+		h.log.Warn("write git baseline artifact", "run_id", runID, "error", err)
+	}
+
+	h.store.CreateEvent(runID, "info", "Git baseline refreshed at agent start: "+shortSHA(snap.HeadSHA)+" on "+snap.Branch)
 }

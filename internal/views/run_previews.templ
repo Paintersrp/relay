@@ -188,6 +188,13 @@ type RunPreviews struct {
 	GitDiffPatchPreview string
 	GitChangedFileCount int64
 	GitDiffSummary      string
+
+	// Git baseline state
+	GitBaselineBaselineSHA string
+	GitBaselineHeadSHA     string
+	GitBaselineBranch      string
+	GitBaselineState       string
+	GitBaselineAvailable   bool
 }
 
 templ RunPreviewPanels(previews RunPreviews) {

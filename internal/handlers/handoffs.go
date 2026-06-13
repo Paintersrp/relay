@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -106,6 +107,34 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Capture run-created Git baseline (best-effort, non-blocking)
+	gitSnap := repos.CaptureGitSnapshot(repo.Path, "run_created")
+	baselineArtifact := repos.GitBaselineArtifact{
+		RunCreated:                 gitSnap,
+		AuthoritativeBaselineStage: "run_created",
+	}
+	if gitSnap.HeadSHA != "" {
+		baselineArtifact.AuthoritativeBaselineSHA = gitSnap.HeadSHA
+	}
+	baselineJSON, _ := json.MarshalIndent(baselineArtifact, "", "  ")
+
+	if gitSnap.IsGitRepo && gitSnap.HeadSHA != "" {
+		if _, err := h.store.UpdateRunBranch(run.ID, gitSnap.Branch, gitSnap.HeadSHA, gitSnap.HeadSHA); err != nil {
+			h.log.Warn("update run branch with baseline", "run_id", run.ID, "error", err)
+		}
+		h.store.CreateEvent(run.ID, "info", "Git baseline captured at run creation: "+shortSHA(gitSnap.HeadSHA)+" on "+gitSnap.Branch)
+	} else {
+		h.store.CreateEvent(run.ID, "warn", "Git baseline unavailable: "+gitSnap.Error)
+	}
+
+	if baselineJSON != nil {
+		if bp, err := artifacts.Write(run.ID, "git_baseline_json", pipeline.ArtifactFilename("git_baseline_json"), baselineJSON); err == nil {
+			h.store.CreateArtifact(run.ID, "git_baseline_json", bp, "application/json")
+		} else {
+			h.log.Warn("write git baseline artifact", "run_id", run.ID, "error", err)
+		}
+	}
+
 	artifactPath, err := artifacts.Write(run.ID, "original_handoff", pipeline.ArtifactFilename("original_handoff"), []byte(handoffText))
 	if err != nil {
 		h.log.Error("write handoff artifact", "error", err)
@@ -158,4 +187,11 @@ func normalizeManualRepoInput(repoName, repoPath string) (name string, path stri
 	}
 
 	return repoName, path, nil
+}
+
+func shortSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }

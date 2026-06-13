@@ -224,6 +224,19 @@ func (s *Store) UpdateRunStatus(id int64, status string) (*Run, error) {
 	return &run, nil
 }
 
+func (s *Store) UpdateRunBranch(id int64, branchName, baseCommit, headCommit string) (*Run, error) {
+	run, err := s.queries.UpdateRunBranch(context.Background(), generated.UpdateRunBranchParams{
+		BranchName: branchName,
+		BaseCommit: baseCommit,
+		HeadCommit: headCommit,
+		ID:         id,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &run, nil
+}
+
 func (s *Store) UpdateRunModel(id int64, recommendedModel, selectedModel string) (*Run, error) {
 	run, err := s.queries.UpdateRunModel(context.Background(), generated.UpdateRunModelParams{
 		RecommendedModel: recommendedModel,

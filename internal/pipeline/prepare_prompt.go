@@ -518,6 +518,8 @@ func ArtifactFilename(kind string) string {
 		return "commit-message.txt"
 	case "commit_suggestion_json":
 		return "commit-suggestion.json"
+	case "git_baseline_json":
+		return "git_baseline.json"
 	default:
 		return fmt.Sprintf("%s.txt", kind)
 	}
