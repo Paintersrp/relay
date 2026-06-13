@@ -2224,7 +2224,7 @@ templ manualCommitCopyCommand(previews RunPreviews) {
 			<div class="text-xs text-gray-400 mb-1">Subject: <span class="text-gray-300">{ previews.CommitResultSubject }</span></div>
 		}
 		if previews.CommitState == "committed_local" {
-			<div class="text-xs text-blue-300">Use <strong>Push Commit</strong> above or run <code class="text-gray-300">git push</code> from the repo.</div>
+			<div class="text-xs text-blue-300">Use <strong>Push to Upstream</strong> above or run <code class="text-gray-300">git push</code> from the repo.</div>
 		} else if previews.CommitState == "pushed" {
 			<div class="text-xs text-green-400">Changes have been pushed.</div>
 		}
@@ -2233,14 +2233,14 @@ templ manualCommitCopyCommand(previews RunPreviews) {
 
 templ pushActions(previews RunPreviews, runID int64) {
 	if previews.CommitState == "committed_local" && previews.CommitHasUpstream {
-		@StageEvidenceRow("ready", "Push Commit", "Pushes the local commit to the upstream branch.", "") {
+		@StageEvidenceRow("ready", "Push to Upstream", "Pushes the local commit to the upstream branch.", "") {
 			<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
 				hx-post={"/runs/" + Itoa(runID) + "/actions"}
 				hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
 				class="inline">
 				<input type="hidden" name="action" value="push-git-commit"/>
 				<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
-					Push Commit
+					Push to Upstream
 				</button>
 			</form>
 		}
