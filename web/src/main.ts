@@ -220,7 +220,7 @@ function setLiveUpdatesIndicator(state: LiveUpdateState): void {
       indicator.classList.add('border-yellow-700', 'text-yellow-300', 'bg-yellow-950/60');
       break;
     case 'disconnected':
-      if (text) text.textContent = 'Live updates disconnected - refresh to resync';
+      if (text) text.textContent = 'Live updates disconnected — refresh to resync';
       indicator.classList.add('border-red-700', 'text-red-300', 'bg-red-950/60');
       break;
     default:

@@ -217,6 +217,8 @@ func nextActionIconName(action WorkbenchNextActionView) string {
 		return "play"
 	case "start_opencode":
 		return "bot"
+	case "finalize_opencode_without_result":
+		return "file-search"
 	case "monitor_agent_run":
 		return "bot"
 	case "review_agent_result":

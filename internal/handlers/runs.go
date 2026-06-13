@@ -33,6 +33,8 @@ type RunsHandler struct {
 	runAgentCommandArgs  agentCommandRunner
 	launchAgentExecution func(func())
 	launchValidation     func(func())
+	openCodeCancelMu     sync.Mutex
+	openCodeCancels      map[int64]context.CancelFunc
 }
 
 func NewRunsHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *RunsHandler {
@@ -45,6 +47,7 @@ func NewRunsHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *RunsH
 		log:                 log,
 		eventHub:            eventHub,
 		runAgentCommandArgs: pipeline.RunLocalAgentCommandArgsStreaming,
+		openCodeCancels:     make(map[int64]context.CancelFunc),
 		launchAgentExecution: func(fn func()) {
 			go fn()
 		},
@@ -64,6 +67,47 @@ func (h *RunsHandler) publishRunEvent(runID int64, kind, source, status string) 
 		Source: source,
 		Status: status,
 	})
+}
+
+func (h *RunsHandler) registerOpenCodeCancel(execID int64, cancel context.CancelFunc) {
+	if h == nil || cancel == nil {
+		return
+	}
+	h.openCodeCancelMu.Lock()
+	if h.openCodeCancels == nil {
+		h.openCodeCancels = make(map[int64]context.CancelFunc)
+	}
+	h.openCodeCancels[execID] = cancel
+	h.openCodeCancelMu.Unlock()
+}
+
+func (h *RunsHandler) unregisterOpenCodeCancel(execID int64) {
+	if h == nil {
+		return
+	}
+	h.openCodeCancelMu.Lock()
+	cancel, ok := h.openCodeCancels[execID]
+	if ok {
+		delete(h.openCodeCancels, execID)
+	}
+	h.openCodeCancelMu.Unlock()
+	if ok && cancel != nil {
+		cancel()
+	}
+}
+
+func (h *RunsHandler) cancelOpenCodeExecution(execID int64) bool {
+	if h == nil {
+		return false
+	}
+	h.openCodeCancelMu.Lock()
+	cancel, ok := h.openCodeCancels[execID]
+	h.openCodeCancelMu.Unlock()
+	if !ok || cancel == nil {
+		return false
+	}
+	cancel()
+	return true
 }
 
 func readArtifactPreview(runID int64, kind string) string {
@@ -1221,6 +1265,8 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.reconcileOpenCodeResult(w, r, id)
 	case "reconcile-opencode-result":
 		h.reconcileOpenCodeResult(w, r, id)
+	case "finalize-opencode-without-result":
+		h.finalizeOpenCodeWithoutResult(w, r, id)
 	case "update-selected-model":
 		h.updateSelectedModel(w, r, id)
 	case "accept-audit-clearance":
@@ -1708,9 +1754,63 @@ func (h *RunsHandler) reconcileOpenCodeResult(w http.ResponseWriter, r *http.Req
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=run", http.StatusSeeOther)
 }
 
+func (h *RunsHandler) finalizeOpenCodeWithoutResult(w http.ResponseWriter, r *http.Request, runID int64) {
+	exec, err := h.store.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		h.log.Error("finalize opencode without result: get latest execution", "error", err)
+		h.store.CreateEvent(runID, "warn", "OpenCode finalization failed: latest execution not found.")
+		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "error")
+		setHXPushURL(w, runID, "run")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=run", http.StatusSeeOther)
+		return
+	}
+
+	if !isOpenCodeExecutionRunning(exec) {
+		h.store.CreateEvent(runID, "info", "OpenCode execution is already finished; capturing git diff.")
+		h.publishRunEvent(runID, events.KindStepAudit, "audit", "finished")
+		h.inspectDiff(w, r, runID)
+		return
+	}
+
+	preserved := preservedAgentExecutionFields(exec)
+	liveness := evaluateOpenCodeExecutionLiveness(runID, exec, time.Now())
+	switch liveness.State {
+	case "waiting_response", "stale_output", "stale_timeout":
+	default:
+		h.store.CreateEvent(runID, "warn", "OpenCode is still producing output; keep waiting or review the current run.")
+		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "running")
+		setHXPushURL(w, runID, "run")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=run", http.StatusSeeOther)
+		return
+	}
+
+	if h.cancelOpenCodeExecution(exec.ID) {
+		h.log.Info("canceled active opencode execution before manual finalization", "run_id", runID, "exec_id", exec.ID)
+	}
+
+	finishedAt := executionTimestampNow()
+	errorMsg := "finalized without agent result after quiet OpenCode output; user chose to inspect git diff"
+	if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, "completed", preserved.exitCode, preserved.startedAt, &finishedAt, preserved.stdoutPath, preserved.stderrPath, preserved.combinedPath, preserved.resultPath, &errorMsg); err != nil {
+		h.log.Error("finalize opencode without result: update execution status", "error", err)
+		h.store.CreateEvent(runID, "warn", "OpenCode finalization failed: could not mark the execution terminal.")
+		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "error")
+		setHXPushURL(w, runID, "run")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=run", http.StatusSeeOther)
+		return
+	}
+
+	h.store.CreateEvent(runID, "info", "OpenCode execution finalized without a final agent result; inspecting git diff.")
+	h.publishRunEvent(runID, events.KindStepAgent, "opencode", "completed_without_result")
+	h.publishRunEvent(runID, events.KindRunSummary, "opencode", "completed_without_result")
+
+	h.inspectDiff(w, r, runID)
+}
+
 // runOpenCodeExecution runs the OpenCode command in the background and persists results.
 // This method never writes an HTTP response or redirects.
 func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, execID int64, invocation pipeline.OpenCodeRunInvocation) {
+	defer h.unregisterOpenCodeCancel(execID)
+
 	// Update to running
 	startedAt := executionTimestampNow()
 	h.store.UpdateAgentExecutionStatus(execID, "running", nil, &startedAt, nil, nil, nil, nil, nil, nil)
@@ -1890,6 +1990,11 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 	writeStreamProgressLocked()
 	streamMu.Unlock()
 
+	if currentExec, err := h.store.GetAgentExecution(execID); err == nil && currentExec.FinishedAt.Valid {
+		h.log.Info("opencode execution already finalized; preserving terminal state", "run_id", runID, "exec_id", execID, "status", currentExec.Status)
+		return
+	}
+
 	// Determine execution status
 	execStatus := "completed"
 	if runResult.TimedOut {
@@ -2010,8 +2115,10 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 	h.publishRunEvent(runID, events.KindStepAgent, "opencode", "starting")
 
 	// Launch background execution
+	commandCtx, cancel := context.WithCancel(context.Background())
+	h.registerOpenCodeCancel(exec.ID, cancel)
 	h.launchAgentExecution(func() {
-		h.runOpenCodeExecution(context.Background(), runID, exec.ID, invocation)
+		h.runOpenCodeExecution(commandCtx, runID, exec.ID, invocation)
 	})
 
 	// Redirect immediately to Step 5

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 
 	"relay/internal/artifacts"
 	"relay/internal/pipeline"
+	"relay/internal/repos"
 	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -914,6 +916,76 @@ func TestRunOpenCodeExecutionStreamsArtifactsWhileRunning(t *testing.T) {
 	}
 	if !strings.Contains(string(rawData), "Build status: PASS") {
 		t.Fatalf("expected persisted DONE result after stream completion, got %q", string(rawData))
+	}
+}
+
+func TestRunOpenCodeExecutionPreservesManualFinalization(t *testing.T) {
+	s := setupTestStore(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+		close(started)
+		<-release
+		return pipeline.AgentCommandRunResult{
+			ExitCode: 1,
+			Stdout:   "quiet output with no final result\n",
+			Stderr:   "still waiting\n",
+		}
+	}
+
+	runID := setupOpenCodeRun(t, s)
+	exec, err := s.CreateAgentExecution(runID, "opencode_go", "starting", "test command")
+	if err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+
+	go func() {
+		h.runOpenCodeExecution(context.Background(), runID, exec.ID, pipeline.OpenCodeRunInvocation{
+			Binary:  "opencode",
+			Args:    []string{"run"},
+			WorkDir: t.TempDir(),
+			Stdin:   "prompt",
+		})
+		close(done)
+	}()
+
+	<-started
+
+	finished := executionTimestampNow()
+	finalizationError := "finalized without agent result after quiet OpenCode output; user chose to inspect git diff"
+	if _, err := s.UpdateAgentExecutionStatus(exec.ID, "completed", nil, nil, &finished, nil, nil, nil, nil, &finalizationError); err != nil {
+		t.Fatalf("manual finalization update: %v", err)
+	}
+
+	close(release)
+	<-done
+
+	execRow, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution after manual finalization: %v", err)
+	}
+	if execRow.Status != "completed" {
+		t.Fatalf("expected preserved completed status, got %q", execRow.Status)
+	}
+	if !execRow.FinishedAt.Valid {
+		t.Fatal("expected finished_at to remain set after late command return")
+	}
+	if !execRow.Error.Valid || !strings.Contains(execRow.Error.String, "finalized without agent result") {
+		t.Fatalf("expected manual finalization error to be preserved, got %q", execRow.Error.String)
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts after manual finalization: %v", err)
+	}
+	for _, a := range artifactsList {
+		switch a.Kind {
+		case "agent_result_raw", "agent_result_json":
+			t.Fatalf("did not expect %s artifact after manual finalization", a.Kind)
+		}
 	}
 }
 
@@ -2552,6 +2624,49 @@ func setLatestOpenCodeExecutionTimestamps(t *testing.T, s *store.Store, runID in
 	}
 }
 
+func setupGitEvidenceRepo(t *testing.T, s *store.Store, runID int64) {
+	t.Helper()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is required for git evidence tests")
+	}
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	repo, err := s.GetRepo(run.RepoID)
+	if err != nil {
+		t.Fatalf("get repo: %v", err)
+	}
+
+	runGit := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo.Path
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, string(out))
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	runGit("init", "-b", "main")
+	runGit("config", "user.email", "relay-test@example.invalid")
+	runGit("config", "user.name", "Relay Test")
+	runGit("add", ".")
+	runGit("commit", "-m", "initial")
+
+	head := runGit("rev-parse", "HEAD")
+	if _, err := s.UpdateRunBranch(runID, "main", head, head); err != nil {
+		t.Fatalf("update run branch: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(repo.Path, "README.md"), []byte("# repo\nmanual finalize evidence\n"), 0644); err != nil {
+		t.Fatalf("write dirty change: %v", err)
+	}
+}
+
 func TestParseExecutionTimestampSupportsAbsoluteAndLegacyLocalFormats(t *testing.T) {
 	t.Run("RFC3339Nano", func(t *testing.T) {
 		want := time.Date(2026, time.June, 13, 7, 14, 14, 123456789, time.FixedZone("EDT", -4*60*60))
@@ -3157,6 +3272,109 @@ func TestRecoverActiveNoOutputOpenCodeDoesNotMarkFailed(t *testing.T) {
 	}
 }
 
+func TestFinalizeQuietOpenCodeWithoutResultMarksCompletedAndCapturesGitDiff(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+	setupGitEvidenceRepo(t, s, runID)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`{"type":"text","part":{"type":"text","text":"still working"}}
+`,
+		"stderr line\n",
+	)
+	quietAt := time.Now().Add(-3 * time.Minute)
+	seedStreamProgressArtifactAt(t, s, runID, 2, 1, 64, 18, quietAt)
+	touchOpenCodeOutputArtifacts(t, runID, quietAt)
+	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-5*time.Minute), quietAt)
+
+	req := httptest.NewRequest("POST", "/runs/"+itoa(runID)+"/actions", strings.NewReader("action=finalize-opencode-without-result"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Action(w, req)
+
+	if w.Code != 303 {
+		t.Fatalf("expected finalize action redirect, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "?step=audit") {
+		t.Fatalf("expected redirect to step=audit, got %s", loc)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.Status != "completed" {
+		t.Fatalf("expected execution to be completed after finalization, got %q", exec.Status)
+	}
+	if !exec.FinishedAt.Valid {
+		t.Fatal("expected finished_at to be set after manual finalization")
+	}
+	if !exec.Error.Valid || !strings.Contains(exec.Error.String, "finalized without agent result") {
+		t.Fatalf("expected finalization error message, got %q", exec.Error.String)
+	}
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status == "agent_done" {
+		t.Fatal("did not expect manual finalization to advance the run to agent_done")
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	hasEvidence := false
+	for _, a := range artifactsList {
+		switch a.Kind {
+		case "agent_result_raw", "agent_result_json":
+			t.Fatalf("did not expect %s artifact for manual finalization", a.Kind)
+		case "git_change_evidence_json":
+			hasEvidence = true
+		}
+	}
+	if !hasEvidence {
+		t.Fatal("expected git change evidence to be captured during finalization")
+	}
+
+	evidenceData, err := artifacts.Read(runID, "git_change_evidence_json", pipeline.ArtifactFilename("git_change_evidence_json"))
+	if err != nil {
+		t.Fatalf("read git change evidence: %v", err)
+	}
+	var evidence repos.GitChangeEvidence
+	if err := json.Unmarshal(evidenceData, &evidence); err != nil {
+		t.Fatalf("unmarshal git change evidence: %v", err)
+	}
+	if evidence.Mode != repos.EvidenceModeUncommittedWorktree {
+		t.Fatalf("expected uncommitted worktree evidence, got %q", evidence.Mode)
+	}
+	if !strings.Contains(evidence.Patch, "README.md") {
+		t.Fatalf("expected git diff patch to include README.md, got %q", evidence.Patch)
+	}
+
+	events, err := s.ListEventsByRun(runID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	foundFinalization := false
+	for _, ev := range events {
+		if strings.Contains(ev.Message, "finalized without a final agent result") {
+			foundFinalization = true
+			break
+		}
+	}
+	if !foundFinalization {
+		t.Fatal("expected an event describing manual quiet finalization")
+	}
+}
+
 func TestRunGetKeepsPollingWhenOpenCodeRunningWithFreshOutput(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
@@ -3456,11 +3674,17 @@ func TestRunGetShowsWaitingResponseForQuietRunningOpenCode(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "OpenCode is running but has been quiet") {
+	if !strings.Contains(body, "OpenCode has stopped producing output but the process has not exited") {
 		t.Fatal("expected waiting-response copy for a quiet running execution")
 	}
 	if strings.Contains(body, "OpenCode output stopped before a final result") {
 		t.Fatal("did not expect stale copy for waiting-response state")
+	}
+	if !strings.Contains(body, "Stop Waiting and Inspect Git Diff") {
+		t.Fatal("expected the quiet-run inspection CTA to be visible")
+	}
+	if !strings.Contains(body, "finalize-opencode-without-result") {
+		t.Fatal("expected finalize-opencode-without-result action in the waiting-response UI")
 	}
 	if strings.Contains(body, "Recover Stale OpenCode Run") {
 		t.Fatal("did not expect stale recovery action for waiting-response state")

@@ -171,6 +171,36 @@ func TestNextAction_ExecutionStarting(t *testing.T) {
 	}
 }
 
+func TestNextAction_ExecutionWaitingResponseOffersFinalization(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:      true,
+		HasAgentPrompt:          true,
+		HasAgentPacket:          true,
+		HasOpenCodeExecution:    true,
+		OpenCodeExecutionStatus: "running",
+		OpenCodeLifecycleState:  "waiting_response",
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionFinalizeOpenCode {
+		t.Errorf("expected finalize_opencode_without_result, got %s", action.Kind)
+	}
+	if action.Title != "OpenCode is waiting for response" {
+		t.Errorf("expected waiting-response title, got %q", action.Title)
+	}
+	if !strings.Contains(action.Summary, "quiet") || !strings.Contains(action.Summary, "inspect git diff") {
+		t.Errorf("expected finalization summary, got %q", action.Summary)
+	}
+	if action.Step != "audit" {
+		t.Errorf("expected audit step, got %s", action.Step)
+	}
+	if action.PrimaryFormAction != "finalize-opencode-without-result" {
+		t.Errorf("expected finalize-opencode-without-result form action, got %s", action.PrimaryFormAction)
+	}
+	if action.Severity != "warn" {
+		t.Errorf("expected warn severity, got %s", action.Severity)
+	}
+}
+
 func TestNextAction_StaleExecutionNeedsRecovery(t *testing.T) {
 	input := WorkbenchNextActionInput{
 		HasOriginalHandoff:      true,

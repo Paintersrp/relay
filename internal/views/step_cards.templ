@@ -1089,7 +1089,7 @@ func openCodeLifecycleDescription(previews RunPreviews) string {
 	case "waiting_output":
 		return "OpenCode is running, but Relay has not seen output yet."
 	case "waiting_response":
-		return "OpenCode is running but has been quiet. The agent may be thinking or preparing a final response."
+		return "OpenCode has gone quiet and may be waiting on a final response."
 	case "stale_output":
 		return "OpenCode stopped emitting output and may need recovery."
 	case "stale_timeout":
@@ -1298,7 +1298,26 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 		if previews.HasOpenCodeExecution {
 			@openCodeStatusSummary(previews)
 
-			if isRunning && previews.HasOpenCodeStaleRunning {
+			if isRunning && previews.OpenCodeLifecycleState == "waiting_response" {
+				@StageEvidenceRow("warning", "OpenCode has stopped producing output but the process has not exited", "The agent may be waiting on a final response. If the repo changes look complete, stop waiting and inspect git diff.", "") {
+					<div class="space-y-2">
+						if previews.OpenCodeStreamLastChunkAge != "" {
+							<div class="text-xs text-amber-200/90">Last streamed chunk: { previews.OpenCodeStreamLastChunkAge }</div>
+						} else if previews.OpenCodeLastOutputAge != "" {
+							<div class="text-xs text-amber-200/90">Last output: { previews.OpenCodeLastOutputAge }</div>
+						}
+						<div class="text-xs text-amber-200/90">
+							Relay will cancel OpenCode if it is still running, preserve the terminal state, capture git evidence, and continue to Step 7.
+						</div>
+						@WorkbenchActionForm(run.ID, "finalize-opencode-without-result", "inline") {
+							<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+								@ActionIcon("file-search", "relay-icon-sm")
+								Stop Waiting and Inspect Git Diff
+							</button>
+						}
+					</div>
+				}
+			} else if isRunning && previews.HasOpenCodeStaleRunning {
 				{{ staleTitle := "OpenCode output stopped before a final result" }}
 				{{ staleSummary := previews.OpenCodeStaleReason }}
 				if previews.OpenCodeLifecycleState == "stale_timeout" {
@@ -1583,7 +1602,7 @@ templ relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, 
 				}
 			}
 			if previews.ValidationProgressRunning {
-				@StageEvidenceRow("running", "Validation live progress", "This page refreshes automatically while validation commands are active.", "") {
+				@StageEvidenceRow("running", "Validation live progress", "Live updates refresh this panel while validation commands are active.", "") {
 					@validationProgressDisplay(previews.ValidationProgressPreview, run.ID, artifacts, previews)
 				}
 			} else if previews.ValidationProgressPreview.Status == "error" {

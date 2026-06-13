@@ -11,6 +11,7 @@ const (
 	WorkbenchNextActionCheckOpenCodeCLI       WorkbenchNextActionKind = "check_opencode_cli"
 	WorkbenchNextActionPreviewOpenCodeCommand WorkbenchNextActionKind = "preview_opencode_command"
 	WorkbenchNextActionStartOpenCode          WorkbenchNextActionKind = "start_opencode"
+	WorkbenchNextActionFinalizeOpenCode       WorkbenchNextActionKind = "finalize_opencode_without_result"
 	WorkbenchNextActionMonitorAgentRun        WorkbenchNextActionKind = "monitor_agent_run"
 	WorkbenchNextActionReviewAgentResult      WorkbenchNextActionKind = "review_agent_result"
 	WorkbenchNextActionRunValidation          WorkbenchNextActionKind = "run_validation"
@@ -178,6 +179,17 @@ func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextActio
 			Summary:  summary,
 			Step:     "run",
 			Severity: "warn",
+		}
+	}
+
+	if input.HasOpenCodeExecution && input.OpenCodeLifecycleState == "waiting_response" {
+		return WorkbenchNextAction{
+			Kind:              WorkbenchNextActionFinalizeOpenCode,
+			Title:             "OpenCode is waiting for response",
+			Summary:           "OpenCode output has gone quiet. Finalize the quiet run and inspect git diff in Step 7 if the repo changes look complete.",
+			Step:              "audit",
+			PrimaryFormAction: "finalize-opencode-without-result",
+			Severity:          "warn",
 		}
 	}
 
