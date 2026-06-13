@@ -885,7 +885,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 				}
 				@StageEvidenceRow("blocked", "Start OpenCode Go", "Already running.", "blocked")
 			} else if previews.HasOpenCodeStaleRunning {
-				{{ staleTitle := "OpenCode output stopped while execution is still marked running" }}
+				{{ staleTitle := "OpenCode output stopped before a final result" }}
 				{{ staleSummary := previews.OpenCodeStaleReason }}
 				if previews.OpenCodeLifecycleState == "stale_timeout" {
 					{{ staleTitle = "OpenCode execution exceeded timeout or Relay lost the worker" }}
@@ -893,7 +893,7 @@ templ OpenCodeGoHandoffStepPanel(run *store.Run, artifacts []store.Artifact, che
 						{{ staleSummary = "OpenCode is no longer plausibly active." }}
 					}
 				} else if staleSummary == "" {
-					{{ staleSummary = "OpenCode stopped producing output while still marked running." }}
+					{{ staleSummary = "OpenCode stopped producing output before a final result." }}
 				}
 				@StageEvidenceRow("warning", staleTitle, staleSummary, "") {
 					@WorkbenchStepLink(run.ID, "run", "text-xs sm:text-sm text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
@@ -1038,7 +1038,7 @@ func transcriptEventClass(kind string) string {
 }
 
 templ AgentRunMonitorStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
-	if isExecutionRunning(previews.OpenCodeExecutionStatus) && previews.HasOpenCodeRunning && !previews.HasOpenCodeStaleRunning {
+	if isExecutionRunning(previews.OpenCodeExecutionStatus) && (previews.HasOpenCodeRunning || previews.HasOpenCodeStaleRunning) {
 		<div id="agent-run-monitor"
 			hx-get={"/runs/" + Itoa(run.ID) + "?step=run"}
 			hx-trigger="every 2s"
@@ -1138,13 +1138,13 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 									<span class="text-gray-300">{ previews.OpenCodeLastOutputAt }</span>
 								</div>
 							}
-							if previews.HasOpenCodeStaleRunning && previews.OpenCodeStreamLastChunkAge != "" {
+							if previews.OpenCodeStreamLastChunkAge != "" {
 								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
 									<span class="text-gray-400 shrink-0">Last chunk</span>
 									<span class="text-gray-300">{ previews.OpenCodeStreamLastChunkAge }</span>
 								</div>
 							}
-							if previews.HasOpenCodeStaleRunning && previews.OpenCodeStreamLastChunkAt != "" {
+							if previews.OpenCodeStreamLastChunkAt != "" {
 								<div class="flex flex-col sm:flex-row sm:justify-between gap-1">
 									<span class="text-gray-400 shrink-0">Last chunk at</span>
 									<span class="text-gray-300">{ previews.OpenCodeStreamLastChunkAt }</span>
@@ -1156,7 +1156,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 			}
 
 			if isRunning && previews.HasOpenCodeStaleRunning {
-				{{ staleTitle := "OpenCode output stopped while execution is still marked running" }}
+				{{ staleTitle := "OpenCode output stopped before a final result" }}
 				{{ staleSummary := previews.OpenCodeStaleReason }}
 				if previews.OpenCodeLifecycleState == "stale_timeout" {
 					{{ staleTitle = "OpenCode execution exceeded timeout or Relay lost the worker" }}
@@ -1164,7 +1164,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 						{{ staleSummary = "OpenCode is no longer plausibly active." }}
 					}
 				} else if staleSummary == "" {
-					{{ staleSummary = "OpenCode stopped producing output while still marked running." }}
+					{{ staleSummary = "OpenCode stopped producing output before a final result." }}
 				}
 				{{ recoveryLabel := previews.OpenCodeRecoveryActionLabel }}
 				if recoveryLabel == "" {
@@ -1172,8 +1172,13 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 				}
 				@StageEvidenceRow("warning", staleTitle, staleSummary, "") {
 					<div class="space-y-2">
+						if previews.OpenCodeStreamLastChunkAge != "" {
+							<div class="text-xs text-amber-200/90">Last streamed chunk: { previews.OpenCodeStreamLastChunkAge }</div>
+						} else if previews.OpenCodeLastOutputAge != "" {
+							<div class="text-xs text-amber-200/90">Last output: { previews.OpenCodeLastOutputAge }</div>
+						}
 						<div class="text-xs text-amber-200/90">
-							Review stdout, stderr, and the combined log, then recover this run.
+							Review stdout, stderr, and the combined log, then recover this run if the agent is no longer active.
 						</div>
 						@WorkbenchActionForm(run.ID, "recover-stale-opencode-execution", "inline") {
 							<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>

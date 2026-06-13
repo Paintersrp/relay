@@ -190,38 +190,49 @@ func evaluateOpenCodeExecutionLiveness(runID int64, exec *store.AgentExecution, 
 		liveness.Runtime = formatDurationCompact(end.Sub(startedAt))
 	}
 
-	var latestActivity time.Time
-	if lastOutputAt, ok := latestOpenCodeOutputTime(runID); ok {
-		liveness.HasOutput = true
-		liveness.LastOutputAt = lastOutputAt.Local().Format("2006-01-02 15:04:05")
-		liveness.LastOutputAge = formatDurationCompact(now.Sub(lastOutputAt)) + " ago"
-		latestActivity = lastOutputAt
-	}
-
+	var lastChunkAt time.Time
+	lastChunkOK := false
 	if progressData := readArtifactPreview(runID, "opencode_stream_progress_json"); progressData != "" {
 		var sp pipeline.StreamProgress
 		if err := json.Unmarshal([]byte(progressData), &sp); err == nil {
 			hasStreamEvidence := sp.StdoutChunks > 0 || sp.StderrChunks > 0 || sp.LastChunkAt != ""
 			if hasStreamEvidence {
-				liveness.HasStream = sp.StdoutChunks > 0 || sp.StderrChunks > 0 || sp.LastChunkAt != ""
+				liveness.HasStream = true
 				liveness.HasOutput = true
 				if sp.LastChunkAt != "" {
 					liveness.LastChunkAt = sp.LastChunkAt
-					if lastChunkAt, ok := parseExecutionTimestamp(sp.LastChunkAt); ok {
-						liveness.LastChunkAge = formatDurationCompact(now.Sub(lastChunkAt)) + " ago"
-						if latestActivity.IsZero() || lastChunkAt.After(latestActivity) {
-							latestActivity = lastChunkAt
-						}
+					if parsedLastChunkAt, ok := parseExecutionTimestamp(sp.LastChunkAt); ok {
+						lastChunkAt = parsedLastChunkAt
+						lastChunkOK = true
+						liveness.LastChunkAge = formatDurationCompact(now.Sub(parsedLastChunkAt)) + " ago"
 					}
 				}
 			}
 		}
 	}
 
-	if updatedAt, ok := parseExecutionTimestamp(exec.UpdatedAt); ok {
-		if latestActivity.IsZero() || updatedAt.After(latestActivity) {
+	var lastOutputAt time.Time
+	lastOutputOK := false
+	if parsedLastOutputAt, ok := latestOpenCodeOutputTime(runID); ok {
+		liveness.HasOutput = true
+		liveness.LastOutputAt = parsedLastOutputAt.Local().Format("2006-01-02 15:04:05")
+		liveness.LastOutputAge = formatDurationCompact(now.Sub(parsedLastOutputAt)) + " ago"
+		lastOutputAt = parsedLastOutputAt
+		lastOutputOK = true
+	}
+
+	var latestActivity time.Time
+	switch {
+	case lastChunkOK:
+		latestActivity = lastChunkAt
+	case lastOutputOK:
+		latestActivity = lastOutputAt
+	case exec.UpdatedAt != "":
+		if updatedAt, ok := parseExecutionTimestamp(exec.UpdatedAt); ok {
 			latestActivity = updatedAt
 		}
+	case startedOK:
+		latestActivity = startedAt
 	}
 
 	if !liveness.Running {
@@ -257,12 +268,12 @@ func evaluateOpenCodeExecutionLiveness(runID int64, exec *store.AgentExecution, 
 		liveness.PlausiblyActive = false
 		liveness.State = "stale_output"
 		switch {
-		case liveness.LastOutputAge != "":
-			liveness.Reason = "OpenCode output stopped " + liveness.LastOutputAge + " ago."
 		case liveness.LastChunkAge != "":
-			liveness.Reason = "OpenCode stream stopped " + liveness.LastChunkAge + " ago."
+			liveness.Reason = "Last streamed chunk: " + liveness.LastChunkAge + "."
+		case liveness.LastOutputAge != "":
+			liveness.Reason = "Last output: " + liveness.LastOutputAge + "."
 		default:
-			liveness.Reason = "OpenCode output stopped and Relay no longer sees recent activity."
+			liveness.Reason = "OpenCode output stopped before a final result."
 		}
 		liveness.CanRecover = true
 		liveness.RecoveryActionLabel = openCodeRecoveryActionLabel
@@ -664,6 +675,9 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		HasOpenCodeDryRun:             dryRunPreview != "",
 		HasOpenCodeExecution:          hasOpenCodeExecution,
 		OpenCodeExecutionStatus:       openCodeExecStatus,
+		HasOpenCodeStaleRunning:       openCodePreviews.HasOpenCodeStaleRunning,
+		OpenCodeLifecycleState:        openCodePreviews.OpenCodeLifecycleState,
+		OpenCodeCanRecover:            openCodePreviews.OpenCodeCanRecover,
 		HasAgentResult:                hasAgentResult,
 		AgentResultStatus:             agentResultStatus,
 		HasValidationCommands:         hasValidationCommands,
@@ -711,6 +725,7 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		OpenCodeExecutionExitCode:       openCodePreviews.OpenCodeExecutionExitCode,
 		OpenCodeExecutionStarted:        openCodePreviews.OpenCodeExecutionStarted,
 		OpenCodeExecutionFinished:       openCodePreviews.OpenCodeExecutionFinished,
+		OpenCodeExecutionError:          openCodePreviews.OpenCodeExecutionError,
 		OpenCodeRuntime:                 openCodePreviews.OpenCodeRuntime,
 		OpenCodeLastOutputAt:            openCodePreviews.OpenCodeLastOutputAt,
 		OpenCodeLastOutputAge:           openCodePreviews.OpenCodeLastOutputAge,
@@ -1248,28 +1263,11 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 	stdoutData, err := artifacts.Read(runID, "opencode_stdout", pipeline.ArtifactFilename("opencode_stdout"))
 	hasStdout := err == nil && len(stdoutData) > 0
 
+	stderrData, err := artifacts.Read(runID, "opencode_stderr", pipeline.ArtifactFilename("opencode_stderr"))
+	hasStderr := err == nil && len(stderrData) > 0
+
 	combinedData, err := artifacts.Read(runID, "opencode_combined_log", pipeline.ArtifactFilename("opencode_combined_log"))
 	hasCombined := err == nil && len(combinedData) > 0
-
-	if !hasStdout && !hasCombined {
-		liveness := evaluateOpenCodeExecutionLiveness(runID, exec, now)
-		if !liveness.Stale || liveness.State != "stale_timeout" {
-			return openCodeReconcileResult{Changed: false, Message: "Execution is running but no captured output artifacts exist yet."}, nil
-		}
-
-		finishedAt := now.Format(time.RFC3339Nano)
-		errorMsg := "OpenCode execution recovered as failed: runtime exceeded the timeout window and no stdout/stderr artifacts were captured. Relay may have restarted, lost the worker, or OpenCode exited before producing output."
-		if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, "failed", preserved.exitCode, preserved.startedAt, &finishedAt, preserved.stdoutPath, preserved.stderrPath, preserved.combinedPath, preserved.resultPath, &errorMsg); err != nil {
-			h.log.Error("recover stale no-output opencode execution", "error", err)
-			return openCodeReconcileResult{}, err
-		}
-		h.store.CreateEvent(runID, "warn", "OpenCode execution recovered as failed: timeout exceeded with no captured output.")
-		return openCodeReconcileResult{
-			Changed:     true,
-			FinalStatus: "failed",
-			Message:     errorMsg,
-		}, nil
-	}
 
 	// Try to parse agent result from stdout
 	finishedAt := now.Format(time.RFC3339Nano)
@@ -1302,11 +1300,34 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 	}
 
 	// No DONE/BLOCKED found — mark execution as failed with a useful message
-	errorMsg = "OpenCode execution recovered as failed: output stopped or Relay lost the worker, and no DONE/BLOCKED final result was found. Review stdout/stderr artifacts, then retry if needed."
+	liveness := evaluateOpenCodeExecutionLiveness(runID, exec, now)
+	if !liveness.Stale {
+		return openCodeReconcileResult{Changed: false, Message: "Execution is still active and does not need recovery."}, nil
+	}
+
+	if !hasStdout && !hasStderr && !hasCombined && liveness.State == "stale_timeout" {
+		errorMsg = "OpenCode execution recovered as failed: runtime exceeded the timeout window and no stdout/stderr artifacts were captured. Relay may have restarted, lost the worker, or OpenCode exited before producing output."
+		if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, "failed", preserved.exitCode, preserved.startedAt, &finishedAt, preserved.stdoutPath, preserved.stderrPath, preserved.combinedPath, preserved.resultPath, &errorMsg); err != nil {
+			h.log.Error("recover stale no-output opencode execution", "error", err)
+			return openCodeReconcileResult{}, err
+		}
+		h.store.CreateEvent(runID, "warn", "OpenCode execution recovered as failed: timeout exceeded with no captured output.")
+		return openCodeReconcileResult{
+			Changed:     true,
+			FinalStatus: "failed",
+			Message:     errorMsg,
+		}, nil
+	}
+
+	if liveness.State == "stale_timeout" {
+		errorMsg = "OpenCode execution recovered as failed: runtime exceeded the timeout window before a final DONE/BLOCKED result. Review stdout/stderr/combined log. OpenCode may have hung, exited without final output, or Relay may have lost the worker."
+	} else {
+		errorMsg = "OpenCode execution recovered as failed: streamed output stopped before a final DONE/BLOCKED result. OpenCode may have hung, exited without final output, or Relay may have lost the worker."
+	}
 	if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, "failed", preserved.exitCode, preserved.startedAt, &finishedAt, preserved.stdoutPath, preserved.stderrPath, preserved.combinedPath, preserved.resultPath, &errorMsg); err != nil {
 		h.log.Error("reconcile: update execution status to failed", "error", err)
 	}
-	h.store.CreateEvent(runID, "warn", "OpenCode execution recovered as failed: no DONE/BLOCKED final result was found.")
+	h.store.CreateEvent(runID, "warn", errorMsg)
 	return openCodeReconcileResult{
 		Changed:     true,
 		FinalStatus: "failed",
@@ -1320,7 +1341,7 @@ func (h *RunsHandler) reconcileOpenCodeResult(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		h.log.Error("reconcile opencode result", "error", err)
 		h.store.CreateEvent(runID, "warn", "OpenCode reconciliation failed: "+err.Error())
-	} else if result.Changed {
+	} else if !result.Changed {
 		h.store.CreateEvent(runID, "info", result.Message)
 	}
 	setHXPushURL(w, runID, "run")
@@ -2673,6 +2694,19 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 	if isOpenCodeExecutionRunning(previews.OpenCodeExecutionStatus) {
 		liveness := evaluateOpenCodeExecutionLiveness(runID, exec, now)
 		applyOpenCodeExecutionLiveness(&previews, liveness)
+
+		// For stale states without a real DONE/BLOCKED result, clear the
+		// parsed result fields so the template does not show confusing
+		// "UNKNOWN" status alongside the stale recovery warning.
+		if (previews.OpenCodeLifecycleState == "stale_output" || previews.OpenCodeLifecycleState == "stale_timeout") &&
+			previews.OpenCodeParsedResultStatus != "" &&
+			previews.OpenCodeParsedResultStatus != "DONE" && previews.OpenCodeParsedResultStatus != "BLOCKED" {
+			previews.OpenCodeParsedResultStatus = ""
+			previews.OpenCodeParsedBuildStatus = ""
+			previews.OpenCodeParsedTestStatus = ""
+			previews.OpenCodeParsedLOCChanged = ""
+			previews.OpenCodeParsedResultRaw = ""
+		}
 	} else if previews.OpenCodeLifecycleState == "" {
 		switch previews.OpenCodeExecutionStatus {
 		case "completed":

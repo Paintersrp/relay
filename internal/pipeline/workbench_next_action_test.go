@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -148,6 +149,35 @@ func TestNextAction_ExecutionStarting(t *testing.T) {
 	action := BuildWorkbenchNextAction(input)
 	if action.Kind != WorkbenchNextActionMonitorAgentRun {
 		t.Errorf("expected monitor_agent_run, got %s", action.Kind)
+	}
+}
+
+func TestNextAction_StaleExecutionNeedsRecovery(t *testing.T) {
+	input := WorkbenchNextActionInput{
+		HasOriginalHandoff:      true,
+		HasAgentPrompt:          true,
+		HasAgentPacket:          true,
+		HasOpenCodeExecution:    true,
+		OpenCodeExecutionStatus: "running",
+		HasOpenCodeStaleRunning: true,
+		OpenCodeLifecycleState:  "stale_output",
+		OpenCodeCanRecover:      true,
+	}
+	action := BuildWorkbenchNextAction(input)
+	if action.Kind != WorkbenchNextActionMonitorAgentRun {
+		t.Errorf("expected monitor_agent_run, got %s", action.Kind)
+	}
+	if action.Severity != "warn" {
+		t.Errorf("expected warn severity, got %s", action.Severity)
+	}
+	if action.Step != "run" {
+		t.Errorf("expected run step, got %s", action.Step)
+	}
+	if !strings.Contains(action.Title, "stalled") {
+		t.Errorf("expected stalled title, got %q", action.Title)
+	}
+	if !strings.Contains(action.Summary, "recover") {
+		t.Errorf("expected recovery summary, got %q", action.Summary)
 	}
 }
 

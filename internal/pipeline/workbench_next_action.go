@@ -54,6 +54,9 @@ type WorkbenchNextActionInput struct {
 
 	HasOpenCodeExecution    bool
 	OpenCodeExecutionStatus string
+	HasOpenCodeStaleRunning bool
+	OpenCodeLifecycleState  string
+	OpenCodeCanRecover      bool
 	HasAgentResult          bool
 	AgentResultStatus       string
 
@@ -139,6 +142,24 @@ func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextActio
 			Step:              "packet",
 			PrimaryFormAction: "generate-opencode-packet",
 			Severity:          "ready",
+		}
+	}
+
+	if input.HasOpenCodeExecution && input.HasOpenCodeStaleRunning {
+		title := "OpenCode run stalled"
+		summary := "OpenCode output stopped before a final result. Review Step 5 and recover the run if the agent is no longer active."
+		if input.OpenCodeLifecycleState == "stale_timeout" {
+			title = "OpenCode run exceeded timeout"
+			summary = "OpenCode exceeded the timeout window or Relay lost the worker. Review Step 5 and recover the run."
+		} else if !input.OpenCodeCanRecover {
+			summary = "OpenCode output looks stalled. Review Step 5 before continuing."
+		}
+		return WorkbenchNextAction{
+			Kind:     WorkbenchNextActionMonitorAgentRun,
+			Title:    title,
+			Summary:  summary,
+			Step:     "run",
+			Severity: "warn",
 		}
 	}
 
