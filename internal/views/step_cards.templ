@@ -1038,7 +1038,7 @@ func transcriptEventClass(kind string) string {
 }
 
 templ AgentRunMonitorStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
-	if isExecutionRunning(previews.OpenCodeExecutionStatus) && (previews.HasOpenCodeRunning || previews.HasOpenCodeStaleRunning) {
+	if previews.HasOpenCodeRunning {
 		<div id="agent-run-monitor"
 			hx-get={"/runs/" + Itoa(run.ID) + "?step=run"}
 			hx-trigger="every 2s"

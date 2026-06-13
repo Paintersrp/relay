@@ -2896,8 +2896,8 @@ another line
 	if !strings.Contains(body, "Recover Stale OpenCode Run") {
 		t.Fatal("expected recovery action for stale OpenCode output")
 	}
-	if !strings.Contains(body, `hx-trigger="every 2s"`) {
-		t.Fatal("expected polling to continue for stale OpenCode output")
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling to stop for stale OpenCode output")
 	}
 	if !strings.Contains(body, "Last chunk") {
 		t.Fatal("expected last chunk age for stale OpenCode output")
@@ -2938,8 +2938,8 @@ func TestRunGetShowsStaleTimeoutRecoveryForNoOutputOpenCodeExecution(t *testing.
 	if strings.Contains(body, "no output yet") {
 		t.Fatal("did not expect active no-output wording in stale timeout state")
 	}
-	if !strings.Contains(body, `hx-trigger="every 2s"`) {
-		t.Fatal("expected polling to continue for timeout-orphan stale state")
+	if strings.Contains(body, `hx-trigger="every 2s"`) {
+		t.Fatal("expected polling to stop for timeout-orphan stale state")
 	}
 }
 

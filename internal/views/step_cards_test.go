@@ -1715,9 +1715,9 @@ func TestAgentRunStaleRunningWithCapturedOutputShowsRecoveryAction(t *testing.T)
 	if !strings.Contains(html, "recover-stale-opencode-execution") {
 		t.Errorf("expected recover-stale-opencode-execution action input")
 	}
-	// Stale running executions should keep polling so late final output can auto-reconcile.
-	if !strings.Contains(html, `hx-trigger="every 2s"`) {
-		t.Errorf("stale running execution should keep hx-trigger polling, got: %s", html)
+	// Stale running executions should stop polling; the operator must click recovery.
+	if strings.Contains(html, `hx-trigger="every 2s"`) {
+		t.Errorf("stale running execution should stop hx-trigger polling, got: %s", html)
 	}
 	// Should show warning about captured output
 	if !strings.Contains(html, "OpenCode output stopped before a final result") {

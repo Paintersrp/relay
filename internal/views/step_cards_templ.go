@@ -3693,7 +3693,7 @@ func AgentRunMonitorStepPanel(run *store.Run, artifacts []store.Artifact, checks
 			templ_7745c5c3_Var172 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		if isExecutionRunning(previews.OpenCodeExecutionStatus) && (previews.HasOpenCodeRunning || previews.HasOpenCodeStaleRunning) {
+		if previews.HasOpenCodeRunning {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 254, "<div id=\"agent-run-monitor\" hx-get=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
