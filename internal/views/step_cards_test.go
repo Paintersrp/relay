@@ -833,6 +833,61 @@ func TestAgentRunStageShowsExecutionErrorFallback(t *testing.T) {
 	}
 }
 
+func TestAgentRunStageShowsCompletedWithoutResultFallbackWithoutGitEvidence(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	artifacts := []store.Artifact{}
+	previews := RunPreviews{
+		HasOpenCodeExecution:    true,
+		OpenCodeExecutionStatus: "completed",
+		OpenCodeLifecycleState:  "completed_without_result",
+	}
+	err := AgentRunMonitorStepPanel(run, artifacts, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "OpenCode completed without a final DONE/BLOCKED result") {
+		t.Errorf("expected completed-without-result warning")
+	}
+	if !strings.Contains(html, "Inspect Git Diff (Step 7)") {
+		t.Errorf("expected Step 7 diff inspection link")
+	}
+	if !strings.Contains(html, "Manual result intake fallback") {
+		t.Errorf("expected manual result fallback")
+	}
+	if strings.Contains(html, "No repo changes detected") {
+		t.Errorf("did not expect no-changes warning without git evidence")
+	}
+}
+
+func TestAgentRunStageShowsNoChangesWarningWhenGitEvidenceIsClean(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	artifacts := []store.Artifact{}
+	previews := RunPreviews{
+		HasOpenCodeExecution:    true,
+		OpenCodeExecutionStatus: "completed",
+		OpenCodeLifecycleState:  "completed_without_result",
+		HasGitChangeEvidence:    true,
+		GitChangeEvidenceMode:   "no_changes",
+	}
+	err := AgentRunMonitorStepPanel(run, artifacts, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "No repo changes detected") {
+		t.Errorf("expected no-changes warning when git evidence is clean")
+	}
+	if !strings.Contains(html, "Inspect Git Diff (Step 7)") {
+		t.Errorf("expected Step 7 diff inspection link")
+	}
+	if strings.Contains(html, "Manual result intake fallback") {
+		t.Errorf("did not expect manual fallback when git evidence is already clean")
+	}
+}
+
 func TestOpenCodeHandoffStageShowsBlockedAdapterEvidence(t *testing.T) {
 	var buf strings.Builder
 	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft", SelectedModel: "gpt-4"}

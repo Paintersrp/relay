@@ -1069,6 +1069,8 @@ func openCodeLifecycleLabel(state string) string {
 		return "timed out"
 	case "completed":
 		return "completed"
+	case "completed_without_result":
+		return "completed without result"
 	case "failed":
 		return "failed"
 	default:
@@ -1094,6 +1096,8 @@ func openCodeLifecycleDescription(previews RunPreviews) string {
 		return "OpenCode exceeded the timeout window and may need recovery."
 	case "completed":
 		return "OpenCode finished and Relay will show the parsed result."
+	case "completed_without_result":
+		return "OpenCode finished, but Relay did not find a final DONE/BLOCKED result. Review the logs and inspect git diff before continuing."
 	case "failed":
 		return "OpenCode ended with a failure; review logs and artifacts."
 	default:
@@ -1462,39 +1466,41 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 				}
 			}
 
-			if previews.HasOpenCodeExecution && !isExecutionRunning(previews.OpenCodeExecutionStatus) && previews.OpenCodeParsedResultStatus == "" {
-				@StageEvidenceRow("warning", "OpenCode completed without a final DONE/BLOCKED result", "Relay did not find a DONE/BLOCKED final response in the captured output. The agent may have finished its work but Relay cannot parse the result. Review the combined log and inspect git diff to verify changes.", "") {
-					<div class="space-y-2">
+			if previews.HasOpenCodeExecution && previews.OpenCodeLifecycleState == "completed_without_result" {
+				if previews.HasGitChangeEvidence && (previews.GitChangeEvidenceMode == "no_changes" || previews.GitChangeEvidenceMode == "baseline_unavailable_no_changes") {
+					@StageEvidenceRow("warning", "No repo changes detected", "OpenCode completed or stopped, and the captured git evidence shows a clean tree. The agent may have made no effective edit or reverted its change. Inspect git diff in Step 7 for details.", "") {
 						<div class="relay-action-row">
 							@WorkbenchStepLink(run.ID, "audit", "file-search", "text-xs text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
 								Inspect Git Diff (Step 7)
 							}
 						</div>
-						<div class="relay-card p-3 sm:p-4">
-							<div class="text-xs text-gray-500 mb-3 font-medium">Manual result intake fallback</div>
-							<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-								hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-								hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
-								class="space-y-3">
-								<input type="hidden" name="action" value="submit-agent-result"/>
-								<textarea name="agent_result_text" rows="6"
-									class="w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded-lg p-2 text-gray-300 min-w-0 resize-y"
-									placeholder={"DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42"}></textarea>
-							<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
-								@ActionIcon("play", "relay-icon-sm")
-								Save Agent Result
-							</button>
-							</form>
+					}
+				} else {
+					@StageEvidenceRow("warning", "OpenCode completed without a final DONE/BLOCKED result", "Relay did not find a DONE/BLOCKED final response in the captured output. The agent may have finished its work but Relay cannot parse the result. Review the combined log and inspect git diff to verify changes.", "") {
+						<div class="space-y-2">
+							<div class="relay-action-row">
+								@WorkbenchStepLink(run.ID, "audit", "file-search", "text-xs text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
+									Inspect Git Diff (Step 7)
+								}
+							</div>
+							<div class="relay-card p-3 sm:p-4">
+								<div class="text-xs text-gray-500 mb-3 font-medium">Manual result intake fallback</div>
+								<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+									hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+									hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+									class="space-y-3">
+									<input type="hidden" name="action" value="submit-agent-result"/>
+									<textarea name="agent_result_text" rows="6"
+										class="w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded-lg p-2 text-gray-300 min-w-0 resize-y"
+										placeholder={"DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42"}></textarea>
+									<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+										@ActionIcon("play", "relay-icon-sm")
+										Save Agent Result
+									</button>
+								</form>
+							</div>
 						</div>
-					</div>
-				}
-			} else if previews.HasOpenCodeExecution && !isExecutionRunning(previews.OpenCodeExecutionStatus) && previews.OpenCodeParsedResultStatus != "" && (!previews.HasGitChangeEvidence || previews.GitChangeEvidenceMode == "no_changes" || previews.GitChangeEvidenceMode == "baseline_unavailable_no_changes") {
-				@StageEvidenceRow("warning", "No repo changes detected", "OpenCode completed or stopped, but git status is clean. The agent may have made no effective edit or reverted its change. Inspect git diff in Step 7 for details.", "") {
-					<div class="relay-action-row">
-						@WorkbenchStepLink(run.ID, "audit", "file-search", "text-xs text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center") {
-							Inspect Git Diff (Step 7)
-						}
-					</div>
+					}
 				}
 			} else {
 				<details class="m-4 relay-card p-3 sm:p-4">

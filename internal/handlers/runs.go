@@ -92,8 +92,26 @@ const (
 
 var runEventHeartbeatInterval = 20 * time.Second
 
-func isOpenCodeExecutionRunning(status string) bool {
-	return status == "starting" || status == "running"
+func isOpenCodeExecutionRunning(exec *store.AgentExecution) bool {
+	return exec != nil && !exec.FinishedAt.Valid && (exec.Status == "starting" || exec.Status == "running")
+}
+
+func openCodeExecutionDisplayStatus(exec *store.AgentExecution) string {
+	if exec == nil {
+		return ""
+	}
+
+	if exec.FinishedAt.Valid {
+		if exec.Status == "failed" {
+			return "failed"
+		}
+		if exec.ExitCode.Valid && exec.ExitCode.Int64 != 0 {
+			return "failed"
+		}
+		return "completed"
+	}
+
+	return exec.Status
 }
 
 func parseExecutionTimestamp(value string) (time.Time, bool) {
@@ -198,7 +216,7 @@ type openCodeExecutionLiveness struct {
 
 func evaluateOpenCodeExecutionLiveness(runID int64, exec *store.AgentExecution, now time.Time) openCodeExecutionLiveness {
 	liveness := openCodeExecutionLiveness{
-		Running: exec != nil && isOpenCodeExecutionRunning(exec.Status),
+		Running: isOpenCodeExecutionRunning(exec),
 	}
 	if exec == nil {
 		return liveness
@@ -259,8 +277,9 @@ func evaluateOpenCodeExecutionLiveness(runID int64, exec *store.AgentExecution, 
 		latestActivity = startedAt
 	}
 
+	displayStatus := openCodeExecutionDisplayStatus(exec)
 	if !liveness.Running {
-		switch exec.Status {
+		switch displayStatus {
 		case "completed":
 			liveness.State = "completed"
 		case "failed":
@@ -1553,7 +1572,7 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 	now := time.Now()
 
 	// If execution is already terminal, check if we can recover agent_result_raw from stdout
-	terminal := exec.Status != "starting" && exec.Status != "running"
+	terminal := !isOpenCodeExecutionRunning(exec)
 	if terminal {
 		// Check if agent_result_raw is missing but stdout has DONE/BLOCKED
 		artifactsList, err := h.store.ListArtifactsByRun(runID)
@@ -1582,6 +1601,7 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 			if err := h.persistAgentResult(runID, assistantText); err != nil {
 				return openCodeReconcileResult{}, fmt.Errorf("persist recovered agent result: %w", err)
 			}
+			h.publishRunEvent(runID, events.KindRunSummary, "opencode", string(parsed.Status))
 			return openCodeReconcileResult{
 				Changed:           true,
 				ParsedAgentResult: true,
@@ -1647,6 +1667,7 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 		}
 		h.store.CreateEvent(runID, "warn", "OpenCode execution recovered as failed: timeout exceeded with no captured output.")
 		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "failed")
+		h.publishRunEvent(runID, events.KindRunSummary, "opencode", "failed")
 		return openCodeReconcileResult{
 			Changed:     true,
 			FinalStatus: "failed",
@@ -1664,6 +1685,7 @@ func (h *RunsHandler) reconcileOpenCodeExecution(runID int64) (openCodeReconcile
 	}
 	h.store.CreateEvent(runID, "warn", errorMsg)
 	h.publishRunEvent(runID, events.KindStepAgent, "opencode", "failed")
+	h.publishRunEvent(runID, events.KindRunSummary, "opencode", "failed")
 	return openCodeReconcileResult{
 		Changed:     true,
 		FinalStatus: "failed",
@@ -1916,6 +1938,7 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 			}
 			h.store.CreateEvent(runID, "info", "OpenCode Go execution completed with result: "+string(parsed.Status))
 			h.publishRunEvent(runID, events.KindStepAgent, "opencode", string(parsed.Status))
+			h.publishRunEvent(runID, events.KindRunSummary, "opencode", string(parsed.Status))
 			h.log.Info("opencode go execution completed", "run_id", runID, "exit_code", runResult.ExitCode, "status", parsed.Status)
 			return
 		}
@@ -1931,6 +1954,7 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		finalStatus = "failed"
 	}
 	h.publishRunEvent(runID, events.KindStepAgent, "opencode", finalStatus)
+	h.publishRunEvent(runID, events.KindRunSummary, "opencode", finalStatus)
 	h.log.Info("opencode go execution completed", "run_id", runID, "exit_code", runResult.ExitCode)
 }
 
@@ -3464,7 +3488,7 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 	}
 
 	previews.HasOpenCodeExecution = true
-	previews.OpenCodeExecutionStatus = exec.Status
+	previews.OpenCodeExecutionStatus = openCodeExecutionDisplayStatus(exec)
 	if exec.ExitCode.Valid {
 		previews.OpenCodeExecutionExitCode = strconv.FormatInt(exec.ExitCode.Int64, 10)
 	}
@@ -3536,7 +3560,7 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 			previews.OpenCodeParsedResultRaw = parsed.Raw
 		}
 
-		if isOpenCodeExecutionRunning(previews.OpenCodeExecutionStatus) && (parsed.Status == pipeline.AgentResultDone || parsed.Status == pipeline.AgentResultBlocked) {
+		if isOpenCodeExecutionRunning(exec) && (parsed.Status == pipeline.AgentResultDone || parsed.Status == pipeline.AgentResultBlocked) {
 			result, reconcileErr := h.reconcileOpenCodeExecution(runID)
 			if reconcileErr == nil {
 				changed = result.Changed
@@ -3559,7 +3583,7 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 				}
 				if refreshedExec, err2 := h.store.GetLatestAgentExecutionByRun(runID); err2 == nil {
 					exec = refreshedExec
-					previews.OpenCodeExecutionStatus = refreshedExec.Status
+					previews.OpenCodeExecutionStatus = openCodeExecutionDisplayStatus(refreshedExec)
 					if refreshedExec.ExitCode.Valid {
 						previews.OpenCodeExecutionExitCode = strconv.FormatInt(refreshedExec.ExitCode.Int64, 10)
 					}
@@ -3570,11 +3594,12 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 						previews.OpenCodeExecutionFinished = refreshedExec.FinishedAt.String
 					}
 					previews.OpenCodeRuntime = formatOpenCodeRuntime(previews.OpenCodeExecutionStarted, previews.OpenCodeExecutionFinished, now)
-					if refreshedExec.Status == "completed" {
+					switch previews.OpenCodeExecutionStatus {
+					case "completed":
 						previews.OpenCodeLifecycleState = "completed"
-					} else if refreshedExec.Status == "failed" {
+					case "failed":
 						previews.OpenCodeLifecycleState = "failed"
-					} else {
+					default:
 						previews.OpenCodeLifecycleState = "none"
 					}
 					previews.HasOpenCodeRunning = false
@@ -3589,7 +3614,7 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 		}
 	}
 
-	if isOpenCodeExecutionRunning(previews.OpenCodeExecutionStatus) {
+	if isOpenCodeExecutionRunning(exec) {
 		liveness := evaluateOpenCodeExecutionLiveness(runID, exec, now)
 		applyOpenCodeExecutionLiveness(&previews, liveness)
 
@@ -3605,12 +3630,28 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 			previews.OpenCodeParsedLOCChanged = ""
 			previews.OpenCodeParsedResultRaw = ""
 		}
-	} else if previews.OpenCodeLifecycleState == "" {
+	} else {
 		switch previews.OpenCodeExecutionStatus {
 		case "completed":
-			previews.OpenCodeLifecycleState = "completed"
+			if previews.OpenCodeParsedResultStatus == "DONE" || previews.OpenCodeParsedResultStatus == "BLOCKED" {
+				previews.OpenCodeLifecycleState = "completed"
+			} else {
+				previews.OpenCodeLifecycleState = "completed_without_result"
+				previews.OpenCodeParsedResultStatus = ""
+				previews.OpenCodeParsedBuildStatus = ""
+				previews.OpenCodeParsedTestStatus = ""
+				previews.OpenCodeParsedLOCChanged = ""
+				previews.OpenCodeParsedResultRaw = ""
+			}
 		case "failed":
 			previews.OpenCodeLifecycleState = "failed"
+			if previews.OpenCodeParsedResultStatus != "DONE" && previews.OpenCodeParsedResultStatus != "BLOCKED" {
+				previews.OpenCodeParsedResultStatus = ""
+				previews.OpenCodeParsedBuildStatus = ""
+				previews.OpenCodeParsedTestStatus = ""
+				previews.OpenCodeParsedLOCChanged = ""
+				previews.OpenCodeParsedResultRaw = ""
+			}
 		default:
 			previews.OpenCodeLifecycleState = "none"
 		}

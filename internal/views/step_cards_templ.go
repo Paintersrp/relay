@@ -3756,6 +3756,8 @@ func openCodeLifecycleLabel(state string) string {
 		return "timed out"
 	case "completed":
 		return "completed"
+	case "completed_without_result":
+		return "completed without result"
 	case "failed":
 		return "failed"
 	default:
@@ -3781,6 +3783,8 @@ func openCodeLifecycleDescription(previews RunPreviews) string {
 		return "OpenCode exceeded the timeout window and may need recovery."
 	case "completed":
 		return "OpenCode finished and Relay will show the parsed result."
+	case "completed_without_result":
+		return "OpenCode finished, but Relay did not find a final DONE/BLOCKED result. Review the logs and inspect git diff before continuing."
 	case "failed":
 		return "OpenCode ended with a failure; review logs and artifacts."
 	default:
@@ -3901,7 +3905,7 @@ func openCodeStatusSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var171 string
 			templ_7745c5c3_Var171, templ_7745c5c3_Err = templ.JoinStringErrs(openCodeLifecycleLabel(previews.OpenCodeLifecycleState))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1171, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1175, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var171))
 			if templ_7745c5c3_Err != nil {
@@ -3924,7 +3928,7 @@ func openCodeStatusSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var172 string
 			templ_7745c5c3_Var172, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeCommandPreview)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1179, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1183, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var172))
 			if templ_7745c5c3_Err != nil {
@@ -3943,7 +3947,7 @@ func openCodeStatusSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var173 string
 			templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeWorkDir)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1185, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1189, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var173))
 			if templ_7745c5c3_Err != nil {
@@ -3962,7 +3966,7 @@ func openCodeStatusSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var174 string
 			templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeModel)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1191, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1195, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var174))
 			if templ_7745c5c3_Err != nil {
@@ -3981,7 +3985,7 @@ func openCodeStatusSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var175 string
 			templ_7745c5c3_Var175, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeAgent)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1197, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1201, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var175))
 			if templ_7745c5c3_Err != nil {
@@ -4000,7 +4004,7 @@ func openCodeStatusSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var176 string
 			templ_7745c5c3_Var176, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeExecutionStarted)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1203, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1207, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var176))
 			if templ_7745c5c3_Err != nil {
@@ -4019,7 +4023,7 @@ func openCodeStatusSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var177 string
 			templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeRuntime)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1209, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1213, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
 			if templ_7745c5c3_Err != nil {
@@ -4038,7 +4042,7 @@ func openCodeStatusSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var178 string
 			templ_7745c5c3_Var178, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeLastOutputAge)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1215, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1219, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var178))
 			if templ_7745c5c3_Err != nil {
@@ -4058,7 +4062,7 @@ func openCodeStatusSummary(previews RunPreviews) templ.Component {
 				var templ_7745c5c3_Var179 string
 				templ_7745c5c3_Var179, templ_7745c5c3_Err = templ.JoinStringErrs("stdout " + Itoa(previews.OpenCodeStreamStdoutChunks))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1223, Col: 61}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1227, Col: 61}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var179))
 				if templ_7745c5c3_Err != nil {
@@ -4073,7 +4077,7 @@ func openCodeStatusSummary(previews RunPreviews) templ.Component {
 				var templ_7745c5c3_Var180 string
 				templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.JoinStringErrs(" / ")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1226, Col: 13}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1230, Col: 13}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var180))
 				if templ_7745c5c3_Err != nil {
@@ -4088,7 +4092,7 @@ func openCodeStatusSummary(previews RunPreviews) templ.Component {
 				var templ_7745c5c3_Var181 string
 				templ_7745c5c3_Var181, templ_7745c5c3_Err = templ.JoinStringErrs("stderr " + Itoa(previews.OpenCodeStreamStderrChunks))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1229, Col: 61}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1233, Col: 61}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var181))
 				if templ_7745c5c3_Err != nil {
@@ -4109,7 +4113,7 @@ func openCodeStatusSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var182 string
 			templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.JoinStringErrs(activity)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1238, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1242, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var182))
 			if templ_7745c5c3_Err != nil {
@@ -4181,7 +4185,7 @@ func openCodeActivityTimeline(events []OpenCodeTranscriptEventView) templ.Compon
 				var templ_7745c5c3_Var186 string
 				templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.JoinStringErrs("[" + openCodeActivityLabel(ev.Kind) + "]")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1253, Col: 78}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1257, Col: 78}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var186))
 				if templ_7745c5c3_Err != nil {
@@ -4194,7 +4198,7 @@ func openCodeActivityTimeline(events []OpenCodeTranscriptEventView) templ.Compon
 				var templ_7745c5c3_Var187 string
 				templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinStringErrs(" " + openCodeTrimEventText(ev.Text, 180))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1254, Col: 95}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1258, Col: 95}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var187))
 				if templ_7745c5c3_Err != nil {
@@ -4267,7 +4271,7 @@ func openCodeRecentOutput(events []OpenCodeTranscriptEventView) templ.Component 
 				var templ_7745c5c3_Var191 string
 				templ_7745c5c3_Var191, templ_7745c5c3_Err = templ.JoinStringErrs("[" + ev.Kind + "]")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1270, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1274, Col: 55}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var191))
 				if templ_7745c5c3_Err != nil {
@@ -4280,7 +4284,7 @@ func openCodeRecentOutput(events []OpenCodeTranscriptEventView) templ.Component 
 				var templ_7745c5c3_Var192 string
 				templ_7745c5c3_Var192, templ_7745c5c3_Err = templ.JoinStringErrs(" " + openCodeTrimEventText(ev.Text, 220))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1271, Col: 95}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1275, Col: 95}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var192))
 				if templ_7745c5c3_Err != nil {
@@ -4460,7 +4464,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var198 string
 						templ_7745c5c3_Var198, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeStreamLastChunkAge)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1315, Col: 104}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1319, Col: 104}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var198))
 						if templ_7745c5c3_Err != nil {
@@ -4478,7 +4482,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var199 string
 						templ_7745c5c3_Var199, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeLastOutputAge)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1317, Col: 91}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1321, Col: 91}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var199))
 						if templ_7745c5c3_Err != nil {
@@ -4516,7 +4520,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var201 string
 						templ_7745c5c3_Var201, templ_7745c5c3_Err = templ.JoinStringErrs(recoveryLabel)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1325, Col: 23}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1329, Col: 23}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var201))
 						if templ_7745c5c3_Err != nil {
@@ -4567,7 +4571,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var203 string
 						templ_7745c5c3_Var203, templ_7745c5c3_Err = templ.JoinStringErrs("stdout: " + Itoa(previews.OpenCodeStreamStdoutChunks) + " chunks (" + Itoa(previews.OpenCodeStreamStdoutBytes) + " bytes)")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1335, Col: 139}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1339, Col: 139}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var203))
 						if templ_7745c5c3_Err != nil {
@@ -4586,7 +4590,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var204 string
 						templ_7745c5c3_Var204, templ_7745c5c3_Err = templ.JoinStringErrs("stderr: " + Itoa(previews.OpenCodeStreamStderrChunks) + " chunks (" + Itoa(previews.OpenCodeStreamStderrBytes) + " bytes)")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1338, Col: 139}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1342, Col: 139}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var204))
 						if templ_7745c5c3_Err != nil {
@@ -4609,7 +4613,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var205 string
 						templ_7745c5c3_Var205, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeStreamLastChunkAge)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1342, Col: 83}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1346, Col: 83}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var205))
 						if templ_7745c5c3_Err != nil {
@@ -4666,7 +4670,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var207 string
 						templ_7745c5c3_Var207, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeFailureHint)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1355, Col: 86}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1359, Col: 86}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var207))
 						if templ_7745c5c3_Err != nil {
@@ -4684,7 +4688,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var208 string
 						templ_7745c5c3_Var208, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeExecutionError)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1357, Col: 89}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1361, Col: 89}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var208))
 						if templ_7745c5c3_Err != nil {
@@ -4702,7 +4706,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var209 string
 						templ_7745c5c3_Var209, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeExecutionExitCode)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1360, Col: 69}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1364, Col: 69}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var209))
 						if templ_7745c5c3_Err != nil {
@@ -4874,7 +4878,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var215 templ.SafeURL
 						templ_7745c5c3_Var215, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/opencode_stdout/download")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1397, Col: 79}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1401, Col: 79}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var215))
 						if templ_7745c5c3_Err != nil {
@@ -4915,7 +4919,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var217 templ.SafeURL
 						templ_7745c5c3_Var217, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/opencode_stderr/download")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1404, Col: 79}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1408, Col: 79}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var217))
 						if templ_7745c5c3_Err != nil {
@@ -4956,7 +4960,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var219 templ.SafeURL
 						templ_7745c5c3_Var219, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/opencode_combined_log/download")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1411, Col: 85}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1415, Col: 85}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var219))
 						if templ_7745c5c3_Err != nil {
@@ -5024,7 +5028,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 					var templ_7745c5c3_Var223 string
 					templ_7745c5c3_Var223, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeParsedResultStatus)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1424, Col: 122}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1428, Col: 122}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var223))
 					if templ_7745c5c3_Err != nil {
@@ -5042,7 +5046,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var224 string
 						templ_7745c5c3_Var224, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeParsedBuildStatus)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1429, Col: 73}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1433, Col: 73}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var224))
 						if templ_7745c5c3_Err != nil {
@@ -5061,7 +5065,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var225 string
 						templ_7745c5c3_Var225, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeParsedTestStatus)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1435, Col: 72}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1439, Col: 72}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var225))
 						if templ_7745c5c3_Err != nil {
@@ -5080,7 +5084,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var226 string
 						templ_7745c5c3_Var226, templ_7745c5c3_Err = templ.JoinStringErrs(previews.OpenCodeParsedLOCChanged)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1441, Col: 72}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1445, Col: 72}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var226))
 						if templ_7745c5c3_Err != nil {
@@ -5129,7 +5133,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 						var templ_7745c5c3_Var228 templ.SafeURL
 						templ_7745c5c3_Var228, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/agent_result_raw/download")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1451, Col: 80}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1455, Col: 80}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var228))
 						if templ_7745c5c3_Err != nil {
@@ -5187,24 +5191,9 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if previews.HasOpenCodeExecution && !isExecutionRunning(previews.OpenCodeExecutionStatus) && previews.OpenCodeParsedResultStatus == "" {
-				templ_7745c5c3_Var230 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-					if !templ_7745c5c3_IsBuffer {
-						defer func() {
-							templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-							if templ_7745c5c3_Err == nil {
-								templ_7745c5c3_Err = templ_7745c5c3_BufErr
-							}
-						}()
-					}
-					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 375, "<div class=\"space-y-2\"><div class=\"relay-action-row\">")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Var231 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			if previews.HasOpenCodeExecution && previews.OpenCodeLifecycleState == "completed_without_result" {
+				if previews.HasGitChangeEvidence && (previews.GitChangeEvidenceMode == "no_changes" || previews.GitChangeEvidenceMode == "baseline_unavailable_no_changes") {
+					templ_7745c5c3_Var230 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -5216,91 +5205,44 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 376, "Inspect Git Diff (Step 7)")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 375, "<div class=\"relay-action-row\">")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Var231 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+							templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+							templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+							if !templ_7745c5c3_IsBuffer {
+								defer func() {
+									templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+									if templ_7745c5c3_Err == nil {
+										templ_7745c5c3_Err = templ_7745c5c3_BufErr
+									}
+								}()
+							}
+							ctx = templ.InitializeContext(ctx)
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 376, "Inspect Git Diff (Step 7)")
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							return nil
+						})
+						templ_7745c5c3_Err = WorkbenchStepLink(run.ID, "audit", "file-search", "text-xs text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center").Render(templ.WithChildren(ctx, templ_7745c5c3_Var231), templ_7745c5c3_Buffer)
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 377, "</div>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = WorkbenchStepLink(run.ID, "audit", "file-search", "text-xs text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center").Render(templ.WithChildren(ctx, templ_7745c5c3_Var231), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = StageEvidenceRow("warning", "No repo changes detected", "OpenCode completed or stopped, and the captured git evidence shows a clean tree. The agent may have made no effective edit or reverted its change. Inspect git diff in Step 7 for details.", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var230), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 377, "</div><div class=\"relay-card p-3 sm:p-4\"><div class=\"text-xs text-gray-500 mb-3 font-medium\">Manual result intake fallback</div><form action=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var232 templ.SafeURL
-					templ_7745c5c3_Var232, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/actions")
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1475, Col: 57}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var232))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 378, "\" method=\"POST\" hx-post=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var233 string
-					templ_7745c5c3_Var233, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(run.ID) + "/actions")
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1476, Col: 53}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var233)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 379, "\" hx-target=\"#run-workbench-shell\" hx-select=\"#run-workbench-shell\" hx-swap=\"outerHTML show:#run-workbench-shell:top settle:120ms\" hx-indicator=\"#run-workbench-loading\" data-relay-workbench-action=\"true\" class=\"space-y-3\"><input type=\"hidden\" name=\"action\" value=\"submit-agent-result\"> <textarea name=\"agent_result_text\" rows=\"6\" class=\"w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded-lg p-2 text-gray-300 min-w-0 resize-y\" placeholder=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var234 string
-					templ_7745c5c3_Var234, templ_7745c5c3_Err = templ.ResolveAttributeValue("DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42")
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1482, Col: 93}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var234)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 380, "\"></textarea> <button type=\"submit\" class=\"btn-primary text-xs sm:text-sm gap-1.5\" data-stage-primary-action>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = ActionIcon("play", "relay-icon-sm").Render(ctx, templ_7745c5c3_Buffer)
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 381, "Save Agent Result</button></form></div></div>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					return nil
-				})
-				templ_7745c5c3_Err = StageEvidenceRow("warning", "OpenCode completed without a final DONE/BLOCKED result", "Relay did not find a DONE/BLOCKED final response in the captured output. The agent may have finished its work but Relay cannot parse the result. Review the combined log and inspect git diff to verify changes.", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var230), templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-			} else if previews.HasOpenCodeExecution && !isExecutionRunning(previews.OpenCodeExecutionStatus) && previews.OpenCodeParsedResultStatus != "" && (!previews.HasGitChangeEvidence || previews.GitChangeEvidenceMode == "no_changes" || previews.GitChangeEvidenceMode == "baseline_unavailable_no_changes") {
-				templ_7745c5c3_Var235 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
-					templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
-					templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
-					if !templ_7745c5c3_IsBuffer {
-						defer func() {
-							templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
-							if templ_7745c5c3_Err == nil {
-								templ_7745c5c3_Err = templ_7745c5c3_BufErr
-							}
-						}()
-					}
-					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 382, "<div class=\"relay-action-row\">")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Var236 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+				} else {
+					templ_7745c5c3_Var232 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 						if !templ_7745c5c3_IsBuffer {
@@ -5312,25 +5254,89 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 							}()
 						}
 						ctx = templ.InitializeContext(ctx)
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 383, "Inspect Git Diff (Step 7)")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 378, "<div class=\"space-y-2\"><div class=\"relay-action-row\">")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Var233 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+							templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+							templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+							if !templ_7745c5c3_IsBuffer {
+								defer func() {
+									templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+									if templ_7745c5c3_Err == nil {
+										templ_7745c5c3_Err = templ_7745c5c3_BufErr
+									}
+								}()
+							}
+							ctx = templ.InitializeContext(ctx)
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 379, "Inspect Git Diff (Step 7)")
+							if templ_7745c5c3_Err != nil {
+								return templ_7745c5c3_Err
+							}
+							return nil
+						})
+						templ_7745c5c3_Err = WorkbenchStepLink(run.ID, "audit", "file-search", "text-xs text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center").Render(templ.WithChildren(ctx, templ_7745c5c3_Var233), templ_7745c5c3_Buffer)
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 380, "</div><div class=\"relay-card p-3 sm:p-4\"><div class=\"text-xs text-gray-500 mb-3 font-medium\">Manual result intake fallback</div><form action=\"")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var234 templ.SafeURL
+						templ_7745c5c3_Var234, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/actions")
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1488, Col: 58}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var234))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 381, "\" method=\"POST\" hx-post=\"")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var235 string
+						templ_7745c5c3_Var235, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(run.ID) + "/actions")
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1489, Col: 54}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var235)
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 382, "\" hx-target=\"#run-workbench-shell\" hx-select=\"#run-workbench-shell\" hx-swap=\"outerHTML show:#run-workbench-shell:top settle:120ms\" hx-indicator=\"#run-workbench-loading\" data-relay-workbench-action=\"true\" class=\"space-y-3\"><input type=\"hidden\" name=\"action\" value=\"submit-agent-result\"> <textarea name=\"agent_result_text\" rows=\"6\" class=\"w-full text-xs font-mono bg-gray-950 border border-gray-800 rounded-lg p-2 text-gray-300 min-w-0 resize-y\" placeholder=\"")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var236 string
+						templ_7745c5c3_Var236, templ_7745c5c3_Err = templ.ResolveAttributeValue("DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42")
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1495, Col: 94}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var236)
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 383, "\"></textarea> <button type=\"submit\" class=\"btn-primary text-xs sm:text-sm gap-1.5\" data-stage-primary-action>")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = ActionIcon("play", "relay-icon-sm").Render(ctx, templ_7745c5c3_Buffer)
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 384, "Save Agent Result</button></form></div></div>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						return nil
 					})
-					templ_7745c5c3_Err = WorkbenchStepLink(run.ID, "audit", "file-search", "text-xs text-indigo-400 hover:text-indigo-300 underline min-h-[36px] inline-flex items-center").Render(templ.WithChildren(ctx, templ_7745c5c3_Var236), templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = StageEvidenceRow("warning", "OpenCode completed without a final DONE/BLOCKED result", "Relay did not find a DONE/BLOCKED final response in the captured output. The agent may have finished its work but Relay cannot parse the result. Review the combined log and inspect git diff to verify changes.", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var232), templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 384, "</div>")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					return nil
-				})
-				templ_7745c5c3_Err = StageEvidenceRow("warning", "No repo changes detected", "OpenCode completed or stopped, but git status is clean. The agent may have made no effective edit or reverted its change. Inspect git diff in Step 7 for details.", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var235), templ_7745c5c3_Buffer)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
 				}
 			} else {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 385, "<details class=\"m-4 relay-card p-3 sm:p-4\"><summary class=\"cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none min-h-[36px] inline-flex items-center\">Manual result intake fallback</summary><div class=\"mt-3\"><form action=\"")
@@ -5340,7 +5346,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 				var templ_7745c5c3_Var237 templ.SafeURL
 				templ_7745c5c3_Var237, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/actions")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1505, Col: 56}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1511, Col: 56}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var237))
 				if templ_7745c5c3_Err != nil {
@@ -5353,7 +5359,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 				var templ_7745c5c3_Var238 string
 				templ_7745c5c3_Var238, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(run.ID) + "/actions")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1506, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1512, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var238)
 				if templ_7745c5c3_Err != nil {
@@ -5366,7 +5372,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 				var templ_7745c5c3_Var239 string
 				templ_7745c5c3_Var239, templ_7745c5c3_Err = templ.ResolveAttributeValue("DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1512, Col: 92}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1518, Col: 92}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var239)
 				if templ_7745c5c3_Err != nil {
@@ -5473,7 +5479,7 @@ func relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, c
 			var templ_7745c5c3_Var242 templ.SafeURL
 			templ_7745c5c3_Var242, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/actions")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1538, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1544, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var242))
 			if templ_7745c5c3_Err != nil {
@@ -5486,7 +5492,7 @@ func relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, c
 			var templ_7745c5c3_Var243 string
 			templ_7745c5c3_Var243, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(run.ID) + "/actions")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1539, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1545, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var243)
 			if templ_7745c5c3_Err != nil {
@@ -5540,7 +5546,7 @@ func relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, c
 					var templ_7745c5c3_Var245 templ.SafeURL
 					templ_7745c5c3_Var245, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/actions")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1566, Col: 56}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1572, Col: 56}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var245))
 					if templ_7745c5c3_Err != nil {
@@ -5553,7 +5559,7 @@ func relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, c
 					var templ_7745c5c3_Var246 string
 					templ_7745c5c3_Var246, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(run.ID) + "/actions")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1567, Col: 52}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1573, Col: 52}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var246)
 					if templ_7745c5c3_Err != nil {
@@ -5623,7 +5629,7 @@ func relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, c
 					var templ_7745c5c3_Var249 templ.SafeURL
 					templ_7745c5c3_Var249, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/actions")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1586, Col: 56}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1592, Col: 56}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var249))
 					if templ_7745c5c3_Err != nil {
@@ -5636,7 +5642,7 @@ func relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, c
 					var templ_7745c5c3_Var250 string
 					templ_7745c5c3_Var250, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(run.ID) + "/actions")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1587, Col: 52}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1593, Col: 52}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var250)
 					if templ_7745c5c3_Err != nil {
@@ -5684,7 +5690,7 @@ func relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, c
 							var templ_7745c5c3_Var252 string
 							templ_7745c5c3_Var252, templ_7745c5c3_Err = templ.JoinStringErrs(cmd.Command)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1604, Col: 65}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1610, Col: 65}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var252))
 							if templ_7745c5c3_Err != nil {
@@ -5697,7 +5703,7 @@ func relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, c
 							var templ_7745c5c3_Var253 string
 							templ_7745c5c3_Var253, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(cmd.ExitCode)))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1605, Col: 50}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1611, Col: 50}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var253))
 							if templ_7745c5c3_Err != nil {
@@ -5710,7 +5716,7 @@ func relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, c
 							var templ_7745c5c3_Var254 string
 							templ_7745c5c3_Var254, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(cmd.DurationMs))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1606, Col: 40}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1612, Col: 40}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var254))
 							if templ_7745c5c3_Err != nil {
@@ -5964,7 +5970,7 @@ func relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, c
 				var templ_7745c5c3_Var262 templ.SafeURL
 				templ_7745c5c3_Var262, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/artifacts/validation_run_json/download")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1664, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1670, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var262))
 				if templ_7745c5c3_Err != nil {
@@ -6062,7 +6068,7 @@ func relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, c
 					var templ_7745c5c3_Var266 templ.SafeURL
 					templ_7745c5c3_Var266, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(run.ID) + "/actions")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1680, Col: 56}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1686, Col: 56}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var266))
 					if templ_7745c5c3_Err != nil {
@@ -6075,7 +6081,7 @@ func relayValidationStepPanelInner(run *store.Run, artifacts []store.Artifact, c
 					var templ_7745c5c3_Var267 string
 					templ_7745c5c3_Var267, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(run.ID) + "/actions")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1681, Col: 52}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1687, Col: 52}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var267)
 					if templ_7745c5c3_Err != nil {
@@ -6198,7 +6204,7 @@ func validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []s
 		var templ_7745c5c3_Var271 string
 		templ_7745c5c3_Var271, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(v.CommandCount)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1714, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1720, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var271))
 		if templ_7745c5c3_Err != nil {
@@ -6211,7 +6217,7 @@ func validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []s
 		var templ_7745c5c3_Var272 string
 		templ_7745c5c3_Var272, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(v.PassedCount)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1715, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1721, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var272))
 		if templ_7745c5c3_Err != nil {
@@ -6224,7 +6230,7 @@ func validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []s
 		var templ_7745c5c3_Var273 string
 		templ_7745c5c3_Var273, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(v.FailedCount)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1716, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1722, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var273))
 		if templ_7745c5c3_Err != nil {
@@ -6237,7 +6243,7 @@ func validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []s
 		var templ_7745c5c3_Var274 string
 		templ_7745c5c3_Var274, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(v.TimedOutCount)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1717, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1723, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var274))
 		if templ_7745c5c3_Err != nil {
@@ -6250,7 +6256,7 @@ func validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []s
 		var templ_7745c5c3_Var275 string
 		templ_7745c5c3_Var275, templ_7745c5c3_Err = templ.JoinStringErrs(formatDuration(v.TotalDurationMs))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1718, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1724, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var275))
 		if templ_7745c5c3_Err != nil {
@@ -6276,7 +6282,7 @@ func validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []s
 			var templ_7745c5c3_Var276 string
 			templ_7745c5c3_Var276, templ_7745c5c3_Err = templ.JoinStringErrs(cmd.Command)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1727, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1733, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var276))
 			if templ_7745c5c3_Err != nil {
@@ -6294,7 +6300,7 @@ func validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []s
 				var templ_7745c5c3_Var277 string
 				templ_7745c5c3_Var277, templ_7745c5c3_Err = templ.JoinStringErrs(cmd.Source)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1731, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1737, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var277))
 				if templ_7745c5c3_Err != nil {
@@ -6312,7 +6318,7 @@ func validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []s
 			var templ_7745c5c3_Var278 string
 			templ_7745c5c3_Var278, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(cmd.ExitCode)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1733, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1739, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var278))
 			if templ_7745c5c3_Err != nil {
@@ -6325,7 +6331,7 @@ func validationResultsSummary(v ValidationRunPreview, runID int64, artifacts []s
 			var templ_7745c5c3_Var279 string
 			templ_7745c5c3_Var279, templ_7745c5c3_Err = templ.JoinStringErrs(formatDuration(cmd.DurationMs))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1734, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1740, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var279))
 			if templ_7745c5c3_Err != nil {
@@ -6524,7 +6530,7 @@ func validationCommandStatusChip(status string) templ.Component {
 			var templ_7745c5c3_Var283 string
 			templ_7745c5c3_Var283, templ_7745c5c3_Err = templ.JoinStringErrs(status)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1791, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1797, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var283))
 			if templ_7745c5c3_Err != nil {
@@ -6575,7 +6581,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 		var templ_7745c5c3_Var285 string
 		templ_7745c5c3_Var285, templ_7745c5c3_Err = templ.JoinStringErrs(progress.StartedAt)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1808, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1814, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var285))
 		if templ_7745c5c3_Err != nil {
@@ -6588,7 +6594,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 		var templ_7745c5c3_Var286 string
 		templ_7745c5c3_Var286, templ_7745c5c3_Err = templ.JoinStringErrs(progress.UpdatedAt)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1812, Col: 30}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1818, Col: 30}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var286))
 		if templ_7745c5c3_Err != nil {
@@ -6601,7 +6607,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 		var templ_7745c5c3_Var287 string
 		templ_7745c5c3_Var287, templ_7745c5c3_Err = templ.JoinStringErrs(validationProgressElapsed(progress))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1816, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1822, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var287))
 		if templ_7745c5c3_Err != nil {
@@ -6619,7 +6625,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 			var templ_7745c5c3_Var288 string
 			templ_7745c5c3_Var288, templ_7745c5c3_Err = templ.JoinStringErrs(progress.CurrentCommand)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1821, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1827, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var288))
 			if templ_7745c5c3_Err != nil {
@@ -6642,7 +6648,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 		var templ_7745c5c3_Var289 string
 		templ_7745c5c3_Var289, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(progress.TotalCommands)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1828, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1834, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var289))
 		if templ_7745c5c3_Err != nil {
@@ -6655,7 +6661,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 		var templ_7745c5c3_Var290 string
 		templ_7745c5c3_Var290, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(progress.CompletedCount)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1829, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1835, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var290))
 		if templ_7745c5c3_Err != nil {
@@ -6668,7 +6674,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 		var templ_7745c5c3_Var291 string
 		templ_7745c5c3_Var291, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(progress.RunningCount)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1830, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1836, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var291))
 		if templ_7745c5c3_Err != nil {
@@ -6681,7 +6687,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 		var templ_7745c5c3_Var292 string
 		templ_7745c5c3_Var292, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(progress.PendingCount)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1831, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1837, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var292))
 		if templ_7745c5c3_Err != nil {
@@ -6694,7 +6700,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 		var templ_7745c5c3_Var293 string
 		templ_7745c5c3_Var293, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(progress.PassedCount)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1834, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1840, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var293))
 		if templ_7745c5c3_Err != nil {
@@ -6707,7 +6713,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 		var templ_7745c5c3_Var294 string
 		templ_7745c5c3_Var294, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(progress.FailedCount)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1835, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1841, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var294))
 		if templ_7745c5c3_Err != nil {
@@ -6720,7 +6726,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 		var templ_7745c5c3_Var295 string
 		templ_7745c5c3_Var295, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(progress.TimedOutCount)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1836, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1842, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var295))
 		if templ_7745c5c3_Err != nil {
@@ -6738,7 +6744,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 			var templ_7745c5c3_Var296 string
 			templ_7745c5c3_Var296, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(progress.SkippedCount)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1838, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1844, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var296))
 			if templ_7745c5c3_Err != nil {
@@ -6757,7 +6763,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 			var templ_7745c5c3_Var297 string
 			templ_7745c5c3_Var297, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(progress.ErrorCount)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1841, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1847, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var297))
 			if templ_7745c5c3_Err != nil {
@@ -6785,7 +6791,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 				var templ_7745c5c3_Var298 string
 				templ_7745c5c3_Var298, templ_7745c5c3_Err = templ.JoinStringErrs(previews.ValidationStdoutPreview)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1852, Col: 122}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1858, Col: 122}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var298))
 				if templ_7745c5c3_Err != nil {
@@ -6804,7 +6810,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 				var templ_7745c5c3_Var299 string
 				templ_7745c5c3_Var299, templ_7745c5c3_Err = templ.JoinStringErrs(previews.ValidationStderrPreview)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1858, Col: 122}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1864, Col: 122}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var299))
 				if templ_7745c5c3_Err != nil {
@@ -6909,7 +6915,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 				var templ_7745c5c3_Var303 string
 				templ_7745c5c3_Var303, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(progress.CurrentIndex)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1887, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1893, Col: 47}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var303))
 				if templ_7745c5c3_Err != nil {
@@ -6922,7 +6928,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 				var templ_7745c5c3_Var304 string
 				templ_7745c5c3_Var304, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(progress.TotalCommands)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1887, Col: 90}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1893, Col: 90}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var304))
 				if templ_7745c5c3_Err != nil {
@@ -6953,7 +6959,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 				var templ_7745c5c3_Var305 string
 				templ_7745c5c3_Var305, templ_7745c5c3_Err = templ.JoinStringErrs(cmd.Command)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1897, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1903, Col: 75}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var305))
 				if templ_7745c5c3_Err != nil {
@@ -6971,7 +6977,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 					var templ_7745c5c3_Var306 string
 					templ_7745c5c3_Var306, templ_7745c5c3_Err = templ.JoinStringErrs(cmd.Label)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1899, Col: 68}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1905, Col: 68}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var306))
 					if templ_7745c5c3_Err != nil {
@@ -6994,7 +7000,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 					var templ_7745c5c3_Var307 string
 					templ_7745c5c3_Var307, templ_7745c5c3_Err = templ.JoinStringErrs(cmd.Source)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1905, Col: 26}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1911, Col: 26}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var307))
 					if templ_7745c5c3_Err != nil {
@@ -7013,7 +7019,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 					var templ_7745c5c3_Var308 string
 					templ_7745c5c3_Var308, templ_7745c5c3_Err = templ.JoinStringErrs(cmd.StartedAt)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1908, Col: 54}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1914, Col: 54}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var308))
 					if templ_7745c5c3_Err != nil {
@@ -7032,7 +7038,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 					var templ_7745c5c3_Var309 string
 					templ_7745c5c3_Var309, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(cmd.ExitCode)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1911, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1917, Col: 46}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var309))
 					if templ_7745c5c3_Err != nil {
@@ -7051,7 +7057,7 @@ func validationProgressDisplay(progress ValidationProgressPreview, runID int64, 
 					var templ_7745c5c3_Var310 string
 					templ_7745c5c3_Var310, templ_7745c5c3_Err = templ.JoinStringErrs(validationProgressCommandDuration(cmd))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1914, Col: 75}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1920, Col: 75}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var310))
 					if templ_7745c5c3_Err != nil {
@@ -7240,7 +7246,7 @@ func validationRecentOutput(previews RunPreviews, runID int64, artifacts []store
 				var templ_7745c5c3_Var317 string
 				templ_7745c5c3_Var317, templ_7745c5c3_Err = templ.JoinStringErrs(previews.ValidationStdoutPreview)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1964, Col: 122}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1970, Col: 122}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var317))
 				if templ_7745c5c3_Err != nil {
@@ -7259,7 +7265,7 @@ func validationRecentOutput(previews RunPreviews, runID int64, artifacts []store
 				var templ_7745c5c3_Var318 string
 				templ_7745c5c3_Var318, templ_7745c5c3_Err = templ.JoinStringErrs(previews.ValidationStderrPreview)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1970, Col: 122}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 1976, Col: 122}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var318))
 				if templ_7745c5c3_Err != nil {
@@ -7410,7 +7416,7 @@ func auditHandoffSection(previews RunPreviews, runID int64) templ.Component {
 			var templ_7745c5c3_Var324 templ.SafeURL
 			templ_7745c5c3_Var324, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/artifacts/audit_handoff/download")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2006, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2012, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var324))
 			if templ_7745c5c3_Err != nil {
@@ -7428,7 +7434,7 @@ func auditHandoffSection(previews RunPreviews, runID int64) templ.Component {
 				var templ_7745c5c3_Var325 string
 				templ_7745c5c3_Var325, templ_7745c5c3_Err = templ.JoinStringErrs(previews.AuditHandoff)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2015, Col: 106}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2021, Col: 106}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var325))
 				if templ_7745c5c3_Err != nil {
@@ -7451,7 +7457,7 @@ func auditHandoffSection(previews RunPreviews, runID int64) templ.Component {
 			var templ_7745c5c3_Var326 templ.SafeURL
 			templ_7745c5c3_Var326, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/actions")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2026, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2032, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var326))
 			if templ_7745c5c3_Err != nil {
@@ -7464,7 +7470,7 @@ func auditHandoffSection(previews RunPreviews, runID int64) templ.Component {
 			var templ_7745c5c3_Var327 string
 			templ_7745c5c3_Var327, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(runID) + "/actions")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2027, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2033, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var327)
 			if templ_7745c5c3_Err != nil {
@@ -7550,7 +7556,7 @@ func changeEvidenceDisplay(previews RunPreviews) templ.Component {
 		var templ_7745c5c3_Var331 string
 		templ_7745c5c3_Var331, templ_7745c5c3_Err = templ.JoinStringErrs(formattedEvidenceMode(previews.GitChangeEvidenceMode))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2060, Col: 131}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2066, Col: 131}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var331))
 		if templ_7745c5c3_Err != nil {
@@ -7568,7 +7574,7 @@ func changeEvidenceDisplay(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var332 string
 			templ_7745c5c3_Var332, templ_7745c5c3_Err = templ.JoinStringErrs(shortSHA(previews.GitChangeEvidenceBaseline))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2065, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2071, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var332))
 			if templ_7745c5c3_Err != nil {
@@ -7587,7 +7593,7 @@ func changeEvidenceDisplay(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var333 string
 			templ_7745c5c3_Var333, templ_7745c5c3_Err = templ.JoinStringErrs(shortSHA(previews.GitChangeEvidenceHead))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2071, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2077, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var333))
 			if templ_7745c5c3_Err != nil {
@@ -7606,7 +7612,7 @@ func changeEvidenceDisplay(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var334 string
 			templ_7745c5c3_Var334, templ_7745c5c3_Err = templ.JoinStringErrs(previews.GitChangeEvidenceBranch)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2077, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2083, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var334))
 			if templ_7745c5c3_Err != nil {
@@ -7625,7 +7631,7 @@ func changeEvidenceDisplay(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var335 string
 			templ_7745c5c3_Var335, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(previews.GitChangeEvidenceCommitCnt)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2083, Col: 83}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2089, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var335))
 			if templ_7745c5c3_Err != nil {
@@ -7644,7 +7650,7 @@ func changeEvidenceDisplay(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var336 string
 			templ_7745c5c3_Var336, templ_7745c5c3_Err = templ.JoinStringErrs(previews.GitChangeEvidenceWarning)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2088, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2094, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var336))
 			if templ_7745c5c3_Err != nil {
@@ -7711,7 +7717,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 		var templ_7745c5c3_Var338 templ.SafeURL
 		templ_7745c5c3_Var338, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/actions")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2105, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2111, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var338))
 		if templ_7745c5c3_Err != nil {
@@ -7724,7 +7730,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 		var templ_7745c5c3_Var339 string
 		templ_7745c5c3_Var339, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(runID) + "/actions")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2106, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2112, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var339)
 		if templ_7745c5c3_Err != nil {
@@ -7780,7 +7786,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 					var templ_7745c5c3_Var341 string
 					templ_7745c5c3_Var341, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(previews.GitChangedFileCount))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2129, Col: 110}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2135, Col: 110}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var341))
 					if templ_7745c5c3_Err != nil {
@@ -7905,7 +7911,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 					var templ_7745c5c3_Var346 templ.SafeURL
 					templ_7745c5c3_Var346, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/artifacts/git_diff_patch/download")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2151, Col: 77}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2157, Col: 77}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var346))
 					if templ_7745c5c3_Err != nil {
@@ -7950,7 +7956,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 					var templ_7745c5c3_Var348 string
 					templ_7745c5c3_Var348, templ_7745c5c3_Err = templ.JoinStringErrs(previews.GitStatusPreview)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2161, Col: 126}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2167, Col: 126}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var348))
 					if templ_7745c5c3_Err != nil {
@@ -7991,7 +7997,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 					var templ_7745c5c3_Var350 string
 					templ_7745c5c3_Var350, templ_7745c5c3_Err = templ.JoinStringErrs(previews.GitDiffStatPreview)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2170, Col: 128}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2176, Col: 128}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var350))
 					if templ_7745c5c3_Err != nil {
@@ -8056,7 +8062,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 				var templ_7745c5c3_Var353 templ.SafeURL
 				templ_7745c5c3_Var353, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/artifacts/audit_handoff/download")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2184, Col: 74}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2190, Col: 74}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var353))
 				if templ_7745c5c3_Err != nil {
@@ -8096,7 +8102,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 					var templ_7745c5c3_Var355 string
 					templ_7745c5c3_Var355, templ_7745c5c3_Err = templ.JoinStringErrs(previews.AuditHandoff)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2191, Col: 133}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2197, Col: 133}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var355))
 					if templ_7745c5c3_Err != nil {
@@ -8168,7 +8174,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 				var templ_7745c5c3_Var358 templ.SafeURL
 				templ_7745c5c3_Var358, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/actions")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2211, Col: 54}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2217, Col: 54}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var358))
 				if templ_7745c5c3_Err != nil {
@@ -8181,7 +8187,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 				var templ_7745c5c3_Var359 string
 				templ_7745c5c3_Var359, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(runID) + "/actions")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2212, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2218, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var359)
 				if templ_7745c5c3_Err != nil {
@@ -8198,7 +8204,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 				var templ_7745c5c3_Var360 string
 				templ_7745c5c3_Var360, templ_7745c5c3_Err = templ.JoinStringErrs(btnLabel)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2218, Col: 17}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2224, Col: 17}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var360))
 				if templ_7745c5c3_Err != nil {
@@ -8245,7 +8251,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 				var templ_7745c5c3_Var362 templ.SafeURL
 				templ_7745c5c3_Var362, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/actions")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2228, Col: 54}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2234, Col: 54}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var362))
 				if templ_7745c5c3_Err != nil {
@@ -8258,7 +8264,7 @@ func DiffAuditStepPanel(previews RunPreviews, runID int64) templ.Component {
 				var templ_7745c5c3_Var363 string
 				templ_7745c5c3_Var363, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(runID) + "/actions")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2229, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2235, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var363)
 				if templ_7745c5c3_Err != nil {
@@ -8354,7 +8360,7 @@ func auditDecisionSection(previews RunPreviews, runID int64) templ.Component {
 							var templ_7745c5c3_Var366 string
 							templ_7745c5c3_Var366, templ_7745c5c3_Err = templ.JoinStringErrs(previews.AuditClearanceSource)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2257, Col: 46}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2263, Col: 46}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var366))
 							if templ_7745c5c3_Err != nil {
@@ -8369,7 +8375,7 @@ func auditDecisionSection(previews RunPreviews, runID int64) templ.Component {
 							var templ_7745c5c3_Var367 string
 							templ_7745c5c3_Var367, templ_7745c5c3_Err = templ.JoinStringErrs(" | ")
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2260, Col: 12}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2266, Col: 12}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var367))
 							if templ_7745c5c3_Err != nil {
@@ -8388,7 +8394,7 @@ func auditDecisionSection(previews RunPreviews, runID int64) templ.Component {
 							var templ_7745c5c3_Var368 string
 							templ_7745c5c3_Var368, templ_7745c5c3_Err = templ.JoinStringErrs(previews.AuditClearanceAcceptedAt)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2263, Col: 54}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2269, Col: 54}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var368))
 							if templ_7745c5c3_Err != nil {
@@ -8407,7 +8413,7 @@ func auditDecisionSection(previews RunPreviews, runID int64) templ.Component {
 					var templ_7745c5c3_Var369 templ.SafeURL
 					templ_7745c5c3_Var369, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/actions")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2267, Col: 53}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2273, Col: 53}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var369))
 					if templ_7745c5c3_Err != nil {
@@ -8420,7 +8426,7 @@ func auditDecisionSection(previews RunPreviews, runID int64) templ.Component {
 					var templ_7745c5c3_Var370 string
 					templ_7745c5c3_Var370, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(runID) + "/actions")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2268, Col: 49}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2274, Col: 49}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var370)
 					if templ_7745c5c3_Err != nil {
@@ -8464,7 +8470,7 @@ func auditDecisionSection(previews RunPreviews, runID int64) templ.Component {
 					var templ_7745c5c3_Var372 templ.SafeURL
 					templ_7745c5c3_Var372, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/actions")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2280, Col: 53}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2286, Col: 53}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var372))
 					if templ_7745c5c3_Err != nil {
@@ -8477,7 +8483,7 @@ func auditDecisionSection(previews RunPreviews, runID int64) templ.Component {
 					var templ_7745c5c3_Var373 string
 					templ_7745c5c3_Var373, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(runID) + "/actions")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2281, Col: 49}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2287, Col: 49}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var373)
 					if templ_7745c5c3_Err != nil {
@@ -8696,7 +8702,7 @@ func GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Run
 						var templ_7745c5c3_Var382 string
 						templ_7745c5c3_Var382, templ_7745c5c3_Err = templ.JoinStringErrs(previews.AuditClearanceSource)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2333, Col: 47}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2339, Col: 47}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var382))
 						if templ_7745c5c3_Err != nil {
@@ -8711,7 +8717,7 @@ func GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Run
 						var templ_7745c5c3_Var383 string
 						templ_7745c5c3_Var383, templ_7745c5c3_Err = templ.JoinStringErrs(" | ")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2336, Col: 14}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2342, Col: 14}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var383))
 						if templ_7745c5c3_Err != nil {
@@ -8730,7 +8736,7 @@ func GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Run
 						var templ_7745c5c3_Var384 string
 						templ_7745c5c3_Var384, templ_7745c5c3_Err = templ.JoinStringErrs(previews.AuditClearanceAcceptedAt)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2339, Col: 55}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2345, Col: 55}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var384))
 						if templ_7745c5c3_Err != nil {
@@ -8823,7 +8829,7 @@ func GitCommitStepPanel(run *store.Run, artifacts []store.Artifact, previews Run
 				var templ_7745c5c3_Var388 string
 				templ_7745c5c3_Var388, templ_7745c5c3_Err = templ.JoinStringErrs(previews.CommitBranch)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2366, Col: 80}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2372, Col: 80}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var388))
 				if templ_7745c5c3_Err != nil {
@@ -9095,7 +9101,7 @@ func commitStateSummary(previews RunPreviews) templ.Component {
 		var templ_7745c5c3_Var393 string
 		templ_7745c5c3_Var393, templ_7745c5c3_Err = templ.JoinStringErrs(commitStateLabel(previews.CommitState))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2453, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2459, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var393))
 		if templ_7745c5c3_Err != nil {
@@ -9113,7 +9119,7 @@ func commitStateSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var394 string
 			templ_7745c5c3_Var394, templ_7745c5c3_Err = templ.JoinStringErrs(previews.CommitStateMsg)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2459, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2465, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var394))
 			if templ_7745c5c3_Err != nil {
@@ -9247,7 +9253,7 @@ func commitStateSummary(previews RunPreviews) templ.Component {
 		var templ_7745c5c3_Var397 string
 		templ_7745c5c3_Var397, templ_7745c5c3_Err = templ.JoinStringErrs(formattedEvidenceMode(previews.CommitEvidenceMode))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2504, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2510, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var397))
 		if templ_7745c5c3_Err != nil {
@@ -9273,7 +9279,7 @@ func commitStateSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var398 string
 			templ_7745c5c3_Var398, templ_7745c5c3_Err = templ.JoinStringErrs(previews.CommitUpstreamRemote)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2512, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2518, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var398))
 			if templ_7745c5c3_Err != nil {
@@ -9286,7 +9292,7 @@ func commitStateSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var399 string
 			templ_7745c5c3_Var399, templ_7745c5c3_Err = templ.JoinStringErrs(previews.CommitUpstreamBranch)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2512, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2518, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var399))
 			if templ_7745c5c3_Err != nil {
@@ -9305,7 +9311,7 @@ func commitStateSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var400 string
 			templ_7745c5c3_Var400, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(previews.CommitAheadCount)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2519, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2525, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var400))
 			if templ_7745c5c3_Err != nil {
@@ -9324,7 +9330,7 @@ func commitStateSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var401 string
 			templ_7745c5c3_Var401, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(previews.CommitBehindCount)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2525, Col: 75}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2531, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var401))
 			if templ_7745c5c3_Err != nil {
@@ -9343,7 +9349,7 @@ func commitStateSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var402 string
 			templ_7745c5c3_Var402, templ_7745c5c3_Err = templ.JoinStringErrs(previews.CommitBranch)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2531, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2537, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var402))
 			if templ_7745c5c3_Err != nil {
@@ -9362,7 +9368,7 @@ func commitStateSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var403 string
 			templ_7745c5c3_Var403, templ_7745c5c3_Err = templ.JoinStringErrs(shortSHA(previews.CommitHeadSHA))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2537, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2543, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var403))
 			if templ_7745c5c3_Err != nil {
@@ -9381,7 +9387,7 @@ func commitStateSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var404 string
 			templ_7745c5c3_Var404, templ_7745c5c3_Err = templ.JoinStringErrs(shortSHA(previews.CommitSHA))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2543, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2549, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var404))
 			if templ_7745c5c3_Err != nil {
@@ -9400,7 +9406,7 @@ func commitStateSummary(previews RunPreviews) templ.Component {
 			var templ_7745c5c3_Var405 string
 			templ_7745c5c3_Var405, templ_7745c5c3_Err = templ.JoinStringErrs(previews.CommitSubject)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2549, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2555, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var405))
 			if templ_7745c5c3_Err != nil {
@@ -9491,7 +9497,7 @@ func commitMessageSuggestion(previews RunPreviews, runID int64) templ.Component 
 				var templ_7745c5c3_Var409 string
 				templ_7745c5c3_Var409, templ_7745c5c3_Err = templ.JoinStringErrs(previews.CommitSuggestionSelected)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2566, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2572, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var409))
 				if templ_7745c5c3_Err != nil {
@@ -9539,7 +9545,7 @@ func commitMessageSuggestion(previews RunPreviews, runID int64) templ.Component 
 				var templ_7745c5c3_Var411 templ.SafeURL
 				templ_7745c5c3_Var411, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/actions")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2576, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2582, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var411))
 				if templ_7745c5c3_Err != nil {
@@ -9552,7 +9558,7 @@ func commitMessageSuggestion(previews RunPreviews, runID int64) templ.Component 
 				var templ_7745c5c3_Var412 string
 				templ_7745c5c3_Var412, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(runID) + "/actions")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2577, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2583, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var412)
 				if templ_7745c5c3_Err != nil {
@@ -9622,7 +9628,7 @@ func commitActions(previews RunPreviews, runID int64) templ.Component {
 				var templ_7745c5c3_Var415 templ.SafeURL
 				templ_7745c5c3_Var415, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/actions")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2593, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2599, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var415))
 				if templ_7745c5c3_Err != nil {
@@ -9635,7 +9641,7 @@ func commitActions(previews RunPreviews, runID int64) templ.Component {
 				var templ_7745c5c3_Var416 string
 				templ_7745c5c3_Var416, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(runID) + "/actions")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2594, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2600, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var416)
 				if templ_7745c5c3_Err != nil {
@@ -9724,7 +9730,7 @@ func manualCommitCommand(previews RunPreviews) templ.Component {
 		var templ_7745c5c3_Var419 string
 		templ_7745c5c3_Var419, templ_7745c5c3_Err = templ.JoinStringErrs(previews.CommitSuggestionSelected)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2620, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2626, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var419))
 		if templ_7745c5c3_Err != nil {
@@ -9779,7 +9785,7 @@ func manualCommitCopyCommand(previews RunPreviews) templ.Component {
 				var templ_7745c5c3_Var422 string
 				templ_7745c5c3_Var422, templ_7745c5c3_Err = templ.JoinStringErrs(previews.RepoPath)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2627, Col: 111}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2633, Col: 111}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var422))
 				if templ_7745c5c3_Err != nil {
@@ -9802,7 +9808,7 @@ func manualCommitCopyCommand(previews RunPreviews) templ.Component {
 				var templ_7745c5c3_Var423 string
 				templ_7745c5c3_Var423, templ_7745c5c3_Err = templ.JoinStringErrs(shortSHA(previews.CommitResultSHA))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2630, Col: 125}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2636, Col: 125}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var423))
 				if templ_7745c5c3_Err != nil {
@@ -9825,7 +9831,7 @@ func manualCommitCopyCommand(previews RunPreviews) templ.Component {
 				var templ_7745c5c3_Var424 string
 				templ_7745c5c3_Var424, templ_7745c5c3_Err = templ.JoinStringErrs(previews.CommitResultSubject)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2633, Col: 110}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2639, Col: 110}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var424))
 				if templ_7745c5c3_Err != nil {
@@ -9902,7 +9908,7 @@ func pushActions(previews RunPreviews, runID int64) templ.Component {
 				var templ_7745c5c3_Var427 templ.SafeURL
 				templ_7745c5c3_Var427, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/actions")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2646, Col: 52}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2652, Col: 52}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var427))
 				if templ_7745c5c3_Err != nil {
@@ -9915,7 +9921,7 @@ func pushActions(previews RunPreviews, runID int64) templ.Component {
 				var templ_7745c5c3_Var428 string
 				templ_7745c5c3_Var428, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(runID) + "/actions")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2647, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2653, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var428)
 				if templ_7745c5c3_Err != nil {
@@ -9959,7 +9965,7 @@ func pushActions(previews RunPreviews, runID int64) templ.Component {
 				var templ_7745c5c3_Var430 string
 				templ_7745c5c3_Var430, templ_7745c5c3_Err = templ.JoinStringErrs(previews.CommitBranch)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2660, Col: 78}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2666, Col: 78}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var430))
 				if templ_7745c5c3_Err != nil {
@@ -11044,7 +11050,7 @@ func openCodeExecutionStatusChip(status string) templ.Component {
 			var templ_7745c5c3_Var457 string
 			templ_7745c5c3_Var457, templ_7745c5c3_Err = templ.JoinStringErrs(status)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2993, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 2999, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var457))
 			if templ_7745c5c3_Err != nil {
@@ -11365,7 +11371,7 @@ func StageEvidenceRow(status string, title string, summary string, meta string) 
 		var templ_7745c5c3_Var465 string
 		templ_7745c5c3_Var465, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 3214, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 3220, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var465))
 		if templ_7745c5c3_Err != nil {
@@ -11383,7 +11389,7 @@ func StageEvidenceRow(status string, title string, summary string, meta string) 
 			var templ_7745c5c3_Var466 string
 			templ_7745c5c3_Var466, templ_7745c5c3_Err = templ.JoinStringErrs(meta)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 3216, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 3222, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var466))
 			if templ_7745c5c3_Err != nil {
@@ -11406,7 +11412,7 @@ func StageEvidenceRow(status string, title string, summary string, meta string) 
 			var templ_7745c5c3_Var467 string
 			templ_7745c5c3_Var467, templ_7745c5c3_Err = templ.JoinStringErrs(summary)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 3220, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 3226, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var467))
 			if templ_7745c5c3_Err != nil {
@@ -11469,7 +11475,7 @@ func StageFailurePanel(title string, summary string) templ.Component {
 		var templ_7745c5c3_Var469 string
 		templ_7745c5c3_Var469, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 3237, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 3243, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var469))
 		if templ_7745c5c3_Err != nil {
@@ -11487,7 +11493,7 @@ func StageFailurePanel(title string, summary string) templ.Component {
 			var templ_7745c5c3_Var470 string
 			templ_7745c5c3_Var470, templ_7745c5c3_Err = templ.JoinStringErrs(summary)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 3239, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/step_cards.templ`, Line: 3245, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var470))
 			if templ_7745c5c3_Err != nil {

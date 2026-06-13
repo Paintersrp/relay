@@ -344,6 +344,15 @@ func BuildWorkbenchNextAction(input WorkbenchNextActionInput) WorkbenchNextActio
 	}
 
 	if input.HasOpenCodeExecution && !input.HasAgentResult {
+		if input.OpenCodeLifecycleState == "completed_without_result" {
+			return WorkbenchNextAction{
+				Kind:     WorkbenchNextActionReviewAgentResult,
+				Title:    "OpenCode completed without a final result",
+				Summary:  "OpenCode exited, but Relay did not parse a DONE/BLOCKED result. Review the logs or paste a manual result.",
+				Step:     "run",
+				Severity: "warn",
+			}
+		}
 		return WorkbenchNextAction{
 			Kind:     WorkbenchNextActionReviewAgentResult,
 			Title:    "Review agent output",

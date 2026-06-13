@@ -316,6 +316,83 @@ func TestStartOpenCodeGoNonZeroExitWithUnknownOutputDoesNotPersistAgentResult(t 
 	}
 }
 
+func TestStartOpenCodeGoZeroExitWithoutFinalResultShowsTerminalFallback(t *testing.T) {
+	s := setupTestStore(t)
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) { fn() }
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+		return pipeline.AgentCommandRunResult{
+			ExitCode: 0,
+			Stdout:   "some output without a final result\n",
+		}
+	}
+
+	runID := setupOpenCodeRun(t, s)
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+
+	h.startOpenCodeGo(w, req, runID)
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Status != "completed" {
+		t.Fatalf("expected status 'completed', got %q", exec.Status)
+	}
+	if !exec.FinishedAt.Valid {
+		t.Fatal("expected finished_at to be set after zero-exit completion")
+	}
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status == "agent_done" {
+		t.Fatal("did not expect zero-exit completion without DONE/BLOCKED to mark the run agent_done")
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	for _, a := range artifactsList {
+		if a.Kind == "agent_result_raw" || a.Kind == "agent_result_json" {
+			t.Fatalf("did not expect %s artifact for zero-exit completion without final result", a.Kind)
+		}
+	}
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	getReq := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	getReq = getReq.WithContext(context.WithValue(getReq.Context(), chi.RouteCtxKey, rctx))
+	getW := httptest.NewRecorder()
+
+	h.Get(getW, getReq)
+
+	if getW.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", getW.Code)
+	}
+	body := getW.Body.String()
+	if strings.Contains(body, "OpenCode is running") {
+		t.Fatal("did not expect running copy after zero-exit completion")
+	}
+	if !strings.Contains(body, "OpenCode completed without a final DONE/BLOCKED result") {
+		t.Fatal("expected completed-without-result warning in the run view")
+	}
+	if !strings.Contains(body, "Inspect Git Diff (Step 7)") {
+		t.Fatal("expected Step 7 diff inspection link for completed-without-result state")
+	}
+	if !strings.Contains(body, "Manual result intake fallback") {
+		t.Fatal("expected manual result fallback for completed-without-result state")
+	}
+	if strings.Contains(body, "No repo changes detected") {
+		t.Fatal("did not expect no-changes warning without fresh git evidence")
+	}
+}
+
 func TestStartOpenCodeGoNonZeroExitWithDoneStillPersistsResult(t *testing.T) {
 	s := setupTestStore(t)
 
@@ -3346,6 +3423,50 @@ func TestRunGetShowsActiveOpenCodeRunningWithRecentStreamProgress(t *testing.T) 
 	}
 	if strings.Contains(body, "Recover Stale OpenCode Run") {
 		t.Fatal("did not expect recovery action for non-stale running execution")
+	}
+}
+
+func TestRunGetShowsWaitingResponseForQuietRunningOpenCode(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	seedRunningExecution(t, s, runID)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`{"type":"text","part":{"type":"text","text":"still working"}}
+`,
+		`stderr line
+`,
+	)
+	quietAt := time.Now().Add(-3 * time.Minute)
+	seedStreamProgressArtifactAt(t, s, runID, 2, 1, 64, 18, quietAt)
+	touchOpenCodeOutputArtifacts(t, runID, quietAt)
+	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-5*time.Minute), quietAt)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "OpenCode is running but has been quiet") {
+		t.Fatal("expected waiting-response copy for a quiet running execution")
+	}
+	if strings.Contains(body, "OpenCode output stopped before a final result") {
+		t.Fatal("did not expect stale copy for waiting-response state")
+	}
+	if strings.Contains(body, "Recover Stale OpenCode Run") {
+		t.Fatal("did not expect stale recovery action for waiting-response state")
+	}
+	if strings.Contains(body, "OpenCode completed without a final DONE/BLOCKED result") {
+		t.Fatal("did not expect terminal-completed copy while execution is still running")
 	}
 }
 
