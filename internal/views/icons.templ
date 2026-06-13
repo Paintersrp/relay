@@ -1,3 +1,4 @@
+// Icon path data derived from Lucide (https://lucide.dev) — ISC License
 package views
 
 func iconClassName(className string) string {
@@ -478,4 +479,19 @@ templ ArtifactIcon(kind string, className string) {
 
 templ LiveUpdateIcon(state string, className string) {
 	@Icon(liveUpdateIconName(state), liveUpdateIconClass(state, className))
+}
+
+templ LiveUpdateIconSet(className string) {
+	<span data-relay-live-updates-state-icon="connecting" class="inline-flex items-center justify-center">
+		@LiveUpdateIcon("connecting", className)
+	</span>
+	<span data-relay-live-updates-state-icon="connected" class="hidden inline-flex items-center justify-center">
+		@LiveUpdateIcon("connected", className)
+	</span>
+	<span data-relay-live-updates-state-icon="reconnecting" class="hidden inline-flex items-center justify-center">
+		@LiveUpdateIcon("reconnecting", className)
+	</span>
+	<span data-relay-live-updates-state-icon="disconnected" class="hidden inline-flex items-center justify-center">
+		@LiveUpdateIcon("disconnected", className)
+	</span>
 }

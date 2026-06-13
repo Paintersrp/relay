@@ -174,7 +174,7 @@ func RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, che
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = LiveUpdateIcon("connecting", "relay-icon-sm").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = LiveUpdateIconSet("relay-icon-sm").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

@@ -1936,6 +1936,124 @@ func TestAgentRunStaleRunningWithCapturedOutputShowsRecoveryAction(t *testing.T)
 	}
 }
 
+func TestRunDetailRendersLiveUpdateIconSet(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	err := RunDetail(run, nil, nil, nil, nil, RunPreviews{}, nil, "intake").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunDetail: %v", err)
+	}
+	html := buf.String()
+
+	states := []string{"connecting", "connected", "reconnecting", "disconnected"}
+	for _, state := range states {
+		attr := `data-relay-live-updates-state-icon="` + state + `"`
+		if strings.Count(html, attr) != 1 {
+			t.Errorf("expected exactly one %s icon wrapper, got %d", attr, strings.Count(html, attr))
+		}
+	}
+
+	if !strings.Contains(html, `data-relay-live-updates-icon`) {
+		t.Errorf("expected outer icon wrapper with data-relay-live-updates-icon")
+	}
+}
+
+func TestLiveUpdateIconSetConnectingVisibleByDefault(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	err := RunDetail(run, nil, nil, nil, nil, RunPreviews{}, nil, "intake").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunDetail: %v", err)
+	}
+	html := buf.String()
+
+	if !strings.Contains(html, `data-relay-live-updates-state-icon="connecting"`) {
+		t.Errorf("expected connecting icon wrapper")
+	}
+
+	if !strings.Contains(html, `data-relay-live-updates-state-icon="connecting" class="inline-flex items-center justify-center"`) {
+		if strings.Contains(html, `data-relay-live-updates-state-icon="connecting" class="`) {
+			t.Errorf("connecting icon should not have hidden class in its class attribute")
+		}
+	}
+
+	if !strings.Contains(html, `data-relay-live-updates-state-icon="connected" class="hidden inline-flex items-center justify-center"`) {
+		t.Errorf("connected icon should have hidden class in initial state")
+	}
+	if !strings.Contains(html, `data-relay-live-updates-state-icon="reconnecting" class="hidden inline-flex items-center justify-center"`) {
+		t.Errorf("reconnecting icon should have hidden class in initial state")
+	}
+	if !strings.Contains(html, `data-relay-live-updates-state-icon="disconnected" class="hidden inline-flex items-center justify-center"`) {
+		t.Errorf("disconnected icon should have hidden class in initial state")
+	}
+}
+
+func TestLiveUpdateIconSetSVGsAreDecorative(t *testing.T) {
+	var buf strings.Builder
+	err := LiveUpdateIconSet("relay-icon-sm").Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render LiveUpdateIconSet: %v", err)
+	}
+	html := buf.String()
+
+	svgCount := strings.Count(html, `<svg`)
+	if svgCount != 4 {
+		t.Errorf("expected 4 SVGs, got %d", svgCount)
+	}
+
+	ariaHiddenCount := strings.Count(html, `aria-hidden="true"`)
+	if ariaHiddenCount != 4 {
+		t.Errorf("expected 4 aria-hidden attributes, got %d", ariaHiddenCount)
+	}
+
+	focusableCount := strings.Count(html, `focusable="false"`)
+	if focusableCount != 4 {
+		t.Errorf("expected 4 focusable attributes, got %d", focusableCount)
+	}
+}
+
+func TestMainTSDoesNotOwnLiveUpdateIconPaths(t *testing.T) {
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("could not find go.mod from %s", dir)
+		}
+		dir = parent
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "web", "src", "main.ts"))
+	if err != nil {
+		t.Fatalf("read main.ts: %v", err)
+	}
+	content := string(data)
+
+	if strings.Contains(content, "liveUpdatesIndicatorSvg") {
+		t.Fatal("main.ts must not contain liveUpdatesIndicatorSvg")
+	}
+	if strings.Contains(content, `"<svg`) || strings.Contains(content, "`<svg") {
+		t.Fatal("main.ts must not contain inline SVG string construction for live-update icons")
+	}
+	// Verify no Lucide live-update path data leaked into TypeScript
+	if strings.Contains(content, `"M5 12.55a11`) {
+		t.Fatal("main.ts must not contain wifi icon path data")
+	}
+	if strings.Contains(content, `"M3 2v6h6"`) {
+		t.Fatal("main.ts must not contain rotate-ccw icon path data")
+	}
+	if strings.Contains(content, `"M2 2l20 20"`) {
+		t.Fatal("main.ts must not contain wifi-off icon path data")
+	}
+	if strings.Contains(content, `"M21 12a9`) {
+		t.Fatal("main.ts must not contain loader-circle icon path data")
+	}
+}
+
 func TestAgentRunRunningWithoutOutputShowsNoOutputYet(t *testing.T) {
 	var buf strings.Builder
 	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
