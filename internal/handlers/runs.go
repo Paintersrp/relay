@@ -2105,6 +2105,8 @@ func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Reques
 		RepoName:           repoName,
 		BranchName:         run.BranchName,
 		Status:             run.Status,
+		SelectedModel:      run.SelectedModel,
+		RecommendedModel:   run.RecommendedModel,
 		OriginalHandoff:    originalHandoff,
 		AgentResultStatus:  agentResultStatus,
 		BuildStatus:        buildStatus,

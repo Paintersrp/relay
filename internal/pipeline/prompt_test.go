@@ -47,6 +47,12 @@ Return DONE or BLOCKED.
 	if !strings.Contains(prompt, "Validation responsibility") {
 		t.Error("prompt should contain Validation responsibility")
 	}
+	if !strings.Contains(prompt, "Run relevant tests/checks during implementation when practical.") {
+		t.Error("prompt should encourage running relevant tests/checks during implementation")
+	}
+	if !strings.Contains(prompt, "Relay validation is the authoritative final gate") {
+		t.Error("prompt should say Relay validation is the authoritative final gate")
+	}
 	if !strings.Contains(prompt, "Relay will run validation") {
 		t.Error("prompt should state Relay will run validation")
 	}
@@ -104,9 +110,6 @@ Return DONE or BLOCKED.
 	if !strings.Contains(prompt, "Relay will run validation") {
 		t.Error("prompt should state Relay will run validation")
 	}
-	if !strings.Contains(prompt, "Do not run validation commands") {
-		t.Error("prompt should tell agent not to run validation")
-	}
 	// Section heading preserved
 	if !strings.Contains(prompt, "## Tests / validation") {
 		t.Error("prompt should preserve Tests / validation heading")
@@ -119,6 +122,9 @@ Return DONE or BLOCKED.
 	}
 	if !strings.Contains(prompt, "Relay validation commands were extracted") {
 		t.Error("prompt should contain Relay validation removed note")
+	}
+	if !strings.Contains(prompt, "Run relevant tests/checks during implementation when practical.") {
+		t.Error("prompt should encourage running relevant tests/checks during implementation")
 	}
 }
 
@@ -720,6 +726,23 @@ go test ./...
 	}
 }
 
+func TestBuildCompactAgentPromptIncludesValidationGuidance(t *testing.T) {
+	handoff := `# Example
+
+## Goal
+
+Do a thing.
+`
+	prompt := BuildCompactAgentPrompt(handoff)
+
+	if !strings.Contains(prompt, "Run relevant tests/checks during implementation when practical.") {
+		t.Fatal("expected compact prompt to encourage running relevant tests/checks during implementation")
+	}
+	if !strings.Contains(prompt, "Relay validation is the authoritative final gate") {
+		t.Fatal("expected compact prompt to state Relay validation is the authoritative final gate")
+	}
+}
+
 func TestBuildAgentPromptStillRemovesRealValidationCommands(t *testing.T) {
 	handoff := `# Example
 
@@ -763,6 +786,9 @@ Do not list RTK-wrapped commands as separate validation commands.
 	// Relay validation removed note should be present
 	if !strings.Contains(prompt, "Relay validation commands were extracted") {
 		t.Error("prompt should contain Relay validation removed note")
+	}
+	if !strings.Contains(prompt, "Run relevant tests/checks during implementation when practical.") {
+		t.Error("prompt should encourage running relevant tests/checks during implementation")
 	}
 
 	// Expected result should be preserved

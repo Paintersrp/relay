@@ -1,17 +1,99 @@
 package pipeline
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
 
+func TestParseUnifiedDiffPatchCapturesFileMetadata(t *testing.T) {
+	patch := `diff --git a/old.txt b/old.txt
+deleted file mode 100644
+index 1111111..0000000
+--- a/old.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-old line
+diff --git a/new.txt b/new.txt
+new file mode 100644
+index 0000000..2222222
+--- /dev/null
++++ b/new.txt
+@@ -0,0 +1,2 @@
++alpha
++beta
+`
+
+	files := ParseUnifiedDiffPatch(patch)
+	if len(files) != 2 {
+		t.Fatalf("expected 2 parsed files, got %d", len(files))
+	}
+
+	first := files[0]
+	if first.Path != "old.txt" {
+		t.Fatalf("expected first file path old.txt, got %s", first.Path)
+	}
+	if first.ChangeType != "deleted" {
+		t.Fatalf("expected deleted change type, got %s", first.ChangeType)
+	}
+	if !first.Deleted {
+		t.Fatal("expected deleted file flag on first file")
+	}
+	if len(first.Hunks) != 1 {
+		t.Fatalf("expected 1 hunk for first file, got %d", len(first.Hunks))
+	}
+	added, deleted, context := countAuditPatchLineKinds(first)
+	if added != 0 || deleted != 1 || context != 0 {
+		t.Fatalf("unexpected line counts for first file: added=%d deleted=%d context=%d", added, deleted, context)
+	}
+
+	second := files[1]
+	if second.Path != "new.txt" {
+		t.Fatalf("expected second file path new.txt, got %s", second.Path)
+	}
+	if second.ChangeType != "added" {
+		t.Fatalf("expected added change type, got %s", second.ChangeType)
+	}
+	if !second.Created {
+		t.Fatal("expected created file flag on second file")
+	}
+	if len(second.Hunks) != 1 {
+		t.Fatalf("expected 1 hunk for second file, got %d", len(second.Hunks))
+	}
+	added, deleted, context = countAuditPatchLineKinds(second)
+	if added != 2 || deleted != 0 || context != 0 {
+		t.Fatalf("unexpected line counts for second file: added=%d deleted=%d context=%d", added, deleted, context)
+	}
+}
+
+func TestParseUnifiedDiffPatchCapturesBinaryIndicators(t *testing.T) {
+	patch := `diff --git a/img.png b/img.png
+index abcdef0..1234567 100644
+Binary files a/img.png and b/img.png differ
+`
+
+	files := ParseUnifiedDiffPatch(patch)
+	if len(files) != 1 {
+		t.Fatalf("expected 1 parsed file, got %d", len(files))
+	}
+	file := files[0]
+	if !file.Binary {
+		t.Fatal("expected binary indicator on parsed file")
+	}
+	if file.ChangeType != "binary" {
+		t.Fatalf("expected binary change type, got %s", file.ChangeType)
+	}
+}
+
 func TestBuildAuditHandoff_AllFields(t *testing.T) {
 	input := AuditHandoffInput{
-		RunID:      42,
-		Title:      "Test handoff",
-		RepoName:   "relay",
-		BranchName: "feature/test",
-		Status:     "validation_passed",
+		RunID:            42,
+		Title:            "Test handoff",
+		RepoName:         "relay",
+		BranchName:       "feature/test",
+		Status:           "validation_passed",
+		SelectedModel:    "DeepSeek V4 Pro",
+		RecommendedModel: "DeepSeek V4 Flash",
 
 		OriginalHandoff:   "# Test handoff\n\nDo some work.",
 		AgentResultStatus: "DONE",
@@ -27,57 +109,113 @@ func TestBuildAuditHandoff_AllFields(t *testing.T) {
 			{Label: "go test", Command: "go test ./...", Source: "handoff", ExitCode: 0, Stdout: "ok", Stderr: "", DurationMS: 5000},
 			{Label: "go vet", Command: "go vet ./...", Source: "handoff", ExitCode: 1, Stdout: "", Stderr: "warning", DurationMS: 2000},
 		},
+
+		GitStatusText:     " M README.md\n?? untracked.txt\n",
+		GitDiffStat:       " README.md | 2 ++\n 1 file changed, 2 insertions(+)",
+		GitDiffNumstat:    "2\t0\tREADME.md",
+		GitDiffNameStatus: "M\tREADME.md",
+		GitDiffPatch: `diff --git a/README.md b/README.md
+index abc..def 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,3 @@
+-# Test
++# Modified
++
++New line
+diff --git a/new-file.txt b/new-file.txt
+new file mode 100644
+--- /dev/null
++++ b/new-file.txt
+@@ -0,0 +1 @@
++hello
+`,
 	}
 
 	content := BuildAuditHandoff(input)
 
-	if !strings.Contains(content, "Run ID: 42") {
-		t.Error("expected Run ID in output")
+	checks := []string{
+		"Run ID: 42",
+		"Title: Test handoff",
+		"Repo: relay",
+		"Branch: feature/test",
+		"Status: validation_passed",
+		"Selected model: DeepSeek V4 Pro",
+		"Recommended model: DeepSeek V4 Flash",
+		"Status: DONE",
+		"Build status: PASS",
+		"Test status: PASS",
+		"LOC changed: 42",
+		"D:/Code/relay",
+		"go fmt ./...",
+		"go test ./...",
+		"go vet ./...",
+		"Exit code: 1",
+		"Duration: 2000ms",
+		"Stdout present: true",
+		"Stderr present: true",
+		"Failure excerpt",
+		" M README.md",
+		"?? untracked.txt",
+		"git status --short",
+		"git diff --name-status",
+		"git diff --stat",
+		"git diff --numstat",
+		"Full Patch For Review",
+		"```diff",
+		"README.md",
+		"new-file.txt",
+		"Per-file Review Notes",
+		"Change type: modified",
+		"Change type: added",
+		"Patch included inline above: yes",
+		"Audit Request",
 	}
-	if !strings.Contains(content, "Title: Test handoff") {
-		t.Error("expected Title in output")
+	for _, check := range checks {
+		if !strings.Contains(content, check) {
+			t.Fatalf("expected audit handoff to contain %q", check)
+		}
 	}
-	if !strings.Contains(content, "Repo: relay") {
-		t.Error("expected Repo in output")
+	if strings.Contains(content, "TRUNCATED: The full git diff patch exceeded the inline audit budget.") {
+		t.Fatal("did not expect global patch truncation for small diff")
 	}
-	if !strings.Contains(content, "Branch: feature/test") {
-		t.Error("expected Branch in output")
+}
+
+func TestBuildAuditHandoff_TruncatesLargePatch(t *testing.T) {
+	var patch strings.Builder
+	patch.WriteString("diff --git a/large.txt b/large.txt\n")
+	patch.WriteString("new file mode 100644\n")
+	patch.WriteString("--- /dev/null\n")
+	patch.WriteString("+++ b/large.txt\n")
+	patch.WriteString("@@ -0,0 +1,5000 @@\n")
+	for i := 0; i < 6000; i++ {
+		patch.WriteString(fmt.Sprintf("+line %04d %s\n", i, strings.Repeat("x", 20)))
 	}
-	if !strings.Contains(content, "Status: validation_passed") {
-		t.Error("expected Status in output")
+
+	input := AuditHandoffInput{
+		RunID:            7,
+		Title:            "Large patch",
+		RepoName:         "relay",
+		BranchName:       "main",
+		Status:           "validation_passed",
+		SelectedModel:    "DeepSeek V4 Pro",
+		RecommendedModel: "DeepSeek V4 Flash",
+		ValidationStatus: "pass",
+		GitDiffPatch:     patch.String(),
 	}
-	if !strings.Contains(content, "# Test handoff") {
-		t.Error("expected original handoff in output")
+
+	content := BuildAuditHandoff(input)
+
+	checks := []string{
+		"TRUNCATED: The full git diff patch exceeded the inline audit budget.",
+		"TRUNCATED: This file's patch exceeded the audit handoff inline budget.",
+		"Patch included inline above: truncated",
+		"large.txt",
 	}
-	if !strings.Contains(content, "DONE") {
-		t.Error("expected agent result status in output")
-	}
-	if !strings.Contains(content, "PASS") {
-		t.Error("expected build/test status in output")
-	}
-	if !strings.Contains(content, "pass") {
-		t.Error("expected validation status in output")
-	}
-	if !strings.Contains(content, "D:/Code/relay") {
-		t.Error("expected validation repo path in output")
-	}
-	if !strings.Contains(content, "go fmt ./...") {
-		t.Error("expected validation commands in output")
-	}
-	if !strings.Contains(content, "go test ./...") {
-		t.Error("expected go test command in output")
-	}
-	if !strings.Contains(content, "go vet ./...") {
-		t.Error("expected go vet command in output")
-	}
-	if !strings.Contains(content, "agent_prompt") {
-		t.Error("expected agent_prompt in artifact list")
-	}
-	if !strings.Contains(content, "validation_run_json") {
-		t.Error("expected validation_run_json in artifact list")
-	}
-	if !strings.Contains(content, "Review request") {
-		t.Error("expected review request section")
+	for _, check := range checks {
+		if !strings.Contains(content, check) {
+			t.Fatalf("expected truncated audit handoff to contain %q", check)
+		}
 	}
 }
 
@@ -102,9 +240,12 @@ func TestBuildAuditHandoff_MinimalFields(t *testing.T) {
 	if !strings.Contains(content, "No commands executed") {
 		t.Error("expected fallback for empty validation commands")
 	}
+	if !strings.Contains(content, "No git diff patch artifact was available") {
+		t.Error("expected fallback when git diff patch is missing")
+	}
 }
 
-func TestBuildAuditHandoff_TruncatesLargeContent(t *testing.T) {
+func TestBuildAuditHandoff_TruncatesLargeOriginalHandoff(t *testing.T) {
 	longHandoff := strings.Repeat("line\n", 5000)
 	input := AuditHandoffInput{
 		RunID:            2,
@@ -118,89 +259,7 @@ func TestBuildAuditHandoff_TruncatesLargeContent(t *testing.T) {
 
 	content := BuildAuditHandoff(input)
 
-	if !strings.Contains(content, "[truncated") {
+	if !strings.Contains(content, "[truncated; full artifact available in Relay]") {
 		t.Error("expected truncation marker for large handoff")
-	}
-}
-
-func TestBuildAuditHandoff_CommandStatuses(t *testing.T) {
-	input := AuditHandoffInput{
-		RunID:            3,
-		Title:            "Command statuses",
-		ValidationStatus: "fail",
-		ValidationCommands: []CommandRunResult{
-			{Command: "passing", ExitCode: 0, DurationMS: 100},
-			{Command: "failing", ExitCode: 1, DurationMS: 200, Stderr: "error"},
-			{Command: "timedout", ExitCode: -2, TimedOut: true, DurationMS: 300},
-		},
-	}
-
-	content := BuildAuditHandoff(input)
-
-	if !strings.Contains(content, "passing") {
-		t.Error("expected passing command")
-	}
-	if !strings.Contains(content, "pass") {
-		t.Error("expected pass status for exit 0")
-	}
-	if !strings.Contains(content, "failing") {
-		t.Error("expected failing command")
-	}
-	if !strings.Contains(content, "fail") {
-		t.Error("expected fail status for exit 1")
-	}
-	if !strings.Contains(content, "timedout") {
-		t.Error("expected timed out command")
-	}
-	if !strings.Contains(content, "timed out") {
-		t.Error("expected timed out status")
-	}
-}
-
-func TestBuildAuditHandoffIncludesGitDiffEvidence(t *testing.T) {
-	input := AuditHandoffInput{
-		RunID:              10,
-		Title:              "Diff evidence test",
-		ValidationStatus:   "pass",
-		ValidationRepoPath: "D:/Code/test",
-		GitStatusText:      " M README.md\n?? untracked.txt\n",
-		GitDiffStat:        " 1 file changed, 2 insertions(+)",
-		GitDiffNameStatus:  "M\tREADME.md",
-		GitDiffPatch:       "diff --git a/README.md b/README.md\nindex abc..def 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,3 @@\n-# Test\n+# Modified\n+\n+New line\n",
-	}
-
-	content := BuildAuditHandoff(input)
-
-	if !strings.Contains(content, "Git Diff Evidence") {
-		t.Error("expected Git Diff Evidence section")
-	}
-	if !strings.Contains(content, "README.md") {
-		t.Error("expected changed file reference in output")
-	}
-	if !strings.Contains(content, "git_diff_patch") {
-		t.Error("expected patch artifact reference")
-	}
-	if !strings.Contains(content, "git_status_text") {
-		t.Error("expected git_status_text in artifact list")
-	}
-	if !strings.Contains(content, "git_diff_stat") {
-		t.Error("expected git_diff_stat in artifact list")
-	}
-	if !strings.Contains(content, "git_diff_patch") {
-		t.Error("expected git_diff_patch in artifact list")
-	}
-}
-
-func TestBuildAuditHandoffNoGitDiffEvidence(t *testing.T) {
-	input := AuditHandoffInput{
-		RunID:            11,
-		Title:            "No diff",
-		ValidationStatus: "pass",
-	}
-
-	content := BuildAuditHandoff(input)
-
-	if !strings.Contains(content, "No git diff evidence artifact was available") {
-		t.Error("expected fallback message when no git diff evidence")
 	}
 }

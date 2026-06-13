@@ -122,11 +122,11 @@ Relay generates a transformed Agent Prompt from the original handoff:
 
 ## Test instructions are preserved in Agent Prompts
 
-Agent Prompt transformation preserves test implementation instructions (prose, bullet checklists, test descriptions). Only command execution material is removed from validation/test sections. Relay tells the agent not to run validation commands by default.
+Agent Prompt transformation preserves test implementation instructions (prose, bullet checklists, test descriptions). Only command execution material is removed from validation/test sections. Relay tells the agent to use tests/checks as implementation feedback when practical while still treating Relay validation as the final gate.
 
 Validation commands remain in the original handoff so Relay can extract and run them locally after agent result.
 
-Generated Agent Prompts tell the running agent not to run validation by default and not to paste validation logs.
+Generated Agent Prompts tell the running agent to keep validation feedback concise, avoid pasting full logs, and rely on Relay validation as the final gate.
 
 Validation commands should be canonical raw commands (e.g., `go test ./...`, not `rtk.exe go test ./...`).
 

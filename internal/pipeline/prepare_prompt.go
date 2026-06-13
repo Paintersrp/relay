@@ -164,28 +164,14 @@ func BuildAgentPrompt(originalHandoff string) string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n## Validation responsibility\n\n")
-	b.WriteString("Relay will run validation after your implementation.\n\n")
-	b.WriteString("Do not run validation commands unless explicitly instructed by the user or unless a command is required to generate source files before editing can continue.\n\n")
-	b.WriteString("Do not paste full validation logs.\n\n")
-	b.WriteString("If you run any checks yourself, summarize only:\n\n")
-	b.WriteString("- command run\n")
-	b.WriteString("- pass/fail\n")
-	b.WriteString("- blocker if failed\n\n")
-	b.WriteString("Relay owns the final validation result.\n\n")
+	writeValidationGuidance(&b)
 
 	if validationPlan != "" {
 		b.WriteString("## Relay validation plan\n\n")
-		b.WriteString("Relay extracted validation commands from the original handoff and will run them after implementation.\n\n")
-		b.WriteString("You do not need to run these commands.\n\n")
+		b.WriteString("Relay extracted validation commands from the original handoff and will run them after implementation. Use them as context for what Relay will verify.\n\n")
 	}
 
-	b.WriteString("## Agent final output requirement\n\n")
-	b.WriteString("Return only:\n\n")
-	b.WriteString("- DONE or BLOCKED\n")
-	b.WriteString("- build status\n")
-	b.WriteString("- test status\n")
-	b.WriteString("- count of LOC changed\n")
-	b.WriteString("- blocker/error only if BLOCKED\n")
+	writeAgentFinalOutputContract(&b)
 
 	return b.String()
 }
@@ -585,9 +571,25 @@ func BuildCompactAgentPrompt(originalHandoff string) string {
 	if !strings.HasSuffix(handoff, "\n") {
 		b.WriteString("\n")
 	}
-	b.WriteString("\n## Validation responsibility\n\n")
-	b.WriteString("Relay will run validation after your implementation.\n")
-	b.WriteString("Do not run validation commands unless explicitly instructed by the user or unless a command is required to generate source files before editing can continue.\n\n")
+	b.WriteString("\n")
+	writeValidationGuidance(&b)
+	writeAgentFinalOutputContract(&b)
+
+	return b.String()
+}
+
+func writeValidationGuidance(b *strings.Builder) {
+	b.WriteString("## Validation responsibility\n\n")
+	b.WriteString("Run relevant tests/checks during implementation when practical. If a command passes, report concise PASS status only. If it fails, inspect the shortest useful failure output, fix the issue, and re-run the failing command. Do not paste full passing logs into the final response.\n\n")
+	b.WriteString("Relay will run the extracted validation commands after you finish. Relay validation is the authoritative final gate, but you should still use tests/checks as implementation feedback.\n\n")
+	b.WriteString("If you run any checks yourself, summarize only:\n\n")
+	b.WriteString("- command run\n")
+	b.WriteString("- pass/fail\n")
+	b.WriteString("- blocker if failed\n\n")
+	b.WriteString("Relay owns the final validation result.\n\n")
+}
+
+func writeAgentFinalOutputContract(b *strings.Builder) {
 	b.WriteString("## Agent final output requirement\n\n")
 	b.WriteString("Return only:\n\n")
 	b.WriteString("- DONE or BLOCKED\n")
@@ -595,8 +597,6 @@ func BuildCompactAgentPrompt(originalHandoff string) string {
 	b.WriteString("- test status\n")
 	b.WriteString("- count of LOC changed\n")
 	b.WriteString("- blocker/error only if BLOCKED\n")
-
-	return b.String()
 }
 
 // stripRTKPreference removes lines about RTK preference from the text.
