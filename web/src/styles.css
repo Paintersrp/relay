@@ -8,22 +8,22 @@
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors min-h-[36px];
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors min-h-[36px];
   }
   .btn-secondary {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg border border-gray-700 hover:border-gray-600 text-sm transition-colors min-h-[36px];
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md border border-gray-700 hover:border-gray-600 text-sm transition-colors min-h-[36px];
   }
   .btn-danger {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg border border-red-700 text-red-400 hover:bg-red-950 text-sm font-medium transition-colors min-h-[36px];
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md border border-red-700 text-red-400 hover:bg-red-950 text-sm font-medium transition-colors min-h-[36px];
   }
   .relay-card {
-    @apply rounded-xl border border-gray-800 bg-gray-900/50;
+    @apply rounded-lg border border-gray-800 bg-gray-900/50;
   }
   .relay-card-header {
     @apply flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3;
   }
   .relay-dashboard-run-card {
-    @apply rounded-xl border border-gray-800 bg-gray-900/50 p-4 min-w-0 break-words space-y-2;
+    @apply rounded-lg border border-gray-800 bg-gray-900/50 p-4 min-w-0 break-words space-y-2;
   }
   .relay-dashboard-run-card-title {
     @apply text-indigo-400 hover:text-indigo-300 font-medium break-words leading-snug;
@@ -66,13 +66,13 @@
     @apply space-y-4 sm:space-y-6;
   }
   .relay-inspector-summary {
-    @apply rounded-xl border border-gray-800 bg-gray-900/50 mb-3;
+    @apply rounded-lg border border-gray-800 bg-gray-900/50 mb-3;
   }
   .relay-inspector-grid {
     @apply grid grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)_minmax(19rem,23rem)] gap-4 sm:gap-5;
   }
   .relay-stage-rail {
-    @apply sticky top-4 self-start rounded-2xl border border-gray-800 bg-gray-950/70 p-3;
+    @apply sticky top-4 self-start rounded-xl border border-gray-800 bg-gray-950/70 p-3;
   }
   .relay-stage-strip {
     @apply lg:hidden;
@@ -94,10 +94,10 @@
     @apply min-w-0;
   }
   .relay-stage-panel-card {
-    @apply rounded-xl border border-gray-800 bg-gray-900/50 min-w-0 overflow-hidden;
+    @apply border border-gray-800 bg-gray-900/50 min-w-0 overflow-hidden;
   }
   .relay-stage-link {
-    @apply block rounded-lg px-3 py-2 transition-colors min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-950;
+    @apply block rounded-md px-3 py-2 transition-colors min-h-[44px] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-950;
   }
   .relay-stage-link-active {
     @apply border border-indigo-700 bg-indigo-900/40 text-indigo-300;
@@ -257,10 +257,10 @@
     @apply text-gray-500 bg-gray-800;
   }
   .relay-stage-failure-panel {
-    @apply rounded-xl border border-red-900/60 bg-red-950/30 p-3 sm:p-4 m-4;
+    @apply rounded-lg border border-red-900/60 bg-red-950/30 p-3 sm:p-4 m-4;
   }
   .relay-stage-output-preview {
-    @apply rounded-xl border border-gray-800 bg-gray-950/60 overflow-hidden min-w-0;
+    @apply rounded-lg border border-gray-800 bg-gray-950/60 overflow-hidden min-w-0;
   }
   .relay-stage-meta {
     @apply text-xs text-gray-500;
@@ -271,7 +271,7 @@
   }
 
   .relay-detail-card {
-    @apply rounded-xl border border-gray-800 bg-gray-900/50 overflow-hidden min-w-0;
+    @apply rounded-lg border border-gray-800 bg-gray-900/50 overflow-hidden min-w-0;
   }
 
   .relay-detail-card-header {
@@ -307,7 +307,7 @@
   }
 
   .relay-htmx-error {
-    @apply fixed top-4 left-1/2 z-[60] w-[calc(100%-1.5rem)] max-w-xl -translate-x-1/2 rounded-xl border border-red-800 bg-red-950/95 text-red-100 shadow-xl;
+    @apply fixed top-4 left-1/2 z-[60] w-[calc(100%-1.5rem)] max-w-xl -translate-x-1/2 rounded-lg border border-red-800 bg-red-950/95 text-red-100 shadow-xl;
   }
 
   .relay-htmx-error-body {
@@ -323,7 +323,7 @@
   }
 
   .relay-htmx-error-dismiss {
-    @apply inline-flex min-h-[32px] shrink-0 items-center justify-center rounded-lg border border-red-800 px-2.5 py-1 text-xs text-red-100 hover:bg-red-900/70;
+    @apply inline-flex min-h-[32px] shrink-0 items-center justify-center rounded-md border border-red-800 px-2.5 py-1 text-xs text-red-100 hover:bg-red-900/70;
   }
 
   .relay-artifact-preview-slot {
