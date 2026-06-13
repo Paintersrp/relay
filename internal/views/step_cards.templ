@@ -1888,24 +1888,49 @@ templ DiffAuditStepPanel(previews RunPreviews, runID int64) {
 				}
 			}
 
-			{{ auditSummary := "Generate the audit handoff after collecting git diff evidence." }}
-			if previews.HasAuditHandoff {
-				auditSummary = "Regenerate after inspecting git diff."
-			}
-			@StageEvidenceRow("ready", "Audit action", auditSummary, "") {
-				<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
-					hx-post={"/runs/" + Itoa(runID) + "/actions"}
-					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
-					class="inline">
-					<input type="hidden" name="action" value="generate-audit-handoff"/>
-					<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
-						if previews.HasAuditHandoff {
-							Regenerate Audit Handoff
-						} else {
-							Generate Audit Handoff
-						}
-					</button>
-				</form>
+			if previews.GitChangeEvidenceMode == "mixed_committed_and_uncommitted" {
+				@StageFailurePanel("Audit blocked: mixed committed and uncommitted changes", "") {
+					<div class="text-xs text-amber-200">
+						Committed changes exist since the baseline, but the working tree is also dirty.
+						Resolve uncommitted changes (commit, stash, or discard), then rerun Inspect Git Diff.
+					</div>
+				}
+			} else if previews.GitChangeEvidenceMode == "no_changes" || previews.GitChangeEvidenceMode == "baseline_unavailable_no_changes" {
+				{{ btnLabel := "Generate Audit Handoff" }}
+				if previews.HasAuditHandoff {
+					btnLabel = "Regenerate Audit Handoff"
+				}
+				@StageEvidenceRow("warning", "No changes detected", "No git diff evidence to include in the audit handoff.", "") {
+					<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+						hx-post={"/runs/" + Itoa(runID) + "/actions"}
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+						class="inline">
+						<input type="hidden" name="action" value="generate-audit-handoff"/>
+						<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+							{ btnLabel }
+						</button>
+					</form>
+				}
+			} else {
+				{{ auditSummary := "Generate the audit handoff after collecting git diff evidence." }}
+				if previews.HasAuditHandoff {
+					auditSummary = "Regenerate after inspecting git diff."
+				}
+				@StageEvidenceRow("ready", "Audit action", auditSummary, "") {
+					<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+						hx-post={"/runs/" + Itoa(runID) + "/actions"}
+						hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+						class="inline">
+						<input type="hidden" name="action" value="generate-audit-handoff"/>
+						<button type="submit" class="btn-primary text-xs sm:text-sm" data-stage-primary-action>
+							if previews.HasAuditHandoff {
+								Regenerate Audit Handoff
+							} else {
+								Generate Audit Handoff
+							}
+						</button>
+					</form>
+				}
 			}
 		</div>
 	</div>

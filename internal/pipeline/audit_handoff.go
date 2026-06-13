@@ -150,10 +150,11 @@ func BuildAuditHandoff(input AuditHandoffInput) string {
 		b.WriteString(fmt.Sprintf("- Current HEAD: %s\n", input.CurrentHeadSHA))
 		b.WriteString(fmt.Sprintf("- Branch: %s\n", orEmpty(input.EvidenceBranch, "N/A")))
 		b.WriteString(fmt.Sprintf("- Commit count: %d\n", input.CommitCount))
-		b.WriteString("\n**WARNING: Mixed committed and uncommitted changes detected.**\n\n")
+		b.WriteString("\n**WARNING: Normal audit generation is blocked until uncommitted changes are resolved.**\n\n")
 		b.WriteString("This run has both committed changes since the baseline AND uncommitted working tree changes.\n")
-		b.WriteString("The audit evidence below reflects the committed range only.\n")
-		b.WriteString("Review the uncommitted changes separately before generating a final audit packet.\n\n")
+		b.WriteString("The committed-range evidence is preserved below for reference, but the uncommitted\n")
+		b.WriteString("working tree changes must be resolved (committed, stashed, or discarded) before\n")
+		b.WriteString("a normal audit packet can be generated.\n\n")
 		if input.EvidenceWarning != "" {
 			b.WriteString(input.EvidenceWarning)
 			if !strings.HasSuffix(input.EvidenceWarning, "\n") {

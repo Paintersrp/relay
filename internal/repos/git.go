@@ -76,22 +76,26 @@ type GitCommitSummary struct {
 }
 
 type GitChangeEvidence struct {
-	RepoPath        string             `json:"repo_path"`
-	Mode            string             `json:"mode"`
-	BaselineSHA     string             `json:"baseline_sha,omitempty"`
-	CurrentHeadSHA  string             `json:"current_head_sha,omitempty"`
-	Branch          string             `json:"branch,omitempty"`
-	StatusPorcelain string             `json:"status_porcelain,omitempty"`
-	Dirty           bool               `json:"dirty"`
-	CommitCount     int                `json:"commit_count"`
-	Commits         []GitCommitSummary `json:"commits,omitempty"`
-	NameStatus      string             `json:"name_status,omitempty"`
-	Stat            string             `json:"stat,omitempty"`
-	Numstat         string             `json:"numstat,omitempty"`
-	Patch           string             `json:"patch,omitempty"`
-	Warning         string             `json:"warning,omitempty"`
-	Error           string             `json:"error,omitempty"`
-	CapturedAt      string             `json:"captured_at"`
+	RepoPath              string             `json:"repo_path"`
+	Mode                  string             `json:"mode"`
+	BaselineSHA           string             `json:"baseline_sha,omitempty"`
+	CurrentHeadSHA        string             `json:"current_head_sha,omitempty"`
+	Branch                string             `json:"branch,omitempty"`
+	StatusPorcelain       string             `json:"status_porcelain,omitempty"`
+	Dirty                 bool               `json:"dirty"`
+	CommitCount           int                `json:"commit_count"`
+	Commits               []GitCommitSummary `json:"commits,omitempty"`
+	NameStatus            string             `json:"name_status,omitempty"`
+	Stat                  string             `json:"stat,omitempty"`
+	Numstat               string             `json:"numstat,omitempty"`
+	Patch                 string             `json:"patch,omitempty"`
+	UncommittedNameStatus string             `json:"uncommitted_name_status,omitempty"`
+	UncommittedStat       string             `json:"uncommitted_stat,omitempty"`
+	UncommittedNumstat    string             `json:"uncommitted_numstat,omitempty"`
+	UncommittedPatch      string             `json:"uncommitted_patch,omitempty"`
+	Warning               string             `json:"warning,omitempty"`
+	Error                 string             `json:"error,omitempty"`
+	CapturedAt            string             `json:"captured_at"`
 }
 
 const (
@@ -154,7 +158,10 @@ func CaptureGitChangeEvidence(repoPath string, baselineSHA string) *GitChangeEvi
 
 	ev.Mode = EvidenceModeMixedCommittedUncommitted
 	collectCommittedRangeEvidence(ev, repoPath, baselineSHA, snap.HeadSHA)
-	collectUncommittedEvidence(ev, repoPath)
+	collectUncommittedSideEvidence(ev, repoPath)
+	ev.StatusPorcelain = snap.StatusPorcelain
+	ev.Dirty = true
+	ev.Warning = "Committed changes exist since the run baseline, but the working tree is also dirty. Resolve uncommitted changes before generating a normal audit packet."
 	return ev
 }
 
@@ -162,17 +169,36 @@ func collectUncommittedEvidence(ev *GitChangeEvidence, repoPath string) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitEvidenceTimeout)
 	defer cancel()
 
-	if ns, err := gitCommandOutput(ctx, repoPath, "diff", "--name-status"); err == nil {
+	// Combine unstaged and staged diffs for full worktree picture
+	if ns, err := gitCommandOutput(ctx, repoPath, "diff", "HEAD", "--name-status"); err == nil {
 		ev.NameStatus = ns
 	}
-	if st, err := gitCommandOutput(ctx, repoPath, "diff", "--stat"); err == nil {
+	if st, err := gitCommandOutput(ctx, repoPath, "diff", "HEAD", "--stat"); err == nil {
 		ev.Stat = st
 	}
-	if nm, err := gitCommandOutput(ctx, repoPath, "diff", "--numstat"); err == nil {
+	if nm, err := gitCommandOutput(ctx, repoPath, "diff", "HEAD", "--numstat"); err == nil {
 		ev.Numstat = nm
 	}
-	if pt, err := gitCommandOutput(ctx, repoPath, "diff", "--no-ext-diff", "--patch"); err == nil {
+	if pt, err := gitCommandOutput(ctx, repoPath, "diff", "HEAD", "--no-ext-diff", "--patch"); err == nil {
 		ev.Patch = pt
+	}
+}
+
+func collectUncommittedSideEvidence(ev *GitChangeEvidence, repoPath string) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitEvidenceTimeout)
+	defer cancel()
+
+	if ns, err := gitCommandOutput(ctx, repoPath, "diff", "HEAD", "--name-status"); err == nil {
+		ev.UncommittedNameStatus = ns
+	}
+	if st, err := gitCommandOutput(ctx, repoPath, "diff", "HEAD", "--stat"); err == nil {
+		ev.UncommittedStat = st
+	}
+	if nm, err := gitCommandOutput(ctx, repoPath, "diff", "HEAD", "--numstat"); err == nil {
+		ev.UncommittedNumstat = nm
+	}
+	if pt, err := gitCommandOutput(ctx, repoPath, "diff", "HEAD", "--no-ext-diff", "--patch"); err == nil {
+		ev.UncommittedPatch = pt
 	}
 }
 

@@ -2135,6 +2135,19 @@ func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Block normal audit handoff generation when mixed committed+uncommitted evidence is present
+	if evidenceJSON := readArtifactPreview(runID, "git_change_evidence_json"); evidenceJSON != "" {
+		var ev struct {
+			Mode string `json:"mode"`
+		}
+		if err := json.Unmarshal([]byte(evidenceJSON), &ev); err == nil && ev.Mode == repos.EvidenceModeMixedCommittedUncommitted {
+			h.store.CreateEvent(runID, "warn", "Audit handoff blocked: mixed committed and uncommitted changes detected. Resolve uncommitted changes and rerun Inspect Git Diff.")
+			setHXPushURL(w, runID, "audit")
+			http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+			return
+		}
+	}
+
 	repo, _ := h.store.GetRepo(run.RepoID)
 	repoName := ""
 	if repo != nil {
@@ -2345,10 +2358,10 @@ func (h *RunsHandler) inspectDiff(w http.ResponseWriter, r *http.Request, runID 
 	writeGitArtifact("git_diff_name_status", evidence.NameStatus, "text/plain")
 	writeGitArtifact("git_diff_patch", evidence.Patch, "text/plain")
 
-	// For committed-range mode, update runs.head_commit to current HEAD
-	if evidence.Mode == repos.EvidenceModeCommittedRange && evidence.CurrentHeadSHA != "" {
+	// For committed-range and mixed mode, update runs.head_commit to current HEAD
+	if evidence.CurrentHeadSHA != "" && (evidence.Mode == repos.EvidenceModeCommittedRange || evidence.Mode == repos.EvidenceModeMixedCommittedUncommitted) {
 		if _, err := h.store.UpdateRunBranch(runID, evidence.Branch, run.BaseCommit, evidence.CurrentHeadSHA); err != nil {
-			h.log.Warn("update run head_commit for committed range", "run_id", runID, "error", err)
+			h.log.Warn("update run head_commit for evidence mode", "run_id", runID, "mode", evidence.Mode, "error", err)
 		}
 	}
 

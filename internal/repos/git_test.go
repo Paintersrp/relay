@@ -286,14 +286,14 @@ func TestCaptureGitChangeEvidence_MixedCommittedAndUncommitted(t *testing.T) {
 
 	baseline := getHeadSHA(t, root)
 
-	// Second commit (committed)
+	// Second commit (committed) — adds feature.txt
 	if err := os.WriteFile(root+"/feature.txt", []byte("feature\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	runCmd(t, root, "git", "add", ".")
 	runCmd(t, root, "git", "commit", "-m", "add feature")
 
-	// Uncommitted dirty change
+	// Uncommitted dirty change to a file from the initial commit
 	if err := os.WriteFile(root+"/initial.txt", []byte("initial\nmodified\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -310,6 +310,129 @@ func TestCaptureGitChangeEvidence_MixedCommittedAndUncommitted(t *testing.T) {
 	}
 	if ev.CommitCount < 1 {
 		t.Fatal("expected at least 1 commit")
+	}
+	if ev.Commits[0].Subject != "add feature" {
+		t.Fatalf("expected subject 'add feature', got %q", ev.Commits[0].Subject)
+	}
+	// Committed-range evidence must be preserved in primary fields
+	if ev.NameStatus == "" {
+		t.Fatal("expected non-empty NameStatus for committed range")
+	}
+	if !strings.Contains(ev.NameStatus, "feature.txt") {
+		t.Fatal("expected feature.txt in committed-range NameStatus")
+	}
+	if ev.Stat == "" {
+		t.Fatal("expected non-empty Stat for committed range")
+	}
+	if ev.Patch == "" {
+		t.Fatal("expected non-empty Patch for committed range")
+	}
+	if !strings.Contains(ev.Patch, "feature.txt") {
+		t.Fatal("expected committed-range patch to contain feature.txt")
+	}
+	// Uncommitted patch must not replace committed-range patch
+	if strings.Contains(ev.Patch, "modified") {
+		t.Fatal("committed-range patch should NOT contain uncommitted 'modified' content")
+	}
+	// Warning must be set
+	if ev.Warning == "" {
+		t.Fatal("expected non-empty Warning for mixed mode")
+	}
+	// StatusPorcelain must reflect uncommitted state
+	if ev.StatusPorcelain == "" {
+		t.Fatal("expected non-empty StatusPorcelain for mixed mode")
+	}
+	if !strings.Contains(ev.StatusPorcelain, "initial.txt") {
+		t.Fatal("expected initial.txt in StatusPorcelain for uncommitted change")
+	}
+	// Uncommitted side fields must be populated
+	if ev.UncommittedNameStatus == "" {
+		t.Fatal("expected non-empty UncommittedNameStatus for mixed mode")
+	}
+	if ev.UncommittedStat == "" {
+		t.Fatal("expected non-empty UncommittedStat for mixed mode")
+	}
+	if ev.UncommittedPatch == "" {
+		t.Fatal("expected non-empty UncommittedPatch for mixed mode")
+	}
+}
+
+func TestCaptureGitChangeEvidence_StagedOnlyChanges(t *testing.T) {
+	requireGit(t)
+	root := t.TempDir()
+
+	runCmd(t, root, "git", "init", "-b", "main")
+	runCmd(t, root, "git", "config", "user.email", "relay-test@example.invalid")
+	runCmd(t, root, "git", "config", "user.name", "Relay Test")
+	runCmd(t, root, "git", "commit", "--allow-empty", "-m", "initial")
+
+	baseline := getHeadSHA(t, root)
+
+	// Create a file and stage it (staged-only change)
+	if err := os.WriteFile(root+"/staged.txt", []byte("staged\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, root, "git", "add", "staged.txt")
+
+	ev := CaptureGitChangeEvidence(root, baseline)
+	if ev.Error != "" {
+		t.Fatalf("unexpected error: %s", ev.Error)
+	}
+	if ev.Mode != EvidenceModeUncommittedWorktree {
+		t.Fatalf("expected mode %q, got %q", EvidenceModeUncommittedWorktree, ev.Mode)
+	}
+	if !ev.Dirty {
+		t.Fatal("expected dirty for staged-only change")
+	}
+	if ev.NameStatus == "" {
+		t.Fatal("expected non-empty NameStatus for staged file")
+	}
+	if !strings.Contains(ev.NameStatus, "staged.txt") {
+		t.Fatal("expected staged.txt in NameStatus")
+	}
+	if ev.Patch == "" {
+		t.Fatal("expected non-empty Patch for staged file")
+	}
+	if !strings.Contains(ev.Patch, "staged.txt") {
+		t.Fatal("expected staged.txt in Patch")
+	}
+	if !strings.Contains(ev.StatusPorcelain, "staged.txt") {
+		t.Fatal("expected staged.txt in StatusPorcelain")
+	}
+}
+
+func TestCaptureGitChangeEvidence_UntrackedOnlyChanges(t *testing.T) {
+	requireGit(t)
+	root := t.TempDir()
+
+	runCmd(t, root, "git", "init", "-b", "main")
+	runCmd(t, root, "git", "config", "user.email", "relay-test@example.invalid")
+	runCmd(t, root, "git", "config", "user.name", "Relay Test")
+	runCmd(t, root, "git", "commit", "--allow-empty", "-m", "initial")
+
+	baseline := getHeadSHA(t, root)
+
+	// Create an untracked file (not staged)
+	if err := os.WriteFile(root+"/untracked.txt", []byte("untracked\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ev := CaptureGitChangeEvidence(root, baseline)
+	if ev.Error != "" {
+		t.Fatalf("unexpected error: %s", ev.Error)
+	}
+	if ev.Mode != EvidenceModeUncommittedWorktree {
+		t.Fatalf("expected mode %q, got %q", EvidenceModeUncommittedWorktree, ev.Mode)
+	}
+	if !ev.Dirty {
+		t.Fatal("expected dirty for untracked-only change")
+	}
+	if !strings.Contains(ev.StatusPorcelain, "untracked.txt") {
+		t.Fatal("expected untracked.txt in StatusPorcelain")
+	}
+	// git diff HEAD won't show untracked files — clean diff is expected
+	if ev.NameStatus != "" {
+		t.Log("NameStatus is empty for untracked-only (no tracked diff)")
 	}
 }
 
