@@ -26,6 +26,14 @@ import (
 
 type agentCommandRunner func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult
 
+type openCodeExecutionControl struct {
+	runID     int64
+	execID    int64
+	cancel    context.CancelFunc
+	done      chan struct{}
+	startedAt time.Time
+}
+
 type RunsHandler struct {
 	store                *store.Store
 	log                  *slog.Logger
@@ -33,8 +41,8 @@ type RunsHandler struct {
 	runAgentCommandArgs  agentCommandRunner
 	launchAgentExecution func(func())
 	launchValidation     func(func())
-	openCodeCancelMu     sync.Mutex
-	openCodeCancels      map[int64]context.CancelFunc
+	openCodeControlMu    sync.Mutex
+	openCodeControls     map[int64]*openCodeExecutionControl
 }
 
 func NewRunsHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *RunsHandler {
@@ -47,7 +55,7 @@ func NewRunsHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *RunsH
 		log:                 log,
 		eventHub:            eventHub,
 		runAgentCommandArgs: pipeline.RunLocalAgentCommandArgsStreaming,
-		openCodeCancels:     make(map[int64]context.CancelFunc),
+		openCodeControls:    make(map[int64]*openCodeExecutionControl),
 		launchAgentExecution: func(fn func()) {
 			go fn()
 		},
@@ -69,45 +77,51 @@ func (h *RunsHandler) publishRunEvent(runID int64, kind, source, status string) 
 	})
 }
 
-func (h *RunsHandler) registerOpenCodeCancel(execID int64, cancel context.CancelFunc) {
+func (h *RunsHandler) registerOpenCodeExecutionControl(runID, execID int64, cancel context.CancelFunc) {
 	if h == nil || cancel == nil {
 		return
 	}
-	h.openCodeCancelMu.Lock()
-	if h.openCodeCancels == nil {
-		h.openCodeCancels = make(map[int64]context.CancelFunc)
+	h.openCodeControlMu.Lock()
+	if h.openCodeControls == nil {
+		h.openCodeControls = make(map[int64]*openCodeExecutionControl)
 	}
-	h.openCodeCancels[execID] = cancel
-	h.openCodeCancelMu.Unlock()
+	h.openCodeControls[execID] = &openCodeExecutionControl{
+		runID:     runID,
+		execID:    execID,
+		cancel:    cancel,
+		done:      make(chan struct{}),
+		startedAt: time.Now(),
+	}
+	h.openCodeControlMu.Unlock()
 }
 
-func (h *RunsHandler) unregisterOpenCodeCancel(execID int64) {
+func (h *RunsHandler) finishOpenCodeExecutionControl(execID int64) {
 	if h == nil {
 		return
 	}
-	h.openCodeCancelMu.Lock()
-	cancel, ok := h.openCodeCancels[execID]
+	h.openCodeControlMu.Lock()
+	control, ok := h.openCodeControls[execID]
 	if ok {
-		delete(h.openCodeCancels, execID)
+		delete(h.openCodeControls, execID)
 	}
-	h.openCodeCancelMu.Unlock()
-	if ok && cancel != nil {
-		cancel()
+	h.openCodeControlMu.Unlock()
+	if ok && control != nil {
+		close(control.done)
 	}
 }
 
-func (h *RunsHandler) cancelOpenCodeExecution(execID int64) bool {
+func (h *RunsHandler) cancelOpenCodeExecution(execID int64) (*openCodeExecutionControl, bool) {
 	if h == nil {
-		return false
+		return nil, false
 	}
-	h.openCodeCancelMu.Lock()
-	cancel, ok := h.openCodeCancels[execID]
-	h.openCodeCancelMu.Unlock()
-	if !ok || cancel == nil {
-		return false
+	h.openCodeControlMu.Lock()
+	control, ok := h.openCodeControls[execID]
+	h.openCodeControlMu.Unlock()
+	if !ok || control == nil || control.cancel == nil {
+		return control, false
 	}
-	cancel()
-	return true
+	control.cancel()
+	return control, true
 }
 
 func readArtifactPreview(runID int64, kind string) string {
@@ -131,6 +145,7 @@ const (
 	openCodeWaitingResponseThreshold = 2 * time.Minute
 	openCodeStartupNoOutputGrace     = 2 * time.Minute
 	openCodeTimeoutGrace             = 1 * time.Minute
+	openCodeCancelWaitTimeout        = 5 * time.Second
 	openCodeRecoveryActionLabel      = "Recover Stale OpenCode Run"
 )
 
@@ -1265,8 +1280,10 @@ func (h *RunsHandler) Action(w http.ResponseWriter, r *http.Request) {
 		h.reconcileOpenCodeResult(w, r, id)
 	case "reconcile-opencode-result":
 		h.reconcileOpenCodeResult(w, r, id)
+	case "stop-opencode-and-inspect-diff":
+		h.stopWaitingAndInspectDiff(w, r, id)
 	case "finalize-opencode-without-result":
-		h.finalizeOpenCodeWithoutResult(w, r, id)
+		h.stopWaitingAndInspectDiff(w, r, id)
 	case "update-selected-model":
 		h.updateSelectedModel(w, r, id)
 	case "accept-audit-clearance":
@@ -1754,26 +1771,31 @@ func (h *RunsHandler) reconcileOpenCodeResult(w http.ResponseWriter, r *http.Req
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=run", http.StatusSeeOther)
 }
 
-func (h *RunsHandler) finalizeOpenCodeWithoutResult(w http.ResponseWriter, r *http.Request, runID int64) {
+func (h *RunsHandler) stopWaitingAndInspectDiff(w http.ResponseWriter, r *http.Request, runID int64) {
 	exec, err := h.store.GetLatestAgentExecutionByRun(runID)
 	if err != nil {
-		h.log.Error("finalize opencode without result: get latest execution", "error", err)
-		h.store.CreateEvent(runID, "warn", "OpenCode finalization failed: latest execution not found.")
+		h.log.Error("stop waiting and inspect diff: get latest execution", "error", err)
+		h.store.CreateEvent(runID, "warn", "OpenCode finalization warning: latest execution not found; capturing git diff.")
 		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "error")
-		setHXPushURL(w, runID, "run")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=run", http.StatusSeeOther)
+		h.inspectDiff(w, r, runID)
 		return
 	}
 
 	if !isOpenCodeExecutionRunning(exec) {
-		h.store.CreateEvent(runID, "info", "OpenCode execution is already finished; capturing git diff.")
-		h.publishRunEvent(runID, events.KindStepAudit, "audit", "finished")
+		if exec.FinishedAt.Valid {
+			h.store.CreateEvent(runID, "info", "OpenCode execution is already finished; capturing git diff.")
+		} else {
+			h.store.CreateEvent(runID, "warn", "OpenCode execution is not running; capturing git diff.")
+		}
+		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "completed_without_result")
+		h.publishRunEvent(runID, events.KindRunSummary, "opencode", "completed_without_result")
 		h.inspectDiff(w, r, runID)
 		return
 	}
 
 	preserved := preservedAgentExecutionFields(exec)
-	liveness := evaluateOpenCodeExecutionLiveness(runID, exec, time.Now())
+	now := time.Now()
+	liveness := evaluateOpenCodeExecutionLiveness(runID, exec, now)
 	switch liveness.State {
 	case "waiting_response", "stale_output", "stale_timeout":
 	default:
@@ -1784,14 +1806,35 @@ func (h *RunsHandler) finalizeOpenCodeWithoutResult(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if h.cancelOpenCodeExecution(exec.ID) {
-		h.log.Info("canceled active opencode execution before manual finalization", "run_id", runID, "exec_id", exec.ID)
+	if stdoutData, err := artifacts.Read(runID, "opencode_stdout", pipeline.ArtifactFilename("opencode_stdout")); err == nil && len(stdoutData) > 0 {
+		assistantText := pipeline.ExtractOpenCodeAssistantText(string(stdoutData))
+		parsed := pipeline.ParseAgentResult(assistantText)
+		if parsed.Status == pipeline.AgentResultDone || parsed.Status == pipeline.AgentResultBlocked {
+			h.reconcileOpenCodeResult(w, r, runID)
+			return
+		}
+	}
+
+	var warningMsg string
+	if control, owned := h.cancelOpenCodeExecution(exec.ID); owned {
+		h.log.Info("canceled active opencode execution before manual finalization", "run_id", runID, "exec_id", exec.ID, "started_at", control.startedAt.Format(time.RFC3339Nano))
+		select {
+		case <-control.done:
+			h.store.CreateEvent(runID, "info", "OpenCode process canceled; finalizing git diff inspection.")
+		case <-time.After(openCodeCancelWaitTimeout):
+			warningMsg = "Relay canceled the OpenCode process, but it did not exit within " + openCodeCancelWaitTimeout.String() + ". Marked execution stopped for diff inspection."
+		}
+	} else {
+		warningMsg = "Relay no longer owns the OpenCode process handle. Marked execution stopped for diff inspection."
 	}
 
 	finishedAt := executionTimestampNow()
 	errorMsg := "finalized without agent result after quiet OpenCode output; user chose to inspect git diff"
+	if warningMsg != "" {
+		errorMsg = errorMsg + "; " + warningMsg
+	}
 	if _, err := h.store.UpdateAgentExecutionStatus(exec.ID, "completed", preserved.exitCode, preserved.startedAt, &finishedAt, preserved.stdoutPath, preserved.stderrPath, preserved.combinedPath, preserved.resultPath, &errorMsg); err != nil {
-		h.log.Error("finalize opencode without result: update execution status", "error", err)
+		h.log.Error("stop waiting and inspect diff: update execution status", "error", err)
 		h.store.CreateEvent(runID, "warn", "OpenCode finalization failed: could not mark the execution terminal.")
 		h.publishRunEvent(runID, events.KindStepAgent, "opencode", "error")
 		setHXPushURL(w, runID, "run")
@@ -1800,16 +1843,30 @@ func (h *RunsHandler) finalizeOpenCodeWithoutResult(w http.ResponseWriter, r *ht
 	}
 
 	h.store.CreateEvent(runID, "info", "OpenCode execution finalized without a final agent result; inspecting git diff.")
+	if warningMsg != "" {
+		h.store.CreateEvent(runID, "warn", warningMsg)
+	}
 	h.publishRunEvent(runID, events.KindStepAgent, "opencode", "completed_without_result")
 	h.publishRunEvent(runID, events.KindRunSummary, "opencode", "completed_without_result")
 
-	h.inspectDiff(w, r, runID)
+	if _, err := h.inspectDiffArtifacts(runID); err != nil {
+		h.log.Error("stop waiting and inspect diff: inspect git diff", "error", err)
+		h.store.CreateEvent(runID, "warn", "Git diff inspection failed: "+err.Error())
+		h.publishRunEvent(runID, events.KindStepAudit, "audit", "error")
+	}
+
+	setHXPushURL(w, runID, "audit")
+	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+}
+
+func (h *RunsHandler) finalizeOpenCodeWithoutResult(w http.ResponseWriter, r *http.Request, runID int64) {
+	h.stopWaitingAndInspectDiff(w, r, runID)
 }
 
 // runOpenCodeExecution runs the OpenCode command in the background and persists results.
 // This method never writes an HTTP response or redirects.
 func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, execID int64, invocation pipeline.OpenCodeRunInvocation) {
-	defer h.unregisterOpenCodeCancel(execID)
+	defer h.finishOpenCodeExecutionControl(execID)
 
 	// Update to running
 	startedAt := executionTimestampNow()
@@ -1995,6 +2052,11 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		return
 	}
 
+	if ctx.Err() != nil {
+		h.log.Info("opencode execution canceled before terminalization; deferring completion to the stop-waiting action", "run_id", runID, "exec_id", execID, "error", ctx.Err())
+		return
+	}
+
 	// Determine execution status
 	execStatus := "completed"
 	if runResult.TimedOut {
@@ -2116,7 +2178,7 @@ func (h *RunsHandler) startOpenCodeGo(w http.ResponseWriter, r *http.Request, ru
 
 	// Launch background execution
 	commandCtx, cancel := context.WithCancel(context.Background())
-	h.registerOpenCodeCancel(exec.ID, cancel)
+	h.registerOpenCodeExecutionControl(runID, exec.ID, cancel)
 	h.launchAgentExecution(func() {
 		h.runOpenCodeExecution(commandCtx, runID, exec.ID, invocation)
 	})
@@ -2727,34 +2789,26 @@ func (h *RunsHandler) generateAuditHandoff(w http.ResponseWriter, r *http.Reques
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
 }
 
-func (h *RunsHandler) inspectDiff(w http.ResponseWriter, r *http.Request, runID int64) {
+func (h *RunsHandler) inspectDiffArtifacts(runID int64) (repos.GitChangeEvidence, error) {
 	run, err := h.store.GetRun(runID)
 	if err != nil {
 		h.log.Error("get run for inspect-diff", "error", err)
-		http.Error(w, "run not found", http.StatusNotFound)
-		return
+		return repos.GitChangeEvidence{}, err
 	}
 
 	repo, err := h.store.GetRepo(run.RepoID)
 	if err != nil {
 		h.log.Error("get repo for inspect-diff", "error", err)
-		http.Error(w, "repo not found", http.StatusNotFound)
-		return
+		return repos.GitChangeEvidence{}, err
 	}
 
 	if repo.Path == "" {
-		h.store.CreateEvent(runID, "warn", "No repo path configured for git diff inspection")
-		setHXPushURL(w, runID, "audit")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
-		return
+		return repos.GitChangeEvidence{}, fmt.Errorf("no repo path configured for git diff inspection")
 	}
 
 	info, err := os.Stat(repo.Path)
 	if err != nil || !info.IsDir() {
-		h.store.CreateEvent(runID, "warn", "Repo path does not exist or is not a directory: "+repo.Path)
-		setHXPushURL(w, runID, "audit")
-		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
-		return
+		return repos.GitChangeEvidence{}, fmt.Errorf("repo path does not exist or is not a directory: %s", repo.Path)
 	}
 
 	// Clear existing diff artifacts and downstream stale audit/commit artifacts
@@ -2781,6 +2835,9 @@ func (h *RunsHandler) inspectDiff(w http.ResponseWriter, r *http.Request, runID 
 
 	// Capture change evidence using the new repos-level function
 	evidence := repos.CaptureGitChangeEvidence(repo.Path, baselineSHA)
+	if evidence == nil {
+		return repos.GitChangeEvidence{}, fmt.Errorf("failed to capture git change evidence")
+	}
 
 	// Write git_change_evidence_json artifact
 	if evidenceJSON, err := json.MarshalIndent(evidence, "", "  "); err == nil {
@@ -2829,9 +2886,22 @@ func (h *RunsHandler) inspectDiff(w http.ResponseWriter, r *http.Request, runID 
 		eventMsg += ": baseline unavailable, no working tree changes"
 	}
 	h.store.CreateEvent(runID, "info", eventMsg)
+	h.publishRunEvent(runID, events.KindStepArtifacts, "audit", evidence.Mode)
 	h.publishRunEvent(runID, events.KindStepAudit, "audit", evidence.Mode)
+	h.publishRunEvent(runID, events.KindRunSummary, "audit", evidence.Mode)
 
 	h.log.Info("git diff inspection completed", "run_id", runID, "mode", evidence.Mode)
+	return *evidence, nil
+}
+
+func (h *RunsHandler) inspectDiff(w http.ResponseWriter, r *http.Request, runID int64) {
+	if _, err := h.inspectDiffArtifacts(runID); err != nil {
+		h.store.CreateEvent(runID, "warn", "Git diff inspection failed: "+err.Error())
+		h.publishRunEvent(runID, events.KindStepAudit, "audit", "error")
+		setHXPushURL(w, runID, "audit")
+		http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)
+		return
+	}
 
 	setHXPushURL(w, runID, "audit")
 	http.Redirect(w, r, "/runs/"+strconv.FormatInt(runID, 10)+"?step=audit", http.StatusSeeOther)

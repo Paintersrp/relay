@@ -3272,7 +3272,7 @@ func TestRecoverActiveNoOutputOpenCodeDoesNotMarkFailed(t *testing.T) {
 	}
 }
 
-func TestFinalizeQuietOpenCodeWithoutResultMarksCompletedAndCapturesGitDiff(t *testing.T) {
+func TestStopWaitingQuietOpenCodeWithoutProcessHandleMarksCompletedAndCapturesGitDiff(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	runID := setupOpenCodeRun(t, s)
@@ -3289,7 +3289,7 @@ func TestFinalizeQuietOpenCodeWithoutResultMarksCompletedAndCapturesGitDiff(t *t
 	touchOpenCodeOutputArtifacts(t, runID, quietAt)
 	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-5*time.Minute), quietAt)
 
-	req := httptest.NewRequest("POST", "/runs/"+itoa(runID)+"/actions", strings.NewReader("action=finalize-opencode-without-result"))
+	req := httptest.NewRequest("POST", "/runs/"+itoa(runID)+"/actions", strings.NewReader("action=stop-opencode-and-inspect-diff"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", itoa(runID))
@@ -3364,14 +3364,142 @@ func TestFinalizeQuietOpenCodeWithoutResultMarksCompletedAndCapturesGitDiff(t *t
 		t.Fatalf("list events: %v", err)
 	}
 	foundFinalization := false
+	foundMissingHandleWarning := false
 	for _, ev := range events {
 		if strings.Contains(ev.Message, "finalized without a final agent result") {
 			foundFinalization = true
-			break
+		}
+		if strings.Contains(ev.Message, "Relay no longer owns the OpenCode process handle") {
+			foundMissingHandleWarning = true
 		}
 	}
 	if !foundFinalization {
 		t.Fatal("expected an event describing manual quiet finalization")
+	}
+	if !foundMissingHandleWarning {
+		t.Fatal("expected a warning event for missing OpenCode process handle")
+	}
+}
+
+func TestStopWaitingQuietOpenCodeCancelsOwnedProcessAndCapturesGitDiff(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+		<-ctx.Done()
+		close(canceled)
+		return pipeline.AgentCommandRunResult{
+			ExitCode: 1,
+			Stdout:   "quiet output with no final result\n",
+			Stderr:   "still waiting\n",
+			Error:    ctx.Err().Error(),
+		}
+	}
+
+	runID := setupOpenCodeRun(t, s)
+	setupGitEvidenceRepo(t, s, runID)
+
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+	h.startOpenCodeGo(w, req, runID)
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected OpenCode runner to start")
+	}
+
+	quietAt := time.Now().Add(-3 * time.Minute)
+	seedOpenCodeOutputArtifacts(t, s, runID,
+		`{"type":"text","part":{"type":"text","text":"still working"}}
+`,
+		"stderr line\n",
+	)
+	seedStreamProgressArtifactAt(t, s, runID, 2, 1, 64, 18, quietAt)
+	touchOpenCodeOutputArtifacts(t, runID, quietAt)
+	ageLatestOpenCodeExecution(t, s, runID, time.Now().Add(-5*time.Minute), quietAt)
+
+	actionReq := httptest.NewRequest("POST", "/runs/"+itoa(runID)+"/actions", strings.NewReader("action=stop-opencode-and-inspect-diff"))
+	actionReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	actionReq = actionReq.WithContext(context.WithValue(actionReq.Context(), chi.RouteCtxKey, rctx))
+	actionW := httptest.NewRecorder()
+
+	h.Action(actionW, actionReq)
+
+	select {
+	case <-canceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected OpenCode runner context to be canceled")
+	}
+
+	if actionW.Code != 303 {
+		t.Fatalf("expected stop action redirect, got %d", actionW.Code)
+	}
+	if loc := actionW.Header().Get("Location"); !strings.Contains(loc, "?step=audit") {
+		t.Fatalf("expected redirect to step=audit, got %s", loc)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.Status != "completed" {
+		t.Fatalf("expected execution to be completed after stop action, got %q", exec.Status)
+	}
+	if !exec.FinishedAt.Valid {
+		t.Fatal("expected finished_at to be set after stop action")
+	}
+	if !exec.Error.Valid || !strings.Contains(exec.Error.String, "finalized without agent result") {
+		t.Fatalf("expected finalization error message, got %q", exec.Error.String)
+	}
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status == "agent_done" {
+		t.Fatal("did not expect stop action to advance the run to agent_done")
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	hasEvidence := false
+	for _, a := range artifactsList {
+		switch a.Kind {
+		case "agent_result_raw", "agent_result_json":
+			t.Fatalf("did not expect %s artifact for stop action", a.Kind)
+		case "git_change_evidence_json":
+			hasEvidence = true
+		}
+	}
+	if !hasEvidence {
+		t.Fatal("expected git change evidence to be captured during stop action")
+	}
+
+	events, err := s.ListEventsByRun(runID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	foundCancel := false
+	for _, ev := range events {
+		if strings.Contains(ev.Message, "OpenCode process canceled; finalizing git diff inspection.") {
+			foundCancel = true
+			break
+		}
+	}
+	if !foundCancel {
+		t.Fatal("expected a cancellation event when Relay owns the process handle")
 	}
 }
 
@@ -3683,8 +3811,8 @@ func TestRunGetShowsWaitingResponseForQuietRunningOpenCode(t *testing.T) {
 	if !strings.Contains(body, "Stop Waiting and Inspect Git Diff") {
 		t.Fatal("expected the quiet-run inspection CTA to be visible")
 	}
-	if !strings.Contains(body, "finalize-opencode-without-result") {
-		t.Fatal("expected finalize-opencode-without-result action in the waiting-response UI")
+	if !strings.Contains(body, "stop-opencode-and-inspect-diff") {
+		t.Fatal("expected stop-opencode-and-inspect-diff action in the waiting-response UI")
 	}
 	if strings.Contains(body, "Recover Stale OpenCode Run") {
 		t.Fatal("did not expect stale recovery action for waiting-response state")

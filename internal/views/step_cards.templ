@@ -1089,7 +1089,7 @@ func openCodeLifecycleDescription(previews RunPreviews) string {
 	case "waiting_output":
 		return "OpenCode is running, but Relay has not seen output yet."
 	case "waiting_response":
-		return "OpenCode has gone quiet and may be waiting on a final response."
+		return "OpenCode has gone quiet and may be waiting on a final response. Stop Waiting and Inspect Git Diff if the repo changes already look complete."
 	case "stale_output":
 		return "OpenCode stopped emitting output and may need recovery."
 	case "stale_timeout":
@@ -1299,7 +1299,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 			@openCodeStatusSummary(previews)
 
 			if isRunning && previews.OpenCodeLifecycleState == "waiting_response" {
-				@StageEvidenceRow("warning", "OpenCode has stopped producing output but the process has not exited", "The agent may be waiting on a final response. If the repo changes look complete, stop waiting and inspect git diff.", "") {
+				@StageEvidenceRow("warning", "OpenCode has stopped producing output but the process has not exited", "The agent may be waiting on a final response. Stop waiting to cancel Relay-owned execution and inspect git diff now.", "") {
 					<div class="space-y-2">
 						if previews.OpenCodeStreamLastChunkAge != "" {
 							<div class="text-xs text-amber-200/90">Last streamed chunk: { previews.OpenCodeStreamLastChunkAge }</div>
@@ -1309,7 +1309,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 						<div class="text-xs text-amber-200/90">
 							Relay will cancel OpenCode if it is still running, preserve the terminal state, capture git evidence, and continue to Step 7.
 						</div>
-						@WorkbenchActionForm(run.ID, "finalize-opencode-without-result", "inline") {
+						@WorkbenchActionForm(run.ID, "stop-opencode-and-inspect-diff", "inline") {
 							<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
 								@ActionIcon("file-search", "relay-icon-sm")
 								Stop Waiting and Inspect Git Diff
@@ -1340,14 +1340,22 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 							<div class="text-xs text-amber-200/90">Last output: { previews.OpenCodeLastOutputAge }</div>
 						}
 						<div class="text-xs text-amber-200/90">
-							Review stdout, stderr, and the combined log, then recover this run if the agent is no longer active.
+							Review stdout, stderr, and the combined log, then recover this run or stop waiting and inspect git diff if the current changes are ready.
 						</div>
-						@WorkbenchActionForm(run.ID, "recover-stale-opencode-execution", "inline") {
-							<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
-								@ActionIcon("life-buoy", "relay-icon-sm")
-								{ recoveryLabel }
-							</button>
-						}
+						<div class="flex flex-wrap gap-2">
+							@WorkbenchActionForm(run.ID, "recover-stale-opencode-execution", "inline") {
+								<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+									@ActionIcon("life-buoy", "relay-icon-sm")
+									{ recoveryLabel }
+								</button>
+							}
+							@WorkbenchActionForm(run.ID, "stop-opencode-and-inspect-diff", "inline") {
+								<button type="submit" class="btn-secondary text-xs sm:text-sm gap-1.5" data-stage-secondary-action>
+									@ActionIcon("file-search", "relay-icon-sm")
+									Stop Waiting and Inspect Git Diff
+								</button>
+							}
+						</div>
 					</div>
 				}
 			} else if isRunning {

@@ -1948,6 +1948,32 @@ func TestAgentRunTerminalStateDoesNotPoll(t *testing.T) {
 	}
 }
 
+func TestAgentRunWaitingResponseShowsStopWaitingAction(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	previews := RunPreviews{
+		HasOpenCodeExecution:    true,
+		OpenCodeExecutionStatus: "running",
+		HasOpenCodeRunning:      true,
+		OpenCodeLifecycleState:  "waiting_response",
+		OpenCodeLastOutputAge:   "3m ago",
+	}
+	err := AgentRunMonitorStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Stop Waiting and Inspect Git Diff") {
+		t.Fatalf("expected stop-waiting CTA for waiting_response, got: %s", html)
+	}
+	if !strings.Contains(html, "stop-opencode-and-inspect-diff") {
+		t.Fatal("expected stop-opencode-and-inspect-diff action for waiting_response")
+	}
+	if strings.Contains(html, "Recover Stale OpenCode Run") {
+		t.Fatal("did not expect stale recovery CTA for waiting_response")
+	}
+}
+
 func TestAgentRunStaleRunningWithCapturedOutputShowsRecoveryAction(t *testing.T) {
 	var buf strings.Builder
 	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
@@ -1974,6 +2000,12 @@ func TestAgentRunStaleRunningWithCapturedOutputShowsRecoveryAction(t *testing.T)
 	if !strings.Contains(html, "recover-stale-opencode-execution") {
 		t.Errorf("expected recover-stale-opencode-execution action input")
 	}
+	if !strings.Contains(html, "Stop Waiting and Inspect Git Diff") {
+		t.Errorf("expected stop-waiting CTA for stale running state, got: %s", html)
+	}
+	if !strings.Contains(html, "stop-opencode-and-inspect-diff") {
+		t.Errorf("expected stop-opencode-and-inspect-diff action input for stale running")
+	}
 	// Stale running executions should stop polling; the operator must click recovery.
 	if strings.Contains(html, `hx-trigger="every 2s"`) {
 		t.Errorf("stale running execution should stop hx-trigger polling, got: %s", html)
@@ -1988,6 +2020,40 @@ func TestAgentRunStaleRunningWithCapturedOutputShowsRecoveryAction(t *testing.T)
 	}
 	if !strings.Contains(html, "download combined log") {
 		t.Errorf("expected combined log download link for stale running")
+	}
+}
+
+func TestAgentRunActiveStreamingAndOutputHideStopWaitingAction(t *testing.T) {
+	testCases := []RunPreviews{
+		{
+			HasOpenCodeExecution:    true,
+			OpenCodeExecutionStatus: "running",
+			HasOpenCodeRunning:      true,
+			OpenCodeLifecycleState:  "active_streaming",
+		},
+		{
+			HasOpenCodeExecution:    true,
+			OpenCodeExecutionStatus: "running",
+			HasOpenCodeRunning:      true,
+			HasOpenCodeOutput:       true,
+			OpenCodeLifecycleState:  "active_output",
+		},
+	}
+
+	for _, previews := range testCases {
+		var buf strings.Builder
+		run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+		err := AgentRunMonitorStepPanel(run, nil, nil, previews).Render(context.Background(), &buf)
+		if err != nil {
+			t.Fatalf("render AgentRunMonitorStepPanel: %v", err)
+		}
+		html := buf.String()
+		if strings.Contains(html, "Stop Waiting and Inspect Git Diff") {
+			t.Fatalf("did not expect stop-waiting CTA for %s", previews.OpenCodeLifecycleState)
+		}
+		if strings.Contains(html, "stop-opencode-and-inspect-diff") {
+			t.Fatalf("did not expect stop-waiting action for %s", previews.OpenCodeLifecycleState)
+		}
 	}
 }
 
