@@ -261,7 +261,7 @@ templ SelectedStageBody(run *store.Run, repo *store.Repo, artifacts []store.Arti
 	case "intake":
 		@IntakeStepPanel(run, repo, artifacts, checks, intakeReview, previews)
 	case "prompt":
-		@AgentPromptStepPanel(run, artifacts, checks, previews)
+		@AgentPromptStepPanel(run, artifacts, checks, previews, intakeReview)
 	case "packet":
 		@AgentPacketStepPanel(run, artifacts, previews)
 	case "handoff":
@@ -487,42 +487,120 @@ templ IntakeStepPanel(run *store.Run, repo *store.Repo, artifacts []store.Artifa
 	</div>
 }
 
-templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews) {
+templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, intakeReview *pipeline.IntakeReview) {
 	<div class="relay-card">
 		<div class="relay-card-header">
-			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
+			<div class="flex flex-wrap items-center gap-2 sm:gap-3 w-full">
 				@agentPromptStatusChip(artifactExists(artifacts, "agent_prompt"), checks)
-				<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
-					hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
-					hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
-					class="inline">
-					<input type="hidden" name="action" value="prepare-prompt"/>
-					<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
-						@ActionIcon("scroll-text", "relay-icon-sm")
-						if artifactExists(artifacts, "agent_prompt") {
-							Regenerate Agent Prompt
-						} else {
-							Generate Agent Prompt
+				<div class="flex flex-wrap items-center gap-2 sm:gap-3">
+					if artifactExists(artifacts, "agent_prompt") {
+						@WorkbenchStepLink(run.ID, "packet", "package", "btn-primary text-xs sm:text-sm gap-1.5") {
+							Continue to Packet
 						}
-					</button>
-				</form>
+						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+							class="inline">
+							<input type="hidden" name="action" value="prepare-prompt"/>
+							<button type="submit" class="btn-secondary text-xs sm:text-sm gap-1.5" data-stage-secondary-action>
+								@ActionIcon("scroll-text", "relay-icon-sm")
+								Regenerate Agent Prompt
+							</button>
+						</form>
+						@ArtifactPreviewLink(run.ID, "agent_prompt", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
+							View Full Prompt
+						}
+						<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
+							class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download Prompt</a>
+					} else {
+						<form action={"/runs/" + Itoa(run.ID) + "/actions"} method="POST"
+							hx-post={"/runs/" + Itoa(run.ID) + "/actions"}
+							hx-target="#run-workbench-shell" hx-select="#run-workbench-shell" hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms" hx-indicator="#run-workbench-loading" data-relay-workbench-action="true"
+							class="inline">
+							<input type="hidden" name="action" value="prepare-prompt"/>
+							<button type="submit" class="btn-primary text-xs sm:text-sm gap-1.5" data-stage-primary-action>
+								@ActionIcon("scroll-text", "relay-icon-sm")
+								Generate Agent Prompt
+							</button>
+						</form>
+					}
+				</div>
 			</div>
 		</div>
 
-		<div class="relay-stage-evidence-list">
+		<div class="p-4 space-y-4">
 			if artifactExists(artifacts, "agent_prompt") {
-				@StageEvidenceRow("ready", "Agent Prompt generated", "Review the hunk diff below.", "") {
-					@ArtifactPreviewLink(run.ID, "agent_prompt", "text-xs text-indigo-400 hover:text-indigo-300 min-h-[36px] inline-flex items-center") {
-						View
-					}
-					<a href={"/runs/" + Itoa(run.ID) + "/artifacts/agent_prompt/download"}
-						class="text-xs text-gray-500 hover:text-gray-300 min-h-[36px] inline-flex items-center" data-stage-artifact-link>Download</a>
-				}
+				<div class="grid gap-4 xl:grid-cols-2">
+					<section class="relay-card">
+						<div class="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+							<h3 class="font-medium text-sm sm:text-base">Transformation summary</h3>
+						</div>
+						<div class="p-4 space-y-3">
+							for _, item := range promptTransformationItems(run, intakeReview, previews) {
+								<div class="flex gap-3">
+									<span class="mt-0.5 shrink-0 text-green-400">
+										@StatusIcon("passed", "relay-icon-sm")
+									</span>
+									<div class="min-w-0">
+										<div class="text-sm font-medium text-gray-100">{ item.Title }</div>
+										<div class="text-xs text-gray-400 mt-0.5">{ item.Detail }</div>
+									</div>
+								</div>
+							}
+						</div>
+					</section>
+
+					<section class="relay-card">
+						<div class="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+							<h3 class="font-medium text-sm sm:text-base">Model and execution</h3>
+						</div>
+						<div class="p-4 space-y-3">
+							for _, row := range promptModelExecutionRows(run, intakeReview, previews) {
+								<div class="rounded-lg border border-gray-800 bg-gray-950/40 p-3">
+									<div class="text-[11px] font-medium uppercase tracking-wider text-gray-500">{ row.Label }</div>
+									<div class="mt-1 text-sm text-gray-200 whitespace-pre-wrap break-words">{ row.Value }</div>
+								</div>
+							}
+						</div>
+					</section>
+
+					<section class="relay-card xl:col-span-2">
+						<div class="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+							<h3 class="font-medium text-sm sm:text-base">Scope preserved</h3>
+						</div>
+						<div class="p-4">
+							if files := promptScopedFiles(intakeReview); len(files) > 0 {
+								<div class="flex flex-wrap gap-2">
+									for _, file := range files {
+										<span class="relay-chip-gray font-mono text-[11px] sm:text-xs break-all">{ file }</span>
+									}
+								</div>
+							} else {
+								<p class="text-sm text-gray-400">No explicit scoped files were declared.</p>
+							}
+						</div>
+					</section>
+
+					<section class="relay-card xl:col-span-2">
+						<div class="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+							<h3 class="font-medium text-sm sm:text-base">Prompt preview</h3>
+						</div>
+						<div class="p-4">
+							<div class="rounded-lg border border-gray-800 bg-gray-950/40 p-4">
+								<pre class="text-xs sm:text-sm leading-6 font-mono text-gray-300 whitespace-pre-wrap break-words">{ promptPreviewExcerpt(previews.AgentPrompt, 1200) }</pre>
+							</div>
+						</div>
+					</section>
+				</div>
 
 				if len(previews.AgentPromptDiff.Lines) > 0 {
-					@StageEvidenceRow("passed", "Prompt diff", "Shows changed sections only, with nearby context.", "") {
-						<div class="relay-stage-output-preview">
-							<div class="max-h-96 overflow-auto min-w-0 text-xs leading-5 font-mono p-3">
+					<details class="rounded-xl border border-gray-800 bg-gray-950/40">
+						<summary class="cursor-pointer list-none flex items-center justify-between gap-3 px-4 py-3 text-sm text-gray-200 min-h-[44px]">
+							<span>Technical prompt diff</span>
+							<span class="text-xs text-gray-500">Collapsed by default</span>
+						</summary>
+						<div class="border-t border-gray-800 p-4">
+							<div class="max-h-96 overflow-auto min-w-0 text-xs leading-5 font-mono">
 								for _, line := range previews.AgentPromptDiff.Lines {
 									switch line.Kind {
 									case "add":
@@ -537,17 +615,43 @@ templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []
 								}
 							</div>
 							if previews.AgentPromptDiff.Truncated {
-								<div class="border-t border-gray-800 px-3 py-2 text-xs text-yellow-300">
-									Diff preview truncated. Use View or Download for the full artifacts.
+								<div class="mt-3 border-t border-gray-800 pt-3 text-xs text-yellow-300">
+									Diff preview truncated. Use View Full Prompt or Download Prompt for the full artifacts.
 								</div>
 							}
 						</div>
-					}
+					</details>
 				}
 			} else if hasCheckStatus(checks, "validation", "block") || hasCheckStatus(checks, "validation", "fail") {
-				@StageEvidenceRow("blocked", "Intake Review has blockers", "Resolve before generating Agent Prompt.", "")
+				<div class="rounded-xl border border-red-800/50 bg-red-950/20 p-4 space-y-2">
+					<div class="text-sm font-medium text-red-200">Intake Review has blockers</div>
+					<div class="text-sm text-red-100/80">Resolve intake blockers before generating the Agent Prompt.</div>
+					<div class="flex flex-wrap gap-2">
+						@WorkbenchStepLink(run.ID, "intake", "clipboard-check", "btn-secondary text-xs sm:text-sm") {
+							Review Intake
+						}
+					</div>
+				</div>
 			} else {
-				@StageEvidenceRow("pending", "Agent Prompt not generated", "Run Intake Review first, then generate the Agent Prompt.", "")
+				<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-4 space-y-3">
+					<div class="text-sm font-medium text-gray-100">What Relay will generate</div>
+					<ul class="space-y-2 text-sm text-gray-300">
+						for _, item := range promptTransformationItems(run, intakeReview, previews) {
+							<li class="flex gap-3">
+								<span class="mt-0.5 shrink-0 text-gray-500">
+									@StatusIcon("pending", "relay-icon-sm")
+								</span>
+								<div class="min-w-0">
+									<div class="font-medium text-gray-100">{ item.Title }</div>
+									<div class="text-xs text-gray-400 mt-0.5">{ item.Detail }</div>
+								</div>
+							</li>
+						}
+					</ul>
+					<div class="text-xs text-gray-500">
+						Relay will remove orchestration-only text, preserve the scoped implementation instructions, and attach the repo-agent execution contract before moving to the packet step.
+					</div>
+				</div>
 			}
 		</div>
 	</div>

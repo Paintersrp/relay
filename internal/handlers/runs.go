@@ -1138,10 +1138,15 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Determine active step — default to intake, override with valid ?step=
-	activeStep := normalizeRunStep(r.URL.Query().Get("step"))
+	requestedStep := strings.TrimSpace(r.URL.Query().Get("step"))
+	hasRequestedStep := r.URL.Query().Has("step")
+	activeStep := resolveRunActiveStep(requestedStep, hasRequestedStep, previews.NextAction.Step)
+	showSetupReview := !hasRequestedStep &&
+		activeStep == "handoff" &&
+		hasArtifactKind(artifactsList, "agent_prompt") &&
+		hasArtifactKind(artifactsList, "opencode_handoff_packet")
 
-	views.RunDetail(run, repo, artifactsList, checksList, eventsList, previews, &intakeReview, activeStep).Render(r.Context(), w)
+	views.RunDetail(run, repo, artifactsList, checksList, eventsList, previews, &intakeReview, activeStep, showSetupReview).Render(r.Context(), w)
 }
 
 func writeRunEventSSE(w io.Writer, flusher http.Flusher, event events.RunEvent) error {
@@ -3887,6 +3892,16 @@ func normalizeRunStep(step string) string {
 	}
 }
 
+func resolveRunActiveStep(requestedStep string, hasRequestedStep bool, fallbackStep string) string {
+	if hasRequestedStep {
+		return normalizeRunStep(requestedStep)
+	}
+	if strings.TrimSpace(fallbackStep) != "" {
+		return normalizeRunStep(fallbackStep)
+	}
+	return "intake"
+}
+
 func parseValidationProgressPreview(jsonData string) views.ValidationProgressPreview {
 	if jsonData == "" {
 		return views.ValidationProgressPreview{}
@@ -3960,7 +3975,12 @@ func hasValidationCommandsForPreview(handoffText string, repoDefaults string) bo
 	return len(pipeline.ExtractValidationCommands(handoffText, repoDefaults)) > 0
 }
 
-func defaultActiveRunStep(_ []store.Artifact, _ []store.Check) string {
+func defaultActiveRunStep(args ...any) string {
+	if len(args) > 0 {
+		if step, ok := args[0].(string); ok {
+			return resolveRunActiveStep("", false, step)
+		}
+	}
 	return "intake"
 }
 

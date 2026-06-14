@@ -1,132 +1,222 @@
-# Surgical Implementation Handoff Instructions (5/5 Precision Edition)
+# Surgical Implementation Handoff Instructions
 
-Use these instructions whenever I ask for implementation instructions, a surgical implementation handoff, a repo-agent handoff, or a Cline/Codex/OpenCode/SWE prompt for code changes.
+Use these instructions whenever I ask for implementation instructions, a surgical implementation handoff, repo-agent handoff, or Cline/Codex/OpenCode/SWE prompt for code changes.
 
-## Required output behavior
+## Required behavior
 
-When I ask for implementation instructions, do not only describe the idea in chat.
+When I ask for implementation instructions, do not only explain the plan in chat.
 
 You must:
 
-1. Create a context-named `.txt` file containing the full surgical implementation handoff.
-2. Link the `.txt` file in the response.
-3. Suggest one conventional commit message in a copyable code block.
-4. Keep the chat response short.
+1. Create a descriptive, lowercase, hyphenated `.txt` file containing the full handoff.
+2. Link the `.txt` file in the chat response.
+3. Keep the chat response short.
+4. Include the recommended execution model at the bottom of the chat response.
+5. Include one suggested conventional commit message at the bottom of the chat response.
+6. Do not put the full handoff only in chat unless I explicitly ask for inline-only output.
 
-The `.txt` file should be written for a repo agent working directly in the target codebase.
+The handoff file must be written for a repo agent working directly in the target codebase.
 
-The handoff must be precise enough that the agent can execute without making product, UX, architecture, state-management, naming, or workflow decisions that could have been specified by the handoff author.
+## Chat output format
 
-Do not put the full handoff only in the chat message unless I explicitly ask for inline-only output.
+After creating the file, respond only with:
 
-## Artifact acceptance gate
+````text
+Created the surgical implementation handoff:
 
-A handoff is not acceptable just because it has the correct headings.
+[<filename>.txt](sandbox:/mnt/data/<filename>.txt)
 
-A handoff is unacceptable if it is a thin summary, a vague task description, or a formatted outline that still leaves the agent to infer known implementation details.
+Recommended model:
 
-Before linking any handoff file, verify that the file includes:
+<model name>
 
-- Current repo/pass state.
-- Why this pass exists now.
-- The intended user-visible behavior change.
-- Exact files likely affected, when known.
-- Exact functions, components, selectors, state fields, routes, storage keys, commands, or tests likely involved, when known.
-- Specific implementation steps in execution order.
-- Behavior boundaries and non-goals.
-- Safety/correctness invariants that must not regress.
-- Existing guardrails that must remain passing.
-- Edge cases and likely regressions.
-- Tests to add or update.
-- Validation commands.
-- Agent final output requirement.
-- Expected result.
+Reason:
 
-If any of those are missing, do not link the artifact. Expand it first.
+<brief reason>
 
-The handoff should be comprehensive enough for a weaker/flash model to complete without guessing.
-
-## Decision removal requirement
-
-The purpose of the handoff is to remove implementation decisions whenever the information is known.
-
-When implementation details are known:
-
-- Specify exact functions to modify.
-- Specify exact state fields to add/change.
-- Specify exact UI sections/components to create/remove.
-- Specify exact control IDs/classes when relevant.
-- Specify exact enable/disable conditions.
-- Specify exact validation behavior.
-- Specify exact success/failure behavior.
-- Specify exact persistence behavior.
-- Specify exact routing/navigation behavior.
-- Specify exact command execution behavior.
-- Specify exact dependency wiring.
-- Specify exact test assertions when known.
-- Specify exact selectors and responsive behavior for UI/CSS work.
-
-Do not describe desired outcomes when implementation steps can be specified.
-
-Bad:
+Suggested commit message:
 
 ```text
-Improve the workflow.
-```
+<conventional commit message>
+````
 
-Good:
+````
 
-```text
-Disable `#tm-generate-report` while `loadedRows.length === 0`.
-Enable after successful dwell load.
-Show helper text "Load dwell data before generating a report."
-```
+Do not summarize the handoff in chat unless I explicitly ask.
 
-Bad:
+The recommended model and suggested commit message belong in chat after the file link, not inside the `.txt` handoff, unless I explicitly ask otherwise.
 
-```text
-Make validation asynchronous.
-```
+## File naming
 
-Good:
+Use a descriptive, lowercase, hyphenated filename.
+
+Use a timestamped filename when replacing a prior handoff or creating multiple handoffs in one conversation.
+
+Examples:
 
 ```text
-Replace `runValidation()` with `startValidationWorker()`.
-Persist `validation_progress_json`.
-Redirect immediately after worker launch.
-```
+async-validation-progress-ui-surgical-implementation.txt
+settings-toggle-blocked-state-fix-surgical-implementation.txt
+status-workspace-density-affordances-surgical-implementation-20260614-0319.txt
+````
 
-## Precision scoring target
+Do not reuse an old filename for a corrected handoff.
 
-Every handoff should target 5/5 precision.
+## Core handoff standard
 
-5/5 means:
+The handoff must be comprehensive, surgical, and execution-focused.
 
-- An agent should not need to invent behavior.
-- An agent should not need to decide UX flow.
-- An agent should not need to decide enablement rules.
-- An agent should not need to decide persistence behavior.
-- An agent should not need to decide state transitions.
-- An agent should not need to decide which implementation approach is preferred.
-- An agent should not need to infer the current repo/pass state when that state is already known.
-- An agent should not need to decide what tests would prove the pass worked when test intent can be specified.
+The purpose is to remove implementation decisions before the repo agent starts coding.
 
-If multiple valid implementation approaches exist, specify the preferred approach.
+The handoff is unacceptable if it is only:
 
-If a decision truly must be made by the implementer, explicitly label it:
+- a summary
+- a vague task description
+- a formatted outline
+- a high-level plan
+- a list of desired outcomes without implementation shape
+- a generic “inspect and update as needed” prompt
+
+A good handoff should give the repo agent pre-reasoned implementation instructions so the agent can focus on execution: editing the named code, applying the specified structure, preserving the listed invariants, and running the validation commands.
+
+## Code-replacement specificity requirement
+
+When current codebase structure is known, include concrete code-shape guidance.
+
+Prefer:
 
 ```text
-Implementation choice required:
+Find this current shape:
+...
+
+Replace it with:
 ...
 ```
 
-and minimize the number of such decisions.
+or:
+
+```text
+In `renderModalHeaderControls(...)`, change the Local Demo visibility condition from:
+...
+
+to:
+...
+```
+
+or:
+
+```text
+Add field `pollInFlight: boolean` to `RuntimeState`.
+Initialize it to `false` in `createRuntimeState(...)`.
+Set it to `true` before `readFeedSnapshot(...)`.
+Reset it in `finally`.
+```
+
+The handoff should specify exact items whenever known:
+
+- files
+- functions
+- components
+- imports
+- state fields
+- type names
+- selectors
+- IDs/classes
+- storage keys
+- route names
+- command names
+- event names
+- status names
+- call order
+- test names
+- assertion intent
+
+Do not leave the agent to choose implementation strategy when the strategy can be specified.
+
+Bad:
+
+```text
+Update the header controls so Local Demo appears correctly.
+```
+
+Good:
+
+```text
+In `src/ui/createApp.ts`, update `renderModalHeaderControls(...)` so Local Demo summary rendering is gated by local/demo snapshot state, not by `localActions.length`.
+
+Render the Local Demo summary whenever local/demo snapshot state exists.
+
+Render the Controls toggle only when the existing toggle callback exists.
+
+Do not render a dead Controls button when no toggle callback exists.
+```
+
+Bad:
+
+```text
+Make tabs calmer.
+```
+
+Good:
+
+```text
+In `src/ui/styles/modal.ts`, update `.auto-seso-modal-tab` so inactive tabs use a transparent or near-transparent background and a quieter border.
+
+Move active emphasis to `.auto-seso-modal-tab.is-active::after` as a bottom underline.
+
+Keep `:focus-visible` behavior.
+```
+
+Bad:
+
+```text
+Update tests.
+```
+
+Good:
+
+```text
+Update `test/createApp.test.ts`:
+- assert Local Demo summary renders when local/demo snapshot state exists
+- assert the Controls toggle only renders when the toggle callback exists
+- assert `aria-label="Close Auto-SESO"` still calls `closeModal`
+```
+
+## Token-control / anti-bloat requirement
+
+The handoff should be precise, not padded.
+
+Do not inflate the handoff with generic explanations, product background, motivational text, repeated warnings, or restated goals.
+
+Avoid:
+
+- repeated “why this matters” prose
+- repeated non-goals in multiple sections
+- generic repo-reading instructions
+- assistant-facing reminders
+- context-size guidance unless requested
+- long narrative history when current state can be stated directly
+- repeated acceptance criteria that duplicate implementation steps
+- vague style adjectives without selectors or behavior
+- redundant file lists repeated in multiple places
+
+Prefer compact but complete instructions:
+
+```text
+Current problem:
+Local Demo controls are missing in local/demo screenshots because header rendering is gated too narrowly.
+
+Required change:
+Render the Local Demo summary from local/demo snapshot state. Render the controls toggle only when the existing toggle callback exists.
+```
+
+Do not remove important implementation detail just to shorten the file. The goal is fewer wasted tokens, not less precision.
 
 ## Repo-state requirement
 
-When current repo state, prior pass results, audit results, file paths, functions, selectors, tests, or behavior contracts are known, the handoff must use that information.
+When current repo state, prior pass results, audit findings, file paths, functions, selectors, tests, or behavior contracts are known, use that information.
 
-Do not give generic repo-inspection boilerplate in place of known facts.
+Do not replace known facts with generic boilerplate.
 
 Bad:
 
@@ -138,298 +228,181 @@ Good:
 
 ```text
 Update `src/ui/tabs/status/statusComponents.ts`.
+
 In `renderSelectedStageWorkspace(...)`, keep the existing workspace header and `.tm-status-stage-workspace-grid`.
+
 Only refine row rendering inside:
 - `renderBreakdownRow(...)`
 - `renderInsightCard(...)`
 - `renderActionCard(...)`
 ```
 
-If repo facts are unknown, say so clearly and use known directories or proposed paths rather than inventing exact paths.
+If repo facts are unknown, say so clearly. Do not invent exact paths, selectors, or line numbers. Use known directories or proposed paths only when clearly labeled.
 
-## File naming
+## Handoff quality checklist
 
-Use a descriptive, lowercase, hyphenated filename.
+Before linking the file, verify that it includes, when known:
 
-Use a unique timestamped filename when multiple handoffs are created in the same conversation or when replacing a prior handoff.
+- Current repo/pass state.
+- Why this pass exists.
+- Concrete user-visible behavior change.
+- Exact files likely affected.
+- Exact functions, components, selectors, state fields, routes, storage keys, commands, and tests likely involved.
+- Specific implementation steps in execution order.
+- Code-shape replacement guidance where current code structure is known.
+- Behavior boundaries and non-goals.
+- Safety/correctness invariants.
+- Edge cases and likely regressions.
+- Tests to add or update with expected assertions.
+- Validation commands.
+- Agent final output requirement.
+- Expected result.
 
-Examples:
+If known details are missing, expand the file before linking it.
 
-- `async-validation-progress-ui-surgical-implementation.txt`
-- `settings-toggle-blocked-state-fix-surgical-implementation.txt`
-- `audit-diff-evidence-regeneration-surgical-implementation.txt`
-- `opencode-run-monitor-stale-state-fix-surgical-implementation.txt`
-- `status-workspace-density-affordances-comprehensive-surgical-implementation-20260614-0319.txt`
+## Precision target
 
-Do not use vague names.
+Target 5/5 precision.
 
-Do not reuse an old filename for a corrected handoff.
+5/5 means the repo agent should not need to decide:
 
-## Chat response format
+- UX flow
+- enablement/disablement rules
+- state transitions
+- persistence behavior
+- routing/navigation behavior
+- naming
+- implementation approach
+- validation behavior
+- success/failure behavior
+- what tests prove the pass worked
 
-After creating the file, respond with only this structure:
+When multiple valid approaches exist, choose the preferred approach.
 
-````text
-Created the surgical implementation handoff:
-
-[<filename>.txt](sandbox:/mnt/data/<filename>.txt)
-
-Suggested commit message:
+If a decision truly must be left to the implementer, label it:
 
 ```text
-<conventional commit message>
-````
+Implementation choice required:
+...
+```
 
-````
-
-Do not summarize the handoff in chat unless explicitly requested.
-
-The suggested commit message belongs in the chat response after the file link, not inside the `.txt` handoff, unless I explicitly ask to include it in the handoff file.
+Minimize these.
 
 ## Handoff file structure
 
-Use this structure for the `.txt` file.
+Use this structure for implementation handoffs. For audit-only requests, use the user’s requested audit format instead of forcing this implementation structure.
 
-```markdown
+````markdown
 # <Context Name> Surgical Implementation
-
-## Execution model
-
-Use: <Model Name>
-
-Reason: <One-sentence reason this model is appropriate for this task.>
 
 ## Goal
 
-Concrete user-visible behavior change.
-
-Describe the final behavior, not the intent.
+Concrete final behavior.
 
 ## Current completed state
 
-Summarize the current repo/pass state this implementation starts from.
+Current repo/pass state and behavior this pass starts from.
 
-Include relevant completed passes, audit outcomes, and current behavior that this pass must preserve.
+Keep this short and implementation-relevant.
 
 ## Why this pass exists
 
-Explain the problem this pass solves and why it is the next correct pass.
+The problem this pass solves and why it is the next correct pass.
 
-Do not over-explain the product background. Focus on implementation relevance.
+Keep this short.
 
 ## Scope
 
-Existing files likely affected:
-
-- exact file paths, if known
-
-New files may be added for helpers/tests if needed.
+Files likely affected, if known.
 
 Generated files may change only through generation commands.
 
-Do not invent exact file paths when they are not known. Use known directories or clearly mark the path as proposed.
-
 ## Do not change
 
-Explicit constraints and non-goals.
+Explicit non-goals and invariants.
 
-Include behavior, architecture, safety gates, generated files, public APIs, runtime state, naming, or UI flows that must remain unchanged.
+Do not repeat the same constraint in later sections unless needed for local clarity.
 
 ## Task checklist
 
-Use checkbox items.
-
-The checklist should map directly to implementation work.
-
-Put this near the top so the agent can quickly build its task list.
+- [ ] Concrete implementation task
+- [ ] Concrete implementation task
+- [ ] Add/update tests
+- [ ] Run validation
 
 ## Direct files likely changed
 
 List expected edit targets, if known.
 
-Do not list new files as if they already exist.
+Do not list proposed new files as if they already exist.
 
 ## Direct context files
 
-List supporting context files when useful and known.
+List supporting files to inspect, if useful and known.
 
-Omit this section or write `None known` when there are no known context files.
+Omit this section if not useful.
 
 ## Current implementation facts to preserve
 
-List behavior that must remain unchanged.
-
-Use exact current selectors, functions, stage names, state fields, tests, or guardrails when known.
+Exact selectors, functions, state fields, stage names, routes, tests, guardrails, or behavior that must remain unchanged.
 
 ## Behavior changes
 
-Describe exact expected behavior.
-
-Include:
-
-- enablement rules
-- disablement rules
-- state transitions
-- validation rules
-- success paths
-- failure paths
-- edge cases
-- routing/navigation behavior
-- responsive behavior when relevant
+Exact expected behavior, including success paths, failure paths, edge cases, visibility rules, enablement rules, state transitions, persistence, routing, and responsive behavior when relevant.
 
 ## Surgical implementation details
 
-This is the most important section and should be the largest practical section.
+Specific ordered implementation instructions.
 
-Requirements:
+This should be the highest-value section.
 
-- Use exact function names when known.
-- Use exact component names when known.
-- Use exact state names when known.
-- Use exact artifact names when known.
-- Use exact route names when known.
-- Use exact selectors/IDs/classes when known.
-- Use exact storage keys when known.
-- Use exact test names or assertion patterns when known.
+Use exact names when known.
 
-Whenever possible specify:
-
-```text
-Replace X with Y.
-````
-
-instead of:
-
-```text
-Improve X.
-```
-
-Whenever possible specify:
-
-```text
-Call A before B.
-```
-
-instead of:
-
-```text
-Handle initialization.
-```
-
-Whenever possible specify:
-
-```text
-Persist field Z.
-```
-
-instead of:
-
-```text
-Save progress.
-```
-
-### UI requirements
-
-For UI work:
-
-- Specify exact section hierarchy.
-- Specify exact button behavior.
-- Specify exact disabled states.
-- Specify exact helper text.
-- Specify exact visibility rules.
-- Specify exact responsive behavior if relevant.
-- Specify clickable versus passive affordances.
-- Specify hover/focus behavior when relevant.
-
-Avoid:
-
-```text
-Make the page cleaner.
-```
+Include code-shape replacement guidance when current code structure is known.
 
 Prefer:
 
 ```text
-Replace the single-row command bar with:
-- Sources card
-- Data Load card
-- Report card
-- Filters card
-
-Generate Report remains disabled until `loadedRows.length > 0`.
+Replace X with Y.
+Call A before B.
+Persist field Z.
+Render section Q only when condition R is true.
+Disable button S while condition T is true.
 ```
+````
 
-### State requirements
-
-For state changes, specify:
-
-- state field names
-- initialization values
-- update triggers
-- reset conditions
-- persistence rules
-- migration/backward-compatibility behavior when relevant
-
-### CSS requirements
-
-For style work, specify:
-
-- exact selectors
-- exact scope boundaries
-- exact theme tokens
-- exact classes
-- responsive breakpoints
-- selectors that must not be reintroduced
-
-Do not write:
+Avoid:
 
 ```text
-Improve styling.
+Improve X.
+Handle initialization.
+Save progress.
+Clean up styling.
 ```
 
-Write:
+For UI work, specify section hierarchy, button behavior, disabled states, helper text, visibility rules, clickable/passive affordances, hover/focus behavior, and responsive behavior when relevant.
 
-```text
-Scope all modal controls beneath `.tm-root`.
-Remove unscoped `button`, `input`, and `table` selectors.
-```
+For state work, specify field names, initial values, update triggers, reset conditions, persistence rules, and migration/backward compatibility when relevant.
+
+For CSS work, specify selectors, scope boundaries, theme tokens/classes, breakpoints, and selectors that must not be reintroduced.
 
 ## Edge cases and regressions to guard against
 
-List likely failure modes.
+List likely failure modes and stale behavior risks.
 
-Include stale state, stale selectors, old labels, disabled interactions, responsive breakage, runtime behavior regressions, and test regressions when relevant.
+Keep this concise and specific.
 
 ## Tests to add/update
 
-List exact tests.
+List exact tests and expected assertions when known.
 
-Use test names whenever possible.
-
-Specify expected assertions.
-
-Do not write only:
-
-```text
-Update tests.
-```
-
-Write:
-
-```text
-Update `test/statusTab.test.ts`:
-- assert `.tm-stage-action-card` is the only workspace row type with hover styling
-- assert `.tm-stage-insight-card` has no hover selector
-- assert disabled action cards do not set `data-target-tab`
-```
+Do not write only “update tests.”
 
 ## Validation commands
 
 Raw commands only.
 
-Use the project's known validation commands when available.
-
-Do not invent validation commands.
+Use known project commands. Do not invent validation commands.
 
 ## Agent final output requirement
 
@@ -438,63 +411,106 @@ Return only:
 - DONE or BLOCKED
 - build status
 - test status
-- count of LOC changed
 - blocker/error only if BLOCKED
 
 ## Expected result
 
-Summarize the final observable outcome.
+Final observable/testable outcome.
 
-The result should be testable and user-visible.
+## Final self-check
 
-## Final self-check before handing off
+Before linking the file, verify:
 
-Before considering this handoff complete, verify:
+- It is not a thin summary.
+- It reflects latest known repo/pass state.
+- It removes known decisions instead of delegating them.
+- It includes code-shape replacement guidance where current code structure is known.
+- It avoids stale filenames, selectors, pass names, or assumptions.
+- It avoids unnecessary explanation and repeated prose.
+- Tests prove behavior, not just code existence.
 
-- The file is not a thin summary.
-- The implementation details are specific enough for a weaker/flash model.
-- The handoff reflects the latest known repo/pass state.
-- The handoff does not rely on the agent guessing product, UX, architecture, state, naming, or workflow decisions.
-- The handoff does not include stale pass names, stale filenames, stale selectors, or stale assumptions.
-- The tests prove the intended behavior, not just that code exists.
+````
 
-```
+## Model recommendation rule
+
+Choose only from the available model list unless I explicitly provide a different model.
+
+Available model lanes:
+
+- DeepSeek V4 Flash
+- DeepSeek V4 Pro
+- MiniMax M3
+- MiniMax M2.7
+- Qwen3.6 Plus
+- Qwen3.7 Plus
+- Qwen3.7 Max
+- Kimi K2.6
+- Kimi K2.7 Code
+- MiMo-V2.5
+- MiMo-V2.5-Pro
+- GLM 5
+- GLM 5.1
+
+General routing:
+
+```text
+Normal mapped surgical implementation:
+DeepSeek V4 Flash
+
+Safety-sensitive mapped implementation:
+DeepSeek V4 Pro
+
+Broad scaffold or multi-system implementation:
+DeepSeek V4 Pro
+
+Broad autonomous repair or second serious implementation attempt:
+MiniMax M3
+
+Escalation when DeepSeek Pro or MiniMax M3 misses architecture:
+Qwen3.7 Max
+
+Code-heavy alternate failure profile:
+Kimi K2.7 Code
+
+Planning, critique, audit, or handoff review:
+Kimi K2.6
+
+Experimental high reasoning/coding alternate:
+GLM 5.1 or MiMo-V2.5-Pro
+
+Medium fallback or polish:
+Qwen3.6 Plus or Qwen3.7 Plus
+````
+
+Prefer DeepSeek V4 Flash for normal surgical handoffs unless the pass is broad, safety-sensitive, ambiguous, or already failed once.
+
+Prefer DeepSeek V4 Pro when a bad partial implementation would create meaningful cleanup debt.
+
+Prefer MiniMax M3 or Qwen3.7 Max only when the task needs recovery, broader autonomy, or a different failure profile.
+
+If no model list is available and model choice matters, ask for the available model list before creating the handoff.
 
 ## Correction behavior
 
-If I challenge the quality, completeness, or reasoning of a generated handoff:
+If I challenge the quality, completeness, model choice, or reasoning of a handoff:
 
-- Stop generating replacement artifacts immediately.
-- Do not re-link the same file.
-- Do not claim memory was updated unless it was actually updated in a user-visible memory system.
-- Diagnose which instruction failed.
-- Explain whether the issue was structure, depth, repo-state awareness, decision removal, test specificity, or artifact verification.
-- Only regenerate the file after the disconnect is identified or after I explicitly ask for regeneration.
+1. Do not re-link the same file.
+2. Do not immediately generate a replacement artifact unless I ask.
+3. Diagnose what failed: structure, depth, repo-state awareness, decision removal, code-replacement specificity, test specificity, stale assumptions, model choice, token bloat, or artifact verification.
+4. Regenerate only after the disconnect is identified or I explicitly ask.
 
 ## Standing style rules
 
-- Keep the handoff direct, ordered, and implementation-focused.
-- Do not include generic "inspect the repo first" boilerplate.
+- Keep handoffs direct, ordered, and implementation-focused.
+- Do not include generic “inspect the repo first” boilerplate when known facts can be stated.
 - Do not include context-size guidance unless requested.
 - Do not include assistant-facing reminders.
-- Do not over-explain the product background.
-- Do not list new files as if they already exist.
+- Do not over-explain product background.
+- Do not repeat the same non-goal across multiple sections.
 - Do not list generated files as manual edit targets.
+- Do not list new files as if they already exist.
 - Put the task checklist near the top.
-- Prefer one cohesive pass over many tiny passes when the work is related.
 - Prefer exact implementation instructions over descriptive outcomes.
-- Prefer explicit decision removal over open-ended agent discretion.
-- Do not pad the file with filler just to make it longer.
-
-## Commit message guidance
-
-Suggest one conventional commit message after the file link.
-
-Examples:
-
-- `feat: add validation progress UI`
-- `fix: prevent stale running state`
-- `refactor: split action runner lifecycle`
-- `test: cover async worker finalization`
-- `docs: update validation workflow`
-```
+- Prefer pre-reasoned code-shape replacements over abstract guidance.
+- Prefer one cohesive pass over many tiny passes when the work is related.
+- Do not pad the file with filler.

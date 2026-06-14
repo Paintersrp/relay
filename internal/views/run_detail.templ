@@ -5,7 +5,8 @@ import (
 	"relay/internal/store"
 )
 
-templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
+templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string, showSetupReview ...bool) {
+	{{ setupReviewEnabled := len(showSetupReview) > 0 && showSetupReview[0] }}
 	@Layout(run.Title) {
 		<div class="mb-6 sm:mb-8">
 			<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -30,7 +31,7 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 			</div>
 		</div>
 
-		<section id="run-workbench-shell"
+		<section id="run-workbench"
 			class="relay-workbench-shell"
 			data-relay-workbench
 			data-relay-run-events={"/runs/" + Itoa(run.ID) + "/events"}
@@ -43,16 +44,23 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 					<span data-relay-live-updates-text>Live updates connecting</span>
 				</span>
 			</div>
-			<div id="run-workbench-loading" class="htmx-indicator relay-workbench-loading">
-				Refreshing workbench...
+			<div id="run-workbench-shell" class="space-y-4">
+				<div id="run-workbench-loading" class="htmx-indicator relay-workbench-loading">
+					Refreshing workbench...
+				</div>
+				@RunInspectorShell(run, repo, artifacts, checks, events, previews, intakeReview, activeStep, setupReviewEnabled)
 			</div>
-			@RunInspectorShell(run, repo, artifacts, checks, events, previews, intakeReview, activeStep)
 		</section>
 	}
 }
 
-templ RunInspectorShell(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string) {
-	@RunInspectorSummary(run, previews)
+templ RunInspectorShell(run *store.Run, repo *store.Repo, artifacts []store.Artifact, checks []store.Check, events []store.Event, previews RunPreviews, intakeReview *pipeline.IntakeReview, activeStep string, showSetupReview ...bool) {
+	{{ setupReviewEnabled := len(showSetupReview) > 0 && showSetupReview[0] }}
+	if setupReviewEnabled {
+		@RunSetupReviewPanel(run, artifacts, checks, previews, intakeReview)
+	} else {
+		@RunInspectorSummary(run, previews)
+	}
 	@PipelineStageStrip(run.ID, previews, artifacts, checks, intakeReview, activeStep)
 
 	<div class="relay-inspector-grid">
@@ -64,6 +72,60 @@ templ RunInspectorShell(run *store.Run, repo *store.Repo, artifacts []store.Arti
 			@SelectedStagePanel(run, repo, artifacts, checks, previews, intakeReview, activeStep)
 		</main>
 		@RunDetailsRail(run, repo, artifacts, checks, events, previews)
+	</div>
+}
+
+templ RunSetupReviewPanel(run *store.Run, artifacts []store.Artifact, checks []store.Check, previews RunPreviews, intakeReview *pipeline.IntakeReview) {
+	<div class={ "relay-inspector-summary p-3 sm:p-4 border", nextActionCardBorderClass(previews.NextAction.Severity) }>
+		<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+			<div class="min-w-0 flex-1">
+				<div class="flex flex-wrap items-center gap-2 mb-1.5">
+					<span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Run setup</span>
+					<span class="relay-chip-indigo">auto-completed</span>
+				</div>
+				<h2 class="text-base sm:text-lg font-bold text-gray-100 mb-1 break-words">
+					Relay already completed Intake, Prompt, and Packet from your handoff.
+				</h2>
+				<p class="text-sm text-gray-400">
+					Current gate: { previews.NextAction.Title }. Review the completed setup below or continue to the current gate.
+				</p>
+			</div>
+			<div class="flex flex-col gap-2 shrink-0 w-full lg:w-auto lg:min-w-[220px]">
+				@NextActionPrimaryControl(run.ID, previews.NextAction, "btn-primary text-sm justify-center gap-2 w-full")
+			</div>
+		</div>
+
+		<div class="mt-4 grid gap-3 sm:grid-cols-2">
+			for _, item := range runSetupReviewChecklistItems(run, artifacts, previews, intakeReview) {
+				<div class={ "rounded-lg border p-3 min-w-0", setupChecklistCardClass(item.Done) }>
+					<div class="flex items-start gap-2.5">
+						<span class={ setupChecklistBadgeClass(item.Done) }>
+							if item.Done {
+								@StatusIcon("passed", "relay-icon-sm")
+							} else {
+								@StatusIcon("pending", "relay-icon-sm")
+							}
+						</span>
+						<div class="min-w-0">
+							<div class="text-sm font-medium text-gray-100">{ item.Label }</div>
+							<div class="text-xs text-gray-400 mt-0.5">{ item.Detail }</div>
+						</div>
+					</div>
+				</div>
+			}
+		</div>
+
+		<div class="mt-4 flex flex-wrap gap-2">
+			@WorkbenchStepLink(run.ID, "intake", "clipboard-check", "btn-secondary text-xs sm:text-sm") {
+				View Intake
+			}
+			@WorkbenchStepLink(run.ID, "prompt", "scroll-text", "btn-secondary text-xs sm:text-sm") {
+				View Prompt
+			}
+			@WorkbenchStepLink(run.ID, "packet", "package", "btn-secondary text-xs sm:text-sm") {
+				View Packet
+			}
+		</div>
 	</div>
 }
 
@@ -150,6 +212,53 @@ templ RunInspectorSummary(run *store.Run, previews RunPreviews) {
 				</div>
 			}
 		</div>
+	}
+}
+
+templ NextActionPrimaryControl(runID int64, action WorkbenchNextActionView, className string) {
+	if !action.Disabled && action.PrimaryFormAction != "" {
+		<form action={"/runs/" + Itoa(runID) + "/actions"} method="POST"
+			hx-post={"/runs/" + Itoa(runID) + "/actions"}
+			hx-target="#run-workbench-shell"
+			hx-select="#run-workbench-shell"
+			hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
+			hx-indicator="#run-workbench-loading"
+			data-relay-workbench-action="true"
+			class="sm:w-auto">
+			<input type="hidden" name="action" value={ action.PrimaryFormAction }/>
+			<button type="submit"
+				class={className}>
+				@ActionIcon(nextActionIconName(action), "relay-icon-sm")
+				{ nextActionButtonLabel(action) }
+			</button>
+		</form>
+	} else if !action.Disabled && action.PrimaryHref != "" {
+		<a href={ action.PrimaryHref }
+			class={className + " inline-flex items-center"}>
+			@ActionIcon(nextActionIconName(action), "relay-icon-sm")
+			{ nextActionButtonLabel(action) }
+		</a>
+	} else if !action.Disabled &&
+		action.PrimaryFormAction == "" &&
+		action.PrimaryHref == "" &&
+		action.Step != "" {
+		<a href={"/runs/" + Itoa(runID) + "?step=" + action.Step}
+			hx-get={"/runs/" + Itoa(runID) + "?step=" + action.Step}
+			hx-target="#run-workbench-shell"
+			hx-select="#run-workbench-shell"
+			hx-swap="outerHTML show:#run-workbench-shell:top settle:120ms"
+			hx-push-url="true"
+			hx-indicator="#run-workbench-loading"
+			data-relay-workbench-link="true"
+			class={className + " inline-flex items-center"}>
+			@ActionIcon(nextActionIconName(action), "relay-icon-sm")
+			{ nextActionButtonLabel(action) }
+		</a>
+	} else if action.Disabled {
+		<span class="relay-chip-gray text-xs cursor-not-allowed inline-flex items-center justify-center py-2 px-4"
+			title={ action.DisabledReason }>
+			{ nextActionButtonLabel(action) } (blocked)
+		</span>
 	}
 }
 

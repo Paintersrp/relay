@@ -175,13 +175,16 @@ type LiveUpdateState = 'connecting' | 'connected' | 'reconnecting' | 'disconnect
 
 let relayRunEventSource: EventSource | null = null;
 let relayRunEventSourceUrl = '';
-let relayRunEventShell: HTMLElement | null = null;
 let relayRunRefreshTimer: number | undefined;
 let relayRunRefreshInFlight = false;
 let relayRunRefreshPending = false;
 
 function currentWorkbenchShell(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('#run-workbench-shell[data-relay-workbench]');
+  return document.querySelector<HTMLElement>('#run-workbench-shell');
+}
+
+function currentWorkbenchRoot(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('#run-workbench[data-relay-workbench]');
 }
 
 function liveUpdatesIndicator(): HTMLElement | null {
@@ -236,7 +239,6 @@ function closeRunEventSource(): void {
   }
   relayRunEventSource = null;
   relayRunEventSourceUrl = '';
-  relayRunEventShell = null;
 }
 
 function finishWorkbenchRefresh(): void {
@@ -257,12 +259,13 @@ function queueWorkbenchRefresh(): void {
     }
 
     const shell = currentWorkbenchShell();
-    if (!shell || !document.documentElement.contains(shell)) {
+    const root = currentWorkbenchRoot();
+    if (!shell || !root || !document.documentElement.contains(shell)) {
       relayRunRefreshPending = false;
       return;
     }
 
-    const url = shell.getAttribute('data-relay-run-url') || '';
+    const url = root.getAttribute('data-relay-run-url') || '';
     if (!url) {
       relayRunRefreshPending = false;
       return;
@@ -297,28 +300,26 @@ function hasReusableRunEventSource(url: string): boolean {
 }
 
 function initRunEventStream(): void {
-  const shell = currentWorkbenchShell();
-  if (!shell) {
+  const root = currentWorkbenchRoot();
+  if (!root) {
     closeRunEventSource();
     setLiveUpdatesIndicator('disconnected');
     return;
   }
 
-  const url = shell.getAttribute('data-relay-run-events') || '';
+  const url = root.getAttribute('data-relay-run-events') || '';
   if (!url) {
     closeRunEventSource();
     setLiveUpdatesIndicator('disconnected');
     return;
   }
 
-  // HTMX replaces the shell element during a refresh, so keep the stream if the URL is unchanged.
+  // HTMX replaces the shell element during a refresh, so keep the stream if the run URL is unchanged.
   if (hasReusableRunEventSource(url)) {
-    relayRunEventShell = shell;
     return;
   }
 
   closeRunEventSource();
-  relayRunEventShell = shell;
   relayRunEventSourceUrl = url;
   setLiveUpdatesIndicator('connecting');
 

@@ -148,11 +148,67 @@ func TestRunDetailRendersWorkbenchShell(t *testing.T) {
 		t.Fatalf("render RunDetail: %v", err)
 	}
 	html := buf.String()
-	if !strings.Contains(html, `id="run-workbench-shell"`) {
-		t.Errorf("expected run-workbench-shell id")
+	if !strings.Contains(html, `id="run-workbench"`) {
+		t.Errorf("expected run-workbench id")
 	}
 	if !strings.Contains(html, `data-relay-workbench`) {
 		t.Errorf("expected data-relay-workbench attribute")
+	}
+	if !strings.Contains(html, `data-relay-run-events="/runs/1/events"`) {
+		t.Errorf("expected stable run event stream attribute")
+	}
+	if !strings.Contains(html, `data-relay-run-url="/runs/1?step=intake"`) {
+		t.Errorf("expected stable run URL attribute")
+	}
+	if strings.Count(html, `data-relay-live-updates-indicator`) != 1 {
+		t.Errorf("expected exactly one live updates indicator")
+	}
+	if strings.Index(html, `data-relay-live-updates-indicator`) > strings.Index(html, `id="run-workbench-shell"`) {
+		t.Errorf("expected live indicator outside the swapped shell")
+	}
+	if !strings.Contains(html, `id="run-workbench-shell"`) {
+		t.Errorf("expected run-workbench-shell id")
+	}
+}
+
+func TestRunDetailRendersSetupReviewBannerWhenEnabled(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft", SelectedModel: "DeepSeek V4 Pro", RecommendedModel: "DeepSeek V4 Flash"}
+	artifacts := []store.Artifact{{Kind: "agent_prompt"}, {Kind: "opencode_handoff_packet"}}
+	previews := RunPreviews{
+		NextAction: WorkbenchNextActionView{
+			Kind:              "check_opencode_cli",
+			Title:             "Check OpenCode CLI",
+			Summary:           "Verify the local OpenCode binary and resolved model before starting execution.",
+			Step:              "handoff",
+			PrimaryFormAction: "check-opencode-cli",
+			Severity:          "ready",
+		},
+		AgentPrompt:            "# prompt",
+		AgentPromptEstimate:    "1.2 KB (~300 tokens, approximate)",
+		OpenCodePacket:         "{\"selected_model\":\"DeepSeek V4 Pro\"}",
+		GitBaselineAvailable:   true,
+		GitBaselineBaselineSHA: "abcdef1234567890",
+	}
+	review := &pipeline.IntakeReview{
+		Metadata: pipeline.HandoffMetadata{FinalOutputContract: "Return DONE or BLOCKED."},
+	}
+	err := RunDetail(run, nil, artifacts, nil, nil, previews, review, "handoff", true).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render RunDetail with setup review: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Run setup") {
+		t.Fatalf("expected run setup banner, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Relay already completed Intake, Prompt, and Packet") {
+		t.Fatalf("expected setup completion explanation, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Check OpenCode CLI") {
+		t.Fatalf("expected current gate action in setup review, got:\n%s", html)
+	}
+	if !strings.Contains(html, "View Intake") || !strings.Contains(html, "View Prompt") || !strings.Contains(html, "View Packet") {
+		t.Fatalf("expected setup review stage links, got:\n%s", html)
 	}
 }
 
@@ -346,6 +402,82 @@ func TestRunInspectorSummaryTargetsWorkbenchShell(t *testing.T) {
 	}
 	if !strings.Contains(html, `hx-indicator="#run-workbench-loading"`) {
 		t.Errorf("expected hx-indicator on run inspector summary action form")
+	}
+}
+
+func TestAgentPromptStepPanelGeneratedPromptShowsTransformationReview(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft", SelectedModel: "DeepSeek V4 Pro", RecommendedModel: "DeepSeek V4 Flash"}
+	artifacts := []store.Artifact{
+		{Kind: "agent_prompt"},
+		{Kind: "opencode_handoff_packet"},
+	}
+	review := &pipeline.IntakeReview{
+		Metadata: pipeline.HandoffMetadata{
+			ScopedFiles: []pipeline.ScopedFile{
+				{Path: "internal/handlers/runs.go"},
+				{Path: "internal/views/step_cards.templ"},
+			},
+			FinalOutputContract: "Return DONE or BLOCKED.",
+		},
+	}
+	previews := RunPreviews{
+		AgentPrompt:         "# Prompt\n\nDo the thing.",
+		AgentPromptEstimate: "1.2 KB (~300 tokens, approximate)",
+		AgentPromptDiff: PreviewDiff{
+			Lines: []PreviewDiffLine{
+				{Kind: "remove", Text: "Orchestration wrapper"},
+				{Kind: "add", Text: "Compact repo-agent prompt"},
+			},
+		},
+	}
+	err := AgentPromptStepPanel(run, artifacts, nil, previews, review).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render AgentPromptStepPanel generated state: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Transformation summary") {
+		t.Fatalf("expected transformation summary, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Continue to Packet") {
+		t.Fatalf("expected continue to packet primary action, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Regenerate Agent Prompt") {
+		t.Fatalf("expected regenerate prompt secondary action, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Technical prompt diff") {
+		t.Fatalf("expected collapsed technical diff, got:\n%s", html)
+	}
+	if !strings.Contains(html, "<details") || strings.Contains(html, "<details open") {
+		t.Fatalf("expected technical diff to be collapsed by default, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Prompt preview") {
+		t.Fatalf("expected prompt preview section, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Scope preserved") {
+		t.Fatalf("expected scope preserved section, got:\n%s", html)
+	}
+	if !strings.Contains(html, "View Full Prompt") || !strings.Contains(html, "Download Prompt") {
+		t.Fatalf("expected prompt artifact links, got:\n%s", html)
+	}
+}
+
+func TestAgentPromptStepPanelNoPromptShowsGenerateAction(t *testing.T) {
+	var buf strings.Builder
+	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft"}
+	err := AgentPromptStepPanel(run, nil, nil, RunPreviews{}, nil).Render(context.Background(), &buf)
+	if err != nil {
+		t.Fatalf("render AgentPromptStepPanel empty state: %v", err)
+	}
+	html := buf.String()
+	if !strings.Contains(html, "Generate Agent Prompt") {
+		t.Fatalf("expected generate prompt primary action, got:\n%s", html)
+	}
+	if strings.Contains(html, "Technical prompt diff") || strings.Contains(html, "<details") {
+		t.Fatalf("did not expect technical diff before prompt generation, got:\n%s", html)
+	}
+	if !strings.Contains(html, "What Relay will generate") {
+		t.Fatalf("expected generation explanation, got:\n%s", html)
 	}
 }
 

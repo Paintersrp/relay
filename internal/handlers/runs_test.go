@@ -97,6 +97,20 @@ func TestDefaultActiveRunStep_StartsAtIntakeAfterValidationRunCheck(t *testing.T
 	}
 }
 
+func TestResolveRunActiveStepUsesFallbackWhenNoStepRequested(t *testing.T) {
+	got := resolveRunActiveStep("", false, "handoff")
+	if got != "handoff" {
+		t.Fatalf("expected handoff fallback, got %q", got)
+	}
+}
+
+func TestResolveRunActiveStepRespectsExplicitStep(t *testing.T) {
+	got := resolveRunActiveStep("intake", true, "handoff")
+	if got != "intake" {
+		t.Fatalf("expected explicit intake step, got %q", got)
+	}
+}
+
 func TestParseValidationRunPreview_Pass(t *testing.T) {
 	jsonData := `{
 		"status": "pass",
