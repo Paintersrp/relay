@@ -27,6 +27,7 @@ function initWorkbenchSwapFocus(): void {
     const detail = (event as CustomEvent).detail;
     const target = detail?.target as HTMLElement | undefined;
     if (target?.id !== 'run-workbench-shell') return;
+    syncWorkbenchRootRefreshUrl();
     const heading = target.querySelector<HTMLElement>('[data-run-stage-heading]');
     heading?.focus({ preventScroll: true });
     initRunEventStream();
@@ -187,6 +188,27 @@ function currentWorkbenchRoot(): HTMLElement | null {
   return document.querySelector<HTMLElement>('#run-workbench[data-relay-workbench]');
 }
 
+function currentWorkbenchRefreshUrl(): string {
+  const shell = currentWorkbenchShell();
+  const shellUrl = shell?.getAttribute('data-relay-run-url') || '';
+  if (shellUrl) return shellUrl;
+
+  const root = currentWorkbenchRoot();
+  const rootUrl = root?.getAttribute('data-relay-run-url') || '';
+  if (rootUrl) return rootUrl;
+
+  return `${window.location.pathname}${window.location.search}`;
+}
+
+function syncWorkbenchRootRefreshUrl(): void {
+  const root = currentWorkbenchRoot();
+  const shell = currentWorkbenchShell();
+  const shellUrl = shell?.getAttribute('data-relay-run-url') || '';
+  if (root && shellUrl) {
+    root.setAttribute('data-relay-run-url', shellUrl);
+  }
+}
+
 function liveUpdatesIndicator(): HTMLElement | null {
   return document.querySelector<HTMLElement>('[data-relay-live-updates-indicator]');
 }
@@ -259,13 +281,12 @@ function queueWorkbenchRefresh(): void {
     }
 
     const shell = currentWorkbenchShell();
-    const root = currentWorkbenchRoot();
-    if (!shell || !root || !document.documentElement.contains(shell)) {
+    if (!shell || !currentWorkbenchRoot() || !document.documentElement.contains(shell)) {
       relayRunRefreshPending = false;
       return;
     }
 
-    const url = root.getAttribute('data-relay-run-url') || '';
+    const url = currentWorkbenchRefreshUrl();
     if (!url) {
       relayRunRefreshPending = false;
       return;
@@ -282,7 +303,7 @@ function queueWorkbenchRefresh(): void {
     htmx.ajax('GET', url, {
       target: shell,
       select: '#run-workbench-shell',
-      swap: 'outerHTML show:#run-workbench-shell:top settle:120ms',
+      swap: 'outerHTML show:none settle:120ms',
     });
   }, 250);
 }

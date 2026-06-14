@@ -4736,7 +4736,7 @@ func agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []s
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = StageEvidenceRow("warning", "OpenCode has stopped producing output but the process has not exited", "The agent may be waiting on a final response. Stop waiting to cancel Relay-owned execution and inspect git diff now.", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var207), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = StageEvidenceRow("warning", "OpenCode has stopped producing output but the process has not exited", "The agent may be waiting on a final response. Stop waiting when the visible repo changes are ready for diff inspection.", "").Render(templ.WithChildren(ctx, templ_7745c5c3_Var207), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

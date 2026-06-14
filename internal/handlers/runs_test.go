@@ -844,6 +844,33 @@ func TestGetRunInspectorSummaryUsesCommitAndPushState(t *testing.T) {
 	}
 }
 
+func TestGetRunStepRunRendersRunPanelWithoutSetupReview(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := newTestHandoff(t, s, validHandoff())
+
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	html := w.Body.String()
+	if !strings.Contains(html, `data-relay-run-url="/runs/`+itoa(runID)+`?step=run"`) {
+		t.Fatalf("expected shell refresh URL to reflect explicit run step, got:\n%s", html)
+	}
+	if !strings.Contains(html, `id="agent-run-monitor"`) {
+		t.Fatalf("expected run monitor panel for explicit run step, got:\n%s", html)
+	}
+	if strings.Contains(html, "Run setup") {
+		t.Fatalf("did not expect setup review banner for explicit run step, got:\n%s", html)
+	}
+}
+
 func TestAgentRunMonitorDoesNotSetHXRedirectForTerminalExecution(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))

@@ -169,6 +169,9 @@ func TestRunDetailRendersWorkbenchShell(t *testing.T) {
 	if !strings.Contains(html, `id="run-workbench-shell"`) {
 		t.Errorf("expected run-workbench-shell id")
 	}
+	if !strings.Contains(html, `data-relay-run-url="/runs/1?step=intake"`) {
+		t.Errorf("expected shell refresh URL to reflect the active step")
+	}
 }
 
 func TestRunDetailRendersSetupReviewBannerWhenEnabled(t *testing.T) {
@@ -445,17 +448,33 @@ func TestAgentPromptStepPanelGeneratedPromptShowsTransformationReview(t *testing
 	if !strings.Contains(html, "Regenerate Agent Prompt") {
 		t.Fatalf("expected regenerate prompt secondary action, got:\n%s", html)
 	}
+	continueIdx := strings.Index(html, "Continue to Packet")
+	regenIdx := strings.Index(html, "Regenerate Agent Prompt")
+	if continueIdx == -1 || regenIdx == -1 || continueIdx > regenIdx {
+		t.Fatalf("expected Continue to Packet before Regenerate Agent Prompt, got:\n%s", html)
+	}
+	if strings.Count(html, "btn-primary") != 1 {
+		t.Fatalf("expected only Continue to Packet to use btn-primary in the generated prompt state, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Model and execution") {
+		t.Fatalf("expected model and execution section, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Scope preserved") {
+		t.Fatalf("expected scope preserved section, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Prompt preview") {
+		t.Fatalf("expected prompt preview section, got:\n%s", html)
+	}
+	summaryIdx := strings.Index(html, "Transformation summary")
+	diffIdx := strings.Index(html, "Technical prompt diff")
+	if summaryIdx == -1 || diffIdx == -1 || summaryIdx > diffIdx {
+		t.Fatalf("expected transformation summary before technical prompt diff, got:\n%s", html)
+	}
 	if !strings.Contains(html, "Technical prompt diff") {
 		t.Fatalf("expected collapsed technical diff, got:\n%s", html)
 	}
 	if !strings.Contains(html, "<details") || strings.Contains(html, "<details open") {
 		t.Fatalf("expected technical diff to be collapsed by default, got:\n%s", html)
-	}
-	if !strings.Contains(html, "Prompt preview") {
-		t.Fatalf("expected prompt preview section, got:\n%s", html)
-	}
-	if !strings.Contains(html, "Scope preserved") {
-		t.Fatalf("expected scope preserved section, got:\n%s", html)
 	}
 	if !strings.Contains(html, "View Full Prompt") || !strings.Contains(html, "Download Prompt") {
 		t.Fatalf("expected prompt artifact links, got:\n%s", html)

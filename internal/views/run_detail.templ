@@ -44,7 +44,9 @@ templ RunDetail(run *store.Run, repo *store.Repo, artifacts []store.Artifact, ch
 					<span data-relay-live-updates-text>Live updates connecting</span>
 				</span>
 			</div>
-			<div id="run-workbench-shell" class="space-y-4">
+			<div id="run-workbench-shell"
+				class="space-y-4"
+				data-relay-run-url={"/runs/" + Itoa(run.ID) + "?step=" + activeStep}>
 				<div id="run-workbench-loading" class="htmx-indicator relay-workbench-loading">
 					Refreshing workbench...
 				</div>

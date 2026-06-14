@@ -1403,7 +1403,7 @@ templ agentRunMonitorInner(run *store.Run, artifacts []store.Artifact, checks []
 			@openCodeStatusSummary(previews)
 
 			if isRunning && previews.OpenCodeLifecycleState == "waiting_response" {
-				@StageEvidenceRow("warning", "OpenCode has stopped producing output but the process has not exited", "The agent may be waiting on a final response. Stop waiting to cancel Relay-owned execution and inspect git diff now.", "") {
+				@StageEvidenceRow("warning", "OpenCode has stopped producing output but the process has not exited", "The agent may be waiting on a final response. Stop waiting when the visible repo changes are ready for diff inspection.", "") {
 					<div class="space-y-2">
 						if previews.OpenCodeStreamLastChunkAge != "" {
 							<div class="text-xs text-amber-200/90">Last streamed chunk: { previews.OpenCodeStreamLastChunkAge }</div>
