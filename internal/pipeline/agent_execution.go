@@ -86,9 +86,24 @@ type AgentCommandRunResult struct {
 	FinishedAt time.Time `json:"finished_at"`
 }
 
+type AgentCommandWaitResult struct {
+	Err          error
+	ExitCode     int
+	ProcessState string
+}
+
 type AgentCommandStreamCallbacks struct {
-	OnStdout func(chunk []byte)
-	OnStderr func(chunk []byte)
+	OnStartCalled         func()
+	OnStartReturned       func(pid int)
+	OnStartError          func(err error)
+	OnStdoutReaderStarted func()
+	OnStdoutReaderDone    func(err error)
+	OnStderrReaderStarted func()
+	OnStderrReaderDone    func(err error)
+	OnWaitStarted         func()
+	OnWaitReturned        func(result AgentCommandWaitResult)
+	OnStdout              func(chunk []byte)
+	OnStderr              func(chunk []byte)
 }
 
 const DefaultAgentCommandTimeout = 30 * time.Minute
@@ -219,7 +234,13 @@ func RunLocalAgentCommandArgsStreaming(
 		}
 	}
 
+	if callbacks.OnStartCalled != nil {
+		callbacks.OnStartCalled()
+	}
 	if err := cmd.Start(); err != nil {
+		if callbacks.OnStartError != nil {
+			callbacks.OnStartError(err)
+		}
 		finished := time.Now()
 		return AgentCommandRunResult{
 			Command:    commandPreview,
@@ -229,6 +250,9 @@ func RunLocalAgentCommandArgsStreaming(
 			StartedAt:  start,
 			FinishedAt: finished,
 		}
+	}
+	if callbacks.OnStartReturned != nil {
+		callbacks.OnStartReturned(cmd.Process.Pid)
 	}
 
 	var stdoutBuf bytes.Buffer
@@ -241,7 +265,7 @@ func RunLocalAgentCommandArgsStreaming(
 	streamResults := make(chan streamReadResult, 2)
 	var wg sync.WaitGroup
 
-	readStream := func(pipe io.Reader, buf *bytes.Buffer, callback func([]byte)) {
+	readStream := func(pipe io.Reader, buf *bytes.Buffer, callback func([]byte), done func(error)) {
 		defer wg.Done()
 
 		reader := bufio.NewReader(pipe)
@@ -254,6 +278,9 @@ func RunLocalAgentCommandArgsStreaming(
 				}
 			}
 			if err != nil {
+				if done != nil {
+					done(err)
+				}
 				if err == io.EOF {
 					streamResults <- streamReadResult{}
 				} else {
@@ -265,10 +292,44 @@ func RunLocalAgentCommandArgsStreaming(
 	}
 
 	wg.Add(2)
-	go readStream(stdoutPipe, &stdoutBuf, callbacks.OnStdout)
-	go readStream(stderrPipe, &stderrBuf, callbacks.OnStderr)
+	go func() {
+		if callbacks.OnStdoutReaderStarted != nil {
+			callbacks.OnStdoutReaderStarted()
+		}
+		readStream(stdoutPipe, &stdoutBuf, callbacks.OnStdout, callbacks.OnStdoutReaderDone)
+	}()
+	go func() {
+		if callbacks.OnStderrReaderStarted != nil {
+			callbacks.OnStderrReaderStarted()
+		}
+		readStream(stderrPipe, &stderrBuf, callbacks.OnStderr, callbacks.OnStderrReaderDone)
+	}()
 
+	if callbacks.OnWaitStarted != nil {
+		callbacks.OnWaitStarted()
+	}
 	waitErr := cmd.Wait()
+	exitCode := 0
+	errMsg := ""
+	if waitErr != nil {
+		if exitErr, ok := waitErr.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = -1
+			errMsg = waitErr.Error()
+		}
+	}
+	if callbacks.OnWaitReturned != nil {
+		processState := ""
+		if cmd.ProcessState != nil {
+			processState = cmd.ProcessState.String()
+		}
+		callbacks.OnWaitReturned(AgentCommandWaitResult{
+			Err:          waitErr,
+			ExitCode:     exitCode,
+			ProcessState: processState,
+		})
+	}
 	wg.Wait()
 	close(streamResults)
 
@@ -294,16 +355,6 @@ func RunLocalAgentCommandArgsStreaming(
 		}
 	}
 
-	exitCode := 0
-	errMsg := ""
-	if waitErr != nil {
-		if exitErr, ok := waitErr.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			exitCode = -1
-			errMsg = waitErr.Error()
-		}
-	}
 	if len(readErrors) > 0 {
 		readErrMsg := "stream read errors: " + strings.Join(readErrors, "; ")
 		if errMsg != "" {

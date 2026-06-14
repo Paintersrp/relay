@@ -237,7 +237,7 @@ function setLiveUpdatesIndicator(state: LiveUpdateState): void {
 
   switch (state) {
     case 'connected':
-      if (text) text.textContent = 'Live updates connected';
+      if (text) text.textContent = 'Live updates synced';
       indicator.classList.add('border-green-700', 'text-green-300', 'bg-green-950/60');
       break;
     case 'reconnecting':

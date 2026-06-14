@@ -121,6 +121,18 @@ type RunPreviews struct {
 	OpenCodeStderrArtifactID    int64
 	OpenCodeCombinedArtifactID  int64
 	HasOpenCodeExecution        bool
+	HasOpenCodeLifecycleDiagnostic bool
+	OpenCodeLifecycleDiagnosticClassification string
+	OpenCodeLifecycleDiagnosticSummary string
+	OpenCodeLifecycleDiagnosticPID int
+	OpenCodeLifecycleDiagnosticProcessAlive string
+	OpenCodeLifecycleDiagnosticWaitStartedAt string
+	OpenCodeLifecycleDiagnosticWaitReturnedAt string
+	OpenCodeLifecycleDiagnosticStoreFinalizedAt string
+	OpenCodeLifecycleDiagnosticLastChunkAt string
+	OpenCodeLifecycleDiagnosticSelectedExecutionID int64
+	OpenCodeLifecycleDiagnosticLatestStoreStatus string
+	OpenCodeLifecycleDiagnosticLatestStoreFinishedAt string
 	// OpenCode adapter fields
 	OpenCodeBinary         string
 	OpenCodeArgs           []string

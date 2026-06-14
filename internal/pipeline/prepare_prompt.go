@@ -490,6 +490,8 @@ func ArtifactFilename(kind string) string {
 		return "agent_result.txt"
 	case "agent_result_json":
 		return "agent_result.json"
+	case "opencode_lifecycle_diagnostic_json":
+		return "opencode_lifecycle_diagnostic.json"
 	case "validation_run_json":
 		return "validation_run.json"
 	case "validation_progress_json":

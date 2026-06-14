@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http/httptest"
 	"os"
@@ -986,6 +987,102 @@ func TestRunOpenCodeExecutionPreservesManualFinalization(t *testing.T) {
 		case "agent_result_raw", "agent_result_json":
 			t.Fatalf("did not expect %s artifact after manual finalization", a.Kind)
 		}
+	}
+}
+
+func TestStartOpenCodeGoWritesLifecycleDiagnostic(t *testing.T) {
+	s := setupTestStore(t)
+
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h.launchAgentExecution = func(fn func()) { fn() }
+	h.runAgentCommandArgs = func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+		if callbacks.OnStartCalled != nil {
+			callbacks.OnStartCalled()
+		}
+		if callbacks.OnStartReturned != nil {
+			callbacks.OnStartReturned(43210)
+		}
+		if callbacks.OnStdoutReaderStarted != nil {
+			callbacks.OnStdoutReaderStarted()
+		}
+		if callbacks.OnStderrReaderStarted != nil {
+			callbacks.OnStderrReaderStarted()
+		}
+		if callbacks.OnWaitStarted != nil {
+			callbacks.OnWaitStarted()
+		}
+		if callbacks.OnStdout != nil {
+			callbacks.OnStdout([]byte(`{"type":"text","part":{"type":"text","text":"DONE"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Build status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Test status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Count of LOC changed: 12"}}
+`))
+		}
+		if callbacks.OnStdoutReaderDone != nil {
+			callbacks.OnStdoutReaderDone(io.EOF)
+		}
+		if callbacks.OnStderrReaderDone != nil {
+			callbacks.OnStderrReaderDone(io.EOF)
+		}
+		if callbacks.OnWaitReturned != nil {
+			callbacks.OnWaitReturned(pipeline.AgentCommandWaitResult{ExitCode: 0, ProcessState: "exit status 0"})
+		}
+		now := time.Now()
+		return pipeline.AgentCommandRunResult{
+			ExitCode: 0,
+			Stdout: `{"type":"text","part":{"type":"text","text":"DONE"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Build status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Test status: PASS"}}
+{"type":"text","part":{"type":"text","text":"\n"}}
+{"type":"text","part":{"type":"text","text":"Count of LOC changed: 12"}}
+`,
+			StartedAt:  now.Add(-2 * time.Second),
+			FinishedAt: now,
+		}
+	}
+
+	runID := setupOpenCodeRun(t, s)
+	req := httptest.NewRequest("POST", "/", nil)
+	w := httptest.NewRecorder()
+
+	h.startOpenCodeGo(w, req, runID)
+
+	if w.Code != 303 {
+		t.Fatalf("expected redirect after starting OpenCode, got %d", w.Code)
+	}
+
+	diag, ok := readOpenCodeLifecycleDiagnostic(runID)
+	if !ok {
+		t.Fatal("expected opencode lifecycle diagnostic artifact")
+	}
+	if diag.RunID != runID {
+		t.Fatalf("expected run_id %d, got %d", runID, diag.RunID)
+	}
+	if diag.ExecutionID == 0 {
+		t.Fatal("expected execution_id to be recorded")
+	}
+	if diag.Command == "" {
+		t.Fatal("expected command preview to be recorded")
+	}
+	if diag.CommandStartCalledAt == "" || diag.CommandStartReturnedAt == "" {
+		t.Fatal("expected command start timestamps to be recorded")
+	}
+	if diag.WaitStartedAt == "" || diag.WaitReturnedAt == "" {
+		t.Fatal("expected wait timestamps to be recorded")
+	}
+	if diag.StoreFinalizeStartedAt == "" || diag.StoreFinalizeEndedAt == "" {
+		t.Fatal("expected store finalize timestamps to be recorded")
+	}
+	if diag.LatestStoreStatus != "completed" {
+		t.Fatalf("expected latest_store_status completed, got %q", diag.LatestStoreStatus)
+	}
+	if diag.FinalResultStatus != "DONE" {
+		t.Fatalf("expected final result status DONE, got %q", diag.FinalResultStatus)
 	}
 }
 
@@ -3044,6 +3141,82 @@ func TestRunGetAutoReconcilesRunningOpenCodeDoneOutput(t *testing.T) {
 	}
 }
 
+func TestRunGetShowsOpenCodeLifecycleDiagnosticPanel(t *testing.T) {
+	s := setupTestStore(t)
+	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	runID := setupOpenCodeRun(t, s)
+
+	execID := seedRunningExecution(t, s, runID)
+	finishedAt := "2026-06-14T12:34:56Z"
+	ec := int64(0)
+	if _, err := s.UpdateAgentExecutionStatus(execID, "completed", &ec, nil, &finishedAt, nil, nil, nil, nil, nil); err != nil {
+		t.Fatalf("complete execution: %v", err)
+	}
+	seedOpenCodeLifecycleDiagnosticArtifact(t, s, runID, openCodeLifecycleDiagnostic{
+		Version:                  1,
+		RunID:                    runID,
+		ExecutionID:              execID,
+		DiagnosticClassification: "completed",
+		DiagnosticSummary:        "Relay persisted the terminal execution state and the lifecycle view is aligned.",
+		WaitStartedAt:            "2026-06-14T12:34:00Z",
+		WaitReturnedAt:           "2026-06-14T12:34:01Z",
+		StoreFinalizeStartedAt:   "2026-06-14T12:34:02Z",
+		StoreFinalizeEndedAt:     finishedAt,
+		LatestStoreStatus:        "completed",
+		LatestStoreFinishedAt:    finishedAt,
+		SelectedExecutionID:      execID,
+		ControlDone:              true,
+		LastLifecycleComputedAt:  "2026-06-14T12:34:03Z",
+		LastLifecycleState:       "completed",
+		PID:                      43210,
+	})
+
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	previewCheck, _ := h.buildExecutionPreviews(runID, run, artifactsList)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", itoa(runID))
+	req := httptest.NewRequest("GET", "/runs/"+itoa(runID)+"?step=run", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	h.Get(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 from GET render, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "OpenCode lifecycle diagnostic") {
+		t.Fatalf("expected diagnostic panel to render (has_diag=%v has_exec=%v status=%q lifecycle=%q)\nbody:\n%s",
+			previewCheck.HasOpenCodeLifecycleDiagnostic,
+			previewCheck.HasOpenCodeExecution,
+			previewCheck.OpenCodeExecutionStatus,
+			previewCheck.OpenCodeLifecycleState,
+			body,
+		)
+	}
+	if !strings.Contains(body, "Relay persisted the terminal execution state and the lifecycle view is aligned.") {
+		t.Fatal("expected diagnostic summary to render")
+	}
+	if !strings.Contains(body, "completed") {
+		t.Fatal("expected diagnostic classification to render")
+	}
+	if !strings.Contains(body, "View diagnostic JSON") {
+		t.Fatal("expected diagnostic JSON view link")
+	}
+	if !strings.Contains(body, "opencode_lifecycle_diagnostic_json/download") {
+		t.Fatal("expected diagnostic JSON download link")
+	}
+}
+
 func TestRunGetShowsStaleOpenCodeWhenOutputStopped(t *testing.T) {
 	s := setupTestStore(t)
 	h := NewRunsHandler(s, slog.New(slog.NewTextHandler(os.Stderr, nil)))
@@ -3718,6 +3891,21 @@ func seedStreamProgressArtifactAt(t *testing.T, s *store.Store, runID int64, std
 		t.Fatalf("write stream progress: %v", err)
 	}
 	s.CreateArtifact(runID, "opencode_stream_progress_json", p, "application/json")
+}
+
+func seedOpenCodeLifecycleDiagnosticArtifact(t *testing.T, s *store.Store, runID int64, diag openCodeLifecycleDiagnostic) {
+	t.Helper()
+	data, err := json.MarshalIndent(diag, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal opencode lifecycle diagnostic: %v", err)
+	}
+	p, err := artifacts.Write(runID, openCodeLifecycleDiagnosticArtifactKind, pipeline.ArtifactFilename(openCodeLifecycleDiagnosticArtifactKind), data)
+	if err != nil {
+		t.Fatalf("write opencode lifecycle diagnostic: %v", err)
+	}
+	if _, err := s.CreateArtifact(runID, openCodeLifecycleDiagnosticArtifactKind, p, "application/json"); err != nil {
+		t.Fatalf("create opencode lifecycle diagnostic artifact: %v", err)
+	}
 }
 
 func ageLatestOpenCodeExecution(t *testing.T, s *store.Store, runID int64, startedAt, updatedAt time.Time) {

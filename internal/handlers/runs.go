@@ -124,6 +124,19 @@ func (h *RunsHandler) cancelOpenCodeExecution(execID int64) (*openCodeExecutionC
 	return control, true
 }
 
+func (h *RunsHandler) lookupOpenCodeExecutionControl(execID int64) (*openCodeExecutionControl, bool) {
+	if h == nil {
+		return nil, false
+	}
+	h.openCodeControlMu.Lock()
+	control, ok := h.openCodeControls[execID]
+	h.openCodeControlMu.Unlock()
+	if !ok || control == nil {
+		return nil, false
+	}
+	return control, true
+}
+
 func readArtifactPreview(runID int64, kind string) string {
 	data, err := artifacts.Read(runID, kind, pipeline.ArtifactFilename(kind))
 	if err != nil {
@@ -980,143 +993,155 @@ func (h *RunsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	previews := views.RunPreviews{
-		NextAction:                      nextActionView,
-		OriginalHandoff:                 originalPreview,
-		ValidationJSON:                  readArtifactPreview(id, "handoff_validation_json"),
-		AgentPrompt:                     agentPromptPreview,
-		OpenCodePacket:                  readArtifactPreview(id, "opencode_handoff_packet"),
-		AgentPromptEstimate:             agentPromptEstimate,
-		HandoffPreflightStatus:          preflightStatus,
-		HandoffPreflightChecks:          preflightChecks,
-		OpenCodeCommandPreview:          openCodePreviews.OpenCodeCommandPreview,
-		OpenCodeExecutionStatus:         openCodePreviews.OpenCodeExecutionStatus,
-		OpenCodeExecutionExitCode:       openCodePreviews.OpenCodeExecutionExitCode,
-		OpenCodeExecutionStarted:        openCodePreviews.OpenCodeExecutionStarted,
-		OpenCodeExecutionFinished:       openCodePreviews.OpenCodeExecutionFinished,
-		OpenCodeExecutionError:          openCodePreviews.OpenCodeExecutionError,
-		OpenCodeRuntime:                 openCodePreviews.OpenCodeRuntime,
-		OpenCodeLastOutputAt:            openCodePreviews.OpenCodeLastOutputAt,
-		OpenCodeLastOutputAge:           openCodePreviews.OpenCodeLastOutputAge,
-		OpenCodePermissionWarning:       openCodePreviews.OpenCodePermissionWarning,
-		OpenCodeStdoutArtifactID:        0,
-		OpenCodeStderrArtifactID:        0,
-		OpenCodeCombinedArtifactID:      0,
-		HasOpenCodeExecution:            openCodePreviews.HasOpenCodeExecution,
-		OpenCodeBinary:                  openCodeBinary,
-		OpenCodeArgs:                    openCodeArgs,
-		OpenCodeWorkDir:                 openCodeWorkDir,
-		OpenCodeModel:                   openCodeModel,
-		OpenCodeAgent:                   openCodeAgent,
-		OpenCodeVariant:                 openCodeVariant,
-		OpenCodeThinking:                openCodeThinking,
-		OpenCodeStdinSource:             openCodeStdinSource,
-		OpenCodeStdinBytes:              openCodeStdinBytes,
-		OpenCodeAdapterError:            openCodeAdapterError,
-		OpenCodeFailureHint:             openCodeFailureHint,
-		OpenCodeDryRunPreview:           dryRunPreview,
-		HasOpenCodeDryRun:               dryRunPreview != "",
-		HasOpenCodeStdout:               openCodePreviews.HasOpenCodeStdout,
-		HasOpenCodeStderr:               openCodePreviews.HasOpenCodeStderr,
-		HasOpenCodeCombinedLog:          openCodePreviews.HasOpenCodeCombinedLog,
-		HasValidationCommands:           hasValidationCommands,
-		HasOpenCodeCLICheck:             hasCLICheck,
-		OpenCodeCLICheckPreview:         cliCheckPreview,
-		OpenCodeCLICheckBinary:          cliCheckBinary,
-		OpenCodeCLICheckResolvedModel:   cliCheckResolvedModel,
-		OpenCodeCLICheckModelAvailable:  cliCheckModelAvailable,
-		OpenCodeCLICheckVersionExitCode: cliCheckVersionExitCode,
-		OpenCodeCLICheckModelsExitCode:  cliCheckModelsExitCode,
-		OpenCodeCLICheckCheckedAt:       cliCheckCheckedAt,
-		OpenCodeCLICheckError:           cliCheckError,
-		OpenCodeCLICheckStatus:          cliCheckStatus,
-		IntakeRemediationHandoff:        intakeRemediationHandoffPreview,
-		HasIntakeRemediationHandoff:     hasIntakeRemediationHandoff,
-		HasOpenCodeRunning:              openCodePreviews.HasOpenCodeRunning,
-		HasOpenCodeStaleRunning:         openCodePreviews.HasOpenCodeStaleRunning,
-		HasOpenCodeOutput:               openCodePreviews.HasOpenCodeOutput,
-		OpenCodeLifecycleState:          openCodePreviews.OpenCodeLifecycleState,
-		OpenCodeStaleReason:             openCodePreviews.OpenCodeStaleReason,
-		OpenCodeCanRecover:              openCodePreviews.OpenCodeCanRecover,
-		OpenCodeRecoveryActionLabel:     openCodePreviews.OpenCodeRecoveryActionLabel,
-		OpenCodeTranscript:              openCodePreviews.OpenCodeTranscript,
-		OpenCodeParsedResultStatus:      openCodePreviews.OpenCodeParsedResultStatus,
-		OpenCodeParsedBuildStatus:       openCodePreviews.OpenCodeParsedBuildStatus,
-		OpenCodeParsedTestStatus:        openCodePreviews.OpenCodeParsedTestStatus,
-		OpenCodeParsedLOCChanged:        openCodePreviews.OpenCodeParsedLOCChanged,
-		OpenCodeParsedResultRaw:         openCodePreviews.OpenCodeParsedResultRaw,
-		OpenCodeStreamStdoutChunks:      openCodePreviews.OpenCodeStreamStdoutChunks,
-		OpenCodeStreamStderrChunks:      openCodePreviews.OpenCodeStreamStderrChunks,
-		OpenCodeStreamStdoutBytes:       openCodePreviews.OpenCodeStreamStdoutBytes,
-		OpenCodeStreamStderrBytes:       openCodePreviews.OpenCodeStreamStderrBytes,
-		OpenCodeStreamLastChunkAt:       openCodePreviews.OpenCodeStreamLastChunkAt,
-		OpenCodeStreamLastChunkAge:      openCodePreviews.OpenCodeStreamLastChunkAge,
-		HasOpenCodeStreamActivity:       openCodePreviews.HasOpenCodeStreamActivity,
-		ValidationRun:                   validationRunPreview,
-		HasValidationProgress:           hasValidationProgress,
-		ValidationProgressRunning:       validationProgressRunning,
-		ValidationProgressStale:         validationProgressStale,
-		ValidationProgressPreview:       validationProgressPreview,
-		ValidationFailedAccepted:        validationAcceptedWithFailure,
-		HasAuditHandoff:                 hasAuditHandoff,
-		AuditHandoff:                    auditHandoffPreview,
-		RepoPath:                        previewsRepoPath,
-		SuggestedCommitMessage:          commitMessagePreview,
-		HasCommitSuggestion:             hasCommitSuggestion,
-		CommitMessage:                   commitMessagePreview,
-		CommitSuggestionJSON:            commitSuggestionJSONStr,
-		CommitSuggestionStatus:          commitSuggestionStatus,
-		CommitSuggestionGeneratedAt:     commitSuggestionGeneratedAt,
-		HasGitStatus:                    hasGitStatus,
-		GitStatusPreview:                gitStatusPreview,
-		HasGitDiffStat:                  hasGitDiffStat,
-		GitDiffStatPreview:              gitDiffStatPreview,
-		HasGitDiffPatch:                 hasGitDiffPatch,
-		GitDiffPatchPreview:             gitDiffPatchPreview,
-		GitChangedFileCount:             gitChangedFileCount,
-		GitDiffSummary:                  gitDiffSummary,
-		GitBaselineBaselineSHA:          gitBaselineBaselineSHA,
-		GitBaselineHeadSHA:              gitBaselineHeadSHA,
-		GitBaselineBranch:               gitBaselineBranch,
-		GitBaselineState:                gitBaselineState,
-		GitBaselineAvailable:            gitBaselineAvailable,
-		HasGitChangeEvidence:            hasGitChangeEvidence,
-		GitChangeEvidenceMode:           gitChangeEvidenceMode,
-		GitChangeEvidenceBaseline:       gitChangeEvidenceBaseline,
-		GitChangeEvidenceHead:           gitChangeEvidenceHead,
-		GitChangeEvidenceBranch:         gitChangeEvidenceBranch,
-		GitChangeEvidenceCommitCnt:      gitChangeEvidenceCommitCnt,
-		GitChangeEvidenceWarning:        gitChangeEvidenceWarning,
-		CommitState:                     string(commitStateResult.State),
-		CommitStateMsg:                  commitStateResult.Error,
-		CommitValidationPassed:          commitStateResult.ValidationPassed || commitStateResult.ValidationFailedAccepted,
-		CommitAuditAccepted:             commitStateResult.AuditAccepted,
-		CommitEvidenceMode:              commitStateResult.EvidenceMode,
-		CommitBranch:                    commitStateResult.Branch,
-		CommitHeadSHA:                   commitStateResult.HeadSHA,
-		CommitUpstreamRemote:            commitStateResult.UpstreamRemote,
-		CommitUpstreamBranch:            commitStateResult.UpstreamBranch,
-		CommitAheadCount:                commitStateResult.AheadCount,
-		CommitBehindCount:               commitStateResult.BehindCount,
-		CommitHasUpstream:               commitStateResult.HasUpstream,
-		CommitWorktreeClean:             commitStateResult.WorktreeClean,
-		CommitSHA:                       commitStateResult.CommitSHA,
-		CommitSubject:                   commitStateResult.CommitSubject,
-		CommitSuggestionSelected:        commitSuggestionSelected,
-		CommitSuggestionSource:          commitSuggestionSource,
-		CommitSuggestionConfidence:      commitSuggestionConfidence,
-		CommitWarnings:                  commitWarnings,
-		HasAuditClearance:               hasAuditClearance,
-		AuditClearanceStatus:            auditClearanceStatus,
-		AuditClearanceAcceptedAt:        auditClearanceAcceptedAt,
-		AuditClearanceSource:            auditClearanceSource,
-		HasCommitResult:                 hasCommitResult,
-		CommitResultSuccess:             commitResultSuccess,
-		CommitResultSHA:                 commitResultSHA,
-		CommitResultSubject:             commitResultSubject,
-		HasPushDryRun:                   hasPushDryRun,
-		PushDryRunPass:                  pushDryRunPass,
-		HasPushResult:                   hasPushResult,
-		PushResultSuccess:               pushResultSuccess,
+		NextAction:                                       nextActionView,
+		OriginalHandoff:                                  originalPreview,
+		ValidationJSON:                                   readArtifactPreview(id, "handoff_validation_json"),
+		AgentPrompt:                                      agentPromptPreview,
+		OpenCodePacket:                                   readArtifactPreview(id, "opencode_handoff_packet"),
+		AgentPromptEstimate:                              agentPromptEstimate,
+		HandoffPreflightStatus:                           preflightStatus,
+		HandoffPreflightChecks:                           preflightChecks,
+		OpenCodeCommandPreview:                           openCodePreviews.OpenCodeCommandPreview,
+		OpenCodeExecutionStatus:                          openCodePreviews.OpenCodeExecutionStatus,
+		OpenCodeExecutionExitCode:                        openCodePreviews.OpenCodeExecutionExitCode,
+		OpenCodeExecutionStarted:                         openCodePreviews.OpenCodeExecutionStarted,
+		OpenCodeExecutionFinished:                        openCodePreviews.OpenCodeExecutionFinished,
+		OpenCodeExecutionError:                           openCodePreviews.OpenCodeExecutionError,
+		OpenCodeRuntime:                                  openCodePreviews.OpenCodeRuntime,
+		OpenCodeLastOutputAt:                             openCodePreviews.OpenCodeLastOutputAt,
+		OpenCodeLastOutputAge:                            openCodePreviews.OpenCodeLastOutputAge,
+		OpenCodePermissionWarning:                        openCodePreviews.OpenCodePermissionWarning,
+		OpenCodeStdoutArtifactID:                         0,
+		OpenCodeStderrArtifactID:                         0,
+		OpenCodeCombinedArtifactID:                       0,
+		HasOpenCodeExecution:                             openCodePreviews.HasOpenCodeExecution,
+		OpenCodeBinary:                                   openCodeBinary,
+		OpenCodeArgs:                                     openCodeArgs,
+		OpenCodeWorkDir:                                  openCodeWorkDir,
+		OpenCodeModel:                                    openCodeModel,
+		OpenCodeAgent:                                    openCodeAgent,
+		OpenCodeVariant:                                  openCodeVariant,
+		OpenCodeThinking:                                 openCodeThinking,
+		OpenCodeStdinSource:                              openCodeStdinSource,
+		OpenCodeStdinBytes:                               openCodeStdinBytes,
+		OpenCodeAdapterError:                             openCodeAdapterError,
+		OpenCodeFailureHint:                              openCodeFailureHint,
+		OpenCodeDryRunPreview:                            dryRunPreview,
+		HasOpenCodeDryRun:                                dryRunPreview != "",
+		HasOpenCodeStdout:                                openCodePreviews.HasOpenCodeStdout,
+		HasOpenCodeStderr:                                openCodePreviews.HasOpenCodeStderr,
+		HasOpenCodeCombinedLog:                           openCodePreviews.HasOpenCodeCombinedLog,
+		HasOpenCodeLifecycleDiagnostic:                   openCodePreviews.HasOpenCodeLifecycleDiagnostic,
+		OpenCodeLifecycleDiagnosticClassification:        openCodePreviews.OpenCodeLifecycleDiagnosticClassification,
+		OpenCodeLifecycleDiagnosticSummary:               openCodePreviews.OpenCodeLifecycleDiagnosticSummary,
+		OpenCodeLifecycleDiagnosticPID:                   openCodePreviews.OpenCodeLifecycleDiagnosticPID,
+		OpenCodeLifecycleDiagnosticProcessAlive:          openCodePreviews.OpenCodeLifecycleDiagnosticProcessAlive,
+		OpenCodeLifecycleDiagnosticWaitStartedAt:         openCodePreviews.OpenCodeLifecycleDiagnosticWaitStartedAt,
+		OpenCodeLifecycleDiagnosticWaitReturnedAt:        openCodePreviews.OpenCodeLifecycleDiagnosticWaitReturnedAt,
+		OpenCodeLifecycleDiagnosticStoreFinalizedAt:      openCodePreviews.OpenCodeLifecycleDiagnosticStoreFinalizedAt,
+		OpenCodeLifecycleDiagnosticLastChunkAt:           openCodePreviews.OpenCodeLifecycleDiagnosticLastChunkAt,
+		OpenCodeLifecycleDiagnosticSelectedExecutionID:   openCodePreviews.OpenCodeLifecycleDiagnosticSelectedExecutionID,
+		OpenCodeLifecycleDiagnosticLatestStoreStatus:     openCodePreviews.OpenCodeLifecycleDiagnosticLatestStoreStatus,
+		OpenCodeLifecycleDiagnosticLatestStoreFinishedAt: openCodePreviews.OpenCodeLifecycleDiagnosticLatestStoreFinishedAt,
+		HasValidationCommands:                            hasValidationCommands,
+		HasOpenCodeCLICheck:                              hasCLICheck,
+		OpenCodeCLICheckPreview:                          cliCheckPreview,
+		OpenCodeCLICheckBinary:                           cliCheckBinary,
+		OpenCodeCLICheckResolvedModel:                    cliCheckResolvedModel,
+		OpenCodeCLICheckModelAvailable:                   cliCheckModelAvailable,
+		OpenCodeCLICheckVersionExitCode:                  cliCheckVersionExitCode,
+		OpenCodeCLICheckModelsExitCode:                   cliCheckModelsExitCode,
+		OpenCodeCLICheckCheckedAt:                        cliCheckCheckedAt,
+		OpenCodeCLICheckError:                            cliCheckError,
+		OpenCodeCLICheckStatus:                           cliCheckStatus,
+		IntakeRemediationHandoff:                         intakeRemediationHandoffPreview,
+		HasIntakeRemediationHandoff:                      hasIntakeRemediationHandoff,
+		HasOpenCodeRunning:                               openCodePreviews.HasOpenCodeRunning,
+		HasOpenCodeStaleRunning:                          openCodePreviews.HasOpenCodeStaleRunning,
+		HasOpenCodeOutput:                                openCodePreviews.HasOpenCodeOutput,
+		OpenCodeLifecycleState:                           openCodePreviews.OpenCodeLifecycleState,
+		OpenCodeStaleReason:                              openCodePreviews.OpenCodeStaleReason,
+		OpenCodeCanRecover:                               openCodePreviews.OpenCodeCanRecover,
+		OpenCodeRecoveryActionLabel:                      openCodePreviews.OpenCodeRecoveryActionLabel,
+		OpenCodeTranscript:                               openCodePreviews.OpenCodeTranscript,
+		OpenCodeParsedResultStatus:                       openCodePreviews.OpenCodeParsedResultStatus,
+		OpenCodeParsedBuildStatus:                        openCodePreviews.OpenCodeParsedBuildStatus,
+		OpenCodeParsedTestStatus:                         openCodePreviews.OpenCodeParsedTestStatus,
+		OpenCodeParsedLOCChanged:                         openCodePreviews.OpenCodeParsedLOCChanged,
+		OpenCodeParsedResultRaw:                          openCodePreviews.OpenCodeParsedResultRaw,
+		OpenCodeStreamStdoutChunks:                       openCodePreviews.OpenCodeStreamStdoutChunks,
+		OpenCodeStreamStderrChunks:                       openCodePreviews.OpenCodeStreamStderrChunks,
+		OpenCodeStreamStdoutBytes:                        openCodePreviews.OpenCodeStreamStdoutBytes,
+		OpenCodeStreamStderrBytes:                        openCodePreviews.OpenCodeStreamStderrBytes,
+		OpenCodeStreamLastChunkAt:                        openCodePreviews.OpenCodeStreamLastChunkAt,
+		OpenCodeStreamLastChunkAge:                       openCodePreviews.OpenCodeStreamLastChunkAge,
+		HasOpenCodeStreamActivity:                        openCodePreviews.HasOpenCodeStreamActivity,
+		ValidationRun:                                    validationRunPreview,
+		HasValidationProgress:                            hasValidationProgress,
+		ValidationProgressRunning:                        validationProgressRunning,
+		ValidationProgressStale:                          validationProgressStale,
+		ValidationProgressPreview:                        validationProgressPreview,
+		ValidationFailedAccepted:                         validationAcceptedWithFailure,
+		HasAuditHandoff:                                  hasAuditHandoff,
+		AuditHandoff:                                     auditHandoffPreview,
+		RepoPath:                                         previewsRepoPath,
+		SuggestedCommitMessage:                           commitMessagePreview,
+		HasCommitSuggestion:                              hasCommitSuggestion,
+		CommitMessage:                                    commitMessagePreview,
+		CommitSuggestionJSON:                             commitSuggestionJSONStr,
+		CommitSuggestionStatus:                           commitSuggestionStatus,
+		CommitSuggestionGeneratedAt:                      commitSuggestionGeneratedAt,
+		HasGitStatus:                                     hasGitStatus,
+		GitStatusPreview:                                 gitStatusPreview,
+		HasGitDiffStat:                                   hasGitDiffStat,
+		GitDiffStatPreview:                               gitDiffStatPreview,
+		HasGitDiffPatch:                                  hasGitDiffPatch,
+		GitDiffPatchPreview:                              gitDiffPatchPreview,
+		GitChangedFileCount:                              gitChangedFileCount,
+		GitDiffSummary:                                   gitDiffSummary,
+		GitBaselineBaselineSHA:                           gitBaselineBaselineSHA,
+		GitBaselineHeadSHA:                               gitBaselineHeadSHA,
+		GitBaselineBranch:                                gitBaselineBranch,
+		GitBaselineState:                                 gitBaselineState,
+		GitBaselineAvailable:                             gitBaselineAvailable,
+		HasGitChangeEvidence:                             hasGitChangeEvidence,
+		GitChangeEvidenceMode:                            gitChangeEvidenceMode,
+		GitChangeEvidenceBaseline:                        gitChangeEvidenceBaseline,
+		GitChangeEvidenceHead:                            gitChangeEvidenceHead,
+		GitChangeEvidenceBranch:                          gitChangeEvidenceBranch,
+		GitChangeEvidenceCommitCnt:                       gitChangeEvidenceCommitCnt,
+		GitChangeEvidenceWarning:                         gitChangeEvidenceWarning,
+		CommitState:                                      string(commitStateResult.State),
+		CommitStateMsg:                                   commitStateResult.Error,
+		CommitValidationPassed:                           commitStateResult.ValidationPassed || commitStateResult.ValidationFailedAccepted,
+		CommitAuditAccepted:                              commitStateResult.AuditAccepted,
+		CommitEvidenceMode:                               commitStateResult.EvidenceMode,
+		CommitBranch:                                     commitStateResult.Branch,
+		CommitHeadSHA:                                    commitStateResult.HeadSHA,
+		CommitUpstreamRemote:                             commitStateResult.UpstreamRemote,
+		CommitUpstreamBranch:                             commitStateResult.UpstreamBranch,
+		CommitAheadCount:                                 commitStateResult.AheadCount,
+		CommitBehindCount:                                commitStateResult.BehindCount,
+		CommitHasUpstream:                                commitStateResult.HasUpstream,
+		CommitWorktreeClean:                              commitStateResult.WorktreeClean,
+		CommitSHA:                                        commitStateResult.CommitSHA,
+		CommitSubject:                                    commitStateResult.CommitSubject,
+		CommitSuggestionSelected:                         commitSuggestionSelected,
+		CommitSuggestionSource:                           commitSuggestionSource,
+		CommitSuggestionConfidence:                       commitSuggestionConfidence,
+		CommitWarnings:                                   commitWarnings,
+		HasAuditClearance:                                hasAuditClearance,
+		AuditClearanceStatus:                             auditClearanceStatus,
+		AuditClearanceAcceptedAt:                         auditClearanceAcceptedAt,
+		AuditClearanceSource:                             auditClearanceSource,
+		HasCommitResult:                                  hasCommitResult,
+		CommitResultSuccess:                              commitResultSuccess,
+		CommitResultSHA:                                  commitResultSHA,
+		CommitResultSubject:                              commitResultSubject,
+		HasPushDryRun:                                    hasPushDryRun,
+		PushDryRunPass:                                   pushDryRunPass,
+		HasPushResult:                                    hasPushResult,
+		PushResultSuccess:                                pushResultSuccess,
 	}
 
 	if validationStdout := readArtifactPreview(id, "validation_stdout"); validationStdout != "" {
@@ -1871,7 +1896,20 @@ func (h *RunsHandler) finalizeOpenCodeWithoutResult(w http.ResponseWriter, r *ht
 // runOpenCodeExecution runs the OpenCode command in the background and persists results.
 // This method never writes an HTTP response or redirects.
 func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, execID int64, invocation pipeline.OpenCodeRunInvocation) {
-	defer h.finishOpenCodeExecutionControl(execID)
+	defer func() {
+		if control, ok := h.lookupOpenCodeExecutionControl(execID); ok && control != nil {
+			h.writeOpenCodeLifecycleDiagnostic(ctx, runID, execID, func(diag *openCodeLifecycleDiagnostic) {
+				diag.ControlPresent = true
+				diag.ControlDone = true
+			})
+		} else {
+			h.writeOpenCodeLifecycleDiagnostic(ctx, runID, execID, func(diag *openCodeLifecycleDiagnostic) {
+				diag.ControlPresent = false
+				diag.ControlDone = true
+			})
+		}
+		h.finishOpenCodeExecutionControl(execID)
+	}()
 
 	// Update to running
 	startedAt := executionTimestampNow()
@@ -1896,6 +1934,21 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 	writeErrors := map[string]string{}
 	streamProgress := pipeline.StreamProgress{}
 	lastProgressWrite := time.Time{}
+	lastDiagnosticWrite := time.Time{}
+	stdoutChunkCount := int64(0)
+	stderrChunkCount := int64(0)
+	stdoutByteCount := int64(0)
+	stderrByteCount := int64(0)
+	lastStdoutChunkAt := ""
+	lastStderrChunkAt := ""
+	lastAnyChunkAt := ""
+	lastActivityText := ""
+	latestStoreStatus := "running"
+	processState := ""
+	waitExitCode := 0
+	waitErrorText := ""
+	controlPresent := true
+	controlDone := false
 
 	recordWriteError := func(key string, err error) {
 		if err == nil {
@@ -1981,6 +2034,69 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		return writeArtifactSnapshotLocked("opencode_combined_log", combined)
 	}
 
+	writeDiagnosticSnapshotLocked := func(force bool, mutate func(*openCodeLifecycleDiagnostic)) {
+		now := time.Now()
+		if !force && !lastDiagnosticWrite.IsZero() && now.Sub(lastDiagnosticWrite) < 500*time.Millisecond {
+			return
+		}
+		h.writeOpenCodeLifecycleDiagnostic(ctx, runID, execID, mutate)
+		lastDiagnosticWrite = now
+	}
+
+	writeBaseDiagnosticLocked := func() {
+		writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+			diag.RunID = runID
+			diag.ExecutionID = execID
+			diag.Command = invocation.Preview
+			diag.WorkDir = invocation.WorkDir
+			diag.Model = invocation.Model
+			diag.Agent = invocation.Agent
+			diag.SelectedExecutionID = execID
+			diag.LatestStoreStatus = latestStoreStatus
+			diag.ControlPresent = controlPresent
+			diag.ControlDone = controlDone
+		})
+	}
+
+	recordChunkDiagnosticLocked := func(isStdout bool, chunk []byte) {
+		nowText := executionTimestampNow()
+		if isStdout {
+			stdoutChunkCount++
+			stdoutByteCount += int64(len(chunk))
+			lastStdoutChunkAt = nowText
+		} else {
+			stderrChunkCount++
+			stderrByteCount += int64(len(chunk))
+			lastStderrChunkAt = nowText
+		}
+		lastAnyChunkAt = nowText
+		text := strings.TrimSpace(strings.ReplaceAll(string(chunk), "\n", " "))
+		lastActivityText = text
+		if len(lastActivityText) > 180 {
+			lastActivityText = lastActivityText[:180] + "..."
+		}
+		writeDiagnosticSnapshotLocked(false, func(diag *openCodeLifecycleDiagnostic) {
+			diag.RunID = runID
+			diag.ExecutionID = execID
+			diag.Command = invocation.Preview
+			diag.WorkDir = invocation.WorkDir
+			diag.Model = invocation.Model
+			diag.Agent = invocation.Agent
+			diag.SelectedExecutionID = execID
+			diag.LatestStoreStatus = latestStoreStatus
+			diag.ControlPresent = controlPresent
+			diag.ControlDone = controlDone
+			diag.StdoutChunkCount = stdoutChunkCount
+			diag.StderrChunkCount = stderrChunkCount
+			diag.StdoutByteCount = stdoutByteCount
+			diag.StderrByteCount = stderrByteCount
+			diag.LastStdoutChunkAt = lastStdoutChunkAt
+			diag.LastStderrChunkAt = lastStderrChunkAt
+			diag.LastAnyChunkAt = lastAnyChunkAt
+			diag.LastActivityText = lastActivityText
+		})
+	}
+
 	writeStreamProgressLocked := func() {
 		data, err := json.MarshalIndent(streamProgress, "", "  ")
 		if err != nil {
@@ -2003,6 +2119,10 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		streamMu.Unlock()
 	}
 
+	streamMu.Lock()
+	writeBaseDiagnosticLocked()
+	streamMu.Unlock()
+
 	// Run command with timeout
 	runResult := h.runAgentCommandArgs(
 		ctx,
@@ -2012,6 +2132,118 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 		invocation.Stdin,
 		pipeline.DefaultAgentCommandTimeout,
 		pipeline.AgentCommandStreamCallbacks{
+			OnStartCalled: func() {
+				streamMu.Lock()
+				defer streamMu.Unlock()
+				writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+					diag.RunID = runID
+					diag.ExecutionID = execID
+					diag.Command = invocation.Preview
+					diag.WorkDir = invocation.WorkDir
+					diag.Model = invocation.Model
+					diag.Agent = invocation.Agent
+					diag.SelectedExecutionID = execID
+					diag.LatestStoreStatus = latestStoreStatus
+					diag.ControlPresent = controlPresent
+					diag.ControlDone = controlDone
+					diag.CommandStartCalledAt = executionTimestampNow()
+				})
+			},
+			OnStartReturned: func(pid int) {
+				streamMu.Lock()
+				defer streamMu.Unlock()
+				writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+					diag.RunID = runID
+					diag.ExecutionID = execID
+					diag.Command = invocation.Preview
+					diag.WorkDir = invocation.WorkDir
+					diag.Model = invocation.Model
+					diag.Agent = invocation.Agent
+					diag.SelectedExecutionID = execID
+					diag.LatestStoreStatus = latestStoreStatus
+					diag.ControlPresent = controlPresent
+					diag.ControlDone = controlDone
+					diag.CommandStartReturnedAt = executionTimestampNow()
+					diag.PID = pid
+				})
+			},
+			OnStartError: func(err error) {
+				streamMu.Lock()
+				defer streamMu.Unlock()
+				writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+					diag.RunID = runID
+					diag.ExecutionID = execID
+					diag.Command = invocation.Preview
+					diag.WorkDir = invocation.WorkDir
+					diag.Model = invocation.Model
+					diag.Agent = invocation.Agent
+					diag.SelectedExecutionID = execID
+					diag.LatestStoreStatus = latestStoreStatus
+					diag.ControlPresent = controlPresent
+					diag.ControlDone = controlDone
+					if err != nil {
+						diag.CommandStartError = err.Error()
+					}
+				})
+			},
+			OnStdoutReaderStarted: func() {
+				streamMu.Lock()
+				defer streamMu.Unlock()
+				writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+					diag.StdoutReaderStartedAt = executionTimestampNow()
+				})
+			},
+			OnStdoutReaderDone: func(err error) {
+				streamMu.Lock()
+				defer streamMu.Unlock()
+				writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+					diag.StdoutReaderDoneAt = executionTimestampNow()
+					if err != nil && err != io.EOF {
+						diag.StdoutReaderError = err.Error()
+					}
+				})
+			},
+			OnStderrReaderStarted: func() {
+				streamMu.Lock()
+				defer streamMu.Unlock()
+				writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+					diag.StderrReaderStartedAt = executionTimestampNow()
+				})
+			},
+			OnStderrReaderDone: func(err error) {
+				streamMu.Lock()
+				defer streamMu.Unlock()
+				writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+					diag.StderrReaderDoneAt = executionTimestampNow()
+					if err != nil && err != io.EOF {
+						diag.StderrReaderError = err.Error()
+					}
+				})
+			},
+			OnWaitStarted: func() {
+				streamMu.Lock()
+				defer streamMu.Unlock()
+				writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+					diag.WaitStartedAt = executionTimestampNow()
+				})
+			},
+			OnWaitReturned: func(result pipeline.AgentCommandWaitResult) {
+				streamMu.Lock()
+				defer streamMu.Unlock()
+				waitErrorText = ""
+				if result.Err != nil {
+					waitErrorText = result.Err.Error()
+				}
+				waitExitCode = result.ExitCode
+				processState = result.ProcessState
+				writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+					diag.WaitReturnedAt = executionTimestampNow()
+					diag.WaitError = waitErrorText
+					diag.ProcessState = processState
+					exitCode := waitExitCode
+					diag.ExitCode = &exitCode
+				})
+			},
 			OnStdout: func(chunk []byte) {
 				if len(chunk) == 0 {
 					return
@@ -2023,6 +2255,7 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 				appendArtifactLocked("opencode_stdout", chunk)
 				writeCombinedSnapshotLocked(streamedStdout.String(), streamedStderr.String())
 				streamProgress.UpdateStreamProgressFromStdout(chunk)
+				recordChunkDiagnosticLocked(true, chunk)
 				if time.Since(lastProgressWrite) > 500*time.Millisecond {
 					writeStreamProgressLocked()
 				}
@@ -2038,6 +2271,7 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 				appendArtifactLocked("opencode_stderr", chunk)
 				writeCombinedSnapshotLocked(streamedStdout.String(), streamedStderr.String())
 				streamProgress.UpdateStreamProgressFromStderr(chunk)
+				recordChunkDiagnosticLocked(false, chunk)
 				if time.Since(lastProgressWrite) > 500*time.Millisecond {
 					writeStreamProgressLocked()
 				}
@@ -2050,9 +2284,47 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 	stderrPath := writeArtifactSnapshotLocked("opencode_stderr", runResult.Stderr)
 	combinedPath := writeCombinedSnapshotLocked(runResult.Stdout, runResult.Stderr)
 	writeStreamProgressLocked()
+	writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+		diag.RunID = runID
+		diag.ExecutionID = execID
+		diag.Command = invocation.Preview
+		diag.WorkDir = invocation.WorkDir
+		diag.Model = invocation.Model
+		diag.Agent = invocation.Agent
+		diag.SelectedExecutionID = execID
+		diag.LatestStoreStatus = latestStoreStatus
+		diag.ControlPresent = controlPresent
+		diag.ControlDone = controlDone
+		diag.StdoutChunkCount = stdoutChunkCount
+		diag.StderrChunkCount = stderrChunkCount
+		diag.StdoutByteCount = stdoutByteCount
+		diag.StderrByteCount = stderrByteCount
+		diag.LastStdoutChunkAt = lastStdoutChunkAt
+		diag.LastStderrChunkAt = lastStderrChunkAt
+		diag.LastAnyChunkAt = lastAnyChunkAt
+		diag.LastActivityText = lastActivityText
+		diag.WaitError = waitErrorText
+		diag.ProcessState = processState
+		if waitExitCode != 0 || runResult.ExitCode != 0 {
+			exitCode := runResult.ExitCode
+			diag.ExitCode = &exitCode
+		}
+	})
 	streamMu.Unlock()
 
 	if currentExec, err := h.store.GetAgentExecution(execID); err == nil && currentExec.FinishedAt.Valid {
+		streamMu.Lock()
+		finalFinishedAt := currentExec.FinishedAt.String
+		h.writeOpenCodeLifecycleDiagnostic(ctx, runID, execID, func(diag *openCodeLifecycleDiagnostic) {
+			diag.SelectedExecutionID = execID
+			diag.LatestStoreStatus = currentExec.Status
+			diag.LatestStoreFinishedAt = finalFinishedAt
+			diag.StoreFinalizeStartedAt = finalFinishedAt
+			diag.StoreFinalizeEndedAt = finalFinishedAt
+			diag.ControlPresent = true
+			diag.ControlDone = true
+		})
+		streamMu.Unlock()
 		h.log.Info("opencode execution already finalized; preserving terminal state", "run_id", runID, "exec_id", execID, "status", currentExec.Status)
 		return
 	}
@@ -2073,6 +2345,16 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 	ec := int64(runResult.ExitCode)
 	startedStr := runResult.StartedAt.Format(time.RFC3339Nano)
 	finishedStr := runResult.FinishedAt.Format(time.RFC3339Nano)
+
+	streamMu.Lock()
+	writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+		diag.StoreFinalizeStartedAt = executionTimestampNow()
+		diag.SelectedExecutionID = execID
+		diag.LatestStoreStatus = execStatus
+		diag.ControlPresent = controlPresent
+		diag.ControlDone = controlDone
+	})
+	streamMu.Unlock()
 
 	var errPtr *string
 	if runResult.Error != "" {
@@ -2097,13 +2379,41 @@ func (h *RunsHandler) runOpenCodeExecution(ctx context.Context, runID int64, exe
 
 	if _, err := h.store.UpdateAgentExecutionStatus(execID, execStatus, &ec, &startedStr, &finishedStr,
 		&stdoutPath, &stderrPath, &combinedPath, nil, errPtr); err != nil {
+		streamMu.Lock()
+		writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+			diag.StoreFinalizeError = err.Error()
+		})
+		streamMu.Unlock()
 		h.log.Error("finalize agent execution status", "exec_id", execID, "error", err)
+	} else {
+		streamMu.Lock()
+		writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+			diag.StoreFinalizeEndedAt = executionTimestampNow()
+			diag.LatestStoreStatus = execStatus
+			diag.LatestStoreFinishedAt = finishedStr
+			diag.ControlPresent = controlPresent
+			diag.ControlDone = controlDone
+		})
+		streamMu.Unlock()
 	}
 
 	// Extract assistant text from JSONL stdout
 	if runResult.Stdout != "" {
+		streamMu.Lock()
+		writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+			diag.FinalResultParseStartedAt = executionTimestampNow()
+			diag.SelectedExecutionID = execID
+		})
+		streamMu.Unlock()
 		assistantText := pipeline.ExtractOpenCodeAssistantText(runResult.Stdout)
 		parsed := pipeline.ParseAgentResult(assistantText)
+		streamMu.Lock()
+		writeDiagnosticSnapshotLocked(true, func(diag *openCodeLifecycleDiagnostic) {
+			diag.FinalResultParseEndedAt = executionTimestampNow()
+			diag.FinalResultStatus = string(parsed.Status)
+			diag.FinalResultRawPreview = openCodeDiagnosticTextPreview(assistantText, 600)
+		})
+		streamMu.Unlock()
 		if parsed.Status == pipeline.AgentResultDone || parsed.Status == pipeline.AgentResultBlocked {
 			if err := h.persistAgentResult(runID, assistantText); err != nil {
 				h.log.Warn("failed to persist opencode agent result", "error", err)
@@ -3837,6 +4147,58 @@ func (h *RunsHandler) buildExecutionPreviews(runID int64, run *store.Run, artifa
 		default:
 			previews.OpenCodeLifecycleState = "none"
 		}
+	}
+
+	diag, hasDiag := readOpenCodeLifecycleDiagnostic(runID)
+	shouldUpdateDiagnostic := isOpenCodeExecutionRunning(exec) &&
+		(previews.OpenCodeLifecycleState == "waiting_response" ||
+			previews.OpenCodeLifecycleState == "active_streaming" ||
+			previews.OpenCodeLifecycleState == "active_output" ||
+			previews.OpenCodeLifecycleState == "running_no_output" ||
+			previews.HasOpenCodeStaleRunning)
+	if shouldUpdateDiagnostic {
+		processProbeAt := executionTimestampNow()
+		controlPresent := false
+		controlDone := true
+		if control, ok := h.lookupOpenCodeExecutionControl(exec.ID); ok && control != nil {
+			controlPresent = true
+			select {
+			case <-control.done:
+				controlDone = true
+			default:
+				controlDone = false
+			}
+		}
+		var probe processProbeResult
+		if diag.PID > 0 {
+			probe = probeProcessAliveFunc(diag.PID)
+		}
+		h.writeOpenCodeLifecycleDiagnostic(context.Background(), runID, exec.ID, func(d *openCodeLifecycleDiagnostic) {
+			d.SelectedExecutionID = exec.ID
+			d.LatestStoreStatus = exec.Status
+			if exec.FinishedAt.Valid {
+				d.LatestStoreFinishedAt = exec.FinishedAt.String
+			}
+			d.LastLifecycleState = previews.OpenCodeLifecycleState
+			d.ControlPresent = controlPresent
+			d.ControlDone = controlDone
+			if diag.PID > 0 {
+				d.PID = diag.PID
+				if probe.Known {
+					alive := probe.Alive
+					d.ProcessAlive = &alive
+				} else {
+					d.ProcessAlive = nil
+				}
+				d.ProcessProbeAt = processProbeAt
+				d.ProcessProbeErr = probe.Error
+			}
+		})
+		diag, hasDiag = readOpenCodeLifecycleDiagnostic(runID)
+	}
+
+	if hasDiag {
+		applyOpenCodeLifecycleDiagnosticToPreviews(&previews, diag)
 	}
 
 	return previews, changed

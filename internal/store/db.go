@@ -283,6 +283,13 @@ func (s *Store) ListArtifactsByRun(runID int64) ([]Artifact, error) {
 	return s.queries.ListArtifactsByRun(context.Background(), runID)
 }
 
+func (s *Store) ListArtifactsByRunKind(runID int64, kind string) ([]Artifact, error) {
+	return s.queries.ListArtifactsByRunKind(context.Background(), generated.ListArtifactsByRunKindParams{
+		RunID: runID,
+		Kind:  kind,
+	})
+}
+
 // Events
 
 func (s *Store) CreateEvent(runID int64, level, message string) (*Event, error) {
