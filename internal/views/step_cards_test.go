@@ -408,6 +408,47 @@ func TestRunInspectorSummaryTargetsWorkbenchShell(t *testing.T) {
 	}
 }
 
+func TestPromptChangeEvidenceSummarizesDiffAndScope(t *testing.T) {
+	review := &pipeline.IntakeReview{
+		Metadata: pipeline.HandoffMetadata{
+			ScopedFiles: []pipeline.ScopedFile{
+				{Path: "internal/views/step_cards.templ"},
+				{Path: "web/src/main.ts"},
+			},
+		},
+	}
+	previews := RunPreviews{
+		AgentPromptDiff: PreviewDiff{
+			Lines: []PreviewDiffLine{
+				{Kind: "remove", Text: "### Wrapper prose"},
+				{Kind: "remove", Text: "```"},
+				{Kind: "add", Text: "## Compact repo-agent prompt"},
+				{Kind: "add", Text: "Preserve scoped files"},
+			},
+		},
+	}
+
+	evidence := promptChangeEvidence(previews, review)
+	if !evidence.HasDiff {
+		t.Fatalf("expected diff evidence to be present")
+	}
+	if evidence.RemovedCount != 2 {
+		t.Fatalf("expected 2 removed lines, got %d", evidence.RemovedCount)
+	}
+	if evidence.AddedCount != 2 {
+		t.Fatalf("expected 2 added lines, got %d", evidence.AddedCount)
+	}
+	if len(evidence.RemovedSamples) == 0 || !strings.Contains(evidence.RemovedSamples[0], "Wrapper prose") {
+		t.Fatalf("expected removed sample content, got %#v", evidence.RemovedSamples)
+	}
+	if len(evidence.AddedSamples) == 0 || !strings.Contains(evidence.AddedSamples[0], "Compact repo-agent prompt") {
+		t.Fatalf("expected added sample content, got %#v", evidence.AddedSamples)
+	}
+	if len(evidence.ScopedFiles) != 2 || evidence.ScopedFiles[0] != "internal/views/step_cards.templ" || evidence.ScopedFiles[1] != "web/src/main.ts" {
+		t.Fatalf("expected scoped files to be preserved, got %#v", evidence.ScopedFiles)
+	}
+}
+
 func TestAgentPromptStepPanelGeneratedPromptShowsTransformationReview(t *testing.T) {
 	var buf strings.Builder
 	run := &store.Run{ID: 1, Title: "Test Run", Status: "draft", SelectedModel: "DeepSeek V4 Pro", RecommendedModel: "DeepSeek V4 Flash"}
@@ -439,8 +480,8 @@ func TestAgentPromptStepPanelGeneratedPromptShowsTransformationReview(t *testing
 		t.Fatalf("render AgentPromptStepPanel generated state: %v", err)
 	}
 	html := buf.String()
-	if !strings.Contains(html, "Transformation summary") {
-		t.Fatalf("expected transformation summary, got:\n%s", html)
+	if !strings.Contains(html, "Prompt changes") {
+		t.Fatalf("expected prompt changes summary, got:\n%s", html)
 	}
 	if !strings.Contains(html, "Continue to Packet") {
 		t.Fatalf("expected continue to packet primary action, got:\n%s", html)
@@ -459,22 +500,25 @@ func TestAgentPromptStepPanelGeneratedPromptShowsTransformationReview(t *testing
 	if !strings.Contains(html, "Model and execution") {
 		t.Fatalf("expected model and execution section, got:\n%s", html)
 	}
-	if !strings.Contains(html, "Scope preserved") {
-		t.Fatalf("expected scope preserved section, got:\n%s", html)
+	if !strings.Contains(html, "Removed from handoff") || !strings.Contains(html, "Added to agent prompt") || !strings.Contains(html, "Preserved scope") {
+		t.Fatalf("expected evidence sections, got:\n%s", html)
 	}
 	if !strings.Contains(html, "Prompt preview") {
 		t.Fatalf("expected prompt preview section, got:\n%s", html)
 	}
-	summaryIdx := strings.Index(html, "Transformation summary")
+	summaryIdx := strings.Index(html, "Prompt changes")
 	diffIdx := strings.Index(html, "Technical prompt diff")
 	if summaryIdx == -1 || diffIdx == -1 || summaryIdx > diffIdx {
-		t.Fatalf("expected transformation summary before technical prompt diff, got:\n%s", html)
+		t.Fatalf("expected prompt changes before technical prompt diff, got:\n%s", html)
 	}
 	if !strings.Contains(html, "Technical prompt diff") {
 		t.Fatalf("expected collapsed technical diff, got:\n%s", html)
 	}
 	if !strings.Contains(html, "<details") || strings.Contains(html, "<details open") {
 		t.Fatalf("expected technical diff to be collapsed by default, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Orchestration wrapper") || !strings.Contains(html, "Compact repo-agent prompt") {
+		t.Fatalf("expected evidence samples derived from the diff, got:\n%s", html)
 	}
 	if !strings.Contains(html, "View Full Prompt") || !strings.Contains(html, "Download Prompt") {
 		t.Fatalf("expected prompt artifact links, got:\n%s", html)
@@ -495,7 +539,7 @@ func TestAgentPromptStepPanelNoPromptShowsGenerateAction(t *testing.T) {
 	if strings.Contains(html, "Technical prompt diff") || strings.Contains(html, "<details") {
 		t.Fatalf("did not expect technical diff before prompt generation, got:\n%s", html)
 	}
-	if !strings.Contains(html, "What Relay will generate") {
+	if !strings.Contains(html, "Prompt evidence preview") {
 		t.Fatalf("expected generation explanation, got:\n%s", html)
 	}
 }
@@ -1279,6 +1323,12 @@ func TestRunDetailsRailRendersOnDesktop(t *testing.T) {
 	if !strings.Contains(html, "2") {
 		t.Errorf("expected artifact count 2")
 	}
+	if !strings.Contains(html, "Primary Artifacts") {
+		t.Errorf("expected primary artifacts section")
+	}
+	if !strings.Contains(html, "Diagnostics & Raw Artifacts") {
+		t.Errorf("expected diagnostics disclosure")
+	}
 	if !strings.Contains(html, "passed") {
 		t.Errorf("expected validation status passed")
 	}
@@ -1320,18 +1370,18 @@ func TestArtifactShortcutGroupsRenderNormalLinks(t *testing.T) {
 	artifacts := []store.Artifact{
 		{Kind: "original_handoff", CreatedAt: "2024-01-01"},
 		{Kind: "agent_prompt", CreatedAt: "2024-01-01"},
-		{Kind: "audit_handoff", CreatedAt: "2024-01-01"},
+		{Kind: "validation_run_json", CreatedAt: "2024-01-01"},
 	}
 	err := ArtifactShortcutGroups(1, artifacts).Render(context.Background(), &buf)
 	if err != nil {
 		t.Fatalf("render ArtifactShortcutGroups: %v", err)
 	}
 	html := buf.String()
+	if !strings.Contains(html, "Primary Artifacts") {
+		t.Errorf("expected Primary Artifacts card label")
+	}
 	if !strings.Contains(html, "Intake / Prompt") {
 		t.Errorf("expected Intake / Prompt group label")
-	}
-	if !strings.Contains(html, "Diff / Audit") {
-		t.Errorf("expected Diff / Audit group label")
 	}
 	if !strings.Contains(html, `/artifacts/original_handoff`) {
 		t.Errorf("expected artifact href")
@@ -1339,8 +1389,8 @@ func TestArtifactShortcutGroupsRenderNormalLinks(t *testing.T) {
 	if !strings.Contains(html, `/artifacts/agent_prompt`) {
 		t.Errorf("expected artifact href for prompt")
 	}
-	if !strings.Contains(html, `/artifacts/audit_handoff`) {
-		t.Errorf("expected artifact href for audit")
+	if !strings.Contains(html, `/artifacts/validation_run_json`) {
+		t.Errorf("expected artifact href for validation")
 	}
 	if strings.Contains(html, `hx-target="#run-workbench-shell"`) {
 		t.Errorf("artifact shortcut links should not have shell hx-target")
@@ -1356,6 +1406,38 @@ func TestArtifactShortcutGroupsRenderNormalLinks(t *testing.T) {
 	}
 	if !strings.Contains(html, `data-relay-artifact-preview-link="true"`) {
 		t.Errorf("artifact shortcut links should have data-relay-artifact-preview-link")
+	}
+}
+
+func TestArtifactShortcutGroupsExcludeDebugArtifactsFromPrimaryCard(t *testing.T) {
+	var primary strings.Builder
+	var diagnostics strings.Builder
+	artifacts := []store.Artifact{
+		{Kind: "agent_prompt", CreatedAt: "2024-01-01"},
+		{Kind: "opencode_cli_check_json", CreatedAt: "2024-01-01"},
+		{Kind: "opencode_dry_run_json", CreatedAt: "2024-01-01"},
+		{Kind: "git_diff_patch", CreatedAt: "2024-01-01"},
+		{Kind: "git_push_dry_run_json", CreatedAt: "2024-01-01"},
+	}
+
+	if err := ArtifactShortcutGroups(1, artifacts).Render(context.Background(), &primary); err != nil {
+		t.Fatalf("render ArtifactShortcutGroups: %v", err)
+	}
+	if err := ArtifactDiagnosticsDisclosure(1, artifacts).Render(context.Background(), &diagnostics); err != nil {
+		t.Fatalf("render ArtifactDiagnosticsDisclosure: %v", err)
+	}
+
+	primaryHTML := primary.String()
+	diagnosticsHTML := diagnostics.String()
+
+	if strings.Contains(primaryHTML, "CLI check") || strings.Contains(primaryHTML, "dry run") || strings.Contains(primaryHTML, "diff patch") {
+		t.Fatalf("expected debug artifacts to stay out of primary card, got:\n%s", primaryHTML)
+	}
+	if !strings.Contains(diagnosticsHTML, "Diagnostics & Raw Artifacts") {
+		t.Fatalf("expected diagnostics disclosure label, got:\n%s", diagnosticsHTML)
+	}
+	if !strings.Contains(diagnosticsHTML, "CLI check") || !strings.Contains(diagnosticsHTML, "dry run") || !strings.Contains(diagnosticsHTML, "diff patch") {
+		t.Fatalf("expected debug artifacts in diagnostics disclosure, got:\n%s", diagnosticsHTML)
 	}
 }
 

@@ -10,12 +10,17 @@ type artifactGroupDef struct {
 	Kinds []string
 }
 
-var artifactGroups = []artifactGroupDef{
+var primaryArtifactGroups = []artifactGroupDef{
 	{Label: "Intake / Prompt", Kinds: []string{"original_handoff", "intake_remediation_handoff", "agent_prompt"}},
-	{Label: "Agent / OpenCode", Kinds: []string{"opencode_handoff_packet", "opencode_cli_check_json", "opencode_dry_run_json", "opencode_lifecycle_diagnostic_json", "opencode_stdout", "opencode_stderr", "opencode_combined_log", "agent_result_raw", "agent_result_json"}},
-	{Label: "Validation", Kinds: []string{"validation_progress_json", "validation_run_json", "validation_stdout", "validation_stderr"}},
-	{Label: "Diff / Audit", Kinds: []string{"git_status_text", "git_diff_name_status", "git_diff_stat", "git_diff_patch", "audit_handoff"}},
-	{Label: "Commit / Push", Kinds: []string{"commit_message_text", "commit_suggestion_json", "git_commit_state_json", "git_commit_result_json", "git_push_dry_run_json", "git_push_result_json"}},
+	{Label: "Agent / OpenCode", Kinds: []string{"opencode_handoff_packet", "opencode_combined_log", "agent_result_raw", "agent_result_json"}},
+	{Label: "Validation / Audit", Kinds: []string{"validation_run_json", "audit_handoff"}},
+	{Label: "Commit", Kinds: []string{"commit_message_text", "commit_suggestion_json", "git_commit_state_json", "git_commit_result_json", "git_push_result_json"}},
+}
+
+var diagnosticArtifactGroups = []artifactGroupDef{
+	{Label: "OpenCode Diagnostics", Kinds: []string{"opencode_cli_check_json", "opencode_dry_run_json", "opencode_lifecycle_diagnostic_json", "opencode_stdout", "opencode_stderr"}},
+	{Label: "Validation Diagnostics", Kinds: []string{"validation_progress_json", "validation_stdout", "validation_stderr"}},
+	{Label: "Diff / Git Diagnostics", Kinds: []string{"git_status_text", "git_diff_name_status", "git_diff_stat", "git_diff_patch", "git_push_dry_run_json"}},
 }
 
 templ ArtifactPreviewSlot() {
@@ -67,6 +72,7 @@ templ RunDetailsRail(run *store.Run, repo *store.Repo, artifacts []store.Artifac
 		@ArtifactShortcutGroups(run.ID, artifacts)
 		@ArtifactPreviewSlot()
 		@LatestEventsSummary(events, run.ID)
+		@ArtifactDiagnosticsDisclosure(run.ID, artifacts)
 		@RunMaterialsDisclosure(previews)
 
 		<details class="relay-detail-card relay-detail-disclosure">
@@ -227,15 +233,15 @@ templ RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, 
 
 templ ArtifactShortcutGroups(runID int64, artifacts []store.Artifact) {
 	<div class="relay-detail-card">
-		<div class="relay-detail-card-header">Artifact Shortcuts</div>
+		<div class="relay-detail-card-header">Primary Artifacts</div>
 		<div class="relay-detail-list">
-			for _, group := range artifactGroups {
-				{{ kinds := filterArtifactKinds(artifacts, group.Kinds) }}
-				if len(kinds) > 0 {
+			{{ groups := artifactGroupsForDisplay(artifacts, primaryArtifactGroups) }}
+			if len(groups) > 0 {
+				for _, group := range groups {
 					<div class="px-3 py-2">
 						<div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">{ group.Label }</div>
 						<div class="flex flex-wrap gap-1.5">
-							for _, kind := range kinds {
+							for _, kind := range group.Kinds {
 								@ArtifactPreviewLink(runID, kind, "inline-flex items-center px-2 py-1 text-xs rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors break-all") {
 									{ shortArtifactLabel(kind) }
 								}
@@ -243,9 +249,43 @@ templ ArtifactShortcutGroups(runID int64, artifacts []store.Artifact) {
 						</div>
 					</div>
 				}
+			} else {
+				<p class="text-xs text-gray-600 px-3 py-2">No primary artifacts yet.</p>
 			}
 		</div>
 	</div>
+}
+
+templ ArtifactDiagnosticsDisclosure(runID int64, artifacts []store.Artifact) {
+	<details class="relay-detail-card relay-detail-disclosure">
+		<summary class="relay-detail-summary">
+			<div class="flex items-center justify-between w-full">
+				<span class="font-medium text-sm">Diagnostics & Raw Artifacts</span>
+				<span class="text-xs text-gray-500">collapsed</span>
+			</div>
+		</summary>
+		<div class="mt-2">
+			<div class="relay-detail-list">
+				{{ groups := artifactGroupsForDisplay(artifacts, diagnosticArtifactGroups) }}
+				if len(groups) > 0 {
+					for _, group := range groups {
+						<div class="px-3 py-2">
+							<div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">{ group.Label }</div>
+							<div class="flex flex-wrap gap-1.5">
+								for _, kind := range group.Kinds {
+									@ArtifactPreviewLink(runID, kind, "inline-flex items-center px-2 py-1 text-xs rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors break-all") {
+										{ shortArtifactLabel(kind) }
+									}
+								}
+							</div>
+						</div>
+					}
+				} else {
+					<p class="text-xs text-gray-600 px-3 py-2">No diagnostics artifacts yet.</p>
+				}
+			</div>
+		</div>
+	</details>
 }
 
 templ LatestEventsSummary(events []store.Event, runID int64) {

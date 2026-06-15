@@ -1,7 +1,6 @@
 package views
 
 import (
-	"fmt"
 	"strings"
 
 	"relay/internal/pipeline"
@@ -14,14 +13,23 @@ type SetupReviewChecklistItem struct {
 	Done   bool
 }
 
-type PromptSummaryItem struct {
-	Title  string
-	Detail string
-}
-
 type PromptDetailRow struct {
 	Label string
 	Value string
+}
+
+type PromptChangeEvidence struct {
+	RemovedCount   int
+	AddedCount     int
+	RemovedSamples []string
+	AddedSamples   []string
+	ScopedFiles    []string
+	HasDiff        bool
+}
+
+type artifactGroupView struct {
+	Label string
+	Kinds []string
 }
 
 func shouldShowRunSetupReview(hasRequestedStep bool, activeStep string, previews RunPreviews, artifacts []store.Artifact) bool {
@@ -118,40 +126,31 @@ func modelSelectionDetail(run *store.Run) string {
 	}
 }
 
-func promptTransformationItems(run *store.Run, intakeReview *pipeline.IntakeReview, previews RunPreviews) []PromptSummaryItem {
-	scopeCount := len(promptScopedFiles(intakeReview))
-	scopeDetail := "No explicit scoped files were declared."
-	if scopeCount > 0 {
-		scopeDetail = fmt.Sprintf("%d scoped file%s were preserved.", scopeCount, pluralSuffix(scopeCount))
+func promptChangeEvidence(previews RunPreviews, intakeReview *pipeline.IntakeReview) PromptChangeEvidence {
+	evidence := PromptChangeEvidence{
+		ScopedFiles: promptScopedFiles(intakeReview),
+	}
+	if len(previews.AgentPromptDiff.Lines) == 0 {
+		return evidence
 	}
 
-	outputContractDetail := "Relay appends the final output contract to the generated prompt."
-	if promptOutputContractPresent(intakeReview) {
-		outputContractDetail = "Relay preserved the final output contract from the handoff."
+	evidence.HasDiff = true
+	for _, line := range previews.AgentPromptDiff.Lines {
+		switch line.Kind {
+		case "remove":
+			evidence.RemovedCount++
+			if sample := promptChangeEvidenceSample(line.Text); sample != "" {
+				evidence.RemovedSamples = appendPromptChangeEvidenceSample(evidence.RemovedSamples, sample, 3)
+			}
+		case "add":
+			evidence.AddedCount++
+			if sample := promptChangeEvidenceSample(line.Text); sample != "" {
+				evidence.AddedSamples = appendPromptChangeEvidenceSample(evidence.AddedSamples, sample, 3)
+			}
+		}
 	}
 
-	return []PromptSummaryItem{
-		{
-			Title:  "Removed orchestration-only wrapper text",
-			Detail: "Relay stripped wrapper prose, validation-command scaffolding, and other orchestration-only instructions from the generated prompt.",
-		},
-		{
-			Title:  "Preserved the implementation goal",
-			Detail: promptImplementationGoal(run, intakeReview),
-		},
-		{
-			Title:  "Preserved scoped files",
-			Detail: scopeDetail,
-		},
-		{
-			Title:  "Added the repo-agent execution contract",
-			Detail: outputContractDetail,
-		},
-		{
-			Title:  "Normalized model and prompt metadata",
-			Detail: promptMetadataDetail(run, previews),
-		},
-	}
+	return evidence
 }
 
 func promptModelExecutionRows(run *store.Run, intakeReview *pipeline.IntakeReview, previews RunPreviews) []PromptDetailRow {
@@ -166,26 +165,20 @@ func promptModelExecutionRows(run *store.Run, intakeReview *pipeline.IntakeRevie
 	return rows
 }
 
-func promptImplementationGoal(run *store.Run, intakeReview *pipeline.IntakeReview) string {
-	if run != nil && strings.TrimSpace(run.Title) != "" {
-		return "Relay kept the implementation goal centered on " + run.Title + "."
+func artifactGroupsForDisplay(artifacts []store.Artifact, groups []artifactGroupDef) []artifactGroupView {
+	if len(groups) == 0 {
+		return nil
 	}
-	if intakeReview != nil && strings.TrimSpace(intakeReview.Metadata.Title) != "" {
-		return "Relay kept the implementation goal centered on " + intakeReview.Metadata.Title + "."
+	rendered := make([]artifactGroupView, 0, len(groups))
+	for _, group := range groups {
+		if kinds := filterArtifactKinds(artifacts, group.Kinds); len(kinds) > 0 {
+			rendered = append(rendered, artifactGroupView{
+				Label: group.Label,
+				Kinds: kinds,
+			})
+		}
 	}
-	return "Relay kept the implementation goal centered on the original handoff."
-}
-
-func promptMetadataDetail(run *store.Run, previews RunPreviews) string {
-	selected := promptSelectedModel(run)
-	if selected == "" {
-		selected = "No selected model recorded"
-	}
-	size := promptSizeEstimate(previews)
-	if size == "" {
-		size = "prompt size unavailable"
-	}
-	return selected + "; " + size + "."
+	return rendered
 }
 
 func promptRecommendedModel(run *store.Run) string {
@@ -261,6 +254,33 @@ func promptPreviewExcerpt(text string, maxChars int) string {
 		excerpt = strings.TrimSpace(string(runes[:maxChars]))
 	}
 	return excerpt + "\n..."
+}
+
+func promptChangeEvidenceSample(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	if strings.HasPrefix(text, "```") {
+		return ""
+	}
+	if strings.Trim(text, "-=_*`~# ") == "" {
+		return ""
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	return shortenText(text, 120)
+}
+
+func appendPromptChangeEvidenceSample(samples []string, sample string, limit int) []string {
+	for _, existing := range samples {
+		if existing == sample {
+			return samples
+		}
+	}
+	if limit > 0 && len(samples) >= limit {
+		return samples
+	}
+	return append(samples, sample)
 }
 
 func promptScopedFiles(intakeReview *pipeline.IntakeReview) []string {

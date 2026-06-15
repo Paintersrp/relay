@@ -530,23 +530,72 @@ templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []
 
 		<div class="p-4 space-y-4">
 			if artifactExists(artifacts, "agent_prompt") {
+				{{ evidence := promptChangeEvidence(previews, intakeReview) }}
 				<div class="grid gap-4 xl:grid-cols-2">
 					<section class="relay-card">
 						<div class="flex items-center justify-between border-b border-gray-800 px-4 py-3">
-							<h3 class="font-medium text-sm sm:text-base">Transformation summary</h3>
+							<h3 class="font-medium text-sm sm:text-base">Prompt changes</h3>
 						</div>
-						<div class="p-4 space-y-3">
-							for _, item := range promptTransformationItems(run, intakeReview, previews) {
-								<div class="flex gap-3">
-									<span class="mt-0.5 shrink-0 text-green-400">
-										@StatusIcon("passed", "relay-icon-sm")
-									</span>
-									<div class="min-w-0">
-										<div class="text-sm font-medium text-gray-100">{ item.Title }</div>
-										<div class="text-xs text-gray-400 mt-0.5">{ item.Detail }</div>
+						<div class="p-4 space-y-4">
+							if evidence.HasDiff {
+								<div class="rounded-lg border border-gray-800 bg-gray-950/40 p-3">
+									<div class="flex items-start justify-between gap-3">
+										<div class="min-w-0">
+											<div class="text-[11px] font-medium uppercase tracking-wider text-gray-500">Removed from handoff</div>
+											<div class="text-sm text-gray-200">{ Itoa(int64(evidence.RemovedCount)) } line{ pluralSuffix(evidence.RemovedCount) }</div>
+										</div>
+										<span class="mt-0.5 shrink-0 text-red-400">
+											@StatusIcon("failed", "relay-icon-sm")
+										</span>
 									</div>
+									if len(evidence.RemovedSamples) > 0 {
+										<ul class="mt-2 space-y-1 text-xs text-red-200">
+											for _, sample := range evidence.RemovedSamples {
+												<li class="rounded-md border border-red-900/40 bg-red-950/20 px-2 py-1.5 whitespace-pre-wrap break-words">{ sample }</li>
+											}
+										</ul>
+									} else {
+										<p class="mt-2 text-xs text-gray-500">No readable removed lines were visible in the preview.</p>
+									}
+								</div>
+
+								<div class="rounded-lg border border-gray-800 bg-gray-950/40 p-3">
+									<div class="flex items-start justify-between gap-3">
+										<div class="min-w-0">
+											<div class="text-[11px] font-medium uppercase tracking-wider text-gray-500">Added to agent prompt</div>
+											<div class="text-sm text-gray-200">{ Itoa(int64(evidence.AddedCount)) } line{ pluralSuffix(evidence.AddedCount) }</div>
+										</div>
+										<span class="mt-0.5 shrink-0 text-green-400">
+											@StatusIcon("passed", "relay-icon-sm")
+										</span>
+									</div>
+									if len(evidence.AddedSamples) > 0 {
+										<ul class="mt-2 space-y-1 text-xs text-green-200">
+											for _, sample := range evidence.AddedSamples {
+												<li class="rounded-md border border-green-900/40 bg-green-950/20 px-2 py-1.5 whitespace-pre-wrap break-words">{ sample }</li>
+											}
+										</ul>
+									} else {
+										<p class="mt-2 text-xs text-gray-500">No readable added lines were visible in the preview.</p>
+									}
+								</div>
+							} else {
+								<div class="rounded-lg border border-gray-800 bg-gray-950/40 p-3 text-sm text-gray-400">
+									Prompt evidence is not available yet. Generate the Agent Prompt to inspect the removed and added lines.
 								</div>
 							}
+							<div class="rounded-lg border border-gray-800 bg-gray-950/40 p-3">
+								<div class="text-[11px] font-medium uppercase tracking-wider text-gray-500">Preserved scope</div>
+								if len(evidence.ScopedFiles) > 0 {
+									<div class="mt-2 flex flex-wrap gap-2">
+										for _, file := range evidence.ScopedFiles {
+											<span class="relay-chip-gray font-mono text-[11px] sm:text-xs break-all">{ file }</span>
+										}
+									</div>
+								} else {
+									<p class="mt-2 text-sm text-gray-400">No explicit scoped files were declared.</p>
+								}
+							</div>
 						</div>
 					</section>
 
@@ -634,22 +683,12 @@ templ AgentPromptStepPanel(run *store.Run, artifacts []store.Artifact, checks []
 				</div>
 			} else {
 				<div class="rounded-xl border border-gray-800 bg-gray-950/40 p-4 space-y-3">
-					<div class="text-sm font-medium text-gray-100">What Relay will generate</div>
-					<ul class="space-y-2 text-sm text-gray-300">
-						for _, item := range promptTransformationItems(run, intakeReview, previews) {
-							<li class="flex gap-3">
-								<span class="mt-0.5 shrink-0 text-gray-500">
-									@StatusIcon("pending", "relay-icon-sm")
-								</span>
-								<div class="min-w-0">
-									<div class="font-medium text-gray-100">{ item.Title }</div>
-									<div class="text-xs text-gray-400 mt-0.5">{ item.Detail }</div>
-								</div>
-							</li>
-						}
-					</ul>
+					<div class="text-sm font-medium text-gray-100">Prompt evidence preview</div>
+					<div class="text-sm text-gray-300">
+						Generate the Agent Prompt to inspect the removed handoff lines, the added repo-agent instructions, and the scoped files preserved in the transformed prompt.
+					</div>
 					<div class="text-xs text-gray-500">
-						Relay will remove orchestration-only text, preserve the scoped implementation instructions, and attach the repo-agent execution contract before moving to the packet step.
+						The generated review will keep the raw technical prompt diff available in a collapsed section below the evidence cards.
 					</div>
 				</div>
 			}

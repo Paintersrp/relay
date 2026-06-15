@@ -18,12 +18,17 @@ type artifactGroupDef struct {
 	Kinds []string
 }
 
-var artifactGroups = []artifactGroupDef{
+var primaryArtifactGroups = []artifactGroupDef{
 	{Label: "Intake / Prompt", Kinds: []string{"original_handoff", "intake_remediation_handoff", "agent_prompt"}},
-	{Label: "Agent / OpenCode", Kinds: []string{"opencode_handoff_packet", "opencode_cli_check_json", "opencode_dry_run_json", "opencode_lifecycle_diagnostic_json", "opencode_stdout", "opencode_stderr", "opencode_combined_log", "agent_result_raw", "agent_result_json"}},
-	{Label: "Validation", Kinds: []string{"validation_progress_json", "validation_run_json", "validation_stdout", "validation_stderr"}},
-	{Label: "Diff / Audit", Kinds: []string{"git_status_text", "git_diff_name_status", "git_diff_stat", "git_diff_patch", "audit_handoff"}},
-	{Label: "Commit / Push", Kinds: []string{"commit_message_text", "commit_suggestion_json", "git_commit_state_json", "git_commit_result_json", "git_push_dry_run_json", "git_push_result_json"}},
+	{Label: "Agent / OpenCode", Kinds: []string{"opencode_handoff_packet", "opencode_combined_log", "agent_result_raw", "agent_result_json"}},
+	{Label: "Validation / Audit", Kinds: []string{"validation_run_json", "audit_handoff"}},
+	{Label: "Commit", Kinds: []string{"commit_message_text", "commit_suggestion_json", "git_commit_state_json", "git_commit_result_json", "git_push_result_json"}},
+}
+
+var diagnosticArtifactGroups = []artifactGroupDef{
+	{Label: "OpenCode Diagnostics", Kinds: []string{"opencode_cli_check_json", "opencode_dry_run_json", "opencode_lifecycle_diagnostic_json", "opencode_stdout", "opencode_stderr"}},
+	{Label: "Validation Diagnostics", Kinds: []string{"validation_progress_json", "validation_stdout", "validation_stderr"}},
+	{Label: "Diff / Git Diagnostics", Kinds: []string{"git_status_text", "git_diff_name_status", "git_diff_stat", "git_diff_patch", "git_push_dry_run_json"}},
 }
 
 func ArtifactPreviewSlot() templ.Component {
@@ -83,7 +88,7 @@ func ArtifactInlinePreview(runID int64, kind string, content string, truncated b
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(kind)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 32, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 37, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -96,7 +101,7 @@ func ArtifactInlinePreview(runID int64, kind string, content string, truncated b
 		var templ_7745c5c3_Var4 templ.SafeURL
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/artifacts/" + kind)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 34, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 39, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -117,7 +122,7 @@ func ArtifactInlinePreview(runID int64, kind string, content string, truncated b
 		var templ_7745c5c3_Var5 templ.SafeURL
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/artifacts/" + kind + "/download")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 38, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 43, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -148,7 +153,7 @@ func ArtifactInlinePreview(runID int64, kind string, content string, truncated b
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(content)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 47, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 52, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -195,7 +200,7 @@ func ArtifactPreviewLink(runID int64, kind string, className string) templ.Compo
 		var templ_7745c5c3_Var9 templ.SafeURL
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs("/runs/" + Itoa(runID) + "/artifacts/" + kind)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 52, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 57, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -208,7 +213,7 @@ func ArtifactPreviewLink(runID int64, kind string, className string) templ.Compo
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue("/runs/" + Itoa(runID) + "/artifacts/" + kind + "/preview")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 53, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 58, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 		if templ_7745c5c3_Err != nil {
@@ -288,6 +293,10 @@ func RunDetailsRail(run *store.Run, repo *store.Repo, artifacts []store.Artifact
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
+		templ_7745c5c3_Err = ArtifactDiagnosticsDisclosure(run.ID, artifacts).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
 		templ_7745c5c3_Err = RunMaterialsDisclosure(previews).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -299,7 +308,7 @@ func RunDetailsRail(run *store.Run, repo *store.Repo, artifacts []store.Artifact
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(len(artifacts))))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 76, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 82, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -320,7 +329,7 @@ func RunDetailsRail(run *store.Run, repo *store.Repo, artifacts []store.Artifact
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(len(events))))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 88, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 94, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -383,7 +392,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(repo.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 118, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 124, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -407,7 +416,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(run.BranchName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 129, Col: 22}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 135, Col: 22}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -432,7 +441,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 				var templ_7745c5c3_Var18 string
 				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue("Baseline SHA: " + previews.GitBaselineBaselineSHA)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 140, Col: 113}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 146, Col: 113}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 				if templ_7745c5c3_Err != nil {
@@ -445,7 +454,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(shortSHA(previews.GitBaselineBaselineSHA))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 140, Col: 159}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 146, Col: 159}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -491,7 +500,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 				var templ_7745c5c3_Var22 string
 				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(previews.GitBaselineState)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 145, Col: 99}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 151, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 				if templ_7745c5c3_Err != nil {
@@ -516,7 +525,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(run.SelectedModel)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 156, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 162, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -565,7 +574,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(run.Status)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 166, Col: 23}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 172, Col: 23}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 		if templ_7745c5c3_Err != nil {
@@ -609,7 +618,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(previews.NextAction.Title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 174, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 180, Col: 99}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 			if templ_7745c5c3_Err != nil {
@@ -627,7 +636,7 @@ func RunDetailsSummary(run *store.Run, repo *store.Repo, previews RunPreviews, a
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(Itoa(int64(len(artifacts))))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 180, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 186, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -749,13 +758,13 @@ func ArtifactShortcutGroups(runID int64, artifacts []store.Artifact) templ.Compo
 			templ_7745c5c3_Var31 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "<div class=\"relay-detail-card\"><div class=\"relay-detail-card-header\">Artifact Shortcuts</div><div class=\"relay-detail-list\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "<div class=\"relay-detail-card\"><div class=\"relay-detail-card-header\">Primary Artifacts</div><div class=\"relay-detail-list\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		for _, group := range artifactGroups {
-			kinds := filterArtifactKinds(artifacts, group.Kinds)
-			if len(kinds) > 0 {
+		groups := artifactGroupsForDisplay(artifacts, primaryArtifactGroups)
+		if len(groups) > 0 {
+			for _, group := range groups {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "<div class=\"px-3 py-2\"><div class=\"text-xs font-medium text-gray-500 uppercase tracking-wider mb-1\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -763,7 +772,7 @@ func ArtifactShortcutGroups(runID int64, artifacts []store.Artifact) templ.Compo
 				var templ_7745c5c3_Var32 string
 				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(group.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 236, Col: 96}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 242, Col: 96}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 				if templ_7745c5c3_Err != nil {
@@ -773,7 +782,7 @@ func ArtifactShortcutGroups(runID int64, artifacts []store.Artifact) templ.Compo
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				for _, kind := range kinds {
+				for _, kind := range group.Kinds {
 					templ_7745c5c3_Var33 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
@@ -789,7 +798,7 @@ func ArtifactShortcutGroups(runID int64, artifacts []store.Artifact) templ.Compo
 						var templ_7745c5c3_Var34 string
 						templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(shortArtifactLabel(kind))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 240, Col: 35}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 246, Col: 35}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 						if templ_7745c5c3_Err != nil {
@@ -807,8 +816,106 @@ func ArtifactShortcutGroups(runID int64, artifacts []store.Artifact) templ.Compo
 					return templ_7745c5c3_Err
 				}
 			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "<p class=\"text-xs text-gray-600 px-3 py-2\">No primary artifacts yet.</p>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func ArtifactDiagnosticsDisclosure(runID int64, artifacts []store.Artifact) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var35 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var35 == nil {
+			templ_7745c5c3_Var35 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<details class=\"relay-detail-card relay-detail-disclosure\"><summary class=\"relay-detail-summary\"><div class=\"flex items-center justify-between w-full\"><span class=\"font-medium text-sm\">Diagnostics & Raw Artifacts</span> <span class=\"text-xs text-gray-500\">collapsed</span></div></summary><div class=\"mt-2\"><div class=\"relay-detail-list\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		groups := artifactGroupsForDisplay(artifacts, diagnosticArtifactGroups)
+		if len(groups) > 0 {
+			for _, group := range groups {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<div class=\"px-3 py-2\"><div class=\"text-xs font-medium text-gray-500 uppercase tracking-wider mb-1\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var36 string
+				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(group.Label)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 273, Col: 97}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "</div><div class=\"flex flex-wrap gap-1.5\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				for _, kind := range group.Kinds {
+					templ_7745c5c3_Var37 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+						templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+						templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+						if !templ_7745c5c3_IsBuffer {
+							defer func() {
+								templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+								if templ_7745c5c3_Err == nil {
+									templ_7745c5c3_Err = templ_7745c5c3_BufErr
+								}
+							}()
+						}
+						ctx = templ.InitializeContext(ctx)
+						var templ_7745c5c3_Var38 string
+						templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(shortArtifactLabel(kind))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 277, Col: 36}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						return nil
+					})
+					templ_7745c5c3_Err = ArtifactPreviewLink(runID, kind, "inline-flex items-center px-2 py-1 text-xs rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors break-all").Render(templ.WithChildren(ctx, templ_7745c5c3_Var37), templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "</div></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<p class=\"text-xs text-gray-600 px-3 py-2\">No diagnostics artifacts yet.</p>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "</div></div></details>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -832,33 +939,33 @@ func LatestEventsSummary(events []store.Event, runID int64) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var35 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var35 == nil {
-			templ_7745c5c3_Var35 = templ.NopComponent
+		templ_7745c5c3_Var39 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var39 == nil {
+			templ_7745c5c3_Var39 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "<div class=\"relay-detail-card\"><div class=\"relay-detail-card-header\">Latest Events</div><div class=\"relay-detail-list\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<div class=\"relay-detail-card\"><div class=\"relay-detail-card-header\">Latest Events</div><div class=\"relay-detail-list\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(events) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<p class=\"text-xs text-gray-600 px-3 py-2\">No events yet.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<p class=\"text-xs text-gray-600 px-3 py-2\">No events yet.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<div class=\"space-y-0 divide-y divide-gray-800/50\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<div class=\"space-y-0 divide-y divide-gray-800/50\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			display := latestEvents(events, 3)
 			for _, e := range display {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<div class=\"px-3 py-1.5 text-xs flex items-start gap-2 min-w-0\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<div class=\"px-3 py-1.5 text-xs flex items-start gap-2 min-w-0\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if e.Level == "warn" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<span class=\"inline-flex items-center gap-1.5 text-yellow-400 font-mono text-[10px] shrink-0 mt-0.5\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "<span class=\"inline-flex items-center gap-1.5 text-yellow-400 font-mono text-[10px] shrink-0 mt-0.5\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -866,12 +973,12 @@ func LatestEventsSummary(events []store.Event, runID int64) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<span>WARN</span></span> ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<span>WARN</span></span> ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				} else if e.Level == "error" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "<span class=\"inline-flex items-center gap-1.5 text-red-400 font-mono text-[10px] shrink-0 mt-0.5\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "<span class=\"inline-flex items-center gap-1.5 text-red-400 font-mono text-[10px] shrink-0 mt-0.5\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -879,12 +986,12 @@ func LatestEventsSummary(events []store.Event, runID int64) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<span>ERR</span></span> ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "<span>ERR</span></span> ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<span class=\"inline-flex items-center gap-1.5 text-gray-500 font-mono text-[10px] shrink-0 mt-0.5\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "<span class=\"inline-flex items-center gap-1.5 text-gray-500 font-mono text-[10px] shrink-0 mt-0.5\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -892,35 +999,35 @@ func LatestEventsSummary(events []store.Event, runID int64) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<span>INFO</span></span> ")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "<span>INFO</span></span> ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<span class=\"text-gray-400 min-w-0 break-words\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<span class=\"text-gray-400 min-w-0 break-words\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var36 string
-				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(e.Message)
+				var templ_7745c5c3_Var40 string
+				templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(e.Message)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 278, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/views/run_details.templ`, Line: 318, Col: 66}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "</span></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "</span></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -944,12 +1051,12 @@ func RunMaterialsDisclosure(previews RunPreviews) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var37 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var37 == nil {
-			templ_7745c5c3_Var37 = templ.NopComponent
+		templ_7745c5c3_Var41 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var41 == nil {
+			templ_7745c5c3_Var41 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "<details class=\"relay-detail-card relay-detail-disclosure\"><summary class=\"relay-detail-summary\"><div class=\"flex items-center justify-between w-full\"><span class=\"font-medium text-sm\">Raw Run Materials</span> <span class=\"text-xs text-gray-500\">collapsed</span></div></summary><p class=\"text-xs text-gray-500 mt-1 mb-2\">Original handoff, validation report, and agent prompt previews.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<details class=\"relay-detail-card relay-detail-disclosure\"><summary class=\"relay-detail-summary\"><div class=\"flex items-center justify-between w-full\"><span class=\"font-medium text-sm\">Raw Run Materials</span> <span class=\"text-xs text-gray-500\">collapsed</span></div></summary><p class=\"text-xs text-gray-500 mt-1 mb-2\">Original handoff, validation report, and agent prompt previews.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -957,7 +1064,7 @@ func RunMaterialsDisclosure(previews RunPreviews) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</details>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "</details>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
