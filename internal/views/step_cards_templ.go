@@ -4622,7 +4622,7 @@ func openCodeLifecycleDiagnosticPanel(run *store.Run, previews RunPreviews, isRu
 			if previews.OpenCodeLifecycleDiagnosticSelectedExecutionID > 0 {
 				selectedExecutionDisplay = Itoa(previews.OpenCodeLifecycleDiagnosticSelectedExecutionID)
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 335, " <details class=\"m-4 relay-card p-3 sm:p-4\"><summary class=\"cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none min-h-[36px] inline-flex items-center\">OpenCode lifecycle diagnostic</summary><div class=\"mt-3 space-y-3\"><div class=\"grid gap-2 text-xs sm:grid-cols-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 335, " <details class=\"m-4 relay-card p-3 sm:p-4\"><summary class=\"cursor-pointer text-xs text-gray-500 hover:text-gray-300 list-none min-h-[36px] inline-flex items-center\">OpenCode lifecycle diagnostic snapshot</summary><div class=\"mt-3 space-y-3\"><div class=\"grid gap-2 text-xs sm:grid-cols-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
