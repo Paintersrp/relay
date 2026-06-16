@@ -1,4 +1,4 @@
-import { createRouter as createTanStackRouter } from "@tanstack/react-router";
+import { createRouter as createTanStackRouter, RouterProvider } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 
 export function getRouter() {
@@ -12,8 +12,14 @@ export function getRouter() {
   return router;
 }
 
+const router = getRouter();
+
+export function Router() {
+  return <RouterProvider router={router} />;
+}
+
 declare module "@tanstack/react-router" {
   interface Register {
-    router: ReturnType<typeof getRouter>;
+    router: typeof router;
   }
 }
