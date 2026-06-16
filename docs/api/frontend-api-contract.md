@@ -177,6 +177,7 @@ Relay is partitioned into two runtime environments:
 
 ### 7. POST `/api/runs/{id}/prepare`
 - **Purpose**: Trigger compilation of the instruction brief and git environment preparation.
+- **Note**: This endpoint is not implemented in Pass 6.
 - **Request Body**: None
 - **Response Body**:
   ```json

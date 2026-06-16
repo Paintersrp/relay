@@ -49,6 +49,8 @@ var allowedKinds = map[string]bool{
 	"parsed_frontmatter":                 true,
 	"run_config":                         true,
 	"intake_validation_report":           true,
+	"canonical_packet":                   true,
+	"packet_validation_report":           true,
 }
 
 func SetBaseDir(dir string) {

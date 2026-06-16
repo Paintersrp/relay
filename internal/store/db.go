@@ -260,7 +260,6 @@ func (s *Store) UpdateRunRepo(id int64, repoID int64) (*Run, error) {
 	return &run, nil
 }
 
-
 // Artifacts
 
 func (s *Store) CreateArtifact(runID int64, kind, path, mimeType string) (*Artifact, error) {

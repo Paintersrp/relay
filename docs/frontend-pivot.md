@@ -47,10 +47,18 @@ The `VITE_RELAY_API_BASE_URL=http://localhost:8080` environment variable documen
 - Close Run wired to backend.
 - Mock data replaced with real React Query data.
 
+### Pass 5 — Intake Wiring
+- Wired Step 1 Intake UI and Mutations, supporting real approval/reject/blocked decisions.
+- Real Go backend parsed frontmatter, created runs, and saved intake artifacts.
+
+### Pass 6 (current) — Compiler & Validation Service
+- Implemented internal Go backend compiler and packet validation service.
+- Compiles approved runs into canonical packets (`canonical_packet.json`) and runs schema/path/security checks, outputting validation reports (`packet_validation_report.json`) and transitioning run status to `packet_validated` or `packet_validation_failed`.
+
 ### Later passes — Decommission (TBD)
 
 - The old templ/htmx UI may be decommissioned in a future pass after the React frontend reaches feature parity.
-- This is explicitly not planned for Pass 1–4.
+- This is explicitly not planned for Pass 1–6.
 
 ## Hard Constraints
 
