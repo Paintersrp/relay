@@ -62,31 +62,32 @@ func CORSMiddleware(next http.Handler) http.Handler {
 // Shared Models matching TypeScript contract
 
 type RelayRun struct {
-	ID                string                `json:"id"`
-	Name              string                `json:"name"`
-	Repo              string                `json:"repo"`
-	Branch            string                `json:"branch"`
-	ActiveStep        string                `json:"activeStep"`     // "intake" | "prepare" | "execute" | "audit"
-	Status            string                `json:"status"`         // "intake_needs_review" | "brief_ready_for_review" | "executor_running" | "audit_ready_for_review" | "completed" | "blocked"
-	LifecycleState    string                `json:"lifecycleState"` // "intake" | "prepare" | "execute" | "audit" | "completed" | "failed"
-	CreatedAt         string                `json:"createdAt"`      // ISO-8601
-	UpdatedAt         string                `json:"updatedAt"`      // ISO-8601
-	Summary           string                `json:"summary"`
-	Model             string                `json:"model"`
-	RiskLevel         string                `json:"riskLevel"` // "low" | "medium" | "high" | "critical"
-	Validation        RelayValidationResult `json:"validation"`
-	Artifacts         []RelayArtifact       `json:"artifacts"`
-	LatestEvents      []RelayRunEvent       `json:"latestEvents"`
-	StatusSeverity    string                `json:"statusSeverity"` // "neutral" | "info" | "success" | "warning" | "danger"
-	State             string                `json:"state"`
-	Title             string                `json:"title"`
-	PacketID          string                `json:"packetId"`
-	Worktree          string                `json:"worktree,omitempty"`
-	Executor          string                `json:"executor"`
-	ValidationSummary RelayValidationResult `json:"validationSummary"`
-	ApprovalGate      RelayApprovalGate     `json:"approvalGate"`
-	LogPreview        RelayLogPreview       `json:"logPreview"`
-	StepLabels        map[string]string     `json:"stepLabels"`
+	ID                    string                `json:"id"`
+	Name                  string                `json:"name"`
+	Repo                  string                `json:"repo"`
+	Branch                string                `json:"branch"`
+	ActiveStep            string                `json:"activeStep"`     // "intake" | "prepare" | "execute" | "audit"
+	Status                string                `json:"status"`         // canonical workflow state for action gating
+	LifecycleState        string                `json:"lifecycleState"` // "intake" | "prepare" | "execute" | "audit" | "completed" | "failed"
+	CreatedAt             string                `json:"createdAt"`      // ISO-8601
+	UpdatedAt             string                `json:"updatedAt"`      // ISO-8601
+	Summary               string                `json:"summary"`
+	Model                 string                `json:"model"`
+	RiskLevel             string                `json:"riskLevel"` // "low" | "medium" | "high" | "critical"
+	Validation            RelayValidationResult `json:"validation"`
+	Artifacts             []RelayArtifact       `json:"artifacts"`
+	LatestEvents          []RelayRunEvent       `json:"latestEvents"`
+	StatusSeverity        string                `json:"statusSeverity"` // "neutral" | "info" | "success" | "warning" | "danger"
+	State                 string                `json:"state"`
+	Title                 string                `json:"title"`
+	PacketID              string                `json:"packetId"`
+	Worktree              string                `json:"worktree,omitempty"`
+	Executor              string                `json:"executor"`
+	ValidationSummary     RelayValidationResult `json:"validationSummary"`
+	ApprovalGate          RelayApprovalGate     `json:"approvalGate"`
+	LogPreview            RelayLogPreview       `json:"logPreview"`
+	StepLabels            map[string]string     `json:"stepLabels"`
+	LatestExecutionStatus string                `json:"latestExecutionStatus,omitempty"` // active execution phase: "starting" | "running" | "completed" | "failed" | ""
 }
 
 type RelayValidationResult struct {
@@ -398,151 +399,141 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 		}
 	}
 
-	// Determine active step, status, and lifecycleState
+	// Status is canonical workflow state for action gating
+	status := run.Status
+
+	// Documented legacy aliases — normalize a few historic statuses
+	if status == "ready" {
+		status = "approved_for_prepare"
+	} else if status == "needs_review" {
+		status = "intake_needs_review"
+	}
+
+	// Latest execution status exposed separately, never overwrites canonical status
+	latestExecutionStatus := ""
+	if latestExec != nil {
+		latestExecutionStatus = latestExec.Status
+	}
+
+	// Derive display/helper fields from canonical status
 	activeStep := "intake"
-	status := "intake_needs_review"
 	lifecycleState := "intake"
 	state := "Intake Review"
 	statusSeverity := "warning"
 
-	if latestExec != nil && (latestExec.Status == "starting" || latestExec.Status == "running") {
-		activeStep = "execute"
-		status = "executor_running"
-		lifecycleState = "execute"
-		state = "Running"
-		statusSeverity = "info"
-	} else {
-		switch run.Status {
-		case "draft", "needs_cleanup":
-			activeStep = "intake"
-			status = "intake_needs_review"
-			lifecycleState = "intake"
-			state = "Intake Review"
-			statusSeverity = "warning"
-			if run.Status == "needs_cleanup" {
-				statusSeverity = "danger"
-			}
-		case "needs_review", "intake_needs_review":
-			activeStep = "intake"
-			status = "intake_needs_review"
-			lifecycleState = "intake"
-			state = "Intake Needs Review"
-			statusSeverity = "warning"
-		case "intake_received":
-			activeStep = "intake"
-			status = "intake_needs_review"
-			lifecycleState = "intake"
+	switch status {
+	case "draft", "needs_cleanup":
+		activeStep = "intake"
+		lifecycleState = "intake"
+		state = "Intake Review"
+		statusSeverity = "warning"
+		if status == "needs_cleanup" {
+			statusSeverity = "danger"
+		}
+	case "intake_needs_review", "intake_received":
+		activeStep = "intake"
+		lifecycleState = "intake"
+		state = "Intake Needs Review"
+		statusSeverity = "warning"
+		if status == "intake_received" {
 			state = "Intake Received"
 			statusSeverity = "info"
-		case "validated":
-			activeStep = "intake"
-			status = "intake_needs_review"
-			lifecycleState = "intake"
-			state = "Intake Validated"
-			statusSeverity = "info"
-		case "ready", "approved_for_prepare":
-			activeStep = "prepare"
-			status = "brief_ready_for_review"
-			lifecycleState = "prepare"
-			state = "Approved for Prepare"
-			statusSeverity = "success"
-		case "packet_validated", "repair_validated":
-			activeStep = "prepare"
-			status = "brief_ready_for_review"
-			lifecycleState = "prepare"
-			state = "Packet Validated"
-			statusSeverity = "info"
-		case "brief_ready_for_review":
-			activeStep = "prepare"
-			status = "brief_ready_for_review"
-			lifecycleState = "prepare"
-			state = "Brief Ready for Review"
-			statusSeverity = "success"
-		case "approved_for_executor":
-			activeStep = "execute"
-			status = "executor_running"
-			lifecycleState = "execute"
-			state = "Approved for Executor"
-			statusSeverity = "success"
-		case executor.StatusExecutorDispatched:
-			activeStep = "execute"
-			status = "executor_running"
-			lifecycleState = "execute"
-			state = "Executor Dispatched"
-			statusSeverity = "info"
-		case executor.StatusExecutorDone:
-			activeStep = "execute"
-			status = "executor_running"
-			lifecycleState = "execute"
-			state = "Executor Done"
-			statusSeverity = "success"
-		case executor.StatusExecutorBlocked:
-			activeStep = "execute"
-			status = "blocked"
-			lifecycleState = "failed"
-			state = "Executor Blocked"
-			statusSeverity = "danger"
-		case "blocked":
-			activeStep = "intake"
-			status = "blocked"
-			lifecycleState = "failed"
-			state = "Blocked"
-			statusSeverity = "danger"
-		case "agent_done":
-			activeStep = "execute"
-			status = "executor_running"
-			lifecycleState = "execute"
-			state = "Agent Done"
-			statusSeverity = "success"
-		case "agent_blocked":
-			activeStep = "execute"
-			status = "blocked"
-			lifecycleState = "failed"
-			state = "Agent Blocked"
-			statusSeverity = "danger"
-		case "agent_result_needs_review":
-			activeStep = "execute"
-			status = "blocked"
-			lifecycleState = "execute"
-			state = "Result Needs Review"
-			statusSeverity = "warning"
-		case "validation_passed", "validation_failed_accepted":
-			activeStep = "audit"
-			status = "audit_ready_for_review"
-			lifecycleState = "audit"
-			state = "Audit Review"
-			statusSeverity = "warning"
-		case "validation_failed":
-			activeStep = "audit"
-			status = "blocked"
-			lifecycleState = "failed"
-			state = "Validation Failed"
-			statusSeverity = "danger"
-		case "audit_ready":
-			activeStep = "audit"
-			status = "audit_ready_for_review"
-			lifecycleState = "audit"
-			state = "Audit Ready"
-			statusSeverity = "warning"
-		case "accepted":
-			activeStep = "audit"
-			status = "audit_ready_for_review"
-			lifecycleState = "audit"
-			state = "Approved — Ready to Close"
-			statusSeverity = "success"
-		case "accepted_with_warnings":
-			activeStep = "audit"
-			status = "audit_ready_for_review"
-			lifecycleState = "audit"
-			state = "Approved with Warnings"
-			statusSeverity = "warning"
-		case "completed":
-			activeStep = "audit"
-			status = "completed"
-			lifecycleState = "completed"
-			state = "Completed"
-			statusSeverity = "success"
 		}
+	case "validated":
+		activeStep = "intake"
+		lifecycleState = "intake"
+		state = "Intake Validated"
+		statusSeverity = "info"
+	case "approved_for_prepare":
+		activeStep = "prepare"
+		lifecycleState = "prepare"
+		state = "Approved for Prepare"
+		statusSeverity = "success"
+	case "packet_validated", "repair_validated":
+		activeStep = "prepare"
+		lifecycleState = "prepare"
+		state = "Packet Validated"
+		statusSeverity = "info"
+	case "packet_validation_failed":
+		activeStep = "prepare"
+		lifecycleState = "prepare"
+		state = "Packet Validation Failed"
+		statusSeverity = "danger"
+	case "brief_ready_for_review":
+		activeStep = "prepare"
+		lifecycleState = "prepare"
+		state = "Brief Ready for Review"
+		statusSeverity = "success"
+	case "approved_for_executor":
+		activeStep = "execute"
+		lifecycleState = "execute"
+		state = "Approved for Executor"
+		statusSeverity = "success"
+	case executor.StatusExecutorDispatched:
+		activeStep = "execute"
+		lifecycleState = "execute"
+		state = "Executor Dispatched"
+		statusSeverity = "info"
+	case executor.StatusExecutorDone:
+		activeStep = "execute"
+		lifecycleState = "execute"
+		state = "Executor Done"
+		statusSeverity = "success"
+	case executor.StatusExecutorBlocked:
+		activeStep = "execute"
+		lifecycleState = "failed"
+		state = "Executor Blocked"
+		statusSeverity = "danger"
+	case "blocked":
+		activeStep = "intake"
+		lifecycleState = "failed"
+		state = "Blocked"
+		statusSeverity = "danger"
+	case "agent_done":
+		activeStep = "execute"
+		lifecycleState = "execute"
+		state = "Agent Done"
+		statusSeverity = "success"
+	case "agent_blocked":
+		activeStep = "execute"
+		lifecycleState = "failed"
+		state = "Agent Blocked"
+		statusSeverity = "danger"
+	case "agent_result_needs_review":
+		activeStep = "execute"
+		lifecycleState = "execute"
+		state = "Result Needs Review"
+		statusSeverity = "warning"
+	case "validation_passed", "validation_failed_accepted":
+		activeStep = "audit"
+		lifecycleState = "audit"
+		state = "Audit Review"
+		statusSeverity = "warning"
+	case "validation_failed":
+		activeStep = "audit"
+		lifecycleState = "failed"
+		state = "Validation Failed"
+		statusSeverity = "danger"
+	case "audit_ready", "audit_ready_for_review":
+		activeStep = "audit"
+		lifecycleState = "audit"
+		state = "Audit Ready"
+		statusSeverity = "warning"
+	case "accepted":
+		activeStep = "audit"
+		lifecycleState = "audit"
+		state = "Approved — Ready to Close"
+		statusSeverity = "success"
+	case "accepted_with_warnings":
+		activeStep = "audit"
+		lifecycleState = "audit"
+		state = "Approved with Warnings"
+		statusSeverity = "warning"
+	case "completed":
+		activeStep = "audit"
+		lifecycleState = "completed"
+		state = "Completed"
+		statusSeverity = "success"
 	}
 
 	model := run.SelectedModel
@@ -609,31 +600,32 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 	}
 
 	return RelayRun{
-		ID:                idStr,
-		Name:              run.Title,
-		Repo:              repoName,
-		Branch:            run.BranchName,
-		Worktree:          worktree,
-		ActiveStep:        activeStep,
-		Status:            status,
-		LifecycleState:    lifecycleState,
-		CreatedAt:         parseAndFormatTime(run.CreatedAt),
-		UpdatedAt:         parseAndFormatTime(run.UpdatedAt),
-		Summary:           "Orchestration run: " + run.Title,
-		Model:             model,
-		RiskLevel:         "medium",
-		Validation:        valResult,
-		Artifacts:         relayArtifacts,
-		LatestEvents:      relayEvents,
-		StatusSeverity:    statusSeverity,
-		State:             state,
-		Title:             run.Title,
-		PacketID:          packetID,
-		Executor:          "deepseek-v4-flash",
-		ValidationSummary: valResult,
-		ApprovalGate:      buildApprovalGate(activeStep, run.Status),
-		LogPreview:        buildLogPreview(events),
-		StepLabels:        stepLabels,
+		ID:                    idStr,
+		Name:                  run.Title,
+		Repo:                  repoName,
+		Branch:                run.BranchName,
+		Worktree:              worktree,
+		ActiveStep:            activeStep,
+		Status:                status,
+		LifecycleState:        lifecycleState,
+		CreatedAt:             parseAndFormatTime(run.CreatedAt),
+		UpdatedAt:             parseAndFormatTime(run.UpdatedAt),
+		Summary:               "Orchestration run: " + run.Title,
+		Model:                 model,
+		RiskLevel:             "medium",
+		Validation:            valResult,
+		Artifacts:             relayArtifacts,
+		LatestEvents:          relayEvents,
+		StatusSeverity:        statusSeverity,
+		State:                 state,
+		Title:                 run.Title,
+		PacketID:              packetID,
+		Executor:              "deepseek-v4-flash",
+		ValidationSummary:     valResult,
+		ApprovalGate:          buildApprovalGate(activeStep, run.Status),
+		LogPreview:            buildLogPreview(events),
+		StepLabels:            stepLabels,
+		LatestExecutionStatus: latestExecutionStatus,
 	}
 }
 

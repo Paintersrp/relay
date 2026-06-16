@@ -11,7 +11,7 @@ interface RunSummaryHeaderProps {
 }
 
 export function RunSummaryHeader({ run }: RunSummaryHeaderProps) {
-  const isRunning = run.status === 'executor_running'
+  const isRunning = run.status === 'executor_dispatched' || run.status === 'executor_running'
 
   return (
     <div className="flex flex-col gap-3 px-4 py-3 border-b bg-muted/20">

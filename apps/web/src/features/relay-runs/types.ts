@@ -16,12 +16,33 @@ export type RelayRunStep = "intake" | "prepare" | "execute" | "audit";
 // Compatibility alias for Step Key
 export type RelayRunStepKey = RelayRunStep;
 
-// Required run statuses
+// Canonical workflow states for action gating — all statuses the API can emit
 export type RelayRunStatus =
+  | "draft"
+  | "needs_cleanup"
+  | "intake_received"
   | "intake_needs_review"
+  | "validated"
+  | "approved_for_prepare"
+  | "packet_validated"
+  | "packet_validation_failed"
+  | "repair_validated"
   | "brief_ready_for_review"
+  | "approved_for_executor"
+  | "executor_dispatched"
   | "executor_running"
+  | "executor_done"
+  | "executor_blocked"
+  | "agent_done"
+  | "agent_blocked"
+  | "agent_result_needs_review"
+  | "audit_ready"
   | "audit_ready_for_review"
+  | "accepted"
+  | "accepted_with_warnings"
+  | "validation_passed"
+  | "validation_failed_accepted"
+  | "validation_failed"
   | "completed"
   | "blocked";
 
@@ -217,6 +238,9 @@ export interface RelayRun {
   approvalGate: RelayApprovalGate;
   logPreview: RelayLogPreview;
   stepLabels: Record<RelayRunStep, string>;
+
+  // Latest agent execution phase (separate from canonical status)
+  latestExecutionStatus?: string;
 }
 
 // Run detail page workbench input structure

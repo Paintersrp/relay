@@ -335,6 +335,151 @@ func TestAPI(t *testing.T) {
 		}
 	})
 
+	// Status mapping tests — verify canonical workflow states are preserved
+	t.Run("GET /api/runs/{id} - canonical status mapping for approved_for_prepare", func(t *testing.T) {
+		approvedRun, err := s.CreateRun(repo.ID, "Status Test", "approved_for_prepare", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+
+		runIDStr := strconv.FormatInt(approvedRun.ID, 10)
+		req := httptest.NewRequest("GET", "/api/runs/"+runIDStr, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+
+		var relayRun RelayRun
+		if err := json.NewDecoder(w.Body).Decode(&relayRun); err != nil {
+			t.Fatalf("failed to decode run: %v", err)
+		}
+		if relayRun.Status != "approved_for_prepare" {
+			t.Errorf("expected status approved_for_prepare, got %q", relayRun.Status)
+		}
+		if relayRun.ActiveStep != "prepare" {
+			t.Errorf("expected activeStep prepare, got %q", relayRun.ActiveStep)
+		}
+		if relayRun.LifecycleState != "prepare" {
+			t.Errorf("expected lifecycleState prepare, got %q", relayRun.LifecycleState)
+		}
+	})
+
+	t.Run("GET /api/runs/{id} - canonical status mapping for packet_validated", func(t *testing.T) {
+		pvRun, err := s.CreateRun(repo.ID, "Status Test PV", "packet_validated", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+
+		runIDStr := strconv.FormatInt(pvRun.ID, 10)
+		req := httptest.NewRequest("GET", "/api/runs/"+runIDStr, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+
+		var relayRun RelayRun
+		if err := json.NewDecoder(w.Body).Decode(&relayRun); err != nil {
+			t.Fatalf("failed to decode run: %v", err)
+		}
+		if relayRun.Status != "packet_validated" {
+			t.Errorf("expected status packet_validated, got %q", relayRun.Status)
+		}
+		if relayRun.ActiveStep != "prepare" {
+			t.Errorf("expected activeStep prepare, got %q", relayRun.ActiveStep)
+		}
+	})
+
+	t.Run("GET /api/runs/{id} - canonical status mapping for approved_for_executor", func(t *testing.T) {
+		afeRun, err := s.CreateRun(repo.ID, "Status Test AFE", "approved_for_executor", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+
+		runIDStr := strconv.FormatInt(afeRun.ID, 10)
+		req := httptest.NewRequest("GET", "/api/runs/"+runIDStr, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+
+		var relayRun RelayRun
+		if err := json.NewDecoder(w.Body).Decode(&relayRun); err != nil {
+			t.Fatalf("failed to decode run: %v", err)
+		}
+		if relayRun.Status != "approved_for_executor" {
+			t.Errorf("expected status approved_for_executor, got %q", relayRun.Status)
+		}
+		if relayRun.ActiveStep != "execute" {
+			t.Errorf("expected activeStep execute, got %q", relayRun.ActiveStep)
+		}
+		if relayRun.LifecycleState != "execute" {
+			t.Errorf("expected lifecycleState execute, got %q", relayRun.LifecycleState)
+		}
+	})
+
+	t.Run("GET /api/runs/{id} - canonical status mapping for executor_done", func(t *testing.T) {
+		edRun, err := s.CreateRun(repo.ID, "Status Test ED", "executor_done", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+
+		runIDStr := strconv.FormatInt(edRun.ID, 10)
+		req := httptest.NewRequest("GET", "/api/runs/"+runIDStr, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+
+		var relayRun RelayRun
+		if err := json.NewDecoder(w.Body).Decode(&relayRun); err != nil {
+			t.Fatalf("failed to decode run: %v", err)
+		}
+		if relayRun.Status != "executor_done" {
+			t.Errorf("expected status executor_done, got %q", relayRun.Status)
+		}
+		if relayRun.ActiveStep != "execute" {
+			t.Errorf("expected activeStep execute, got %q", relayRun.ActiveStep)
+		}
+		if relayRun.LifecycleState != "execute" {
+			t.Errorf("expected lifecycleState execute, got %q", relayRun.LifecycleState)
+		}
+	})
+
+	t.Run("GET /api/runs/{id} - canonical status mapping for audit_ready", func(t *testing.T) {
+		arRun, err := s.CreateRun(repo.ID, "Status Test AR", "audit_ready", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+
+		runIDStr := strconv.FormatInt(arRun.ID, 10)
+		req := httptest.NewRequest("GET", "/api/runs/"+runIDStr, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+
+		var relayRun RelayRun
+		if err := json.NewDecoder(w.Body).Decode(&relayRun); err != nil {
+			t.Fatalf("failed to decode run: %v", err)
+		}
+		if relayRun.Status != "audit_ready" {
+			t.Errorf("expected status audit_ready, got %q", relayRun.Status)
+		}
+		if relayRun.ActiveStep != "audit" {
+			t.Errorf("expected activeStep audit, got %q", relayRun.ActiveStep)
+		}
+	})
+
 	t.Run("POST /api/runs/{id}/approve-intake - Conflict (409)", func(t *testing.T) {
 		// Run status is already "intake_needs_review", let's update it to something invalid like "completed"
 		_, err := s.UpdateRunStatus(run.ID, "completed")

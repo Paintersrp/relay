@@ -176,10 +176,9 @@ function deriveAuditData(
   )
 
   const runStatus = run.status || ''
-  const lifecycleState = run.lifecycleState || ''
-  const isAccepted = runStatus === 'audit_ready_for_review' && (run.state === 'Approved — Ready to Close' || run.state === 'Approved with Warnings')
-  const isAuditReady = runStatus === 'audit_ready_for_review' && lifecycleState === 'audit'
-  const isCompleted = runStatus === 'completed' && lifecycleState === 'completed'
+  const isAccepted = runStatus === 'accepted' || runStatus === 'accepted_with_warnings'
+  const isAuditReady = runStatus === 'audit_ready' || runStatus === 'audit_ready_for_review'
+  const isCompleted = runStatus === 'completed'
   const isBlocked = runStatus === 'blocked'
 
   const commitMsgArts = artifacts.filter((a: any) =>

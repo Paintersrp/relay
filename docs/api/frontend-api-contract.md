@@ -25,6 +25,47 @@ Relay is partitioned into two runtime environments:
 - **No Templ/Htmx UI Calls**: The new React UI must interact only with the JSON API endpoints specified below. It must not call old HTML-rendering routes or templ/htmx form action handlers.
 - **No Old Route Naming Schemes**: Do not reuse the old templ/htmx form action names (`/approve_intake`, `/execute_handoff`, etc.) or layout page names as API endpoint paths. The JSON API uses clean rest-style routes (e.g. `/api/runs/{id}/approve-intake`).
 
+## Workflow Status Contract
+
+`RelayRun.status` is the **canonical workflow state** used for action gating. It is set to the exact store status value and must not be collapsed into a broad display bucket. Display/helper fields are derived separately:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `status` | `RelayRunStatus` | Canonical workflow state for action gating |
+| `activeStep` | `RelayRunStep` | Current pipeline step (`intake`, `prepare`, `execute`, `audit`) |
+| `lifecycleState` | `RelayRunLifecycleState` | Lifecycle bucket (`intake`, `prepare`, `execute`, `audit`, `completed`, `failed`) |
+| `state` | `string` | Human-readable display state label |
+| `statusSeverity` | `RelayRunStatusSeverity` | UI badge severity (`neutral`, `info`, `success`, `warning`, `danger`) |
+| `latestExecutionStatus` | `string` (optional) | Latest agent execution phase (`starting`, `running`, `completed`, `failed`, etc.) — separate from canonical status; `""` when no execution has been recorded |
+
+### Canonical Status Values
+
+The following canonical statuses are emitted by `GET /api/runs` and `GET /api/runs/{id}`:
+
+- `draft` — Run created but not yet submitted
+- `needs_cleanup` — Run has uncommitted or dirty state
+- `intake_received` — Handoff received, no validation warnings
+- `intake_needs_review` — Handoff received with warnings, awaiting review
+- `validated` — Legacy: intake validated
+- `approved_for_prepare` — Intake approved; compilation allowed
+- `packet_validated` — Compilation succeeded, packet valid
+- `packet_validation_failed` — Compilation failed validation
+- `repair_validated` — Repair succeeded
+- `brief_ready_for_review` — Executor brief rendered, awaiting approval
+- `approved_for_executor` — Brief approved; executor dispatch allowed
+- `executor_dispatched` — Executor dispatched and running
+- `executor_done` — Executor completed successfully
+- `executor_blocked` — Executor encountered a blocking error
+- `audit_ready` — Audit packet generated, ready for review
+- `audit_ready_for_review` — Legacy: audit ready (htmx fallback)
+- `accepted` — Audit approved
+- `accepted_with_warnings` — Audit approved with warnings
+- `completed` — Run closed
+- `blocked` — Run blocked (intake or general)
+- Legacy agent states: `agent_done`, `agent_blocked`, `agent_result_needs_review`, `validation_passed`, `validation_failed_accepted`, `validation_failed`
+
+Display fields (`state`, `activeStep`, `lifecycleState`, `statusSeverity`) are derived from the canonical status and must not be used for action gating. Frontend action gating must use `status` only.
+
 ## Shared Models
 
 ### RelayRun
@@ -36,7 +77,7 @@ Relay is partitioned into two runtime environments:
   "repo": "string",
   "branch": "string",
   "activeStep": "intake | prepare | execute | audit",
-  "status": "intake_needs_review | brief_ready_for_review | executor_running | audit_ready_for_review | completed | blocked",
+  "status": "<canonical workflow state>",
   "lifecycleState": "intake | prepare | execute | audit | completed | failed",
   "createdAt": "string (ISO-8601)",
   "updatedAt": "string (ISO-8601)",
@@ -50,7 +91,10 @@ Relay is partitioned into two runtime environments:
     "issues": []
   },
   "artifacts": [],
-  "latestEvents": []
+  "latestEvents": [],
+  "statusSeverity": "neutral | info | success | warning | danger",
+  "state": "string",
+  "latestExecutionStatus": "string (optional)"
 }
 ```
 
@@ -104,6 +148,11 @@ Relay is partitioned into two runtime environments:
 ### 2. GET `/api/runs/{id}`
 - **Purpose**: Fetch details of a single run by ID.
 - **Request Body**: None
+- **Expected status values for key pipeline states**:
+  - `approved_for_prepare` — Intake approved, ready to compile (activeStep: `prepare`, lifecycleState: `prepare`)
+  - `packet_validated` — Compilation succeeded (activeStep: `prepare`, lifecycleState: `prepare`)
+  - `approved_for_executor` — Brief approved, ready to dispatch executor (activeStep: `execute`, lifecycleState: `execute`)
+  - `executor_done` — Executor completed (activeStep: `execute`, lifecycleState: `execute`)
 - **Response Body**: `RelayRun`
 - **Fallback Policy**: Allowed. Falls back to the corresponding static mock run if the endpoint is 404, unimplemented, or the daemon is offline.
 - **Expected Error Behavior**: Throws a descriptive error if the response contains invalid or malformed JSON.
@@ -139,7 +188,7 @@ Relay is partitioned into two runtime environments:
   {
     "success": true,
     "runId": "string",
-    "status": "intake_needs_review",
+    "status": "intake_received | intake_needs_review",
     "lifecycleState": "intake",
     "createdAt": "string (ISO-8601)"
   }
@@ -167,8 +216,8 @@ Relay is partitioned into two runtime environments:
   {
     "success": true,
     "runId": "string",
-    "status": "brief_ready_for_review | intake_needs_review | blocked",
-    "lifecycleState": "prepare | intake",
+    "status": "approved_for_prepare | intake_needs_review | blocked",
+    "lifecycleState": "prepare | intake | failed",
     "updatedAt": "string (ISO-8601)"
   }
   ```
@@ -256,7 +305,7 @@ Relay is partitioned into two runtime environments:
   {
     "success": true,
     "runId": "string",
-    "status": "executor_running",
+    "status": "executor_dispatched",
     "lifecycleState": "execute",
     "updatedAt": "string (ISO-8601)"
   }
@@ -287,7 +336,7 @@ Relay is partitioned into two runtime environments:
   {
     "success": true,
     "runId": "string",
-    "status": "audit_ready_for_review",
+    "status": "audit_ready",
     "inputSummary": "string (path to audit_input_summary.md artifact)",
     "auditPacket": "string (path to audit_packet.md artifact)",
     "decision": "manual_review_required | accepted | accepted_with_warnings | revision_required | blocked",
@@ -344,9 +393,9 @@ Relay is partitioned into two runtime environments:
   {
     "success": true,
     "runId": "string",
-    "status": "audit_ready_for_review",
+    "status": "accepted | accepted_with_warnings",
     "lifecycleState": "audit",
-    "state": "Approved — Ready to Close",
+    "state": "Approved — Ready to Close | Approved with Warnings",
     "updatedAt": "string (ISO-8601)"
   }
   ```
@@ -368,7 +417,7 @@ Relay is partitioned into two runtime environments:
   {
     "success": true,
     "runId": "string",
-    "status": "audit_ready_for_review",
+    "status": "audit_ready | audit_ready_for_review",
     "lifecycleState": "audit",
     "updatedAt": "string (ISO-8601)"
   }
