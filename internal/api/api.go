@@ -384,6 +384,20 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 	events, _ := h.store.ListEventsByRun(run.ID)
 	latestExec, _ := h.store.GetLatestAgentExecutionByRun(run.ID)
 
+	worktree := ""
+	for _, art := range artifacts {
+		if art.Kind == "run_config" {
+			if data, err := os.ReadFile(art.Path); err == nil {
+				var cfg map[string]interface{}
+				if err := json.Unmarshal(data, &cfg); err == nil {
+					if wt, ok := cfg["worktree"].(string); ok {
+						worktree = wt
+					}
+				}
+			}
+		}
+	}
+
 	// Determine active step, status, and lifecycleState
 	activeStep := "intake"
 	status := "intake_needs_review"
@@ -599,6 +613,7 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 		Name:              run.Title,
 		Repo:              repoName,
 		Branch:            run.BranchName,
+		Worktree:          worktree,
 		ActiveStep:        activeStep,
 		Status:            status,
 		LifecycleState:    lifecycleState,
@@ -1140,6 +1155,7 @@ func (h *APIHandler) ApproveIntake(w http.ResponseWriter, r *http.Request) {
 		Model              string `json:"model"`
 		Repo               string `json:"repo"`
 		Branch             string `json:"branch"`
+		Worktree           string `json:"worktree"`
 		ValidationCommands string `json:"validationCommands"`
 	}
 	type ApproveIntakeRequest struct {
@@ -1207,6 +1223,9 @@ func (h *APIHandler) ApproveIntake(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Overrides.Branch != "" {
 		configMap["branch_context"] = req.Overrides.Branch
+	}
+	if req.Overrides.Worktree != "" {
+		configMap["worktree"] = req.Overrides.Worktree
 	}
 	if req.Overrides.Model != "" {
 		configMap["model"] = req.Overrides.Model

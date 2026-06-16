@@ -5,9 +5,7 @@ import {
   runDetailQueryOptions,
   runArtifactsQueryOptions,
   runEventsQueryOptions,
-  approveIntake,
-  formatRunDateRelative,
-  formatRunDate
+  approveIntake
 } from '@/features/relay-runs'
 import { RunWorkbenchLayout } from '@/components/relay/RunWorkbenchLayout'
 import { ValidationPanel } from '@/components/relay/ValidationPanel'
@@ -106,7 +104,6 @@ function IntakePage() {
         <IntakeMainContent
           run={run}
           artifacts={artifacts || []}
-          events={events || []}
         />
       }
       sideContent={
@@ -125,11 +122,9 @@ function IntakePage() {
 function IntakeMainContent({
   run,
   artifacts,
-  events,
 }: {
   run: any
   artifacts: any[]
-  events: any[]
 }) {
   const queryClient = useQueryClient()
   const [notes, setNotes] = useState('')
@@ -151,6 +146,7 @@ function IntakeMainContent({
   const [model, setModel] = useState(run.model || '')
   const [repo, setRepo] = useState(run.repo || '')
   const [branch, setBranch] = useState(run.branch || '')
+  const [worktree, setWorktree] = useState(run.worktree || '')
   const [validationCommands, setValidationCommands] = useState(initialValCommands)
 
   // Keep fields in sync if run shifts
@@ -158,13 +154,15 @@ function IntakeMainContent({
     if (run.model) setModel(run.model)
     if (run.repo) setRepo(run.repo)
     if (run.branch) setBranch(run.branch)
-  }, [run.model, run.repo, run.branch])
+    if (run.worktree) setWorktree(run.worktree)
+  }, [run.model, run.repo, run.branch, run.worktree])
 
   useEffect(() => {
     if (runConfigArt && runConfigArt.preview) {
       try {
         const cfg = JSON.parse(runConfigArt.preview)
         if (cfg.validation_commands) setValidationCommands(cfg.validation_commands)
+        if (cfg.worktree) setWorktree(cfg.worktree)
       } catch {
         // ignore
       }
@@ -173,9 +171,9 @@ function IntakeMainContent({
 
   // Setup mutation for submitting review
   const { mutate, isPending } = useMutation({
-    mutationFn: ({ decision, requestPayload }: { decision: string; requestPayload: any }) =>
+    mutationFn: ({ requestPayload }: { requestPayload: any }) =>
       approveIntake(run.id, requestPayload),
-    onSuccess: (data) => {
+    onSuccess: () => {
       setMutationError(null)
       setNotes('')
       // Invalidate queries to refresh route details
@@ -198,10 +196,11 @@ function IntakeMainContent({
         model: model !== run.model ? model.trim() : undefined,
         repo: repo !== run.repo ? repo.trim() : undefined,
         branch: branch !== run.branch ? branch.trim() : undefined,
+        worktree: worktree !== run.worktree ? worktree.trim() : undefined,
         validationCommands: validationCommands !== initialValCommands ? validationCommands.trim() : undefined,
       },
     }
-    mutate({ decision: action, requestPayload: payload })
+    mutate({ requestPayload: payload })
   }
 
   const plannerHandoff = artifacts.find((a) => a.filename === 'planner_handoff.md' || a.kind === 'handoff')
@@ -301,6 +300,17 @@ function IntakeMainContent({
               value={branch}
               onChange={(e) => setBranch(e.target.value)}
               placeholder="e.g. main"
+              className="h-8 text-xs bg-background/50"
+              disabled={isPending || !isReviewable}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="override-worktree" className="text-xs text-muted-foreground">Worktree Override</Label>
+            <Input
+              id="override-worktree"
+              value={worktree}
+              onChange={(e) => setWorktree(e.target.value)}
+              placeholder="e.g. my-worktree"
               className="h-8 text-xs bg-background/50"
               disabled={isPending || !isReviewable}
             />

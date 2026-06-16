@@ -1,2 +1,16 @@
-import { formatDistanceToNow } from 'date-fns'; import type { RelayRunSummary } from '../types'; import { StatusBadge } from './status-badge';
-export function RunSummaryHeader({run}:{run:RelayRunSummary}){return <header className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between"><div><p className="text-sm text-slate-400">{run.repo}{run.branch?` · ${run.branch}`:''}</p><h2 className="text-3xl font-bold">{run.title}</h2><p className="mt-1 text-sm text-slate-400">Updated {formatDistanceToNow(new Date(run.updatedAt),{addSuffix:true})} · {run.model ?? 'model unset'}</p></div><StatusBadge severity={run.statusSeverity}>{run.state}</StatusBadge></header>}
+import type { RelayRunSummary } from '../types';
+import { StatusBadge } from './status-badge';
+import { formatRunDateRelative } from '../queries';
+
+export function RunSummaryHeader({run}:{run:RelayRunSummary}){
+	return (
+		<header className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+			<div>
+				<p className="text-sm text-slate-400">{run.repo}{run.branch?` · ${run.branch}`:''}</p>
+				<h2 className="text-3xl font-bold">{run.title}</h2>
+				<p className="mt-1 text-sm text-slate-400">Updated {formatRunDateRelative(run.updatedAt)} · {run.model ?? 'model unset'}</p>
+			</div>
+			<StatusBadge severity={run.statusSeverity}>{run.state}</StatusBadge>
+		</header>
+	);
+}

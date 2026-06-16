@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"relay/internal/artifacts"
 	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -277,6 +278,35 @@ func TestAPI(t *testing.T) {
 		}
 		if dbRun.SelectedModel != "gpt-4o-custom" {
 			t.Errorf("expected model gpt-4o-custom, got %s", dbRun.SelectedModel)
+		}
+	})
+
+	t.Run("POST /api/runs/{id}/approve-intake - Success Approve with Worktree Override", func(t *testing.T) {
+		_, err := s.UpdateRunStatus(run.ID, "intake_received")
+		if err != nil {
+			t.Fatalf("failed to reset run status: %v", err)
+		}
+
+		body := `{"action":"approve","notes":"All clean!","overrides":{"worktree":"custom-worktree-path"}}`
+		req := httptest.NewRequest("POST", "/api/runs/"+strconv.FormatInt(run.ID, 10)+"/approve-intake", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		cfgBytes, err := artifacts.Read(run.ID, "run_config", "run_config.json")
+		if err != nil {
+			t.Fatalf("failed to read run_config: %v", err)
+		}
+		var cfg map[string]interface{}
+		if err := json.Unmarshal(cfgBytes, &cfg); err != nil {
+			t.Fatalf("failed to unmarshal run_config: %v", err)
+		}
+		if cfg["worktree"] != "custom-worktree-path" {
+			t.Errorf("expected worktree override 'custom-worktree-path', got %v", cfg["worktree"])
 		}
 	})
 

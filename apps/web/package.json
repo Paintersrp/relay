@@ -18,7 +18,6 @@
     "@tanstack/zod-adapter": "latest",
     "class-variance-authority": "latest",
     "clsx": "latest",
-    "date-fns": "latest",
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",

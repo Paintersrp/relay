@@ -114,6 +114,7 @@ export interface RelayActionRequest {
     model?: string;
     repo?: string;
     branch?: string;
+    worktree?: string;
     validationCommands?: string;
   };
 }
@@ -127,19 +128,29 @@ export interface RelayActionResponse {
 }
 
 export interface PlannerHandoffIntakeRequest {
-  repo: string;
-  branch: string;
-  handoffPath: string;
-  packetId?: string;
+  // Primary v2 fields
+  planner_handoff_markdown?: string;
+  repo_target?: string;
+  branch_context?: string;
+  run_id?: string;
   name?: string;
+
+  // Compatibility aliases
+  repo?: string;
+  branch?: string;
+  handoffPath?: string;
+  packetId?: string;
+  source?: string;
 }
 
 export interface PlannerHandoffIntakeResponse {
   success: boolean;
   runId: string;
+  run_id?: string;
   status: RelayRunStatus;
   lifecycleState: RelayRunLifecycleState;
   createdAt: string;
+  review_url?: string;
 }
 
 // Canonical API Error shape
