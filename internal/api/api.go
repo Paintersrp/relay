@@ -13,6 +13,7 @@ import (
 
 	"relay/internal/artifacts"
 	"relay/internal/intake"
+	"relay/internal/renderer"
 	"relay/internal/store"
 	"relay/internal/store/generated"
 
@@ -414,6 +415,24 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 			status = "brief_ready_for_review"
 			lifecycleState = "prepare"
 			state = "Approved for Prepare"
+			statusSeverity = "success"
+		case "packet_validated", "repair_validated":
+			activeStep = "prepare"
+			status = "brief_ready_for_review"
+			lifecycleState = "prepare"
+			state = "Packet Validated"
+			statusSeverity = "info"
+		case "brief_ready_for_review":
+			activeStep = "prepare"
+			status = "brief_ready_for_review"
+			lifecycleState = "prepare"
+			state = "Brief Ready for Review"
+			statusSeverity = "success"
+		case "approved_for_executor":
+			activeStep = "execute"
+			status = "executor_running"
+			lifecycleState = "execute"
+			state = "Approved for Executor"
 			statusSeverity = "success"
 		case "blocked":
 			activeStep = "intake"
@@ -1157,5 +1176,67 @@ func (h *APIHandler) ApproveIntake(w http.ResponseWriter, r *http.Request) {
 		"status":         mappedRun.Status,
 		"lifecycleState": mappedRun.LifecycleState,
 		"updatedAt":      mappedRun.UpdatedAt,
+	})
+}
+
+// POST /api/runs/{id}/render-brief
+func (h *APIHandler) RenderBrief(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	rend := renderer.New(h.store)
+	res, err := rend.RenderExecutorBrief(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	if !res.Success {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+			"success": false,
+			"runId":   idStr,
+			"issues":  res.Issues,
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"runId":   idStr,
+	})
+}
+
+// POST /api/runs/{id}/approve-brief
+func (h *APIHandler) ApproveBrief(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	rend := renderer.New(h.store)
+	res, err := rend.ApproveExecutorBrief(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	if !res.Success {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+			"success": false,
+			"runId":   idStr,
+			"issues":  res.Issues,
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"runId":   idStr,
 	})
 }

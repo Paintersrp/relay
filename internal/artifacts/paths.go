@@ -51,6 +51,8 @@ var allowedKinds = map[string]bool{
 	"intake_validation_report":           true,
 	"canonical_packet":                   true,
 	"packet_validation_report":           true,
+	"executor_brief":                     true,
+	"brief_validation_report":            true,
 }
 
 func SetBaseDir(dir string) {

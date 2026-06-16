@@ -46,11 +46,13 @@ func ValidatePacketJSON(packetJSON []byte, schemaPath string) (*ValidationReport
 
 	// 2. JSON Schema validation
 	locatedPath := locateSchemaFile(schemaPath)
-	absSchemaPath, err := filepath.Abs(locatedPath)
+	schemaBytes, err := os.ReadFile(locatedPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute schema path: %w", err)
+		return nil, fmt.Errorf("failed to read schema file %q: %w", locatedPath, err)
 	}
-	schemaLoader := gojsonschema.NewReferenceLoader("file:///" + filepath.ToSlash(absSchemaPath))
+	schemaStr := sanitizeSchemaRegexes(string(schemaBytes))
+
+	schemaLoader := gojsonschema.NewStringLoader(schemaStr)
 	documentLoader := gojsonschema.NewGoLoader(raw)
 
 	result, err := gojsonschema.Validate(schemaLoader, documentLoader)
@@ -123,7 +125,7 @@ func scanForSecrets(val interface{}) []string {
 	var issues []string
 	switch v := val.(type) {
 	case string:
-		if hasSecret(v) {
+		if HasSecret(v) {
 			issues = append(issues, fmt.Sprintf("secret-like value detected in string: %s", truncateString(v, 30)))
 		}
 	case map[string]interface{}:
@@ -145,7 +147,7 @@ var secretRegexes = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(?:sig|signature|aws_secret_access_key|private_key|client_secret|client_id|access_token|refresh_token|password|passwd|api_key|apikey)=["']?[a-zA-Z0-9_\-\.\~\+\/]{16,}`),
 }
 
-func hasSecret(s string) bool {
+func HasSecret(s string) bool {
 	if strings.Contains(s, "-----BEGIN") {
 		return true
 	}
@@ -155,6 +157,10 @@ func hasSecret(s string) bool {
 		}
 	}
 	return false
+}
+
+func hasSecret(s string) bool {
+	return HasSecret(s)
 }
 
 func truncateString(s string, limit int) string {
@@ -228,8 +234,6 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []string {
 	requiredFields := []string{
 		"goal",
 		"scope",
-		"expected_behavior",
-		"completion_contract",
 		"executor_final_response_format",
 	}
 
@@ -243,6 +247,20 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []string {
 		if !ok || strings.TrimSpace(strVal) == "" {
 			issues = append(issues, fmt.Sprintf("required execution_payload field %q is empty", f))
 		}
+	}
+
+	// Validate expected_behavior (should be non-empty array of strings)
+	if val, ok := exec["expected_behavior"]; !ok {
+		issues = append(issues, "required execution_payload field \"expected_behavior\" is missing")
+	} else if arr, ok := val.([]interface{}); !ok || len(arr) == 0 {
+		issues = append(issues, "required execution_payload field \"expected_behavior\" is empty")
+	}
+
+	// Validate completion_contract (should be object)
+	if val, ok := exec["completion_contract"]; !ok {
+		issues = append(issues, "required execution_payload field \"completion_contract\" is missing")
+	} else if obj, ok := val.(map[string]interface{}); !ok || len(obj) == 0 {
+		issues = append(issues, "required execution_payload field \"completion_contract\" is empty")
 	}
 
 	// Check arrays are not empty
@@ -279,7 +297,22 @@ func locateSchemaFile(p string) string {
 		if _, err := os.Stat(tryPath); err == nil {
 			return tryPath
 		}
+		// Also map handoffs/ to relay-contracts/
+		if strings.HasPrefix(p, "handoffs/") {
+			tryMapped := filepath.Join(dir, strings.Replace(p, "handoffs/", "relay-contracts/", 1))
+			if _, err := os.Stat(tryMapped); err == nil {
+				return tryMapped
+			}
+		}
 		dir = filepath.Join(dir, "..")
 	}
 	return p
+}
+
+func sanitizeSchemaRegexes(schemaContent string) string {
+	// Remove lookaheads: (?!/) and other lookaheads that Go's RE2 doesn't support
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!/)`, "")
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(^|/)\\.\\.($|/))`, "")
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*\\\\)`, "")
+	return schemaContent
 }

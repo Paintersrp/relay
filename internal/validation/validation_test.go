@@ -13,7 +13,7 @@ func TestValidation(t *testing.T) {
 	schemaPath := filepath.Join(tmpDir, "test_schema.json")
 
 	// Read existing schema
-	schemaBytes, err := os.ReadFile("d:/Code/relay/handoffs/schema/canonical_packet.schema.json")
+	schemaBytes, err := os.ReadFile(locateSchemaFile("handoffs/schema/canonical_packet.schema.json"))
 	if err != nil {
 		t.Fatalf("failed to read real schema for test: %v", err)
 	}
@@ -21,48 +21,13 @@ func TestValidation(t *testing.T) {
 		t.Fatalf("failed to write test schema: %v", err)
 	}
 
-	validPacket := map[string]interface{}{
-		"packet_meta": map[string]interface{}{
-			"packet_id":       "packet-2026-06-16-test",
-			"task_slug":       "test-task",
-			"target_executor": "deepseek-v4-flash",
-			"repo_target":     "Paintersrp/relay",
-			"branch_context":  "main",
-			"lifecycle_state": "packet_created",
-			"artifact_paths": map[string]interface{}{
-				"canonical_packet": "handoffs/packets/test.json",
-			},
-		},
-		"planner_context": map[string]interface{}{
-			"context_snapshot": "This is a test snapshot",
-		},
-		"execution_payload": map[string]interface{}{
-			"goal":                 "Implement a test goal",
-			"scope":                "Scope of test",
-			"non_goals":            []string{"Not doing X"},
-			"file_targets":         []string{"internal/compiler/compiler.go"},
-			"implementation_steps": []string{"Step 1"},
-			"code_requirements":    []string{"Must do Y"},
-			"validation_commands": []interface{}{
-				map[string]interface{}{
-					"command":  "go test ./...",
-					"required": true,
-					"purpose":  "Verify test suite",
-				},
-			},
-			"expected_behavior":              "It works",
-			"completion_contract":            "Done when done",
-			"executor_final_response_format": "JSON",
-		},
-		"audit_seed": map[string]interface{}{
-			"audit_checklist":         []string{"Check A"},
-			"scope_drift_checks":      []string{"Check B"},
-			"non_goal_checks":         []string{"Check C"},
-			"file_scope_checks":       []string{"Check D"},
-			"risk_checks":             []string{"Check E"},
-			"validation_expectations": []string{"Check F"},
-			"manual_review_checklist": []string{"Check G"},
-		},
+	validPacketBytes, err := os.ReadFile(locateSchemaFile("handoffs/examples/canonical_packet.valid.example.json"))
+	if err != nil {
+		t.Fatalf("failed to read valid packet example: %v", err)
+	}
+	var validPacket map[string]interface{}
+	if err := json.Unmarshal(validPacketBytes, &validPacket); err != nil {
+		t.Fatalf("failed to parse valid packet example: %v", err)
 	}
 
 	t.Run("Valid Packet", func(t *testing.T) {
