@@ -221,6 +221,89 @@ export interface RelayRunStepInfo {
   description: string;
 }
 
+// Step 4: Audit / Close-specific types
+
+export type RelayAuditDecisionValue =
+  | "accepted"
+  | "accepted_with_warnings"
+  | "revision_required"
+  | "blocked"
+  | "manual_review_required";
+
+export const RELAY_AUDIT_DECISION_VALUES: RelayAuditDecisionValue[] = [
+  "accepted",
+  "accepted_with_warnings",
+  "revision_required",
+  "blocked",
+  "manual_review_required",
+];
+
+export interface RelayAuditInputSummaryInfo {
+  artifactId: string;
+  artifactPath: string;
+  available: boolean;
+  generatedAt?: string;
+  preview?: string;
+  evidenceIncluded: string[];
+  missingEvidence: string[];
+}
+
+export interface RelayAuditPacketInfo {
+  artifactId: string;
+  artifactPath: string;
+  available: boolean;
+  isManual: boolean;
+  generatedAt?: string;
+  decision?: RelayAuditDecisionValue;
+  preview?: string;
+  warnings: string[];
+}
+
+export interface RelayAuditDecisionStatus {
+  currentDecision?: RelayAuditDecisionValue;
+  source: "generated" | "manual" | "approved" | "none";
+  approvedAt?: string;
+  approvedBy?: string;
+  notes?: string;
+}
+
+export interface RelayCommitSummary {
+  changedFileArtifactIds: string[];
+  commitMessageArtifactId?: string;
+  commitMessagePreview?: string;
+  commitMessageAvailable: boolean;
+  validationSummary: string;
+  auditDecisionSummary: string;
+}
+
+export interface RelayAuditActions {
+  canGenerateAudit: boolean;
+  canSubmitManual: boolean;
+  canApproveAudit: boolean;
+  canRequestRevision: boolean;
+  canPrepareCommitMessage: boolean;
+  canCloseRun: boolean;
+  generateAuditUnavailableReason?: string;
+  submitManualUnavailableReason?: string;
+  approveAuditUnavailableReason?: string;
+  requestRevisionUnavailableReason?: string;
+  prepareCommitMessageUnavailableReason?: string;
+  closeRunUnavailableReason?: string;
+}
+
+export interface RelayAuditPageData {
+  runId: string;
+  inputSummary: RelayAuditInputSummaryInfo;
+  generatedPacket: RelayAuditPacketInfo;
+  manualPacket?: RelayAuditPacketInfo;
+  decision: RelayAuditDecisionStatus;
+  commitSummary: RelayCommitSummary;
+  actions: RelayAuditActions;
+  warnings: string[];
+  revisionRequirements: string[];
+  blockers: string[];
+}
+
 // Step 3: Execute-specific types
 
 export type RelayExecutorPhase =

@@ -22,7 +22,42 @@ export {
   recoverRun,
   getArtifactContent,
   auditRun,
-  approveCloseout
+  approveCloseout,
+  submitManualAuditPacket,
+  approveAudit,
+  requestAuditRevision,
+  prepareCommitMessage,
+  closeRun,
 } from './api'
-export type { RelayRun, RelayRunStatus, RelayRunStep, RelayValidationIssue, RelayArtifactPreview, RelayApprovalGate, RelayLogPreview, RelayExecutorPhase, RelayChangedFile, RelayValidationCommand, RelayExecuteActions } from './types'
+export type {
+  SubmitManualAuditPayload,
+  SubmitManualAuditResponse,
+  AuditApprovePayload,
+  AuditRevisionPayload,
+  PrepareCommitMessageResponse,
+  AuditActionResponse,
+} from './api'
+export type {
+  RelayRun,
+  RelayRunStatus,
+  RelayRunStep,
+  RelayValidationIssue,
+  RelayArtifactPreview,
+  RelayApprovalGate,
+  RelayLogPreview,
+  RelayExecutorPhase,
+  RelayChangedFile,
+  RelayValidationCommand,
+  RelayExecuteActions,
+  RelayAuditDecisionValue,
+  RelayAuditInputSummaryInfo,
+  RelayAuditPacketInfo,
+  RelayAuditDecisionStatus,
+  RelayCommitSummary,
+  RelayAuditActions,
+  RelayAuditPageData,
+} from './types'
+export {
+  RELAY_AUDIT_DECISION_VALUES,
+} from './types'
 export { runArtifactContentQueryOptions } from './queries'

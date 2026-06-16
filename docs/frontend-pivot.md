@@ -43,6 +43,13 @@ The `VITE_RELAY_API_BASE_URL=http://localhost:8080` environment variable documen
 ### Pass 4 — Action wiring
 
 - Approval gate actions (approve, reject) wired to real backend endpoints.
+- Step 4 Audit / Close route wired to real backend endpoints.
+- Backend handlers added: `ApproveAudit`, `RequestAuditRevision`, `PrepareCommitMessage`, `CloseRun`.
+- Frontend mutation methods: `submitManualAuditPacket`, `approveAudit`, `requestAuditRevision`, `prepareCommitMessage`, `closeRun`.
+- Audit Input Summary, Audit Packet, Audit Decision, Warnings/Revision Requirements, Commit Summary, and Close Run sections render real backend data.
+- Generate audit, manual audit packet submission, approve audit, request revision, prepare commit message, and mark done are real backend mutations.
+- Prepare commit message writes only a suggested artifact — no git commit, push, staging, or repo mutation.
+- Closeout gated by accepted or accepted_with_warnings audit state, updates Relay run state only.
 - New Run intake submission wired to backend.
 - Close Run wired to backend.
 - Mock data replaced with real React Query data.

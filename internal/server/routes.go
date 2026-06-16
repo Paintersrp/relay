@@ -41,6 +41,10 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 		r.Post("/runs/{id}/execute", apiH.ExecuteRun)
 		r.Post("/runs/{id}/audit", apiH.GenerateAudit)
 		r.Post("/runs/{id}/audit/submit", apiH.SubmitAuditPacket)
+		r.Post("/runs/{id}/audit/approve", apiH.ApproveAudit)
+		r.Post("/runs/{id}/audit/request-revision", apiH.RequestAuditRevision)
+		r.Post("/runs/{id}/audit/prepare-commit-message", apiH.PrepareCommitMessage)
+		r.Post("/runs/{id}/audit/close", apiH.CloseRun)
 		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)

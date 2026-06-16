@@ -17,6 +17,7 @@ import type {
   PlannerHandoffIntakeRequest,
   PlannerHandoffIntakeResponse,
   RelayApiErrorShape,
+  RelayAuditDecisionValue,
 } from "./types";
 
 // Custom API Error Class
@@ -251,5 +252,94 @@ export async function approveCloseout(
   return postJson<RelayActionRequest, RelayActionResponse>(
     `/api/runs/${id}/approve-closeout`,
     req
+  );
+}
+
+// Step 4: Audit / Close API methods
+
+export interface SubmitManualAuditPayload {
+  audit_packet_markdown: string;
+  decision: RelayAuditDecisionValue;
+  notes?: string;
+}
+
+export interface SubmitManualAuditResponse {
+  success: boolean;
+  runId: string;
+  auditPacket: string;
+  decision: RelayAuditDecisionValue;
+  updatedAt: string;
+}
+
+export async function submitManualAuditPacket(
+  id: string,
+  payload: SubmitManualAuditPayload
+): Promise<SubmitManualAuditResponse> {
+  return postJson<SubmitManualAuditPayload, SubmitManualAuditResponse>(
+    `/api/runs/${id}/audit/submit`,
+    payload
+  );
+}
+
+export interface AuditApprovePayload {
+  decision: "accepted" | "accepted_with_warnings";
+  notes?: string;
+}
+
+export interface AuditActionResponse {
+  success: boolean;
+  runId: string;
+  status: string;
+  lifecycleState: string;
+  state?: string;
+  updatedAt: string;
+}
+
+export async function approveAudit(
+  id: string,
+  payload: AuditApprovePayload
+): Promise<AuditActionResponse> {
+  return postJson<AuditApprovePayload, AuditActionResponse>(
+    `/api/runs/${id}/audit/approve`,
+    payload
+  );
+}
+
+export interface AuditRevisionPayload {
+  notes?: string;
+  reason?: string;
+}
+
+export async function requestAuditRevision(
+  id: string,
+  payload?: AuditRevisionPayload
+): Promise<AuditActionResponse> {
+  return postJson<AuditRevisionPayload, AuditActionResponse>(
+    `/api/runs/${id}/audit/request-revision`,
+    payload || {}
+  );
+}
+
+export interface PrepareCommitMessageResponse {
+  success: boolean;
+  runId: string;
+  commitMessage: string;
+  artifactPath: string;
+  artifactKind: string;
+}
+
+export async function prepareCommitMessage(
+  id: string
+): Promise<PrepareCommitMessageResponse> {
+  return postJson<undefined, PrepareCommitMessageResponse>(
+    `/api/runs/${id}/audit/prepare-commit-message`
+  );
+}
+
+export async function closeRun(
+  id: string
+): Promise<AuditActionResponse> {
+  return postJson<undefined, AuditActionResponse>(
+    `/api/runs/${id}/audit/close`
   );
 }

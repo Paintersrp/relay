@@ -244,6 +244,12 @@ func mapArtifactKindAndLabel(kind string) (string, string) {
 		return "diff", "Git Diff Name Status"
 	case "git_commit_suggestion":
 		return "audit", "Git Commit Suggestion"
+	case "commit_message_text":
+		return "audit", "Commit Message (Text)"
+	case "commit_suggestion_json":
+		return "audit", "Commit Suggestion (JSON)"
+	case "audit_input_summary":
+		return "audit", "Audit Input Summary"
 	default:
 		lower := strings.ToLower(kind)
 		if strings.Contains(lower, "diff") || strings.Contains(lower, "patch") || strings.Contains(lower, "status") {
@@ -333,7 +339,7 @@ func buildApprovalGate(activeStep string, status string) RelayApprovalGate {
 		state = "approved"
 	case "audit":
 		label = "Audit Review"
-		if status == "completed" {
+		if status == "completed" || status == "accepted" || status == "accepted_with_warnings" {
 			state = "approved"
 		} else {
 			state = "pending"
@@ -504,7 +510,19 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 			lifecycleState = "audit"
 			state = "Audit Ready"
 			statusSeverity = "warning"
-		case "completed", "accepted":
+		case "accepted":
+			activeStep = "audit"
+			status = "audit_ready_for_review"
+			lifecycleState = "audit"
+			state = "Approved — Ready to Close"
+			statusSeverity = "success"
+		case "accepted_with_warnings":
+			activeStep = "audit"
+			status = "audit_ready_for_review"
+			lifecycleState = "audit"
+			state = "Approved with Warnings"
+			statusSeverity = "warning"
+		case "completed":
 			activeStep = "audit"
 			status = "completed"
 			lifecycleState = "completed"
@@ -1527,5 +1545,229 @@ func (h *APIHandler) SubmitAuditPacket(w http.ResponseWriter, r *http.Request) {
 		"auditPacket": result.AuditPacket,
 		"decision":    result.Decision,
 		"updatedAt":   result.CreatedAt.Format(time.RFC3339),
+	})
+}
+
+// POST /api/runs/{id}/audit/approve
+func (h *APIHandler) ApproveAudit(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
+		return
+	}
+
+	if run.Status != "audit_ready" && run.Status != "audit_ready_for_review" && run.Status != "accepted_with_warnings" {
+		writeError(w, http.StatusConflict, "CONFLICT", fmt.Sprintf("Run status is %q, must be audit_ready to approve", run.Status))
+		return
+	}
+
+	var req struct {
+		Decision string `json:"decision"`
+		Notes    string `json:"notes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON payload")
+		return
+	}
+
+	if req.Decision != "accepted" && req.Decision != "accepted_with_warnings" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", fmt.Sprintf("Invalid audit decision %q: must be accepted or accepted_with_warnings", req.Decision))
+		return
+	}
+
+	nextStatus := req.Decision
+	eventMsg := "Audit approved"
+	if req.Decision == "accepted_with_warnings" {
+		eventMsg = "Audit approved with warnings"
+	}
+	if req.Notes != "" {
+		eventMsg = fmt.Sprintf("%s: %s", eventMsg, req.Notes)
+	}
+
+	updatedRun, err := h.store.UpdateRunStatus(id, nextStatus)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run status")
+		return
+	}
+
+	_, _ = h.store.CreateEvent(id, "status_change", eventMsg)
+
+	repoName := "Unknown Repo"
+	if repo, err := h.store.GetRepo(updatedRun.RepoID); err == nil && repo != nil {
+		repoName = repo.Name
+	}
+	mappedRun := h.mapRunToRelayRun(*updatedRun, repoName)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":        true,
+		"runId":          idStr,
+		"status":         mappedRun.Status,
+		"lifecycleState": mappedRun.LifecycleState,
+		"state":          mappedRun.State,
+		"updatedAt":      mappedRun.UpdatedAt,
+	})
+}
+
+// POST /api/runs/{id}/audit/request-revision
+func (h *APIHandler) RequestAuditRevision(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
+		return
+	}
+
+	if run.Status != "audit_ready" && run.Status != "audit_ready_for_review" {
+		writeError(w, http.StatusConflict, "CONFLICT", fmt.Sprintf("Run status is %q, cannot request revision in this state", run.Status))
+		return
+	}
+
+	var req struct {
+		Notes  string `json:"notes"`
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req.Notes = ""
+		req.Reason = ""
+	}
+
+	eventMsg := "Audit revision requested"
+	if req.Reason != "" {
+		eventMsg = fmt.Sprintf("%s: %s", eventMsg, req.Reason)
+	}
+	if req.Notes != "" {
+		eventMsg = fmt.Sprintf("%s (%s)", eventMsg, req.Notes)
+	}
+
+	_, _ = h.store.CreateEvent(id, "status_change", eventMsg)
+
+	repoName := "Unknown Repo"
+	if repo, err := h.store.GetRepo(run.RepoID); err == nil && repo != nil {
+		repoName = repo.Name
+	}
+	mappedRun := h.mapRunToRelayRun(*run, repoName)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":        true,
+		"runId":          idStr,
+		"status":         mappedRun.Status,
+		"lifecycleState": mappedRun.LifecycleState,
+		"updatedAt":      mappedRun.UpdatedAt,
+	})
+}
+
+// POST /api/runs/{id}/audit/prepare-commit-message
+func (h *APIHandler) PrepareCommitMessage(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
+		return
+	}
+
+	storeArts, _ := h.store.ListArtifactsByRun(id)
+
+	changedFiles := "No changed files detected."
+	for _, art := range storeArts {
+		if art.Kind == "git_diff_name_status" || art.Kind == "git_diff_stat" || art.Kind == "git_status" {
+			if data, readErr := os.ReadFile(art.Path); readErr == nil {
+				changedFiles = string(data)
+				break
+			}
+		}
+	}
+
+	title := run.Title
+	if title == "" {
+		title = "Untitled Run"
+	}
+
+	msgContent := fmt.Sprintf(`Commit Title: feat: %s
+
+Commit Body:
+
+%s
+
+---
+Prepared by Relay — review before committing.
+`, title, changedFiles)
+
+	path, err := artifacts.Write(id, "commit_message_text", "commit_message.txt", []byte(msgContent))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to write commit message artifact: "+err.Error())
+		return
+	}
+
+	_, _ = h.store.CreateArtifact(id, "commit_message_text", path, "text/plain")
+	_, _ = h.store.CreateEvent(id, "info", "Commit message prepared")
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":       true,
+		"runId":         idStr,
+		"commitMessage": msgContent,
+		"artifactPath":  path,
+		"artifactKind":  "commit_message_text",
+	})
+}
+
+// POST /api/runs/{id}/audit/close
+func (h *APIHandler) CloseRun(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
+		return
+	}
+
+	if run.Status != "accepted" && run.Status != "accepted_with_warnings" {
+		writeError(w, http.StatusConflict, "CONFLICT", fmt.Sprintf("Run status is %q, must be accepted or accepted_with_warnings to close", run.Status))
+		return
+	}
+
+	updatedRun, err := h.store.UpdateRunStatus(id, "completed")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to close run")
+		return
+	}
+
+	_, _ = h.store.CreateEvent(id, "status_change", "Run closed")
+
+	repoName := "Unknown Repo"
+	if repo, err := h.store.GetRepo(updatedRun.RepoID); err == nil && repo != nil {
+		repoName = repo.Name
+	}
+	mappedRun := h.mapRunToRelayRun(*updatedRun, repoName)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":        true,
+		"runId":          idStr,
+		"status":         mappedRun.Status,
+		"lifecycleState": mappedRun.LifecycleState,
+		"updatedAt":      mappedRun.UpdatedAt,
 	})
 }

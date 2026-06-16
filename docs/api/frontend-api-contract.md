@@ -330,8 +330,88 @@ Relay is partitioned into two runtime environments:
 - **Fallback Policy**: **Strictly Forbidden**. Returns 404 if no artifact of that kind exists.
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
-### 13. POST `/api/runs/{id}/approve-closeout`
-- **Purpose**: Accept the audit results and commit/close the run.
+### 13. POST `/api/runs/{id}/audit/approve`
+- **Purpose**: Approve the audit with a decision of `accepted` or `accepted_with_warnings`. Transitions the run to `accepted` or `accepted_with_warnings` status, enabling the close action. Does not commit, push, or mutate the git repo.
+- **Request Body**:
+  ```json
+  {
+    "decision": "accepted | accepted_with_warnings",
+    "notes": "string (optional)"
+  }
+  ```
+- **Response Body**:
+  ```json
+  {
+    "success": true,
+    "runId": "string",
+    "status": "audit_ready_for_review",
+    "lifecycleState": "audit",
+    "state": "Approved — Ready to Close",
+    "updatedAt": "string (ISO-8601)"
+  }
+  ```
+- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
+- **Expected Error Behavior**: Returns 400 for invalid decision. Returns 404 for missing run. Returns 409 if run is not in `audit_ready` or `audit_ready_for_review` state. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+- **Notes**: This action only updates Relay run state. No git mutation occurs.
+
+### 14. POST `/api/runs/{id}/audit/request-revision`
+- **Purpose**: Request revision for an audit. Records the revision request as an event. Does not change the run status from audit state.
+- **Request Body**:
+  ```json
+  {
+    "notes": "string (optional)",
+    "reason": "string (optional)"
+  }
+  ```
+- **Response Body**:
+  ```json
+  {
+    "success": true,
+    "runId": "string",
+    "status": "audit_ready_for_review",
+    "lifecycleState": "audit",
+    "updatedAt": "string (ISO-8601)"
+  }
+  ```
+- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
+- **Expected Error Behavior**: Returns 404 for missing run. Returns 409 if run is not in audit state. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+
+### 15. POST `/api/runs/{id}/audit/prepare-commit-message`
+- **Purpose**: Prepare a suggested commit message artifact for the run. Writes a `commit_message.txt` artifact with the run title and changed file summary. Does not commit, push, stage, or mutate any repo files.
+- **Request Body**: None
+- **Response Body**:
+  ```json
+  {
+    "success": true,
+    "runId": "string",
+    "commitMessage": "string",
+    "artifactPath": "string",
+    "artifactKind": "commit_message_text"
+  }
+  ```
+- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
+- **Expected Error Behavior**: Returns 404 for missing run. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+- **Notes**: Only creates a suggested message artifact. No git commit, git push, git add, staging, merge, or repo mutation occurs.
+
+### 16. POST `/api/runs/{id}/audit/close`
+- **Purpose**: Close a run after audit approval. Transitions the run to `completed` status. Gated to `accepted` or `accepted_with_warnings` status only. Preserves all artifacts and evidence. Does not commit, push, or mutate the git repo.
+- **Request Body**: None
+- **Response Body**:
+  ```json
+  {
+    "success": true,
+    "runId": "string",
+    "status": "completed",
+    "lifecycleState": "completed",
+    "updatedAt": "string (ISO-8601)"
+  }
+  ```
+- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
+- **Expected Error Behavior**: Returns 409 if run is not in `accepted` or `accepted_with_warnings` state. Returns 404 for missing run. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+- **Notes**: Closing updates Relay run state only. No git commit, push, or repo mutation occurs.
+
+### 17. POST `/api/runs/{id}/approve-closeout`
+- **Purpose**: (Legacy) Accept the audit results and commit/close the run.
 - **Request Body**:
   ```json
   {
