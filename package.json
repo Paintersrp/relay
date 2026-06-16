@@ -12,7 +12,9 @@
     "dev:js": "npx esbuild web/src/main.ts --bundle --outfile=web/static/app.js --format=iife --platform=browser --target=es2020 --watch",
     "dev:templ": "templ generate --watch",
     "dev:server": "air -c .air.toml",
-    "dev": "concurrently \"npm:dev:css\" \"npm:dev:js\" \"npm:dev:templ\" \"npm:dev:server\""
+    "dev": "concurrently \"npm:dev:css\" \"npm:dev:js\" \"npm:dev:templ\" \"npm:dev:server\"",
+    "dev:web": "cd apps/web && npm run dev",
+    "build:web": "cd apps/web && npm run build"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.0.0",

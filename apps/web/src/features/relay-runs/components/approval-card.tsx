@@ -1,0 +1,2 @@
+import { Button } from '@/components/ui/button'; import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+export function ApprovalCard({title,description}:{title:string;description:string}){return <Card><CardHeader><CardTitle>{title}</CardTitle></CardHeader><CardContent><p className="mb-4 text-sm text-slate-400">{description}</p><Button disabled>Mock-only action</Button></CardContent></Card>}
