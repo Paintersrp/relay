@@ -2,12 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"relay/internal/store"
@@ -53,6 +55,8 @@ func TestAPI(t *testing.T) {
 		r.Get("/runs/{id}", apiH.GetRun)
 		r.Get("/runs/{id}/artifacts", apiH.ListArtifacts)
 		r.Get("/runs/{id}/events", apiH.ListEvents)
+		r.Post("/intake/planner-handoff", apiH.IntakePlannerHandoff)
+		r.Post("/runs/{id}/approve-intake", apiH.ApproveIntake)
 		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)
@@ -168,4 +172,155 @@ func TestAPI(t *testing.T) {
 			t.Errorf("expected event message 'Run initialized', got %q", events[0].Message)
 		}
 	})
+
+	t.Run("POST /api/intake/planner-handoff - Success (New Run)", func(t *testing.T) {
+		body := `{"planner_handoff_markdown":"---\ntitle: Standard Handoff\nrepo: test-repo\nbranch: main\n---\n# Standard Handoff\nGoal: test","repo":"test-repo"}`
+		req := httptest.NewRequest("POST", "/api/intake/planner-handoff", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp PlannerHandoffIntakeResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if !resp.Success {
+			t.Error("expected success = true")
+		}
+		if resp.RunID == "" {
+			t.Error("expected non-empty runId")
+		}
+		if resp.Status != "intake_needs_review" && resp.Status != "intake_received" {
+			t.Errorf("unexpected status %q", resp.Status)
+		}
+		if resp.ReviewURL != "/runs/"+resp.RunID+"/intake" {
+			t.Errorf("expected review url '/runs/%s/intake', got %q", resp.RunID, resp.ReviewURL)
+		}
+		if len(resp.Artifacts) == 0 {
+			t.Error("expected artifacts in response")
+		}
+	})
+
+	t.Run("POST /api/intake/planner-handoff - Success (Attach Run)", func(t *testing.T) {
+		runIDStr := strconv.FormatInt(run.ID, 10)
+		body := fmt.Sprintf(`{"planner_handoff_markdown":"---\ntitle: Attach Handoff\nrepo: test-repo\nbranch: main\n---\n# Attach Handoff","run_id":"%s"}`, runIDStr)
+		req := httptest.NewRequest("POST", "/api/intake/planner-handoff", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp PlannerHandoffIntakeResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if resp.RunID != runIDStr {
+			t.Errorf("expected runId %s, got %s", runIDStr, resp.RunID)
+		}
+	})
+
+	t.Run("POST /api/intake/planner-handoff - Empty Markdown (400)", func(t *testing.T) {
+		body := `{"planner_handoff_markdown":"","repo":"test-repo"}`
+		req := httptest.NewRequest("POST", "/api/intake/planner-handoff", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("POST /api/intake/planner-handoff - Unknown run_id (404)", func(t *testing.T) {
+		body := `{"planner_handoff_markdown":"# Title","run_id":"999999","repo":"test-repo"}`
+		req := httptest.NewRequest("POST", "/api/intake/planner-handoff", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Errorf("expected 404, got %d", w.Code)
+		}
+	})
+
+	t.Run("POST /api/runs/{id}/approve-intake - Success Approve", func(t *testing.T) {
+		_, err := s.UpdateRunStatus(run.ID, "intake_received")
+		if err != nil {
+			t.Fatalf("failed to reset run status: %v", err)
+		}
+
+		body := `{"action":"approve","notes":"All clean!","overrides":{"model":"gpt-4o-custom"}}`
+		req := httptest.NewRequest("POST", "/api/runs/"+strconv.FormatInt(run.ID, 10)+"/approve-intake", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		dbRun, err := s.GetRun(run.ID)
+		if err != nil {
+			t.Fatalf("failed to query run: %v", err)
+		}
+		if dbRun.Status != "approved_for_prepare" {
+			t.Errorf("expected status approved_for_prepare, got %s", dbRun.Status)
+		}
+		if dbRun.SelectedModel != "gpt-4o-custom" {
+			t.Errorf("expected model gpt-4o-custom, got %s", dbRun.SelectedModel)
+		}
+	})
+
+	t.Run("POST /api/runs/{id}/approve-intake - Success Needs Revision", func(t *testing.T) {
+		_, err := s.UpdateRunStatus(run.ID, "intake_received")
+		if err != nil {
+			t.Fatalf("failed to reset run status: %v", err)
+		}
+
+		body := `{"action":"needs_revision","notes":"Please fix typos"}`
+		req := httptest.NewRequest("POST", "/api/runs/"+strconv.FormatInt(run.ID, 10)+"/approve-intake", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", w.Code)
+		}
+
+		dbRun, err := s.GetRun(run.ID)
+		if err != nil {
+			t.Fatalf("failed to query run: %v", err)
+		}
+		if dbRun.Status != "intake_needs_review" {
+			t.Errorf("expected status intake_needs_review, got %s", dbRun.Status)
+		}
+	})
+
+	t.Run("POST /api/runs/{id}/approve-intake - Conflict (409)", func(t *testing.T) {
+		// Run status is already "intake_needs_review", let's update it to something invalid like "completed"
+		_, err := s.UpdateRunStatus(run.ID, "completed")
+		if err != nil {
+			t.Fatalf("failed to update status: %v", err)
+		}
+
+		body := `{"action":"approve","notes":"All clean!"}`
+		req := httptest.NewRequest("POST", "/api/runs/"+strconv.FormatInt(run.ID, 10)+"/approve-intake", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusConflict {
+			t.Errorf("expected 409, got %d", w.Code)
+		}
+	})
 }
+

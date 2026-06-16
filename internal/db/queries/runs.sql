@@ -41,3 +41,7 @@ UPDATE runs SET branch_name = ?, base_commit = ?, head_commit = ?, updated_at = 
 
 -- name: UpdateRunTitle :one
 UPDATE runs SET title = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
+
+-- name: UpdateRunRepo :one
+UPDATE runs SET repo_id = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
+

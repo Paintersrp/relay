@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"relay/internal/artifacts"
+	"relay/internal/intake"
 	"relay/internal/store"
 	"relay/internal/store/generated"
 
@@ -35,7 +37,7 @@ func CORSMiddleware(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 		if origin == "http://localhost:3000" || origin == "http://127.0.0.1:3000" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
 		}
 		if r.Method == "OPTIONS" {
@@ -185,6 +187,14 @@ func mapArtifactKindAndLabel(kind string) (string, string) {
 	switch kind {
 	case "original_handoff":
 		return "handoff", "Original Handoff"
+	case "planner_handoff":
+		return "handoff", "Planner Handoff"
+	case "parsed_frontmatter":
+		return "handoff", "Parsed Frontmatter"
+	case "run_config":
+		return "handoff", "Run Configuration"
+	case "intake_validation_report":
+		return "validation", "Intake Validation Report"
 	case "agent_prompt":
 		return "prompt", "Compiled Prompt Brief"
 	case "opencode_handoff_packet":
@@ -296,8 +306,11 @@ func buildApprovalGate(activeStep string, status string) RelayApprovalGate {
 	switch activeStep {
 	case "intake":
 		label = "Intake Review"
-		if status == "validated" {
+		if status == "validated" || status == "approved_for_prepare" || status == "ready" {
 			state = "approved"
+		} else if status == "blocked" {
+			state = "rejected"
+			note = "Intake blocked"
 		} else {
 			state = "pending"
 		}
@@ -369,7 +382,7 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 		statusSeverity = "info"
 	} else {
 		switch run.Status {
-		case "draft", "needs_review", "needs_cleanup":
+		case "draft", "needs_cleanup":
 			activeStep = "intake"
 			status = "intake_needs_review"
 			lifecycleState = "intake"
@@ -378,18 +391,36 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 			if run.Status == "needs_cleanup" {
 				statusSeverity = "danger"
 			}
+		case "needs_review", "intake_needs_review":
+			activeStep = "intake"
+			status = "intake_needs_review"
+			lifecycleState = "intake"
+			state = "Intake Needs Review"
+			statusSeverity = "warning"
+		case "intake_received":
+			activeStep = "intake"
+			status = "intake_needs_review"
+			lifecycleState = "intake"
+			state = "Intake Received"
+			statusSeverity = "info"
 		case "validated":
 			activeStep = "intake"
 			status = "intake_needs_review"
 			lifecycleState = "intake"
 			state = "Intake Validated"
 			statusSeverity = "info"
-		case "ready":
+		case "ready", "approved_for_prepare":
 			activeStep = "prepare"
 			status = "brief_ready_for_review"
 			lifecycleState = "prepare"
-			state = "Brief Review"
-			statusSeverity = "info"
+			state = "Approved for Prepare"
+			statusSeverity = "success"
+		case "blocked":
+			activeStep = "intake"
+			status = "blocked"
+			lifecycleState = "failed"
+			state = "Blocked"
+			statusSeverity = "danger"
 		case "agent_done":
 			activeStep = "execute"
 			status = "executor_running"
@@ -444,7 +475,7 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 		sizeHint := getFileSizeHint(art.Path)
 
 		preview := ""
-		if art.MimeType == "text/plain" || art.MimeType == "application/json" {
+		if art.MimeType == "text/plain" || art.MimeType == "application/json" || art.MimeType == "text/markdown" {
 			if data, err := os.ReadFile(art.Path); err == nil {
 				if len(data) > 500 {
 					preview = string(data[:500]) + "..."
@@ -614,7 +645,7 @@ func (h *APIHandler) ListArtifacts(w http.ResponseWriter, r *http.Request) {
 		sizeHint := getFileSizeHint(art.Path)
 
 		preview := ""
-		if art.MimeType == "text/plain" || art.MimeType == "application/json" {
+		if art.MimeType == "text/plain" || art.MimeType == "application/json" || art.MimeType == "text/markdown" {
 			if data, err := os.ReadFile(art.Path); err == nil {
 				if len(data) > 500 {
 					preview = string(data[:500]) + "..."
@@ -675,4 +706,456 @@ func (h *APIHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// POST /api/intake/planner-handoff DTOs
+type PlannerHandoffIntakeRequest struct {
+	Repo        string `json:"repo"`
+	Branch      string `json:"branch"`
+	HandoffPath string `json:"handoffPath"`
+	PacketID    string `json:"packetId,omitempty"`
+	Name        string `json:"name,omitempty"`
+
+	// S3 fields
+	PlannerHandoffMarkdown string `json:"planner_handoff_markdown"`
+	RunID                  string `json:"run_id,omitempty"`
+	RepoTarget             string `json:"repo_target,omitempty"`
+	BranchContext          string `json:"branch_context,omitempty"`
+	Source                 string `json:"source,omitempty"`
+}
+
+type PlannerHandoffIntakeResponse struct {
+	Success        bool                  `json:"success"`
+	RunID          string                `json:"runId"`
+	RunIDSnake     string                `json:"run_id"`
+	Status         string                `json:"status"`
+	LifecycleState string                `json:"lifecycleState,omitempty"`
+	CreatedAt      string                `json:"createdAt,omitempty"`
+	ReviewURL      string                `json:"review_url"`
+	Artifacts      []RelayArtifact       `json:"artifacts,omitempty"`
+	Validation     RelayValidationResult `json:"validation"`
+}
+
+// Helpers for intake
+
+func resolveRepo(s *store.Store, repoNameOrPath string) (*store.Repo, error) {
+	if repoNameOrPath == "" {
+		return nil, fmt.Errorf("repo is required")
+	}
+	// Try by exact name
+	repo, err := s.GetRepoByName(repoNameOrPath)
+	if err == nil && repo != nil {
+		return repo, nil
+	}
+	// Try by exact path
+	repo, err = s.GetRepoByPath(repoNameOrPath)
+	if err == nil && repo != nil {
+		return repo, nil
+	}
+	// Try base name of path
+	baseName := filepath.Base(repoNameOrPath)
+	repo, err = s.GetRepoByName(baseName)
+	if err == nil && repo != nil {
+		return repo, nil
+	}
+	// Clean path and try path
+	normalized := filepath.Clean(repoNameOrPath)
+	repo, err = s.GetRepoByPath(normalized)
+	if err == nil && repo != nil {
+		return repo, nil
+	}
+	// Try listing repos and matching by name
+	repos, err := s.ListRepos()
+	if err == nil {
+		for _, r := range repos {
+			if strings.EqualFold(r.Name, repoNameOrPath) || strings.EqualFold(r.Name, baseName) {
+				return &r, nil
+			}
+		}
+	}
+	// If not found, create new repo
+	return s.CreateRepo(baseName, repoNameOrPath)
+}
+
+func deriveRunTitleFromMarkdown(markdown string) string {
+	lines := strings.Split(markdown, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "# ") && !strings.HasPrefix(trimmed, "## ") {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, "# "))
+		}
+	}
+	return "Untitled Run"
+}
+
+// POST /api/intake/planner-handoff
+func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request) {
+	var req PlannerHandoffIntakeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON payload")
+		return
+	}
+
+	markdown := req.PlannerHandoffMarkdown
+	if strings.TrimSpace(markdown) == "" && req.HandoffPath != "" {
+		data, err := os.ReadFile(req.HandoffPath)
+		if err == nil {
+			markdown = string(data)
+		}
+	}
+
+	if strings.TrimSpace(markdown) == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Planner handoff markdown is empty or missing")
+		return
+	}
+
+	metadata, _, _, _ := intake.ParseFrontmatter(markdown)
+	warnings, blockers := intake.ValidateHandoffText(markdown)
+
+	if len(blockers) > 0 {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", strings.Join(blockers, "; "))
+		return
+	}
+
+	repoTarget := req.Repo
+	if repoTarget == "" {
+		repoTarget = req.RepoTarget
+	}
+	if repoTarget == "" {
+		repoTarget = metadata["repo"]
+	}
+	if repoTarget == "" {
+		repoTarget = metadata["repo_target"]
+	}
+	if repoTarget == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "No repository target found in request or frontmatter")
+		return
+	}
+
+	repo, err := resolveRepo(h.store, repoTarget)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to resolve repository: "+err.Error())
+		return
+	}
+
+	branchContext := req.Branch
+	if branchContext == "" {
+		branchContext = req.BranchContext
+	}
+	if branchContext == "" {
+		branchContext = metadata["branch"]
+	}
+	if branchContext == "" {
+		branchContext = metadata["branch_context"]
+	}
+	if branchContext == "" {
+		branchContext = "main"
+	}
+
+	title := req.Name
+	if title == "" {
+		title = req.PacketID
+	}
+	if title == "" {
+		title = metadata["title"]
+	}
+	if title == "" {
+		title = deriveRunTitleFromMarkdown(markdown)
+	}
+
+	recommendedModel := metadata["recommended_model"]
+	if recommendedModel == "" {
+		recommendedModel = "deepseek-v4-flash"
+	}
+	selectedModel := recommendedModel
+
+	var run *generated.Run
+	isNew := false
+
+	runIDStr := req.RunID
+	if runIDStr != "" {
+		runIDInt, err := strconv.ParseInt(runIDStr, 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run_id format")
+			return
+		}
+		run, err = h.store.GetRun(runIDInt)
+		if err != nil || run == nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %s not found", runIDStr))
+			return
+		}
+	} else {
+		isNew = true
+		status := "intake_received"
+		if len(warnings) > 0 {
+			status = "intake_needs_review"
+		}
+		r, err := h.store.CreateRun(repo.ID, title, status, recommendedModel, selectedModel, branchContext)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create run: "+err.Error())
+			return
+		}
+		run = r
+	}
+
+	if !isNew {
+		status := "intake_received"
+		if len(warnings) > 0 {
+			status = "intake_needs_review"
+		}
+		updatedRun, err := h.store.UpdateRunStatus(run.ID, status)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run status: "+err.Error())
+			return
+		}
+		if recommendedModel != "" {
+			_, _ = h.store.UpdateRunModel(run.ID, recommendedModel, recommendedModel)
+		}
+		if branchContext != "" {
+			_, _ = h.store.UpdateRunBranch(run.ID, branchContext, "", "")
+		}
+		run = updatedRun
+	}
+
+	_ = h.store.DeleteChecksByRunKind(run.ID, "validation")
+	if len(warnings) > 0 {
+		for _, w := range warnings {
+			_, _ = h.store.CreateCheck(run.ID, "validation", "warning", w, "{}")
+		}
+	} else {
+		_, _ = h.store.CreateCheck(run.ID, "validation", "pass", "Intake validation successful", "{}")
+	}
+
+	_ = h.store.DeleteArtifactsByRunKind(run.ID, "planner_handoff")
+	_ = h.store.DeleteArtifactsByRunKind(run.ID, "parsed_frontmatter")
+	_ = h.store.DeleteArtifactsByRunKind(run.ID, "run_config")
+	_ = h.store.DeleteArtifactsByRunKind(run.ID, "intake_validation_report")
+
+	path, err := artifacts.Write(run.ID, "planner_handoff", "planner_handoff.md", []byte(markdown))
+	if err == nil {
+		_, _ = h.store.CreateArtifact(run.ID, "planner_handoff", path, "text/markdown")
+	}
+
+	fmJSON, _ := json.MarshalIndent(metadata, "", "  ")
+	path, err = artifacts.Write(run.ID, "parsed_frontmatter", "parsed_frontmatter.json", fmJSON)
+	if err == nil {
+		_, _ = h.store.CreateArtifact(run.ID, "parsed_frontmatter", path, "application/json")
+	}
+
+	sourceStr := req.Source
+	if sourceStr == "" {
+		sourceStr = "api"
+	}
+	configMap := map[string]string{
+		"repo_target":    repo.Path,
+		"branch_context": branchContext,
+		"source":         sourceStr,
+		"created_from":   "intake_endpoint",
+	}
+	configJSON, _ := json.MarshalIndent(configMap, "", "  ")
+	path, err = artifacts.Write(run.ID, "run_config", "run_config.json", configJSON)
+	if err == nil {
+		_, _ = h.store.CreateArtifact(run.ID, "run_config", path, "application/json")
+	}
+
+	dbChecks, _ := h.store.ListChecksByRun(run.ID)
+	valResult := buildValidationResult(dbChecks)
+
+	report := map[string]interface{}{
+		"status":   run.Status,
+		"errors":   valResult.Errors,
+		"warnings": valResult.Warnings,
+		"passed":   valResult.Passed,
+		"issues":   valResult.Issues,
+	}
+	reportJSON, _ := json.MarshalIndent(report, "", "  ")
+	path, err = artifacts.Write(run.ID, "intake_validation_report", "intake_validation_report.json", reportJSON)
+	if err == nil {
+		_, _ = h.store.CreateArtifact(run.ID, "intake_validation_report", path, "application/json")
+	}
+
+	_, _ = h.store.CreateEvent(run.ID, "info", "Handoff intake receipt: planner handoff registered")
+
+	dbArtifacts, _ := h.store.ListArtifactsByRun(run.ID)
+	relayArtifacts := make([]RelayArtifact, 0)
+	for _, art := range dbArtifacts {
+		k, l := mapArtifactKindAndLabel(art.Kind)
+		filename := filepath.Base(art.Path)
+		sizeHint := getFileSizeHint(art.Path)
+		relayArtifacts = append(relayArtifacts, RelayArtifact{
+			ID:        strconv.FormatInt(art.ID, 10),
+			Label:     l,
+			Path:      fmt.Sprintf("/api/runs/%d/artifacts/%s", run.ID, art.Kind),
+			Kind:      k,
+			SizeHint:  sizeHint,
+			CreatedAt: parseAndFormatTime(art.CreatedAt),
+			Status:    "ready",
+			Filename:  filename,
+		})
+	}
+
+	runIDStrOutput := strconv.FormatInt(run.ID, 10)
+	reviewURL := fmt.Sprintf("/runs/%s/intake", runIDStrOutput)
+	mappedRun := h.mapRunToRelayRun(*run, repo.Name)
+
+	response := PlannerHandoffIntakeResponse{
+		Success:        true,
+		RunID:          runIDStrOutput,
+		RunIDSnake:     runIDStrOutput,
+		Status:         mappedRun.Status,
+		LifecycleState: mappedRun.LifecycleState,
+		CreatedAt:      mappedRun.CreatedAt,
+		ReviewURL:      reviewURL,
+		Artifacts:      relayArtifacts,
+		Validation:     valResult,
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+// POST /api/runs/{id}/approve-intake
+func (h *APIHandler) ApproveIntake(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
+		return
+	}
+
+	// Validate current status allows Step 1 review action
+	if run.Status != "intake_received" && run.Status != "intake_needs_review" {
+		writeError(w, http.StatusConflict, "CONFLICT", fmt.Sprintf("Run status is %q, cannot approve/review in this state", run.Status))
+		return
+	}
+
+	type ApproveIntakeOverrides struct {
+		Model              string `json:"model"`
+		Repo               string `json:"repo"`
+		Branch             string `json:"branch"`
+		ValidationCommands string `json:"validationCommands"`
+	}
+	type ApproveIntakeRequest struct {
+		Action    string                 `json:"action"` // "approve", "needs_revision", "blocked"
+		Notes     string                 `json:"notes"`
+		Overrides ApproveIntakeOverrides `json:"overrides"`
+	}
+
+	var req ApproveIntakeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON payload")
+		return
+	}
+
+	// Validate action
+	if req.Action != "approve" && req.Action != "needs_revision" && req.Action != "blocked" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", fmt.Sprintf("Invalid decision action %q", req.Action))
+		return
+	}
+
+	// Apply overrides if provided and different
+	var updatedRun *generated.Run = run
+
+	// 1. Repo override
+	if req.Overrides.Repo != "" {
+		newRepo, err := resolveRepo(h.store, req.Overrides.Repo)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to resolve repository: "+err.Error())
+			return
+		}
+		if newRepo.ID != run.RepoID {
+			updatedRun, err = h.store.UpdateRunRepo(run.ID, newRepo.ID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run repository: "+err.Error())
+				return
+			}
+		}
+	}
+
+	// 2. Model override
+	if req.Overrides.Model != "" && req.Overrides.Model != run.SelectedModel {
+		updatedRun, err = h.store.UpdateRunModel(run.ID, run.RecommendedModel, req.Overrides.Model)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run model: "+err.Error())
+			return
+		}
+	}
+
+	// 3. Branch override
+	if req.Overrides.Branch != "" && req.Overrides.Branch != run.BranchName {
+		updatedRun, err = h.store.UpdateRunBranch(run.ID, req.Overrides.Branch, run.BaseCommit, run.HeadCommit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run branch: "+err.Error())
+			return
+		}
+	}
+
+	// 4. Persistence of overrides and notes in run_config.json
+	configMap := make(map[string]interface{})
+	if data, err := artifacts.Read(run.ID, "run_config", "run_config.json"); err == nil {
+		_ = json.Unmarshal(data, &configMap)
+	}
+	if req.Overrides.Repo != "" {
+		configMap["repo_target"] = req.Overrides.Repo
+	}
+	if req.Overrides.Branch != "" {
+		configMap["branch_context"] = req.Overrides.Branch
+	}
+	if req.Overrides.Model != "" {
+		configMap["model"] = req.Overrides.Model
+	}
+	if req.Overrides.ValidationCommands != "" {
+		configMap["validation_commands"] = req.Overrides.ValidationCommands
+	}
+	configMap["notes"] = req.Notes
+	configMap["decision"] = req.Action
+	configMap["reviewed_at"] = time.Now().UTC().Format(time.RFC3339)
+
+	configJSON, _ := json.MarshalIndent(configMap, "", "  ")
+	_ = h.store.DeleteArtifactsByRunKind(run.ID, "run_config")
+	if path, err := artifacts.Write(run.ID, "run_config", "run_config.json", configJSON); err == nil {
+		_, _ = h.store.CreateArtifact(run.ID, "run_config", path, "application/json")
+	}
+
+	// Update run status based on action
+	nextStatus := "intake_needs_review"
+	eventMessage := "Intake needs revision"
+	if req.Action == "approve" {
+		nextStatus = "approved_for_prepare"
+		eventMessage = "Intake approved"
+	} else if req.Action == "blocked" {
+		nextStatus = "blocked"
+		eventMessage = "Intake blocked"
+	}
+
+	if req.Notes != "" {
+		eventMessage = fmt.Sprintf("%s: %s", eventMessage, req.Notes)
+	}
+
+	updatedRun, err = h.store.UpdateRunStatus(run.ID, nextStatus)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run status: "+err.Error())
+		return
+	}
+
+	_, _ = h.store.CreateEvent(run.ID, "status_change", eventMessage)
+
+	repoName := "Unknown Repo"
+	if repo, err := h.store.GetRepo(updatedRun.RepoID); err == nil && repo != nil {
+		repoName = repo.Name
+	}
+
+	mappedRun := h.mapRunToRelayRun(*updatedRun, repoName)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":        true,
+		"runId":          strconv.FormatInt(run.ID, 10),
+		"status":         mappedRun.Status,
+		"lifecycleState": mappedRun.LifecycleState,
+		"updatedAt":      mappedRun.UpdatedAt,
+	})
 }

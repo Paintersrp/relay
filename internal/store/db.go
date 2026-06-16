@@ -249,6 +249,18 @@ func (s *Store) UpdateRunModel(id int64, recommendedModel, selectedModel string)
 	return &run, nil
 }
 
+func (s *Store) UpdateRunRepo(id int64, repoID int64) (*Run, error) {
+	run, err := s.queries.UpdateRunRepo(context.Background(), generated.UpdateRunRepoParams{
+		RepoID: repoID,
+		ID:     id,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &run, nil
+}
+
+
 // Artifacts
 
 func (s *Store) CreateArtifact(runID int64, kind, path, mimeType string) (*Artifact, error) {

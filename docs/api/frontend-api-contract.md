@@ -148,12 +148,18 @@ Relay is partitioned into two runtime environments:
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
 ### 6. POST `/api/runs/{id}/approve-intake`
-- **Purpose**: Approve the parsed metadata and git preflights of the intake step.
+- **Purpose**: Approve, request revision, or block the parsed metadata and git preflights of the intake step.
 - **Request Body**:
   ```json
   {
-    "action": "approve | reject",
-    "notes": "string (optional)"
+    "action": "approve | needs_revision | blocked",
+    "notes": "string (optional)",
+    "overrides": {
+      "model": "string (optional)",
+      "repo": "string (optional)",
+      "branch": "string (optional)",
+      "validationCommands": "string (optional)"
+    }
   }
   ```
 - **Response Body**:
@@ -161,8 +167,8 @@ Relay is partitioned into two runtime environments:
   {
     "success": true,
     "runId": "string",
-    "status": "brief_ready_for_review",
-    "lifecycleState": "prepare",
+    "status": "brief_ready_for_review | intake_needs_review | blocked",
+    "lifecycleState": "prepare | intake",
     "updatedAt": "string (ISO-8601)"
   }
   ```

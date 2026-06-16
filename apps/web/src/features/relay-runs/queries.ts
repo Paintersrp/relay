@@ -5,31 +5,22 @@
 // ============================================================
 
 import { queryOptions } from '@tanstack/react-query'
-import { MOCK_RUNS, getMockRun } from './mock-data'
-import type { RelayRun } from './types'
-
-// Simulate async data fetch from mock data with a slight delay
-async function fetchMockRuns(): Promise<RelayRun[]> {
-  await new Promise((resolve) => setTimeout(resolve, 80))
-  return MOCK_RUNS
-}
-
-async function fetchMockRun(id: string): Promise<RelayRun | null> {
-  await new Promise((resolve) => setTimeout(resolve, 60))
-  return getMockRun(id) ?? null
-}
+import { getRuns, getRun, getRunArtifacts, getRunEvents } from './api'
+import type { RelayRun, RelayArtifact, RelayRunEvent } from './types'
 
 // Query key factory
 export const relayRunKeys = {
   all: ['relay-runs'] as const,
   list: () => [...relayRunKeys.all, 'list'] as const,
   detail: (id: string) => [...relayRunKeys.all, 'detail', id] as const,
+  artifacts: (id: string) => [...relayRunKeys.all, 'detail', id, 'artifacts'] as const,
+  events: (id: string) => [...relayRunKeys.all, 'detail', id, 'events'] as const,
 }
 
 // Query options for all runs (list page)
 export const runsListQueryOptions = queryOptions({
   queryKey: relayRunKeys.list(),
-  queryFn: fetchMockRuns,
+  queryFn: getRuns,
   staleTime: 5 * 60 * 1000,
 })
 
@@ -37,7 +28,25 @@ export const runsListQueryOptions = queryOptions({
 export function runDetailQueryOptions(id: string) {
   return queryOptions({
     queryKey: relayRunKeys.detail(id),
-    queryFn: () => fetchMockRun(id),
+    queryFn: () => getRun(id),
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+// Query options for run artifacts
+export function runArtifactsQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: relayRunKeys.artifacts(id),
+    queryFn: () => getRunArtifacts(id),
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+// Query options for run events
+export function runEventsQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: relayRunKeys.events(id),
+    queryFn: () => getRunEvents(id),
     staleTime: 2 * 60 * 1000,
   })
 }

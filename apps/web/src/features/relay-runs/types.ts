@@ -105,11 +105,17 @@ export interface RelayRunEvent {
 }
 
 // Approval and Action models
-export type RelayApprovalAction = "approve" | "reject" | "skip";
+export type RelayApprovalAction = "approve" | "needs_revision" | "blocked" | "reject" | "skip";
 
 export interface RelayActionRequest {
   action: RelayApprovalAction | string;
   notes?: string;
+  overrides?: {
+    model?: string;
+    repo?: string;
+    branch?: string;
+    validationCommands?: string;
+  };
 }
 
 export interface RelayActionResponse {

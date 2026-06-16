@@ -289,6 +289,34 @@ func (q *Queries) UpdateRunModel(ctx context.Context, arg UpdateRunModelParams) 
 	return i, err
 }
 
+const updateRunRepo = `-- name: UpdateRunRepo :one
+UPDATE runs SET repo_id = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at
+`
+
+type UpdateRunRepoParams struct {
+	RepoID int64 `json:"repo_id"`
+	ID     int64 `json:"id"`
+}
+
+func (q *Queries) UpdateRunRepo(ctx context.Context, arg UpdateRunRepoParams) (Run, error) {
+	row := q.db.QueryRowContext(ctx, updateRunRepo, arg.RepoID, arg.ID)
+	var i Run
+	err := row.Scan(
+		&i.ID,
+		&i.RepoID,
+		&i.Title,
+		&i.Status,
+		&i.RecommendedModel,
+		&i.SelectedModel,
+		&i.BranchName,
+		&i.BaseCommit,
+		&i.HeadCommit,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateRunStatus = `-- name: UpdateRunStatus :one
 UPDATE runs SET status = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at
 `
