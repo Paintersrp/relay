@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"relay/internal/artifacts"
+	"relay/internal/auditor"
 	"relay/internal/compiler"
 	"relay/internal/events"
 	"relay/internal/executor"
@@ -497,6 +498,12 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 			lifecycleState = "failed"
 			state = "Validation Failed"
 			statusSeverity = "danger"
+		case "audit_ready":
+			activeStep = "audit"
+			status = "audit_ready_for_review"
+			lifecycleState = "audit"
+			state = "Audit Ready"
+			statusSeverity = "warning"
 		case "completed", "accepted":
 			activeStep = "audit"
 			status = "completed"
@@ -714,6 +721,38 @@ func (h *APIHandler) ListArtifacts(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// GET /api/runs/{id}/artifacts/{kind}
+func (h *APIHandler) GetArtifactContent(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	kind := chi.URLParam(r, "kind")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+	if kind == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Artifact kind is required")
+		return
+	}
+
+	artifacts, err := h.store.ListArtifactsByRunKind(id, kind)
+	if err != nil || len(artifacts) == 0 {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("No artifact found for run %s kind %s", idStr, kind))
+		return
+	}
+
+	art := artifacts[len(artifacts)-1]
+	data, err := os.ReadFile(art.Path)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to read artifact file")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 // GET /api/runs/{id}/events
@@ -1418,4 +1457,75 @@ func (h *APIHandler) ExecuteRun(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", fmt.Sprintf("Unknown execute action %q", req.Action))
 	}
+}
+
+// POST /api/runs/{id}/audit
+func (h *APIHandler) GenerateAudit(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	svc := auditor.NewService(h.store)
+	result, err := svc.Generate(id)
+	if err != nil {
+		writeError(w, http.StatusConflict, "CONFLICT", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":        true,
+		"runId":          idStr,
+		"status":         result.Status,
+		"inputSummary":   result.InputSummary,
+		"auditPacket":    result.AuditPacket,
+		"decision":       result.Decision,
+		"warnings":       result.Warnings,
+		"lifecycleState": "audit",
+	})
+}
+
+// POST /api/runs/{id}/audit/submit
+func (h *APIHandler) SubmitAuditPacket(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	var req struct {
+		AuditPacketMarkdown string `json:"audit_packet_markdown"`
+		Decision            string `json:"decision"`
+		Notes               string `json:"notes"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON payload")
+		return
+	}
+
+	subSvc := auditor.NewSubmissionService(h.store)
+	input := auditor.ManualAuditSubmission{
+		RunID:               id,
+		AuditPacketMarkdown: req.AuditPacketMarkdown,
+		Decision:            auditor.Decision(req.Decision),
+		Notes:               req.Notes,
+	}
+
+	result, err := subSvc.SubmitManual(input)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":     true,
+		"runId":       idStr,
+		"auditPacket": result.AuditPacket,
+		"decision":    result.Decision,
+		"updatedAt":   result.CreatedAt.Format(time.RFC3339),
+	})
 }

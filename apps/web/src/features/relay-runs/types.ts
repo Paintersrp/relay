@@ -221,6 +221,37 @@ export interface RelayRunStepInfo {
   description: string;
 }
 
+// Step 3: Execute-specific types
+
+export type RelayExecutorPhase =
+  | "idle"
+  | "dispatched"
+  | "running"
+  | "done"
+  | "blocked"
+  | "failed"
+  | "unavailable";
+
+export interface RelayChangedFile {
+  path: string;
+  status: string;
+}
+
+export interface RelayValidationCommand {
+  command: string;
+  status: string;
+  output?: string;
+}
+
+export interface RelayExecuteActions {
+  canStart: boolean;
+  canCancel: boolean;
+  canRecover: boolean;
+  startUnavailableReason?: string;
+  cancelUnavailableReason?: string;
+  recoverUnavailableReason?: string;
+}
+
 // Exported standard steps array
 export const RELAY_RUN_STEPS: RelayRunStepInfo[] = [
   {

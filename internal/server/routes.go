@@ -31,6 +31,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 		r.Get("/runs", apiH.ListRuns)
 		r.Get("/runs/{id}", apiH.GetRun)
 		r.Get("/runs/{id}/artifacts", apiH.ListArtifacts)
+		r.Get("/runs/{id}/artifacts/{kind}", apiH.GetArtifactContent)
 		r.Get("/runs/{id}/events", apiH.ListEvents)
 		r.Post("/intake/planner-handoff", apiH.IntakePlannerHandoff)
 		r.Post("/runs/{id}/approve-intake", apiH.ApproveIntake)
@@ -38,6 +39,8 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 		r.Post("/runs/{id}/render-brief", apiH.RenderBrief)
 		r.Post("/runs/{id}/approve-brief", apiH.ApproveBrief)
 		r.Post("/runs/{id}/execute", apiH.ExecuteRun)
+		r.Post("/runs/{id}/audit", apiH.GenerateAudit)
+		r.Post("/runs/{id}/audit/submit", apiH.SubmitAuditPacket)
 		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)

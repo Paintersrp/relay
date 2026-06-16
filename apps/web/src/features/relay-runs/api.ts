@@ -210,8 +210,34 @@ export async function approveBrief(
   );
 }
 
+export interface ExecuteActionPayload {
+  action: "start" | "cancel" | "recover";
+}
+
 export async function executeRun(id: string): Promise<RelayActionResponse> {
-  return postJson<undefined, RelayActionResponse>(`/api/runs/${id}/execute`);
+  return postJson<ExecuteActionPayload, RelayActionResponse>(`/api/runs/${id}/execute`, { action: "start" });
+}
+
+export async function cancelRun(id: string): Promise<RelayActionResponse> {
+  return postJson<ExecuteActionPayload, RelayActionResponse>(`/api/runs/${id}/execute`, { action: "cancel" });
+}
+
+export async function recoverRun(id: string): Promise<RelayActionResponse> {
+  return postJson<ExecuteActionPayload, RelayActionResponse>(`/api/runs/${id}/execute`, { action: "recover" });
+}
+
+export async function getArtifactContent(id: string, kind: string): Promise<string> {
+  const url = `${API_BASE_URL}/api/runs/${id}/artifacts/${kind}`;
+  try {
+    const res = await fetch(url, { headers: { Accept: "text/plain, application/json" } });
+    if (!res.ok) {
+      throw new RelayApiError(`Failed to fetch artifact content from GET /api/runs/${id}/artifacts/${kind} (status: ${res.status})`, res.status, `/api/runs/${id}/artifacts/${kind}`, "GET");
+    }
+    return await res.text();
+  } catch (err: any) {
+    if (err instanceof RelayApiError) throw err;
+    throw new RelayApiError(`Daemon unavailable fetching artifact content for run ${id} kind ${kind}: ${err.message}`, 503, `/api/runs/${id}/artifacts/${kind}`, "GET");
+  }
 }
 
 export async function auditRun(id: string): Promise<RelayActionResponse> {

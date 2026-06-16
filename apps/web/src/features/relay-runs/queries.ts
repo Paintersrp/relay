@@ -5,8 +5,7 @@
 // ============================================================
 
 import { queryOptions } from '@tanstack/react-query'
-import { getRuns, getRun, getRunArtifacts, getRunEvents } from './api'
-import type { RelayRun, RelayArtifact, RelayRunEvent } from './types'
+import { getRuns, getRun, getRunArtifacts, getRunEvents, getArtifactContent } from './api'
 
 // Query key factory
 export const relayRunKeys = {
@@ -15,6 +14,7 @@ export const relayRunKeys = {
   detail: (id: string) => [...relayRunKeys.all, 'detail', id] as const,
   artifacts: (id: string) => [...relayRunKeys.all, 'detail', id, 'artifacts'] as const,
   events: (id: string) => [...relayRunKeys.all, 'detail', id, 'events'] as const,
+  artifactContent: (id: string, kind: string) => [...relayRunKeys.all, 'detail', id, 'artifacts', kind] as const,
 }
 
 // Query options for all runs (list page)
@@ -47,6 +47,14 @@ export function runEventsQueryOptions(id: string) {
   return queryOptions({
     queryKey: relayRunKeys.events(id),
     queryFn: () => getRunEvents(id),
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+export function runArtifactContentQueryOptions(id: string, kind: string) {
+  return queryOptions({
+    queryKey: relayRunKeys.artifactContent(id, kind),
+    queryFn: () => getArtifactContent(id, kind),
     staleTime: 2 * 60 * 1000,
   })
 }

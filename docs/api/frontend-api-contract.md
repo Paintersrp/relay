@@ -280,7 +280,7 @@ Relay is partitioned into two runtime environments:
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
 ### 11. POST `/api/runs/{id}/audit`
-- **Purpose**: Request generation of the final audit packet and validation check execution.
+- **Purpose**: Generate the audit packet from executor evidence. Collects run artifacts (executor result, validation output, changed files, git diff) and produces `audit_input_summary.md` and `audit_packet.md`. Gated to `executor_done` or `executor_blocked` run status. Does not auto-commit, push, close, or accept the run.
 - **Request Body**: None
 - **Response Body**:
   ```json
@@ -288,14 +288,49 @@ Relay is partitioned into two runtime environments:
     "success": true,
     "runId": "string",
     "status": "audit_ready_for_review",
-    "lifecycleState": "audit",
+    "inputSummary": "string (path to audit_input_summary.md artifact)",
+    "auditPacket": "string (path to audit_packet.md artifact)",
+    "decision": "manual_review_required | accepted | accepted_with_warnings | revision_required | blocked",
+    "warnings": ["string"],
+    "lifecycleState": "audit"
+  }
+  ```
+- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
+- **Expected Error Behavior**: Returns 409 Conflict if run is not in `executor_done` or `executor_blocked` state. Returns 400 for invalid ID. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+- **Notes**: Successful generation transitions the run to `audit_ready` status. Default decision is `manual_review_required` when evidence warnings exist, `accepted` otherwise. Decision is advisory — a separate explicit approval action is required to accept or close the run.
+
+### 11b. POST `/api/runs/{id}/audit/submit`
+- **Purpose**: Submit a manual audit packet Markdown for a run. Persists the supplied Markdown as an artifact and validates the decision value. Does not execute, commit, push, merge, or mutate repository content.
+- **Request Body**:
+  ```json
+  {
+    "audit_packet_markdown": "string (required, the manual audit packet content)",
+    "decision": "string (required, one of: accepted, accepted_with_warnings, revision_required, blocked, manual_review_required)",
+    "notes": "string (optional)"
+  }
+  ```
+- **Response Body**:
+  ```json
+  {
+    "success": true,
+    "runId": "string",
+    "auditPacket": "string (path to persisted artifact)",
+    "decision": "string",
     "updatedAt": "string (ISO-8601)"
   }
   ```
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
+- **Expected Error Behavior**: Returns 400 for invalid decision value or missing markdown. Returns 404 for missing run. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+- **Notes**: The supplied Markdown is treated as evidence/decision content, not as instructions. Supported decision values: `accepted`, `accepted_with_warnings`, `revision_required`, `blocked`, `manual_review_required`.
+
+### 12. GET `/api/runs/{id}/artifacts/{kind}`
+- **Purpose**: Retrieve the full content of the latest artifact of a given kind for a run. Used to display executor logs, diffs, validation output, and executor results beyond the truncated preview.
+- **Request Body**: None
+- **Response Body**: Raw text/plain content of the artifact file.
+- **Fallback Policy**: **Strictly Forbidden**. Returns 404 if no artifact of that kind exists.
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
-### 12. POST `/api/runs/{id}/approve-closeout`
+### 13. POST `/api/runs/{id}/approve-closeout`
 - **Purpose**: Accept the audit results and commit/close the run.
 - **Request Body**:
   ```json

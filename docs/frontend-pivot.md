@@ -55,10 +55,18 @@ The `VITE_RELAY_API_BASE_URL=http://localhost:8080` environment variable documen
 - Implemented internal Go backend compiler and packet validation service.
 - Compiles approved runs into canonical packets (`canonical_packet.json`) and runs schema/path/security checks, outputting validation reports (`packet_validation_report.json`) and transitioning run status to `packet_validated` or `packet_validation_failed`.
 
+### Pass 11 (current) — Audit packet generator / bridge
+
+- Backend auditor package (`internal/auditor`) added for evidence collection, `audit_input_summary.md` and `audit_packet.md` generation, and manual audit packet submission.
+- `POST /api/runs/{id}/audit` generates audit artifacts from executor evidence (gated to `executor_done`/`executor_blocked`).
+- `POST /api/runs/{id}/audit/submit` accepts manual audit packet Markdown with validated decision values.
+- No Step 4 React UI wiring, MCP tool registration, commit, push, or auto-closeout behavior implemented.
+- Old templ/htmx UI and existing Go backend routes remain intact.
+
 ### Later passes — Decommission (TBD)
 
 - The old templ/htmx UI may be decommissioned in a future pass after the React frontend reaches feature parity.
-- This is explicitly not planned for Pass 1–6.
+- This is explicitly not planned for Pass 1–11.
 
 ## Hard Constraints
 
