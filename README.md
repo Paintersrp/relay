@@ -110,6 +110,23 @@ make build      # full build
 make test       # run tests
 ```
 
+## React Workbench Frontend (apps/web)
+
+`apps/web` is an additive TanStack Start React frontend for the Relay run workbench. The existing
+Go backend (`cmd/relay`, port 8080) and server-rendered templ/htmx UI (`web/`) remain unchanged.
+
+```bash
+# Start the React workbench (separate terminal, port 3000):
+cd apps/web
+cp .env.example .env        # sets VITE_RELAY_API_BASE_URL=http://localhost:8080
+npm install
+npm run dev
+# → http://localhost:3000
+```
+
+Pass 1 uses mock data only. Real API wiring begins in Pass 3.
+See `docs/frontend-pivot.md` for the full additive pivot documentation.
+
 ## Database
 
 Relay uses a local SQLite database at `data/relay.sqlite` by default.

@@ -21,6 +21,17 @@ web/static/app.css.map
 web/static/app.js
 web/static/app.js.map
 
+# apps/web generated/cache output (source, lockfile, components.json remain tracked)
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.output/
+apps/web/.tanstack/
+apps/web/.vinxi/
+apps/web/.vite/
+apps/web/.vercel/
+apps/web/.netlify/
+apps/web/.env
+
 # Coverage
 coverage/
 coverage.out
