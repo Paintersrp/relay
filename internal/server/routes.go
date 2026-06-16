@@ -22,8 +22,10 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
 
+	eventHub := events.NewHub(log)
+
 	// JSON API adapter routes
-	apiH := api.NewAPIHandler(s, log)
+	apiH := api.NewAPIHandler(s, log, eventHub)
 	r.Route("/api", func(r chi.Router) {
 		r.Use(api.CORSMiddleware)
 		r.Get("/runs", apiH.ListRuns)
@@ -35,6 +37,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 		r.Post("/runs/{id}/prepare", apiH.PrepareRun)
 		r.Post("/runs/{id}/render-brief", apiH.RenderBrief)
 		r.Post("/runs/{id}/approve-brief", apiH.ApproveBrief)
+		r.Post("/runs/{id}/execute", apiH.ExecuteRun)
 		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)
@@ -42,7 +45,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 		})
 	})
 
-	eventHub := events.NewHub(log)
+	// Templ/HTMX routes
 	dashboard := handlers.NewDashboardHandler(s)
 	handoffs := handlers.NewHandoffsHandler(s, log, eventHub)
 	runs := handlers.NewRunsHandler(s, log, eventHub)

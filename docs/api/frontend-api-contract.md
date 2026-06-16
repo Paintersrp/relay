@@ -244,9 +244,14 @@ Relay is partitioned into two runtime environments:
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
 ### 10. POST `/api/runs/{id}/execute`
-- **Purpose**: Start the repository agent execution loop.
-- **Request Body**: None
-- **Response Body**:
+- **Purpose**: Start the repository agent execution loop. Dispatches only from `approved_for_executor` run status. Reads `executor_brief.md` artifact as the sole executor task instruction.
+- **Request Body**:
+  ```json
+  {
+    "action": "start | cancel | recover"
+  }
+  ```
+- **Success Response Body** (start):
   ```json
   {
     "success": true,
@@ -256,6 +261,21 @@ Relay is partitioned into two runtime environments:
     "updatedAt": "string (ISO-8601)"
   }
   ```
+- **Error Response Body** (dispatch blocked, 422):
+  ```json
+  {
+    "success": false,
+    "runId": "string",
+    "error": "string describing why dispatch was blocked"
+  }
+  ```
+- **Notes**:
+  - `start` dispatches only when run status is `approved_for_executor`.
+  - Dispatch reads `executor_brief.md` and sends only that rendered brief text to the executor.
+  - Missing/empty brief, missing workspace config, missing selected model, or duplicate active session blocks dispatch.
+  - Lifecycle states: `approved_for_executor` → `executor_dispatched` → `executor_done` | `executor_blocked`.
+  - Output artifacts: `executor_stdout.txt`, `executor_stderr.txt`, `command_log.txt`, `executor_result.txt`.
+  - `cancel` and `recover` return `501 Not Implemented` when unavailable.
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 

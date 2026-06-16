@@ -53,6 +53,10 @@ var allowedKinds = map[string]bool{
 	"packet_validation_report":           true,
 	"executor_brief":                     true,
 	"brief_validation_report":            true,
+	"executor_stdout":                    true,
+	"executor_stderr":                    true,
+	"command_log":                        true,
+	"executor_result":                    true,
 }
 
 func SetBaseDir(dir string) {

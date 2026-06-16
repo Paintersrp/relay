@@ -13,6 +13,8 @@ import (
 
 	"relay/internal/artifacts"
 	"relay/internal/compiler"
+	"relay/internal/events"
+	"relay/internal/executor"
 	"relay/internal/intake"
 	"relay/internal/renderer"
 	"relay/internal/store"
@@ -22,14 +24,20 @@ import (
 )
 
 type APIHandler struct {
-	store *store.Store
-	log   *slog.Logger
+	store    *store.Store
+	log      *slog.Logger
+	eventHub *events.Hub
 }
 
-func NewAPIHandler(s *store.Store, log *slog.Logger) *APIHandler {
+func NewAPIHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *APIHandler {
+	var eventHub *events.Hub
+	if len(hub) > 0 {
+		eventHub = hub[0]
+	}
 	return &APIHandler{
-		store: s,
-		log:   log,
+		store:    s,
+		log:      log,
+		eventHub: eventHub,
 	}
 }
 
@@ -435,6 +443,24 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 			lifecycleState = "execute"
 			state = "Approved for Executor"
 			statusSeverity = "success"
+		case executor.StatusExecutorDispatched:
+			activeStep = "execute"
+			status = "executor_running"
+			lifecycleState = "execute"
+			state = "Executor Dispatched"
+			statusSeverity = "info"
+		case executor.StatusExecutorDone:
+			activeStep = "execute"
+			status = "executor_running"
+			lifecycleState = "execute"
+			state = "Executor Done"
+			statusSeverity = "success"
+		case executor.StatusExecutorBlocked:
+			activeStep = "execute"
+			status = "blocked"
+			lifecycleState = "failed"
+			state = "Executor Blocked"
+			statusSeverity = "danger"
 		case "blocked":
 			activeStep = "intake"
 			status = "blocked"
@@ -1329,4 +1355,67 @@ func (h *APIHandler) ApproveBrief(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"runId":   idStr,
 	})
+}
+
+// POST /api/runs/{id}/execute
+func (h *APIHandler) ExecuteRun(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	var req struct {
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req.Action = "start"
+	}
+
+	switch req.Action {
+	case "start":
+		params := &executor.DispatchParams{
+			Store:    h.store,
+			Log:      h.log,
+			EventHub: h.eventHub,
+			RunID:    id,
+		}
+
+		result, err := executor.DispatchBrief(params)
+		if err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+				"success": false,
+				"runId":   idStr,
+				"error":   err.Error(),
+			})
+			return
+		}
+
+		_ = result
+
+		run, _ := h.store.GetRun(id)
+		repoName := "Unknown Repo"
+		if repo, err := h.store.GetRepo(run.RepoID); err == nil && repo != nil {
+			repoName = repo.Name
+		}
+		mappedRun := h.mapRunToRelayRun(*run, repoName)
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success":        true,
+			"runId":          idStr,
+			"status":         mappedRun.Status,
+			"lifecycleState": mappedRun.LifecycleState,
+			"updatedAt":      mappedRun.UpdatedAt,
+		})
+
+	case "cancel":
+		writeError(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "Cancel action is not yet available for executor dispatch")
+
+	case "recover":
+		writeError(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "Recover action is not yet available for executor dispatch")
+
+	default:
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", fmt.Sprintf("Unknown execute action %q", req.Action))
+	}
 }

@@ -534,6 +534,14 @@ func ArtifactFilename(kind string) string {
 		return "git-push-dry-run.json"
 	case "git_push_result_json":
 		return "git-push-result.json"
+	case "executor_stdout":
+		return "executor_stdout.txt"
+	case "executor_stderr":
+		return "executor_stderr.txt"
+	case "command_log":
+		return "command_log.txt"
+	case "executor_result":
+		return "executor_result.txt"
 	default:
 		return fmt.Sprintf("%s.txt", kind)
 	}
