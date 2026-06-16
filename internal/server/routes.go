@@ -1,8 +1,12 @@
 package server
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 
 	"relay/internal/api"
 	"relay/internal/devreload"
@@ -14,6 +18,48 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
+
+// webBaseURL returns the configured React workbench base URL.
+// It reads RELAY_WEB_BASE_URL and falls back to http://localhost:3000.
+// Trailing slashes are trimmed. The result is a fixed, server-configured
+// value and never derived from user-controlled request input.
+func webBaseURL() string {
+	base := os.Getenv("RELAY_WEB_BASE_URL")
+	if base == "" {
+		base = "http://localhost:3000"
+	}
+	return strings.TrimRight(base, "/")
+}
+
+// webURL appends an internal workbench path to the configured base URL.
+// path must begin with "/" and is a literal internal route; it is never
+// derived from user input to prevent open-redirect vulnerabilities.
+func webURL(path string) string {
+	return webBaseURL() + path
+}
+
+// resolveRunStep maps a run status to the appropriate React workbench step path segment.
+// Unknown or empty statuses fall back to "intake".
+func resolveRunStep(status string) string {
+	switch status {
+	case "draft", "validated", "needs_cleanup", "needs_review",
+		"intake_approved", "intake_rejected", "intake_blocked":
+		return "intake"
+	case "packet_ready", "packet_validated", "packet_validation_failed",
+		"brief_ready_for_review", "brief_validation_failed",
+		"approved_for_executor":
+		return "prepare"
+	case "executor_running", "executor_done", "executor_blocked",
+		"executor_error", "executor_cancelled":
+		return "execute"
+	case "audit_pending", "audit_generated", "audit_submitted",
+		"audit_approved", "audit_approved_with_warnings",
+		"audit_revision_requested", "audit_closed", "closed":
+		return "audit"
+	default:
+		return "intake"
+	}
+}
 
 func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
@@ -52,31 +98,58 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 		})
 	})
 
-	// Templ/HTMX routes
-	dashboard := handlers.NewDashboardHandler(s)
+	// Legacy handoff creation — backend creation logic preserved; success
+	// redirect updated to React intake (see handlers/handoffs.go).
 	handoffs := handlers.NewHandoffsHandler(s, log, eventHub)
 	runs := handlers.NewRunsHandler(s, log, eventHub)
 	handoffs.SetRunsHandler(runs)
-	artifactsH := handlers.NewArtifactsHandler(s)
-
-	r.Get("/", dashboard.Get)
-	r.Get("/handoffs/new", handoffs.NewForm)
 	r.Post("/handoffs", handoffs.Create)
 
-	r.Get("/runs/{id}", runs.Get)
-	r.Get("/runs/{id}/events", runs.Events)
-	r.Post("/runs/{id}/actions", runs.Action)
-	r.Get("/runs/{id}/agent-run-monitor", runs.AgentRunMonitor)
+	// GET / → React /runs
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, webURL("/runs"), http.StatusFound)
+	})
 
-	r.Get("/runs/{id}/artifacts/{kind}/preview", artifactsH.Preview)
+	// GET /handoffs/new → React /runs/new
+	r.Get("/handoffs/new", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, webURL("/runs/new"), http.StatusFound)
+	})
+
+	// GET /runs/{id} → React /runs/{id}/{resolvedStep} based on run status
+	r.Get("/runs/{id}", func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid run id", http.StatusBadRequest)
+			return
+		}
+		run, err := s.GetRun(id)
+		if err != nil {
+			http.Error(w, "run not found", http.StatusNotFound)
+			return
+		}
+		step := resolveRunStep(run.Status)
+		http.Redirect(w, r, webURL(fmt.Sprintf("/runs/%d/%s", id, step)), http.StatusFound)
+	})
+
+	// GET /runs/{id}/agent-run-monitor → React /runs/{id}/execute
+	r.Get("/runs/{id}/agent-run-monitor", func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		http.Redirect(w, r, webURL("/runs/"+idStr+"/execute"), http.StatusFound)
+	})
+
+	// Artifact raw view and download routes — preserved
+	artifactsH := handlers.NewArtifactsHandler(s)
 	r.Get("/runs/{id}/artifacts/{kind}", artifactsH.View)
 	r.Get("/runs/{id}/artifacts/{kind}/download", artifactsH.Download)
 
+	// Instruction routes — preserved
 	instructionH := handlers.NewInstructionsHandler()
 	r.Get("/instructions", instructionH.List)
 	r.Get("/instructions/{kind}", instructionH.View)
 	r.Get("/instructions/{kind}/download", instructionH.Download)
 
+	// Repository settings routes — preserved
 	repoSettings := handlers.NewRepoSettingsHandler(s, rs, log)
 	r.Get("/settings/repos", repoSettings.Get)
 	r.Post("/settings/repos/roots", repoSettings.AddRoot)

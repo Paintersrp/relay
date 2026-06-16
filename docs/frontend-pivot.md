@@ -1,18 +1,20 @@
 # Relay Frontend Pivot
 
-> **Pass 1 — Additive scaffold only. No backend migration. No execution movement.**
+> **Pass 14R — Old templ/htmx workflow UI routes replaced with React redirects. React is now the primary workflow UI.**
 
 ## Overview
 
-`apps/web` is a **new, additive** React frontend for the Relay run workbench. It lives alongside the existing Go backend and templ/htmx UI. Nothing in the current backend or old UI has been changed.
+`apps/web` is the **primary workflow UI** for the Relay run workbench. Superseded Go templ/htmx
+workflow routes now redirect to the React workbench. The Go backend retains JSON API routes,
+orchestration, and utility UI pages (instructions, settings, raw artifact viewer).
 
 ## Runtime Split
 
-| Runtime                | Location    | Port                   | Responsibility                                              |
-| ---------------------- | ----------- | ---------------------- | ----------------------------------------------------------- |
-| Go daemon (existing)   | `cmd/relay` | `:8080`                | Orchestration, SQLite, artifact storage, run lifecycle      |
-| TanStack Start (React) | `apps/web`  | `:3000`                | Run workbench UI, read-only display, future action surfaces |
-| Old templ/htmx UI      | `web/`      | `:8080` (served by Go) | Existing server-rendered UI — untouched until later pass    |
+| Runtime                | Location    | Port                   | Responsibility                                                              |
+| ---------------------- | ----------- | ---------------------- | --------------------------------------------------------------------------- |
+| Go daemon              | `cmd/relay` | `:8080`                | JSON APIs, orchestration, SQLite, artifacts, utility UI (instructions, settings, artifact raw view) |
+| TanStack Start (React) | `apps/web`  | `:3000`                | **Primary workflow UI** — run creation, intake, prepare, execute, audit     |
+| Old templ/htmx UI      | `web/`      | `:8080` (served by Go) | Utility views only; workflow routes redirect to React                        |
 
 The `VITE_RELAY_API_BASE_URL=http://localhost:8080` environment variable documents where the React frontend will send API requests. **Pass 1 does not make any API calls** — all data is mock-only.
 
@@ -70,6 +72,16 @@ The `VITE_RELAY_API_BASE_URL=http://localhost:8080` environment variable documen
 - No Step 4 React UI wiring, MCP tool registration, commit, push, or auto-closeout behavior implemented.
 - Old templ/htmx UI and existing Go backend routes remain intact.
 
+### Pass 14R (current) — Decommission superseded templ/htmx workflow routes
+
+- Old workflow entry routes (`GET /`, `GET /handoffs/new`, `GET /runs/{id}`, `GET /runs/{id}/agent-run-monitor`) redirect to React workbench.
+- `POST /handoffs` backend creation preserved; success redirect changed to React `/runs/{id}/intake`.
+- `GET /runs/{id}` resolves current run status to the appropriate workbench step (`intake`, `prepare`, `execute`, `audit`) and redirects there.
+- Removed routes: `POST /runs/{id}/actions`, `GET /runs/{id}/events` (HTMX SSE partial), `GET /runs/{id}/artifacts/{kind}/preview` (templ preview).
+- Preserved routes: all `/api/*`, raw artifact view/download, instructions, repo settings.
+- `RELAY_WEB_BASE_URL` env var controls React workbench base (default `http://localhost:3000`).
+- React workbench is now the primary workflow UI.
+
 ### Later passes — Decommission (TBD)
 
 - The old templ/htmx UI may be decommissioned in a future pass after the React frontend reaches feature parity.
@@ -79,7 +91,7 @@ The `VITE_RELAY_API_BASE_URL=http://localhost:8080` environment variable documen
 
 - **Pipeline execution must NOT move into TanStack Start server functions.** The Go daemon owns all execution, validation, and artifact lifecycle.
 - **Do not convert the repo into a monorepo workspace.** Root `package.json` and its scripts remain for the old build.
-- **Do not delete or migrate the old templ/htmx UI** until a later pass explicitly permits it.
+- **Workflow routes removed are limited to superseded templ/htmx UI paths.** JSON API routes, artifact raw view/download, instructions, and settings remain on the Go backend.
 - All new frontend package changes belong to `apps/web/package.json` and `apps/web/package-lock.json` only.
 
 ## Tech Stack (apps/web)

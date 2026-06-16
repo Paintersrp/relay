@@ -51,14 +51,21 @@ The current local-first flow does not yet implement:
 
 ## Stack
 
+**Go backend (primary):**
 - Go `net/http` + `chi` router
-- `templ` for server-rendered views
+- `templ` for server-rendered utility views (instructions, settings, artifact viewer)
 - SQLite via `database/sql`
 - `sqlc` for typed queries
 - `goose` for migrations
-- `htmx` + Alpine for browser interactions
 - Tailwind CSS v4
 - TypeScript bundled with esbuild
+
+**React workbench (primary workflow UI):**
+- TanStack Start (React + Vite + file-based routing)
+- TanStack Router
+- TanStack React Query
+- Tailwind CSS v4 + shadcn/ui
+- TypeScript
 
 ## Prerequisites
 
@@ -116,10 +123,32 @@ make build      # full build
 make test       # run tests
 ```
 
-## React Workbench Frontend (apps/web)
+## React Workbench Frontend (apps/web) — Primary Workflow UI
 
-`apps/web` is an additive TanStack Start React frontend for the Relay run workbench. The existing
-Go backend (`cmd/relay`, port 8080) and server-rendered templ/htmx UI (`web/`) remain unchanged.
+`apps/web` is the **primary workflow UI** for Relay. All run creation, intake, prepare, execute,
+and audit steps are served by the React workbench at port 3000.
+
+The Go backend (`cmd/relay`, port 8080) continues to own:
+- All JSON API routes (`/api/*`)
+- Orchestration, run lifecycle, and artifact storage
+- Utility server-rendered pages: instructions (`/instructions/*`), repo settings (`/settings/repos*`),
+  and raw artifact viewer/download (`/runs/{id}/artifacts/{kind}`, `/runs/{id}/artifacts/{kind}/download`)
+- SSE event stream (`/api/runs/{id}/events`)
+
+Old templ/htmx workflow routes now redirect to the React workbench:
+
+| Old Go route | New destination |
+|---|---|
+| `GET /` | React `/runs` |
+| `GET /handoffs/new` | React `/runs/new` |
+| `POST /handoffs` (success) | React `/runs/{id}/intake` |
+| `GET /runs/{id}` | React `/runs/{id}/{step}` (status-resolved) |
+| `GET /runs/{id}/agent-run-monitor` | React `/runs/{id}/execute` |
+
+Routes `POST /runs/{id}/actions`, `GET /runs/{id}/events` (HTMX), and
+`GET /runs/{id}/artifacts/{kind}/preview` (templ) are removed. JSON API equivalents remain under `/api/*`.
+
+Set `RELAY_WEB_BASE_URL` (default `http://localhost:3000`) if you run the React workbench on a different port.
 
 ```bash
 # Start the React workbench (separate terminal, port 3000):
@@ -130,8 +159,7 @@ npm run dev
 # → http://localhost:3000
 ```
 
-Pass 1 uses mock data only. Real API wiring begins in Pass 3.
-See `docs/frontend-pivot.md` for the full additive pivot documentation.
+See `docs/frontend-pivot.md` for full pivot documentation.
 
 ## Database
 

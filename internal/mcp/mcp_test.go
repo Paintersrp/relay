@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"relay/internal/artifacts"
@@ -271,6 +272,22 @@ func TestServerMethodNotFound(t *testing.T) {
 	resp := srv.handleLine(mustMarshal(t, req))
 	if resp.Error == nil || resp.Error.Code != CodeMethodNotFound {
 		t.Errorf("expected MethodNotFound (-32601), got %+v", resp.Error)
+	}
+}
+
+// TestServerSafety verifies that no unsafe generic tool names are registered.
+func TestServerSafety(t *testing.T) {
+	srv := NewServer(nil_slog(t))
+	unsafeNames := []string{
+		"shell", "exec", "command", "read_file", "write_file",
+		"git_commit", "git_push", "checkout", "reset", "merge",
+	}
+	for _, tool := range srv.tools {
+		for _, unsafe := range unsafeNames {
+			if contains(strings.ToLower(tool.Name), unsafe) {
+				t.Errorf("unsafe tool name registered: %q contains unsafe keyword %q", tool.Name, unsafe)
+			}
+		}
 	}
 }
 

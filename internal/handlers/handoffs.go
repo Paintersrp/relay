@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,6 +17,16 @@ import (
 	"relay/internal/store"
 	"relay/internal/views"
 )
+
+// handoffWebBaseURL returns the configured React workbench base URL for
+// post-create redirects. Mirrors the same logic in internal/server/routes.go.
+func handoffWebBaseURL() string {
+	base := os.Getenv("RELAY_WEB_BASE_URL")
+	if base == "" {
+		base = "http://localhost:3000"
+	}
+	return strings.TrimRight(base, "/")
+}
 
 type HandoffsHandler struct {
 	store       *store.Store
@@ -185,7 +196,9 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.log.Warn("auto-setup skipped: runsHandler not set", "run_id", run.ID)
 	}
 
-	http.Redirect(w, r, "/runs/"+strconv.FormatInt(run.ID, 10), http.StatusSeeOther)
+	// Redirect to React workbench intake route after successful run creation.
+	intakeURL := handoffWebBaseURL() + "/runs/" + strconv.FormatInt(run.ID, 10) + "/intake"
+	http.Redirect(w, r, intakeURL, http.StatusSeeOther)
 }
 
 func normalizeManualRepoInput(repoName, repoPath string) (name string, path string, err error) {

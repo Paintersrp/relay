@@ -120,6 +120,8 @@ Run ID `0` is a reserved sentinel directory used only for MCP test artifacts. It
 
 > [!IMPORTANT]
 > Pass 13B tools are **not registered** until Pass 13A target-client feasibility succeeds and the user explicitly confirms.
+>
+> **Current Status**: **BLOCKED** (Gated because no durable target-client feasibility evidence, e.g., the run ID 0 test artifact at `data/artifacts/0/mcp_test_audit_packet.md`, was found on disk in the repository).
 
 After the gate succeeds, the following tools will be added:
 
