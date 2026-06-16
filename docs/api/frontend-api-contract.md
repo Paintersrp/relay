@@ -58,6 +58,7 @@ The following canonical statuses are emitted by `GET /api/runs` and `GET /api/ru
 - `executor_blocked` — Executor encountered a blocking error
 - `audit_ready` — Audit packet generated, ready for review
 - `audit_ready_for_review` — Legacy: audit ready (htmx fallback)
+- `revision_required` — Revision requested, audit must be regenerated
 - `accepted` — Audit approved
 - `accepted_with_warnings` — Audit approved with warnings
 - `completed` — Run closed
@@ -65,6 +66,8 @@ The following canonical statuses are emitted by `GET /api/runs` and `GET /api/ru
 - Legacy agent states: `agent_done`, `agent_blocked`, `agent_result_needs_review`, `validation_passed`, `validation_failed_accepted`, `validation_failed`
 
 Display fields (`state`, `activeStep`, `lifecycleState`, `statusSeverity`) are derived from the canonical status and must not be used for action gating. Frontend action gating must use `status` only.
+
+The canonical final state is `completed`. No mutating actions are available in this state.
 
 ## Shared Models
 
@@ -135,6 +138,30 @@ Display fields (`state`, `activeStep`, `lifecycleState`, `statusSeverity`) are d
 ```
 
 ---
+
+### Audit State Machine
+
+The audit lifecycle follows these state transitions:
+
+```
+executor_done / executor_blocked
+  → POST /audit (GenerateAudit)
+  → audit_ready
+      → POST /audit/approve → accepted / accepted_with_warnings
+          → POST /audit/prepare-commit-message (artifact only, no git)
+          → POST /audit/close → completed (final state, read-only)
+      → POST /audit/request-revision → revision_required
+          → POST /audit (regenerate from executor terminal states) → audit_ready
+```
+
+**Rules:**
+- `audit_ready` and `audit_ready_for_review` are equivalent for action gating.
+- `revision_required` blocks all review actions until audit is regenerated.
+- `completed` is the canonical final state. All actions are blocked in this state.
+- ApproveAudit transitions to `accepted` or `accepted_with_warnings` only; never closes the run.
+- PrepareCommitMessage is gated to `accepted`/`accepted_with_warnings` only.
+- CloseRun is gated to `accepted`/`accepted_with_warnings` only; transitions to `completed`.
+- No audit action performs git add, commit, push, merge, reset, checkout, or worktree mutation.
 
 ## Endpoints
 
@@ -404,7 +431,7 @@ Display fields (`state`, `activeStep`, `lifecycleState`, `statusSeverity`) are d
 - **Notes**: This action only updates Relay run state. No git mutation occurs.
 
 ### 14. POST `/api/runs/{id}/audit/request-revision`
-- **Purpose**: Request revision for an audit. Records the revision request as an event. Does not change the run status from audit state.
+- **Purpose**: Request revision for an audit. Records the revision request as an event artifact and transitions the run status to `revision_required`. Does not commit, push, or mutate repository content.
 - **Request Body**:
   ```json
   {
@@ -417,16 +444,17 @@ Display fields (`state`, `activeStep`, `lifecycleState`, `statusSeverity`) are d
   {
     "success": true,
     "runId": "string",
-    "status": "audit_ready | audit_ready_for_review",
+    "status": "revision_required",
     "lifecycleState": "audit",
     "updatedAt": "string (ISO-8601)"
   }
   ```
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Returns 404 for missing run. Returns 409 if run is not in audit state. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+- **Expected Error Behavior**: Returns 404 for missing run. Returns 409 if run is not in `audit_ready` or `audit_ready_for_review` state. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+- **Notes**: Transitions the run to `revision_required`. An `audit_revision_request.md` artifact is persisted with revision details for durable evidence. After revision, audit must be regenerated from executor terminal states. No git mutation occurs.
 
 ### 15. POST `/api/runs/{id}/audit/prepare-commit-message`
-- **Purpose**: Prepare a suggested commit message artifact for the run. Writes a `commit_message.txt` artifact with the run title and changed file summary. Does not commit, push, stage, or mutate any repo files.
+- **Purpose**: Prepare a suggested commit message artifact for the run. Writes a `commit_message.txt` artifact with the run title and changed file summary. Gated to `accepted` or `accepted_with_warnings` status only. Does not commit, push, stage, or mutate any repo files.
 - **Request Body**: None
 - **Response Body**:
   ```json
@@ -439,7 +467,7 @@ Display fields (`state`, `activeStep`, `lifecycleState`, `statusSeverity`) are d
   }
   ```
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Returns 404 for missing run. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+- **Expected Error Behavior**: Returns 404 for missing run. Returns 409 if run is not in `accepted` or `accepted_with_warnings` state. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 - **Notes**: Only creates a suggested message artifact. No git commit, git push, git add, staging, merge, or repo mutation occurs.
 
 ### 16. POST `/api/runs/{id}/audit/close`

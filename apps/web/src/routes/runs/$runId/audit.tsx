@@ -5,7 +5,6 @@ import {
   runDetailQueryOptions,
   runArtifactsQueryOptions,
   runEventsQueryOptions,
-  runArtifactContentQueryOptions,
   auditRun,
   submitManualAuditPacket,
   approveAudit,
@@ -32,7 +31,6 @@ import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   ShieldCheck,
   FileText,
@@ -47,7 +45,6 @@ import {
   ArrowLeft,
   RefreshCw,
   FileCode,
-  Clock,
 } from 'lucide-react'
 
 export const Route = createFileRoute('/runs/$runId/audit')({
@@ -56,7 +53,6 @@ export const Route = createFileRoute('/runs/$runId/audit')({
 
 function AuditPage() {
   const { runId } = Route.useParams()
-  const queryClient = useQueryClient()
   const { data: run, isLoading: isLoadingRun, error: errorRun } = useQuery(runDetailQueryOptions(runId))
   const { data: artifacts, isLoading: isLoadingArtifacts } = useQuery(runArtifactsQueryOptions(runId))
   const { data: events } = useQuery(runEventsQueryOptions(runId))
@@ -165,20 +161,16 @@ function deriveAuditData(
     a.filename?.includes('manual') || a.path?.includes('manual')
   )
 
-  const hasApprovedEvent = events.some((e: any) =>
-    e.message?.includes('Audit approved') || e.message?.includes('Audit approved with warnings')
-  )
   const hasRevisionEvent = events.some((e: any) =>
     e.message?.includes('Audit revision requested')
   )
-  const hasCloseEvent = events.some((e: any) =>
-    e.message?.includes('Run closed')
-  )
 
   const runStatus = run.status || ''
+  const isExecutorTerminal = runStatus === 'executor_done' || runStatus === 'executor_blocked'
   const isAccepted = runStatus === 'accepted' || runStatus === 'accepted_with_warnings'
   const isAuditReady = runStatus === 'audit_ready' || runStatus === 'audit_ready_for_review'
   const isCompleted = runStatus === 'completed'
+  const isRevisionRequired = runStatus === 'revision_required'
   const isBlocked = runStatus === 'blocked'
 
   const commitMsgArts = artifacts.filter((a: any) =>
@@ -246,18 +238,18 @@ function deriveAuditData(
       auditDecisionSummary: decisionValue || 'Pending review',
     },
     actions: {
-      canGenerateAudit: isAuditReady && (!hasGenerateEvent || !genPacketArt),
-      canSubmitManual: isAuditReady && !isAccepted,
-      canApproveAudit: (hasGenerateEvent || hasManualSubmitEvent) && isAuditReady && !auditDecision && !isCompleted,
-      canRequestRevision: isAuditReady && !isCompleted,
-      canPrepareCommitMessage: isAuditReady && (auditDecision || isAccepted) && !isCompleted,
+      canGenerateAudit: isExecutorTerminal && !isCompleted,
+      canSubmitManual: isAuditReady && !isAccepted && !isCompleted && !isRevisionRequired,
+      canApproveAudit: (hasGenerateEvent || hasManualSubmitEvent) && isAuditReady && !auditDecision && !isCompleted && !isRevisionRequired,
+      canRequestRevision: isAuditReady && !isCompleted && !isRevisionRequired,
+      canPrepareCommitMessage: isAccepted && !isCompleted,
       canCloseRun: isAccepted && !isCompleted,
-      generateAuditUnavailableReason: !isAuditReady ? `Current status: ${runStatus}` : undefined,
-      submitManualUnavailableReason: !isAuditReady ? `Current status: ${runStatus}` : undefined,
-      approveAuditUnavailableReason: !isAuditReady ? `Current status: ${runStatus}` : undefined,
-      requestRevisionUnavailableReason: !isAuditReady ? `Current status: ${runStatus}` : undefined,
-      prepareCommitMessageUnavailableReason: !isAuditReady ? `Current status: ${runStatus}` : 'Audit must be approved first',
-      closeRunUnavailableReason: !isAccepted ? `Audit must be approved first` : undefined,
+      generateAuditUnavailableReason: !isExecutorTerminal ? `Current status: ${runStatus}. Audit generation requires executor_done or executor_blocked.` : undefined,
+      submitManualUnavailableReason: !isAuditReady || isRevisionRequired ? `Current status: ${runStatus}` : undefined,
+      approveAuditUnavailableReason: !isAuditReady || isRevisionRequired ? `Current status: ${runStatus}` : undefined,
+      requestRevisionUnavailableReason: !isAuditReady || isRevisionRequired ? `Current status: ${runStatus}` : undefined,
+      prepareCommitMessageUnavailableReason: !isAccepted ? `Run must be in accepted or accepted_with_warnings status. Current: ${runStatus}` : undefined,
+      closeRunUnavailableReason: !isAccepted ? `Audit must be approved first (status must be accepted or accepted_with_warnings). Current: ${runStatus}` : undefined,
     },
     warnings: run.validationSummary?.warnings > 0
       ? (run.validationSummary?.issues || []).filter((i: any) => i.severity === 'warning').map((i: any) => i.message)
@@ -265,7 +257,11 @@ function deriveAuditData(
     revisionRequirements: hasRevisionEvent
       ? events.filter((e: any) => e.message?.includes('Audit revision requested')).map((e: any) => e.message)
       : [],
-    blockers: isBlocked ? ['Run is blocked and cannot proceed to close.'] : [],
+    blockers: isBlocked
+      ? ['Run is blocked and cannot proceed to close.']
+      : isRevisionRequired
+        ? ['Revision requested — audit must be regenerated.']
+        : [],
   }
 }
 
@@ -859,7 +855,7 @@ function AuditMainContent({
             </Button>
           )}
 
-          {auditData.actions.closeRunUnavailableReason && !run.lifecycleState === 'completed' && (
+          {auditData.actions.closeRunUnavailableReason && run.lifecycleState !== 'completed' && (
             <p className="text-xs text-muted-foreground/60 italic mt-1 flex items-center gap-1">
               <AlertTriangle className="w-3 h-3" />
               {auditData.actions.closeRunUnavailableReason}

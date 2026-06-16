@@ -38,6 +38,7 @@ export type RelayRunStatus =
   | "agent_result_needs_review"
   | "audit_ready"
   | "audit_ready_for_review"
+  | "revision_required"
   | "accepted"
   | "accepted_with_warnings"
   | "validation_passed"

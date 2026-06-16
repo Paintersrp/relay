@@ -519,6 +519,11 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 		lifecycleState = "audit"
 		state = "Audit Ready"
 		statusSeverity = "warning"
+	case "revision_required":
+		activeStep = "audit"
+		lifecycleState = "audit"
+		state = "Revision Required"
+		statusSeverity = "warning"
 	case "accepted":
 		activeStep = "audit"
 		lifecycleState = "audit"
@@ -1665,11 +1670,26 @@ func (h *APIHandler) RequestAuditRevision(w http.ResponseWriter, r *http.Request
 
 	_, _ = h.store.CreateEvent(id, "status_change", eventMsg)
 
+	// Persist revision details as an artifact for durable evidence
+	revisionData := fmt.Sprintf("# Audit Revision Request\n\n- Run ID: %d\n- Reason: %s\n- Notes: %s\n- Requested: %s\n",
+		id, req.Reason, req.Notes, time.Now().UTC().Format(time.RFC3339))
+	revisionPath, revErr := artifacts.Write(id, "audit_revision", "audit_revision_request.md", []byte(revisionData))
+	if revErr == nil {
+		_, _ = h.store.CreateArtifact(id, "audit_revision", revisionPath, "text/markdown")
+	}
+
+	// Transition run status to revision_required
+	updatedRun, err := h.store.UpdateRunStatus(id, "revision_required")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run status")
+		return
+	}
+
 	repoName := "Unknown Repo"
-	if repo, err := h.store.GetRepo(run.RepoID); err == nil && repo != nil {
+	if repo, err := h.store.GetRepo(updatedRun.RepoID); err == nil && repo != nil {
 		repoName = repo.Name
 	}
-	mappedRun := h.mapRunToRelayRun(*run, repoName)
+	mappedRun := h.mapRunToRelayRun(*updatedRun, repoName)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":        true,
@@ -1692,6 +1712,11 @@ func (h *APIHandler) PrepareCommitMessage(w http.ResponseWriter, r *http.Request
 	run, err := h.store.GetRun(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
+		return
+	}
+
+	if run.Status != "accepted" && run.Status != "accepted_with_warnings" {
+		writeError(w, http.StatusConflict, "CONFLICT", fmt.Sprintf("Run status is %q, must be accepted or accepted_with_warnings to prepare commit message", run.Status))
 		return
 	}
 
