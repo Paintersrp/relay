@@ -1,0 +1,1 @@
+export const Tabs=({children}:React.PropsWithChildren)=> <div>{children}</div>; export const TabsList=({children}:React.PropsWithChildren)=> <div className="flex gap-2">{children}</div>; export const TabsTrigger=({children}:React.PropsWithChildren)=> <span className="rounded-md bg-slate-900 px-3 py-1 text-sm">{children}</span>;

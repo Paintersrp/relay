@@ -652,3 +652,10 @@ data/
   relay.sqlite      SQLite database (gitignored)
   artifacts/        Run artifact files (gitignored)
 ```
+## New TanStack Start frontend prototype
+
+- `apps/web` contains the new Relay frontend prototype.
+- Existing Go/templ/htmx UI remains during transition.
+- Run the Go backend on port 8080.
+- Run the new frontend from `apps/web`.
+- Set `VITE_RELAY_API_BASE_URL=http://localhost:8080`.
