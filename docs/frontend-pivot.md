@@ -8,11 +8,11 @@
 
 ## Runtime Split
 
-| Runtime | Location | Port | Responsibility |
-|---|---|---|---|
-| Go daemon (existing) | `cmd/relay` | `:8080` | Orchestration, SQLite, artifact storage, run lifecycle |
-| TanStack Start (React) | `apps/web` | `:3000` | Run workbench UI, read-only display, future action surfaces |
-| Old templ/htmx UI | `web/` | `:8080` (served by Go) | Existing server-rendered UI — untouched until later pass |
+| Runtime                | Location    | Port                   | Responsibility                                              |
+| ---------------------- | ----------- | ---------------------- | ----------------------------------------------------------- |
+| Go daemon (existing)   | `cmd/relay` | `:8080`                | Orchestration, SQLite, artifact storage, run lifecycle      |
+| TanStack Start (React) | `apps/web`  | `:3000`                | Run workbench UI, read-only display, future action surfaces |
+| Old templ/htmx UI      | `web/`      | `:8080` (served by Go) | Existing server-rendered UI — untouched until later pass    |
 
 The `VITE_RELAY_API_BASE_URL=http://localhost:8080` environment variable documents where the React frontend will send API requests. **Pass 1 does not make any API calls** — all data is mock-only.
 

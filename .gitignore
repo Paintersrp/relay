@@ -59,3 +59,9 @@ internal/**/data/
 *.bak
 *.swp
 *.swo
+# TanStack Start frontend prototype
+apps/web/node_modules/
+apps/web/.output/
+apps/web/dist/
+apps/web/.env
+apps/web/.env.local
