@@ -196,6 +196,10 @@ export async function prepareRun(id: string): Promise<RelayActionResponse> {
   return postJson<undefined, RelayActionResponse>(`/api/runs/${id}/prepare`);
 }
 
+export async function renderBrief(id: string): Promise<RelayActionResponse> {
+  return postJson<undefined, RelayActionResponse>(`/api/runs/${id}/render-brief`);
+}
+
 export async function approveBrief(
   id: string,
   req: RelayActionRequest

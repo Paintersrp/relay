@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"relay/internal/artifacts"
+	"relay/internal/compiler"
 	"relay/internal/intake"
 	"relay/internal/renderer"
 	"relay/internal/store"
@@ -1179,6 +1180,61 @@ func (h *APIHandler) ApproveIntake(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// POST /api/runs/{id}/prepare
+func (h *APIHandler) PrepareRun(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
+		return
+	}
+
+	if run.Status != "approved_for_prepare" {
+		writeError(w, http.StatusConflict, "CONFLICT", fmt.Sprintf("Run status is %q, must be approved_for_prepare to compile", run.Status))
+		return
+	}
+
+	comp := compiler.New(h.store)
+	res, err := comp.CompileApprovedRun(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	if !res.Success {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+			"success":          false,
+			"runId":            idStr,
+			"packetId":         res.PacketID,
+			"issues":           res.Issues,
+			"validationReport": res.ValidationReport,
+		})
+		return
+	}
+
+	repoName := "Unknown Repo"
+	if repo, err := h.store.GetRepo(run.RepoID); err == nil && repo != nil {
+		repoName = repo.Name
+	}
+
+	mappedRun := h.mapRunToRelayRun(*run, repoName)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":          true,
+		"runId":            idStr,
+		"packetId":         res.PacketID,
+		"status":           mappedRun.Status,
+		"lifecycleState":   mappedRun.LifecycleState,
+		"validationReport": res.ValidationReport,
+	})
+}
+
 // POST /api/runs/{id}/render-brief
 func (h *APIHandler) RenderBrief(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
@@ -1200,6 +1256,23 @@ func (h *APIHandler) RenderBrief(w http.ResponseWriter, r *http.Request) {
 			"success": false,
 			"runId":   idStr,
 			"issues":  res.Issues,
+		})
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err == nil && run != nil {
+		repoName := "Unknown Repo"
+		if repo, err := h.store.GetRepo(run.RepoID); err == nil && repo != nil {
+			repoName = repo.Name
+		}
+		mappedRun := h.mapRunToRelayRun(*run, repoName)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success":        true,
+			"runId":          idStr,
+			"status":         mappedRun.Status,
+			"lifecycleState": mappedRun.LifecycleState,
+			"updatedAt":      mappedRun.UpdatedAt,
 		})
 		return
 	}
@@ -1231,6 +1304,23 @@ func (h *APIHandler) ApproveBrief(w http.ResponseWriter, r *http.Request) {
 			"success": false,
 			"runId":   idStr,
 			"issues":  res.Issues,
+		})
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err == nil && run != nil {
+		repoName := "Unknown Repo"
+		if repo, err := h.store.GetRepo(run.RepoID); err == nil && repo != nil {
+			repoName = repo.Name
+		}
+		mappedRun := h.mapRunToRelayRun(*run, repoName)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success":        true,
+			"runId":          idStr,
+			"status":         mappedRun.Status,
+			"lifecycleState": mappedRun.LifecycleState,
+			"updatedAt":      mappedRun.UpdatedAt,
 		})
 		return
 	}

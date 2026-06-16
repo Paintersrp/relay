@@ -13,6 +13,12 @@ export {
   getRun,
   getRunArtifacts,
   getRunEvents,
-  approveIntake
+  approveIntake,
+  prepareRun,
+  renderBrief,
+  approveBrief,
+  executeRun,
+  auditRun,
+  approveCloseout
 } from './api'
 export type { RelayRun, RelayRunStatus, RelayRunStep, RelayValidationIssue, RelayArtifactPreview, RelayApprovalGate, RelayLogPreview } from './types'

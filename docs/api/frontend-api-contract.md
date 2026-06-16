@@ -176,8 +176,36 @@ Relay is partitioned into two runtime environments:
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
 ### 7. POST `/api/runs/{id}/prepare`
-- **Purpose**: Trigger compilation of the instruction brief and git environment preparation.
-- **Note**: This endpoint is not implemented in Pass 6.
+- **Purpose**: Trigger compilation of the instruction brief (calls existing Pass 6 compiler service).
+- **Note**: Requires run status `approved_for_prepare`. Returns `422 Unprocessable Entity` with validation report on compile failure.
+- **Request Body**: None
+- **Response Body** (success):
+  ```json
+  {
+    "success": true,
+    "runId": "string",
+    "packetId": "string",
+    "status": "packet_validated | packet_validation_failed",
+    "lifecycleState": "prepare",
+    "validationReport": {}
+  }
+  ```
+- **Response Body** (validation failure, 422):
+  ```json
+  {
+    "success": false,
+    "runId": "string",
+    "packetId": "string",
+    "issues": ["string"],
+    "validationReport": {}
+  }
+  ```
+- **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
+- **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+
+### 8. POST `/api/runs/{id}/render-brief`
+- **Purpose**: Render the executor brief from the compiled canonical packet (calls existing Pass 7 renderer service).
+- **Note**: Requires run status `packet_validated` or `repair_validated`.
 - **Request Body**: None
 - **Response Body**:
   ```json
@@ -192,12 +220,13 @@ Relay is partitioned into two runtime environments:
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
-### 8. POST `/api/runs/{id}/approve-brief`
+### 9. POST `/api/runs/{id}/approve-brief`
 - **Purpose**: Approve the compiled brief and authorize execution.
+- **Note**: Requires run status `brief_ready_for_review` and a passing brief validation report. Advances to `approved_for_executor`.
 - **Request Body**:
   ```json
   {
-    "action": "approve | reject",
+    "action": "approve | needs_revision",
     "notes": "string (optional)"
   }
   ```
@@ -206,7 +235,7 @@ Relay is partitioned into two runtime environments:
   {
     "success": true,
     "runId": "string",
-    "status": "executor_running",
+    "status": "approved_for_executor",
     "lifecycleState": "execute",
     "updatedAt": "string (ISO-8601)"
   }
@@ -214,7 +243,7 @@ Relay is partitioned into two runtime environments:
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
-### 9. POST `/api/runs/{id}/execute`
+### 10. POST `/api/runs/{id}/execute`
 - **Purpose**: Start the repository agent execution loop.
 - **Request Body**: None
 - **Response Body**:
@@ -230,7 +259,7 @@ Relay is partitioned into two runtime environments:
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
-### 10. POST `/api/runs/{id}/audit`
+### 11. POST `/api/runs/{id}/audit`
 - **Purpose**: Request generation of the final audit packet and validation check execution.
 - **Request Body**: None
 - **Response Body**:
@@ -246,7 +275,7 @@ Relay is partitioned into two runtime environments:
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
-### 11. POST `/api/runs/{id}/approve-closeout`
+### 12. POST `/api/runs/{id}/approve-closeout`
 - **Purpose**: Accept the audit results and commit/close the run.
 - **Request Body**:
   ```json
