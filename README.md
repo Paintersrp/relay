@@ -34,6 +34,12 @@ Key design points:
 - Validation runner is local/user-triggered.
 - `AGENTS.md` and `.clinerules` source templates live under `internal/instructions`.
 
+## MCP Bridge
+
+Relay includes an experimental MCP (Model Context Protocol) bridge that allows MCP-compatible clients to interact with runs via tools.
+
+See **[docs/mcp.md](docs/mcp.md)** for setup, tool shapes, smoke test instructions, and safety boundaries.
+
 ## Not implemented yet
 
 The current local-first flow does not yet implement:
