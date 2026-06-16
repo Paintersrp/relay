@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"relay/internal/api"
 	"relay/internal/devreload"
 	"relay/internal/events"
 	"relay/internal/handlers"
@@ -20,6 +21,21 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
+
+	// JSON API adapter routes
+	apiH := api.NewAPIHandler(s, log)
+	r.Route("/api", func(r chi.Router) {
+		r.Use(api.CORSMiddleware)
+		r.Get("/runs", apiH.ListRuns)
+		r.Get("/runs/{id}", apiH.GetRun)
+		r.Get("/runs/{id}/artifacts", apiH.ListArtifacts)
+		r.Get("/runs/{id}/events", apiH.ListEvents)
+		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"NOT_FOUND","message":"API route not found"}`))
+		})
+	})
 
 	eventHub := events.NewHub(log)
 	dashboard := handlers.NewDashboardHandler(s)
