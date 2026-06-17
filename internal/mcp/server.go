@@ -1,12 +1,22 @@
 // Package mcp provides the MCP server entry point and tool registry.
 // It serves the MCP JSON-RPC 2.0 protocol over stdio.
 //
-// Usage (from cmd/relay or a standalone binary):
+// Usage (from cmd/mcpserver):
 //
-//	srv := mcp.NewServer(log)
+//	deps := &mcp.MCPDeps{Store: store, Log: log}
+//	srv := mcp.NewServer(log, deps)
 //	if err := srv.Serve(os.Stdin, os.Stdout); err != nil {
 //	    log.Error("mcp serve", "error", err)
 //	}
+//
+// Safety boundaries:
+//   - No shell execution is exposed.
+//   - No arbitrary file read/write is exposed.
+//   - No git commit, push, branch, or worktree mutation is exposed.
+//   - All artifact writes go through relay/internal/artifacts conventions.
+//   - All run state changes use existing relay store and service behavior.
+//   - Tool descriptions explicitly note that Relay does not read chat messages.
+//   - Callers must not pass secrets, tokens, auth headers, or private keys as tool arguments.
 package mcp
 
 import (
@@ -21,16 +31,26 @@ import (
 // requests from r and writes responses to w.
 type Server struct {
 	log   *slog.Logger
+	deps  *MCPDeps
 	tools []ToolDefinition
 }
 
-// NewServer constructs an MCP server with the default tool set registered.
-func NewServer(log *slog.Logger) *Server {
-	s := &Server{log: log}
-	// Register Pass 13A tool only. Pass 13B tools are not registered here
-	// because target-client feasibility has not been confirmed. See mcp.md.
+// NewServer constructs an MCP server with the full Pass 16 tool set registered.
+// deps may be nil for tests that only need protocol-level behavior (no real tools).
+func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
+	var d *MCPDeps
+	if len(deps) > 0 {
+		d = deps[0]
+	}
+	s := &Server{log: log, deps: d}
 	s.tools = []ToolDefinition{
+		// Pass 13A feasibility tool — preserved for backward compatibility.
 		ToolSubmitTestAuditPacket,
+		// Pass 16 real tools.
+		ToolCreateRunFromPlannerHandoff,
+		ToolListOpenRuns,
+		ToolGetRunStatus,
+		ToolSubmitAuditPacket,
 	}
 	return s
 }
@@ -38,6 +58,9 @@ func NewServer(log *slog.Logger) *Server {
 // Serve reads JSON-RPC 2.0 requests from r and writes responses to w until r
 // is closed. Each request and response is a single line of JSON (no Content-Length
 // framing required by this transport; the MCP client must send one JSON object per line).
+//
+// Notifications (JSON-RPC messages with no "id" field) are dispatched but produce
+// no response line, per the JSON-RPC 2.0 specification.
 func (s *Server) Serve(r io.Reader, w io.Writer) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
@@ -48,7 +71,10 @@ func (s *Server) Serve(r io.Reader, w io.Writer) error {
 		if len(line) == 0 {
 			continue
 		}
-		resp := s.handleLine(line)
+		resp, skip := s.handleLineWithSkip(line)
+		if skip {
+			continue
+		}
 		if err := enc.Encode(resp); err != nil {
 			return fmt.Errorf("encode response: %w", err)
 		}
@@ -56,29 +82,38 @@ func (s *Server) Serve(r io.Reader, w io.Writer) error {
 	return scanner.Err()
 }
 
-// handleLine dispatches a single JSON-RPC 2.0 request line.
+// handleLine dispatches a single JSON-RPC 2.0 request line (used in tests).
 func (s *Server) handleLine(line []byte) Response {
+	resp, _ := s.handleLineWithSkip(line)
+	return resp
+}
+
+// handleLineWithSkip dispatches a single JSON-RPC 2.0 request line.
+// skip is true for notifications that must not produce a response.
+func (s *Server) handleLineWithSkip(line []byte) (resp Response, skip bool) {
 	var req Request
 	if err := json.Unmarshal(line, &req); err != nil {
-		return errResponse(nil, CodeParseError, "parse error: "+err.Error())
+		return errResponse(nil, CodeParseError, "parse error: "+err.Error()), false
 	}
 
-	s.log.Debug("mcp request", "method", req.Method)
+	if s.log != nil {
+		s.log.Debug("mcp request", "method", req.Method)
+	}
 
 	switch req.Method {
 	case "initialize":
-		return s.handleInitialize(req)
+		return s.handleInitialize(req), false
 	case "initialized":
-		// Notification; no response required but we return a no-op.
-		return okResponse(req.ID, nil)
+		// Notification per MCP spec — no ID, no response written.
+		return Response{}, true
 	case "tools/list":
-		return s.handleToolsList(req)
+		return s.handleToolsList(req), false
 	case "tools/call":
-		return s.handleToolsCall(req)
+		return s.handleToolsCall(req), false
 	case "ping":
-		return okResponse(req.ID, map[string]string{})
+		return okResponse(req.ID, map[string]string{}), false
 	default:
-		return errResponse(req.ID, CodeMethodNotFound, "method not found: "+req.Method)
+		return errResponse(req.ID, CodeMethodNotFound, "method not found: "+req.Method), false
 	}
 }
 
@@ -91,7 +126,7 @@ func (s *Server) handleInitialize(req Request) Response {
 		},
 		ServerInfo: ServerInfo{
 			Name:    "relay-mcp",
-			Version: "0.1.0",
+			Version: "0.2.0",
 		},
 	}
 	return okResponse(req.ID, result)
@@ -118,6 +153,14 @@ func (s *Server) handleToolsCall(req Request) Response {
 	switch params.Name {
 	case "submit_test_audit_packet":
 		result = HandleSubmitTestAuditPacket(args)
+	case "create_run_from_planner_handoff":
+		result = s.HandleCreateRunFromPlannerHandoff(args)
+	case "list_open_runs":
+		result = s.HandleListOpenRuns(args)
+	case "get_run_status":
+		result = s.HandleGetRunStatus(args)
+	case "submit_audit_packet":
+		result = s.HandleSubmitAuditPacket(args)
 	default:
 		return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 	}

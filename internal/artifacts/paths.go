@@ -59,6 +59,7 @@ var allowedKinds = map[string]bool{
 	"command_log":                        true,
 	"executor_result":                    true,
 	"audit_revision":                     true,
+	"mcp_audit_handback":                 true,
 }
 
 func SetBaseDir(dir string) {

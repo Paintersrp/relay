@@ -9,7 +9,11 @@
 //	  "mcpServers": {
 //	    "relay": {
 //	      "command": "/path/to/relay-mcpserver",
-//	      "args": []
+//	      "args": [],
+//	      "env": {
+//	        "RELAY_DB_PATH": "/path/to/data/relay.sqlite",
+//	        "RELAY_ARTIFACTS_DIR": "/path/to/data/artifacts"
+//	      }
 //	    }
 //	  }
 //	}
@@ -20,6 +24,8 @@
 //
 // Safety boundaries: no shell execution, no arbitrary file read/write,
 // no git commit/push/branch mutation is exposed through MCP tools.
+// Tool arguments must not contain secrets, tokens, auth headers, private keys,
+// or signed URLs — these are stored as persistent artifacts.
 package main
 
 import (
@@ -29,6 +35,7 @@ import (
 	"relay/internal/artifacts"
 	"relay/internal/config"
 	"relay/internal/mcp"
+	"relay/internal/store"
 )
 
 func main() {
@@ -38,14 +45,39 @@ func main() {
 		log.Warn("loading local env files", "error", err)
 	}
 
-	// Configure artifact base dir if overridden.
-	if dir := os.Getenv("RELAY_ARTIFACTS_DIR"); dir != "" {
-		artifacts.SetBaseDir(dir)
+	// Configure artifact base directory.
+	artifactsDir := os.Getenv("RELAY_ARTIFACTS_DIR")
+	if artifactsDir == "" {
+		artifactsDir = "data/artifacts"
+	}
+	artifacts.SetBaseDir(artifactsDir)
+
+	// Open the Relay SQLite store. The store auto-migrates on first open.
+	dbPath := os.Getenv("RELAY_DB_PATH")
+	if dbPath == "" {
+		dbPath = "data/relay.sqlite"
 	}
 
-	log.Info("relay MCP server starting", "transport", "stdio", "protocol", mcp.MCPProtocolVersion)
+	s, err := store.Open(dbPath, log)
+	if err != nil {
+		log.Error("relay MCP server: cannot open database", "path", dbPath, "error", err)
+		os.Exit(1)
+	}
+	defer s.Close()
 
-	srv := mcp.NewServer(log)
+	log.Info("relay MCP server starting",
+		"transport", "stdio",
+		"protocol", mcp.MCPProtocolVersion,
+		"db_path", dbPath,
+		"artifacts_dir", artifactsDir,
+	)
+
+	deps := &mcp.MCPDeps{
+		Store: s,
+		Log:   log,
+	}
+
+	srv := mcp.NewServer(log, deps)
 	if err := srv.Serve(os.Stdin, os.Stdout); err != nil {
 		log.Error("mcp serve error", "error", err)
 		os.Exit(1)

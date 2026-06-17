@@ -1,4 +1,4 @@
-.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean
+.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean mcp-build mcp-test mcp-smoke mcp-clean
 
 install:
 	npm install
@@ -35,3 +35,17 @@ vet:
 
 clean:
 	rm -rf bin/ tmp/ web/static/app.css web/static/app.js web/static/app.css.map web/static/app.js.map
+
+## MCP targets
+
+mcp-build:
+	go build -o bin/relay-mcpserver.exe ./cmd/mcpserver
+
+mcp-test:
+	go test ./internal/mcp/... ./cmd/mcpserver/...
+
+mcp-smoke: mcp-build
+	go run ./cmd/mcp-smoke
+
+mcp-clean:
+	rm -f bin/relay-mcpserver.exe bin/relay-mcpserver
