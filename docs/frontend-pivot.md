@@ -77,6 +77,7 @@ JSON `/api/runs/{id}/events` (GET) and `/api/runs/{id}/artifacts/{kind}` (GET) r
 | Pass 7 | Complete | Executor brief renderer |
 | Pass 11 | Complete | Audit packet generator |
 | Pass 14R | Complete | Old templ/htmx workflow UI routes decommissioned |
+| Pass 14R2 | Complete | Removed obsolete RunsHandler scaffolding, deleted files, cleaned layout navigation |
 | Pass 15A | Complete | Workflow state contract repaired (canonical statuses exposed) |
 | Pass 15B | Complete | Audit/close state gating repaired |
 | Pass 15C | Complete | MCP 13A/B boundary documented |

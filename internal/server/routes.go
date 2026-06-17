@@ -126,8 +126,6 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	// templates, generated templ output, test files, and static workflow assets
 	// have been physically removed. See Pass 14R2 handoff.
 	handoffs := handlers.NewHandoffsHandler(s, log, eventHub)
-	runs := handlers.NewRunsHandler(s, log, eventHub)
-	handoffs.SetRunsHandler(runs)
 	r.Post("/handoffs", handoffs.Create)
 
 	// GET / → React /runs

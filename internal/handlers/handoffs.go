@@ -28,10 +28,9 @@ func handoffWebBaseURL() string {
 }
 
 type HandoffsHandler struct {
-	store       *store.Store
-	log         *slog.Logger
-	eventHub    *events.Hub
-	runsHandler *RunsHandler
+	store    *store.Store
+	log      *slog.Logger
+	eventHub *events.Hub
 }
 
 func NewHandoffsHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *HandoffsHandler {
@@ -40,11 +39,6 @@ func NewHandoffsHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *H
 		eventHub = hub[0]
 	}
 	return &HandoffsHandler{store: s, log: log, eventHub: eventHub}
-}
-
-// SetRunsHandler provides access to run-level operations for auto-setup.
-func (h *HandoffsHandler) SetRunsHandler(rh *RunsHandler) {
-	h.runsHandler = rh
 }
 
 func (h *HandoffsHandler) publishRunEvent(runID int64, kind, source, status string) {
@@ -164,19 +158,6 @@ func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	h.publishRunEvent(run.ID, events.KindRunSummary, "handoff", "created")
 
 	h.log.Info("handoff created", "run_id", run.ID, "repo", repo.Name)
-
-	// Auto-run setup pipeline
-	if h.runsHandler != nil {
-		result := h.runsHandler.prepareRunForReview(run.ID)
-		if result.Blocked {
-			h.log.Info("auto-setup blocked by intake review", "run_id", run.ID, "blockers", result.Blockers)
-		} else {
-			h.log.Info("auto-setup complete", "run_id", run.ID,
-				"prompt", result.PromptGenerated, "packet", result.PacketGenerated)
-		}
-	} else {
-		h.log.Warn("auto-setup skipped: runsHandler not set", "run_id", run.ID)
-	}
 
 	// Redirect to React workbench intake route after successful run creation.
 	intakeURL := handoffWebBaseURL() + "/runs/" + strconv.FormatInt(run.ID, 10) + "/intake"
