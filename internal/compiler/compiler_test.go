@@ -290,4 +290,148 @@ func TestCompiler(t *testing.T) {
 			t.Error("unsafe path errors must make report non-repair-eligible")
 		}
 	})
+
+	t.Run("Nested field extraction inside packet_maker_brief", func(t *testing.T) {
+		run, err := s.CreateRun(repo.ID, "Run with Nested Fields", "approved_for_prepare", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+
+		configMap := map[string]interface{}{
+			"repo_target":    repo.Path,
+			"branch_context": "main",
+			"file_targets":   []string{"src/compiler.go"},
+		}
+		configJSON, _ := json.Marshal(configMap)
+		configPath, _ := artifacts.Write(run.ID, "run_config", "run_config.json", configJSON)
+		_, _ = s.CreateArtifact(run.ID, "run_config", configPath, "application/json")
+
+		handoffText := `# Planner Handoff
+
+<context_snapshot>
+This is the snapshot
+</context_snapshot>
+
+<decision_log>
+- D1: Use a custom compiler test.
+  Rationale: To verify nested field extraction.
+</decision_log>
+
+<constraints>
+- C1: Respect target boundary.
+  Applies to: executor
+</constraints>
+
+<pass_boundary>
+current_pass: 1
+total_planned_passes: 1
+this_pass_scope: scope
+out_of_scope_for_this_pass:
+  - none
+</pass_boundary>
+
+<packet_maker_brief>
+Goal:
+Test nested parser.
+
+Scope:
+Verification scope.
+
+Non-goals:
+- Do not build production app.
+
+Likely file targets:
+- ` + "`" + `src/compiler.go` + "`" + `
+  role: primary
+  action: must_edit
+  reason: testing
+
+Required implementation steps:
+1. First step.
+   action: modify
+   target_paths:
+     - src/compiler.go
+   instructions: test it
+   acceptance_criteria:
+     - passes
+
+Expected behavior:
+- Works as expected.
+
+Completion requirements:
+- DONE when it works.
+- BLOCKED when stuck.
+
+Rejected alternatives:
+- RA1: Avoid fixing the parser.
+  Reason rejected: Required for the task.
+
+Risk register:
+- R1: Broken compiler logic.
+  Severity: high
+  Description: Might introduce syntax issues.
+  Mitigation: Add comprehensive regression tests.
+
+Code requirements:
+- CR1: The parser must extract nested fields.
+  Applies to:
+    - src/compiler.go
+</packet_maker_brief>
+`
+		handoffPath, _ := artifacts.Write(run.ID, "planner_handoff", "planner_handoff.md", []byte(handoffText))
+		_, _ = s.CreateArtifact(run.ID, "planner_handoff", handoffPath, "text/markdown")
+
+		res, err := c.CompileApprovedRun(context.Background(), run.ID)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if len(res.Issues) > 0 {
+			t.Fatalf("expected no issues, got: %v", res.Issues)
+		}
+
+		if !res.Success {
+			t.Fatalf("expected validation success, got errors: %+v", res.ValidationReport.Errors)
+		}
+
+		// Read packet
+		packetBytes, err := artifacts.Read(run.ID, "canonical_packet", "canonical_packet.json")
+		if err != nil {
+			t.Fatalf("failed to read packet: %v", err)
+		}
+		var packet map[string]interface{}
+		_ = json.Unmarshal(packetBytes, &packet)
+
+		// Assert rejected alternatives extracted
+		pCtx, _ := packet["planner_context"].(map[string]interface{})
+		rej, ok := pCtx["rejected_alternatives"].([]interface{})
+		if !ok || len(rej) == 0 {
+			t.Fatalf("rejected_alternatives was not extracted or empty: %+v", pCtx["rejected_alternatives"])
+		}
+		rMap := rej[0].(map[string]interface{})
+		if rMap["id"] != "RA1" || rMap["alternative"] != "Avoid fixing the parser." || rMap["reason_rejected"] != "Required for the task." {
+			t.Errorf("rejected_alternatives content mismatch: %+v", rej)
+		}
+
+		// Assert risk register extracted
+		risks, ok := pCtx["risk_register"].([]interface{})
+		if !ok || len(risks) == 0 {
+			t.Fatalf("risk_register was not extracted or empty: %+v", pCtx["risk_register"])
+		}
+		riskMap := risks[0].(map[string]interface{})
+		if riskMap["id"] != "R1" || riskMap["severity"] != "high" || riskMap["description"] != "Broken compiler logic." || riskMap["mitigation"] != "Add comprehensive regression tests." {
+			t.Errorf("risk_register content mismatch: %+v", risks)
+		}
+
+		// Assert code requirements extracted
+		exec, _ := packet["execution_payload"].(map[string]interface{})
+		cr, ok := exec["code_requirements"].([]interface{})
+		if !ok || len(cr) == 0 {
+			t.Fatalf("code_requirements was not extracted or empty: %+v", exec["code_requirements"])
+		}
+		crMap := cr[0].(map[string]interface{})
+		if crMap["id"] != "CR1" || crMap["requirement"] != "The parser must extract nested fields." {
+			t.Errorf("code_requirements content mismatch: %+v", cr)
+		}
+	})
 }

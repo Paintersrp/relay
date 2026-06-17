@@ -339,33 +339,75 @@ func (c *Compiler) parseHandoff(
 		userRequestSummary = runTitle
 	}
 
+	// Extract briefText early so we can parse nested fields from it
+	briefText, _ := getSection("packet_maker_brief", "packet maker brief")
+
 	decisionText, _ := getSection("decision_log", "decision log")
 	decisionLog := parseDecisionLog(decisionText)
+	if decisionLog == nil {
+		decisionLog = []map[string]interface{}{}
+	}
 
 	constraintsText, _ := getSection("constraints", "constraints")
 	constraints := parseConstraints(constraintsText)
+	if constraints == nil {
+		constraints = []map[string]interface{}{}
+	}
 
 	assumptionsText, _ := getSection("assumptions", "assumptions")
 	assumptions := parseAssumptions(assumptionsText)
+	if assumptions == nil {
+		assumptions = []map[string]interface{}{}
+	}
 
 	factsText, _ := getSection("known_repo_facts", "known repo facts")
 	knownRepoFacts := parseKnownRepoFacts(factsText)
+	if knownRepoFacts == nil {
+		knownRepoFacts = []map[string]interface{}{}
+	}
 
 	boundaryText, _ := getSection("pass_boundary", "pass boundary")
 	boundary := parsePassBoundary(boundaryText)
 
 	unresolvedText, _ := getSection("unresolved_questions", "unresolved questions")
+	if unresolvedText == "" && briefText != "" {
+		unresolvedText = extractSubsection(briefText, "unresolved questions")
+	}
+	if unresolvedText == "" {
+		unresolvedText = extractSubsection(content, "unresolved questions")
+	}
 	unresolvedQuestions := parseUnresolvedQuestions(unresolvedText)
+	if unresolvedQuestions == nil {
+		unresolvedQuestions = []map[string]interface{}{}
+	}
 
 	rejectedText, _ := getSection("rejected_alternatives", "rejected alternatives")
+	if rejectedText == "" && briefText != "" {
+		rejectedText = extractSubsection(briefText, "rejected alternatives")
+	}
+	if rejectedText == "" {
+		rejectedText = extractSubsection(content, "rejected alternatives")
+	}
 	rejectedAlternatives := parseRejectedAlternatives(rejectedText)
+	if rejectedAlternatives == nil {
+		rejectedAlternatives = []map[string]interface{}{}
+	}
 
 	riskText, _ := getSection("risk_register", "risk register")
+	if riskText == "" && briefText != "" {
+		riskText = extractSubsection(briefText, "risk register")
+	}
+	if riskText == "" {
+		riskText = extractSubsection(content, "risk register")
+	}
 	riskRegister := parseRiskRegister(riskText)
 	if len(riskRegister) == 0 {
 		// Attempt to derive risks from audit priorities
 		prioritiesText, _ := getSection("audit_priorities", "audit priorities")
 		riskRegister = deriveRisksFromAudit(prioritiesText, constraints)
+	}
+	if riskRegister == nil {
+		riskRegister = []map[string]interface{}{}
 	}
 
 	plannerContext := map[string]interface{}{
@@ -382,7 +424,7 @@ func (c *Compiler) parseHandoff(
 	}
 
 	// 3. Parse execution_payload
-	briefText, ok := getSection("packet_maker_brief", "packet maker brief")
+	briefText, ok = getSection("packet_maker_brief", "packet maker brief")
 	var goal, scope, expectedBehaviorRaw, completionContractRaw string
 	var nonGoals []string
 	var fileTargets []map[string]interface{}
@@ -504,6 +546,22 @@ func (c *Compiler) parseHandoff(
 		}
 	}
 
+	// Parse code requirements (or provide default if empty)
+	reqText, _ := getSection("code_requirements", "code requirements")
+	if len(reqText) == 0 {
+		reqText, _ = getSection("code", "code requirements")
+	}
+	if len(reqText) == 0 && briefText != "" {
+		reqText = extractSubsection(briefText, "code requirements")
+	}
+	if len(reqText) == 0 {
+		reqText = extractSubsection(content, "code requirements")
+	}
+	codeRequirements = parseCodeRequirements(reqText)
+	if codeRequirements == nil {
+		codeRequirements = []map[string]interface{}{}
+	}
+
 	// If required executable sections are missing, fail explicitly (CR4)
 	if goal == "" {
 		issues = append(issues, "Missing required execution section: goal")
@@ -513,6 +571,9 @@ func (c *Compiler) parseHandoff(
 	}
 	if len(implementationSteps) == 0 {
 		issues = append(issues, "Missing required execution section: implementation_steps")
+	}
+	if len(codeRequirements) == 0 {
+		issues = append(issues, "Missing required execution section: code_requirements")
 	}
 
 	// Add targets from config (CR5)
@@ -570,12 +631,6 @@ func (c *Compiler) parseHandoff(
 		}
 	}
 
-	// Parse code requirements (or provide default if empty)
-	reqText, _ := getSection("code_requirements", "code requirements")
-	if len(reqText) == 0 {
-		reqText, _ = getSection("code", "code requirements")
-	}
-	codeRequirements = parseCodeRequirements(reqText)
 	for i := range codeRequirements {
 		apps, _ := codeRequirements[i]["applies_to"].([]string)
 		var cleanApps []string
@@ -599,6 +654,26 @@ func (c *Compiler) parseHandoff(
 
 	expectedBehavior := parseExpectedBehavior(expectedBehaviorRaw)
 	completionContract := parseCompletionContract(completionContractRaw)
+
+	// Slices normalization before inserting to map
+	if nonGoals == nil {
+		nonGoals = []string{}
+	}
+	if fileTargets == nil {
+		fileTargets = []map[string]interface{}{}
+	}
+	if implementationSteps == nil {
+		implementationSteps = []map[string]interface{}{}
+	}
+	if codeRequirements == nil {
+		codeRequirements = []map[string]interface{}{}
+	}
+	if validationCmds == nil {
+		validationCmds = []ValidationCommand{}
+	}
+	if expectedBehavior == nil {
+		expectedBehavior = []string{}
+	}
 
 	executionPayload := map[string]interface{}{
 		"goal":                           goal,
@@ -1390,7 +1465,7 @@ func parseRiskRegister(text string) []map[string]interface{} {
 			}
 
 			if sevVal != "" {
-				sevVal = strings.ToLower(strings.Trim(sevVal, `"'` + "`"))
+				sevVal = strings.ToLower(cleanParsedString(sevVal))
 				if sevVal == "low" || sevVal == "medium" || sevVal == "high" || sevVal == "critical" {
 					current["severity"] = sevVal
 				}
@@ -2003,3 +2078,70 @@ func parseAuditChecklist(text string) []map[string]interface{} {
 
 	return result
 }
+
+func extractSubsection(content, name string) string {
+	lines := strings.Split(content, "\n")
+	var sectionLines []string
+	found := false
+	normName := strings.ToLower(strings.TrimSpace(name))
+
+	isMatch := func(line string) bool {
+		trimmed := strings.TrimSpace(line)
+		trimmed = strings.TrimLeft(trimmed, "#")
+		trimmed = strings.TrimSpace(trimmed)
+		if strings.HasPrefix(trimmed, "-") {
+			trimmed = strings.TrimPrefix(trimmed, "-")
+		} else if strings.HasPrefix(trimmed, "*") {
+			trimmed = strings.TrimPrefix(trimmed, "*")
+		}
+		trimmed = strings.TrimSpace(trimmed)
+		trimmed = strings.TrimSuffix(trimmed, ":")
+		trimmed = strings.TrimSpace(trimmed)
+		
+		trimmedLower := strings.ToLower(trimmed)
+		return trimmedLower == normName
+	}
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if found {
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" {
+				isHeader := false
+				if strings.HasPrefix(trimmed, "#") {
+					isHeader = true
+				} else {
+					keywords := []string{
+						"goal", "goals", "scope", "scopes", "non-goal", "non-goals",
+						"file target", "file targets", "likely file target", "likely file targets",
+						"implementation step", "implementation steps", "required implementation step", "required implementation steps",
+						"code requirement", "code requirements", "expected behavior", "expected behaviors",
+						"completion requirement", "completion requirements", "completion contract", "completion contracts",
+						"rejected alternative", "rejected alternatives", "risk register", "risk registers",
+						"unresolved question", "unresolved questions", "priority", "priorities", "checklist", "checklists",
+						"validation expectation", "validation expectations",
+					}
+					for _, kw := range keywords {
+						cleanLine := strings.TrimLeft(trimmed, "-* ")
+						cleanLine = strings.TrimSuffix(cleanLine, ":")
+						cleanLine = strings.TrimSpace(cleanLine)
+						if strings.ToLower(cleanLine) == kw {
+							isHeader = true
+							break
+						}
+					}
+				}
+				if isHeader {
+					break
+				}
+			}
+			sectionLines = append(sectionLines, line)
+		} else {
+			if isMatch(line) {
+				found = true
+			}
+		}
+	}
+	return strings.TrimSpace(strings.Join(sectionLines, "\n"))
+}
+
