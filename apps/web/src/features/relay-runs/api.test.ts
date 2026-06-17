@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
-import { getRun, getRuns, RelayApiError } from './api';
+import { getRun, getRuns, validateRun, RelayApiError } from './api';
 import { runsListQueryOptions, runDetailQueryOptions } from './queries';
 
 describe('Relay API Client Boundary (Real Data Wiring)', () => {
@@ -78,5 +78,22 @@ describe('Relay API Client Boundary (Real Data Wiring)', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toContain('/api/runs/58');
     expect(result?.id).toBe('58');
+  });
+
+  it("validateRun('58') issues POST /api/runs/58/validate", async () => {
+    const mockResponse = { success: true, runId: '58', status: 'passed' };
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify(mockResponse),
+    });
+    globalThis.fetch = fetchSpy;
+
+    const res = await validateRun('58');
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toContain('/api/runs/58/validate');
+    expect(fetchSpy.mock.calls[0][1]?.method).toBe('POST');
+    expect(res.success).toBe(true);
+    expect(res.status).toBe('passed');
   });
 });

@@ -8,6 +8,7 @@ import {
   executeRun,
   cancelRun,
   recoverRun,
+  validateRun,
 } from '@/features/relay-runs'
 import type { RelayExecutorPhase } from '@/features/relay-runs'
 import { RunWorkbenchLayout } from '@/components/relay/RunWorkbenchLayout'
@@ -144,6 +145,12 @@ function ExecuteMainContent({
   const runLifecycle = (run.lifecycleState || '') as string
   const executorPhase = deriveExecutorPhase(runStatus, runLifecycle)
 
+  const hasStructuredValidationEvidence = artifacts.some(
+    (a: any) => a.storageKind === 'validation_run_json' || a.storageKind === 'validation_progress_json'
+  )
+  const localValidationIsRunning = runStatus === 'local_validation_running'
+  const canRunValidation = (runStatus === 'executor_done' || runStatus === 'executor_blocked' || runStatus === 'validation_passed' || runStatus === 'validation_failed') && !localValidationIsRunning && !hasStructuredValidationEvidence
+
   const actionAvailability = useMemo(() => {
     const isApproved = runStatus === 'approved_for_executor'
     const isExecuting = runStatus === 'executor_dispatched' || runStatus === 'executor_running'
@@ -234,7 +241,19 @@ function ExecuteMainContent({
     },
   })
 
-  const activeMutation = startMutation.isPending || cancelMutation.isPending || recoverMutation.isPending
+  // Mutation: Run Validation
+  const validateMutation = useMutation({
+    mutationFn: () => validateRun(run.id),
+    onSuccess: () => {
+      setMutationError(null)
+      void queryClient.invalidateQueries({ queryKey: ['relay-runs'] })
+    },
+    onError: (err: any) => {
+      setMutationError(err.message || 'Failed to run validation.')
+    },
+  })
+
+  const activeMutation = startMutation.isPending || cancelMutation.isPending || recoverMutation.isPending || validateMutation.isPending
 
   const handleStart = () => {
     setMutationError(null)
@@ -249,6 +268,11 @@ function ExecuteMainContent({
   const handleRecover = () => {
     setMutationError(null)
     recoverMutation.mutate()
+  }
+
+  const handleValidate = () => {
+    setMutationError(null)
+    validateMutation.mutate()
   }
 
   const formatPhaseLabel = (phase: RelayExecutorPhase): string => {
@@ -490,13 +514,39 @@ function ExecuteMainContent({
             <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
               <Clock className="w-3.5 h-3.5 shrink-0" />
               <span className="italic">
-                {executorPhase === 'idle'
-                  ? 'Validation not yet available. Start the executor first.'
-                  : executorPhase === 'running'
-                    ? 'Validation runs after executor completes.'
-                    : 'No validation artifacts found for this run.'}
+                {localValidationIsRunning
+                  ? 'Local validation is running...'
+                  : executorPhase === 'idle'
+                    ? 'Validation not yet available. Start the executor first.'
+                    : executorPhase === 'running'
+                      ? 'Validation runs after executor completes.'
+                      : 'No validation artifacts found for this run.'}
               </span>
             </div>
+          )}
+
+          {localValidationIsRunning && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>Local validation is executing...</span>
+            </div>
+          )}
+
+          {canRunValidation && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleValidate}
+              disabled={activeMutation}
+              className="w-fit gap-1.5 mt-2"
+            >
+              {validateMutation.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Play className="w-3.5 h-3.5" />
+              )}
+              Run Validation
+            </Button>
           )}
 
           {/* Show summary counts from run validation */}

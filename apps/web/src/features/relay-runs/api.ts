@@ -9,6 +9,7 @@ import type {
   RelayApiErrorShape,
   RelayAuditDecisionValue,
   RelayValidationResult,
+  RelayValidationCommand,
 } from "./types";
 
 // Custom API Error Class
@@ -312,6 +313,21 @@ export async function getArtifactContentByUrl(contentUrl: string): Promise<strin
     if (err instanceof RelayApiError) throw err;
     throw new RelayApiError(`Daemon unavailable fetching artifact content from URL ${contentUrl}: ${err.message}`, 503, contentUrl, "GET");
   }
+}
+
+export interface ValidateRunResponse {
+  success: boolean;
+  runId: string;
+  status: string;
+  runStatus: string;
+  commands: RelayValidationCommand[];
+  stdout?: string;
+  stderr?: string;
+  progress?: string;
+}
+
+export async function validateRun(id: string): Promise<ValidateRunResponse> {
+  return postJson<undefined, ValidateRunResponse>(`/api/runs/${id}/validate`);
 }
 
 export async function auditRun(id: string): Promise<RelayActionResponse> {

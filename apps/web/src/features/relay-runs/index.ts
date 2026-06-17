@@ -23,6 +23,7 @@ export {
   recoverRun,
   getArtifactContent,
   getArtifactContentByUrl,
+  validateRun,
   auditRun,
   approveCloseout,
   submitManualAuditPacket,
@@ -41,6 +42,7 @@ export type {
   AuditRevisionPayload,
   PrepareCommitMessageResponse,
   AuditActionResponse,
+  ValidateRunResponse,
 } from './api'
 export type {
   RelayRun,

@@ -6,6 +6,7 @@ import {
   runArtifactsQueryOptions,
   runEventsQueryOptions,
   auditRun,
+  validateRun,
   submitManualAuditPacket,
   approveAudit,
   requestAuditRevision,
@@ -292,6 +293,24 @@ function AuditMainContent({
     [run, artifacts, events]
   )
 
+  const runStatus = run.status || ''
+  const hasStructuredValidationEvidence = artifacts.some(
+    (a: any) => a.storageKind === 'validation_run_json' || a.storageKind === 'validation_progress_json'
+  )
+  const localValidationIsRunning = runStatus === 'local_validation_running'
+  const localValidationPassed = runStatus === 'validation_passed'
+  const localValidationFailed = runStatus === 'validation_failed'
+  const localValidationAccepted = runStatus === 'validation_failed_accepted'
+
+  const auditBlockedByMissingValidation = !hasStructuredValidationEvidence && runStatus !== 'validation_failed_accepted'
+
+  const validationRunJsonArt = artifacts.find(a => a.storageKind === 'validation_run_json')
+  const validationProgressJsonArt = artifacts.find(a => a.storageKind === 'validation_progress_json')
+  const validationStdoutArt = artifacts.find(a => a.storageKind === 'validation_stdout')
+  const validationStderrArt = artifacts.find(a => a.storageKind === 'validation_stderr')
+
+  const validationResultArt = validationRunJsonArt || validationProgressJsonArt
+
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['relay-runs'] })
   }
@@ -300,6 +319,12 @@ function AuditMainContent({
     mutationFn: () => auditRun(runId),
     onSuccess: () => { setMutationError(null); invalidate() },
     onError: (err: any) => setMutationError(err.message || 'Failed to generate audit.'),
+  })
+
+  const validateMutation = useMutation({
+    mutationFn: () => validateRun(runId),
+    onSuccess: () => { setMutationError(null); invalidate() },
+    onError: (err: any) => setMutationError(err.message || 'Failed to run validation.'),
   })
 
   const submitManualMutation = useMutation({
@@ -337,13 +362,19 @@ function AuditMainContent({
   })
 
   const activeMutation = generateMutation.isPending
+    || validateMutation.isPending
     || submitManualMutation.isPending
     || approveMutation.isPending
     || revisionMutation.isPending
     || prepareCommitMutation.isPending
     || closeMutation.isPending
 
-  const handleGenerateAudit = () => { setMutationError(null); generateMutation.mutate() }
+  const handleGenerateAudit = () => {
+    if (auditBlockedByMissingValidation || localValidationIsRunning) return
+    setMutationError(null)
+    generateMutation.mutate()
+  }
+  const handleValidate = () => { setMutationError(null); validateMutation.mutate() }
   const handleSubmitManual = () => { setMutationError(null); submitManualMutation.mutate() }
   const handleApproveAudit = () => { setMutationError(null); approveMutation.mutate() }
   const handleRequestRevision = () => { setMutationError(null); revisionMutation.mutate() }
@@ -358,6 +389,91 @@ function AuditMainContent({
           <span>{mutationError}</span>
         </div>
       )}
+
+      {/* Local Validation Required Panel */}
+      <Section title="Local Validation Required" icon={<ShieldCheck className="w-4 h-4 text-purple-400" />}>
+        <div className="flex flex-col gap-2">
+          {auditBlockedByMissingValidation && !localValidationIsRunning && !localValidationFailed && (
+            <p className="text-xs text-muted-foreground">
+              Run local validation before generating the audit packet.
+            </p>
+          )}
+          {localValidationIsRunning && (
+            <p className="text-xs text-muted-foreground">
+              Local validation is running. Audit generation is unavailable until validation finishes.
+            </p>
+          )}
+          {localValidationFailed && (
+            <p className="text-xs text-red-400">
+              Local validation failed. Review validation artifacts before continuing.
+            </p>
+          )}
+          {localValidationPassed && (
+            <p className="text-xs text-emerald-400">
+              Local validation passed.
+            </p>
+          )}
+          {localValidationAccepted && (
+            <p className="text-xs text-yellow-400">
+              Local validation failed but was accepted.
+            </p>
+          )}
+
+          {/* Validation Artifact Links */}
+          {(validationResultArt || validationStdoutArt || validationStderrArt) && (
+            <div className="flex flex-col gap-1.5 mt-2 border-t border-border/40 pt-2">
+              <span className="text-[11px] font-medium text-muted-foreground/70">Validation Evidence:</span>
+              {validationResultArt && (
+                <div className="flex items-center gap-2 text-xs font-mono">
+                  <span className="text-muted-foreground">Validation Result:</span>
+                  <ArtifactPreviewCard artifact={validationResultArt} runId={runId} className="flex-1 max-w-xs" />
+                </div>
+              )}
+              {validationStdoutArt && (
+                <div className="flex items-center gap-2 text-xs font-mono">
+                  <span className="text-muted-foreground">Validation Output:</span>
+                  <ArtifactPreviewCard artifact={validationStdoutArt} runId={runId} className="flex-1 max-w-xs" />
+                </div>
+              )}
+              {validationStderrArt && (
+                <div className="flex items-center gap-2 text-xs font-mono">
+                  <span className="text-muted-foreground">Validation Error Output:</span>
+                  <ArtifactPreviewCard artifact={validationStderrArt} runId={runId} className="flex-1 max-w-xs" />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Action Button */}
+          {(auditBlockedByMissingValidation || localValidationFailed) && !localValidationIsRunning && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleValidate}
+              disabled={activeMutation}
+              className="w-fit gap-1.5 mt-1"
+            >
+              {validateMutation.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
+              Run Validation
+            </Button>
+          )}
+          {localValidationIsRunning && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={true}
+              className="w-fit gap-1.5 mt-1"
+            >
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Running Validation...
+            </Button>
+          )}
+        </div>
+      </Section>
 
       {/* Audit Input Summary */}
       <Section title="Audit Input Summary" icon={<FileText className="w-4 h-4" />}>
@@ -404,7 +520,7 @@ function AuditMainContent({
                 variant="outline"
                 size="sm"
                 onClick={handleGenerateAudit}
-                disabled={activeMutation}
+                disabled={activeMutation || auditBlockedByMissingValidation || localValidationIsRunning}
                 className="w-fit gap-1.5 mt-1"
               >
                 {generateMutation.isPending ? (
@@ -426,7 +542,7 @@ function AuditMainContent({
                 variant="default"
                 size="sm"
                 onClick={handleGenerateAudit}
-                disabled={activeMutation}
+                disabled={activeMutation || auditBlockedByMissingValidation || localValidationIsRunning}
                 className="w-fit gap-1.5"
               >
                 {generateMutation.isPending ? (
