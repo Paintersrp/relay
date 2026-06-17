@@ -351,6 +351,7 @@ export interface RepairValidationResponse {
   reValidationError?: string;
   reValidationReport?: any;
   error?: string;
+  repairArtifacts?: Record<string, string>;
 }
 
 export async function repairValidation(id: string): Promise<RepairValidationResponse> {

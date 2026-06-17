@@ -119,6 +119,16 @@ func TestCheckEligibility_ineligible(t *testing.T) {
 			},
 		},
 		{
+			name: "file target mismatch",
+			report: &validation.ValidationReport{
+				Valid:          false,
+				RepairEligible: false,
+				Errors: []validation.ValidationError{
+					{Type: "input", Code: validation.CodeFileTargetMismatch, Message: "mismatch", RepairEligible: false},
+				},
+			},
+		},
+		{
 			name: "missing code",
 			report: &validation.ValidationReport{
 				Valid:          false,
@@ -242,6 +252,12 @@ func TestService_RepairValidation(t *testing.T) {
 		}
 		if fakeAdapter.Calls != 1 {
 			t.Errorf("expected 1 call, got %d", fakeAdapter.Calls)
+		}
+		if len(res.RepairArtifacts) == 0 {
+			t.Errorf("expected repair artifacts, got none")
+		}
+		if res.RepairArtifacts[ArtifactKindRepairPrompt] == "" {
+			t.Errorf("expected repair prompt artifact path")
 		}
 		
 		runStatus, _ := s.GetRun(run.ID)

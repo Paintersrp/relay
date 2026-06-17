@@ -1710,13 +1710,13 @@ func (h *APIHandler) RepairValidation(w http.ResponseWriter, r *http.Request) {
 	}
 	hasCode := false
 	for _, e := range report.Errors {
-		if e.Type != "" {
+		if e.Code != "" {
 			hasCode = true
 			break
 		}
 	}
 	if !hasCode {
-		writeError(w, http.StatusUnprocessableEntity, "BLOCKED", "Validation report errors lack stable type codes; cannot determine repair eligibility")
+		writeError(w, http.StatusUnprocessableEntity, "BLOCKED", "Validation report errors lack stable failure codes; cannot determine repair eligibility")
 		return
 	}
 
@@ -1748,6 +1748,7 @@ func (h *APIHandler) RepairValidation(w http.ResponseWriter, r *http.Request) {
 		"reValidationReport": result.ReValidationReport,
 		"reValidationError":  result.ReValidationError,
 		"error":              result.Error,
+		"repairArtifacts":    result.RepairArtifacts,
 	}
 
 	if !result.Eligible {
@@ -1757,7 +1758,7 @@ func (h *APIHandler) RepairValidation(w http.ResponseWriter, r *http.Request) {
 
 	if !result.RepairAttempted {
 		// Blocked because no command or other reason
-		writeJSON(w, http.StatusOK, resp)
+		writeJSON(w, http.StatusConflict, resp)
 		return
 	}
 

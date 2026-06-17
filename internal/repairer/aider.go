@@ -23,7 +23,6 @@ var EligibleCodes = map[string]bool{
 	validation.CodeExtraProperty:         true,
 	validation.CodeInvalidType:           true,
 	validation.CodeStringPatternMismatch: true,
-	validation.CodeFileTargetMismatch:    true,
 }
 
 // CheckEligibility validates that all errors in the report are
@@ -137,13 +136,17 @@ type RepairResult struct {
 	ReValidationReport *validation.ValidationReport `json:"reValidationReport,omitempty"`
 	ReValidationError  string                       `json:"reValidationError,omitempty"`
 	Error              string                       `json:"error,omitempty"`
+	RepairArtifacts    map[string]string            `json:"repairArtifacts,omitempty"`
 }
 
 // RepairValidation runs the full repair flow for a validation-stage failure.
 // It checks eligibility, builds a prompt, persists artifacts, re-validates,
 // and updates run status on success.
 func (svc *Service) RepairValidation(runID int64, packetJSON []byte, report *validation.ValidationReport) *RepairResult {
-	result := &RepairResult{RunID: runID}
+	result := &RepairResult{
+		RunID:           runID,
+		RepairArtifacts: make(map[string]string),
+	}
 
 	eligible, reason := CheckEligibility(report)
 	if !eligible {
@@ -164,6 +167,7 @@ func (svc *Service) RepairValidation(runID int64, packetJSON []byte, report *val
 	reqBytes, _ := json.MarshalIndent(reqData, "", "  ")
 	if path, err := artifacts.Write(runID, ArtifactKindRepairRequest, "repair_request.json", []byte(validation.RedactSecrets(string(reqBytes)))); err == nil {
 		_, _ = svc.store.CreateArtifact(runID, ArtifactKindRepairRequest, path, "application/json")
+		result.RepairArtifacts[ArtifactKindRepairRequest] = path
 	}
 
 	// Build repair prompt
@@ -172,6 +176,7 @@ func (svc *Service) RepairValidation(runID int64, packetJSON []byte, report *val
 	// Persist repair prompt artifact
 	if path, err := artifacts.Write(runID, ArtifactKindRepairPrompt, "repair_prompt.txt", []byte(prompt)); err == nil {
 		_, _ = svc.store.CreateArtifact(runID, ArtifactKindRepairPrompt, path, "text/plain")
+		result.RepairArtifacts[ArtifactKindRepairPrompt] = path
 	}
 
 	// Check if adapter has a command/is available
@@ -194,6 +199,7 @@ func (svc *Service) RepairValidation(runID int64, packetJSON []byte, report *val
 
 	if path, writeErr := artifacts.Write(runID, ArtifactKindRepairOutput, "repair_output.txt", []byte(outputLog)); writeErr == nil {
 		_, _ = svc.store.CreateArtifact(runID, ArtifactKindRepairOutput, path, "text/plain")
+		result.RepairArtifacts[ArtifactKindRepairOutput] = path
 	}
 
 	if err != nil {
@@ -207,6 +213,7 @@ func (svc *Service) RepairValidation(runID int64, packetJSON []byte, report *val
 	// Persist repaired packet candidate artifact
 	if path, writeErr := artifacts.Write(runID, ArtifactKindRepairedPacket, "repaired_packet.json", []byte(validation.RedactSecrets(string(repairedJSON)))); writeErr == nil {
 		_, _ = svc.store.CreateArtifact(runID, ArtifactKindRepairedPacket, path, "application/json")
+		result.RepairArtifacts[ArtifactKindRepairedPacket] = path
 	}
 
 	// Re-validate repaired packet
@@ -224,6 +231,7 @@ func (svc *Service) RepairValidation(runID int64, packetJSON []byte, report *val
 	valBytes, _ := json.MarshalIndent(valReport, "", "  ")
 	if path, writeErr := artifacts.Write(runID, ArtifactKindRepairValidation, "repair_validation_report.json", []byte(validation.RedactSecrets(string(valBytes)))); writeErr == nil {
 		_, _ = svc.store.CreateArtifact(runID, ArtifactKindRepairValidation, path, "application/json")
+		result.RepairArtifacts[ArtifactKindRepairValidation] = path
 	}
 
 	if valReport.Valid {
