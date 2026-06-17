@@ -59,4 +59,48 @@ describe('Validation Gate Predicate Matrix', () => {
 
     expect(result.auditBlockedByValidation).toBe(true);
   });
+
+  describe('Execute Route Local Validation Rerun & Visibility Matrix', () => {
+    // Helper to evaluate canRunValidation as defined on the execute route
+    const evaluateCanRunValidation = (artifacts: { storageKind: string }[], runStatus: string) => {
+      const { hasFinalValidationEvidence } = evaluateValidationGate(artifacts, runStatus);
+      const localValidationIsRunning = runStatus === 'local_validation_running';
+      const isPostExecutor = runStatus === 'executor_done' ||
+                             runStatus === 'executor_blocked' ||
+                             runStatus === 'validation_passed' ||
+                             runStatus === 'validation_failed' ||
+                             runStatus === 'validation_failed_accepted';
+      return isPostExecutor &&
+             !localValidationIsRunning &&
+             (!hasFinalValidationEvidence || runStatus === 'validation_failed');
+    };
+
+    it('progress-only evidence does not suppress validation need (canRunValidation should be true)', () => {
+      const artifacts = [{ storageKind: 'validation_progress_json' }];
+      const status = 'executor_done';
+      const canRun = evaluateCanRunValidation(artifacts, status);
+      expect(canRun).toBe(true);
+    });
+
+    it('validation failed with final evidence still permits rerun need (canRunValidation should be true)', () => {
+      const artifacts = [{ storageKind: 'validation_run_json' }];
+      const status = 'validation_failed';
+      const canRun = evaluateCanRunValidation(artifacts, status);
+      expect(canRun).toBe(true);
+    });
+
+    it('validation passed with final evidence does NOT permit rerun (canRunValidation should be false)', () => {
+      const artifacts = [{ storageKind: 'validation_run_json' }];
+      const status = 'validation_passed';
+      const canRun = evaluateCanRunValidation(artifacts, status);
+      expect(canRun).toBe(false);
+    });
+
+    it('validation running suppresses validation run capability (canRunValidation should be false)', () => {
+      const artifacts: any[] = [];
+      const status = 'local_validation_running';
+      const canRun = evaluateCanRunValidation(artifacts, status);
+      expect(canRun).toBe(false);
+    });
+  });
 });

@@ -521,20 +521,27 @@ function AuditMainContent({
               </div>
             )}
             {auditData.actions.canGenerateAudit && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleGenerateAudit}
-                disabled={activeMutation || auditBlockedByValidation}
-                className="w-fit gap-1.5 mt-1"
-              >
-                {generateMutation.isPending ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3.5 h-3.5" />
+              <div className="flex flex-col gap-1.5 mt-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGenerateAudit}
+                  disabled={activeMutation || auditBlockedByValidation}
+                  className="w-fit gap-1.5"
+                >
+                  {generateMutation.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  )}
+                  Regenerate Audit Summary
+                </Button>
+                {auditBlockedByValidation && (
+                  <p className="text-xs text-yellow-500/90 mt-1">
+                    Generate Audit is blocked: audit requires a final validation result artifact and either passed or accepted-failed validation status.
+                  </p>
                 )}
-                Regenerate Audit Summary
-              </Button>
+              </div>
             )}
           </div>
         ) : (
@@ -543,20 +550,27 @@ function AuditMainContent({
               No audit input summary generated yet.
             </p>
             {auditData.actions.canGenerateAudit ? (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={handleGenerateAudit}
-                disabled={activeMutation || auditBlockedByValidation}
-                className="w-fit gap-1.5"
-              >
-                {generateMutation.isPending ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <ShieldCheck className="w-3.5 h-3.5" />
+              <div className="flex flex-col gap-1.5">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleGenerateAudit}
+                  disabled={activeMutation || auditBlockedByValidation}
+                  className="w-fit gap-1.5"
+                >
+                  {generateMutation.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                  )}
+                  Generate Audit
+                </Button>
+                {auditBlockedByValidation && (
+                  <p className="text-xs text-yellow-500/90 mt-1">
+                    Generate Audit is blocked: audit requires a final validation result artifact and either passed or accepted-failed validation status.
+                  </p>
                 )}
-                Generate Audit
-              </Button>
+              </div>
             ) : (
               <p className="text-xs text-muted-foreground/60 italic">
                 {auditData.actions.generateAuditUnavailableReason || 'Audit generation is not available for this run.'}

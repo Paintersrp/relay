@@ -9,6 +9,7 @@ import {
   cancelRun,
   recoverRun,
   validateRun,
+  evaluateValidationGate,
 } from '@/features/relay-runs'
 import type { RelayExecutorPhase } from '@/features/relay-runs'
 import { RunWorkbenchLayout } from '@/components/relay/RunWorkbenchLayout'
@@ -145,11 +146,16 @@ function ExecuteMainContent({
   const runLifecycle = (run.lifecycleState || '') as string
   const executorPhase = deriveExecutorPhase(runStatus, runLifecycle)
 
-  const hasStructuredValidationEvidence = artifacts.some(
-    (a: any) => a.storageKind === 'validation_run_json' || a.storageKind === 'validation_progress_json'
-  )
+  const { hasFinalValidationEvidence } = evaluateValidationGate(artifacts, runStatus)
   const localValidationIsRunning = runStatus === 'local_validation_running'
-  const canRunValidation = (runStatus === 'executor_done' || runStatus === 'executor_blocked' || runStatus === 'validation_passed' || runStatus === 'validation_failed') && !localValidationIsRunning && !hasStructuredValidationEvidence
+  const isPostExecutor = runStatus === 'executor_done' ||
+                         runStatus === 'executor_blocked' ||
+                         runStatus === 'validation_passed' ||
+                         runStatus === 'validation_failed' ||
+                         runStatus === 'validation_failed_accepted'
+  const canRunValidation = isPostExecutor &&
+                           !localValidationIsRunning &&
+                           (!hasFinalValidationEvidence || runStatus === 'validation_failed')
 
   const actionAvailability = useMemo(() => {
     const isApproved = runStatus === 'approved_for_executor'
@@ -501,10 +507,13 @@ function ExecuteMainContent({
             validationArtifacts.slice(0, 5).map((a: any) => (
               <div key={a.id} className="flex items-center gap-2 text-xs font-mono p-1.5 bg-muted/20 rounded border border-border/40">
                 <Badge variant={
-                  a.filename?.includes('validation_run_json') ? 'success' :
+                  a.storageKind === 'validation_run_json' ? 'success' :
+                  a.storageKind === 'validation_progress_json' ? 'secondary' :
                   a.status === 'ready' ? 'success' : 'secondary'
                 } className="text-xs shrink-0">
-                  {a.status === 'ready' ? 'Captured' : a.status}
+                  {a.storageKind === 'validation_run_json' ? 'Validation Result' :
+                   a.storageKind === 'validation_progress_json' ? 'Validation Progress' :
+                   a.status === 'ready' ? 'Captured' : a.status}
                 </Badge>
                 <code className="flex-1 text-muted-foreground truncate">{a.filename || a.label}</code>
                 {a.sizeHint && <span className="text-muted-foreground/60">{a.sizeHint}</span>}
