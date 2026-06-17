@@ -177,6 +177,8 @@ function deriveAuditData(
   const isRevisionRequired = runStatus === 'revision_required'
   const isBlocked = runStatus === 'blocked'
 
+  const { validationAllowsAudit } = evaluateValidationGate(artifacts as any, runStatus)
+
   const commitMsgArts = artifacts.filter((a: any) =>
     a.kind === 'audit' && (a.filename?.includes('commit_message') || a.path?.includes('commit_message'))
   )
@@ -242,13 +244,19 @@ function deriveAuditData(
       auditDecisionSummary: decisionValue || 'Pending review',
     },
     actions: {
-      canGenerateAudit: isAuditCandidate && !isCompleted,
+      canGenerateAudit: isAuditCandidate && !isCompleted && validationAllowsAudit,
       canSubmitManual: isAuditReady && !isAccepted && !isCompleted && !isRevisionRequired,
       canApproveAudit: (hasGenerateEvent || hasManualSubmitEvent) && isAuditReady && !auditDecision && !isCompleted && !isRevisionRequired,
       canRequestRevision: isAuditReady && !isCompleted && !isRevisionRequired,
       canPrepareCommitMessage: isAccepted && !isCompleted,
       canCloseRun: isAccepted && !isCompleted,
-      generateAuditUnavailableReason: !isAuditCandidate ? `Current status: ${runStatus}. Audit generation is not available for this lifecycle stage.` : undefined,
+      generateAuditUnavailableReason: !isAuditCandidate
+        ? `Current status: ${runStatus}. Audit generation is not available for this lifecycle stage.`
+        : isCompleted
+          ? undefined
+          : !validationAllowsAudit
+            ? `Current status: ${runStatus}. Audit generation requires a passed or accepted-failed local validation result.`
+            : undefined,
       submitManualUnavailableReason: !isAuditReady || isRevisionRequired ? `Current status: ${runStatus}` : undefined,
       approveAuditUnavailableReason: !isAuditReady || isRevisionRequired ? `Current status: ${runStatus}` : undefined,
       requestRevisionUnavailableReason: !isAuditReady || isRevisionRequired ? `Current status: ${runStatus}` : undefined,
@@ -299,10 +307,7 @@ function AuditMainContent({
   )
 
   const runStatus = run.status || ''
-  const {
-    hasFinalValidationEvidence,
-    auditBlockedByValidation,
-  } = evaluateValidationGate(artifacts, runStatus)
+  const { hasFinalValidationEvidence } = evaluateValidationGate(artifacts, runStatus)
 
   const localValidationIsRunning = runStatus === 'local_validation_running'
   const localValidationPassed = runStatus === 'validation_passed'
@@ -381,7 +386,7 @@ function AuditMainContent({
     || acceptFailureMutation.isPending
 
   const handleGenerateAudit = () => {
-    if (auditBlockedByValidation) return
+    if (!auditData.actions.canGenerateAudit) return
     setMutationError(null)
     generateMutation.mutate()
   }
@@ -594,13 +599,13 @@ function AuditMainContent({
                 ))}
               </div>
             )}
-            {auditData.actions.canGenerateAudit && (
+            {(auditData.actions.canGenerateAudit || (isAuditCandidateStatus(runStatus) && runStatus !== 'completed')) && (
               <div className="flex flex-col gap-1.5 mt-1">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleGenerateAudit}
-                  disabled={activeMutation || auditBlockedByValidation}
+                  disabled={activeMutation || !auditData.actions.canGenerateAudit}
                   className="w-fit gap-1.5"
                 >
                   {generateMutation.isPending ? (
@@ -610,9 +615,9 @@ function AuditMainContent({
                   )}
                   Regenerate Audit Summary
                 </Button>
-                {auditBlockedByValidation && (
+                {!auditData.actions.canGenerateAudit && (
                   <p className="text-xs text-yellow-500/90 mt-1">
-                    Generate Audit is blocked: audit requires a final validation result artifact and either passed or accepted-failed validation status.
+                    {auditData.actions.generateAuditUnavailableReason || 'Audit generation is blocked by validation requirements.'}
                   </p>
                 )}
               </div>
@@ -629,7 +634,7 @@ function AuditMainContent({
                   variant="default"
                   size="sm"
                   onClick={handleGenerateAudit}
-                  disabled={activeMutation || auditBlockedByValidation}
+                  disabled={activeMutation}
                   className="w-fit gap-1.5"
                 >
                   {generateMutation.isPending ? (
@@ -639,11 +644,21 @@ function AuditMainContent({
                   )}
                   Generate Audit
                 </Button>
-                {auditBlockedByValidation && (
-                  <p className="text-xs text-yellow-500/90 mt-1">
-                    Generate Audit is blocked: audit requires a final validation result artifact and either passed or accepted-failed validation status.
-                  </p>
-                )}
+              </div>
+            ) : isAuditCandidateStatus(runStatus) && runStatus !== 'completed' ? (
+              <div className="flex flex-col gap-1.5">
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={true}
+                  className="w-fit gap-1.5"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Generate Audit
+                </Button>
+                <p className="text-xs text-yellow-500/90 mt-1">
+                  {auditData.actions.generateAuditUnavailableReason || 'Audit generation is blocked by validation requirements.'}
+                </p>
               </div>
             ) : (
               <p className="text-xs text-muted-foreground/60 italic">

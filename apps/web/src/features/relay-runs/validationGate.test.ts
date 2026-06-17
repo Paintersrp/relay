@@ -73,6 +73,46 @@ describe('Validation Gate Predicate Matrix', () => {
     expect(result.auditBlockedByValidation).toBe(true);
   });
 
+  it('executor_done with validation_run_json is blocked by validation gate', () => {
+    const artifacts = [{ storageKind: 'validation_run_json' }];
+    const status = 'executor_done';
+    const result = evaluateValidationGate(artifacts, status);
+
+    expect(result.hasFinalValidationEvidence).toBe(true);
+    expect(result.validationAllowsAudit).toBe(false);
+    expect(result.auditBlockedByValidation).toBe(true);
+  });
+
+  it('executor_blocked with validation_run_json is blocked by validation gate', () => {
+    const artifacts = [{ storageKind: 'validation_run_json' }];
+    const status = 'executor_blocked';
+    const result = evaluateValidationGate(artifacts, status);
+
+    expect(result.hasFinalValidationEvidence).toBe(true);
+    expect(result.validationAllowsAudit).toBe(false);
+    expect(result.auditBlockedByValidation).toBe(true);
+  });
+
+  it('executor_done without any validation artifacts is blocked by validation gate', () => {
+    const artifacts: any[] = [];
+    const status = 'executor_done';
+    const result = evaluateValidationGate(artifacts, status);
+
+    expect(result.hasFinalValidationEvidence).toBe(false);
+    expect(result.validationAllowsAudit).toBe(false);
+    expect(result.auditBlockedByValidation).toBe(true);
+  });
+
+  it('validation_passed with only progress evidence is blocked by validation gate', () => {
+    const artifacts = [{ storageKind: 'validation_progress_json' }];
+    const status = 'validation_passed';
+    const result = evaluateValidationGate(artifacts, status);
+
+    expect(result.hasFinalValidationEvidence).toBe(false);
+    expect(result.validationAllowsAudit).toBe(false);
+    expect(result.auditBlockedByValidation).toBe(true);
+  });
+
   describe('Audit candidate status predicate', () => {
     const candidateStatuses = ['executor_done', 'executor_blocked', 'validation_passed', 'validation_failed', 'validation_failed_accepted', 'local_validation_running'];
     const nonCandidateStatuses = ['pending', 'preparing', 'briefing', 'approved', 'executor_running', 'accepted', 'accepted_with_warnings', 'audit_ready', 'audit_ready_for_review', 'revision_required', 'blocked', 'completed'];
