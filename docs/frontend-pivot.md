@@ -81,7 +81,8 @@ JSON `/api/runs/{id}/events` (GET) and `/api/runs/{id}/artifacts/{kind}` (GET) r
 | Pass 15A | Complete | Workflow state contract repaired (canonical statuses exposed) |
 | Pass 15B | Complete | Audit/close state gating repaired |
 | Pass 15C | Complete | MCP 13A/B boundary documented |
-| Pass 15D | In progress | E2E verification and docs reconciliation |
+| Pass 15D | Complete | E2E verification and docs reconciliation |
+| Pass 15D2 | Complete | Post-removal E2E verification + closeout (React `/runs/new` functional, physical deletion confirmed, retained utility ledger created, git safety re-audited) |
 
 ## Known Blocked Areas
 

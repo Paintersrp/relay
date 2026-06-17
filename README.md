@@ -401,87 +401,30 @@ The original handoff and compact Agent Prompt are stored separately.
 
 Run detail shows an inline Original Handoff → Agent Prompt hunk diff after the Agent Prompt is generated, while keeping View/Download links for full artifacts.
 
-## Run workbench workflow
+## React Workbench Workflow
 
-After handoff creation, Relay automatically runs Intake Review and, when there are no blockers, prepares the Agent Prompt and Agent Packet. The run workbench is then used for review: Intake Review → Agent Prompt → Agent Packet → OpenCode Go Handoff → Agent Run → Relay Validation.
+The React workbench at port 3000 is the **primary workflow UI**. Routes:
 
-Run detail now surfaces a top-level Next Action card. The eight-step navigation remains available for review/debugging, but the primary workflow is guided by the recommended next action.
+| Path | Step |
+|------|------|
+| `/runs` | Run list |
+| `/runs/new` | Create a run by pasting/uploading a handoff |
+| `/runs/{id}/intake` | Intake Review — parse frontmatter, validate, approve |
+| `/runs/{id}/prepare` | Prepare — compile handoff packet, render agent brief |
+| `/runs/{id}/execute` | Execute — dispatch agent, monitor progress |
+| `/runs/{id}/audit` | Audit / Close — generate audit, approve, close |
 
-After each action completes, Relay redirects to the step where the next decision is most useful:
+All workflow state is managed by the Go daemon via JSON APIs. The React workbench queries the Go backend at `VITE_RELAY_API_BASE_URL` (default `http://localhost:8080`).
 
-- **Intake Review** (ready) &rarr; Step 2 Agent Prompt
-- **Intake Review** (blockers/warnings) &rarr; stays on Step 1
-- **Agent Prompt** generation &rarr; stays on Step 2 for review
-- **Agent Packet** generation &rarr; Step 4 OpenCode Handoff
-- **OpenCode start** &rarr; Step 5 Agent Run Monitor
-- **Agent result** &rarr; Step 6 Relay Validation
-- **Validation run** &rarr; stays on Step 6
-- **Validation pass + audit handoff** &rarr; Step 7 Diff/Audit
-- **Commit suggestion prepared** &rarr; Step 8 Git Commit
-
-The Next Action card updates naturally after each redirect because the server owns state.
-
-Guided workbench smoke test: the next-action flow can launch, monitor, and validate a small OpenCode run.
-
-The workbench is responsive for desktop and phone-sized devices. Long commands, JSON, and logs are contained inside scrollable panels so the page itself should not horizontally overflow.
-
-Run detail defaults to Step 1 Intake Review. The user intentionally reviews each step and navigates forward using the step navigation links. Explicit `?step=` query parameter navigation is also supported.
-
-Run detail is organized as a guided step-by-step workbench with a single active review step. Step navigation is server-rendered using query parameters (`?step=intake`, `?step=prompt`, `?step=handoff`, etc.). Each step panel includes a status chip, purpose description, and actionable controls based on current run state:
-
-- **Step 1 — Intake Review**: Default active step. Shows validation checks, warnings, blockers, and the Intake Review panel. The "Run Intake Review" button changes to "Re-run Intake Review" after first run. Original handoff is available collapsed. After successful review with no blockers, redirects to Step 2.
-- **Step 2 — Agent Prompt**: Shows the Original → Agent Prompt hunk diff inline with View/Download links. Buttons toggle between "Generate Agent Prompt" and "Regenerate Agent Prompt". Stays on this step after generation so the user can review.
-- **Step 3 — Agent Packet**: Shows packet preview, View/Download links. Buttons toggle between "Generate Agent Packet" and "Regenerate Agent Packet". After generation, redirects to Step 4.
-- **Step 4 — OpenCode Go Handoff**: Shows preflight readiness, OpenCode adapter configuration (binary, model, agent, working directory, command preview), and an explicit "Start OpenCode Go" button. Adapter readiness/blockers are visible at the top of the adapter section. If an execution exists, shows a notice linking to Step 5. Step 4 is handoff/preflight only; execution results appear in Step 5.
-- **Step 5 — Agent Run Monitor**: Shows the running or completed OpenCode execution. Displays command context, terminal-style output transcript, artifact links (stdout, stderr, combined log), and parsed final result (DONE/BLOCKED). Auto-refreshes via HTMX polling while running. When DONE/BLOCKED is parsed, a validation CTA appears. Manual result intake fallback is available and shown more prominently when no result was auto-parsed.
-- **Step 6 — Relay Validation**: Runs Relay-extracted validation commands locally after agent result. Validation starts asynchronously — clicking **Run Validation Commands** returns immediately and Step 6 auto-refreshes via HTMX polling every 2 seconds while validation runs. Shows real-time progress (current command, completed commands with inline results, elapsed time). Requires an agent result before the validation button is enabled. After completion, shows command-level results with status chips, exit codes, duration, and stdout/stderr indicators for each command. When validation passes, an audit handoff section appears. Stays on this step after run so the user can inspect pass/fail and output links.
-- **Step 7 — Diff/Audit**: Inspect the local git diff/status from the selected repo path and generate the audit handoff. Step 7 provides an "Inspect Git Diff" action that collects git status, diff stat, and patch artifacts. Diff evidence is displayed inline preview and included in the audit handoff. The audit handoff is a compact markdown document intended to be copied into GPT for review. Full AI audit/review is performed by pasting the audit handoff into GPT. After audit, proceed to Step 8 for commit preparation.
-- **Step 8 — Git Commit**: Prepare a suggested conventional commit message based on the handoff, audit handoff, and git diff evidence. Relay displays the suggested message and a copyable `git add -A && git commit -m "..."` command. Relay does not stage or commit on your behalf. The commit message is deterministic — no external API calls. Commit suggestion artifacts (`commit_message_text`, `commit_suggestion_json`) are created as run artifacts.
-
-Clarifications:
-
-- The top-level Next Action card is the primary guide. The stepper remains for manual review/debugging.
-- After actions complete, Relay redirects to the step where the next decision is most useful.
-- Relay does not execute OpenCode automatically. Execution only starts when the user explicitly clicks "Start OpenCode Go".
-- Step 4 shows the OpenCode adapter configuration (binary, args, model, agent, working directory, command preview) in a details panel.
-- If the adapter is blocked (e.g., missing model mapping), an error message is shown with the specific env var to set.
-- If preflight checks are blocked, the Start button remains disabled.
-- If an OpenCode execution exists, Step 4 shows a notice linking to Step 5 for monitoring or review.
-- Starting OpenCode Go creates an execution record and returns immediately. The browser redirects to Step 5 Agent Run Monitor.
-- Step 5 shows running status with auto-refresh via HTMX polling every 2 seconds while the execution is active.
-- Relay captures stdout, stderr, and a combined log as run artifacts after execution.
-- Step 5 displays a terminal-style output transcript parsed from OpenCode JSONL events.
-- Relay extracts assistant text from JSONL stdout events and parses DONE/BLOCKED final output automatically.
-- Relay does not persist UNKNOWN results automatically from JSON noise.
-- When DONE/BLOCKED is parsed, Step 5 shows a prominent validation CTA.
-- When no result is auto-parsed, Step 5 shows a prominent manual fallback.
-- Relay Validation remains user-triggered after agent result. Step 5 does not auto-navigate to validation.
-- Manual agent result intake remains available as a fallback in Step 5.
-- Manual action buttons remain available as retry/regenerate controls for each step.
-- Artifact previews (Original Handoff, Validation Report, Agent Prompt) are available in a collapsed `<details>` element at the bottom of the run detail page, not expanded by default.
+See `docs/frontend-pivot.md` for full architecture documentation.
 
 ### First-run checklist
 
-1. Install OpenCode.
-2. Connect OpenCode Go in the TUI:
-   ```text
-   opencode
-   /connect
-   /models
-   ```
-3. Confirm CLI models:
-   ```bash
-   opencode models
-   ```
-4. Fill `.env.local` (copy `.env.example` to `.env.local`).
-5. Restart Relay.
-6. Open Step 4 (OpenCode Go Handoff) for a run.
-7. Click **Check OpenCode CLI** to verify binary and model availability.
-8. Click **Dry Run / Preview Command** to confirm the full invocation.
-9. Confirm preview includes `--model opencode-go/deepseek-v4-flash --thinking max`.
-10. Click **Start OpenCode Go**.
-11. Review Step 5 Agent Run Monitor for status, transcript, and parsed result.
-12. When DONE/BLOCKED appears, proceed to Step 6 Relay Validation.
+1. Start the Go backend: `go run ./cmd/relay` (port 8080).
+2. Start the React workbench: `cd apps/web && npm run dev` (port 3000).
+3. Open `http://localhost:3000/runs/new`.
+4. Paste or upload a surgical implementation handoff.
+5. Submit — the run is created and you are redirected to `/runs/{id}/intake`.
 
 ### Troubleshooting
 
