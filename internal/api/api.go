@@ -108,15 +108,17 @@ type RelayValidationIssue struct {
 }
 
 type RelayArtifact struct {
-	ID        string `json:"id"`
-	Label     string `json:"label"`
-	Path      string `json:"path"`
-	Kind      string `json:"kind"` // "prompt" | "handoff" | "result" | "audit" | "validation" | "diff"
-	SizeHint  string `json:"sizeHint,omitempty"`
-	CreatedAt string `json:"createdAt,omitempty"`
-	Status    string `json:"status"`
-	Filename  string `json:"filename"`
-	Preview   string `json:"preview,omitempty"`
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Path        string `json:"path"`
+	Kind        string `json:"kind"` // "prompt" | "handoff" | "result" | "audit" | "validation" | "diff"
+	StorageKind string `json:"storageKind,omitempty"`
+	ContentURL  string `json:"contentUrl,omitempty"`
+	SizeHint    string `json:"sizeHint,omitempty"`
+	CreatedAt   string `json:"createdAt,omitempty"`
+	Status      string `json:"status"`
+	Filename    string `json:"filename"`
+	Preview     string `json:"preview,omitempty"`
 }
 
 type RelayRunEvent struct {
@@ -570,15 +572,17 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 		}
 
 		relayArtifacts = append(relayArtifacts, RelayArtifact{
-			ID:        strconv.FormatInt(art.ID, 10),
-			Label:     l,
-			Path:      fmt.Sprintf("/api/runs/%s/artifacts/%s", idStr, art.Kind),
-			Kind:      k,
-			SizeHint:  sizeHint,
-			CreatedAt: parseAndFormatTime(art.CreatedAt),
-			Status:    "ready",
-			Filename:  filename,
-			Preview:   preview,
+			ID:          strconv.FormatInt(art.ID, 10),
+			Label:       l,
+			Path:        fmt.Sprintf("/api/runs/%s/artifacts/%s", idStr, art.Kind),
+			Kind:        k,
+			StorageKind: art.Kind,
+			ContentURL:  fmt.Sprintf("/api/runs/%s/artifacts/%s", idStr, art.Kind),
+			SizeHint:    sizeHint,
+			CreatedAt:   parseAndFormatTime(art.CreatedAt),
+			Status:      "ready",
+			Filename:    filename,
+			Preview:     preview,
 		})
 	}
 
@@ -742,15 +746,17 @@ func (h *APIHandler) ListArtifacts(w http.ResponseWriter, r *http.Request) {
 		}
 
 		result = append(result, RelayArtifact{
-			ID:        strconv.FormatInt(art.ID, 10),
-			Label:     l,
-			Path:      fmt.Sprintf("/api/runs/%s/artifacts/%s", idStr, art.Kind),
-			Kind:      k,
-			SizeHint:  sizeHint,
-			CreatedAt: parseAndFormatTime(art.CreatedAt),
-			Status:    "ready",
-			Filename:  filename,
-			Preview:   preview,
+			ID:          strconv.FormatInt(art.ID, 10),
+			Label:       l,
+			Path:        fmt.Sprintf("/api/runs/%s/artifacts/%s", idStr, art.Kind),
+			Kind:        k,
+			StorageKind: art.Kind,
+			ContentURL:  fmt.Sprintf("/api/runs/%s/artifacts/%s", idStr, art.Kind),
+			SizeHint:    sizeHint,
+			CreatedAt:   parseAndFormatTime(art.CreatedAt),
+			Status:      "ready",
+			Filename:    filename,
+			Preview:     preview,
 		})
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -1101,14 +1107,16 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 		filename := filepath.Base(art.Path)
 		sizeHint := getFileSizeHint(art.Path)
 		relayArtifacts = append(relayArtifacts, RelayArtifact{
-			ID:        strconv.FormatInt(art.ID, 10),
-			Label:     l,
-			Path:      fmt.Sprintf("/api/runs/%d/artifacts/%s", run.ID, art.Kind),
-			Kind:      k,
-			SizeHint:  sizeHint,
-			CreatedAt: parseAndFormatTime(art.CreatedAt),
-			Status:    "ready",
-			Filename:  filename,
+			ID:          strconv.FormatInt(art.ID, 10),
+			Label:       l,
+			Path:        fmt.Sprintf("/api/runs/%d/artifacts/%s", run.ID, art.Kind),
+			Kind:        k,
+			StorageKind: art.Kind,
+			ContentURL:  fmt.Sprintf("/api/runs/%d/artifacts/%s", run.ID, art.Kind),
+			SizeHint:    sizeHint,
+			CreatedAt:   parseAndFormatTime(art.CreatedAt),
+			Status:      "ready",
+			Filename:    filename,
 		})
 	}
 

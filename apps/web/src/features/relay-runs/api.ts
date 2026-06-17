@@ -297,6 +297,23 @@ export async function getArtifactContent(id: string, kind: string): Promise<stri
   }
 }
 
+export async function getArtifactContentByUrl(contentUrl: string): Promise<string> {
+  if (!contentUrl.startsWith("/api/runs/")) {
+    throw new Error(`Invalid content URL: ${contentUrl}. Must start with '/api/runs/'.`);
+  }
+  const url = `${API_BASE_URL}${contentUrl}`;
+  try {
+    const res = await fetch(url, { headers: { Accept: "text/plain, application/json" } });
+    if (!res.ok) {
+      throw new RelayApiError(`Failed to fetch artifact content from GET ${contentUrl} (status: ${res.status})`, res.status, contentUrl, "GET");
+    }
+    return await res.text();
+  } catch (err: any) {
+    if (err instanceof RelayApiError) throw err;
+    throw new RelayApiError(`Daemon unavailable fetching artifact content from URL ${contentUrl}: ${err.message}`, 503, contentUrl, "GET");
+  }
+}
+
 export async function auditRun(id: string): Promise<RelayActionResponse> {
   return postJson<undefined, RelayActionResponse>(`/api/runs/${id}/audit`);
 }

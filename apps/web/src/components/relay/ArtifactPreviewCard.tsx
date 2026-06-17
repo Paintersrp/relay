@@ -93,7 +93,9 @@ export function ArtifactPreviewCard({
         </CardHeader>
         <CardContent className="p-3 pt-0">
           <div className="flex items-center justify-between gap-2 mb-2">
-            <p className="font-mono text-[10px] text-muted-foreground truncate">{artifact.path}</p>
+            <p className="font-mono text-[10px] text-muted-foreground truncate">
+              stored kind: {artifact.storageKind || artifact.kind}
+            </p>
             {artifact.sizeHint && (
               <span className="text-[10px] text-muted-foreground shrink-0">{artifact.sizeHint}</span>
             )}

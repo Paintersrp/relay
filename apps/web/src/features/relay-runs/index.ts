@@ -5,6 +5,7 @@ export {
   runDetailQueryOptions,
   runArtifactsQueryOptions,
   runEventsQueryOptions,
+  runArtifactContentQueryOptionsForArtifact,
   formatRunDate,
   formatRunDateRelative
 } from './queries'
@@ -21,6 +22,7 @@ export {
   cancelRun,
   recoverRun,
   getArtifactContent,
+  getArtifactContentByUrl,
   auditRun,
   approveCloseout,
   submitManualAuditPacket,

@@ -1,9 +1,5 @@
-// ============================================================
-// Relay React Query helpers for the real Go daemon API.
-// ============================================================
-
-import { queryOptions } from '@tanstack/react-query'
-import { getRuns, getRun, getRunArtifacts, getRunEvents, getArtifactContent } from './api'
+import { getRuns, getRun, getRunArtifacts, getRunEvents, getArtifactContent, getArtifactContentByUrl } from './api'
+import type { RelayArtifact } from './types'
 
 // Query key factory
 export const relayRunKeys = {
@@ -53,6 +49,21 @@ export function runArtifactContentQueryOptions(id: string, kind: string) {
   return queryOptions({
     queryKey: relayRunKeys.artifactContent(id, kind),
     queryFn: () => getArtifactContent(id, kind),
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+export function runArtifactContentQueryOptionsForArtifact(runId: string, artifact: RelayArtifact) {
+  const identity = artifact.storageKind || artifact.contentUrl || artifact.path || artifact.kind;
+  const contentUrl = artifact.contentUrl || artifact.path;
+  return queryOptions({
+    queryKey: [...relayRunKeys.all, 'detail', runId, 'artifacts-by-url', identity],
+    queryFn: () => {
+      if (contentUrl && contentUrl.startsWith('/api/runs/')) {
+        return getArtifactContentByUrl(contentUrl);
+      }
+      return getArtifactContent(runId, artifact.kind);
+    },
     staleTime: 2 * 60 * 1000,
   })
 }

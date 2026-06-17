@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { runArtifactContentQueryOptions, API_BASE_URL, type RelayArtifact } from '@/features/relay-runs'
+import { runArtifactContentQueryOptionsForArtifact, API_BASE_URL, type RelayArtifact } from '@/features/relay-runs'
 import { Copy, Check, ExternalLink, Loader2, FileText, AlertCircle } from 'lucide-react'
 
 interface ArtifactInspectorDialogProps {
@@ -29,8 +29,8 @@ export function ArtifactInspectorDialog({
   const [copied, setCopied] = useState(false)
 
   const { data: content, isLoading, error } = useQuery({
-    ...runArtifactContentQueryOptions(runId, artifact.kind),
-    enabled: open && !!runId && !!artifact?.kind,
+    ...runArtifactContentQueryOptionsForArtifact(runId, artifact),
+    enabled: open && !!runId && !!artifact,
   })
 
   useEffect(() => {
@@ -71,8 +71,9 @@ export function ArtifactInspectorDialog({
   }
 
   const formattedContent = getFormattedContent()
-  const rawUrl = `${API_BASE_URL}/api/runs/${runId}/artifacts/${artifact.kind}`
-
+  const contentUrl = artifact.contentUrl || artifact.path
+  const rawUrl = `${API_BASE_URL}${contentUrl}`
+ 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[90vw] max-w-[1100px] h-[85vh] flex flex-col p-6 bg-slate-950/95 border-slate-800 text-slate-100 backdrop-blur-xl shadow-2xl overflow-hidden">
@@ -85,9 +86,15 @@ export function ArtifactInspectorDialog({
             <Badge variant="secondary" className="font-mono text-xs bg-slate-800 text-slate-300 border-slate-700">
               {artifact.kind}
             </Badge>
+            {artifact.storageKind && artifact.storageKind !== artifact.kind && (
+              <Badge variant="outline" className="font-mono text-xs text-slate-400 border-slate-800">
+                {artifact.storageKind}
+              </Badge>
+            )}
           </div>
           <DialogDescription className="text-xs text-slate-400 font-mono flex flex-wrap gap-x-4 gap-y-1 pt-1">
-            <span>Path: {artifact.path || 'unknown'}</span>
+            <span>Stored Kind: {artifact.storageKind || artifact.kind}</span>
+            <span>URL: {contentUrl}</span>
             {artifact.sizeHint && <span>Size: {artifact.sizeHint}</span>}
             {artifact.createdAt && <span>Created: {new Date(artifact.createdAt).toLocaleString()}</span>}
           </DialogDescription>
@@ -104,6 +111,7 @@ export function ArtifactInspectorDialog({
               <AlertCircle className="w-8 h-8 text-red-500" />
               <span className="text-sm font-semibold">Error Loading Artifact</span>
               <p className="text-xs text-slate-400 max-w-md">{(error as Error).message}</p>
+              <p className="text-[10px] text-red-500/80 font-mono">Endpoint: {contentUrl}</p>
             </div>
           ) : !content ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-2 text-slate-500">

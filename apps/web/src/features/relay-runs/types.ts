@@ -68,7 +68,8 @@ export type RelayArtifactKind =
   | "parsed_frontmatter"
   | "run_config"
   | "intake_validation_report"
-  | "mcp_audit_handback";
+  | "mcp_audit_handback"
+  | string;
 
 // Canonical Relay Artifact type
 export interface RelayArtifact {
@@ -76,6 +77,8 @@ export interface RelayArtifact {
   label: string;
   path: string;
   kind: RelayArtifactKind;
+  storageKind?: string;
+  contentUrl?: string;
   sizeHint?: string;
   createdAt?: string;
 
