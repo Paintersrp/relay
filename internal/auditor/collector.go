@@ -105,13 +105,20 @@ func (c *Collector) generateRevisionRequirements(ev *Evidence) {
 		}
 	}
 
-	// 2. Map validation failures of required commands to revision requirements
+	// 2. Map validation failures or missing evidence of required commands to revision requirements
 	for _, vr := range ev.ValidationResults {
-		if vr.Required && vr.Status == CheckFail {
-			ev.RevisionRequirements = append(ev.RevisionRequirements, RevisionRequirement{
-				Reason:   fmt.Sprintf("Validation command %s (%s) failed with exit: %s", vr.ID, vr.Command, vr.ExitResult),
-				Severity: SeverityError,
-			})
+		if vr.Required {
+			if vr.Status == CheckFail {
+				ev.RevisionRequirements = append(ev.RevisionRequirements, RevisionRequirement{
+					Reason:   fmt.Sprintf("Validation command %s (%s) failed with exit: %s", vr.ID, vr.Command, vr.ExitResult),
+					Severity: SeverityError,
+				})
+			} else if vr.Status == CheckUnknown {
+				ev.RevisionRequirements = append(ev.RevisionRequirements, RevisionRequirement{
+					Reason:   fmt.Sprintf("Validation command %s (%s) has unknown result — evidence missing or incomplete: %s", vr.ID, vr.Command, vr.EvidenceSummary),
+					Severity: SeverityError,
+				})
+			}
 		}
 	}
 
@@ -184,7 +191,7 @@ func extractStringField(raw json.RawMessage) (string, bool) {
 	return "", false
 }
 
-func parseFileTargets(raw json.RawMessage) ([]string, error) {
+func parseFileTargets(raw json.RawMessage) ([]string, []EvidenceWarning) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
@@ -201,72 +208,137 @@ func parseFileTargets(raw json.RawMessage) ([]string, error) {
 		}
 		return nil, nil
 	}
-	// 3. Try an array of interface{} which might be strings or objects
+	// 3. Try an array of interface{} which might be strings or objects (schema-valid canonical form)
 	var genericArr []interface{}
 	if err := json.Unmarshal(raw, &genericArr); err == nil {
 		var targets []string
-		for _, item := range genericArr {
-			if s, ok := item.(string); ok {
-				targets = append(targets, s)
-			} else if m, ok := item.(map[string]interface{}); ok {
-				if pathVal, ok := m["path"]; ok {
-					if pathStr, ok := pathVal.(string); ok {
-						targets = append(targets, pathStr)
+		var warnings []EvidenceWarning
+		for i, item := range genericArr {
+			switch v := item.(type) {
+			case string:
+				targets = append(targets, v)
+			case map[string]interface{}:
+				pathVal, hasPath := v["path"]
+				if hasPath {
+					if pathStr, ok := pathVal.(string); ok && strings.TrimSpace(pathStr) != "" {
+						targets = append(targets, strings.TrimSpace(pathStr))
+					} else {
+						warnings = append(warnings, EvidenceWarning{
+							Message:  fmt.Sprintf("file_targets[%d] has path field but it is not a non-empty string", i),
+							Severity: SeverityWarning,
+						})
 					}
+				} else {
+					warnings = append(warnings, EvidenceWarning{
+						Message:  fmt.Sprintf("file_targets[%d] is an object without a path field — skipping", i),
+						Severity: SeverityWarning,
+					})
 				}
+			default:
+				warnings = append(warnings, EvidenceWarning{
+					Message:  fmt.Sprintf("file_targets[%d] has unsupported type — skipping", i),
+					Severity: SeverityWarning,
+				})
 			}
 		}
-		return targets, nil
+		return targets, warnings
 	}
 	// 4. Try a single object with a "path" field or multiple fields
 	var singleObj map[string]interface{}
 	if err := json.Unmarshal(raw, &singleObj); err == nil {
 		if pathVal, ok := singleObj["path"]; ok {
-			if pathStr, ok := pathVal.(string); ok {
-				return []string{pathStr}, nil
+			if pathStr, ok := pathVal.(string); ok && strings.TrimSpace(pathStr) != "" {
+				return []string{strings.TrimSpace(pathStr)}, nil
 			}
 		}
 	}
-	return nil, fmt.Errorf("unsupported file_targets format")
+	return nil, []EvidenceWarning{{
+		Message:  "unsupported file_targets format — cannot parse file targets",
+		Severity: SeverityError,
+	}}
 }
 
 // parseChecklistItems handles old flat-string and new typed-object audit checklist formats.
-func parseChecklistItems(raw json.RawMessage) []ChecklistItem {
+// Returns parsed items and any warnings for malformed entries.
+func parseChecklistItems(raw json.RawMessage) ([]ChecklistItem, []EvidenceWarning) {
 	if len(raw) == 0 {
-		return nil
+		return nil, nil
 	}
-	// Try new typed-object format: [{id, check, severity_if_failed}]
-	type checkItemRaw struct {
-		ID               string `json:"id"`
-		Check            string `json:"check"`
-		SeverityIfFailed string `json:"severity_if_failed"`
-	}
-	var typed []checkItemRaw
-	if err := json.Unmarshal(raw, &typed); err == nil && len(typed) > 0 {
-		// Only accept if at least one item has a non-empty Check field (objects, not strings)
-		if typed[0].Check != "" {
-			items := make([]ChecklistItem, 0, len(typed))
-			for _, t := range typed {
-				if t.Check == "" {
-					continue
-				}
-				sev := CheckSeverity(t.SeverityIfFailed)
-				if sev == "" {
-					sev = SeverityWarning
-				}
-				items = append(items, ChecklistItem{
-					ID:               t.ID,
-					Check:            t.Check,
-					SeverityIfFailed: sev,
-				})
+
+	// Determine the format by inspecting the first non-null element.
+	isObjectFormat := false
+	var rawArr []json.RawMessage
+	if err := json.Unmarshal(raw, &rawArr); err == nil && len(rawArr) > 0 {
+		for _, el := range rawArr {
+			if len(el) == 0 || string(el) == "null" {
+				continue
 			}
-			return items
+			trim := strings.TrimSpace(string(el))
+			if strings.HasPrefix(trim, "{") {
+				isObjectFormat = true
+			}
+			break
 		}
 	}
-	// Fall back to old flat-string format: parse meaningful lines
+
+	if isObjectFormat {
+		// Typed-object format: [{"id":..., "check":..., "severity_if_failed":...}]
+		var typed []map[string]interface{}
+		if err := json.Unmarshal(raw, &typed); err != nil {
+			return nil, []EvidenceWarning{{
+				Message:  fmt.Sprintf("audit_checklist typed-object parse error: %v", err),
+				Severity: SeverityError,
+			}}
+		}
+		items := make([]ChecklistItem, 0, len(typed))
+		var warnings []EvidenceWarning
+		idx := 0
+		for _, t := range typed {
+			check, _ := t["check"].(string)
+			check = strings.TrimSpace(check)
+			if check == "" {
+				warnings = append(warnings, EvidenceWarning{
+					Message:  "audit_checklist contains an object with empty or missing check field — skipping",
+					Severity: SeverityWarning,
+				})
+				continue
+			}
+			idx++
+			id, _ := t["id"].(string)
+			id = strings.TrimSpace(id)
+			if id == "" {
+				id = fmt.Sprintf("A%d", idx)
+			}
+			sev := SeverityWarning
+			if sevStr, ok := t["severity_if_failed"].(string); ok {
+				sevStr = strings.ToLower(strings.TrimSpace(sevStr))
+				switch sevStr {
+				case "info":
+					sev = SeverityInfo
+				case "warning":
+					sev = SeverityWarning
+				case "error":
+					sev = SeverityError
+				case "blocker":
+					sev = SeverityBlocker
+				}
+			}
+			items = append(items, ChecklistItem{
+				ID:               id,
+				Check:            check,
+				SeverityIfFailed: sev,
+			})
+		}
+		return items, warnings
+	}
+
+	// Fall back to old flat-string format: must be an array of strings
 	var flat []string
 	if err := json.Unmarshal(raw, &flat); err != nil {
-		return nil
+		return nil, []EvidenceWarning{{
+			Message:  fmt.Sprintf("audit_checklist flat-array parse error: %v — checklist items unavailable", err),
+			Severity: SeverityError,
+		}}
 	}
 	items := make([]ChecklistItem, 0)
 	var idx int
@@ -277,7 +349,7 @@ func parseChecklistItems(raw json.RawMessage) []ChecklistItem {
 			continue
 		}
 		lower := strings.ToLower(line)
-		// Skip section headers
+		// Skip section headers (lines ending with colon not starting with a check prefix)
 		if strings.HasSuffix(lower, ":") && !strings.HasPrefix(lower, "a") && !strings.HasPrefix(lower, "confirm") && !strings.HasPrefix(lower, "verify") {
 			pendingSeverity = ""
 			continue
@@ -300,7 +372,7 @@ func parseChecklistItems(raw json.RawMessage) []ChecklistItem {
 			SeverityIfFailed: sev,
 		})
 	}
-	return items
+	return items, nil
 }
 
 func (c *Collector) collectPacketMetadata(runID int64, ev *Evidence) {
@@ -373,19 +445,23 @@ func (c *Collector) collectPacketMetadata(runID int64, ev *Evidence) {
 	}
 
 	// Parse file targets
-	targets, err := parseFileTargets(ep.FileTargets)
-	if err != nil {
+	targets, ftWarnings := parseFileTargets(ep.FileTargets)
+	ev.Warnings = append(ev.Warnings, ftWarnings...)
+	if len(targets) == 0 {
 		meta.MissingFields = append(meta.MissingFields, "execution_payload.file_targets")
-		ev.Warnings = append(ev.Warnings, EvidenceWarning{
-			Message:  fmt.Sprintf("execution_payload.file_targets parse error: %v in canonical_packet.json", err),
-			Severity: SeverityError,
-		})
-	} else if len(targets) == 0 {
-		meta.MissingFields = append(meta.MissingFields, "execution_payload.file_targets")
-		ev.Warnings = append(ev.Warnings, EvidenceWarning{
-			Message:  "execution_payload.file_targets missing or empty in canonical_packet.json",
-			Severity: SeverityError,
-		})
+		hasWarning := false
+		for _, w := range ftWarnings {
+			if w.Severity == SeverityError {
+				hasWarning = true
+				break
+			}
+		}
+		if !hasWarning {
+			ev.Warnings = append(ev.Warnings, EvidenceWarning{
+				Message:  "execution_payload.file_targets missing or empty in canonical_packet.json",
+				Severity: SeverityError,
+			})
+		}
 	} else {
 		meta.FileTargets = targets
 	}
@@ -404,7 +480,9 @@ func (c *Collector) collectPacketMetadata(runID int64, ev *Evidence) {
 
 	// Parse audit checklist and related checks from audit_seed
 	if pkt.AuditSeed != nil {
-		meta.AuditChecklist = parseChecklistItems(pkt.AuditSeed.AuditChecklist)
+		items, checklistWarnings := parseChecklistItems(pkt.AuditSeed.AuditChecklist)
+		meta.AuditChecklist = items
+		ev.Warnings = append(ev.Warnings, checklistWarnings...)
 		meta.NonGoalChecks = pkt.AuditSeed.NonGoalChecks
 		meta.FileScopeChecks = pkt.AuditSeed.FileScopeChecks
 	} else {
@@ -567,13 +645,33 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 					summary = fmt.Sprintf("sourced from %s artifact (%d bytes)", best.kind, len(best.data))
 					redacted := redactSecrets(string(best.data))
 					lower := strings.ToLower(redacted)
-					if strings.Contains(lower, "ok\n") || strings.Contains(lower, "pass") || strings.Contains(lower, "exit 0") {
+					// Match Go test output (ok\tpkg) or generic pass
+					okLineMatch := false
+					for _, line := range strings.Split(lower, "\n") {
+						trimmed := strings.TrimSpace(line)
+						if strings.HasPrefix(trimmed, "ok") && (len(trimmed) == 2 || trimmed[2] == ' ' || trimmed[2] == '\t') {
+							okLineMatch = true
+							break
+						}
+					}
+					if okLineMatch || strings.Contains(lower, "pass") || strings.Contains(lower, "exit 0") {
 						status = CheckPass
 						exitResult = "exit 0 (inferred)"
 					} else if strings.Contains(lower, "fail") || strings.Contains(lower, "error") || strings.Contains(lower, "exit 1") {
 						status = CheckFail
 						exitResult = "non-zero exit (inferred)"
 					}
+				}
+			}
+
+			// Check for contradiction with executor result
+			if ev.ExecutorResult.Present && ev.ExecutorResult.Summary != "" {
+				execLower := strings.ToLower(ev.ExecutorResult.Summary)
+				if strings.Contains(execLower, "done") && status == CheckFail {
+					ev.Warnings = append(ev.Warnings, EvidenceWarning{
+						Message:  fmt.Sprintf("Executor reports DONE but validation command %s (%s) shows FAIL: %s — evidence contradiction, manual review required", spec.ID, spec.Command, summary),
+						Severity: SeverityError,
+					})
 				}
 			}
 
@@ -610,7 +708,15 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 		} else {
 			redacted := redactSecrets(string(best.data))
 			lower := strings.ToLower(redacted)
-			if strings.Contains(lower, "ok\n") || strings.Contains(lower, "pass") {
+			okLineMatch := false
+			for _, line := range strings.Split(lower, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "ok") && (len(trimmed) == 2 || trimmed[2] == ' ' || trimmed[2] == '\t') {
+					okLineMatch = true
+					break
+				}
+			}
+			if okLineMatch || strings.Contains(lower, "pass") {
 				status = CheckPass
 				exitResult = "exit 0 (inferred)"
 			} else if strings.Contains(lower, "fail") || strings.Contains(lower, "error") {
@@ -722,9 +828,105 @@ func (c *Collector) evaluateChecklistResults(ev *Evidence) {
 
 		// Heuristic evidence matching
 		switch {
-		case strings.Contains(lowerCheck, "validation") || strings.Contains(lowerCheck, "test") || strings.Contains(lowerCheck, "go test") || strings.Contains(lowerCheck, "make "):
+
+		// ── Content / section checks (use diff evidence) ──
+		case strings.Contains(lowerCheck, "section") && (strings.Contains(lowerCheck, "includes") || strings.Contains(lowerCheck, "present") || strings.Contains(lowerCheck, "required")):
+			headingMatched := false
+			diffContent := ""
+			if ev.GitDiff.Present {
+				diffContent = ev.GitDiff.Preview
+				evidenceSource = fmt.Sprintf("git_diff_patch: %s", ev.GitDiff.RawArtifactPath)
+			}
+			if diffContent != "" {
+				for _, line := range strings.Split(diffContent, "\n") {
+					trimmed := strings.TrimSpace(line)
+					if strings.HasPrefix(trimmed, "+#") {
+						headingMatched = true
+						break
+					}
+				}
+				if headingMatched {
+					result = CheckPass
+					rationale = "Diff evidence shows added Markdown headings — section likely present"
+				} else {
+					result = CheckUnknown
+					rationale = "Diff evidence present but no added headings detected — manual review required to confirm section content"
+				}
+			} else {
+				result = CheckUnknown
+				rationale = "No diff evidence — cannot confirm section presence"
+				evidenceSource = "none"
+			}
+
+		// ── Documentation-only diff checks ──
+		case strings.Contains(lowerCheck, "documentation-only") || strings.Contains(lowerCheck, "documentation only") || strings.Contains(lowerCheck, "doc-only") || strings.Contains(lowerCheck, "docs-only"):
+			if hasChangedFiles {
+				evidenceSource = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
+				isDocOnly := true
+				for _, f := range ev.ChangedFiles.Files {
+					ext := strings.ToLower(filepath.Ext(f.Path))
+					if ext != ".md" && ext != ".txt" && ext != ".json" {
+						isDocOnly = false
+						break
+					}
+				}
+				if isDocOnly {
+					result = CheckPass
+					rationale = "All changed files are documentation-only (.md, .txt, .json)"
+				} else {
+					result = CheckFail
+					rationale = "Changed files include non-documentation files"
+				}
+			} else {
+				result = CheckUnknown
+				rationale = "No changed-files evidence available — cannot confirm diff is documentation-only"
+				evidenceSource = "none"
+			}
+
+		// ── File scope / changed-files checks (use changed_files evidence) ──
+		case strings.Contains(lowerCheck, "changed file") || strings.Contains(lowerCheck, "file scope") ||
+			strings.Contains(lowerCheck, "only expected file") || strings.Contains(lowerCheck, "only") && strings.Contains(lowerCheck, "edit") ||
+			strings.Contains(lowerCheck, "runtime code") || strings.Contains(lowerCheck, "no runtime") ||
+			strings.Contains(lowerCheck, "test files were deleted") || strings.Contains(lowerCheck, "no test file") ||
+			strings.Contains(lowerCheck, "security-sensitive") || strings.Contains(lowerCheck, "auth") && strings.Contains(lowerCheck, "file") ||
+			strings.Contains(lowerCheck, "scope") || strings.Contains(lowerCheck, "outside expected"):
+
+			if hasChangedFiles {
+				evidenceSource = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
+				targetSet := map[string]bool{}
+				for _, t := range ev.Packet.FileTargets {
+					targetSet[t] = true
+				}
+				var outOfScope []string
+				for _, f := range ev.ChangedFiles.Files {
+					if !targetSet[f.Path] {
+						outOfScope = append(outOfScope, f.Path)
+					}
+				}
+				if len(outOfScope) == 0 {
+					result = CheckPass
+					rationale = fmt.Sprintf("All %d changed files are within expected targets — evidence from changed_files artifact", len(ev.ChangedFiles.Files))
+				} else {
+					result = CheckFail
+					rationale = fmt.Sprintf("Out-of-scope files detected: %s — evidence from changed_files artifact", strings.Join(outOfScope, ", "))
+				}
+			} else if hasDiff {
+				evidenceSource = fmt.Sprintf("git_diff_patch: %s", ev.GitDiff.RawArtifactPath)
+				result = CheckUnknown
+				rationale = "Diff artifact present but no explicit changed-files list — scope cannot be confirmed automatically"
+			} else {
+				result = CheckUnknown
+				rationale = "No changed files or diff artifact found — scope cannot be confirmed"
+				evidenceSource = "none"
+			}
+
+		// ── Validation / test command checks (use validation evidence) ──
+		case strings.Contains(lowerCheck, "go vet") || strings.Contains(lowerCheck, "go test") ||
+			strings.Contains(lowerCheck, "go build") || strings.Contains(lowerCheck, "make ") ||
+			strings.Contains(lowerCheck, "templ generate") || strings.Contains(lowerCheck, "npm run") ||
+			strings.Contains(lowerCheck, "validation") && strings.Contains(lowerCheck, "command") ||
+			strings.Contains(lowerCheck, "validation") && strings.Contains(lowerCheck, "pass"):
 			if hasValidation {
-				// Find matching validation result
 				for _, vr := range ev.ValidationResults {
 					if strings.Contains(lowerCheck, strings.ToLower(vr.Command)) || vr.Status != CheckUnknown {
 						result = vr.Status
@@ -744,22 +946,9 @@ func (c *Collector) evaluateChecklistResults(ev *Evidence) {
 				evidenceSource = "none"
 			}
 
-		case strings.Contains(lowerCheck, "changed file") || strings.Contains(lowerCheck, "file scope") || strings.Contains(lowerCheck, "only") && strings.Contains(lowerCheck, "edit") || strings.Contains(lowerCheck, "diff"):
-			if hasChangedFiles {
-				evidenceSource = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
-				result = CheckUnknown
-				rationale = "Changed files artifact present — auditor must confirm scope manually"
-			} else if hasDiff {
-				evidenceSource = fmt.Sprintf("git_diff_patch: %s", ev.GitDiff.RawArtifactPath)
-				result = CheckUnknown
-				rationale = "Diff artifact present — auditor must confirm scope manually"
-			} else {
-				result = CheckUnknown
-				rationale = "No changed files or diff artifact found — scope cannot be confirmed"
-				evidenceSource = "none"
-			}
-
-		case strings.Contains(lowerCheck, "executor") || strings.Contains(lowerCheck, "result") || strings.Contains(lowerCheck, "status"):
+		// ── Executor result checks ──
+		case strings.Contains(lowerCheck, "executor") || strings.Contains(lowerCheck, "result") && strings.Contains(lowerCheck, "done") ||
+			strings.Contains(lowerCheck, "executor") && strings.Contains(lowerCheck, "status"):
 			if ev.ExecutorResult.Present {
 				evidenceSource = fmt.Sprintf("executor_result: %s", ev.ExecutorResult.RawArtifactPath)
 				result = CheckUnknown

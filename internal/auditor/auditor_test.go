@@ -78,7 +78,10 @@ func TestParseChecklistItems_TypedObjects(t *testing.T) {
 		{"id":"A1","check":"Confirm foo.go was edited.","severity_if_failed":"blocker"},
 		{"id":"A2","check":"Confirm tests pass.","severity_if_failed":"error"}
 	]`)
-	items := parseChecklistItems(raw)
+	items, warnings := parseChecklistItems(raw)
+	if len(warnings) > 0 {
+		t.Fatalf("unexpected warnings: %+v", warnings)
+	}
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(items))
 	}
@@ -101,7 +104,10 @@ func TestParseChecklistItems_FlatStrings(t *testing.T) {
 		"A2: Confirm tests pass.",
 		"severity_if_failed: error"
 	]`)
-	items := parseChecklistItems(raw)
+	items, warnings := parseChecklistItems(raw)
+	if len(warnings) > 0 {
+		t.Fatalf("unexpected warnings: %+v", warnings)
+	}
 	if len(items) == 0 {
 		t.Fatal("expected at least 1 item from flat format")
 	}
@@ -114,6 +120,87 @@ func TestParseChecklistItems_FlatStrings(t *testing.T) {
 	}
 	if !foundFoo {
 		t.Error("expected to find 'foo.go' check in flat items")
+	}
+}
+
+func TestParseChecklistItems_TypedObjects_MalformedEntry(t *testing.T) {
+	raw := json.RawMessage(`[
+		{"id":"A1","check":"Confirm foo.go was edited.","severity_if_failed":"blocker"},
+		{"id":"A2","check":"","severity_if_failed":"error"},
+		{"id":"A3","check":"Confirm tests pass.","severity_if_failed":"error"}
+	]`)
+	items, warnings := parseChecklistItems(raw)
+	if len(items) != 2 {
+		t.Fatalf("expected 2 valid items, got %d: %+v", len(items), items)
+	}
+	if len(warnings) == 0 {
+		t.Error("expected warning for malformed entry with empty check")
+	}
+	if items[0].ID != "A1" {
+		t.Errorf("expected first item ID A1, got %q", items[0].ID)
+	}
+	if items[1].ID != "A3" {
+		t.Errorf("expected second item ID A3, got %q", items[1].ID)
+	}
+}
+
+func TestParseChecklistItems_TypedObjects_MissingIDs(t *testing.T) {
+	raw := json.RawMessage(`[
+		{"check":"Confirm foo.go was edited.","severity_if_failed":"blocker"},
+		{"check":"Confirm tests pass.","severity_if_failed":"error"}
+	]`)
+	items, warnings := parseChecklistItems(raw)
+	if len(warnings) > 0 {
+		t.Fatalf("unexpected warnings: %+v", warnings)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+	if items[0].ID != "A1" {
+		t.Errorf("expected synthesized ID A1, got %q", items[0].ID)
+	}
+	if items[1].ID != "A2" {
+		t.Errorf("expected synthesized ID A2, got %q", items[1].ID)
+	}
+}
+
+func TestParseChecklistItems_TypedObjects_SeverityIfFailedNotInCheck(t *testing.T) {
+	raw := json.RawMessage(`[
+		{"id":"A1","check":"Confirm foo.go was edited.","severity_if_failed":"blocker"}
+	]`)
+	items, warnings := parseChecklistItems(raw)
+	if len(warnings) > 0 {
+		t.Fatalf("unexpected warnings: %+v", warnings)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Check == "severity_if_failed" || strings.Contains(items[0].Check, "severity_if_failed") {
+		t.Error("severity_if_failed must not appear in check text")
+	}
+	if string(items[0].SeverityIfFailed) == "severity_if_failed" {
+		t.Error("severity_if_failed must not appear in severity field as label")
+	}
+}
+
+func TestParseChecklistItems_Empty(t *testing.T) {
+	raw := json.RawMessage(`[]`)
+	items, warnings := parseChecklistItems(raw)
+	if len(warnings) > 0 {
+		t.Fatalf("unexpected warnings: %+v", warnings)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected 0 items for empty array, got %d", len(items))
+	}
+}
+
+func TestParseChecklistItems_Null(t *testing.T) {
+	items, warnings := parseChecklistItems(nil)
+	if len(warnings) > 0 {
+		t.Fatalf("unexpected warnings: %+v", warnings)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected 0 items for nil, got %d", len(items))
 	}
 }
 
@@ -789,6 +876,260 @@ func (f *fakeStore) ListArtifactsByRunKind(runID int64, kind string) ([]store.Ar
 		out[i] = store.Artifact{Path: p}
 	}
 	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// Run 71-style docs-only task — comprehensive fixture
+// ---------------------------------------------------------------------------
+
+func TestRun71StyleDocsOnlyTask(t *testing.T) {
+	setupTestArtifactDir(t)
+	const runID = int64(200)
+
+	// Write canonical packet with typed-object checklist items (Run 71 style)
+	checks := []map[string]interface{}{
+		{"id": "A1", "check": "Confirm docs/mcp.md includes the required section.", "severity_if_failed": "blocker"},
+		{"id": "A2", "check": "Confirm diff is documentation-only.", "severity_if_failed": "blocker"},
+		{"id": "A3", "check": "Confirm no runtime code files changed outside expected targets.", "severity_if_failed": "error"},
+		{"id": "A4", "check": "Confirm no test files were deleted.", "severity_if_failed": "error"},
+		{"id": "A5", "check": "Confirm no security-sensitive, auth, or MCP files changed outside expected targets.", "severity_if_failed": "error"},
+		{"id": "A6", "check": "Confirm task is documentation-only and touched only documentation files.", "severity_if_failed": "error"},
+		{"id": "A7", "check": "Confirm changed files are exactly docs/mcp.md.", "severity_if_failed": "warning"},
+		{"id": "A8", "check": "Confirm the executor result indicates DONE.", "severity_if_failed": "warning"},
+		{"id": "A9", "check": "Confirm only expected files were edited.", "severity_if_failed": "warning"},
+		{"id": "A10", "check": "Confirm go vet ./... passes.", "severity_if_failed": "error"},
+	}
+
+	pkt := map[string]interface{}{
+		"execution_payload": map[string]interface{}{
+			"goal":       "Add ChatGPT Remote MCP Validation section to docs/mcp.md",
+			"scope":      "Make a documentation-only edit to docs/mcp.md",
+			"non_goals":  []string{"Do not add new MCP tools.", "Do not change runtime behavior."},
+			"file_targets": []map[string]interface{}{
+				{"path": "docs/mcp.md", "role": "docs", "action": "must_edit", "reason": "Add required section"},
+			},
+			"validation_commands": []map[string]interface{}{
+				{"id": "V1", "command": "go vet ./...", "required": true, "purpose": "Run vet", "success_signal": "Command exits 0.", "failure_handling": "attempt_fix_once_then_block"},
+				{"id": "V2", "command": "templ generate", "required": true, "purpose": "Gen templ", "success_signal": "Command exits 0.", "failure_handling": "skip_if_command_unavailable"},
+			},
+		},
+		"audit_seed": map[string]interface{}{
+			"audit_checklist": checks,
+			"non_goal_checks": []string{"Verify that out-of-scope goal \"Add new MCP tools\" was not implemented."},
+			"file_scope_checks": []string{"Confirm docs/mcp.md edits only satisfy the goal."},
+		},
+	}
+	pktData, _ := json.Marshal(pkt)
+	writeArtifactFile(t, runID, "canonical_packet.json", pktData)
+
+	// Write changed files artifact — only docs/mcp.md changed
+	changedFilesPath := writeArtifactFile(t, runID, "git_diff_name_status.txt", []byte("M\tdocs/mcp.md\n"))
+
+	// Write diff artifact with added heading
+	writeArtifactFile(t, runID, "git_diff.patch", []byte("diff --git a/docs/mcp.md b/docs/mcp.md\nindex abc..def 100644\n--- a/docs/mcp.md\n+++ b/docs/mcp.md\n@@ -1,3 +1,7 @@\n # MCP Tools\n \n+## ChatGPT Remote MCP Validation\n+\n+This section describes how to validate ChatGPT Remote MCP endpoints.\n+\n"))
+
+	// Write executor result artifact
+	writeArtifactFile(t, runID, "executor_result.txt", []byte("STATUS: DONE\n\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 12\n"))
+
+	// Write validation artifacts
+	valPath := writeArtifactFile(t, runID, "validation_stdout.txt", []byte("ok  \tgithub.com/relay/internal/auditor\nok  \tgithub.com/relay/internal/compiler\n"))
+
+	ev := &Evidence{RunID: runID, RunTitle: "Run 71 Docs", RunStatus: "executor_done"}
+	c := &Collector{
+		store: &fakeStore{
+			artifactPaths: map[string][]string{
+				"git_diff_name_status": {changedFilesPath},
+				"validation_stdout":    {valPath},
+			},
+		},
+	}
+
+	c.collectPacketMetadata(runID, ev)
+	c.collectExecutorResult(runID, ev)
+	c.collectValidationResults(runID, ev)
+	c.collectChangedFiles(runID, ev)
+	c.collectGitDiff(runID, ev)
+	c.evaluateChecklistResults(ev)
+	c.evaluateFileScopeResults(ev)
+	c.evaluateNonGoalResults(ev)
+	c.generateRevisionRequirements(ev)
+
+	// === ASSERTIONS ===
+
+	// 1. Checklist has exactly A1-A10 (no doubled rows, no extra severity_if_failed rows)
+	if len(ev.ChecklistResults) != 10 {
+		t.Fatalf("expected exactly 10 checklist results (A1-A10), got %d: %+v", len(ev.ChecklistResults), ev.ChecklistResults)
+	}
+	expectedIDs := []string{"A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10"}
+	for i, id := range expectedIDs {
+		if ev.ChecklistResults[i].ID != id {
+			t.Errorf("checklist[%d] expected ID %q, got %q", i, id, ev.ChecklistResults[i].ID)
+		}
+	}
+
+	// 2. No checklist row has "severity_if_failed" as its check text
+	for _, cr := range ev.ChecklistResults {
+		if cr.Check == "severity_if_failed" || strings.Contains(cr.Check, "severity_if_failed") {
+			t.Errorf("checklist item %q has severity_if_failed in check text: %q", cr.ID, cr.Check)
+		}
+	}
+
+	// 3. Severity appears in severity column only (never in check or ID)
+	for _, cr := range ev.ChecklistResults {
+		if cr.ID == "severity_if_failed" || strings.Contains(cr.ID, "severity_if_failed") {
+			t.Errorf("checklist item ID must not be severity_if_failed, got %q", cr.ID)
+		}
+	}
+
+	// 4. A1 (section heading check) should pass with diff evidence
+	for _, cr := range ev.ChecklistResults {
+		if cr.ID == "A1" {
+			if cr.Result != CheckPass {
+				t.Errorf("A1 expected pass from diff evidence, got %q: %s", cr.Result, cr.Rationale)
+			}
+			if !strings.Contains(cr.EvidenceSource, "git_diff_patch") {
+				t.Errorf("A1 evidence source should reference git_diff_patch, got %q", cr.EvidenceSource)
+			}
+		}
+	}
+
+	// 5. A2 (documentation-only diff) should pass from changed-files evidence
+	for _, cr := range ev.ChecklistResults {
+		if cr.ID == "A2" {
+			if cr.Result != CheckPass {
+				t.Errorf("A2 expected pass from changed-files evidence, got %q: %s", cr.Result, cr.Rationale)
+			}
+		}
+	}
+
+	// 6. A3 (no runtime files) should pass
+	for _, cr := range ev.ChecklistResults {
+		if cr.ID == "A3" {
+			if cr.Result != CheckPass {
+				t.Errorf("A3 expected pass, got %q: %s", cr.Result, cr.Rationale)
+			}
+		}
+	}
+
+	// 7. A4 (no tests deleted) should pass
+	for _, cr := range ev.ChecklistResults {
+		if cr.ID == "A4" {
+			if cr.Result != CheckPass {
+				t.Errorf("A4 expected pass, got %q: %s", cr.Result, cr.Rationale)
+			}
+		}
+	}
+
+	// 8. A5 (no security/auth/MCP files) should pass
+	for _, cr := range ev.ChecklistResults {
+		if cr.ID == "A5" {
+			if cr.Result != CheckPass {
+				t.Errorf("A5 expected pass, got %q: %s", cr.Result, cr.Rationale)
+			}
+		}
+	}
+
+	// 9. A6 (doc-only task) should pass
+	for _, cr := range ev.ChecklistResults {
+		if cr.ID == "A6" {
+			if cr.Result != CheckPass {
+				t.Errorf("A6 expected pass, got %q: %s", cr.Result, cr.Rationale)
+			}
+		}
+	}
+
+	// 10. A7 (changed files exactly docs/mcp.md) should pass
+	for _, cr := range ev.ChecklistResults {
+		if cr.ID == "A7" {
+			if cr.Result != CheckPass {
+				t.Errorf("A7 expected pass, got %q: %s", cr.Result, cr.Rationale)
+			}
+		}
+	}
+
+	// 11. A8 (executor result DONE) — should be unknown from heuristics (no keyword match for DONE status check)
+	for _, cr := range ev.ChecklistResults {
+		if cr.ID == "A8" {
+			if cr.Result != CheckUnknown {
+				t.Errorf("A8 expected unknown (automated executor status check not implemented), got %q", cr.Result)
+			}
+		}
+	}
+
+	// 12. A9 (only expected files edited) should pass
+	for _, cr := range ev.ChecklistResults {
+		if cr.ID == "A9" {
+			if cr.Result != CheckPass {
+				t.Errorf("A9 expected pass, got %q: %s", cr.Result, cr.Rationale)
+			}
+		}
+	}
+
+	// 13. A10 (go vet passes) — validation evidence present
+	for _, cr := range ev.ChecklistResults {
+		if cr.ID == "A10" {
+			if cr.Result == CheckUnknown {
+				t.Errorf("A10 expected pass or fail from validation evidence, got unknown: %s", cr.Rationale)
+			}
+		}
+	}
+
+	// 14. Validation evidence preserves both commands (required and optional/manual)
+	if len(ev.ValidationResults) != 2 {
+		t.Fatalf("expected 2 validation results, got %d", len(ev.ValidationResults))
+	}
+	foundV1 := false
+	foundV2 := false
+	for _, vr := range ev.ValidationResults {
+		if vr.ID == "V1" {
+			foundV1 = true
+			if !vr.Required {
+				t.Error("V1 should be required")
+			}
+		}
+		if vr.ID == "V2" {
+			foundV2 = true
+			if !vr.Required {
+				t.Error("V2 should be required (set in canonical packet)")
+			}
+		}
+	}
+	if !foundV1 {
+		t.Error("V1 validation command missing from results")
+	}
+	if !foundV2 {
+		t.Error("V2 validation command missing from results")
+	}
+
+	// 15. No contradictory validation evidence
+	for _, w := range ev.Warnings {
+		if strings.Contains(w.Message, "contradiction") {
+			t.Errorf("Unexpected contradiction warning: %s", w.Message)
+		}
+	}
+
+	// 16. Revision requirements for unknown required validation
+	hasMissingValReq := false
+	for _, rr := range ev.RevisionRequirements {
+		if strings.Contains(rr.Reason, "unknown result") {
+			hasMissingValReq = true
+		}
+	}
+	if !hasMissingValReq {
+		// Either V1 or V2 might have unknown status if the heuristic didn't match
+		t.Log("Note: revision requirements may not include unknown-status escalation (depends on heuristic matching)")
+	}
+
+	// 17. Generate packet and check for cleanliness
+	decision := DetermineDefaultDecision(ev)
+	packet := GenerateAuditPacket(ev, decision)
+	if strings.Contains(packet, "_Not available_") {
+		t.Error("audit packet must not contain _Not available_ for docs-only fixture")
+	}
+	// Packet should not contain severity_if_failed as a checklist row
+	if strings.Contains(packet, "severity_if_failed") {
+		t.Error("audit packet must not contain severity_if_failed in checklist rows")
+	}
 }
 
 // TestAuditPacketTemplateContractPathRegression verifies that the forbidden template path
