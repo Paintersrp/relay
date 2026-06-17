@@ -15,7 +15,6 @@ import (
 	"relay/internal/pipeline"
 	"relay/internal/repos"
 	"relay/internal/store"
-	"relay/internal/views"
 )
 
 // handoffWebBaseURL returns the configured React workbench base URL for
@@ -58,23 +57,6 @@ func (h *HandoffsHandler) publishRunEvent(runID int64, kind, source, status stri
 		Source: source,
 		Status: status,
 	})
-}
-
-func (h *HandoffsHandler) NewForm(w http.ResponseWriter, r *http.Request) {
-	reposList, err := h.store.ListReposByName()
-	if err != nil {
-		reposList = nil
-	}
-	var repoOptions []views.RepoOption
-	for _, repo := range reposList {
-		branches, err := repos.ListLocalBranches(repo.Path)
-		ro := views.RepoOption{Repo: repo}
-		if err == nil {
-			ro.Branches = branches
-		}
-		repoOptions = append(repoOptions, ro)
-	}
-	views.NewHandoff(repoOptions).Render(r.Context(), w)
 }
 
 func (h *HandoffsHandler) Create(w http.ResponseWriter, r *http.Request) {

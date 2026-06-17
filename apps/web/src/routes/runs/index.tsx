@@ -22,7 +22,7 @@ function RunsListPage() {
         <div>
           <h1 className="text-lg font-semibold">Runs</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Handoff orchestration runs — Pass 1 mock data only.
+            Handoff orchestration runs
           </p>
         </div>
         <Button size="sm" asChild className="gap-1.5">

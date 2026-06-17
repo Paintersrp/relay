@@ -39,23 +39,46 @@ func webURL(path string) string {
 }
 
 // resolveRunStep maps a run status to the appropriate React workbench step path segment.
+// The mapping uses canonical workflow statuses (see docs/api/frontend-api-contract.md).
 // Unknown or empty statuses fall back to "intake".
 func resolveRunStep(status string) string {
 	switch status {
-	case "draft", "validated", "needs_cleanup", "needs_review",
+	// Intake step statuses
+	case "draft", "needs_cleanup",
+		"intake_received", "intake_needs_review",
+		"validated", "needs_review",
 		"intake_approved", "intake_rejected", "intake_blocked":
 		return "intake"
-	case "packet_ready", "packet_validated", "packet_validation_failed",
-		"brief_ready_for_review", "brief_validation_failed",
-		"approved_for_executor":
+
+	// Prepare step statuses
+	case "approved_for_prepare",
+		"packet_ready", "packet_validated", "packet_validation_failed",
+		"repair_validated",
+		"brief_ready_for_review", "brief_validation_failed":
 		return "prepare"
-	case "executor_running", "executor_done", "executor_blocked",
-		"executor_error", "executor_cancelled":
+
+	// Execute step statuses
+	case "approved_for_executor",
+		"executor_dispatched",
+		"executor_running", "executor_done", "executor_blocked",
+		"executor_error", "executor_cancelled",
+		"agent_done", "agent_blocked", "agent_result_needs_review":
 		return "execute"
-	case "audit_pending", "audit_generated", "audit_submitted",
+
+	// Audit step statuses
+	case "validation_passed", "validation_failed_accepted", "validation_failed",
+		"audit_ready", "audit_ready_for_review",
+		"revision_required",
+		"accepted", "accepted_with_warnings",
+		"completed",
+		"audit_pending", "audit_generated", "audit_submitted",
 		"audit_approved", "audit_approved_with_warnings",
 		"audit_revision_requested", "audit_closed", "closed":
 		return "audit"
+
+	case "blocked":
+		return "intake"
+
 	default:
 		return "intake"
 	}
@@ -99,7 +122,9 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	})
 
 	// Legacy handoff creation — backend creation logic preserved; success
-	// redirect updated to React intake (see handlers/handoffs.go).
+	// redirect updated to React intake. Old templ/htmx workflow UI handlers,
+	// templates, generated templ output, test files, and static workflow assets
+	// have been physically removed. See Pass 14R2 handoff.
 	handoffs := handlers.NewHandoffsHandler(s, log, eventHub)
 	runs := handlers.NewRunsHandler(s, log, eventHub)
 	handoffs.SetRunsHandler(runs)

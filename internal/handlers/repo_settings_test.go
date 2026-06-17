@@ -85,8 +85,8 @@ func TestRepoSettingsToggleRootHTMXRendersShellWithoutRedirect(t *testing.T) {
 	}
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", itoa(root.ID))
-	url := "/settings/repos/roots/" + itoa(root.ID) + "/toggle"
+	rctx.URLParams.Add("id", testItoa(root.ID))
+	url := "/settings/repos/roots/" + testItoa(root.ID) + "/toggle"
 	r := httptest.NewRequest("POST", url, strings.NewReader("enabled=0"))
 	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -117,8 +117,8 @@ func TestRepoSettingsDeleteRootHTMXRendersShellWithoutRedirect(t *testing.T) {
 	}
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", itoa(root.ID))
-	url := "/settings/repos/roots/" + itoa(root.ID) + "/delete"
+	rctx.URLParams.Add("id", testItoa(root.ID))
+	url := "/settings/repos/roots/" + testItoa(root.ID) + "/delete"
 	r := httptest.NewRequest("POST", url, nil)
 	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 	r.Header.Set("HX-Request", "true")
@@ -216,8 +216,8 @@ func TestRepoSettingsDeleteRootNonHTMXStillDeletesRoot(t *testing.T) {
 	}
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", itoa(root.ID))
-	url := "/settings/repos/roots/" + itoa(root.ID) + "/delete"
+	rctx.URLParams.Add("id", testItoa(root.ID))
+	url := "/settings/repos/roots/" + testItoa(root.ID) + "/delete"
 	r := httptest.NewRequest("POST", url, nil)
 	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 
@@ -246,8 +246,8 @@ func TestRepoSettingsToggleRootNonHTMXStillRedirects(t *testing.T) {
 	}
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", itoa(root.ID))
-	url := "/settings/repos/roots/" + itoa(root.ID) + "/toggle"
+	rctx.URLParams.Add("id", testItoa(root.ID))
+	url := "/settings/repos/roots/" + testItoa(root.ID) + "/toggle"
 	r := httptest.NewRequest("POST", url, strings.NewReader("enabled=0"))
 	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -274,8 +274,8 @@ func TestRepoSettingsDeleteRootNonHTMXStillRedirects(t *testing.T) {
 	}
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", itoa(root.ID))
-	url := "/settings/repos/roots/" + itoa(root.ID) + "/delete"
+	rctx.URLParams.Add("id", testItoa(root.ID))
+	url := "/settings/repos/roots/" + testItoa(root.ID) + "/delete"
 	r := httptest.NewRequest("POST", url, nil)
 	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 

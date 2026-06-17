@@ -1,8 +1,9 @@
 # Relay Frontend Pivot
 
 > **Pass 14R — Old templ/htmx workflow UI routes replaced with React redirects. React is now the primary workflow UI.**
+> **Pass 15D — Verified end-to-end. Docs reconciled with implementation.**
 
-## Overview
+## Current Architecture
 
 `apps/web` is the **primary workflow UI** for the Relay run workbench. Superseded Go templ/htmx
 workflow routes now redirect to the React workbench. The Go backend retains JSON API routes,
@@ -16,76 +17,75 @@ orchestration, and utility UI pages (instructions, settings, raw artifact viewer
 | TanStack Start (React) | `apps/web`  | `:3000`                | **Primary workflow UI** — run creation, intake, prepare, execute, audit     |
 | Old templ/htmx UI      | `web/`      | `:8080` (served by Go) | Utility views only; workflow routes redirect to React                        |
 
-The `VITE_RELAY_API_BASE_URL=http://localhost:8080` environment variable documents where the React frontend will send API requests. **Pass 1 does not make any API calls** — all data is mock-only.
+## Canonical Workflow States
 
-## Pass Boundaries
+The API exposes canonical workflow states in the `status` field. Display/helper fields (`activeStep`, `lifecycleState`, `state`, `statusSeverity`) are derived from `status` and must not be used for action gating.
 
-### Pass 1 (current) — Additive scaffold
+See `docs/api/frontend-api-contract.md` for the full status table and gating rules.
 
-- `apps/web` created with official TanStack Start React scaffold using npm.
-- React Query configured at app root.
-- Tailwind CSS v4 + shadcn/ui initialized inside `apps/web`.
-- Relay-specific workbench routes (`/runs`, `/runs/new`, `/runs/$runId/intake`, `/runs/$runId/prepare`, `/runs/$runId/execute`, `/runs/$runId/audit`) using mock data only.
-- All action buttons (approve, submit, close) are visually disabled to prevent confusion with real mutations.
-- **No real Go API calls. No real SSE. No mutations.**
+## Primary React Routes
 
-### Pass 2 (next) — Frontend API contract
+| Path | Description |
+|------|-------------|
+| `/runs` | Run list with real API data |
+| `/runs/new` | New run intake form (connects to `POST /api/intake/planner-handoff`) |
+| `/runs/{id}/intake` | Step 1: Intake Review |
+| `/runs/{id}/prepare` | Step 2/3: Compile / Render Brief |
+| `/runs/{id}/execute` | Step 4: Execute |
+| `/runs/{id}/audit` | Step 5: Audit / Close |
 
-- Define the JSON API shape Relay's Go backend will expose.
-- Document request/response schemas for each workbench step.
-- No backend implementation yet.
+The frontend uses TanStack React Query to fetch from the Go backend JSON API (`VITE_RELAY_API_BASE_URL`). Mutations call real backend endpoints. Read endpoints fall back to mock data on 404/501 or backend unavailable.
 
-### Pass 3 — Read-only backend JSON endpoints
+## Preserved Go Utility Routes
 
-- Go backend adds new JSON-only endpoints alongside existing templ/htmx routes.
-- React frontend queries these endpoints via React Query.
-- Old templ/htmx UI remains intact.
-- Real validation results, artifact content, log lines, and run metadata become available.
+All `/api/*` JSON routes remain the API surface.
 
-### Pass 4 — Action wiring
+Utility server-rendered pages remain:
 
-- Approval gate actions (approve, reject) wired to real backend endpoints.
-- Step 4 Audit / Close route wired to real backend endpoints.
-- Backend handlers added: `ApproveAudit`, `RequestAuditRevision`, `PrepareCommitMessage`, `CloseRun`.
-- Frontend mutation methods: `submitManualAuditPacket`, `approveAudit`, `requestAuditRevision`, `prepareCommitMessage`, `closeRun`.
-- Audit Input Summary, Audit Packet, Audit Decision, Warnings/Revision Requirements, Commit Summary, and Close Run sections render real backend data.
-- Generate audit, manual audit packet submission, approve audit, request revision, prepare commit message, and mark done are real backend mutations.
-- Prepare commit message writes only a suggested artifact — no git commit, push, staging, or repo mutation.
-- Closeout gated by accepted or accepted_with_warnings audit state, updates Relay run state only.
-- New Run intake submission wired to backend.
-- Close Run wired to backend.
-- Mock data replaced with real React Query data.
+- `GET /instructions`, `/instructions/{kind}`, `/instructions/{kind}/download` — instruction assets
+- `GET /settings/repos`, `POST /settings/repos/*` — repository settings
+- `GET /runs/{id}/artifacts/{kind}`, `/runs/{id}/artifacts/{kind}/download` — raw artifact viewer/download
 
-### Pass 5 — Intake Wiring
-- Wired Step 1 Intake UI and Mutations, supporting real approval/reject/blocked decisions.
-- Real Go backend parsed frontmatter, created runs, and saved intake artifacts.
+## Removed / Redirected Old UI Routes
 
-### Pass 6 (current) — Compiler & Validation Service
-- Implemented internal Go backend compiler and packet validation service.
-- Compiles approved runs into canonical packets (`canonical_packet.json`) and runs schema/path/security checks, outputting validation reports (`packet_validation_report.json`) and transitioning run status to `packet_validated` or `packet_validation_failed`.
+| Old Go route | New destination |
+|---|---|
+| `GET /` | React `/runs` |
+| `GET /handoffs/new` | React `/runs/new` |
+| `POST /handoffs` (success) | React `/runs/{id}/intake` |
+| `GET /runs/{id}` | React `/runs/{id}/{step}` (status-resolved) |
+| `GET /runs/{id}/agent-run-monitor` | React `/runs/{id}/execute` |
 
-### Pass 11 (current) — Audit packet generator / bridge
+Removed routes (return 404 if accessed directly on Go server):
 
-- Backend auditor package (`internal/auditor`) added for evidence collection, `audit_input_summary.md` and `audit_packet.md` generation, and manual audit packet submission.
-- `POST /api/runs/{id}/audit` generates audit artifacts from executor evidence (gated to `executor_done`/`executor_blocked`).
-- `POST /api/runs/{id}/audit/submit` accepts manual audit packet Markdown with validated decision values.
-- No Step 4 React UI wiring, MCP tool registration, commit, push, or auto-closeout behavior implemented.
-- Old templ/htmx UI and existing Go backend routes remain intact.
+- `POST /runs/{id}/actions` — HTMX form action handler
+- `GET /runs/{id}/events` — HTMX SSE partial page
+- `GET /runs/{id}/artifacts/{kind}/preview` — templ preview page
 
-### Pass 14R (current) — Decommission superseded templ/htmx workflow routes
+JSON `/api/runs/{id}/events` (GET) and `/api/runs/{id}/artifacts/{kind}` (GET) remain available.
 
-- Old workflow entry routes (`GET /`, `GET /handoffs/new`, `GET /runs/{id}`, `GET /runs/{id}/agent-run-monitor`) redirect to React workbench.
-- `POST /handoffs` backend creation preserved; success redirect changed to React `/runs/{id}/intake`.
-- `GET /runs/{id}` resolves current run status to the appropriate workbench step (`intake`, `prepare`, `execute`, `audit`) and redirects there.
-- Removed routes: `POST /runs/{id}/actions`, `GET /runs/{id}/events` (HTMX SSE partial), `GET /runs/{id}/artifacts/{kind}/preview` (templ preview).
-- Preserved routes: all `/api/*`, raw artifact view/download, instructions, repo settings.
-- `RELAY_WEB_BASE_URL` env var controls React workbench base (default `http://localhost:3000`).
-- React workbench is now the primary workflow UI.
+## Pass History
 
-### Later passes — Decommission (TBD)
+| Pass | Status | Summary |
+|------|--------|---------|
+| Pass 1 | Complete | TanStack Start scaffold with mock data |
+| Pass 2 | Complete | API contract document created |
+| Pass 3 | Complete | Read-only JSON endpoints added |
+| Pass 4 | Complete | Action wiring (audit/close mutations) |
+| Pass 5 | Complete | Intake wiring (real backend parsing) |
+| Pass 6 | Complete | Compiler & validation service |
+| Pass 7 | Complete | Executor brief renderer |
+| Pass 11 | Complete | Audit packet generator |
+| Pass 14R | Complete | Old templ/htmx workflow UI routes decommissioned |
+| Pass 15A | Complete | Workflow state contract repaired (canonical statuses exposed) |
+| Pass 15B | Complete | Audit/close state gating repaired |
+| Pass 15C | Complete | MCP 13A/B boundary documented |
+| Pass 15D | In progress | E2E verification and docs reconciliation |
 
-- The old templ/htmx UI may be decommissioned in a future pass after the React frontend reaches feature parity.
-- This is explicitly not planned for Pass 1–11.
+## Known Blocked Areas
+
+- **Pass 13B MCP tools**: Blocked pending target-client feasibility confirmation. Only `submit_test_audit_packet` (Pass 13A) is registered.
+- No shell/file/git mutation MCP tools are present.
 
 ## Hard Constraints
 
@@ -98,7 +98,7 @@ The `VITE_RELAY_API_BASE_URL=http://localhost:8080` environment variable documen
 
 - **Framework**: TanStack Start (React, Vite, file-based routing)
 - **Routing**: TanStack Router
-- **Data fetching**: TanStack React Query (mock data in Pass 1)
+- **Data fetching**: TanStack React Query (real API with mock fallback)
 - **Styling**: Tailwind CSS v4 + shadcn/ui components
 - **Icons**: lucide-react
 - **Package manager**: npm (apps/web only)
@@ -106,12 +106,11 @@ The `VITE_RELAY_API_BASE_URL=http://localhost:8080` environment variable documen
 ## Development
 
 ```bash
-# Start the Go backend (existing):
-make dev
-# or:
-go run cmd/relay/main.go
+# Start the Go backend:
+go run ./cmd/relay
+# → http://localhost:8080
 
-# Start the React frontend (new, separate terminal):
+# Start the React frontend (separate terminal):
 cd apps/web
 cp .env.example .env
 npm install
@@ -119,4 +118,4 @@ npm run dev
 # → http://localhost:3000
 ```
 
-The two processes are independent. The Go backend does not depend on the React frontend, and in Pass 1, the React frontend does not depend on the Go backend.
+The two processes are independent. The Go backend owns all orchestration, storage, and API surface. The React frontend queries the Go backend via `VITE_RELAY_API_BASE_URL` (default `http://localhost:8080`).

@@ -266,22 +266,49 @@ Diff evidence is displayed inline in Step 7 and included in the audit handoff wh
 
 ## Routes
 
+### Go backend routes (port 8080)
+
+Workflow entry routes redirect to the React workbench (port 3000):
+
+| Method | Path                       | Behavior                                    |
+| ------ | -------------------------- | ------------------------------------------- |
+| GET    | `/`                        | Redirect to React `/runs`                   |
+| GET    | `/handoffs/new`            | Redirect to React `/runs/new`               |
+| POST   | `/handoffs`                | Create run; redirect to React `/runs/{id}/intake` |
+| GET    | `/runs/{id}`               | Redirect to React `/runs/{id}/{step}` per run status |
+| GET    | `/runs/{id}/agent-run-monitor` | Redirect to React `/runs/{id}/execute`  |
+
+Removed old templ/htmx routes: `POST /runs/{id}/actions`, `GET /runs/{id}/events` (HTMX page), `GET /runs/{id}/artifacts/{kind}/preview`.
+
+Preserved utility routes:
+
 | Method | Path                                   | Description                |
 | ------ | -------------------------------------- | -------------------------- |
-| GET    | `/`                                    | Dashboard with recent runs |
-| GET    | `/handoffs/new`                        | New handoff form           |
-| POST   | `/handoffs`                            | Create handoff run         |
-| GET    | `/runs/{id}`                           | Run detail workbench       |
-| POST   | `/runs/{id}/actions`                   | Execute run action         |
-| GET    | `/runs/{id}/agent-run-monitor`         | Agent run monitor partial  |
-| GET    | `/runs/{id}/artifacts/{kind}`          | View artifact              |
+| GET    | `/runs/{id}/artifacts/{kind}`          | View raw artifact content  |
 | GET    | `/runs/{id}/artifacts/{kind}/download` | Download artifact          |
 | GET    | `/instructions`                        | Instruction assets list    |
 | GET    | `/instructions/{kind}`                 | View instruction asset     |
 | GET    | `/instructions/{kind}/download`        | Download instruction asset |
 | GET    | `/settings/repos`                      | Repository settings        |
 | POST   | `/settings/repos/roots`                | Add scan root              |
+| POST   | `/settings/repos/roots/{id}/toggle`    | Toggle scan root           |
+| POST   | `/settings/repos/roots/{id}/delete`    | Delete scan root           |
 | POST   | `/settings/repos/scan`                 | Scan repos now             |
+
+### JSON API routes (`/api/*`)
+
+See `docs/api/frontend-api-contract.md` for full endpoint documentation.
+
+### React workbench routes (port 3000)
+
+| Path | Description |
+|------|-------------|
+| `/runs` | Run list |
+| `/runs/new` | New run intake form |
+| `/runs/{id}/intake` | Step 1: Intake Review |
+| `/runs/{id}/prepare` | Step 2/3: Compile / Render Brief |
+| `/runs/{id}/execute` | Step 4: Execute |
+| `/runs/{id}/audit` | Step 5: Audit / Close |
 
 ## Run Actions
 
@@ -703,10 +730,12 @@ data/
   relay.sqlite      SQLite database (gitignored)
   artifacts/        Run artifact files (gitignored)
 ```
-## New TanStack Start frontend prototype
+## TanStack Start Workbench (apps/web)
 
-- `apps/web` contains the new Relay frontend prototype.
-- Existing Go/templ/htmx UI remains during transition.
-- Run the Go backend on port 8080.
-- Run the new frontend from `apps/web`.
-- Set `VITE_RELAY_API_BASE_URL=http://localhost:8080`.
+`apps/web` is the **primary workflow UI** for Relay. See `docs/frontend-pivot.md` for architecture details.
+
+Old templ/htmx workflow routes redirect to the React workbench. The Go backend retains JSON API, orchestration, and utility UI pages.
+
+- Run Go backend on port 8080: `go run ./cmd/relay`
+- Run React workbench on port 3000: `cd apps/web && npm run dev`
+- Set `VITE_RELAY_API_BASE_URL=http://localhost:8080` in `apps/web/.env`

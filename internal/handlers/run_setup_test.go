@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"relay/internal/artifacts"
@@ -116,6 +117,8 @@ func setupTestStore(t *testing.T) *store.Store {
 	t.Cleanup(func() { s.Close() })
 	return s
 }
+
+func testItoa(v int64) string { return strconv.FormatInt(v, 10) }
 
 func newTestHandoff(t *testing.T, s *store.Store, handoffText string) int64 {
 	t.Helper()

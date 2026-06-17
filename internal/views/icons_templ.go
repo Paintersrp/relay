@@ -203,41 +203,6 @@ func liveUpdateIconClass(state string, className string) string {
 	}
 }
 
-func nextActionIconName(action WorkbenchNextActionView) string {
-	switch action.Kind {
-	case "generate_fix_handoff":
-		return "file-text"
-	case "generate_agent_prompt":
-		return "scroll-text"
-	case "generate_agent_packet":
-		return "package"
-	case "check_opencode_cli":
-		return "terminal"
-	case "preview_opencode_command":
-		return "play"
-	case "start_opencode":
-		return "bot"
-	case "finalize_opencode_without_result":
-		return "file-search"
-	case "monitor_agent_run":
-		return "bot"
-	case "review_agent_result":
-		return "clipboard-check"
-	case "run_validation":
-		return "play"
-	case "review_validation_output":
-		return "file-search"
-	case "ready_for_audit":
-		return "file-search"
-	case "committed_local":
-		return "git-commit"
-	case "pushed":
-		return "upload-cloud"
-	default:
-		return actionIconName(action.Kind)
-	}
-}
-
 func iconBase(className string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
