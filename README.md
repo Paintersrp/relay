@@ -150,6 +150,11 @@ Routes `POST /runs/{id}/actions`, `GET /runs/{id}/events` (HTMX), and
 
 Set `RELAY_WEB_BASE_URL` (default `http://localhost:3000`) if you run the React workbench on a different port.
 
+By default, the Go backend allows CORS requests from `http://localhost:3000`, `http://127.0.0.1:3000`, `http://localhost:5173`, and `http://127.0.0.1:5173`. You can override or append additional origins via:
+```bash
+RELAY_CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
 ```bash
 # Start the React workbench (separate terminal, port 3000):
 cd apps/web

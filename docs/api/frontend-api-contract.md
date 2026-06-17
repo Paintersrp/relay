@@ -19,6 +19,20 @@ Relay is partitioned into two runtime environments:
    - Handles the React UI and coordinates state transitions by querying the Go daemon's API.
    - Configures the Go backend URL using the environment variable `VITE_RELAY_API_BASE_URL` (defaults to `http://localhost:8080`).
 
+## CORS Origin Configuration
+
+By default, the Go backend allows cross-origin resource sharing (CORS) from the following local React development origins:
+- `http://localhost:3000`
+- `http://127.0.0.1:3000`
+- `http://localhost:5173`
+- `http://127.0.0.1:5173`
+
+If the frontend runs on a different host or port, you can customize the allowed origins by setting the `RELAY_CORS_ALLOWED_ORIGINS` environment variable on the Go backend (e.g. as a comma-separated list of origins):
+
+```bash
+RELAY_CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
 ## Contract Rules
 
 - **Go Daemon Orchestration**: Go remains the sole backend orchestration engine. Pipeline execution logic, validation runners, and git worktrees must not move into TanStack Start server functions.
