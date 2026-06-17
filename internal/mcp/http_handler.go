@@ -22,6 +22,9 @@ type HTTPHandler struct {
 func NewHTTPHandler(srv *Server, log *slog.Logger) *HTTPHandler {
 	token := os.Getenv("RELAY_MCP_AUTH_TOKEN")
 	disableAuth := os.Getenv("RELAY_MCP_DISABLE_AUTH") == "true"
+	if token == "" && !disableAuth {
+		log.Warn("Relay MCP HTTP endpoint running without auth; intended for local connector proof only")
+	}
 	return &HTTPHandler{
 		server:      srv,
 		log:         log,
@@ -37,14 +40,8 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Enforce bearer token auth if not explicitly disabled.
-	if !h.disableAuth {
-		if h.authToken == "" {
-			h.log.Error("mcp http auth failed: RELAY_MCP_AUTH_TOKEN is not configured on the server")
-			http.Error(w, "Unauthorized: server auth token not configured", http.StatusUnauthorized)
-			return
-		}
-
+	// Enforce bearer token auth if not explicitly disabled and token is configured.
+	if !h.disableAuth && h.authToken != "" {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			http.Error(w, "Unauthorized: missing Authorization header", http.StatusUnauthorized)

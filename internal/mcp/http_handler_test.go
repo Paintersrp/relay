@@ -87,7 +87,7 @@ func TestHTTPHandler_Auth(t *testing.T) {
 		}
 	})
 
-	t.Run("AuthMissingTokenUnconfiguredReject", func(t *testing.T) {
+	t.Run("AuthMissingTokenUnconfiguredAccept", func(t *testing.T) {
 		t.Setenv("RELAY_MCP_AUTH_TOKEN", "")
 		t.Setenv("RELAY_MCP_DISABLE_AUTH", "false")
 
@@ -102,8 +102,8 @@ func TestHTTPHandler_Auth(t *testing.T) {
 
 		h.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("expected 401 Unauthorized, got %d", rec.Code)
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
 		}
 	})
 }

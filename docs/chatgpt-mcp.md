@@ -31,17 +31,26 @@ To protect the local development environment, the remote MCP endpoint operates u
 
 ## Setup Instructions
 
-### 1. Configure the Daemon Authentication
-The remote `/mcp` endpoint enforces Bearer Token authentication by default. Before launching the Relay daemon, set the `RELAY_MCP_AUTH_TOKEN` environment variable to a secure opaque string:
+### 1. Configure the Daemon Authentication (Optional)
+The remote `/mcp` endpoint supports both Bearer Token authentication and unauthenticated access (for local/ngrok connector proof):
 
-```bash
-# Windows PowerShell
-$env:RELAY_MCP_AUTH_TOKEN="your-secure-mcp-token"
-go run ./cmd/relay
+- **No-Auth Mode (Default for proofing)**:
+  If the `RELAY_MCP_AUTH_TOKEN` environment variable is unset or empty, `/mcp` will accept unauthenticated requests. This is the recommended mode for local development and initial ChatGPT connector registration proof.
 
-# Linux / macOS
-RELAY_MCP_AUTH_TOKEN="your-secure-mcp-token" go run ./cmd/relay
-```
+  When running in this mode, Relay will log a clear warning:
+  `Relay MCP HTTP endpoint running without auth; intended for local connector proof only`
+
+- **Token-Configured Mode (For hardening)**:
+  To enforce Bearer Token authentication, set the `RELAY_MCP_AUTH_TOKEN` environment variable before launching the Relay daemon:
+
+  ```bash
+  # Windows PowerShell
+  $env:RELAY_MCP_AUTH_TOKEN="your-secure-mcp-token"
+  go run ./cmd/relay
+
+  # Linux / macOS
+  RELAY_MCP_AUTH_TOKEN="your-secure-mcp-token" go run ./cmd/relay
+  ```
 
 ### 2. Expose the Local Daemon over HTTPS
 ChatGPT requires a secure HTTPS URL to interact with your local daemon. You must expose the Go daemon (defaulting to port `8080`) using an HTTPS tunnel.
@@ -52,16 +61,43 @@ ngrok http 8080
 ```
 This will provide a public forwarding URL, for example: `https://abcd-123-45-67.ngrok-free.app`.
 
-### 3. Add the Connector in ChatGPT
+### 3. Direct Validation Recipe (curl)
+Before configuring ChatGPT, verify your endpoint responds correctly:
+
+#### Test initialize:
+```bash
+curl -i -X POST https://<ngrok-host>/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "MCP-Protocol-Version: 2024-11-05" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"test"}}}'
+```
+
+Expected Response:
+`200 OK` with JSON matching the MCP initialization schema (including server capabilities and client info).
+
+#### Test tools/list:
+```bash
+curl -i -X POST https://<ngrok-host>/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "MCP-Protocol-Version: 2024-11-05" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+```
+
+Expected Response:
+`200 OK` listing the approved five tools.
+
+### 4. Add the Connector in ChatGPT
 1. Navigate to the ChatGPT Workspace Settings.
 2. Select **Connected Data** or **Connectors** (Developer flow).
 3. Add a new custom MCP Connector.
-4. Set the **Server URL** to your HTTPS tunnel base URL with `/mcp` appended, e.g.:
-   ```
-   https://abcd-123-45-67.ngrok-free.app/mcp
-   ```
-5. Choose **Bearer Token** authentication and paste your secure token value (`your-secure-mcp-token`).
-6. Save and verify that the connector successfully connects and registers the approved tools.
+4. Fill in the form:
+   - **Connection**: Server URL
+   - **Authentication**: No Auth *(or Bearer Token if `RELAY_MCP_AUTH_TOKEN` is configured)*
+   - **URL**: `https://<ngrok-host>/mcp`
+5. Check any required acknowledgment/risk checkboxes.
+6. Click **Create** to verify that the connector successfully connects and registers the approved tools.
 
 ---
 
