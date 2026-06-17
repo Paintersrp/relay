@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { useState } from 'react'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -6,15 +7,83 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
-import { ArrowLeft, Info } from 'lucide-react'
+import { ArrowLeft, AlertCircle, Loader2 } from 'lucide-react'
+import { submitPlannerHandoff, RelayApiError } from '@/features/relay-runs'
 
 export const Route = createFileRoute('/runs/new')({
   component: NewRunPage,
 })
 
 function NewRunPage() {
+  const router = useRouter()
+  const [markdown, setMarkdown] = useState('')
+  const [repo, setRepo] = useState('')
+  const [branch, setBranch] = useState('')
+  const [name, setName] = useState('')
+  const [source, setSource] = useState('react_workbench')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const text = event.target?.result
+      if (typeof text === 'string') {
+        setMarkdown(text)
+        setErrorMsg(null)
+      }
+    }
+    reader.onerror = () => {
+      setErrorMsg('Failed to read the handoff file.')
+    }
+    reader.readAsText(file)
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!markdown.trim()) {
+      setErrorMsg('Planner handoff markdown is required.')
+      return
+    }
+
+    setIsSubmitting(true)
+    setErrorMsg(null)
+
+    try {
+      const response = await submitPlannerHandoff({
+        planner_handoff_markdown: markdown,
+        repo_target: repo.trim() || undefined,
+        branch_context: branch.trim() || undefined,
+        name: name.trim() || undefined,
+        source: source.trim() || undefined,
+      })
+
+      if (response.review_url) {
+        window.location.href = response.review_url
+      } else {
+        void router.navigate({
+          to: '/runs/$runId/intake',
+          params: { runId: response.runID || response.run_id || '' }
+        })
+      }
+    } catch (err: any) {
+      if (err instanceof RelayApiError) {
+        setErrorMsg(err.errorShape?.message || err.message)
+      } else {
+        setErrorMsg(err.message || 'An unexpected error occurred during submission.')
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const isFormValid = markdown.trim().length > 0
+
   return (
-    <div className="flex flex-col flex-1 overflow-y-auto">
+    <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-y-auto">
       {/* Page header */}
       <div className="flex items-center gap-3 px-6 py-4 border-b border-border/60">
         <Button variant="ghost" size="sm" asChild className="gap-1.5 h-7 text-xs -ml-1">
@@ -31,16 +100,16 @@ function NewRunPage() {
       </div>
 
       <div className="max-w-2xl mx-auto w-full p-6 flex flex-col gap-6">
-        {/* Pass 4 notice */}
-        <Alert variant="warning" className="border-yellow-600/40 bg-yellow-600/5">
-          <Info className="w-4 h-4" />
-          <AlertTitle className="text-yellow-400">Pass 1 — Intake Submission Disabled</AlertTitle>
-          <AlertDescription className="text-muted-foreground">
-            Real planner handoff submission is implemented in Pass 4. The controls below are
-            illustrative only and do not submit to the backend. Approving or submitting will have no
-            effect.
-          </AlertDescription>
-        </Alert>
+        {/* Error Alert */}
+        {errorMsg && (
+          <Alert variant="destructive">
+            <AlertCircle className="w-4 h-4" />
+            <AlertTitle>Submission Failed</AlertTitle>
+            <AlertDescription className="text-xs">
+              {errorMsg}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Incoming handoff section */}
         <Card className="border-border/60">
@@ -56,9 +125,10 @@ function NewRunPage() {
               <Textarea
                 id="handoff-paste"
                 placeholder="Paste handoff content here…"
-                className="font-mono text-xs min-h-[120px] resize-none opacity-60 cursor-not-allowed"
-                disabled
-                aria-label="Handoff paste input — disabled in Pass 1"
+                className="font-mono text-xs min-h-[180px] resize-y"
+                value={markdown}
+                onChange={(e) => setMarkdown(e.target.value)}
+                aria-label="Handoff paste input"
               />
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -72,9 +142,9 @@ function NewRunPage() {
                 id="handoff-file"
                 type="file"
                 accept=".md,.txt,.json"
-                className="text-xs opacity-60 cursor-not-allowed"
-                disabled
-                aria-label="Handoff file upload — disabled in Pass 1"
+                className="text-xs cursor-pointer"
+                onChange={handleFileChange}
+                aria-label="Handoff file upload"
               />
             </div>
           </CardContent>
@@ -94,36 +164,40 @@ function NewRunPage() {
                 <Label htmlFor="repo-input" className="text-xs">Repository</Label>
                 <Input
                   id="repo-input"
-                  placeholder="owner/repo"
-                  disabled
-                  className="text-xs opacity-60 cursor-not-allowed"
+                  placeholder="owner/repo (or auto-detected)"
+                  value={repo}
+                  onChange={(e) => setRepo(e.target.value)}
+                  className="text-xs"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="branch-input" className="text-xs">Branch</Label>
                 <Input
                   id="branch-input"
-                  placeholder="feature/my-branch"
-                  disabled
-                  className="text-xs opacity-60 cursor-not-allowed"
+                  placeholder="feature/my-branch (or auto-detected)"
+                  value={branch}
+                  onChange={(e) => setBranch(e.target.value)}
+                  className="text-xs"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="executor-input" className="text-xs">Executor</Label>
+                <Label htmlFor="name-input" className="text-xs">Run Name / Title</Label>
                 <Input
-                  id="executor-input"
-                  placeholder="opencode / cline / codex"
-                  disabled
-                  className="text-xs opacity-60 cursor-not-allowed"
+                  id="name-input"
+                  placeholder="My Relay Run (or auto-detected)"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="text-xs"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="model-input" className="text-xs">Model</Label>
+                <Label htmlFor="source-input" className="text-xs">Source</Label>
                 <Input
-                  id="model-input"
-                  placeholder="anthropic/claude-3-5-sonnet"
-                  disabled
-                  className="text-xs opacity-60 cursor-not-allowed"
+                  id="source-input"
+                  placeholder="react_workbench"
+                  value={source}
+                  onChange={(e) => setSource(e.target.value)}
+                  className="text-xs"
                 />
               </div>
             </div>
@@ -132,19 +206,26 @@ function NewRunPage() {
 
         {/* Submit area */}
         <div className="flex items-center justify-end gap-2">
-          <Button variant="outline" size="sm" asChild>
+          <Button variant="outline" size="sm" asChild disabled={isSubmitting}>
             <Link to="/runs">Cancel</Link>
           </Button>
           <Button
+            type="submit"
             size="sm"
-            disabled
-            className="opacity-50 cursor-not-allowed"
-            title="Handoff submission is not implemented in Pass 1"
+            disabled={!isFormValid || isSubmitting}
+            className="min-w-[120px]"
           >
-            Submit Handoff — Pass 4
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              'Submit Handoff'
+            )}
           </Button>
         </div>
       </div>
-    </div>
+    </form>
   )
 }

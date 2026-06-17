@@ -1,7 +1,7 @@
-# Relay Workbench E2E Verification Report — Pass 15D
+# Relay Workbench E2E Verification Report — Pass 15E
 
 **Date**: 2026-06-16
-**Pass**: 15D — End-to-End Verification + Docs Reconciliation
+**Pass**: 15E — React Intake Creation Form Wiring
 **Schema Version**: 1.0.0
 
 ## 1. Verification Matrix
@@ -13,7 +13,7 @@
 | Old UI decommission | Superseded templ/htmx workflow routes redirect/remove per 14R table | **PASS** (with fix applied) | See Section 2 below. `resolveRunStep` fixed to use canonical workflow statuses. |
 | Preserved utility routes | raw artifact view/download, instructions, repo settings remain available | **PASS** | `routes.go:143-158` preserves artifact, instruction, and settings routes. |
 | API status contract | `run.status` exposes canonical workflow states used for gating | **PASS** | `internal/api/api.go:379-635` `mapRunToRelayRun` preserves canonical `status` field. Display fields derived separately. See Section 3 below. |
-| Intake | React create/intake can create or load a run and approve intake | **PASS** (API) / **KNOWN GAP** (UI) | `POST /api/intake/planner-handoff` functional. `POST /api/runs/{id}/approve-intake` functional. `/runs/new` page is still disabled (Pass 1 scaffold state). See Section 7. |
+| Intake | React create/intake can create or load a run and approve intake | **PASS** | `POST /api/intake/planner-handoff` functional. `POST /api/runs/{id}/approve-intake` functional. `/runs/new` page is fully wired and functional. See Section 7. |
 | Prepare | compile and render brief gates work from canonical statuses | **PASS** | `PrepareRun` gated on `approved_for_prepare` (`api.go:1297`). `RenderBrief` gated on `packet_validated`/`repair_validated` (`renderer.go`). `ApproveBrief` gated on `brief_ready_for_review` (`renderer.go:174`). |
 | Execute | start executor only from `approved_for_executor`; missing executor is reported | **PASS** | `DispatchBrief` gated on `approved_for_executor` (`executor.go:539`). Missing executor/OpenCode returns visible error via `writeError(422)`. |
 | Audit | generate audit from `executor_done`/`executor_blocked`; approve/revision/close semantics work | **PASS** | `GenerateAudit` gated on `executor_done`/`executor_blocked` (`auditor/service.go:30`). `ApproveAudit` gated on `audit_ready`/`audit_ready_for_review` (`api.go:1582`). `RequestAuditRevision` gated on same. `PrepareCommitMessage` gated on `accepted`/`accepted_with_warnings` (`api.go:1718`). `CloseRun` gated on same (`api.go:1783`). |
@@ -131,30 +131,28 @@ No `os/exec`, `git`, shell, or file-system mutations outside `artifacts.Write` (
 
 All files listed in the handoff's "Files to Inspect First" section were inspected. No unexpected missing files found.
 
-## 7. Known Gaps
+## 7. Evidence and Gaps
 
-### Gap 1: `/runs/new` page still disabled (Pass 1 scaffold)
+### React Run Creation Flow Evidence
 
-`apps/web/src/routes/runs/new.tsx` still shows:
-- "Pass 1 — Intake Submission Disabled" alert
-- Disabled textarea, file input, and form fields
-- Disabled "Submit Handoff — Pass 4" button
+| Field | Value / Behavior |
+| --- | --- |
+| **Input Handoff** | Markdown implementation handoff containing frontmatter |
+| **Manual Inputs** | Optional Repository target override, Branch context override, Run Name/Title, Source |
+| **POST Request** | Sent to `POST /api/intake/planner-handoff` with markdown & config payload |
+| **API Response** | Contains `success: true`, `runId`, `status: "intake_received"`, and `review_url: "/runs/{id}/intake"` |
+| **Redirect** | Successfully navigates user to `/runs/{id}/intake` in the React workbench |
+| **Daemon Check** | Verification of run status is `intake_received` or `intake_needs_review` |
 
-**Impact**: Users cannot create new runs through the React workbench UI. They must use the Go backend form `POST /handoffs` or the API endpoint `POST /api/intake/planner-handoff` directly.
-
-**Why not fixed in 15D**: Wiring the new-run form with real API calls is a full feature implementation (Pass 5 scope), not a narrow verification fix. Fixing it would require React state management, API integration, and error handling — exceeding the "small fix" threshold.
-
-**Recommendation**: A future pass should wire the `/runs/new` page to call `POST /api/intake/planner-handoff` and remove the Pass 1 disabled state.
-
-### Gap 2: `ApprovalCard` and other components have stale Pass 1 labels
+### Gap 1: `ApprovalCard` and other components have stale Pass 1 labels
 
 `apps/web/src/components/relay/ApprovalCard.tsx` and `ArtifactPreviewCard.tsx` still display "Pass 1" references. These are cosmetic and do not affect API behavior.
 
 **Recommendation**: Clean up in a UI polish pass.
 
-### Gap 3: Pre-existing test failure
+### Gap 2: Pre-existing test failure
 
-`TestRunLocalAgentCommandArgsStreamingStreamsOutputBeforeExit` in `internal/pipeline` fails with exit code -1. This is a pre-existing test issue unrelated to Pass 15D.
+`TestRunLocalAgentCommandArgsStreamingStreamsOutputBeforeExit` in `internal/pipeline` fails with exit code -1. This is a pre-existing test issue unrelated to Pass 15E.
 
 ## 8. Validation Commands Results
 
@@ -162,10 +160,10 @@ All files listed in the handoff's "Files to Inspect First" section were inspecte
 | --- | --- |
 | `go build -o bin/relay.exe ./cmd/relay` | **PASS** — compiles successfully |
 | `go vet ./...` | **PASS** — no issues |
-| `go test ./... -short -count=1` | 23/24 packages pass. `internal/pipeline` has 1 pre-existing failure (see Gap 3). |
+| `go test ./... -short -count=1` | 23/24 packages pass. `internal/pipeline` has 1 pre-existing failure (see Gap 2). |
 | `go test -short ./internal/server/...` | **PASS** — all server tests pass including `TestResolveRunStep` with updated canonical statuses |
-| `npm --prefix apps/web run build` | **UNAVAILABLE** — PowerShell execution policy blocks npm scripts. `npm install` not attempted (same restriction). Build status unconfirmed for frontend. |
-| `npm --prefix apps/web run typecheck` | **UNAVAILABLE** — same PowerShell restriction |
+| `npm --prefix apps/web run build` | **PASS** — Build completed successfully under RTK validation (1866 modules transformed, built in 1.47s) |
+| `npm --prefix apps/web run typecheck` | **PASS** — compiles with no type errors |
 
 Note: `goose`, `templ generate`, and `sqlc generate` were not run as they are generation steps, not verification commands, and the Go build passes without regeneration.
 

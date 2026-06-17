@@ -28,6 +28,8 @@ export {
   requestAuditRevision,
   prepareCommitMessage,
   closeRun,
+  submitPlannerHandoff,
+  RelayApiError,
 } from './api'
 export type {
   SubmitManualAuditPayload,
