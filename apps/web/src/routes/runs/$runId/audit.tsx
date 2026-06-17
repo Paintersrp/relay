@@ -12,6 +12,7 @@ import {
   requestAuditRevision,
   prepareCommitMessage,
   closeRun,
+  evaluateValidationGate,
 } from '@/features/relay-runs'
 import type {
   RelayAuditDecisionValue,
@@ -294,22 +295,20 @@ function AuditMainContent({
   )
 
   const runStatus = run.status || ''
-  const hasStructuredValidationEvidence = artifacts.some(
-    (a: any) => a.storageKind === 'validation_run_json' || a.storageKind === 'validation_progress_json'
-  )
+  const {
+    hasFinalValidationEvidence,
+    auditBlockedByValidation,
+  } = evaluateValidationGate(artifacts, runStatus)
+
   const localValidationIsRunning = runStatus === 'local_validation_running'
   const localValidationPassed = runStatus === 'validation_passed'
   const localValidationFailed = runStatus === 'validation_failed'
   const localValidationAccepted = runStatus === 'validation_failed_accepted'
 
-  const auditBlockedByMissingValidation = !hasStructuredValidationEvidence && runStatus !== 'validation_failed_accepted'
-
   const validationRunJsonArt = artifacts.find(a => a.storageKind === 'validation_run_json')
   const validationProgressJsonArt = artifacts.find(a => a.storageKind === 'validation_progress_json')
   const validationStdoutArt = artifacts.find(a => a.storageKind === 'validation_stdout')
   const validationStderrArt = artifacts.find(a => a.storageKind === 'validation_stderr')
-
-  const validationResultArt = validationRunJsonArt || validationProgressJsonArt
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['relay-runs'] })
@@ -370,7 +369,7 @@ function AuditMainContent({
     || closeMutation.isPending
 
   const handleGenerateAudit = () => {
-    if (auditBlockedByMissingValidation || localValidationIsRunning) return
+    if (auditBlockedByValidation) return
     setMutationError(null)
     generateMutation.mutate()
   }
@@ -393,7 +392,7 @@ function AuditMainContent({
       {/* Local Validation Required Panel */}
       <Section title="Local Validation Required" icon={<ShieldCheck className="w-4 h-4 text-purple-400" />}>
         <div className="flex flex-col gap-2">
-          {auditBlockedByMissingValidation && !localValidationIsRunning && !localValidationFailed && (
+          {!hasFinalValidationEvidence && !localValidationIsRunning && !localValidationFailed && (
             <p className="text-xs text-muted-foreground">
               Run local validation before generating the audit packet.
             </p>
@@ -420,13 +419,19 @@ function AuditMainContent({
           )}
 
           {/* Validation Artifact Links */}
-          {(validationResultArt || validationStdoutArt || validationStderrArt) && (
+          {(validationRunJsonArt || validationProgressJsonArt || validationStdoutArt || validationStderrArt) && (
             <div className="flex flex-col gap-1.5 mt-2 border-t border-border/40 pt-2">
               <span className="text-[11px] font-medium text-muted-foreground/70">Validation Evidence:</span>
-              {validationResultArt && (
+              {validationRunJsonArt && (
                 <div className="flex items-center gap-2 text-xs font-mono">
                   <span className="text-muted-foreground">Validation Result:</span>
-                  <ArtifactPreviewCard artifact={validationResultArt} runId={runId} className="flex-1 max-w-xs" />
+                  <ArtifactPreviewCard artifact={validationRunJsonArt} runId={runId} className="flex-1 max-w-xs" />
+                </div>
+              )}
+              {validationProgressJsonArt && (
+                <div className="flex items-center gap-2 text-xs font-mono">
+                  <span className="text-muted-foreground">Validation Progress:</span>
+                  <ArtifactPreviewCard artifact={validationProgressJsonArt} runId={runId} className="flex-1 max-w-xs" />
                 </div>
               )}
               {validationStdoutArt && (
@@ -445,7 +450,7 @@ function AuditMainContent({
           )}
 
           {/* Action Button */}
-          {(auditBlockedByMissingValidation || localValidationFailed) && !localValidationIsRunning && (
+          {(!hasFinalValidationEvidence || localValidationFailed) && !localValidationIsRunning && (
             <Button
               variant="outline"
               size="sm"
@@ -520,7 +525,7 @@ function AuditMainContent({
                 variant="outline"
                 size="sm"
                 onClick={handleGenerateAudit}
-                disabled={activeMutation || auditBlockedByMissingValidation || localValidationIsRunning}
+                disabled={activeMutation || auditBlockedByValidation}
                 className="w-fit gap-1.5 mt-1"
               >
                 {generateMutation.isPending ? (
@@ -542,7 +547,7 @@ function AuditMainContent({
                 variant="default"
                 size="sm"
                 onClick={handleGenerateAudit}
-                disabled={activeMutation || auditBlockedByMissingValidation || localValidationIsRunning}
+                disabled={activeMutation || auditBlockedByValidation}
                 className="w-fit gap-1.5"
               >
                 {generateMutation.isPending ? (
