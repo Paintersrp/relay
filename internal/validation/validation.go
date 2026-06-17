@@ -24,8 +24,9 @@ const (
 	CodeInvalidEnum           = "CANONICAL_PACKET_INVALID_ENUM"
 	CodeExtraProperty         = "CANONICAL_PACKET_EXTRA_PROPERTY"
 	CodeInvalidType           = "CANONICAL_PACKET_INVALID_TYPE"
-	CodeStringPatternMismatch = "CANONICAL_PACKET_STRING_PATTERN_MISMATCH"
-	CodeFileTargetMismatch    = "CANONICAL_PACKET_FILE_TARGET_MISMATCH"
+	CodeStringPatternMismatch      = "CANONICAL_PACKET_STRING_PATTERN_MISMATCH"
+	CodeFileTargetMismatch         = "CANONICAL_PACKET_FILE_TARGET_MISMATCH"
+	CodeBlockingUnresolvedQuestion = "CANONICAL_PACKET_BLOCKING_UNRESOLVED_QUESTION"
 )
 
 type ValidationReport struct {
@@ -95,6 +96,16 @@ func ValidatePacketJSON(packetJSON []byte, schemaPath string) (*ValidationReport
 		report.Valid = false
 		report.RepairEligible = false // Secrets are never repair eligible
 		for _, issue := range secretIssues {
+			report.Errors = append(report.Errors, issue)
+		}
+	}
+
+	// Scan for blocking unresolved questions
+	blockingIssues := checkBlockingUnresolvedQuestions(packetMap)
+	if len(blockingIssues) > 0 {
+		report.Valid = false
+		report.RepairEligible = false // explicit blocking: true is an intent failure, not repairable
+		for _, issue := range blockingIssues {
 			report.Errors = append(report.Errors, issue)
 		}
 	}
@@ -414,6 +425,27 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 		}
 	}
 
+	return issues
+}
+
+func checkBlockingUnresolvedQuestions(packet map[string]interface{}) []ValidationError {
+	var issues []ValidationError
+	if plannerCtx, ok := packet["planner_context"].(map[string]interface{}); ok {
+		if questions, ok := plannerCtx["unresolved_questions"].([]interface{}); ok {
+			for _, q := range questions {
+				if qObj, ok := q.(map[string]interface{}); ok {
+					if blocking, ok := qObj["blocking"].(bool); ok && blocking {
+						issues = append(issues, ValidationError{
+							Type:           "input",
+							Code:           CodeBlockingUnresolvedQuestion,
+							Message:        "packet contains a blocking unresolved question, which stops execution",
+							RepairEligible: false,
+						})
+					}
+				}
+			}
+		}
+	}
 	return issues
 }
 

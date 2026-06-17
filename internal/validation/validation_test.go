@@ -321,4 +321,100 @@ func TestValidation(t *testing.T) {
 			t.Errorf("expected decision words error, got %v", report.Errors)
 		}
 	})
+
+	t.Run("Blocking Unresolved Question Fails", func(t *testing.T) {
+		invalidPacket := make(map[string]interface{})
+		for k, v := range validPacket {
+			invalidPacket[k] = v
+		}
+		plannerCtx := make(map[string]interface{})
+		if originalCtx, ok := validPacket["planner_context"].(map[string]interface{}); ok {
+			for k, v := range originalCtx {
+				plannerCtx[k] = v
+			}
+		}
+		plannerCtx["unresolved_questions"] = []interface{}{
+			map[string]interface{}{
+				"id": "Q1",
+				"question": "Is this a test?",
+				"blocking": true,
+			},
+		}
+		invalidPacket["planner_context"] = plannerCtx
+
+		packetJSON, _ := json.Marshal(invalidPacket)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if report.Valid {
+			t.Error("expected invalid report due to blocking unresolved question")
+		}
+		if report.RepairEligible {
+			t.Error("blocking unresolved question should make report non-repair-eligible")
+		}
+		found := false
+		for _, e := range report.Errors {
+			if e.Type == "input" && e.Code == CodeBlockingUnresolvedQuestion {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected blocking unresolved question error, got %v", report.Errors)
+		}
+	})
+
+	t.Run("Non-Blocking Unresolved Question Passes", func(t *testing.T) {
+		testPacket := make(map[string]interface{})
+		for k, v := range validPacket {
+			testPacket[k] = v
+		}
+		plannerCtx := make(map[string]interface{})
+		if originalCtx, ok := validPacket["planner_context"].(map[string]interface{}); ok {
+			for k, v := range originalCtx {
+				plannerCtx[k] = v
+			}
+		}
+		plannerCtx["unresolved_questions"] = []interface{}{
+			map[string]interface{}{
+				"id": "Q2",
+				"question": "Just a thought?",
+				"blocking": false,
+			},
+		}
+		testPacket["planner_context"] = plannerCtx
+
+		packetJSON, _ := json.Marshal(testPacket)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !report.Valid {
+			t.Errorf("expected valid report for non-blocking unresolved question, got errors: %v", report.Errors)
+		}
+	})
+
+	t.Run("Empty Unresolved Questions Passes", func(t *testing.T) {
+		testPacket := make(map[string]interface{})
+		for k, v := range validPacket {
+			testPacket[k] = v
+		}
+		plannerCtx := make(map[string]interface{})
+		if originalCtx, ok := validPacket["planner_context"].(map[string]interface{}); ok {
+			for k, v := range originalCtx {
+				plannerCtx[k] = v
+			}
+		}
+		plannerCtx["unresolved_questions"] = []interface{}{}
+		testPacket["planner_context"] = plannerCtx
+
+		packetJSON, _ := json.Marshal(testPacket)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !report.Valid {
+			t.Errorf("expected valid report for empty unresolved questions, got errors: %v", report.Errors)
+		}
+	})
 }
