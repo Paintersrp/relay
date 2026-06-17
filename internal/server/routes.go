@@ -12,6 +12,7 @@ import (
 	"relay/internal/devreload"
 	"relay/internal/events"
 	"relay/internal/handlers"
+	"relay/internal/mcp"
 	"relay/internal/repos"
 	"relay/internal/store"
 
@@ -90,6 +91,15 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
+
+	// Expose ChatGPT-facing remote MCP endpoint
+	mcpDeps := &mcp.MCPDeps{
+		Store: s,
+		Log:   log,
+	}
+	mcpSrv := mcp.NewServer(log, mcpDeps)
+	mcpHandler := mcp.NewHTTPHandler(mcpSrv, log)
+	r.Handle("/mcp", mcpHandler)
 
 	eventHub := events.NewHub(log)
 

@@ -3,6 +3,7 @@ package compiler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"relay/internal/store"
 	"relay/internal/validation"
 	"testing"
+	"time"
 )
 
 func TestCompiler(t *testing.T) {
@@ -118,8 +120,9 @@ func TestCompiler(t *testing.T) {
 			t.Fatalf("expected no compilation issues, got: %v", res.Issues)
 		}
 
-		if res.PacketID != "packet-2026-06-16-fix-overflow-stale-ui" {
-			t.Errorf("expected packet ID 'packet-2026-06-16-fix-overflow-stale-ui', got %q", res.PacketID)
+		expectedPacketID := fmt.Sprintf("packet-%s-fix-overflow-stale-ui", time.Now().Format("2006-01-02"))
+		if res.PacketID != expectedPacketID {
+			t.Errorf("expected packet ID %q, got %q", expectedPacketID, res.PacketID)
 		}
 
 		// Check database status

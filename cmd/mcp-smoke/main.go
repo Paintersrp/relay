@@ -14,9 +14,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,12 +60,14 @@ type toolCallResult struct {
 // --- harness state ---
 
 type harness struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout *bufio.Scanner
-	nextID int
-	pass   int
-	fail   int
+	cmd       *exec.Cmd
+	stdin     io.WriteCloser
+	stdout    *bufio.Scanner
+	nextID    int
+	pass      int
+	fail      int
+	httpURL   string
+	httpToken string
 }
 
 func main() {
@@ -74,64 +78,79 @@ func main() {
 }
 
 func run() error {
-	// Create isolated temp directories for this smoke run.
-	tmpDir, err := os.MkdirTemp("", "relay-mcp-smoke-*")
-	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	httpURL := os.Getenv("RELAY_MCP_URL")
+	httpToken := os.Getenv("RELAY_MCP_AUTH_TOKEN")
 
-	dbPath := filepath.Join(tmpDir, "relay.sqlite")
-	artifactsDir := filepath.Join(tmpDir, "artifacts")
-	if err := os.MkdirAll(artifactsDir, 0755); err != nil {
-		return fmt.Errorf("create artifacts dir: %w", err)
-	}
+	var h *harness
 
-	// Locate the mcpserver binary.
-	binaryName := "relay-mcpserver"
-	if runtime.GOOS == "windows" {
-		binaryName = "relay-mcpserver.exe"
-	}
-	binaryPath := filepath.Join("bin", binaryName)
-	if _, err := os.Stat(binaryPath); err != nil {
-		return fmt.Errorf("MCP binary not found at %q — run 'make mcp-build' first: %w", binaryPath, err)
-	}
+	if httpURL != "" {
+		fmt.Printf("Running smoke test in HTTP mode targeting %s\n", httpURL)
+		h = &harness{
+			nextID:    1,
+			httpURL:   httpURL,
+			httpToken: httpToken,
+		}
+	} else {
+		fmt.Println("Running smoke test in stdio mode")
+		// Create isolated temp directories for this smoke run.
+		tmpDir, err := os.MkdirTemp("", "relay-mcp-smoke-*")
+		if err != nil {
+			return fmt.Errorf("create temp dir: %w", err)
+		}
+		defer os.RemoveAll(tmpDir)
 
-	// Launch the subprocess.
-	cmd := exec.Command(binaryPath)
-	cmd.Env = append(os.Environ(),
-		"RELAY_DB_PATH="+dbPath,
-		"RELAY_ARTIFACTS_DIR="+artifactsDir,
-	)
-	cmd.Stderr = os.Stderr
+		dbPath := filepath.Join(tmpDir, "relay.sqlite")
+		artifactsDir := filepath.Join(tmpDir, "artifacts")
+		if err := os.MkdirAll(artifactsDir, 0755); err != nil {
+			return fmt.Errorf("create artifacts dir: %w", err)
+		}
 
-	stdinPipe, err := cmd.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("stdin pipe: %w", err)
-	}
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("stdout pipe: %w", err)
-	}
+		// Locate the mcpserver binary.
+		binaryName := "relay-mcpserver"
+		if runtime.GOOS == "windows" {
+			binaryName = "relay-mcpserver.exe"
+		}
+		binaryPath := filepath.Join("bin", binaryName)
+		if _, err := os.Stat(binaryPath); err != nil {
+			return fmt.Errorf("MCP binary not found at %q — run 'make mcp-build' first: %w", binaryPath, err)
+		}
 
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start mcpserver: %w", err)
-	}
-	defer func() {
-		_ = stdinPipe.Close()
-		_ = cmd.Wait()
-	}()
+		// Launch the subprocess.
+		cmd := exec.Command(binaryPath)
+		cmd.Env = append(os.Environ(),
+			"RELAY_DB_PATH="+dbPath,
+			"RELAY_ARTIFACTS_DIR="+artifactsDir,
+		)
+		cmd.Stderr = os.Stderr
 
-	h := &harness{
-		cmd:    cmd,
-		stdin:  stdinPipe,
-		stdout: bufio.NewScanner(stdoutPipe),
-		nextID: 1,
-	}
-	h.stdout.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
+		stdinPipe, err := cmd.StdinPipe()
+		if err != nil {
+			return fmt.Errorf("stdin pipe: %w", err)
+		}
+		stdoutPipe, err := cmd.StdoutPipe()
+		if err != nil {
+			return fmt.Errorf("stdout pipe: %w", err)
+		}
 
-	// Give the server a moment to initialize.
-	time.Sleep(200 * time.Millisecond)
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("start mcpserver: %w", err)
+		}
+		defer func() {
+			_ = stdinPipe.Close()
+			_ = cmd.Wait()
+		}()
+
+		h = &harness{
+			cmd:    cmd,
+			stdin:  stdinPipe,
+			stdout: bufio.NewScanner(stdoutPipe),
+			nextID: 1,
+		}
+		h.stdout.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
+
+		// Give the server a moment to initialize.
+		time.Sleep(200 * time.Millisecond)
+	}
 
 	// -------------------------------------------------------
 	// 1. Initialize handshake
@@ -471,6 +490,35 @@ func (h *harness) call(method string, params interface{}) (*rpcResponse, error) 
 		Params:  params,
 	}
 
+	if h.httpURL != "" {
+		data, err := json.Marshal(req)
+		if err != nil {
+			return nil, fmt.Errorf("marshal request: %w", err)
+		}
+		httpReq, err := http.NewRequest("POST", h.httpURL, bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("new request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
+		if h.httpToken != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+h.httpToken)
+		}
+		resp, err := http.DefaultClient.Do(httpReq)
+		if err != nil {
+			return nil, fmt.Errorf("do request: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("HTTP error status %d: %s", resp.StatusCode, string(body))
+		}
+		var rpcResp rpcResponse
+		if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+			return nil, fmt.Errorf("decode response: %w", err)
+		}
+		return &rpcResp, nil
+	}
+
 	data, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -516,6 +564,32 @@ func (h *harness) notify(method string, params interface{}) error {
 	if params != nil {
 		req["params"] = params
 	}
+
+	if h.httpURL != "" {
+		data, err := json.Marshal(req)
+		if err != nil {
+			return err
+		}
+		httpReq, err := http.NewRequest("POST", h.httpURL, bytes.NewReader(data))
+		if err != nil {
+			return err
+		}
+		httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
+		if h.httpToken != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+h.httpToken)
+		}
+		resp, err := http.DefaultClient.Do(httpReq)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("HTTP notification error status %d: %s", resp.StatusCode, string(body))
+		}
+		return nil
+	}
+
 	data, err := json.Marshal(req)
 	if err != nil {
 		return err
