@@ -290,6 +290,129 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []string {
 		}
 	}
 
+	// 1. Scan for vague phrases in execution_payload
+	bannedPhrases := []string{
+		"decide best approach",
+		"determine whether",
+		"improve",
+		"make it work",
+		"wire as needed",
+		"inspect and decide",
+		"choose appropriate behavior",
+		"if appropriate",
+		"maybe",
+		"optional enhancement",
+	}
+
+	var scanText func(val interface{})
+	scanText = func(val interface{}) {
+		switch v := val.(type) {
+		case string:
+			lower := strings.ToLower(v)
+			for _, phrase := range bannedPhrases {
+				if strings.Contains(lower, phrase) {
+					issues = append(issues, fmt.Sprintf("vague or decision-delegating phrase %q detected in execution_payload", phrase))
+				}
+			}
+		case map[string]interface{}:
+			for _, val := range v {
+				scanText(val)
+			}
+		case []interface{}:
+			for _, item := range v {
+				scanText(item)
+			}
+		}
+	}
+	scanText(exec)
+
+	// 2. User-facing workflow validation: check for frontend file targets
+	var targetExecutor string
+	if meta, ok := packet["packet_meta"].(map[string]interface{}); ok {
+		if te, ok := meta["target_executor"].(string); ok {
+			targetExecutor = te
+		}
+	}
+
+	if targetExecutor == "deepseek-v4-flash" {
+		payloadBytes, _ := json.Marshal(exec)
+		payloadStr := strings.ToLower(string(payloadBytes))
+
+		userFacingRegex := regexp.MustCompile(`(?i)\b(ui|frontend|view|page|user-facing|workflow|render|display)\b`)
+		hasUserFacingTerm := userFacingRegex.Match(payloadBytes)
+
+		if hasUserFacingTerm {
+			hasBackendOnlyDecision := false
+			if plannerCtx, ok := packet["planner_context"].(map[string]interface{}); ok {
+				plannerCtxBytes, _ := json.Marshal(plannerCtx)
+				if strings.Contains(strings.ToLower(string(plannerCtxBytes)), "backend-only") {
+					hasBackendOnlyDecision = true
+				}
+			}
+			if strings.Contains(payloadStr, "backend-only") {
+				hasBackendOnlyDecision = true
+			}
+
+			if !hasBackendOnlyDecision {
+				hasFrontendFile := false
+				if targets, ok := exec["file_targets"].([]interface{}); ok {
+					for _, t := range targets {
+						var path string
+						if pathStr, ok := t.(string); ok {
+							path = pathStr
+						} else if targetObj, ok := t.(map[string]interface{}); ok {
+							if pathStr, ok := targetObj["path"].(string); ok {
+								path = pathStr
+							}
+						}
+						lowerPath := strings.ToLower(path)
+						if strings.HasSuffix(lowerPath, ".templ") ||
+							strings.HasSuffix(lowerPath, ".ts") ||
+							strings.HasSuffix(lowerPath, ".tsx") ||
+							strings.HasSuffix(lowerPath, ".js") ||
+							strings.HasSuffix(lowerPath, ".jsx") ||
+							strings.HasSuffix(lowerPath, ".html") ||
+							strings.HasSuffix(lowerPath, ".gohtml") ||
+							strings.HasSuffix(lowerPath, ".css") ||
+							strings.Contains(lowerPath, "web/") ||
+							strings.Contains(lowerPath, "templates/") {
+							hasFrontendFile = true
+							break
+						}
+					}
+				}
+
+				if !hasFrontendFile {
+					issues = append(issues, "user-facing workflow requested but no frontend file targets specified (and backend-only sufficiency was not explicitly decided)")
+				}
+			}
+		}
+	}
+
+	// 3. Inspect action step validation
+	if steps, ok := exec["implementation_steps"].([]interface{}); ok {
+		for _, s := range steps {
+			if stepObj, ok := s.(map[string]interface{}); ok {
+				action, _ := stepObj["action"].(string)
+				if action == "inspect" {
+					tPaths, ok := stepObj["target_paths"].([]interface{})
+					if !ok || len(tPaths) == 0 {
+						issues = append(issues, "inspect step action requires non-empty target_paths")
+					}
+					title, _ := stepObj["title"].(string)
+					insts, _ := stepObj["instructions"].(string)
+					textToCheck := strings.ToLower(title + " " + insts)
+					if strings.Contains(textToCheck, "decide") ||
+						strings.Contains(textToCheck, "determine") ||
+						strings.Contains(textToCheck, "choose") ||
+						strings.Contains(textToCheck, "whether") {
+						issues = append(issues, "inspect step instructions/title contain decision words delegating reasoning")
+					}
+				}
+			}
+		}
+	}
+
 	return issues
 }
 

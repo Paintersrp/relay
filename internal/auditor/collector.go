@@ -684,6 +684,35 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 		return
 	}
 
+	// Check for per-command output-stream and error-stream artifacts
+	hasStdoutArtifacts := false
+	hasStderrArtifacts := false
+	for _, a := range collected {
+		if a.kind == "validation_stdout" {
+			hasStdoutArtifacts = true
+		}
+		if a.kind == "validation_stderr" {
+			hasStderrArtifacts = true
+		}
+	}
+
+	for _, spec := range ev.Packet.ValidationCommands {
+		if spec.Required {
+			if !hasStdoutArtifacts {
+				ev.Warnings = append(ev.Warnings, EvidenceWarning{
+					Message:  fmt.Sprintf("Validation command %s (%s): output-stream artifact missing — required validation evidence gap", spec.ID, spec.Command),
+					Severity: SeverityError,
+				})
+			}
+			if !hasStderrArtifacts {
+				ev.Warnings = append(ev.Warnings, EvidenceWarning{
+					Message:  fmt.Sprintf("Validation command %s (%s): error-stream artifact missing — required validation evidence gap", spec.ID, spec.Command),
+					Severity: SeverityError,
+				})
+			}
+		}
+	}
+
 	// Determine the best available validation artifact path for commands that lack a specific match
 	var bestAvailablePath string
 	for _, a := range collected {

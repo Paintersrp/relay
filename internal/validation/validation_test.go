@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -177,6 +178,147 @@ func TestValidation(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("expected input error, got %v", report.Errors)
+		}
+	})
+
+	t.Run("Vague Phrasing Detected", func(t *testing.T) {
+		invalidPacket := make(map[string]interface{})
+		for k, v := range validPacket {
+			invalidPacket[k] = v
+		}
+		exec := make(map[string]interface{})
+		for k, v := range validPacket["execution_payload"].(map[string]interface{}) {
+			exec[k] = v
+		}
+		exec["goal"] = "Please improve the UI and decide best approach to wire as needed."
+		invalidPacket["execution_payload"] = exec
+
+		packetJSON, _ := json.Marshal(invalidPacket)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if report.Valid {
+			t.Error("expected invalid report due to vague phrasing")
+		}
+		found := false
+		for _, e := range report.Errors {
+			if e.Type == "input" && strings.Contains(e.Message, "vague or decision-delegating phrase") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected vague phrase input error, got %v", report.Errors)
+		}
+	})
+
+	t.Run("User Facing Workflow No Frontend File Fail", func(t *testing.T) {
+		invalidPacket := make(map[string]interface{})
+		for k, v := range validPacket {
+			invalidPacket[k] = v
+		}
+		exec := make(map[string]interface{})
+		for k, v := range validPacket["execution_payload"].(map[string]interface{}) {
+			exec[k] = v
+		}
+		exec["goal"] = "Fix user-facing UI route workflow behavior."
+		// Targets are backend only
+		exec["file_targets"] = []interface{}{
+			map[string]interface{}{
+				"path": "internal/validation/validation.go",
+				"role": "primary",
+				"action": "must_edit",
+				"reason": "test",
+			},
+		}
+		invalidPacket["execution_payload"] = exec
+
+		packetJSON, _ := json.Marshal(invalidPacket)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if report.Valid {
+			t.Error("expected invalid report since user-facing task has no frontend file targets")
+		}
+		found := false
+		for _, e := range report.Errors {
+			if e.Type == "input" && strings.Contains(e.Message, "no frontend file targets specified") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected frontend target error, got %v", report.Errors)
+		}
+	})
+
+	t.Run("User Facing Workflow No Frontend File Explicit Backend Only Pass", func(t *testing.T) {
+		invalidPacket := make(map[string]interface{})
+		for k, v := range validPacket {
+			invalidPacket[k] = v
+		}
+		exec := make(map[string]interface{})
+		for k, v := range validPacket["execution_payload"].(map[string]interface{}) {
+			exec[k] = v
+		}
+		exec["goal"] = "Fix user-facing UI route workflow behavior (backend-only suffices)."
+		exec["file_targets"] = []interface{}{
+			map[string]interface{}{
+				"path": "internal/validation/validation.go",
+				"role": "primary",
+				"action": "must_edit",
+				"reason": "test",
+			},
+		}
+		invalidPacket["execution_payload"] = exec
+
+		packetJSON, _ := json.Marshal(invalidPacket)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !report.Valid {
+			t.Errorf("expected passing report since backend-only is explicitly allowed, got errors: %v", report.Errors)
+		}
+	})
+
+	t.Run("Inspect Step Decision Words Fail", func(t *testing.T) {
+		invalidPacket := make(map[string]interface{})
+		for k, v := range validPacket {
+			invalidPacket[k] = v
+		}
+		exec := make(map[string]interface{})
+		for k, v := range validPacket["execution_payload"].(map[string]interface{}) {
+			exec[k] = v
+		}
+		exec["implementation_steps"] = []interface{}{
+			map[string]interface{}{
+				"id": "S1",
+				"title": "Decide what to do.",
+				"action": "inspect",
+				"target_paths": []interface{}{"internal/validation/validation.go"},
+				"instructions": "Determine whether we should change logic.",
+				"acceptance_criteria": []interface{}{"done"},
+			},
+		}
+		invalidPacket["execution_payload"] = exec
+
+		packetJSON, _ := json.Marshal(invalidPacket)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if report.Valid {
+			t.Error("expected invalid report due to decision words in inspect step")
+		}
+		found := false
+		for _, e := range report.Errors {
+			if e.Type == "input" && strings.Contains(e.Message, "contain decision words") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected decision words error, got %v", report.Errors)
 		}
 	})
 }

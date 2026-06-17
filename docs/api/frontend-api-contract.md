@@ -70,6 +70,7 @@ The following canonical statuses are emitted by `GET /api/runs` and `GET /api/ru
 - `executor_dispatched` — Executor dispatched and running
 - `executor_done` — Executor completed successfully
 - `executor_blocked` — Executor encountered a blocking error
+- `local_validation_running` — Local validation commands are executing
 - `audit_ready` — Audit packet generated, ready for review
 - `audit_ready_for_review` — Legacy: audit ready (htmx fallback)
 - `revision_required` — Revision requested, audit must be regenerated
@@ -77,7 +78,9 @@ The following canonical statuses are emitted by `GET /api/runs` and `GET /api/ru
 - `accepted_with_warnings` — Audit approved with warnings
 - `completed` — Run closed
 - `blocked` — Run blocked (intake or general)
-- Legacy agent states: `agent_done`, `agent_blocked`, `agent_result_needs_review`, `validation_passed`, `validation_failed_accepted`, `validation_failed`
+- `validation_passed` — All required validation commands passed (audit step entry point)
+- `validation_failed` — One or more required validation commands failed
+- Legacy agent states: `agent_done`, `agent_blocked`, `agent_result_needs_review`, `validation_failed_accepted`
 
 Display fields (`state`, `activeStep`, `lifecycleState`, `statusSeverity`) are derived from the canonical status and must not be used for action gating. Frontend action gating must use `status` only.
 
@@ -194,6 +197,9 @@ executor_done / executor_blocked
   - `packet_validated` — Compilation succeeded (activeStep: `prepare`, lifecycleState: `prepare`)
   - `approved_for_executor` — Brief approved, ready to dispatch executor (activeStep: `execute`, lifecycleState: `execute`)
   - `executor_done` — Executor completed (activeStep: `execute`, lifecycleState: `execute`)
+  - `local_validation_running` — Validation commands running (activeStep: `execute`, lifecycleState: `execute`)
+  - `validation_passed` — Validation passed (activeStep: `audit`, lifecycleState: `audit`)
+  - `validation_failed` — Validation failed (activeStep: `audit`, lifecycleState: `failed`)
 - **Response Body**: `RelayRun`
 - **Fallback Policy**: Allowed. Falls back to the corresponding static mock run if the endpoint is 404, unimplemented, or the daemon is offline.
 - **Expected Error Behavior**: Throws a descriptive error if the response contains invalid or malformed JSON.

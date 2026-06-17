@@ -54,8 +54,19 @@ func (svc *Service) requiredValidationCommandsExist(runID int64) (bool, error) {
 }
 
 func (svc *Service) hasValidationArtifacts(runID int64) bool {
-	arts, err := svc.store.ListArtifactsByRunKind(runID, validationrunner.ArtifactKindJSON)
-	return err == nil && len(arts) > 0
+	jsonArts, err := svc.store.ListArtifactsByRunKind(runID, validationrunner.ArtifactKindJSON)
+	if err != nil || len(jsonArts) == 0 {
+		return false
+	}
+	stdoutArts, err := svc.store.ListArtifactsByRunKind(runID, validationrunner.ArtifactKindStdout)
+	if err != nil || len(stdoutArts) == 0 {
+		return false
+	}
+	stderrArts, err := svc.store.ListArtifactsByRunKind(runID, validationrunner.ArtifactKindStderr)
+	if err != nil || len(stderrArts) == 0 {
+		return false
+	}
+	return true
 }
 
 // Generate collects evidence, generates an audit input summary and audit packet,

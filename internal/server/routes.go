@@ -63,7 +63,8 @@ func resolveRunStep(status string) string {
 		"executor_dispatched",
 		"executor_running", "executor_done", "executor_blocked",
 		"executor_error", "executor_cancelled",
-		"agent_done", "agent_blocked", "agent_result_needs_review":
+		"agent_done", "agent_blocked", "agent_result_needs_review",
+		"local_validation_running":
 		return "execute"
 
 	// Audit step statuses

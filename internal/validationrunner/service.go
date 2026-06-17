@@ -94,6 +94,9 @@ func (svc *Service) RunValidation(ctx context.Context, runID int64) (*Validation
 	svc.store.DeleteArtifactsByRunKind(runID, ArtifactKindStderr)
 	svc.store.DeleteArtifactsByRunKind(runID, ArtifactKindJSON)
 
+	svc.store.UpdateRunStatus(runID, "local_validation_running")
+	svc.store.CreateEvent(runID, "status_change", "Local validation started")
+
 	startedAt := nowUTC()
 	allCommadsStdout := strings.Builder{}
 	allCommadsStderr := strings.Builder{}
@@ -140,7 +143,7 @@ func (svc *Service) RunValidation(ctx context.Context, runID int64) (*Validation
 			cr.NotRunReason = out.notRunReason
 		}
 
-		if out.stdout != "" {
+		{
 			stdoutFilename := fmt.Sprintf("validation_stdout_%s.txt", spec.ID)
 			stdoutPath := filepath.Join(artifacts.Dir(runID), stdoutFilename)
 			if err := writeArtifactFile(stdoutPath, out.stdout); err == nil {
@@ -149,7 +152,7 @@ func (svc *Service) RunValidation(ctx context.Context, runID int64) (*Validation
 			}
 		}
 
-		if out.stderr != "" {
+		{
 			stderrFilename := fmt.Sprintf("validation_stderr_%s.txt", spec.ID)
 			stderrPath := filepath.Join(artifacts.Dir(runID), stderrFilename)
 			if err := writeArtifactFile(stderrPath, out.stderr); err == nil {

@@ -65,5 +65,3 @@ apps/web/.output/
 apps/web/dist/
 apps/web/.env
 apps/web/.env.local
-
-.aider*

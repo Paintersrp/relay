@@ -2,6 +2,8 @@ package validationrunner
 
 import "time"
 
+const DefaultCommandTimeout = 5 * time.Minute
+
 type RunStatus string
 
 const (

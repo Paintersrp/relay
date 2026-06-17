@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunAndCapture(t *testing.T) {
@@ -55,6 +56,25 @@ func TestRedactSensitiveFromOutput(t *testing.T) {
 	}
 }
 
+func TestRedactSensitiveFromOutput_APIKeys(t *testing.T) {
+	// Verify common API key prefixes are redacted
+	result := redactSensitiveFromOutput("api key: sk-proj-abcdef123456")
+	if strings.Contains(result, "sk-") {
+		t.Error("expected sk- token to be redacted")
+	}
+	if !strings.Contains(result, "[REDACTED]") {
+		t.Error("expected [REDACTED] in output")
+	}
+}
+
+func TestRedactSensitiveFromOutput_EnvKeys(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "sk-test-key-12345")
+	result := redactSensitiveFromOutput("using key sk-test-key-12345")
+	if strings.Contains(result, "sk-test-key-12345") {
+		t.Error("expected OPENAI_API_KEY value to be redacted")
+	}
+}
+
 func TestWriteArtifactFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
@@ -66,8 +86,8 @@ func TestWriteArtifactFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if string(data) != "hello" {
-		t.Errorf("expected 'hello', got %q", string(data))
+	if !strings.Contains(string(data), "hello") {
+		t.Errorf("expected content containing 'hello', got %q", string(data))
 	}
 }
 
@@ -78,8 +98,26 @@ func TestWriteArtifactFile_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write should not error for empty content: %v", err)
 	}
-	if _, err := os.Stat(path); err == nil {
-		t.Error("empty file should not be created")
+	if _, err := os.Stat(path); err != nil {
+		t.Error("empty file should be created with empty-output marker")
+	} else {
+		data, _ := os.ReadFile(path)
+		if !strings.Contains(string(data), "[empty output]") {
+			t.Errorf("expected [empty output] marker, got %q", string(data))
+		}
+	}
+}
+
+func TestWriteArtifactFile_NonEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "content.txt")
+	err := writeArtifactFile(path, "actual output")
+	if err != nil {
+		t.Fatalf("write error: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "actual output") {
+		t.Errorf("expected actual output in file, got %q", string(data))
 	}
 }
 
@@ -107,6 +145,12 @@ func TestBuildCommandOutput(t *testing.T) {
 	}
 	if !strings.Contains(text, "1500ms") {
 		t.Error("expected duration")
+	}
+}
+
+func TestCommandTimeout_UsesDefault(t *testing.T) {
+	if DefaultCommandTimeout != 5*time.Minute {
+		t.Errorf("expected DefaultCommandTimeout to be 5m, got %v", DefaultCommandTimeout)
 	}
 }
 

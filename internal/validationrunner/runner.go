@@ -34,6 +34,15 @@ var envSecretPatterns = []string{
 	"RELAY_OPENCODE_BIN",
 	"RELAY_OPENCODE_AGENT",
 	"RELAY_OPENCODE_VARIANT",
+	"RELAY_OPENCODE_API_KEY",
+	"RELAY_OPENCODE_SECRET",
+	"OPENAI_API_KEY",
+	"ANTHROPIC_API_KEY",
+}
+
+// commonRedactTokens are literal strings that should always be redacted from output.
+var commonRedactTokens = []string{
+	"sk-",
 }
 
 func redactSensitiveFromOutput(data string) string {
@@ -44,6 +53,9 @@ func redactSensitiveFromOutput(data string) string {
 			continue
 		}
 		result = strings.ReplaceAll(result, val, "[REDACTED]")
+	}
+	for _, token := range commonRedactTokens {
+		result = strings.ReplaceAll(result, token, "[REDACTED]")
 	}
 	return result
 }
@@ -63,11 +75,14 @@ func runCommand(ctx context.Context, cmd sealedCommand, workdir string) commandO
 		return out
 	}
 
+	cmdCtx, cancel := context.WithTimeout(ctx, DefaultCommandTimeout)
+	defer cancel()
+
 	startTime := time.Now()
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	c := exec.CommandContext(ctx, "cmd", "/C", cmd.Command)
+	c := exec.CommandContext(cmdCtx, "cmd", "/C", cmd.Command)
 	c.Dir = workdir
 	c.Stdout = &stdoutBuf
 	c.Stderr = &stderrBuf
@@ -79,7 +94,10 @@ func runCommand(ctx context.Context, cmd sealedCommand, workdir string) commandO
 	out.finishedAt = nowUTC()
 
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		if cmdCtx.Err() == context.DeadlineExceeded {
+			out.exitCode = -1
+			out.notRunReason = "timeout"
+		} else if exitErr, ok := err.(*exec.ExitError); ok {
 			out.exitCode = exitErr.ExitCode()
 		} else {
 			out.exitCode = -1
@@ -101,9 +119,9 @@ func runAndCapture(ctx context.Context, cmd sealedCommand, workdir string) comma
 
 func writeArtifactFile(path, content string) error {
 	if content == "" {
-		return nil
+		content = "[empty output]"
 	}
-	return os.WriteFile(path, []byte(content), 0644)
+	return os.WriteFile(path, []byte(content+"\n"), 0644)
 }
 
 func buildCommandOutput(out commandOutput) string {

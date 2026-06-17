@@ -480,6 +480,11 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 		lifecycleState = "execute"
 		state = "Executor Dispatched"
 		statusSeverity = "info"
+	case "local_validation_running":
+		activeStep = "execute"
+		lifecycleState = "execute"
+		state = "Local Validation Running"
+		statusSeverity = "info"
 	case executor.StatusExecutorDone:
 		activeStep = "execute"
 		lifecycleState = "execute"
@@ -1541,15 +1546,22 @@ func (h *APIHandler) ValidateRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Determine the post-validation run status from the DB
+	updatedRun, _ := h.store.GetRun(id)
+	postStatus := "validation_passed"
+	if updatedRun != nil {
+		postStatus = updatedRun.Status
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":   true,
-		"runId":     idStr,
-		"status":    string(vr.Status),
-		"commands":  vr.Commands,
-		"stdout":    vr.StdoutPath,
-		"stderr":    vr.StderrPath,
-		"progress":  vr.ProgressPath,
-		"runStatus": run.Status,
+		"success":      true,
+		"runId":        idStr,
+		"status":       string(vr.Status),
+		"runStatus":    postStatus,
+		"commands":     vr.Commands,
+		"stdout":       vr.StdoutPath,
+		"stderr":       vr.StderrPath,
+		"progress":     vr.ProgressPath,
 	})
 }
 
@@ -1562,7 +1574,7 @@ func (h *APIHandler) GenerateAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If run is executor_done and validation artifacts are missing, run validation first
+	// If run is executor_done or executor_blocked and validation artifacts are missing, run validation first
 	run, err := h.store.GetRun(id)
 	if err == nil && (run.Status == executor.StatusExecutorDone || run.Status == executor.StatusExecutorBlocked) {
 		valSvc := validationrunner.NewService(h.store)
@@ -1571,6 +1583,17 @@ func (h *APIHandler) GenerateAudit(w http.ResponseWriter, r *http.Request) {
 			_, valErr := valSvc.RunValidation(r.Context(), id)
 			if valErr != nil {
 				_, _ = h.store.CreateEvent(id, "warn", "Auto-validation before audit failed: "+valErr.Error())
+			}
+			// Re-check: if validation still lacks complete artifacts, block audit
+			if !valSvc.HasValidationArtifacts(id) {
+				writeError(w, http.StatusConflict, "CONFLICT", "Auto-validation before audit failed: required validation artifacts are missing — run validation explicitly via POST /api/runs/"+idStr+"/validate")
+				return
+			}
+			// Check post-validation run status
+			updatedRun, _ := h.store.GetRun(id)
+			if updatedRun != nil && updatedRun.Status == "validation_failed" {
+				writeError(w, http.StatusConflict, "CONFLICT", "Auto-validation before audit failed: required validation commands failed — run validation explicitly via POST /api/runs/"+idStr+"/validate")
+				return
 			}
 		}
 	}
