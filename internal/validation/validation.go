@@ -181,6 +181,12 @@ func checkPaths(packet map[string]interface{}) []string {
 					if err := validatePathSafety(pathStr); err != nil {
 						issues = append(issues, fmt.Sprintf("unsafe file target: %s (%v)", pathStr, err))
 					}
+				} else if targetObj, ok := t.(map[string]interface{}); ok {
+					if pathStr, ok := targetObj["path"].(string); ok {
+						if err := validatePathSafety(pathStr); err != nil {
+							issues = append(issues, fmt.Sprintf("unsafe file target: %s (%v)", pathStr, err))
+						}
+					}
 				}
 			}
 		}
