@@ -29,8 +29,7 @@ function RunLayout() {
         <div className="text-4xl">⚠️</div>
         <h1 className="text-lg font-semibold">Run not found</h1>
         <p className="text-sm text-muted-foreground max-w-sm">
-          No relay run with ID <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">{runId}</code> was found.
-          This ID does not match any known run in Pass 1 mock data.
+          No relay run with ID <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">{runId}</code> was found in the Relay backend database.
         </p>
         <Button variant="outline" size="sm" asChild>
           <Link to="/runs">

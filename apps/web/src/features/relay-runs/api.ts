@@ -1,13 +1,3 @@
-// ============================================================
-// Relay API Client Boundary
-// ============================================================
-
-import {
-  getMockRelayRuns,
-  getMockRelayRunById,
-  getMockRelayRunArtifacts,
-  getMockRelayRunEvents,
-} from "./mock-data";
 import type {
   RelayRun,
   RelayArtifact,
@@ -18,6 +8,7 @@ import type {
   PlannerHandoffIntakeResponse,
   RelayApiErrorShape,
   RelayAuditDecisionValue,
+  RelayValidationResult,
 } from "./types";
 
 // Custom API Error Class
@@ -50,10 +41,9 @@ export const API_BASE_URL =
   "http://localhost:8080";
 
 /**
- * Executes a GET request with explicit fallback to mock data on offline,
- * 404, or 501 cases. Throws if the daemon returns invalid JSON.
+ * Executes a GET request. Throws if the daemon returns invalid JSON or errors.
  */
-async function getJson<T>(path: string, mockFallback: () => T): Promise<T> {
+async function getJson<T>(path: string): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
   try {
     const res = await fetch(url, {
@@ -61,10 +51,6 @@ async function getJson<T>(path: string, mockFallback: () => T): Promise<T> {
         Accept: "application/json",
       },
     });
-
-    if (res.status === 404 || res.status === 501) {
-      return mockFallback();
-    }
 
     if (!res.ok) {
       throw new RelayApiError(
@@ -90,9 +76,72 @@ async function getJson<T>(path: string, mockFallback: () => T): Promise<T> {
     if (err instanceof RelayApiError) {
       throw err;
     }
-    // Connection refused / network offline. Fallback to mock data.
-    return mockFallback();
+    // Connection refused / network offline.
+    throw new RelayApiError(
+      `Network error fetching from GET ${path}: ${err.message}`,
+      503,
+      path,
+      "GET"
+    );
   }
+}
+
+/**
+ * Helper to normalize backend runs with defaults for frontend UI-only optional fields.
+ */
+export function normalizeRun(run: any): RelayRun {
+  if (!run) return run;
+
+  const defaultStepLabels = {
+    intake: "Intake / Configure",
+    prepare: "Compile / Render",
+    execute: "Execute",
+    audit: "Audit / Close",
+  };
+
+  const defaultValidation: RelayValidationResult = {
+    errors: 0,
+    warnings: 0,
+    passed: 0,
+    issues: [],
+  };
+
+  return {
+    ...run,
+    id: String(run.id),
+    name: run.name || `Run ${run.id}`,
+    repo: run.repo || "",
+    branch: run.branch || "",
+    status: run.status || "draft",
+    activeStep: run.activeStep || "intake",
+    lifecycleState: run.lifecycleState || "intake",
+    createdAt: run.createdAt || new Date().toISOString(),
+    updatedAt: run.updatedAt || new Date().toISOString(),
+    summary: run.summary || "",
+    model: run.model || "gpt-4o",
+    riskLevel: run.riskLevel || "low",
+    validation: run.validation || defaultValidation,
+    artifacts: run.artifacts || [],
+    latestEvents: run.latestEvents || [],
+    statusSeverity: run.statusSeverity || "neutral",
+    state: run.state || "Draft",
+    title: run.title || run.name || `Run ${run.id}`,
+    packetId: run.packetId || "",
+    executor: run.executor || "openai",
+    validationSummary: run.validationSummary || run.validation || defaultValidation,
+    approvalGate: run.approvalGate || {
+      label: "Intake Approval",
+      state: "pending",
+    },
+    logPreview: run.logPreview || {
+      lines: [],
+      truncated: false,
+    },
+    stepLabels: {
+      ...defaultStepLabels,
+      ...run.stepLabels,
+    },
+  };
 }
 
 /**
@@ -155,22 +204,29 @@ async function postJson<TReq, TRes>(path: string, body?: TReq): Promise<TRes> {
 
 // GET endpoints
 export async function getRuns(): Promise<RelayRun[]> {
-  return getJson<RelayRun[]>("/api/runs", getMockRelayRuns);
+  const runs = await getJson<any[]>("/api/runs");
+  return (runs || []).map(normalizeRun);
 }
 
 // Legacy compatibility alias
 export const listRuns = getRuns;
 
 export async function getRun(id: string): Promise<RelayRun | null> {
-  return getJson<RelayRun | null>(`/api/runs/${id}`, () => getMockRelayRunById(id) ?? null);
+  const run = await getJson<any>(`/api/runs/${id}`);
+  return normalizeRun(run);
 }
 
 export async function getRunArtifacts(id: string): Promise<RelayArtifact[]> {
-  return getJson<RelayArtifact[]>(`/api/runs/${id}/artifacts`, () => getMockRelayRunArtifacts(id));
+  const artifacts = await getJson<any[]>(`/api/runs/${id}/artifacts`);
+  return (artifacts || []).map((art) => ({
+    ...art,
+    status: art.status || "ready",
+    filename: art.filename || art.path?.split("/").pop() || "",
+  }));
 }
 
 export async function getRunEvents(id: string): Promise<RelayRunEvent[]> {
-  return getJson<RelayRunEvent[]>(`/api/runs/${id}/events`, () => getMockRelayRunEvents(id));
+  return getJson<RelayRunEvent[]>(`/api/runs/${id}/events`);
 }
 
 // POST endpoints (mutations)

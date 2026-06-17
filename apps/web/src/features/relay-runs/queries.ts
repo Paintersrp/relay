@@ -1,7 +1,5 @@
 // ============================================================
-// Relay React Query helpers — Pass 1 mock-only.
-// All queries return mock data. No real API calls are made.
-// Pass 3 will replace these with real backend JSON endpoints.
+// Relay React Query helpers for the real Go daemon API.
 // ============================================================
 
 import { queryOptions } from '@tanstack/react-query'

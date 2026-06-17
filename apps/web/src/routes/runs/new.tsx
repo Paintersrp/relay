@@ -66,7 +66,7 @@ function NewRunPage() {
       } else {
         void router.navigate({
           to: '/runs/$runId/intake',
-          params: { runId: response.runID || response.run_id || '' }
+          params: { runId: response.runId || response.run_id || '' }
         })
       }
     } catch (err: any) {
