@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateValidationGate, evaluateExecuteValidationAction } from './validationGate';
+import { evaluateValidationGate, evaluateExecuteValidationAction, isAuditCandidateStatus } from './validationGate';
 
 describe('Validation Gate Predicate Matrix', () => {
   it('validation_progress_json without validation_run_json keeps Generate Audit disabled', () => {
@@ -71,6 +71,23 @@ describe('Validation Gate Predicate Matrix', () => {
     const result = evaluateValidationGate(artifacts, status);
 
     expect(result.auditBlockedByValidation).toBe(true);
+  });
+
+  describe('Audit candidate status predicate', () => {
+    const candidateStatuses = ['executor_done', 'executor_blocked', 'validation_passed', 'validation_failed', 'validation_failed_accepted', 'local_validation_running'];
+    const nonCandidateStatuses = ['pending', 'preparing', 'briefing', 'approved', 'executor_running', 'accepted', 'accepted_with_warnings', 'audit_ready', 'audit_ready_for_review', 'revision_required', 'blocked', 'completed'];
+
+    for (const status of candidateStatuses) {
+      it(`returns true for ${status}`, () => {
+        expect(isAuditCandidateStatus(status)).toBe(true);
+      });
+    }
+
+    for (const status of nonCandidateStatuses) {
+      it(`returns false for ${status}`, () => {
+        expect(isAuditCandidateStatus(status)).toBe(false);
+      });
+    }
   });
 
   describe('Execute Route Local Validation Rerun & Visibility Matrix', () => {

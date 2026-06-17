@@ -13,6 +13,7 @@ import {
   prepareCommitMessage,
   closeRun,
   evaluateValidationGate,
+  isAuditCandidateStatus,
   acceptFailedValidation,
 } from '@/features/relay-runs'
 import type {
@@ -169,7 +170,7 @@ function deriveAuditData(
   )
 
   const runStatus = run.status || ''
-  const isExecutorTerminal = runStatus === 'executor_done' || runStatus === 'executor_blocked'
+  const isAuditCandidate = isAuditCandidateStatus(runStatus)
   const isAccepted = runStatus === 'accepted' || runStatus === 'accepted_with_warnings'
   const isAuditReady = runStatus === 'audit_ready' || runStatus === 'audit_ready_for_review'
   const isCompleted = runStatus === 'completed'
@@ -241,13 +242,13 @@ function deriveAuditData(
       auditDecisionSummary: decisionValue || 'Pending review',
     },
     actions: {
-      canGenerateAudit: isExecutorTerminal && !isCompleted,
+      canGenerateAudit: isAuditCandidate && !isCompleted,
       canSubmitManual: isAuditReady && !isAccepted && !isCompleted && !isRevisionRequired,
       canApproveAudit: (hasGenerateEvent || hasManualSubmitEvent) && isAuditReady && !auditDecision && !isCompleted && !isRevisionRequired,
       canRequestRevision: isAuditReady && !isCompleted && !isRevisionRequired,
       canPrepareCommitMessage: isAccepted && !isCompleted,
       canCloseRun: isAccepted && !isCompleted,
-      generateAuditUnavailableReason: !isExecutorTerminal ? `Current status: ${runStatus}. Audit generation requires executor_done or executor_blocked.` : undefined,
+      generateAuditUnavailableReason: !isAuditCandidate ? `Current status: ${runStatus}. Audit generation is not available for this lifecycle stage.` : undefined,
       submitManualUnavailableReason: !isAuditReady || isRevisionRequired ? `Current status: ${runStatus}` : undefined,
       approveAuditUnavailableReason: !isAuditReady || isRevisionRequired ? `Current status: ${runStatus}` : undefined,
       requestRevisionUnavailableReason: !isAuditReady || isRevisionRequired ? `Current status: ${runStatus}` : undefined,

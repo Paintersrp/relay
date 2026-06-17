@@ -35,6 +35,17 @@ export function evaluateValidationGate(
   };
 }
 
+export function isAuditCandidateStatus(runStatus: string): boolean {
+  return (
+    runStatus === 'executor_done' ||
+    runStatus === 'executor_blocked' ||
+    runStatus === 'validation_passed' ||
+    runStatus === 'validation_failed' ||
+    runStatus === 'validation_failed_accepted' ||
+    runStatus === 'local_validation_running'
+  );
+}
+
 export function evaluateExecuteValidationAction(
   artifacts: Artifact[],
   runStatus: string
