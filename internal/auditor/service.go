@@ -78,9 +78,28 @@ func (svc *Service) Generate(runID int64) (*GeneratedAudit, error) {
 		return nil, fmt.Errorf("get run: %w", err)
 	}
 
-	if run.Status != executor.StatusExecutorDone && run.Status != executor.StatusExecutorBlocked &&
-		run.Status != "validation_passed" && run.Status != "validation_failed" && run.Status != "validation_failed_accepted" {
-		return nil, fmt.Errorf("audit generation requires executor_done, executor_blocked, validation_passed, validation_failed, or validation_failed_accepted status, got %q", run.Status)
+	required, _ := svc.requiredValidationCommandsExist(runID)
+
+	if run.Status == "validation_failed" {
+		return nil, fmt.Errorf("validation failed: rerun validation or accept failed validation with a reason before generating audit")
+	}
+
+	if required {
+		if run.Status != "validation_passed" && run.Status != "validation_failed_accepted" {
+			return nil, fmt.Errorf("audit generation for runs with required validation commands requires validation_passed or validation_failed_accepted status, got %q", run.Status)
+		}
+	} else {
+		if run.Status != executor.StatusExecutorDone && run.Status != executor.StatusExecutorBlocked &&
+			run.Status != "validation_passed" && run.Status != "validation_failed_accepted" {
+			return nil, fmt.Errorf("audit generation requires executor_done, executor_blocked, validation_passed, or validation_failed_accepted status, got %q", run.Status)
+		}
+	}
+
+	if run.Status == "validation_passed" {
+		jsonArts, err := svc.store.ListArtifactsByRunKind(runID, validationrunner.ArtifactKindJSON)
+		if err != nil || len(jsonArts) == 0 {
+			return nil, fmt.Errorf("audit generation requires validation_run_json for validation_passed status")
+		}
 	}
 
 	if run.Status == "validation_failed_accepted" {
@@ -94,7 +113,6 @@ func (svc *Service) Generate(runID int64) (*GeneratedAudit, error) {
 		}
 	}
 
-	required, _ := svc.requiredValidationCommandsExist(runID)
 	if required && !svc.hasValidationArtifacts(runID) {
 		return nil, fmt.Errorf("required validation commands exist but validation artifacts are missing — run validation first via POST /api/runs/%d/validate", runID)
 	}
