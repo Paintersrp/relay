@@ -29,7 +29,8 @@ import {
   ArrowLeft,
   ArrowRight,
   ShieldCheck,
-  ShieldX
+  ShieldX,
+  ExternalLink
 } from 'lucide-react'
 
 export const Route = createFileRoute('/runs/$runId/intake')({
@@ -110,7 +111,7 @@ function IntakePage() {
         <>
           <ValidationPanel summary={run.validationSummary} />
           {artifacts && artifacts.map((a) => (
-            <ArtifactPreviewCard key={a.id} artifact={a} />
+            <ArtifactPreviewCard key={a.id} artifact={a} runId={run.id} />
           ))}
           <LogPreviewPanel logPreview={logPreview} />
         </>
@@ -131,12 +132,13 @@ function IntakeMainContent({
   const [mutationError, setMutationError] = useState<string | null>(null)
 
   // Extract initial values from run and configurations
-  const runConfigArt = artifacts.find((a) => a.filename === 'run_config.json')
+  const runConfigArt = artifacts.find((a) => a.filename === 'run_config.json' || a.kind === 'run_config')
   let initialValCommands = ''
+  let runConfig: any = {}
   if (runConfigArt && runConfigArt.preview) {
     try {
-      const cfg = JSON.parse(runConfigArt.preview)
-      initialValCommands = cfg.validation_commands || ''
+      runConfig = JSON.parse(runConfigArt.preview)
+      initialValCommands = runConfig.validation_commands || ''
     } catch {
       // ignore
     }
@@ -206,6 +208,30 @@ function IntakeMainContent({
   const plannerHandoff = artifacts.find((a) => a.filename === 'planner_handoff.md' || a.kind === 'handoff')
   const parsedFrontmatter = artifacts.find((a) => a.filename === 'parsed_frontmatter.json')
 
+  // Parse repo target/path details
+  const repoTarget = runConfig.repo_target || run.repo
+  const branchContext = runConfig.branch_context || run.branch
+  const configSource = runConfig.source || 'unknown'
+  const createdFrom = runConfig.created_from || 'unknown'
+
+  const isRepoNameOnly = !run.repo.includes('/') && !run.repo.includes('\\') && !run.repo.includes(':')
+  const isLocalPath = repoTarget.includes('/') || repoTarget.includes('\\') || repoTarget.includes(':')
+  const isGitHubRepo = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(repoTarget)
+
+  // Parse frontmatter details to determine presence/clarity
+  let frontmatterObj: any = null
+  let hasFrontmatter = false
+  if (parsedFrontmatter && parsedFrontmatter.preview) {
+    try {
+      frontmatterObj = JSON.parse(parsedFrontmatter.preview)
+      if (frontmatterObj && Object.keys(frontmatterObj).length > 0) {
+        hasFrontmatter = true
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* Section: Incoming Handoff */}
@@ -252,6 +278,85 @@ function IntakeMainContent({
               )}
             </div>
           )}
+        </div>
+
+        {!hasFrontmatter && (
+          <div className="mt-3 p-3 bg-yellow-950/20 border border-yellow-900/40 rounded text-xs text-yellow-400 leading-normal flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              No YAML frontmatter was parsed from the submitted handoff. Relay used explicit MCP/API arguments and fallback defaults where available.
+            </span>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2 mt-4">
+          <span className="text-xs font-semibold text-muted-foreground">Configuration Provenance</span>
+          <div className="border border-border/40 rounded-lg overflow-hidden bg-muted/10 text-xs">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-border/40 bg-muted/30">
+                  <th className="p-2 font-medium text-muted-foreground w-1/4">Field</th>
+                  <th className="p-2 font-medium text-muted-foreground w-2/4">Value</th>
+                  <th className="p-2 font-medium text-muted-foreground w-1/4">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-border/20">
+                  <td className="p-2 font-mono text-muted-foreground">Repo</td>
+                  <td className="p-2 font-mono text-foreground">{repoTarget}</td>
+                  <td className="p-2 text-foreground">
+                    {frontmatterObj?.repo ? 'parsed frontmatter' : runConfig.repo_target ? 'explicit MCP arg' : 'resolved repo'}
+                  </td>
+                </tr>
+                <tr className="border-b border-border/20">
+                  <td className="p-2 font-mono text-muted-foreground">Branch</td>
+                  <td className="p-2 font-mono text-foreground">{branchContext}</td>
+                  <td className="p-2 text-foreground">
+                    {frontmatterObj?.branch ? 'parsed frontmatter' : runConfig.branch_context ? 'explicit MCP arg' : 'fallback default'}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="p-2 font-mono text-muted-foreground">Title</td>
+                  <td className="p-2 text-foreground truncate max-w-xs">{run.title}</td>
+                  <td className="p-2 text-foreground">
+                    {frontmatterObj?.title ? 'parsed frontmatter' : 'markdown H1'}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Section>
+
+      <Separator />
+
+      {/* Section: Resolved Repository */}
+      <Section title="Resolved Repository" icon={<FolderGit2 className="w-4 h-4 text-purple-400" />}>
+        <div className="flex flex-col gap-1.5">
+          <KeyValueRow label={isRepoNameOnly ? "Repo display name" : "Repo target"} value={run.repo} />
+          {repoTarget !== run.repo && (
+            <div className="flex items-baseline gap-2 text-xs">
+              <span className="text-muted-foreground w-32 shrink-0">Resolved target/path</span>
+              {isLocalPath ? (
+                <span className="font-mono text-foreground bg-muted/40 px-1.5 py-0.5 rounded select-all border border-border/40">{repoTarget}</span>
+              ) : isGitHubRepo ? (
+                <a
+                  href={`https://github.com/${repoTarget}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-purple-400 hover:underline flex items-center gap-1 select-all"
+                >
+                  {repoTarget}
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              ) : (
+                <span className="text-foreground select-all">{repoTarget}</span>
+              )}
+            </div>
+          )}
+          <KeyValueRow label="Branch context" value={branchContext} mono />
+          <KeyValueRow label="Source" value={configSource} />
+          <KeyValueRow label="Created by" value={createdFrom} />
         </div>
       </Section>
 

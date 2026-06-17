@@ -109,7 +109,7 @@ function PreparePage() {
         <>
           <ValidationPanel summary={run.validationSummary} />
           {artifacts && artifacts.map((a) => (
-            <ArtifactPreviewCard key={a.id} artifact={a} />
+            <ArtifactPreviewCard key={a.id} artifact={a} runId={run.id} />
           ))}
           <LogPreviewPanel logPreview={logPreview} />
         </>

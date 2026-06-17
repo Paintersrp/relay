@@ -63,7 +63,12 @@ export type RelayArtifactKind =
   | "result"
   | "audit"
   | "validation"
-  | "diff";
+  | "diff"
+  | "planner_handoff"
+  | "parsed_frontmatter"
+  | "run_config"
+  | "intake_validation_report"
+  | "mcp_audit_handback";
 
 // Canonical Relay Artifact type
 export interface RelayArtifact {

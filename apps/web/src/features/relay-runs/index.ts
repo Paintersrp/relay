@@ -30,6 +30,7 @@ export {
   closeRun,
   submitPlannerHandoff,
   RelayApiError,
+  API_BASE_URL,
 } from './api'
 export type {
   SubmitManualAuditPayload,
@@ -41,6 +42,7 @@ export type {
 } from './api'
 export type {
   RelayRun,
+  RelayArtifact,
   RelayRunStatus,
   RelayRunStep,
   RelayValidationIssue,
