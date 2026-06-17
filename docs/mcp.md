@@ -261,3 +261,13 @@ The MCP subprocess and the HTTP daemon (`cmd/relay`) share the same SQLite datab
 
 - **Pass 13A (feasibility):** Added `submit_test_audit_packet` to prove stdio MCP bridge works. Gated real tools.
 - **Pass 16 (real tools):** Implemented all 4 real tools (`create_run_from_planner_handoff`, `list_open_runs`, `get_run_status`, `submit_audit_packet`), wired MCP server to real Relay DB, added executable `make mcp-smoke` harness.
+
+---
+
+## ChatGPT Remote MCP Validation
+
+Relay exposes `/mcp` through the Go daemon (`cmd/relay`) for ChatGPT-facing remote MCP access. During local development, ChatGPT connects through an HTTPS tunnel (e.g. `ssh -R` or `ngrok`) that forwards to the local daemon.
+
+The current `/mcp` endpoint uses No Auth; this is a temporary development proof only. Production use **must** restore authentication before exposing the endpoint beyond local validation.
+
+Local stdio MCP (the `relay-mcpserver` binary), if retained, is optional/dev-only and is not the primary ChatGPT integration path. Remote HTTPS MCP is the intended ChatGPT integration channel.
