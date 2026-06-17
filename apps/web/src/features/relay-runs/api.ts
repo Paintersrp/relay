@@ -340,6 +340,20 @@ export async function acceptFailedValidation(
   );
 }
 
+export interface RepairValidationResponse {
+  success: boolean;
+  runId: string;
+  eligible: boolean;
+  ineligibleReason?: string;
+  reValidationValid?: boolean;
+  reValidationError?: string;
+  reValidationReport?: any;
+}
+
+export async function repairValidation(id: string): Promise<RepairValidationResponse> {
+  return postJson<undefined, RepairValidationResponse>(`/api/runs/${id}/repair/validation`);
+}
+
 export async function auditRun(id: string): Promise<RelayActionResponse> {
   return postJson<undefined, RelayActionResponse>(`/api/runs/${id}/audit`);
 }

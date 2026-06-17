@@ -17,7 +17,9 @@ import (
 	"relay/internal/events"
 	"relay/internal/executor"
 	"relay/internal/intake"
+	"relay/internal/repairer"
 	"relay/internal/renderer"
+	"relay/internal/validation"
 	"relay/internal/store"
 	"relay/internal/store/generated"
 	"relay/internal/validationrunner"
@@ -257,6 +259,16 @@ func mapArtifactKindAndLabel(kind string) (string, string) {
 		return "audit", "Commit Message (Text)"
 	case "commit_suggestion_json":
 		return "audit", "Commit Suggestion (JSON)"
+	case "repair_request_json":
+		return "validation", "Repair Request (JSON)"
+	case "repair_prompt":
+		return "prompt", "Repair Prompt"
+	case "repair_output":
+		return "result", "Repair Output"
+	case "repaired_packet":
+		return "handoff", "Repaired Packet"
+	case "repair_validation_report":
+		return "validation", "Repair Validation Report"
 	case "audit_input_summary":
 		return "audit", "Audit Input Summary"
 	default:
@@ -1646,6 +1658,113 @@ func (h *APIHandler) AcceptFailedValidation(w http.ResponseWriter, r *http.Reque
 		"success": true,
 		"runId":   idStr,
 		"status":  "validation_failed_accepted",
+	})
+}
+
+// POST /api/runs/{id}/repair/validation
+func (h *APIHandler) RepairValidation(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
+		return
+	}
+
+	// Only allow repair from packet_validation_failed status
+	if run.Status != "packet_validation_failed" {
+		writeError(w, http.StatusConflict, "CONFLICT",
+			fmt.Sprintf("Repair requires packet_validation_failed status, got %q", run.Status))
+		return
+	}
+
+	// Load the existing validation report artifact
+	arts, err := h.store.ListArtifactsByRunKind(id, "packet_validation_report")
+	if err != nil || len(arts) == 0 {
+		writeError(w, http.StatusConflict, "CONFLICT", "No packet validation report found. Run prepare first.")
+		return
+	}
+
+	reportArt := arts[len(arts)-1]
+	reportBytes, err := os.ReadFile(reportArt.Path)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to read validation report artifact")
+		return
+	}
+
+	var report validation.ValidationReport
+	if err := json.Unmarshal(reportBytes, &report); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to parse validation report")
+		return
+	}
+
+	// Check that the report has stable failure codes (S8)
+	if len(report.Errors) == 0 {
+		writeError(w, http.StatusUnprocessableEntity, "BLOCKED", "Validation report contains no failure codes; cannot determine repair eligibility")
+		return
+	}
+	hasCode := false
+	for _, e := range report.Errors {
+		if e.Type != "" {
+			hasCode = true
+			break
+		}
+	}
+	if !hasCode {
+		writeError(w, http.StatusUnprocessableEntity, "BLOCKED", "Validation report errors lack stable type codes; cannot determine repair eligibility")
+		return
+	}
+
+	// Load canonical packet
+	packetArts, err := h.store.ListArtifactsByRunKind(id, "canonical_packet")
+	if err != nil || len(packetArts) == 0 {
+		writeError(w, http.StatusConflict, "CONFLICT", "No canonical packet found. Run prepare first.")
+		return
+	}
+	packetArt := packetArts[len(packetArts)-1]
+	packetJSON, err := os.ReadFile(packetArt.Path)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to read canonical packet artifact")
+		return
+	}
+
+	// Run repair service
+	svc := repairer.NewService(h.store)
+	result := svc.RepairValidation(id, packetJSON, &report)
+
+	if result.IneligibleReason != "" {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+			"success":          false,
+			"runId":            idStr,
+			"eligible":         false,
+			"ineligibleReason": result.IneligibleReason,
+		})
+		return
+	}
+
+	if result.Error != "" {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+			"success":               false,
+			"runId":                 idStr,
+			"eligible":              true,
+			"reValidationValid":     false,
+			"reValidationError":     result.Error,
+			"reValidationReport":    result.ReValidationReport,
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":               true,
+		"runId":                 idStr,
+		"eligible":              true,
+		"reValidationValid":     true,
+		"reValidationReport":    result.ReValidationReport,
 	})
 }
 
