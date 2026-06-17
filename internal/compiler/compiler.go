@@ -281,7 +281,7 @@ func (c *Compiler) parseHandoff(
 	if taskSlug == "" {
 		issues = append(issues, "No safe task slug or packet ID could be derived")
 		return nil, issues
-    }
+	}
 
 	packetID = fmt.Sprintf("packet-%s-%s", createdDate, taskSlug)
 
@@ -1079,7 +1079,7 @@ func extractBriefSection(content, sectionName string) string {
 
 func cleanParsedString(s string) string {
 	s = strings.TrimSpace(s)
-	s = strings.Trim(s, `"'` + "`")
+	s = strings.Trim(s, `"'`+"`")
 	return strings.TrimSpace(s)
 }
 
@@ -1253,7 +1253,7 @@ func parseAssumptions(text string) []map[string]interface{} {
 				val = trimmed[len("if false:"):]
 			}
 			if val != "" {
-				val = strings.ToLower(strings.Trim(val, `"'` + "`"))
+				val = strings.ToLower(strings.Trim(val, `"'`+"`"))
 				if val == "block" || val == "revise_packet" || val == "continue_with_note" {
 					current["if_false"] = val
 				} else if strings.Contains(val, "block") {
@@ -1310,7 +1310,7 @@ func parseKnownRepoFacts(text string) []map[string]interface{} {
 				val = trimmed[len("source:"):]
 			}
 			if val != "" {
-				val = strings.ToLower(strings.Trim(val, `"'` + "`"))
+				val = strings.ToLower(strings.Trim(val, `"'`+"`"))
 				if val == "user_provided" || val == "repo_inspection" || val == "prior_artifact" || val == "unknown" {
 					current["source"] = val
 				} else if strings.Contains(val, "user") {
@@ -1367,7 +1367,7 @@ func parseUnresolvedQuestions(text string) []map[string]interface{} {
 				val = trimmed[len("blocking:"):]
 			}
 			if val != "" {
-				val = strings.ToLower(strings.Trim(val, `"'` + "`"))
+				val = strings.ToLower(strings.Trim(val, `"'`+"`"))
 				current["blocking"] = (val == "true" || val == "yes" || val == "1")
 			}
 		}
@@ -1658,7 +1658,7 @@ func parseFileTargetsStructured(text string) []map[string]interface{} {
 			}
 
 			if roleVal != "" {
-				roleVal = strings.ToLower(strings.Trim(roleVal, `"'` + "`"))
+				roleVal = strings.ToLower(strings.Trim(roleVal, `"'`+"`"))
 				allowedRoles := []string{"primary", "supporting", "test", "docs", "config", "read_only", "generated_do_not_edit"}
 				for _, r := range allowedRoles {
 					if roleVal == r || strings.Contains(roleVal, r) {
@@ -1668,7 +1668,7 @@ func parseFileTargetsStructured(text string) []map[string]interface{} {
 				}
 			}
 			if actVal != "" {
-				actVal = strings.ToLower(strings.Trim(actVal, `"'` + "`"))
+				actVal = strings.ToLower(strings.Trim(actVal, `"'`+"`"))
 				allowedActions := []string{"must_edit", "may_edit", "must_create", "may_create", "must_read", "do_not_edit", "generated_do_not_edit"}
 				for _, a := range allowedActions {
 					if actVal == a || strings.Contains(actVal, a) {
@@ -1738,7 +1738,7 @@ func parseImplementationSteps(text string) []map[string]interface{} {
 			lower := strings.ToLower(trimmed)
 			if strings.HasPrefix(lower, "- action:") {
 				act := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(trimmed, "- action:")))
-				act = strings.Trim(act, `"'` + "`")
+				act = strings.Trim(act, `"'`+"`")
 				allowedActions := []string{"inspect", "modify", "create", "delete", "move", "rename", "test", "document", "configure", "verify"}
 				for _, a := range allowedActions {
 					if act == a || strings.Contains(act, a) {
@@ -1750,7 +1750,7 @@ func parseImplementationSteps(text string) []map[string]interface{} {
 				colonIdx := strings.Index(trimmed, ":")
 				if colonIdx > 0 {
 					val := strings.TrimSpace(trimmed[colonIdx+1:])
-					val = strings.Trim(val, `"'` + "`")
+					val = strings.Trim(val, `"'`+"`")
 					if val != "" {
 						if paths, ok := current["target_paths"].([]string); ok {
 							current["target_paths"] = append(paths, val)
@@ -1760,7 +1760,7 @@ func parseImplementationSteps(text string) []map[string]interface{} {
 			} else if strings.HasPrefix(trimmed, "-") && strings.Contains(trimmed, "/") && current != nil {
 				if paths, ok := current["target_paths"].([]string); ok && len(paths) == 0 {
 					val := strings.TrimSpace(strings.TrimLeft(trimmed, "-*"))
-					val = strings.Trim(val, `"'` + "`")
+					val = strings.Trim(val, `"'`+"`")
 					if !strings.Contains(val, " ") && (strings.Contains(val, "/") || strings.Contains(val, ".")) {
 						current["target_paths"] = append(paths, val)
 					}
@@ -1769,7 +1769,7 @@ func parseImplementationSteps(text string) []map[string]interface{} {
 				current["instructions"] = strings.TrimSpace(strings.TrimPrefix(trimmed, "- instructions:"))
 			} else if strings.HasPrefix(lower, "- acceptance_criteria:") || strings.HasPrefix(lower, "- acceptance criteria:") {
 				val := strings.TrimSpace(trimmed[strings.Index(trimmed, ":")+1:])
-				val = strings.Trim(val, `"'` + "`")
+				val = strings.Trim(val, `"'`+"`")
 				if val != "" {
 					if acs, ok := current["acceptance_criteria"].([]string); ok {
 						current["acceptance_criteria"] = append(acs, val)
@@ -1777,11 +1777,11 @@ func parseImplementationSteps(text string) []map[string]interface{} {
 				}
 			} else if strings.HasPrefix(trimmed, "-") && current != nil {
 				val := strings.TrimSpace(strings.TrimLeft(trimmed, "-*"))
-				val = strings.Trim(val, `"'` + "`")
+				val = strings.Trim(val, `"'`+"`")
 				if val != "" {
 					if acs, ok := current["acceptance_criteria"].([]string); ok {
 						lowVal := strings.ToLower(val)
-						if !strings.HasPrefix(lowVal, "role:") && !strings.HasPrefix(lowVal, "action:") && 
+						if !strings.HasPrefix(lowVal, "role:") && !strings.HasPrefix(lowVal, "action:") &&
 							!strings.HasPrefix(lowVal, "target_path") && !strings.HasPrefix(lowVal, "instructions:") {
 							current["acceptance_criteria"] = append(acs, val)
 						}
@@ -1862,7 +1862,7 @@ func parseCodeRequirements(text string) []map[string]interface{} {
 			lower := strings.ToLower(trimmed)
 			if strings.HasPrefix(lower, "- applies to:") {
 				val := strings.TrimSpace(trimmed[len("- applies to:"):])
-				val = strings.Trim(val, `"'` + "`")
+				val = strings.Trim(val, `"'`+"`")
 				if val != "" {
 					if apps, ok := current["applies_to"].([]string); ok {
 						current["applies_to"] = append(apps, val)
@@ -1870,7 +1870,7 @@ func parseCodeRequirements(text string) []map[string]interface{} {
 				}
 			} else if strings.HasPrefix(trimmed, "-") && current != nil {
 				val := strings.TrimSpace(strings.TrimLeft(trimmed, "-*"))
-				val = strings.Trim(val, `"'` + "`")
+				val = strings.Trim(val, `"'`+"`")
 				if val != "" && !strings.Contains(val, " ") && (strings.Contains(val, "/") || strings.Contains(val, ".")) {
 					if apps, ok := current["applies_to"].([]string); ok {
 						current["applies_to"] = append(apps, val)
@@ -1935,7 +1935,7 @@ func parseCompletionContract(text string) map[string]interface{} {
 			idx := strings.Index(lower, "done when")
 			if colonIdx := strings.Index(trimmed[idx:], ":"); colonIdx > 0 {
 				val := strings.TrimSpace(trimmed[idx+colonIdx+1:])
-				val = strings.Trim(val, `"'` + "`")
+				val = strings.Trim(val, `"'`+"`")
 				if val != "" {
 					*currentList = append(*currentList, val)
 				}
@@ -1946,7 +1946,7 @@ func parseCompletionContract(text string) map[string]interface{} {
 			idx := strings.Index(lower, "blocked when")
 			if colonIdx := strings.Index(trimmed[idx:], ":"); colonIdx > 0 {
 				val := strings.TrimSpace(trimmed[idx+colonIdx+1:])
-				val = strings.Trim(val, `"'` + "`")
+				val = strings.Trim(val, `"'`+"`")
 				if val != "" {
 					*currentList = append(*currentList, val)
 				}
@@ -1957,7 +1957,7 @@ func parseCompletionContract(text string) map[string]interface{} {
 			idx := strings.Index(lower, "allowed discretion")
 			if colonIdx := strings.Index(trimmed[idx:], ":"); colonIdx > 0 {
 				val := strings.TrimSpace(trimmed[idx+colonIdx+1:])
-				val = strings.Trim(val, `"'` + "`")
+				val = strings.Trim(val, `"'`+"`")
 				if val != "" {
 					*currentList = append(*currentList, val)
 				}
@@ -1968,7 +1968,7 @@ func parseCompletionContract(text string) map[string]interface{} {
 			idx := strings.Index(lower, "forbidden discretion")
 			if colonIdx := strings.Index(trimmed[idx:], ":"); colonIdx > 0 {
 				val := strings.TrimSpace(trimmed[idx+colonIdx+1:])
-				val = strings.Trim(val, `"'` + "`")
+				val = strings.Trim(val, `"'`+"`")
 				if val != "" {
 					*currentList = append(*currentList, val)
 				}
@@ -1979,7 +1979,7 @@ func parseCompletionContract(text string) map[string]interface{} {
 		if strings.HasPrefix(trimmed, "-") || strings.HasPrefix(trimmed, "*") {
 			if currentList != nil {
 				val := strings.TrimSpace(strings.TrimLeft(trimmed, "-*"))
-				val = strings.Trim(val, `"'` + "`")
+				val = strings.Trim(val, `"'`+"`")
 				if val != "" {
 					*currentList = append(*currentList, val)
 				}
@@ -2041,7 +2041,7 @@ func parseAuditChecklist(text string) []map[string]interface{} {
 				val = strings.TrimSpace(strings.TrimPrefix(trimmed, "severity_if_failed:"))
 			}
 			if val != "" {
-				val = strings.ToLower(strings.Trim(val, `"'` + "`"))
+				val = strings.ToLower(strings.Trim(val, `"'`+"`"))
 				if val == "info" || val == "warning" || val == "error" || val == "blocker" {
 					current["severity_if_failed"] = val
 				}
@@ -2097,7 +2097,7 @@ func extractSubsection(content, name string) string {
 		trimmed = strings.TrimSpace(trimmed)
 		trimmed = strings.TrimSuffix(trimmed, ":")
 		trimmed = strings.TrimSpace(trimmed)
-		
+
 		trimmedLower := strings.ToLower(trimmed)
 		return trimmedLower == normName
 	}
@@ -2144,4 +2144,3 @@ func extractSubsection(content, name string) string {
 	}
 	return strings.TrimSpace(strings.Join(sectionLines, "\n"))
 }
-

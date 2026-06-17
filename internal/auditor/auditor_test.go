@@ -2,6 +2,7 @@ package auditor
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,9 +57,9 @@ func canonicalPacketJSON(goal, scope string, nonGoals []string, fileTargets []st
 	}
 	pkt := map[string]interface{}{
 		"execution_payload": map[string]interface{}{
-			"goal":       goal,
-			"scope":      scope,
-			"non_goals":  nonGoals,
+			"goal":         goal,
+			"scope":        scope,
+			"non_goals":    nonGoals,
 			"file_targets": fileTargets,
 		},
 		"audit_seed": map[string]interface{}{
@@ -67,6 +68,76 @@ func canonicalPacketJSON(goal, scope string, nonGoals []string, fileTargets []st
 	}
 	data, _ := json.Marshal(pkt)
 	return data
+}
+
+// ---------------------------------------------------------------------------
+// Run 73-style regression: 14 object checklist items → exactly 14 rows
+// ---------------------------------------------------------------------------
+
+func TestParseChecklistItems_Run73Style_14Objects_14Rows(t *testing.T) {
+	// Build 14 checklist objects matching Run 73 style
+	checks := make([]map[string]interface{}, 14)
+	for i := 0; i < 14; i++ {
+		checks[i] = map[string]interface{}{
+			"id":                 fmt.Sprintf("A%d", i+1),
+			"check":              fmt.Sprintf("Confirm check item %d passes.", i+1),
+			"severity_if_failed": "error",
+		}
+	}
+	// Override specific items to match real audit checklist variety
+	checks[0]["severity_if_failed"] = "blocker"
+	checks[1]["check"] = "Confirm go test ./... passes."
+	checks[2]["check"] = "Confirm go vet ./... passes."
+	checks[3]["check"] = "Confirm no unexpected runtime files changed."
+	checks[4]["check"] = "Confirm no test files were deleted."
+	checks[5]["check"] = "Confirm only expected files changed."
+	checks[6]["check"] = "Confirm diff is documentation-only."
+	checks[7]["check"] = "Confirm security-sensitive files unchanged."
+	checks[8]["check"] = "Confirm executor result indicates DONE."
+	checks[9]["check"] = "Confirm validation commands passed."
+	checks[10]["check"] = "Confirm no MCP or auth files changed."
+	checks[11]["check"] = "Confirm changed files are within targets."
+	checks[12]["check"] = "Confirm no scope drift."
+	checks[13]["check"] = "Confirm task satisfies goal."
+
+	raw, _ := json.Marshal(checks)
+	items, warnings := parseChecklistItems(raw)
+
+	if len(warnings) > 0 {
+		t.Fatalf("unexpected warnings: %+v", warnings)
+	}
+	if len(items) != 14 {
+		t.Fatalf("expected exactly 14 checklist rows from 14 objects, got %d", len(items))
+	}
+
+	// Verify no row has severity_if_failed as check text
+	for _, it := range items {
+		if it.Check == "severity_if_failed" || strings.Contains(it.Check, "severity_if_failed") {
+			t.Errorf("checklist item %q has severity_if_failed in check text: %q", it.ID, it.Check)
+		}
+		if it.ID == "severity_if_failed" || strings.Contains(it.ID, "severity_if_failed") {
+			t.Errorf("checklist item ID must not be severity_if_failed, got %q", it.ID)
+		}
+	}
+
+	// Verify original IDs are preserved
+	for i, it := range items {
+		expectedID := fmt.Sprintf("A%d", i+1)
+		if it.ID != expectedID {
+			t.Errorf("item %d expected ID %q, got %q", i, expectedID, it.ID)
+		}
+		expectedCheck := checks[i]["check"].(string)
+		if it.Check != expectedCheck {
+			t.Errorf("item %d expected check %q, got %q", i, expectedCheck, it.Check)
+		}
+	}
+
+	// Verify severity_if_failed values are in severity column, not check text
+	for _, it := range items {
+		if string(it.SeverityIfFailed) == "severity_if_failed" {
+			t.Errorf("severity_if_failed must not appear in severity field as label: %q", it.SeverityIfFailed)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -655,6 +726,50 @@ func TestEvaluateFileScopeResults_AllInScope(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Exact canonical checklist regression: two objects produce exactly two rows
+// ---------------------------------------------------------------------------
+
+func TestParseChecklistItems_ExactTwoObjects_TwoRows(t *testing.T) {
+	raw := json.RawMessage(`[
+		{"id":"A1","check":"Confirm foo.go was edited.","severity_if_failed":"blocker"},
+		{"id":"A2","check":"Confirm tests pass.","severity_if_failed":"error"}
+	]`)
+	items, warnings := parseChecklistItems(raw)
+
+	if len(warnings) > 0 {
+		t.Fatalf("unexpected warnings: %+v", warnings)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected exactly 2 checklist rows from 2 object entries, got %d", len(items))
+	}
+
+	// No row should contain severity metadata as check text
+	for _, it := range items {
+		if strings.Contains(it.Check, "severity_if_failed") {
+			t.Errorf("checklist item %q has severity_if_failed in check text: %q", it.ID, it.Check)
+		}
+		if it.Check == "severity_if_failed" {
+			t.Errorf("checklist item %q has severity_if_failed as entire check text", it.ID)
+		}
+	}
+
+	// No row should have severity metadata as ID
+	for _, it := range items {
+		if it.ID == "severity_if_failed" {
+			t.Errorf("checklist item ID must not be severity_if_failed, got %q", it.ID)
+		}
+	}
+
+	// IDs are preserved
+	if items[0].ID != "A1" {
+		t.Errorf("expected first item ID A1, got %q", items[0].ID)
+	}
+	if items[1].ID != "A2" {
+		t.Errorf("expected second item ID A2, got %q", items[1].ID)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Documentation-only task fixture
 // ---------------------------------------------------------------------------
 
@@ -902,9 +1017,9 @@ func TestRun71StyleDocsOnlyTask(t *testing.T) {
 
 	pkt := map[string]interface{}{
 		"execution_payload": map[string]interface{}{
-			"goal":       "Add ChatGPT Remote MCP Validation section to docs/mcp.md",
-			"scope":      "Make a documentation-only edit to docs/mcp.md",
-			"non_goals":  []string{"Do not add new MCP tools.", "Do not change runtime behavior."},
+			"goal":      "Add ChatGPT Remote MCP Validation section to docs/mcp.md",
+			"scope":     "Make a documentation-only edit to docs/mcp.md",
+			"non_goals": []string{"Do not add new MCP tools.", "Do not change runtime behavior."},
 			"file_targets": []map[string]interface{}{
 				{"path": "docs/mcp.md", "role": "docs", "action": "must_edit", "reason": "Add required section"},
 			},
@@ -914,8 +1029,8 @@ func TestRun71StyleDocsOnlyTask(t *testing.T) {
 			},
 		},
 		"audit_seed": map[string]interface{}{
-			"audit_checklist": checks,
-			"non_goal_checks": []string{"Verify that out-of-scope goal \"Add new MCP tools\" was not implemented."},
+			"audit_checklist":   checks,
+			"non_goal_checks":   []string{"Verify that out-of-scope goal \"Add new MCP tools\" was not implemented."},
 			"file_scope_checks": []string{"Confirm docs/mcp.md edits only satisfy the goal."},
 		},
 	}
@@ -1148,4 +1263,3 @@ func TestAuditPacketTemplateContractPathRegression(t *testing.T) {
 		t.Fatalf("Authoritative template is missing or cannot be read: %v", err)
 	}
 }
-

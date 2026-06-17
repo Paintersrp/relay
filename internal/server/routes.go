@@ -118,6 +118,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 		r.Post("/runs/{id}/render-brief", apiH.RenderBrief)
 		r.Post("/runs/{id}/approve-brief", apiH.ApproveBrief)
 		r.Post("/runs/{id}/execute", apiH.ExecuteRun)
+		r.Post("/runs/{id}/validate", apiH.ValidateRun)
 		r.Post("/runs/{id}/audit", apiH.GenerateAudit)
 		r.Post("/runs/{id}/audit/submit", apiH.SubmitAuditPacket)
 		r.Post("/runs/{id}/audit/approve", apiH.ApproveAudit)

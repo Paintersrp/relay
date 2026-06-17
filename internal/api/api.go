@@ -20,6 +20,7 @@ import (
 	"relay/internal/renderer"
 	"relay/internal/store"
 	"relay/internal/store/generated"
+	"relay/internal/validationrunner"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -1511,6 +1512,47 @@ func (h *APIHandler) ExecuteRun(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// POST /api/runs/{id}/validate
+func (h *APIHandler) ValidateRun(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
+		return
+	}
+
+	if run.Status != executor.StatusExecutorDone && run.Status != executor.StatusExecutorBlocked &&
+		run.Status != "validation_passed" && run.Status != "validation_failed" {
+		writeError(w, http.StatusConflict, "CONFLICT",
+			fmt.Sprintf("Validation requires executor_done, executor_blocked, validation_passed, or validation_failed status, got %q", run.Status))
+		return
+	}
+
+	svc := validationrunner.NewService(h.store)
+	vr, err := svc.RunValidation(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":   true,
+		"runId":     idStr,
+		"status":    string(vr.Status),
+		"commands":  vr.Commands,
+		"stdout":    vr.StdoutPath,
+		"stderr":    vr.StderrPath,
+		"progress":  vr.ProgressPath,
+		"runStatus": run.Status,
+	})
+}
+
 // POST /api/runs/{id}/audit
 func (h *APIHandler) GenerateAudit(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
@@ -1518,6 +1560,19 @@ func (h *APIHandler) GenerateAudit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
 		return
+	}
+
+	// If run is executor_done and validation artifacts are missing, run validation first
+	run, err := h.store.GetRun(id)
+	if err == nil && (run.Status == executor.StatusExecutorDone || run.Status == executor.StatusExecutorBlocked) {
+		valSvc := validationrunner.NewService(h.store)
+		required, _ := valSvc.RequiredCommandsInPacket(id)
+		if required && !valSvc.HasValidationArtifacts(id) {
+			_, valErr := valSvc.RunValidation(r.Context(), id)
+			if valErr != nil {
+				_, _ = h.store.CreateEvent(id, "warn", "Auto-validation before audit failed: "+valErr.Error())
+			}
+		}
 	}
 
 	svc := auditor.NewService(h.store)

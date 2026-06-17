@@ -141,6 +141,34 @@ func (c *Collector) generateRevisionRequirements(ev *Evidence) {
 			})
 		}
 	}
+
+	// 5. Map checklist-parser structural failures (malformed entries) to revision requirements
+	var checklistParseWarnings []EvidenceWarning
+	for _, w := range ev.Warnings {
+		if strings.Contains(w.Message, "Malformed checklist entry") || strings.Contains(w.Message, "parse error") {
+			checklistParseWarnings = append(checklistParseWarnings, w)
+		}
+	}
+	if len(checklistParseWarnings) > 0 {
+		// Deduplicate: only add one revision requirement for checklist-parser structural issues
+		alreadyMapped := false
+		for _, rr := range ev.RevisionRequirements {
+			if strings.Contains(rr.Reason, "checklist parser") {
+				alreadyMapped = true
+				break
+			}
+		}
+		if !alreadyMapped {
+			messages := make([]string, len(checklistParseWarnings))
+			for i, w := range checklistParseWarnings {
+				messages[i] = w.Message
+			}
+			ev.RevisionRequirements = append(ev.RevisionRequirements, RevisionRequirement{
+				Reason:   fmt.Sprintf("Checklist parser structural issues: %s", strings.Join(messages, "; ")),
+				Severity: SeverityError,
+			})
+		}
+	}
 }
 
 // canonicalPacketRaw is the top-level canonical_packet.json structure we parse.
@@ -156,11 +184,11 @@ type auditSeedRaw struct {
 }
 
 type executionPayloadRaw struct {
-	Goal               json.RawMessage          `json:"goal"`
-	Scope              json.RawMessage          `json:"scope"`
-	NonGoals           json.RawMessage          `json:"non_goals"`
-	FileTargets        json.RawMessage          `json:"file_targets"`
-	ValidationCommands []validationCommandRaw   `json:"validation_commands"`
+	Goal               json.RawMessage        `json:"goal"`
+	Scope              json.RawMessage        `json:"scope"`
+	NonGoals           json.RawMessage        `json:"non_goals"`
+	FileTargets        json.RawMessage        `json:"file_targets"`
+	ValidationCommands []validationCommandRaw `json:"validation_commands"`
 }
 
 type validationCommandRaw struct {
@@ -341,14 +369,45 @@ func parseChecklistItems(raw json.RawMessage) ([]ChecklistItem, []EvidenceWarnin
 		}}
 	}
 	items := make([]ChecklistItem, 0)
+	var warnings []EvidenceWarning
 	var idx int
 	var pendingSeverity CheckSeverity
+
+	// JSON-residue field labels to skip in flat parsing when objects were serialized as strings
+	isJSONResidue := func(lower string) bool {
+		residuePrefixes := []string{
+			"\"severity_if_failed\"",
+			"\"id\"",
+			"\"check\"",
+			"\"severity\"",
+			"\"evidence_source\"",
+			"\"rationale\"",
+			"\"result\"",
+		}
+		for _, p := range residuePrefixes {
+			if strings.HasPrefix(lower, p) {
+				return true
+			}
+		}
+		return false
+	}
+
 	for _, line := range flat {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		lower := strings.ToLower(line)
+
+		// Skip JSON-residue field-label lines — they are object-serialization artifacts
+		if isJSONResidue(lower) {
+			warnings = append(warnings, EvidenceWarning{
+				Message:  fmt.Sprintf("Malformed checklist entry (JSON residue): %s — skipping", line),
+				Severity: SeverityWarning,
+			})
+			continue
+		}
+
 		// Skip section headers (lines ending with colon not starting with a check prefix)
 		if strings.HasSuffix(lower, ":") && !strings.HasPrefix(lower, "a") && !strings.HasPrefix(lower, "confirm") && !strings.HasPrefix(lower, "verify") {
 			pendingSeverity = ""
@@ -372,7 +431,7 @@ func parseChecklistItems(raw json.RawMessage) ([]ChecklistItem, []EvidenceWarnin
 			SeverityIfFailed: sev,
 		})
 	}
-	return items, nil
+	return items, warnings
 }
 
 func (c *Collector) collectPacketMetadata(runID int64, ev *Evidence) {
@@ -537,6 +596,21 @@ func (c *Collector) collectExecutorResult(runID int64, ev *Evidence) {
 	}
 }
 
+type validationRunJSON struct {
+	RunID    int64  `json:"runId"`
+	Status   string `json:"status"`
+	Commands []struct {
+		ID           string `json:"id"`
+		Command      string `json:"command"`
+		Required     bool   `json:"required"`
+		Status       string `json:"status"`
+		ExitCode     int    `json:"exitCode"`
+		StdoutKind   string `json:"stdoutKind"`
+		StderrKind   string `json:"stderrKind"`
+		NotRunReason string `json:"notRunReason,omitempty"`
+	} `json:"commands"`
+}
+
 func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 	// Build per-command results from packet validation_commands + available artifacts
 	specByID := map[string]ValidationCommandSpec{}
@@ -562,12 +636,19 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 		}
 	}
 
-	// Try parsing validation_run.json
+	// Try parsing validation_run.json as validation runner's ValidationRun first
+	var valRun validationRunJSON
+	hasValRun := false
 	var progress pipeline.ValidationProgress
 	hasProgress := false
 	var progressPath string
 	for _, a := range collected {
 		if a.kind == "validation_run_json" {
+			if err := json.Unmarshal(a.data, &valRun); err == nil && len(valRun.Commands) > 0 {
+				hasValRun = true
+				progressPath = a.path
+				break
+			}
 			if err := json.Unmarshal(a.data, &progress); err == nil {
 				hasProgress = true
 				progressPath = a.path
@@ -603,6 +684,14 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 		return
 	}
 
+	// Determine the best available validation artifact path for commands that lack a specific match
+	var bestAvailablePath string
+	for _, a := range collected {
+		if a.path != "" && bestAvailablePath == "" {
+			bestAvailablePath = a.path
+		}
+	}
+
 	// For each spec, find the result
 	if len(specByID) > 0 {
 		for _, spec := range ev.Packet.ValidationCommands {
@@ -612,7 +701,29 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 			summary := "No validation artifact matched"
 
 			matchedFromProgress := false
-			if hasProgress {
+			if hasValRun {
+				for _, vc := range valRun.Commands {
+					if strings.EqualFold(vc.ID, spec.ID) {
+						matchedFromProgress = true
+						bestPath = progressPath
+						exitResult = fmt.Sprintf("exit %d", vc.ExitCode)
+						summary = fmt.Sprintf("Command exit code: %d, status: %s", vc.ExitCode, vc.Status)
+						if vc.Status == "pass" {
+							status = CheckPass
+						} else if vc.Status == "fail" {
+							status = CheckFail
+						} else if vc.NotRunReason != "" {
+							status = CheckUnknown
+							summary = fmt.Sprintf("Not run: %s", vc.NotRunReason)
+						} else {
+							status = CheckUnknown
+						}
+						break
+					}
+				}
+			}
+
+			if !matchedFromProgress && hasProgress {
 				for _, pc := range progress.Commands {
 					if strings.Contains(strings.ToLower(pc.Command), strings.ToLower(spec.Command)) ||
 						strings.Contains(strings.ToLower(spec.Command), strings.ToLower(pc.Command)) {
@@ -664,6 +775,12 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 				}
 			}
 
+			// If the specific command was not matched to an artifact but we have available artifacts,
+			// still report the best available path so required commands show evidence
+			if bestPath == "" && bestAvailablePath != "" {
+				bestPath = bestAvailablePath
+			}
+
 			// Check for contradiction with executor result
 			if ev.ExecutorResult.Present && ev.ExecutorResult.Summary != "" {
 				execLower := strings.ToLower(ev.ExecutorResult.Summary)
@@ -696,7 +813,16 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 		status := CheckUnknown
 		exitResult := "unknown"
 		summary := fmt.Sprintf("sourced from %s artifact (%d bytes)", best.kind, len(best.data))
-		if best.kind == "validation_run_json" && hasProgress {
+		if best.kind == "validation_run_json" && hasValRun {
+			status = CheckPass
+			for _, vc := range valRun.Commands {
+				if vc.Status == "fail" {
+					status = CheckFail
+					break
+				}
+			}
+			exitResult = fmt.Sprintf("validation status: %s", valRun.Status)
+		} else if best.kind == "validation_run_json" && hasProgress {
 			status = CheckPass
 			for _, pc := range progress.Commands {
 				if pc.Status == "fail" {

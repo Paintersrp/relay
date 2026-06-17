@@ -230,12 +230,12 @@ func TestCompiler(t *testing.T) {
 	t.Run("TestPassBoundaryCoercesIntegers", func(t *testing.T) {
 		boundaryText := "```yaml\ncurrent_pass: \"2\"\ntotal_planned_passes: \"3\"\nthis_pass_scope: scope\nout_of_scope_for_this_pass:\n  - none\n```"
 		boundary := parsePassBoundary(boundaryText)
-		
+
 		cp, ok := boundary["current_pass"].(int)
 		if !ok || cp != 2 {
 			t.Errorf("expected current_pass = 2 (int), got %v", boundary["current_pass"])
 		}
-		
+
 		tpp, ok := boundary["total_planned_passes"].(int)
 		if !ok || tpp != 3 {
 			t.Errorf("expected total_planned_passes = 3 (int), got %v", boundary["total_planned_passes"])

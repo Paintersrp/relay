@@ -58,6 +58,49 @@ func TestParseFileTargetsFlexibleFormats(t *testing.T) {
 	}
 }
 
+func TestParseChecklistItems_FlatString_SkipsJSONResidue(t *testing.T) {
+	// Flat array containing JSON-residue field labels mixed with real checks
+	raw := json.RawMessage(`[
+		"\"severity_if_failed\": \"error\"",
+		"\"id\": \"A1\"",
+		"\"check\": \"Confirm foo.go was edited.\"",
+		"\"severity\": \"blocker\"",
+		"\"evidence_source\": \"diff\"",
+		"\"rationale\": \"Must be reviewed.\"",
+		"\"result\": \"pass\"",
+		"Confirm foo.go was edited.",
+		"\"severity_if_failed\": \"blocker\"",
+		"\"id\": \"A2\"",
+		"\"check\": \"Confirm tests pass.\"",
+		"Confirm tests pass."
+	]`)
+	items, warnings := parseChecklistItems(raw)
+
+	// Should produce 2 valid check items, not 12
+	if len(items) != 2 {
+		t.Fatalf("expected exactly 2 valid check rows from flat array with JSON residue, got %d: %+v", len(items), items)
+	}
+
+	// Should have warnings for the skipped JSON residue lines
+	if len(warnings) == 0 {
+		t.Error("expected warnings for JSON residue lines")
+	}
+
+	// Verify check text is clean (no JSON residue)
+	for _, it := range items {
+		if strings.Contains(it.Check, "severity_if_failed") || strings.Contains(it.Check, "\"id\"") || strings.Contains(it.Check, "\"check\"") {
+			t.Errorf("check text must not contain JSON residue: %q", it.Check)
+		}
+	}
+
+	// Verify severity_if_failed values are proper severities, not field names
+	for _, it := range items {
+		if string(it.SeverityIfFailed) == "severity_if_failed" {
+			t.Errorf("severity_if_failed must not appear in severity field: %q", it.SeverityIfFailed)
+		}
+	}
+}
+
 func TestGenerateRevisionRequirements(t *testing.T) {
 	c := &Collector{}
 

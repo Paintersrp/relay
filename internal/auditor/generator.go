@@ -283,7 +283,22 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 		b.WriteString("The auditor must manually verify the following before accepting:\n\n")
 		for _, w := range ev.Warnings {
 			if w.Severity == SeverityError || w.Severity == SeverityBlocker {
-				b.WriteString(fmt.Sprintf("- %s\n", w.Message))
+				b.WriteString(fmt.Sprintf("- [%s] %s\n", string(w.Severity), w.Message))
+			}
+		}
+		for _, cr := range ev.FileScopeResults {
+			if cr.Result == CheckFail && (cr.SeverityIfFailed == SeverityBlocker || cr.SeverityIfFailed == SeverityError) {
+				b.WriteString(fmt.Sprintf("- [file-scope] %s: %s\n", cr.ID, cr.Rationale))
+			}
+		}
+		for _, cr := range ev.ChecklistResults {
+			if cr.Result == CheckFail && (cr.SeverityIfFailed == SeverityBlocker || cr.SeverityIfFailed == SeverityError) {
+				b.WriteString(fmt.Sprintf("- [checklist] %s (%s): %s\n", cr.ID, cr.Check, cr.Rationale))
+			}
+		}
+		for _, vr := range ev.ValidationResults {
+			if vr.Required && vr.Status == CheckFail {
+				b.WriteString(fmt.Sprintf("- [validation] %s (%s): %s\n", vr.ID, vr.Command, vr.EvidenceSummary))
 			}
 		}
 	case DecisionRevisionRequired:
@@ -297,6 +312,16 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 		for _, w := range ev.Warnings {
 			if w.Severity == SeverityBlocker {
 				b.WriteString(fmt.Sprintf("- **BLOCKER:** %s\n", w.Message))
+			}
+		}
+		for _, cr := range ev.FileScopeResults {
+			if cr.Result == CheckFail && cr.SeverityIfFailed == SeverityBlocker {
+				b.WriteString(fmt.Sprintf("- **BLOCKER:** [file-scope] %s: %s\n", cr.ID, cr.Rationale))
+			}
+		}
+		for _, cr := range ev.ChecklistResults {
+			if cr.Result == CheckFail && cr.SeverityIfFailed == SeverityBlocker {
+				b.WriteString(fmt.Sprintf("- **BLOCKER:** [checklist] %s (%s): %s\n", cr.ID, cr.Check, cr.Rationale))
 			}
 		}
 	}

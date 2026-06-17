@@ -35,11 +35,11 @@ const (
 type CheckSeverity string
 
 const (
-	SeverityBlocker  CheckSeverity = "blocker"
-	SeverityError    CheckSeverity = "error"
-	SeverityWarning  CheckSeverity = "warning"
-	SeverityInfo     CheckSeverity = "info"
-	SeverityUnknown  CheckSeverity = "unknown"
+	SeverityBlocker CheckSeverity = "blocker"
+	SeverityError   CheckSeverity = "error"
+	SeverityWarning CheckSeverity = "warning"
+	SeverityInfo    CheckSeverity = "info"
+	SeverityUnknown CheckSeverity = "unknown"
 )
 
 // EvidenceWarning carries a message and severity for missing or degraded evidence.
@@ -86,19 +86,19 @@ type ValidationCommandSpec struct {
 // ChecklistItem is one item from audit_seed.audit_checklist (supports old flat-string
 // and new typed-object formats from the canonical packet).
 type ChecklistItem struct {
-	ID              string        `json:"id"`
-	Check           string        `json:"check"`
+	ID               string        `json:"id"`
+	Check            string        `json:"check"`
 	SeverityIfFailed CheckSeverity `json:"severityIfFailed"`
 }
 
 // PerCheckResult is the auditor's evaluation of a single checklist item.
 type PerCheckResult struct {
-	ID            string        `json:"id"`
-	Check         string        `json:"check"`
-	Result        CheckResult   `json:"result"`
+	ID               string        `json:"id"`
+	Check            string        `json:"check"`
+	Result           CheckResult   `json:"result"`
 	SeverityIfFailed CheckSeverity `json:"severityIfFailed"`
-	EvidenceSource string       `json:"evidenceSource"`
-	Rationale     string        `json:"rationale"`
+	EvidenceSource   string        `json:"evidenceSource"`
+	Rationale        string        `json:"rationale"`
 }
 
 // ValidationCommandResult is the collected result for one validation command.
@@ -187,14 +187,14 @@ type Evidence struct {
 
 // GeneratedAudit is the output of a successful audit generation pass.
 type GeneratedAudit struct {
-	RunID               int64     `json:"runId"`
-	Status              string    `json:"status"`
-	InputSummary        string    `json:"inputSummary"`
-	AuditPacket         string    `json:"auditPacket"`
-	Decision            Decision  `json:"decision"`
-	CreatedAt           time.Time `json:"createdAt"`
-	Warnings            []string  `json:"warnings"`
-	RevisionRequirements []string `json:"revisionRequirements"`
+	RunID                int64     `json:"runId"`
+	Status               string    `json:"status"`
+	InputSummary         string    `json:"inputSummary"`
+	AuditPacket          string    `json:"auditPacket"`
+	Decision             Decision  `json:"decision"`
+	CreatedAt            time.Time `json:"createdAt"`
+	Warnings             []string  `json:"warnings"`
+	RevisionRequirements []string  `json:"revisionRequirements"`
 }
 
 // ManualAuditSubmission is the payload for a manual auditor submission.
