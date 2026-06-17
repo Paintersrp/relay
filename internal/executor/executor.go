@@ -442,6 +442,8 @@ func runBackgroundDispatch(
 
 	s.UpdateAgentExecutionStatus(execID, execStatus, &ec, &startedAt, &finishedStr, &stdoutPath, &stderrPath, &combinedPath, nil, errPtr)
 
+	collectAndPersistGitEvidence(s, runID, repo.Path)
+
 	if runResult.Stdout != "" {
 		assistantText := pipeline.ExtractOpenCodeAssistantText(runResult.Stdout)
 		parsed := pipeline.ParseAgentResult(assistantText)
@@ -659,4 +661,32 @@ func extractBlocker(raw string) string {
 		}
 	}
 	return ""
+}
+
+func collectAndPersistGitEvidence(s *store.Store, runID int64, repoPath string) {
+	if repoPath == "" {
+		return
+	}
+	ev, err := pipeline.CollectGitDiffEvidence(context.Background(), repoPath, 30*time.Second)
+	if err != nil {
+		s.CreateEvent(runID, "warn", fmt.Sprintf("Failed to collect git evidence: %v", err))
+		return
+	}
+
+	persistGitArtifact(s, runID, "git_status_text", ev.StatusText)
+	persistGitArtifact(s, runID, "git_diff_stat", ev.DiffStat)
+	persistGitArtifact(s, runID, "git_diff_numstat", ev.DiffNumstat)
+	persistGitArtifact(s, runID, "git_diff_name_status", ev.NameStatus)
+	persistGitArtifact(s, runID, "git_diff_patch", ev.DiffPatch)
+}
+
+func persistGitArtifact(s *store.Store, runID int64, kind, content string) {
+	if content == "" {
+		return
+	}
+	filename := pipeline.ArtifactFilename(kind)
+	path, err := artifacts.Write(runID, kind, filename, []byte(content))
+	if err == nil && path != "" {
+		s.CreateArtifact(runID, kind, path, "text/plain")
+	}
 }

@@ -271,3 +271,18 @@ Relay exposes `/mcp` through the Go daemon (`cmd/relay`) for ChatGPT-facing remo
 The current `/mcp` endpoint uses No Auth; this is a temporary development proof only. Production use **must** restore authentication before exposing the endpoint beyond local validation.
 
 Local stdio MCP (the `relay-mcpserver` binary), if retained, is optional/dev-only and is not the primary ChatGPT integration path. Remote HTTPS MCP is the intended ChatGPT integration channel.
+
+---
+
+## Remote MCP Smoke-Test Checklist
+
+Run these checks against a local development instance of the Go daemon with an HTTPS tunnel active. This checklist is **not** production deployment guidance.
+
+1. **Daemon starts without error** — `go run ./cmd/relay` binds on the configured port.
+2. **Tunnel is reachable** — `curl -s -o /dev/null -w "%{http_code}" <tunnel-url>/mcp` returns `200` or `405`.
+3. **ChatGPT can discover tools** — ChatGPT session successfully calls `tools/list` on the remote `/mcp` endpoint.
+4. **Tools respond without auth errors** — Each tool (`submit_test_audit_packet`, `create_run_from_planner_handoff`, `list_open_runs`, `get_run_status`, `submit_audit_packet`) returns a structured response, not an auth/403 body.
+5. **Artifact written to disk** — After calling a write tool, confirm an artifact file appears under `$RELAY_ARTIFACTS_DIR`.
+6. **Run state persisted** — After a write tool, `get_run_status` returns the expected updated state.
+7. **No credentials leaked** — Review tunnel and daemon logs; confirm no tokens, keys, or signed URLs appear in the output.
+8. **Daemon stops cleanly** — `Ctrl+C` or `SIGTERM` shuts the process down without a panic.

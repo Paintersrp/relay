@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"relay/internal/artifacts"
+	"relay/internal/pipeline"
 	"relay/internal/store"
 )
 
@@ -87,7 +89,51 @@ func (c *Collector) Collect(runID int64) (*Evidence, error) {
 	c.evaluateFileScopeResults(ev)
 	c.evaluateNonGoalResults(ev)
 
+	c.generateRevisionRequirements(ev)
+
 	return ev, nil
+}
+
+func (c *Collector) generateRevisionRequirements(ev *Evidence) {
+	// 1. Map blocker/error warnings to revision requirements
+	for _, w := range ev.Warnings {
+		if w.Severity == SeverityBlocker || w.Severity == SeverityError {
+			ev.RevisionRequirements = append(ev.RevisionRequirements, RevisionRequirement{
+				Reason:   fmt.Sprintf("Resolve warning: %s", w.Message),
+				Severity: w.Severity,
+			})
+		}
+	}
+
+	// 2. Map validation failures of required commands to revision requirements
+	for _, vr := range ev.ValidationResults {
+		if vr.Required && vr.Status == CheckFail {
+			ev.RevisionRequirements = append(ev.RevisionRequirements, RevisionRequirement{
+				Reason:   fmt.Sprintf("Validation command %s (%s) failed with exit: %s", vr.ID, vr.Command, vr.ExitResult),
+				Severity: SeverityError,
+			})
+		}
+	}
+
+	// 3. Map checklist failures to revision requirements
+	for _, cr := range ev.ChecklistResults {
+		if cr.Result == CheckFail {
+			ev.RevisionRequirements = append(ev.RevisionRequirements, RevisionRequirement{
+				Reason:   fmt.Sprintf("Checklist item %s failed: %s", cr.ID, cr.Check),
+				Severity: cr.SeverityIfFailed,
+			})
+		}
+	}
+
+	// 4. Map file scope failures to revision requirements
+	for _, fsr := range ev.FileScopeResults {
+		if fsr.Result == CheckFail {
+			ev.RevisionRequirements = append(ev.RevisionRequirements, RevisionRequirement{
+				Reason:   fmt.Sprintf("File scope check %s failed: %s (Rationale: %s)", fsr.ID, fsr.Check, fsr.Rationale),
+				Severity: fsr.SeverityIfFailed,
+			})
+		}
+	}
 }
 
 // canonicalPacketRaw is the top-level canonical_packet.json structure we parse.
@@ -106,7 +152,7 @@ type executionPayloadRaw struct {
 	Goal               json.RawMessage          `json:"goal"`
 	Scope              json.RawMessage          `json:"scope"`
 	NonGoals           json.RawMessage          `json:"non_goals"`
-	FileTargets        []string                 `json:"file_targets"`
+	FileTargets        json.RawMessage          `json:"file_targets"`
 	ValidationCommands []validationCommandRaw   `json:"validation_commands"`
 }
 
@@ -136,6 +182,52 @@ func extractStringField(raw json.RawMessage) (string, bool) {
 		return strings.TrimSpace(joined), len(arr) > 0
 	}
 	return "", false
+}
+
+func parseFileTargets(raw json.RawMessage) ([]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	// 1. Try a string array
+	var strArr []string
+	if err := json.Unmarshal(raw, &strArr); err == nil {
+		return strArr, nil
+	}
+	// 2. Try a single string
+	var singleStr string
+	if err := json.Unmarshal(raw, &singleStr); err == nil {
+		if strings.TrimSpace(singleStr) != "" {
+			return []string{strings.TrimSpace(singleStr)}, nil
+		}
+		return nil, nil
+	}
+	// 3. Try an array of interface{} which might be strings or objects
+	var genericArr []interface{}
+	if err := json.Unmarshal(raw, &genericArr); err == nil {
+		var targets []string
+		for _, item := range genericArr {
+			if s, ok := item.(string); ok {
+				targets = append(targets, s)
+			} else if m, ok := item.(map[string]interface{}); ok {
+				if pathVal, ok := m["path"]; ok {
+					if pathStr, ok := pathVal.(string); ok {
+						targets = append(targets, pathStr)
+					}
+				}
+			}
+		}
+		return targets, nil
+	}
+	// 4. Try a single object with a "path" field or multiple fields
+	var singleObj map[string]interface{}
+	if err := json.Unmarshal(raw, &singleObj); err == nil {
+		if pathVal, ok := singleObj["path"]; ok {
+			if pathStr, ok := pathVal.(string); ok {
+				return []string{pathStr}, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("unsupported file_targets format")
 }
 
 // parseChecklistItems handles old flat-string and new typed-object audit checklist formats.
@@ -281,7 +373,22 @@ func (c *Collector) collectPacketMetadata(runID int64, ev *Evidence) {
 	}
 
 	// Parse file targets
-	meta.FileTargets = ep.FileTargets
+	targets, err := parseFileTargets(ep.FileTargets)
+	if err != nil {
+		meta.MissingFields = append(meta.MissingFields, "execution_payload.file_targets")
+		ev.Warnings = append(ev.Warnings, EvidenceWarning{
+			Message:  fmt.Sprintf("execution_payload.file_targets parse error: %v in canonical_packet.json", err),
+			Severity: SeverityError,
+		})
+	} else if len(targets) == 0 {
+		meta.MissingFields = append(meta.MissingFields, "execution_payload.file_targets")
+		ev.Warnings = append(ev.Warnings, EvidenceWarning{
+			Message:  "execution_payload.file_targets missing or empty in canonical_packet.json",
+			Severity: SeverityError,
+		})
+	} else {
+		meta.FileTargets = targets
+	}
 
 	// Parse validation commands
 	for _, vc := range ep.ValidationCommands {
@@ -377,6 +484,20 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 		}
 	}
 
+	// Try parsing validation_run.json
+	var progress pipeline.ValidationProgress
+	hasProgress := false
+	var progressPath string
+	for _, a := range collected {
+		if a.kind == "validation_run_json" {
+			if err := json.Unmarshal(a.data, &progress); err == nil {
+				hasProgress = true
+				progressPath = a.path
+				break
+			}
+		}
+	}
+
 	if len(specByID) == 0 && len(collected) == 0 {
 		ev.Warnings = append(ev.Warnings, EvidenceWarning{
 			Message:  "No validation commands in packet and no validation output artifacts found — validation evidence unavailable",
@@ -392,45 +513,68 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 		})
 		// Produce unknown results for each required command
 		for _, spec := range ev.Packet.ValidationCommands {
-			result := CheckUnknown
-			rationale := "No validation output artifact found"
 			ev.ValidationResults = append(ev.ValidationResults, ValidationCommandResult{
 				ID:              spec.ID,
 				Command:         spec.Command,
 				Required:        spec.Required,
-				Status:          result,
+				Status:          CheckUnknown,
 				ExitResult:      "not_run",
-				EvidenceSummary: rationale,
+				EvidenceSummary: "No validation output artifact found",
 			})
 		}
 		return
 	}
 
-	// If we have packet commands, try to match artifacts; otherwise produce one generic result
+	// For each spec, find the result
 	if len(specByID) > 0 {
 		for _, spec := range ev.Packet.ValidationCommands {
-			// Find the best matching artifact (use the largest available)
-			var best valArtifact
-			for _, a := range collected {
-				if len(a.data) > len(best.data) {
-					best = a
-				}
-			}
-			summary := fmt.Sprintf("sourced from %s artifact (%d bytes)", best.kind, len(best.data))
-			redacted := redactSecrets(string(best.data))
-			preview := boundedPreview([]byte(redacted), MaxPreviewBytes)
-			_ = preview // available if needed for more detail
-
+			var bestPath string
 			status := CheckUnknown
 			exitResult := "unknown"
-			// Heuristic: check for common pass indicators in stdout
-			lower := strings.ToLower(redacted)
-			if strings.Contains(lower, "ok\n") || strings.Contains(lower, "pass") || strings.Contains(lower, "exit 0") {
-				status = CheckPass
-				exitResult = "exit 0 (inferred)"
-			} else if strings.Contains(lower, "fail") || strings.Contains(lower, "error") || strings.Contains(lower, "exit 1") {
-				status = CheckFail
-				exitResult = "non-zero exit (inferred)"
+			summary := "No validation artifact matched"
+
+			matchedFromProgress := false
+			if hasProgress {
+				for _, pc := range progress.Commands {
+					if strings.Contains(strings.ToLower(pc.Command), strings.ToLower(spec.Command)) ||
+						strings.Contains(strings.ToLower(spec.Command), strings.ToLower(pc.Command)) {
+						matchedFromProgress = true
+						bestPath = progressPath
+						exitResult = fmt.Sprintf("exit %d", pc.ExitCode)
+						summary = fmt.Sprintf("Command exit code: %d, progress status: %s", pc.ExitCode, pc.Status)
+						if pc.Status == "pass" {
+							status = CheckPass
+						} else if pc.Status == "fail" {
+							status = CheckFail
+						} else {
+							status = CheckUnknown
+						}
+						break
+					}
+				}
+			}
+
+			if !matchedFromProgress {
+				// Fallback to heuristic in validation_stdout / validation_stderr
+				var best valArtifact
+				for _, a := range collected {
+					if a.kind != "validation_run_json" && len(a.data) > len(best.data) {
+						best = a
+					}
+				}
+				if len(best.data) > 0 {
+					bestPath = best.path
+					summary = fmt.Sprintf("sourced from %s artifact (%d bytes)", best.kind, len(best.data))
+					redacted := redactSecrets(string(best.data))
+					lower := strings.ToLower(redacted)
+					if strings.Contains(lower, "ok\n") || strings.Contains(lower, "pass") || strings.Contains(lower, "exit 0") {
+						status = CheckPass
+						exitResult = "exit 0 (inferred)"
+					} else if strings.Contains(lower, "fail") || strings.Contains(lower, "error") || strings.Contains(lower, "exit 1") {
+						status = CheckFail
+						exitResult = "non-zero exit (inferred)"
+					}
+				}
 			}
 
 			ev.ValidationResults = append(ev.ValidationResults, ValidationCommandResult{
@@ -440,29 +584,41 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 				Status:          status,
 				ExitResult:      exitResult,
 				EvidenceSummary: summary,
-				RawArtifactPath: best.path,
+				RawArtifactPath: bestPath,
 			})
 		}
 	} else {
-		// No packet commands — produce one generic validation result
-		best := collected[0]
+		// No packet commands — produce one generic validation result from the best available artifact
+		var best valArtifact
 		for _, a := range collected {
 			if len(a.data) > len(best.data) {
 				best = a
 			}
 		}
-		redacted := redactSecrets(string(best.data))
-		summary := fmt.Sprintf("sourced from %s artifact (%d bytes)", best.kind, len(best.data))
 		status := CheckUnknown
 		exitResult := "unknown"
-		lower := strings.ToLower(redacted)
-		if strings.Contains(lower, "ok\n") || strings.Contains(lower, "pass") {
+		summary := fmt.Sprintf("sourced from %s artifact (%d bytes)", best.kind, len(best.data))
+		if best.kind == "validation_run_json" && hasProgress {
 			status = CheckPass
-			exitResult = "exit 0 (inferred)"
-		} else if strings.Contains(lower, "fail") || strings.Contains(lower, "error") {
-			status = CheckFail
-			exitResult = "non-zero exit (inferred)"
+			for _, pc := range progress.Commands {
+				if pc.Status == "fail" {
+					status = CheckFail
+					break
+				}
+			}
+			exitResult = fmt.Sprintf("progress status: %s", progress.Status)
+		} else {
+			redacted := redactSecrets(string(best.data))
+			lower := strings.ToLower(redacted)
+			if strings.Contains(lower, "ok\n") || strings.Contains(lower, "pass") {
+				status = CheckPass
+				exitResult = "exit 0 (inferred)"
+			} else if strings.Contains(lower, "fail") || strings.Contains(lower, "error") {
+				status = CheckFail
+				exitResult = "non-zero exit (inferred)"
+			}
 		}
+
 		ev.ValidationResults = append(ev.ValidationResults, ValidationCommandResult{
 			ID:              "V?",
 			Command:         "(unknown — not in packet)",
@@ -643,77 +799,262 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 		return
 	}
 
-	if !ev.ChangedFiles.Present {
-		// Produce unknown results for all checks
-		for i, chk := range checks {
-			ev.FileScopeResults = append(ev.FileScopeResults, PerCheckResult{
-				ID:               fmt.Sprintf("FS%d", i+1),
-				Check:            chk,
-				Result:           CheckUnknown,
-				SeverityIfFailed: SeverityError,
-				EvidenceSource:   "none",
-				Rationale:        "No changed-files artifact — file scope cannot be confirmed",
-			})
-		}
-		if len(fileTargets) > 0 && len(checks) == 0 {
-			ev.FileScopeResults = append(ev.FileScopeResults, PerCheckResult{
-				ID:               "FS1",
-				Check:            fmt.Sprintf("Changed files limited to expected targets: %s", strings.Join(fileTargets, ", ")),
-				Result:           CheckUnknown,
-				SeverityIfFailed: SeverityError,
-				EvidenceSource:   "none",
-				Rationale:        "No changed-files artifact — cannot confirm scope against expected targets",
-			})
-		}
-		ev.Warnings = append(ev.Warnings, EvidenceWarning{
-			Message:  "File scope checks cannot be evaluated without changed-files artifact",
-			Severity: SeverityError,
-		})
-		return
-	}
-
-	changedPaths := make([]string, len(ev.ChangedFiles.Files))
-	for i, f := range ev.ChangedFiles.Files {
-		changedPaths[i] = f.Path
-	}
-
-	// Check against explicit file_targets from packet
-	if len(fileTargets) > 0 {
-		targetSet := map[string]bool{}
-		for _, t := range fileTargets {
-			targetSet[t] = true
-		}
-		var outOfScope []string
-		for _, p := range changedPaths {
-			if !targetSet[p] {
-				outOfScope = append(outOfScope, p)
+	// FS-TARGETS check (original name/check string for test compatibility)
+	{
+		res := CheckUnknown
+		rat := "No changed-files artifact — cannot confirm scope against expected targets"
+		src := "none"
+		if ev.ChangedFiles.Present {
+			src = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
+			targetSet := map[string]bool{}
+			for _, t := range fileTargets {
+				targetSet[t] = true
 			}
-		}
-		result := CheckPass
-		rationale := fmt.Sprintf("All %d changed files are within expected targets", len(changedPaths))
-		if len(outOfScope) > 0 {
-			result = CheckFail
-			rationale = fmt.Sprintf("Out-of-scope files detected: %s", strings.Join(outOfScope, ", "))
+			var outOfScope []string
+			for _, f := range ev.ChangedFiles.Files {
+				if !targetSet[f.Path] {
+					outOfScope = append(outOfScope, f.Path)
+				}
+			}
+			if len(outOfScope) == 0 {
+				res = CheckPass
+				rat = fmt.Sprintf("All %d changed files are within expected targets", len(ev.ChangedFiles.Files))
+			} else {
+				res = CheckFail
+				rat = fmt.Sprintf("Out-of-scope files detected: %s", strings.Join(outOfScope, ", "))
+			}
+		} else if len(fileTargets) > 0 && len(checks) == 0 {
+			res = CheckUnknown
+			rat = "No changed-files artifact — cannot confirm scope against expected targets"
 		}
 		ev.FileScopeResults = append(ev.FileScopeResults, PerCheckResult{
 			ID:               "FS-TARGETS",
 			Check:            fmt.Sprintf("Changed files limited to: %s", strings.Join(fileTargets, ", ")),
-			Result:           result,
+			Result:           res,
 			SeverityIfFailed: SeverityError,
-			EvidenceSource:   fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath),
-			Rationale:        rationale,
+			EvidenceSource:   src,
+			Rationale:        rat,
 		})
 	}
 
-	// Evaluate explicit file_scope_checks (these require manual review)
+	// 1. Only expected files check
+	{
+		res := CheckUnknown
+		rat := "No changed-files artifact — cannot verify if only expected files changed"
+		src := "none"
+		if ev.ChangedFiles.Present {
+			src = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
+			targetSet := map[string]bool{}
+			for _, t := range fileTargets {
+				targetSet[t] = true
+			}
+			var outOfScope []string
+			for _, f := range ev.ChangedFiles.Files {
+				if !targetSet[f.Path] {
+					outOfScope = append(outOfScope, f.Path)
+				}
+			}
+			if len(outOfScope) == 0 {
+				res = CheckPass
+				rat = fmt.Sprintf("All %d changed files are within expected targets", len(ev.ChangedFiles.Files))
+			} else {
+				res = CheckFail
+				rat = fmt.Sprintf("Out-of-scope files detected: %s", strings.Join(outOfScope, ", "))
+			}
+		}
+		ev.FileScopeResults = append(ev.FileScopeResults, PerCheckResult{
+			ID:               "FS-EXPECTED-ONLY",
+			Check:            "Only expected files changed",
+			Result:           res,
+			SeverityIfFailed: SeverityError,
+			EvidenceSource:   src,
+			Rationale:        rat,
+		})
+	}
+
+	// 2. Runtime files check
+	{
+		res := CheckUnknown
+		rat := "No changed-files artifact — cannot verify if runtime files changed"
+		src := "none"
+		if ev.ChangedFiles.Present {
+			src = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
+			targetSet := map[string]bool{}
+			for _, t := range fileTargets {
+				targetSet[t] = true
+			}
+			var unexpectedCode []string
+			for _, f := range ev.ChangedFiles.Files {
+				if !targetSet[f.Path] {
+					ext := filepath.Ext(f.Path)
+					if ext == ".go" || ext == ".templ" || ext == ".ts" || ext == ".tsx" || ext == ".js" || ext == ".jsx" {
+						unexpectedCode = append(unexpectedCode, f.Path)
+					}
+				}
+			}
+			if len(unexpectedCode) == 0 {
+				res = CheckPass
+				rat = "No unexpected runtime code files changed outside targets"
+			} else {
+				res = CheckFail
+				rat = fmt.Sprintf("Unexpected runtime code files changed outside targets: %s", strings.Join(unexpectedCode, ", "))
+			}
+		}
+		ev.FileScopeResults = append(ev.FileScopeResults, PerCheckResult{
+			ID:               "FS-RUNTIME-FILES",
+			Check:            "No unexpected runtime code files changed outside expected targets",
+			Result:           res,
+			SeverityIfFailed: SeverityError,
+			EvidenceSource:   src,
+			Rationale:        rat,
+		})
+	}
+
+	// 3. Tests removed/weakened check
+	{
+		res := CheckUnknown
+		rat := "No changed-files artifact — cannot verify if tests were deleted"
+		src := "none"
+		if ev.ChangedFiles.Present {
+			src = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
+			var deletedTests []string
+			for _, f := range ev.ChangedFiles.Files {
+				if (strings.Contains(f.Path, "test") || strings.Contains(f.Path, "_test.go")) && f.Status == "D" {
+					deletedTests = append(deletedTests, f.Path)
+				}
+			}
+			if len(deletedTests) == 0 {
+				res = CheckPass
+				rat = "No test files were deleted"
+			} else {
+				res = CheckFail
+				rat = fmt.Sprintf("Deleted test files detected: %s", strings.Join(deletedTests, ", "))
+			}
+		}
+		ev.FileScopeResults = append(ev.FileScopeResults, PerCheckResult{
+			ID:               "FS-TESTS-PRESERVED",
+			Check:            "No test files were deleted",
+			Result:           res,
+			SeverityIfFailed: SeverityError,
+			EvidenceSource:   src,
+			Rationale:        rat,
+		})
+	}
+
+	// 4. Security-sensitive / MCP / auth files check
+	{
+		res := CheckUnknown
+		rat := "No changed-files artifact — cannot verify MCP/auth/security file changes"
+		src := "none"
+		if ev.ChangedFiles.Present {
+			src = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
+			targetSet := map[string]bool{}
+			for _, t := range fileTargets {
+				targetSet[t] = true
+			}
+			var sensitiveChanges []string
+			sensitiveKeywords := []string{"mcp", "auth", "security", "credentials", "token", "password", "secret", "private_key"}
+			for _, f := range ev.ChangedFiles.Files {
+				if !targetSet[f.Path] {
+					lowerPath := strings.ToLower(f.Path)
+					matched := false
+					for _, kw := range sensitiveKeywords {
+						if strings.Contains(lowerPath, kw) {
+							matched = true
+							break
+						}
+					}
+					if matched {
+						sensitiveChanges = append(sensitiveChanges, f.Path)
+					}
+				}
+			}
+			if len(sensitiveChanges) == 0 {
+				res = CheckPass
+				rat = "No security-sensitive, auth, or MCP files changed outside expected targets"
+			} else {
+				res = CheckFail
+				rat = fmt.Sprintf("Security-sensitive/auth/MCP files changed outside targets: %s", strings.Join(sensitiveChanges, ", "))
+			}
+		}
+		ev.FileScopeResults = append(ev.FileScopeResults, PerCheckResult{
+			ID:               "FS-SECURITY-MCP",
+			Check:            "No security-sensitive, auth, or MCP files changed outside expected targets",
+			Result:           res,
+			SeverityIfFailed: SeverityError,
+			EvidenceSource:   src,
+			Rationale:        rat,
+		})
+	}
+
+	// 5. Documentation-only run check
+	{
+		res := CheckUnknown
+		rat := "No changed-files artifact — cannot verify if doc-only task touched code"
+		src := "none"
+		if ev.ChangedFiles.Present {
+			src = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
+			isDocOnly := true
+			for _, t := range fileTargets {
+				ext := filepath.Ext(t)
+				if ext != ".md" && ext != ".txt" && ext != ".json" && !strings.Contains(t, "docs/") && !strings.Contains(t, "handoffs/") {
+					isDocOnly = false
+					break
+				}
+			}
+			if isDocOnly && len(fileTargets) > 0 {
+				var touchedCode []string
+				for _, f := range ev.ChangedFiles.Files {
+					ext := filepath.Ext(f.Path)
+					if ext == ".go" || ext == ".templ" || ext == ".ts" || ext == ".tsx" || ext == ".js" || ext == ".jsx" {
+						touchedCode = append(touchedCode, f.Path)
+					}
+				}
+				if len(touchedCode) == 0 {
+					res = CheckPass
+					rat = "Documentation-only task changed only documentation files"
+				} else {
+					res = CheckFail
+					rat = fmt.Sprintf("Documentation-only task touched runtime code files: %s", strings.Join(touchedCode, ", "))
+				}
+			} else {
+				res = CheckNotApplicable
+				rat = "Task is not documentation-only"
+			}
+		}
+		ev.FileScopeResults = append(ev.FileScopeResults, PerCheckResult{
+			ID:               "FS-DOC-ONLY",
+			Check:            "Documentation-only tasks touched only documentation files",
+			Result:           res,
+			SeverityIfFailed: SeverityError,
+			EvidenceSource:   src,
+			Rationale:        rat,
+		})
+	}
+
+	if !ev.ChangedFiles.Present {
+		ev.Warnings = append(ev.Warnings, EvidenceWarning{
+			Message:  "File scope checks cannot be evaluated without changed-files artifact",
+			Severity: SeverityError,
+		})
+	}
+
+	// Also evaluate any explicit file_scope_checks (from audit_seed)
 	for i, chk := range checks {
+		res := CheckUnknown
+		rat := "No changed-files artifact — cannot verify manually"
+		src := "none"
+		if ev.ChangedFiles.Present {
+			src = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
+			rat = fmt.Sprintf("Changed files present (%d files) — auditor must verify manually", len(ev.ChangedFiles.Files))
+		}
 		ev.FileScopeResults = append(ev.FileScopeResults, PerCheckResult{
 			ID:               fmt.Sprintf("FS%d", i+1),
 			Check:            chk,
-			Result:           CheckUnknown,
+			Result:           res,
 			SeverityIfFailed: SeverityWarning,
-			EvidenceSource:   fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath),
-			Rationale:        fmt.Sprintf("Changed files present (%d files) — auditor must verify manually", len(changedPaths)),
+			EvidenceSource:   src,
+			Rationale:        rat,
 		})
 	}
 }

@@ -127,15 +127,21 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 		b.WriteString("⚠ **EVIDENCE GAP: No validation evidence found.**\n")
 		b.WriteString("**Audit consequence:** Validation cannot be confirmed. Required validation checks are marked `unknown`.\n")
 	} else {
-		b.WriteString("| ID | Command | Required | Status | Exit Result | Evidence Summary |\n")
-		b.WriteString("|---|---|---|---|---|---|\n")
+		b.WriteString("| ID | Command | Required | Status | Exit Result | Evidence Summary | Raw Artifact Path |\n")
+		b.WriteString("|---|---|---|---|---|---|---|\n")
 		for _, vr := range ev.ValidationResults {
 			req := "no"
 			if vr.Required {
 				req = "**yes**"
 			}
-			b.WriteString(fmt.Sprintf("| %s | `%s` | %s | `%s` | %s | %s |\n",
-				vr.ID, vr.Command, req, string(vr.Status), vr.ExitResult, vr.EvidenceSummary))
+			rawPath := vr.RawArtifactPath
+			if rawPath == "" {
+				rawPath = "_not available_"
+			} else {
+				rawPath = fmt.Sprintf("`%s`", rawPath)
+			}
+			b.WriteString(fmt.Sprintf("| %s | `%s` | %s | `%s` | %s | %s | %s |\n",
+				vr.ID, vr.Command, req, string(vr.Status), vr.ExitResult, vr.EvidenceSummary, rawPath))
 		}
 		b.WriteString("\n")
 		for _, vr := range ev.ValidationResults {
