@@ -24,6 +24,7 @@ export {
   getArtifactContent,
   getArtifactContentByUrl,
   validateRun,
+  acceptFailedValidation,
   auditRun,
   approveCloseout,
   submitManualAuditPacket,
@@ -69,5 +70,5 @@ export {
   RELAY_AUDIT_DECISION_VALUES,
 } from './types'
 export { runArtifactContentQueryOptions } from './queries'
-export { evaluateValidationGate } from './validationGate'
+export { evaluateValidationGate, evaluateExecuteValidationAction } from './validationGate'
 

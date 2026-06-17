@@ -13,6 +13,7 @@ import {
   prepareCommitMessage,
   closeRun,
   evaluateValidationGate,
+  acceptFailedValidation,
 } from '@/features/relay-runs'
 import type {
   RelayAuditDecisionValue,
@@ -288,6 +289,8 @@ function AuditMainContent({
   const [showApproveForm, setShowApproveForm] = useState(false)
   const [revisionReason, setRevisionReason] = useState('')
   const [showRevisionForm, setShowRevisionForm] = useState(false)
+  const [acceptanceReason, setAcceptanceReason] = useState('')
+  const [showAcceptanceForm, setShowAcceptanceForm] = useState(false)
 
   const auditData = useMemo(
     () => deriveAuditData(run, artifacts, events),
@@ -306,6 +309,7 @@ function AuditMainContent({
   const localValidationAccepted = runStatus === 'validation_failed_accepted'
 
   const validationRunJsonArt = artifacts.find(a => a.storageKind === 'validation_run_json')
+  const validationFailureAcceptanceJsonArt = artifacts.find(a => a.storageKind === 'validation_failure_acceptance_json')
   const validationProgressJsonArt = artifacts.find(a => a.storageKind === 'validation_progress_json')
   const validationStdoutArt = artifacts.find(a => a.storageKind === 'validation_stdout')
   const validationStderrArt = artifacts.find(a => a.storageKind === 'validation_stderr')
@@ -360,6 +364,12 @@ function AuditMainContent({
     onError: (err: any) => setMutationError(err.message || 'Failed to close run.'),
   })
 
+  const acceptFailureMutation = useMutation({
+    mutationFn: (reason: string) => acceptFailedValidation(runId, reason),
+    onSuccess: () => { setMutationError(null); setShowAcceptanceForm(false); setAcceptanceReason(''); invalidate() },
+    onError: (err: any) => setMutationError(err.message || 'Failed to accept validation failure.'),
+  })
+
   const activeMutation = generateMutation.isPending
     || validateMutation.isPending
     || submitManualMutation.isPending
@@ -367,6 +377,7 @@ function AuditMainContent({
     || revisionMutation.isPending
     || prepareCommitMutation.isPending
     || closeMutation.isPending
+    || acceptFailureMutation.isPending
 
   const handleGenerateAudit = () => {
     if (auditBlockedByValidation) return
@@ -379,6 +390,7 @@ function AuditMainContent({
   const handleRequestRevision = () => { setMutationError(null); revisionMutation.mutate() }
   const handlePrepareCommitMessage = () => { setMutationError(null); prepareCommitMutation.mutate() }
   const handleCloseRun = () => { setMutationError(null); closeMutation.mutate() }
+  const handleAcceptFailure = () => { if (!acceptanceReason.trim()) return; setMutationError(null); acceptFailureMutation.mutate(acceptanceReason) }
 
   return (
     <div className="flex flex-col gap-4">
@@ -419,13 +431,19 @@ function AuditMainContent({
           )}
 
           {/* Validation Artifact Links */}
-          {(validationRunJsonArt || validationProgressJsonArt || validationStdoutArt || validationStderrArt) && (
+          {(validationRunJsonArt || validationFailureAcceptanceJsonArt || validationProgressJsonArt || validationStdoutArt || validationStderrArt) && (
             <div className="flex flex-col gap-1.5 mt-2 border-t border-border/40 pt-2">
               <span className="text-[11px] font-medium text-muted-foreground/70">Validation Evidence:</span>
               {validationRunJsonArt && (
                 <div className="flex items-center gap-2 text-xs font-mono">
                   <span className="text-muted-foreground">Validation Result:</span>
                   <ArtifactPreviewCard artifact={validationRunJsonArt} runId={runId} className="flex-1 max-w-xs" />
+                </div>
+              )}
+              {validationFailureAcceptanceJsonArt && (
+                <div className="flex items-center gap-2 text-xs font-mono">
+                  <span className="text-muted-foreground">Failure Acceptance:</span>
+                  <ArtifactPreviewCard artifact={validationFailureAcceptanceJsonArt} runId={runId} className="flex-1 max-w-xs" />
                 </div>
               )}
               {validationProgressJsonArt && (
@@ -476,6 +494,61 @@ function AuditMainContent({
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
               Running Validation...
             </Button>
+          )}
+
+          {localValidationFailed && hasFinalValidationEvidence && (
+            <div className="flex flex-col gap-2 mt-2 border-t border-border/40 pt-2">
+              <span className="text-[11px] font-medium text-muted-foreground/70">Accept Failed Validation:</span>
+              {!showAcceptanceForm ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAcceptanceForm(true)}
+                  disabled={activeMutation}
+                  className="w-fit gap-1.5"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-yellow-400" />
+                  Accept Failure...
+                </Button>
+              ) : (
+                <div className="flex flex-col gap-2 p-3 bg-yellow-950/10 border border-yellow-900/30 rounded">
+                  <span className="text-xs font-medium text-yellow-400/90">Provide Acceptance Reason:</span>
+                  <Textarea
+                    placeholder="Enter reason for accepting this validation failure..."
+                    value={acceptanceReason}
+                    onChange={(e) => setAcceptanceReason(e.target.value)}
+                    className="text-xs h-16 bg-background border-yellow-900/50 focus-visible:ring-yellow-800"
+                    disabled={activeMutation}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleAcceptFailure}
+                      disabled={activeMutation || !acceptanceReason.trim()}
+                      className="bg-yellow-600 hover:bg-yellow-700 text-black font-semibold h-7 text-xs"
+                    >
+                      {acceptFailureMutation.isPending ? (
+                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                      ) : null}
+                      Submit Acceptance
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowAcceptanceForm(false)
+                        setAcceptanceReason('')
+                      }}
+                      disabled={activeMutation}
+                      className="h-7 text-xs"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </Section>

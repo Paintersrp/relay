@@ -9,7 +9,7 @@ import {
   cancelRun,
   recoverRun,
   validateRun,
-  evaluateValidationGate,
+  evaluateExecuteValidationAction,
 } from '@/features/relay-runs'
 import type { RelayExecutorPhase } from '@/features/relay-runs'
 import { RunWorkbenchLayout } from '@/components/relay/RunWorkbenchLayout'
@@ -146,16 +146,8 @@ function ExecuteMainContent({
   const runLifecycle = (run.lifecycleState || '') as string
   const executorPhase = deriveExecutorPhase(runStatus, runLifecycle)
 
-  const { hasFinalValidationEvidence } = evaluateValidationGate(artifacts, runStatus)
+  const canRunValidation = evaluateExecuteValidationAction(artifacts, runStatus)
   const localValidationIsRunning = runStatus === 'local_validation_running'
-  const isPostExecutor = runStatus === 'executor_done' ||
-                         runStatus === 'executor_blocked' ||
-                         runStatus === 'validation_passed' ||
-                         runStatus === 'validation_failed' ||
-                         runStatus === 'validation_failed_accepted'
-  const canRunValidation = isPostExecutor &&
-                           !localValidationIsRunning &&
-                           (!hasFinalValidationEvidence || runStatus === 'validation_failed')
 
   const actionAvailability = useMemo(() => {
     const isApproved = runStatus === 'approved_for_executor'

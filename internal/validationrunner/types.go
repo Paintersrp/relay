@@ -38,6 +38,9 @@ type ValidationRun struct {
 	StdoutPath   string          `json:"stdoutPath"`
 	StderrPath   string          `json:"stderrPath"`
 	ProgressPath string          `json:"progressPath"`
+	PassedCount  int             `json:"passedCount"`
+	FailedCount  int             `json:"failedCount"`
+	SkippedCount int             `json:"skippedCount"`
 }
 
 const validationStdoutFilename = "validation_stdout.txt"

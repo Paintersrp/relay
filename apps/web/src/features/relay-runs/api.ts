@@ -330,6 +330,16 @@ export async function validateRun(id: string): Promise<ValidateRunResponse> {
   return postJson<undefined, ValidateRunResponse>(`/api/runs/${id}/validate`);
 }
 
+export async function acceptFailedValidation(
+  id: string,
+  reason: string
+): Promise<AuditActionResponse> {
+  return postJson<{ reason: string }, AuditActionResponse>(
+    `/api/runs/${id}/validate/accept-failure`,
+    { reason }
+  );
+}
+
 export async function auditRun(id: string): Promise<RelayActionResponse> {
   return postJson<undefined, RelayActionResponse>(`/api/runs/${id}/audit`);
 }

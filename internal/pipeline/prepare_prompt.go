@@ -494,6 +494,8 @@ func ArtifactFilename(kind string) string {
 		return "opencode_lifecycle_diagnostic.json"
 	case "validation_run_json":
 		return "validation_run.json"
+	case "validation_failure_acceptance_json":
+		return "validation_failure_acceptance.json"
 	case "validation_progress_json":
 		return "validation_progress.json"
 	case "validation_stdout":

@@ -21,6 +21,7 @@ var allowedKinds = map[string]bool{
 	"agent_result_json":                  true,
 	"opencode_lifecycle_diagnostic_json": true,
 	"validation_run_json":                true,
+	"validation_failure_acceptance_json": true,
 	"validation_stdout":                  true,
 	"validation_stderr":                  true,
 	"validation_progress_json":           true,

@@ -79,8 +79,19 @@ func (svc *Service) Generate(runID int64) (*GeneratedAudit, error) {
 	}
 
 	if run.Status != executor.StatusExecutorDone && run.Status != executor.StatusExecutorBlocked &&
-		run.Status != "validation_passed" && run.Status != "validation_failed" {
-		return nil, fmt.Errorf("audit generation requires executor_done, executor_blocked, validation_passed, or validation_failed status, got %q", run.Status)
+		run.Status != "validation_passed" && run.Status != "validation_failed" && run.Status != "validation_failed_accepted" {
+		return nil, fmt.Errorf("audit generation requires executor_done, executor_blocked, validation_passed, validation_failed, or validation_failed_accepted status, got %q", run.Status)
+	}
+
+	if run.Status == "validation_failed_accepted" {
+		jsonArts, err := svc.store.ListArtifactsByRunKind(runID, validationrunner.ArtifactKindJSON)
+		if err != nil || len(jsonArts) == 0 {
+			return nil, fmt.Errorf("audit generation requires validation_run_json for validation_failed_accepted status")
+		}
+		acceptanceArts, err := svc.store.ListArtifactsByRunKind(runID, "validation_failure_acceptance_json")
+		if err != nil || len(acceptanceArts) == 0 {
+			return nil, fmt.Errorf("audit generation requires validation_failure_acceptance_json for validation_failed_accepted status")
+		}
 	}
 
 	required, _ := svc.requiredValidationCommandsExist(runID)

@@ -16,9 +16,14 @@ export function evaluateValidationGate(
     (a) => a.storageKind === 'validation_run_json'
   );
 
+  const hasAcceptanceArtifact = artifacts.some(
+    (a) => a.storageKind === 'validation_failure_acceptance_json'
+  );
+
   const validationAllowsAudit =
     hasFinalValidationEvidence &&
-    (runStatus === 'validation_passed' || runStatus === 'validation_failed_accepted');
+    (runStatus === 'validation_passed' ||
+      (runStatus === 'validation_failed_accepted' && hasAcceptanceArtifact));
 
   const auditBlockedByValidation =
     runStatus === 'local_validation_running' || !validationAllowsAudit;
@@ -29,3 +34,23 @@ export function evaluateValidationGate(
     auditBlockedByValidation,
   };
 }
+
+export function evaluateExecuteValidationAction(
+  artifacts: Artifact[],
+  runStatus: string
+): boolean {
+  const { hasFinalValidationEvidence } = evaluateValidationGate(artifacts, runStatus);
+  const localValidationIsRunning = runStatus === 'local_validation_running';
+  const isPostExecutor =
+    runStatus === 'executor_done' ||
+    runStatus === 'executor_blocked' ||
+    runStatus === 'validation_passed' ||
+    runStatus === 'validation_failed' ||
+    runStatus === 'validation_failed_accepted';
+  return (
+    isPostExecutor &&
+    !localValidationIsRunning &&
+    (!hasFinalValidationEvidence || runStatus === 'validation_failed')
+  );
+}
+

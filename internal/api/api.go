@@ -227,6 +227,8 @@ func mapArtifactKindAndLabel(kind string) (string, string) {
 		return "validation", "Validation Output (Stderr)"
 	case "validation_run_json":
 		return "validation", "Validation Report (JSON)"
+	case "validation_failure_acceptance_json":
+		return "validation", "Validation Failure Acceptance (JSON)"
 	case "opencode_stdout":
 		return "result", "OpenCode Output (Stdout)"
 	case "opencode_stderr":
@@ -1562,6 +1564,88 @@ func (h *APIHandler) ValidateRun(w http.ResponseWriter, r *http.Request) {
 		"stdout":       vr.StdoutPath,
 		"stderr":       vr.StderrPath,
 		"progress":     vr.ProgressPath,
+	})
+}
+
+// POST /api/runs/{id}/validate/accept-failure
+func (h *APIHandler) AcceptFailedValidation(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON payload")
+		return
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.Reason == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Reason is required and cannot be empty")
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
+		return
+	}
+
+	if run.Status != "validation_failed" {
+		writeError(w, http.StatusConflict, "CONFLICT",
+			fmt.Sprintf("Accepting validation failure requires validation_failed status, got %q", run.Status))
+		return
+	}
+
+	// Check that final validation evidence validation_run_json exists
+	valSvc := validationrunner.NewService(h.store)
+	if !valSvc.HasValidationArtifacts(id) {
+		writeError(w, http.StatusConflict, "CONFLICT", "Cannot accept validation failure without final validation evidence (validation_run.json missing)")
+		return
+	}
+
+	// Write validation_failure_acceptance_json artifact
+	acceptanceData := map[string]interface{}{
+		"runId":      id,
+		"acceptedAt": time.Now().UTC().Format(time.RFC3339),
+		"reason":     req.Reason,
+	}
+	acceptanceBytes, err := json.MarshalIndent(acceptanceData, "", "  ")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to format acceptance data")
+		return
+	}
+
+	progPath, err := artifacts.Write(id, "validation_failure_acceptance_json", "validation_failure_acceptance.json", acceptanceBytes)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", fmt.Sprintf("Failed to write artifact: %s", err.Error()))
+		return
+	}
+
+	_, err = h.store.CreateArtifact(id, "validation_failure_acceptance_json", progPath, "application/json")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", fmt.Sprintf("Failed to save artifact: %s", err.Error()))
+		return
+	}
+
+	// Create event
+	_, _ = h.store.CreateEvent(id, "info", fmt.Sprintf("Validation failure accepted. Reason: %s", req.Reason))
+
+	// Update status
+	_, err = h.store.UpdateRunStatus(id, "validation_failed_accepted")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run status")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"runId":   idStr,
+		"status":  "validation_failed_accepted",
 	})
 }
 

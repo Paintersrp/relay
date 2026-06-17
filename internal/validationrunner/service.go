@@ -192,6 +192,16 @@ func (svc *Service) RunValidation(ctx context.Context, runID int64) (*Validation
 	}
 	vr.FinishedAt = nowUTC()
 
+	for _, cr := range vr.Commands {
+		if cr.NotRunReason != "" {
+			vr.SkippedCount++
+		} else if cr.Status == "pass" {
+			vr.PassedCount++
+		} else {
+			vr.FailedCount++
+		}
+	}
+
 	combinedStdout := allCommadsStdout.String()
 	combinedStderr := allCommadsStderr.String()
 
