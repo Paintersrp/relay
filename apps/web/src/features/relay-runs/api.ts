@@ -344,10 +344,13 @@ export interface RepairValidationResponse {
   success: boolean;
   runId: string;
   eligible: boolean;
+  repairAttempted?: boolean;
+  blockedReason?: string;
   ineligibleReason?: string;
   reValidationValid?: boolean;
   reValidationError?: string;
   reValidationReport?: any;
+  error?: string;
 }
 
 export async function repairValidation(id: string): Promise<RepairValidationResponse> {

@@ -13,9 +13,20 @@ import (
 
 type ValidationError struct {
 	Type           string `json:"type"` // "schema", "structural", "security", "state", "path", "input"
+	Code           string `json:"code,omitempty"`
 	Message        string `json:"message"`
 	RepairEligible bool   `json:"repair_eligible"`
 }
+
+const (
+	CodeJSONSyntax            = "CANONICAL_PACKET_JSON_SYNTAX"
+	CodeMissingRequiredField  = "CANONICAL_PACKET_MISSING_REQUIRED_FIELD"
+	CodeInvalidEnum           = "CANONICAL_PACKET_INVALID_ENUM"
+	CodeExtraProperty         = "CANONICAL_PACKET_EXTRA_PROPERTY"
+	CodeInvalidType           = "CANONICAL_PACKET_INVALID_TYPE"
+	CodeStringPatternMismatch = "CANONICAL_PACKET_STRING_PATTERN_MISMATCH"
+	CodeFileTargetMismatch    = "CANONICAL_PACKET_FILE_TARGET_MISMATCH"
+)
 
 type ValidationReport struct {
 	Valid          bool              `json:"valid"`
@@ -38,6 +49,7 @@ func ValidatePacketJSON(packetJSON []byte, schemaPath string) (*ValidationReport
 		report.Valid = false
 		report.Errors = append(report.Errors, ValidationError{
 			Type:           "structural",
+			Code:           CodeJSONSyntax,
 			Message:        fmt.Sprintf("Invalid JSON syntax: %v", err),
 			RepairEligible: true, // Formatting/syntax errors are repair eligible
 		})
@@ -65,6 +77,7 @@ func ValidatePacketJSON(packetJSON []byte, schemaPath string) (*ValidationReport
 		for _, desc := range result.Errors() {
 			report.Errors = append(report.Errors, ValidationError{
 				Type:           "schema",
+				Code:           mapSchemaErrorType(desc.Type()),
 				Message:        desc.String(),
 				RepairEligible: true, // Schema violations are repair eligible
 			})
@@ -82,11 +95,7 @@ func ValidatePacketJSON(packetJSON []byte, schemaPath string) (*ValidationReport
 		report.Valid = false
 		report.RepairEligible = false // Secrets are never repair eligible
 		for _, issue := range secretIssues {
-			report.Errors = append(report.Errors, ValidationError{
-				Type:           "security",
-				Message:        issue,
-				RepairEligible: false,
-			})
+			report.Errors = append(report.Errors, issue)
 		}
 	}
 
@@ -96,11 +105,7 @@ func ValidatePacketJSON(packetJSON []byte, schemaPath string) (*ValidationReport
 		report.Valid = false
 		report.RepairEligible = false // Path traversal/absolute paths are intent/boundary violations, not repairable formatting issues
 		for _, issue := range pathIssues {
-			report.Errors = append(report.Errors, ValidationError{
-				Type:           "path",
-				Message:        issue,
-				RepairEligible: false,
-			})
+			report.Errors = append(report.Errors, issue)
 		}
 	}
 
@@ -110,23 +115,19 @@ func ValidatePacketJSON(packetJSON []byte, schemaPath string) (*ValidationReport
 		report.Valid = false
 		report.RepairEligible = false // Missing product behavior or goals is not format repairable
 		for _, issue := range payloadIssues {
-			report.Errors = append(report.Errors, ValidationError{
-				Type:           "input",
-				Message:        issue,
-				RepairEligible: false,
-			})
+			report.Errors = append(report.Errors, issue)
 		}
 	}
 
 	return report, nil
 }
 
-func scanForSecrets(val interface{}) []string {
-	var issues []string
+func scanForSecrets(val interface{}) []ValidationError {
+	var issues []ValidationError
 	switch v := val.(type) {
 	case string:
 		if HasSecret(v) {
-			issues = append(issues, fmt.Sprintf("secret-like value detected in string: %s", truncateString(v, 30)))
+			issues = append(issues, ValidationError{Type: "security", Code: "CANONICAL_PACKET_SECURITY", Message: fmt.Sprintf("secret-like value detected in string: %s", truncateString(v, 30)), RepairEligible: false})
 		}
 	case map[string]interface{}:
 		for _, val := range v {
@@ -170,8 +171,8 @@ func truncateString(s string, limit int) string {
 	return s
 }
 
-func checkPaths(packet map[string]interface{}) []string {
-	var issues []string
+func checkPaths(packet map[string]interface{}) []ValidationError {
+	var issues []ValidationError
 
 	// Check file_targets in execution_payload
 	if exec, ok := packet["execution_payload"].(map[string]interface{}); ok {
@@ -179,12 +180,12 @@ func checkPaths(packet map[string]interface{}) []string {
 			for _, t := range targets {
 				if pathStr, ok := t.(string); ok {
 					if err := validatePathSafety(pathStr); err != nil {
-						issues = append(issues, fmt.Sprintf("unsafe file target: %s (%v)", pathStr, err))
+						issues = append(issues, ValidationError{Type: "path", Code: "CANONICAL_PACKET_UNSAFE_PATH", Message: fmt.Sprintf("unsafe file target: %s (%v)", pathStr, err), RepairEligible: false})
 					}
 				} else if targetObj, ok := t.(map[string]interface{}); ok {
 					if pathStr, ok := targetObj["path"].(string); ok {
 						if err := validatePathSafety(pathStr); err != nil {
-							issues = append(issues, fmt.Sprintf("unsafe file target: %s (%v)", pathStr, err))
+							issues = append(issues, ValidationError{Type: "path", Code: "CANONICAL_PACKET_UNSAFE_PATH", Message: fmt.Sprintf("unsafe file target: %s (%v)", pathStr, err), RepairEligible: false})
 						}
 					}
 				}
@@ -198,7 +199,7 @@ func checkPaths(packet map[string]interface{}) []string {
 			for k, p := range paths {
 				if pathStr, ok := p.(string); ok {
 					if err := validatePathSafety(pathStr); err != nil {
-						issues = append(issues, fmt.Sprintf("unsafe artifact path for %s: %s (%v)", k, pathStr, err))
+						issues = append(issues, ValidationError{Type: "path", Code: "CANONICAL_PACKET_UNSAFE_PATH", Message: fmt.Sprintf("unsafe artifact path for %s: %s (%v)", k, pathStr, err), RepairEligible: false})
 					}
 				}
 			}
@@ -229,12 +230,12 @@ func validatePathSafety(p string) error {
 	return nil
 }
 
-func checkRequiredPayloadFields(packet map[string]interface{}) []string {
-	var issues []string
+func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError {
+	var issues []ValidationError
 
 	exec, ok := packet["execution_payload"].(map[string]interface{})
 	if !ok {
-		return []string{"execution_payload is missing or invalid"}
+		return []ValidationError{{Type: "input", Code: "CANONICAL_PACKET_MISSING_PAYLOAD", Message: "execution_payload is missing or invalid", RepairEligible: false}}
 	}
 
 	requiredFields := []string{
@@ -246,27 +247,27 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []string {
 	for _, f := range requiredFields {
 		val, ok := exec[f]
 		if !ok {
-			issues = append(issues, fmt.Sprintf("required execution_payload field %q is missing", f))
+			issues = append(issues, ValidationError{Type: "input", Code: CodeMissingRequiredField, Message: fmt.Sprintf("required execution_payload field %q is missing", f), RepairEligible: false})
 			continue
 		}
 		strVal, ok := val.(string)
 		if !ok || strings.TrimSpace(strVal) == "" {
-			issues = append(issues, fmt.Sprintf("required execution_payload field %q is empty", f))
+			issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_EMPTY_FIELD", Message: fmt.Sprintf("required execution_payload field %q is empty", f), RepairEligible: false})
 		}
 	}
 
 	// Validate expected_behavior (should be non-empty array of strings)
 	if val, ok := exec["expected_behavior"]; !ok {
-		issues = append(issues, "required execution_payload field \"expected_behavior\" is missing")
+		issues = append(issues, ValidationError{Type: "input", Code: CodeMissingRequiredField, Message: "required execution_payload field \"expected_behavior\" is missing", RepairEligible: false})
 	} else if arr, ok := val.([]interface{}); !ok || len(arr) == 0 {
-		issues = append(issues, "required execution_payload field \"expected_behavior\" is empty")
+		issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_EMPTY_FIELD", Message: "required execution_payload field \"expected_behavior\" is empty", RepairEligible: false})
 	}
 
 	// Validate completion_contract (should be object)
 	if val, ok := exec["completion_contract"]; !ok {
-		issues = append(issues, "required execution_payload field \"completion_contract\" is missing")
+		issues = append(issues, ValidationError{Type: "input", Code: CodeMissingRequiredField, Message: "required execution_payload field \"completion_contract\" is missing", RepairEligible: false})
 	} else if obj, ok := val.(map[string]interface{}); !ok || len(obj) == 0 {
-		issues = append(issues, "required execution_payload field \"completion_contract\" is empty")
+		issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_EMPTY_FIELD", Message: "required execution_payload field \"completion_contract\" is empty", RepairEligible: false})
 	}
 
 	// Check arrays are not empty
@@ -281,12 +282,12 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []string {
 	for _, f := range requiredArrays {
 		val, ok := exec[f]
 		if !ok {
-			issues = append(issues, fmt.Sprintf("required execution_payload field %q is missing", f))
+			issues = append(issues, ValidationError{Type: "input", Code: CodeMissingRequiredField, Message: fmt.Sprintf("required execution_payload field %q is missing", f), RepairEligible: false})
 			continue
 		}
 		arrVal, ok := val.([]interface{})
 		if !ok || len(arrVal) == 0 {
-			issues = append(issues, fmt.Sprintf("required execution_payload field %q is empty", f))
+			issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_EMPTY_FIELD", Message: fmt.Sprintf("required execution_payload field %q is empty", f), RepairEligible: false})
 		}
 	}
 
@@ -311,7 +312,7 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []string {
 			lower := strings.ToLower(v)
 			for _, phrase := range bannedPhrases {
 				if strings.Contains(lower, phrase) {
-					issues = append(issues, fmt.Sprintf("vague or decision-delegating phrase %q detected in execution_payload", phrase))
+					issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_VAGUE_INTENT", Message: fmt.Sprintf("vague or decision-delegating phrase %q detected in execution_payload", phrase), RepairEligible: false})
 				}
 			}
 		case map[string]interface{}:
@@ -383,7 +384,7 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []string {
 				}
 
 				if !hasFrontendFile {
-					issues = append(issues, "user-facing workflow requested but no frontend file targets specified (and backend-only sufficiency was not explicitly decided)")
+					issues = append(issues, ValidationError{Type: "input", Code: CodeFileTargetMismatch, Message: "user-facing workflow requested but no frontend file targets specified (and backend-only sufficiency was not explicitly decided)", RepairEligible: false})
 				}
 			}
 		}
@@ -397,7 +398,7 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []string {
 				if action == "inspect" {
 					tPaths, ok := stepObj["target_paths"].([]interface{})
 					if !ok || len(tPaths) == 0 {
-						issues = append(issues, "inspect step action requires non-empty target_paths")
+						issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_INVALID_STEP", Message: "inspect step action requires non-empty target_paths", RepairEligible: false})
 					}
 					title, _ := stepObj["title"].(string)
 					insts, _ := stepObj["instructions"].(string)
@@ -406,7 +407,7 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []string {
 						strings.Contains(textToCheck, "determine") ||
 						strings.Contains(textToCheck, "choose") ||
 						strings.Contains(textToCheck, "whether") {
-						issues = append(issues, "inspect step instructions/title contain decision words delegating reasoning")
+						issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_VAGUE_INTENT", Message: "inspect step instructions/title contain decision words delegating reasoning", RepairEligible: false})
 					}
 				}
 			}
@@ -445,3 +446,32 @@ func sanitizeSchemaRegexes(schemaContent string) string {
 	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*\\\\)`, "")
 	return schemaContent
 }
+
+func mapSchemaErrorType(t string) string {
+	switch t {
+	case "required":
+		return CodeMissingRequiredField
+	case "enum":
+		return CodeInvalidEnum
+	case "additional_property", "additional_properties":
+		return CodeExtraProperty
+	case "type", "invalid_type":
+		return CodeInvalidType
+	case "pattern":
+		return CodeStringPatternMismatch
+	default:
+		return "CANONICAL_PACKET_SCHEMA_ERROR"
+	}
+}
+
+func RedactSecrets(s string) string {
+	for _, re := range secretRegexes {
+		s = re.ReplaceAllString(s, "[REDACTED]")
+	}
+	if strings.Contains(s, "-----BEGIN") {
+		re := regexp.MustCompile(`(?s)-----BEGIN.*?-----END.*?-----`)
+		s = re.ReplaceAllString(s, "[REDACTED KEY]")
+	}
+	return s
+}
+

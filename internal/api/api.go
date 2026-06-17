@@ -1737,35 +1737,36 @@ func (h *APIHandler) RepairValidation(w http.ResponseWriter, r *http.Request) {
 	svc := repairer.NewService(h.store)
 	result := svc.RepairValidation(id, packetJSON, &report)
 
-	if result.IneligibleReason != "" {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
-			"success":          false,
-			"runId":            idStr,
-			"eligible":         false,
-			"ineligibleReason": result.IneligibleReason,
-		})
+	resp := map[string]interface{}{
+		"success":            result.Success,
+		"runId":              idStr,
+		"eligible":           result.Eligible,
+		"repairAttempted":    result.RepairAttempted,
+		"blockedReason":      result.BlockedReason,
+		"ineligibleReason":   result.IneligibleReason,
+		"reValidationValid":  result.ReValidationValid,
+		"reValidationReport": result.ReValidationReport,
+		"reValidationError":  result.ReValidationError,
+		"error":              result.Error,
+	}
+
+	if !result.Eligible {
+		writeJSON(w, http.StatusUnprocessableEntity, resp)
 		return
 	}
 
-	if result.Error != "" {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
-			"success":               false,
-			"runId":                 idStr,
-			"eligible":              true,
-			"reValidationValid":     false,
-			"reValidationError":     result.Error,
-			"reValidationReport":    result.ReValidationReport,
-		})
+	if !result.RepairAttempted {
+		// Blocked because no command or other reason
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":               true,
-		"runId":                 idStr,
-		"eligible":              true,
-		"reValidationValid":     true,
-		"reValidationReport":    result.ReValidationReport,
-	})
+	if !result.Success {
+		writeJSON(w, http.StatusUnprocessableEntity, resp)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // POST /api/runs/{id}/audit

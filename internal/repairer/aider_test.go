@@ -1,10 +1,28 @@
 package repairer
 
 import (
+	"context"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"relay/internal/store"
 	"relay/internal/validation"
 )
+
+type FakeAdapter struct {
+	Calls  int
+	Stdout string
+	Stderr string
+	Err    error
+}
+
+func (f *FakeAdapter) Repair(ctx context.Context, prompt string) (string, string, error) {
+	f.Calls++
+	return f.Stdout, f.Stderr, f.Err
+}
 
 func TestCheckEligibility_eligible(t *testing.T) {
 	tests := []struct {
@@ -17,7 +35,7 @@ func TestCheckEligibility_eligible(t *testing.T) {
 				Valid:          false,
 				RepairEligible: true,
 				Errors: []validation.ValidationError{
-					{Type: "structural", Message: "invalid JSON", RepairEligible: true},
+					{Type: "structural", Code: validation.CodeJSONSyntax, Message: "invalid JSON", RepairEligible: true},
 				},
 			},
 		},
@@ -27,7 +45,7 @@ func TestCheckEligibility_eligible(t *testing.T) {
 				Valid:          false,
 				RepairEligible: true,
 				Errors: []validation.ValidationError{
-					{Type: "schema", Message: "missing required field", RepairEligible: true},
+					{Type: "schema", Code: validation.CodeMissingRequiredField, Message: "missing required field", RepairEligible: true},
 				},
 			},
 		},
@@ -37,8 +55,8 @@ func TestCheckEligibility_eligible(t *testing.T) {
 				Valid:          false,
 				RepairEligible: true,
 				Errors: []validation.ValidationError{
-					{Type: "structural", Message: "syntax error", RepairEligible: true},
-					{Type: "schema", Message: "invalid type", RepairEligible: true},
+					{Type: "structural", Code: validation.CodeJSONSyntax, Message: "syntax error", RepairEligible: true},
+					{Type: "schema", Code: validation.CodeInvalidType, Message: "invalid type", RepairEligible: true},
 				},
 			},
 		},
@@ -65,7 +83,7 @@ func TestCheckEligibility_ineligible(t *testing.T) {
 				Valid:          false,
 				RepairEligible: false,
 				Errors: []validation.ValidationError{
-					{Type: "security", Message: "secret detected", RepairEligible: false},
+					{Type: "security", Code: "CANONICAL_PACKET_SECURITY", Message: "secret detected", RepairEligible: false},
 				},
 			},
 		},
@@ -75,7 +93,7 @@ func TestCheckEligibility_ineligible(t *testing.T) {
 				Valid:          false,
 				RepairEligible: false,
 				Errors: []validation.ValidationError{
-					{Type: "path", Message: "unsafe path", RepairEligible: false},
+					{Type: "path", Code: "CANONICAL_PACKET_UNSAFE_PATH", Message: "unsafe path", RepairEligible: false},
 				},
 			},
 		},
@@ -85,7 +103,7 @@ func TestCheckEligibility_ineligible(t *testing.T) {
 				Valid:          false,
 				RepairEligible: false,
 				Errors: []validation.ValidationError{
-					{Type: "input", Message: "missing field", RepairEligible: false},
+					{Type: "input", Code: "CANONICAL_PACKET_MISSING_PAYLOAD", Message: "missing field", RepairEligible: false},
 				},
 			},
 		},
@@ -95,8 +113,18 @@ func TestCheckEligibility_ineligible(t *testing.T) {
 				Valid:          false,
 				RepairEligible: false,
 				Errors: []validation.ValidationError{
+					{Type: "structural", Code: validation.CodeJSONSyntax, Message: "syntax", RepairEligible: true},
+					{Type: "security", Code: "CANONICAL_PACKET_SECURITY", Message: "secret", RepairEligible: false},
+				},
+			},
+		},
+		{
+			name: "missing code",
+			report: &validation.ValidationReport{
+				Valid:          false,
+				RepairEligible: true,
+				Errors: []validation.ValidationError{
 					{Type: "structural", Message: "syntax", RepairEligible: true},
-					{Type: "security", Message: "secret", RepairEligible: false},
 				},
 			},
 		},
@@ -140,10 +168,10 @@ func TestCheckEligibility_edgeCases(t *testing.T) {
 }
 
 func TestBuildRepairPrompt(t *testing.T) {
-	packetJSON := []byte(`{"packet_meta":{"packet_id":"test-1"},"execution_payload":{"goal":"test"}}`)
+	packetJSON := []byte(`{"packet_meta":{"packet_id":"test-1"},"execution_payload":{"goal":"test","token":"Bearer 12345"}}`)
 	report := &validation.ValidationReport{
 		Errors: []validation.ValidationError{
-			{Type: "structural", Message: "invalid JSON syntax"},
+			{Type: "structural", Code: validation.CodeJSONSyntax, Message: "invalid JSON syntax"},
 		},
 	}
 
@@ -154,9 +182,151 @@ func TestBuildRepairPrompt(t *testing.T) {
 	if !contains(prompt, "invalid JSON syntax") {
 		t.Error("expected prompt to contain error message")
 	}
-	if !contains(prompt, string(packetJSON)) {
-		t.Error("expected prompt to contain packet JSON")
+	if contains(prompt, "Bearer 12345") {
+		t.Error("expected prompt to be redacted")
 	}
+	if !contains(prompt, "[REDACTED]") {
+		t.Error("expected prompt to contain [REDACTED]")
+	}
+}
+
+func TestService_RepairValidation(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s, err := store.Open(dbPath, logger)
+	if err != nil {
+		t.Fatalf("failed to open store: %v", err)
+	}
+	defer s.Close()
+
+	repo, _ := s.CreateRepo("test-repo", dir)
+	run, _ := s.CreateRun(repo.ID, "test-run", "packet_validation_failed", "gpt-4o", "gpt-4o", "main")
+
+	t.Run("eligible one-call behavior, valid output", func(t *testing.T) {
+		validBytes, err := os.ReadFile("../../relay-contracts/examples/canonical_packet.valid.example.json")
+		if err != nil {
+			validBytes, err = os.ReadFile("../../../relay-contracts/examples/canonical_packet.valid.example.json")
+			if err != nil {
+				t.Fatalf("failed to read valid packet for test: %v", err)
+			}
+		}
+
+		fakeAdapter := &FakeAdapter{
+			Stdout: string(validBytes),
+		}
+		svc := NewServiceWithAdapter(s, fakeAdapter)
+
+		report := &validation.ValidationReport{
+			Valid:          false,
+			RepairEligible: true,
+			Errors: []validation.ValidationError{
+				{Type: "structural", Code: validation.CodeJSONSyntax, Message: "syntax", RepairEligible: true},
+			},
+		}
+
+		packetJSON := []byte(`{"packet_meta": {}}`)
+		res := svc.RepairValidation(run.ID, packetJSON, report)
+
+		if !res.Eligible {
+			t.Errorf("expected eligible")
+		}
+		if !res.RepairAttempted {
+			t.Errorf("expected repair attempted")
+		}
+		if res.BlockedReason != "" {
+			t.Errorf("expected no blocked reason")
+		}
+		if res.Success != true {
+			t.Errorf("expected success, got error: %s", res.Error)
+		}
+		if fakeAdapter.Calls != 1 {
+			t.Errorf("expected 1 call, got %d", fakeAdapter.Calls)
+		}
+		
+		runStatus, _ := s.GetRun(run.ID)
+		if runStatus.Status != "repair_validated" {
+			t.Errorf("expected repair_validated, got %s", runStatus.Status)
+		}
+	})
+    
+	t.Run("ineligible zero-call behavior", func(t *testing.T) {
+		fakeAdapter := &FakeAdapter{}
+		svc := NewServiceWithAdapter(s, fakeAdapter)
+
+		report := &validation.ValidationReport{
+			Valid:          false,
+			RepairEligible: false,
+			Errors: []validation.ValidationError{
+				{Type: "security", Code: "CANONICAL_PACKET_SECURITY", Message: "secret", RepairEligible: false},
+			},
+		}
+
+		res := svc.RepairValidation(run.ID, []byte("{}"), report)
+
+		if res.Eligible {
+			t.Errorf("expected ineligible")
+		}
+		if fakeAdapter.Calls != 0 {
+			t.Errorf("expected 0 calls")
+		}
+	})
+
+	t.Run("missing command blocked/no-attempt behavior", func(t *testing.T) {
+		svc := NewService(s) // Default adapter with no ENV set
+
+		report := &validation.ValidationReport{
+			Valid:          false,
+			RepairEligible: true,
+			Errors: []validation.ValidationError{
+				{Type: "structural", Code: validation.CodeJSONSyntax, Message: "syntax", RepairEligible: true},
+			},
+		}
+
+		res := svc.RepairValidation(run.ID, []byte("{}"), report)
+
+		if !res.Eligible {
+			t.Errorf("expected eligible")
+		}
+		if res.RepairAttempted {
+			t.Errorf("expected no attempt")
+		}
+		if res.BlockedReason == "" {
+			t.Errorf("expected blocked reason")
+		}
+	})
+
+	t.Run("invalid output status preservation", func(t *testing.T) {
+		fakeAdapter := &FakeAdapter{
+			Stdout: `{"invalid": true}`,
+		}
+		svc := NewServiceWithAdapter(s, fakeAdapter)
+
+		report := &validation.ValidationReport{
+			Valid:          false,
+			RepairEligible: true,
+			Errors: []validation.ValidationError{
+				{Type: "structural", Code: validation.CodeJSONSyntax, Message: "syntax", RepairEligible: true},
+			},
+		}
+
+		// Reset run status before test
+		_, _ = s.UpdateRunStatus(run.ID, "packet_validation_failed")
+
+		res := svc.RepairValidation(run.ID, []byte("{}"), report)
+
+		if res.Success {
+			t.Errorf("expected failure")
+		}
+		if res.ReValidationValid == nil || *res.ReValidationValid != false {
+			t.Errorf("expected revalidation invalid")
+		}
+
+		runStatus, _ := s.GetRun(run.ID)
+		if runStatus.Status == "repair_validated" {
+			t.Errorf("expected status to not advance")
+		}
+	})
 }
 
 func contains(s, substr string) bool {
