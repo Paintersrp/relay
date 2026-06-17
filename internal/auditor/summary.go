@@ -90,6 +90,14 @@ func GenerateInputSummary(ev *Evidence) string {
 	}
 	b.WriteString("\n")
 
+	if ev.AcceptanceEvidence.Present {
+		b.WriteString("## Validation Failure Acceptance\n\n")
+		b.WriteString(fmt.Sprintf("Evidence source: `%s`\n\n", ev.AcceptanceEvidence.RawArtifactPath))
+		b.WriteString("```json\n")
+		b.WriteString(ev.AcceptanceEvidence.Content)
+		b.WriteString("\n```\n\n")
+	}
+
 	b.WriteString("## Changed Files\n\n")
 	if ev.ChangedFiles.Present {
 		b.WriteString(fmt.Sprintf("Evidence source kind: `%s`\n", ev.ChangedFiles.SourceKind))

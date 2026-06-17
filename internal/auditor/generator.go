@@ -96,6 +96,9 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 			b.WriteString(fmt.Sprintf("| Validation (%s) | `validation_stdout` | ⚠ not present |\n", vr.ID))
 		}
 	}
+	if ev.AcceptanceEvidence.Present {
+		b.WriteString(fmt.Sprintf("| Validation Failure Acceptance | `validation_failure_acceptance_json` | `%s` |\n", ev.AcceptanceEvidence.RawArtifactPath))
+	}
 	b.WriteString("\n")
 
 	// --- Implementation Evidence ---
@@ -151,6 +154,14 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 		}
 	}
 	b.WriteString("\n")
+
+	if ev.AcceptanceEvidence.Present {
+		b.WriteString("## Validation Failure Acceptance\n\n")
+		b.WriteString(fmt.Sprintf("**Source:** `%s`\n\n", ev.AcceptanceEvidence.RawArtifactPath))
+		b.WriteString("**Content:**\n```json\n")
+		b.WriteString(ev.AcceptanceEvidence.Content)
+		b.WriteString("\n```\n\n")
+	}
 
 	// --- Changed Files ---
 	b.WriteString("## Changed Files / Diff Review\n\n")

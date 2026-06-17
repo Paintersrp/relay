@@ -142,6 +142,13 @@ type ChangedFilesEvidence struct {
 	SourceKind      string             `json:"sourceKind"`
 }
 
+// AcceptanceEvidence holds validation failure acceptance evidence.
+type AcceptanceEvidence struct {
+	Present         bool   `json:"present"`
+	Content         string `json:"content"`
+	RawArtifactPath string `json:"rawArtifactPath"`
+}
+
 // RevisionRequirement describes a specific thing the executor must correct.
 type RevisionRequirement struct {
 	Reason   string        `json:"reason"`
@@ -168,6 +175,9 @@ type Evidence struct {
 
 	// GitDiff holds diff evidence.
 	GitDiff DiffEvidence `json:"gitDiff"`
+
+	// AcceptanceEvidence holds validation failure acceptance evidence.
+	AcceptanceEvidence AcceptanceEvidence `json:"acceptanceEvidence"`
 
 	// ChecklistResults holds per-check audit results.
 	ChecklistResults []PerCheckResult `json:"checklistResults"`

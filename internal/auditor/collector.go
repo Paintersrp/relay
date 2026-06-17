@@ -85,6 +85,7 @@ func (c *Collector) Collect(runID int64) (*Evidence, error) {
 	c.collectValidationResults(runID, ev)
 	c.collectChangedFiles(runID, ev)
 	c.collectGitDiff(runID, ev)
+	c.collectAcceptanceEvidence(runID, ev)
 	c.evaluateChecklistResults(ev)
 	c.evaluateFileScopeResults(ev)
 	c.evaluateNonGoalResults(ev)
@@ -952,6 +953,28 @@ func (c *Collector) collectGitDiff(runID int64, ev *Evidence) {
 		Present:         true,
 		Preview:         boundedPreview([]byte(redacted), MaxDiffPreviewBytes),
 		RawArtifactPath: rawPath,
+	}
+}
+
+func (c *Collector) collectAcceptanceEvidence(runID int64, ev *Evidence) {
+	paths := c.listArtifactPaths(runID, "validation_failure_acceptance_json")
+	if len(paths) == 0 {
+		return
+	}
+	p := paths[0]
+	data, err := os.ReadFile(p)
+	if err != nil {
+		ev.Warnings = append(ev.Warnings, EvidenceWarning{
+			Message:  fmt.Sprintf("validation_failure_acceptance.json read error: %v", err),
+			Severity: SeverityError,
+		})
+		return
+	}
+	redacted := redactSecrets(string(data))
+	ev.AcceptanceEvidence = AcceptanceEvidence{
+		Present:         true,
+		Content:         boundedPreview([]byte(redacted), MaxPreviewBytes),
+		RawArtifactPath: p,
 	}
 }
 
