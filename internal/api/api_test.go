@@ -62,6 +62,7 @@ func TestAPI(t *testing.T) {
 		r.Get("/runs/{id}/events", apiH.ListEvents)
 		r.Post("/intake/planner-handoff", apiH.IntakePlannerHandoff)
 		r.Post("/runs/{id}/approve-intake", apiH.ApproveIntake)
+		r.Post("/runs/{id}/prepare", apiH.PrepareRun)
 		r.Post("/runs/{id}/audit", apiH.GenerateAudit)
 		r.Post("/runs/{id}/audit/submit", apiH.SubmitAuditPacket)
 		r.Post("/runs/{id}/audit/approve", apiH.ApproveAudit)
@@ -725,6 +726,96 @@ func TestAPI(t *testing.T) {
 			if strings.Contains(string(auditHandlerCode), pattern) {
 				t.Errorf("found git mutation pattern %q in audit handler code", pattern)
 			}
+		}
+	})
+
+	t.Run("PREPARE: Endpoint accepts approved_for_prepare and packet_validation_failed, rejects intake_needs_review", func(t *testing.T) {
+		// 1. Create a run in intake_needs_review
+		runNeedsReview, err := s.CreateRun(repo.ID, "Intake Needs Review Run", "intake_needs_review", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+		idNeedsReviewStr := strconv.FormatInt(runNeedsReview.ID, 10)
+
+		req := httptest.NewRequest("POST", "/api/runs/"+idNeedsReviewStr+"/prepare", nil)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusConflict {
+			t.Errorf("expected 409 conflict, got %d. Body: %s", w.Code, w.Body.String())
+		}
+		var errResp map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&errResp); err == nil {
+			if errResp["currentStatus"] != "intake_needs_review" {
+				t.Errorf("expected currentStatus intake_needs_review, got %v", errResp["currentStatus"])
+			}
+			if errResp["error"] != "CONFLICT" {
+				t.Errorf("expected error CONFLICT, got %v", errResp["error"])
+			}
+		} else {
+			t.Fatalf("failed to parse conflict error json: %v", err)
+		}
+
+		// 2. Create a run in approved_for_prepare with invalid inputs to test success (or invalid to test validation fail)
+		runApproved, err := s.CreateRun(repo.ID, "Approved Run", "approved_for_prepare", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+		idApprovedStr := strconv.FormatInt(runApproved.ID, 10)
+
+		// Set up files so CompileApprovedRun runs
+		configMap := map[string]interface{}{
+			"repo_target":    repo.Path,
+			"branch_context": "main",
+			"file_targets":   []string{"src/ui/overflowPage.ts"},
+		}
+		configJSON, _ := json.Marshal(configMap)
+		configPath, _ := artifacts.Write(runApproved.ID, "run_config", "run_config.json", configJSON)
+		_, _ = s.CreateArtifact(runApproved.ID, "run_config", configPath, "application/json")
+
+		// Write invalid planner_handoff.md so validation fails but compiles, producing packet_validation_failed (422)
+		invalidHandoff := []byte("# Standard Handoff\nGoal: test") // missing implementation_steps, scope, etc.
+		handoffPath, _ := artifacts.Write(runApproved.ID, "planner_handoff", "planner_handoff.md", invalidHandoff)
+		_, _ = s.CreateArtifact(runApproved.ID, "planner_handoff", handoffPath, "text/markdown")
+
+		req2 := httptest.NewRequest("POST", "/api/runs/"+idApprovedStr+"/prepare", nil)
+		w2 := httptest.NewRecorder()
+		r.ServeHTTP(w2, req2)
+
+		if w2.Code != http.StatusUnprocessableEntity {
+			t.Errorf("expected 422, got %d. Body: %s", w2.Code, w2.Body.String())
+		}
+		var valResp map[string]interface{}
+		if err := json.NewDecoder(w2.Body).Decode(&valResp); err != nil {
+			t.Fatalf("failed to decode validation failure response: %v", err)
+		}
+		if valResp["success"] != false {
+			t.Errorf("expected success to be false, got %v", valResp["success"])
+		}
+		if valResp["status"] != "packet_validation_failed" {
+			t.Errorf("expected status to be packet_validation_failed, got %v", valResp["status"])
+		}
+
+		// Verify that packet_validation_report was written
+		updatedRun, _ := s.GetRun(runApproved.ID)
+		if updatedRun.Status != "packet_validation_failed" {
+			t.Errorf("expected status packet_validation_failed, got %s", updatedRun.Status)
+		}
+
+		arts, _ := s.ListArtifactsByRunKind(runApproved.ID, "packet_validation_report")
+		if len(arts) == 0 {
+			t.Error("expected packet_validation_report to exist")
+		}
+
+		// 3. Retry Compile from packet_validation_failed
+		req3 := httptest.NewRequest("POST", "/api/runs/"+idApprovedStr+"/prepare", nil)
+		w3 := httptest.NewRecorder()
+		r.ServeHTTP(w3, req3)
+
+		// It should compile again (attempt retry) and since inputs are still invalid, return 422
+		if w3.Code != http.StatusUnprocessableEntity {
+			t.Errorf("expected 422 on retry, got %d. Body: %s", w3.Code, w3.Body.String())
 		}
 	})
 

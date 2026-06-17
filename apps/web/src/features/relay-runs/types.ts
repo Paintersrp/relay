@@ -186,6 +186,8 @@ export interface RelayApiErrorShape {
   message: string;
   code?: string;
   details?: Record<string, any>;
+  currentStatus?: string;
+  requiredStatuses?: string[];
 }
 
 // Legacy structure compatibility support

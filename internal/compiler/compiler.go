@@ -41,8 +41,16 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 	}
 
 	// 2. Enforce state (CR1)
-	if run.Status != "approved_for_prepare" {
-		return nil, fmt.Errorf("run %d status is %q, but must be approved_for_prepare to compile", runID, run.Status)
+	if run.Status != "approved_for_prepare" && run.Status != "packet_validation_failed" {
+		return nil, fmt.Errorf("run %d status is %q, but must be approved_for_prepare or packet_validation_failed to compile", runID, run.Status)
+	}
+
+	isRetry := run.Status == "packet_validation_failed"
+	if isRetry {
+		_, _ = c.store.CreateEvent(runID, "info", "Compile retry started")
+		_ = c.store.DeleteChecksByRunKind(runID, "validation")
+		_ = c.store.DeleteArtifactsByRunKind(runID, "canonical_packet")
+		_ = c.store.DeleteArtifactsByRunKind(runID, "packet_validation_report")
 	}
 
 	// 3. Load compile inputs (CR2)
@@ -95,7 +103,13 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 		// Update status to packet_validation_failed
 		_, _ = c.store.UpdateRunStatus(runID, "packet_validation_failed")
 		_, _ = c.store.CreateCheck(runID, "validation", "fail", "Handoff parsing failed", "{}")
-		_, _ = c.store.CreateEvent(runID, "warning", "Compile failed: "+strings.Join(parseIssues, "; "))
+		var failMsg string
+		if isRetry {
+			failMsg = "Compile retry failed: " + strings.Join(parseIssues, "; ")
+		} else {
+			failMsg = "Compile failed: " + strings.Join(parseIssues, "; ")
+		}
+		_, _ = c.store.CreateEvent(runID, "warning", failMsg)
 
 		return result, nil
 	}
@@ -145,7 +159,13 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 		_, _ = c.store.UpdateRunStatus(runID, "packet_validated")
 		_ = c.store.DeleteChecksByRunKind(runID, "validation")
 		_, _ = c.store.CreateCheck(runID, "validation", "pass", "Packet validation passed", "{}")
-		_, _ = c.store.CreateEvent(runID, "info", fmt.Sprintf("Run compiled successfully: packet %s generated", packetID))
+		var successMsg string
+		if isRetry {
+			successMsg = fmt.Sprintf("Compile retry completed: packet %s generated", packetID)
+		} else {
+			successMsg = fmt.Sprintf("Run compiled successfully: packet %s generated", packetID)
+		}
+		_, _ = c.store.CreateEvent(runID, "info", successMsg)
 	} else {
 		// S11: packet_validation_failed
 		_, _ = c.store.UpdateRunStatus(runID, "packet_validation_failed")
@@ -153,7 +173,13 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 		for _, e := range report.Errors {
 			_, _ = c.store.CreateCheck(runID, "validation", "fail", e.Message, "{}")
 		}
-		_, _ = c.store.CreateEvent(runID, "warning", fmt.Sprintf("Run compile failed: %d validation errors", len(report.Errors)))
+		var failMsg string
+		if isRetry {
+			failMsg = fmt.Sprintf("Compile retry failed: %d validation errors", len(report.Errors))
+		} else {
+			failMsg = fmt.Sprintf("Run compile failed: %d validation errors", len(report.Errors))
+		}
+		_, _ = c.store.CreateEvent(runID, "warning", failMsg)
 	}
 
 	return result, nil

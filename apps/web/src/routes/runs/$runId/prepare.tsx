@@ -8,11 +8,13 @@ import {
   prepareRun,
   renderBrief,
   approveBrief,
+  RelayApiError,
 } from '@/features/relay-runs'
 import { RunWorkbenchLayout } from '@/components/relay/RunWorkbenchLayout'
 import { ValidationPanel } from '@/components/relay/ValidationPanel'
 import { LogPreviewPanel } from '@/components/relay/LogPreviewPanel'
 import { ArtifactPreviewCard } from '@/components/relay/ArtifactPreviewCard'
+import { ArtifactInspectorDialog } from '@/components/relay/ArtifactInspectorDialog'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
@@ -128,6 +130,7 @@ function PrepareMainContent({
   const queryClient = useQueryClient()
   const [approvalNotes, setApprovalNotes] = useState('')
   const [mutationError, setMutationError] = useState<string | null>(null)
+  const [showValidationInspector, setShowValidationInspector] = useState(false)
 
   // Find relevant artifacts
   const canonicalPacketArt = artifacts.find((a) => a.filename === 'canonical_packet.json')
@@ -159,7 +162,21 @@ function PrepareMainContent({
       void queryClient.invalidateQueries({ queryKey: ['relay-runs'] })
     },
     onError: (err: any) => {
-      setMutationError(err.message || 'Compile failed.')
+      // Refresh state even on expected API error response (422, 409)
+      void queryClient.invalidateQueries({ queryKey: ['relay-runs'] })
+
+      if (err instanceof RelayApiError) {
+        if (err.status === 422) {
+          setMutationError('Compile failed packet validation. Review Packet Validation Report below.')
+        } else if (err.status === 409) {
+          const currentStatus = err.errorShape?.currentStatus || run.status
+          setMutationError(`Compile cannot run from status "${currentStatus}". Return to the required step or refresh the run.`)
+        } else {
+          setMutationError(err.message || 'Compile failed.')
+        }
+      } else {
+        setMutationError(err.message || 'Compile failed.')
+      }
     },
   })
 
@@ -244,7 +261,7 @@ function PrepareMainContent({
 
       {/* Section 1: Compiler Result */}
       <Section title="Compiler Result" icon={<CheckCircle2 className="w-4 h-4 text-emerald-400" />}>
-        {!compileAttempted ? (
+        {(!compileAttempted && !isPacketValidationFailed) ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
               <Clock className="w-4 h-4 shrink-0" />
@@ -266,7 +283,7 @@ function PrepareMainContent({
                 Run Compile
               </Button>
             )}
-            {!canCompile && !isPacketValidationFailed && (
+            {!canCompile && (
               <p className="text-xs text-muted-foreground italic">
                 Compile requires status &quot;approved_for_prepare&quot;. Current status: {status}.
               </p>
@@ -294,6 +311,11 @@ function PrepareMainContent({
                   <span className="ml-2 opacity-70">{canonicalPacketArt.sizeHint}</span>
                 )}
               </div>
+            )}
+            {isPacketValidationFailed && (
+              <p className="text-xs text-yellow-500/90 italic">
+                Retry compile is available because this run is in packet_validation_failed.
+              </p>
             )}
             {canRetryCompile && (
               <Button
@@ -323,8 +345,12 @@ function PrepareMainContent({
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-4 text-xs">
               <span className="flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-emerald-400">
+                {packetValidationReport?.valid === true ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                )}
+                <span className={packetValidationReport?.valid === true ? 'text-emerald-400' : 'text-red-400'}>
                   {packetValidationReport?.valid === true ? 'Valid' : 'Invalid'}
                 </span>
               </span>
@@ -336,11 +362,21 @@ function PrepareMainContent({
                 </span>
               )}
             </div>
-            <div className="text-xs text-muted-foreground">
-              Report: <code className="font-mono">{packetValidationArt.path}</code>
-              {packetValidationArt.sizeHint && (
-                <span className="ml-2 opacity-70">{packetValidationArt.sizeHint}</span>
-              )}
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-muted-foreground truncate">
+                Report: <code className="font-mono">{packetValidationArt.path}</code>
+                {packetValidationArt.sizeHint && (
+                  <span className="ml-2 opacity-70">{packetValidationArt.sizeHint}</span>
+                )}
+              </div>
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs text-purple-400 hover:text-purple-300"
+                onClick={() => setShowValidationInspector(true)}
+              >
+                Inspect Report
+              </Button>
             </div>
             {packetValidationReport?.errors && packetValidationReport.errors.length > 0 && (
               <div className="flex flex-col gap-1.5 mt-1 border border-border/40 rounded bg-muted/20 p-2 max-h-36 overflow-y-auto">
@@ -353,6 +389,13 @@ function PrepareMainContent({
               </div>
             )}
           </div>
+        ) : isPacketValidationFailed ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-xs bg-red-950/20 border border-red-900/30 rounded p-3 text-red-400">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span className="italic">Compile failed packet validation. Review Validation Report or Logs below.</span>
+            </div>
+          </div>
         ) : (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
@@ -360,6 +403,14 @@ function PrepareMainContent({
               <span className="italic">Packet validation report not available. Compile must be run first.</span>
             </div>
           </div>
+        )}
+        {packetValidationArt && (
+          <ArtifactInspectorDialog
+            runId={run.id}
+            artifact={packetValidationArt}
+            open={showValidationInspector}
+            onOpenChange={setShowValidationInspector}
+          />
         )}
       </Section>
 

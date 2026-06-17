@@ -1297,8 +1297,13 @@ func (h *APIHandler) PrepareRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if run.Status != "approved_for_prepare" {
-		writeError(w, http.StatusConflict, "CONFLICT", fmt.Sprintf("Run status is %q, must be approved_for_prepare to compile", run.Status))
+	if run.Status != "approved_for_prepare" && run.Status != "packet_validation_failed" {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error":            "CONFLICT",
+			"message":          fmt.Sprintf("Run status is %q, must be approved_for_prepare or packet_validation_failed to compile", run.Status),
+			"currentStatus":    run.Status,
+			"requiredStatuses": []string{"approved_for_prepare", "packet_validation_failed"},
+		})
 		return
 	}
 
@@ -1313,6 +1318,8 @@ func (h *APIHandler) PrepareRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
 			"success":          false,
 			"runId":            idStr,
+			"status":           "packet_validation_failed",
+			"lifecycleState":   "prepare",
 			"packetId":         res.PacketID,
 			"issues":           res.Issues,
 			"validationReport": res.ValidationReport,
