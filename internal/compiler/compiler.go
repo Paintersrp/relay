@@ -81,22 +81,22 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 	// 4. Parse content
 	packetMap, parseIssues := c.parseHandoff(handoffText, runConfig, frontmatter, run.Title)
 	if len(parseIssues) > 0 {
+		var issueStrs []string
+		for _, issue := range parseIssues {
+			issueStrs = append(issueStrs, issue.Message)
+		}
 		// If critical fields are missing, compile result fails
 		result := &CompileResult{
 			Success: false,
 			RunID:   runID,
-			Issues:  parseIssues,
+			Issues:  issueStrs,
 		}
 		// Write validation report for parse failures
 		var valReport validation.ValidationReport
 		valReport.Valid = false
 		valReport.RepairEligible = true // Parse/formatting issues are repair-eligible
 		for _, issue := range parseIssues {
-			valReport.Errors = append(valReport.Errors, validation.ValidationError{
-				Type:           "structural",
-				Message:        issue,
-				RepairEligible: true,
-			})
+			valReport.Errors = append(valReport.Errors, issue)
 		}
 		result.ValidationReport = &valReport
 		_ = c.writeReport(runID, &valReport)
@@ -106,9 +106,9 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 		_, _ = c.store.CreateCheck(runID, "validation", "fail", "Handoff parsing failed", "{}")
 		var failMsg string
 		if isRetry {
-			failMsg = "Compile retry failed: " + strings.Join(parseIssues, "; ")
+			failMsg = "Compile retry failed: " + strings.Join(issueStrs, "; ")
 		} else {
-			failMsg = "Compile failed: " + strings.Join(parseIssues, "; ")
+			failMsg = "Compile failed: " + strings.Join(issueStrs, "; ")
 		}
 		_, _ = c.store.CreateEvent(runID, "warning", failMsg)
 
@@ -205,8 +205,8 @@ func (c *Compiler) parseHandoff(
 	runConfig map[string]interface{},
 	frontmatter map[string]string,
 	runTitle string,
-) (map[string]interface{}, []string) {
-	var issues []string
+) (map[string]interface{}, []validation.ValidationError) {
+	var issues []validation.ValidationError
 
 	// Helper to extract section using XML tags first, falling back to Markdown headings
 	getSection := func(tagName, mdHeading string) (string, bool) {
@@ -279,7 +279,7 @@ func (c *Compiler) parseHandoff(
 		taskSlug = slugify(runTitle)
 	}
 	if taskSlug == "" {
-		issues = append(issues, "No safe task slug or packet ID could be derived")
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingRequiredField, Message: "No safe task slug or packet ID could be derived", RepairEligible: true})
 		return nil, issues
 	}
 
@@ -340,7 +340,7 @@ func (c *Compiler) parseHandoff(
 	// 2. Parse planner_context
 	snapshot, ok := getSection("context_snapshot", "context snapshot")
 	if !ok || snapshot == "" {
-		issues = append(issues, "Missing required section: context_snapshot")
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingRequiredField, Message: "Missing required section: context_snapshot", RepairEligible: true})
 	}
 	contextSnapshotArr := parseContextSnapshot(snapshot)
 
@@ -576,16 +576,16 @@ func (c *Compiler) parseHandoff(
 
 	// If required executable sections are missing, fail explicitly (CR4)
 	if goal == "" {
-		issues = append(issues, "Missing required execution section: goal")
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingRequiredField, Message: "Missing required execution section: goal", RepairEligible: true})
 	}
 	if scope == "" {
-		issues = append(issues, "Missing required execution section: scope")
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingRequiredField, Message: "Missing required execution section: scope", RepairEligible: true})
 	}
 	if len(implementationSteps) == 0 {
-		issues = append(issues, "Missing required execution section: implementation_steps")
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingImplementationSteps, Message: "Missing required execution section: implementation_steps", RepairEligible: true})
 	}
 	if len(codeRequirements) == 0 {
-		issues = append(issues, "Missing required execution section: code_requirements")
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingCodeRequirements, Message: "Missing required execution section: code_requirements", RepairEligible: true})
 	}
 
 	// Add targets from config (CR5)
@@ -611,7 +611,7 @@ func (c *Compiler) parseHandoff(
 		}
 	}
 	if len(fileTargets) == 0 {
-		issues = append(issues, "Missing required execution section: file_targets")
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingRequiredField, Message: "Missing required execution section: file_targets", RepairEligible: true})
 	}
 
 	// Parse validation expectations / commands
@@ -687,6 +687,13 @@ func (c *Compiler) parseHandoff(
 	}
 	if expectedBehavior == nil {
 		expectedBehavior = []string{}
+	}
+
+	if len(validationCmds) == 0 {
+		profile, _ := packetMeta["content_profile"].(string)
+		if profile == "implementation_ready" {
+			issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingValidationContract, Message: "Missing required execution section: validation_contract for executable profile", RepairEligible: false})
+		}
 	}
 
 	validationContract := map[string]interface{}{

@@ -261,6 +261,10 @@ func (r *Renderer) writeReport(runID int64, valid bool, issues []string) error {
 			code = "BRIEF_FORBIDDEN_CONTEXT_RENDERED"
 		case strings.Contains(issue, "sensitive data"):
 			code = "SENSITIVE_DATA_DETECTED"
+		case strings.Contains(issue, "is missing"), strings.Contains(issue, "is empty"), strings.Contains(issue, "invalid"):
+			if strings.Contains(issue, "packet_meta") || strings.Contains(issue, "execution_payload") || strings.Contains(issue, "validation_contract") {
+				code = "RENDERER_REQUIRED_FIELD_MISSING"
+			}
 		}
 		reportIssues = append(reportIssues, BriefValidationIssue{
 			Code:     code,

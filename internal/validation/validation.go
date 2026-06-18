@@ -24,9 +24,13 @@ const (
 	CodeInvalidEnum                = "CANONICAL_PACKET_INVALID_ENUM"
 	CodeExtraProperty              = "CANONICAL_PACKET_EXTRA_PROPERTY"
 	CodeInvalidType                = "CANONICAL_PACKET_INVALID_TYPE"
-	CodeStringPatternMismatch      = "CANONICAL_PACKET_STRING_PATTERN_MISMATCH"
-	CodeFileTargetMismatch         = "CANONICAL_PACKET_FILE_TARGET_MISMATCH"
-	CodeBlockingUnresolvedQuestion = "CANONICAL_PACKET_BLOCKING_UNRESOLVED_QUESTION"
+	CodeStringPatternMismatch                 = "CANONICAL_PACKET_STRING_PATTERN_MISMATCH"
+	CodeFileTargetMismatch                    = "CANONICAL_PACKET_FILE_TARGET_MISMATCH"
+	CodeBlockingUnresolvedQuestion            = "CANONICAL_PACKET_BLOCKING_UNRESOLVED_QUESTION"
+	CodeMissingImplementationSteps            = "CANONICAL_PACKET_MISSING_IMPLEMENTATION_STEPS"
+	CodeMissingCodeRequirements               = "CANONICAL_PACKET_MISSING_CODE_REQUIREMENTS"
+	CodeMissingPassExitEvidence               = "CANONICAL_PACKET_MISSING_PASS_EXIT_EVIDENCE"
+	CodeMissingValidationContract             = "CANONICAL_PACKET_MISSING_VALIDATION_CONTRACT"
 )
 
 type ValidationReport struct {
@@ -524,6 +528,8 @@ func reportIsRepairEligible(errors []ValidationError) bool {
 func isRepairableValidationCode(code string) bool {
 	switch code {
 	case CodeJSONSyntax, CodeMissingRequiredField, CodeInvalidEnum, CodeExtraProperty, CodeInvalidType, CodeStringPatternMismatch:
+		return true
+	case CodeMissingImplementationSteps, CodeMissingCodeRequirements, CodeMissingPassExitEvidence:
 		return true
 	default:
 		return false
