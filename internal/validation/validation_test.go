@@ -418,3 +418,201 @@ func TestValidation(t *testing.T) {
 		}
 	})
 }
+
+func TestSchemaAuditCriteria(t *testing.T) {
+	// Paths
+	canonicalSchemaPath := locateSchemaFile("handoffs/schema/canonical_packet.schema.json")
+	plannerSchemaPath := locateSchemaFile("handoffs/schema/planner_handoff.schema.json")
+	reportSchemaPath := locateSchemaFile("handoffs/schema/validation_report.schema.json")
+	taxonomyPath := locateSchemaFile("handoffs/schema/middleware_failure_codes.json")
+
+	// 1-3. Planner Handoff Tests
+	t.Run("Planner handoff containing packet_maker_brief fails", func(t *testing.T) {
+		validHandoff := []byte(`{
+			"handoff_meta": {
+				"handoff_id": "planner-handoff-2026-06-18-test",
+				"schema_version": "1.0.0",
+				"created_at": "2026-06-18T00:00:00Z",
+				"planner_agent": "planner",
+				"intended_handoff_path": "handoffs/planner/test.md",
+				"task_slug": "test",
+				"content_profile": "summary_only",
+				"target_packet_path": "handoffs/packets/test.json",
+				"target_executor": "deepseek-v4-flash",
+				"canonical_packet_schema_path": "handoffs/schema/canonical_packet.schema.json"
+			},
+			"required_sections": {
+				"context_snapshot": {"required": true, "tag_name": "context", "purpose": "test"},
+				"decision_log": {"required": true, "tag_name": "log", "purpose": "test"},
+				"constraints": {"required": true, "tag_name": "con", "purpose": "test"},
+				"assumptions": {"required": true, "tag_name": "assm", "purpose": "test"},
+				"pass_boundary": {"required": true, "tag_name": "pass", "purpose": "test"},
+				"compiler_input": {"required": true, "tag_name": "comp", "purpose": "test"},
+				"validation_expectations": {"required": true, "tag_name": "val", "purpose": "test"},
+				"audit_priorities": {"required": true, "tag_name": "aud", "purpose": "test"},
+				"packet_maker_brief": {"required": true, "tag_name": "pmb", "purpose": "test"}
+			}
+		}`)
+		valid, _ := ValidatePlannerHandoffJSON(validHandoff, plannerSchemaPath)
+		if valid {
+			t.Error("expected Planner handoff containing packet_maker_brief to fail")
+		}
+	})
+
+	t.Run("Planner handoff containing compiler_directives fails", func(t *testing.T) {
+		validHandoff := []byte(`{
+			"handoff_meta": {
+				"handoff_id": "planner-handoff-2026-06-18-test",
+				"schema_version": "1.0.0",
+				"created_at": "2026-06-18T00:00:00Z",
+				"planner_agent": "planner",
+				"intended_handoff_path": "handoffs/planner/test.md",
+				"task_slug": "test",
+				"content_profile": "summary_only",
+				"target_packet_path": "handoffs/packets/test.json",
+				"target_executor": "deepseek-v4-flash",
+				"canonical_packet_schema_path": "handoffs/schema/canonical_packet.schema.json"
+			},
+			"required_sections": {
+				"context_snapshot": {"required": true, "tag_name": "context", "purpose": "test"},
+				"decision_log": {"required": true, "tag_name": "log", "purpose": "test"},
+				"constraints": {"required": true, "tag_name": "con", "purpose": "test"},
+				"assumptions": {"required": true, "tag_name": "assm", "purpose": "test"},
+				"pass_boundary": {"required": true, "tag_name": "pass", "purpose": "test"},
+				"compiler_input": {"required": true, "tag_name": "comp", "purpose": "test"},
+				"validation_expectations": {"required": true, "tag_name": "val", "purpose": "test"},
+				"audit_priorities": {"required": true, "tag_name": "aud", "purpose": "test"},
+				"compiler_directives": {"required": true, "tag_name": "cd", "purpose": "test"}
+			}
+		}`)
+		valid, _ := ValidatePlannerHandoffJSON(validHandoff, plannerSchemaPath)
+		if valid {
+			t.Error("expected Planner handoff containing compiler_directives to fail")
+		}
+	})
+
+	t.Run("Planner handoff missing compiler_input fails", func(t *testing.T) {
+		validHandoff := []byte(`{
+			"handoff_meta": {
+				"handoff_id": "planner-handoff-2026-06-18-test",
+				"schema_version": "1.0.0",
+				"created_at": "2026-06-18T00:00:00Z",
+				"planner_agent": "planner",
+				"intended_handoff_path": "handoffs/planner/test.md",
+				"task_slug": "test",
+				"content_profile": "summary_only",
+				"target_packet_path": "handoffs/packets/test.json",
+				"target_executor": "deepseek-v4-flash",
+				"canonical_packet_schema_path": "handoffs/schema/canonical_packet.schema.json"
+			},
+			"required_sections": {
+				"context_snapshot": {"required": true, "tag_name": "context", "purpose": "test"},
+				"decision_log": {"required": true, "tag_name": "log", "purpose": "test"},
+				"constraints": {"required": true, "tag_name": "con", "purpose": "test"},
+				"assumptions": {"required": true, "tag_name": "assm", "purpose": "test"},
+				"pass_boundary": {"required": true, "tag_name": "pass", "purpose": "test"},
+				"validation_expectations": {"required": true, "tag_name": "val", "purpose": "test"},
+				"audit_priorities": {"required": true, "tag_name": "aud", "purpose": "test"}
+			}
+		}`)
+		valid, _ := ValidatePlannerHandoffJSON(validHandoff, plannerSchemaPath)
+		if valid {
+			t.Error("expected Planner handoff missing compiler_input to fail")
+		}
+	})
+
+	// 4-6. Validation Report Tests
+	t.Run("Validation report issue without code fails", func(t *testing.T) {
+		report := []byte(`{
+			"valid": false,
+			"repair_eligible": false,
+			"errors": [
+				{
+					"type": "input",
+					"message": "Missing code"
+				}
+			]
+		}`)
+		valid, _ := ValidateReportJSON(report, reportSchemaPath, taxonomyPath)
+		if valid {
+			t.Error("expected validation report issue without code to fail")
+		}
+	})
+
+	t.Run("Validation report issue with unknown code fails", func(t *testing.T) {
+		report := []byte(`{
+			"valid": false,
+			"repair_eligible": false,
+			"errors": [
+				{
+					"type": "input",
+					"code": "SOME_MADE_UP_CODE",
+					"message": "Bad code"
+				}
+			]
+		}`)
+		valid, _ := ValidateReportJSON(report, reportSchemaPath, taxonomyPath)
+		if valid {
+			t.Error("expected validation report issue with unknown code to fail")
+		}
+	})
+
+	t.Run("Report with repair_allowed true and uncoded issue fails", func(t *testing.T) {
+		report := []byte(`{
+			"valid": false,
+			"repair_eligible": true,
+			"errors": [
+				{
+					"type": "input",
+					"message": "Uncoded issue",
+					"repair_eligible": true
+				}
+			]
+		}`)
+		valid, _ := ValidateReportJSON(report, reportSchemaPath, taxonomyPath)
+		if valid {
+			t.Error("expected report with repair_allowed true and uncoded issue to fail")
+		}
+	})
+
+	// 7-8. Canonical Packet Tests
+	validPacketBytes, _ := os.ReadFile(locateSchemaFile("handoffs/examples/canonical_packet.valid.example.json"))
+	var validPacket map[string]interface{}
+	json.Unmarshal(validPacketBytes, &validPacket)
+
+	t.Run("Canonical packet containing packet_maker_model fails", func(t *testing.T) {
+		invalidPacket := make(map[string]interface{})
+		for k, v := range validPacket {
+			invalidPacket[k] = v
+		}
+		invalidPacket["model_routing"] = map[string]interface{}{
+			"planner_model": "gpt-4o",
+			"packet_maker_model": "gpt-4o",
+		}
+
+		packetJSON, _ := json.Marshal(invalidPacket)
+		report, _ := ValidatePacketJSON(packetJSON, canonicalSchemaPath)
+		if report.Valid {
+			t.Error("expected canonical packet containing packet_maker_model to fail")
+		}
+	})
+
+	t.Run("Canonical packet with producer packet-maker fails", func(t *testing.T) {
+		invalidPacket := make(map[string]interface{})
+		for k, v := range validPacket {
+			invalidPacket[k] = v
+		}
+		meta := make(map[string]interface{})
+		for k, v := range validPacket["packet_meta"].(map[string]interface{}) {
+			meta[k] = v
+		}
+		meta["producer_kind"] = "packet-maker"
+		invalidPacket["packet_meta"] = meta
+
+		packetJSON, _ := json.Marshal(invalidPacket)
+		report, _ := ValidatePacketJSON(packetJSON, canonicalSchemaPath)
+		if report.Valid {
+			t.Error("expected canonical packet with producer packet-maker to fail")
+		}
+	})
+}

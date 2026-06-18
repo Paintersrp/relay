@@ -52,7 +52,7 @@ func TestRenderer(t *testing.T) {
 			"protocol_version":            "1.0.0",
 			"schema_version":              "1.0.0",
 			"created_at":                  "2026-06-16T21:50:42Z",
-			"created_by_agent":            "packet-maker",
+			"producer_kind":               "relay-packet-compiler",
 			"source_planner_handoff_path": "handoffs/planner/test.md",
 			"intended_packet_path":        "handoffs/packets/test.json",
 			"model_routing": map[string]interface{}{

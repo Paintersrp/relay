@@ -96,7 +96,7 @@ func buildSmokePacket() map[string]interface{} {
 			"protocol_version":            "1.0.0",
 			"schema_version":              "1.0.0",
 			"created_at":                  "2026-06-17T00:00:00Z",
-			"created_by_agent":            "packet-maker",
+			"producer_kind":               "relay-packet-compiler",
 			"source_planner_handoff_path": "handoffs/planner/aider-repair-smoke-test.planner-handoff.md",
 			"intended_packet_path":        "handoffs/packets/aider-repair-smoke-test.canonical-packet.json",
 			"task_slug":                   "aider-repair-smoke-test",

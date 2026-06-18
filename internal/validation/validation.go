@@ -507,3 +507,86 @@ func RedactSecrets(s string) string {
 	return s
 }
 
+// ValidateReportJSON validates a validation report JSON against its schema and enforces failure taxonomy.
+func ValidateReportJSON(reportJSON []byte, schemaPath string, taxonomyPath string) (bool, error) {
+	schemaLoader := gojsonschema.NewReferenceLoader("file:///" + filepath.ToSlash(locateSchemaFile(schemaPath)))
+	// We need to clean schema regexes because gojsonschema uses RE2
+	schemaBytes, err := os.ReadFile(locateSchemaFile(schemaPath))
+	if err == nil {
+		clean := sanitizeSchemaRegexes(string(schemaBytes))
+		schemaLoader = gojsonschema.NewStringLoader(clean)
+	}
+
+	documentLoader := gojsonschema.NewBytesLoader(reportJSON)
+	result, err := gojsonschema.Validate(schemaLoader, documentLoader)
+	if err != nil {
+		return false, fmt.Errorf("schema validation error: %v", err)
+	}
+	if !result.Valid() {
+		return false, nil
+	}
+
+	taxBytes, err := os.ReadFile(locateSchemaFile(taxonomyPath))
+	if err != nil {
+		return false, fmt.Errorf("failed to read taxonomy: %v", err)
+	}
+	var tax map[string]interface{}
+	if err := json.Unmarshal(taxBytes, &tax); err != nil {
+		return false, fmt.Errorf("failed to unmarshal taxonomy: %v", err)
+	}
+	
+	codesList, ok := tax["codes"].([]interface{})
+	if !ok {
+		return false, fmt.Errorf("taxonomy codes not found")
+	}
+	validCodes := make(map[string]bool)
+	for _, c := range codesList {
+		if codeObj, ok := c.(map[string]interface{}); ok {
+			if codeStr, ok := codeObj["code"].(string); ok {
+				validCodes[codeStr] = true
+			}
+		}
+	}
+
+	var report ValidationReport
+	if err := json.Unmarshal(reportJSON, &report); err != nil {
+		return false, fmt.Errorf("failed to parse report: %v", err)
+	}
+
+	for _, e := range report.Errors {
+		if e.Code == "" {
+			return false, nil
+		}
+		if !validCodes[e.Code] {
+			return false, nil
+		}
+	}
+
+	if report.RepairEligible {
+		for _, e := range report.Errors {
+			if !e.RepairEligible {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
+}
+
+// ValidatePlannerHandoffJSON validates a planner handoff metadata JSON against its schema.
+func ValidatePlannerHandoffJSON(handoffJSON []byte, schemaPath string) (bool, error) {
+	schemaBytes, err := os.ReadFile(locateSchemaFile(schemaPath))
+	var schemaLoader gojsonschema.JSONLoader
+	if err == nil {
+		clean := sanitizeSchemaRegexes(string(schemaBytes))
+		schemaLoader = gojsonschema.NewStringLoader(clean)
+	} else {
+		schemaLoader = gojsonschema.NewReferenceLoader("file:///" + filepath.ToSlash(locateSchemaFile(schemaPath)))
+	}
+
+	documentLoader := gojsonschema.NewBytesLoader(handoffJSON)
+	result, err := gojsonschema.Validate(schemaLoader, documentLoader)
+	if err != nil {
+		return false, fmt.Errorf("schema validation error: %v", err)
+	}
+	return result.Valid(), nil
+}

@@ -1197,7 +1197,7 @@ func parseConstraints(text string) []map[string]interface{} {
 			if appsText != "" {
 				appsText = strings.ToLower(appsText)
 				var apps []string
-				allowed := []string{"planner", "packet_maker", "renderer", "executor", "auditor", "middleware"}
+				allowed := []string{"planner", "renderer", "executor", "auditor", "middleware"}
 				for _, val := range allowed {
 					if strings.Contains(appsText, val) || strings.Contains(strings.ReplaceAll(appsText, "_", ""), strings.ReplaceAll(val, "_", "")) {
 						apps = append(apps, val)
