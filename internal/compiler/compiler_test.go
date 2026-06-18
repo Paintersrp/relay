@@ -148,7 +148,7 @@ func TestCompiler(t *testing.T) {
 		if !ok {
 			t.Fatal("missing packet_meta")
 		}
-		for _, field := range []string{"protocol_version", "schema_version", "created_at", "created_by_agent", "source_planner_handoff_path", "intended_packet_path"} {
+		for _, field := range []string{"protocol_version", "schema_version", "created_at", "producer_kind", "source_planner_handoff_path", "intended_packet_path"} {
 			if val, ok := meta[field].(string); !ok || val == "" {
 				t.Errorf("missing or empty metadata field: %s", field)
 			}
@@ -291,7 +291,7 @@ func TestCompiler(t *testing.T) {
 		}
 	})
 
-	t.Run("Nested field extraction inside packet_maker_brief", func(t *testing.T) {
+	t.Run("Nested field extraction inside compiler_input", func(t *testing.T) {
 		run, err := s.CreateRun(repo.ID, "Run with Nested Fields", "approved_for_prepare", "gpt-4o", "gpt-4o", "main")
 		if err != nil {
 			t.Fatalf("failed to create run: %v", err)
@@ -330,7 +330,7 @@ out_of_scope_for_this_pass:
   - none
 </pass_boundary>
 
-<packet_maker_brief>
+<compiler_input>
 Goal:
 Test nested parser.
 
@@ -376,7 +376,7 @@ Code requirements:
 - CR1: The parser must extract nested fields.
   Applies to:
     - src/compiler.go
-</packet_maker_brief>
+</compiler_input>
 `
 		handoffPath, _ := artifacts.Write(run.ID, "planner_handoff", "planner_handoff.md", []byte(handoffText))
 		_, _ = s.CreateArtifact(run.ID, "planner_handoff", handoffPath, "text/markdown")

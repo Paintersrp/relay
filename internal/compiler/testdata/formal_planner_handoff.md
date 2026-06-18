@@ -31,9 +31,9 @@ The implementation should not redesign the page.
 
 <constraints>
 - C1: Use existing state and render helpers where available.
-  - Applies to: packet_maker, renderer, executor, auditor
+  - Applies to: compiler, renderer, executor, auditor
 - C2: Do not change backend endpoint contracts.
-  - Applies to: packet_maker, executor, auditor
+  - Applies to: compiler, executor, auditor
 </constraints>
 
 <assumptions>
@@ -79,7 +79,7 @@ next_pass_hint: ""
 ```
 </pass_boundary>
 
-<packet_maker_brief>
+<compiler_input>
 Goal:
 Fix stale active/free count rendering.
 
@@ -114,7 +114,7 @@ Completion requirements:
   - Tweak CSS styling.
 - Forbidden discretion:
   - Redesigning page layout.
-</packet_maker_brief>
+</compiler_input>
 
 <code_requirements>
 - CR1: Preserve all existing code structure and comments.

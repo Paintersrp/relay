@@ -314,7 +314,7 @@ func (c *Compiler) parseHandoff(
 		"protocol_version":            "1.0.0",
 		"schema_version":              "1.0.0",
 		"created_at":                  createdAt,
-		"created_by_agent":            "packet-maker",
+		"producer_kind":            "relay-packet-compiler",
 		"source_planner_handoff_path": sourcePath,
 		"intended_packet_path":        intendedPath,
 		"task_slug":                   taskSlug,
@@ -340,7 +340,7 @@ func (c *Compiler) parseHandoff(
 	}
 
 	// Extract briefText early so we can parse nested fields from it
-	briefText, _ := getSection("packet_maker_brief", "packet maker brief")
+	briefText, _ := getSection("compiler_input", "compiler input")
 
 	decisionText, _ := getSection("decision_log", "decision log")
 	decisionLog := parseDecisionLog(decisionText)
@@ -424,7 +424,7 @@ func (c *Compiler) parseHandoff(
 	}
 
 	// 3. Parse execution_payload
-	briefText, ok = getSection("packet_maker_brief", "packet maker brief")
+	briefText, ok = getSection("compiler_input", "compiler input")
 	var goal, scope, expectedBehaviorRaw, completionContractRaw string
 	var nonGoals []string
 	var fileTargets []map[string]interface{}

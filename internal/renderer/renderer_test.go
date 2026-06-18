@@ -57,7 +57,7 @@ func TestRenderer(t *testing.T) {
 			"intended_packet_path":        "handoffs/packets/test.json",
 			"model_routing": map[string]interface{}{
 				"planner_model":        "gpt-4o",
-				"packet_maker_model":   "gpt-4o",
+				"compiler_version":   "gpt-4o",
 				"recommended_executor": "deepseek-v4-flash",
 				"routing_reason":       "test",
 			},
