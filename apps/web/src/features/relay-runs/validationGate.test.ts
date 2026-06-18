@@ -192,13 +192,59 @@ describe('Validation Gate Predicate Matrix', () => {
       const report = {
         repair_eligible: false,
         errors: [
-          { code: 'CANONICAL_PACKET_UNSAFE_PATH', repair_eligible: false },
+          { code: 'CANONICAL_PACKET_JSON_SYNTAX', repair_eligible: false },
         ],
       };
 
       const result = evaluateRepairEligibility(report);
       expect(result.canOfferRepair).toBe(false);
       expect(result.reason).toContain('not repair-eligible');
+    });
+
+    it('offers repair for missing implementation steps', () => {
+      const report = {
+        repair_eligible: true,
+        errors: [
+          { code: 'CANONICAL_PACKET_MISSING_IMPLEMENTATION_STEPS', repair_eligible: true },
+        ],
+      };
+      const result = evaluateRepairEligibility(report);
+      expect(result.canOfferRepair).toBe(true);
+    });
+
+    it('offers repair for missing code requirements', () => {
+      const report = {
+        repair_eligible: true,
+        errors: [
+          { code: 'CANONICAL_PACKET_MISSING_CODE_REQUIREMENTS', repair_eligible: true },
+        ],
+      };
+      const result = evaluateRepairEligibility(report);
+      expect(result.canOfferRepair).toBe(true);
+    });
+
+    it('blocks repair for missing validation contract', () => {
+      const report = {
+        repair_eligible: true,
+        errors: [
+          { code: 'CANONICAL_PACKET_MISSING_VALIDATION_CONTRACT', repair_eligible: true },
+        ],
+      };
+      const result = evaluateRepairEligibility(report);
+      expect(result.canOfferRepair).toBe(false);
+      expect(result.reason).toContain('allowlist');
+    });
+
+    it('blocks repair for missing pass-exit evidence', () => {
+      const report = {
+        repair_eligible: true,
+        errors: [
+          { code: 'CANONICAL_PACKET_MISSING_PASS_EXIT_EVIDENCE', repair_eligible: true },
+        ],
+      };
+      const result = evaluateRepairEligibility(report);
+      expect(result.canOfferRepair).toBe(false);
+      expect(result.reason).toContain('allowlist');
     });
   });
 });

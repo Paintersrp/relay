@@ -17,12 +17,14 @@ import (
 // EligibleCodes is the allowlist of specific validation error codes
 // that qualify for Aider repair.
 var EligibleCodes = map[string]bool{
-	validation.CodeJSONSyntax:            true,
-	validation.CodeMissingRequiredField:  true,
-	validation.CodeInvalidEnum:           true,
-	validation.CodeExtraProperty:         true,
-	validation.CodeInvalidType:           true,
-	validation.CodeStringPatternMismatch: true,
+	validation.CodeJSONSyntax:                 true,
+	validation.CodeMissingRequiredField:       true,
+	validation.CodeInvalidEnum:                true,
+	validation.CodeExtraProperty:              true,
+	validation.CodeInvalidType:                true,
+	validation.CodeStringPatternMismatch:      true,
+	validation.CodeMissingImplementationSteps: true,
+	validation.CodeMissingCodeRequirements:    true,
 }
 
 // CheckEligibility validates that all errors in the report are

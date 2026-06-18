@@ -60,6 +60,26 @@ func TestCheckEligibility_eligible(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "missing implementation steps",
+			report: &validation.ValidationReport{
+				Valid:          false,
+				RepairEligible: true,
+				Errors: []validation.ValidationError{
+					{Type: "input", Code: validation.CodeMissingImplementationSteps, Message: "missing steps", RepairEligible: true},
+				},
+			},
+		},
+		{
+			name: "missing code requirements",
+			report: &validation.ValidationReport{
+				Valid:          false,
+				RepairEligible: true,
+				Errors: []validation.ValidationError{
+					{Type: "input", Code: validation.CodeMissingCodeRequirements, Message: "missing code reqs", RepairEligible: true},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -135,6 +155,26 @@ func TestCheckEligibility_ineligible(t *testing.T) {
 				RepairEligible: true,
 				Errors: []validation.ValidationError{
 					{Type: "structural", Message: "syntax", RepairEligible: true},
+				},
+			},
+		},
+		{
+			name: "missing validation contract",
+			report: &validation.ValidationReport{
+				Valid:          false,
+				RepairEligible: false,
+				Errors: []validation.ValidationError{
+					{Type: "input", Code: validation.CodeMissingValidationContract, Message: "missing validation contract", RepairEligible: false},
+				},
+			},
+		},
+		{
+			name: "missing pass exit evidence",
+			report: &validation.ValidationReport{
+				Valid:          false,
+				RepairEligible: false,
+				Errors: []validation.ValidationError{
+					{Type: "input", Code: validation.CodeMissingPassExitEvidence, Message: "missing pass exit evidence", RepairEligible: false},
 				},
 			},
 		},

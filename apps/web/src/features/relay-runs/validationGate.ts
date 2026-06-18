@@ -25,6 +25,17 @@ export interface RepairEligibilityResult {
   reason: string;
 }
 
+const ELIGIBLE_CODES = new Set([
+  'CANONICAL_PACKET_JSON_SYNTAX',
+  'CANONICAL_PACKET_MISSING_REQUIRED_FIELD',
+  'CANONICAL_PACKET_INVALID_ENUM',
+  'CANONICAL_PACKET_EXTRA_PROPERTY',
+  'CANONICAL_PACKET_INVALID_TYPE',
+  'CANONICAL_PACKET_STRING_PATTERN_MISMATCH',
+  'CANONICAL_PACKET_MISSING_IMPLEMENTATION_STEPS',
+  'CANONICAL_PACKET_MISSING_CODE_REQUIREMENTS',
+]);
+
 export function evaluateValidationGate(
   artifacts: Artifact[],
   runStatus: string
@@ -108,6 +119,12 @@ export function evaluateRepairEligibility(
       return {
         canOfferRepair: false,
         reason: `Validation issue ${code} is not repair-eligible.`,
+      };
+    }
+    if (!ELIGIBLE_CODES.has(code)) {
+      return {
+        canOfferRepair: false,
+        reason: `Validation issue ${code} is not in the repair allowlist.`,
       };
     }
   }
