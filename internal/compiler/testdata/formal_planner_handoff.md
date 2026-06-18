@@ -31,9 +31,9 @@ The implementation should not redesign the page.
 
 <constraints>
 - C1: Use existing state and render helpers where available.
-  - Applies to: compiler, renderer, executor, auditor
+  - Applies to: packet_compiler, brief_renderer, executor, auditor_agent
 - C2: Do not change backend endpoint contracts.
-  - Applies to: compiler, executor, auditor
+  - Applies to: packet_compiler, executor, auditor_agent
 </constraints>
 
 <assumptions>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateValidationGate, evaluateExecuteValidationAction, isAuditCandidateStatus } from './validationGate';
+import { evaluateValidationGate, evaluateExecuteValidationAction, evaluateRepairEligibility, isAuditCandidateStatus } from './validationGate';
 
 describe('Validation Gate Predicate Matrix', () => {
   it('validation_progress_json without validation_run_json keeps Generate Audit disabled', () => {
@@ -159,5 +159,46 @@ describe('Validation Gate Predicate Matrix', () => {
       expect(canRun).toBe(false);
     });
   });
-});
 
+  describe('Repair eligibility gate', () => {
+    it('requires coded, repair-eligible issues before offering repair', () => {
+      const report = {
+        repair_eligible: true,
+        errors: [
+          { code: 'CANONICAL_PACKET_MISSING_REQUIRED_FIELD', repair_eligible: true },
+          { code: 'CANONICAL_PACKET_INVALID_ENUM', repair_eligible: true },
+        ],
+      };
+
+      const result = evaluateRepairEligibility(report);
+      expect(result.canOfferRepair).toBe(true);
+      expect(result.reason).toBe('');
+    });
+
+    it('blocks repair when an issue is uncoded', () => {
+      const report = {
+        repair_eligible: true,
+        errors: [
+          { code: '', repair_eligible: true },
+        ],
+      };
+
+      const result = evaluateRepairEligibility(report);
+      expect(result.canOfferRepair).toBe(false);
+      expect(result.reason).toContain('uncoded');
+    });
+
+    it('blocks repair when the report is not repair-eligible', () => {
+      const report = {
+        repair_eligible: false,
+        errors: [
+          { code: 'CANONICAL_PACKET_UNSAFE_PATH', repair_eligible: false },
+        ],
+      };
+
+      const result = evaluateRepairEligibility(report);
+      expect(result.canOfferRepair).toBe(false);
+      expect(result.reason).toContain('not repair-eligible');
+    });
+  });
+});

@@ -72,5 +72,4 @@ export {
   RELAY_AUDIT_DECISION_VALUES,
 } from './types'
 export { runArtifactContentQueryOptions } from './queries'
-export { evaluateValidationGate, evaluateExecuteValidationAction, isAuditCandidateStatus } from './validationGate'
-
+export { evaluateValidationGate, evaluateExecuteValidationAction, evaluateRepairEligibility, isAuditCandidateStatus } from './validationGate'

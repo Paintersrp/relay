@@ -17,11 +17,11 @@ import (
 	"relay/internal/events"
 	"relay/internal/executor"
 	"relay/internal/intake"
-	"relay/internal/repairer"
 	"relay/internal/renderer"
-	"relay/internal/validation"
+	"relay/internal/repairer"
 	"relay/internal/store"
 	"relay/internal/store/generated"
+	"relay/internal/validation"
 	"relay/internal/validationrunner"
 
 	"github.com/go-chi/chi/v5"
@@ -1568,14 +1568,14 @@ func (h *APIHandler) ValidateRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":      true,
-		"runId":        idStr,
-		"status":       string(vr.Status),
-		"runStatus":    postStatus,
-		"commands":     vr.Commands,
-		"stdout":       vr.StdoutPath,
-		"stderr":       vr.StderrPath,
-		"progress":     vr.ProgressPath,
+		"success":   true,
+		"runId":     idStr,
+		"status":    string(vr.Status),
+		"runStatus": postStatus,
+		"commands":  vr.Commands,
+		"stdout":    vr.StdoutPath,
+		"stderr":    vr.StderrPath,
+		"progress":  vr.ProgressPath,
 	})
 }
 
@@ -1703,20 +1703,15 @@ func (h *APIHandler) RepairValidation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check that the report has stable failure codes (S8)
-	if len(report.Errors) == 0 {
-		writeError(w, http.StatusUnprocessableEntity, "BLOCKED", "Validation report contains no failure codes; cannot determine repair eligibility")
-		return
-	}
-	hasCode := false
-	for _, e := range report.Errors {
-		if e.Code != "" {
-			hasCode = true
-			break
+	eligible, reason := repairer.CheckEligibility(&report)
+	if !eligible {
+		resp := map[string]interface{}{
+			"success":          false,
+			"runId":            idStr,
+			"eligible":         false,
+			"ineligibleReason": reason,
 		}
-	}
-	if !hasCode {
-		writeError(w, http.StatusUnprocessableEntity, "BLOCKED", "Validation report errors lack stable failure codes; cannot determine repair eligibility")
+		writeJSON(w, http.StatusUnprocessableEntity, resp)
 		return
 	}
 

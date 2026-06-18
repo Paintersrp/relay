@@ -19,11 +19,11 @@ type ValidationError struct {
 }
 
 const (
-	CodeJSONSyntax            = "CANONICAL_PACKET_JSON_SYNTAX"
-	CodeMissingRequiredField  = "CANONICAL_PACKET_MISSING_REQUIRED_FIELD"
-	CodeInvalidEnum           = "CANONICAL_PACKET_INVALID_ENUM"
-	CodeExtraProperty         = "CANONICAL_PACKET_EXTRA_PROPERTY"
-	CodeInvalidType           = "CANONICAL_PACKET_INVALID_TYPE"
+	CodeJSONSyntax                 = "CANONICAL_PACKET_JSON_SYNTAX"
+	CodeMissingRequiredField       = "CANONICAL_PACKET_MISSING_REQUIRED_FIELD"
+	CodeInvalidEnum                = "CANONICAL_PACKET_INVALID_ENUM"
+	CodeExtraProperty              = "CANONICAL_PACKET_EXTRA_PROPERTY"
+	CodeInvalidType                = "CANONICAL_PACKET_INVALID_TYPE"
 	CodeStringPatternMismatch      = "CANONICAL_PACKET_STRING_PATTERN_MISMATCH"
 	CodeFileTargetMismatch         = "CANONICAL_PACKET_FILE_TARGET_MISMATCH"
 	CodeBlockingUnresolvedQuestion = "CANONICAL_PACKET_BLOCKING_UNRESOLVED_QUESTION"
@@ -129,6 +129,8 @@ func ValidatePacketJSON(packetJSON []byte, schemaPath string) (*ValidationReport
 			report.Errors = append(report.Errors, issue)
 		}
 	}
+
+	report.RepairEligible = reportIsRepairEligible(report.Errors)
 
 	return report, nil
 }
@@ -287,7 +289,6 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 		"file_targets",
 		"implementation_steps",
 		"code_requirements",
-		"validation_commands",
 	}
 
 	for _, f := range requiredArrays {
@@ -300,6 +301,12 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 		if !ok || len(arrVal) == 0 {
 			issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_EMPTY_FIELD", Message: fmt.Sprintf("required execution_payload field %q is empty", f), RepairEligible: false})
 		}
+	}
+
+	if val, ok := exec["validation_contract"]; !ok {
+		issues = append(issues, ValidationError{Type: "input", Code: CodeMissingRequiredField, Message: "required execution_payload field \"validation_contract\" is missing", RepairEligible: false})
+	} else if obj, ok := val.(map[string]interface{}); !ok || len(obj) == 0 {
+		issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_EMPTY_FIELD", Message: "required execution_payload field \"validation_contract\" is empty", RepairEligible: false})
 	}
 
 	// 1. Scan for vague phrases in execution_payload
@@ -492,7 +499,34 @@ func mapSchemaErrorType(t string) string {
 	case "pattern":
 		return CodeStringPatternMismatch
 	default:
-		return "CANONICAL_PACKET_SCHEMA_ERROR"
+		return "SCHEMA_VALIDATION_FAILED"
+	}
+}
+
+func reportIsRepairEligible(errors []ValidationError) bool {
+	if len(errors) == 0 {
+		return false
+	}
+	for _, err := range errors {
+		if err.Code == "" {
+			return false
+		}
+		if !isRepairableValidationCode(err.Code) {
+			return false
+		}
+		if !err.RepairEligible {
+			return false
+		}
+	}
+	return true
+}
+
+func isRepairableValidationCode(code string) bool {
+	switch code {
+	case CodeJSONSyntax, CodeMissingRequiredField, CodeInvalidEnum, CodeExtraProperty, CodeInvalidType, CodeStringPatternMismatch:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -534,7 +568,7 @@ func ValidateReportJSON(reportJSON []byte, schemaPath string, taxonomyPath strin
 	if err := json.Unmarshal(taxBytes, &tax); err != nil {
 		return false, fmt.Errorf("failed to unmarshal taxonomy: %v", err)
 	}
-	
+
 	codesList, ok := tax["codes"].([]interface{})
 	if !ok {
 		return false, fmt.Errorf("taxonomy codes not found")

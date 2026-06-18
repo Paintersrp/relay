@@ -2,10 +2,27 @@ export interface Artifact {
   storageKind: string;
 }
 
+export interface PacketValidationIssueLike {
+  code?: string;
+  repair_eligible?: boolean;
+  RepairEligible?: boolean;
+}
+
+export interface PacketValidationReportLike {
+  repair_eligible?: boolean;
+  RepairEligible?: boolean;
+  errors?: PacketValidationIssueLike[];
+}
+
 export interface ValidationGateResult {
   hasFinalValidationEvidence: boolean;
   validationAllowsAudit: boolean;
   auditBlockedByValidation: boolean;
+}
+
+export interface RepairEligibilityResult {
+  canOfferRepair: boolean;
+  reason: string;
 }
 
 export function evaluateValidationGate(
@@ -65,3 +82,45 @@ export function evaluateExecuteValidationAction(
   );
 }
 
+export function evaluateRepairEligibility(
+  report?: PacketValidationReportLike | null
+): RepairEligibilityResult {
+  const errors = report?.errors ?? [];
+  const reportedEligible = report?.repair_eligible ?? report?.RepairEligible ?? false;
+
+  if (!Array.isArray(errors) || errors.length === 0) {
+    return {
+      canOfferRepair: false,
+      reason: 'Validation report has no repairable errors.',
+    };
+  }
+
+  for (const issue of errors) {
+    const code = issue?.code?.trim?.() ?? '';
+    const repairEligible = issue?.repair_eligible ?? issue?.RepairEligible;
+    if (!code) {
+      return {
+        canOfferRepair: false,
+        reason: 'Validation report contains an uncoded issue.',
+      };
+    }
+    if (repairEligible !== true) {
+      return {
+        canOfferRepair: false,
+        reason: `Validation issue ${code} is not repair-eligible.`,
+      };
+    }
+  }
+
+  if (!reportedEligible) {
+    return {
+      canOfferRepair: false,
+      reason: 'Validation report is not repair-eligible.',
+    };
+  }
+
+  return {
+    canOfferRepair: true,
+    reason: '',
+  };
+}

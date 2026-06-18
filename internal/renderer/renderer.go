@@ -315,13 +315,60 @@ func validateRequiredRendererInputs(packet map[string]interface{}) []string {
 	if !ok {
 		issues = append(issues, "execution_payload is missing or invalid")
 	} else {
-		requiredPayloadFields := []string{"goal", "scope"}
+		requiredPayloadFields := []string{"goal", "scope", "validation_contract"}
 		for _, f := range requiredPayloadFields {
 			val, exists := exec[f]
 			if !exists {
 				issues = append(issues, fmt.Sprintf("execution_payload.%s is missing", f))
 			} else if s, ok := val.(string); !ok || strings.TrimSpace(s) == "" {
-				issues = append(issues, fmt.Sprintf("execution_payload.%s is empty", f))
+				if f == "validation_contract" {
+					if obj, ok := val.(map[string]interface{}); !ok || len(obj) == 0 {
+						issues = append(issues, "execution_payload.validation_contract is missing or invalid")
+					}
+				} else {
+					issues = append(issues, fmt.Sprintf("execution_payload.%s is empty", f))
+				}
+			}
+		}
+
+		if contract, ok := exec["validation_contract"].(map[string]interface{}); ok && len(contract) > 0 {
+			mode, _ := contract["mode"].(string)
+			failurePolicy, _ := contract["failure_policy"].(string)
+			if strings.TrimSpace(mode) == "" {
+				issues = append(issues, "execution_payload.validation_contract.mode is missing")
+			}
+			if strings.TrimSpace(failurePolicy) == "" {
+				issues = append(issues, "execution_payload.validation_contract.failure_policy is missing")
+			}
+
+			switch mode {
+			case "commands":
+				if commands, ok := contract["commands"].([]interface{}); !ok || len(commands) == 0 {
+					issues = append(issues, "execution_payload.validation_contract.commands is missing or empty")
+				}
+			case "manual":
+				if checks, ok := contract["manual_checks"].([]interface{}); !ok || len(checks) == 0 {
+					issues = append(issues, "execution_payload.validation_contract.manual_checks is missing or empty")
+				}
+			case "external":
+				if evidence, ok := contract["required_evidence"].([]interface{}); !ok || len(evidence) == 0 {
+					issues = append(issues, "execution_payload.validation_contract.required_evidence is missing or empty")
+				}
+			case "not_applicable":
+				if reason, ok := contract["not_applicable_reason"].(string); !ok || strings.TrimSpace(reason) == "" {
+					issues = append(issues, "execution_payload.validation_contract.not_applicable_reason is missing")
+				}
+			case "deferred":
+				deferredReason, reasonOK := contract["deferred_reason"].(string)
+				deferredOwner, ownerOK := contract["deferred_owner"].(string)
+				if !reasonOK || strings.TrimSpace(deferredReason) == "" {
+					issues = append(issues, "execution_payload.validation_contract.deferred_reason is missing")
+				}
+				if !ownerOK || strings.TrimSpace(deferredOwner) == "" {
+					issues = append(issues, "execution_payload.validation_contract.deferred_owner is missing")
+				}
+			default:
+				issues = append(issues, fmt.Sprintf("execution_payload.validation_contract.mode %q is invalid", mode))
 			}
 		}
 	}
@@ -379,6 +426,7 @@ func validateRenderedBrief(brief string) []string {
 		"audit_seed",
 		"rejected_alternatives",
 		"risk_register",
+		"validation_commands",
 		"future-pass",
 		"approval rationale",
 	}
@@ -630,6 +678,17 @@ func renderTemplate(tmpl string, packet map[string]interface{}) (string, error) 
 		"execution_payload": packet["execution_payload"],
 		"YYYY-MM-DD":        createdDate,
 		"short-task-name":   taskSlug,
+	}
+
+	if exec, ok := packet["execution_payload"].(map[string]interface{}); ok {
+		if contract, ok := exec["validation_contract"].(map[string]interface{}); ok {
+			mode, _ := contract["mode"].(string)
+			renderCtx["validation_contract_is_commands"] = mode == "commands"
+			renderCtx["validation_contract_is_manual"] = mode == "manual"
+			renderCtx["validation_contract_is_external"] = mode == "external"
+			renderCtx["validation_contract_is_not_applicable"] = mode == "not_applicable"
+			renderCtx["validation_contract_is_deferred"] = mode == "deferred"
+		}
 	}
 
 	stack := ContextStack{renderCtx}

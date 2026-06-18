@@ -129,7 +129,7 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 	}
 
 	// 5. Validate packet
-	report, err := validation.ValidatePacketJSON(packetBytes, "handoffs/schema/canonical_packet.schema.json")
+	report, err := validation.ValidatePacketJSON(packetBytes, "relay-contracts/schema/canonical_packet.schema.json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run packet validation: %w", err)
 	}
@@ -310,19 +310,31 @@ func (c *Compiler) parseHandoff(
 	}
 
 	packetMeta := map[string]interface{}{
-		"packet_id":                   packetID,
-		"protocol_version":            "1.0.0",
-		"schema_version":              "1.0.0",
-		"created_at":                  createdAt,
-		"producer_kind":            "relay-packet-compiler",
+		"packet_id":        packetID,
+		"protocol_version": "1.0.0",
+		"schema_version":   "1.0.0",
+		"created_at":       createdAt,
+		"producer": map[string]interface{}{
+			"kind":    "middleware",
+			"name":    "relay-packet-compiler",
+			"version": getString("compiler_version"),
+		},
 		"source_planner_handoff_path": sourcePath,
 		"intended_packet_path":        intendedPath,
 		"task_slug":                   taskSlug,
 		"target_executor":             targetExecutor,
 		"repo_target":                 repoTarget,
 		"branch_context":              branchContext,
+		"content_profile":             getString("content_profile"),
 		"lifecycle_state":             "packet_created",
 		"artifact_paths":              artifactPaths,
+	}
+	producer := packetMeta["producer"].(map[string]interface{})
+	if version, ok := producer["version"].(string); !ok || strings.TrimSpace(version) == "" {
+		producer["version"] = "1.0.0"
+	}
+	if profile, _ := packetMeta["content_profile"].(string); profile == "" {
+		packetMeta["content_profile"] = "implementation_ready"
 	}
 
 	// 2. Parse planner_context
@@ -610,21 +622,23 @@ func (c *Compiler) parseHandoff(
 	validationCmds := parseValidationCommands(valText)
 	if len(validationCmds) == 0 {
 		// Try load from config
-		if cfgCmds, ok := runConfig["validation_commands"].([]interface{}); ok {
-			for _, c := range cfgCmds {
-				if cmdMap, ok := c.(map[string]interface{}); ok {
-					cmdStr, _ := cmdMap["command"].(string)
-					reqVal, _ := cmdMap["required"].(bool)
-					purp, _ := cmdMap["purpose"].(string)
-					if cmdStr != "" {
-						validationCmds = append(validationCmds, ValidationCommand{
-							ID:              fmt.Sprintf("V%d", len(validationCmds)+1),
-							Command:         cmdStr,
-							Required:        reqVal,
-							Purpose:         purp,
-							SuccessSignal:   "Command exits 0.",
-							FailureHandling: "attempt_fix_once_then_block",
-						})
+		if cfgContract, ok := runConfig["validation_contract"].(map[string]interface{}); ok {
+			if cfgCmds, ok := cfgContract["commands"].([]interface{}); ok {
+				for _, c := range cfgCmds {
+					if cmdMap, ok := c.(map[string]interface{}); ok {
+						cmdStr, _ := cmdMap["command"].(string)
+						reqVal, _ := cmdMap["required"].(bool)
+						purp, _ := cmdMap["purpose"].(string)
+						if cmdStr != "" {
+							validationCmds = append(validationCmds, ValidationCommand{
+								ID:              fmt.Sprintf("V%d", len(validationCmds)+1),
+								Command:         cmdStr,
+								Required:        reqVal,
+								Purpose:         purp,
+								SuccessSignal:   "Command exits 0.",
+								FailureHandling: "attempt_fix_once_then_block",
+							})
+						}
 					}
 				}
 			}
@@ -675,6 +689,12 @@ func (c *Compiler) parseHandoff(
 		expectedBehavior = []string{}
 	}
 
+	validationContract := map[string]interface{}{
+		"mode":           "commands",
+		"failure_policy": "block",
+		"commands":       validationCmds,
+	}
+
 	executionPayload := map[string]interface{}{
 		"goal":                           goal,
 		"scope":                          scope,
@@ -682,7 +702,7 @@ func (c *Compiler) parseHandoff(
 		"file_targets":                   fileTargets,
 		"implementation_steps":           implementationSteps,
 		"code_requirements":              codeRequirements,
-		"validation_commands":            validationCmds,
+		"validation_contract":            validationContract,
 		"expected_behavior":              expectedBehavior,
 		"completion_contract":            completionContract,
 		"executor_final_response_format": "DONE_or_BLOCKED_strict_text",
@@ -1197,10 +1217,29 @@ func parseConstraints(text string) []map[string]interface{} {
 			if appsText != "" {
 				appsText = strings.ToLower(appsText)
 				var apps []string
-				allowed := []string{"planner", "renderer", "executor", "auditor", "middleware"}
-				for _, val := range allowed {
-					if strings.Contains(appsText, val) || strings.Contains(strings.ReplaceAll(appsText, "_", ""), strings.ReplaceAll(val, "_", "")) {
-						apps = append(apps, val)
+				aliasMap := []struct {
+					needle string
+					value  string
+				}{
+					{needle: "planner_agent", value: "planner_agent"},
+					{needle: "planner", value: "planner_agent"},
+					{needle: "packet_compiler", value: "packet_compiler"},
+					{needle: "compiler", value: "packet_compiler"},
+					{needle: "packet_validator", value: "packet_validator"},
+					{needle: "validator", value: "packet_validator"},
+					{needle: "brief_renderer", value: "brief_renderer"},
+					{needle: "renderer", value: "brief_renderer"},
+					{needle: "executor", value: "executor"},
+					{needle: "auditor_agent", value: "auditor_agent"},
+					{needle: "auditor", value: "auditor_agent"},
+					{needle: "relay_middleware", value: "relay_middleware"},
+					{needle: "middleware", value: "relay_middleware"},
+				}
+				seen := map[string]bool{}
+				for _, alias := range aliasMap {
+					if strings.Contains(appsText, alias.needle) && !seen[alias.value] {
+						apps = append(apps, alias.value)
+						seen[alias.value] = true
 					}
 				}
 				if len(apps) > 0 {

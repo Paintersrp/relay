@@ -40,6 +40,7 @@ func TestRenderer(t *testing.T) {
 			"target_executor": "deepseek-v4-flash",
 			"repo_target":     "Paintersrp/relay",
 			"branch_context":  "main",
+			"content_profile": "implementation_ready",
 			"lifecycle_state": "packet_created",
 			"artifact_paths": map[string]interface{}{
 				"canonical_packet":  "handoffs/packets/test.json",
@@ -49,15 +50,19 @@ func TestRenderer(t *testing.T) {
 				"audit_packet":      "handoffs/audits/test.md",
 				"planner_handoff":   "handoffs/planner/test.md",
 			},
-			"protocol_version":            "1.0.0",
-			"schema_version":              "1.0.0",
-			"created_at":                  "2026-06-16T21:50:42Z",
-			"producer_kind":               "relay-packet-compiler",
+			"protocol_version": "1.0.0",
+			"schema_version":   "1.0.0",
+			"created_at":       "2026-06-16T21:50:42Z",
+			"producer": map[string]interface{}{
+				"kind":    "middleware",
+				"name":    "relay-packet-compiler",
+				"version": "1.0.0",
+			},
 			"source_planner_handoff_path": "handoffs/planner/test.md",
 			"intended_packet_path":        "handoffs/packets/test.json",
 			"model_routing": map[string]interface{}{
 				"planner_model":        "gpt-4o",
-				"compiler_version":   "gpt-4o",
+				"compiler_version":     "gpt-4o",
 				"recommended_executor": "deepseek-v4-flash",
 				"routing_reason":       "test",
 			},
@@ -105,14 +110,18 @@ func TestRenderer(t *testing.T) {
 				},
 			},
 			"code_requirements": []interface{}{},
-			"validation_commands": []interface{}{
-				map[string]interface{}{
-					"id":               "V1",
-					"command":          "go test ./...",
-					"required":         true,
-					"purpose":          "Verify test suite",
-					"success_signal":   "PASS",
-					"failure_handling": "block_if_fails",
+			"validation_contract": map[string]interface{}{
+				"mode":           "commands",
+				"failure_policy": "block",
+				"commands": []interface{}{
+					map[string]interface{}{
+						"id":               "V1",
+						"command":          "go test ./...",
+						"required":         true,
+						"purpose":          "Verify test suite",
+						"success_signal":   "PASS",
+						"failure_handling": "block_if_fails",
+					},
 				},
 			},
 			"expected_behavior": []interface{}{"It works"},
@@ -123,6 +132,23 @@ func TestRenderer(t *testing.T) {
 				"forbidden_discretion": []interface{}{"no cheating"},
 			},
 			"executor_final_response_format": "DONE_or_BLOCKED_strict_text",
+			"implementation_contract": []interface{}{
+				map[string]interface{}{
+					"section_name": "artifact_contract_table",
+					"summary":      "Keep the executor brief and validation report artifacts aligned.",
+					"details":      []interface{}{"Smoke fixture remains a canonical-packet-shaped validation example."},
+					"required":     true,
+				},
+			},
+			"pass_exit_evidence": []interface{}{
+				map[string]interface{}{
+					"requirement":         "Smoke packet uses the current producer and validation_contract fields.",
+					"observable_evidence": "packet_meta.producer and execution_payload.validation_contract are present in the packet JSON.",
+					"evidence_source":     "artifact_output",
+					"acceptance_check":    "The smoke packet validates except for the intentionally omitted audit_seed.",
+					"failure_meaning":     "The smoke fixture has drifted from the current canonical packet shape.",
+				},
+			},
 		},
 		"audit_seed": map[string]interface{}{
 			"audit_checklist": []interface{}{
@@ -208,6 +234,88 @@ func TestRenderer(t *testing.T) {
 		}
 		if res.Success {
 			t.Error("expected render to fail due to malformed packet")
+		}
+	})
+
+	t.Run("Missing validation contract", func(t *testing.T) {
+		run, err := s.CreateRun(repo.ID, "Run missing validation contract", "packet_validated", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+
+		badPacket := make(map[string]interface{})
+		for k, v := range validPacket {
+			badPacket[k] = v
+		}
+		execPayload := make(map[string]interface{})
+		for k, v := range validPacket["execution_payload"].(map[string]interface{}) {
+			execPayload[k] = v
+		}
+		delete(execPayload, "validation_contract")
+		badPacket["execution_payload"] = execPayload
+
+		packetBytes, _ := json.Marshal(badPacket)
+		path, _ := artifacts.Write(run.ID, "canonical_packet", "canonical_packet.json", packetBytes)
+		_, _ = s.CreateArtifact(run.ID, "canonical_packet", path, "application/json")
+
+		res, err := rend.RenderExecutorBrief(context.Background(), run.ID)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if res.Success {
+			t.Fatal("expected render to fail due to missing validation contract")
+		}
+		found := false
+		for _, issue := range res.Issues {
+			if strings.Contains(issue, "validation_contract") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected validation_contract issue, got %v", res.Issues)
+		}
+	})
+
+	t.Run("Malformed validation contract", func(t *testing.T) {
+		run, err := s.CreateRun(repo.ID, "Run malformed validation contract", "packet_validated", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+
+		badPacket := make(map[string]interface{})
+		for k, v := range validPacket {
+			badPacket[k] = v
+		}
+		execPayload := make(map[string]interface{})
+		for k, v := range validPacket["execution_payload"].(map[string]interface{}) {
+			execPayload[k] = v
+		}
+		execPayload["validation_contract"] = map[string]interface{}{
+			"mode":           "commands",
+			"failure_policy": "block",
+			"commands":       []interface{}{},
+		}
+		badPacket["execution_payload"] = execPayload
+
+		packetBytes, _ := json.Marshal(badPacket)
+		path, _ := artifacts.Write(run.ID, "canonical_packet", "canonical_packet.json", packetBytes)
+		_, _ = s.CreateArtifact(run.ID, "canonical_packet", path, "application/json")
+
+		res, err := rend.RenderExecutorBrief(context.Background(), run.ID)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if res.Success {
+			t.Fatal("expected render to fail due to malformed validation contract")
+		}
+		found := false
+		for _, issue := range res.Issues {
+			if strings.Contains(issue, "validation_contract") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected validation_contract issue, got %v", res.Issues)
 		}
 	})
 

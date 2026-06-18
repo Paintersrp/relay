@@ -10,6 +10,7 @@ import {
   approveBrief,
   RelayApiError,
   repairValidation,
+  evaluateRepairEligibility,
 } from '@/features/relay-runs'
 import type { RepairValidationResponse } from '@/features/relay-runs'
 import { RunWorkbenchLayout } from '@/components/relay/RunWorkbenchLayout'
@@ -253,7 +254,8 @@ function PrepareMainContent({
   }
 
   // Determine repair eligibility from packet validation report
-  const repairEligible = packetValidationReport?.repair_eligible ?? packetValidationReport?.RepairEligible ?? false
+  const repairEligibility = evaluateRepairEligibility(packetValidationReport)
+  const repairEligible = repairEligibility.canOfferRepair
 
   const isPending = compileMutation.isPending || renderBriefMutation.isPending || approveMutation.isPending || repairMutation.isPending
 
@@ -477,7 +479,7 @@ function PrepareMainContent({
                 <span className="text-xs text-muted-foreground">
                   {repairEligible
                     ? 'Packet validation found repair-eligible issues.'
-                    : 'No repair-eligible issues detected.'}
+                    : repairEligibility.reason}
                 </span>
               </div>
               {repairEligible && (

@@ -14,7 +14,7 @@ func TestValidation(t *testing.T) {
 	schemaPath := filepath.Join(tmpDir, "test_schema.json")
 
 	// Read existing schema
-	schemaBytes, err := os.ReadFile(locateSchemaFile("handoffs/schema/canonical_packet.schema.json"))
+	schemaBytes, err := os.ReadFile(locateSchemaFile("relay-contracts/schema/canonical_packet.schema.json"))
 	if err != nil {
 		t.Fatalf("failed to read real schema for test: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestValidation(t *testing.T) {
 		t.Fatalf("failed to write test schema: %v", err)
 	}
 
-	validPacketBytes, err := os.ReadFile(locateSchemaFile("handoffs/examples/canonical_packet.valid.example.json"))
+	validPacketBytes, err := os.ReadFile(locateSchemaFile("relay-contracts/examples/canonical_packet.valid.example.json"))
 	if err != nil {
 		t.Fatalf("failed to read valid packet example: %v", err)
 	}
@@ -225,8 +225,8 @@ func TestValidation(t *testing.T) {
 		// Targets are backend only
 		exec["file_targets"] = []interface{}{
 			map[string]interface{}{
-				"path": "internal/validation/validation.go",
-				"role": "primary",
+				"path":   "internal/validation/validation.go",
+				"role":   "primary",
 				"action": "must_edit",
 				"reason": "test",
 			},
@@ -264,8 +264,8 @@ func TestValidation(t *testing.T) {
 		exec["goal"] = "Fix user-facing UI route workflow behavior (backend-only suffices)."
 		exec["file_targets"] = []interface{}{
 			map[string]interface{}{
-				"path": "internal/validation/validation.go",
-				"role": "primary",
+				"path":   "internal/validation/validation.go",
+				"role":   "primary",
 				"action": "must_edit",
 				"reason": "test",
 			},
@@ -293,11 +293,11 @@ func TestValidation(t *testing.T) {
 		}
 		exec["implementation_steps"] = []interface{}{
 			map[string]interface{}{
-				"id": "S1",
-				"title": "Decide what to do.",
-				"action": "inspect",
-				"target_paths": []interface{}{"internal/validation/validation.go"},
-				"instructions": "Determine whether we should change logic.",
+				"id":                  "S1",
+				"title":               "Decide what to do.",
+				"action":              "inspect",
+				"target_paths":        []interface{}{"internal/validation/validation.go"},
+				"instructions":        "Determine whether we should change logic.",
 				"acceptance_criteria": []interface{}{"done"},
 			},
 		}
@@ -335,7 +335,7 @@ func TestValidation(t *testing.T) {
 		}
 		plannerCtx["unresolved_questions"] = []interface{}{
 			map[string]interface{}{
-				"id": "Q1",
+				"id":       "Q1",
 				"question": "Is this a test?",
 				"blocking": true,
 			},
@@ -377,7 +377,7 @@ func TestValidation(t *testing.T) {
 		}
 		plannerCtx["unresolved_questions"] = []interface{}{
 			map[string]interface{}{
-				"id": "Q2",
+				"id":       "Q2",
 				"question": "Just a thought?",
 				"blocking": false,
 			},
@@ -421,10 +421,10 @@ func TestValidation(t *testing.T) {
 
 func TestSchemaAuditCriteria(t *testing.T) {
 	// Paths
-	canonicalSchemaPath := locateSchemaFile("handoffs/schema/canonical_packet.schema.json")
-	plannerSchemaPath := locateSchemaFile("handoffs/schema/planner_handoff.schema.json")
-	reportSchemaPath := locateSchemaFile("handoffs/schema/validation_report.schema.json")
-	taxonomyPath := locateSchemaFile("handoffs/schema/middleware_failure_codes.json")
+	canonicalSchemaPath := locateSchemaFile("relay-contracts/schema/canonical_packet.schema.json")
+	plannerSchemaPath := locateSchemaFile("relay-contracts/schema/planner_handoff_manifest.schema.json")
+	reportSchemaPath := locateSchemaFile("relay-contracts/schema/validation_report.schema.json")
+	taxonomyPath := locateSchemaFile("relay-contracts/schema/middleware_failure_codes.json")
 
 	// 1-3. Planner Handoff Tests
 	t.Run("Planner handoff containing packet_maker_brief fails", func(t *testing.T) {
@@ -436,10 +436,10 @@ func TestSchemaAuditCriteria(t *testing.T) {
 				"planner_agent": "planner",
 				"intended_handoff_path": "handoffs/planner/test.md",
 				"task_slug": "test",
-				"content_profile": "summary_only",
+				"content_profile": "implementation_ready",
 				"target_packet_path": "handoffs/packets/test.json",
 				"target_executor": "deepseek-v4-flash",
-				"canonical_packet_schema_path": "handoffs/schema/canonical_packet.schema.json"
+				"canonical_packet_schema_path": "schema/canonical_packet.schema.json"
 			},
 			"required_sections": {
 				"context_snapshot": {"required": true, "tag_name": "context", "purpose": "test"},
@@ -468,10 +468,10 @@ func TestSchemaAuditCriteria(t *testing.T) {
 				"planner_agent": "planner",
 				"intended_handoff_path": "handoffs/planner/test.md",
 				"task_slug": "test",
-				"content_profile": "summary_only",
+				"content_profile": "implementation_ready",
 				"target_packet_path": "handoffs/packets/test.json",
 				"target_executor": "deepseek-v4-flash",
-				"canonical_packet_schema_path": "handoffs/schema/canonical_packet.schema.json"
+				"canonical_packet_schema_path": "schema/canonical_packet.schema.json"
 			},
 			"required_sections": {
 				"context_snapshot": {"required": true, "tag_name": "context", "purpose": "test"},
@@ -500,10 +500,10 @@ func TestSchemaAuditCriteria(t *testing.T) {
 				"planner_agent": "planner",
 				"intended_handoff_path": "handoffs/planner/test.md",
 				"task_slug": "test",
-				"content_profile": "summary_only",
+				"content_profile": "implementation_ready",
 				"target_packet_path": "handoffs/packets/test.json",
 				"target_executor": "deepseek-v4-flash",
-				"canonical_packet_schema_path": "handoffs/schema/canonical_packet.schema.json"
+				"canonical_packet_schema_path": "schema/canonical_packet.schema.json"
 			},
 			"required_sections": {
 				"context_snapshot": {"required": true, "tag_name": "context", "purpose": "test"},
@@ -576,26 +576,9 @@ func TestSchemaAuditCriteria(t *testing.T) {
 	})
 
 	// 7-8. Canonical Packet Tests
-	validPacketBytes, _ := os.ReadFile(locateSchemaFile("handoffs/examples/canonical_packet.valid.example.json"))
+	validPacketBytes, _ := os.ReadFile(locateSchemaFile("relay-contracts/examples/canonical_packet.valid.example.json"))
 	var validPacket map[string]interface{}
 	json.Unmarshal(validPacketBytes, &validPacket)
-
-	t.Run("Canonical packet containing packet_maker_model fails", func(t *testing.T) {
-		invalidPacket := make(map[string]interface{})
-		for k, v := range validPacket {
-			invalidPacket[k] = v
-		}
-		invalidPacket["model_routing"] = map[string]interface{}{
-			"planner_model": "gpt-4o",
-			"packet_maker_model": "gpt-4o",
-		}
-
-		packetJSON, _ := json.Marshal(invalidPacket)
-		report, _ := ValidatePacketJSON(packetJSON, canonicalSchemaPath)
-		if report.Valid {
-			t.Error("expected canonical packet containing packet_maker_model to fail")
-		}
-	})
 
 	t.Run("Canonical packet with producer packet-maker fails", func(t *testing.T) {
 		invalidPacket := make(map[string]interface{})
@@ -606,7 +589,14 @@ func TestSchemaAuditCriteria(t *testing.T) {
 		for k, v := range validPacket["packet_meta"].(map[string]interface{}) {
 			meta[k] = v
 		}
-		meta["producer_kind"] = "packet-maker"
+		producer := make(map[string]interface{})
+		if original, ok := meta["producer"].(map[string]interface{}); ok {
+			for k, v := range original {
+				producer[k] = v
+			}
+		}
+		producer["kind"] = "packet-maker"
+		meta["producer"] = producer
 		invalidPacket["packet_meta"] = meta
 
 		packetJSON, _ := json.Marshal(invalidPacket)

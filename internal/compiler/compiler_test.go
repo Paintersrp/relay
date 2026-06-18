@@ -148,9 +148,18 @@ func TestCompiler(t *testing.T) {
 		if !ok {
 			t.Fatal("missing packet_meta")
 		}
-		for _, field := range []string{"protocol_version", "schema_version", "created_at", "producer_kind", "source_planner_handoff_path", "intended_packet_path"} {
+		for _, field := range []string{"protocol_version", "schema_version", "created_at", "source_planner_handoff_path", "intended_packet_path"} {
 			if val, ok := meta[field].(string); !ok || val == "" {
 				t.Errorf("missing or empty metadata field: %s", field)
+			}
+		}
+		producer, ok := meta["producer"].(map[string]interface{})
+		if !ok {
+			t.Fatal("producer is missing or not an object")
+		}
+		for _, field := range []string{"kind", "name", "version"} {
+			if val, ok := producer[field].(string); !ok || val == "" {
+				t.Errorf("missing or empty producer field: %s", field)
 			}
 		}
 
@@ -184,10 +193,14 @@ func TestCompiler(t *testing.T) {
 			}
 		}
 
-		// Assert validation commands have ID
-		cmds, ok := exec["validation_commands"].([]interface{})
+		// Assert validation contract commands have ID
+		contract, ok := exec["validation_contract"].(map[string]interface{})
+		if !ok {
+			t.Fatal("validation_contract is missing or not an object")
+		}
+		cmds, ok := contract["commands"].([]interface{})
 		if !ok || len(cmds) == 0 {
-			t.Fatal("validation_commands is empty or not a list")
+			t.Fatal("validation_contract.commands is empty or not a list")
 		}
 		for i, cmdVal := range cmds {
 			cmdMap, ok := cmdVal.(map[string]interface{})
