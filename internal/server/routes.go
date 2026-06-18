@@ -109,6 +109,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	r.Route("/api", func(r chi.Router) {
 		r.Use(api.CORSMiddleware)
 		r.Get("/runs", apiH.ListRuns)
+		r.Post("/dev/setup-smoke-validation-failure", apiH.SetupSmokeValidationFailure)
 		r.Get("/runs/{id}", apiH.GetRun)
 		r.Get("/runs/{id}/artifacts", apiH.ListArtifacts)
 		r.Get("/runs/{id}/artifacts/{kind}", apiH.GetArtifactContent)

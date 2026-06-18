@@ -9,7 +9,9 @@ import {
   renderBrief,
   approveBrief,
   RelayApiError,
+  repairValidation,
 } from '@/features/relay-runs'
+import type { RepairValidationResponse } from '@/features/relay-runs'
 import { RunWorkbenchLayout } from '@/components/relay/RunWorkbenchLayout'
 import { ValidationPanel } from '@/components/relay/ValidationPanel'
 import { LogPreviewPanel } from '@/components/relay/LogPreviewPanel'
@@ -209,6 +211,32 @@ function PrepareMainContent({
     },
   })
 
+  // State for repair result
+  const [repairResult, setRepairResult] = useState<RepairValidationResponse | null>(null)
+
+  // Mutation: Attempt Repair
+  const repairMutation = useMutation({
+    mutationFn: () => repairValidation(run.id),
+    onSuccess: (data) => {
+      setMutationError(null)
+      setRepairResult(data)
+      void queryClient.invalidateQueries({ queryKey: ['relay-runs'] })
+    },
+    onError: (err: any) => {
+      void queryClient.invalidateQueries({ queryKey: ['relay-runs'] })
+      if (err instanceof RelayApiError) {
+        const shape = err.errorShape
+        if (shape?.error || shape?.message) {
+          setMutationError(shape.error || shape.message)
+        } else {
+          setMutationError(err.message || 'Repair failed.')
+        }
+      } else {
+        setMutationError(err.message || 'Repair failed.')
+      }
+    },
+  })
+
   // Parse validation reports if available
   let packetValidationReport: any = null
   if (packetValidationArt?.preview) {
@@ -227,7 +255,7 @@ function PrepareMainContent({
   // Determine repair eligibility from packet validation report
   const repairEligible = packetValidationReport?.repair_eligible ?? packetValidationReport?.RepairEligible ?? false
 
-  const isPending = compileMutation.isPending || renderBriefMutation.isPending || approveMutation.isPending
+  const isPending = compileMutation.isPending || renderBriefMutation.isPending || approveMutation.isPending || repairMutation.isPending
 
   const handleCompile = () => {
     setMutationError(null)
@@ -242,6 +270,12 @@ function PrepareMainContent({
   const handleRenderBrief = () => {
     setMutationError(null)
     renderBriefMutation.mutate()
+  }
+
+  const handleAttemptRepair = () => {
+    setMutationError(null)
+    setRepairResult(null)
+    repairMutation.mutate()
   }
 
   const handleApproveBrief = () => {
@@ -423,30 +457,113 @@ function PrepareMainContent({
             Repair attempts fix structural or formatting issues detected during packet validation.
             This is available when the validation report marks issues as repair-eligible.
           </p>
-          {packetValidationArt ? (
-            <div className="flex items-center gap-2 text-xs">
-              <Badge
-                variant={repairEligible ? 'warning' : 'secondary'}
-                className="text-xs"
-              >
-                {repairEligible ? 'Repair Eligible' : 'Not Eligible'}
-              </Badge>
-              <span className="text-xs text-muted-foreground">
-                {repairEligible
-                  ? 'Packet validation found repair-eligible issues.'
-                  : 'No repair-eligible issues detected.'}
-              </span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
-              <Clock className="w-4 h-4 shrink-0" />
-              <span className="italic">Not yet available. Run compile first.</span>
+
+          {status === 'repair_validated' && (
+            <div className="flex items-start gap-2 text-xs bg-emerald-950/20 border border-emerald-900/30 rounded p-3">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-400" />
+              <div>
+                <p className="font-semibold text-emerald-400">Repair validated</p>
+                <p className="text-emerald-300/80">Repair passed validation. You can now render the brief.</p>
+              </div>
             </div>
           )}
-          <div className="flex items-center gap-2 text-xs text-muted-foreground/60 italic">
-            <AlertTriangle className="w-3 h-3" />
-            <span>Repair behavior is not yet implemented in this pass.</span>
-          </div>
+
+          {isPacketValidationFailed && repairResult === null && !repairMutation.isPending && (
+            <>
+              <div className="flex items-center gap-2 text-xs">
+                <Badge variant={repairEligible ? 'warning' : 'secondary'} className="text-xs">
+                  {repairEligible ? 'Repair Eligible' : 'Not Eligible'}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  {repairEligible
+                    ? 'Packet validation found repair-eligible issues.'
+                    : 'No repair-eligible issues detected.'}
+                </span>
+              </div>
+              {repairEligible && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleAttemptRepair}
+                  disabled={isPending}
+                  className="w-fit gap-1.5"
+                >
+                  <Wrench className="w-3.5 h-3.5" />
+                  Attempt Repair
+                </Button>
+              )}
+            </>
+          )}
+
+          {repairMutation.isPending && (
+            <Button variant="default" size="sm" disabled className="w-fit gap-1.5">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Repairing...
+            </Button>
+          )}
+
+          {repairResult !== null && repairResult.blockedReason && (
+            <div className="flex items-start gap-2 text-xs bg-red-950/20 border border-red-900/30 rounded p-3">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-400" />
+              <div>
+                <p className="font-semibold text-red-400">Repair blocked</p>
+                <p className="text-red-300/80">{repairResult.blockedReason}</p>
+              </div>
+            </div>
+          )}
+
+          {repairResult !== null && !repairResult.blockedReason && repairResult.ineligibleReason && (
+            <div className="flex items-start gap-2 text-xs bg-yellow-950/20 border border-yellow-900/30 rounded p-3">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-yellow-400" />
+              <div>
+                <p className="font-semibold text-yellow-400">Repair ineligible</p>
+                <p className="text-yellow-300/80">{repairResult.ineligibleReason}</p>
+              </div>
+            </div>
+          )}
+
+          {repairResult !== null && !repairResult.blockedReason && !repairResult.ineligibleReason && repairResult.reValidationValid === false && (
+            <div className="flex items-start gap-2 text-xs bg-red-950/20 border border-red-900/30 rounded p-3">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-400" />
+              <div>
+                <p className="font-semibold text-red-400">Repair attempted; validation still failed</p>
+                {repairResult.reValidationError && (
+                  <p className="text-red-300/80">{repairResult.reValidationError}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {repairResult !== null && !repairResult.blockedReason && !repairResult.ineligibleReason && repairResult.reValidationValid === undefined && repairResult.error && (
+            <div className="flex items-start gap-2 text-xs bg-red-950/20 border border-red-900/30 rounded p-3">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-400" />
+              <div>
+                <p className="font-semibold text-red-400">Repair error</p>
+                <p className="text-red-300/80">{repairResult.error}</p>
+              </div>
+            </div>
+          )}
+
+          {repairResult !== null && !repairResult.blockedReason && !repairResult.ineligibleReason && repairResult.reValidationValid === true && (
+            <div className="flex items-start gap-2 text-xs bg-emerald-950/20 border border-emerald-900/30 rounded p-3">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-400" />
+              <div>
+                <p className="font-semibold text-emerald-400">Repair validated</p>
+                <p className="text-emerald-300/80">Repair passed validation. You can now render the brief.</p>
+              </div>
+            </div>
+          )}
+
+          {!isPacketValidationFailed && status !== 'repair_validated' && (
+            <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
+              <Clock className="w-4 h-4 shrink-0" />
+              <span className="italic">
+                {compileAttempted
+                  ? 'Repair is only available when compile fails validation.'
+                  : 'Not yet available. Run compile first.'}
+              </span>
+            </div>
+          )}
         </div>
       </Section>
 

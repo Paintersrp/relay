@@ -34,6 +34,7 @@ export {
   closeRun,
   submitPlannerHandoff,
   RelayApiError,
+  repairValidation,
   API_BASE_URL,
 } from './api'
 export type {
@@ -44,6 +45,7 @@ export type {
   PrepareCommitMessageResponse,
   AuditActionResponse,
   ValidateRunResponse,
+  RepairValidationResponse,
 } from './api'
 export type {
   RelayRun,
