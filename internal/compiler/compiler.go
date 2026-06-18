@@ -437,6 +437,9 @@ func (c *Compiler) parseHandoff(
 
 	// 3. Parse execution_payload
 	briefText, ok = getSection("compiler_input", "compiler input")
+	if !ok || briefText == "" {
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingCompilerInput, Message: "Missing required section: compiler_input", RepairEligible: false})
+	}
 	var goal, scope, expectedBehaviorRaw, completionContractRaw string
 	var nonGoals []string
 	var fileTargets []map[string]interface{}

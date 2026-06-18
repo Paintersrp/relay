@@ -24,13 +24,14 @@ const (
 	CodeInvalidEnum                = "CANONICAL_PACKET_INVALID_ENUM"
 	CodeExtraProperty              = "CANONICAL_PACKET_EXTRA_PROPERTY"
 	CodeInvalidType                = "CANONICAL_PACKET_INVALID_TYPE"
-	CodeStringPatternMismatch                 = "CANONICAL_PACKET_STRING_PATTERN_MISMATCH"
-	CodeFileTargetMismatch                    = "CANONICAL_PACKET_FILE_TARGET_MISMATCH"
-	CodeBlockingUnresolvedQuestion            = "CANONICAL_PACKET_BLOCKING_UNRESOLVED_QUESTION"
-	CodeMissingImplementationSteps            = "CANONICAL_PACKET_MISSING_IMPLEMENTATION_STEPS"
-	CodeMissingCodeRequirements               = "CANONICAL_PACKET_MISSING_CODE_REQUIREMENTS"
-	CodeMissingPassExitEvidence               = "CANONICAL_PACKET_MISSING_PASS_EXIT_EVIDENCE"
-	CodeMissingValidationContract             = "CANONICAL_PACKET_MISSING_VALIDATION_CONTRACT"
+	CodeStringPatternMismatch      = "CANONICAL_PACKET_STRING_PATTERN_MISMATCH"
+	CodeFileTargetMismatch         = "CANONICAL_PACKET_FILE_TARGET_MISMATCH"
+	CodeBlockingUnresolvedQuestion = "CANONICAL_PACKET_BLOCKING_UNRESOLVED_QUESTION"
+	CodeMissingImplementationSteps = "CANONICAL_PACKET_MISSING_IMPLEMENTATION_STEPS"
+	CodeMissingCodeRequirements    = "CANONICAL_PACKET_MISSING_CODE_REQUIREMENTS"
+	CodeMissingPassExitEvidence    = "CANONICAL_PACKET_MISSING_PASS_EXIT_EVIDENCE"
+	CodeMissingValidationContract  = "CANONICAL_PACKET_MISSING_VALIDATION_CONTRACT"
+	CodeMissingCompilerInput       = "PLANNER_HANDOFF_MISSING_COMPILER_INPUT"
 )
 
 type ValidationReport struct {
@@ -82,7 +83,7 @@ func ValidatePacketJSON(packetJSON []byte, schemaPath string) (*ValidationReport
 		for _, desc := range result.Errors() {
 			report.Errors = append(report.Errors, ValidationError{
 				Type:           "schema",
-				Code:           mapSchemaErrorType(desc.Type()),
+				Code:           mapSchemaErrorType(desc),
 				Message:        desc.String(),
 				RepairEligible: true, // Schema violations are repair eligible
 			})
@@ -298,7 +299,13 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 	for _, f := range requiredArrays {
 		val, ok := exec[f]
 		if !ok {
-			issues = append(issues, ValidationError{Type: "input", Code: CodeMissingRequiredField, Message: fmt.Sprintf("required execution_payload field %q is missing", f), RepairEligible: false})
+			code := CodeMissingRequiredField
+			if f == "implementation_steps" {
+				code = CodeMissingImplementationSteps
+			} else if f == "code_requirements" {
+				code = CodeMissingCodeRequirements
+			}
+			issues = append(issues, ValidationError{Type: "input", Code: code, Message: fmt.Sprintf("required execution_payload field %q is missing", f), RepairEligible: false})
 			continue
 		}
 		arrVal, ok := val.([]interface{})
@@ -308,7 +315,7 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 	}
 
 	if val, ok := exec["validation_contract"]; !ok {
-		issues = append(issues, ValidationError{Type: "input", Code: CodeMissingRequiredField, Message: "required execution_payload field \"validation_contract\" is missing", RepairEligible: false})
+		issues = append(issues, ValidationError{Type: "input", Code: CodeMissingValidationContract, Message: "required execution_payload field \"validation_contract\" is missing", RepairEligible: false})
 	} else if obj, ok := val.(map[string]interface{}); !ok || len(obj) == 0 {
 		issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_EMPTY_FIELD", Message: "required execution_payload field \"validation_contract\" is empty", RepairEligible: false})
 	}
@@ -490,9 +497,22 @@ func sanitizeSchemaRegexes(schemaContent string) string {
 	return schemaContent
 }
 
-func mapSchemaErrorType(t string) string {
+func mapSchemaErrorType(desc gojsonschema.ResultError) string {
+	t := desc.Type()
 	switch t {
 	case "required":
+		if prop, ok := desc.Details()["property"].(string); ok {
+			switch prop {
+			case "implementation_steps":
+				return CodeMissingImplementationSteps
+			case "code_requirements":
+				return CodeMissingCodeRequirements
+			case "validation_contract":
+				return CodeMissingValidationContract
+			case "pass_exit_evidence":
+				return CodeMissingPassExitEvidence
+			}
+		}
 		return CodeMissingRequiredField
 	case "enum":
 		return CodeInvalidEnum

@@ -14,18 +14,18 @@ const (
 )
 
 type CommandResult struct {
-	ID              string `json:"id"`
-	Command         string `json:"command"`
-	Required        bool   `json:"required"`
-	Status          string `json:"status"`
-	ExitCode        int    `json:"exitCode"`
-	DurationMs      int64  `json:"durationMs"`
-	Workdir         string `json:"workdir"`
-	StartedAt       string `json:"startedAt"`
-	FinishedAt      string `json:"finishedAt"`
-	StdoutKind      string `json:"stdoutKind"`
-	StderrKind      string `json:"stderrKind"`
-	NotRunReason    string `json:"notRunReason,omitempty"`
+	ID           string `json:"id"`
+	Command      string `json:"command"`
+	Required     bool   `json:"required"`
+	Status       string `json:"status"`
+	ExitCode     int    `json:"exitCode"`
+	DurationMs   int64  `json:"durationMs"`
+	Workdir      string `json:"workdir"`
+	StartedAt    string `json:"startedAt"`
+	FinishedAt   string `json:"finishedAt"`
+	StdoutKind   string `json:"stdoutKind"`
+	StderrKind   string `json:"stderrKind"`
+	NotRunReason string `json:"notRunReason,omitempty"`
 }
 
 type ValidationRun struct {
@@ -49,7 +49,7 @@ const validationRunFilename = "validation_run.json"
 
 const ArtifactKindStdout = "validation_stdout"
 const ArtifactKindStderr = "validation_stderr"
-const ArtifactKindJSON  = "validation_run_json"
+const ArtifactKindJSON = "validation_run_json"
 
 func nowUTC() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)

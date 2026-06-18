@@ -259,13 +259,13 @@ func TestService_RepairValidation(t *testing.T) {
 		if res.RepairArtifacts[ArtifactKindRepairPrompt] == "" {
 			t.Errorf("expected repair prompt artifact path")
 		}
-		
+
 		runStatus, _ := s.GetRun(run.ID)
 		if runStatus.Status != "repair_validated" {
 			t.Errorf("expected repair_validated, got %s", runStatus.Status)
 		}
 	})
-    
+
 	t.Run("ineligible zero-call behavior", func(t *testing.T) {
 		fakeAdapter := &FakeAdapter{}
 		svc := NewServiceWithAdapter(s, fakeAdapter)

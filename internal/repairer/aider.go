@@ -64,11 +64,11 @@ func BuildRepairPrompt(packetJSON []byte, report *validation.ValidationReport) s
 
 // RepairArtifactKind constants for persisted repair artifacts.
 const (
-	ArtifactKindRepairRequest      = "repair_request_json"
-	ArtifactKindRepairPrompt       = "repair_prompt"
-	ArtifactKindRepairOutput       = "repair_output"
-	ArtifactKindRepairedPacket     = "repaired_packet"
-	ArtifactKindRepairValidation   = "repair_validation_report"
+	ArtifactKindRepairRequest    = "repair_request_json"
+	ArtifactKindRepairPrompt     = "repair_prompt"
+	ArtifactKindRepairOutput     = "repair_output"
+	ArtifactKindRepairedPacket   = "repaired_packet"
+	ArtifactKindRepairValidation = "repair_validation_report"
 )
 
 // Adapter defines the contract for an Aider repair execution.
