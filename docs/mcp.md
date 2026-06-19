@@ -2,9 +2,9 @@
 
 > [!IMPORTANT]
 > **Current GPT-Facing MCP Action Surface:**
-> The Planner has exactly **one** current GPT-facing MCP action: submitting a reviewed Planner handoff to Relay to create/start a run. 
+> The current Planner Project-facing MCP action is **only** `create_run_from_planner_handoff`. It submits a reviewed Planner handoff to Relay to create/start a run.
 > 
-> The Planner does **not** have multiple project-facing MCP actions. It cannot invoke status queries, audits, or downstream dispatch via MCP at this time. All other tools documented below are either local/dev/server capabilities, internal test vectors, or future capabilities not currently exposed to the GPT-facing project environment.
+> The Planner does **not** have multiple project-facing MCP actions. It cannot invoke status queries, run listing, audits, or downstream dispatch via MCP at this time. Other tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` may exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
 
 ---
 
