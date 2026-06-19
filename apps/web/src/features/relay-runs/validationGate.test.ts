@@ -188,11 +188,11 @@ describe('Validation Gate Predicate Matrix', () => {
       expect(result.reason).toContain('uncoded');
     });
 
-    it('blocks repair when the report is not repair-eligible', () => {
+    it('blocks repair when the report is not repair-eligible even if issue is repair-eligible', () => {
       const report = {
         repair_eligible: false,
         errors: [
-          { code: 'CANONICAL_PACKET_JSON_SYNTAX', repair_eligible: false },
+          { code: 'CANONICAL_PACKET_JSON_SYNTAX', repair_eligible: true },
         ],
       };
 
