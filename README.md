@@ -34,11 +34,26 @@ Key design points:
 - Validation runner is local/user-triggered.
 - `AGENTS.md` and `.clinerules` source templates live under `internal/instructions`.
 
-## MCP Bridge
+## MCP Bridge & GPT-Facing Action Surface
 
-Relay includes an experimental MCP (Model Context Protocol) bridge that allows MCP-compatible clients to interact with runs via tools.
+Relay includes an MCP (Model Context Protocol) integration. The **current GPT-facing Relay MCP Action** is defined as follows:
 
-See **[docs/mcp.md](docs/mcp.md)** for setup, tool shapes, smoke test instructions, and safety boundaries.
+*   **Action:** Submitting a reviewed Planner handoff artifact/content to Relay.
+*   **Result:** Relay creates and starts a new run from that handoff, and owns all downstream processing.
+*   **User Confirmation:** The Planner must explicitly ask for user confirmation after handoff creation before invoking this MCP run-creation action.
+
+### Safety Boundaries & Capabilities
+
+The current GPT-facing MCP action does **not** expose:
+*   Shell execution or command running
+*   Arbitrary file access or file reads/writes
+*   Git operations (commits, pushes, branch creation)
+*   Direct executor dispatch or downstream processing controls
+*   Audit closeout or status reporting tools (unless separately configured)
+
+Any broader list of local/dev MCP server tools (e.g., in `mcpserver` or local development contexts) or historical tools are strictly local/dev/server capabilities or future/internal capabilities. They are not current Planner-facing Project actions.
+
+For detailed setup, tool definitions, local stdio server setup, and testing instructions, see **[docs/mcp.md](docs/mcp.md)**.
 
 ## Not implemented yet
 

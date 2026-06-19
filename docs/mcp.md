@@ -1,6 +1,21 @@
-# Relay MCP — Pass 16: Real Tools + Smoke Tests
+# Relay MCP — Model Context Protocol Specification
 
-Relay exposes a bounded set of Model Context Protocol (MCP) tools over a **stdio subprocess** transport. MCP clients such as Claude Desktop, Cursor, and OpenCode launch the `relay-mcpserver` binary, communicate over stdin/stdout using newline-delimited JSON-RPC 2.0, and call tools on behalf of the user.
+> [!IMPORTANT]
+> **Current GPT-Facing MCP Action Surface:**
+> The Planner has exactly **one** current GPT-facing MCP action: submitting a reviewed Planner handoff to Relay to create/start a run. 
+> 
+> The Planner does **not** have multiple project-facing MCP actions. It cannot invoke status queries, audits, or downstream dispatch via MCP at this time. All other tools documented below are either local/dev/server capabilities, internal test vectors, or future capabilities not currently exposed to the GPT-facing project environment.
+
+---
+
+## Current GPT-Facing Action vs. Local/Dev Tool Inventory
+
+1.  **Project MCP Action (Production/GPT-Facing):**
+    *   **Action:** `create_run_from_planner_handoff` — Submits a reviewed Planner handoff to Relay. Relay creates/starts the run and handles all downstream compiler, validator, and executor tasks.
+    *   **User Gating:** Requires explicit user confirmation in chat before submission.
+2.  **Local/Dev/Server Tool Inventory (Optional/Developer-Only):**
+    *   The `mcpserver` implementation defines other tools (e.g., status, list, audits) used for local debugging, unit/smoke testing, or command-line developer workflows.
+    *   These are **not** currently exposed to the Planner Project unless the specific project configuration is modified to expose them.
 
 ---
 
@@ -96,9 +111,9 @@ The MCP server uses WAL mode and shares the database safely with the Go HTTP dae
 
 ---
 
-## Registered Tools (Pass 16)
+## Registered Tools (Pass 16 / Developer Tool Inventory)
 
-Exactly 5 tools are registered. No shell execution, arbitrary file access, or git mutation tools are exposed.
+Exactly 5 tools are registered in the local/dev MCP server. Note that **only tool #2 (`create_run_from_planner_handoff`)** is currently exposed as a Project MCP action for the GPT-facing Planner. The others are kept for local debugging, testing, or future expansion. No shell execution, arbitrary file access, or git mutation tools are exposed.
 
 ### 1. `submit_test_audit_packet`
 
