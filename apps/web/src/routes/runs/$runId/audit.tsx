@@ -1,6 +1,6 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useMemo } from 'react'
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
 import {
   runDetailQueryOptions,
   runArtifactsQueryOptions,
@@ -15,7 +15,7 @@ import {
   evaluateValidationGate,
   isAuditCandidateStatus,
   acceptFailedValidation,
-} from '@/features/relay-runs'
+} from "@/features/relay-runs";
 import type {
   RelayAuditDecisionValue,
   RelayAuditInputSummaryInfo,
@@ -23,18 +23,18 @@ import type {
   RelayAuditDecisionStatus,
   RelayCommitSummary,
   RelayAuditActions,
-} from '@/features/relay-runs'
-import { RELAY_AUDIT_DECISION_VALUES } from '@/features/relay-runs'
-import { RunWorkbenchLayout } from '@/components/relay/RunWorkbenchLayout'
-import { ValidationPanel } from '@/components/relay/ValidationPanel'
-import { ArtifactPreviewCard } from '@/components/relay/ArtifactPreviewCard'
-import { LogPreviewPanel } from '@/components/relay/LogPreviewPanel'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Separator } from '@/components/ui/separator'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+} from "@/features/relay-runs";
+import { RELAY_AUDIT_DECISION_VALUES } from "@/features/relay-runs";
+import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
+import { ValidationPanel } from "@/components/relay/ValidationPanel";
+import { ArtifactPreviewCard } from "@/components/relay/ArtifactPreviewCard";
+import { LogPreviewPanel } from "@/components/relay/LogPreviewPanel";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   ShieldCheck,
   FileText,
@@ -49,17 +49,23 @@ import {
   ArrowLeft,
   RefreshCw,
   FileCode,
-} from 'lucide-react'
+} from "lucide-react";
 
-export const Route = createFileRoute('/runs/$runId/audit')({
+export const Route = createFileRoute("/runs/$runId/audit")({
   component: AuditPage,
-})
+});
 
 function AuditPage() {
-  const { runId } = Route.useParams()
-  const { data: run, isLoading: isLoadingRun, error: errorRun } = useQuery(runDetailQueryOptions(runId))
-  const { data: artifacts, isLoading: isLoadingArtifacts } = useQuery(runArtifactsQueryOptions(runId))
-  const { data: events } = useQuery(runEventsQueryOptions(runId))
+  const { runId } = Route.useParams();
+  const {
+    data: run,
+    isLoading: isLoadingRun,
+    error: errorRun,
+  } = useQuery(runDetailQueryOptions(runId));
+  const { data: artifacts, isLoading: isLoadingArtifacts } = useQuery(
+    runArtifactsQueryOptions(runId),
+  );
+  const { data: events } = useQuery(runEventsQueryOptions(runId));
 
   if (isLoadingRun || isLoadingArtifacts) {
     return (
@@ -69,16 +75,19 @@ function AuditPage() {
         <Skeleton className="h-4 w-48" />
         <Skeleton className="h-64 w-full mt-6" />
       </div>
-    )
+    );
   }
 
   if (errorRun || !run) {
     return (
       <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center min-h-[50vh]">
         <div className="text-4xl">⚠️</div>
-        <h1 className="text-lg font-semibold">Run not found or error loading</h1>
+        <h1 className="text-lg font-semibold">
+          Run not found or error loading
+        </h1>
         <p className="text-sm text-muted-foreground max-w-sm">
-          Failed to load run details from backend. Please verify the backend is running and the run ID is correct.
+          Failed to load run details from backend. Please verify the backend is
+          running and the run ID is correct.
         </p>
         <Button variant="outline" size="sm" asChild>
           <Link to="/runs">
@@ -87,25 +96,25 @@ function AuditPage() {
           </Link>
         </Button>
       </div>
-    )
+    );
   }
 
   const formattedLogs = events
     ? events.map((e) => {
-        const timeStr = new Date(e.createdAt).toLocaleTimeString('en-US', {
+        const timeStr = new Date(e.createdAt).toLocaleTimeString("en-US", {
           hour12: false,
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        })
-        return `[${timeStr}] ${e.message}`
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+        return `[${timeStr}] ${e.message}`;
       })
-    : []
+    : [];
 
   const logPreview = {
     lines: formattedLogs.slice(-50),
     truncated: formattedLogs.length > 50,
-  }
+  };
 
   return (
     <RunWorkbenchLayout
@@ -125,113 +134,154 @@ function AuditPage() {
       sideContent={
         <>
           <ValidationPanel summary={run.validationSummary} />
-          {artifacts && artifacts.map((a) => (
-            <ArtifactPreviewCard key={a.id} artifact={a} runId={run.id} />
-          ))}
+          {artifacts &&
+            artifacts.map((a) => (
+              <ArtifactPreviewCard key={a.id} artifact={a} runId={run.id} />
+            ))}
           <LogPreviewPanel logPreview={logPreview} />
         </>
       }
     />
-  )
+  );
 }
 
 function deriveAuditData(
   run: any,
   artifacts: any[],
-  events: any[]
+  events: any[],
 ): {
-  inputSummary: RelayAuditInputSummaryInfo
-  generatedPacket: RelayAuditPacketInfo
-  manualPacket?: RelayAuditPacketInfo
-  decision: RelayAuditDecisionStatus
-  commitSummary: RelayCommitSummary
-  actions: RelayAuditActions
-  warnings: string[]
-  revisionRequirements: string[]
-  blockers: string[]
+  inputSummary: RelayAuditInputSummaryInfo;
+  generatedPacket: RelayAuditPacketInfo;
+  manualPacket?: RelayAuditPacketInfo;
+  decision: RelayAuditDecisionStatus;
+  commitSummary: RelayCommitSummary;
+  actions: RelayAuditActions;
+  warnings: string[];
+  revisionRequirements: string[];
+  blockers: string[];
 } {
-  const auditInputArts = artifacts.filter((a: any) =>
-    a.kind === 'audit' && (a.filename?.includes('audit_input_summary') || a.path?.includes('audit_input_summary') || a.label === 'Audit Input Summary')
-  ).sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
-  const inputArtifact = auditInputArts[0]
+  const auditInputArts = artifacts
+    .filter(
+      (a: any) =>
+        a.kind === "audit" &&
+        (a.filename?.includes("audit_input_summary") ||
+          a.path?.includes("audit_input_summary") ||
+          a.label === "Audit Input Summary"),
+    )
+    .sort(
+      (a: any, b: any) =>
+        new Date(b.createdAt || 0).getTime() -
+        new Date(a.createdAt || 0).getTime(),
+    );
+  const inputArtifact = auditInputArts[0];
 
-  const packetArts = artifacts.filter((a: any) =>
-    a.kind === 'audit' && (a.filename?.includes('audit_packet') || a.path?.includes('audit_packet') || a.label === 'Audit Packet')
-  )
-  const genPacketArt = packetArts.find((a: any) =>
-    !a.filename?.includes('manual') && !a.path?.includes('manual')
-  )
-  const manualPacketArt = packetArts.find((a: any) =>
-    a.filename?.includes('manual') || a.path?.includes('manual')
-  )
+  const packetArts = artifacts.filter(
+    (a: any) =>
+      a.kind === "audit" &&
+      (a.filename?.includes("audit_packet") ||
+        a.path?.includes("audit_packet") ||
+        a.label === "Audit Packet"),
+  );
+  const genPacketArt = packetArts.find(
+    (a: any) => !a.filename?.includes("manual") && !a.path?.includes("manual"),
+  );
+  const manualPacketArt = packetArts.find(
+    (a: any) => a.filename?.includes("manual") || a.path?.includes("manual"),
+  );
 
   const hasRevisionEvent = events.some((e: any) =>
-    e.message?.includes('Audit revision requested')
-  )
+    e.message?.includes("Audit revision requested"),
+  );
 
-  const runStatus = run.status || ''
-  const isAuditCandidate = isAuditCandidateStatus(runStatus)
-  const isAccepted = runStatus === 'accepted' || runStatus === 'accepted_with_warnings'
-  const isAuditReady = runStatus === 'audit_ready' || runStatus === 'audit_ready_for_review'
-  const isCompleted = runStatus === 'completed'
-  const isRevisionRequired = runStatus === 'revision_required'
-  const isBlocked = runStatus === 'blocked'
+  const runStatus = run.status || "";
+  const isAuditCandidate = isAuditCandidateStatus(runStatus);
+  const isAccepted =
+    runStatus === "accepted" || runStatus === "accepted_with_warnings";
+  const isAuditReady =
+    runStatus === "audit_ready" || runStatus === "audit_ready_for_review";
+  const isCompleted = runStatus === "completed";
+  const isRevisionRequired = runStatus === "revision_required";
+  const isBlocked = runStatus === "blocked";
 
-  const { validationAllowsAudit } = evaluateValidationGate(artifacts as any, runStatus)
+  const { validationAllowsAudit } = evaluateValidationGate(
+    artifacts as any,
+    runStatus,
+  );
 
-  const commitMsgArts = artifacts.filter((a: any) =>
-    a.kind === 'audit' && (a.filename?.includes('commit_message') || a.path?.includes('commit_message'))
-  )
-  const commitMsgArt = commitMsgArts[commitMsgArts.length - 1]
-  const changedFileArts = artifacts.filter((a: any) => a.kind === 'diff')
+  const commitMsgArts = artifacts.filter(
+    (a: any) =>
+      a.kind === "audit" &&
+      (a.filename?.includes("commit_message") ||
+        a.path?.includes("commit_message")),
+  );
+  const commitMsgArt = commitMsgArts[commitMsgArts.length - 1];
+  const changedFileArts = artifacts.filter((a: any) => a.kind === "diff");
 
-  const evidenceArtifacts = artifacts.filter((a: any) =>
-    a.kind === 'result' || a.kind === 'validation' || a.kind === 'diff'
-  )
+  const evidenceArtifacts = artifacts.filter(
+    (a: any) =>
+      a.kind === "result" || a.kind === "validation" || a.kind === "diff",
+  );
 
-  const hasGenerateEvent = events.some((e: any) =>
-    e.message?.includes('Audit packet generated') || e.message?.includes('audit packet generated')
-  )
+  const hasGenerateEvent = events.some(
+    (e: any) =>
+      e.message?.includes("Audit packet generated") ||
+      e.message?.includes("audit packet generated"),
+  );
   const hasManualSubmitEvent = events.some((e: any) =>
-    e.message?.includes('Manual audit packet submitted')
-  )
+    e.message?.includes("Manual audit packet submitted"),
+  );
 
-  const auditDecision = run.approvalGate?.state === 'approved'
-  const decisionValue: RelayAuditDecisionValue | undefined = isAccepted ? 'accepted' : undefined
+  const auditDecision = run.approvalGate?.state === "approved";
+  const decisionValue: RelayAuditDecisionValue | undefined = isAccepted
+    ? "accepted"
+    : undefined;
 
   return {
     inputSummary: {
-      artifactId: inputArtifact?.id || '',
-      artifactPath: inputArtifact?.path || '',
+      artifactId: inputArtifact?.id || "",
+      artifactPath: inputArtifact?.path || "",
       available: !!inputArtifact,
       generatedAt: inputArtifact?.createdAt,
       preview: inputArtifact?.preview,
-      evidenceIncluded: evidenceArtifacts.map((a: any) => a.label || a.filename),
+      evidenceIncluded: evidenceArtifacts.map(
+        (a: any) => a.label || a.filename,
+      ),
       missingEvidence: [],
     },
     generatedPacket: {
-      artifactId: genPacketArt?.id || '',
-      artifactPath: genPacketArt?.path || '',
+      artifactId: genPacketArt?.id || "",
+      artifactPath: genPacketArt?.path || "",
       available: !!genPacketArt,
       isManual: false,
       generatedAt: genPacketArt?.createdAt,
       preview: genPacketArt?.preview,
-      warnings: run.validationSummary?.warnings > 0
-        ? (run.validationSummary?.issues || []).filter((i: any) => i.severity === 'warning').map((i: any) => i.message)
-        : [],
+      warnings:
+        run.validationSummary?.warnings > 0
+          ? (run.validationSummary?.issues || [])
+              .filter((i: any) => i.severity === "warning")
+              .map((i: any) => i.message)
+          : [],
     },
-    manualPacket: manualPacketArt ? {
-      artifactId: manualPacketArt.id,
-      artifactPath: manualPacketArt.path,
-      available: true,
-      isManual: true,
-      generatedAt: manualPacketArt.createdAt,
-      preview: manualPacketArt.preview,
-      warnings: [],
-    } : undefined,
+    manualPacket: manualPacketArt
+      ? {
+          artifactId: manualPacketArt.id,
+          artifactPath: manualPacketArt.path,
+          available: true,
+          isManual: true,
+          generatedAt: manualPacketArt.createdAt,
+          preview: manualPacketArt.preview,
+          warnings: [],
+        }
+      : undefined,
     decision: {
       currentDecision: decisionValue,
-      source: isCompleted ? 'approved' : hasManualSubmitEvent ? 'manual' : hasGenerateEvent ? 'generated' : 'none',
+      source: isCompleted
+        ? "approved"
+        : hasManualSubmitEvent
+          ? "manual"
+          : hasGenerateEvent
+            ? "generated"
+            : "none",
       approvedAt: run.updatedAt,
       notes: run.approvalGate?.note,
     },
@@ -241,12 +291,19 @@ function deriveAuditData(
       commitMessagePreview: commitMsgArt?.preview,
       commitMessageAvailable: !!commitMsgArt,
       validationSummary: `${run.validationSummary?.passed || 0} passed, ${run.validationSummary?.errors || 0} errors, ${run.validationSummary?.warnings || 0} warnings`,
-      auditDecisionSummary: decisionValue || 'Pending review',
+      auditDecisionSummary: decisionValue || "Pending review",
     },
     actions: {
-      canGenerateAudit: isAuditCandidate && !isCompleted && validationAllowsAudit,
-      canSubmitManual: isAuditReady && !isAccepted && !isCompleted && !isRevisionRequired,
-      canApproveAudit: (hasGenerateEvent || hasManualSubmitEvent) && isAuditReady && !auditDecision && !isCompleted && !isRevisionRequired,
+      canGenerateAudit:
+        isAuditCandidate && !isCompleted && validationAllowsAudit,
+      canSubmitManual:
+        isAuditReady && !isAccepted && !isCompleted && !isRevisionRequired,
+      canApproveAudit:
+        (hasGenerateEvent || hasManualSubmitEvent) &&
+        isAuditReady &&
+        !auditDecision &&
+        !isCompleted &&
+        !isRevisionRequired,
       canRequestRevision: isAuditReady && !isCompleted && !isRevisionRequired,
       canPrepareCommitMessage: isAccepted && !isCompleted,
       canCloseRun: isAccepted && !isCompleted,
@@ -257,24 +314,42 @@ function deriveAuditData(
           : !validationAllowsAudit
             ? `Current status: ${runStatus}. Audit generation requires a passed or accepted-failed local validation result.`
             : undefined,
-      submitManualUnavailableReason: !isAuditReady || isRevisionRequired ? `Current status: ${runStatus}` : undefined,
-      approveAuditUnavailableReason: !isAuditReady || isRevisionRequired ? `Current status: ${runStatus}` : undefined,
-      requestRevisionUnavailableReason: !isAuditReady || isRevisionRequired ? `Current status: ${runStatus}` : undefined,
-      prepareCommitMessageUnavailableReason: !isAccepted ? `Run must be in accepted or accepted_with_warnings status. Current: ${runStatus}` : undefined,
-      closeRunUnavailableReason: !isAccepted ? `Audit must be approved first (status must be accepted or accepted_with_warnings). Current: ${runStatus}` : undefined,
+      submitManualUnavailableReason:
+        !isAuditReady || isRevisionRequired
+          ? `Current status: ${runStatus}`
+          : undefined,
+      approveAuditUnavailableReason:
+        !isAuditReady || isRevisionRequired
+          ? `Current status: ${runStatus}`
+          : undefined,
+      requestRevisionUnavailableReason:
+        !isAuditReady || isRevisionRequired
+          ? `Current status: ${runStatus}`
+          : undefined,
+      prepareCommitMessageUnavailableReason: !isAccepted
+        ? `Run must be in accepted or accepted_with_warnings status. Current: ${runStatus}`
+        : undefined,
+      closeRunUnavailableReason: !isAccepted
+        ? `Audit must be approved first (status must be accepted or accepted_with_warnings). Current: ${runStatus}`
+        : undefined,
     },
-    warnings: run.validationSummary?.warnings > 0
-      ? (run.validationSummary?.issues || []).filter((i: any) => i.severity === 'warning').map((i: any) => i.message)
-      : [],
+    warnings:
+      run.validationSummary?.warnings > 0
+        ? (run.validationSummary?.issues || [])
+            .filter((i: any) => i.severity === "warning")
+            .map((i: any) => i.message)
+        : [],
     revisionRequirements: hasRevisionEvent
-      ? events.filter((e: any) => e.message?.includes('Audit revision requested')).map((e: any) => e.message)
+      ? events
+          .filter((e: any) => e.message?.includes("Audit revision requested"))
+          .map((e: any) => e.message)
       : [],
     blockers: isBlocked
-      ? ['Run is blocked and cannot proceed to close.']
+      ? ["Run is blocked and cannot proceed to close."]
       : isRevisionRequired
-        ? ['Revision requested — audit must be regenerated.']
+        ? ["Revision requested — audit must be regenerated."]
         : [],
-  }
+  };
 }
 
 function AuditMainContent({
@@ -282,121 +357,201 @@ function AuditMainContent({
   artifacts,
   events,
 }: {
-  run: any
-  artifacts: any[]
-  events: any[]
+  run: any;
+  artifacts: any[];
+  events: any[];
 }) {
-  const queryClient = useQueryClient()
-  const { runId } = Route.useParams()
-  const [mutationError, setMutationError] = useState<string | null>(null)
-  const [showManualSubmit, setShowManualSubmit] = useState(false)
-  const [manualDecision, setManualDecision] = useState<string>('')
-  const [manualPacketMarkdown, setManualPacketMarkdown] = useState('')
-  const [manualNotes, setManualNotes] = useState('')
-  const [approveDecision, setApproveDecision] = useState<'accepted' | 'accepted_with_warnings'>('accepted')
-  const [approveNotes, setApproveNotes] = useState('')
-  const [showApproveForm, setShowApproveForm] = useState(false)
-  const [revisionReason, setRevisionReason] = useState('')
-  const [showRevisionForm, setShowRevisionForm] = useState(false)
-  const [acceptanceReason, setAcceptanceReason] = useState('')
-  const [showAcceptanceForm, setShowAcceptanceForm] = useState(false)
+  const queryClient = useQueryClient();
+  const { runId } = Route.useParams();
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [showManualSubmit, setShowManualSubmit] = useState(false);
+  const [manualDecision, setManualDecision] = useState<string>("");
+  const [manualPacketMarkdown, setManualPacketMarkdown] = useState("");
+  const [manualNotes, setManualNotes] = useState("");
+  const [approveDecision, setApproveDecision] = useState<
+    "accepted" | "accepted_with_warnings"
+  >("accepted");
+  const [approveNotes, setApproveNotes] = useState("");
+  const [showApproveForm, setShowApproveForm] = useState(false);
+  const [revisionReason, setRevisionReason] = useState("");
+  const [showRevisionForm, setShowRevisionForm] = useState(false);
+  const [acceptanceReason, setAcceptanceReason] = useState("");
+  const [showAcceptanceForm, setShowAcceptanceForm] = useState(false);
 
   const auditData = useMemo(
     () => deriveAuditData(run, artifacts, events),
-    [run, artifacts, events]
-  )
+    [run, artifacts, events],
+  );
 
-  const runStatus = run.status || ''
-  const { hasFinalValidationEvidence } = evaluateValidationGate(artifacts, runStatus)
+  const runStatus = run.status || "";
+  const { hasFinalValidationEvidence } = evaluateValidationGate(
+    artifacts,
+    runStatus,
+  );
 
-  const localValidationIsRunning = runStatus === 'local_validation_running'
-  const localValidationPassed = runStatus === 'validation_passed'
-  const localValidationFailed = runStatus === 'validation_failed'
-  const localValidationAccepted = runStatus === 'validation_failed_accepted'
+  const localValidationIsRunning = runStatus === "local_validation_running";
+  const localValidationPassed = runStatus === "validation_passed";
+  const localValidationFailed = runStatus === "validation_failed";
+  const localValidationAccepted = runStatus === "validation_failed_accepted";
 
-  const validationRunJsonArt = artifacts.find(a => a.storageKind === 'validation_run_json')
-  const validationFailureAcceptanceJsonArt = artifacts.find(a => a.storageKind === 'validation_failure_acceptance_json')
-  const validationProgressJsonArt = artifacts.find(a => a.storageKind === 'validation_progress_json')
-  const validationStdoutArt = artifacts.find(a => a.storageKind === 'validation_stdout')
-  const validationStderrArt = artifacts.find(a => a.storageKind === 'validation_stderr')
+  const validationRunJsonArt = artifacts.find(
+    (a) => a.storageKind === "validation_run_json",
+  );
+  const validationFailureAcceptanceJsonArt = artifacts.find(
+    (a) => a.storageKind === "validation_failure_acceptance_json",
+  );
+  const validationProgressJsonArt = artifacts.find(
+    (a) => a.storageKind === "validation_progress_json",
+  );
+  const validationStdoutArt = artifacts.find(
+    (a) => a.storageKind === "validation_stdout",
+  );
+  const validationStderrArt = artifacts.find(
+    (a) => a.storageKind === "validation_stderr",
+  );
 
   const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ['relay-runs'] })
-  }
+    void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
+  };
 
   const generateMutation = useMutation({
     mutationFn: () => auditRun(runId),
-    onSuccess: () => { setMutationError(null); invalidate() },
-    onError: (err: any) => setMutationError(err.message || 'Failed to generate audit.'),
-  })
+    onSuccess: () => {
+      setMutationError(null);
+      invalidate();
+    },
+    onError: (err: any) =>
+      setMutationError(err.message || "Failed to generate audit."),
+  });
 
   const validateMutation = useMutation({
     mutationFn: () => validateRun(runId),
-    onSuccess: () => { setMutationError(null); invalidate() },
-    onError: (err: any) => setMutationError(err.message || 'Failed to run validation.'),
-  })
+    onSuccess: () => {
+      setMutationError(null);
+      invalidate();
+    },
+    onError: (err: any) =>
+      setMutationError(err.message || "Failed to run validation."),
+  });
 
   const submitManualMutation = useMutation({
-    mutationFn: () => submitManualAuditPacket(runId, {
-      audit_packet_markdown: manualPacketMarkdown,
-      decision: manualDecision as RelayAuditDecisionValue,
-      notes: manualNotes,
-    }),
-    onSuccess: () => { setMutationError(null); setShowManualSubmit(false); setManualPacketMarkdown(''); invalidate() },
-    onError: (err: any) => setMutationError(err.message || 'Failed to submit manual audit packet.'),
-  })
+    mutationFn: () =>
+      submitManualAuditPacket(runId, {
+        audit_packet_markdown: manualPacketMarkdown,
+        decision: manualDecision as RelayAuditDecisionValue,
+        notes: manualNotes,
+      }),
+    onSuccess: () => {
+      setMutationError(null);
+      setShowManualSubmit(false);
+      setManualPacketMarkdown("");
+      invalidate();
+    },
+    onError: (err: any) =>
+      setMutationError(err.message || "Failed to submit manual audit packet."),
+  });
 
   const approveMutation = useMutation({
-    mutationFn: () => approveAudit(runId, { decision: approveDecision, notes: approveNotes }),
-    onSuccess: () => { setMutationError(null); setShowApproveForm(false); setApproveNotes(''); invalidate() },
-    onError: (err: any) => setMutationError(err.message || 'Failed to approve audit.'),
-  })
+    mutationFn: () =>
+      approveAudit(runId, { decision: approveDecision, notes: approveNotes }),
+    onSuccess: () => {
+      setMutationError(null);
+      setShowApproveForm(false);
+      setApproveNotes("");
+      invalidate();
+    },
+    onError: (err: any) =>
+      setMutationError(err.message || "Failed to approve audit."),
+  });
 
   const revisionMutation = useMutation({
     mutationFn: () => requestAuditRevision(runId, { reason: revisionReason }),
-    onSuccess: () => { setMutationError(null); setShowRevisionForm(false); setRevisionReason(''); invalidate() },
-    onError: (err: any) => setMutationError(err.message || 'Failed to request revision.'),
-  })
+    onSuccess: () => {
+      setMutationError(null);
+      setShowRevisionForm(false);
+      setRevisionReason("");
+      invalidate();
+    },
+    onError: (err: any) =>
+      setMutationError(err.message || "Failed to request revision."),
+  });
 
   const prepareCommitMutation = useMutation({
     mutationFn: () => prepareCommitMessage(runId),
-    onSuccess: () => { setMutationError(null); invalidate() },
-    onError: (err: any) => setMutationError(err.message || 'Failed to prepare commit message.'),
-  })
+    onSuccess: () => {
+      setMutationError(null);
+      invalidate();
+    },
+    onError: (err: any) =>
+      setMutationError(err.message || "Failed to prepare commit message."),
+  });
 
   const closeMutation = useMutation({
     mutationFn: () => closeRun(runId),
-    onSuccess: () => { setMutationError(null); invalidate() },
-    onError: (err: any) => setMutationError(err.message || 'Failed to close run.'),
-  })
+    onSuccess: () => {
+      setMutationError(null);
+      invalidate();
+    },
+    onError: (err: any) =>
+      setMutationError(err.message || "Failed to close run."),
+  });
 
   const acceptFailureMutation = useMutation({
     mutationFn: (reason: string) => acceptFailedValidation(runId, reason),
-    onSuccess: () => { setMutationError(null); setShowAcceptanceForm(false); setAcceptanceReason(''); invalidate() },
-    onError: (err: any) => setMutationError(err.message || 'Failed to accept validation failure.'),
-  })
+    onSuccess: () => {
+      setMutationError(null);
+      setShowAcceptanceForm(false);
+      setAcceptanceReason("");
+      invalidate();
+    },
+    onError: (err: any) =>
+      setMutationError(err.message || "Failed to accept validation failure."),
+  });
 
-  const activeMutation = generateMutation.isPending
-    || validateMutation.isPending
-    || submitManualMutation.isPending
-    || approveMutation.isPending
-    || revisionMutation.isPending
-    || prepareCommitMutation.isPending
-    || closeMutation.isPending
-    || acceptFailureMutation.isPending
+  const activeMutation =
+    generateMutation.isPending ||
+    validateMutation.isPending ||
+    submitManualMutation.isPending ||
+    approveMutation.isPending ||
+    revisionMutation.isPending ||
+    prepareCommitMutation.isPending ||
+    closeMutation.isPending ||
+    acceptFailureMutation.isPending;
 
   const handleGenerateAudit = () => {
-    if (!auditData.actions.canGenerateAudit) return
-    setMutationError(null)
-    generateMutation.mutate()
-  }
-  const handleValidate = () => { setMutationError(null); validateMutation.mutate() }
-  const handleSubmitManual = () => { setMutationError(null); submitManualMutation.mutate() }
-  const handleApproveAudit = () => { setMutationError(null); approveMutation.mutate() }
-  const handleRequestRevision = () => { setMutationError(null); revisionMutation.mutate() }
-  const handlePrepareCommitMessage = () => { setMutationError(null); prepareCommitMutation.mutate() }
-  const handleCloseRun = () => { setMutationError(null); closeMutation.mutate() }
-  const handleAcceptFailure = () => { if (!acceptanceReason.trim()) return; setMutationError(null); acceptFailureMutation.mutate(acceptanceReason) }
+    if (!auditData.actions.canGenerateAudit) return;
+    setMutationError(null);
+    generateMutation.mutate();
+  };
+  const handleValidate = () => {
+    setMutationError(null);
+    validateMutation.mutate();
+  };
+  const handleSubmitManual = () => {
+    setMutationError(null);
+    submitManualMutation.mutate();
+  };
+  const handleApproveAudit = () => {
+    setMutationError(null);
+    approveMutation.mutate();
+  };
+  const handleRequestRevision = () => {
+    setMutationError(null);
+    revisionMutation.mutate();
+  };
+  const handlePrepareCommitMessage = () => {
+    setMutationError(null);
+    prepareCommitMutation.mutate();
+  };
+  const handleCloseRun = () => {
+    setMutationError(null);
+    closeMutation.mutate();
+  };
+  const handleAcceptFailure = () => {
+    if (!acceptanceReason.trim()) return;
+    setMutationError(null);
+    acceptFailureMutation.mutate(acceptanceReason);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -408,27 +563,32 @@ function AuditMainContent({
       )}
 
       {/* Local Validation Required Panel */}
-      <Section title="Local Validation Required" icon={<ShieldCheck className="w-4 h-4 text-purple-400" />}>
+      <Section
+        title="Local Validation Required"
+        icon={<ShieldCheck className="w-4 h-4 text-purple-400" />}
+      >
         <div className="flex flex-col gap-2">
-          {!hasFinalValidationEvidence && !localValidationIsRunning && !localValidationFailed && (
-            <p className="text-xs text-muted-foreground">
-              Run local validation before generating the audit packet.
-            </p>
-          )}
+          {!hasFinalValidationEvidence &&
+            !localValidationIsRunning &&
+            !localValidationFailed && (
+              <p className="text-xs text-muted-foreground">
+                Run local validation before generating the audit packet.
+              </p>
+            )}
           {localValidationIsRunning && (
             <p className="text-xs text-muted-foreground">
-              Local validation is running. Audit generation is unavailable until validation finishes.
+              Local validation is running. Audit generation is unavailable until
+              validation finishes.
             </p>
           )}
           {localValidationFailed && (
             <p className="text-xs text-red-400">
-              Local validation failed. Review validation artifacts before continuing.
+              Local validation failed. Review validation artifacts before
+              continuing.
             </p>
           )}
           {localValidationPassed && (
-            <p className="text-xs text-emerald-400">
-              Local validation passed.
-            </p>
+            <p className="text-xs text-emerald-400">Local validation passed.</p>
           )}
           {localValidationAccepted && (
             <p className="text-xs text-yellow-400">
@@ -437,59 +597,96 @@ function AuditMainContent({
           )}
 
           {/* Validation Artifact Links */}
-          {(validationRunJsonArt || validationFailureAcceptanceJsonArt || validationProgressJsonArt || validationStdoutArt || validationStderrArt) && (
+          {(validationRunJsonArt ||
+            validationFailureAcceptanceJsonArt ||
+            validationProgressJsonArt ||
+            validationStdoutArt ||
+            validationStderrArt) && (
             <div className="flex flex-col gap-1.5 mt-2 border-t border-border/40 pt-2">
-              <span className="text-[11px] font-medium text-muted-foreground/70">Validation Evidence:</span>
+              <span className="text-[11px] font-medium text-muted-foreground/70">
+                Validation Evidence:
+              </span>
               {validationRunJsonArt && (
                 <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="text-muted-foreground">Validation Result:</span>
-                  <ArtifactPreviewCard artifact={validationRunJsonArt} runId={runId} className="flex-1 max-w-xs" />
+                  <span className="text-muted-foreground">
+                    Validation Result:
+                  </span>
+                  <ArtifactPreviewCard
+                    artifact={validationRunJsonArt}
+                    runId={runId}
+                    className="flex-1 max-w-xs"
+                  />
                 </div>
               )}
               {validationFailureAcceptanceJsonArt && (
                 <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="text-muted-foreground">Failure Acceptance:</span>
-                  <ArtifactPreviewCard artifact={validationFailureAcceptanceJsonArt} runId={runId} className="flex-1 max-w-xs" />
+                  <span className="text-muted-foreground">
+                    Failure Acceptance:
+                  </span>
+                  <ArtifactPreviewCard
+                    artifact={validationFailureAcceptanceJsonArt}
+                    runId={runId}
+                    className="flex-1 max-w-xs"
+                  />
                 </div>
               )}
               {validationProgressJsonArt && (
                 <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="text-muted-foreground">Validation Progress:</span>
-                  <ArtifactPreviewCard artifact={validationProgressJsonArt} runId={runId} className="flex-1 max-w-xs" />
+                  <span className="text-muted-foreground">
+                    Validation Progress:
+                  </span>
+                  <ArtifactPreviewCard
+                    artifact={validationProgressJsonArt}
+                    runId={runId}
+                    className="flex-1 max-w-xs"
+                  />
                 </div>
               )}
               {validationStdoutArt && (
                 <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="text-muted-foreground">Validation Output:</span>
-                  <ArtifactPreviewCard artifact={validationStdoutArt} runId={runId} className="flex-1 max-w-xs" />
+                  <span className="text-muted-foreground">
+                    Validation Output:
+                  </span>
+                  <ArtifactPreviewCard
+                    artifact={validationStdoutArt}
+                    runId={runId}
+                    className="flex-1 max-w-xs"
+                  />
                 </div>
               )}
               {validationStderrArt && (
                 <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="text-muted-foreground">Validation Error Output:</span>
-                  <ArtifactPreviewCard artifact={validationStderrArt} runId={runId} className="flex-1 max-w-xs" />
+                  <span className="text-muted-foreground">
+                    Validation Error Output:
+                  </span>
+                  <ArtifactPreviewCard
+                    artifact={validationStderrArt}
+                    runId={runId}
+                    className="flex-1 max-w-xs"
+                  />
                 </div>
               )}
             </div>
           )}
 
           {/* Action Button */}
-          {(!hasFinalValidationEvidence || localValidationFailed) && !localValidationIsRunning && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleValidate}
-              disabled={activeMutation}
-              className="w-fit gap-1.5 mt-1"
-            >
-              {validateMutation.isPending ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="w-3.5 h-3.5" />
-              )}
-              Run Validation
-            </Button>
-          )}
+          {(!hasFinalValidationEvidence || localValidationFailed) &&
+            !localValidationIsRunning && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleValidate}
+                disabled={activeMutation}
+                className="w-fit gap-1.5 mt-1"
+              >
+                {validateMutation.isPending ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3.5 h-3.5" />
+                )}
+                Run Validation
+              </Button>
+            )}
           {localValidationIsRunning && (
             <Button
               variant="outline"
@@ -504,7 +701,9 @@ function AuditMainContent({
 
           {localValidationFailed && hasFinalValidationEvidence && (
             <div className="flex flex-col gap-2 mt-2 border-t border-border/40 pt-2">
-              <span className="text-[11px] font-medium text-muted-foreground/70">Accept Failed Validation:</span>
+              <span className="text-[11px] font-medium text-muted-foreground/70">
+                Accept Failed Validation:
+              </span>
               {!showAcceptanceForm ? (
                 <Button
                   variant="outline"
@@ -518,7 +717,9 @@ function AuditMainContent({
                 </Button>
               ) : (
                 <div className="flex flex-col gap-2 p-3 bg-yellow-950/10 border border-yellow-900/30 rounded">
-                  <span className="text-xs font-medium text-yellow-400/90">Provide Acceptance Reason:</span>
+                  <span className="text-xs font-medium text-yellow-400/90">
+                    Provide Acceptance Reason:
+                  </span>
                   <Textarea
                     placeholder="Enter reason for accepting this validation failure..."
                     value={acceptanceReason}
@@ -543,8 +744,8 @@ function AuditMainContent({
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        setShowAcceptanceForm(false)
-                        setAcceptanceReason('')
+                        setShowAcceptanceForm(false);
+                        setAcceptanceReason("");
                       }}
                       disabled={activeMutation}
                       className="h-7 text-xs"
@@ -560,14 +761,23 @@ function AuditMainContent({
       </Section>
 
       {/* Audit Input Summary */}
-      <Section title="Audit Input Summary" icon={<FileText className="w-4 h-4" />}>
+      <Section
+        title="Audit Input Summary"
+        icon={<FileText className="w-4 h-4" />}
+      >
         {auditData.inputSummary.available ? (
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-xs font-mono text-muted-foreground">{auditData.inputSummary.artifactPath}</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {auditData.inputSummary.artifactPath}
+              </span>
               {auditData.inputSummary.generatedAt && (
-                <span className="text-[11px] text-muted-foreground/60">{new Date(auditData.inputSummary.generatedAt).toLocaleString()}</span>
+                <span className="text-[11px] text-muted-foreground/60">
+                  {new Date(
+                    auditData.inputSummary.generatedAt,
+                  ).toLocaleString()}
+                </span>
               )}
             </div>
             {auditData.inputSummary.preview && (
@@ -576,36 +786,56 @@ function AuditMainContent({
               </pre>
             )}
             <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
-              <span className="text-[11px] font-medium text-muted-foreground/70">Evidence included:</span>
+              <span className="text-[11px] font-medium text-muted-foreground/70">
+                Evidence included:
+              </span>
               {auditData.inputSummary.evidenceIncluded.length > 0 ? (
-                auditData.inputSummary.evidenceIncluded.slice(0, 10).map((e: string, i: number) => (
-                  <span key={i} className="flex items-center gap-1 text-[11px]">
-                    <CheckSquare className="w-3 h-3 text-emerald-400/70" />
-                    {e}
-                  </span>
-                ))
+                auditData.inputSummary.evidenceIncluded
+                  .slice(0, 10)
+                  .map((e: string, i: number) => (
+                    <span
+                      key={i}
+                      className="flex items-center gap-1 text-[11px]"
+                    >
+                      <CheckSquare className="w-3 h-3 text-emerald-400/70" />
+                      {e}
+                    </span>
+                  ))
               ) : (
-                <span className="italic text-[11px] text-muted-foreground/50">No evidence artifacts found.</span>
+                <span className="italic text-[11px] text-muted-foreground/50">
+                  No evidence artifacts found.
+                </span>
               )}
             </div>
             {auditData.inputSummary.missingEvidence.length > 0 && (
               <div className="flex flex-col gap-0.5 text-xs text-yellow-400/80">
-                <span className="text-[11px] font-medium">Missing evidence:</span>
-                {auditData.inputSummary.missingEvidence.map((w: string, i: number) => (
-                  <span key={i} className="flex items-center gap-1 text-[11px]">
-                    <AlertTriangle className="w-3 h-3" />
-                    {w}
-                  </span>
-                ))}
+                <span className="text-[11px] font-medium">
+                  Missing evidence:
+                </span>
+                {auditData.inputSummary.missingEvidence.map(
+                  (w: string, i: number) => (
+                    <span
+                      key={i}
+                      className="flex items-center gap-1 text-[11px]"
+                    >
+                      <AlertTriangle className="w-3 h-3" />
+                      {w}
+                    </span>
+                  ),
+                )}
               </div>
             )}
-            {(auditData.actions.canGenerateAudit || (isAuditCandidateStatus(runStatus) && runStatus !== 'completed')) && (
+            {(auditData.actions.canGenerateAudit ||
+              (isAuditCandidateStatus(runStatus) &&
+                runStatus !== "completed")) && (
               <div className="flex flex-col gap-1.5 mt-1">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleGenerateAudit}
-                  disabled={activeMutation || !auditData.actions.canGenerateAudit}
+                  disabled={
+                    activeMutation || !auditData.actions.canGenerateAudit
+                  }
                   className="w-fit gap-1.5"
                 >
                   {generateMutation.isPending ? (
@@ -617,7 +847,8 @@ function AuditMainContent({
                 </Button>
                 {!auditData.actions.canGenerateAudit && (
                   <p className="text-xs text-yellow-500/90 mt-1">
-                    {auditData.actions.generateAuditUnavailableReason || 'Audit generation is blocked by validation requirements.'}
+                    {auditData.actions.generateAuditUnavailableReason ||
+                      "Audit generation is blocked by validation requirements."}
                   </p>
                 )}
               </div>
@@ -645,7 +876,8 @@ function AuditMainContent({
                   Generate Audit
                 </Button>
               </div>
-            ) : isAuditCandidateStatus(runStatus) && runStatus !== 'completed' ? (
+            ) : isAuditCandidateStatus(runStatus) &&
+              runStatus !== "completed" ? (
               <div className="flex flex-col gap-1.5">
                 <Button
                   variant="default"
@@ -657,12 +889,14 @@ function AuditMainContent({
                   Generate Audit
                 </Button>
                 <p className="text-xs text-yellow-500/90 mt-1">
-                  {auditData.actions.generateAuditUnavailableReason || 'Audit generation is blocked by validation requirements.'}
+                  {auditData.actions.generateAuditUnavailableReason ||
+                    "Audit generation is blocked by validation requirements."}
                 </p>
               </div>
             ) : (
               <p className="text-xs text-muted-foreground/60 italic">
-                {auditData.actions.generateAuditUnavailableReason || 'Audit generation is not available for this run.'}
+                {auditData.actions.generateAuditUnavailableReason ||
+                  "Audit generation is not available for this run."}
               </p>
             )}
           </div>
@@ -672,14 +906,25 @@ function AuditMainContent({
       <Separator />
 
       {/* Audit Packet */}
-      <Section title="Audit Packet" icon={<ShieldCheck className="w-4 h-4 text-yellow-400" />}>
+      <Section
+        title="Audit Packet"
+        icon={<ShieldCheck className="w-4 h-4 text-yellow-400" />}
+      >
         {auditData.generatedPacket.available ? (
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
-              <Badge variant="warning" className="text-xs">Generated</Badge>
-              <span className="text-xs font-mono text-muted-foreground truncate">{auditData.generatedPacket.artifactPath}</span>
+              <Badge variant="destructive" className="text-xs">
+                Generated
+              </Badge>
+              <span className="text-xs font-mono text-muted-foreground truncate">
+                {auditData.generatedPacket.artifactPath}
+              </span>
               {auditData.generatedPacket.generatedAt && (
-                <span className="text-[11px] text-muted-foreground/60">{new Date(auditData.generatedPacket.generatedAt).toLocaleString()}</span>
+                <span className="text-[11px] text-muted-foreground/60">
+                  {new Date(
+                    auditData.generatedPacket.generatedAt,
+                  ).toLocaleString()}
+                </span>
               )}
             </div>
             {auditData.generatedPacket.preview && (
@@ -689,17 +934,24 @@ function AuditMainContent({
             )}
             {auditData.generatedPacket.warnings.length > 0 && (
               <div className="flex flex-col gap-0.5 text-xs text-yellow-400/80">
-                {auditData.generatedPacket.warnings.map((w: string, i: number) => (
-                  <span key={i} className="flex items-center gap-1 text-[11px]">
-                    <AlertTriangle className="w-3 h-3" />
-                    {w}
-                  </span>
-                ))}
+                {auditData.generatedPacket.warnings.map(
+                  (w: string, i: number) => (
+                    <span
+                      key={i}
+                      className="flex items-center gap-1 text-[11px]"
+                    >
+                      <AlertTriangle className="w-3 h-3" />
+                      {w}
+                    </span>
+                  ),
+                )}
               </div>
             )}
             {auditData.generatedPacket.decision && (
               <div className="flex items-center gap-2 text-xs">
-                <Badge variant="secondary" className="text-xs">Decision: {auditData.generatedPacket.decision}</Badge>
+                <Badge variant="secondary" className="text-xs">
+                  Decision: {auditData.generatedPacket.decision}
+                </Badge>
               </div>
             )}
           </div>
@@ -712,8 +964,12 @@ function AuditMainContent({
         {auditData.manualPacket && (
           <div className="flex flex-col gap-1.5 mt-3 pt-3 border-t border-border/40">
             <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-xs">Manual Submission</Badge>
-              <span className="text-xs font-mono text-muted-foreground truncate">{auditData.manualPacket.artifactPath}</span>
+              <Badge variant="secondary" className="text-xs">
+                Manual Submission
+              </Badge>
+              <span className="text-xs font-mono text-muted-foreground truncate">
+                {auditData.manualPacket.artifactPath}
+              </span>
             </div>
             {auditData.manualPacket.preview && (
               <pre className="text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
@@ -738,7 +994,9 @@ function AuditMainContent({
               </Button>
             ) : (
               <div className="flex flex-col gap-2 p-3 bg-muted/20 rounded border border-border/40">
-                <p className="text-xs font-medium text-muted-foreground">Submit Manual Audit Packet</p>
+                <p className="text-xs font-medium text-muted-foreground">
+                  Submit Manual Audit Packet
+                </p>
                 <Textarea
                   className="text-xs font-mono min-h-[120px]"
                   placeholder="Paste audit packet markdown content..."
@@ -746,7 +1004,9 @@ function AuditMainContent({
                   onChange={(e) => setManualPacketMarkdown(e.target.value)}
                 />
                 <div className="flex flex-col gap-1">
-                  <label className="text-[11px] text-muted-foreground">Decision</label>
+                  <label className="text-[11px] text-muted-foreground">
+                    Decision
+                  </label>
                   <select
                     className="text-xs bg-background border border-border/60 rounded px-2 py-1.5"
                     value={manualDecision}
@@ -754,7 +1014,9 @@ function AuditMainContent({
                   >
                     <option value="">Select decision...</option>
                     {RELAY_AUDIT_DECISION_VALUES.map((d) => (
-                      <option key={d} value={d}>{d}</option>
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -769,7 +1031,11 @@ function AuditMainContent({
                     variant="default"
                     size="sm"
                     onClick={handleSubmitManual}
-                    disabled={activeMutation || !manualDecision || !manualPacketMarkdown.trim()}
+                    disabled={
+                      activeMutation ||
+                      !manualDecision ||
+                      !manualPacketMarkdown.trim()
+                    }
                     className="w-fit gap-1.5"
                   >
                     {submitManualMutation.isPending ? (
@@ -782,7 +1048,12 @@ function AuditMainContent({
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => { setShowManualSubmit(false); setManualPacketMarkdown(''); setManualDecision(''); setManualNotes('') }}
+                    onClick={() => {
+                      setShowManualSubmit(false);
+                      setManualPacketMarkdown("");
+                      setManualDecision("");
+                      setManualNotes("");
+                    }}
                     disabled={activeMutation}
                   >
                     Cancel
@@ -793,36 +1064,59 @@ function AuditMainContent({
           </div>
         )}
 
-        {!auditData.generatedPacket.available && !auditData.manualPacket && !auditData.actions.canSubmitManual && (
-          <p className="text-xs text-muted-foreground/60 italic mt-1">
-            No audit packet available and manual submission is not enabled for this run.
-          </p>
-        )}
+        {!auditData.generatedPacket.available &&
+          !auditData.manualPacket &&
+          !auditData.actions.canSubmitManual && (
+            <p className="text-xs text-muted-foreground/60 italic mt-1">
+              No audit packet available and manual submission is not enabled for
+              this run.
+            </p>
+          )}
       </Section>
 
       <Separator />
 
       {/* Audit Decision */}
-      <Section title="Audit Decision" icon={<CheckSquare className="w-4 h-4 text-emerald-400" />}>
+      <Section
+        title="Audit Decision"
+        icon={<CheckSquare className="w-4 h-4 text-emerald-400" />}
+      >
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant={
-            auditData.decision.source === 'approved' ? 'success' :
-            auditData.decision.source === 'manual' ? 'warning' :
-            auditData.decision.source === 'generated' ? 'secondary' : 'outline'
-          } className="text-xs">
-            {auditData.decision.source === 'approved' ? 'Approved' :
-             auditData.decision.source === 'manual' ? 'Manual Decision Submitted' :
-             auditData.decision.source === 'generated' ? 'Generated Recommendation' : 'No Decision'}
+          <Badge
+            variant={
+              auditData.decision.source === "approved"
+                ? "default"
+                : auditData.decision.source === "manual"
+                  ? "destructive"
+                  : auditData.decision.source === "generated"
+                    ? "secondary"
+                    : "outline"
+            }
+            className="text-xs"
+          >
+            {auditData.decision.source === "approved"
+              ? "Approved"
+              : auditData.decision.source === "manual"
+                ? "Manual Decision Submitted"
+                : auditData.decision.source === "generated"
+                  ? "Generated Recommendation"
+                  : "No Decision"}
           </Badge>
           {auditData.decision.currentDecision && (
-            <span className="text-xs font-mono text-muted-foreground">{auditData.decision.currentDecision}</span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {auditData.decision.currentDecision}
+            </span>
           )}
           {auditData.decision.approvedAt && (
-            <span className="text-xs text-muted-foreground/60">{new Date(auditData.decision.approvedAt).toLocaleString()}</span>
+            <span className="text-xs text-muted-foreground/60">
+              {new Date(auditData.decision.approvedAt).toLocaleString()}
+            </span>
           )}
         </div>
         {auditData.decision.notes && (
-          <p className="text-xs text-muted-foreground mt-1">{auditData.decision.notes}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {auditData.decision.notes}
+          </p>
         )}
 
         <div className="flex items-center gap-2 flex-wrap mt-2">
@@ -854,16 +1148,26 @@ function AuditMainContent({
 
         {showApproveForm && (
           <div className="flex flex-col gap-2 p-3 bg-muted/20 rounded border border-border/40 mt-2">
-            <p className="text-xs font-medium text-muted-foreground">Approve Audit</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              Approve Audit
+            </p>
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] text-muted-foreground">Decision</label>
+              <label className="text-[11px] text-muted-foreground">
+                Decision
+              </label>
               <select
                 className="text-xs bg-background border border-border/60 rounded px-2 py-1.5"
                 value={approveDecision}
-                onChange={(e) => setApproveDecision(e.target.value as 'accepted' | 'accepted_with_warnings')}
+                onChange={(e) =>
+                  setApproveDecision(
+                    e.target.value as "accepted" | "accepted_with_warnings",
+                  )
+                }
               >
                 <option value="accepted">Accepted</option>
-                <option value="accepted_with_warnings">Accepted with Warnings</option>
+                <option value="accepted_with_warnings">
+                  Accepted with Warnings
+                </option>
               </select>
             </div>
             <Textarea
@@ -890,7 +1194,10 @@ function AuditMainContent({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setShowApproveForm(false); setApproveNotes('') }}
+                onClick={() => {
+                  setShowApproveForm(false);
+                  setApproveNotes("");
+                }}
                 disabled={activeMutation}
               >
                 Cancel
@@ -901,7 +1208,9 @@ function AuditMainContent({
 
         {showRevisionForm && (
           <div className="flex flex-col gap-2 p-3 bg-muted/20 rounded border border-border/40 mt-2">
-            <p className="text-xs font-medium text-muted-foreground">Request Revision</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              Request Revision
+            </p>
             <Textarea
               className="text-xs min-h-[60px]"
               placeholder="Describe what needs revision..."
@@ -926,7 +1235,10 @@ function AuditMainContent({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setShowRevisionForm(false); setRevisionReason('') }}
+                onClick={() => {
+                  setShowRevisionForm(false);
+                  setRevisionReason("");
+                }}
                 disabled={activeMutation}
               >
                 Cancel
@@ -935,24 +1247,35 @@ function AuditMainContent({
           </div>
         )}
 
-        {!auditData.actions.canApproveAudit && !auditData.actions.canRequestRevision && auditData.decision.source === 'none' && (
-          <p className="text-xs text-muted-foreground/60 italic mt-1">
-            Generate an audit packet or submit a manual audit to enable decision actions.
-          </p>
-        )}
+        {!auditData.actions.canApproveAudit &&
+          !auditData.actions.canRequestRevision &&
+          auditData.decision.source === "none" && (
+            <p className="text-xs text-muted-foreground/60 italic mt-1">
+              Generate an audit packet or submit a manual audit to enable
+              decision actions.
+            </p>
+          )}
       </Section>
 
       <Separator />
 
       {/* Warnings / Revision Requirements */}
-      {(auditData.warnings.length > 0 || auditData.revisionRequirements.length > 0 || auditData.blockers.length > 0) && (
+      {(auditData.warnings.length > 0 ||
+        auditData.revisionRequirements.length > 0 ||
+        auditData.blockers.length > 0) && (
         <>
-          <Section title="Warnings / Revision Requirements" icon={<AlertTriangle className="w-4 h-4 text-yellow-400" />}>
+          <Section
+            title="Warnings / Revision Requirements"
+            icon={<AlertTriangle className="w-4 h-4 text-yellow-400" />}
+          >
             {auditData.blockers.length > 0 && (
               <div className="flex flex-col gap-1">
                 <p className="text-xs font-medium text-red-400">Blockers</p>
                 {auditData.blockers.map((b: string, i: number) => (
-                  <div key={i} className="flex items-start gap-1.5 text-xs text-red-400/80">
+                  <div
+                    key={i}
+                    className="flex items-start gap-1.5 text-xs text-red-400/80"
+                  >
                     <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
                     <span>{b}</span>
                   </div>
@@ -961,9 +1284,14 @@ function AuditMainContent({
             )}
             {auditData.revisionRequirements.length > 0 && (
               <div className="flex flex-col gap-1 mt-2">
-                <p className="text-xs font-medium text-yellow-400">Revision Requirements</p>
+                <p className="text-xs font-medium text-yellow-400">
+                  Revision Requirements
+                </p>
                 {auditData.revisionRequirements.map((r: string, i: number) => (
-                  <div key={i} className="flex items-start gap-1.5 text-xs text-yellow-400/80">
+                  <div
+                    key={i}
+                    className="flex items-start gap-1.5 text-xs text-yellow-400/80"
+                  >
                     <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
                     <span>{r}</span>
                   </div>
@@ -972,9 +1300,14 @@ function AuditMainContent({
             )}
             {auditData.warnings.length > 0 && (
               <div className="flex flex-col gap-1 mt-2">
-                <p className="text-xs font-medium text-muted-foreground">Warnings</p>
+                <p className="text-xs font-medium text-muted-foreground">
+                  Warnings
+                </p>
                 {auditData.warnings.map((w: string, i: number) => (
-                  <div key={i} className="flex items-start gap-1.5 text-xs text-yellow-400/70">
+                  <div
+                    key={i}
+                    className="flex items-start gap-1.5 text-xs text-yellow-400/70"
+                  >
                     <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
                     <span>{w}</span>
                   </div>
@@ -990,8 +1323,17 @@ function AuditMainContent({
       <Section title="Commit Summary" icon={<FileCode className="w-4 h-4" />}>
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
-            <Badge variant={auditData.commitSummary.commitMessageAvailable ? 'success' : 'secondary'} className="text-xs">
-              {auditData.commitSummary.commitMessageAvailable ? 'Prepared' : 'Not prepared'}
+            <Badge
+              variant={
+                auditData.commitSummary.commitMessageAvailable
+                  ? "default"
+                  : "secondary"
+              }
+              className="text-xs"
+            >
+              {auditData.commitSummary.commitMessageAvailable
+                ? "Prepared"
+                : "Not prepared"}
             </Badge>
             {auditData.commitSummary.commitMessageAvailable && (
               <span className="text-xs font-mono text-muted-foreground truncate">
@@ -1002,13 +1344,16 @@ function AuditMainContent({
 
           <div className="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
             <div>
-              <span className="font-medium">Changed files:</span> {auditData.commitSummary.changedFileArtifactIds.length}
+              <span className="font-medium">Changed files:</span>{" "}
+              {auditData.commitSummary.changedFileArtifactIds.length}
             </div>
             <div>
-              <span className="font-medium">Validation:</span> {auditData.commitSummary.validationSummary}
+              <span className="font-medium">Validation:</span>{" "}
+              {auditData.commitSummary.validationSummary}
             </div>
             <div>
-              <span className="font-medium">Audit:</span> {auditData.commitSummary.auditDecisionSummary}
+              <span className="font-medium">Audit:</span>{" "}
+              {auditData.commitSummary.auditDecisionSummary}
             </div>
           </div>
 
@@ -1036,7 +1381,8 @@ function AuditMainContent({
           )}
 
           <p className="text-[11px] text-muted-foreground/50 italic">
-            Preparing a commit message only writes a suggested artifact. No git commit, push, or staging occurs.
+            Preparing a commit message only writes a suggested artifact. No git
+            commit, push, or staging occurs.
           </p>
         </div>
       </Section>
@@ -1047,13 +1393,23 @@ function AuditMainContent({
       <Section title="Close Run" icon={<Terminal className="w-4 h-4" />}>
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
-            <Badge variant={
-              run.lifecycleState === 'completed' ? 'success' :
-              auditData.actions.canCloseRun ? 'warning' : 'secondary'
-            } className="text-xs">
-              {run.lifecycleState === 'completed' ? 'Closed' :
-               auditData.actions.canCloseRun ? 'Ready to Close' :
-               auditData.decision.source === 'approved' ? 'Approved' : 'Pending'}
+            <Badge
+              variant={
+                run.lifecycleState === "completed"
+                  ? "default"
+                  : auditData.actions.canCloseRun
+                    ? "destructive"
+                    : "secondary"
+              }
+              className="text-xs"
+            >
+              {run.lifecycleState === "completed"
+                ? "Closed"
+                : auditData.actions.canCloseRun
+                  ? "Ready to Close"
+                  : auditData.decision.source === "approved"
+                    ? "Approved"
+                    : "Pending"}
             </Badge>
             {auditData.decision.currentDecision && (
               <span className="text-xs text-muted-foreground">
@@ -1079,29 +1435,39 @@ function AuditMainContent({
             </Button>
           )}
 
-          {auditData.actions.closeRunUnavailableReason && run.lifecycleState !== 'completed' && (
-            <p className="text-xs text-muted-foreground/60 italic mt-1 flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3" />
-              {auditData.actions.closeRunUnavailableReason}
-            </p>
-          )}
+          {auditData.actions.closeRunUnavailableReason &&
+            run.lifecycleState !== "completed" && (
+              <p className="text-xs text-muted-foreground/60 italic mt-1 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                {auditData.actions.closeRunUnavailableReason}
+              </p>
+            )}
 
-          {run.lifecycleState === 'completed' && (
+          {run.lifecycleState === "completed" && (
             <p className="text-xs text-emerald-400/70 mt-1">
               Run is closed. All artifacts and evidence are preserved.
             </p>
           )}
 
           <p className="text-[11px] text-muted-foreground/50 italic mt-1">
-            Closing a run updates Relay run state only. No git commit, push, or repo mutation occurs.
+            Closing a run updates Relay run state only. No git commit, push, or
+            repo mutation occurs.
           </p>
         </div>
       </Section>
     </div>
-  )
+  );
 }
 
-function Section({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
+function Section({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <Card className="border-border/60 bg-card/20">
       <CardHeader className="p-3 pb-2">
@@ -1114,5 +1480,5 @@ function Section({ title, icon, children }: { title: string; icon?: React.ReactN
         {children}
       </CardContent>
     </Card>
-  )
+  );
 }

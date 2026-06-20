@@ -1,56 +1,62 @@
-import { useState } from 'react'
-import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
-import { Separator } from '@/components/ui/separator'
-import { ArrowLeft, AlertCircle, Loader2 } from 'lucide-react'
-import { submitPlannerHandoff, RelayApiError } from '@/features/relay-runs'
+import { useState } from "react";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
+import { ArrowLeft, AlertCircle, Loader2 } from "lucide-react";
+import { submitPlannerHandoff, RelayApiError } from "@/features/relay-runs";
 
-export const Route = createFileRoute('/runs/new')({
+export const Route = createFileRoute("/runs/new")({
   component: NewRunPage,
-})
+});
 
 function NewRunPage() {
-  const router = useRouter()
-  const [markdown, setMarkdown] = useState('')
-  const [repo, setRepo] = useState('')
-  const [branch, setBranch] = useState('')
-  const [name, setName] = useState('')
-  const [source, setSource] = useState('react_workbench')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const router = useRouter();
+  const [markdown, setMarkdown] = useState("");
+  const [repo, setRepo] = useState("");
+  const [branch, setBranch] = useState("");
+  const [name, setName] = useState("");
+  const [source, setSource] = useState("react_workbench");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    const reader = new FileReader()
+    const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target?.result
-      if (typeof text === 'string') {
-        setMarkdown(text)
-        setErrorMsg(null)
+      const text = event.target?.result;
+      if (typeof text === "string") {
+        setMarkdown(text);
+        setErrorMsg(null);
       }
-    }
+    };
     reader.onerror = () => {
-      setErrorMsg('Failed to read the handoff file.')
-    }
-    reader.readAsText(file)
-  }
+      setErrorMsg("Failed to read the handoff file.");
+    };
+    reader.readAsText(file);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     if (!markdown.trim()) {
-      setErrorMsg('Planner handoff markdown is required.')
-      return
+      setErrorMsg("Planner handoff markdown is required.");
+      return;
     }
 
-    setIsSubmitting(true)
-    setErrorMsg(null)
+    setIsSubmitting(true);
+    setErrorMsg(null);
 
     try {
       const response = await submitPlannerHandoff({
@@ -59,34 +65,44 @@ function NewRunPage() {
         branch_context: branch.trim() || undefined,
         name: name.trim() || undefined,
         source: source.trim() || undefined,
-      })
+      });
 
       if (response.review_url) {
-        window.location.href = response.review_url
+        window.location.href = response.review_url;
       } else {
         void router.navigate({
-          to: '/runs/$runId/intake',
-          params: { runId: response.runId || response.run_id || '' }
-        })
+          to: "/runs/$runId/intake",
+          params: { runId: response.runId || response.run_id || "" },
+        });
       }
     } catch (err: any) {
       if (err instanceof RelayApiError) {
-        setErrorMsg(err.errorShape?.message || err.message)
+        setErrorMsg(err.errorShape?.message || err.message);
       } else {
-        setErrorMsg(err.message || 'An unexpected error occurred during submission.')
+        setErrorMsg(
+          err.message || "An unexpected error occurred during submission.",
+        );
       }
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
-  const isFormValid = markdown.trim().length > 0
+  const isFormValid = markdown.trim().length > 0;
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-y-auto">
+    <form
+      onSubmit={handleSubmit}
+      className="flex flex-col flex-1 overflow-y-auto"
+    >
       {/* Page header */}
       <div className="flex items-center gap-3 px-6 py-4 border-b border-border/60">
-        <Button variant="ghost" size="sm" asChild className="gap-1.5 h-7 text-xs -ml-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          asChild
+          className="gap-1.5 h-7 text-xs -ml-1"
+        >
           <Link to="/runs">
             <ArrowLeft className="w-3.5 h-3.5" />
             Back to Runs
@@ -95,7 +111,9 @@ function NewRunPage() {
         <Separator orientation="vertical" className="h-4" />
         <div>
           <h1 className="text-base font-semibold">New Run</h1>
-          <p className="text-xs text-muted-foreground">Submit a handoff packet to start a relay run.</p>
+          <p className="text-xs text-muted-foreground">
+            Submit a handoff packet to start a relay run.
+          </p>
         </div>
       </div>
 
@@ -105,23 +123,25 @@ function NewRunPage() {
           <Alert variant="destructive">
             <AlertCircle className="w-4 h-4" />
             <AlertTitle>Submission Failed</AlertTitle>
-            <AlertDescription className="text-xs">
-              {errorMsg}
-            </AlertDescription>
+            <AlertDescription className="text-xs">{errorMsg}</AlertDescription>
           </Alert>
         )}
 
         {/* Incoming handoff section */}
         <Card className="border-border/60">
           <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-sm font-medium">Incoming Handoff</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Incoming Handoff
+            </CardTitle>
             <CardDescription className="text-xs">
               Paste or upload a surgical implementation handoff packet.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-4 pt-2 flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="handoff-paste" className="text-xs">Paste Handoff</Label>
+              <Label htmlFor="handoff-paste" className="text-xs">
+                Paste Handoff
+              </Label>
               <Textarea
                 id="handoff-paste"
                 placeholder="Paste handoff content here…"
@@ -137,7 +157,9 @@ function NewRunPage() {
               <span>upload file</span>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="handoff-file" className="text-xs">Upload Handoff File</Label>
+              <Label htmlFor="handoff-file" className="text-xs">
+                Upload Handoff File
+              </Label>
               <Input
                 id="handoff-file"
                 type="file"
@@ -153,7 +175,9 @@ function NewRunPage() {
         {/* Run configuration section */}
         <Card className="border-border/60">
           <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-sm font-medium">Run Configuration</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Run Configuration
+            </CardTitle>
             <CardDescription className="text-xs">
               Override detected values from the handoff metadata.
             </CardDescription>
@@ -161,7 +185,9 @@ function NewRunPage() {
           <CardContent className="p-4 pt-2 flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="repo-input" className="text-xs">Repository</Label>
+                <Label htmlFor="repo-input" className="text-xs">
+                  Repository
+                </Label>
                 <Input
                   id="repo-input"
                   placeholder="owner/repo (or auto-detected)"
@@ -171,7 +197,9 @@ function NewRunPage() {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="branch-input" className="text-xs">Branch</Label>
+                <Label htmlFor="branch-input" className="text-xs">
+                  Branch
+                </Label>
                 <Input
                   id="branch-input"
                   placeholder="feature/my-branch (or auto-detected)"
@@ -181,7 +209,9 @@ function NewRunPage() {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="name-input" className="text-xs">Run Name / Title</Label>
+                <Label htmlFor="name-input" className="text-xs">
+                  Run Name / Title
+                </Label>
                 <Input
                   id="name-input"
                   placeholder="My Relay Run (or auto-detected)"
@@ -191,7 +221,9 @@ function NewRunPage() {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="source-input" className="text-xs">Source</Label>
+                <Label htmlFor="source-input" className="text-xs">
+                  Source
+                </Label>
                 <Input
                   id="source-input"
                   placeholder="react_workbench"
@@ -221,11 +253,11 @@ function NewRunPage() {
                 Submitting...
               </>
             ) : (
-              'Submit Handoff'
+              "Submit Handoff"
             )}
           </Button>
         </div>
       </div>
     </form>
-  )
+  );
 }

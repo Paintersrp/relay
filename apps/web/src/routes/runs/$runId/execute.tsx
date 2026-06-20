@@ -1,6 +1,6 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, useMemo } from 'react'
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
 import {
   runDetailQueryOptions,
   runArtifactsQueryOptions,
@@ -10,18 +10,18 @@ import {
   recoverRun,
   validateRun,
   evaluateExecuteValidationAction,
-} from '@/features/relay-runs'
-import type { RelayExecutorPhase } from '@/features/relay-runs'
-import { RunWorkbenchLayout } from '@/components/relay/RunWorkbenchLayout'
-import { ValidationPanel } from '@/components/relay/ValidationPanel'
-import { LogPreviewPanel } from '@/components/relay/LogPreviewPanel'
-import { ArtifactPreviewCard } from '@/components/relay/ArtifactPreviewCard'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Separator } from '@/components/ui/separator'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
+} from "@/features/relay-runs";
+import type { RelayExecutorPhase } from "@/features/relay-runs";
+import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
+import { ValidationPanel } from "@/components/relay/ValidationPanel";
+import { LogPreviewPanel } from "@/components/relay/LogPreviewPanel";
+import { ArtifactPreviewCard } from "@/components/relay/ArtifactPreviewCard";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Loader2,
   CheckCircle2,
@@ -36,17 +36,25 @@ import {
   Clock,
   ArrowLeft,
   FileText,
-} from 'lucide-react'
+} from "lucide-react";
 
-export const Route = createFileRoute('/runs/$runId/execute')({
+export const Route = createFileRoute("/runs/$runId/execute")({
   component: ExecutePage,
-})
+});
 
 function ExecutePage() {
-  const { runId } = Route.useParams()
-  const { data: run, isLoading: isLoadingRun, error: errorRun } = useQuery(runDetailQueryOptions(runId))
-  const { data: artifacts, isLoading: isLoadingArtifacts } = useQuery(runArtifactsQueryOptions(runId))
-  const { data: events, isLoading: isLoadingEvents } = useQuery(runEventsQueryOptions(runId))
+  const { runId } = Route.useParams();
+  const {
+    data: run,
+    isLoading: isLoadingRun,
+    error: errorRun,
+  } = useQuery(runDetailQueryOptions(runId));
+  const { data: artifacts, isLoading: isLoadingArtifacts } = useQuery(
+    runArtifactsQueryOptions(runId),
+  );
+  const { data: events, isLoading: isLoadingEvents } = useQuery(
+    runEventsQueryOptions(runId),
+  );
 
   if (isLoadingRun || isLoadingArtifacts || isLoadingEvents) {
     return (
@@ -56,16 +64,19 @@ function ExecutePage() {
         <Skeleton className="h-4 w-48" />
         <Skeleton className="h-64 w-full mt-6" />
       </div>
-    )
+    );
   }
 
   if (errorRun || !run) {
     return (
       <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center min-h-[50vh]">
         <div className="text-4xl">⚠️</div>
-        <h1 className="text-lg font-semibold">Run not found or error loading</h1>
+        <h1 className="text-lg font-semibold">
+          Run not found or error loading
+        </h1>
         <p className="text-sm text-muted-foreground max-w-sm">
-          Failed to load run details from backend. Please verify the backend is running and the run ID is correct.
+          Failed to load run details from backend. Please verify the backend is
+          running and the run ID is correct.
         </p>
         <Button variant="outline" size="sm" asChild>
           <Link to="/runs">
@@ -74,25 +85,25 @@ function ExecutePage() {
           </Link>
         </Button>
       </div>
-    )
+    );
   }
 
   const formattedLogs = events
     ? events.map((e) => {
-        const timeStr = new Date(e.createdAt).toLocaleTimeString('en-US', {
+        const timeStr = new Date(e.createdAt).toLocaleTimeString("en-US", {
           hour12: false,
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        })
-        return `[${timeStr}] ${e.message}`
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+        return `[${timeStr}] ${e.message}`;
       })
-    : []
+    : [];
 
   const logPreview = {
     lines: formattedLogs.slice(-50),
     truncated: formattedLogs.length > 50,
-  }
+  };
 
   return (
     <RunWorkbenchLayout
@@ -102,202 +113,238 @@ function ExecutePage() {
         latestEvents: events || [],
         logPreview,
       }}
-      mainContent={
-        <ExecuteMainContent
-          run={run}
-          artifacts={artifacts || []}
-        />
-      }
+      mainContent={<ExecuteMainContent run={run} artifacts={artifacts || []} />}
       sideContent={
         <>
           <ValidationPanel summary={run.validationSummary} />
-          {artifacts && artifacts.map((a) => (
-            <ArtifactPreviewCard key={a.id} artifact={a} runId={run.id} />
-          ))}
+          {artifacts &&
+            artifacts.map((a) => (
+              <ArtifactPreviewCard key={a.id} artifact={a} runId={run.id} />
+            ))}
           <LogPreviewPanel logPreview={logPreview} />
         </>
       }
     />
-  )
+  );
 }
 
-function deriveExecutorPhase(runStatus: string, lifecycleState: string): RelayExecutorPhase {
-  if (lifecycleState === 'failed' || runStatus === 'blocked') return 'blocked'
-  if (runStatus === 'executor_dispatched' || runStatus === 'executor_running') return 'running'
-  if (runStatus === 'executor_done' || runStatus === 'agent_done') return 'done'
-  if (runStatus === 'executor_blocked' || runStatus === 'agent_blocked') return 'failed'
-  if (runStatus === 'agent_result_needs_review') return 'done'
-  if (runStatus === 'approved_for_executor') return 'idle'
-  if (lifecycleState === 'execute') return 'idle'
-  return 'unavailable'
+function deriveExecutorPhase(
+  runStatus: string,
+  lifecycleState: string,
+): RelayExecutorPhase {
+  if (lifecycleState === "failed" || runStatus === "blocked") return "blocked";
+  if (runStatus === "executor_dispatched" || runStatus === "executor_running")
+    return "running";
+  if (runStatus === "executor_done" || runStatus === "agent_done")
+    return "done";
+  if (runStatus === "executor_blocked" || runStatus === "agent_blocked")
+    return "failed";
+  if (runStatus === "agent_result_needs_review") return "done";
+  if (runStatus === "approved_for_executor") return "idle";
+  if (lifecycleState === "execute") return "idle";
+  return "unavailable";
 }
 
 function ExecuteMainContent({
   run,
   artifacts,
 }: {
-  run: any
-  artifacts: any[]
+  run: any;
+  artifacts: any[];
 }) {
-  const queryClient = useQueryClient()
-  const [mutationError, setMutationError] = useState<string | null>(null)
+  const queryClient = useQueryClient();
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
-  const runStatus = (run.status || '') as string
-  const runLifecycle = (run.lifecycleState || '') as string
-  const executorPhase = deriveExecutorPhase(runStatus, runLifecycle)
+  const runStatus = (run.status || "") as string;
+  const runLifecycle = (run.lifecycleState || "") as string;
+  const executorPhase = deriveExecutorPhase(runStatus, runLifecycle);
 
-  const canRunValidation = evaluateExecuteValidationAction(artifacts, runStatus)
-  const localValidationIsRunning = runStatus === 'local_validation_running'
+  const canRunValidation = evaluateExecuteValidationAction(
+    artifacts,
+    runStatus,
+  );
+  const localValidationIsRunning = runStatus === "local_validation_running";
 
   const actionAvailability = useMemo(() => {
-    const isApproved = runStatus === 'approved_for_executor'
-    const isExecuting = runStatus === 'executor_dispatched' || runStatus === 'executor_running'
-    const isBlocked = executorPhase === 'blocked' || executorPhase === 'failed'
+    const isApproved = runStatus === "approved_for_executor";
+    const isExecuting =
+      runStatus === "executor_dispatched" || runStatus === "executor_running";
+    const isBlocked = executorPhase === "blocked" || executorPhase === "failed";
     return {
-      canStart: isApproved || (isBlocked && runLifecycle === 'execute'),
+      canStart: isApproved || (isBlocked && runLifecycle === "execute"),
       canCancel: isExecuting,
-      canRecover: isBlocked && runLifecycle === 'execute',
-      startUnavailableReason: !isApproved && !isBlocked ? `Current status: ${runStatus}` : undefined,
-      cancelUnavailableReason: 'Cancellation is not yet implemented in the backend.',
-      recoverUnavailableReason: 'Recovery is not yet implemented in the backend.',
-    }
-  }, [runStatus, runLifecycle, executorPhase])
+      canRecover: isBlocked && runLifecycle === "execute",
+      startUnavailableReason:
+        !isApproved && !isBlocked ? `Current status: ${runStatus}` : undefined,
+      cancelUnavailableReason:
+        "Cancellation is not yet implemented in the backend.",
+      recoverUnavailableReason:
+        "Recovery is not yet implemented in the backend.",
+    };
+  }, [runStatus, runLifecycle, executorPhase]);
 
   // Find relevant artifacts for Step 3 display
-  const resultArtifacts = artifacts.filter((a: any) => a.kind === 'result')
-  const diffArtifacts = artifacts.filter((a: any) => a.kind === 'diff')
-  const validationArtifacts = artifacts.filter((a: any) => a.kind === 'validation')
+  const resultArtifacts = artifacts.filter((a: any) => a.kind === "result");
+  const diffArtifacts = artifacts.filter((a: any) => a.kind === "diff");
+  const validationArtifacts = artifacts.filter(
+    (a: any) => a.kind === "validation",
+  );
 
   // Find specific result candidates
-  const executorResultArt = resultArtifacts.find((a: any) =>
-    a.filename?.includes('executor_result') || a.label?.includes('Executor Result')
-  )
-  const agentResultRawArt = resultArtifacts.find((a: any) =>
-    a.filename?.includes('agent_result_raw') || a.label?.includes('Agent Result')
-  )
-  const executorStdoutArt = resultArtifacts.find((a: any) =>
-    a.filename?.includes('executor_stdout') || a.label?.includes('Executor Stdout')
-  )
+  const executorResultArt = resultArtifacts.find(
+    (a: any) =>
+      a.filename?.includes("executor_result") ||
+      a.label?.includes("Executor Result"),
+  );
+  const agentResultRawArt = resultArtifacts.find(
+    (a: any) =>
+      a.filename?.includes("agent_result_raw") ||
+      a.label?.includes("Agent Result"),
+  );
+  const executorStdoutArt = resultArtifacts.find(
+    (a: any) =>
+      a.filename?.includes("executor_stdout") ||
+      a.label?.includes("Executor Stdout"),
+  );
 
   // Choose the best result artifact for display
-  const primaryResultArt = executorResultArt || agentResultRawArt || executorStdoutArt || resultArtifacts[0]
+  const primaryResultArt =
+    executorResultArt ||
+    agentResultRawArt ||
+    executorStdoutArt ||
+    resultArtifacts[0];
 
   // Find diff artifacts for changed files
-  const gitDiffPatch = diffArtifacts.find((a: any) =>
-    a.filename?.includes('git_diff_patch') || a.label?.includes('Git Diff Patch')
-  )
-  const gitDiffNameStatus = diffArtifacts.find((a: any) =>
-    a.filename?.includes('git_diff_name_status') || a.label?.includes('Git Diff Name Status')
-  )
-  const gitStatus = diffArtifacts.find((a: any) =>
-    a.filename?.includes('git_status') || a.label?.includes('Git Status')
-  )
-  const primaryDiffArt = gitDiffPatch || gitDiffNameStatus || gitStatus || diffArtifacts[0]
+  const gitDiffPatch = diffArtifacts.find(
+    (a: any) =>
+      a.filename?.includes("git_diff_patch") ||
+      a.label?.includes("Git Diff Patch"),
+  );
+  const gitDiffNameStatus = diffArtifacts.find(
+    (a: any) =>
+      a.filename?.includes("git_diff_name_status") ||
+      a.label?.includes("Git Diff Name Status"),
+  );
+  const gitStatus = diffArtifacts.find(
+    (a: any) =>
+      a.filename?.includes("git_status") || a.label?.includes("Git Status"),
+  );
+  const primaryDiffArt =
+    gitDiffPatch || gitDiffNameStatus || gitStatus || diffArtifacts[0];
 
   // Find validation artifact candidates
-  const validationStdoutArt = validationArtifacts.find((a: any) =>
-    a.filename?.includes('validation_stdout') || a.label?.includes('Validation Output')
-  )
-  const validationReportArt = validationArtifacts.find((a: any) =>
-    a.filename?.includes('validation_run') || a.label?.includes('Validation Report')
-  )
-  const primaryValidationArt = validationStdoutArt || validationReportArt || validationArtifacts[0]
+  const validationStdoutArt = validationArtifacts.find(
+    (a: any) =>
+      a.filename?.includes("validation_stdout") ||
+      a.label?.includes("Validation Output"),
+  );
+  const validationReportArt = validationArtifacts.find(
+    (a: any) =>
+      a.filename?.includes("validation_run") ||
+      a.label?.includes("Validation Report"),
+  );
+  const primaryValidationArt =
+    validationStdoutArt || validationReportArt || validationArtifacts[0];
 
   // Mutation: Start Executor
   const startMutation = useMutation({
     mutationFn: () => executeRun(run.id),
     onSuccess: () => {
-      setMutationError(null)
-      void queryClient.invalidateQueries({ queryKey: ['relay-runs'] })
+      setMutationError(null);
+      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
     },
     onError: (err: any) => {
-      setMutationError(err.message || 'Failed to start executor.')
+      setMutationError(err.message || "Failed to start executor.");
     },
-  })
+  });
 
   // Mutation: Cancel Executor
   const cancelMutation = useMutation({
     mutationFn: () => cancelRun(run.id),
     onSuccess: () => {
-      setMutationError(null)
-      void queryClient.invalidateQueries({ queryKey: ['relay-runs'] })
+      setMutationError(null);
+      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
     },
     onError: (err: any) => {
-      setMutationError(err.message || 'Failed to cancel executor.')
+      setMutationError(err.message || "Failed to cancel executor.");
     },
-  })
+  });
 
   // Mutation: Recover Executor
   const recoverMutation = useMutation({
     mutationFn: () => recoverRun(run.id),
     onSuccess: () => {
-      setMutationError(null)
-      void queryClient.invalidateQueries({ queryKey: ['relay-runs'] })
+      setMutationError(null);
+      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
     },
     onError: (err: any) => {
-      setMutationError(err.message || 'Failed to recover executor.')
+      setMutationError(err.message || "Failed to recover executor.");
     },
-  })
+  });
 
   // Mutation: Run Validation
   const validateMutation = useMutation({
     mutationFn: () => validateRun(run.id),
     onSuccess: () => {
-      setMutationError(null)
-      void queryClient.invalidateQueries({ queryKey: ['relay-runs'] })
+      setMutationError(null);
+      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
     },
     onError: (err: any) => {
-      setMutationError(err.message || 'Failed to run validation.')
+      setMutationError(err.message || "Failed to run validation.");
     },
-  })
+  });
 
-  const activeMutation = startMutation.isPending || cancelMutation.isPending || recoverMutation.isPending || validateMutation.isPending
+  const activeMutation =
+    startMutation.isPending ||
+    cancelMutation.isPending ||
+    recoverMutation.isPending ||
+    validateMutation.isPending;
 
   const handleStart = () => {
-    setMutationError(null)
-    startMutation.mutate()
-  }
+    setMutationError(null);
+    startMutation.mutate();
+  };
 
   const handleCancel = () => {
-    setMutationError(null)
-    cancelMutation.mutate()
-  }
+    setMutationError(null);
+    cancelMutation.mutate();
+  };
 
   const handleRecover = () => {
-    setMutationError(null)
-    recoverMutation.mutate()
-  }
+    setMutationError(null);
+    recoverMutation.mutate();
+  };
 
   const handleValidate = () => {
-    setMutationError(null)
-    validateMutation.mutate()
-  }
+    setMutationError(null);
+    validateMutation.mutate();
+  };
 
   const formatPhaseLabel = (phase: RelayExecutorPhase): string => {
     const labels: Record<RelayExecutorPhase, string> = {
-      idle: 'Awaiting Start',
-      dispatched: 'Dispatching…',
-      running: 'Executing',
-      done: 'Completed',
-      blocked: 'Blocked',
-      failed: 'Failed',
-      unavailable: 'Unavailable',
-    }
-    return labels[phase]
-  }
+      idle: "Awaiting Start",
+      dispatched: "Dispatching…",
+      running: "Executing",
+      done: "Completed",
+      blocked: "Blocked",
+      failed: "Failed",
+      unavailable: "Unavailable",
+    };
+    return labels[phase];
+  };
 
   const formatPhaseBadgeVariant = (phase: RelayExecutorPhase): string => {
     const variants: Record<RelayExecutorPhase, string> = {
-      idle: 'secondary',
-      dispatched: 'running',
-      running: 'running',
-      done: 'success',
-      blocked: 'destructive',
-      failed: 'destructive',
-      unavailable: 'outline',
-    }
-    return variants[phase]
-  }
+      idle: "secondary",
+      dispatched: "running",
+      running: "running",
+      done: "success",
+      blocked: "destructive",
+      failed: "destructive",
+      unavailable: "outline",
+    };
+    return variants[phase];
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -313,13 +360,15 @@ function ExecuteMainContent({
       <Section
         title="Agent Status"
         icon={
-          executorPhase === 'running' || executorPhase === 'dispatched'
-            ? <Loader2 className="w-4 h-4 text-violet-400 animate-spin" />
-            : executorPhase === 'done'
-              ? <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              : executorPhase === 'blocked' || executorPhase === 'failed'
-                ? <XCircle className="w-4 h-4 text-red-400" />
-                : <Clock className="w-4 h-4 text-muted-foreground" />
+          executorPhase === "running" || executorPhase === "dispatched" ? (
+            <Loader2 className="w-4 h-4 text-violet-400 animate-spin" />
+          ) : executorPhase === "done" ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          ) : executorPhase === "blocked" || executorPhase === "failed" ? (
+            <XCircle className="w-4 h-4 text-red-400" />
+          ) : (
+            <Clock className="w-4 h-4 text-muted-foreground" />
+          )
         }
       >
         <div className="flex items-center gap-2">
@@ -330,40 +379,47 @@ function ExecuteMainContent({
             {formatPhaseLabel(executorPhase)}
           </Badge>
           <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-            <span className="font-mono">{run.executorAdapter || run.executor}</span>
+            <span className="font-mono">
+              {run.executorAdapter || run.executor}
+            </span>
             <span className="opacity-50">/</span>
             <span>{run.model}</span>
           </span>
         </div>
-        
-        {executorPhase === 'running' && (
+
+        {executorPhase === "running" && (
           <p className="text-xs text-muted-foreground/70 mt-1">
-            Executor is actively running. Live log streaming via SSE is not yet available; refresh to see latest output.
+            Executor is actively running. Live log streaming via SSE is not yet
+            available; refresh to see latest output.
           </p>
         )}
-        {executorPhase === 'done' && (
+        {executorPhase === "done" && (
           <p className="text-xs text-emerald-400/70 mt-1">
-            Executor completed successfully. Review changed files and result below.
+            Executor completed successfully. Review changed files and result
+            below.
           </p>
         )}
-        {executorPhase === 'blocked' && (
+        {executorPhase === "blocked" && (
           <p className="text-xs text-red-400/70 mt-1">
-            Executor reported a blocking issue. Review result artifacts for details.
+            Executor reported a blocking issue. Review result artifacts for
+            details.
           </p>
         )}
-        {executorPhase === 'failed' && (
+        {executorPhase === "failed" && (
           <p className="text-xs text-red-400/70 mt-1">
-            Executor encountered a failure. Review error artifacts and consider recovery options.
+            Executor encountered a failure. Review error artifacts and consider
+            recovery options.
           </p>
         )}
-        {executorPhase === 'idle' && (
+        {executorPhase === "idle" && (
           <p className="text-xs text-muted-foreground/70 mt-1">
             Ready to dispatch executor. Click Start to begin the agent run.
           </p>
         )}
-        {executorPhase === 'unavailable' && (
+        {executorPhase === "unavailable" && (
           <p className="text-xs text-muted-foreground/70 mt-1">
-            Execution is not available for this run. Current status: {runStatus}.
+            Execution is not available for this run. Current status: {runStatus}
+            .
           </p>
         )}
 
@@ -382,7 +438,9 @@ function ExecuteMainContent({
               ) : (
                 <Play className="w-3.5 h-3.5" />
               )}
-              {runStatus === 'approved_for_executor' ? 'Start Executor' : 'Restart Executor'}
+              {runStatus === "approved_for_executor"
+                ? "Start Executor"
+                : "Restart Executor"}
             </Button>
           )}
 
@@ -424,18 +482,20 @@ function ExecuteMainContent({
         </div>
 
         {/* Unsupported action hints */}
-        {actionAvailability.canCancel && actionAvailability.cancelUnavailableReason && (
-          <p className="text-xs text-muted-foreground/60 italic mt-1 flex items-center gap-1">
-            <AlertTriangle className="w-3 h-3" />
-            {actionAvailability.cancelUnavailableReason}
-          </p>
-        )}
-        {actionAvailability.canRecover && actionAvailability.recoverUnavailableReason && (
-          <p className="text-xs text-muted-foreground/60 italic mt-1 flex items-center gap-1">
-            <AlertTriangle className="w-3 h-3" />
-            {actionAvailability.recoverUnavailableReason}
-          </p>
-        )}
+        {actionAvailability.canCancel &&
+          actionAvailability.cancelUnavailableReason && (
+            <p className="text-xs text-muted-foreground/60 italic mt-1 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              {actionAvailability.cancelUnavailableReason}
+            </p>
+          )}
+        {actionAvailability.canRecover &&
+          actionAvailability.recoverUnavailableReason && (
+            <p className="text-xs text-muted-foreground/60 italic mt-1 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              {actionAvailability.recoverUnavailableReason}
+            </p>
+          )}
       </Section>
 
       <Separator />
@@ -446,13 +506,17 @@ function ExecuteMainContent({
           <ScrollArea className="h-48 w-full rounded-md border border-border/50 bg-black/30">
             <div className="p-3 font-mono text-xs space-y-0.5">
               {run.logPreview.lines.map((line: string, i: number) => (
-                <div key={i} className="text-emerald-300/80 leading-relaxed whitespace-pre-wrap break-all">
+                <div
+                  key={i}
+                  className="text-emerald-300/80 leading-relaxed whitespace-pre-wrap break-all"
+                >
                   {line}
                 </div>
               ))}
               {run.logPreview.truncated && (
                 <div className="text-muted-foreground/50 italic">
-                  … output truncated. Full log available via raw artifact content endpoint.
+                  … output truncated. Full log available via raw artifact
+                  content endpoint.
                 </div>
               )}
             </div>
@@ -461,29 +525,42 @@ function ExecuteMainContent({
           <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
             <Terminal className="w-3.5 h-3.5 shrink-0" />
             <span className="italic">
-              {executorPhase === 'idle'
-                ? 'No logs yet. Start the executor to see output.'
-                : 'No event logs recorded for this phase.'}
+              {executorPhase === "idle"
+                ? "No logs yet. Start the executor to see output."
+                : "No event logs recorded for this phase."}
             </span>
           </div>
         )}
 
         {/* Executor log artifact links */}
-        {resultArtifacts.filter((a: any) =>
-          a.filename?.includes('executor_stdout') || a.filename?.includes('command_log') || a.filename?.includes('executor_stderr')
+        {resultArtifacts.filter(
+          (a: any) =>
+            a.filename?.includes("executor_stdout") ||
+            a.filename?.includes("command_log") ||
+            a.filename?.includes("executor_stderr"),
         ).length > 0 && (
           <div className="flex flex-col gap-1 mt-1">
-            <p className="text-[11px] text-muted-foreground/60 italic">Executor log artifacts on disk:</p>
+            <p className="text-[11px] text-muted-foreground/60 italic">
+              Executor log artifacts on disk:
+            </p>
             {resultArtifacts
-              .filter((a: any) =>
-                a.filename?.includes('executor_stdout') || a.filename?.includes('command_log') || a.filename?.includes('executor_stderr')
+              .filter(
+                (a: any) =>
+                  a.filename?.includes("executor_stdout") ||
+                  a.filename?.includes("command_log") ||
+                  a.filename?.includes("executor_stderr"),
               )
               .slice(0, 3)
               .map((a: any) => (
-                <div key={a.id} className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground/70">
+                <div
+                  key={a.id}
+                  className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground/70"
+                >
                   <FileText className="w-3 h-3 shrink-0" />
                   <span className="truncate">{a.filename}</span>
-                  {a.sizeHint && <span className="shrink-0">({a.sizeHint})</span>}
+                  {a.sizeHint && (
+                    <span className="shrink-0">({a.sizeHint})</span>
+                  )}
                 </div>
               ))}
           </div>
@@ -493,25 +570,47 @@ function ExecuteMainContent({
       <Separator />
 
       {/* Validation Commands */}
-      <Section title="Validation Commands" icon={<CheckCircle2 className="w-4 h-4" />}>
+      <Section
+        title="Validation Commands"
+        icon={<CheckCircle2 className="w-4 h-4" />}
+      >
         <p className="text-xs text-muted-foreground">
-          Validation commands are run after executor completion. Results are captured as artifacts.
+          Validation commands are run after executor completion. Results are
+          captured as artifacts.
         </p>
         <div className="flex flex-col gap-1 mt-1">
           {validationArtifacts.length > 0 ? (
             validationArtifacts.slice(0, 5).map((a: any) => (
-              <div key={a.id} className="flex items-center gap-2 text-xs font-mono p-1.5 bg-muted/20 rounded border border-border/40">
-                <Badge variant={
-                  a.storageKind === 'validation_run_json' ? 'success' :
-                  a.storageKind === 'validation_progress_json' ? 'secondary' :
-                  a.status === 'ready' ? 'success' : 'secondary'
-                } className="text-xs shrink-0">
-                  {a.storageKind === 'validation_run_json' ? 'Validation Result' :
-                   a.storageKind === 'validation_progress_json' ? 'Validation Progress' :
-                   a.status === 'ready' ? 'Captured' : a.status}
+              <div
+                key={a.id}
+                className="flex items-center gap-2 text-xs font-mono p-1.5 bg-muted/20 rounded border border-border/40"
+              >
+                <Badge
+                  variant={
+                    a.storageKind === "validation_run_json"
+                      ? "default"
+                      : a.storageKind === "validation_progress_json"
+                        ? "secondary"
+                        : a.status === "ready"
+                          ? "default"
+                          : "secondary"
+                  }
+                  className="text-xs shrink-0"
+                >
+                  {a.storageKind === "validation_run_json"
+                    ? "Validation Result"
+                    : a.storageKind === "validation_progress_json"
+                      ? "Validation Progress"
+                      : a.status === "ready"
+                        ? "Captured"
+                        : a.status}
                 </Badge>
-                <code className="flex-1 text-muted-foreground truncate">{a.filename || a.label}</code>
-                {a.sizeHint && <span className="text-muted-foreground/60">{a.sizeHint}</span>}
+                <code className="flex-1 text-muted-foreground truncate">
+                  {a.filename || a.label}
+                </code>
+                {a.sizeHint && (
+                  <span className="text-muted-foreground/60">{a.sizeHint}</span>
+                )}
               </div>
             ))
           ) : (
@@ -519,12 +618,12 @@ function ExecuteMainContent({
               <Clock className="w-3.5 h-3.5 shrink-0" />
               <span className="italic">
                 {localValidationIsRunning
-                  ? 'Local validation is running...'
-                  : executorPhase === 'idle'
-                    ? 'Validation not yet available. Start the executor first.'
-                    : executorPhase === 'running'
-                      ? 'Validation runs after executor completes.'
-                      : 'No validation artifacts found for this run.'}
+                  ? "Local validation is running..."
+                  : executorPhase === "idle"
+                    ? "Validation not yet available. Start the executor first."
+                    : executorPhase === "running"
+                      ? "Validation runs after executor completes."
+                      : "No validation artifacts found for this run."}
               </span>
             </div>
           )}
@@ -554,24 +653,35 @@ function ExecuteMainContent({
           )}
 
           {/* Show summary counts from run validation */}
-          {(run.validationSummary?.errors > 0 || run.validationSummary?.warnings > 0 || run.validationSummary?.passed > 0) && (
+          {(run.validationSummary?.errors > 0 ||
+            run.validationSummary?.warnings > 0 ||
+            run.validationSummary?.passed > 0) && (
             <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
               {run.validationSummary.errors > 0 && (
                 <span className="flex items-center gap-1">
                   <XCircle className="w-3 h-3 text-red-400" />
-                  <span className="text-red-400">{run.validationSummary.errors}</span> errors
+                  <span className="text-red-400">
+                    {run.validationSummary.errors}
+                  </span>{" "}
+                  errors
                 </span>
               )}
               {run.validationSummary.warnings > 0 && (
                 <span className="flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3 text-yellow-400" />
-                  <span className="text-yellow-400">{run.validationSummary.warnings}</span> warnings
+                  <span className="text-yellow-400">
+                    {run.validationSummary.warnings}
+                  </span>{" "}
+                  warnings
                 </span>
               )}
               {run.validationSummary.passed > 0 && (
                 <span className="flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                  <span className="text-emerald-400">{run.validationSummary.passed}</span> passed
+                  <span className="text-emerald-400">
+                    {run.validationSummary.passed}
+                  </span>{" "}
+                  passed
                 </span>
               )}
             </div>
@@ -595,13 +705,20 @@ function ExecuteMainContent({
           <div className="flex flex-col gap-2">
             {/* Individual diff artifact entries */}
             {diffArtifacts.slice(0, 5).map((a: any) => (
-              <div key={a.id} className="flex items-center justify-between p-2 bg-muted/20 rounded border border-border/40 text-xs font-mono">
+              <div
+                key={a.id}
+                className="flex items-center justify-between p-2 bg-muted/20 rounded border border-border/40 text-xs font-mono"
+              >
                 <div className="flex items-center gap-2 min-w-0">
                   <FileCode className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                  <span className="text-muted-foreground truncate">{a.filename || a.label}</span>
+                  <span className="text-muted-foreground truncate">
+                    {a.filename || a.label}
+                  </span>
                 </div>
                 {a.sizeHint && (
-                  <span className="text-muted-foreground/60 shrink-0 ml-2">{a.sizeHint}</span>
+                  <span className="text-muted-foreground/60 shrink-0 ml-2">
+                    {a.sizeHint}
+                  </span>
                 )}
               </div>
             ))}
@@ -621,11 +738,11 @@ function ExecuteMainContent({
           <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
             <FileCode className="w-3.5 h-3.5 shrink-0" />
             <span className="italic">
-              {executorPhase === 'idle'
-                ? 'Execution has not started — diff not yet available.'
-                : executorPhase === 'running'
-                  ? 'Execution in progress — diff not yet available.'
-                  : 'No diff artifacts found for this run.'}
+              {executorPhase === "idle"
+                ? "Execution has not started — diff not yet available."
+                : executorPhase === "running"
+                  ? "Execution in progress — diff not yet available."
+                  : "No diff artifacts found for this run."}
             </span>
           </div>
         )}
@@ -634,16 +751,30 @@ function ExecuteMainContent({
       <Separator />
 
       {/* Executor Result */}
-      <Section title="Executor Result" icon={<CheckCircle2 className="w-4 h-4 text-muted-foreground" />}>
+      <Section
+        title="Executor Result"
+        icon={<CheckCircle2 className="w-4 h-4 text-muted-foreground" />}
+      >
         {primaryResultArt ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <Badge variant={executorPhase === 'done' ? 'success' : 'secondary'} className="text-xs">
-                {executorPhase === 'done' ? 'Completed' : executorPhase === 'blocked' || executorPhase === 'failed' ? 'Failed' : 'Captured'}
+              <Badge
+                variant={executorPhase === "done" ? "default" : "secondary"}
+                className="text-xs"
+              >
+                {executorPhase === "done"
+                  ? "Completed"
+                  : executorPhase === "blocked" || executorPhase === "failed"
+                    ? "Failed"
+                    : "Captured"}
               </Badge>
-              <span className="text-xs font-mono text-muted-foreground truncate">{primaryResultArt.filename}</span>
+              <span className="text-xs font-mono text-muted-foreground truncate">
+                {primaryResultArt.filename}
+              </span>
               {primaryResultArt.sizeHint && (
-                <span className="text-xs text-muted-foreground/60">{primaryResultArt.sizeHint}</span>
+                <span className="text-xs text-muted-foreground/60">
+                  {primaryResultArt.sizeHint}
+                </span>
               )}
             </div>
 
@@ -654,21 +785,33 @@ function ExecuteMainContent({
               </pre>
             ) : (
               <div className="text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
-                <span className="italic">Result content preview not available.</span>
+                <span className="italic">
+                  Result content preview not available.
+                </span>
               </div>
             )}
 
             {/* Show other result artifacts as references */}
             {resultArtifacts.length > 1 && (
               <div className="flex flex-col gap-1 mt-1">
-                <p className="text-[11px] text-muted-foreground/60 italic">Additional result artifacts:</p>
-                {resultArtifacts.filter((a: any) => a.id !== primaryResultArt.id).slice(0, 3).map((a: any) => (
-                  <div key={a.id} className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground/70">
-                    <FileText className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{a.filename}</span>
-                    {a.sizeHint && <span className="shrink-0">({a.sizeHint})</span>}
-                  </div>
-                ))}
+                <p className="text-[11px] text-muted-foreground/60 italic">
+                  Additional result artifacts:
+                </p>
+                {resultArtifacts
+                  .filter((a: any) => a.id !== primaryResultArt.id)
+                  .slice(0, 3)
+                  .map((a: any) => (
+                    <div
+                      key={a.id}
+                      className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground/70"
+                    >
+                      <FileText className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{a.filename}</span>
+                      {a.sizeHint && (
+                        <span className="shrink-0">({a.sizeHint})</span>
+                      )}
+                    </div>
+                  ))}
               </div>
             )}
           </div>
@@ -676,20 +819,28 @@ function ExecuteMainContent({
           <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
             <Clock className="w-3.5 h-3.5 shrink-0" />
             <span className="italic">
-              {executorPhase === 'idle'
-                ? 'Execution has not started — result pending.'
-                : executorPhase === 'running'
-                  ? 'Execution in progress — result pending.'
-                  : 'No result artifact found for this run.'}
+              {executorPhase === "idle"
+                ? "Execution has not started — result pending."
+                : executorPhase === "running"
+                  ? "Execution in progress — result pending."
+                  : "No result artifact found for this run."}
             </span>
           </div>
         )}
       </Section>
     </div>
-  )
+  );
 }
 
-function Section({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
+function Section({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <Card className="border-border/60 bg-card/20">
       <CardHeader className="p-3 pb-2">
@@ -702,5 +853,5 @@ function Section({ title, icon, children }: { title: string; icon?: React.ReactN
         {children}
       </CardContent>
     </Card>
-  )
+  );
 }
