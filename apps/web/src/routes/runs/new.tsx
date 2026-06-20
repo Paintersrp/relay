@@ -180,7 +180,7 @@ function NewRunPage() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
     >
       <AppPageFrame
         title="New Run"
@@ -220,11 +220,11 @@ function NewRunPage() {
           </div>
 
           <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-            <section className="flex min-h-0 flex-col border-b border-[var(--relay-row-border)] lg:border-r lg:border-b-0">
-              <div className="min-h-0 overflow-y-auto">
-                <div className="flex flex-col gap-5">
+            <section className="flex min-h-0 flex-1 flex-col border-b border-[var(--relay-row-border)] lg:border-r lg:border-b-0">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto">
                   {errorMsg && (
-                    <div className="px-4 pt-4">
+                    <div className="shrink-0 px-4 pt-4">
                       <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
                         <AlertTitle>Submission Failed</AlertTitle>
@@ -293,7 +293,7 @@ function NewRunPage() {
                     </div>
                   </div>
 
-                  <details className="border-t border-[var(--relay-row-border)] px-4 py-3">
+                  <details className="shrink-0 border-t border-[var(--relay-row-border)] px-4 py-3">
                     <summary className="cursor-pointer select-none text-sm font-semibold text-foreground">
                       Review / override
                       <span className="ml-2 font-normal text-xs text-muted-foreground">
@@ -354,7 +354,7 @@ function NewRunPage() {
                 </div>
               </div>
 
-              <div className="mt-auto flex h-12 shrink-0 items-center justify-between gap-3 border-t border-[var(--relay-row-border)] px-4 py-0">
+              <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-t border-[var(--relay-row-border)] px-4 py-0">
                 <p className="text-xs text-muted-foreground">
                   Create a run from this Planner handoff.
                 </p>
