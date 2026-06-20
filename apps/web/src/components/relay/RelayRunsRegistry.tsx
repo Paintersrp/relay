@@ -5,8 +5,8 @@ import {
   Bot,
   GitBranch,
   GitFork,
+  ListFilter,
   Package,
-  TimerReset,
 } from "lucide-react";
 
 import { RelayAttentionBadge } from "@/components/relay/RelayAttentionBadge";
@@ -142,23 +142,24 @@ export function RelayRunsRegistry({
   return (
     <div
       className={cn(
-        "flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]",
+        "flex min-h-0 flex-1 flex-col overflow-hidden border-t border-[var(--relay-row-border)] bg-[var(--relay-content-bg)]",
         className,
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--relay-row-border)] px-4 py-3">
-        <div>
-          <p className="text-sm font-medium text-foreground">
-            {rows.length} run{rows.length === 1 ? "" : "s"} in registry
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {attentionCount} needing attention
-          </p>
+        <div className="flex items-center gap-2">
+          <ListFilter className="size-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold text-foreground">Runs</h2>
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+            {rows.length}
+          </span>
+          {attentionCount > 0 ? (
+            <span className="rounded border border-[var(--relay-row-border)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+              {attentionCount} need attention
+            </span>
+          ) : null}
         </div>
-        <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-          <TimerReset className="size-3.5" />
-          Real-time operator view
-        </div>
+        <span className="font-mono text-xs text-muted-foreground">Updated</span>
       </div>
 
       <div className="px-4 pt-2">
@@ -189,7 +190,7 @@ export function RelayRunsRegistry({
                     key={`loading-row-${index}`}
                     className="border-[var(--relay-row-border)]"
                   >
-                    <TableCell className="py-3">
+                    <TableCell className="py-2.5">
                       <div className="space-y-2">
                         <Skeleton className="h-4 w-56" />
                         <Skeleton className="h-3 w-72" />
@@ -243,7 +244,7 @@ export function RelayRunsRegistry({
                       key={run.id}
                       className="border-[var(--relay-row-border)]"
                     >
-                      <TableCell className="py-3 align-top">
+                      <TableCell className="py-2.5 align-top">
                         <div className="space-y-2">
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-foreground">
