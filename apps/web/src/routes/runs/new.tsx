@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent, type FormEvent } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { ArrowLeft, AlertCircle, AlertTriangle, CheckCircle2, Circle, Loader2 } from "lucide-react";
+import { ArrowLeft, AlertCircle, AlertTriangle, CheckCircle2, Circle, Loader2, Upload } from "lucide-react";
 import { AppPageFrame } from "@/components/relay/AppPageFrame";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -65,9 +65,9 @@ function IntakeStep({
       )}
     >
       {state === "complete" ? (
-        <CheckCircle2 className="h-3.5 w-3.5" />
+        <CheckCircle2 className="h-3 w-3" />
       ) : (
-        <Circle className="h-3.5 w-3.5" />
+        <Circle className="h-3 w-3" />
       )}
       {label}
     </span>
@@ -185,12 +185,13 @@ function NewRunPage() {
       <AppPageFrame
         title="New Run"
         description="Submit a Planner handoff to create a Relay run."
+        headerClassName="px-4 py-3"
         leading={
           <Button
             variant="ghost"
             size="sm"
             asChild
-            className="-ml-1 h-7 gap-1.5 text-xs"
+            className="-ml-1 h-6 gap-1.5 px-1 text-xs"
           >
             <Link to="/runs">
               <ArrowLeft className="h-3.5 w-3.5" />
@@ -201,7 +202,7 @@ function NewRunPage() {
         bodyClassName="flex min-h-0 flex-col p-0"
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="flex shrink-0 items-center justify-end gap-2 border-b border-[var(--relay-row-border)] px-5 py-3">
+          <div className="flex h-9 shrink-0 items-center justify-end gap-2 border-b border-[var(--relay-row-border)] px-4 py-0">
             <IntakeStep
               label="1 Handoff Intake"
               state={hasHandoff ? "complete" : "active"}
@@ -218,12 +219,12 @@ function NewRunPage() {
             />
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
             <section className="flex min-h-0 flex-col border-b border-[var(--relay-row-border)] lg:border-r lg:border-b-0">
               <div className="min-h-0 overflow-y-auto">
                 <div className="flex flex-col gap-5">
                   {errorMsg && (
-                    <div className="px-5 pt-5">
+                    <div className="px-4 pt-4">
                       <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
                         <AlertTitle>Submission Failed</AlertTitle>
@@ -232,7 +233,7 @@ function NewRunPage() {
                     </div>
                   )}
 
-                  <div className="flex min-h-0 flex-1 flex-col px-5 py-5">
+                  <div className="flex min-h-0 flex-1 flex-col px-4 pt-3 pb-4">
                     <div>
                       <h2 className="text-base font-semibold text-foreground">
                         Paste or upload Planner handoff
@@ -242,7 +243,7 @@ function NewRunPage() {
                       </p>
                     </div>
 
-                    <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
+                    <div className="mt-3 flex min-h-0 flex-1 flex-col gap-4">
                       <div className="flex min-h-0 flex-1 flex-col gap-2">
                         <Label
                           htmlFor="handoff-paste"
@@ -250,7 +251,7 @@ function NewRunPage() {
                         >
                           Planner handoff Markdown
                         </Label>
-                        <div className="min-h-0 flex-1">
+                        <div className="relative min-h-0 flex-1">
                           <Textarea
                             id="handoff-paste"
                             placeholder="Paste Planner handoff Markdown here..."
@@ -259,34 +260,40 @@ function NewRunPage() {
                             onChange={(e) => setMarkdown(e.target.value)}
                             aria-label="Planner handoff paste input"
                           />
+                          {!hasHandoff ? (
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                              <div className="flex flex-col items-center gap-2 text-muted-foreground/35">
+                                <Upload className="h-7 w-7" />
+                                <span className="font-mono text-[11px]">or drop a file</span>
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
 
-                      <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-                        <div className="flex flex-col gap-1.5">
-                          <Label
-                            htmlFor="handoff-file"
-                            className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground"
-                          >
-                            Upload handoff file
-                          </Label>
-                          <Input
-                            id="handoff-file"
-                            type="file"
-                            accept=".md,.txt,.json"
-                            className="cursor-pointer border-[var(--relay-row-border)] bg-background/70 text-xs"
-                            onChange={handleFileChange}
-                            aria-label="Planner handoff file upload"
-                          />
-                        </div>
+                      <div className="flex items-center gap-3">
+                        <Label
+                          htmlFor="handoff-file"
+                          className="shrink-0 cursor-pointer rounded border border-[var(--relay-row-border)] bg-background/60 px-3 py-1.5 font-mono text-[11px] text-foreground hover:bg-[var(--relay-panel-hover-bg)]"
+                        >
+                          Upload file
+                        </Label>
+                        <Input
+                          id="handoff-file"
+                          type="file"
+                          accept=".md,.txt,.json"
+                          className="sr-only"
+                          onChange={handleFileChange}
+                          aria-label="Planner handoff file upload"
+                        />
                         <p className="font-mono text-[11px] text-muted-foreground">
-                          Upload .md, .txt, or .json
+                          Accepts .md, .txt, or .json
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  <details className="border-t border-[var(--relay-row-border)] px-5 py-3">
+                  <details className="border-t border-[var(--relay-row-border)] px-4 py-3">
                     <summary className="cursor-pointer select-none text-sm font-semibold text-foreground">
                       Review / override
                       <span className="ml-2 font-normal text-xs text-muted-foreground">
@@ -347,9 +354,9 @@ function NewRunPage() {
                 </div>
               </div>
 
-              <div className="mt-auto flex shrink-0 flex-col gap-3 border-t border-[var(--relay-row-border)] px-5 py-3 md:flex-row md:items-center md:justify-between">
+              <div className="mt-auto flex h-12 shrink-0 items-center justify-between gap-3 border-t border-[var(--relay-row-border)] px-4 py-0">
                 <p className="text-xs text-muted-foreground">
-                  Create a run from the current Planner handoff and optional overrides.
+                  Create a run from this Planner handoff.
                 </p>
                 <div className="flex items-center gap-2">
                   <Button variant="outline" size="sm" asChild disabled={isSubmitting}>
@@ -375,9 +382,9 @@ function NewRunPage() {
             </section>
 
             <aside className="flex min-h-0 flex-col bg-[var(--relay-panel-bg)]">
-              <div className="border-b border-[var(--relay-row-border)] px-5 py-4">
+              <div className="border-b border-[var(--relay-row-border)] px-5 py-3">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-sm font-semibold text-foreground">
+                  <h2 className="whitespace-nowrap text-sm font-semibold text-foreground">
                     Detected Handoff Metadata
                   </h2>
                   <span className="rounded-full border border-[var(--relay-row-border)] px-2 py-1 font-mono text-[11px] text-muted-foreground">
@@ -389,7 +396,7 @@ function NewRunPage() {
               <div className="flex min-h-0 flex-1 flex-col">
                 {!hasHandoff ? (
                   <>
-                    <div className="flex flex-1 items-center justify-center px-5 py-10">
+                    <div className="flex flex-1 items-start justify-center px-8 pt-[28vh] text-center">
                       <div className="flex max-w-xs flex-col items-center text-center">
                         <Circle className="h-8 w-8 text-muted-foreground/30" />
                         <p className="mt-4 text-sm text-foreground">
