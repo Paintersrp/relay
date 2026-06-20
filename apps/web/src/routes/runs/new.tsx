@@ -199,7 +199,7 @@ function NewRunPage() {
             </Link>
           </Button>
         }
-        bodyClassName="flex min-h-0 flex-col p-0"
+        bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="flex h-9 shrink-0 items-center justify-end gap-2 border-b border-[var(--relay-row-border)] px-4 py-0">

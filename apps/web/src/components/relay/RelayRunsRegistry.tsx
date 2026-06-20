@@ -167,8 +167,8 @@ export function RelayRunsRegistry({
         />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-x-auto px-4">
-        <div className="flex min-h-0 min-w-[980px] flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-0">
+        <div className="flex h-full min-h-0 min-w-[980px] flex-col">
           <div
             className="grid shrink-0 border-b border-[var(--relay-row-border)] py-2 text-xs font-semibold text-foreground"
             style={{ gridTemplateColumns: registryColumns }}
@@ -228,7 +228,10 @@ export function RelayRunsRegistry({
           ) : null}
 
           {!isLoading && filteredRuns.length > 0 ? (
-            <div ref={scrollParentRef} className="min-h-0 flex-1 overflow-y-auto">
+            <div
+              ref={scrollParentRef}
+              className="min-h-0 flex-1 overflow-y-auto"
+            >
               <div
                 className="relative"
                 style={{ height: `${rowVirtualizer.getTotalSize()}px` }}

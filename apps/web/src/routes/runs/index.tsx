@@ -15,7 +15,7 @@ function RunsListPage() {
     <AppPageFrame
       title="Runs"
       description="Handoff orchestration runs"
-      bodyClassName="flex min-h-0 flex-col p-0"
+      bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
     >
       <RelayRunsRegistry runs={runs} isLoading={isLoading} />
     </AppPageFrame>

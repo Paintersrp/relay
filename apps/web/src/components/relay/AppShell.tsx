@@ -26,7 +26,7 @@ export function AppShell({ children, className }: AppShellProps) {
   return (
     <div
       className={cn(
-        "flex h-screen w-full flex-col bg-[var(--relay-content-bg)] text-foreground",
+        "flex h-dvh w-full flex-col overflow-hidden bg-[var(--relay-content-bg)] text-foreground",
         className,
       )}
     >
