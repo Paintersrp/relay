@@ -936,6 +936,34 @@ func deriveRunTitleFromMarkdown(markdown string) string {
 	return "Untitled Run"
 }
 
+func resolveIntakeExecutorAdapter(req PlannerHandoffIntakeRequest, metadata map[string]string) (string, bool, error) {
+	candidates := []string{
+		req.ExecutorAdapter,
+		req.ExecutorAdapter2,
+		metadata["executor_adapter"],
+		metadata["executorAdapter"],
+	}
+	for _, cand := range candidates {
+		if strings.TrimSpace(cand) != "" {
+			adapter, err := executor.NormalizeKnownAdapterID(cand)
+			if err != nil {
+				return "", true, err
+			}
+			return adapter, true, nil
+		}
+	}
+
+	targetExec := metadata["target_executor"]
+	if strings.TrimSpace(targetExec) != "" {
+		adapter, err := executor.NormalizeKnownAdapterID(targetExec)
+		if err == nil {
+			return adapter, false, nil
+		}
+	}
+
+	return "opencode_go", false, nil
+}
+
 // POST /api/intake/planner-handoff
 func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request) {
 	var req PlannerHandoffIntakeRequest
@@ -1017,17 +1045,11 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 	}
 	selectedModel := recommendedModel
 
-	executorAdapterRaw := req.ExecutorAdapter
-	if executorAdapterRaw == "" {
-		executorAdapterRaw = req.ExecutorAdapter2
+	executorAdapter, explicitAdapter, err := resolveIntakeExecutorAdapter(req, metadata)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
 	}
-	if executorAdapterRaw == "" {
-		executorAdapterRaw = metadata["executor_adapter"]
-	}
-	if executorAdapterRaw == "" {
-		executorAdapterRaw = metadata["executorAdapter"]
-	}
-	executorAdapter := executor.NormalizeAdapterID(executorAdapterRaw)
 
 	var run *generated.Run
 	isNew := false
@@ -1074,7 +1096,7 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 		if branchContext != "" {
 			_, _ = h.store.UpdateRunBranch(run.ID, branchContext, "", "")
 		}
-		if executorAdapterRaw != "" {
+		if explicitAdapter {
 			_, _ = h.store.UpdateRunExecutorAdapter(run.ID, executorAdapter)
 		}
 		run = updatedRun
@@ -1264,9 +1286,9 @@ func (h *APIHandler) ApproveIntake(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Executor Adapter override
 	if req.Overrides.ExecutorAdapter != "" {
-		normalizedAdapter := executor.NormalizeAdapterID(req.Overrides.ExecutorAdapter)
-		if normalizedAdapter != "opencode_go" && normalizedAdapter != "codex" && normalizedAdapter != "antigravity" {
-			writeError(w, http.StatusBadRequest, "BAD_REQUEST", fmt.Sprintf("Invalid executor adapter %q", req.Overrides.ExecutorAdapter))
+		normalizedAdapter, err := executor.NormalizeKnownAdapterID(req.Overrides.ExecutorAdapter)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 			return
 		}
 		if normalizedAdapter != run.ExecutorAdapter {
@@ -1299,7 +1321,8 @@ func (h *APIHandler) ApproveIntake(w http.ResponseWriter, r *http.Request) {
 		configMap["validation_commands"] = req.Overrides.ValidationCommands
 	}
 	if req.Overrides.ExecutorAdapter != "" {
-		configMap["executor_adapter"] = executor.NormalizeAdapterID(req.Overrides.ExecutorAdapter)
+		normalizedAdapter, _ := executor.NormalizeKnownAdapterID(req.Overrides.ExecutorAdapter)
+		configMap["executor_adapter"] = normalizedAdapter
 	}
 	configMap["notes"] = req.Notes
 	configMap["decision"] = req.Action

@@ -182,6 +182,27 @@ executor_done / executor_blocked
 - CloseRun is gated to `accepted`/`accepted_with_warnings` only; transitions to `completed`.
 - No audit action performs git add, commit, push, merge, reset, checkout, or worktree mutation.
 
+### Executor Adapter Semantics
+
+The `executorAdapter` / `executor_adapter` field controls which executor backend the run uses.
+
+**Canonical Values**:
+Responses always emit canonical values: `opencode_go`, `codex`, or `antigravity`.
+
+**Accepted Input Aliases**:
+Input resolution is case-insensitive and ignores surrounding whitespace. Aliases map to canonical values:
+- Missing, empty string, `opencode`, or `opencode_go` map to `opencode_go`.
+- `codex` maps to `codex`.
+- `agy` or `antigravity` maps to `antigravity`.
+
+**Explicit Invalid Input Behavior**:
+If an explicit `executorAdapter` or `executor_adapter` field contains an invalid or unrecognized value, the API returns a `400 BAD_REQUEST` and **must not** persist the invalid value to the database or run config.
+
+**Implicit Fallback Behavior (`target_executor`)**:
+For legacy compatibility, if no explicit adapter field is provided during planner handoff, the metadata field `target_executor` may be used as a fallback.
+- If `target_executor` maps to a known adapter alias (e.g., `codex`), it is accepted.
+- If `target_executor` contains a non-adapter value (such as `deepseek-v4-flash`, `manual`, or `other`), the system safely ignores it and defaults to `opencode_go` rather than returning an error.
+
 ## Endpoints
 
 ### 1. GET `/api/runs`

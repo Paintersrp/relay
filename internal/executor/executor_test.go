@@ -438,9 +438,9 @@ func TestDispatchBrief_UnsupportedAdapterBlocks(t *testing.T) {
 	}
 
 	res, err := DispatchBrief(&DispatchParams{
-		Store:   s,
-		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
-		RunID:   runID,
+		Store: s,
+		Log:   slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID: runID,
 	})
 	if err == nil {
 		t.Fatal("expected error for unsupported adapter, got nil")
@@ -479,3 +479,35 @@ func TestNormalizeAdapterID(t *testing.T) {
 	}
 }
 
+func TestNormalizeKnownAdapterID(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"", "opencode_go", false},
+		{" opencode ", "opencode_go", false},
+		{"OPENCODE_GO", "opencode_go", false},
+		{"codex", "codex", false},
+		{" CODEX ", "codex", false},
+		{"agy", "antigravity", false},
+		{"Antigravity", "antigravity", false},
+		{"invalid", "", true},
+		{"deepseek-v4-flash", "", true},
+	}
+	for _, c := range cases {
+		got, err := NormalizeKnownAdapterID(c.in)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("NormalizeKnownAdapterID(%q) expected error, got nil", c.in)
+			}
+		} else {
+			if err != nil {
+				t.Errorf("NormalizeKnownAdapterID(%q) expected nil error, got %v", c.in, err)
+			}
+			if got != c.want {
+				t.Errorf("NormalizeKnownAdapterID(%q) = %q, want %q", c.in, got, c.want)
+			}
+		}
+	}
+}

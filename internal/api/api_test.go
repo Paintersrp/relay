@@ -824,3 +824,84 @@ func TestAPI(t *testing.T) {
 
 	t.Logf("Audit transition tests completed at %s", time.Now().Format(time.RFC3339))
 }
+
+func TestResolveIntakeExecutorAdapter(t *testing.T) {
+	cases := []struct {
+		name         string
+		req          PlannerHandoffIntakeRequest
+		metadata     map[string]string
+		wantAdapter  string
+		wantExplicit bool
+		wantErr      bool
+	}{
+		{
+			name:         "explicit codex in req",
+			req:          PlannerHandoffIntakeRequest{ExecutorAdapter: "codex"},
+			metadata:     nil,
+			wantAdapter:  "codex",
+			wantExplicit: true,
+			wantErr:      false,
+		},
+		{
+			name:         "snake_case agy alias in metadata",
+			req:          PlannerHandoffIntakeRequest{},
+			metadata:     map[string]string{"executor_adapter": "agy"},
+			wantAdapter:  "antigravity",
+			wantExplicit: true,
+			wantErr:      false,
+		},
+		{
+			name:         "invalid metadata executor_adapter",
+			req:          PlannerHandoffIntakeRequest{},
+			metadata:     map[string]string{"executor_adapter": "invalid_adapter"},
+			wantAdapter:  "",
+			wantExplicit: true,
+			wantErr:      true,
+		},
+		{
+			name:         "target_executor codex (implicit fallback)",
+			req:          PlannerHandoffIntakeRequest{},
+			metadata:     map[string]string{"target_executor": "codex"},
+			wantAdapter:  "codex",
+			wantExplicit: false,
+			wantErr:      false,
+		},
+		{
+			name:         "target_executor deepseek-v4-flash defaulting without error",
+			req:          PlannerHandoffIntakeRequest{},
+			metadata:     map[string]string{"target_executor": "deepseek-v4-flash"},
+			wantAdapter:  "opencode_go",
+			wantExplicit: false,
+			wantErr:      false,
+		},
+		{
+			name:         "no fields defaulting without error",
+			req:          PlannerHandoffIntakeRequest{},
+			metadata:     nil,
+			wantAdapter:  "opencode_go",
+			wantExplicit: false,
+			wantErr:      false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter, explicit, err := resolveIntakeExecutorAdapter(tc.req, tc.metadata)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				if adapter != tc.wantAdapter {
+					t.Errorf("expected adapter %q, got %q", tc.wantAdapter, adapter)
+				}
+				if explicit != tc.wantExplicit {
+					t.Errorf("expected explicit=%v, got %v", tc.wantExplicit, explicit)
+				}
+			}
+		})
+	}
+}

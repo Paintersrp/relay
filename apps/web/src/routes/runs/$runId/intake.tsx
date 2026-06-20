@@ -414,6 +414,16 @@ function IntakeMainContent({
                 <SelectItem value="antigravity">Antigravity (Go)</SelectItem>
               </SelectContent>
             </Select>
+            {executorAdapter === 'codex' && (
+              <div className="text-[10px] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded p-1.5 leading-tight">
+                <strong>Note:</strong> Codex execution is not yet implemented. The adapter will be persisted, but execution will safely block.
+              </div>
+            )}
+            {executorAdapter === 'antigravity' && (
+              <div className="text-[10px] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded p-1.5 leading-tight">
+                <strong>Note:</strong> Antigravity execution is not yet implemented. The adapter will be persisted, but execution will safely block.
+              </div>
+            )}
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="override-repo" className="text-xs text-muted-foreground">Repository Target Path</Label>
