@@ -87,6 +87,7 @@ type Run struct {
 	HeadCommit       string `json:"head_commit"`
 	CreatedAt        string `json:"created_at"`
 	UpdatedAt        string `json:"updated_at"`
+	ExecutorAdapter  string `json:"executor_adapter"`
 }
 
 type ValidationExecution struct {

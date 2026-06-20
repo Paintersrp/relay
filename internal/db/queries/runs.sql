@@ -1,6 +1,6 @@
 -- name: CreateRun :one
-INSERT INTO runs (repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
+INSERT INTO runs (repo_id, title, status, recommended_model, selected_model, executor_adapter, branch_name, base_commit, head_commit)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
 
 -- name: GetRun :one
 SELECT * FROM runs WHERE id = ?;
@@ -16,6 +16,7 @@ SELECT
   runs.status,
   runs.recommended_model,
   runs.selected_model,
+  runs.executor_adapter,
   runs.branch_name,
   runs.base_commit,
   runs.head_commit,
@@ -45,3 +46,5 @@ UPDATE runs SET title = ?, updated_at = datetime('now') WHERE id = ? RETURNING *
 -- name: UpdateRunRepo :one
 UPDATE runs SET repo_id = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
 
+-- name: UpdateRunExecutorAdapter :one
+UPDATE runs SET executor_adapter = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;

@@ -128,7 +128,8 @@ export function normalizeRun(run: any): RelayRun {
     state: run.state || "Draft",
     title: run.title || run.name || `Run ${run.id}`,
     packetId: run.packetId || "",
-    executor: run.executor || "openai",
+    executorAdapter: run.executorAdapter || run.executor || "opencode_go",
+    executor: run.executor || run.executorAdapter || "opencode_go",
     validationSummary: run.validationSummary || run.validation || defaultValidation,
     approvalGate: run.approvalGate || {
       label: "Intake Approval",

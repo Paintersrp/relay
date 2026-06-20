@@ -89,6 +89,7 @@ type RelayRun struct {
 	PacketID              string                `json:"packetId"`
 	Worktree              string                `json:"worktree,omitempty"`
 	Executor              string                `json:"executor"`
+	ExecutorAdapter       string                `json:"executorAdapter"`
 	ValidationSummary     RelayValidationResult `json:"validationSummary"`
 	ApprovalGate          RelayApprovalGate     `json:"approvalGate"`
 	LogPreview            RelayLogPreview       `json:"logPreview"`
@@ -652,7 +653,8 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 		State:                 state,
 		Title:                 run.Title,
 		PacketID:              packetID,
-		Executor:              "deepseek-v4-flash",
+		Executor:              run.ExecutorAdapter,
+		ExecutorAdapter:       run.ExecutorAdapter,
 		ValidationSummary:     valResult,
 		ApprovalGate:          buildApprovalGate(activeStep, run.Status),
 		LogPreview:            buildLogPreview(events),
@@ -866,6 +868,8 @@ type PlannerHandoffIntakeRequest struct {
 	RepoTarget             string `json:"repo_target,omitempty"`
 	BranchContext          string `json:"branch_context,omitempty"`
 	Source                 string `json:"source,omitempty"`
+	ExecutorAdapter        string `json:"executorAdapter,omitempty"`
+	ExecutorAdapter2       string `json:"executor_adapter,omitempty"`
 }
 
 type PlannerHandoffIntakeResponse struct {
@@ -1013,6 +1017,18 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 	}
 	selectedModel := recommendedModel
 
+	executorAdapterRaw := req.ExecutorAdapter
+	if executorAdapterRaw == "" {
+		executorAdapterRaw = req.ExecutorAdapter2
+	}
+	if executorAdapterRaw == "" {
+		executorAdapterRaw = metadata["executor_adapter"]
+	}
+	if executorAdapterRaw == "" {
+		executorAdapterRaw = metadata["executorAdapter"]
+	}
+	executorAdapter := executor.NormalizeAdapterID(executorAdapterRaw)
+
 	var run *generated.Run
 	isNew := false
 
@@ -1034,7 +1050,7 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 		if len(warnings) > 0 {
 			status = "intake_needs_review"
 		}
-		r, err := h.store.CreateRun(repo.ID, title, status, recommendedModel, selectedModel, branchContext)
+		r, err := h.store.CreateRunWithExecutorAdapter(repo.ID, title, status, recommendedModel, selectedModel, executorAdapter, branchContext)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create run: "+err.Error())
 			return
@@ -1057,6 +1073,9 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 		}
 		if branchContext != "" {
 			_, _ = h.store.UpdateRunBranch(run.ID, branchContext, "", "")
+		}
+		if executorAdapterRaw != "" {
+			_, _ = h.store.UpdateRunExecutorAdapter(run.ID, executorAdapter)
 		}
 		run = updatedRun
 	}
@@ -1091,10 +1110,11 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 		sourceStr = "api"
 	}
 	configMap := map[string]string{
-		"repo_target":    repo.Path,
-		"branch_context": branchContext,
-		"source":         sourceStr,
-		"created_from":   "intake_endpoint",
+		"repo_target":      repo.Path,
+		"branch_context":   branchContext,
+		"source":           sourceStr,
+		"created_from":     "intake_endpoint",
+		"executor_adapter": executorAdapter,
 	}
 	configJSON, _ := json.MarshalIndent(configMap, "", "  ")
 	path, err = artifacts.Write(run.ID, "run_config", "run_config.json", configJSON)
@@ -1185,6 +1205,7 @@ func (h *APIHandler) ApproveIntake(w http.ResponseWriter, r *http.Request) {
 		Branch             string `json:"branch"`
 		Worktree           string `json:"worktree"`
 		ValidationCommands string `json:"validationCommands"`
+		ExecutorAdapter    string `json:"executorAdapter"`
 	}
 	type ApproveIntakeRequest struct {
 		Action    string                 `json:"action"` // "approve", "needs_revision", "blocked"
@@ -1241,7 +1262,23 @@ func (h *APIHandler) ApproveIntake(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 4. Persistence of overrides and notes in run_config.json
+	// 4. Executor Adapter override
+	if req.Overrides.ExecutorAdapter != "" {
+		normalizedAdapter := executor.NormalizeAdapterID(req.Overrides.ExecutorAdapter)
+		if normalizedAdapter != "opencode_go" && normalizedAdapter != "codex" && normalizedAdapter != "antigravity" {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", fmt.Sprintf("Invalid executor adapter %q", req.Overrides.ExecutorAdapter))
+			return
+		}
+		if normalizedAdapter != run.ExecutorAdapter {
+			updatedRun, err = h.store.UpdateRunExecutorAdapter(run.ID, normalizedAdapter)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run executor adapter: "+err.Error())
+				return
+			}
+		}
+	}
+
+	// 5. Persistence of overrides and notes in run_config.json
 	configMap := make(map[string]interface{})
 	if data, err := artifacts.Read(run.ID, "run_config", "run_config.json"); err == nil {
 		_ = json.Unmarshal(data, &configMap)
@@ -1260,6 +1297,9 @@ func (h *APIHandler) ApproveIntake(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Overrides.ValidationCommands != "" {
 		configMap["validation_commands"] = req.Overrides.ValidationCommands
+	}
+	if req.Overrides.ExecutorAdapter != "" {
+		configMap["executor_adapter"] = executor.NormalizeAdapterID(req.Overrides.ExecutorAdapter)
 	}
 	configMap["notes"] = req.Notes
 	configMap["decision"] = req.Action

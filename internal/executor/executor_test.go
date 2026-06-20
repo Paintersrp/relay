@@ -40,6 +40,7 @@ func setupExecutorTestStore(t *testing.T) *store.Store {
 			status TEXT NOT NULL DEFAULT 'draft',
 			recommended_model TEXT NOT NULL DEFAULT '',
 			selected_model TEXT NOT NULL DEFAULT '',
+			executor_adapter TEXT NOT NULL DEFAULT 'opencode_go',
 			branch_name TEXT NOT NULL DEFAULT '',
 			base_commit TEXT NOT NULL DEFAULT '',
 			head_commit TEXT NOT NULL DEFAULT '',
@@ -426,3 +427,55 @@ func TestDispatchBrief_UsesInjectedAdapter(t *testing.T) {
 		t.Errorf("expected runner args fake-arg, got %v", recordedArgs)
 	}
 }
+
+func TestDispatchBrief_UnsupportedAdapterBlocks(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+	_, err := s.UpdateRunExecutorAdapter(runID, "codex")
+	if err != nil {
+		t.Fatalf("update run executor adapter: %v", err)
+	}
+
+	res, err := DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+	})
+	if err == nil {
+		t.Fatal("expected error for unsupported adapter, got nil")
+	}
+	if !strings.Contains(err.Error(), "not implemented") {
+		t.Errorf("expected not implemented error, got: %v", err)
+	}
+	if res.Dispatched {
+		t.Error("expected Dispatched=false")
+	}
+
+	run, _ := s.GetRun(runID)
+	if run.Status != StatusExecutorBlocked {
+		t.Errorf("expected run status %s, got %s", StatusExecutorBlocked, run.Status)
+	}
+}
+
+func TestNormalizeAdapterID(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", "opencode_go"},
+		{"opencode", "opencode_go"},
+		{"opencode_go", "opencode_go"},
+		{"codex", "codex"},
+		{"agy", "antigravity"},
+		{"antigravity", "antigravity"},
+		{"invalid", "invalid"},
+	}
+	for _, c := range cases {
+		got := NormalizeAdapterID(c.in)
+		if got != c.want {
+			t.Errorf("NormalizeAdapterID(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+

@@ -479,7 +479,15 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 
 	adapter := p.Adapter
 	if adapter == nil {
-		adapter = NewOpenCodeAdapterFromEnv()
+		var err error
+		adapter, err = NewAdapterFromID(run.ExecutorAdapter)
+		if err != nil {
+			createEvent(s, runID, "warn", "Executor dispatch blocked: "+err.Error())
+			publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
+			updateRunStatus(s, runID, StatusExecutorBlocked)
+			publishRunEvent(p.EventHub, runID, events.KindRunSummary, "executor", "blocked")
+			return DispatchResult{}, fmt.Errorf("adapter error: %w", err)
+		}
 	}
 
 	briefPath := filepath.Join(artifacts.Dir(runID), "executor_brief.md")

@@ -20,6 +20,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   CheckCircle2,
   AlertTriangle,
   Server,
@@ -149,6 +156,7 @@ function IntakeMainContent({
   const [repo, setRepo] = useState(run.repo || '')
   const [branch, setBranch] = useState(run.branch || '')
   const [worktree, setWorktree] = useState(run.worktree || '')
+  const [executorAdapter, setExecutorAdapter] = useState(run.executorAdapter || 'opencode_go')
   const [validationCommands, setValidationCommands] = useState(initialValCommands)
 
   // Keep fields in sync if run shifts
@@ -157,7 +165,8 @@ function IntakeMainContent({
     if (run.repo) setRepo(run.repo)
     if (run.branch) setBranch(run.branch)
     if (run.worktree) setWorktree(run.worktree)
-  }, [run.model, run.repo, run.branch, run.worktree])
+    if (run.executorAdapter) setExecutorAdapter(run.executorAdapter)
+  }, [run.model, run.repo, run.branch, run.worktree, run.executorAdapter])
 
   useEffect(() => {
     if (runConfigArt && runConfigArt.preview) {
@@ -165,6 +174,7 @@ function IntakeMainContent({
         const cfg = JSON.parse(runConfigArt.preview)
         if (cfg.validation_commands) setValidationCommands(cfg.validation_commands)
         if (cfg.worktree) setWorktree(cfg.worktree)
+        if (cfg.executor_adapter) setExecutorAdapter(cfg.executor_adapter)
       } catch {
         // ignore
       }
@@ -199,6 +209,7 @@ function IntakeMainContent({
         repo: repo !== run.repo ? repo.trim() : undefined,
         branch: branch !== run.branch ? branch.trim() : undefined,
         worktree: worktree !== run.worktree ? worktree.trim() : undefined,
+        executorAdapter: executorAdapter !== run.executorAdapter ? executorAdapter : undefined,
         validationCommands: validationCommands !== initialValCommands ? validationCommands.trim() : undefined,
       },
     }
@@ -367,7 +378,7 @@ function IntakeMainContent({
         <KeyValueRow label="Repo" value={run.repo} mono />
         <KeyValueRow label="Branch" value={run.branch} mono />
         <KeyValueRow label="Worktree" value={run.worktree || '—'} mono />
-        <KeyValueRow label="Executor" value={run.executor} />
+        <KeyValueRow label="Executor Adapter" value={run.executorAdapter} mono />
         <KeyValueRow label="Model" value={run.model} mono />
       </Section>
 
@@ -386,6 +397,23 @@ function IntakeMainContent({
               className="h-8 text-xs bg-background/50"
               disabled={isPending || !isReviewable}
             />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="override-executor" className="text-xs text-muted-foreground">Executor Adapter</Label>
+            <Select
+              value={executorAdapter}
+              onValueChange={setExecutorAdapter}
+              disabled={isPending || !isReviewable}
+            >
+              <SelectTrigger id="override-executor" className="h-8 text-xs bg-background/50">
+                <SelectValue placeholder="Select executor adapter" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="opencode_go">OpenCode (Go)</SelectItem>
+                <SelectItem value="codex">Codex (TypeScript)</SelectItem>
+                <SelectItem value="antigravity">Antigravity (Go)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="override-repo" className="text-xs text-muted-foreground">Repository Target Path</Label>

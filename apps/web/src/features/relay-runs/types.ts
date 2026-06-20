@@ -146,6 +146,7 @@ export interface RelayActionRequest {
     branch?: string;
     worktree?: string;
     validationCommands?: string;
+    executorAdapter?: RelayExecutorAdapter | string;
   };
 }
 
@@ -171,6 +172,8 @@ export interface PlannerHandoffIntakeRequest {
   handoffPath?: string;
   packetId?: string;
   source?: string;
+  executorAdapter?: string;
+  executor_adapter?: string;
 }
 
 export interface PlannerHandoffIntakeResponse {
@@ -245,6 +248,7 @@ export interface RelayRun {
   packetId: string;
   worktree?: string;
   executor: string;
+  executorAdapter: string;
   validationSummary: RelayValidationResult;
   approvalGate: RelayApprovalGate;
   logPreview: RelayLogPreview;
@@ -268,6 +272,8 @@ export interface RelayRunStepInfo {
 }
 
 // Step 4: Audit / Close-specific types
+
+export type RelayExecutorAdapter = "opencode_go" | "codex" | "antigravity";
 
 export type RelayAuditDecisionValue =
   | "accepted"

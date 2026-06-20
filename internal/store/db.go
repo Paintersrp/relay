@@ -180,13 +180,23 @@ func (s *Store) EnsureDefaultRepoRoots(paths []string) error {
 
 // Runs
 
+const DefaultExecutorAdapter = "opencode_go"
+
 func (s *Store) CreateRun(repoID int64, title, status, recommendedModel, selectedModel, branchName string) (*Run, error) {
+	return s.CreateRunWithExecutorAdapter(repoID, title, status, recommendedModel, selectedModel, DefaultExecutorAdapter, branchName)
+}
+
+func (s *Store) CreateRunWithExecutorAdapter(repoID int64, title, status, recommendedModel, selectedModel, executorAdapter, branchName string) (*Run, error) {
+	if executorAdapter == "" {
+		executorAdapter = DefaultExecutorAdapter
+	}
 	run, err := s.queries.CreateRun(context.Background(), generated.CreateRunParams{
 		RepoID:           repoID,
 		Title:            title,
 		Status:           status,
 		RecommendedModel: recommendedModel,
 		SelectedModel:    selectedModel,
+		ExecutorAdapter:  executorAdapter,
 		BranchName:       branchName,
 		BaseCommit:       "",
 		HeadCommit:       "",
@@ -253,6 +263,20 @@ func (s *Store) UpdateRunRepo(id int64, repoID int64) (*Run, error) {
 	run, err := s.queries.UpdateRunRepo(context.Background(), generated.UpdateRunRepoParams{
 		RepoID: repoID,
 		ID:     id,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &run, nil
+}
+
+func (s *Store) UpdateRunExecutorAdapter(id int64, executorAdapter string) (*Run, error) {
+	if executorAdapter == "" {
+		executorAdapter = DefaultExecutorAdapter
+	}
+	run, err := s.queries.UpdateRunExecutorAdapter(context.Background(), generated.UpdateRunExecutorAdapterParams{
+		ExecutorAdapter: executorAdapter,
+		ID:              id,
 	})
 	if err != nil {
 		return nil, err

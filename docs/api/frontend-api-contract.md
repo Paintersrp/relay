@@ -114,6 +114,8 @@ The canonical final state is `completed`. No mutating actions are available in t
   "latestEvents": [],
   "statusSeverity": "neutral | info | success | warning | danger",
   "state": "string",
+  "executor": "string",
+  "executorAdapter": "string",
   "latestExecutionStatus": "string (optional)"
 }
 ```
@@ -227,7 +229,9 @@ executor_done / executor_blocked
     "branch": "string",
     "handoffPath": "string",
     "packetId": "string (optional)",
-    "name": "string (optional)"
+    "name": "string (optional)",
+    "executorAdapter": "string (optional)",
+    "executor_adapter": "string (optional)"
   }
   ```
 - **Response Body**:
@@ -254,7 +258,8 @@ executor_done / executor_blocked
       "model": "string (optional)",
       "repo": "string (optional)",
       "branch": "string (optional)",
-      "validationCommands": "string (optional)"
+      "validationCommands": "string (optional)",
+      "executorAdapter": "string (optional)"
     }
   }
   ```
@@ -372,6 +377,7 @@ executor_done / executor_blocked
   - Lifecycle states: `approved_for_executor` → `executor_dispatched` → `executor_done` | `executor_blocked`.
   - Output artifacts: `executor_stdout.txt`, `executor_stderr.txt`, `command_log.txt`, `executor_result.txt`.
   - `cancel` and `recover` return `501 Not Implemented` when unavailable.
+  - Future adapters (`codex` and `antigravity`) will safely block execution until they are implemented.
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
