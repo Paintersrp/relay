@@ -93,6 +93,22 @@ type NormalizedExecutorResult struct {
 	ParseError         string
 }
 
+type ExecutorPreflightCheck struct {
+	Name   string `json:"name"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type ExecutorPreflightResult struct {
+	OK             bool                     `json:"ok"`
+	Adapter        AdapterID                `json:"adapter"`
+	Binary         string                   `json:"binary,omitempty"`
+	WorkDir        string                   `json:"workDir,omitempty"`
+	CommandPreview string                   `json:"commandPreview,omitempty"`
+	Checks         []ExecutorPreflightCheck `json:"checks"`
+	BlockerText    string                   `json:"blockerText,omitempty"`
+}
+
 type ExecutorAdapter interface {
 	ID() AdapterID
 	BuildInvocation(req ExecutorAdapterRequest) (ExecutorInvocation, error)

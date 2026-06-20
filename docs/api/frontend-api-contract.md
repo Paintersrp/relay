@@ -210,6 +210,11 @@ For legacy compatibility, if no explicit adapter field is provided during planne
 - If `target_executor` maps to a known adapter alias (e.g., `codex`), it is accepted.
 - If `target_executor` contains a non-adapter value (such as `deepseek-v4-flash`, `manual`, or `other`), the system safely ignores it and defaults to `opencode_go` rather than returning an error.
 
+**Executor Preflight Behavior**:
+Before launching any executor command, Relay performs local preflight checks for binary availability, workdir existence, stdin/prompt source existence, and command preview presence.
+Preflight does not run the executor CLI or perform auth probes.
+If preflight fails, Relay blocks the run as `executor_blocked` and writes `executor_result` plus `command_log` artifacts with the preflight failure details.
+
 ## Endpoints
 
 ### 1. GET `/api/runs`

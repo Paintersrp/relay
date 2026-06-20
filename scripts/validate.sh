@@ -15,6 +15,9 @@ SUMMARY="$OUT_DIR/summary.txt"
   echo
 } >> "$SUMMARY"
 
+COMMANDS_JSONL="$OUT_DIR/commands.jsonl"
+: > "$COMMANDS_JSONL"
+
 overall=0
 step=0
 
@@ -29,6 +32,7 @@ run_step() {
   rc=$?
   echo "exit_code: $rc" >> "$log"
   echo "$name: $rc" | tee -a "$SUMMARY"
+  printf '{"step":%d,"name":"%s","log":"%s","exit_code":%d}\n' "$step" "$name" "$log" "$rc" >> "$COMMANDS_JSONL"
   if [ "$rc" -ne 0 ]; then
     overall=1
   fi
@@ -45,6 +49,7 @@ run_shell_step() {
   rc=$?
   echo "exit_code: $rc" >> "$log"
   echo "$name: $rc" | tee -a "$SUMMARY"
+  printf '{"step":%d,"name":"%s","log":"%s","exit_code":%d}\n' "$step" "$name" "$log" "$rc" >> "$COMMANDS_JSONL"
   if [ "$rc" -ne 0 ]; then
     overall=1
   fi
@@ -59,4 +64,8 @@ run_shell_step web-build "cd apps/web && npm run build"
 echo >> "$SUMMARY"
 echo "overall: $overall" | tee -a "$SUMMARY"
 echo "validation output: $OUT_DIR"
+
+LATEST_DIR="$(dirname "$OUT_DIR")"
+printf "%s\n" "$OUT_DIR" > "$LATEST_DIR/latest.txt"
+
 exit "$overall"

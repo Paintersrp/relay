@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -53,6 +55,7 @@ type DispatchParams struct {
 	EventHub    *events.Hub
 	RunID       int64
 	Adapter     ExecutorAdapter
+	Preflight   func(ExecutorInvocation) ExecutorPreflightResult
 	RunAgentCmd func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult
 	LaunchAsync func(func())
 }
@@ -70,6 +73,13 @@ func (p *DispatchParams) log() *slog.Logger {
 		return p.Log
 	}
 	return slog.New(slog.NewTextHandler(os.Stderr, nil))
+}
+
+func (p *DispatchParams) preflight() func(ExecutorInvocation) ExecutorPreflightResult {
+	if p.Preflight != nil {
+		return p.Preflight
+	}
+	return defaultExecutorPreflight
 }
 
 func (p *DispatchParams) runner() func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
@@ -178,6 +188,105 @@ func updateRunStatus(store *store.Store, runID int64, status string) {
 		return
 	}
 	store.UpdateRunStatus(runID, status)
+}
+
+func defaultExecutorPreflight(inv ExecutorInvocation) ExecutorPreflightResult {
+	res := ExecutorPreflightResult{
+		OK:             true,
+		Adapter:        inv.Adapter,
+		Binary:         inv.Binary,
+		WorkDir:        inv.WorkDir,
+		CommandPreview: inv.Preview,
+		Checks:         []ExecutorPreflightCheck{},
+	}
+
+	addCheck := func(name string, ok bool, detail string) {
+		res.Checks = append(res.Checks, ExecutorPreflightCheck{Name: name, OK: ok, Detail: detail})
+		if !ok && res.OK {
+			res.OK = false
+			res.BlockerText = detail
+		}
+	}
+
+	if inv.Binary == "" {
+		addCheck("binary_configured", false, "executor binary is not configured")
+	} else {
+		if filepath.IsAbs(inv.Binary) || strings.ContainsAny(inv.Binary, `/\`) {
+			info, err := os.Stat(inv.Binary)
+			if err != nil {
+				addCheck("binary_available", false, fmt.Sprintf("executor binary not found at %s", inv.Binary))
+			} else if info.IsDir() {
+				addCheck("binary_available", false, fmt.Sprintf("executor binary is a directory at %s", inv.Binary))
+			} else {
+				addCheck("binary_available", true, "binary found")
+			}
+		} else {
+			_, err := exec.LookPath(inv.Binary)
+			if err != nil {
+				addCheck("binary_available", false, fmt.Sprintf("executor binary %s not found in PATH", inv.Binary))
+			} else {
+				addCheck("binary_available", true, "binary found in PATH")
+			}
+		}
+	}
+
+	if inv.WorkDir == "" {
+		addCheck("workdir_configured", false, "workdir is not configured")
+	} else {
+		info, err := os.Stat(inv.WorkDir)
+		if err != nil {
+			addCheck("workdir_available", false, fmt.Sprintf("workdir not found: %s", inv.WorkDir))
+		} else if !info.IsDir() {
+			addCheck("workdir_available", false, fmt.Sprintf("workdir is not a directory: %s", inv.WorkDir))
+		} else {
+			addCheck("workdir_available", true, "workdir exists")
+		}
+	}
+
+	if inv.StdinSource == "" || inv.StdinSource == "/dev/null" {
+		addCheck("stdin_source", true, "no stdin source required")
+	} else {
+		info, err := os.Stat(inv.StdinSource)
+		if err != nil {
+			addCheck("stdin_source", false, fmt.Sprintf("stdin source not found: %s", inv.StdinSource))
+		} else if info.IsDir() {
+			addCheck("stdin_source", false, fmt.Sprintf("stdin source is a directory: %s", inv.StdinSource))
+		} else {
+			addCheck("stdin_source", true, "stdin source found")
+		}
+	}
+
+	if inv.Preview == "" {
+		addCheck("command_preview", false, "command preview is empty")
+	} else {
+		addCheck("command_preview", true, "command preview present")
+	}
+
+	return res
+}
+
+func blockExecutorPreflight(p *DispatchParams, s *store.Store, runID int64, inv ExecutorInvocation, res ExecutorPreflightResult) {
+	deleteExecutorArtifacts(s, runID)
+
+	jsonBytes, _ := json.MarshalIndent(res, "", "  ")
+
+	logText := fmt.Sprintf("Preflight: BLOCKED\nCommand: %s\nWorkDir: %s\nModel: %s\nAgent: %s\n\n--- PREFLIGHT DETAILS ---\n%s\n", inv.Preview, inv.WorkDir, inv.Model, inv.Agent, string(jsonBytes))
+	logPath, _ := writeExecutorArtifact(runID, ArtifactKindCommandLog, []byte(logText))
+	if logPath != "" {
+		recordExecutorArtifact(s, runID, ArtifactKindCommandLog, logPath, "text/plain")
+	}
+
+	resText := fmt.Sprintf("STATUS: BLOCKED\n\nBlocker/error only if blocked: executor preflight failed: %s\n", res.BlockerText)
+	resPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte(resText))
+	if resPath != "" {
+		recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resPath, "text/plain")
+	}
+
+	createEvent(s, runID, "warn", "Executor preflight blocked: "+res.BlockerText)
+	publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
+
+	updateRunStatus(s, runID, StatusExecutorBlocked)
+	publishRunEvent(p.EventHub, runID, events.KindRunSummary, "executor", "blocked")
 }
 
 type streamingState struct {
@@ -556,6 +665,12 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 		createEvent(s, runID, "warn", "Executor dispatch blocked: an execution is already running")
 		publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
 		return DispatchResult{}, fmt.Errorf("an execution is already running for this run")
+	}
+
+	preflightRes := p.preflight()(invocation)
+	if !preflightRes.OK {
+		blockExecutorPreflight(p, s, runID, invocation, preflightRes)
+		return DispatchResult{Dispatched: false}, fmt.Errorf("executor preflight failed: %s", preflightRes.BlockerText)
 	}
 
 	exec, err := s.CreateAgentExecution(runID, string(adapter.ID()), "starting", invocation.Preview)

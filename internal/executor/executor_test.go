@@ -147,6 +147,9 @@ func TestDispatchBrief_AcceptsApprovedForExecutor(t *testing.T) {
 		Store: s,
 		Log:   slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		RunID: runID,
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 			runnerCalled = true
 			recordedStdin = stdin
@@ -338,6 +341,9 @@ func TestDispatchBrief_DefaultProviderRemainsOpenCodeGo(t *testing.T) {
 		Store: s,
 		Log:   slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		RunID: runID,
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 0\n"}
 		},
@@ -398,6 +404,9 @@ func TestDispatchBrief_UsesInjectedAdapter(t *testing.T) {
 		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		RunID:   runID,
 		Adapter: &fakeAdapter{},
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 			recordedBin = binary
 			recordedArgs = args
@@ -689,6 +698,9 @@ func TestDispatchBrief_CodexIntegrationWritesArtifact(t *testing.T) {
 		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		RunID:   runID,
 		Adapter: adapter,
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 			recordedBin = binary
 
@@ -786,6 +798,9 @@ func TestDispatchBrief_CodexDoesNotReuseStaleLastMessage(t *testing.T) {
 		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		RunID:   runID,
 		Adapter: adapter,
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 			// fake runner does not write the --output-last-message file
 			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "{\"event\": \"done\"}"}
@@ -950,6 +965,9 @@ func TestDispatchBrief_AntigravityJSONErrorWritesExecutorResult(t *testing.T) {
 		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		RunID:   runID,
 		Adapter: adapter,
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: `{"status":"error","error":"auth failed"}`}
 		},
@@ -1016,6 +1034,9 @@ func TestDispatchBrief_AntigravityNonZeroExitBlocksDespiteSuccessJSON(t *testing
 		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		RunID:   runID,
 		Adapter: adapter,
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 			// Non-zero exit code but success JSON
 			return pipeline.AgentCommandRunResult{ExitCode: 1, Stdout: `{"status":"success"}`}
@@ -1065,5 +1086,131 @@ func TestDispatchBrief_AntigravityNonZeroExitBlocksDespiteSuccessJSON(t *testing
 	}
 	if !foundResult {
 		t.Errorf("expected executor_result artifact")
+	}
+}
+
+func TestDefaultExecutorPreflight_MissingBinaryBlocks(t *testing.T) {
+	workDir := t.TempDir()
+	stdinSource := filepath.Join(workDir, "source.txt")
+	os.WriteFile(stdinSource, []byte("content"), 0644)
+
+	res := defaultExecutorPreflight(ExecutorInvocation{
+		Adapter:     "fake",
+		Binary:      "relay-definitely-missing-executor-bin",
+		WorkDir:     workDir,
+		StdinSource: stdinSource,
+		Preview:     "relay-definitely-missing-executor-bin < source.txt",
+	})
+
+	if res.OK {
+		t.Errorf("expected preflight to fail due to missing binary")
+	}
+	if res.BlockerText == "" || (!strings.Contains(res.BlockerText, "relay-definitely-missing-executor-bin") && !strings.Contains(res.BlockerText, "not found")) {
+		t.Errorf("expected blocker text mentioning binary not found, got %q", res.BlockerText)
+	}
+
+	foundFailedBinaryCheck := false
+	for _, check := range res.Checks {
+		if check.Name == "binary_available" && !check.OK {
+			foundFailedBinaryCheck = true
+		}
+	}
+	if !foundFailedBinaryCheck {
+		t.Errorf("expected failed binary_available check in checks: %v", res.Checks)
+	}
+}
+
+func TestDispatchBrief_PreflightMissingBinaryBlocksWithoutRunner(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	_, err := DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: &fakeAdapter{},
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			t.Fatal("runner should not be called when preflight fails")
+			return pipeline.AgentCommandRunResult{}
+		},
+	})
+
+	if err == nil {
+		t.Fatal("expected error due to preflight failure")
+	}
+
+	exec, _ := s.GetLatestAgentExecutionByRun(runID)
+	if exec != nil {
+		t.Fatalf("expected no execution row created, found one")
+	}
+
+	run, _ := s.GetRun(runID)
+	if run.Status != StatusExecutorBlocked {
+		t.Errorf("expected run status to be %s, got %s", StatusExecutorBlocked, run.Status)
+	}
+
+	artifactsList, _ := s.ListArtifactsByRun(runID)
+	foundLog := false
+	foundResult := false
+	for _, a := range artifactsList {
+		if a.Kind == ArtifactKindCommandLog {
+			foundLog = true
+			content, _ := os.ReadFile(a.Path)
+			if !strings.Contains(string(content), "Preflight: BLOCKED") {
+				t.Errorf("expected command_log to contain Preflight: BLOCKED, got: %s", string(content))
+			}
+		}
+		if a.Kind == ArtifactKindExecutorResult {
+			foundResult = true
+			content, _ := os.ReadFile(a.Path)
+			if !strings.Contains(string(content), "STATUS: BLOCKED") {
+				t.Errorf("expected executor_result to contain STATUS: BLOCKED, got: %s", string(content))
+			}
+		}
+	}
+
+	if !foundLog {
+		t.Errorf("expected command_log artifact to be written on preflight block")
+	}
+	if !foundResult {
+		t.Errorf("expected executor_result artifact to be written on preflight block")
+	}
+}
+
+func TestDispatchBrief_PreflightInjectionAllowsExistingFakeRunnerTests(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	done := make(chan struct{})
+	runnerCalled := false
+
+	res, err := DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: &fakeAdapter{},
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			runnerCalled = true
+			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "fake output"}
+		},
+		LaunchAsync: func(fn func()) {
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if !res.Dispatched {
+		t.Errorf("expected Dispatched=true")
+	}
+	<-done
+	if !runnerCalled {
+		t.Errorf("expected runner to be called")
 	}
 }

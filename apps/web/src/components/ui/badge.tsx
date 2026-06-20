@@ -14,6 +14,14 @@ const badgeVariants = cva(
           "bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
         destructive:
           "bg-destructive/10 text-destructive focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive/20",
+        warning:
+          "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border border-yellow-500/20",
+        info:
+          "bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/20",
+        success:
+          "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
+        running:
+          "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20",
         outline:
           "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
         ghost:
@@ -27,13 +35,18 @@ const badgeVariants = cva(
   }
 )
 
+export interface BadgeProps
+  extends React.ComponentProps<"span">,
+    VariantProps<typeof badgeVariants> {
+  asChild?: boolean
+}
+
 function Badge({
   className,
   variant = "default",
   asChild = false,
   ...props
-}: React.ComponentProps<"span"> &
-  VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
+}: BadgeProps) {
   const Comp = asChild ? Slot.Root : "span"
 
   return (
