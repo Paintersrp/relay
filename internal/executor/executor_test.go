@@ -586,10 +586,34 @@ func TestCodexAdapter_DefaultModelUsesConfigDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
+	if inv.Model != "codex-config-default" {
+		t.Errorf("expected model sentinel codex-config-default, got %q", inv.Model)
+	}
 	for _, a := range inv.Args {
 		if a == "--model" {
 			t.Errorf("expected no --model arg when config model is empty")
 		}
+	}
+}
+
+func TestCodexAdapter_ExplicitModelAddsModelArg(t *testing.T) {
+	adapter := CodexAdapter{Config: CodexAdapterConfig{Binary: "codex", Sandbox: "workspace-write", Model: "gpt-5.1-codex-max"}}
+	req := ExecutorAdapterRequest{RunID: 1, RepoPath: "/tmp/repo", BriefContent: "# Brief", BriefPath: "/tmp/brief.md"}
+	inv, err := adapter.BuildInvocation(req)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if inv.Model != "gpt-5.1-codex-max" {
+		t.Fatalf("expected explicit model, got %q", inv.Model)
+	}
+	found := false
+	for i, arg := range inv.Args {
+		if arg == "--model" && i+1 < len(inv.Args) && inv.Args[i+1] == "gpt-5.1-codex-max" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected --model gpt-5.1-codex-max in args: %v", inv.Args)
 	}
 }
 
@@ -598,10 +622,10 @@ func TestCodexAdapter_RejectsDangerFullAccess(t *testing.T) {
 		Config: CodexAdapterConfig{Binary: "codex", Sandbox: "danger-full-access"},
 	}
 	req := ExecutorAdapterRequest{
-		RunID:         1,
-		RepoPath:      "/tmp/repo",
-		BriefContent:  "# Brief",
-		BriefPath:     "/tmp/brief.md",
+		RunID:        1,
+		RepoPath:     "/tmp/repo",
+		BriefContent: "# Brief",
+		BriefPath:    "/tmp/brief.md",
 	}
 	_, err := adapter.BuildInvocation(req)
 	if err == nil {
@@ -657,18 +681,18 @@ func TestDispatchBrief_CodexIntegrationWritesArtifact(t *testing.T) {
 		Adapter: adapter,
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 			recordedBin = binary
-			
+
 			var resultFile string
 			for i, a := range args {
 				if a == "--output-last-message" && i+1 < len(args) {
 					resultFile = args[i+1]
 				}
 			}
-			
+
 			if resultFile != "" {
 				os.WriteFile(resultFile, []byte("STATUS: DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 12\n"), 0644)
 			}
-			
+
 			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "{\"event\": \"start\"}\n{\"event\": \"chunk\", \"text\": \"hello\"}\n{\"event\": \"end\"}"}
 		},
 		LaunchAsync: func(fn func()) {
@@ -694,12 +718,12 @@ func TestDispatchBrief_CodexIntegrationWritesArtifact(t *testing.T) {
 	if exec.Status != "completed" {
 		t.Errorf("expected exec status completed, got %s", exec.Status)
 	}
-	
+
 	run, _ := s.GetRun(runID)
 	if run.Status != StatusExecutorDone {
 		t.Errorf("expected run status %s, got %s", StatusExecutorDone, run.Status)
 	}
-	
+
 	artifactsList, err := s.ListArtifactsByRun(runID)
 	if err != nil {
 		t.Fatalf("get artifacts: %v", err)
@@ -723,5 +747,72 @@ func TestDispatchBrief_CodexIntegrationWritesArtifact(t *testing.T) {
 	}
 	if !foundResult {
 		t.Errorf("expected executor_result artifact")
+	}
+}
+
+func TestDispatchBrief_CodexDoesNotReuseStaleLastMessage(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	_, err := s.UpdateRunExecutorAdapter(runID, "codex")
+	if err != nil {
+		t.Fatalf("update run executor adapter: %v", err)
+	}
+
+	stalePath, err := artifacts.Write(runID, ArtifactKindCodexLastMessage, "codex_last_message.txt", []byte("STATUS: DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 99\n"))
+	if err != nil {
+		t.Fatalf("write stale codex message: %v", err)
+	}
+	if _, err := s.CreateArtifact(runID, ArtifactKindCodexLastMessage, stalePath, "text/plain"); err != nil {
+		t.Fatalf("record stale artifact: %v", err)
+	}
+
+	done := make(chan struct{})
+
+	adapter := &CodexAdapter{Config: CodexAdapterConfig{Binary: "codex", Sandbox: "workspace-write"}}
+	_, err = DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: adapter,
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			// fake runner does not write the --output-last-message file
+			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "{\"event\": \"done\"}"}
+		},
+		LaunchAsync: func(fn func()) {
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	<-done
+
+	run, _ := s.GetRun(runID)
+	if run.Status != StatusExecutorBlocked {
+		t.Errorf("expected run status %s, got %s", StatusExecutorBlocked, run.Status)
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("get artifacts: %v", err)
+	}
+
+	for _, a := range artifactsList {
+		if a.Kind == ArtifactKindCodexLastMessage {
+			t.Errorf("expected no codex_last_message artifact in DB, found one: %s", a.Path)
+		}
+		if a.Kind == ArtifactKindExecutorResult {
+			content, _ := os.ReadFile(a.Path)
+			if strings.Contains(string(content), "STATUS: DONE") {
+				t.Errorf("executor_result contains stale DONE content: %s", string(content))
+			}
+		}
+	}
+
+	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
+		t.Errorf("expected stale path %s to not exist, got err %v", stalePath, err)
 	}
 }

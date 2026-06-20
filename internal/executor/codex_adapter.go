@@ -70,8 +70,10 @@ func (a *CodexAdapter) BuildInvocation(req ExecutorAdapterRequest) (ExecutorInvo
 		"--output-last-message", lastMessagePath,
 	}
 
-	model := a.Config.Model
+	model := strings.TrimSpace(a.Config.Model)
+	invocationModel := model
 	if model == "" {
+		invocationModel = "codex-config-default"
 		// Do not pass --model, allow Codex to use configured default.
 	} else {
 		args = append(args, "--model", model)
@@ -94,7 +96,7 @@ func (a *CodexAdapter) BuildInvocation(req ExecutorAdapterRequest) (ExecutorInvo
 		Stdin:       req.BriefContent,
 		StdinSource: req.BriefPath,
 		StdinBytes:  len([]byte(req.BriefContent)),
-		Model:       model,
+		Model:       invocationModel,
 		Agent:       "codex",
 		Preview:     preview,
 		ResultFile:  lastMessagePath,

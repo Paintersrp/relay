@@ -26,10 +26,10 @@ const (
 
 	DefaultExecutorTimeout = 30 * time.Minute
 
-	ArtifactKindExecutorStdout = "executor_stdout"
-	ArtifactKindExecutorStderr = "executor_stderr"
-	ArtifactKindCommandLog     = "command_log"
-	ArtifactKindExecutorResult = "executor_result"
+	ArtifactKindExecutorStdout   = "executor_stdout"
+	ArtifactKindExecutorStderr   = "executor_stderr"
+	ArtifactKindCommandLog       = "command_log"
+	ArtifactKindExecutorResult   = "executor_result"
 	ArtifactKindCodexLastMessage = "codex_last_message"
 )
 
@@ -162,6 +162,7 @@ func deleteExecutorArtifacts(store *store.Store, runID int64) {
 		ArtifactKindExecutorStderr,
 		ArtifactKindCommandLog,
 		ArtifactKindExecutorResult,
+		ArtifactKindCodexLastMessage,
 	} {
 		store.DeleteArtifactsByRunKind(runID, kind)
 		artifacts.Delete(runID, kind, pipeline.ArtifactFilename(kind))
