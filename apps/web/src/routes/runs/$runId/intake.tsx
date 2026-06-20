@@ -420,8 +420,8 @@ function IntakeMainContent({
               </div>
             )}
             {executorAdapter === 'antigravity' && (
-              <div className="text-[10px] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded p-1.5 leading-tight">
-                <strong>Note:</strong> Antigravity execution is not yet implemented. The adapter will be persisted, but execution will safely block.
+              <div className="text-[10px] text-muted-foreground bg-muted/20 border border-border/40 rounded p-1.5 leading-tight">
+                <strong>Note:</strong> Antigravity dispatch uses the local Antigravity CLI configuration and authentication available to the Relay daemon.
               </div>
             )}
           </div>

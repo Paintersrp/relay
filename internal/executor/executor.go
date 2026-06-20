@@ -41,6 +41,10 @@ var knownSecrets = []string{
 	"RELAY_CODEX_MODEL",
 	"RELAY_CODEX_PROFILE",
 	"OPENAI_API_KEY",
+	"RELAY_ANTIGRAVITY_BIN",
+	"RELAY_ANTIGRAVITY_MODEL",
+	"RELAY_ANTIGRAVITY_APPROVE_FLAG",
+	"ANTIGRAVITY_API_KEY",
 }
 
 type DispatchParams struct {
@@ -376,6 +380,23 @@ func runBackgroundDispatch(
 	}
 
 	s.UpdateAgentExecutionStatus(execID, execStatus, &ec, &startedAt, &finishedStr, &stdoutPath, &stderrPath, &combinedPath, nil, errPtr)
+
+	if invocation.RequireZeroExit && runResult.ExitCode != 0 {
+		blocker := strings.TrimSpace(runResult.Error)
+		if blocker == "" {
+			blocker = fmt.Sprintf("executor exited with code %d", runResult.ExitCode)
+		}
+		resultText := fmt.Sprintf("STATUS: BLOCKED\n\nBlocker/error only if blocked: %s\n", blocker)
+		resultPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte(resultText))
+		if resultPath != "" {
+			recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
+		}
+		createEvent(s, runID, "warn", "Executor blocked: "+blocker)
+		publishRunEvent(hub, runID, events.KindStepAgent, "executor", "blocked")
+		updateRunStatus(s, runID, StatusExecutorBlocked)
+		publishRunEvent(hub, runID, events.KindRunSummary, "executor", "blocked")
+		return
+	}
 
 	collectAndPersistGitEvidence(s, runID, repo.Path)
 

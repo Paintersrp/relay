@@ -54,25 +54,26 @@ func NewAdapterFromID(id string) (ExecutorAdapter, error) {
 	case AdapterCodex:
 		return NewCodexAdapterFromEnv(), nil
 	case AdapterAntigravity:
-		return nil, fmt.Errorf("executor adapter %q is not implemented", norm)
+		return NewAntigravityAdapterFromEnv(), nil
 	default:
 		return nil, fmt.Errorf("unknown executor adapter %q", id)
 	}
 }
 
 type ExecutorInvocation struct {
-	Adapter     AdapterID
-	Binary      string
-	Args        []string
-	WorkDir     string
-	Stdin       string
-	StdinSource string
-	StdinBytes  int
-	Model       string
-	Agent       string
-	Variant     string
-	Preview     string
-	ResultFile  string
+	Adapter         AdapterID
+	Binary          string
+	Args            []string
+	WorkDir         string
+	Stdin           string
+	StdinSource     string
+	StdinBytes      int
+	Model           string
+	Agent           string
+	Variant         string
+	Preview         string
+	ResultFile      string
+	RequireZeroExit bool
 }
 
 type ExecutorAdapterRequest struct {

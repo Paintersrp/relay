@@ -188,10 +188,13 @@ The `executorAdapter` / `executor_adapter` field controls which executor backend
 
 **Canonical Values**:
 Responses always emit canonical values: `opencode_go`, `codex`, or `antigravity`.
-`opencode_go` and `codex` are active adapters. `antigravity` remains selectable/persistable but blocks until implemented.
+`opencode_go`, `codex`, and `antigravity` are active adapters.
 Codex dispatch relies on local Codex CLI installation/auth/config available to the Relay daemon.
 Codex does not require Relay to store OpenAI API keys.
 Codex sandbox defaults to `workspace-write`; `danger-full-access` is not allowed by Relay.
+Antigravity dispatch relies on local Antigravity CLI installation/auth/config available to the Relay daemon.
+Antigravity does not require Relay to store API keys.
+Antigravity dispatch uses a prompt file, empty stdin, no-color JSON output, and a zero-exit plus JSON-status success policy.
 
 **Accepted Input Aliases**:
 Input resolution is case-insensitive and ignores surrounding whitespace. Aliases map to canonical values:
@@ -402,7 +405,6 @@ For legacy compatibility, if no explicit adapter field is provided during planne
   - Lifecycle states: `approved_for_executor` → `executor_dispatched` → `executor_done` | `executor_blocked`.
   - Output artifacts: `executor_stdout.txt`, `executor_stderr.txt`, `command_log.txt`, `executor_result.txt`.
   - `cancel` and `recover` return `501 Not Implemented` when unavailable.
-  - Future adapter `antigravity` will safely block execution until it is implemented.
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 

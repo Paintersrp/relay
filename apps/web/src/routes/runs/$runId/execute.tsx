@@ -336,14 +336,6 @@ function ExecuteMainContent({
           </span>
         </div>
         
-        {run.executorAdapter === 'antigravity' && executorPhase === 'idle' && (
-          <div className="flex items-start gap-1.5 text-xs text-yellow-400 bg-yellow-950/20 border border-yellow-900/40 rounded p-2 mt-1">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <span>
-              The selected executor adapter (<strong>{run.executorAdapter}</strong>) is not yet supported. Execution will be blocked until implemented.
-            </span>
-          </div>
-        )}
         {executorPhase === 'running' && (
           <p className="text-xs text-muted-foreground/70 mt-1">
             Executor is actively running. Live log streaming via SSE is not yet available; refresh to see latest output.

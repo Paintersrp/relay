@@ -1,4 +1,4 @@
-.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke
+.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean validate mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke
 
 install:
 	npm install
@@ -26,6 +26,9 @@ dev-server:
 
 test:
 	go test ./...
+
+validate:
+	bash scripts/validate.sh
 
 fmt:
 	go fmt ./...

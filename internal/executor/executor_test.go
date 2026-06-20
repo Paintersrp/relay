@@ -428,11 +428,11 @@ func TestDispatchBrief_UsesInjectedAdapter(t *testing.T) {
 	}
 }
 
-func TestDispatchBrief_UnsupportedAdapterBlocks(t *testing.T) {
+func TestDispatchBrief_UnknownAdapterBlocks(t *testing.T) {
 	s := setupExecutorTestStore(t)
 	runID := createExecutorReadyRun(t, s, "approved_for_executor")
 	writeExecutorBrief(t, s, runID, "# Brief")
-	_, err := s.UpdateRunExecutorAdapter(runID, "antigravity")
+	_, err := s.DB().Exec("UPDATE runs SET executor_adapter = 'unknown_adapter' WHERE id = ?", runID)
 	if err != nil {
 		t.Fatalf("update run executor adapter: %v", err)
 	}
@@ -445,8 +445,8 @@ func TestDispatchBrief_UnsupportedAdapterBlocks(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unsupported adapter, got nil")
 	}
-	if !strings.Contains(err.Error(), "not implemented") {
-		t.Errorf("expected not implemented error, got: %v", err)
+	if !strings.Contains(err.Error(), "unknown executor adapter") {
+		t.Errorf("expected unknown adapter error, got: %v", err)
 	}
 	if res.Dispatched {
 		t.Error("expected Dispatched=false")
@@ -522,13 +522,23 @@ func TestNewAdapterFromID_CodexReturnsAdapter(t *testing.T) {
 	}
 }
 
-func TestNewAdapterFromID_AntigravityStillBlocks(t *testing.T) {
-	_, err := NewAdapterFromID("antigravity")
-	if err == nil {
-		t.Fatal("expected error, got nil")
+func TestNewAdapterFromID_AntigravityReturnsAdapter(t *testing.T) {
+	adapter, err := NewAdapterFromID("antigravity")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "not implemented") {
-		t.Errorf("expected not implemented error, got %v", err)
+	if adapter.ID() != AdapterAntigravity {
+		t.Errorf("expected AdapterAntigravity, got %s", adapter.ID())
+	}
+}
+
+func TestNewAdapterFromID_AgyReturnsAntigravityAdapter(t *testing.T) {
+	adapter, err := NewAdapterFromID("agy")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if adapter.ID() != AdapterAntigravity {
+		t.Errorf("expected AdapterAntigravity, got %s", adapter.ID())
 	}
 }
 
@@ -814,5 +824,156 @@ func TestDispatchBrief_CodexDoesNotReuseStaleLastMessage(t *testing.T) {
 
 	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
 		t.Errorf("expected stale path %s to not exist, got err %v", stalePath, err)
+	}
+}
+
+func TestAntigravityAdapter_BuildInvocationNonInteractive(t *testing.T) {
+	adapter := AntigravityAdapter{
+		Config: AntigravityAdapterConfig{Binary: "antigravity", ApproveFlag: "--yes", Model: "gpt-4"},
+	}
+	req := ExecutorAdapterRequest{
+		RunID:        1,
+		RepoPath:     "/tmp/repo",
+		BriefContent: "# Brief\nDo the thing.",
+		BriefPath:    "/tmp/repo/executor_brief.md",
+	}
+	inv, err := adapter.BuildInvocation(req)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if inv.Adapter != AdapterAntigravity {
+		t.Errorf("expected adapter %s, got %s", AdapterAntigravity, inv.Adapter)
+	}
+	if inv.Binary != "antigravity" {
+		t.Errorf("expected binary antigravity, got %s", inv.Binary)
+	}
+
+	expectedArgs := []string{"run", "--prompt-file", "/tmp/repo/executor_brief.md", "--yes", "--no-color", "--output", "json", "--model", "gpt-4"}
+	for i, a := range expectedArgs {
+		if i >= len(inv.Args) || inv.Args[i] != a {
+			t.Errorf("arg %d expected %s, got %v", i, a, inv.Args)
+		}
+	}
+	if inv.Stdin != "" {
+		t.Errorf("expected empty stdin, got %q", inv.Stdin)
+	}
+	if inv.StdinSource != "/dev/null" {
+		t.Errorf("expected stdin source /dev/null, got %s", inv.StdinSource)
+	}
+	if !strings.Contains(inv.Preview, "< /dev/null") {
+		t.Errorf("preview missing expected < /dev/null: %s", inv.Preview)
+	}
+	if !inv.RequireZeroExit {
+		t.Errorf("expected RequireZeroExit true")
+	}
+}
+
+func TestAntigravityAdapter_ApproveFlagNone(t *testing.T) {
+	adapter := AntigravityAdapter{
+		Config: AntigravityAdapterConfig{Binary: "antigravity", ApproveFlag: "none"},
+	}
+	req := ExecutorAdapterRequest{RunID: 1, RepoPath: "/tmp/repo", BriefContent: "# Brief", BriefPath: "/tmp/brief.md"}
+	inv, err := adapter.BuildInvocation(req)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	for _, a := range inv.Args {
+		if a == "--yes" || a == "none" {
+			t.Errorf("expected no approve flag, got %s", a)
+		}
+	}
+}
+
+func TestAntigravityAdapter_NormalizeResultJSONSuccess(t *testing.T) {
+	adapter := AntigravityAdapter{}
+	raw := `{"status":"success"}`
+	res := adapter.NormalizeResult(raw)
+	if res.Status != pipeline.AgentResultDone {
+		t.Errorf("expected DONE, got %v", res.Status)
+	}
+	if !strings.Contains(res.ExecutorResultText, "STATUS: DONE") {
+		t.Errorf("expected text to contain STATUS: DONE, got %s", res.ExecutorResultText)
+	}
+}
+
+func TestAntigravityAdapter_NormalizeResultJSONError(t *testing.T) {
+	adapter := AntigravityAdapter{}
+	raw := `{"status":"error","error":"auth failed"}`
+	res := adapter.NormalizeResult(raw)
+	if res.Status != pipeline.AgentResultBlocked {
+		t.Errorf("expected BLOCKED, got %v", res.Status)
+	}
+	if !strings.Contains(res.BlockerText, "auth failed") {
+		t.Errorf("expected blocker text to contain auth failed, got %s", res.BlockerText)
+	}
+}
+
+func TestDispatchBrief_AntigravityNonZeroExitBlocksDespiteSuccessJSON(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	_, err := s.UpdateRunExecutorAdapter(runID, "antigravity")
+	if err != nil {
+		t.Fatalf("update run executor adapter: %v", err)
+	}
+
+	done := make(chan struct{})
+
+	adapter := &AntigravityAdapter{Config: AntigravityAdapterConfig{Binary: "antigravity", ApproveFlag: "--yes"}}
+	_, err = DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: adapter,
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			// Non-zero exit code but success JSON
+			return pipeline.AgentCommandRunResult{ExitCode: 1, Stdout: `{"status":"success"}`}
+		},
+		LaunchAsync: func(fn func()) {
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	<-done
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Provider != string(AdapterAntigravity) {
+		t.Errorf("expected provider antigravity, got %s", exec.Provider)
+	}
+	if exec.Status != "failed" {
+		t.Errorf("expected exec status failed, got %s", exec.Status)
+	}
+
+	run, _ := s.GetRun(runID)
+	if run.Status != StatusExecutorBlocked {
+		t.Errorf("expected run status %s, got %s", StatusExecutorBlocked, run.Status)
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("get artifacts: %v", err)
+	}
+	foundResult := false
+	for _, a := range artifactsList {
+		if a.Kind == ArtifactKindExecutorResult {
+			foundResult = true
+			content, _ := os.ReadFile(a.Path)
+			if strings.Contains(string(content), "STATUS: DONE") {
+				t.Errorf("executor_result content mismatch, expected BLOCKED, got: %s", string(content))
+			}
+			if !strings.Contains(string(content), "STATUS: BLOCKED") {
+				t.Errorf("executor_result should be BLOCKED, got: %s", string(content))
+			}
+		}
+	}
+	if !foundResult {
+		t.Errorf("expected executor_result artifact")
 	}
 }
