@@ -7,6 +7,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import { AppPageFrame } from "@/components/relay/AppPageFrame";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -93,31 +94,26 @@ function NewRunPage() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col flex-1 overflow-y-auto"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
     >
-      {/* Page header */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-border/60">
-        <Button
-          variant="ghost"
-          size="sm"
-          asChild
-          className="gap-1.5 h-7 text-xs -ml-1"
-        >
-          <Link to="/runs">
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to Runs
-          </Link>
-        </Button>
-        <Separator orientation="vertical" className="h-4" />
-        <div>
-          <h1 className="text-base font-semibold">New Run</h1>
-          <p className="text-xs text-muted-foreground">
-            Submit a handoff packet to start a relay run.
-          </p>
-        </div>
-      </div>
-
-      <div className="max-w-2xl mx-auto w-full p-6 flex flex-col gap-6">
+      <AppPageFrame
+        title="New Run"
+        description="Submit a handoff packet to start a relay run."
+        leading={
+          <Button
+            variant="ghost"
+            size="sm"
+            asChild
+            className="-ml-1 h-7 gap-1.5 text-xs"
+          >
+            <Link to="/runs">
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to Runs
+            </Link>
+          </Button>
+        }
+        bodyClassName="mx-auto flex w-full max-w-2xl flex-col gap-6"
+      >
         {/* Error Alert */}
         {errorMsg && (
           <Alert variant="destructive">
@@ -257,7 +253,7 @@ function NewRunPage() {
             )}
           </Button>
         </div>
-      </div>
+      </AppPageFrame>
     </form>
   );
 }

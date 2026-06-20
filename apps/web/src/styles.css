@@ -191,6 +191,15 @@
     var(--sidebar-foreground) 48%,
     transparent
   );
+  --relay-page-header-bg: color-mix(
+    in oklch,
+    var(--surface-base) 94%,
+    var(--surface-shell)
+  );
+  --relay-page-border: var(--border);
+  --relay-page-body-bg: var(--surface-base);
+  --relay-page-title-fg: var(--foreground);
+  --relay-page-description-fg: var(--muted-foreground);
 }
 
 .dark {
