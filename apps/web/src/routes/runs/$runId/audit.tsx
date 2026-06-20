@@ -131,16 +131,18 @@ function AuditPage() {
           events={events || []}
         />
       }
-      sideContent={
-        <>
-          <ValidationPanel summary={run.validationSummary} />
-          {artifacts &&
-            artifacts.map((a) => (
-              <ArtifactPreviewCard key={a.id} artifact={a} runId={run.id} />
-            ))}
-          <LogPreviewPanel logPreview={logPreview} />
-        </>
-      }
+      inspectorPanels={{
+        logs: <LogPreviewPanel logPreview={logPreview} />,
+        artifacts:
+          artifacts && artifacts.length > 0 ? (
+            <>
+              {artifacts.map((a) => (
+                <ArtifactPreviewCard key={a.id} artifact={a} runId={run.id} />
+              ))}
+            </>
+          ) : null,
+        validation: <ValidationPanel summary={run.validationSummary} />,
+      }}
     />
   );
 }
