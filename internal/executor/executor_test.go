@@ -258,3 +258,171 @@ func TestRedactSensitive(t *testing.T) {
 		t.Errorf("expected [REDACTED], got %q", result)
 	}
 }
+
+func TestOpenCodeAdapter_BuildInvocationPreservesCommand(t *testing.T) {
+	adapter := OpenCodeAdapter{
+		Config: pipeline.OpenCodeRunConfig{Binary: "opencode", Agent: "build", Variant: ""},
+	}
+	req := ExecutorAdapterRequest{
+		RunID:         1,
+		RepoPath:      "/tmp/repo",
+		BriefContent:  "# Brief\nDo the thing.",
+		BriefPath:     "/tmp/repo/executor_brief.md",
+		SelectedModel: "anthropic/claude-3-5-sonnet-20241022",
+	}
+	inv, err := adapter.BuildInvocation(req)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if inv.Adapter != AdapterOpenCodeGo {
+		t.Errorf("expected adapter %s, got %s", AdapterOpenCodeGo, inv.Adapter)
+	}
+	if inv.Binary != "opencode" {
+		t.Errorf("expected binary opencode, got %s", inv.Binary)
+	}
+	expectedArgs := []string{"run", "--format", "json", "--dir", "/tmp/repo", "--agent", "build", "--model", "anthropic/claude-3-5-sonnet-20241022", "--thinking", "max"}
+	if len(inv.Args) != len(expectedArgs) {
+		t.Fatalf("expected %d args, got %d", len(expectedArgs), len(inv.Args))
+	}
+	for i, a := range expectedArgs {
+		if inv.Args[i] != a {
+			t.Errorf("arg %d expected %s, got %s", i, a, inv.Args[i])
+		}
+	}
+	if inv.Stdin != "# Brief\nDo the thing." {
+		t.Errorf("expected stdin to be brief content, got %s", inv.Stdin)
+	}
+	if !strings.Contains(inv.Preview, "opencode") || !strings.Contains(inv.Preview, "/tmp/repo") || !strings.Contains(inv.Preview, " < ") {
+		t.Errorf("preview missing expected components: %s", inv.Preview)
+	}
+}
+
+func TestOpenCodeAdapter_BuildInvocationIncludesVariant(t *testing.T) {
+	adapter := OpenCodeAdapter{
+		Config: pipeline.OpenCodeRunConfig{Binary: "opencode", Agent: "build", Variant: "test-variant"},
+	}
+	req := ExecutorAdapterRequest{
+		RunID:         1,
+		RepoPath:      "/tmp/repo",
+		BriefContent:  "# Brief",
+		BriefPath:     "/tmp/brief.md",
+		SelectedModel: "anthropic/claude-sonnet-4-5",
+	}
+	inv, err := adapter.BuildInvocation(req)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	hasVariant := false
+	hasVariantValue := false
+	for _, a := range inv.Args {
+		if a == "--variant" {
+			hasVariant = true
+		}
+		if a == "test-variant" {
+			hasVariantValue = true
+		}
+	}
+	if !hasVariant || !hasVariantValue {
+		t.Errorf("expected variant args included, got args: %v", inv.Args)
+	}
+}
+
+func TestDispatchBrief_DefaultProviderRemainsOpenCodeGo(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief\nDo the thing.\n")
+
+	done := make(chan struct{})
+	_, err := DispatchBrief(&DispatchParams{
+		Store: s,
+		Log:   slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID: runID,
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 0\n"}
+		},
+		LaunchAsync: func(fn func()) {
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	<-done
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Provider != "opencode_go" {
+		t.Errorf("expected provider opencode_go, got %s", exec.Provider)
+	}
+}
+
+type fakeAdapter struct{}
+
+func (a *fakeAdapter) ID() AdapterID {
+	return "fake"
+}
+
+func (a *fakeAdapter) BuildInvocation(req ExecutorAdapterRequest) (ExecutorInvocation, error) {
+	return ExecutorInvocation{
+		Adapter: "fake",
+		Binary:  "fake-bin",
+		Args:    []string{"fake-arg"},
+		Stdin:   "fake-stdin",
+		WorkDir: req.RepoPath,
+		Preview: "fake-preview",
+	}, nil
+}
+
+func (a *fakeAdapter) NormalizeResult(raw string) NormalizedExecutorResult {
+	return NormalizedExecutorResult{
+		Status:             pipeline.AgentResultDone,
+		ExecutorResultText: "STATUS: DONE",
+	}
+}
+
+func TestDispatchBrief_UsesInjectedAdapter(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	done := make(chan struct{})
+	var recordedBin string
+	var recordedArgs []string
+
+	_, err := DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: &fakeAdapter{},
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			recordedBin = binary
+			recordedArgs = args
+			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "fake output"}
+		},
+		LaunchAsync: func(fn func()) {
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	<-done
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Provider != "fake" {
+		t.Errorf("expected provider fake, got %s", exec.Provider)
+	}
+	if recordedBin != "fake-bin" {
+		t.Errorf("expected runner binary fake-bin, got %s", recordedBin)
+	}
+	if len(recordedArgs) == 0 || recordedArgs[0] != "fake-arg" {
+		t.Errorf("expected runner args fake-arg, got %v", recordedArgs)
+	}
+}

@@ -43,6 +43,7 @@ type DispatchParams struct {
 	Log         *slog.Logger
 	EventHub    *events.Hub
 	RunID       int64
+	Adapter     ExecutorAdapter
 	RunAgentCmd func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult
 	LaunchAsync func(func())
 }
@@ -113,79 +114,6 @@ func redactSensitive(input string) string {
 
 func redactSensitiveBytes(input []byte) []byte {
 	return []byte(redactSensitive(string(input)))
-}
-
-func resolveOpenCodeModel(selectedModel string) (string, error) {
-	return pipeline.ResolveOpenCodeModel(selectedModel)
-}
-
-func openCodeConfigFromEnv() pipeline.OpenCodeRunConfig {
-	return pipeline.OpenCodeRunConfigFromEnv()
-}
-
-func buildExecutorInvocation(cfg pipeline.OpenCodeRunConfig, repoPath, briefContent, selectedModel, briefPath string) (pipeline.OpenCodeRunInvocation, error) {
-	if strings.TrimSpace(cfg.Binary) == "" {
-		return pipeline.OpenCodeRunInvocation{}, fmt.Errorf("OpenCode binary is empty; set RELAY_OPENCODE_BIN")
-	}
-	if strings.TrimSpace(repoPath) == "" {
-		return pipeline.OpenCodeRunInvocation{}, fmt.Errorf("repo path is empty")
-	}
-	if strings.TrimSpace(briefContent) == "" {
-		return pipeline.OpenCodeRunInvocation{}, fmt.Errorf("executor brief content is empty")
-	}
-	if strings.TrimSpace(selectedModel) == "" {
-		return pipeline.OpenCodeRunInvocation{}, fmt.Errorf("selected model is empty")
-	}
-
-	model, err := resolveOpenCodeModel(selectedModel)
-	if err != nil {
-		return pipeline.OpenCodeRunInvocation{}, err
-	}
-
-	agent := strings.TrimSpace(cfg.Agent)
-	if agent == "" {
-		agent = "build"
-	}
-
-	args := []string{
-		"run",
-		"--format", "json",
-		"--dir", repoPath,
-		"--agent", agent,
-		"--model", model,
-		"--thinking", "max",
-	}
-	if strings.TrimSpace(cfg.Variant) != "" {
-		args = append(args, "--variant", strings.TrimSpace(cfg.Variant))
-	}
-
-	preview := pipeline.ShellPreview(cfg.Binary, args)
-	preview += " < " + quotePreview(briefPath)
-
-	return pipeline.OpenCodeRunInvocation{
-		Binary:          cfg.Binary,
-		Args:            args,
-		WorkDir:         repoPath,
-		Stdin:           briefContent,
-		StdinSource:     briefPath,
-		StdinBytes:      len([]byte(briefContent)),
-		AgentPromptPath: briefPath,
-		PacketPath:      "",
-		Model:           model,
-		Agent:           agent,
-		Variant:         strings.TrimSpace(cfg.Variant),
-		Preview:         preview,
-	}, nil
-}
-
-func quotePreview(s string) string {
-	if s == "" {
-		return `""`
-	}
-	if strings.ContainsAny(s, " \t\n\"'") {
-		return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
-	}
-	return s
 }
 
 func parseDispatchResult(raw string) (pipeline.AgentResultStatus, string) {
@@ -288,7 +216,8 @@ func runBackgroundDispatch(
 	p *DispatchParams,
 	runID int64,
 	execID int64,
-	invocation pipeline.OpenCodeRunInvocation,
+	invocation ExecutorInvocation,
+	adapter ExecutorAdapter,
 	repo *store.Repo,
 ) {
 	l := p.log()
@@ -445,42 +374,28 @@ func runBackgroundDispatch(
 	collectAndPersistGitEvidence(s, runID, repo.Path)
 
 	if runResult.Stdout != "" {
-		assistantText := pipeline.ExtractOpenCodeAssistantText(runResult.Stdout)
-		parsed := pipeline.ParseAgentResult(assistantText)
+		res := adapter.NormalizeResult(runResult.Stdout)
 
-		executorResult := fmt.Sprintf("STATUS: %s\n\nBuild status: %s\nTest status: %s\nCount of LOC changed: %s\n",
-			string(parsed.Status), parsed.BuildStatus, parsed.TestStatus, parsed.LOCChanged)
-		if parsed.BlockerError != "" {
-			executorResult += fmt.Sprintf("Blocker/error only if blocked: %s\n", parsed.BlockerError)
-		}
-		resultPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte(executorResult))
-		if resultPath != "" {
-			recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
+		if res.ExecutorResultText != "" {
+			resultPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte(res.ExecutorResultText))
+			if resultPath != "" {
+				recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
+			}
 		}
 
-		switch parsed.Status {
+		switch res.Status {
 		case pipeline.AgentResultDone:
 			createEvent(s, runID, "info", "Executor completed: DONE")
 			publishRunEvent(hub, runID, events.KindStepAgent, "executor", "done")
 			updateRunStatus(s, runID, StatusExecutorDone)
 			publishRunEvent(hub, runID, events.KindRunSummary, "executor", "done")
 		case pipeline.AgentResultBlocked:
-			blockerText := parsed.BlockerError
-			if blockerText == "" {
-				blockerText = "executor reported BLOCKED"
-			}
-			createEvent(s, runID, "warn", "Executor blocked: "+blockerText)
+			createEvent(s, runID, "warn", "Executor blocked: "+res.BlockerText)
 			publishRunEvent(hub, runID, events.KindStepAgent, "executor", "blocked")
 			updateRunStatus(s, runID, StatusExecutorBlocked)
 			publishRunEvent(hub, runID, events.KindRunSummary, "executor", "blocked")
 		default:
-			errMsg := "executor result parse failed: missing or invalid STATUS line"
-			executorResultFail := fmt.Sprintf("STATUS: UNKNOWN\n\nRaw output:\n%s\n", assistantText)
-			resultPathFail, _ := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte(executorResultFail))
-			if resultPathFail != "" {
-				recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPathFail, "text/plain")
-			}
-			createEvent(s, runID, "warn", errMsg)
+			createEvent(s, runID, "warn", res.ParseError)
 			publishRunEvent(hub, runID, events.KindStepAgent, "executor", "parse_failed")
 			updateRunStatus(s, runID, StatusExecutorBlocked)
 			publishRunEvent(hub, runID, events.KindRunSummary, "executor", "blocked")
@@ -562,20 +477,24 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 		return DispatchResult{}, fmt.Errorf("executor brief prerequisite failed: %w", err)
 	}
 
-	cfg := openCodeConfigFromEnv()
-	if cfg.Binary == "" {
-		cfg.Binary = "opencode"
-	}
-	if _, err := resolveOpenCodeModel(selectedModel); err != nil {
-		createEvent(s, runID, "warn", "Executor dispatch blocked: model resolution failed: "+err.Error())
-		publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
-		return DispatchResult{}, fmt.Errorf("model resolution failed: %w", err)
+	adapter := p.Adapter
+	if adapter == nil {
+		adapter = NewOpenCodeAdapterFromEnv()
 	}
 
 	briefPath := filepath.Join(artifacts.Dir(runID), "executor_brief.md")
-	invocation, err := buildExecutorInvocation(cfg, repo.Path, string(briefData), selectedModel, briefPath)
+	req := ExecutorAdapterRequest{
+		RunID:         runID,
+		RepoPath:      repo.Path,
+		BriefContent:  string(briefData),
+		BriefPath:     briefPath,
+		SelectedModel: selectedModel,
+		Timeout:       DefaultExecutorTimeout,
+	}
+
+	invocation, err := adapter.BuildInvocation(req)
 	if err != nil {
-		createEvent(s, runID, "warn", "Executor dispatch blocked: "+err.Error())
+		createEvent(s, runID, "warn", "Executor dispatch blocked: invocation build failed: "+err.Error())
 		publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
 		return DispatchResult{}, fmt.Errorf("invocation build failed: %w", err)
 	}
@@ -587,7 +506,7 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 		return DispatchResult{}, fmt.Errorf("an execution is already running for this run")
 	}
 
-	exec, err := s.CreateAgentExecution(runID, "opencode_go", "starting", invocation.Preview)
+	exec, err := s.CreateAgentExecution(runID, string(adapter.ID()), "starting", invocation.Preview)
 	if err != nil {
 		createEvent(s, runID, "warn", "Executor dispatch blocked: failed to create execution record: "+err.Error())
 		publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
@@ -605,7 +524,7 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 	publishRunEvent(p.EventHub, runID, events.KindRunSummary, "executor", "dispatched")
 
 	p.launcher()(func() {
-		runBackgroundDispatch(commandCtx, p, runID, exec.ID, invocation, repo)
+		runBackgroundDispatch(commandCtx, p, runID, exec.ID, invocation, adapter, repo)
 	})
 
 	return DispatchResult{
