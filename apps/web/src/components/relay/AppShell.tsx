@@ -2,22 +2,12 @@ import * as React from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  BookOpen,
-  FolderKanban,
-  HelpCircle,
-  List,
-  Plus,
-  Settings,
-  Zap,
-} from "lucide-react";
+import { List, Plus, Zap } from "lucide-react";
 
 type ShellNavItemConfig = {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
-  disabled?: boolean;
-  disabledReason?: string;
 };
 
 function isActivePath(pathname: string, href: string): boolean {
@@ -27,41 +17,8 @@ function isActivePath(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-const unavailableReason = "Not implemented in this shell pass.";
-
 const primaryNav: ShellNavItemConfig[] = [
   { label: "Runs", href: "/runs", icon: List },
-  {
-    label: "Projects",
-    href: "/projects",
-    icon: FolderKanban,
-    disabled: true,
-    disabledReason: unavailableReason,
-  },
-  {
-    label: "Settings",
-    href: "/settings",
-    icon: Settings,
-    disabled: true,
-    disabledReason: unavailableReason,
-  },
-];
-
-const utilityNav: ShellNavItemConfig[] = [
-  {
-    label: "Docs",
-    href: "/docs",
-    icon: BookOpen,
-    disabled: true,
-    disabledReason: unavailableReason,
-  },
-  {
-    label: "Support",
-    href: "/support",
-    icon: HelpCircle,
-    disabled: true,
-    disabledReason: unavailableReason,
-  },
 ];
 
 interface AppShellProps {
@@ -77,25 +34,9 @@ function ShellNavItem({
   pathname: string;
 }) {
   const Icon = item.icon;
-  const isActive = !item.disabled && isActivePath(pathname, item.href);
+  const isActive = isActivePath(pathname, item.href);
   const baseClass =
     "relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-colors";
-
-  if (item.disabled) {
-    return (
-      <span
-        aria-disabled="true"
-        title={item.disabledReason}
-        className={cn(
-          baseClass,
-          "cursor-not-allowed select-none text-[var(--relay-sidebar-disabled-fg)]",
-        )}
-      >
-        <Icon className="h-4 w-4 shrink-0" />
-        <span className="truncate">{item.label}</span>
-      </span>
-    );
-  }
 
   return (
     <Link
@@ -159,15 +100,6 @@ export function AppShell({ children, className }: AppShellProps) {
         <div className="flex-1 overflow-y-auto px-2">
           <nav aria-label="Primary" className="flex flex-col gap-1">
             {primaryNav.map((item) => (
-              <ShellNavItem key={item.label} item={item} pathname={pathname} />
-            ))}
-          </nav>
-        </div>
-
-        {/* Utility Nav */}
-        <div className="mt-auto shrink-0 border-t border-[var(--relay-border)]/50 p-2">
-          <nav aria-label="Resources" className="flex flex-col gap-1">
-            {utilityNav.map((item) => (
               <ShellNavItem key={item.label} item={item} pathname={pathname} />
             ))}
           </nav>
