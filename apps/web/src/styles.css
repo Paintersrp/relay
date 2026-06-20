@@ -182,6 +182,20 @@
   --relay-border: var(--border);
   --relay-accent: var(--primary);
   --relay-accent-foreground: var(--primary-foreground);
+  --relay-sidebar-active-bg: var(--surface-panel);
+  --relay-sidebar-active-fg: var(--foreground);
+  --relay-sidebar-active-border: var(--relay-accent);
+  --relay-sidebar-hover-bg: var(--surface-panel-hover);
+  --relay-sidebar-disabled-fg: color-mix(
+    in oklch,
+    var(--sidebar-foreground) 52%,
+    transparent
+  );
+  --relay-sidebar-section-fg: color-mix(
+    in oklch,
+    var(--sidebar-foreground) 48%,
+    transparent
+  );
 }
 
 .dark {
