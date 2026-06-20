@@ -69,6 +69,20 @@ export type RelayArtifactKind =
   | "run_config"
   | "intake_validation_report"
   | "mcp_audit_handback"
+  | "executor_result"
+  | "executor_stdout"
+  | "executor_stderr"
+  | "command_log"
+  | "codex_last_message"
+  | "validation_run_json"
+  | "validation_progress_json"
+  | "validation_stdout"
+  | "validation_stderr"
+  | "git_status_text"
+  | "git_diff_stat"
+  | "git_diff_numstat"
+  | "git_diff_patch"
+  | "git_diff_name_status"
   | string;
 
 // Canonical Relay Artifact type

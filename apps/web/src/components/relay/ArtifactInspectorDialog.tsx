@@ -55,11 +55,12 @@ export function ArtifactInspectorDialog({
     if (!content) return ''
     try {
       // If it looks like JSON or artifact kind suggests it, try parsing it
+      const storageToken = `${artifact.storageKind || ""} ${artifact.kind || ""} ${artifact.filename || ""}`.toLowerCase();
       if (
-        artifact.kind.endsWith('json') ||
-        artifact.filename.endsWith('.json') ||
-        content.trim().startsWith('{') ||
-        content.trim().startsWith('[')
+        storageToken.includes("json") ||
+        artifact.filename.endsWith(".json") ||
+        content.trim().startsWith("{") ||
+        content.trim().startsWith("[")
       ) {
         const parsed = JSON.parse(content)
         return JSON.stringify(parsed, null, 2)
@@ -84,11 +85,11 @@ export function ArtifactInspectorDialog({
               {artifact.label}
             </DialogTitle>
             <Badge variant="secondary" className="font-mono text-xs bg-slate-800 text-slate-300 border-slate-700">
-              {artifact.kind}
+              {artifact.storageKind || artifact.kind}
             </Badge>
             {artifact.storageKind && artifact.storageKind !== artifact.kind && (
               <Badge variant="outline" className="font-mono text-xs text-slate-400 border-slate-800">
-                {artifact.storageKind}
+                {artifact.kind}
               </Badge>
             )}
           </div>

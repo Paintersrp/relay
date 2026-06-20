@@ -145,6 +145,75 @@ function deriveExecutorPhase(
   return "unavailable";
 }
 
+function artifactIdentity(a: any): string {
+  return [
+    a.storageKind,
+    a.kind,
+    a.filename,
+    a.label,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function artifactHas(a: any, ...tokens: string[]): boolean {
+  const id = artifactIdentity(a);
+  return tokens.some((token) => id.includes(token.toLowerCase()));
+}
+
+function artifactPreviewHas(a: any, token: string): boolean {
+  return String(a.preview || "").toLowerCase().includes(token.toLowerCase());
+}
+
+function isResultArtifact(a: any): boolean {
+  return (
+    a.kind === "result" ||
+    artifactHas(
+      a,
+      "executor_result",
+      "agent_result_raw",
+      "executor_stdout",
+      "executor_stderr",
+      "command_log",
+      "codex_last_message",
+    )
+  );
+}
+
+function isExecutorResultArtifact(a: any): boolean {
+  return artifactHas(a, "executor_result");
+}
+
+function isCommandLogArtifact(a: any): boolean {
+  return artifactHas(a, "command_log");
+}
+
+function isExecutorLogArtifact(a: any): boolean {
+  return artifactHas(a, "executor_stdout", "executor_stderr", "command_log");
+}
+
+function isDiffArtifact(a: any): boolean {
+  return a.kind === "diff" || artifactHas(a, "git_diff", "git_status");
+}
+
+function isValidationArtifact(a: any): boolean {
+  return (
+    a.kind === "validation" ||
+    artifactHas(
+      a,
+      "validation_run_json",
+      "validation_progress_json",
+      "validation_stdout",
+      "validation_stderr",
+      "handoff_validation_json",
+      "packet_validation_report",
+      "brief_validation_report",
+      "intake_validation_report",
+    )
+  );
+}
+
 function ExecuteMainContent({
   run,
   artifacts,
@@ -184,13 +253,26 @@ function ExecuteMainContent({
   }, [runStatus, runLifecycle, executorPhase]);
 
   // Find relevant artifacts for Step 3 display
-  const resultArtifacts = artifacts.filter((a: any) => a.kind === "result");
-  const diffArtifacts = artifacts.filter((a: any) => a.kind === "diff");
-  const validationArtifacts = artifacts.filter(
-    (a: any) => a.kind === "validation",
-  );
+  const resultArtifacts = artifacts.filter(isResultArtifact);
+  const diffArtifacts = artifacts.filter(isDiffArtifact);
+  const validationArtifacts = artifacts.filter(isValidationArtifact);
 
   // Find specific result candidates
+  const commandLogArt = resultArtifacts.find(isCommandLogArtifact);
+  const preflightResultArt = resultArtifacts.find(
+    (a: any) =>
+      isExecutorResultArtifact(a) &&
+      artifactPreviewHas(a, "executor preflight failed"),
+  );
+  const preflightCommandLogArt = resultArtifacts.find(
+    (a: any) =>
+      isCommandLogArtifact(a) &&
+      artifactPreviewHas(a, "Preflight: BLOCKED"),
+  );
+  const preflightBlocked =
+    (executorPhase === "blocked" || executorPhase === "failed") &&
+    Boolean(preflightResultArt || preflightCommandLogArt);
+
   const executorResultArt = resultArtifacts.find(
     (a: any) =>
       a.filename?.includes("executor_result") ||
@@ -423,6 +505,23 @@ function ExecuteMainContent({
           </p>
         )}
 
+        {preflightBlocked && (
+          <div className="mt-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-2.5 text-xs text-yellow-700 dark:text-yellow-300">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <div className="flex flex-col gap-1">
+                <span className="font-medium">Executor preflight blocked before launch.</span>
+                <span className="text-yellow-700/80 dark:text-yellow-300/80">
+                  Relay did not start the executor CLI. Fix local daemon readiness, binary path, workdir, or prompt-file availability, then retry.
+                </span>
+                <span className="font-mono text-[11px] text-yellow-700/70 dark:text-yellow-300/70">
+                  Evidence: {(preflightCommandLogArt || commandLogArt)?.filename || "command_log"} / {(preflightResultArt || executorResultArt)?.filename || "executor_result"}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Action Buttons */}
         <div className="flex items-center gap-2 mt-2">
           {actionAvailability.canStart && (
@@ -533,23 +632,13 @@ function ExecuteMainContent({
         )}
 
         {/* Executor log artifact links */}
-        {resultArtifacts.filter(
-          (a: any) =>
-            a.filename?.includes("executor_stdout") ||
-            a.filename?.includes("command_log") ||
-            a.filename?.includes("executor_stderr"),
-        ).length > 0 && (
+        {resultArtifacts.filter(isExecutorLogArtifact).length > 0 && (
           <div className="flex flex-col gap-1 mt-1">
             <p className="text-[11px] text-muted-foreground/60 italic">
               Executor log artifacts on disk:
             </p>
             {resultArtifacts
-              .filter(
-                (a: any) =>
-                  a.filename?.includes("executor_stdout") ||
-                  a.filename?.includes("command_log") ||
-                  a.filename?.includes("executor_stderr"),
-              )
+              .filter(isExecutorLogArtifact)
               .slice(0, 3)
               .map((a: any) => (
                 <div
@@ -762,11 +851,13 @@ function ExecuteMainContent({
                 variant={executorPhase === "done" ? "default" : "secondary"}
                 className="text-xs"
               >
-                {executorPhase === "done"
-                  ? "Completed"
-                  : executorPhase === "blocked" || executorPhase === "failed"
-                    ? "Failed"
-                    : "Captured"}
+                {preflightBlocked
+                  ? "Preflight Blocked"
+                  : executorPhase === "done"
+                    ? "Completed"
+                    : executorPhase === "blocked" || executorPhase === "failed"
+                      ? "Failed"
+                      : "Captured"}
               </Badge>
               <span className="text-xs font-mono text-muted-foreground truncate">
                 {primaryResultArt.filename}

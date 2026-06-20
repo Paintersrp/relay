@@ -215,6 +215,11 @@ Before launching any executor command, Relay performs local preflight checks for
 Preflight does not run the executor CLI or perform auth probes.
 If preflight fails, Relay blocks the run as `executor_blocked` and writes `executor_result` plus `command_log` artifacts with the preflight failure details.
 
+**Frontend Artifact Surfacing**:
+The Execute UI should classify artifacts using `storageKind` first, then `kind`, `filename`, and `label`.
+Preflight failures should be shown as a specific blocked subtype when `executor_result` contains `executor preflight failed` or `command_log` contains `Preflight: BLOCKED`.
+The UI must use existing artifact list/content endpoints and must not require new API fields for this display.
+
 ## Endpoints
 
 ### 1. GET `/api/runs`

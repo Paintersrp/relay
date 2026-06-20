@@ -7,21 +7,34 @@ import { FileText, FileCode, GitMerge, ClipboardCheck, ShieldCheck, FileSearch }
 import { cn } from '@/lib/utils'
 import { ArtifactInspectorDialog } from './ArtifactInspectorDialog'
 
-function getKindIcon(kind: string): React.ReactNode {
-  switch (kind) {
+function getArtifactKindToken(artifact: RelayArtifactPreview): string {
+  return (artifact.storageKind || artifact.kind || "").toLowerCase();
+}
+
+function getKindIcon(token: string): React.ReactNode {
+  if (token.includes('validation')) {
+    return <FileSearch className="w-4 h-4 text-orange-400" />
+  }
+  if (token.includes('git_diff') || token.includes('git_status')) {
+    return <GitMerge className="w-4 h-4 text-pink-400" />
+  }
+
+  switch (token) {
     case 'prompt':
       return <FileText className="w-4 h-4 text-blue-400" />
     case 'handoff':
     case 'planner_handoff':
       return <FileCode className="w-4 h-4 text-violet-400" />
+    case 'executor_result':
+    case 'agent_result_raw':
+    case 'codex_last_message':
     case 'result':
     case 'mcp_audit_handback':
       return <ClipboardCheck className="w-4 h-4 text-emerald-400" />
     case 'audit':
       return <ShieldCheck className="w-4 h-4 text-yellow-400" />
-    case 'validation':
-    case 'intake_validation_report':
-      return <FileSearch className="w-4 h-4 text-orange-400" />
+    case 'command_log':
+      return <FileText className="w-4 h-4 text-slate-400" />
     case 'diff':
       return <GitMerge className="w-4 h-4 text-pink-400" />
     default:
@@ -29,20 +42,29 @@ function getKindIcon(kind: string): React.ReactNode {
   }
 }
 
-function getKindLabel(kind: string): string {
-  switch (kind) {
+function getKindLabel(token: string): string {
+  if (token.includes('validation')) return 'Validation'
+  if (token.includes('git_diff') || token.includes('git_status')) return 'Diff'
+
+  switch (token) {
     case 'prompt':
       return 'Prompt'
     case 'handoff':
     case 'planner_handoff':
       return 'Handoff'
+    case 'executor_result':
+    case 'agent_result_raw':
+    case 'codex_last_message':
     case 'result':
       return 'Result'
+    case 'command_log':
+      return 'Command Log'
+    case 'executor_stdout':
+      return 'Executor Stdout'
+    case 'executor_stderr':
+      return 'Executor Stderr'
     case 'audit':
       return 'Audit'
-    case 'validation':
-    case 'intake_validation_report':
-      return 'Validation'
     case 'diff':
       return 'Diff'
     case 'parsed_frontmatter':
@@ -52,7 +74,7 @@ function getKindLabel(kind: string): string {
     case 'mcp_audit_handback':
       return 'Handback'
     default:
-      return kind.charAt(0).toUpperCase() + kind.slice(1).replace(/_/g, ' ')
+      return token.charAt(0).toUpperCase() + token.slice(1).replace(/_/g, ' ')
   }
 }
 
@@ -83,11 +105,11 @@ export function ArtifactPreviewCard({
         <CardHeader className="p-3 pb-2">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              {getKindIcon(artifact.kind)}
+              {getKindIcon(getArtifactKindToken(artifact))}
               <CardTitle className="text-sm font-medium truncate">{artifact.label}</CardTitle>
             </div>
             <Badge variant="outline" className="text-xs shrink-0 font-mono">
-              {getKindLabel(artifact.kind)}
+              {getKindLabel(getArtifactKindToken(artifact))}
             </Badge>
           </div>
         </CardHeader>
