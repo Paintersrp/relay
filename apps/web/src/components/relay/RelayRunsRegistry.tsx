@@ -1,33 +1,21 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
-import {
-  ArrowRight,
-  Bot,
-  GitBranch,
-  GitFork,
-  ListFilter,
-  Package,
-} from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { ChevronRight } from "lucide-react";
 
 import { RelayAttentionBadge } from "@/components/relay/RelayAttentionBadge";
-import { RelayFilterTabs, type RelayFilterTabItem } from "@/components/relay/RelayFilterTabs";
-import { RelayMetaItem, RelayMetaRow, RelayMonoText } from "@/components/relay/RelayMeta";
+import {
+  RelayFilterTabs,
+  type RelayFilterTabItem,
+} from "@/components/relay/RelayFilterTabs";
+import { RelayMonoText } from "@/components/relay/RelayMeta";
 import { RelayStageLabel } from "@/components/relay/RelayStageLabel";
 import { StatusBadge } from "@/components/relay/StatusBadge";
 import {
   getRelayAttentionReason,
   type RelayAttentionReason,
 } from "@/components/relay/relayVisualState";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   formatRunDate,
   formatRunDateRelative,
@@ -97,6 +85,9 @@ function compareRunsByUpdatedAtDesc(a: RelayRun, b: RelayRun): number {
   return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
 }
 
+const registryColumns =
+  "minmax(20rem,2.4fr) minmax(10rem,1fr) minmax(9rem,0.8fr) minmax(12rem,1fr) minmax(8rem,0.8fr) minmax(10rem,0.9fr) 2.5rem";
+
 export function RelayRunsRegistry({
   runs,
   isLoading = false,
@@ -109,6 +100,13 @@ export function RelayRunsRegistry({
   const attentionCount = rows.filter(
     (run) => getRunAttentionReason(run) !== "none",
   ).length;
+  const scrollParentRef = React.useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filteredRuns.length,
+    getScrollElement: () => scrollParentRef.current,
+    estimateSize: () => 60,
+    overscan: 8,
+  });
 
   const filterItems: RelayFilterTabItem[] = [
     { value: "all", label: "All Runs", count: rows.length },
@@ -147,14 +145,13 @@ export function RelayRunsRegistry({
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--relay-row-border)] px-4 py-3">
-        <div className="flex items-center gap-2">
-          <ListFilter className="size-4 text-muted-foreground" />
+        <div className="flex min-w-0 items-center gap-2">
           <h2 className="text-sm font-semibold text-foreground">Runs</h2>
-          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+          <span className="font-mono text-[11px] text-muted-foreground">
             {rows.length}
           </span>
           {attentionCount > 0 ? (
-            <span className="rounded border border-[var(--relay-row-border)] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+            <span className="font-mono text-[11px] text-warning">
               {attentionCount} need attention
             </span>
           ) : null}
@@ -162,7 +159,7 @@ export function RelayRunsRegistry({
         <span className="font-mono text-xs text-muted-foreground">Updated</span>
       </div>
 
-      <div className="px-4 pt-2">
+      <div className="pt-2">
         <RelayFilterTabs
           value={filter}
           items={filterItems}
@@ -170,68 +167,75 @@ export function RelayRunsRegistry({
         />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
-        <Table className="min-w-[980px]">
-          <TableHeader>
-            <TableRow className="border-[var(--relay-row-border)] hover:bg-transparent">
-              <TableHead className="w-[38%]">Run</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Stage</TableHead>
-              <TableHead>Executor</TableHead>
-              <TableHead>Updated</TableHead>
-              <TableHead>Attention</TableHead>
-              <TableHead className="w-[1%]" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading
-              ? Array.from({ length: 5 }).map((_, index) => (
-                  <TableRow
-                    key={`loading-row-${index}`}
-                    className="border-[var(--relay-row-border)]"
-                  >
-                    <TableCell className="py-2.5">
-                      <div className="space-y-2">
-                        <Skeleton className="h-4 w-56" />
-                        <Skeleton className="h-3 w-72" />
-                        <Skeleton className="h-3 w-80" />
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-6 w-28" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-20" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-24" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-20" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-6 w-24" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="ml-auto h-8 w-28" />
-                    </TableCell>
-                  </TableRow>
-                ))
-              : null}
+      <div className="min-h-0 flex-1 overflow-x-auto px-4">
+        <div className="flex min-h-0 min-w-[980px] flex-1 flex-col">
+          <div
+            className="grid shrink-0 border-b border-[var(--relay-row-border)] py-2 text-xs font-semibold text-foreground"
+            style={{ gridTemplateColumns: registryColumns }}
+          >
+            <div className="px-4">Run</div>
+            <div className="px-4">Status</div>
+            <div className="px-4">Stage</div>
+            <div className="px-4">Executor</div>
+            <div className="px-4">Updated</div>
+            <div className="px-4">Attention</div>
+            <div className="pr-2" />
+          </div>
 
-            {!isLoading && filteredRuns.length === 0 ? (
-              <TableRow className="border-[var(--relay-row-border)]">
-                <TableCell
-                  colSpan={7}
-                  className="py-12 text-center text-sm text-muted-foreground"
+          {isLoading ? (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div
+                  key={`loading-row-${index}`}
+                  className="grid border-b border-[var(--relay-row-border)]"
+                  style={{ gridTemplateColumns: registryColumns }}
                 >
-                  No runs match this filter.
-                </TableCell>
-              </TableRow>
-            ) : null}
+                  <div className="px-4 py-3">
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-56" />
+                      <Skeleton className="h-3 w-40" />
+                    </div>
+                  </div>
+                  <div className="px-4 py-3">
+                    <Skeleton className="h-6 w-28" />
+                  </div>
+                  <div className="px-4 py-3">
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                  <div className="px-4 py-3">
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                  <div className="px-4 py-3">
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                  <div className="px-4 py-3">
+                    <Skeleton className="h-6 w-24" />
+                  </div>
+                  <div className="px-4 py-3">
+                    <Skeleton className="ml-auto h-4 w-4" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
 
-            {!isLoading
-              ? filteredRuns.map((run) => {
+          {!isLoading && filteredRuns.length === 0 ? (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="flex min-h-full items-center justify-center border-b border-[var(--relay-row-border)] px-4 py-12 text-sm text-muted-foreground">
+                No runs match this filter.
+              </div>
+            </div>
+          ) : null}
+
+          {!isLoading && filteredRuns.length > 0 ? (
+            <div ref={scrollParentRef} className="min-h-0 flex-1 overflow-y-auto">
+              <div
+                className="relative"
+                style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const run = filteredRuns[virtualRow.index];
+                  const to = getActiveStepRoute(run);
                   const attentionReason = getRunAttentionReason(run);
                   const attentionCountValue =
                     attentionReason === "validation-failed" &&
@@ -240,109 +244,82 @@ export function RelayRunsRegistry({
                       : undefined;
 
                   return (
-                    <TableRow
+                    <Link
                       key={run.id}
-                      className="border-[var(--relay-row-border)]"
+                      to={to}
+                      aria-label={`Open workbench for ${run.title}`}
+                      className="absolute left-0 grid w-full items-center border-b border-[var(--relay-row-border)] text-sm transition-colors hover:bg-[var(--relay-panel-hover-bg)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--relay-accent)]"
+                      style={{
+                        gridTemplateColumns: registryColumns,
+                        height: `${virtualRow.size}px`,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
                     >
-                      <TableCell className="py-2.5 align-top">
-                        <div className="space-y-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-foreground">
-                              {run.title}
-                            </p>
-                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                              <RelayMonoText className="text-[11px] text-muted-foreground">
-                                {run.id}
-                              </RelayMonoText>
-                              {run.packetId ? (
-                                <div className="inline-flex min-w-0 items-center gap-1.5">
-                                  <Package className="size-3 shrink-0 text-muted-foreground" />
-                                  <RelayMonoText className="truncate text-[11px] text-muted-foreground">
-                                    {run.packetId}
-                                  </RelayMonoText>
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-
-                          <RelayMetaRow>
-                            <RelayMetaItem
-                              icon={<GitFork className="size-3" />}
-                            >
-                              {run.repo}
-                            </RelayMetaItem>
-                            <RelayMetaItem
-                              icon={<GitBranch className="size-3" />}
-                            >
-                              {run.branch}
-                            </RelayMetaItem>
-                            {run.worktree ? (
-                              <RelayMetaItem
-                                icon={<Package className="size-3" />}
-                                mono
-                              >
-                                {run.worktree}
-                              </RelayMetaItem>
+                      <div className="min-w-0 px-4 py-3">
+                        <div className="min-w-0 space-y-1">
+                          <p className="truncate font-medium text-foreground">
+                            {run.title}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <RelayMonoText className="text-[11px] text-muted-foreground">
+                              {run.id}
+                            </RelayMonoText>
+                            {run.packetId ? (
+                              <>
+                                <span className="text-[11px] text-muted-foreground">
+                                  /
+                                </span>
+                                <RelayMonoText className="truncate text-[11px] text-muted-foreground">
+                                  {run.packetId}
+                                </RelayMonoText>
+                              </>
                             ) : null}
-                          </RelayMetaRow>
+                          </div>
                         </div>
-                      </TableCell>
+                      </div>
 
-                      <TableCell className="align-top">
+                      <div className="px-4 py-3">
                         <StatusBadge status={run.status} />
-                      </TableCell>
+                      </div>
 
-                      <TableCell className="align-top">
+                      <div className="px-4 py-3">
                         <RelayStageLabel step={run.activeStep} />
-                      </TableCell>
+                      </div>
 
-                      <TableCell className="align-top">
-                        <RelayMetaItem icon={<Bot className="size-3" />}>
-                          <RelayMonoText>{run.executor}</RelayMonoText>
-                        </RelayMetaItem>
-                      </TableCell>
+                      <div className="px-4 py-3">
+                        <RelayMonoText>{run.executor}</RelayMonoText>
+                      </div>
 
-                      <TableCell className="align-top">
+                      <div className="px-4 py-3">
                         <span
                           className="text-xs text-muted-foreground"
                           title={formatRunDate(run.updatedAt)}
                         >
                           {formatRunDateRelative(run.updatedAt)}
                         </span>
-                      </TableCell>
+                      </div>
 
-                      <TableCell className="align-top">
+                      <div className="px-4 py-3">
                         <RelayAttentionBadge
                           reason={attentionReason}
                           compact
                           count={attentionCountValue}
                         />
-                      </TableCell>
+                      </div>
 
-                      <TableCell className="align-top">
-                        <div className="flex justify-end">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            asChild
-                            className="gap-1.5"
-                          >
-                            <Link to={getActiveStepRoute(run)}>
-                              Open Workbench
-                              <ArrowRight className="size-3.5" />
-                            </Link>
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                      <div className="flex justify-end px-4 py-3 text-muted-foreground">
+                        <ChevronRight className="size-4" />
+                      </div>
+                    </Link>
                   );
-                })
-              : null}
-          </TableBody>
-        </Table>
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-[var(--relay-row-border)] px-4 py-3 text-xs text-muted-foreground">
+      <div className="flex shrink-0 items-center justify-between border-t border-[var(--relay-row-border)] px-4 py-2 font-mono text-[11px] text-muted-foreground">
         <span>
           {filteredRuns.length} run{filteredRuns.length === 1 ? "" : "s"}
         </span>

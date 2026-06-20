@@ -30,6 +30,7 @@
     "@tanstack/react-router-devtools": "latest",
     "@tanstack/react-start": "latest",
     "@tanstack/react-table": "latest",
+    "@tanstack/react-virtual": "latest",
     "@tanstack/zod-adapter": "latest",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

@@ -31,7 +31,7 @@ export function AppPageFrame({
     >
       <header
         className={cn(
-          "shrink-0 border-b border-[var(--relay-page-border)] bg-[var(--relay-page-header-bg)] px-6 py-4",
+          "shrink-0 border-b border-[var(--relay-page-border)] bg-[var(--relay-page-header-bg)] px-4 py-4",
           headerClassName,
         )}
       >
@@ -53,9 +53,7 @@ export function AppPageFrame({
         </div>
       </header>
 
-      <div
-        className={cn("min-h-0 flex-1 overflow-y-auto p-6", bodyClassName)}
-      >
+      <div className={cn("min-h-0 flex-1 overflow-y-auto p-6", bodyClassName)}>
         {children}
       </div>
     </section>
