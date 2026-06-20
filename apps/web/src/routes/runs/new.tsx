@@ -1,25 +1,122 @@
-import { useState } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
+import { ArrowLeft, AlertCircle, AlertTriangle, CheckCircle2, Circle, Loader2, Upload } from "lucide-react";
 import { AppPageFrame } from "@/components/relay/AppPageFrame";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, AlertCircle, Loader2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { submitPlannerHandoff, RelayApiError } from "@/features/relay-runs";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/runs/new")({
   component: NewRunPage,
 });
+
+interface DetectedHandoffMetadata {
+  source?: string;
+  repoTarget?: string;
+  branchContext?: string;
+  taskSlug?: string;
+  targetExecutor?: string;
+  schemaVersion?: string;
+  detectedCount: number;
+}
+
+function findMetadataValue(markdown: string, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const pattern = new RegExp(`^\\s*${key}\\s*:\\s*['"]?([^'"\\n]+)['"]?\\s*$`, "im");
+    const match = markdown.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+  return undefined;
+}
+
+function detectHandoffMetadata(markdown: string): DetectedHandoffMetadata {
+  const metadata: Omit<DetectedHandoffMetadata, "detectedCount"> = {
+    source: findMetadataValue(markdown, ["source"]),
+    repoTarget: findMetadataValue(markdown, ["repo_target", "repository", "repo"]),
+    branchContext: findMetadataValue(markdown, ["branch_context", "branch"]),
+    taskSlug: findMetadataValue(markdown, ["task_slug", "task"]),
+    targetExecutor: findMetadataValue(markdown, ["target_executor", "executor"]),
+    schemaVersion: findMetadataValue(markdown, ["schema_version"]),
+  };
+
+  const detectedCount = Object.values(metadata).filter(Boolean).length;
+  return { ...metadata, detectedCount };
+}
+
+function IntakeStep({
+  label,
+  state,
+}: {
+  label: string;
+  state: "idle" | "active" | "complete" | "ready";
+}) {
+  const icon =
+    state === "complete" ? (
+      <CheckCircle2 className="h-4 w-4 text-[var(--success)]" />
+    ) : (
+      <Circle
+        className={cn(
+          "h-4 w-4",
+          state === "active" && "text-[var(--relay-accent)]",
+          state === "ready" && "text-muted-foreground",
+          state === "idle" && "text-muted-foreground/70",
+        )}
+      />
+    );
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-md border px-3 py-2 text-xs",
+        state === "active" &&
+          "border-[var(--relay-accent)]/45 bg-[var(--relay-accent)]/8 text-foreground",
+        state === "complete" &&
+          "border-[var(--success)]/40 bg-[var(--success)]/10 text-foreground",
+        state === "ready" && "border-[var(--relay-row-border)] bg-background/35 text-muted-foreground",
+        state === "idle" &&
+          "border-[var(--relay-row-border)] bg-transparent text-muted-foreground/80",
+      )}
+    >
+      {icon}
+      <span className="font-medium">{label}</span>
+    </div>
+  );
+}
+
+function MetadataRow({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string;
+}) {
+  const detected = Boolean(value);
+
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-[var(--relay-row-border)] py-3 last:border-b-0">
+      <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+        {label}
+      </span>
+      <div
+        className={cn(
+          "flex min-w-0 items-start gap-2 text-right font-mono text-[11px]",
+          detected ? "text-[var(--success)]" : "text-[var(--warning)]",
+        )}
+      >
+        {detected ? (
+          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        )}
+        <span className="break-all">{value ?? "not detected"}</span>
+      </div>
+    </div>
+  );
+}
 
 function NewRunPage() {
   const router = useRouter();
@@ -31,7 +128,11 @@ function NewRunPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const detectedMetadata = detectHandoffMetadata(markdown);
+  const hasHandoff = markdown.trim().length > 0;
+  const isFormValid = hasHandoff;
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -49,7 +150,7 @@ function NewRunPage() {
     reader.readAsText(file);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!markdown.trim()) {
       setErrorMsg("Planner handoff markdown is required.");
@@ -76,20 +177,18 @@ function NewRunPage() {
           params: { runId: response.runId || response.run_id || "" },
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof RelayApiError) {
         setErrorMsg(err.errorShape?.message || err.message);
+      } else if (err instanceof Error) {
+        setErrorMsg(err.message || "An unexpected error occurred during submission.");
       } else {
-        setErrorMsg(
-          err.message || "An unexpected error occurred during submission.",
-        );
+        setErrorMsg("An unexpected error occurred during submission.");
       }
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  const isFormValid = markdown.trim().length > 0;
 
   return (
     <form
@@ -98,7 +197,7 @@ function NewRunPage() {
     >
       <AppPageFrame
         title="New Run"
-        description="Submit a handoff packet to start a relay run."
+        description="Submit a Planner handoff to create a Relay run."
         leading={
           <Button
             variant="ghost"
@@ -107,151 +206,252 @@ function NewRunPage() {
             className="-ml-1 h-7 gap-1.5 text-xs"
           >
             <Link to="/runs">
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft className="h-3.5 w-3.5" />
               Back to Runs
             </Link>
           </Button>
         }
-        bodyClassName="mx-auto flex w-full max-w-2xl flex-col gap-6"
+        bodyClassName="flex min-h-0 flex-col p-0"
       >
-        {/* Error Alert */}
-        {errorMsg && (
-          <Alert variant="destructive">
-            <AlertCircle className="w-4 h-4" />
-            <AlertTitle>Submission Failed</AlertTitle>
-            <AlertDescription className="text-xs">{errorMsg}</AlertDescription>
-          </Alert>
-        )}
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <section className="min-h-0 overflow-y-auto border-b border-[var(--relay-row-border)] px-5 py-5 lg:border-r lg:border-b-0">
+            <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+              <div className="grid gap-2 md:grid-cols-3">
+                <IntakeStep
+                  label="1 Handoff Intake"
+                  state={hasHandoff ? "complete" : "active"}
+                />
+                <IntakeStep
+                  label="2 Validate Metadata"
+                  state={hasHandoff && !isSubmitting ? "active" : "idle"}
+                />
+                <IntakeStep
+                  label="3 Create Run"
+                  state={isFormValid ? "ready" : "idle"}
+                />
+              </div>
 
-        {/* Incoming handoff section */}
-        <Card className="border-border/60">
-          <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Incoming Handoff
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Paste or upload a surgical implementation handoff packet.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-4 pt-2 flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="handoff-paste" className="text-xs">
-                Paste Handoff
-              </Label>
-              <Textarea
-                id="handoff-paste"
-                placeholder="Paste handoff content here…"
-                className="font-mono text-xs min-h-[180px] resize-y"
-                value={markdown}
-                onChange={(e) => setMarkdown(e.target.value)}
-                aria-label="Handoff paste input"
-              />
-            </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>or</span>
-              <Separator className="flex-1" />
-              <span>upload file</span>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="handoff-file" className="text-xs">
-                Upload Handoff File
-              </Label>
-              <Input
-                id="handoff-file"
-                type="file"
-                accept=".md,.txt,.json"
-                className="text-xs cursor-pointer"
-                onChange={handleFileChange}
-                aria-label="Handoff file upload"
-              />
-            </div>
-          </CardContent>
-        </Card>
+              {errorMsg && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Submission Failed</AlertTitle>
+                  <AlertDescription className="text-xs">{errorMsg}</AlertDescription>
+                </Alert>
+              )}
 
-        {/* Run configuration section */}
-        <Card className="border-border/60">
-          <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Run Configuration
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Override detected values from the handoff metadata.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-4 pt-2 flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="repo-input" className="text-xs">
-                  Repository
-                </Label>
-                <Input
-                  id="repo-input"
-                  placeholder="owner/repo (or auto-detected)"
-                  value={repo}
-                  onChange={(e) => setRepo(e.target.value)}
-                  className="text-xs"
-                />
+              <div className="flex flex-col gap-2">
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">
+                    Paste or upload Planner handoff
+                  </h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Relay will derive a packet from the handoff after metadata is reviewed.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]/35 p-4">
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="handoff-paste" className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                        Planner handoff Markdown
+                      </Label>
+                      <Textarea
+                        id="handoff-paste"
+                        placeholder="Paste Planner handoff Markdown here..."
+                        className="min-h-[360px] resize-none border-[var(--relay-row-border)] bg-background/70 font-mono text-xs"
+                        value={markdown}
+                        onChange={(e) => setMarkdown(e.target.value)}
+                        aria-label="Planner handoff paste input"
+                      />
+                    </div>
+
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="handoff-file" className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                          Upload handoff file
+                        </Label>
+                        <Input
+                          id="handoff-file"
+                          type="file"
+                          accept=".md,.txt,.json"
+                          className="cursor-pointer border-[var(--relay-row-border)] bg-background/70 text-xs"
+                          onChange={handleFileChange}
+                          aria-label="Planner handoff file upload"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 rounded-md border border-dashed border-[var(--relay-row-border)] px-3 py-2 text-xs text-muted-foreground">
+                        <Upload className="h-3.5 w-3.5" />
+                        Accepts .md, .txt, and .json
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="branch-input" className="text-xs">
-                  Branch
-                </Label>
-                <Input
-                  id="branch-input"
-                  placeholder="feature/my-branch (or auto-detected)"
-                  value={branch}
-                  onChange={(e) => setBranch(e.target.value)}
-                  className="text-xs"
-                />
+
+              <div className="rounded-xl border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]/20 p-4">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-sm font-semibold text-foreground">Review / override</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Optional fields override values Relay may derive from the handoff.
+                  </p>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="name-input" className="text-xs">
+                      Run Label
+                    </Label>
+                    <Input
+                      id="name-input"
+                      placeholder="Optional run label"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="border-[var(--relay-row-border)] bg-background/70 text-xs"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="repo-input" className="text-xs">
+                      Repository Override
+                    </Label>
+                    <Input
+                      id="repo-input"
+                      placeholder="owner/repo"
+                      value={repo}
+                      onChange={(e) => setRepo(e.target.value)}
+                      className="border-[var(--relay-row-border)] bg-background/70 text-xs"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="branch-input" className="text-xs">
+                      Branch Override
+                    </Label>
+                    <Input
+                      id="branch-input"
+                      placeholder="feature/my-branch"
+                      value={branch}
+                      onChange={(e) => setBranch(e.target.value)}
+                      className="border-[var(--relay-row-border)] bg-background/70 text-xs"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="source-input" className="text-xs">
+                      Source
+                    </Label>
+                    <Input
+                      id="source-input"
+                      placeholder="react_workbench"
+                      value={source}
+                      onChange={(e) => setSource(e.target.value)}
+                      className="border-[var(--relay-row-border)] bg-background/70 text-xs"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="name-input" className="text-xs">
-                  Run Name / Title
-                </Label>
-                <Input
-                  id="name-input"
-                  placeholder="My Relay Run (or auto-detected)"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="text-xs"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="source-input" className="text-xs">
-                  Source
-                </Label>
-                <Input
-                  id="source-input"
-                  placeholder="react_workbench"
-                  value={source}
-                  onChange={(e) => setSource(e.target.value)}
-                  className="text-xs"
-                />
+
+              <div
+                className={cn(
+                  "rounded-xl border px-4 py-4 transition-colors",
+                  isFormValid
+                    ? "border-[var(--relay-accent)]/45 bg-[var(--relay-accent)]/8"
+                    : "border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]/10",
+                )}
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm font-semibold text-foreground">3 Create Run</span>
+                    <p className="text-xs text-muted-foreground">
+                      Review the detected metadata, then create the run with the current handoff and overrides.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end md:self-auto">
+                    <Button variant="outline" size="sm" asChild disabled={isSubmitting}>
+                      <Link to="/runs">Cancel</Link>
+                    </Button>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={!isFormValid || isSubmitting}
+                      className="min-w-[120px]"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                          Creating run...
+                        </>
+                      ) : (
+                        "Create Run"
+                      )}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </section>
 
-        {/* Submit area */}
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="outline" size="sm" asChild disabled={isSubmitting}>
-            <Link to="/runs">Cancel</Link>
-          </Button>
-          <Button
-            type="submit"
-            size="sm"
-            disabled={!isFormValid || isSubmitting}
-            className="min-w-[120px]"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="w-3 h-3 mr-2 animate-spin" />
-                Submitting...
-              </>
-            ) : (
-              "Submit Handoff"
-            )}
-          </Button>
+          <aside className="flex min-h-0 flex-col bg-[var(--relay-panel-bg)]">
+            <div className="border-b border-[var(--relay-row-border)] px-5 py-4">
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground">
+                    Detected Handoff Metadata
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Local display-only extraction from the current Planner handoff.
+                  </p>
+                </div>
+                <span className="rounded-full border border-[var(--relay-row-border)] px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                  {detectedMetadata.detectedCount}/6 detected
+                </span>
+              </div>
+            </div>
+
+            <div className="flex min-h-0 flex-1 flex-col">
+              {!hasHandoff ? (
+                <>
+                  <div className="flex flex-1 items-center justify-center px-5 py-10">
+                    <div className="max-w-xs text-center">
+                      <p className="text-sm text-foreground">
+                        Metadata will be extracted after parsing.
+                      </p>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Paste or upload a Planner handoff to review the fields Relay may derive before you create the run.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="border-t border-[var(--relay-row-border)] px-5 py-3 text-xs text-muted-foreground">
+                    Awaiting Planner handoff
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                    <MetadataRow label="source" value={detectedMetadata.source} />
+                    <MetadataRow
+                      label="repo_target"
+                      value={detectedMetadata.repoTarget}
+                    />
+                    <MetadataRow
+                      label="branch_context"
+                      value={detectedMetadata.branchContext}
+                    />
+                    <MetadataRow label="task_slug" value={detectedMetadata.taskSlug} />
+                    <MetadataRow
+                      label="target_executor"
+                      value={detectedMetadata.targetExecutor}
+                    />
+                    <MetadataRow
+                      label="schema_version"
+                      value={detectedMetadata.schemaVersion}
+                    />
+                  </div>
+                  <div className="border-t border-[var(--relay-row-border)] px-5 py-3 text-xs text-muted-foreground">
+                    Review detected fields before creating the run.
+                  </div>
+                </>
+              )}
+            </div>
+          </aside>
         </div>
       </AppPageFrame>
     </form>
