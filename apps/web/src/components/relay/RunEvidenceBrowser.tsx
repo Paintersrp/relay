@@ -381,8 +381,10 @@ function MetadataRow({
   mono?: boolean
 }) {
   return (
-    <div className='flex items-baseline gap-2 text-xs'>
-      <span className='w-28 shrink-0 text-muted-foreground'>{label}</span>
+    <div className='grid gap-1 rounded border border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]/30 px-3 py-2 text-xs'>
+      <span className='font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground'>
+        {label}
+      </span>
       <span
         className={cn(
           'min-w-0 break-all text-foreground',
@@ -469,6 +471,7 @@ function EvidenceArtifactDialog({
 }) {
   const selectedArtifact = artifact ?? FALLBACK_ARTIFACT
   const verification = artifact ? deriveVerification(artifact) : null
+  const artifactHash = artifact ? getArtifactHash(artifact) : '—'
   const relatedEvents = React.useMemo(
     () => getRelatedEvents(artifact, events),
     [artifact, events],
@@ -485,24 +488,31 @@ function EvidenceArtifactDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='flex h-[80vh] max-w-[960px] flex-col gap-0 overflow-hidden p-0'>
+      <DialogContent className='grid max-h-[84vh] min-h-[480px] w-[min(92vw,1040px)] max-w-none grid-rows-[auto_auto_minmax(0,1fr)] gap-0 overflow-hidden border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)] p-0'>
         {artifact ? (
           <>
-            <DialogHeader className='shrink-0 border-b border-[var(--relay-row-border)] px-6 py-4'>
-              <div className='flex min-w-0 items-start justify-between gap-3'>
+            <DialogHeader className='shrink-0 border-b border-[var(--relay-row-border)] px-5 py-4'>
+              <div className='flex min-w-0 items-start justify-between gap-4 pr-8'>
                 <div className='min-w-0'>
-                  <DialogTitle className='truncate text-left text-sm font-semibold'>
+                  <DialogTitle className='truncate text-left text-base font-semibold text-foreground'>
                     {artifact.label || artifact.filename || artifact.id}
                   </DialogTitle>
-                  <DialogDescription className='mt-1 text-left font-mono text-[11px]'>
-                    {getArtifactStageLabel(artifact)} · {deriveProducer(artifact)} ·{' '}
-                    {artifact.sizeHint || '—'} · {formatEvidenceTime(artifact.createdAt)}
+                  <DialogDescription className='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-left font-mono text-[11px] text-muted-foreground'>
+                    <span>{getArtifactStageLabel(artifact)}</span>
+                    <span className='text-muted-foreground/40'>·</span>
+                    <span>{deriveProducer(artifact)}</span>
+                    <span className='text-muted-foreground/40'>·</span>
+                    <span>{artifact.sizeHint || '—'}</span>
+                    <span className='text-muted-foreground/40'>·</span>
+                    <span>{formatEvidenceTime(artifact.createdAt)}</span>
+                    <span className='text-muted-foreground/40'>·</span>
+                    <span>{compactHash(artifactHash)}</span>
                   </DialogDescription>
                 </div>
                 {verification ? (
                   <span
                     className={cn(
-                      'flex shrink-0 items-center gap-1 font-mono text-[10px]',
+                      'mt-0.5 flex shrink-0 items-center gap-1 rounded-full border border-current/30 px-2 py-0.5 font-mono text-[10px]',
                       verification.className,
                     )}
                   >
@@ -513,26 +523,29 @@ function EvidenceArtifactDialog({
               </div>
             </DialogHeader>
 
-            <Tabs defaultValue='preview' className='flex min-h-0 flex-1 flex-col'>
-              <div className='shrink-0 border-b border-[var(--relay-row-border)] px-6 py-3'>
-                <TabsList variant='line' className='grid h-8 w-full grid-cols-4'>
-                  <TabsTrigger value='preview' className='text-[10px]'>
+            <Tabs
+              defaultValue='preview'
+              className='row-span-2 grid min-h-0 grid-rows-[auto_minmax(0,1fr)]'
+            >
+              <div className='shrink-0 border-b border-[var(--relay-row-border)] px-5 py-2'>
+                <TabsList variant='line' className='grid h-9 w-full grid-cols-4'>
+                  <TabsTrigger value='preview' className='text-xs'>
                     Preview
                   </TabsTrigger>
-                  <TabsTrigger value='event-chain' className='text-[10px]'>
+                  <TabsTrigger value='event-chain' className='text-xs'>
                     Event Chain
                   </TabsTrigger>
-                  <TabsTrigger value='metadata' className='text-[10px]'>
+                  <TabsTrigger value='metadata' className='text-xs'>
                     Metadata
                   </TabsTrigger>
-                  <TabsTrigger value='raw' className='text-[10px]'>
+                  <TabsTrigger value='raw' className='text-xs'>
                     Raw
                   </TabsTrigger>
                 </TabsList>
               </div>
 
-              <div className='min-h-0 flex-1 px-6 py-4'>
-                <TabsContent value='preview' className='mt-0 h-full overflow-y-auto'>
+              <div className='min-h-0 overflow-hidden px-5 py-4'>
+                <TabsContent value='preview' className='mt-0 h-full'>
                   <PreviewTab
                     artifact={artifact}
                     content={selectedContent}
@@ -543,78 +556,84 @@ function EvidenceArtifactDialog({
 
                 <TabsContent
                   value='event-chain'
-                  className='mt-0 h-full overflow-y-auto'
+                  className='mt-0 h-full'
                 >
                   {relatedEvents.length > 0 ? (
-                    <div className='flex flex-col gap-1.5'>
-                      {relatedEvents.map((event) => (
-                        <div
-                          key={event.id}
-                          className='rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-3 py-2'
-                        >
-                          <p className='font-mono text-[10px] text-muted-foreground/70'>
-                            {formatEvidenceTime(event.createdAt)}
-                          </p>
-                          <p className='mt-0.5 text-xs text-foreground'>
-                            {event.message}
-                          </p>
-                        </div>
-                      ))}
+                    <div className='h-full min-h-[260px] overflow-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-3'>
+                      <div className='flex flex-col gap-2'>
+                        {relatedEvents.map((event) => (
+                          <div
+                            key={event.id}
+                            className='rounded border border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]/60 px-3 py-2'
+                          >
+                            <p className='font-mono text-[10px] text-muted-foreground/70'>
+                              {formatEvidenceTime(event.createdAt)}
+                            </p>
+                            <p className='mt-0.5 text-xs text-foreground'>
+                              {event.message}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ) : (
-                    <p className='rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-3 text-xs text-muted-foreground'>
-                      No related events were captured for this artifact.
-                    </p>
+                    <div className='h-full min-h-[260px] overflow-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4'>
+                      <p className='text-xs text-muted-foreground'>
+                        No related events were captured for this artifact.
+                      </p>
+                    </div>
                   )}
                 </TabsContent>
 
-                <TabsContent value='metadata' className='mt-0 h-full overflow-y-auto'>
-                  <div className='flex flex-col gap-1.5 rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-3'>
-                    <MetadataRow label='ID' value={artifact.id || '—'} />
-                    <MetadataRow
-                      label='Label'
-                      value={artifact.label || '—'}
-                      mono={false}
-                    />
-                    <MetadataRow
-                      label='Filename'
-                      value={artifact.filename || '—'}
-                    />
-                    <MetadataRow label='Kind' value={artifact.kind || '—'} />
-                    <MetadataRow
-                      label='Storage Kind'
-                      value={artifact.storageKind || '—'}
-                    />
-                    <MetadataRow
-                      label='Stage'
-                      value={getArtifactStageLabel(artifact)}
-                      mono={false}
-                    />
-                    <MetadataRow
-                      label='Producer'
-                      value={deriveProducer(artifact)}
-                      mono={false}
-                    />
-                    <MetadataRow
-                      label='Verification'
-                      value={verification?.label || '—'}
-                      mono={false}
-                    />
-                    <MetadataRow
-                      label='Timestamp'
-                      value={formatEvidenceTime(artifact.createdAt)}
-                    />
-                    <MetadataRow label='Hash' value={getArtifactHash(artifact)} />
-                    <MetadataRow label='Size' value={artifact.sizeHint || '—'} />
-                    <MetadataRow label='Path' value={artifact.path || '—'} />
-                    <MetadataRow
-                      label='Content URL'
-                      value={artifact.contentUrl || '—'}
-                    />
+                <TabsContent value='metadata' className='mt-0 h-full'>
+                  <div className='h-full min-h-[260px] overflow-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4'>
+                    <div className='grid gap-3 md:grid-cols-2'>
+                      <MetadataRow label='ID' value={artifact.id || '—'} />
+                      <MetadataRow
+                        label='Label'
+                        value={artifact.label || '—'}
+                        mono={false}
+                      />
+                      <MetadataRow
+                        label='Filename'
+                        value={artifact.filename || '—'}
+                      />
+                      <MetadataRow label='Kind' value={artifact.kind || '—'} />
+                      <MetadataRow
+                        label='Storage Kind'
+                        value={artifact.storageKind || '—'}
+                      />
+                      <MetadataRow
+                        label='Stage'
+                        value={getArtifactStageLabel(artifact)}
+                        mono={false}
+                      />
+                      <MetadataRow
+                        label='Producer'
+                        value={deriveProducer(artifact)}
+                        mono={false}
+                      />
+                      <MetadataRow
+                        label='Verification'
+                        value={verification?.label || '—'}
+                        mono={false}
+                      />
+                      <MetadataRow
+                        label='Timestamp'
+                        value={formatEvidenceTime(artifact.createdAt)}
+                      />
+                      <MetadataRow label='Hash' value={artifactHash} />
+                      <MetadataRow label='Size' value={artifact.sizeHint || '—'} />
+                      <MetadataRow label='Path' value={artifact.path || '—'} />
+                      <MetadataRow
+                        label='Content URL'
+                        value={artifact.contentUrl || '—'}
+                      />
+                    </div>
                   </div>
                 </TabsContent>
 
-                <TabsContent value='raw' className='mt-0 h-full overflow-y-auto'>
+                <TabsContent value='raw' className='mt-0 h-full'>
                   <RawTab
                     artifact={artifact}
                     content={selectedContent}
@@ -738,14 +757,18 @@ function PreviewTab({
   error: unknown
 }) {
   if (isLoading && !content) {
-    return <p className='p-2 text-xs text-muted-foreground'>Loading artifact content…</p>
+    return (
+      <div className='h-full min-h-[260px] overflow-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4 font-mono text-xs leading-relaxed text-muted-foreground'>
+        Loading artifact content…
+      </div>
+    )
   }
 
   if (error && !content) {
     return (
-      <div className='flex flex-col gap-1 p-2'>
+      <div className='h-full min-h-[260px] overflow-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4'>
         <p className='text-xs text-red-400'>Failed to load artifact content.</p>
-        <p className='font-mono text-[10px] text-muted-foreground/70'>
+        <p className='mt-1 font-mono text-[11px] text-muted-foreground/70'>
           {(error as Error)?.message || 'Unknown error'}
         </p>
       </div>
@@ -754,14 +777,18 @@ function PreviewTab({
 
   const raw = content || artifact.preview || ''
   if (!raw) {
-    return <p className='p-2 text-xs text-muted-foreground'>No preview available.</p>
+    return (
+      <div className='h-full min-h-[260px] overflow-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4 font-mono text-xs leading-relaxed text-muted-foreground'>
+        No preview available.
+      </div>
+    )
   }
 
   const formatted = formatJsonIfPossible(raw)
 
   return (
-    <div className='rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]'>
-      <pre className='overflow-x-auto whitespace-pre-wrap break-words p-3 font-mono text-[11px] leading-relaxed text-foreground'>
+    <div className='h-full min-h-[260px] overflow-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4 font-mono text-xs leading-relaxed text-foreground'>
+      <pre className='whitespace-pre-wrap break-words'>
         {formatted}
       </pre>
     </div>
@@ -780,18 +807,22 @@ function RawTab({
   error: unknown
 }) {
   if (isLoading && !content) {
-    return <p className='p-2 text-xs text-muted-foreground'>Loading artifact content…</p>
+    return (
+      <div className='h-full min-h-[260px] overflow-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4 font-mono text-xs leading-relaxed text-muted-foreground'>
+        Loading artifact content…
+      </div>
+    )
   }
 
   if (error && !content) {
     return (
-      <div className='flex flex-col gap-1 p-2'>
+      <div className='h-full min-h-[260px] overflow-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4'>
         <p className='text-xs text-red-400'>Failed to load artifact content.</p>
-        <p className='font-mono text-[10px] text-muted-foreground/70'>
+        <p className='mt-1 font-mono text-[11px] text-muted-foreground/70'>
           {(error as Error)?.message || 'Unknown error'}
         </p>
-        <div className='mt-1 overflow-x-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]'>
-          <pre className='min-w-max p-3 font-mono text-[11px] leading-relaxed text-foreground'>
+        <div className='mt-3 rounded border border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]/60 p-3'>
+          <pre className='overflow-auto font-mono text-xs leading-relaxed text-foreground'>
             {JSON.stringify(artifact, null, 2)}
           </pre>
         </div>
@@ -802,8 +833,8 @@ function RawTab({
   const raw = content || JSON.stringify(artifact, null, 2)
 
   return (
-    <div className='overflow-x-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]'>
-      <pre className='min-w-max p-3 font-mono text-[11px] leading-relaxed text-foreground'>
+    <div className='h-full min-h-[260px] overflow-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4 font-mono text-xs leading-relaxed text-foreground'>
+      <pre className='min-w-max'>
         {raw}
       </pre>
     </div>
