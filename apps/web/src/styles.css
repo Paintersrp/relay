@@ -201,6 +201,28 @@
   --relay-page-body-bg: var(--surface-base);
   --relay-page-title-fg: var(--foreground);
   --relay-page-description-fg: var(--muted-foreground);
+
+  --relay-status-running: var(--running);
+  --relay-status-blocked: var(--destructive);
+  --relay-status-complete: var(--success);
+  --relay-status-audit: var(--warning);
+  --relay-status-validation: var(--destructive);
+  --relay-status-neutral: var(--muted-foreground);
+
+  --relay-row-border: color-mix(in oklch, var(--border) 72%, transparent);
+  --relay-row-hover-bg: color-mix(
+    in oklch,
+    var(--surface-panel-hover) 70%,
+    transparent
+  );
+  --relay-splitpane-border: var(--border);
+  --relay-splitpane-sidebar-bg: color-mix(
+    in oklch,
+    var(--surface-shell) 90%,
+    var(--surface-base)
+  );
+  --relay-inspector-bg: var(--surface-base);
+  --relay-code-fg: var(--foreground);
 }
 
 .dark {
@@ -265,5 +287,56 @@
   kbd,
   samp {
     font-family: var(--font-mono);
+  }
+}
+
+@layer utilities {
+  .relay-status-dot {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    flex-shrink: 0;
+    border-radius: 9999px;
+  }
+
+  .relay-status-dot-running {
+    background: var(--relay-status-running);
+    box-shadow: 0 0 6px var(--relay-status-running);
+    animation: relay-pulse-running 2s ease-in-out infinite;
+  }
+
+  .relay-status-dot-blocked {
+    background: var(--relay-status-blocked);
+  }
+
+  .relay-status-dot-complete {
+    background: var(--relay-status-complete);
+  }
+
+  .relay-status-dot-audit {
+    background: var(--relay-status-audit);
+  }
+
+  .relay-status-dot-validation {
+    background: var(--relay-status-validation);
+  }
+
+  .relay-status-dot-neutral {
+    background: var(--relay-status-neutral);
+  }
+
+  .relay-status-dot-no-pulse {
+    animation: none;
+  }
+}
+
+@keyframes relay-pulse-running {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
   }
 }

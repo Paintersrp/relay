@@ -50,6 +50,7 @@ export type {
 export type {
   RelayRun,
   RelayArtifact,
+  RelayArtifactKind,
   RelayRunStatus,
   RelayRunStep,
   RelayValidationIssue,
