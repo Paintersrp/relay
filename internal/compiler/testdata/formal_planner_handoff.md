@@ -75,7 +75,6 @@ this_pass_scope: Fix stale active/free count rendering after successful refresh.
 out_of_scope_for_this_pass:
   - Redesigning the overflow page
 depends_on_packet_id: ""
-next_pass_hint: ""
 ```
 </pass_boundary>
 

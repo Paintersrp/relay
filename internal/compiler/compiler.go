@@ -1607,18 +1607,12 @@ func parsePassBoundary(text string) map[string]interface{} {
 		dependsOnPacketID = val
 	}
 
-	nextPassHint := ""
-	if val, ok := boundary["next_pass_hint"].(string); ok {
-		nextPassHint = val
-	}
-
 	return map[string]interface{}{
 		"current_pass":               currentPass,
 		"total_planned_passes":       totalPlannedPasses,
 		"this_pass_scope":            thisPassScope,
 		"out_of_scope_for_this_pass": outOfScope,
 		"depends_on_packet_id":       dependsOnPacketID,
-		"next_pass_hint":             nextPassHint,
 	}
 }
 
