@@ -859,11 +859,19 @@ func TestResolveIntakeExecutorAdapter(t *testing.T) {
 			wantErr:      true,
 		},
 		{
-			name:         "target_executor codex (implicit fallback)",
+			name:         "target_executor codex maps as explicit adapter fallback",
 			req:          PlannerHandoffIntakeRequest{},
 			metadata:     map[string]string{"target_executor": "codex"},
 			wantAdapter:  "codex",
-			wantExplicit: false,
+			wantExplicit: true,
+			wantErr:      false,
+		},
+		{
+			name:         "target_executor agy maps as explicit antigravity adapter fallback",
+			req:          PlannerHandoffIntakeRequest{},
+			metadata:     map[string]string{"target_executor": "agy"},
+			wantAdapter:  "antigravity",
+			wantExplicit: true,
 			wantErr:      false,
 		},
 		{

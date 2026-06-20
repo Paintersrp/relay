@@ -957,7 +957,7 @@ func resolveIntakeExecutorAdapter(req PlannerHandoffIntakeRequest, metadata map[
 	if strings.TrimSpace(targetExec) != "" {
 		adapter, err := executor.NormalizeKnownAdapterID(targetExec)
 		if err == nil {
-			return adapter, false, nil
+			return adapter, true, nil
 		}
 	}
 
