@@ -53,6 +53,8 @@ export type {
   RelayArtifactKind,
   RelayRunStatus,
   RelayRunStep,
+  RelayRunEvent,
+  RelayRunEventKind,
   RelayValidationIssue,
   RelayArtifactPreview,
   RelayApprovalGate,

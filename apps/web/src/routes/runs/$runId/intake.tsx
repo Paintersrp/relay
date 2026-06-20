@@ -10,7 +10,7 @@ import {
 import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
 import { ValidationPanel } from "@/components/relay/ValidationPanel";
 import { LogPreviewPanel } from "@/components/relay/LogPreviewPanel";
-import { ArtifactPreviewCard } from "@/components/relay/ArtifactPreviewCard";
+import { RunEvidenceBrowser } from "@/components/relay/RunEvidenceBrowser";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -124,14 +124,13 @@ function IntakePage() {
       mainContent={<IntakeMainContent run={run} artifacts={artifacts || []} />}
       inspectorPanels={{
         logs: <LogPreviewPanel logPreview={logPreview} />,
-        artifacts:
-          artifacts && artifacts.length > 0 ? (
-            <>
-              {artifacts.map((a) => (
-                <ArtifactPreviewCard key={a.id} artifact={a} runId={run.id} />
-              ))}
-            </>
-          ) : null,
+        artifacts: (
+          <RunEvidenceBrowser
+            runId={run.id}
+            artifacts={artifacts || []}
+            events={events || []}
+          />
+        ),
         validation: <ValidationPanel summary={run.validationSummary} />,
       }}
     />
