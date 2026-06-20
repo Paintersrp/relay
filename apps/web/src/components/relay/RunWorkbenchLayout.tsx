@@ -135,13 +135,13 @@ export function RunWorkbenchLayout({
 
       {/* Full-height split pane */}
       <ResizablePanelGroup
-        direction="horizontal"
+        orientation="horizontal"
         className="min-h-0 flex-1 overflow-hidden"
       >
         <ResizablePanel
           id="run-workbench-main"
-          defaultSize={72}
-          minSize={45}
+          defaultSize="72%"
+          minSize="45%"
           className="min-w-0"
         >
           <main className="h-full min-w-0 overflow-y-auto">
@@ -158,9 +158,9 @@ export function RunWorkbenchLayout({
 
             <ResizablePanel
               id="run-workbench-inspector"
-              defaultSize={28}
-              minSize={20}
-              maxSize={42}
+              defaultSize="28%"
+              minSize="20%"
+              maxSize="42%"
               className="hidden min-h-0 lg:flex"
             >
               <aside className="flex h-full min-h-0 w-full flex-col border-l border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]">
