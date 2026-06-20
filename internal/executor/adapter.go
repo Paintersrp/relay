@@ -52,7 +52,7 @@ func NewAdapterFromID(id string) (ExecutorAdapter, error) {
 	case AdapterOpenCodeGo:
 		return NewOpenCodeAdapterFromEnv(), nil
 	case AdapterCodex:
-		return nil, fmt.Errorf("executor adapter %q is not implemented", norm)
+		return NewCodexAdapterFromEnv(), nil
 	case AdapterAntigravity:
 		return nil, fmt.Errorf("executor adapter %q is not implemented", norm)
 	default:
@@ -72,6 +72,7 @@ type ExecutorInvocation struct {
 	Agent       string
 	Variant     string
 	Preview     string
+	ResultFile  string
 }
 
 type ExecutorAdapterRequest struct {

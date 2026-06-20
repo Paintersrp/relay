@@ -432,7 +432,7 @@ func TestDispatchBrief_UnsupportedAdapterBlocks(t *testing.T) {
 	s := setupExecutorTestStore(t)
 	runID := createExecutorReadyRun(t, s, "approved_for_executor")
 	writeExecutorBrief(t, s, runID, "# Brief")
-	_, err := s.UpdateRunExecutorAdapter(runID, "codex")
+	_, err := s.UpdateRunExecutorAdapter(runID, "antigravity")
 	if err != nil {
 		t.Fatalf("update run executor adapter: %v", err)
 	}
@@ -509,5 +509,219 @@ func TestNormalizeKnownAdapterID(t *testing.T) {
 				t.Errorf("NormalizeKnownAdapterID(%q) = %q, want %q", c.in, got, c.want)
 			}
 		}
+	}
+}
+
+func TestNewAdapterFromID_CodexReturnsAdapter(t *testing.T) {
+	adapter, err := NewAdapterFromID("codex")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if adapter.ID() != AdapterCodex {
+		t.Errorf("expected AdapterCodex, got %s", adapter.ID())
+	}
+}
+
+func TestNewAdapterFromID_AntigravityStillBlocks(t *testing.T) {
+	_, err := NewAdapterFromID("antigravity")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not implemented") {
+		t.Errorf("expected not implemented error, got %v", err)
+	}
+}
+
+func TestCodexAdapter_BuildInvocationPreservesCommand(t *testing.T) {
+	adapter := CodexAdapter{
+		Config: CodexAdapterConfig{Binary: "codex", Sandbox: "workspace-write"},
+	}
+	req := ExecutorAdapterRequest{
+		RunID:         1,
+		RepoPath:      "/tmp/repo",
+		BriefContent:  "# Brief\nDo the thing.",
+		BriefPath:     "/tmp/repo/executor_brief.md",
+		SelectedModel: "test-model",
+	}
+	inv, err := adapter.BuildInvocation(req)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if inv.Adapter != AdapterCodex {
+		t.Errorf("expected adapter %s, got %s", AdapterCodex, inv.Adapter)
+	}
+	if inv.Binary != "codex" {
+		t.Errorf("expected binary codex, got %s", inv.Binary)
+	}
+
+	expectedPrefixArgs := []string{"exec", "--cd", "/tmp/repo", "--ask-for-approval", "never", "--sandbox", "workspace-write", "--json", "--output-last-message"}
+	for i, a := range expectedPrefixArgs {
+		if inv.Args[i] != a {
+			t.Errorf("arg %d expected %s, got %s", i, a, inv.Args[i])
+		}
+	}
+	if inv.Args[len(inv.Args)-1] != "-" {
+		t.Errorf("expected last arg to be -, got %s", inv.Args[len(inv.Args)-1])
+	}
+	if inv.Stdin != "# Brief\nDo the thing." {
+		t.Errorf("expected stdin to be brief content, got %s", inv.Stdin)
+	}
+	if !strings.Contains(inv.Preview, "codex exec") || !strings.Contains(inv.Preview, "/tmp/repo") || !strings.Contains(inv.Preview, " < ") {
+		t.Errorf("preview missing expected components: %s", inv.Preview)
+	}
+}
+
+func TestCodexAdapter_DefaultModelUsesConfigDefault(t *testing.T) {
+	adapter := CodexAdapter{
+		Config: CodexAdapterConfig{Binary: "codex", Sandbox: "workspace-write", Model: ""},
+	}
+	req := ExecutorAdapterRequest{
+		RunID:         1,
+		RepoPath:      "/tmp/repo",
+		BriefContent:  "# Brief",
+		BriefPath:     "/tmp/brief.md",
+		SelectedModel: "any-model", // not used by adapter config directly, config empty
+	}
+	inv, err := adapter.BuildInvocation(req)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	for _, a := range inv.Args {
+		if a == "--model" {
+			t.Errorf("expected no --model arg when config model is empty")
+		}
+	}
+}
+
+func TestCodexAdapter_RejectsDangerFullAccess(t *testing.T) {
+	adapter := CodexAdapter{
+		Config: CodexAdapterConfig{Binary: "codex", Sandbox: "danger-full-access"},
+	}
+	req := ExecutorAdapterRequest{
+		RunID:         1,
+		RepoPath:      "/tmp/repo",
+		BriefContent:  "# Brief",
+		BriefPath:     "/tmp/brief.md",
+	}
+	_, err := adapter.BuildInvocation(req)
+	if err == nil {
+		t.Fatal("expected error for danger-full-access, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid sandbox value") {
+		t.Errorf("expected invalid sandbox error, got %v", err)
+	}
+}
+
+func TestCodexAdapter_NormalizeResultDone(t *testing.T) {
+	adapter := CodexAdapter{}
+	raw := "STATUS: DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 5"
+	res := adapter.NormalizeResult(raw)
+	if res.Status != pipeline.AgentResultDone {
+		t.Errorf("expected DONE, got %v", res.Status)
+	}
+	if !strings.Contains(res.ExecutorResultText, "STATUS: DONE") {
+		t.Errorf("expected text to contain STATUS: DONE, got %s", res.ExecutorResultText)
+	}
+}
+
+func TestCodexAdapter_NormalizeResultBlocked(t *testing.T) {
+	adapter := CodexAdapter{}
+	raw := "STATUS: BLOCKED\nBLOCKER: syntax error"
+	res := adapter.NormalizeResult(raw)
+	if res.Status != pipeline.AgentResultBlocked {
+		t.Errorf("expected BLOCKED, got %v", res.Status)
+	}
+	if !strings.Contains(res.BlockerText, "syntax error") {
+		t.Errorf("expected blocker text to contain syntax error, got %s", res.BlockerText)
+	}
+}
+
+func TestDispatchBrief_CodexIntegrationWritesArtifact(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	_, err := s.UpdateRunExecutorAdapter(runID, "codex")
+	if err != nil {
+		t.Fatalf("update run executor adapter: %v", err)
+	}
+
+	done := make(chan struct{})
+	var recordedBin string
+
+	adapter := &CodexAdapter{Config: CodexAdapterConfig{Binary: "codex", Sandbox: "workspace-write"}}
+	_, err = DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: adapter,
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			recordedBin = binary
+			
+			var resultFile string
+			for i, a := range args {
+				if a == "--output-last-message" && i+1 < len(args) {
+					resultFile = args[i+1]
+				}
+			}
+			
+			if resultFile != "" {
+				os.WriteFile(resultFile, []byte("STATUS: DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 12\n"), 0644)
+			}
+			
+			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "{\"event\": \"start\"}\n{\"event\": \"chunk\", \"text\": \"hello\"}\n{\"event\": \"end\"}"}
+		},
+		LaunchAsync: func(fn func()) {
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	<-done
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Provider != string(AdapterCodex) {
+		t.Errorf("expected provider codex, got %s", exec.Provider)
+	}
+	if recordedBin != "codex" {
+		t.Errorf("expected runner binary codex, got %s", recordedBin)
+	}
+	if exec.Status != "completed" {
+		t.Errorf("expected exec status completed, got %s", exec.Status)
+	}
+	
+	run, _ := s.GetRun(runID)
+	if run.Status != StatusExecutorDone {
+		t.Errorf("expected run status %s, got %s", StatusExecutorDone, run.Status)
+	}
+	
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("get artifacts: %v", err)
+	}
+	foundCodexMsg := false
+	foundResult := false
+	for _, a := range artifactsList {
+		if a.Kind == ArtifactKindCodexLastMessage {
+			foundCodexMsg = true
+		}
+		if a.Kind == ArtifactKindExecutorResult {
+			foundResult = true
+			content, _ := os.ReadFile(a.Path)
+			if !strings.Contains(string(content), "STATUS: DONE") {
+				t.Errorf("executor_result content mismatch: %s", string(content))
+			}
+		}
+	}
+	if !foundCodexMsg {
+		t.Errorf("expected codex_last_message artifact")
+	}
+	if !foundResult {
+		t.Errorf("expected executor_result artifact")
 	}
 }

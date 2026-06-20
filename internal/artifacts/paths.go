@@ -59,6 +59,7 @@ var allowedKinds = map[string]bool{
 	"executor_stderr":                    true,
 	"command_log":                        true,
 	"executor_result":                    true,
+	"codex_last_message":                 true,
 	"audit_revision":                     true,
 	"mcp_audit_handback":                 true,
 	"repair_request_json":                true,

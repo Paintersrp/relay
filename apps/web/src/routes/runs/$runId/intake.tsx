@@ -415,8 +415,8 @@ function IntakeMainContent({
               </SelectContent>
             </Select>
             {executorAdapter === 'codex' && (
-              <div className="text-[10px] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded p-1.5 leading-tight">
-                <strong>Note:</strong> Codex execution is not yet implemented. The adapter will be persisted, but execution will safely block.
+              <div className="text-[10px] text-muted-foreground bg-muted/20 border border-border/40 rounded p-1.5 leading-tight">
+                <strong>Note:</strong> Codex dispatch uses the local Codex CLI configuration and authentication available to the Relay daemon.
               </div>
             )}
             {executorAdapter === 'antigravity' && (

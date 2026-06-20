@@ -30,12 +30,17 @@ const (
 	ArtifactKindExecutorStderr = "executor_stderr"
 	ArtifactKindCommandLog     = "command_log"
 	ArtifactKindExecutorResult = "executor_result"
+	ArtifactKindCodexLastMessage = "codex_last_message"
 )
 
 var knownSecrets = []string{
 	"RELAY_OPENCODE_BIN",
 	"RELAY_OPENCODE_AGENT",
 	"RELAY_OPENCODE_VARIANT",
+	"RELAY_CODEX_BIN",
+	"RELAY_CODEX_MODEL",
+	"RELAY_CODEX_PROFILE",
+	"OPENAI_API_KEY",
 }
 
 type DispatchParams struct {
@@ -373,34 +378,51 @@ func runBackgroundDispatch(
 
 	collectAndPersistGitEvidence(s, runID, repo.Path)
 
-	if runResult.Stdout != "" {
-		res := adapter.NormalizeResult(runResult.Stdout)
+	if runResult.Stdout != "" || invocation.ResultFile != "" {
+		normalizationInput := runResult.Stdout
 
-		if res.ExecutorResultText != "" {
-			resultPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte(res.ExecutorResultText))
-			if resultPath != "" {
-				recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
+		if invocation.ResultFile != "" {
+			if content, err := os.ReadFile(invocation.ResultFile); err == nil {
+				trimmed := strings.TrimSpace(string(content))
+				if trimmed != "" {
+					appendPath, wErr := writeExecutorArtifact(runID, ArtifactKindCodexLastMessage, content)
+					if wErr == nil && appendPath != "" {
+						recordExecutorArtifact(s, runID, ArtifactKindCodexLastMessage, appendPath, "text/plain")
+					}
+					normalizationInput = string(content)
+				}
 			}
 		}
 
-		switch res.Status {
-		case pipeline.AgentResultDone:
-			createEvent(s, runID, "info", "Executor completed: DONE")
-			publishRunEvent(hub, runID, events.KindStepAgent, "executor", "done")
-			updateRunStatus(s, runID, StatusExecutorDone)
-			publishRunEvent(hub, runID, events.KindRunSummary, "executor", "done")
-		case pipeline.AgentResultBlocked:
-			createEvent(s, runID, "warn", "Executor blocked: "+res.BlockerText)
-			publishRunEvent(hub, runID, events.KindStepAgent, "executor", "blocked")
-			updateRunStatus(s, runID, StatusExecutorBlocked)
-			publishRunEvent(hub, runID, events.KindRunSummary, "executor", "blocked")
-		default:
-			createEvent(s, runID, "warn", res.ParseError)
-			publishRunEvent(hub, runID, events.KindStepAgent, "executor", "parse_failed")
-			updateRunStatus(s, runID, StatusExecutorBlocked)
-			publishRunEvent(hub, runID, events.KindRunSummary, "executor", "blocked")
+		if normalizationInput != "" {
+			res := adapter.NormalizeResult(normalizationInput)
+
+			if res.ExecutorResultText != "" {
+				resultPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte(res.ExecutorResultText))
+				if resultPath != "" {
+					recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
+				}
+			}
+
+			switch res.Status {
+			case pipeline.AgentResultDone:
+				createEvent(s, runID, "info", "Executor completed: DONE")
+				publishRunEvent(hub, runID, events.KindStepAgent, "executor", "done")
+				updateRunStatus(s, runID, StatusExecutorDone)
+				publishRunEvent(hub, runID, events.KindRunSummary, "executor", "done")
+			case pipeline.AgentResultBlocked:
+				createEvent(s, runID, "warn", "Executor blocked: "+res.BlockerText)
+				publishRunEvent(hub, runID, events.KindStepAgent, "executor", "blocked")
+				updateRunStatus(s, runID, StatusExecutorBlocked)
+				publishRunEvent(hub, runID, events.KindRunSummary, "executor", "blocked")
+			default:
+				createEvent(s, runID, "warn", res.ParseError)
+				publishRunEvent(hub, runID, events.KindStepAgent, "executor", "parse_failed")
+				updateRunStatus(s, runID, StatusExecutorBlocked)
+				publishRunEvent(hub, runID, events.KindRunSummary, "executor", "blocked")
+			}
+			return
 		}
-		return
 	}
 
 	resultPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte("STATUS: UNKNOWN\nNo stdout captured from executor.\n"))
