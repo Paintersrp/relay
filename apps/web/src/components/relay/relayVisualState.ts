@@ -180,6 +180,8 @@ export function getRelayAttentionReason(status: RelayRunStatus | string): RelayA
     case "audit_ready_for_review":
     case "agent_result_needs_review":
     case "revision_required":
+    case "accepted_with_warnings":
+    case "validation_failed_accepted":
       return "audit-required";
     case "intake_needs_review":
     case "needs_cleanup":
