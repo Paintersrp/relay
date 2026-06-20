@@ -2,17 +2,19 @@ import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { RelayArtifact, RelayRunEvent } from '@/features/relay-runs'
 import {
-  runArtifactContentQueryOptionsForArtifact,
   formatRunDate,
+  runArtifactContentQueryOptionsForArtifact,
 } from '@/features/relay-runs'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import {
-  CheckCircle2,
-  Clock,
-  FileText,
-  XCircle,
-} from 'lucide-react'
+import { CheckCircle2, Clock, FileText, XCircle } from 'lucide-react'
 
 type EvidenceStageKey = 'intake' | 'compile' | 'execute' | 'audit' | 'provenance'
 
@@ -127,76 +129,83 @@ function artifactIdentity(artifact: RelayArtifact): string {
     artifact.path,
     artifact.contentUrl,
   ]
-    .filter((v): v is string => typeof v === 'string' && v.length > 0)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .join(' ')
     .toLowerCase()
 }
 
 function getArtifactStage(artifact: RelayArtifact): EvidenceStageKey {
-  const id = artifactIdentity(artifact)
+  const identity = artifactIdentity(artifact)
   for (const stage of EVIDENCE_STAGES) {
-    if (STAGE_KEYWORDS[stage.key].some((kw) => id.includes(kw))) {
+    if (STAGE_KEYWORDS[stage.key].some((keyword) => identity.includes(keyword))) {
       return stage.key
     }
   }
   return 'provenance'
 }
 
+function getArtifactStageLabel(artifact: RelayArtifact): string {
+  return (
+    EVIDENCE_STAGES.find((stage) => stage.key === getArtifactStage(artifact))?.label ??
+    'Provenance'
+  )
+}
+
 function deriveProducer(artifact: RelayArtifact): string {
-  const id = artifactIdentity(artifact)
+  const identity = artifactIdentity(artifact)
   if (
-    id.includes('git_diff') ||
-    id.includes('git_status') ||
-    id.includes('provenance') ||
-    id.includes('diff')
+    identity.includes('git_diff') ||
+    identity.includes('git_status') ||
+    identity.includes('provenance') ||
+    identity.includes('diff')
   ) {
     return 'Provenance'
   }
   if (
-    id.includes('audit') ||
-    id.includes('closeout') ||
-    id.includes('decision') ||
-    id.includes('mcp_audit_handback')
+    identity.includes('audit') ||
+    identity.includes('closeout') ||
+    identity.includes('decision') ||
+    identity.includes('mcp_audit_handback')
   ) {
     return 'Auditor'
   }
   if (
-    id.includes('validation') ||
-    id.includes('packet_validation') ||
-    id.includes('brief_validation') ||
-    id.includes('intake_validation')
+    identity.includes('validation') ||
+    identity.includes('packet_validation') ||
+    identity.includes('brief_validation') ||
+    identity.includes('intake_validation')
   ) {
     return 'Validator'
   }
   if (
-    id.includes('handoff') ||
-    id.includes('planner_handoff') ||
-    id.includes('frontmatter') ||
-    id.includes('run_config') ||
-    id.includes('intake')
+    identity.includes('handoff') ||
+    identity.includes('planner_handoff') ||
+    identity.includes('frontmatter') ||
+    identity.includes('run_config') ||
+    identity.includes('intake')
   ) {
     return 'Intake'
   }
   if (
-    id.includes('canonical_packet') ||
-    id.includes('executor_brief') ||
-    id.includes('packet') ||
-    id.includes('brief') ||
-    id.includes('compile') ||
-    id.includes('render') ||
-    id.includes('repair')
+    identity.includes('canonical_packet') ||
+    identity.includes('executor_brief') ||
+    identity.includes('packet') ||
+    identity.includes('brief') ||
+    identity.includes('compile') ||
+    identity.includes('render') ||
+    identity.includes('repair')
   ) {
     return 'Compiler'
   }
   if (
-    id.includes('executor_result') ||
-    id.includes('agent_result') ||
-    id.includes('command_log') ||
-    id.includes('executor_stdout') ||
-    id.includes('executor_stderr') ||
-    id.includes('stdout') ||
-    id.includes('stderr') ||
-    id.includes('execute')
+    identity.includes('executor_result') ||
+    identity.includes('agent_result') ||
+    identity.includes('command_log') ||
+    identity.includes('executor_stdout') ||
+    identity.includes('executor_stderr') ||
+    identity.includes('stdout') ||
+    identity.includes('stderr') ||
+    identity.includes('execute')
   ) {
     return 'Executor'
   }
@@ -255,27 +264,33 @@ function deriveVerification(artifact: RelayArtifact): VerificationInfo {
 }
 
 function getArtifactHash(artifact: RelayArtifact): string {
-  const a = artifact as any
+  const looseArtifact = artifact as RelayArtifact & Record<string, unknown>
   const direct =
-    a.sha256 || a.hash || a.digest || a.checksum || a.artifactHash
-  if (direct && typeof direct === 'string' && direct.length > 0) {
+    looseArtifact.sha256 ||
+    looseArtifact.hash ||
+    looseArtifact.digest ||
+    looseArtifact.checksum ||
+    looseArtifact.artifactHash
+
+  if (typeof direct === 'string' && direct.length > 0) {
     return direct
   }
-  const preview = artifact.preview
-  if (preview && typeof preview === 'string') {
-    const match = preview.match(
+
+  if (typeof artifact.preview === 'string') {
+    const match = artifact.preview.match(
       /(?:sha256|hash|digest)["':\s]*([a-fA-F0-9]{40,64})/i,
     )
     if (match) {
       return match[1]
     }
   }
+
   return '—'
 }
 
 function compactHash(hash: string): string {
   if (hash === '—') return hash
-  if (hash.length > 16) return hash.slice(0, 12) + '…'
+  if (hash.length > 16) return `${hash.slice(0, 12)}…`
   return hash
 }
 
@@ -286,6 +301,7 @@ function getRelatedEvents(
   if (!artifact) {
     return events.slice(-20)
   }
+
   const tokens = [
     artifact.filename,
     artifact.label,
@@ -293,31 +309,52 @@ function getRelatedEvents(
     artifact.storageKind,
     artifact.path,
   ]
-    .filter((t): t is string => typeof t === 'string' && t.length > 0)
-    .map((t) => t.toLowerCase())
+    .filter((token): token is string => typeof token === 'string' && token.length > 0)
+    .map((token) => token.toLowerCase())
+
   if (tokens.length === 0) {
     return []
   }
-  return events.filter((e) => {
-    const haystack = `${e.message} ${
-      e.details ? JSON.stringify(e.details) : ''
+
+  return events.filter((event) => {
+    const haystack = `${event.message} ${
+      event.details ? JSON.stringify(event.details) : ''
     }`.toLowerCase()
-    return tokens.some((t) => haystack.includes(t))
+    return tokens.some((token) => haystack.includes(token))
   })
 }
 
 function formatEvidenceTime(value?: string): string {
   if (!value) return '—'
-  const d = new Date(value)
-  if (isNaN(d.getTime())) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
   return formatRunDate(value)
 }
 
 function sortArtifacts(list: RelayArtifact[]): RelayArtifact[] {
-  return [...list].sort((a, b) => {
-    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0
-    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0
-    return ta - tb
+  const stageOrder = new Map(
+    EVIDENCE_STAGES.map((stage, index) => [stage.key, index] as const),
+  )
+
+  return [...list].sort((left, right) => {
+    const leftStage = stageOrder.get(getArtifactStage(left)) ?? EVIDENCE_STAGES.length
+    const rightStage =
+      stageOrder.get(getArtifactStage(right)) ?? EVIDENCE_STAGES.length
+
+    if (leftStage !== rightStage) {
+      return leftStage - rightStage
+    }
+
+    const leftTime = left.createdAt ? new Date(left.createdAt).getTime() : 0
+    const rightTime = right.createdAt ? new Date(right.createdAt).getTime() : 0
+
+    if (leftTime !== rightTime) {
+      return leftTime - rightTime
+    }
+
+    return (left.label || left.filename || left.id).localeCompare(
+      right.label || right.filename || right.id,
+    )
   })
 }
 
@@ -327,9 +364,10 @@ function formatJsonIfPossible(raw: string): string {
     try {
       return JSON.stringify(JSON.parse(raw), null, 2)
     } catch {
-      // fall through to raw
+      return raw
     }
   }
+
   return raw
 }
 
@@ -357,6 +395,242 @@ function MetadataRow({
   )
 }
 
+function EvidenceArtifactRow({
+  artifact,
+  selected,
+  onClick,
+}: {
+  artifact: RelayArtifact
+  selected: boolean
+  onClick: () => void
+}) {
+  const verification = deriveVerification(artifact)
+  const name = artifact.label || artifact.filename || artifact.id || 'Unnamed artifact'
+  const stageLabel = getArtifactStageLabel(artifact)
+  const producer = deriveProducer(artifact)
+  const metadata = [
+    stageLabel,
+    producer,
+    artifact.sizeHint || null,
+    compactHash(getArtifactHash(artifact)),
+    formatEvidenceTime(artifact.createdAt),
+  ].filter(Boolean) as string[]
+
+  return (
+    <button
+      type='button'
+      onClick={onClick}
+      className={cn(
+        'w-full rounded border px-3 py-2 text-left transition-colors',
+        selected
+          ? 'border-[var(--relay-accent)] bg-[var(--relay-panel-hover-bg)]'
+          : 'border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] hover:bg-[var(--relay-panel-hover-bg)]',
+      )}
+    >
+      <div className='flex items-start justify-between gap-3'>
+        <div className='min-w-0'>
+          <p className='truncate text-xs font-medium text-foreground' title={name}>
+            {name}
+          </p>
+          <p className='mt-1 truncate font-mono text-[10px] text-muted-foreground'>
+            {stageLabel} · {producer}
+          </p>
+        </div>
+        <span
+          className={cn(
+            'flex shrink-0 items-center gap-0.5 font-mono text-[10px]',
+            verification.className,
+          )}
+        >
+          {verification.icon}
+          {verification.label}
+        </span>
+      </div>
+
+      <p className='mt-1 truncate font-mono text-[10px] text-muted-foreground/80'>
+        {metadata.join(' · ')}
+      </p>
+    </button>
+  )
+}
+
+function EvidenceArtifactDialog({
+  runId,
+  artifact,
+  events,
+  open,
+  onOpenChange,
+}: {
+  runId: string
+  artifact: RelayArtifact | null
+  events: RelayRunEvent[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const selectedArtifact = artifact ?? FALLBACK_ARTIFACT
+  const verification = artifact ? deriveVerification(artifact) : null
+  const relatedEvents = React.useMemo(
+    () => getRelatedEvents(artifact, events),
+    [artifact, events],
+  )
+
+  const {
+    data: selectedContent,
+    isLoading: isLoadingContent,
+    error: contentError,
+  } = useQuery({
+    ...runArtifactContentQueryOptionsForArtifact(runId, selectedArtifact),
+    enabled: open && !!artifact,
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className='flex h-[80vh] max-w-[960px] flex-col gap-0 overflow-hidden p-0'>
+        {artifact ? (
+          <>
+            <DialogHeader className='shrink-0 border-b border-[var(--relay-row-border)] px-6 py-4'>
+              <div className='flex min-w-0 items-start justify-between gap-3'>
+                <div className='min-w-0'>
+                  <DialogTitle className='truncate text-left text-sm font-semibold'>
+                    {artifact.label || artifact.filename || artifact.id}
+                  </DialogTitle>
+                  <DialogDescription className='mt-1 text-left font-mono text-[11px]'>
+                    {getArtifactStageLabel(artifact)} · {deriveProducer(artifact)} ·{' '}
+                    {artifact.sizeHint || '—'} · {formatEvidenceTime(artifact.createdAt)}
+                  </DialogDescription>
+                </div>
+                {verification ? (
+                  <span
+                    className={cn(
+                      'flex shrink-0 items-center gap-1 font-mono text-[10px]',
+                      verification.className,
+                    )}
+                  >
+                    {verification.icon}
+                    {verification.label}
+                  </span>
+                ) : null}
+              </div>
+            </DialogHeader>
+
+            <Tabs defaultValue='preview' className='flex min-h-0 flex-1 flex-col'>
+              <div className='shrink-0 border-b border-[var(--relay-row-border)] px-6 py-3'>
+                <TabsList variant='line' className='grid h-8 w-full grid-cols-4'>
+                  <TabsTrigger value='preview' className='text-[10px]'>
+                    Preview
+                  </TabsTrigger>
+                  <TabsTrigger value='event-chain' className='text-[10px]'>
+                    Event Chain
+                  </TabsTrigger>
+                  <TabsTrigger value='metadata' className='text-[10px]'>
+                    Metadata
+                  </TabsTrigger>
+                  <TabsTrigger value='raw' className='text-[10px]'>
+                    Raw
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              <div className='min-h-0 flex-1 px-6 py-4'>
+                <TabsContent value='preview' className='mt-0 h-full overflow-y-auto'>
+                  <PreviewTab
+                    artifact={artifact}
+                    content={selectedContent}
+                    isLoading={isLoadingContent}
+                    error={contentError}
+                  />
+                </TabsContent>
+
+                <TabsContent
+                  value='event-chain'
+                  className='mt-0 h-full overflow-y-auto'
+                >
+                  {relatedEvents.length > 0 ? (
+                    <div className='flex flex-col gap-1.5'>
+                      {relatedEvents.map((event) => (
+                        <div
+                          key={event.id}
+                          className='rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-3 py-2'
+                        >
+                          <p className='font-mono text-[10px] text-muted-foreground/70'>
+                            {formatEvidenceTime(event.createdAt)}
+                          </p>
+                          <p className='mt-0.5 text-xs text-foreground'>
+                            {event.message}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className='rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-3 text-xs text-muted-foreground'>
+                      No related events were captured for this artifact.
+                    </p>
+                  )}
+                </TabsContent>
+
+                <TabsContent value='metadata' className='mt-0 h-full overflow-y-auto'>
+                  <div className='flex flex-col gap-1.5 rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-3'>
+                    <MetadataRow label='ID' value={artifact.id || '—'} />
+                    <MetadataRow
+                      label='Label'
+                      value={artifact.label || '—'}
+                      mono={false}
+                    />
+                    <MetadataRow
+                      label='Filename'
+                      value={artifact.filename || '—'}
+                    />
+                    <MetadataRow label='Kind' value={artifact.kind || '—'} />
+                    <MetadataRow
+                      label='Storage Kind'
+                      value={artifact.storageKind || '—'}
+                    />
+                    <MetadataRow
+                      label='Stage'
+                      value={getArtifactStageLabel(artifact)}
+                      mono={false}
+                    />
+                    <MetadataRow
+                      label='Producer'
+                      value={deriveProducer(artifact)}
+                      mono={false}
+                    />
+                    <MetadataRow
+                      label='Verification'
+                      value={verification?.label || '—'}
+                      mono={false}
+                    />
+                    <MetadataRow
+                      label='Timestamp'
+                      value={formatEvidenceTime(artifact.createdAt)}
+                    />
+                    <MetadataRow label='Hash' value={getArtifactHash(artifact)} />
+                    <MetadataRow label='Size' value={artifact.sizeHint || '—'} />
+                    <MetadataRow label='Path' value={artifact.path || '—'} />
+                    <MetadataRow
+                      label='Content URL'
+                      value={artifact.contentUrl || '—'}
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value='raw' className='mt-0 h-full overflow-y-auto'>
+                  <RawTab
+                    artifact={artifact}
+                    content={selectedContent}
+                    isLoading={isLoadingContent}
+                    error={contentError}
+                  />
+                </TabsContent>
+              </div>
+            </Tabs>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function RunEvidenceBrowser({
   runId,
   artifacts,
@@ -364,59 +638,42 @@ export function RunEvidenceBrowser({
   className,
 }: RunEvidenceBrowserProps) {
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
+  const [dialogOpen, setDialogOpen] = React.useState(false)
 
-  const groupedArtifacts = React.useMemo(() => {
-    const groups: Record<EvidenceStageKey, RelayArtifact[]> = {
-      intake: [],
-      compile: [],
-      execute: [],
-      audit: [],
-      provenance: [],
-    }
-    for (const a of artifacts) {
-      groups[getArtifactStage(a)].push(a)
-    }
-    for (const key of Object.keys(groups) as EvidenceStageKey[]) {
-      groups[key] = sortArtifacts(groups[key])
-    }
-    return groups
-  }, [artifacts])
+  const sortedArtifacts = React.useMemo(() => sortArtifacts(artifacts), [artifacts])
 
   React.useEffect(() => {
-    if (artifacts.length === 0) {
+    if (sortedArtifacts.length === 0) {
       if (selectedId !== null) setSelectedId(null)
+      if (dialogOpen) setDialogOpen(false)
       return
     }
-    const exists = artifacts.some((a) => a.id === selectedId)
-    if (exists) return
-    for (const stage of EVIDENCE_STAGES) {
-      const first = groupedArtifacts[stage.key][0]
-      if (first) {
-        setSelectedId(first.id)
-        return
-      }
+
+    const selectedStillExists = sortedArtifacts.some(
+      (artifact) => artifact.id === selectedId,
+    )
+
+    if (!selectedStillExists) {
+      setSelectedId(sortedArtifacts[0].id)
     }
-  }, [artifacts, groupedArtifacts, selectedId])
+  }, [dialogOpen, selectedId, sortedArtifacts])
 
   const selectedArtifact = React.useMemo(
-    () => artifacts.find((a) => a.id === selectedId) ?? null,
-    [artifacts, selectedId],
+    () =>
+      sortedArtifacts.find((artifact) => artifact.id === selectedId) ?? null,
+    [selectedId, sortedArtifacts],
   )
 
-  const { data: selectedContent, isLoading: isLoadingContent, error: contentError } =
-    useQuery({
-      ...runArtifactContentQueryOptionsForArtifact(
-        runId,
-        selectedArtifact ?? FALLBACK_ARTIFACT,
-      ),
-      enabled: !!selectedArtifact,
-    })
+  const handleArtifactClick = React.useCallback((artifact: RelayArtifact) => {
+    setSelectedId(artifact.id)
+    setDialogOpen(true)
+  }, [])
 
   if (artifacts.length === 0) {
     return (
       <div
         className={cn(
-          'rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4',
+          'flex h-full min-h-0 flex-col rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4',
           className,
         )}
       >
@@ -430,230 +687,42 @@ export function RunEvidenceBrowser({
     )
   }
 
-  const verification = selectedArtifact
-    ? deriveVerification(selectedArtifact)
-    : null
-  const relatedEvents = selectedArtifact
-    ? getRelatedEvents(selectedArtifact, events)
-    : []
-
   return (
-    <div
-      className={cn(
-        'flex h-[calc(100dvh-14rem)] min-h-[440px] flex-row gap-3',
-        className,
-      )}
-    >
-      {/* Left column: grouped artifact list by stage */}
-      <div className='flex w-[42%] min-w-[150px] flex-col gap-3 overflow-y-auto pr-1'>
-        {EVIDENCE_STAGES.map((stage) => {
-          const stageArtifacts = groupedArtifacts[stage.key]
-          return (
-            <div key={stage.key} className='flex flex-col gap-1'>
-              <div
-                className='flex items-center gap-1.5 px-1 py-0.5'
-                title={stage.description}
-              >
-                <span className='font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground'>
-                  {stage.label}
-                </span>
-                <span className='text-[10px] text-muted-foreground/50'>
-                  {stageArtifacts.length}
-                </span>
-              </div>
-              {stageArtifacts.length === 0 ? (
-                <p className='px-2 py-1 text-[10px] italic text-muted-foreground/60'>
-                  No artifacts captured for this stage.
-                </p>
-              ) : (
-                stageArtifacts.map((a) => {
-                  const isSelected = a.id === selectedId
-                  const prod = deriveProducer(a)
-                  const ver = deriveVerification(a)
-                  const hash = compactHash(getArtifactHash(a))
-                  return (
-                    <button
-                      key={a.id}
-                      type='button'
-                      onClick={() => setSelectedId(a.id)}
-                      className={cn(
-                        'flex flex-col gap-1 rounded border px-2 py-1.5 text-left transition-colors',
-                        isSelected
-                          ? 'border-[var(--relay-accent)] bg-[var(--relay-panel-hover-bg)]'
-                          : 'border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] hover:bg-[var(--relay-panel-hover-bg)]',
-                      )}
-                    >
-                      <span className='truncate text-xs font-medium text-foreground'>
-                        {a.label || a.filename}
-                      </span>
-                      <div className='flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground'>
-                        <span className='font-mono'>{prod}</span>
-                        <span className='opacity-40'>·</span>
-                        <span
-                          className={cn(
-                            'flex items-center gap-0.5',
-                            ver.className,
-                          )}
-                        >
-                          {ver.icon}
-                          {ver.label}
-                        </span>
-                      </div>
-                      <div className='flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground/70'>
-                        <span>{formatEvidenceTime(a.createdAt)}</span>
-                        {a.sizeHint && (
-                          <span className='opacity-60'>({a.sizeHint})</span>
-                        )}
-                      </div>
-                      <div className='truncate font-mono text-[10px] text-muted-foreground/60'>
-                        {hash}
-                      </div>
-                    </button>
-                  )
-                })
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Right column: selected artifact detail tabs */}
-      <div className='flex min-w-0 flex-1 flex-col'>
-        {selectedArtifact && verification ? (
-          <Tabs
-            defaultValue='preview'
-            className='flex h-full min-h-0 flex-col'
-          >
-            <TabsList
-              variant='line'
-              className='shrink-0 self-start'
-            >
-              <TabsTrigger value='preview'>Preview</TabsTrigger>
-              <TabsTrigger value='event-chain'>Event Chain</TabsTrigger>
-              <TabsTrigger value='metadata'>Metadata</TabsTrigger>
-              <TabsTrigger value='raw'>Raw</TabsTrigger>
-            </TabsList>
-
-            {/* Preview tab */}
-            <TabsContent
-              value='preview'
-              className='min-h-0 flex-1 overflow-y-auto'
-            >
-              <PreviewTab
-                artifact={selectedArtifact}
-                content={selectedContent}
-                isLoading={isLoadingContent}
-                error={contentError}
-              />
-            </TabsContent>
-
-            {/* Event Chain tab */}
-            <TabsContent
-              value='event-chain'
-              className='min-h-0 flex-1 overflow-y-auto'
-            >
-              {relatedEvents.length > 0 ? (
-                <div className='flex flex-col gap-1.5'>
-                  {relatedEvents.map((e) => (
-                    <div
-                      key={e.id}
-                      className='flex flex-col gap-0.5 rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-2 py-1.5'
-                    >
-                      <span className='font-mono text-[10px] text-muted-foreground/70'>
-                        {formatEvidenceTime(e.createdAt)}
-                      </span>
-                      <span className='text-xs text-foreground'>
-                        {e.message}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className='p-2 text-xs text-muted-foreground'>
-                  No related events were captured for this artifact.
-                </p>
-              )}
-            </TabsContent>
-
-            {/* Metadata tab */}
-            <TabsContent
-              value='metadata'
-              className='min-h-0 flex-1 overflow-y-auto'
-            >
-              <div className='flex flex-col gap-1.5 p-1'>
-                <MetadataRow label='ID' value={selectedArtifact.id || '—'} />
-                <MetadataRow
-                  label='Label'
-                  value={selectedArtifact.label || '—'}
-                  mono={false}
-                />
-                <MetadataRow
-                  label='Filename'
-                  value={selectedArtifact.filename || '—'}
-                />
-                <MetadataRow
-                  label='Kind'
-                  value={selectedArtifact.kind || '—'}
-                />
-                <MetadataRow
-                  label='Storage Kind'
-                  value={selectedArtifact.storageKind || '—'}
-                />
-                <MetadataRow
-                  label='Producer'
-                  value={deriveProducer(selectedArtifact)}
-                  mono={false}
-                />
-                <MetadataRow
-                  label='Verification'
-                  value={verification.label}
-                  mono={false}
-                />
-                <MetadataRow
-                  label='Timestamp'
-                  value={formatEvidenceTime(selectedArtifact.createdAt)}
-                />
-                <MetadataRow
-                  label='Hash'
-                  value={getArtifactHash(selectedArtifact)}
-                />
-                <MetadataRow
-                  label='Size'
-                  value={selectedArtifact.sizeHint || '—'}
-                />
-                <MetadataRow
-                  label='Path'
-                  value={selectedArtifact.path || '—'}
-                />
-                <MetadataRow
-                  label='Content URL'
-                  value={selectedArtifact.contentUrl || '—'}
-                />
-              </div>
-            </TabsContent>
-
-            {/* Raw tab */}
-            <TabsContent
-              value='raw'
-              className='min-h-0 flex-1 overflow-y-auto'
-            >
-              <RawTab
-                artifact={selectedArtifact}
-                content={selectedContent}
-                isLoading={isLoadingContent}
-                error={contentError}
-              />
-            </TabsContent>
-          </Tabs>
-        ) : (
-          <div className='flex flex-1 items-center justify-center p-4'>
-            <p className='text-xs text-muted-foreground'>
-              Select an artifact to view evidence details.
+    <>
+      <div className={cn('flex h-full min-h-0 flex-col', className)}>
+        <div className='shrink-0 border-b border-[var(--relay-row-border)] pb-2'>
+          <div className='flex items-center justify-between gap-2'>
+            <p className='font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground'>
+              Artifacts
             </p>
+            <span className='font-mono text-[10px] text-muted-foreground'>
+              {sortedArtifacts.length}
+            </span>
           </div>
-        )}
+        </div>
+
+        <div className='min-h-0 flex-1 overflow-y-auto pt-2 pr-1'>
+          <div className='flex flex-col gap-1.5'>
+            {sortedArtifacts.map((artifact) => (
+              <EvidenceArtifactRow
+                key={artifact.id}
+                artifact={artifact}
+                selected={artifact.id === selectedId}
+                onClick={() => handleArtifactClick(artifact)}
+              />
+            ))}
+          </div>
+        </div>
       </div>
-    </div>
+
+      <EvidenceArtifactDialog
+        runId={runId}
+        artifact={selectedArtifact}
+        events={events}
+        open={dialogOpen && !!selectedArtifact}
+        onOpenChange={setDialogOpen}
+      />
+    </>
   )
 }
 
@@ -669,37 +738,33 @@ function PreviewTab({
   error: unknown
 }) {
   if (isLoading && !content) {
-    return (
-      <p className='p-2 text-xs text-muted-foreground'>
-        Loading artifact content…
-      </p>
-    )
+    return <p className='p-2 text-xs text-muted-foreground'>Loading artifact content…</p>
   }
+
   if (error && !content) {
     return (
       <div className='flex flex-col gap-1 p-2'>
-        <p className='text-xs text-red-400'>
-          Failed to load artifact content.
-        </p>
+        <p className='text-xs text-red-400'>Failed to load artifact content.</p>
         <p className='font-mono text-[10px] text-muted-foreground/70'>
           {(error as Error)?.message || 'Unknown error'}
         </p>
       </div>
     )
   }
+
   const raw = content || artifact.preview || ''
   if (!raw) {
-    return (
-      <p className='p-2 text-xs text-muted-foreground'>
-        No preview available.
-      </p>
-    )
+    return <p className='p-2 text-xs text-muted-foreground'>No preview available.</p>
   }
+
   const formatted = formatJsonIfPossible(raw)
+
   return (
-    <pre className='overflow-x-auto whitespace-pre-wrap break-words rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-2 font-mono text-[11px] leading-relaxed text-foreground'>
-      {formatted}
-    </pre>
+    <div className='rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]'>
+      <pre className='overflow-x-auto whitespace-pre-wrap break-words p-3 font-mono text-[11px] leading-relaxed text-foreground'>
+        {formatted}
+      </pre>
+    </div>
   )
 }
 
@@ -715,31 +780,32 @@ function RawTab({
   error: unknown
 }) {
   if (isLoading && !content) {
-    return (
-      <p className='p-2 text-xs text-muted-foreground'>
-        Loading artifact content…
-      </p>
-    )
+    return <p className='p-2 text-xs text-muted-foreground'>Loading artifact content…</p>
   }
+
   if (error && !content) {
     return (
       <div className='flex flex-col gap-1 p-2'>
-        <p className='text-xs text-red-400'>
-          Failed to load artifact content.
-        </p>
+        <p className='text-xs text-red-400'>Failed to load artifact content.</p>
         <p className='font-mono text-[10px] text-muted-foreground/70'>
           {(error as Error)?.message || 'Unknown error'}
         </p>
-        <pre className='mt-1 overflow-x-auto whitespace-pre-wrap break-words rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-2 font-mono text-[11px] leading-relaxed text-foreground'>
-          {JSON.stringify(artifact, null, 2)}
-        </pre>
+        <div className='mt-1 overflow-x-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]'>
+          <pre className='min-w-max p-3 font-mono text-[11px] leading-relaxed text-foreground'>
+            {JSON.stringify(artifact, null, 2)}
+          </pre>
+        </div>
       </div>
     )
   }
+
   const raw = content || JSON.stringify(artifact, null, 2)
+
   return (
-    <pre className='overflow-x-auto whitespace-pre-wrap break-words rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-2 font-mono text-[11px] leading-relaxed text-foreground'>
-      {raw}
-    </pre>
+    <div className='overflow-x-auto rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]'>
+      <pre className='min-w-max p-3 font-mono text-[11px] leading-relaxed text-foreground'>
+        {raw}
+      </pre>
+    </div>
   )
 }
