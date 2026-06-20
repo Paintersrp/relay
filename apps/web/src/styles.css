@@ -175,22 +175,23 @@
 
   /* Relay Shell Tokens */
   --relay-shell-bg: var(--surface-shell);
-  --relay-sidebar-bg: var(--sidebar);
   --relay-content-bg: var(--surface-base);
   --relay-panel-bg: var(--surface-panel);
   --relay-panel-hover-bg: var(--surface-panel-hover);
   --relay-border: var(--border);
   --relay-accent: var(--primary);
   --relay-accent-foreground: var(--primary-foreground);
-  --relay-sidebar-active-bg: var(--surface-panel);
-  --relay-sidebar-active-fg: var(--foreground);
-  --relay-sidebar-active-border: var(--relay-accent);
-  --relay-sidebar-hover-bg: var(--surface-panel-hover);
-  --relay-sidebar-section-fg: color-mix(
+  --relay-topbar-bg: var(--surface-shell);
+  --relay-topbar-border: var(--border);
+  --relay-topbar-fg: var(--foreground);
+  --relay-topbar-muted-fg: color-mix(
     in oklch,
-    var(--sidebar-foreground) 48%,
+    var(--foreground) 48%,
     transparent
   );
+  --relay-topbar-active-bg: var(--relay-accent);
+  --relay-topbar-active-fg: var(--relay-accent-foreground);
+  --relay-topbar-hover-bg: var(--surface-panel-hover);
   --relay-page-header-bg: color-mix(
     in oklch,
     var(--surface-base) 94%,
