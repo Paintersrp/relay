@@ -281,6 +281,8 @@ The MCP subprocess and the HTTP daemon (`cmd/relay`) share the same SQLite datab
 
 ## ChatGPT Remote MCP Validation
 
+> **Dev-Only Note:** This section describes local development validation of the remote `/mcp` endpoint and may exercise broader dev/server tool inventory, but does not redefine the current Planner Project-facing MCP action surface. For the Planner Project, the current action remains only `create_run_from_planner_handoff` unless Project configuration deliberately changes.
+
 Relay exposes `/mcp` through the Go daemon (`cmd/relay`) for ChatGPT-facing remote MCP access. During local development, ChatGPT connects through an HTTPS tunnel (e.g. `ssh -R` or `ngrok`) that forwards to the local daemon.
 
 The current `/mcp` endpoint uses No Auth; this is a temporary development proof only. Production use **must** restore authentication before exposing the endpoint beyond local validation.
@@ -296,7 +298,7 @@ Run these checks against a local development instance of the Go daemon with an H
 1. **Daemon starts without error** — `go run ./cmd/relay` binds on the configured port.
 2. **Tunnel is reachable** — `curl -s -o /dev/null -w "%{http_code}" <tunnel-url>/mcp` returns `200` or `405`.
 3. **ChatGPT can discover tools** — ChatGPT session successfully calls `tools/list` on the remote `/mcp` endpoint.
-4. **Tools respond without auth errors** — Each tool (`submit_test_audit_packet`, `create_run_from_planner_handoff`, `list_open_runs`, `get_run_status`, `submit_audit_packet`) returns a structured response, not an auth/403 body.
+4. **Tools respond without auth errors** — Each tool returns a structured response, not an auth/403 body, in a local/dev validation configuration. Note that tools such as `submit_test_audit_packet`, `create_run_from_planner_handoff`, `list_open_runs`, `get_run_status`, and `submit_audit_packet` are used here but are **not** the current Planner Project action inventory.
 5. **Artifact written to disk** — After calling a write tool, confirm an artifact file appears under `$RELAY_ARTIFACTS_DIR`.
 6. **Run state persisted** — After a write tool, `get_run_status` returns the expected updated state.
 7. **No credentials leaked** — Review tunnel and daemon logs; confirm no tokens, keys, or signed URLs appear in the output.

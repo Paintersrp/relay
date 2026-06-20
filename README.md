@@ -4,7 +4,34 @@ Relay is a local-first handoff/run orchestration web app for turning reviewed Pl
 
 ## Current Status
 
-Relay is currently capable of parsing handoffs, generating Agent Prompts, executing validation commands, and preparing audit handoffs. The project is separated into a Go backend for orchestration and API, and a React workbench for the primary UI.
+Relay is a local-first handoff/run orchestration workbench.
+
+### Implemented / Current
+
+| Capability | Description |
+| --- | --- |
+| UI Handoff Intake | Create runs by pasting/uploading handoffs in the React UI |
+| MCP Handoff Intake | Create runs via the current Planner Project-facing MCP action (`create_run_from_planner_handoff`) after user confirmation |
+| Run Storage | Run metadata and artifact storage |
+| Intake Review | Parse and validate handoff structure before execution |
+| Agent Prompt | Preparation and handoff transformation for agents |
+| Agent Results | Manual agent result intake |
+| Validation | Local/user-triggered validation command execution |
+| Git Diff | Local git diff inspection |
+| Audit Handoff | Generation of audit handoffs for review |
+| Commit Support | Manual git commit support |
+| React Workbench | Primary workflow UI |
+| Go Backend | Ownership of JSON APIs, orchestration, run lifecycle, artifact storage, utility server-rendered pages, and event streaming |
+
+### Not Current / Future
+
+| Capability | Description |
+| --- | --- |
+| Repo-Agent Execution | Fully automatic repo-agent execution |
+| Branch Management | Automatic branch/worktree creation |
+| Repair | Automatic validation failure repair |
+| Audit | Automatic AI audit/closeout |
+| Additional MCP Actions | Additional Planner-facing MCP actions beyond handoff submission are not current |
 
 ### Run Actions
 
@@ -30,41 +57,46 @@ Relay is currently capable of parsing handoffs, generating Agent Prompts, execut
 
 ## Core Concepts
 
-Relay accepts surgical implementation handoffs, stores run metadata and artifacts, validates handoff structure, generates transformed Agent Prompts, and provides a run workbench for inspection.
+These are human-readable documentation definitions only and do not add schema fields or runtime semantics.
 
-Key design points:
-- Original handoff contains validation commands for Relay extraction.
-- Agent Prompt preserves test implementation instructions in validation sections.
-- Agent Prompt tells agent not to run validation by default.
-- Test/validation section headings are preserved; only command fences and command lines are removed.
-- Validation runner is local/user-triggered.
-- `AGENTS.md` and `.clinerules` source templates live under `internal/instructions`.
+- **Planner handoff**: A reviewed Markdown implementation handoff containing a selected pass, scope, constraints, repo facts, implementation requirements, validation expectations, and audit priorities.
+- **Relay run**: A local Relay work item created from a handoff grouping metadata, repository context, lifecycle status, artifacts, validation evidence, diff evidence, audit handoffs, and commit suggestions.
+- **Intake Review**: A validation step to review and approve the structure and scope of a new run before processing.
+- **Agent Prompt / transformed prompt**: A compact execution prompt generated from the original handoff tailored for a running repo agent, excluding Relay validation commands.
+- **Validation evidence**: The captured stdout, stderr, exit code, duration, and timeout state of local/user-triggered validation commands.
+- **Audit handoff**: A compact markdown artifact containing run metadata, agent results, validation results, and git diff evidence intended for review.
+- **Current Project-facing MCP action**: The single `create_run_from_planner_handoff` action available to the Planner.
+- **Local/dev MCP server tool inventory**: Additional MCP tools used for local development and validation, not exposed to the Planner Project.
 
 ## Current Workflow
 
-Relay's intended workflow is:
+Relay's current workflow is:
 
-1. Parse the original handoff.
+1. Create a run from a Planner handoff through the React UI or current Planner Project-facing MCP action.
 2. Build Intake Review.
-3. Detect model, branch, repo, scoped files, validation commands, final output contract, and suggested commit.
+3. Detect model, branch, repo, scoped files, validation commands, final output contract, commit suggestions, warnings, and blockers.
 4. Warn or block when the selected repo does not match the handoff scope.
-5. Generate a transformed Agent Prompt for the running repo agent.
-6. Store original handoff and transformed Agent Prompt separately.
-7. Store manual agent result intake.
-8. Run validation commands locally after agent result.
-9. Store validation stdout/stderr/json artifacts.
+5. Generate a transformed Agent Prompt or execution-preparation artifact for the running repo agent.
+6. Store the original handoff and generated artifacts separately.
+7. Perform manual agent result intake or current user-triggered execution path.
+8. Run validation locally.
+9. Store validation evidence.
 10. Inspect git diff for local changes.
-11. Generate audit handoff for GPT review (includes validation evidence and git diff evidence).
+11. Generate audit handoff for review.
 12. Prepare git commit message suggestion based on handoff, audit, and diff evidence.
-13. Review and manually run `git commit` in the repo (Relay does not commit on your behalf).
+13. Review and manually run `git commit` in the repo.
+
+Relay does not stage files, commit, push, or mutate git on the user's behalf.
 
 ## MCP Bridge & Current Project Action
 
 Relay includes an MCP (Model Context Protocol) integration. The **current Planner Project-facing MCP Action** is exactly as follows:
 
-*   **Action:** Submitting a reviewed Planner handoff artifact/content to Relay.
+*   **Action:** `create_run_from_planner_handoff` — submit a reviewed Planner handoff artifact/content to Relay.
 *   **Result:** Relay creates and starts a new run from that handoff, and owns all downstream processing.
 *   **User Confirmation:** The Planner must explicitly ask for user confirmation after handoff creation before invoking this MCP run-creation action.
+
+No Planner-facing status, list, audit, or dispatch MCP tools are currently available unless Project configuration deliberately changes. The local/dev/server tools documented in `docs/mcp.md` are not automatically Project-facing Planner actions.
 
 ## Safety Boundaries
 
@@ -75,6 +107,7 @@ The current Planner Project-facing MCP action does **not** expose or claim avail
 *   Shell execution or command running
 *   Arbitrary file access or file reads/writes
 *   Git operations (commits, pushes, branch creation)
+*   Secrets, tokens, auth headers, private keys, signed URLs, tunnel URLs, cookies, credentials, or other sensitive material in handoffs or MCP payloads
 
 Any broader list of tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` that may exist in the `mcpserver` or local development contexts are strictly local/dev/server MCP tool inventory or future/internal capabilities. They are **not** current Planner Project actions unless project configuration explicitly changes. MCP run submission also does not use executor briefs, canonical packets, validation reports, repair reports, audit packets, or surrounding chat context as the payload.
 
