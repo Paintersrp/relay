@@ -120,6 +120,7 @@ function IntakePage() {
         latestEvents: events || [],
         logPreview,
       }}
+      currentStep="intake"
       mainContent={<IntakeMainContent run={run} artifacts={artifacts || []} />}
       inspectorPanels={{
         logs: <LogPreviewPanel logPreview={logPreview} />,

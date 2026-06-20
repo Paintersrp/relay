@@ -113,6 +113,7 @@ function ExecutePage() {
         latestEvents: events || [],
         logPreview,
       }}
+      currentStep="execute"
       mainContent={<ExecuteMainContent run={run} artifacts={artifacts || []} />}
       inspectorPanels={{
         logs: <LogPreviewPanel logPreview={logPreview} />,

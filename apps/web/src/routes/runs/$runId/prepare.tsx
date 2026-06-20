@@ -115,6 +115,7 @@ function PreparePage() {
         latestEvents: events || [],
         logPreview,
       }}
+      currentStep="prepare"
       mainContent={<PrepareMainContent run={run} artifacts={artifacts || []} />}
       inspectorPanels={{
         logs: <LogPreviewPanel logPreview={logPreview} />,

@@ -124,6 +124,7 @@ function AuditPage() {
         latestEvents: events || [],
         logPreview,
       }}
+      currentStep="audit"
       mainContent={
         <AuditMainContent
           run={run}
