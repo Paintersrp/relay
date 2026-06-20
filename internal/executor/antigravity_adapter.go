@@ -110,10 +110,26 @@ func (a *AntigravityAdapter) NormalizeResult(raw string) NormalizedExecutorResul
 		return NormalizedExecutorResult{
 			Status:     pipeline.AgentResultUnknown,
 			ParseError: fmt.Sprintf("invalid JSON output: %v", err),
+			ExecutorResultText: fmt.Sprintf(
+				"STATUS: UNKNOWN\n\nRaw output:\n%s\n",
+				raw,
+			),
 		}
 	}
 
-	if strings.ToLower(payload.Status) == "success" {
+	status := strings.TrimSpace(payload.Status)
+	if status == "" {
+		return NormalizedExecutorResult{
+			Status:     pipeline.AgentResultUnknown,
+			ParseError: "antigravity JSON output missing status",
+			ExecutorResultText: fmt.Sprintf(
+				"STATUS: UNKNOWN\n\nRaw output:\n%s\n",
+				raw,
+			),
+		}
+	}
+
+	if strings.EqualFold(status, "success") {
 		return NormalizedExecutorResult{
 			Status:             pipeline.AgentResultDone,
 			ExecutorResultText: "STATUS: DONE\n\nBuild status: antigravity-json-success\nTest status: not_reported\nCount of LOC changed: not_reported\n",
@@ -121,16 +137,23 @@ func (a *AntigravityAdapter) NormalizeResult(raw string) NormalizedExecutorResul
 	}
 
 	// Non-success JSON
-	blockerText := payload.Error
+	blockerText := strings.TrimSpace(payload.Error)
 	if blockerText == "" {
-		blockerText = payload.Message
+		blockerText = strings.TrimSpace(payload.Message)
 	}
 	if blockerText == "" {
-		blockerText = payload.Status
+		blockerText = status
+	}
+	if blockerText == "" {
+		blockerText = "antigravity reported non-success status"
 	}
 
 	return NormalizedExecutorResult{
 		Status:      pipeline.AgentResultBlocked,
 		BlockerText: blockerText,
+		ExecutorResultText: fmt.Sprintf(
+			"STATUS: BLOCKED\n\nBlocker/error only if blocked: %s\n",
+			blockerText,
+		),
 	}
 }

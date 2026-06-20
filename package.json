@@ -15,7 +15,7 @@
     "dev": "concurrently \"npm:dev:css\" \"npm:dev:js\" \"npm:dev:templ\" \"npm:dev:server\"",
     "dev:web": "cd apps/web && npm run dev",
     "build:web": "cd apps/web && npm run build",
-    "validate": "bash scripts/validate.sh"
+    "validate": "make validate"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.0.0",

@@ -1,24 +1,62 @@
 #!/usr/bin/env bash
-set -e
+set -u
 
-echo "Running validation checks..."
+COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown-commit)"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+OUT_DIR="${RELAY_VALIDATE_DIR:-data/validation/${COMMIT}/${STAMP}}"
+mkdir -p "$OUT_DIR"
 
-echo "1. Formatting Go code..."
-rtk.exe test "go fmt ./..." || go fmt ./...
+SUMMARY="$OUT_DIR/summary.txt"
+: > "$SUMMARY"
+{
+  echo "commit: $COMMIT"
+  echo "timestamp_utc: $STAMP"
+  echo "out_dir: $OUT_DIR"
+  echo
+} >> "$SUMMARY"
 
-echo "2. Vetting Go code..."
-rtk.exe test "go vet ./..." || go vet ./...
+overall=0
+step=0
 
-echo "3. Generating templ files..."
-rtk.exe test "templ generate" || templ generate
+run_step() {
+  step=$((step + 1))
+  name="$1"
+  shift
+  log="$OUT_DIR/$(printf '%02d' "$step")-${name}.log"
+  echo "== $name ==" | tee -a "$SUMMARY"
+  echo "$ $*" | tee "$log"
+  "$@" >> "$log" 2>&1
+  rc=$?
+  echo "exit_code: $rc" >> "$log"
+  echo "$name: $rc" | tee -a "$SUMMARY"
+  if [ "$rc" -ne 0 ]; then
+    overall=1
+  fi
+}
 
-echo "4. Generating sqlc code..."
-rtk.exe test "sqlc generate" || sqlc generate
+run_shell_step() {
+  step=$((step + 1))
+  name="$1"
+  command="$2"
+  log="$OUT_DIR/$(printf '%02d' "$step")-${name}.log"
+  echo "== $name ==" | tee -a "$SUMMARY"
+  echo "$ $command" | tee "$log"
+  bash -lc "$command" >> "$log" 2>&1
+  rc=$?
+  echo "exit_code: $rc" >> "$log"
+  echo "$name: $rc" | tee -a "$SUMMARY"
+  if [ "$rc" -ne 0 ]; then
+    overall=1
+  fi
+}
 
-echo "5. Testing Go code..."
-rtk.exe test "go test ./..." || go test ./...
+run_step go-fmt-executor go fmt ./internal/executor
+run_step go-test-executor go test ./internal/executor/...
+run_step go-test-all go test ./...
+run_shell_step web-typecheck "cd apps/web && npm run typecheck"
+run_shell_step web-build "cd apps/web && npm run build"
 
-echo "6. Building frontend assets..."
-rtk.exe test "npm run build" || npm run build
-
-echo "Validation successful!"
+echo >> "$SUMMARY"
+echo "overall: $overall" | tee -a "$SUMMARY"
+echo "validation output: $OUT_DIR"
+exit "$overall"

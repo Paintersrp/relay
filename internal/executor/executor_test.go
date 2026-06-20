@@ -906,6 +906,96 @@ func TestAntigravityAdapter_NormalizeResultJSONError(t *testing.T) {
 	if !strings.Contains(res.BlockerText, "auth failed") {
 		t.Errorf("expected blocker text to contain auth failed, got %s", res.BlockerText)
 	}
+	if !strings.Contains(res.ExecutorResultText, "STATUS: BLOCKED") {
+		t.Errorf("expected ExecutorResultText to contain STATUS: BLOCKED, got %s", res.ExecutorResultText)
+	}
+	if !strings.Contains(res.ExecutorResultText, "auth failed") {
+		t.Errorf("expected ExecutorResultText to contain auth failed, got %s", res.ExecutorResultText)
+	}
+}
+
+func TestAntigravityAdapter_NormalizeResultJSONMissingStatus(t *testing.T) {
+	adapter := AntigravityAdapter{}
+	raw := `{"message":"no status"}`
+	res := adapter.NormalizeResult(raw)
+	if res.Status != pipeline.AgentResultUnknown {
+		t.Errorf("expected UNKNOWN, got %v", res.Status)
+	}
+	if !strings.Contains(res.ParseError, "missing status") {
+		t.Errorf("expected parse error to contain missing status, got %s", res.ParseError)
+	}
+	if !strings.Contains(res.ExecutorResultText, "STATUS: UNKNOWN") {
+		t.Errorf("expected ExecutorResultText to contain STATUS: UNKNOWN, got %s", res.ExecutorResultText)
+	}
+	if !strings.Contains(res.ExecutorResultText, raw) {
+		t.Errorf("expected ExecutorResultText to contain raw output, got %s", res.ExecutorResultText)
+	}
+}
+
+func TestDispatchBrief_AntigravityJSONErrorWritesExecutorResult(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	_, err := s.UpdateRunExecutorAdapter(runID, "antigravity")
+	if err != nil {
+		t.Fatalf("update run executor adapter: %v", err)
+	}
+
+	done := make(chan struct{})
+
+	adapter := &AntigravityAdapter{Config: AntigravityAdapterConfig{Binary: "antigravity", ApproveFlag: "--yes"}}
+	_, err = DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: adapter,
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: `{"status":"error","error":"auth failed"}`}
+		},
+		LaunchAsync: func(fn func()) {
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	<-done
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Status != "completed" {
+		t.Errorf("expected exec status completed, got %s", exec.Status)
+	}
+
+	run, _ := s.GetRun(runID)
+	if run.Status != StatusExecutorBlocked {
+		t.Errorf("expected run status %s, got %s", StatusExecutorBlocked, run.Status)
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("get artifacts: %v", err)
+	}
+	foundResult := false
+	for _, a := range artifactsList {
+		if a.Kind == ArtifactKindExecutorResult {
+			foundResult = true
+			content, _ := os.ReadFile(a.Path)
+			if !strings.Contains(string(content), "STATUS: BLOCKED") {
+				t.Errorf("executor_result should contain STATUS: BLOCKED, got: %s", string(content))
+			}
+			if !strings.Contains(string(content), "auth failed") {
+				t.Errorf("executor_result should contain auth failed, got: %s", string(content))
+			}
+		}
+	}
+	if !foundResult {
+		t.Errorf("expected executor_result artifact")
+	}
 }
 
 func TestDispatchBrief_AntigravityNonZeroExitBlocksDespiteSuccessJSON(t *testing.T) {
