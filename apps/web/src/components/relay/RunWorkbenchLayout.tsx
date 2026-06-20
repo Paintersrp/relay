@@ -3,13 +3,17 @@ import { Link } from '@tanstack/react-router'
 import type { RelayRun } from '@/features/relay-runs'
 import { formatRunDate, formatRunDateRelative } from '@/features/relay-runs'
 import { Button } from '@/components/ui/button'
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable'
 import { StatusBadge } from './StatusBadge'
 import { RunStepper } from './RunStepper'
 import { cn } from '@/lib/utils'
 import { ArrowLeft } from 'lucide-react'
 
 type InspectorPanelKey = 'logs' | 'artifacts' | 'validation' | 'audit'
-type InspectorSize = 's' | 'm' | 'l'
 type InspectorPanels = Partial<Record<InspectorPanelKey, React.ReactNode>>
 
 interface RunWorkbenchLayoutProps {
@@ -30,12 +34,6 @@ const INSPECTOR_TABS: { key: InspectorPanelKey; label: string }[] = [
   { key: 'audit', label: 'Audit' },
 ]
 
-const INSPECTOR_SIZE_CLASS: Record<InspectorSize, string> = {
-  s: 'lg:w-72',
-  m: 'lg:w-96',
-  l: 'lg:w-[30rem]',
-}
-
 function hasPanelContent(content: React.ReactNode): boolean {
   return content !== undefined && content !== null && content !== false
 }
@@ -47,7 +45,6 @@ export function RunWorkbenchLayout({
   inspectorPanels,
   className,
 }: RunWorkbenchLayoutProps) {
-  const [inspectorSize, setInspectorSize] = React.useState<InspectorSize>('m')
   const [activeInspectorTab, setActiveInspectorTab] =
     React.useState<InspectorPanelKey>('logs')
 
@@ -137,73 +134,68 @@ export function RunWorkbenchLayout({
       </div>
 
       {/* Full-height split pane */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Left: stage-specific main content */}
-        <main className="min-w-0 flex-1 overflow-y-auto">
-          <div className="px-4 py-4">{mainContent}</div>
-        </main>
+      <ResizablePanelGroup
+        direction="horizontal"
+        className="min-h-0 flex-1 overflow-hidden"
+      >
+        <ResizablePanel
+          id="run-workbench-main"
+          defaultSize={72}
+          minSize={45}
+          className="min-w-0"
+        >
+          <main className="h-full min-w-0 overflow-y-auto">
+            <div className="px-4 py-4">{mainContent}</div>
+          </main>
+        </ResizablePanel>
 
-        {/* Right: run-local inspector */}
         {visibleTabs.length > 0 ? (
-          <aside
-            className={cn(
-              'hidden min-h-0 shrink-0 flex-col border-l border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)] lg:flex',
-              INSPECTOR_SIZE_CLASS[inspectorSize],
-            )}
-          >
-            {/* Inspector tab bar */}
-            <div className="flex h-10 shrink-0 items-center border-b border-[var(--relay-row-border)] px-3">
-              <div className="flex min-w-0 flex-1 items-center gap-1">
-                {visibleTabs.map((tab) => {
-                  const active = tab.key === resolvedActiveTab
-                  return (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => setActiveInspectorTab(tab.key)}
-                      className={cn(
-                        'h-7 rounded px-2 font-mono text-[11px] transition-colors',
-                        active
-                          ? 'bg-[var(--relay-panel-hover-bg)] text-foreground'
-                          : 'text-muted-foreground hover:text-foreground',
-                      )}
-                      aria-pressed={active}
-                    >
-                      {tab.label}
-                    </button>
-                  )
-                })}
-              </div>
+          <>
+            <ResizableHandle
+              withHandle
+              className="hidden bg-[var(--relay-row-border)] lg:flex"
+            />
 
-              {/* S/M/L width controls */}
-              <div className="ml-2 flex shrink-0 items-center rounded border border-[var(--relay-row-border)]">
-                {(['s', 'm', 'l'] as const).map((size) => (
-                  <button
-                    key={size}
-                    type="button"
-                    onClick={() => setInspectorSize(size)}
-                    className={cn(
-                      'h-6 w-6 font-mono text-[10px] uppercase',
-                      inspectorSize === size
-                        ? 'bg-[var(--relay-panel-hover-bg)] text-foreground'
-                        : 'text-muted-foreground hover:text-foreground',
-                    )}
-                    aria-pressed={inspectorSize === size}
-                    aria-label={`Set inspector size ${size.toUpperCase()}`}
-                  >
-                    {size}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <ResizablePanel
+              id="run-workbench-inspector"
+              defaultSize={28}
+              minSize={20}
+              maxSize={42}
+              className="hidden min-h-0 lg:flex"
+            >
+              <aside className="flex h-full min-h-0 w-full flex-col border-l border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]">
+                <div className="flex h-10 shrink-0 items-center border-b border-[var(--relay-row-border)] px-3">
+                  <div className="flex min-w-0 flex-1 items-center gap-4">
+                    {visibleTabs.map((tab) => {
+                      const active = tab.key === resolvedActiveTab
+                      return (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          onClick={() => setActiveInspectorTab(tab.key)}
+                          className={cn(
+                            'flex h-10 items-center border-b-2 font-mono text-[11px] transition-colors',
+                            active
+                              ? 'border-[var(--relay-accent)] text-foreground'
+                              : 'border-transparent text-muted-foreground hover:text-foreground',
+                          )}
+                          aria-pressed={active}
+                        >
+                          {tab.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
 
-            {/* Inspector panel content */}
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              <div className="flex flex-col gap-3">{activePanel}</div>
-            </div>
-          </aside>
+                <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                  <div className="flex flex-col gap-3">{activePanel}</div>
+                </div>
+              </aside>
+            </ResizablePanel>
+          </>
         ) : null}
-      </div>
+      </ResizablePanelGroup>
     </section>
   )
 }

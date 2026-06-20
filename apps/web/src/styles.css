@@ -87,91 +87,104 @@
   --radius-4xl: 0.875rem;
 }
 
-:root {
+:root,
+[data-theme="abyss-cobalt"] {
   color-scheme: dark;
 
   /*
-    Relay Carbon Amber
+    Relay Abyss / Cobalt
 
     Intent:
-    - Amber remains the primary Relay action color.
-    - Background is neutral carbon, not blue-green.
-    - Secondary surfaces are graphite, not colored.
-    - Blue is reserved for info/running only.
-    - Amber is primary/review/warning.
+    - Jet-dark base with cobalt cast.
+    - Electric high-chroma cobalt primary.
+    - Secondary and accent shift toward violet-indigo.
+    - Borders and rings carry a subtle cobalt glow.
   */
 
-  --radius: 0.3125rem;
+  --radius: 0.35rem;
 
   /* Foundation */
-  --background: oklch(0.135 0.003 260);
-  --foreground: oklch(0.93 0.006 260);
+  --background: oklch(0.09 0.010 250);
+  --foreground: oklch(0.93 0.006 240);
 
-  /* Surface scale */
-  --surface-shell: oklch(0.115 0.003 260);
-  --surface-base: oklch(0.135 0.003 260);
-  --surface-panel: oklch(0.185 0.004 260);
-  --surface-panel-hover: oklch(0.215 0.005 260);
-  --surface-inset: oklch(0.105 0.003 260);
-  --surface-elevated: oklch(0.235 0.005 260);
+  /* User-facing surface scale */
+  --surface-1: oklch(0.09 0.010 250);
+  --surface-2: oklch(0.12 0.012 250);
+  --surface-3: oklch(0.15 0.014 252);
+  --surface-raised: oklch(0.18 0.016 255);
+
+  /* Existing Relay surface compatibility aliases */
+  --surface-shell: var(--surface-1);
+  --surface-base: var(--surface-1);
+  --surface-panel: var(--surface-2);
+  --surface-panel-hover: var(--surface-3);
+  --surface-inset: color-mix(in oklch, var(--surface-1) 88%, black);
+  --surface-elevated: var(--surface-raised);
 
   /* shadcn semantic surfaces */
-  --card: var(--surface-panel);
-  --card-foreground: var(--foreground);
+  --card: oklch(0.12 0.012 250);
+  --card-foreground: oklch(0.93 0.006 240);
 
-  --popover: var(--surface-elevated);
-  --popover-foreground: var(--foreground);
+  --popover: oklch(0.14 0.013 250);
+  --popover-foreground: oklch(0.93 0.006 240);
 
-  /* Primary: Relay amber */
-  --primary: oklch(0.78 0.16 82);
-  --primary-foreground: oklch(0.13 0.018 70);
+  /* Primary: electric cobalt */
+  --primary: oklch(0.72 0.26 240);
+  --primary-foreground: oklch(0.95 0.005 240);
 
-  /* Neutral controls */
-  --secondary: oklch(0.255 0.005 260);
-  --secondary-foreground: oklch(0.88 0.006 260);
+  /* Secondary and accent: violet-indigo */
+  --secondary: oklch(0.17 0.022 265);
+  --secondary-foreground: oklch(0.82 0.007 250);
 
-  --muted: oklch(0.225 0.004 260);
-  --muted-foreground: oklch(0.66 0.008 260);
+  --muted: oklch(0.15 0.016 255);
+  --muted-foreground: oklch(0.54 0.014 248);
 
-  --accent: oklch(0.285 0.006 260);
-  --accent-foreground: oklch(0.94 0.006 260);
+  --accent: oklch(0.19 0.026 265);
+  --accent-foreground: oklch(0.92 0.006 240);
 
-  --border: oklch(0.34 0.006 260 / 0.72);
-  --input: oklch(0.255 0.005 260);
-  --ring: var(--primary);
+  --border: oklch(0.72 0.15 240 / 22%);
+  --input: oklch(0.72 0.15 240 / 17%);
+  --ring: oklch(0.72 0.26 240 / 60%);
 
-  /* Status system */
-  --success: oklch(0.68 0.12 155);
-  --success-foreground: oklch(0.12 0.02 155);
+  /* Run status tokens */
+  --run-running: oklch(0.72 0.26 240);
+  --run-blocked: oklch(0.66 0.20 30);
+  --run-complete: oklch(0.72 0.16 155);
+  --run-audit: oklch(0.78 0.16 75);
+  --run-idle: oklch(0.35 0.012 250);
 
-  --warning: var(--primary);
-  --warning-foreground: var(--primary-foreground);
+  /* Existing status compatibility aliases */
+  --success: var(--run-complete);
+  --success-foreground: oklch(0.09 0.018 155);
 
-  --info: oklch(0.68 0.105 245);
-  --info-foreground: oklch(0.11 0.018 245);
+  --warning: var(--run-audit);
+  --warning-foreground: oklch(0.11 0.020 75);
 
-  --running: oklch(0.7 0.12 232);
-  --running-foreground: oklch(0.105 0.016 232);
+  --info: var(--primary);
+  --info-foreground: var(--primary-foreground);
 
-  --destructive: oklch(0.64 0.18 25);
+  --running: var(--run-running);
+  --running-foreground: var(--primary-foreground);
+
+  --destructive: oklch(0.62 0.22 25);
   --destructive-foreground: oklch(0.97 0.01 25);
 
   /* Charts */
-  --chart-1: var(--primary);
-  --chart-2: var(--info);
-  --chart-3: var(--success);
-  --chart-4: var(--warning);
-  --chart-5: var(--destructive);
+  --chart-1: oklch(0.72 0.26 240);
+  --chart-2: oklch(0.72 0.16 155);
+  --chart-3: oklch(0.78 0.16 75);
+  --chart-4: oklch(0.66 0.20 30);
+  --chart-5: oklch(0.74 0.20 290);
 
   /* Sidebar / topbar */
-  --sidebar: var(--surface-shell);
-  --sidebar-foreground: oklch(0.88 0.006 260);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: oklch(0.23 0.005 260);
-  --sidebar-accent-foreground: oklch(0.92 0.006 260);
-  --sidebar-border: oklch(0.31 0.006 260 / 0.72);
-  --sidebar-ring: var(--primary);
+  --sidebar: oklch(0.10 0.010 250);
+  --sidebar-foreground: oklch(0.90 0.006 240);
+  --sidebar-primary: oklch(0.72 0.26 240);
+  --sidebar-primary-foreground: oklch(0.95 0.005 240);
+  --sidebar-accent: oklch(0.17 0.022 265);
+  --sidebar-accent-foreground: oklch(0.90 0.006 240);
+  --sidebar-border: oklch(0.72 0.15 240 / 20%);
+  --sidebar-ring: oklch(0.72 0.26 240 / 55%);
 
   /* Relay Shell Tokens */
   --relay-shell-bg: var(--surface-shell);
@@ -182,7 +195,7 @@
   --relay-accent: var(--primary);
   --relay-accent-foreground: var(--primary-foreground);
   --relay-topbar-bg: var(--surface-shell);
-  --relay-topbar-border: var(--border);
+  --relay-topbar-border: var(--sidebar-border);
   --relay-topbar-fg: var(--foreground);
   --relay-topbar-muted-fg: color-mix(
     in oklch,
@@ -194,32 +207,32 @@
   --relay-topbar-hover-bg: var(--surface-panel-hover);
   --relay-page-header-bg: color-mix(
     in oklch,
-    var(--surface-base) 94%,
-    var(--surface-shell)
+    var(--surface-base) 92%,
+    var(--surface-raised)
   );
   --relay-page-border: var(--border);
   --relay-page-body-bg: var(--surface-base);
   --relay-page-title-fg: var(--foreground);
   --relay-page-description-fg: var(--muted-foreground);
 
-  --relay-status-running: var(--running);
-  --relay-status-blocked: var(--destructive);
-  --relay-status-complete: var(--success);
-  --relay-status-audit: var(--warning);
-  --relay-status-validation: var(--destructive);
-  --relay-status-neutral: var(--muted-foreground);
+  --relay-status-running: var(--run-running);
+  --relay-status-blocked: var(--run-blocked);
+  --relay-status-complete: var(--run-complete);
+  --relay-status-audit: var(--run-audit);
+  --relay-status-validation: var(--run-blocked);
+  --relay-status-neutral: var(--run-idle);
 
-  --relay-row-border: color-mix(in oklch, var(--border) 72%, transparent);
+  --relay-row-border: color-mix(in oklch, var(--border) 78%, transparent);
   --relay-row-hover-bg: color-mix(
     in oklch,
-    var(--surface-panel-hover) 70%,
+    var(--surface-panel-hover) 74%,
     transparent
   );
   --relay-splitpane-border: var(--border);
   --relay-splitpane-sidebar-bg: color-mix(
     in oklch,
-    var(--surface-shell) 90%,
-    var(--surface-base)
+    var(--surface-shell) 86%,
+    var(--surface-raised)
   );
   --relay-inspector-bg: var(--surface-base);
   --relay-code-fg: var(--foreground);
