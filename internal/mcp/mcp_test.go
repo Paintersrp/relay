@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"relay/internal/artifacts"
+	"relay/internal/plans"
 	"relay/internal/store"
 )
 
@@ -186,7 +188,7 @@ func TestHandleSubmitTestAuditPacket_NoGitOrShellMutation(t *testing.T) {
 
 // --- Server-level tests ---
 
-// TestServerToolsList_Pass16 verifies that the MCP server advertises exactly 5 tools.
+// TestServerToolsList_Pass16 verifies that the MCP server advertises exactly 6 tools.
 func TestServerToolsList_Pass16(t *testing.T) {
 	srv := NewServer(discardLogger())
 	req := Request{
@@ -208,6 +210,7 @@ func TestServerToolsList_Pass16(t *testing.T) {
 	expectedTools := []string{
 		"submit_test_audit_packet",
 		"create_run_from_planner_handoff",
+		"submit_planner_pass_plan",
 		"list_open_runs",
 		"get_run_status",
 		"submit_audit_packet",
@@ -285,6 +288,149 @@ func TestServerSafety(t *testing.T) {
 				t.Errorf("unsafe tool name registered: %q contains unsafe keyword %q", tool.Name, unsafe)
 			}
 		}
+	}
+}
+
+// --- submit_planner_pass_plan tests ---
+
+func TestHandleSubmitPlannerPassPlan_NoDeps(t *testing.T) {
+	srv := NewServer(discardLogger())
+	args, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+	})
+
+	result := srv.HandleSubmitPlannerPassPlan(args)
+	if !result.IsError {
+		t.Fatal("expected DEPENDENCY_ERROR when no store is wired")
+	}
+	if !contains(result.Content[0].Text, "DEPENDENCY_ERROR") {
+		t.Fatalf("expected DEPENDENCY_ERROR, got: %s", result.Content[0].Text)
+	}
+}
+
+func TestHandleSubmitPlannerPassPlan_MissingPlanJSON(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+	args, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": "",
+	})
+
+	result := srv.HandleSubmitPlannerPassPlan(args)
+	if !result.IsError {
+		t.Fatal("expected VALIDATION_ERROR for empty planner_pass_plan_json")
+	}
+	if !contains(result.Content[0].Text, "VALIDATION_ERROR") || !contains(result.Content[0].Text, "planner_pass_plan_json") {
+		t.Fatalf("expected planner_pass_plan_json validation error, got: %s", result.Content[0].Text)
+	}
+}
+
+func TestHandleSubmitPlannerPassPlan_Success(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	rawPlan := mustMarshalPlannerPassPlan(t, validPlannerPassPlan())
+	args, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(rawPlan),
+		"source_artifact_path":   "handoffs/planner/plan.json",
+	})
+
+	result := srv.HandleSubmitPlannerPassPlan(args)
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.Content[0].Text)
+	}
+
+	var out submitPlannerPassPlanOutput
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &out); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if !out.OK {
+		t.Fatal("expected ok=true")
+	}
+	if out.Tool != "submit_planner_pass_plan" {
+		t.Fatalf("expected tool submit_planner_pass_plan, got %q", out.Tool)
+	}
+	if out.PlanID != "plan-123" {
+		t.Fatalf("expected plan_id plan-123, got %q", out.PlanID)
+	}
+	if out.PassCount != 2 {
+		t.Fatalf("expected pass_count 2, got %d", out.PassCount)
+	}
+	if len(out.Passes) != 2 {
+		t.Fatalf("expected 2 passes, got %d", len(out.Passes))
+	}
+	if got := countTableRows(t, deps.Store.DB(), "plans"); got != 1 {
+		t.Fatalf("expected 1 plan row, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "plan_passes"); got != 2 {
+		t.Fatalf("expected 2 plan_passes rows, got %d", got)
+	}
+}
+
+func TestHandleSubmitPlannerPassPlan_InvalidDependency(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	plan := validPlannerPassPlan()
+	plan.Passes[1].Dependencies = []string{"PASS-999"}
+	args, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, plan)),
+	})
+
+	result := srv.HandleSubmitPlannerPassPlan(args)
+	if !result.IsError {
+		t.Fatal("expected PLAN_VALIDATION_FAILED for invalid dependency")
+	}
+
+	var out submitPlannerPassPlanErrorOutput
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &out); err != nil {
+		t.Fatalf("unmarshal error output: %v", err)
+	}
+	if out.Error != "PLAN_VALIDATION_FAILED" {
+		t.Fatalf("expected PLAN_VALIDATION_FAILED, got %q", out.Error)
+	}
+	if out.Validation == nil {
+		t.Fatal("expected validation report in error output")
+	}
+	assertValidationIssueCode(t, *out.Validation, plans.IssuePlanDependencyUnknown)
+	if got := countTableRows(t, deps.Store.DB(), "plans"); got != 0 {
+		t.Fatalf("expected 0 plan rows, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "plan_passes"); got != 0 {
+		t.Fatalf("expected 0 plan_passes rows, got %d", got)
+	}
+}
+
+func TestHandleSubmitPlannerPassPlan_DuplicatePlanID(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	args, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+	})
+
+	first := srv.HandleSubmitPlannerPassPlan(args)
+	if first.IsError {
+		t.Fatalf("expected first submission to succeed, got: %s", first.Content[0].Text)
+	}
+
+	second := srv.HandleSubmitPlannerPassPlan(args)
+	if !second.IsError {
+		t.Fatal("expected duplicate submission to fail")
+	}
+
+	var out submitPlannerPassPlanErrorOutput
+	if err := json.Unmarshal([]byte(second.Content[0].Text), &out); err != nil {
+		t.Fatalf("unmarshal duplicate error output: %v", err)
+	}
+	if out.Error != "PLAN_VALIDATION_FAILED" {
+		t.Fatalf("expected PLAN_VALIDATION_FAILED, got %q", out.Error)
+	}
+	if out.Validation == nil {
+		t.Fatal("expected validation report in duplicate error output")
+	}
+	assertValidationIssueCode(t, *out.Validation, plans.IssuePlanDuplicatePlanID)
+	if got := countTableRows(t, deps.Store.DB(), "plans"); got != 1 {
+		t.Fatalf("expected 1 plan row after duplicate submit, got %d", got)
 	}
 }
 
@@ -709,6 +855,75 @@ func mustMarshal(t *testing.T, v interface{}) []byte {
 		t.Fatalf("marshal: %v", err)
 	}
 	return b
+}
+
+func validPlannerPassPlan() plans.PlannerPassPlan {
+	return plans.PlannerPassPlan{
+		PlanMeta: plans.PlanMeta{
+			PlanID:        "plan-123",
+			SchemaVersion: "1.0.0",
+			CreatedAt:     "2026-06-21T16:10:00Z",
+			Title:         "Relay plan submission service",
+			Goal:          "Store validated planner plans",
+			RepoTarget:    "Paintersrp/relay",
+			BranchContext: "main",
+			Status:        "active",
+		},
+		SourceIntent: plans.SourceIntent{
+			Summary: "Add a backend service for validated plan submission.",
+		},
+		Passes: []plans.PlanPassInput{
+			{
+				PassID:                 "PASS-001",
+				Sequence:               1,
+				Name:                   "Validate plans",
+				Goal:                   "Validate syntax and semantics.",
+				IntendedExecutionScope: []string{"internal/plans/validator.go"},
+				NonGoals:               []string{"No API routes"},
+				Dependencies:           []string{},
+				Status:                 "planned",
+			},
+			{
+				PassID:                 "PASS-002",
+				Sequence:               2,
+				Name:                   "Store plans",
+				Goal:                   "Store validated plans transactionally.",
+				IntendedExecutionScope: []string{"internal/plans/service.go"},
+				NonGoals:               []string{"No UI changes"},
+				Dependencies:           []string{"PASS-001"},
+				Status:                 "planned",
+			},
+		},
+	}
+}
+
+func mustMarshalPlannerPassPlan(t *testing.T, plan plans.PlannerPassPlan) []byte {
+	t.Helper()
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal planner pass plan: %v", err)
+	}
+	return raw
+}
+
+func assertValidationIssueCode(t *testing.T, report plans.PlanValidationReport, code string) {
+	t.Helper()
+	for _, issue := range report.Issues {
+		if issue.Code == code {
+			return
+		}
+	}
+	t.Fatalf("expected validation issue %s, got %+v", code, report.Issues)
+}
+
+func countTableRows(t *testing.T, db *sql.DB, table string) int {
+	t.Helper()
+	var count int
+	query := "SELECT COUNT(*) FROM " + table
+	if err := db.QueryRow(query).Scan(&count); err != nil {
+		t.Fatalf("count rows for %s: %v", table, err)
+	}
+	return count
 }
 
 func discardLogger() *slog.Logger {

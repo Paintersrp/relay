@@ -48,6 +48,7 @@ func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 		ToolSubmitTestAuditPacket,
 		// Pass 16 real tools.
 		ToolCreateRunFromPlannerHandoff,
+		ToolSubmitPlannerPassPlan,
 		ToolListOpenRuns,
 		ToolGetRunStatus,
 		ToolSubmitAuditPacket,
@@ -155,6 +156,8 @@ func (s *Server) handleToolsCall(req Request) Response {
 		result = HandleSubmitTestAuditPacket(args)
 	case "create_run_from_planner_handoff":
 		result = s.HandleCreateRunFromPlannerHandoff(args)
+	case "submit_planner_pass_plan":
+		result = s.HandleSubmitPlannerPassPlan(args)
 	case "list_open_runs":
 		result = s.HandleListOpenRuns(args)
 	case "get_run_status":

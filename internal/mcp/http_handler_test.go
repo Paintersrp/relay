@@ -193,14 +193,15 @@ func TestHTTPHandler_Protocol(t *testing.T) {
 		approvedTools := map[string]bool{
 			"submit_test_audit_packet":        true,
 			"create_run_from_planner_handoff": true,
+			"submit_planner_pass_plan":        true,
 			"list_open_runs":                  true,
 			"get_run_status":                  true,
 			"submit_audit_packet":             true,
 		}
 		unsafeKeywords := []string{"exec", "shell", "read_file", "write_file", "git_commit", "git_push", "checkout", "reset", "branch"}
 
-		if len(list.Tools) != 5 {
-			t.Errorf("expected exactly 5 tools, got %d", len(list.Tools))
+		if len(list.Tools) != 6 {
+			t.Errorf("expected exactly 6 tools, got %d", len(list.Tools))
 		}
 
 		for _, tool := range list.Tools {
