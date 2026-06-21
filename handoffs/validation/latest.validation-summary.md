@@ -1,14 +1,15 @@
 # Latest Relay Validation Report
 
 - status: passed
-- base_commit: 1b78c2ad1b737c4a14b5f3d936241294c1c330e0
-- validated_source_snapshot: 47ffffa7e6df4dcd359a4390f1baec6884d29e56985803409018ce941eda7480
+- base_commit: 849fb6ea53bcadb70f43134bce9fb9af8b14399a
+- validated_source_snapshot: b8c205cb15aa49e8d0583d2450af5684a62674d689b297c0986648c5508cb152
 - worktree_dirty: true
-- created_at: 2026-06-21T12:10:07Z
+- created_at: 2026-06-21T12:28:30Z
 
 ## Validated source changes
 
-- M scripts/validate.sh
+- ?? apps/web/src/components/relay/RunIntakeReviewPanel.tsx
+- M apps/web/src/routes/runs/$runId/intake.tsx
 
 ## Commands
 
