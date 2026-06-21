@@ -625,8 +625,8 @@ func TestHandleCreateRunFromPlannerHandoff_PlanPassAssociation(t *testing.T) {
 	if !run.PlanPassRowID.Valid || run.PlanPassRowID.Int64 != pass.ID {
 		t.Fatalf("expected plan_pass_row_id=%d, got %+v", pass.ID, run.PlanPassRowID)
 	}
-	if pass.Status != "planned" {
-		t.Fatalf("expected pass status to remain planned, got %q", pass.Status)
+	if pass.Status != "in_progress" {
+		t.Fatalf("expected pass status to become in_progress, got %q", pass.Status)
 	}
 }
 
@@ -937,6 +937,65 @@ func TestHandleSubmitAuditPacket_FullFlow(t *testing.T) {
 	}
 	if auditOut.Decision != "accepted" {
 		t.Errorf("expected decision=accepted, got %q", auditOut.Decision)
+	}
+}
+
+func TestHandleSubmitAuditPacket_AssociatedPassLifecycle(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	planArgs, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+	})
+	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
+	if planResult.IsError {
+		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
+	}
+
+	createArgs, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": "---\ntitle: MCP Associated Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# MCP Associated Run\n\nContent.",
+		"repo_target":              "test-repo",
+		"plan_id":                  "plan-123",
+		"pass_id":                  "PASS-001",
+	})
+	createResult := srv.HandleCreateRunFromPlannerHandoff(createArgs)
+	if createResult.IsError {
+		t.Fatalf("create run failed: %s", createResult.Content[0].Text)
+	}
+
+	var createOut createRunOutput
+	if err := json.Unmarshal([]byte(createResult.Content[0].Text), &createOut); err != nil {
+		t.Fatalf("unmarshal create output: %v", err)
+	}
+
+	plan, err := deps.Store.GetPlanByPlanID("plan-123")
+	if err != nil {
+		t.Fatalf("get plan: %v", err)
+	}
+	pass, err := deps.Store.GetPlanPassByPassID(plan.ID, "PASS-001")
+	if err != nil {
+		t.Fatalf("get pass: %v", err)
+	}
+	if pass.Status != "in_progress" {
+		t.Fatalf("expected pass to be in_progress after run creation, got %q", pass.Status)
+	}
+
+	auditArgs, _ := json.Marshal(map[string]string{
+		"run_id":                fmt.Sprintf("%d", createOut.RunID),
+		"audit_packet_markdown": "# Audit\n\nAccept with warnings.",
+		"decision":              "accepted_with_warnings",
+	})
+	auditResult := srv.HandleSubmitAuditPacket(auditArgs)
+	if auditResult.IsError {
+		t.Fatalf("submit audit failed: %s", auditResult.Content[0].Text)
+	}
+
+	pass, err = deps.Store.GetPlanPass(pass.ID)
+	if err != nil {
+		t.Fatalf("reload pass: %v", err)
+	}
+	if pass.Status != "completed" {
+		t.Fatalf("expected pass to become completed, got %q", pass.Status)
 	}
 }
 

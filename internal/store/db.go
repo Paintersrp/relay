@@ -304,10 +304,33 @@ func (s *Store) GetPlanByPlanID(planID string) (*Plan, error) {
 	return &plan, nil
 }
 
+func (s *Store) GetPlanPass(id int64) (*PlanPass, error) {
+	pass, err := s.queries.GetPlanPass(context.Background(), id)
+	if err != nil {
+		return nil, err
+	}
+	return &pass, nil
+}
+
 func (s *Store) GetPlanPassByPassID(planRowID int64, passID string) (*PlanPass, error) {
 	pass, err := s.queries.GetPlanPassByPassID(context.Background(), generated.GetPlanPassByPassIDParams{
 		PlanRowID: planRowID,
 		PassID:    passID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &pass, nil
+}
+
+func (s *Store) ListPlanPassesByPlan(planRowID int64) ([]PlanPass, error) {
+	return s.queries.ListPlanPassesByPlan(context.Background(), planRowID)
+}
+
+func (s *Store) UpdatePlanPassStatus(id int64, status string) (*PlanPass, error) {
+	pass, err := s.queries.UpdatePlanPassStatus(context.Background(), generated.UpdatePlanPassStatusParams{
+		Status: status,
+		ID:     id,
 	})
 	if err != nil {
 		return nil, err

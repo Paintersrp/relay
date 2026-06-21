@@ -30,10 +30,11 @@ import (
 )
 
 type APIHandler struct {
-	store       *store.Store
-	log         *slog.Logger
-	eventHub    *events.Hub
-	planService *plans.Service
+	store            *store.Store
+	log              *slog.Logger
+	eventHub         *events.Hub
+	planService      *plans.Service
+	lifecycleService *plans.RunLifecycleService
 }
 
 func NewAPIHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *APIHandler {
@@ -42,10 +43,11 @@ func NewAPIHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *APIHan
 		eventHub = hub[0]
 	}
 	return &APIHandler{
-		store:       s,
-		log:         log,
-		eventHub:    eventHub,
-		planService: plans.NewService(s),
+		store:            s,
+		log:              log,
+		eventHub:         eventHub,
+		planService:      plans.NewService(s),
+		lifecycleService: plans.NewRunLifecycleService(s),
 	}
 }
 
@@ -1329,6 +1331,10 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create run: "+err.Error())
 			return
 		}
+		if err := h.lifecycleService.MarkAssociatedPassInProgress(r); err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update associated pass status: "+err.Error())
+			return
+		}
 		run = r
 		planID = association.PlanID
 		passID = association.PassID
@@ -2233,6 +2239,10 @@ func (h *APIHandler) ApproveAudit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run status")
 		return
 	}
+	if err := h.lifecycleService.ApplyAuditDecision(updatedRun, nextStatus); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update associated pass status: "+err.Error())
+		return
+	}
 
 	_, _ = h.store.CreateEvent(id, "status_change", eventMsg)
 
@@ -2303,6 +2313,10 @@ func (h *APIHandler) RequestAuditRevision(w http.ResponseWriter, r *http.Request
 	updatedRun, err := h.store.UpdateRunStatus(id, "revision_required")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run status")
+		return
+	}
+	if err := h.lifecycleService.ApplyAuditDecision(updatedRun, "revision_required"); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update associated pass status: "+err.Error())
 		return
 	}
 

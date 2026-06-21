@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -384,8 +385,8 @@ func TestAPI(t *testing.T) {
 		if !createdRun.PlanPassRowID.Valid || createdRun.PlanPassRowID.Int64 != passRow.ID {
 			t.Fatalf("expected plan_pass_row_id=%d, got %+v", passRow.ID, createdRun.PlanPassRowID)
 		}
-		if passRow.Status != "planned" {
-			t.Fatalf("expected pass status to remain planned, got %q", passRow.Status)
+		if passRow.Status != "in_progress" {
+			t.Fatalf("expected pass status to become in_progress, got %q", passRow.Status)
 		}
 	})
 
@@ -779,6 +780,74 @@ func TestAPI(t *testing.T) {
 		arts, err := s.ListArtifactsByRunKind(auditRun.ID, "audit_revision")
 		if err != nil || len(arts) == 0 {
 			t.Error("expected audit_revision artifact to exist")
+		}
+	})
+
+	t.Run("AUDIT: Associated pass stays in_progress on revision and completes on acceptance", func(t *testing.T) {
+		createPlan(t, "plan-api-audit-pass")
+
+		planRow, err := s.GetPlanByPlanID("plan-api-audit-pass")
+		if err != nil {
+			t.Fatalf("get seeded plan: %v", err)
+		}
+		passRow, err := s.GetPlanPassByPassID(planRow.ID, "PASS-001")
+		if err != nil {
+			t.Fatalf("get seeded pass: %v", err)
+		}
+
+		associatedRun, err := s.CreateRunWithAssociation(
+			repo.ID,
+			"Associated Audit Run",
+			"audit_ready",
+			"gpt-4o",
+			"gpt-4o",
+			store.DefaultExecutorAdapter,
+			"main",
+			sql.NullInt64{Int64: planRow.ID, Valid: true},
+			sql.NullInt64{Int64: passRow.ID, Valid: true},
+		)
+		if err != nil {
+			t.Fatalf("create associated run: %v", err)
+		}
+		if _, err := s.UpdatePlanPassStatus(passRow.ID, "in_progress"); err != nil {
+			t.Fatalf("seed pass in_progress: %v", err)
+		}
+
+		runIDStr := strconv.FormatInt(associatedRun.ID, 10)
+		revisionReq := httptest.NewRequest("POST", "/api/runs/"+runIDStr+"/audit/request-revision", strings.NewReader(`{"reason":"Needs work"}`))
+		revisionReq.Header.Set("Content-Type", "application/json")
+		revisionResp := httptest.NewRecorder()
+		r.ServeHTTP(revisionResp, revisionReq)
+		if revisionResp.Code != http.StatusOK {
+			t.Fatalf("expected 200 for revision request, got %d. Body: %s", revisionResp.Code, revisionResp.Body.String())
+		}
+
+		passAfterRevision, err := s.GetPlanPass(passRow.ID)
+		if err != nil {
+			t.Fatalf("get pass after revision: %v", err)
+		}
+		if passAfterRevision.Status != "in_progress" {
+			t.Fatalf("expected pass to stay in_progress after revision, got %q", passAfterRevision.Status)
+		}
+
+		if _, err := s.UpdateRunStatus(associatedRun.ID, "audit_ready"); err != nil {
+			t.Fatalf("reset associated run status: %v", err)
+		}
+
+		approveReq := httptest.NewRequest("POST", "/api/runs/"+runIDStr+"/audit/approve", strings.NewReader(`{"decision":"accepted_with_warnings","notes":"Ship it"}`))
+		approveReq.Header.Set("Content-Type", "application/json")
+		approveResp := httptest.NewRecorder()
+		r.ServeHTTP(approveResp, approveReq)
+		if approveResp.Code != http.StatusOK {
+			t.Fatalf("expected 200 for approve audit, got %d. Body: %s", approveResp.Code, approveResp.Body.String())
+		}
+
+		passAfterApproval, err := s.GetPlanPass(passRow.ID)
+		if err != nil {
+			t.Fatalf("get pass after approval: %v", err)
+		}
+		if passAfterApproval.Status != "completed" {
+			t.Fatalf("expected pass to become completed after approval, got %q", passAfterApproval.Status)
 		}
 	})
 

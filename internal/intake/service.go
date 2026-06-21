@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"relay/internal/artifacts"
+	"relay/internal/plans"
 	"relay/internal/store"
 )
 
@@ -15,12 +16,16 @@ import (
 // Both the HTTP API handler (internal/api) and MCP tools (internal/mcp) use this service
 // to avoid duplicating run-creation semantics.
 type Service struct {
-	store *store.Store
+	store     *store.Store
+	lifecycle *plans.RunLifecycleService
 }
 
 // NewService constructs an intake Service backed by the given store.
 func NewService(s *store.Store) *Service {
-	return &Service{store: s}
+	return &Service{
+		store:     s,
+		lifecycle: plans.NewRunLifecycleService(s),
+	}
 }
 
 // CreateRunInput holds the caller-supplied arguments for creating a run from a planner handoff.
@@ -144,6 +149,9 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create run: %w", err)
+	}
+	if err := svc.lifecycle.MarkAssociatedPassInProgress(run); err != nil {
+		return nil, fmt.Errorf("mark associated plan pass in progress: %w", err)
 	}
 
 	// Write validation checks.

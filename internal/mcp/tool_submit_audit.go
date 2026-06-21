@@ -9,6 +9,7 @@ import (
 
 	"relay/internal/artifacts"
 	"relay/internal/auditor"
+	"relay/internal/plans"
 )
 
 // submitAuditInput is the expected input for submit_audit_packet.
@@ -144,6 +145,9 @@ func (s *Server) HandleSubmitAuditPacket(rawArgs json.RawMessage) ToolCallResult
 	updatedRun, serr := s.deps.Store.UpdateRunStatus(runIDInt, targetStatus)
 	if serr != nil {
 		return toolErr(fmt.Sprintf("STATUS_ERROR: failed to apply status transition to %q: %s", targetStatus, serr))
+	}
+	if serr := plans.NewRunLifecycleService(s.deps.Store).ApplyAuditDecision(updatedRun, targetStatus); serr != nil {
+		return toolErr(fmt.Sprintf("STATUS_ERROR: failed to update associated pass status for %q: %s", targetStatus, serr))
 	}
 
 	// Create run event noting MCP audit handback.
