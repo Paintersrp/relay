@@ -32,7 +32,7 @@ export function LogPreviewPanel({ logPreview, className }: LogPreviewPanelProps)
             density="compact"
           />
         ) : (
-          <ScrollArea className="h-36 w-full rounded-md border border-border/50 bg-black/30">
+          <ScrollArea className="h-36 w-full rounded-md border border-border/50 bg-[var(--relay-code-bg)]">
             <div className="min-w-0 p-3 font-mono text-xs">
               <div className="overflow-x-auto">
                 <div className="min-w-max space-y-0.5">

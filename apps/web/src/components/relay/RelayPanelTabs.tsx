@@ -45,7 +45,7 @@ export function RelayPanelTabs({
             <TabsTrigger
               key={item.value}
               value={item.value}
-              className="shrink-0 rounded-none px-0 pb-2 font-mono text-xs"
+              className="shrink-0 rounded-none px-0 pb-2 text-xs font-medium"
             >
               {Icon ? <Icon className="size-3.5" /> : null}
               <span>{item.label}</span>

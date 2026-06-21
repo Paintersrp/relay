@@ -60,11 +60,11 @@ export function RunStepper({
           <button
             key={step.key}
             type="button"
-            className={cn(
-              'flex h-10 items-center gap-2 border-b-2 px-4 font-mono text-xs transition-colors whitespace-nowrap',
-              isActive &&
-                'border-[var(--relay-accent,hsl(var(--primary)))] text-foreground',
-              isCompleted &&
+              className={cn(
+                'flex h-10 items-center gap-2 border-b-2 px-4 text-xs font-medium transition-colors whitespace-nowrap',
+                isActive &&
+                  'border-[var(--relay-accent,hsl(var(--primary)))] text-foreground',
+                isCompleted &&
                 'border-transparent text-emerald-400 hover:text-foreground',
               !isActive &&
                 !isCompleted &&

@@ -12,13 +12,13 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   const config = getRelayStatusConfig(status)
   if (config.badgeVariant === 'outline') {
     return (
-      <Badge variant="outline" className={cn('font-mono text-xs', className)}>
+      <Badge variant="outline" className={cn('text-xs font-medium', className)}>
         {status}
       </Badge>
     )
   }
   return (
-    <Badge variant={config.badgeVariant as BadgeProps['variant']} className={cn('font-mono text-xs', className)}>
+    <Badge variant={config.badgeVariant as BadgeProps['variant']} className={cn('text-xs font-medium', className)}>
       {config.label}
     </Badge>
   )

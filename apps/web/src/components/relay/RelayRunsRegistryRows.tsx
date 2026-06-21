@@ -64,7 +64,7 @@ export function RelayRunCompactRow({
 
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
         <div className="min-w-0">
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
             Executor
           </p>
           <RelayMonoText className="mt-1 block break-words text-[11px] text-foreground">
@@ -72,7 +72,7 @@ export function RelayRunCompactRow({
           </RelayMonoText>
         </div>
         <div className="min-w-0">
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
             Updated
           </p>
           <span
@@ -83,7 +83,7 @@ export function RelayRunCompactRow({
           </span>
         </div>
         <div className="min-w-0">
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
             Attention
           </p>
           <span className="mt-1 block text-[11px] text-muted-foreground">

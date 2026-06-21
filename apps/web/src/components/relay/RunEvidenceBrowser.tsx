@@ -384,7 +384,7 @@ function ArtifactSummaryRow({
 }) {
   return (
     <div>
-      <dt className='font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground'>
+      <dt className='text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground'>
         {label}
       </dt>
       <dd
@@ -425,7 +425,7 @@ function EventChainTab({ events }: { events: RelayRunEvent[] }) {
           key={event.id}
           className='rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-3 py-2'
         >
-          <p className='font-mono text-[10px] text-muted-foreground'>
+          <p className='text-[10px] text-muted-foreground'>
             {formatEvidenceTime(event.createdAt)}
           </p>
           <p className='mt-1 text-xs text-foreground'>{event.message}</p>
@@ -451,15 +451,11 @@ function ArtifactMetadataTab({
     { label: 'Stage', value: getArtifactStageLabel(artifact) },
     { label: 'Producer', value: deriveProducer(artifact) },
     { label: 'Verification', value: verificationLabel },
-    {
-      label: 'Timestamp',
-      value: formatEvidenceTime(artifact.createdAt),
-      mono: true,
-    },
-    { label: 'Hash', value: getArtifactHash(artifact), mono: true },
-    { label: 'Size', value: artifact.sizeHint || '—', mono: true },
-    { label: 'Path', value: artifact.path || '—', mono: true },
-    { label: 'Content URL', value: artifact.contentUrl || '—', mono: true },
+      { label: 'Timestamp', value: formatEvidenceTime(artifact.createdAt) },
+      { label: 'Hash', value: getArtifactHash(artifact), mono: true },
+      { label: 'Size', value: artifact.sizeHint || '—' },
+      { label: 'Path', value: artifact.path || '—', mono: true },
+      { label: 'Content URL', value: artifact.contentUrl || '—', mono: true },
   ]
 
   return (
@@ -469,7 +465,7 @@ function ArtifactMetadataTab({
           key={row.label}
           className='grid grid-cols-1 gap-2 px-3 py-2 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-4'
         >
-          <span className='font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground'>
+          <span className='text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground'>
             {row.label}
           </span>
           <span
@@ -523,13 +519,13 @@ function EvidenceArtifactRow({
           <p className='truncate text-xs font-medium text-foreground' title={name}>
             {name}
           </p>
-          <p className='mt-1 truncate font-mono text-[10px] text-muted-foreground'>
+          <p className='mt-1 truncate text-[10px] text-muted-foreground'>
             {stageLabel} · {producer}
           </p>
         </div>
         <span
           className={cn(
-            'flex shrink-0 items-center gap-0.5 font-mono text-[10px]',
+            'flex shrink-0 items-center gap-0.5 text-[10px] font-medium',
             verification.className,
           )}
         >
@@ -538,7 +534,7 @@ function EvidenceArtifactRow({
         </span>
       </div>
 
-      <p className='mt-1 truncate font-mono text-[10px] text-muted-foreground/80'>
+      <p className='mt-1 truncate text-[10px] text-muted-foreground/80'>
         {metadata.join(' · ')}
       </p>
     </button>
@@ -607,7 +603,7 @@ function EvidenceArtifactDialog({
                 {verification ? (
                   <span
                     className={cn(
-                      'inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px]',
+                      'inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium',
                       verification.className,
                       'border-current/40 bg-transparent',
                     )}
@@ -617,7 +613,7 @@ function EvidenceArtifactDialog({
                   </span>
                 ) : null}
               </div>
-              <DialogDescription className='mt-2 break-words text-left font-mono text-[11px] text-muted-foreground'>
+              <DialogDescription className='mt-2 break-words text-left text-[11px] text-muted-foreground'>
                 {stageLabel} <span className='opacity-45'>·</span> {producer}{' '}
                 <span className='opacity-45'>·</span> {size}{' '}
                 <span className='opacity-45'>·</span> {timestamp}
@@ -634,7 +630,7 @@ function EvidenceArtifactDialog({
         <div className='grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)]'>
           <aside className='min-h-0 border-b border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] p-3 lg:border-r lg:border-b-0 lg:p-4'>
             <div className='rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-3'>
-              <p className='font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground'>
+              <p className='text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground'>
                 Artifact
               </p>
               <p className='mt-2 break-words text-sm font-medium text-foreground'>
@@ -769,10 +765,10 @@ export function RunEvidenceBrowser({
       <div className={cn('flex h-full min-h-0 flex-col', className)}>
         <div className='shrink-0 border-b border-[var(--relay-row-border)] pb-2'>
           <div className='flex items-center justify-between gap-2'>
-            <p className='font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground'>
+            <p className='text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground'>
               Artifacts
             </p>
-            <span className='font-mono text-[10px] text-muted-foreground'>
+            <span className='text-[10px] font-medium text-muted-foreground'>
               {sortedArtifacts.length}
             </span>
           </div>

@@ -92,140 +92,127 @@
   color-scheme: dark;
 
   /*
-    Relay Ink / Navy / Gold
+    Relay Unified Dark Surface
 
     Intent:
-    - Ink-black base.
-    - Prussian-blue primary panels and cards.
-    - Regal-navy elevated surfaces and hover/accent surfaces.
-    - Gold primary pop color.
-    - School-bus yellow reserved for warning/audit semantics only.
+    - One dark-neutral operator-console surface family.
+    - Minimal tonal elevation shifts.
+    - Cobalt only for active/focus/primary interaction.
+    - Status colors remain semantic and restrained.
   */
 
   --radius: 0.35rem;
 
-  /* User-provided palette */
-  --ink-black: #000814ff;
-  --prussian-blue: #001d3dff;
-  --regal-navy: #003566ff;
-  --gold: #ffd60aff;
-  --school-bus-yellow: #ffc300ff;
-
-  /* Accessible semantic support colors */
-  --relay-text-strong: #f7f9fc;
-  --relay-text-muted: #9fb6d6;
-  --relay-danger: #ff6b6b;
-  --relay-danger-foreground: #140000;
-  --relay-success: #4ade80;
-  --relay-success-foreground: #001407;
-
   /* Foundation */
-  --background: var(--ink-black);
-  --foreground: var(--relay-text-strong);
+  --background: oklch(0.045 0.004 260);
+  --foreground: oklch(0.945 0.004 260);
 
-  /* User-facing surface scale */
-  --surface-1: var(--ink-black);
-  --surface-2: var(--prussian-blue);
-  --surface-3: var(--regal-navy);
-  --surface-raised: color-mix(in srgb, var(--regal-navy) 78%, var(--prussian-blue));
+  /* Unified surface ladder */
+  --surface-base: oklch(0.055 0.005 260);
+  --surface-panel: oklch(0.078 0.007 260);
+  --surface-raised: oklch(0.105 0.010 260);
+  --surface-inset: oklch(0.034 0.004 260);
 
-  /* Existing Relay surface compatibility aliases */
-  --surface-shell: var(--surface-1);
-  --surface-base: var(--surface-1);
-  --surface-panel: var(--surface-2);
-  --surface-panel-hover: var(--surface-3);
-  --surface-inset: color-mix(in srgb, var(--ink-black) 88%, var(--prussian-blue));
+  /* Compatibility aliases: keep the surface family small */
+  --surface-shell: var(--surface-base);
+  --surface-1: var(--surface-base);
+  --surface-2: var(--surface-panel);
+  --surface-3: var(--surface-raised);
   --surface-elevated: var(--surface-raised);
+  --surface-panel-hover: var(--surface-raised);
 
   /* shadcn semantic surfaces */
-  --card: var(--surface-2);
+  --card: var(--surface-panel);
   --card-foreground: var(--foreground);
-
-  --popover: var(--surface-2);
+  --popover: var(--surface-panel);
   --popover-foreground: var(--foreground);
 
-  /* Primary: gold */
-  --primary: var(--gold);
-  --primary-foreground: var(--ink-black);
+  /* Primary interaction accent */
+  --primary: oklch(0.66 0.22 266);
+  --primary-foreground: oklch(0.985 0.004 260);
 
-  /* Secondary and accent: navy surface system */
-  --secondary: var(--regal-navy);
-  --secondary-foreground: var(--relay-text-strong);
+  /* Neutral UI lanes */
+  --secondary: var(--surface-raised);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.095 0.008 260);
+  --muted-foreground: oklch(0.69 0.012 260);
+  --accent: color-mix(in oklch, var(--primary) 16%, var(--surface-raised));
+  --accent-foreground: var(--foreground);
 
-  --muted: color-mix(in srgb, var(--prussian-blue) 82%, var(--ink-black));
-  --muted-foreground: var(--relay-text-muted);
+  /* Structure */
+  --border: oklch(0.245 0.012 260 / 58%);
+  --input: oklch(0.145 0.010 260);
+  --ring: oklch(0.66 0.22 266 / 68%);
 
-  --accent: var(--regal-navy);
-  --accent-foreground: var(--relay-text-strong);
+  /* Existing local font stack; no dependency change in this pass */
+  --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
-  --border: color-mix(in srgb, var(--regal-navy) 72%, var(--gold) 18%);
-  --input: color-mix(in srgb, var(--regal-navy) 64%, var(--ink-black));
-  --ring: color-mix(in srgb, var(--gold) 82%, white);
+  /* Shadow tokens from supplied theme direction */
+  --shadow-color: oklch(0.2571 0.1161 272.24);
+  --shadow-2xs: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.07);
+  --shadow-xs: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.07);
+  --shadow-sm: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 1px 2px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 1px 2px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow-md: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 2px 4px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow-lg: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 4px 6px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow-xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 8px 10px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
+  --shadow-2xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.38);
 
-  /* Run status tokens */
-  --run-running: var(--gold);
-  --run-blocked: var(--relay-danger);
-  --run-complete: var(--relay-success);
-  --run-audit: var(--school-bus-yellow);
-  --run-idle: color-mix(in srgb, var(--regal-navy) 60%, var(--ink-black));
+  /* Run status tokens: semantic lanes, not structural accents */
+  --run-running: var(--primary);
+  --run-blocked: oklch(0.65 0.20 25);
+  --run-complete: oklch(0.70 0.16 155);
+  --run-audit: oklch(0.78 0.16 82);
+  --run-idle: oklch(0.42 0.010 260);
 
-  /* Existing status compatibility aliases */
-  --success: var(--run-complete);
-  --success-foreground: var(--relay-success-foreground);
-
-  --warning: var(--run-audit);
-  --warning-foreground: var(--ink-black);
-
+  --success: oklch(0.70 0.16 155);
+  --success-foreground: oklch(0.055 0.014 155);
+  --warning: oklch(0.78 0.16 82);
+  --warning-foreground: oklch(0.07 0.010 82);
   --info: var(--primary);
   --info-foreground: var(--primary-foreground);
-
   --running: var(--run-running);
   --running-foreground: var(--primary-foreground);
-
-  --destructive: var(--relay-danger);
-  --destructive-foreground: var(--relay-danger-foreground);
+  --destructive: oklch(0.65 0.20 25);
+  --destructive-foreground: oklch(0.98 0.006 25);
 
   /* Charts */
-  --chart-1: var(--gold);
-  --chart-2: var(--regal-navy);
-  --chart-3: var(--prussian-blue);
-  --chart-4: var(--school-bus-yellow);
-  --chart-5: color-mix(in srgb, var(--gold) 50%, var(--regal-navy));
+  --chart-1: var(--primary);
+  --chart-2: var(--success);
+  --chart-3: var(--warning);
+  --chart-4: var(--destructive);
+  --chart-5: oklch(0.62 0.12 300);
 
   /* Sidebar / topbar */
-  --sidebar: var(--ink-black);
+  --sidebar: var(--surface-base);
   --sidebar-foreground: var(--foreground);
-  --sidebar-primary: var(--gold);
-  --sidebar-primary-foreground: var(--ink-black);
-  --sidebar-accent: var(--regal-navy);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--surface-raised);
   --sidebar-accent-foreground: var(--foreground);
-  --sidebar-border: color-mix(in srgb, var(--regal-navy) 68%, var(--ink-black));
+  --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
 
   /* Relay Shell Tokens */
-  --relay-shell-bg: var(--surface-shell);
+  --relay-shell-bg: var(--background);
   --relay-content-bg: var(--surface-base);
   --relay-panel-bg: var(--surface-panel);
-  --relay-panel-hover-bg: var(--surface-panel-hover);
+  --relay-panel-hover-bg: var(--surface-raised);
   --relay-border: var(--border);
   --relay-accent: var(--primary);
   --relay-accent-foreground: var(--primary-foreground);
-  --relay-topbar-bg: var(--surface-shell);
-  --relay-topbar-border: var(--sidebar-border);
+
+  --relay-topbar-bg: var(--background);
+  --relay-topbar-border: var(--border);
   --relay-topbar-fg: var(--foreground);
-  --relay-topbar-muted-fg: color-mix(
-    in srgb,
-    var(--foreground) 56%,
-    transparent
-  );
-  --relay-topbar-active-bg: var(--relay-accent);
-  --relay-topbar-active-fg: var(--relay-accent-foreground);
-  --relay-topbar-hover-bg: var(--surface-panel-hover);
-  --relay-page-header-bg: color-mix(
-    in srgb,
-    var(--surface-base) 72%,
-    var(--surface-panel)
-  );
+  --relay-topbar-muted-fg: var(--muted-foreground);
+  --relay-topbar-active-bg: var(--primary);
+  --relay-topbar-active-fg: var(--primary-foreground);
+  --relay-topbar-hover-bg: var(--surface-raised);
+
+  --relay-page-header-bg: var(--surface-base);
   --relay-page-border: var(--border);
   --relay-page-body-bg: var(--surface-base);
   --relay-page-title-fg: var(--foreground);
@@ -238,19 +225,12 @@
   --relay-status-validation: var(--run-blocked);
   --relay-status-neutral: var(--run-idle);
 
-  --relay-row-border: color-mix(in srgb, var(--regal-navy) 70%, transparent);
-  --relay-row-hover-bg: color-mix(
-    in srgb,
-    var(--surface-panel-hover) 80%,
-    transparent
-  );
+  --relay-row-border: var(--border);
+  --relay-row-hover-bg: var(--surface-raised);
   --relay-splitpane-border: var(--border);
-  --relay-splitpane-sidebar-bg: color-mix(
-    in srgb,
-    var(--surface-shell) 72%,
-    var(--surface-panel)
-  );
+  --relay-splitpane-sidebar-bg: var(--surface-base);
   --relay-inspector-bg: var(--surface-base);
+  --relay-code-bg: var(--surface-inset);
   --relay-code-fg: var(--foreground);
 }
 
@@ -281,13 +261,7 @@
   body {
     margin: 0;
     min-height: 100%;
-    background:
-      radial-gradient(
-        circle at top left,
-        color-mix(in oklch, var(--primary) 5%, transparent),
-        transparent 30rem
-      ),
-      var(--background);
+    background: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
     font-size: 14px;

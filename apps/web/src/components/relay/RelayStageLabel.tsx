@@ -26,7 +26,7 @@ export function RelayStageLabel({
   return (
     <span
       className={cn(
-        "inline-flex items-center font-mono text-xs uppercase tracking-[0.12em]",
+        "inline-flex items-center text-xs font-medium uppercase tracking-[0.06em]",
         STAGE_STATE_CLASS[state],
         className
       )}

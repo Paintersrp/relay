@@ -37,7 +37,7 @@ export function RelayStatusIndicator({
     >
       {showDot ? <RelayStatusDot role={config.role} pulse={config.role === "running"} /> : null}
       {showLabel ? (
-        <span className={cn("font-mono text-xs", ROLE_TEXT_CLASS[config.role])}>
+        <span className={cn("text-xs font-medium", ROLE_TEXT_CLASS[config.role])}>
           {config.label}
         </span>
       ) : null}

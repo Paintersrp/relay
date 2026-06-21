@@ -117,7 +117,7 @@ function InspectorTabStrip({
               type="button"
               onClick={() => onTabChange(tab.key)}
               className={cn(
-                'flex h-10 items-center border-b-2 font-mono text-[11px] transition-colors',
+                'flex h-10 items-center border-b-2 text-[11px] font-medium transition-colors',
                 active
                   ? 'border-[var(--relay-accent)] text-foreground'
                   : 'border-transparent text-muted-foreground hover:text-foreground',
@@ -217,9 +217,9 @@ export function RunWorkbenchLayout({
             </div>
           </div>
 
-          <div className="hidden shrink-0 items-center gap-4 text-right font-mono text-[11px] text-muted-foreground lg:flex">
-            <span>{run.executor}</span>
-            <span title={formatRunDate(run.updatedAt)}>
+          <div className="hidden shrink-0 items-center gap-4 text-right text-[11px] text-muted-foreground lg:flex">
+            <span className="font-mono">{run.executor}</span>
+            <span className="font-medium" title={formatRunDate(run.updatedAt)}>
               Updated {formatRunDateRelative(run.updatedAt)}
             </span>
           </div>
@@ -251,7 +251,7 @@ export function RunWorkbenchLayout({
             <div className="border-b border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-4 py-3">
               <div className="flex min-w-0 items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="font-mono text-sm font-semibold text-[var(--relay-accent)]">
+                  <h2 className="text-sm font-semibold text-[var(--relay-accent)]">
                     {activeStageCopy.title}
                   </h2>
                   <p className="mt-1 text-sm text-muted-foreground">

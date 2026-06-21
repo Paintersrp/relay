@@ -59,7 +59,7 @@ export function RelayAttentionBadge({
   return (
     <Badge
       variant={getAttentionVariant(reason)}
-      className={cn("gap-1 font-mono text-[11px]", className)}
+      className={cn("gap-1 text-[11px] font-medium", className)}
       {...props}
     >
       <AlertTriangle className="size-3" />

@@ -30,7 +30,7 @@ export function RelayFilterTabs({
           <TabsTrigger
             key={item.value}
             value={item.value}
-            className="shrink-0 rounded-none px-0 pb-2 font-mono text-xs"
+            className="shrink-0 rounded-none px-0 pb-2 text-xs font-medium"
           >
             <span>{item.label}</span>
             {typeof item.count === "number" ? (

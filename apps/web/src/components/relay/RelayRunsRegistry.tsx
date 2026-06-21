@@ -147,16 +147,16 @@ export function RelayRunsRegistry({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--relay-row-border)] px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           <h2 className="text-sm font-semibold text-foreground">Runs</h2>
-          <span className="font-mono text-[11px] text-muted-foreground">
+          <span className="text-[11px] font-medium text-muted-foreground">
             {rows.length}
           </span>
           {attentionCount > 0 ? (
-            <span className="font-mono text-[11px] text-[var(--warning)]">
+            <span className="text-[11px] font-medium text-[var(--warning)]">
               {attentionCount} need attention
             </span>
           ) : null}
         </div>
-        <span className="font-mono text-xs text-muted-foreground">Updated</span>
+        <span className="text-xs font-medium text-muted-foreground">Updated</span>
       </div>
 
       <div className="pt-2">
@@ -367,7 +367,7 @@ export function RelayRunsRegistry({
         ) : null}
       </div>
 
-      <div className="flex shrink-0 items-center justify-between border-t border-[var(--relay-row-border)] px-4 py-2 font-mono text-[11px] text-muted-foreground">
+      <div className="flex shrink-0 items-center justify-between border-t border-[var(--relay-row-border)] px-4 py-2 text-[11px] font-medium text-muted-foreground">
         <span>
           {filteredRuns.length} run{filteredRuns.length === 1 ? "" : "s"}
         </span>
