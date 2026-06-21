@@ -11,8 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RunsIndexRouteImport } from './routes/runs/index'
+import { Route as PlansIndexRouteImport } from './routes/plans/index'
 import { Route as RunsNewRouteImport } from './routes/runs/new'
 import { Route as RunsRunIdRouteImport } from './routes/runs/$runId'
+import { Route as PlansPlanIdRouteImport } from './routes/plans/$planId'
 import { Route as RunsRunIdPrepareRouteImport } from './routes/runs/$runId/prepare'
 import { Route as RunsRunIdIntakeRouteImport } from './routes/runs/$runId/intake'
 import { Route as RunsRunIdExecuteRouteImport } from './routes/runs/$runId/execute'
@@ -28,6 +30,11 @@ const RunsIndexRoute = RunsIndexRouteImport.update({
   path: '/runs/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlansIndexRoute = PlansIndexRouteImport.update({
+  id: '/plans/',
+  path: '/plans/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RunsNewRoute = RunsNewRouteImport.update({
   id: '/runs/new',
   path: '/runs/new',
@@ -36,6 +43,11 @@ const RunsNewRoute = RunsNewRouteImport.update({
 const RunsRunIdRoute = RunsRunIdRouteImport.update({
   id: '/runs/$runId',
   path: '/runs/$runId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlansPlanIdRoute = PlansPlanIdRouteImport.update({
+  id: '/plans/$planId',
+  path: '/plans/$planId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RunsRunIdPrepareRoute = RunsRunIdPrepareRouteImport.update({
@@ -61,8 +73,10 @@ const RunsRunIdAuditRoute = RunsRunIdAuditRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/plans/$planId': typeof PlansPlanIdRoute
   '/runs/$runId': typeof RunsRunIdRouteWithChildren
   '/runs/new': typeof RunsNewRoute
+  '/plans/': typeof PlansIndexRoute
   '/runs/': typeof RunsIndexRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
@@ -71,8 +85,10 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/plans/$planId': typeof PlansPlanIdRoute
   '/runs/$runId': typeof RunsRunIdRouteWithChildren
   '/runs/new': typeof RunsNewRoute
+  '/plans': typeof PlansIndexRoute
   '/runs': typeof RunsIndexRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
@@ -82,8 +98,10 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/plans/$planId': typeof PlansPlanIdRoute
   '/runs/$runId': typeof RunsRunIdRouteWithChildren
   '/runs/new': typeof RunsNewRoute
+  '/plans/': typeof PlansIndexRoute
   '/runs/': typeof RunsIndexRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
@@ -94,8 +112,10 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/plans/$planId'
     | '/runs/$runId'
     | '/runs/new'
+    | '/plans/'
     | '/runs/'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
@@ -104,8 +124,10 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/plans/$planId'
     | '/runs/$runId'
     | '/runs/new'
+    | '/plans'
     | '/runs'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
@@ -114,8 +136,10 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/plans/$planId'
     | '/runs/$runId'
     | '/runs/new'
+    | '/plans/'
     | '/runs/'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
@@ -125,8 +149,10 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  PlansPlanIdRoute: typeof PlansPlanIdRoute
   RunsRunIdRoute: typeof RunsRunIdRouteWithChildren
   RunsNewRoute: typeof RunsNewRoute
+  PlansIndexRoute: typeof PlansIndexRoute
   RunsIndexRoute: typeof RunsIndexRoute
 }
 
@@ -146,6 +172,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RunsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/plans/': {
+      id: '/plans/'
+      path: '/plans'
+      fullPath: '/plans/'
+      preLoaderRoute: typeof PlansIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/runs/new': {
       id: '/runs/new'
       path: '/runs/new'
@@ -158,6 +191,13 @@ declare module '@tanstack/react-router' {
       path: '/runs/$runId'
       fullPath: '/runs/$runId'
       preLoaderRoute: typeof RunsRunIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plans/$planId': {
+      id: '/plans/$planId'
+      path: '/plans/$planId'
+      fullPath: '/plans/$planId'
+      preLoaderRoute: typeof PlansPlanIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/runs/$runId/prepare': {
@@ -211,8 +251,10 @@ const RunsRunIdRouteWithChildren = RunsRunIdRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  PlansPlanIdRoute: PlansPlanIdRoute,
   RunsRunIdRoute: RunsRunIdRouteWithChildren,
   RunsNewRoute: RunsNewRoute,
+  PlansIndexRoute: PlansIndexRoute,
   RunsIndexRoute: RunsIndexRoute,
 }
 export const routeTree = rootRouteImport

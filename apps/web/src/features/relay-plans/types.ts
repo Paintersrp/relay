@@ -71,6 +71,10 @@ export interface PlanAPIPass {
 export interface PlanAPIReadPlan extends PlanAPIPlan {
   passCount: number;
   completionReady: boolean;
+  completedPassCount?: number;
+  inProgressPassCount?: number;
+  plannedPassCount?: number;
+  skippedPassCount?: number;
 }
 
 export interface PlanValidationIssue {

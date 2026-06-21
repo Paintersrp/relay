@@ -13,6 +13,10 @@ function isRunsActive(pathname: string): boolean {
   return pathname === "/runs" || pathname.startsWith("/runs/");
 }
 
+function isPlansActive(pathname: string): boolean {
+  return pathname === "/plans" || pathname.startsWith("/plans/");
+}
+
 function isNewRunActive(pathname: string): boolean {
   return pathname === "/runs/new";
 }
@@ -20,6 +24,7 @@ function isNewRunActive(pathname: string): boolean {
 export function AppShell({ children, className }: AppShellProps) {
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
+  const plansActive = isPlansActive(pathname);
   const runsActive = isRunsActive(pathname) && !isNewRunActive(pathname);
   const newRunActive = isNewRunActive(pathname);
 
@@ -54,6 +59,18 @@ export function AppShell({ children, className }: AppShellProps) {
 
         <nav aria-label="Primary" className="ml-auto flex shrink-0 items-center gap-1">
           <Link
+            to="/plans"
+            aria-current={plansActive ? "page" : undefined}
+            className={cn(
+              "rounded px-3 py-1.5 text-xs font-medium transition-colors",
+              plansActive
+                ? "bg-[var(--relay-topbar-active-bg)] text-[var(--relay-topbar-active-fg)]"
+                : "text-[var(--relay-topbar-muted-fg)] hover:bg-[var(--relay-topbar-hover-bg)] hover:text-[var(--relay-topbar-fg)]",
+            )}
+          >
+            Plans
+          </Link>
+          <Link
             to="/runs"
             aria-current={runsActive ? "page" : undefined}
             className={cn(
@@ -66,6 +83,18 @@ export function AppShell({ children, className }: AppShellProps) {
             Runs
           </Link>
         </nav>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled
+          title="Plan submission arrives in UI-PLAN-03"
+          className="h-8 shrink-0 gap-1.5 px-2 text-[var(--relay-topbar-fg)] sm:px-3"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">New Plan</span>
+        </Button>
 
         <Button
           asChild

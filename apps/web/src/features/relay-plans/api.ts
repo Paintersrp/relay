@@ -1,4 +1,5 @@
 import { API_BASE_URL, RelayApiError } from "@/features/relay-runs";
+import type { RelayApiErrorShape } from "@/features/relay-runs/types";
 
 import type {
   PlanDetailResponse,
@@ -65,7 +66,7 @@ async function postPlanJson<TReq, TRes>(path: string, body: TReq): Promise<TRes>
     });
 
     if (!res.ok) {
-      let errorShape;
+      let errorShape: RelayApiErrorShape | undefined;
       try {
         const text = await res.text();
         errorShape = JSON.parse(text);
