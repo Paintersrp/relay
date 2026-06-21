@@ -115,6 +115,8 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 		r.Get("/runs/{id}/artifacts/{kind}", apiH.GetArtifactContent)
 		r.Get("/runs/{id}/events", apiH.ListEvents)
 		r.Post("/intake/planner-handoff", apiH.IntakePlannerHandoff)
+		r.Post("/plans/validate", apiH.ValidatePlan)
+		r.Post("/plans", apiH.SubmitPlan)
 		r.Post("/runs/{id}/approve-intake", apiH.ApproveIntake)
 		r.Post("/runs/{id}/prepare", apiH.PrepareRun)
 		r.Post("/runs/{id}/render-brief", apiH.RenderBrief)

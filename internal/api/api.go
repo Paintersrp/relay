@@ -17,6 +17,7 @@ import (
 	"relay/internal/events"
 	"relay/internal/executor"
 	"relay/internal/intake"
+	"relay/internal/plans"
 	"relay/internal/renderer"
 	"relay/internal/repairer"
 	"relay/internal/store"
@@ -28,9 +29,10 @@ import (
 )
 
 type APIHandler struct {
-	store    *store.Store
-	log      *slog.Logger
-	eventHub *events.Hub
+	store       *store.Store
+	log         *slog.Logger
+	eventHub    *events.Hub
+	planService *plans.Service
 }
 
 func NewAPIHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *APIHandler {
@@ -39,9 +41,10 @@ func NewAPIHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *APIHan
 		eventHub = hub[0]
 	}
 	return &APIHandler{
-		store:    s,
-		log:      log,
-		eventHub: eventHub,
+		store:       s,
+		log:         log,
+		eventHub:    eventHub,
+		planService: plans.NewService(s),
 	}
 }
 
@@ -150,6 +153,48 @@ type RelayApiErrorShape struct {
 	Message string                 `json:"message"`
 	Code    string                 `json:"code,omitempty"`
 	Details map[string]interface{} `json:"details,omitempty"`
+}
+
+type PlanAPIRequest struct {
+	Plan               json.RawMessage `json:"plan"`
+	SourceArtifactPath string          `json:"sourceArtifactPath,omitempty"`
+}
+
+type PlanAPIResponse struct {
+	Success    bool                       `json:"success"`
+	Plan       *PlanAPIPlan               `json:"plan,omitempty"`
+	Passes     []PlanAPIPass              `json:"passes,omitempty"`
+	Validation plans.PlanValidationReport `json:"validation"`
+}
+
+type PlanAPIPlan struct {
+	ID                  string `json:"id"`
+	PlanID              string `json:"planId"`
+	SchemaVersion       string `json:"schemaVersion"`
+	Title               string `json:"title"`
+	Goal                string `json:"goal"`
+	RepoTarget          string `json:"repoTarget"`
+	BranchContext       string `json:"branchContext"`
+	Status              string `json:"status"`
+	SourceIntentSummary string `json:"sourceIntentSummary"`
+	SourceArtifactPath  string `json:"sourceArtifactPath,omitempty"`
+	CreatedAt           string `json:"createdAt"`
+	UpdatedAt           string `json:"updatedAt"`
+}
+
+type PlanAPIPass struct {
+	ID                     string   `json:"id"`
+	PlanRowID              string   `json:"planRowId"`
+	PassID                 string   `json:"passId"`
+	Sequence               int64    `json:"sequence"`
+	Name                   string   `json:"name"`
+	Goal                   string   `json:"goal"`
+	IntendedExecutionScope []string `json:"intendedExecutionScope"`
+	NonGoals               []string `json:"nonGoals"`
+	Dependencies           []string `json:"dependencies"`
+	Status                 string   `json:"status"`
+	CreatedAt              string   `json:"createdAt"`
+	UpdatedAt              string   `json:"updatedAt"`
 }
 
 // Helpers for mappings
@@ -676,7 +721,164 @@ func writeError(w http.ResponseWriter, status int, errStr, msg string) {
 	})
 }
 
+func rawPlanFromRequest(req PlanAPIRequest) ([]byte, bool, error) {
+	raw := []byte(req.Plan)
+	if len(raw) == 0 {
+		return nil, false, nil
+	}
+
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return nil, false, nil
+	}
+
+	return []byte(trimmed), true, nil
+}
+
+func mapPlanToAPI(plan store.Plan) PlanAPIPlan {
+	return PlanAPIPlan{
+		ID:                  strconv.FormatInt(plan.ID, 10),
+		PlanID:              plan.PlanID,
+		SchemaVersion:       plan.SchemaVersion,
+		Title:               plan.Title,
+		Goal:                plan.Goal,
+		RepoTarget:          plan.RepoTarget,
+		BranchContext:       plan.BranchContext,
+		Status:              plan.Status,
+		SourceIntentSummary: plan.SourceIntentSummary,
+		SourceArtifactPath:  plan.SourceArtifactPath,
+		CreatedAt:           parseAndFormatTime(plan.CreatedAt),
+		UpdatedAt:           parseAndFormatTime(plan.UpdatedAt),
+	}
+}
+
+func mapPlanPassToAPI(pass store.PlanPass) PlanAPIPass {
+	return PlanAPIPass{
+		ID:                     strconv.FormatInt(pass.ID, 10),
+		PlanRowID:              strconv.FormatInt(pass.PlanRowID, 10),
+		PassID:                 pass.PassID,
+		Sequence:               pass.Sequence,
+		Name:                   pass.Name,
+		Goal:                   pass.Goal,
+		IntendedExecutionScope: decodeStoredStringSlice(pass.IntendedExecutionScopeJson),
+		NonGoals:               decodeStoredStringSlice(pass.NonGoalsJson),
+		Dependencies:           decodeStoredStringSlice(pass.DependenciesJson),
+		Status:                 pass.Status,
+		CreatedAt:              parseAndFormatTime(pass.CreatedAt),
+		UpdatedAt:              parseAndFormatTime(pass.UpdatedAt),
+	}
+}
+
+func decodeStoredStringSlice(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return []string{}
+	}
+
+	var items []string
+	if err := json.Unmarshal([]byte(value), &items); err != nil {
+		return []string{}
+	}
+	if items == nil {
+		return []string{}
+	}
+	return items
+}
+
+func hasPlanIssue(report plans.PlanValidationReport, code string) bool {
+	for _, issue := range report.Issues {
+		if issue.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
 // Handlers implementation
+
+// POST /api/plans/validate
+func (h *APIHandler) ValidatePlan(w http.ResponseWriter, r *http.Request) {
+	var req PlanAPIRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON payload")
+		return
+	}
+
+	rawPlan, ok, err := rawPlanFromRequest(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid plan payload")
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Plan is required")
+		return
+	}
+
+	_, report, err := h.planService.ValidatePlanJSON(r.Context(), rawPlan)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, PlanAPIResponse{
+		Success:    report.Valid,
+		Validation: report,
+	})
+}
+
+// POST /api/plans
+func (h *APIHandler) SubmitPlan(w http.ResponseWriter, r *http.Request) {
+	var req PlanAPIRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON payload")
+		return
+	}
+
+	rawPlan, ok, err := rawPlanFromRequest(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid plan payload")
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Plan is required")
+		return
+	}
+
+	result, err := h.planService.SubmitPlan(r.Context(), plans.SubmitPlanRequest{
+		RawJSON:            rawPlan,
+		SourceArtifactPath: req.SourceArtifactPath,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	if !result.Report.Valid {
+		status := http.StatusUnprocessableEntity
+		if hasPlanIssue(result.Report, plans.IssuePlanDuplicatePlanID) {
+			status = http.StatusConflict
+		}
+
+		writeJSON(w, status, PlanAPIResponse{
+			Success:    false,
+			Validation: result.Report,
+		})
+		return
+	}
+
+	apiPasses := make([]PlanAPIPass, 0, len(result.Passes))
+	for _, pass := range result.Passes {
+		apiPasses = append(apiPasses, mapPlanPassToAPI(pass))
+	}
+	apiPlan := mapPlanToAPI(result.Plan)
+
+	writeJSON(w, http.StatusCreated, PlanAPIResponse{
+		Success:    true,
+		Plan:       &apiPlan,
+		Passes:     apiPasses,
+		Validation: result.Report,
+	})
+}
 
 // GET /api/runs
 func (h *APIHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
