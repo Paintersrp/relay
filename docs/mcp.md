@@ -2,9 +2,9 @@
 
 > [!IMPORTANT]
 > **Current GPT-Facing MCP Action Surface:**
-> The current Planner Project-facing MCP action is **only** `create_run_from_planner_handoff`. It submits a reviewed Planner handoff to Relay to create/start a run.
+> The current Planner Project-facing MCP action is **only** `create_run_from_planner_handoff` by default. It submits a reviewed Planner handoff to Relay to create/start a run.
 > 
-> The Planner does **not** have multiple project-facing MCP actions. It cannot invoke status queries, run listing, audits, or downstream dispatch via MCP at this time. Other tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` may exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
+> The Planner does **not** have multiple project-facing MCP actions by default. It cannot invoke status queries, run listing, audits, plan submission, or downstream dispatch via MCP unless external Project configuration explicitly exposes those tools. Other tools such as `submit_planner_pass_plan`, `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
 
 ---
 
@@ -14,7 +14,8 @@
     *   **Action:** `create_run_from_planner_handoff` — Submits a reviewed Planner handoff to Relay. Relay creates/starts the run and handles all downstream compiler, validator, and executor tasks.
     *   **User Gating:** Requires explicit user confirmation in chat before submission.
 2.  **Local/Dev/Server Tool Inventory (Optional/Developer-Only):**
-    *   The `mcpserver` implementation defines other tools (e.g., status, list, audits) used for local debugging, unit/smoke testing, or command-line developer workflows.
+    *   The `mcpserver` implementation registers `submit_planner_pass_plan` and other tools (status, list, audits) used for local debugging, unit/smoke testing, or command-line developer workflows.
+    *   `submit_planner_pass_plan` creates plan/pass records only and does not create runs, dispatch executors, mutate git, or read chat context.
     *   These are **not** currently exposed to the Planner Project unless the specific project configuration is modified to expose them.
 
 ---
@@ -62,19 +63,22 @@ make mcp-smoke    # builds binary and runs full smoke harness
 ```
 ✓ initialize
 ✓ ping
-✓ tools/list count=5
+✓ tools/list count=6
 ✓ tools/list approved:submit_test_audit_packet
 ✓ tools/list approved:create_run_from_planner_handoff
+✓ tools/list approved:submit_planner_pass_plan
 ✓ tools/list approved:list_open_runs
 ✓ tools/list approved:get_run_status
 ✓ tools/list approved:submit_audit_packet
+✓ submit_test_audit_packet ok=true
+✓ submit_planner_pass_plan ok=true
 ✓ create_run_from_planner_handoff ok=true
 ✓ get_run_status ok=true
 ✓ list_open_runs contains created run
 ✓ submit_audit_packet status=revision_required
 ✓ unknown tool returns error
 ✓ invalid decision mentions VALIDATION_ERROR
-PASS: 35
+PASS: 46
 ```
 
 ---
@@ -111,9 +115,9 @@ The MCP server uses WAL mode and shares the database safely with the Go HTTP dae
 
 ---
 
-## Registered Tools (Pass 16 / Developer Tool Inventory)
+## Registered Tools (Developer Tool Inventory)
 
-Exactly 5 tools are registered in the local/dev MCP server. Note that **only tool #2 (`create_run_from_planner_handoff`)** is currently exposed as a Project MCP action for the GPT-facing Planner. The others are kept for local debugging, testing, or future expansion. No shell execution, arbitrary file access, or git mutation tools are exposed.
+Exactly 6 tools are registered in the local/dev MCP server. Note that **only tool #2 (`create_run_from_planner_handoff`)** is currently exposed as a Project MCP action for the GPT-facing Planner by default. The others, including `submit_planner_pass_plan`, are kept for local debugging, testing, or future expansion, and are only Project-facing if external configuration explicitly exposes them. No shell execution, arbitrary file access, or git mutation tools are exposed.
 
 ### 1. `submit_test_audit_packet`
 
@@ -149,13 +153,21 @@ Exactly 5 tools are registered in the local/dev MCP server. Note that **only too
   "branch_context": "string (optional) — falls back to frontmatter branch_context or 'main'",
   "name": "string (optional) — run title",
   "source": "string (optional) — default 'mcp_chat'",
-  "client_trace_id": "string (optional)"
+  "client_trace_id": "string (optional)",
+  "plan_id": "string (optional) — Relay plan identifier to associate with the new run",
+  "pass_id": "string (optional) — Relay pass identifier under plan_id; requires plan_id"
 }
 ```
 
-**Output:** `ok`, `tool`, `run_id`, `status`, `lifecycle_state`, `review_url`, `artifact_kinds`, `validation_summary`
+**Output:** `ok`, `tool`, `run_id`, `status`, `lifecycle_state`, `review_url`, `artifact_kinds`, `validation_summary`, `plan_id` (when associated), `pass_id` (when associated)
 
 **Uses:** same intake semantics as `POST /api/intake/planner-handoff`. Creates real run/artifacts/checks/events through existing Relay store services.
+
+**Plan/pass association behavior:**
+- `pass_id` requires `plan_id`.
+- When `plan_id`/`pass_id` point to an existing plan/pass, the new run is associated with that pass and the pass status moves to `in_progress`.
+- Audit acceptance for an associated run moves the pass to `completed`.
+- Audit revision for an associated run keeps/returns the pass to `in_progress`.
 
 ---
 
@@ -227,6 +239,29 @@ No full artifact contents, no log dumps, no secrets.
 
 **Does NOT:** close the run, commit, push, stage, merge, branch, checkout, reset, or mutate the target repository.
 
+### 6. `submit_planner_pass_plan`
+
+**Purpose:** Submit a reviewed Planner pass plan JSON artifact to Relay. This creates `plans` and derived `plan_passes` records only; it does not create runs, attach runs to passes, dispatch executors, mutate git, or read chat context.
+
+**The LLM should call this tool when:**
+- The user asks to submit a Planner pass plan JSON to Relay.
+- The user has a reviewed `.planner-pass-plan.json` artifact to register.
+
+**Input:**
+```json
+{
+  "planner_pass_plan_json": "string (required) — reviewed Planner pass plan JSON content",
+  "source_artifact_path": "string (optional) — repo-relative path to the source .planner-pass-plan.json artifact",
+  "source": "string (optional) — caller/source label for audit context"
+}
+```
+
+**Output:** `ok`, `tool`, `plan_id`, `plan_row_id`, `status`, `pass_count`, `passes[]` (each with `pass_id`, `row_id`, `sequence`, `name`, `status`), `validation`
+
+**Validation failures:** Returned with `ok: false`, an `error`/`message`, and the `validation` report. Duplicate `plan_id` errors are reported in the validation report.
+
+**Does NOT:** create runs, attach runs to passes, dispatch executors, mutate git, read chat context, or perform drift detection.
+
 ---
 
 ## Make Targets
@@ -246,6 +281,7 @@ No full artifact contents, no log dumps, no secrets.
 - **No arbitrary file read/write.** All artifact writes go through `relay/internal/artifacts` conventions which enforce path containment and allowed kind lists.
 - **No git mutation.** No commit, push, stage, merge, branch, checkout, reset, or worktree operations.
 - **No run closure.** `submit_audit_packet` applies a status transition and writes artifacts but does not close or complete runs.
+- **No run/executor/git side effects from plan submission.** `submit_planner_pass_plan` creates plan/pass records only and does not create runs, dispatch executors, mutate git, or read chat context.
 - **Bounded outputs.** No tool dumps full artifact contents, log files, or secret values.
 - **Credential exclusion.** Tool descriptions warn callers not to pass secrets, tokens, auth headers, private keys, API keys, or signed URLs.
 
@@ -275,7 +311,8 @@ The MCP subprocess and the HTTP daemon (`cmd/relay`) share the same SQLite datab
 ## Pass History
 
 - **Pass 13A (feasibility):** Added `submit_test_audit_packet` to prove stdio MCP bridge works. Gated real tools.
-- **Pass 16 (real tools):** Implemented all 4 real tools (`create_run_from_planner_handoff`, `list_open_runs`, `get_run_status`, `submit_audit_packet`), wired MCP server to real Relay DB, added executable `make mcp-smoke` harness.
+- **Pass 16 (real tools):** Implemented the 4 run/audit tools (`create_run_from_planner_handoff`, `list_open_runs`, `get_run_status`, `submit_audit_packet`), wired MCP server to real Relay DB, added executable `make mcp-smoke` harness.
+- **Pass 16+ managed plans:** Added `submit_planner_pass_plan` for local/dev plan submission and updated smoke/docs to cover the 6-tool inventory.
 
 ---
 
@@ -298,7 +335,7 @@ Run these checks against a local development instance of the Go daemon with an H
 1. **Daemon starts without error** — `go run ./cmd/relay` binds on the configured port.
 2. **Tunnel is reachable** — `curl -s -o /dev/null -w "%{http_code}" <tunnel-url>/mcp` returns `200` or `405`.
 3. **ChatGPT can discover tools** — ChatGPT session successfully calls `tools/list` on the remote `/mcp` endpoint.
-4. **Tools respond without auth errors** — Each tool returns a structured response, not an auth/403 body, in a local/dev validation configuration. Note that tools such as `submit_test_audit_packet`, `create_run_from_planner_handoff`, `list_open_runs`, `get_run_status`, and `submit_audit_packet` are used here but are **not** the current Planner Project action inventory.
+4. **Tools respond without auth errors** — Each tool returns a structured response, not an auth/403 body, in a local/dev validation configuration. Note that tools such as `submit_test_audit_packet`, `create_run_from_planner_handoff`, `submit_planner_pass_plan`, `list_open_runs`, `get_run_status`, and `submit_audit_packet` are used here but are **not** the current Planner Project action inventory unless configuration explicitly exposes them.
 5. **Artifact written to disk** — After calling a write tool, confirm an artifact file appears under `$RELAY_ARTIFACTS_DIR`.
 6. **Run state persisted** — After a write tool, `get_run_status` returns the expected updated state.
 7. **No credentials leaked** — Review tunnel and daemon logs; confirm no tokens, keys, or signed URLs appear in the output.

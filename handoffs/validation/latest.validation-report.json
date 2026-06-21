@@ -2,29 +2,59 @@
   "schema_version": "3.0.0",
   "report_kind": "relay_make_validate_latest",
   "status": "passed",
-  "created_at": "2026-06-21T18:34:22Z",
-  "base_commit_short": "f1f4bcab4751",
-  "base_commit_sha": "f1f4bcab4751c7320c7495001bf6b2a6eecb7b0d",
+  "created_at": "2026-06-21T19:16:26Z",
+  "base_commit_short": "c5b3695f8b25",
+  "base_commit_sha": "c5b3695f8b25b8ca513847bd9e73a6c61a063ed1",
   "validated_source_snapshot": {
-    "captured_at": "2026-06-21T18:35:12.191Z",
+    "captured_at": "2026-06-21T19:17:11.551Z",
     "model": "base_commit_plus_worktree_diff_excluding_validation_report_artifacts",
     "worktree_dirty": true,
-    "diff_sha256": "e6577e6bc78a1dfb6f910024a130613c1fc6eb93fcfb9a77d525ac2880e2c23e",
+    "diff_sha256": "1f154ae7e0e7a97328fd306d5b082fc88c25e2fb8e7526d23c98f6a8abae6e25",
     "diff_name_status": [
       {
         "status": "M",
-        "path": "apps/web/src/routes/runs/$runId/prepare.tsx"
+        "path": "cmd/mcp-smoke/main.go"
+      },
+      {
+        "status": "??",
+        "path": "cmd/plan-api-smoke/main.go"
+      },
+      {
+        "status": "M",
+        "path": "docs/api/frontend-api-contract.md"
+      },
+      {
+        "status": "M",
+        "path": "docs/mcp.md"
+      },
+      {
+        "status": "M",
+        "path": "Makefile"
+      },
+      {
+        "status": "M",
+        "path": "README.md"
       }
     ],
-    "diff_stat": "apps/web/src/routes/runs/$runId/prepare.tsx | 1700 ++++++++++++++++-----------\n 1 file changed, 1039 insertions(+), 661 deletions(-)",
+    "diff_stat": "Makefile                          |   5 +-\n README.md                         |  80 +++++++++++++++++-----\n cmd/mcp-smoke/main.go             | 111 ++++++++++++++++++++++++++++--\n docs/api/frontend-api-contract.md | 140 +++++++++++++++++++++++++++++++++++++-\n docs/mcp.md                       |  59 +++++++++++++---\n 5 files changed, 359 insertions(+), 36 deletions(-)",
     "status_porcelain": [
-      " M apps/web/src/routes/runs/$runId/prepare.tsx"
+      " M cmd/mcp-smoke/main.go",
+      " M docs/api/frontend-api-contract.md",
+      " M docs/mcp.md",
+      " M Makefile",
+      " M README.md",
+      "?? cmd/plan-api-smoke/"
     ]
   },
   "post_report_status_porcelain": [
-    " M apps/web/src/routes/runs/$runId/prepare.tsx",
+    " M cmd/mcp-smoke/main.go",
+    " M docs/api/frontend-api-contract.md",
+    " M docs/mcp.md",
     " M handoffs/validation/latest.validation-report.json",
-    " M handoffs/validation/latest.validation-summary.md"
+    " M handoffs/validation/latest.validation-summary.md",
+    " M Makefile",
+    " M README.md",
+    "?? cmd/plan-api-smoke/"
   ],
   "report_files": [
     "handoffs/validation/latest.validation-report.json",
@@ -35,8 +65,8 @@
       "step": 1,
       "name": "go-fmt-executor",
       "command": "go fmt ./internal/executor",
-      "started_at": "2026-06-21T18:34:22.557Z",
-      "completed_at": "2026-06-21T18:34:22.816Z",
+      "started_at": "2026-06-21T19:16:26.844Z",
+      "completed_at": "2026-06-21T19:16:27.742Z",
       "exit_code": 0,
       "status": "passed",
       "output_tail": "$ go fmt ./internal/executor\nexit_code: 0\n"
@@ -45,8 +75,8 @@
       "step": 2,
       "name": "go-test-executor",
       "command": "go test ./internal/executor/...",
-      "started_at": "2026-06-21T18:34:22.817Z",
-      "completed_at": "2026-06-21T18:34:23.926Z",
+      "started_at": "2026-06-21T19:16:27.743Z",
+      "completed_at": "2026-06-21T19:16:29.459Z",
       "exit_code": 0,
       "status": "passed",
       "output_tail": "$ go test ./internal/executor/...\nok  \trelay/internal/executor\t(cached)\nexit_code: 0\n"
@@ -55,18 +85,18 @@
       "step": 3,
       "name": "go-test-all",
       "command": "go test ./...",
-      "started_at": "2026-06-21T18:34:23.926Z",
-      "completed_at": "2026-06-21T18:34:46.236Z",
+      "started_at": "2026-06-21T19:16:29.459Z",
+      "completed_at": "2026-06-21T19:16:41.475Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "$ go test ./...\n?   \trelay/cmd/mcp-smoke\t[no test files]\n?   \trelay/cmd/mcpserver\t[no test files]\n?   \trelay/cmd/relay\t[no test files]\nok  \trelay/internal/api\t(cached)\n?   \trelay/internal/artifacts\t[no test files]\nok  \trelay/internal/auditor\t(cached)\nok  \trelay/internal/compiler\t(cached)\nok  \trelay/internal/config\t(cached)\nok  \trelay/internal/db\t(cached)\n?   \trelay/internal/devreload\t[no test files]\nok  \trelay/internal/events\t(cached)\nok  \trelay/internal/executor\t(cached)\nok  \trelay/internal/handlers\t3.377s\nok  \trelay/internal/instructions\t(cached)\nok  \trelay/internal/intake\t(cached)\nok  \trelay/internal/mcp\t(cached)\nok  \trelay/internal/pipeline\t(cached)\nok  \trelay/internal/plans\t(cached)\nok  \trelay/internal/renderer\t(cached)\nok  \trelay/internal/repairer\t2.739s\nok  \trelay/internal/repos\t(cached)\nok  \trelay/internal/server\t(cached)\n?   \trelay/internal/store\t[no test files]\n?   \trelay/internal/store/generated\t[no test files]\nok  \trelay/internal/validation\t(cached)\nok  \trelay/internal/validationrunner\t(cached)\nok  \trelay/internal/views\t(cached)\nexit_code: 0\n"
+      "output_tail": "$ go test ./...\n?   \trelay/cmd/mcp-smoke\t[no test files]\n?   \trelay/cmd/mcpserver\t[no test files]\n?   \trelay/cmd/plan-api-smoke\t[no test files]\n?   \trelay/cmd/relay\t[no test files]\nok  \trelay/internal/api\t(cached)\n?   \trelay/internal/artifacts\t[no test files]\nok  \trelay/internal/auditor\t(cached)\nok  \trelay/internal/compiler\t(cached)\nok  \trelay/internal/config\t(cached)\nok  \trelay/internal/db\t(cached)\n?   \trelay/internal/devreload\t[no test files]\nok  \trelay/internal/events\t(cached)\nok  \trelay/internal/executor\t(cached)\nok  \trelay/internal/handlers\t4.338s\nok  \trelay/internal/instructions\t(cached)\nok  \trelay/internal/intake\t(cached)\nok  \trelay/internal/mcp\t(cached)\nok  \trelay/internal/pipeline\t(cached)\nok  \trelay/internal/plans\t(cached)\nok  \trelay/internal/renderer\t(cached)\nok  \trelay/internal/repairer\t3.575s\nok  \trelay/internal/repos\t(cached)\nok  \trelay/internal/server\t(cached)\n?   \trelay/internal/store\t[no test files]\n?   \trelay/internal/store/generated\t[no test files]\nok  \trelay/internal/validation\t(cached)\nok  \trelay/internal/validationrunner\t(cached)\nok  \trelay/internal/views\t(cached)\nexit_code: 0\n"
     },
     {
       "step": 4,
       "name": "web-typecheck",
       "command": "cd apps/web && npm run typecheck",
-      "started_at": "2026-06-21T18:34:46.236Z",
-      "completed_at": "2026-06-21T18:34:58.051Z",
+      "started_at": "2026-06-21T19:16:41.475Z",
+      "completed_at": "2026-06-21T19:16:55.684Z",
       "exit_code": 0,
       "status": "passed",
       "output_tail": "$ cd apps/web && npm run typecheck\n\n> relay-web@0.1.0 typecheck\n> tsc --noEmit\n\nexit_code: 0\n"
@@ -75,11 +105,11 @@
       "step": 5,
       "name": "web-build",
       "command": "cd apps/web && npm run build",
-      "started_at": "2026-06-21T18:34:58.051Z",
-      "completed_at": "2026-06-21T18:35:12.190Z",
+      "started_at": "2026-06-21T19:16:55.685Z",
+      "completed_at": "2026-06-21T19:17:11.551Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "dist/server/assets/execute-VWwLc1SR.js                      0.35 kB │ gzip:  0.22 kB\ndist/server/assets/skeleton-DUKd3ZED.js                     0.36 kB │ gzip:  0.26 kB\ndist/server/assets/prepare-DCBK3A0O.js                      0.43 kB │ gzip:  0.25 kB\ndist/server/assets/separator-inoumVr2.js                    0.58 kB │ gzip:  0.35 kB\ndist/server/assets/label-5wyWNmyn.js                        0.59 kB │ gzip:  0.37 kB\ndist/server/assets/textarea-YISkD-Ci.js                     0.88 kB │ gzip:  0.48 kB\ndist/server/assets/AppPageFrame-DJS84t06.js                 1.71 kB │ gzip:  0.64 kB\ndist/server/assets/_runId-DWpcJmaZ.js                       1.93 kB │ gzip:  0.81 kB\ndist/server/assets/_tanstack-start-manifest_v-CbLFuQEl.js   3.17 kB │ gzip:  0.77 kB\ndist/server/assets/RelayStateSurface-BLk-JDuv.js            4.28 kB │ gzip:  1.11 kB\ndist/server/assets/ArtifactInspectorDialog-MmWumPoy.js      7.08 kB │ gzip:  2.14 kB\ndist/server/assets/router-T3lUZTyJ.js                       7.14 kB │ gzip:  2.23 kB\ndist/server/assets/tabs-CEgpXszM.js                         9.73 kB │ gzip:  2.46 kB\ndist/server/assets/relay-runs-D-a0ToEv.js                  17.17 kB │ gzip:  4.84 kB\ndist/server/assets/new-DoUO4Vh-.js                         19.11 kB │ gzip:  4.52 kB\ndist/server/assets/runs-Ch-hki9s.js                        22.65 kB │ gzip:  4.34 kB\ndist/server/assets/execute-C7MOWvmb.js                     28.83 kB │ gzip:  5.72 kB\ndist/server/assets/prepare-DlP_y8VS.js                     35.11 kB │ gzip:  7.02 kB\ndist/server/assets/intake-BZAs1Ui2.js                      47.34 kB │ gzip:  9.52 kB\ndist/server/assets/audit-BSNlll04.js                       52.16 kB │ gzip:  8.91 kB\ndist/server/assets/LogPreviewPanel-BSKu39Q0.js             52.23 kB │ gzip: 10.96 kB\ndist/server/server.js                                      60.76 kB │ gzip: 15.42 kB\n\n\u001b[32m✓ built in 3.31s\u001b[39m\n\u001b[33m\u001b[33m[PLUGIN_TIMINGS] \u001b[0mYour build spent significant time in plugins. Here is a breakdown:\n  - tanstack-start-core:import-protection (47%)\n  - @tanstack/devtools:remove-devtools-on-build (40%)\n  - tanstack-start-core:import-protection-transform-cache (13%)\nSee https://rolldown.rs/options/checks#plugintimings for more details.\n\u001b[39m\n\u001b[33m\u001b[33m[PLUGIN_TIMINGS] \u001b[0mYour build spent significant time in plugins. Here is a breakdown:\n  - tanstack-start-core:import-protection (41%)\n  - tanstack-start-core:import-protection-transform-cache (21%)\n  - tanstack-router:code-splitter:compile-reference-file (12%)\n  - tanstack-start-core::server-fn:ssr (10%)\n  - tanstack-router:code-splitter:compile-virtual-file (7%)\nSee https://rolldown.rs/options/checks#plugintimings for more details.\n\u001b[39m\nexit_code: 0\n"
+      "output_tail": "✓ 105 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/server/assets/start-CKmjcLTR.js                        0.22 kB │ gzip:  0.17 kB\ndist/server/assets/empty-plugin-adapters-DzrEkdBF.js        0.28 kB │ gzip:  0.18 kB\ndist/server/assets/_runId-B6_n37sz.js                       0.33 kB │ gzip:  0.22 kB\ndist/server/assets/audit-D5nZ7E6T.js                        0.35 kB │ gzip:  0.22 kB\ndist/server/assets/intake-DumX4hE0.js                       0.35 kB │ gzip:  0.22 kB\ndist/server/assets/execute-VWwLc1SR.js                      0.35 kB │ gzip:  0.22 kB\ndist/server/assets/skeleton-DUKd3ZED.js                     0.36 kB │ gzip:  0.26 kB\ndist/server/assets/prepare-DCBK3A0O.js                      0.43 kB │ gzip:  0.25 kB\ndist/server/assets/separator-inoumVr2.js                    0.58 kB │ gzip:  0.35 kB\ndist/server/assets/label-5wyWNmyn.js                        0.59 kB │ gzip:  0.37 kB\ndist/server/assets/textarea-YISkD-Ci.js                     0.88 kB │ gzip:  0.48 kB\ndist/server/assets/AppPageFrame-DJS84t06.js                 1.71 kB │ gzip:  0.64 kB\ndist/server/assets/_runId-DWpcJmaZ.js                       1.93 kB │ gzip:  0.81 kB\ndist/server/assets/_tanstack-start-manifest_v-CbLFuQEl.js   3.17 kB │ gzip:  0.77 kB\ndist/server/assets/RelayStateSurface-BLk-JDuv.js            4.28 kB │ gzip:  1.11 kB\ndist/server/assets/ArtifactInspectorDialog-MmWumPoy.js      7.08 kB │ gzip:  2.14 kB\ndist/server/assets/router-T3lUZTyJ.js                       7.14 kB │ gzip:  2.23 kB\ndist/server/assets/tabs-CEgpXszM.js                         9.73 kB │ gzip:  2.46 kB\ndist/server/assets/relay-runs-D-a0ToEv.js                  17.17 kB │ gzip:  4.84 kB\ndist/server/assets/new-DoUO4Vh-.js                         19.11 kB │ gzip:  4.52 kB\ndist/server/assets/runs-Ch-hki9s.js                        22.65 kB │ gzip:  4.34 kB\ndist/server/assets/execute-C7MOWvmb.js                     28.83 kB │ gzip:  5.72 kB\ndist/server/assets/prepare-DlP_y8VS.js                     35.11 kB │ gzip:  7.02 kB\ndist/server/assets/intake-BZAs1Ui2.js                      47.34 kB │ gzip:  9.52 kB\ndist/server/assets/audit-BSNlll04.js                       52.16 kB │ gzip:  8.91 kB\ndist/server/assets/LogPreviewPanel-BSKu39Q0.js             52.23 kB │ gzip: 10.96 kB\ndist/server/server.js                                      60.76 kB │ gzip: 15.42 kB\n\n\u001b[32m✓ built in 2.33s\u001b[39m\n\u001b[33m\u001b[33m[PLUGIN_TIMINGS] \u001b[0mYour build spent significant time in plugins. Here is a breakdown:\n  - tanstack-start-core:import-protection (48%)\n  - @tanstack/devtools:remove-devtools-on-build (39%)\n  - tanstack-start-core:import-protection-transform-cache (13%)\nSee https://rolldown.rs/options/checks#plugintimings for more details.\n\u001b[39m\nexit_code: 0\n"
     }
   ]
 }

@@ -156,6 +156,47 @@ The canonical final state is `completed`. No mutating actions are available in t
 }
 ```
 
+### Managed Plan Models
+
+```ts
+type PlanAPIPlan = {
+  id: string
+  planId: string
+  schemaVersion: string
+  title: string
+  goal: string
+  repoTarget: string
+  branchContext: string
+  status: 'active' | 'complete' | 'abandoned'
+  sourceIntentSummary: string
+  sourceArtifactPath?: string
+  createdAt: string
+  updatedAt: string
+}
+
+type PlanAPIPass = {
+  id: string
+  planRowId: string
+  passId: string
+  sequence: number
+  name: string
+  goal: string
+  intendedExecutionScope: string[]
+  nonGoals: string[]
+  dependencies: string[]
+  status: 'planned' | 'in_progress' | 'completed' | 'skipped'
+  createdAt: string
+  updatedAt: string
+}
+
+type PlanAPIReadPlan = PlanAPIPlan & {
+  passCount: number
+  completionReady: boolean
+}
+```
+
+`completionReady` is read-only. It is `true` only when every pass in the plan is terminal (`completed` or `skipped`). It does not mutate `plans.status`.
+
 ---
 
 ### Audit State Machine
@@ -269,7 +310,11 @@ The UI must use existing artifact list/content endpoints and must not require ne
     "packetId": "string (optional)",
     "name": "string (optional)",
     "executorAdapter": "string (optional)",
-    "executor_adapter": "string (optional)"
+    "executor_adapter": "string (optional)",
+    "planId": "string optional",
+    "passId": "string optional",
+    "plan_id": "string optional snake_case alias",
+    "pass_id": "string optional snake_case alias"
   }
   ```
 - **Response Body**:
@@ -279,9 +324,16 @@ The UI must use existing artifact list/content endpoints and must not require ne
     "runId": "string",
     "status": "intake_received | intake_needs_review",
     "lifecycleState": "intake",
-    "createdAt": "string (ISO-8601)"
+    "createdAt": "string (ISO-8601)",
+    "planId": "string (optional)",
+    "passId": "string (optional)"
   }
   ```
+- **Validation rules for plan/pass association**:
+  - `passId` / `pass_id` without a plan ID is rejected.
+  - An unknown `planId` returns `404`.
+  - A `passId` that does not exist under the specified plan returns `404`.
+  - A successful pass association moves the pass to `in_progress`.
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
@@ -571,6 +623,90 @@ The UI must use existing artifact list/content endpoints and must not require ne
   ```
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+
+### 18. POST `/api/plans/validate`
+- **Purpose**: Validate a Planner pass plan JSON against the canonical schema and Relay rules without persisting anything.
+- **Request Body**:
+  ```json
+  {
+    "plan": "<PlannerPassPlan JSON>",
+    "sourceArtifactPath": "string (optional)"
+  }
+  ```
+- **Response Body**:
+  ```json
+  {
+    "success": true,
+    "validation": {
+      "valid": true,
+      "issues": []
+    }
+  }
+  ```
+- **Expected Error Behavior**: Returns `400` for missing/invalid JSON or missing plan. Validation failures are returned with `success: false` and a `200 OK` status from the validation endpoint itself.
+- **Notes**: No `plans` or `plan_passes` rows are written.
+
+### 19. POST `/api/plans`
+- **Purpose**: Submit a reviewed Planner pass plan to Relay. Creates one `plans` row and derived `plan_passes` rows.
+- **Request Body**:
+  ```json
+  {
+    "plan": "<PlannerPassPlan JSON>",
+    "sourceArtifactPath": "string (optional)"
+  }
+  ```
+- **Response Body** (success, `201`):
+  ```json
+  {
+    "success": true,
+    "plan": { "id": "string", "planId": "string", ... },
+    "passes": [ { "id": "string", "passId": "string", ... } ],
+    "validation": { "valid": true, "issues": [] }
+  }
+  ```
+- **Expected Error Behavior**: Returns `422` for validation failures. Returns `409` when the submitted `plan_id` already exists. Returns `400` for missing/invalid JSON or missing plan.
+- **Notes**: Passes are stored ordered by `sequence`. Pass statuses must be `planned` at submission time.
+
+### 20. GET `/api/plans`
+- **Purpose**: List stored managed plans.
+- **Query Parameters**:
+  - `status` (optional): filter by `active`, `complete`, or `abandoned`.
+  - `limit` (optional): default `50`, capped at `100`.
+- **Response Body**:
+  ```json
+  {
+    "success": true,
+    "count": 1,
+    "plans": [ { "id": "string", "planId": "string", "passCount": 2, "completionReady": false, ... } ]
+  }
+  ```
+- **Expected Error Behavior**: Returns `400` for an invalid status filter or invalid limit.
+
+### 21. GET `/api/plans/{planId}`
+- **Purpose**: Get plan detail, including all passes ordered by `sequence ASC` and the read-only `completionReady` flag.
+- **Response Body**:
+  ```json
+  {
+    "success": true,
+    "plan": { "id": "string", "planId": "string", "passCount": 2, "completionReady": false, ... },
+    "passes": [ ... ],
+    "completionReady": false
+  }
+  ```
+- **Expected Error Behavior**: Returns `404` for an unknown plan.
+
+### 22. GET `/api/plans/{planId}/passes/{passId}`
+- **Purpose**: Get a single pass scoped to its parent plan.
+- **Response Body**:
+  ```json
+  {
+    "success": true,
+    "plan": { "id": "string", "planId": "string", ... },
+    "pass": { "id": "string", "passId": "string", ... },
+    "completionReady": false
+  }
+  ```
+- **Expected Error Behavior**: Returns `404` for an unknown plan or for a `passId` that does not belong to the specified plan.
 
 ---
 

@@ -12,6 +12,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | --- | --- |
 | UI Handoff Intake | Create runs by pasting/uploading handoffs in the React UI |
 | MCP Handoff Intake | Create runs via the current Planner Project-facing MCP action (`create_run_from_planner_handoff`) after user confirmation |
+| Managed Plans (backend) | Optional plan/pass orchestration: validate and submit Planner pass plans, associate runs to passes, read-only plan and pass APIs |
 | Run Storage | Run metadata and artifact storage |
 | Intake Review | Parse and validate handoff structure before execution |
 | Agent Prompt | Preparation and handoff transformation for agents |
@@ -31,7 +32,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | Branch Management | Automatic branch/worktree creation |
 | Repair | Automatic validation failure repair |
 | Audit | Automatic AI audit/closeout |
-| Additional MCP Actions | Additional Planner-facing MCP actions beyond handoff submission are not current |
+| Additional Project-Facing MCP Actions | Project-facing MCP exposure beyond `create_run_from_planner_handoff` is configuration-dependent; local/dev/server MCP inventory includes additional tools |
 
 ### Run Actions
 
@@ -65,26 +66,48 @@ These are human-readable documentation definitions only and do not add schema fi
 - **Agent Prompt / transformed prompt**: A compact execution prompt generated from the original handoff tailored for a running repo agent, excluding Relay validation commands.
 - **Validation evidence**: The captured stdout, stderr, exit code, duration, and timeout state of local/user-triggered validation commands.
 - **Audit handoff**: A compact markdown artifact containing run metadata, agent results, validation results, and git diff evidence intended for review.
-- **Current Project-facing MCP action**: The single `create_run_from_planner_handoff` action available to the Planner.
-- **Local/dev MCP server tool inventory**: Additional MCP tools used for local development and validation, not exposed to the Planner Project.
+- **Managed plan**: A reviewed Planner pass plan persisted by Relay as a `plans` record with derived `plan_passes`. Plans are optional; standalone runs remain valid.
+- **Pass**: A unit of work within a managed plan, represented as a `plan_passes` record with a sequence, scope, goals, and a status (`planned`, `in_progress`, `completed`, `skipped`). Passes are created automatically from a submitted plan; they are not created ad hoc.
+- **Pass-associated run**: A run linked to a specific plan pass via `plan_id`/`pass_id` (or `planId`/`passId`). Creating the run moves the pass from `planned` to `in_progress`; audit acceptance moves it to `completed`; audit revision keeps/returns it to `in_progress`.
+- **Current Project-facing MCP action**: The single `create_run_from_planner_handoff` action available to the Planner by default.
+- **Local/dev MCP server tool inventory**: Additional MCP tools including `submit_planner_pass_plan` used for local development and validation. These are not automatically Planner Project-facing unless external Project configuration explicitly exposes them.
+
+## Managed Plans (Backend)
+
+Managed plans are an optional orchestration layer in Relay. A **managed plan** is a reviewed Planner pass plan persisted as a `plans` row with derived `plan_passes` rows. A **pass** is a sequenced unit of work within a plan. Plans and passes are not required: standalone runs remain fully valid, and runs may be standalone, plan-only, or associated to a specific pass.
+
+Key behaviors:
+
+- Submit a plan with `POST /api/plans` or the local/dev MCP tool `submit_planner_pass_plan`. Passes are created automatically from the submitted plan; they are not created ad hoc.
+- Multiple runs may be associated with the same pass over time for revisions or tweaks.
+- Pass lifecycle is driven by existing run/audit behavior:
+  - Passes start as `planned`.
+  - Creating a run associated with a pass moves the pass to `in_progress`.
+  - Audit acceptance for an associated run moves the pass to `completed`.
+  - Audit revision for an associated run keeps/returns the pass to `in_progress`.
+- `completionReady` is read-only, derived from pass terminal status (`completed` or `skipped`), and does not mutate `plans.status`.
+- Relay does not automatically prompt the next pass, complete the plan, or perform drift detection in this phase.
+
+Read-only plan endpoints: `GET /api/plans`, `GET /api/plans/{planId}`, and `GET /api/plans/{planId}/passes/{passId}`. Run creation accepts optional `plan_id`/`pass_id` (or `planId`/`passId`) to associate a run with a plan/pass; `pass_id` requires `plan_id`.
 
 ## Current Workflow
 
 Relay's current workflow is:
 
-1. Create a run from a Planner handoff through the React UI or current Planner Project-facing MCP action.
-2. Build Intake Review.
-3. Detect model, branch, repo, scoped files, validation commands, final output contract, commit suggestions, warnings, and blockers.
-4. Warn or block when the selected repo does not match the handoff scope.
-5. Generate a transformed Agent Prompt or execution-preparation artifact for the running repo agent.
-6. Store the original handoff and generated artifacts separately.
-7. Perform manual agent result intake or current user-triggered execution path.
-8. Run validation locally.
-9. Store validation evidence.
-10. Inspect git diff for local changes.
-11. Generate audit handoff for review.
-12. Prepare git commit message suggestion based on handoff, audit, and diff evidence.
-13. Review and manually run `git commit` in the repo.
+1. Optionally submit a managed plan via `POST /api/plans` or the local/dev MCP tool `submit_planner_pass_plan`. Plans are optional; standalone runs remain valid.
+2. Create a run from a Planner handoff through the React UI or current Planner Project-facing MCP action (`create_run_from_planner_handoff`). Runs may be standalone, associated only to a plan, or associated to a specific pass via `plan_id`/`pass_id`.
+3. Build Intake Review.
+4. Detect model, branch, repo, scoped files, validation commands, final output contract, commit suggestions, warnings, and blockers.
+5. Warn or block when the selected repo does not match the handoff scope.
+6. Generate a transformed Agent Prompt or execution-preparation artifact for the running repo agent.
+7. Store the original handoff and generated artifacts separately.
+8. Perform manual agent result intake or current user-triggered execution path.
+9. Run validation locally.
+10. Store validation evidence.
+11. Inspect git diff for local changes.
+12. Generate audit handoff for review.
+13. Prepare git commit message suggestion based on handoff, audit, and diff evidence.
+14. Review and manually run `git commit` in the repo.
 
 Relay does not stage files, commit, push, or mutate git on the user's behalf.
 
@@ -96,7 +119,9 @@ Relay includes an MCP (Model Context Protocol) integration. The **current Planne
 *   **Result:** Relay creates and starts a new run from that handoff, and owns all downstream processing.
 *   **User Confirmation:** The Planner must explicitly ask for user confirmation after handoff creation before invoking this MCP run-creation action.
 
-No Planner-facing status, list, audit, or dispatch MCP tools are currently available unless Project configuration deliberately changes. The local/dev/server tools documented in `docs/mcp.md` are not automatically Project-facing Planner actions.
+The local/dev/server MCP tool inventory also registers `submit_planner_pass_plan` (validate and persist a reviewed Planner pass plan) alongside the existing local/dev tools. This tool is **not** automatically a Planner Project-facing action unless external Project configuration explicitly exposes it. Planner use of any MCP tool requires active tool configuration and explicit user confirmation.
+
+No Planner-facing status, list, audit, or dispatch MCP tools are currently available by default unless Project configuration deliberately changes. The local/dev/server tools documented in `docs/mcp.md` are not automatically Project-facing Planner actions.
 
 ## Safety Boundaries
 
@@ -373,6 +398,27 @@ Preserved utility routes:
 | POST   | `/settings/repos/roots/{id}/toggle`    | Toggle scan root           |
 | POST   | `/settings/repos/roots/{id}/delete`    | Delete scan root           |
 | POST   | `/settings/repos/scan`                 | Scan repos now             |
+
+### Managed Plan API routes (`/api/plans/*`)
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| POST   | `/api/plans/validate` | Validate a Planner pass plan JSON without persisting it |
+| POST   | `/api/plans` | Submit a reviewed Planner pass plan; creates `plans` + derived `plan_passes` |
+| GET    | `/api/plans` | List plans with optional `status` and `limit` filters |
+| GET    | `/api/plans/{planId}` | Get plan detail with passes ordered by `sequence` and `completionReady` |
+| GET    | `/api/plans/{planId}/passes/{passId}` | Get a single pass scoped to its parent plan |
+
+Plan/pass lifecycle behavior:
+
+- Passes start as `planned`.
+- Creating a run associated with a pass moves the pass to `in_progress`.
+- Audit acceptance for an associated run moves the pass to `completed`.
+- Audit revision for an associated run keeps/returns the pass to `in_progress`.
+- `completionReady` is read-only, derived from pass terminal status (`completed` or `skipped`), and does not mutate `plans.status`.
+- Relay does not automatically prompt the next pass, complete the plan, or perform drift detection in this phase.
+
+Run creation endpoints accept optional `plan_id`/`pass_id` (or `planId`/`passId`) to associate a run with a plan or pass. `pass_id` requires `plan_id`.
 
 ### JSON API routes (`/api/*`)
 

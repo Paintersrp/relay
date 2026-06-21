@@ -1,14 +1,19 @@
 # Latest Relay Validation Report
 
 - status: passed
-- base_commit: f1f4bcab4751c7320c7495001bf6b2a6eecb7b0d
-- validated_source_snapshot: e6577e6bc78a1dfb6f910024a130613c1fc6eb93fcfb9a77d525ac2880e2c23e
+- base_commit: c5b3695f8b25b8ca513847bd9e73a6c61a063ed1
+- validated_source_snapshot: 1f154ae7e0e7a97328fd306d5b082fc88c25e2fb8e7526d23c98f6a8abae6e25
 - worktree_dirty: true
-- created_at: 2026-06-21T18:34:22Z
+- created_at: 2026-06-21T19:16:26Z
 
 ## Validated source changes
 
-- M apps/web/src/routes/runs/$runId/prepare.tsx
+- M cmd/mcp-smoke/main.go
+- ?? cmd/plan-api-smoke/main.go
+- M docs/api/frontend-api-contract.md
+- M docs/mcp.md
+- M Makefile
+- M README.md
 
 ## Commands
 

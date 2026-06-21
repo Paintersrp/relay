@@ -183,7 +183,7 @@ func run() error {
 	h.check("ping", resp.Error == nil)
 
 	// -------------------------------------------------------
-	// 3. tools/list — verify exactly 5 approved tools, no unsafe tools
+	// 3. tools/list — verify exactly 6 approved tools, no unsafe tools
 	// -------------------------------------------------------
 	resp, err = h.call("tools/list", nil)
 	if err != nil {
@@ -205,13 +205,14 @@ func run() error {
 	approvedTools := map[string]bool{
 		"submit_test_audit_packet":        true,
 		"create_run_from_planner_handoff": true,
+		"submit_planner_pass_plan":        true,
 		"list_open_runs":                  true,
 		"get_run_status":                  true,
 		"submit_audit_packet":             true,
 	}
 	unsafeKeywords := []string{"exec", "shell", "read_file", "write_file", "git_commit", "git_push", "checkout", "reset", "branch"}
 
-	h.check("tools/list count=5", len(toolsList.Tools) == 5)
+	h.check("tools/list count=6", len(toolsList.Tools) == 6)
 	for _, tool := range toolsList.Tools {
 		h.check("tools/list approved:"+tool.Name, approvedTools[tool.Name])
 		for _, unsafe := range unsafeKeywords {
@@ -266,7 +267,63 @@ func run() error {
 	}
 
 	// -------------------------------------------------------
-	// 5. create_run_from_planner_handoff — create real run
+	// 5. submit_planner_pass_plan — create managed plan/pass records
+	// -------------------------------------------------------
+	resp, err = h.call("tools/call", map[string]interface{}{
+		"name": "submit_planner_pass_plan",
+		"arguments": map[string]interface{}{
+			"planner_pass_plan_json": smokePlanFixture(),
+			"source":                 "mcp_smoke_test",
+		},
+	})
+	if err != nil {
+		return h.fatal("submit_planner_pass_plan", err)
+	}
+	if resp.Error != nil {
+		return h.fatal("submit_planner_pass_plan", fmt.Errorf("RPC error: %s", resp.Error.Message))
+	}
+
+	var planResult toolCallResult
+	if err := json.Unmarshal(resp.Result, &planResult); err != nil {
+		return h.fatal("submit_planner_pass_plan parse", err)
+	}
+	h.check("submit_planner_pass_plan !isError", !planResult.IsError)
+
+	var smokePlanID string
+	if len(planResult.Content) > 0 {
+		var out map[string]interface{}
+		if err := json.Unmarshal([]byte(planResult.Content[0].Text), &out); err == nil {
+			h.check("submit_planner_pass_plan ok=true", out["ok"] == true)
+			h.check("submit_planner_pass_plan tool=submit_planner_pass_plan", out["tool"] == "submit_planner_pass_plan")
+			if planID, ok := out["plan_id"].(string); ok {
+				smokePlanID = planID
+				h.check("submit_planner_pass_plan plan_id=mcp-smoke-plan", planID == "mcp-smoke-plan")
+			}
+			if passCount, ok := out["pass_count"].(float64); ok {
+				h.check("submit_planner_pass_plan pass_count=2", int(passCount) == 2)
+			}
+			foundPassIDs := map[string]bool{}
+			if passes, ok := out["passes"].([]interface{}); ok {
+				for _, p := range passes {
+					if pm, ok := p.(map[string]interface{}); ok {
+						if pid, ok := pm["pass_id"].(string); ok {
+							foundPassIDs[pid] = true
+						}
+					}
+				}
+			}
+			h.check("submit_planner_pass_plan has PASS-001", foundPassIDs["PASS-001"])
+			h.check("submit_planner_pass_plan has PASS-002", foundPassIDs["PASS-002"])
+		}
+	}
+
+	if smokePlanID == "" {
+		return fmt.Errorf("submit_planner_pass_plan did not return a plan_id; cannot continue smoke test")
+	}
+	fmt.Printf("  created plan_id: %s\n", smokePlanID)
+
+	// -------------------------------------------------------
+	// 6. create_run_from_planner_handoff — create pass-associated run
 	// -------------------------------------------------------
 	handoffMarkdown := `---
 title: Smoke Test Handoff
@@ -276,11 +333,11 @@ branch_context: main
 
 # Smoke Test Handoff
 
-This is a synthetic handoff created by the Pass 16 MCP smoke harness.
+This is a synthetic handoff created by the managed-plan MCP smoke harness.
 
 ## Context
 
-Validates that create_run_from_planner_handoff creates a real Relay run via MCP.
+Validates that create_run_from_planner_handoff can associate a new run to a plan pass.
 `
 	resp, err = h.call("tools/call", map[string]interface{}{
 		"name": "create_run_from_planner_handoff",
@@ -289,6 +346,8 @@ Validates that create_run_from_planner_handoff creates a real Relay run via MCP.
 			"repo_target":              "smoke-test-repo",
 			"branch_context":           "main",
 			"source":                   "mcp_smoke_test",
+			"plan_id":                  smokePlanID,
+			"pass_id":                  "PASS-001",
 		},
 	})
 	if err != nil {
@@ -314,6 +373,8 @@ Validates that create_run_from_planner_handoff creates a real Relay run via MCP.
 				h.check("create_run_from_planner_handoff run_id non-zero", int64(runID) > 0)
 			}
 			h.check("create_run_from_planner_handoff has status", out["status"] != nil && out["status"] != "")
+			h.check("create_run_from_planner_handoff plan_id returned", out["plan_id"] == smokePlanID)
+			h.check("create_run_from_planner_handoff pass_id returned", out["pass_id"] == "PASS-001")
 		}
 	}
 
@@ -475,6 +536,46 @@ Validates that create_run_from_planner_handoff creates a real Relay run via MCP.
 	}
 	fmt.Println("ALL CHECKS PASSED")
 	return nil
+}
+
+func smokePlanFixture() string {
+	return `{
+  "plan_meta": {
+    "plan_id": "mcp-smoke-plan",
+    "schema_version": "1.0.0",
+    "created_at": "2026-06-21T00:00:00Z",
+    "title": "MCP Smoke Managed Plan",
+    "goal": "Verify managed plan MCP submission smoke coverage.",
+    "repo_target": "smoke-test-repo",
+    "branch_context": "main",
+    "status": "active"
+  },
+  "source_intent": {
+    "summary": "Synthetic smoke plan for managed-plan MCP coverage."
+  },
+  "passes": [
+    {
+      "pass_id": "PASS-001",
+      "sequence": 1,
+      "name": "Smoke pass one",
+      "goal": "Create a pass-associated smoke run.",
+      "intended_execution_scope": ["cmd/mcp-smoke/main.go"],
+      "non_goals": ["No production data mutation"],
+      "dependencies": [],
+      "status": "planned"
+    },
+    {
+      "pass_id": "PASS-002",
+      "sequence": 2,
+      "name": "Smoke pass two",
+      "goal": "Provide dependency coverage.",
+      "intended_execution_scope": ["docs/mcp.md"],
+      "non_goals": ["No UI changes"],
+      "dependencies": ["PASS-001"],
+      "status": "planned"
+    }
+  ]
+}`
 }
 
 // --- harness helpers ---

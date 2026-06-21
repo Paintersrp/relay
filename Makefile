@@ -1,4 +1,4 @@
-.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean validate mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke
+.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean validate mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke plan-api-smoke
 
 install:
 	npm install
@@ -49,6 +49,9 @@ mcp-test:
 
 mcp-smoke: mcp-build
 	go run ./cmd/mcp-smoke
+
+plan-api-smoke:
+	go run ./cmd/plan-api-smoke
 
 mcp-http-test:
 	go test ./internal/mcp/... ./internal/server/...
