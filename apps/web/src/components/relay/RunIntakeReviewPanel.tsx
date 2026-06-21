@@ -18,7 +18,6 @@ import { approveIntake } from "@/features/relay-runs";
 import { RelayStateBanner } from "@/components/relay/RelayStateSurface";
 import { RunStageSummaryChip } from "@/components/relay/RunStagePrimitives";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -42,11 +41,242 @@ interface RunIntakeReviewPanelViewProps {
   controller: RunIntakeReviewController;
 }
 
+type SelectOption = {
+  value: string;
+  label: string;
+};
+
+const EXECUTION_PROFILE_OPTIONS: SelectOption[] = [
+  { value: "opencode_go", label: "OpenCode" },
+  { value: "codex", label: "Codex" },
+  { value: "antigravity", label: "Antigravity" },
+];
+
+const MODEL_OPTIONS_BY_EXECUTION_PROFILE: Record<string, SelectOption[]> = {
+  opencode_go: [{ value: "deepseek-v4-flash", label: "deepseek-v4-flash" }],
+  codex: [{ value: "gpt-5.5-codex", label: "gpt-5.5-codex" }],
+  antigravity: [{ value: "deepseek-v4-flash", label: "deepseek-v4-flash" }],
+};
+
 function findArtifact(
   artifacts: RelayArtifact[],
   predicate: (artifact: RelayArtifact) => boolean,
 ) {
   return artifacts.find(predicate);
+}
+
+function normalizeOptionValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function pushOption(options: SelectOption[], value: unknown, label?: unknown) {
+  const normalizedValue = normalizeOptionValue(value);
+  if (!normalizedValue || options.some((option) => option.value === normalizedValue)) {
+    return;
+  }
+
+  const normalizedLabel = normalizeOptionValue(label);
+  options.push({
+    value: normalizedValue,
+    label: normalizedLabel || normalizedValue,
+  });
+}
+
+function collectStringOrObjectOptions(
+  source: unknown,
+  valueKeys: string[] = ["value", "label", "name"],
+): SelectOption[] {
+  const options: SelectOption[] = [];
+
+  const pushFromEntry = (entry: unknown) => {
+    if (typeof entry === "string") {
+      pushOption(options, entry);
+      return;
+    }
+
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return;
+    }
+
+    const record = entry as Record<string, unknown>;
+    const value =
+      valueKeys
+        .map((key) => normalizeOptionValue(record[key]))
+        .find(Boolean) || "";
+    const label = normalizeOptionValue(record.label);
+    pushOption(options, value, label || value);
+  };
+
+  if (Array.isArray(source)) {
+    source.forEach(pushFromEntry);
+    return options;
+  }
+
+  pushFromEntry(source);
+  return options;
+}
+
+function collectRepoOptions({
+  repo,
+  repoTarget,
+  run,
+  runConfig,
+  frontmatterObject,
+}: {
+  repo: string;
+  repoTarget: string;
+  run: RelayRun;
+  runConfig: Record<string, any>;
+  frontmatterObject: Record<string, any> | null;
+}) {
+  const options: SelectOption[] = [];
+
+  [
+    repo,
+    repoTarget,
+    run.repo,
+    runConfig.repo,
+    runConfig.repo_target,
+    frontmatterObject?.repo,
+    frontmatterObject?.repo_target,
+  ].forEach((value) => pushOption(options, value));
+
+  [
+    runConfig.repositories,
+    runConfig.available_repos,
+    runConfig.repo_options,
+    frontmatterObject?.repositories,
+    frontmatterObject?.available_repos,
+    frontmatterObject?.repo_options,
+  ].forEach((source) => {
+    collectStringOrObjectOptions(source, [
+      "value",
+      "repo",
+      "path",
+      "name",
+      "label",
+    ]).forEach((option) => pushOption(options, option.value, option.label));
+  });
+
+  return options;
+}
+
+function collectBranchOptions({
+  branch,
+  branchContext,
+  selectedRepo,
+  run,
+  runConfig,
+  frontmatterObject,
+}: {
+  branch: string;
+  branchContext: string;
+  selectedRepo: string;
+  run: RelayRun;
+  runConfig: Record<string, any>;
+  frontmatterObject: Record<string, any> | null;
+}) {
+  const options: SelectOption[] = [];
+  const branchValueKeys = ["value", "branch", "name", "label"];
+
+  [
+    branch,
+    branchContext,
+    run.branch,
+    runConfig.branch,
+    runConfig.branch_context,
+    frontmatterObject?.branch,
+    frontmatterObject?.branch_context,
+  ].forEach((value) => pushOption(options, value));
+
+  const addBranchSource = (source: unknown) => {
+    if (!source) {
+      return;
+    }
+
+    if (
+      source &&
+      typeof source === "object" &&
+      !Array.isArray(source) &&
+      !branchValueKeys.some((key) => key in (source as Record<string, unknown>))
+    ) {
+      if (!selectedRepo) {
+        return;
+      }
+
+      collectStringOrObjectOptions(
+        (source as Record<string, unknown>)[selectedRepo],
+        branchValueKeys,
+      ).forEach((option) => pushOption(options, option.value, option.label));
+      return;
+    }
+
+    collectStringOrObjectOptions(source, branchValueKeys).forEach((option) =>
+      pushOption(options, option.value, option.label),
+    );
+  };
+
+  [
+    runConfig.branches,
+    runConfig.available_branches,
+    runConfig.branch_options,
+    frontmatterObject?.branches,
+    frontmatterObject?.available_branches,
+    frontmatterObject?.branch_options,
+  ].forEach(addBranchSource);
+
+  return options;
+}
+
+function collectScopedBranchOptions({
+  selectedRepo,
+  runConfig,
+  frontmatterObject,
+}: {
+  selectedRepo: string;
+  runConfig: Record<string, any>;
+  frontmatterObject: Record<string, any> | null;
+}) {
+  const options: SelectOption[] = [];
+  const branchValueKeys = ["value", "branch", "name", "label"];
+
+  const addBranchSource = (source: unknown) => {
+    if (!source) {
+      return;
+    }
+
+    if (
+      source &&
+      typeof source === "object" &&
+      !Array.isArray(source) &&
+      !branchValueKeys.some((key) => key in (source as Record<string, unknown>))
+    ) {
+      if (!selectedRepo) {
+        return;
+      }
+
+      collectStringOrObjectOptions(
+        (source as Record<string, unknown>)[selectedRepo],
+        branchValueKeys,
+      ).forEach((option) => pushOption(options, option.value, option.label));
+      return;
+    }
+
+    collectStringOrObjectOptions(source, branchValueKeys).forEach((option) =>
+      pushOption(options, option.value, option.label),
+    );
+  };
+
+  [
+    runConfig.branches,
+    runConfig.available_branches,
+    runConfig.branch_options,
+    frontmatterObject?.branches,
+    frontmatterObject?.available_branches,
+    frontmatterObject?.branch_options,
+  ].forEach(addBranchSource);
+
+  return options;
 }
 
 function parsePreviewObject(preview?: string): Record<string, any> | null {
@@ -164,20 +394,12 @@ export function useRunIntakeReviewController({
     frontmatterObject && Object.keys(frontmatterObject).length > 0,
   );
 
-  const initialValCommands =
-    typeof runConfig.validation_commands === "string"
-      ? runConfig.validation_commands
-      : "";
-
   const [model, setModel] = React.useState(run.model || "");
   const [repo, setRepo] = React.useState(run.repo || "");
   const [branch, setBranch] = React.useState(run.branch || "");
-  const [worktree, setWorktree] = React.useState(run.worktree || "");
   const [executorAdapter, setExecutorAdapter] = React.useState(
     run.executorAdapter || "opencode_go",
   );
-  const [validationCommands, setValidationCommands] =
-    React.useState(initialValCommands);
 
   React.useEffect(() => {
     if (run.model) {
@@ -189,13 +411,10 @@ export function useRunIntakeReviewController({
     if (run.branch) {
       setBranch(run.branch);
     }
-    if (run.worktree) {
-      setWorktree(run.worktree);
-    }
     if (run.executorAdapter) {
       setExecutorAdapter(run.executorAdapter);
     }
-  }, [run.model, run.repo, run.branch, run.worktree, run.executorAdapter]);
+  }, [run.model, run.repo, run.branch, run.executorAdapter]);
 
   React.useEffect(() => {
     if (runConfigArtifact?.preview) {
@@ -204,12 +423,6 @@ export function useRunIntakeReviewController({
         return;
       }
 
-      if (typeof parsedConfig.validation_commands === "string") {
-        setValidationCommands(parsedConfig.validation_commands);
-      }
-      if (typeof parsedConfig.worktree === "string") {
-        setWorktree(parsedConfig.worktree);
-      }
       if (typeof parsedConfig.executor_adapter === "string") {
         setExecutorAdapter(parsedConfig.executor_adapter);
       }
@@ -246,14 +459,9 @@ export function useRunIntakeReviewController({
           model: model !== run.model ? model.trim() : undefined,
           repo: repo !== run.repo ? repo.trim() : undefined,
           branch: branch !== run.branch ? branch.trim() : undefined,
-          worktree: worktree !== run.worktree ? worktree.trim() : undefined,
           executorAdapter:
             executorAdapter !== run.executorAdapter
               ? executorAdapter
-              : undefined,
-          validationCommands:
-            validationCommands !== initialValCommands
-              ? validationCommands.trim()
               : undefined,
         },
       },
@@ -276,6 +484,10 @@ export function useRunIntakeReviewController({
     typeof runConfig.created_from === "string" && runConfig.created_from
       ? runConfig.created_from
       : "unknown";
+  const targetWorktree =
+    typeof runConfig.worktree === "string" && runConfig.worktree
+      ? runConfig.worktree
+      : run.worktree || "";
 
   const repoSource =
     frontmatterObject?.repo || frontmatterObject?.repo_target
@@ -289,12 +501,6 @@ export function useRunIntakeReviewController({
       : runConfig.branch_context
         ? "explicit MCP arg"
         : "fallback default";
-  const worktreeSource =
-    typeof runConfig.worktree === "string" && runConfig.worktree
-      ? "run config"
-      : run.worktree
-        ? "current run value"
-        : undefined;
   const modelSource = run.model ? "current run value" : undefined;
   const executorSource =
     typeof runConfig.executor_adapter === "string" && runConfig.executor_adapter
@@ -302,13 +508,32 @@ export function useRunIntakeReviewController({
       : run.executorAdapter
         ? "current run value"
         : "default adapter";
-  const validationSource =
-    typeof runConfig.validation_commands === "string" &&
-    runConfig.validation_commands
-      ? "run config"
-      : validationCommands
-        ? "current run value"
-        : undefined;
+  const repoOptions = collectRepoOptions({
+    repo,
+    repoTarget,
+    run,
+    runConfig,
+    frontmatterObject,
+  });
+  const branchOptions = collectBranchOptions({
+    branch,
+    branchContext,
+    selectedRepo: repo,
+    run,
+    runConfig,
+    frontmatterObject,
+  });
+  const scopedBranchOptions = collectScopedBranchOptions({
+    selectedRepo: repo,
+    runConfig,
+    frontmatterObject,
+  });
+  const allowedModelOptions =
+    MODEL_OPTIONS_BY_EXECUTION_PROFILE[executorAdapter] || [];
+  const modelOptions = [...allowedModelOptions];
+  if (model && !modelOptions.some((option) => option.value === model)) {
+    modelOptions.push({ value: model, label: model });
+  }
 
   const validationSummary = run.validationSummary;
   const validationIssues = validationSummary?.issues || [];
@@ -351,6 +576,39 @@ export function useRunIntakeReviewController({
   const isApproved =
     run.status === "approved_for_prepare" || run.activeStep === "prepare";
 
+  const previousRepoRef = React.useRef(repo);
+  React.useEffect(() => {
+    if (previousRepoRef.current === repo) {
+      return;
+    }
+
+    previousRepoRef.current = repo;
+    const resolvedBranchOptions =
+      scopedBranchOptions.length > 0 ? scopedBranchOptions : branchOptions;
+    if (
+      branch &&
+      resolvedBranchOptions.some((option) => option.value === branch)
+    ) {
+      return;
+    }
+
+    setBranch(resolvedBranchOptions[0]?.value || "");
+  }, [repo, branch, branchOptions, scopedBranchOptions]);
+
+  const previousExecutorAdapterRef = React.useRef(executorAdapter);
+  React.useEffect(() => {
+    if (previousExecutorAdapterRef.current === executorAdapter) {
+      return;
+    }
+
+    previousExecutorAdapterRef.current = executorAdapter;
+    if (model && allowedModelOptions.some((option) => option.value === model)) {
+      return;
+    }
+
+    setModel(allowedModelOptions[0]?.value || "");
+  }, [executorAdapter, model, allowedModelOptions]);
+
   return {
     run,
     mutationError,
@@ -363,12 +621,8 @@ export function useRunIntakeReviewController({
     setRepo,
     branch,
     setBranch,
-    worktree,
-    setWorktree,
     executorAdapter,
     setExecutorAdapter,
-    validationCommands,
-    setValidationCommands,
     handleSubmit,
     repoTarget,
     branchContext,
@@ -376,10 +630,12 @@ export function useRunIntakeReviewController({
     createdFrom,
     repoSource,
     branchSource,
-    worktreeSource,
     modelSource,
     executorSource,
-    validationSource,
+    repoOptions,
+    branchOptions,
+    modelOptions,
+    targetWorktree,
     validationSummary,
     readinessIssues,
     summaryStatusTone,
@@ -455,22 +711,20 @@ export function RunIntakeReviewPanel({
     setRepo,
     branch,
     setBranch,
-    worktree,
-    setWorktree,
     executorAdapter,
     setExecutorAdapter,
-    validationCommands,
-    setValidationCommands,
     repoTarget,
     branchContext,
     configSource,
     createdFrom,
     repoSource,
     branchSource,
-    worktreeSource,
     modelSource,
     executorSource,
-    validationSource,
+    repoOptions,
+    branchOptions,
+    modelOptions,
+    targetWorktree,
     validationSummary,
     readinessIssues,
     summaryStatusTone,
@@ -552,7 +806,7 @@ export function RunIntakeReviewPanel({
                     {branch || branchContext || " - "}
                   </div>
                   <div className="font-mono text-[12px] text-muted-foreground">
-                    Worktree: {worktree || "default"}
+                    Worktree: {targetWorktree || "default"}
                   </div>
                 </div>
               </div>
@@ -571,8 +825,8 @@ export function RunIntakeReviewPanel({
                       Run Configuration
                     </p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Adjust the execution target and workspace details before
-                      approving the intake.
+                      Adjust the execution target details before approving the
+                      intake.
                     </p>
                   </div>
                   <RunStageSummaryChip
@@ -600,15 +854,26 @@ export function RunIntakeReviewPanel({
                   htmlFor="override-repo"
                   className="text-xs text-muted-foreground"
                 >
-                  Repository Target Path
+                  Repository
                 </Label>
-                <Input
-                  id="override-repo"
+                <Select
                   value={repo}
-                  onChange={(event) => setRepo(event.target.value)}
-                  placeholder="e.g. d:\\Code\\relay"
+                  onValueChange={setRepo}
                   disabled={isPending || !isReviewable}
-                />
+                >
+                  <SelectTrigger id="override-repo">
+                    <SelectValue placeholder="Select repository" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {repoOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
                 <InlineHint
                   source={repoSource}
                   detail={
@@ -627,15 +892,26 @@ export function RunIntakeReviewPanel({
                   htmlFor="override-branch"
                   className="text-xs text-muted-foreground"
                 >
-                  Branch / Worktree Context
+                  Branch
                 </Label>
-                <Input
-                  id="override-branch"
+                <Select
                   value={branch}
-                  onChange={(event) => setBranch(event.target.value)}
-                  placeholder="e.g. main"
+                  onValueChange={setBranch}
                   disabled={isPending || !isReviewable}
-                />
+                >
+                  <SelectTrigger id="override-branch">
+                    <SelectValue placeholder="Select branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {branchOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
                 <InlineHint
                   source={branchSource}
                   detail={
@@ -653,51 +929,10 @@ export function RunIntakeReviewPanel({
 
               <div className="flex flex-col gap-1.5">
                 <Label
-                  htmlFor="override-worktree"
-                  className="text-xs text-muted-foreground"
-                >
-                  Worktree Override
-                </Label>
-                <Input
-                  id="override-worktree"
-                  value={worktree}
-                  onChange={(event) => setWorktree(event.target.value)}
-                  placeholder="e.g. my-worktree"
-                  disabled={isPending || !isReviewable}
-                />
-                <InlineHint
-                  source={worktreeSource}
-                  detail={
-                    !worktree && !worktreeSource
-                      ? "Optional override; Relay will use the run workspace when left blank."
-                      : undefined
-                  }
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label
-                  htmlFor="override-model"
-                  className="text-xs text-muted-foreground"
-                >
-                  Target Model
-                </Label>
-                <Input
-                  id="override-model"
-                  value={model}
-                  onChange={(event) => setModel(event.target.value)}
-                  placeholder="e.g. deepseek-v4-flash"
-                  disabled={isPending || !isReviewable}
-                />
-                <InlineHint source={modelSource} />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label
                   htmlFor="override-executor"
                   className="text-xs text-muted-foreground"
                 >
-                  Executor Adapter
+                  Execution Profile
                 </Label>
                 <Select
                   value={executorAdapter}
@@ -705,15 +940,15 @@ export function RunIntakeReviewPanel({
                   disabled={isPending || !isReviewable}
                 >
                   <SelectTrigger id="override-executor">
-                    <SelectValue placeholder="Select executor adapter" />
+                    <SelectValue placeholder="Select execution profile" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="opencode_go">OpenCode (Go)</SelectItem>
-                      <SelectItem value="codex">Codex (TypeScript)</SelectItem>
-                      <SelectItem value="antigravity">
-                        Antigravity (Go)
-                      </SelectItem>
+                      {EXECUTION_PROFILE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -735,19 +970,30 @@ export function RunIntakeReviewPanel({
 
               <div className="flex flex-col gap-1.5">
                 <Label
-                  htmlFor="override-validation"
+                  htmlFor="override-model"
                   className="text-xs text-muted-foreground"
                 >
-                  Validation Commands
+                  Target Model
                 </Label>
-                <Input
-                  id="override-validation"
-                  value={validationCommands}
-                  onChange={(event) => setValidationCommands(event.target.value)}
-                  placeholder="e.g. go test ./..."
+                <Select
+                  value={model}
+                  onValueChange={setModel}
                   disabled={isPending || !isReviewable}
-                />
-                <InlineHint source={validationSource} />
+                >
+                  <SelectTrigger id="override-model">
+                    <SelectValue placeholder="Select target model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {modelOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <InlineHint source={modelSource} />
               </div>
             </div>
           </section>

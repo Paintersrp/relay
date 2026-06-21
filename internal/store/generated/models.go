@@ -54,6 +54,36 @@ type Event struct {
 	CreatedAt    string `json:"created_at"`
 }
 
+type Plan struct {
+	ID                  int64  `json:"id"`
+	PlanID              string `json:"plan_id"`
+	SchemaVersion       string `json:"schema_version"`
+	Title               string `json:"title"`
+	Goal                string `json:"goal"`
+	RepoTarget          string `json:"repo_target"`
+	BranchContext       string `json:"branch_context"`
+	Status              string `json:"status"`
+	SourceIntentSummary string `json:"source_intent_summary"`
+	SourceArtifactPath  string `json:"source_artifact_path"`
+	CreatedAt           string `json:"created_at"`
+	UpdatedAt           string `json:"updated_at"`
+}
+
+type PlanPass struct {
+	ID                         int64  `json:"id"`
+	PlanRowID                  int64  `json:"plan_row_id"`
+	PassID                     string `json:"pass_id"`
+	Sequence                   int64  `json:"sequence"`
+	Name                       string `json:"name"`
+	Goal                       string `json:"goal"`
+	IntendedExecutionScopeJson string `json:"intended_execution_scope_json"`
+	NonGoalsJson               string `json:"non_goals_json"`
+	DependenciesJson           string `json:"dependencies_json"`
+	Status                     string `json:"status"`
+	CreatedAt                  string `json:"created_at"`
+	UpdatedAt                  string `json:"updated_at"`
+}
+
 type Repo struct {
 	ID                        int64  `json:"id"`
 	Name                      string `json:"name"`
