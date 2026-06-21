@@ -20,9 +20,7 @@ import {
   RelayStateBanner,
 } from "@/components/relay/RelayStateSurface";
 import {
-  RunStageKeyValueGrid,
   RunStagePreviewBlock,
-  RunStageProvenanceTable,
   RunStageSection,
   RunStageSummaryCard,
   RunStageSummaryChip,
@@ -122,6 +120,25 @@ function renderRepoValue(value: string) {
   }
 
   return value;
+}
+
+function InlineHint({
+  source,
+  detail,
+}: {
+  source?: string;
+  detail?: React.ReactNode;
+}) {
+  if (!source && !detail) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+      {source ? <p>Source: {source}</p> : null}
+      {detail ? <p>{detail}</p> : null}
+    </div>
+  );
 }
 
 export function RunIntakeReviewPanel({
@@ -264,73 +281,42 @@ export function RunIntakeReviewPanel({
       ? runConfig.created_from
       : "unknown";
 
-  const repoSource = frontmatterObject?.repo
-    ? "parsed frontmatter"
-    : runConfig.repo_target
-      ? "explicit MCP arg"
-      : "resolved repo";
-  const branchSource = frontmatterObject?.branch
-    ? "parsed frontmatter"
-    : runConfig.branch_context
-      ? "explicit MCP arg"
-      : "fallback default";
-  const titleSource = frontmatterObject?.title
-    ? "parsed frontmatter"
-    : "markdown H1";
+  const repoSource =
+    frontmatterObject?.repo || frontmatterObject?.repo_target
+      ? "parsed frontmatter"
+      : runConfig.repo_target
+        ? "explicit MCP arg"
+        : "resolved repo";
+  const branchSource =
+    frontmatterObject?.branch || frontmatterObject?.branch_context
+      ? "parsed frontmatter"
+      : runConfig.branch_context
+        ? "explicit MCP arg"
+        : "fallback default";
+  const worktreeSource =
+    typeof runConfig.worktree === "string" && runConfig.worktree
+      ? "run config"
+      : run.worktree
+        ? "current run value"
+        : undefined;
+  const modelSource = run.model ? "current run value" : undefined;
+  const executorSource =
+    typeof runConfig.executor_adapter === "string" && runConfig.executor_adapter
+      ? "run config"
+      : run.executorAdapter
+        ? "current run value"
+        : "default adapter";
+  const validationSource =
+    typeof runConfig.validation_commands === "string" &&
+    runConfig.validation_commands
+      ? "run config"
+      : validationCommands
+        ? "current run value"
+        : undefined;
 
   const validationSummary = run.validationSummary;
   const validationIssues = validationSummary?.issues || [];
   const summaryStatusTone = getStatusTone(run.status);
-
-  const contextRows = [
-    {
-      label:
-        !run.repo.includes("/") &&
-        !run.repo.includes("\\") &&
-        !run.repo.includes(":")
-          ? "Repo display name"
-          : "Repo target",
-      value: renderRepoValue(run.repo),
-      mono: false,
-    },
-    ...(repoTarget !== run.repo
-      ? [
-          {
-            label: "Resolved target/path",
-            value: renderRepoValue(repoTarget),
-            mono: false,
-          },
-        ]
-      : []),
-    {
-      label: "Branch context",
-      value: branchContext || " - ",
-      mono: true,
-    },
-    {
-      label: "Source",
-      value: configSource,
-    },
-    {
-      label: "Created by",
-      value: createdFrom,
-    },
-    {
-      label: "Worktree",
-      value: run.worktree || " - ",
-      mono: true,
-    },
-    {
-      label: "Executor adapter",
-      value: run.executorAdapter || " - ",
-      mono: true,
-    },
-    {
-      label: "Model",
-      value: run.model || " - ",
-      mono: true,
-    },
-  ];
 
   const preflightChecks = validationSummary
     ? [
@@ -360,6 +346,11 @@ export function RunIntakeReviewPanel({
         },
       ]
     : [];
+  const preflightPassedCount = preflightChecks.filter((check) => check.pass).length;
+  const preflightSummary =
+    preflightChecks.length > 0
+      ? `${preflightPassedCount}/${preflightChecks.length} checks OK`
+      : "Preflight pending";
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -370,23 +361,6 @@ export function RunIntakeReviewPanel({
           description={mutationError}
         />
       ) : null}
-
-      <div className="flex flex-wrap gap-2">
-        <RunStageSummaryChip
-          label="Status"
-          value={run.status}
-          tone={summaryStatusTone}
-          mono
-        />
-        <RunStageSummaryChip label="Packet" value={run.packetId || " - "} mono />
-        <RunStageSummaryChip label="Repo" value={repoTarget || " - "} mono />
-        <RunStageSummaryChip
-          label="Branch"
-          value={branchContext || " - "}
-          mono
-        />
-        <RunStageSummaryChip label="Source" value={configSource} />
-      </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <RunStageSummaryCard
@@ -401,13 +375,27 @@ export function RunIntakeReviewPanel({
               mono
             />
           }
-        />
+          className="xl:col-span-1"
+        >
+          <div className="flex flex-wrap gap-2">
+            <RunStageSummaryChip label="Source" value={configSource} />
+            <RunStageSummaryChip label="Created" value={createdFrom} />
+          </div>
+        </RunStageSummaryCard>
         <RunStageSummaryCard
-          eyebrow="Repository"
-          title={repoTarget || " - "}
-          description={branchContext || " - "}
+          eyebrow="Repository / Workspace"
+          title={renderRepoValue(repo || repoTarget || " - ")}
+          description={branch || branchContext || " - "}
           icon={<FolderGit2 className="h-4 w-4" />}
-        />
+        >
+          <div className="flex flex-wrap gap-2">
+            <RunStageSummaryChip
+              label="Worktree"
+              value={worktree || " - "}
+              mono
+            />
+          </div>
+        </RunStageSummaryCard>
         <RunStageSummaryCard
           eyebrow="Execution"
           title={model || run.model || " - "}
@@ -419,7 +407,20 @@ export function RunIntakeReviewPanel({
           title={`${validationSummary?.errors ?? 0} errors`}
           description={`${validationSummary?.warnings ?? 0} warnings · ${validationSummary?.passed ?? 0} passed`}
           icon={<ShieldCheck className="h-4 w-4" />}
-        />
+        >
+          <div className="flex flex-wrap gap-2">
+            <RunStageSummaryChip
+              label="Preflight"
+              value={preflightSummary}
+              tone={
+                preflightChecks.length > 0 &&
+                preflightPassedCount === preflightChecks.length
+                  ? "success"
+                  : "warning"
+              }
+            />
+          </div>
+        </RunStageSummaryCard>
       </div>
 
       {!hasFrontmatter ? (
@@ -431,101 +432,86 @@ export function RunIntakeReviewPanel({
       ) : null}
 
       <RunStageSection
-        title="Incoming Handoff"
-        subtitle="Review the submitted handoff and parsed frontmatter before changing runtime configuration."
-        icon={<FileText className="h-4 w-4" />}
-        contentClassName="flex flex-col gap-4"
-      >
-        <RunStageKeyValueGrid
-          rows={[
-            {
-              label: "Packet ID",
-              value: run.packetId || " - ",
-              mono: true,
-            },
-            {
-              label: "Title",
-              value: run.title || " - ",
-              emphasis: true,
-            },
-            {
-              label: "Status",
-              value: run.status,
-              mono: true,
-            },
-          ]}
-          columns={2}
-        />
-
-        <div className="grid gap-4 xl:grid-cols-2">
-          <RunStagePreviewBlock
-            title="Planner Handoff Preview"
-            subtitle="Captured markdown from the intake packet."
-          >
-            {plannerHandoff?.preview
-              ? plannerHandoff.preview
-              : renderUnavailablePreview(
-                  plannerHandoff,
-                  "Handoff preview content is unavailable.",
-                )}
-          </RunStagePreviewBlock>
-
-          <RunStagePreviewBlock
-            title="Parsed Frontmatter Preview"
-            subtitle="Structured metadata extracted from the handoff."
-          >
-            {parsedFrontmatter?.preview
-              ? parsedFrontmatter.preview
-              : renderUnavailablePreview(
-                  parsedFrontmatter,
-                  "Parsed frontmatter preview is unavailable.",
-                )}
-          </RunStagePreviewBlock>
-        </div>
-      </RunStageSection>
-
-      <RunStageSection
-        title="Configuration Provenance"
-        subtitle="Track where the key intake values were sourced before approval."
-        icon={<FolderGit2 className="h-4 w-4" />}
-      >
-        <RunStageProvenanceTable
-          rows={[
-            {
-              field: "Repo",
-              value: repoTarget || " - ",
-              source: repoSource,
-              valueMono: true,
-            },
-            {
-              field: "Branch",
-              value: branchContext || " - ",
-              source: branchSource,
-              valueMono: true,
-            },
-            {
-              field: "Title",
-              value: run.title || " - ",
-              source: titleSource,
-            },
-          ]}
-        />
-      </RunStageSection>
-
-      <RunStageSection
-        title="Resolved Intake Context"
-        subtitle="This is the run context Relay will carry into prepare and execution."
-        icon={<FolderGit2 className="h-4 w-4" />}
-      >
-        <RunStageKeyValueGrid rows={contextRows} columns={2} />
-      </RunStageSection>
-
-      <RunStageSection
         title="Run Configuration"
         subtitle="Adjust the execution target and workspace details before approving the intake."
         icon={<Server className="h-4 w-4" />}
+        contentClassName="flex flex-col gap-4"
       >
+        <p className="text-xs text-muted-foreground">
+          Review the editable intake configuration first. Provenance is shown
+          inline with each field instead of in separate context panels.
+        </p>
+
         <div className="grid gap-3 md:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="override-repo" className="text-xs text-muted-foreground">
+              Repository Target Path
+            </Label>
+            <Input
+              id="override-repo"
+              value={repo}
+              onChange={(event) => setRepo(event.target.value)}
+              placeholder="e.g. d:\\Code\\relay"
+              disabled={isPending || !isReviewable}
+            />
+            <InlineHint
+              source={repoSource}
+              detail={
+                repoTarget && repoTarget !== repo
+                  ? <>Resolved intake target: <span className="font-mono text-[11px]">{repoTarget}</span></>
+                  : undefined
+              }
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label
+              htmlFor="override-branch"
+              className="text-xs text-muted-foreground"
+            >
+              Branch / Worktree Context
+            </Label>
+            <Input
+              id="override-branch"
+              value={branch}
+              onChange={(event) => setBranch(event.target.value)}
+              placeholder="e.g. main"
+              disabled={isPending || !isReviewable}
+            />
+            <InlineHint
+              source={branchSource}
+              detail={
+                branchContext && branchContext !== branch
+                  ? <>Resolved intake branch: <span className="font-mono text-[11px]">{branchContext}</span></>
+                  : undefined
+              }
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label
+              htmlFor="override-worktree"
+              className="text-xs text-muted-foreground"
+            >
+              Worktree Override
+            </Label>
+            <Input
+              id="override-worktree"
+              value={worktree}
+              onChange={(event) => setWorktree(event.target.value)}
+              placeholder="e.g. my-worktree"
+              disabled={isPending || !isReviewable}
+            />
+            <InlineHint
+              source={worktreeSource}
+              detail={
+                !worktree && !worktreeSource
+                  ? "Optional override; Relay will use the run workspace when left blank."
+                  : undefined
+              }
+            />
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="override-model" className="text-xs text-muted-foreground">
               Target Model
@@ -537,6 +523,7 @@ export function RunIntakeReviewPanel({
               placeholder="e.g. deepseek-v4-flash"
               disabled={isPending || !isReviewable}
             />
+            <InlineHint source={modelSource} />
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -574,51 +561,7 @@ export function RunIntakeReviewPanel({
                 configuration and authentication available to the Relay daemon.
               </p>
             ) : null}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="override-repo" className="text-xs text-muted-foreground">
-              Repository Target Path
-            </Label>
-            <Input
-              id="override-repo"
-              value={repo}
-              onChange={(event) => setRepo(event.target.value)}
-              placeholder="e.g. d:\\Code\\relay"
-              disabled={isPending || !isReviewable}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label
-              htmlFor="override-branch"
-              className="text-xs text-muted-foreground"
-            >
-              Branch / Worktree Context
-            </Label>
-            <Input
-              id="override-branch"
-              value={branch}
-              onChange={(event) => setBranch(event.target.value)}
-              placeholder="e.g. main"
-              disabled={isPending || !isReviewable}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label
-              htmlFor="override-worktree"
-              className="text-xs text-muted-foreground"
-            >
-              Worktree Override
-            </Label>
-            <Input
-              id="override-worktree"
-              value={worktree}
-              onChange={(event) => setWorktree(event.target.value)}
-              placeholder="e.g. my-worktree"
-              disabled={isPending || !isReviewable}
-            />
+            <InlineHint source={executorSource} />
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -635,6 +578,7 @@ export function RunIntakeReviewPanel({
               placeholder="e.g. go test ./..."
               disabled={isPending || !isReviewable}
             />
+            <InlineHint source={validationSource} />
           </div>
         </div>
       </RunStageSection>
@@ -680,24 +624,6 @@ export function RunIntakeReviewPanel({
           icon={<AlertTriangle className="h-4 w-4" />}
           contentClassName="flex flex-col gap-3"
         >
-          <div className="flex flex-wrap gap-2">
-            <RunStageSummaryChip
-              label="Errors"
-              value={String(validationSummary?.errors ?? 0)}
-              tone={(validationSummary?.errors ?? 0) > 0 ? "danger" : "default"}
-            />
-            <RunStageSummaryChip
-              label="Warnings"
-              value={String(validationSummary?.warnings ?? 0)}
-              tone={(validationSummary?.warnings ?? 0) > 0 ? "warning" : "default"}
-            />
-            <RunStageSummaryChip
-              label="Passed"
-              value={String(validationSummary?.passed ?? 0)}
-              tone="success"
-            />
-          </div>
-
           {validationIssues.length > 0 ? (
             <div className="max-h-48 overflow-y-auto rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40">
               <div className="flex flex-col divide-y divide-[var(--relay-row-border)]">
@@ -724,6 +650,39 @@ export function RunIntakeReviewPanel({
           )}
         </RunStageSection>
       </div>
+
+      <RunStageSection
+        title="Handoff Evidence"
+        subtitle="Supporting previews for the submitted handoff and parsed frontmatter."
+        icon={<FileText className="h-4 w-4" />}
+        contentClassName="flex flex-col gap-4"
+      >
+        <div className="grid gap-4 xl:grid-cols-2">
+          <RunStagePreviewBlock
+            title="Planner Handoff Preview"
+            subtitle="Captured markdown from the intake packet."
+          >
+            {plannerHandoff?.preview
+              ? plannerHandoff.preview
+              : renderUnavailablePreview(
+                  plannerHandoff,
+                  "Handoff preview content is unavailable.",
+                )}
+          </RunStagePreviewBlock>
+
+          <RunStagePreviewBlock
+            title="Parsed Frontmatter Preview"
+            subtitle="Structured metadata extracted from the handoff."
+          >
+            {parsedFrontmatter?.preview
+              ? parsedFrontmatter.preview
+              : renderUnavailablePreview(
+                  parsedFrontmatter,
+                  "Parsed frontmatter preview is unavailable.",
+                )}
+          </RunStagePreviewBlock>
+        </div>
+      </RunStageSection>
 
       <RunStageSection
         title="Approval Gate"
