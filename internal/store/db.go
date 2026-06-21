@@ -26,6 +26,8 @@ type Check = generated.Check
 type AgentExecution = generated.AgentExecution
 type ValidationExecution = generated.ValidationExecution
 type DashboardRun = generated.ListRecentRunsWithRepoRow
+type Plan = generated.Plan
+type PlanPass = generated.PlanPass
 
 type Store struct {
 	db      *sql.DB

@@ -46,17 +46,61 @@ type SelectOption = {
   label: string;
 };
 
-const EXECUTION_PROFILE_OPTIONS: SelectOption[] = [
-  { value: "opencode_go", label: "OpenCode" },
-  { value: "codex", label: "Codex" },
-  { value: "antigravity", label: "Antigravity" },
-];
+const EXECUTION_PROFILE_OPTIONS = [
+  {
+    value: "opencode_go",
+    label: "OpenCode",
+    description: "Run through the OpenCode executor adapter.",
+    models: [
+      { value: "openrouter/auto", label: "OpenRouter Auto" },
+      { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
+      {
+        value: "deepseek/deepseek-chat-v3-0324:free",
+        label: "DeepSeek Chat V3 0324",
+      },
+      {
+        value: "anthropic/claude-sonnet-4-5",
+        label: "Claude Sonnet 4.5",
+      },
+    ],
+  },
+  {
+    value: "codex",
+    label: "Codex",
+    description: "Run through the Codex executor adapter.",
+    models: [{ value: "codex", label: "Codex Default" }],
+  },
+  {
+    value: "antigravity",
+    label: "Antigravity",
+    description: "Run through the Antigravity executor adapter.",
+    models: [{ value: "antigravity", label: "Antigravity Default" }],
+  },
+] as const;
 
-const MODEL_OPTIONS_BY_EXECUTION_PROFILE: Record<string, SelectOption[]> = {
-  opencode_go: [{ value: "deepseek-v4-flash", label: "deepseek-v4-flash" }],
-  codex: [{ value: "gpt-5.5-codex", label: "gpt-5.5-codex" }],
-  antigravity: [{ value: "deepseek-v4-flash", label: "deepseek-v4-flash" }],
-};
+function getExecutionProfile(value: string) {
+  return (
+    EXECUTION_PROFILE_OPTIONS.find((profile) => profile.value === value) ??
+    EXECUTION_PROFILE_OPTIONS[0]
+  );
+}
+
+function getModelOptionsForProfile(profileValue: string, currentModel?: string) {
+  const profile = getExecutionProfile(profileValue);
+  const modelOptions = [...profile.models];
+
+  if (
+    currentModel &&
+    !modelOptions.some((option) => option.value === currentModel)
+  ) {
+    modelOptions.push({
+      value: currentModel,
+      label: `${currentModel} (current)`,
+    });
+  }
+
+  return modelOptions;
+}
 
 function findArtifact(
   artifacts: RelayArtifact[],
@@ -468,6 +512,15 @@ export function useRunIntakeReviewController({
     });
   };
 
+  const handleExecutionProfileChange = (nextProfile: string) => {
+    setExecutorAdapter(nextProfile);
+
+    const nextModelOptions = getModelOptionsForProfile(nextProfile);
+    if (!nextModelOptions.some((option) => option.value === model)) {
+      setModel(nextModelOptions[0]?.value ?? "");
+    }
+  };
+
   const repoTarget =
     typeof runConfig.repo_target === "string" && runConfig.repo_target
       ? runConfig.repo_target
@@ -528,12 +581,7 @@ export function useRunIntakeReviewController({
     runConfig,
     frontmatterObject,
   });
-  const allowedModelOptions =
-    MODEL_OPTIONS_BY_EXECUTION_PROFILE[executorAdapter] || [];
-  const modelOptions = [...allowedModelOptions];
-  if (model && !modelOptions.some((option) => option.value === model)) {
-    modelOptions.push({ value: model, label: model });
-  }
+  const currentModelOptions = getModelOptionsForProfile(executorAdapter, model);
 
   const validationSummary = run.validationSummary;
   const validationIssues = validationSummary?.issues || [];
@@ -595,20 +643,6 @@ export function useRunIntakeReviewController({
     setBranch(resolvedBranchOptions[0]?.value || "");
   }, [repo, branch, branchOptions, scopedBranchOptions]);
 
-  const previousExecutorAdapterRef = React.useRef(executorAdapter);
-  React.useEffect(() => {
-    if (previousExecutorAdapterRef.current === executorAdapter) {
-      return;
-    }
-
-    previousExecutorAdapterRef.current = executorAdapter;
-    if (model && allowedModelOptions.some((option) => option.value === model)) {
-      return;
-    }
-
-    setModel(allowedModelOptions[0]?.value || "");
-  }, [executorAdapter, model, allowedModelOptions]);
-
   return {
     run,
     mutationError,
@@ -622,7 +656,7 @@ export function useRunIntakeReviewController({
     branch,
     setBranch,
     executorAdapter,
-    setExecutorAdapter,
+    handleExecutionProfileChange,
     handleSubmit,
     repoTarget,
     branchContext,
@@ -634,7 +668,7 @@ export function useRunIntakeReviewController({
     executorSource,
     repoOptions,
     branchOptions,
-    modelOptions,
+    currentModelOptions,
     targetWorktree,
     validationSummary,
     readinessIssues,
@@ -712,7 +746,7 @@ export function RunIntakeReviewPanel({
     branch,
     setBranch,
     executorAdapter,
-    setExecutorAdapter,
+    handleExecutionProfileChange,
     repoTarget,
     branchContext,
     configSource,
@@ -723,7 +757,7 @@ export function RunIntakeReviewPanel({
     executorSource,
     repoOptions,
     branchOptions,
-    modelOptions,
+    currentModelOptions,
     targetWorktree,
     validationSummary,
     readinessIssues,
@@ -936,7 +970,7 @@ export function RunIntakeReviewPanel({
                 </Label>
                 <Select
                   value={executorAdapter}
-                  onValueChange={setExecutorAdapter}
+                  onValueChange={handleExecutionProfileChange}
                   disabled={isPending || !isReviewable}
                 >
                   <SelectTrigger id="override-executor">
@@ -985,7 +1019,7 @@ export function RunIntakeReviewPanel({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      {modelOptions.map((option) => (
+                      {currentModelOptions.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
