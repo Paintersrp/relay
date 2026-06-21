@@ -30,7 +30,7 @@ export function AppShell({ children, className }: AppShellProps) {
         className,
       )}
     >
-      <header className="flex h-13 shrink-0 items-center border-b border-[var(--relay-topbar-border)] bg-[var(--relay-topbar-bg)] px-4">
+      <header className="flex h-13 min-w-0 shrink-0 items-center gap-2 overflow-hidden border-b border-[var(--relay-topbar-border)] bg-[var(--relay-topbar-bg)] px-3 sm:px-4">
         <Link
           to="/runs"
           className="flex min-w-0 items-center gap-2.5 text-[var(--relay-topbar-fg)]"
@@ -39,12 +39,12 @@ export function AppShell({ children, className }: AppShellProps) {
           <span className="flex h-6 w-6 items-center justify-center rounded border border-[var(--relay-accent)]/35 bg-[var(--relay-accent)]/10 text-[var(--relay-accent)]">
             <ArrowRight className="h-3.5 w-3.5" />
           </span>
-          <span className="text-sm font-semibold leading-none tracking-tight">
+          <span className="truncate text-sm font-semibold leading-none tracking-tight">
             Relay
           </span>
         </Link>
 
-        <span className="mx-2 text-xs text-[var(--relay-topbar-muted-fg)]">
+        <span className="hidden text-xs text-[var(--relay-topbar-muted-fg)] sm:inline">
           ·
         </span>
 
@@ -52,7 +52,7 @@ export function AppShell({ children, className }: AppShellProps) {
           v1.0.4-stable
         </span>
 
-        <nav aria-label="Primary" className="ml-auto flex items-center gap-1">
+        <nav aria-label="Primary" className="ml-auto flex shrink-0 items-center gap-1">
           <Link
             to="/runs"
             aria-current={runsActive ? "page" : undefined}
@@ -71,13 +71,13 @@ export function AppShell({ children, className }: AppShellProps) {
           asChild
           size="sm"
           className={cn(
-            "ml-2 h-8 gap-1.5 bg-[var(--relay-accent)] text-[var(--relay-accent-foreground)] hover:bg-[var(--relay-accent)]/90",
+            "h-8 shrink-0 gap-1.5 px-2 sm:px-3 bg-[var(--relay-accent)] text-[var(--relay-accent-foreground)] hover:bg-[var(--relay-accent)]/90",
             newRunActive && "ring-1 ring-[var(--relay-accent)]/45",
           )}
         >
-          <Link to="/runs/new">
+          <Link to="/runs/new" aria-label="New Run">
             <Plus className="h-3.5 w-3.5" />
-            New Run
+            <span className="hidden sm:inline">New Run</span>
           </Link>
         </Button>
       </header>

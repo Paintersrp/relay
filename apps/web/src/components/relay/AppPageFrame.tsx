@@ -35,10 +35,10 @@ export function AppPageFrame({
           headerClassName,
         )}
       >
-        <div className="flex min-w-0 items-start justify-between gap-4">
-          <div className="flex min-w-0 items-start gap-3">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
             {leading && <div className="shrink-0">{leading}</div>}
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h1 className="truncate text-lg font-semibold leading-tight text-[var(--relay-page-title-fg)]">
                 {title}
               </h1>
@@ -49,7 +49,11 @@ export function AppPageFrame({
               )}
             </div>
           </div>
-          {actions && <div className="shrink-0">{actions}</div>}
+          {actions && (
+            <div className="flex w-full flex-wrap justify-start gap-2 sm:w-auto sm:justify-end">
+              {actions}
+            </div>
+          )}
         </div>
       </header>
 

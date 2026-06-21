@@ -281,7 +281,7 @@ function IntakeMainContent({ run, artifacts }: { run: any; artifacts: any[] }) {
             Planner Handoff Preview
           </span>
           {plannerHandoff?.preview ? (
-            <pre className="text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+            <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
               {plannerHandoff.preview}
             </pre>
           ) : (
@@ -305,7 +305,7 @@ function IntakeMainContent({ run, artifacts }: { run: any; artifacts: any[] }) {
             Parsed Frontmatter Preview
           </span>
           {parsedFrontmatter?.preview ? (
-            <pre className="text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+            <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
               {parsedFrontmatter.preview}
             </pre>
           ) : (
@@ -337,8 +337,8 @@ function IntakeMainContent({ run, artifacts }: { run: any; artifacts: any[] }) {
           <span className="text-xs font-semibold text-muted-foreground">
             Configuration Provenance
           </span>
-          <div className="border border-border/40 rounded-lg overflow-hidden bg-muted/10 text-xs">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto rounded-lg border border-border/40 bg-muted/10 text-xs">
+            <table className="w-full min-w-[36rem] border-collapse text-left">
               <thead>
                 <tr className="border-b border-border/40 bg-muted/30">
                   <th className="p-2 font-medium text-muted-foreground w-1/4">
@@ -809,14 +809,14 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="border-border/60 bg-card/20">
+    <Card className="min-w-0 border-border/60 bg-card/20">
       <CardHeader className="p-3 pb-2">
         <CardTitle className="text-sm font-medium flex items-center gap-2">
           {icon}
           {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-3 pt-0 flex flex-col gap-1.5">
+      <CardContent className="min-w-0 p-3 pt-0 flex flex-col gap-1.5">
         {children}
       </CardContent>
     </Card>
@@ -833,9 +833,11 @@ function KeyValueRow({
   mono?: boolean;
 }) {
   return (
-    <div className="flex items-baseline gap-2 text-xs">
+    <div className="flex min-w-0 items-baseline gap-2 text-xs">
       <span className="text-muted-foreground w-32 shrink-0">{label}</span>
-      <span className={mono ? "font-mono text-foreground" : "text-foreground"}>
+      <span
+        className={mono ? "min-w-0 break-words font-mono text-foreground" : "min-w-0 break-words text-foreground"}
+      >
         {value}
       </span>
     </div>

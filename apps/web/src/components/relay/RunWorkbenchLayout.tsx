@@ -96,6 +96,43 @@ function getInspectorFallback(tab: InspectorPanelKey): React.ReactNode {
   )
 }
 
+function InspectorTabStrip({
+  activeTab,
+  onTabChange,
+  className,
+}: {
+  activeTab?: InspectorPanelKey
+  onTabChange: (tab: InspectorPanelKey) => void
+  className?: string
+}) {
+  return (
+    <div className={cn('overflow-x-auto', className)}>
+      <div className="flex min-w-max items-center gap-4">
+        {INSPECTOR_TABS.map((tab) => {
+          const active = tab.key === activeTab
+
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => onTabChange(tab.key)}
+              className={cn(
+                'flex h-10 items-center border-b-2 font-mono text-[11px] transition-colors',
+                active
+                  ? 'border-[var(--relay-accent)] text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+              aria-pressed={active}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function RunWorkbenchLayout({
   run,
   currentStep,
@@ -116,13 +153,11 @@ export function RunWorkbenchLayout({
   const resolvedPanels: InspectorPanels =
     inspectorPanels ?? (sideContent ? { logs: sideContent } : {})
 
-  const visibleTabs = INSPECTOR_TABS
-
-  const resolvedActiveTab = visibleTabs.some(
+  const resolvedActiveTab = INSPECTOR_TABS.some(
     (tab) => tab.key === activeInspectorTab,
   )
     ? activeInspectorTab
-    : visibleTabs[0]?.key
+    : INSPECTOR_TABS[0]?.key
 
   const activePanelContent = resolvedActiveTab
     ? resolvedPanels[resolvedActiveTab]
@@ -226,7 +261,25 @@ export function RunWorkbenchLayout({
                 <StatusBadge status={run.status} className="shrink-0" />
               </div>
             </div>
-            <div className="px-4 py-4">{mainContent}</div>
+            <div className="min-w-0 px-4 py-4">
+              {mainContent}
+
+              <section className="mt-4 lg:hidden">
+                <div className="overflow-hidden rounded border border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]">
+                  <div className="border-b border-[var(--relay-row-border)] px-3 pt-2">
+                    <InspectorTabStrip
+                      activeTab={resolvedActiveTab}
+                      onTabChange={setActiveInspectorTab}
+                    />
+                  </div>
+                  <div className="p-3">
+                    <div className="flex min-w-0 flex-col gap-3">
+                      {activePanel}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
           </main>
         </ResizablePanel>
 
@@ -245,27 +298,11 @@ export function RunWorkbenchLayout({
           >
             <aside className="flex h-full min-h-0 w-full flex-col border-l border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]">
               <div className="flex h-10 shrink-0 items-center border-b border-[var(--relay-row-border)] px-3">
-                <div className="flex min-w-0 flex-1 items-center gap-4">
-                  {visibleTabs.map((tab) => {
-                    const active = tab.key === resolvedActiveTab
-                    return (
-                      <button
-                        key={tab.key}
-                        type="button"
-                        onClick={() => setActiveInspectorTab(tab.key)}
-                        className={cn(
-                          'flex h-10 items-center border-b-2 font-mono text-[11px] transition-colors',
-                          active
-                            ? 'border-[var(--relay-accent)] text-foreground'
-                            : 'border-transparent text-muted-foreground hover:text-foreground',
-                        )}
-                        aria-pressed={active}
-                      >
-                        {tab.label}
-                      </button>
-                    )
-                  })}
-                </div>
+                <InspectorTabStrip
+                  activeTab={resolvedActiveTab}
+                  onTabChange={setActiveInspectorTab}
+                  className="min-w-0 flex-1"
+                />
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto p-3">

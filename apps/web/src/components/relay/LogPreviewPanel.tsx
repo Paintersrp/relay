@@ -13,9 +13,9 @@ interface LogPreviewPanelProps {
 
 export function LogPreviewPanel({ logPreview, className }: LogPreviewPanelProps) {
   return (
-    <Card className={cn('border-border/60', className)}>
+    <Card className={cn('min-w-0 border-border/60', className)}>
       <CardHeader className="p-3 pb-2">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
+        <CardTitle className="flex items-center gap-2 text-sm font-medium">
           <Terminal className="w-4 h-4 text-muted-foreground" />
           Log Preview
           {logPreview.truncated && (
@@ -29,12 +29,18 @@ export function LogPreviewPanel({ logPreview, className }: LogPreviewPanelProps)
             tone="empty"
             title="No logs captured yet"
             description="Run events will appear here after Relay records stage activity."
+            density="compact"
           />
         ) : (
           <ScrollArea className="h-36 w-full rounded-md border border-border/50 bg-black/30">
-            <div className="p-3 font-mono text-xs space-y-0.5">
+            <div className="min-w-0 p-3 font-mono text-xs">
+              <div className="overflow-x-auto">
+                <div className="min-w-max space-y-0.5">
               {logPreview.lines.map((line, i) => (
-                <div key={i} className="text-emerald-300/80 leading-relaxed whitespace-pre-wrap break-all">
+                <div
+                  key={i}
+                  className="text-emerald-300/80 leading-relaxed whitespace-pre"
+                >
                   {line}
                 </div>
               ))}
@@ -43,6 +49,8 @@ export function LogPreviewPanel({ logPreview, className }: LogPreviewPanelProps)
                   … output truncated. Full log available in Pass 3.
                 </div>
               )}
+                </div>
+              </div>
             </div>
           </ScrollArea>
         )}

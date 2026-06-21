@@ -713,7 +713,7 @@ function PrepareMainContent({
               </div>
               {/* Bounded safe plain text preview (CR5) */}
               {executorBriefArt.preview ? (
-                <pre className="text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+                <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
                   {executorBriefArt.preview}
                 </pre>
               ) : (
@@ -937,14 +937,14 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="border-border/60 bg-card/20">
+    <Card className="min-w-0 border-border/60 bg-card/20">
       <CardHeader className="p-3 pb-2">
         <CardTitle className="text-sm font-medium flex items-center gap-2">
           {icon}
           {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-3 pt-0 flex flex-col gap-1.5">
+      <CardContent className="min-w-0 p-3 pt-0 flex flex-col gap-1.5">
         {children}
       </CardContent>
     </Card>

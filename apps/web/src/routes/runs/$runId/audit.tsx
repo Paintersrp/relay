@@ -806,7 +806,7 @@ function AuditMainContent({
               )}
             </div>
             {auditData.inputSummary.preview && (
-              <pre className="text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
                 {auditData.inputSummary.preview}
               </pre>
             )}
@@ -953,7 +953,7 @@ function AuditMainContent({
               )}
             </div>
             {auditData.generatedPacket.preview && (
-              <pre className="text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
                 {auditData.generatedPacket.preview}
               </pre>
             )}
@@ -997,7 +997,7 @@ function AuditMainContent({
               </span>
             </div>
             {auditData.manualPacket.preview && (
-              <pre className="text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
                 {auditData.manualPacket.preview}
               </pre>
             )}
@@ -1367,7 +1367,7 @@ function AuditMainContent({
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+          <div className="grid grid-cols-1 gap-2 text-[11px] text-muted-foreground sm:grid-cols-3">
             <div>
               <span className="font-medium">Changed files:</span>{" "}
               {auditData.commitSummary.changedFileArtifactIds.length}
@@ -1383,7 +1383,7 @@ function AuditMainContent({
           </div>
 
           {auditData.commitSummary.commitMessagePreview && (
-            <pre className="text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-32 overflow-y-auto whitespace-pre-wrap text-foreground">
+            <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-32 overflow-y-auto whitespace-pre-wrap text-foreground">
               {auditData.commitSummary.commitMessagePreview}
             </pre>
           )}
@@ -1494,14 +1494,14 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="border-border/60 bg-card/20">
+    <Card className="min-w-0 border-border/60 bg-card/20">
       <CardHeader className="p-3 pb-2">
         <CardTitle className="text-sm font-medium flex items-center gap-2">
           {icon}
           {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-3 pt-0 flex flex-col gap-1.5">
+      <CardContent className="min-w-0 p-3 pt-0 flex flex-col gap-1.5">
         {children}
       </CardContent>
     </Card>

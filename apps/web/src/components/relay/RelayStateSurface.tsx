@@ -20,6 +20,8 @@ export type RelayStateTone =
   | 'success'
   | 'blocked'
 
+export type RelayStateDensity = 'default' | 'compact'
+
 interface RelayStatePrimitiveProps {
   tone: RelayStateTone
   title: string
@@ -29,6 +31,7 @@ interface RelayStatePrimitiveProps {
   className?: string
   children?: React.ReactNode
   icon?: React.ReactNode
+  density?: RelayStateDensity
 }
 
 const TONE_STYLES: Record<
@@ -84,23 +87,26 @@ function RelayStateCopy({
   action,
   children,
   icon,
+  density = 'default',
 }: Omit<RelayStatePrimitiveProps, 'className'>) {
   const toneStyle = TONE_STYLES[tone]
   const Icon = toneStyle.icon
+  const compact = density === 'compact'
 
   return (
     <>
       <div className="flex items-start gap-3">
         <div
           className={cn(
-            'flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)]',
+            'flex shrink-0 items-center justify-center rounded border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)]',
+            compact ? 'h-6 w-6' : 'h-8 w-8',
             toneStyle.accentClass,
           )}
         >
           {icon ?? (
             <Icon
               className={cn(
-                'h-4 w-4',
+                compact ? 'h-3.5 w-3.5' : 'h-4 w-4',
                 tone === 'loading' && 'animate-spin',
               )}
             />
@@ -137,11 +143,13 @@ export function RelayStateSurface({
   className,
   children,
   icon,
+  density = 'default',
 }: RelayStatePrimitiveProps) {
   return (
     <div
       className={cn(
-        'rounded border border-[var(--relay-row-border)] border-l-2 bg-[var(--relay-panel-bg)] px-4 py-3',
+        'rounded border border-[var(--relay-row-border)] border-l-2 bg-[var(--relay-panel-bg)]',
+        density === 'compact' ? 'px-3 py-2' : 'px-4 py-3',
         TONE_STYLES[tone].borderClass,
         className,
       )}
@@ -153,6 +161,7 @@ export function RelayStateSurface({
         metadata={metadata}
         action={action}
         icon={icon}
+        density={density}
       >
         {children}
       </RelayStateCopy>
@@ -169,11 +178,13 @@ export function RelayInlineState({
   className,
   children,
   icon,
+  density = 'default',
 }: RelayStatePrimitiveProps) {
   return (
     <div
       className={cn(
-        'rounded border border-[var(--relay-row-border)] border-l-2 bg-[var(--relay-panel-hover-bg)] px-3 py-2.5',
+        'rounded border border-[var(--relay-row-border)] border-l-2 bg-[var(--relay-panel-hover-bg)]',
+        density === 'compact' ? 'px-3 py-2' : 'px-3 py-2.5',
         TONE_STYLES[tone].borderClass,
         className,
       )}
@@ -185,6 +196,7 @@ export function RelayInlineState({
         metadata={metadata}
         action={action}
         icon={icon}
+        density={density}
       >
         {children}
       </RelayStateCopy>
@@ -201,11 +213,13 @@ export function RelayStateBanner({
   className,
   children,
   icon,
+  density = 'default',
 }: RelayStatePrimitiveProps) {
   return (
     <div
       className={cn(
-        'rounded border border-[var(--relay-row-border)] border-l-2 bg-[var(--relay-panel-hover-bg)] px-3 py-2.5',
+        'rounded border border-[var(--relay-row-border)] border-l-2 bg-[var(--relay-panel-hover-bg)]',
+        density === 'compact' ? 'px-3 py-2' : 'px-3 py-2.5',
         TONE_STYLES[tone].borderClass,
         className,
       )}
@@ -218,6 +232,7 @@ export function RelayStateBanner({
         metadata={metadata}
         action={action}
         icon={icon}
+        density={density}
       >
         {children}
       </RelayStateCopy>

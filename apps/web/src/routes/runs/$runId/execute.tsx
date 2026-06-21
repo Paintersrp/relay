@@ -589,21 +589,25 @@ function ExecuteMainContent({
       <Section title="Live Logs" icon={<Terminal className="w-4 h-4" />}>
         {run.logPreview.lines.length > 0 ? (
           <ScrollArea className="h-48 w-full rounded-md border border-border/50 bg-black/30">
-            <div className="p-3 font-mono text-xs space-y-0.5">
-              {run.logPreview.lines.map((line: string, i: number) => (
-                <div
-                  key={i}
-                  className="text-emerald-300/80 leading-relaxed whitespace-pre-wrap break-all"
-                >
-                  {line}
+            <div className="min-w-0 p-3 font-mono text-xs">
+              <div className="overflow-x-auto">
+                <div className="min-w-max space-y-0.5">
+                  {run.logPreview.lines.map((line: string, i: number) => (
+                    <div
+                      key={i}
+                      className="text-emerald-300/80 leading-relaxed whitespace-pre"
+                    >
+                      {line}
+                    </div>
+                  ))}
+                  {run.logPreview.truncated && (
+                    <div className="text-muted-foreground/50 italic">
+                      … output truncated. Full log available via raw artifact
+                      content endpoint.
+                    </div>
+                  )}
                 </div>
-              ))}
-              {run.logPreview.truncated && (
-                <div className="text-muted-foreground/50 italic">
-                  … output truncated. Full log available via raw artifact
-                  content endpoint.
-                </div>
-              )}
+              </div>
             </div>
           </ScrollArea>
         ) : (
@@ -765,7 +769,7 @@ function ExecuteMainContent({
 
         {primaryValidationArt?.preview && (
           <div className="mt-2">
-            <pre className="text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-32 overflow-y-auto whitespace-pre-wrap text-foreground">
+            <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-32 overflow-y-auto whitespace-pre-wrap text-foreground">
               {primaryValidationArt.preview}
             </pre>
           </div>
@@ -800,7 +804,7 @@ function ExecuteMainContent({
 
             {/* Preview for primary diff artifact */}
             {primaryDiffArt?.preview && (
-              <pre className="text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
                 {primaryDiffArt.preview}
               </pre>
             )}
@@ -857,7 +861,7 @@ function ExecuteMainContent({
 
             {/* Parsed result preview */}
             {primaryResultArt.preview ? (
-              <pre className="text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
                 {primaryResultArt.preview}
               </pre>
             ) : (
@@ -919,14 +923,14 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="border-border/60 bg-card/20">
+    <Card className="min-w-0 border-border/60 bg-card/20">
       <CardHeader className="p-3 pb-2">
         <CardTitle className="text-sm font-medium flex items-center gap-2">
           {icon}
           {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-3 pt-0 flex flex-col gap-1.5">
+      <CardContent className="min-w-0 p-3 pt-0 flex flex-col gap-1.5">
         {children}
       </CardContent>
     </Card>

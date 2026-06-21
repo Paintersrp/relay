@@ -85,7 +85,7 @@ function MetadataRow({
 
   return (
     <div className="flex items-start justify-between gap-3 border-b border-[var(--relay-row-border)] py-3 last:border-b-0">
-      <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+      <span className="shrink-0 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
         {label}
       </span>
       <div
@@ -99,7 +99,7 @@ function MetadataRow({
         ) : (
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         )}
-        <span className="break-all">{value ?? "not detected"}</span>
+        <span className="break-words">{value ?? "not detected"}</span>
       </div>
     </div>
   );
@@ -202,21 +202,25 @@ function NewRunPage() {
         bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="flex h-9 shrink-0 items-center justify-end gap-2 border-b border-[var(--relay-row-border)] px-4 py-0">
-            <IntakeStep
-              label="1 Handoff Intake"
-              state={hasHandoff ? "complete" : "active"}
-            />
-            <span className="font-mono text-xs text-muted-foreground/30">→</span>
-            <IntakeStep
-              label="2 Validate Metadata"
-              state={hasHandoff && !isSubmitting ? "active" : "idle"}
-            />
-            <span className="font-mono text-xs text-muted-foreground/30">→</span>
-            <IntakeStep
-              label="3 Create Run"
-              state={isFormValid ? "ready" : "idle"}
-            />
+          <div className="shrink-0 border-b border-[var(--relay-row-border)] px-4 py-2">
+            <div className="overflow-x-auto">
+              <div className="flex min-w-max items-center gap-2 lg:justify-end">
+                <IntakeStep
+                  label="1 Handoff Intake"
+                  state={hasHandoff ? "complete" : "active"}
+                />
+                <span className="font-mono text-xs text-muted-foreground/30">→</span>
+                <IntakeStep
+                  label="2 Validate Metadata"
+                  state={hasHandoff && !isSubmitting ? "active" : "idle"}
+                />
+                <span className="font-mono text-xs text-muted-foreground/30">→</span>
+                <IntakeStep
+                  label="3 Create Run"
+                  state={isFormValid ? "ready" : "idle"}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
@@ -229,6 +233,7 @@ function NewRunPage() {
                         tone="danger"
                         title="Handoff submission failed"
                         description={errorMsg}
+                        density="compact"
                       />
                     </div>
                   )}
@@ -255,7 +260,7 @@ function NewRunPage() {
                           <Textarea
                             id="handoff-paste"
                             placeholder="Paste Planner handoff Markdown here..."
-                            className="h-full min-h-[420px] flex-1 resize-none border-[var(--relay-row-border)] bg-background/70 font-mono text-xs"
+                            className="h-full min-h-[260px] flex-1 resize-none border-[var(--relay-row-border)] bg-background/70 font-mono text-xs sm:min-h-[340px] lg:min-h-[420px]"
                             value={markdown}
                             onChange={(e) => setMarkdown(e.target.value)}
                             aria-label="Planner handoff paste input"
@@ -271,7 +276,7 @@ function NewRunPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-3">
                         <Label
                           htmlFor="handoff-file"
                           className="shrink-0 cursor-pointer rounded border border-[var(--relay-row-border)] bg-background/60 px-3 py-1.5 font-mono text-[11px] text-foreground hover:bg-[var(--relay-panel-hover-bg)]"
@@ -354,11 +359,11 @@ function NewRunPage() {
                 </div>
               </div>
 
-              <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-t border-[var(--relay-row-border)] px-4 py-0">
-                <p className="text-xs text-muted-foreground">
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[var(--relay-row-border)] px-4 py-3 sm:min-h-12 sm:flex-nowrap sm:py-0">
+                <p className="min-w-0 text-xs text-muted-foreground">
                   Create a run from this Planner handoff.
                 </p>
-                <div className="flex items-center gap-2">
+                <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
                   <Button variant="outline" size="sm" asChild disabled={isSubmitting}>
                     <Link to="/runs">Cancel</Link>
                   </Button>
@@ -384,10 +389,10 @@ function NewRunPage() {
             <aside className="flex min-h-0 flex-col bg-[var(--relay-panel-bg)]">
               <div className="border-b border-[var(--relay-row-border)] px-5 py-3">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="whitespace-nowrap text-sm font-semibold text-foreground">
+                  <h2 className="min-w-0 text-sm font-semibold text-foreground">
                     Detected Handoff Metadata
                   </h2>
-                  <span className="rounded-full border border-[var(--relay-row-border)] px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                  <span className="shrink-0 rounded-full border border-[var(--relay-row-border)] px-2 py-1 font-mono text-[11px] text-muted-foreground">
                     {detectedMetadata.detectedCount}/6 detected
                   </span>
                 </div>
@@ -420,6 +425,7 @@ function NewRunPage() {
                           title="Metadata incomplete"
                           description="Relay did not detect structured handoff metadata. Submission can continue, but defaults or explicit overrides may be used."
                           className="mb-4"
+                          density="compact"
                         />
                       ) : null}
                       <MetadataRow label="source" value={detectedMetadata.source} />

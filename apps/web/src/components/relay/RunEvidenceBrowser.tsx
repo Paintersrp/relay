@@ -402,7 +402,9 @@ function ArtifactSummaryRow({
 function ArtifactModalFrame({ children }: { children: React.ReactNode }) {
   return (
     <div className='flex h-full min-h-0 flex-col overflow-hidden rounded border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)]'>
-      <div className='min-h-0 flex-1 overflow-auto p-4'>{children}</div>
+      <div className='min-h-0 min-w-0 max-w-full flex-1 overflow-auto p-4'>
+        {children}
+      </div>
     </div>
   )
 }
@@ -465,7 +467,7 @@ function ArtifactMetadataTab({
       {rows.map((row) => (
         <div
           key={row.label}
-          className='grid grid-cols-[160px_minmax(0,1fr)] gap-4 px-3 py-2'
+          className='grid grid-cols-1 gap-2 px-3 py-2 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-4'
         >
           <span className='font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground'>
             {row.label}
@@ -593,9 +595,9 @@ function EvidenceArtifactDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className='flex h-[82vh] w-[calc(100vw-4rem)] !max-w-[1120px] sm:!max-w-[1120px] flex-col gap-0 overflow-hidden rounded-lg border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-0 shadow-2xl'
+        className='flex h-[min(82vh,calc(100vh-1rem))] max-h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] !max-w-[1120px] flex-col gap-0 overflow-hidden rounded-lg border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-0 shadow-2xl sm:h-[min(82vh,calc(100vh-2rem))] sm:max-h-[calc(100vh-2rem)] sm:w-[calc(100vw-2rem)] sm:!max-w-[1120px]'
       >
-        <DialogHeader className='shrink-0 border-b border-[var(--relay-row-border)] px-6 py-4'>
+        <DialogHeader className='shrink-0 border-b border-[var(--relay-row-border)] px-4 py-4 sm:px-6'>
           <div className='flex min-w-0 items-start justify-between gap-4'>
             <div className='min-w-0 flex-1'>
               <div className='flex min-w-0 items-center gap-3'>
@@ -615,7 +617,7 @@ function EvidenceArtifactDialog({
                   </span>
                 ) : null}
               </div>
-              <DialogDescription className='mt-2 text-left font-mono text-[11px] text-muted-foreground'>
+              <DialogDescription className='mt-2 break-words text-left font-mono text-[11px] text-muted-foreground'>
                 {stageLabel} <span className='opacity-45'>·</span> {producer}{' '}
                 <span className='opacity-45'>·</span> {size}{' '}
                 <span className='opacity-45'>·</span> {timestamp}
@@ -629,8 +631,8 @@ function EvidenceArtifactDialog({
           </div>
         </DialogHeader>
 
-        <div className='grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)]'>
-          <aside className='min-h-0 border-r border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] p-4'>
+        <div className='grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)]'>
+          <aside className='min-h-0 border-b border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] p-3 lg:border-r lg:border-b-0 lg:p-4'>
             <div className='rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-3'>
               <p className='font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground'>
                 Artifact
@@ -638,7 +640,7 @@ function EvidenceArtifactDialog({
               <p className='mt-2 break-words text-sm font-medium text-foreground'>
                 {title}
               </p>
-              <dl className='mt-4 space-y-3'>
+              <dl className='mt-3 space-y-2 lg:mt-4 lg:space-y-3'>
                 <ArtifactSummaryRow label='Stage' value={stageLabel} />
                 <ArtifactSummaryRow label='Producer' value={producer} />
                 <ArtifactSummaryRow label='Time' value={timestamp} />
@@ -648,9 +650,10 @@ function EvidenceArtifactDialog({
             </div>
           </aside>
 
-          <Tabs defaultValue='preview' className='flex min-h-0 flex-col'>
-            <div className='shrink-0 border-b border-[var(--relay-row-border)] px-5 pt-3'>
-              <TabsList variant='line' className='h-10 gap-6'>
+          <Tabs defaultValue='preview' className='flex min-h-0 min-w-0 flex-col'>
+            <div className='shrink-0 border-b border-[var(--relay-row-border)] px-3 pt-3 sm:px-5'>
+              <div className='overflow-x-auto'>
+                <TabsList variant='line' className='h-10 min-w-max gap-6'>
                 <TabsTrigger value='preview' className='h-10 px-0 text-xs'>
                   Preview
                 </TabsTrigger>
@@ -663,11 +666,12 @@ function EvidenceArtifactDialog({
                 <TabsTrigger value='raw' className='h-10 px-0 text-xs'>
                   Raw
                 </TabsTrigger>
-              </TabsList>
+                </TabsList>
+              </div>
             </div>
 
-            <div className='min-h-0 flex-1 p-5'>
-              <TabsContent value='preview' className='mt-0 h-full'>
+            <div className='min-h-0 min-w-0 flex-1 p-3 sm:p-5'>
+              <TabsContent value='preview' className='mt-0 h-full min-w-0'>
                 <ArtifactModalFrame>
                   <PreviewTab
                     artifact={artifact}
@@ -678,13 +682,13 @@ function EvidenceArtifactDialog({
                 </ArtifactModalFrame>
               </TabsContent>
 
-              <TabsContent value='event-chain' className='mt-0 h-full'>
+              <TabsContent value='event-chain' className='mt-0 h-full min-w-0'>
                 <ArtifactModalFrame>
                   <EventChainTab events={relatedEvents} />
                 </ArtifactModalFrame>
               </TabsContent>
 
-              <TabsContent value='metadata' className='mt-0 h-full'>
+              <TabsContent value='metadata' className='mt-0 h-full min-w-0'>
                 <ArtifactModalFrame>
                   <ArtifactMetadataTab
                     artifact={artifact}
@@ -693,7 +697,7 @@ function EvidenceArtifactDialog({
                 </ArtifactModalFrame>
               </TabsContent>
 
-              <TabsContent value='raw' className='mt-0 h-full'>
+              <TabsContent value='raw' className='mt-0 h-full min-w-0'>
                 <ArtifactModalFrame>
                   <RawTab
                     artifact={artifact}
@@ -841,8 +845,8 @@ function PreviewTab({
   const formatted = formatJsonIfPossible(raw)
 
   return (
-    <div className='font-mono text-xs leading-relaxed text-foreground'>
-      <pre className='whitespace-pre-wrap break-words'>
+    <div className='min-w-0 max-w-full font-mono text-xs leading-relaxed text-foreground'>
+      <pre className='max-w-full overflow-auto whitespace-pre-wrap break-words'>
         {formatted}
       </pre>
     </div>
@@ -876,7 +880,7 @@ function RawTab({
           {(error as Error)?.message || 'Unknown error'}
         </p>
         <div className='mt-3 rounded border border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]/60 p-3'>
-          <pre className='overflow-auto font-mono text-xs leading-relaxed text-foreground'>
+          <pre className='max-w-full overflow-auto font-mono text-xs leading-relaxed text-foreground'>
             {JSON.stringify(artifact, null, 2)}
           </pre>
         </div>
@@ -887,10 +891,8 @@ function RawTab({
   const raw = content || JSON.stringify(artifact, null, 2)
 
   return (
-    <div className='font-mono text-xs leading-relaxed text-foreground'>
-      <pre className='min-w-max'>
-        {raw}
-      </pre>
+    <div className='min-w-0 max-w-full overflow-auto font-mono text-xs leading-relaxed text-foreground'>
+      <pre className='min-w-max max-w-full'>{raw}</pre>
     </div>
   )
 }
