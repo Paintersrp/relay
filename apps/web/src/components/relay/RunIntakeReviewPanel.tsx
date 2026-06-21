@@ -15,12 +15,8 @@ import {
 
 import type { RelayArtifact, RelayRun } from "@/features/relay-runs";
 import { approveIntake } from "@/features/relay-runs";
+import { RelayStateBanner } from "@/components/relay/RelayStateSurface";
 import {
-  RelayInlineState,
-  RelayStateBanner,
-} from "@/components/relay/RelayStateSurface";
-import {
-  RunStagePreviewBlock,
   RunStageSection,
   RunStageSummaryCard,
   RunStageSummaryChip,
@@ -28,7 +24,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -41,6 +36,14 @@ import {
 interface RunIntakeReviewPanelProps {
   run: RelayRun;
   artifacts: RelayArtifact[];
+}
+
+export type RunIntakeReviewController = ReturnType<
+  typeof useRunIntakeReviewController
+>;
+
+interface RunIntakeReviewPanelViewProps {
+  controller: RunIntakeReviewController;
 }
 
 function findArtifact(
@@ -81,19 +84,6 @@ function getStatusTone(status: string) {
     return "info" as const;
   }
   return "default" as const;
-}
-
-function renderUnavailablePreview(artifact: RelayArtifact | undefined, message: string) {
-  return (
-    <div className="flex flex-col gap-2 text-xs text-muted-foreground">
-      <p className="italic">{message}</p>
-      {artifact ? (
-        <p className="font-mono text-[11px]">
-          {artifact.filename} | {artifact.path} | {artifact.sizeHint || "unknown"}
-        </p>
-      ) : null}
-    </div>
-  );
 }
 
 function renderRepoValue(value: string) {
@@ -141,12 +131,11 @@ function InlineHint({
   );
 }
 
-export function RunIntakeReviewPanel({
+export function useRunIntakeReviewController({
   run,
   artifacts,
 }: RunIntakeReviewPanelProps) {
   const queryClient = useQueryClient();
-  const [notes, setNotes] = React.useState("");
   const [mutationError, setMutationError] = React.useState<string | null>(null);
 
   const runConfigArtifact = findArtifact(
@@ -154,14 +143,11 @@ export function RunIntakeReviewPanel({
     (artifact) =>
       artifact.filename === "run_config.json" || artifact.kind === "run_config",
   );
-  const plannerHandoff = findArtifact(
-    artifacts,
-    (artifact) =>
-      artifact.filename === "planner_handoff.md" || artifact.kind === "handoff",
-  );
   const parsedFrontmatter = findArtifact(
     artifacts,
-    (artifact) => artifact.filename === "parsed_frontmatter.json",
+    (artifact) =>
+      artifact.filename === "parsed_frontmatter.json" ||
+      artifact.kind === "parsed_frontmatter",
   );
 
   const runConfig = parsePreviewObject(runConfigArtifact?.preview) || {};
@@ -227,7 +213,6 @@ export function RunIntakeReviewPanel({
       approveIntake(run.id, requestPayload),
     onSuccess: () => {
       setMutationError(null);
-      setNotes("");
       void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
     },
     onError: (error: unknown) => {
@@ -244,24 +229,26 @@ export function RunIntakeReviewPanel({
 
   const handleSubmit = (action: "approve" | "needs_revision" | "blocked") => {
     setMutationError(null);
-    const payload = {
-      action,
-      notes: notes.trim(),
-      overrides: {
-        model: model !== run.model ? model.trim() : undefined,
-        repo: repo !== run.repo ? repo.trim() : undefined,
-        branch: branch !== run.branch ? branch.trim() : undefined,
-        worktree: worktree !== run.worktree ? worktree.trim() : undefined,
-        executorAdapter:
-          executorAdapter !== run.executorAdapter ? executorAdapter : undefined,
-        validationCommands:
-          validationCommands !== initialValCommands
-            ? validationCommands.trim()
-            : undefined,
-      },
-    };
 
-    mutate({ requestPayload: payload });
+    mutate({
+      requestPayload: {
+        action,
+        overrides: {
+          model: model !== run.model ? model.trim() : undefined,
+          repo: repo !== run.repo ? repo.trim() : undefined,
+          branch: branch !== run.branch ? branch.trim() : undefined,
+          worktree: worktree !== run.worktree ? worktree.trim() : undefined,
+          executorAdapter:
+            executorAdapter !== run.executorAdapter
+              ? executorAdapter
+              : undefined,
+          validationCommands:
+            validationCommands !== initialValCommands
+              ? validationCommands.trim()
+              : undefined,
+        },
+      },
+    });
   };
 
   const repoTarget =
@@ -352,6 +339,131 @@ export function RunIntakeReviewPanel({
       ? `${preflightPassedCount}/${preflightChecks.length} checks OK`
       : "Preflight pending";
 
+  return {
+    run,
+    mutationError,
+    isPending,
+    isReviewable,
+    hasFrontmatter,
+    model,
+    setModel,
+    repo,
+    setRepo,
+    branch,
+    setBranch,
+    worktree,
+    setWorktree,
+    executorAdapter,
+    setExecutorAdapter,
+    validationCommands,
+    setValidationCommands,
+    handleSubmit,
+    repoTarget,
+    branchContext,
+    configSource,
+    createdFrom,
+    repoSource,
+    branchSource,
+    worktreeSource,
+    modelSource,
+    executorSource,
+    validationSource,
+    validationSummary,
+    summaryStatusTone,
+    preflightChecks,
+    preflightPassedCount,
+    preflightSummary,
+  };
+}
+
+export function RunIntakeStageActions({
+  controller,
+}: {
+  controller: RunIntakeReviewController;
+}) {
+  const { run, isPending, isReviewable, handleSubmit } = controller;
+
+  if (run.status === "approved_for_prepare" || run.activeStep === "prepare") {
+    return (
+      <Button size="sm" asChild>
+        <Link to="/runs/$runId/prepare" params={{ runId: run.id }}>
+          Proceed to Compile / Render
+          <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+        </Link>
+      </Button>
+    );
+  }
+
+  if (!isReviewable) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap justify-end gap-2 py-2">
+      <Button size="sm" onClick={() => handleSubmit("approve")} disabled={isPending}>
+        <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
+        Approve Intake
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => handleSubmit("needs_revision")}
+        disabled={isPending}
+      >
+        <AlertTriangle className="mr-1.5 h-3.5 w-3.5" />
+        Needs Revision
+      </Button>
+      <Button
+        variant="destructive"
+        size="sm"
+        onClick={() => handleSubmit("blocked")}
+        disabled={isPending}
+      >
+        <ShieldX className="mr-1.5 h-3.5 w-3.5" />
+        Block Run
+      </Button>
+    </div>
+  );
+}
+
+export function RunIntakeReviewPanel({
+  controller,
+}: RunIntakeReviewPanelViewProps) {
+  const {
+    run,
+    mutationError,
+    isPending,
+    isReviewable,
+    hasFrontmatter,
+    model,
+    setModel,
+    repo,
+    setRepo,
+    branch,
+    setBranch,
+    worktree,
+    setWorktree,
+    executorAdapter,
+    setExecutorAdapter,
+    validationCommands,
+    setValidationCommands,
+    repoTarget,
+    branchContext,
+    configSource,
+    createdFrom,
+    repoSource,
+    branchSource,
+    worktreeSource,
+    modelSource,
+    executorSource,
+    validationSource,
+    validationSummary,
+    summaryStatusTone,
+    preflightChecks,
+    preflightPassedCount,
+    preflightSummary,
+  } = controller;
+
   return (
     <div className="flex min-w-0 flex-col gap-4">
       {mutationError ? (
@@ -380,6 +492,10 @@ export function RunIntakeReviewPanel({
           <div className="flex flex-wrap gap-2">
             <RunStageSummaryChip label="Source" value={configSource} />
             <RunStageSummaryChip label="Created" value={createdFrom} />
+            <RunStageSummaryChip
+              value={hasFrontmatter ? "Frontmatter parsed" : "No frontmatter"}
+              tone={hasFrontmatter ? "success" : "warning"}
+            />
           </div>
         </RunStageSummaryCard>
         <RunStageSummaryCard
@@ -403,33 +519,54 @@ export function RunIntakeReviewPanel({
           icon={<Server className="h-4 w-4" />}
         />
         <RunStageSummaryCard
-          eyebrow="Validation"
+          eyebrow="Validation / Preflight"
           title={`${validationSummary?.errors ?? 0} errors`}
           description={`${validationSummary?.warnings ?? 0} warnings · ${validationSummary?.passed ?? 0} passed`}
           icon={<ShieldCheck className="h-4 w-4" />}
         >
-          <div className="flex flex-wrap gap-2">
-            <RunStageSummaryChip
-              label="Preflight"
-              value={preflightSummary}
-              tone={
-                preflightChecks.length > 0 &&
-                preflightPassedCount === preflightChecks.length
-                  ? "success"
-                  : "warning"
-              }
-            />
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-2">
+              <RunStageSummaryChip
+                label="Preflight"
+                value={preflightSummary}
+                tone={
+                  preflightChecks.length > 0 &&
+                  preflightPassedCount === preflightChecks.length
+                    ? "success"
+                    : "warning"
+                }
+              />
+            </div>
+            {preflightChecks.length > 0 ? (
+              <div className="grid gap-2">
+                {preflightChecks.map((check) => (
+                  <div
+                    key={check.label}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-2"
+                  >
+                    <div className="flex min-w-0 items-center gap-2 text-sm text-foreground">
+                      {check.pass ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                      )}
+                      <span className="min-w-0 flex-1">{check.label}</span>
+                    </div>
+                    <RunStageSummaryChip
+                      value={check.pass ? "OK" : "Review"}
+                      tone={check.pass ? "success" : "warning"}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Preflight not available from current intake data.
+              </p>
+            )}
           </div>
         </RunStageSummaryCard>
       </div>
-
-      {!hasFrontmatter ? (
-        <RelayStateBanner
-          tone="warning"
-          title="No YAML frontmatter parsed"
-          description="No YAML frontmatter was parsed from the submitted handoff. Relay used explicit MCP/API arguments and fallback defaults where available."
-        />
-      ) : null}
 
       <RunStageSection
         title="Run Configuration"
@@ -457,9 +594,12 @@ export function RunIntakeReviewPanel({
             <InlineHint
               source={repoSource}
               detail={
-                repoTarget && repoTarget !== repo
-                  ? <>Resolved intake target: <span className="font-mono text-[11px]">{repoTarget}</span></>
-                  : undefined
+                repoTarget && repoTarget !== repo ? (
+                  <>
+                    Resolved intake target:{" "}
+                    <span className="font-mono text-[11px]">{repoTarget}</span>
+                  </>
+                ) : undefined
               }
             />
           </div>
@@ -481,9 +621,12 @@ export function RunIntakeReviewPanel({
             <InlineHint
               source={branchSource}
               detail={
-                branchContext && branchContext !== branch
-                  ? <>Resolved intake branch: <span className="font-mono text-[11px]">{branchContext}</span></>
-                  : undefined
+                branchContext && branchContext !== branch ? (
+                  <>
+                    Resolved intake branch:{" "}
+                    <span className="font-mono text-[11px]">{branchContext}</span>
+                  </>
+                ) : undefined
               }
             />
           </div>
@@ -581,186 +724,6 @@ export function RunIntakeReviewPanel({
             <InlineHint source={validationSource} />
           </div>
         </div>
-      </RunStageSection>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <RunStageSection
-          title="Repo Workspace Preflight"
-          subtitle="Quick intake checks derived from the current validation summary."
-          icon={<CheckCircle2 className="h-4 w-4" />}
-        >
-          {preflightChecks.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              {preflightChecks.map((check) => (
-                <div
-                  key={check.label}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-2"
-                >
-                  <div className="flex items-center gap-2 text-sm text-foreground">
-                    {check.pass ? (
-                      <CheckCircle2 className="h-4 w-4" />
-                    ) : (
-                      <AlertTriangle className="h-4 w-4" />
-                    )}
-                    <span>{check.label}</span>
-                  </div>
-                  <RunStageSummaryChip
-                    value={check.pass ? "OK" : "Review"}
-                    tone={check.pass ? "success" : "warning"}
-                  />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Preflight not available from current intake data.
-            </p>
-          )}
-        </RunStageSection>
-
-        <RunStageSection
-          title="Validation Results"
-          subtitle="Keep the intake review compact while surfacing the current issues."
-          icon={<AlertTriangle className="h-4 w-4" />}
-          contentClassName="flex flex-col gap-3"
-        >
-          {validationIssues.length > 0 ? (
-            <div className="max-h-48 overflow-y-auto rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40">
-              <div className="flex flex-col divide-y divide-[var(--relay-row-border)]">
-                {validationIssues.map((issue, index) => (
-                  <div
-                    key={`${issue.code}-${index}`}
-                    className="flex items-start gap-3 px-3 py-2 text-sm"
-                  >
-                    <RunStageSummaryChip
-                      value={issue.severity.toUpperCase()}
-                      tone={issue.severity === "error" ? "danger" : "warning"}
-                    />
-                    <span className="min-w-0 flex-1 break-words text-foreground">
-                      {issue.message}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No validation issues found.
-            </p>
-          )}
-        </RunStageSection>
-      </div>
-
-      <RunStageSection
-        title="Handoff Evidence"
-        subtitle="Supporting previews for the submitted handoff and parsed frontmatter."
-        icon={<FileText className="h-4 w-4" />}
-        contentClassName="flex flex-col gap-4"
-      >
-        <div className="grid gap-4 xl:grid-cols-2">
-          <RunStagePreviewBlock
-            title="Planner Handoff Preview"
-            subtitle="Captured markdown from the intake packet."
-          >
-            {plannerHandoff?.preview
-              ? plannerHandoff.preview
-              : renderUnavailablePreview(
-                  plannerHandoff,
-                  "Handoff preview content is unavailable.",
-                )}
-          </RunStagePreviewBlock>
-
-          <RunStagePreviewBlock
-            title="Parsed Frontmatter Preview"
-            subtitle="Structured metadata extracted from the handoff."
-          >
-            {parsedFrontmatter?.preview
-              ? parsedFrontmatter.preview
-              : renderUnavailablePreview(
-                  parsedFrontmatter,
-                  "Parsed frontmatter preview is unavailable.",
-                )}
-          </RunStagePreviewBlock>
-        </div>
-      </RunStageSection>
-
-      <RunStageSection
-        title="Approval Gate"
-        subtitle="Approve the intake as-is, send it back for revision, or block the run."
-        icon={<ShieldCheck className="h-4 w-4" />}
-        contentClassName="flex flex-col gap-3"
-      >
-        {!isReviewable ? (
-          <RelayInlineState
-            tone="warning"
-            title="Intake review inactive"
-            description={`Run is currently in ${run.state || run.status} state.`}
-          />
-        ) : null}
-
-        {isReviewable ? (
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="review-notes" className="text-xs text-muted-foreground">
-                Review Notes (Optional)
-              </Label>
-              <Textarea
-                id="review-notes"
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                placeholder="Provide details about approval or revision requirements..."
-                className="min-h-24 resize-y"
-                disabled={isPending}
-              />
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                onClick={() => handleSubmit("approve")}
-                disabled={isPending}
-              >
-                <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
-                Approve Intake
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleSubmit("needs_revision")}
-                disabled={isPending}
-              >
-                <AlertTriangle className="mr-1.5 h-3.5 w-3.5" />
-                Needs Revision
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => handleSubmit("blocked")}
-                disabled={isPending}
-              >
-                <ShieldX className="mr-1.5 h-3.5 w-3.5" />
-                Block Run
-              </Button>
-            </div>
-          </div>
-        ) : null}
-
-        {run.status === "approved_for_prepare" || run.activeStep === "prepare" ? (
-          <RelayStateBanner
-            tone="success"
-            title="Intake Approved Successfully!"
-            description="This run is now approved for brief compilation and environment preparation."
-            action={
-              <Button size="sm" asChild>
-                <Link to="/runs/$runId/prepare" params={{ runId: run.id }}>
-                  Proceed to Compile / Render
-                  <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            }
-            icon={<CheckCircle2 className="h-4 w-4" />}
-          />
-        ) : null}
       </RunStageSection>
     </div>
   );

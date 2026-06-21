@@ -20,6 +20,7 @@ type InspectorPanels = Partial<Record<InspectorPanelKey, React.ReactNode>>
 interface RunWorkbenchLayoutProps {
   run: RelayRun
   currentStep?: RelayRunStep
+  stageActions?: React.ReactNode
   /** Left/main content area (step-specific sections) */
   mainContent: React.ReactNode
   /** Legacy fallback: stacked side content. Placed under the `logs` panel when `inspectorPanels` is not provided. */
@@ -136,6 +137,7 @@ function InspectorTabStrip({
 export function RunWorkbenchLayout({
   run,
   currentStep,
+  stageActions,
   mainContent,
   sideContent,
   inspectorPanels,
@@ -228,12 +230,15 @@ export function RunWorkbenchLayout({
 
       {/* Stage rail */}
       <div className="shrink-0 border-b border-[var(--relay-row-border)]">
-        <RunStepper
-          runId={run.id}
-          activeStep={activeShellStep}
-          isRunning={isRunning}
-          className="px-4"
-        />
+        <div className="flex min-h-10 items-center justify-between gap-3 px-4">
+          <RunStepper
+            runId={run.id}
+            activeStep={activeShellStep}
+            isRunning={isRunning}
+            className="min-w-0 flex-1"
+          />
+          {stageActions ? <div className="shrink-0">{stageActions}</div> : null}
+        </div>
       </div>
 
       {/* Full-height split pane */}

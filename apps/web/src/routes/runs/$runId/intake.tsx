@@ -1,11 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
+  type RelayArtifact,
+  type RelayRun,
+  type RelayRunEvent,
   runDetailQueryOptions,
   runArtifactsQueryOptions,
   runEventsQueryOptions,
 } from "@/features/relay-runs";
-import { RunIntakeReviewPanel } from "@/components/relay/RunIntakeReviewPanel";
+import {
+  RunIntakeReviewPanel,
+  RunIntakeStageActions,
+  useRunIntakeReviewController,
+} from "@/components/relay/RunIntakeReviewPanel";
 import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
 import {
   RunWorkbenchLoadFailedState,
@@ -49,6 +56,25 @@ function IntakePage() {
     );
   }
 
+  return (
+    <IntakeWorkbench
+      run={run}
+      artifacts={artifacts || []}
+      events={events || []}
+    />
+  );
+}
+
+function IntakeWorkbench({
+  run,
+  artifacts,
+  events,
+}: {
+  run: RelayRun;
+  artifacts: RelayArtifact[];
+  events: RelayRunEvent[];
+}) {
+
   // Format events as log preview lines
   const formattedLogs = events
     ? events.map((e) => {
@@ -66,6 +92,10 @@ function IntakePage() {
     lines: formattedLogs.slice(-50),
     truncated: formattedLogs.length > 50,
   };
+  const intakeReview = useRunIntakeReviewController({
+    run,
+    artifacts: artifacts || [],
+  });
 
   return (
     <RunWorkbenchLayout
@@ -76,7 +106,8 @@ function IntakePage() {
         logPreview,
       }}
       currentStep="intake"
-      mainContent={<RunIntakeReviewPanel run={run} artifacts={artifacts || []} />}
+      stageActions={<RunIntakeStageActions controller={intakeReview} />}
+      mainContent={<RunIntakeReviewPanel controller={intakeReview} />}
       inspectorPanels={{
         logs: <LogPreviewPanel logPreview={logPreview} />,
         artifacts: (
