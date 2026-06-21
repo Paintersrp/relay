@@ -34,11 +34,11 @@ const commandsToRun = [
   { step: 5, name: 'web-build', command: 'cd apps/web && npm run build', shell: true },
 ]
 
-function redact(value) {
+function redactCommandOutput(value) {
   return String(value ?? '')
     .replace(/(Authorization:\s*Bearer\s+)[^\s]+/gi, '$1[REDACTED_TOKEN]')
     .replace(/([?&](?:token|access_token|auth|signature|X-Amz-Signature)=)[^&\s]+/gi, '$1[REDACTED_TOKEN]')
-    .replace(/\b[A-Za-z0-9+/]{48,}={0,2}\b/g, '[REDACTED_SECRET]')
+    .replace(/\b[A-Za-z0-9+_-]{48,}={0,2}\b/g, '[REDACTED_SECRET]')
     .replace(/([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|API_KEY|ACCESS_KEY|PRIVATE_KEY|AUTH|COOKIE|SESSION|CSRF|JWT)[A-Z0-9_]*=)[^\s]+/gi, '$1[REDACTED_SECRET]')
 }
 
@@ -81,7 +81,6 @@ function parseStatusLines(raw) {
       const candidatePaths = pathPart.split(' -> ').map((value) => normalizeInputPath(value))
       return !candidatePaths.some((candidate) => isExcludedPath(candidate))
     })
-    .map((line) => redact(line))
     .sort((left, right) => left.localeCompare(right))
 }
 
@@ -136,8 +135,8 @@ function captureSourceSnapshot(baseCommitSha) {
     return leftKey.localeCompare(rightKey)
   })
 
-  const diffStat = redact(runGit(['diff', '--stat', 'HEAD', '--', '.', ...exclusionArgs]).trim())
-  const binaryDiff = redact(runGit(['diff', '--binary', 'HEAD', '--', '.', ...exclusionArgs]))
+  const diffStat = runGit(['diff', '--stat', 'HEAD', '--', '.', ...exclusionArgs]).trim()
+  const binaryDiff = runGit(['diff', '--binary', 'HEAD', '--', '.', ...exclusionArgs])
 
   const untrackedFileDigests = untrackedPaths.map((entry) => {
     const absolutePath = path.resolve(repoRoot, entry)
@@ -170,13 +169,12 @@ function capturePostReportStatus() {
   return runGit(['status', '--porcelain=v1', '--untracked-files=normal'])
     .split(/\r?\n/)
     .filter(Boolean)
-    .map((line) => redact(line))
     .sort((left, right) => left.localeCompare(right))
 }
 
 function outputTail(command, stdout, stderr, exitCode) {
   const combined = `$ ${command}\n${stdout || ''}${stderr || ''}exit_code: ${exitCode}\n`
-  return redact(combined.split(/\r?\n/).slice(-40).join('\n'))
+  return redactCommandOutput(combined.split(/\r?\n/).slice(-40).join('\n'))
 }
 
 function runValidationCommand(spec) {

@@ -1,14 +1,14 @@
 # Latest Relay Validation Report
 
 - status: passed
-- base_commit: f14ecb4ee9dd17122580dd56f438d00a9e7535c5
-- validated_source_snapshot: 224f2f99d19a425e58b357695a1bfd52b998ad8f46dfa5568e871d6bb2b79c1c
+- base_commit: 1b78c2ad1b737c4a14b5f3d936241294c1c330e0
+- validated_source_snapshot: 47ffffa7e6df4dcd359a4390f1baec6884d29e56985803409018ce941eda7480
 - worktree_dirty: true
-- created_at: 2026-06-21T11:51:17Z
+- created_at: 2026-06-21T12:10:07Z
 
 ## Validated source changes
 
-- ?? apps/web/src/components/relay/RunStagePrimitives.tsx
+- M scripts/validate.sh
 
 ## Commands
 
