@@ -14,6 +14,29 @@ export type RelayPlanRegistryFilter =
   | "complete"
   | "abandoned";
 
+export interface PlanProgressSummary {
+  total: number;
+  completed: number;
+  skipped: number;
+  terminal: number;
+  label: string;
+  dotCount: number;
+  filledDots: number;
+}
+
+export type PlanRegistryPassSummary =
+  | {
+      kind: "current" | "next";
+      passId?: string;
+      title: string;
+      subtitle?: string;
+    }
+  | {
+      kind: "fallback";
+      title: string;
+      subtitle?: string;
+    };
+
 export type RelayPlanAttention =
   | "none"
   | "completion-ready"
@@ -30,6 +53,10 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 const relativeDateFormatter = new Intl.RelativeTimeFormat("en-US", {
   numeric: "auto",
 });
+
+function clampCount(value: number, total: number): number {
+  return Math.min(total, Math.max(0, value));
+}
 
 export function isTerminalPassStatus(status: PlanAPIPassStatus): boolean {
   return status === "completed" || status === "skipped";
@@ -191,6 +218,57 @@ export function getPlanStatusVariant(status: PlanAPIStatus): BadgeProps["variant
     case "abandoned":
       return "destructive";
   }
+}
+
+export function getPlanProgressSummary(plan: PlanAPIReadPlan): PlanProgressSummary {
+  const total = Math.max(0, plan.passCount ?? 0);
+  const completed = clampCount(
+    typeof plan.completedPassCount === "number"
+      ? plan.completedPassCount
+      : plan.completionReady
+        ? total
+        : 0,
+    total,
+  );
+  const skipped = clampCount(plan.skippedPassCount ?? 0, total);
+  const terminal = clampCount(completed + skipped, total);
+
+  return {
+    total,
+    completed,
+    skipped,
+    terminal,
+    label: `${terminal} / ${total}`,
+    dotCount: total,
+    filledDots: terminal,
+  };
+}
+
+export function getPlanRegistryPassSummary(
+  plan: PlanAPIReadPlan,
+): PlanRegistryPassSummary {
+  if (plan.currentPassName || plan.currentPassId || plan.currentPassGoal) {
+    return {
+      kind: "current",
+      passId: plan.currentPassId,
+      title: plan.currentPassName ?? "Current pass",
+      subtitle: plan.currentPassGoal,
+    };
+  }
+
+  if (plan.nextPassName || plan.nextPassId || plan.nextPassGoal) {
+    return {
+      kind: "next",
+      passId: plan.nextPassId,
+      title: plan.nextPassName ?? "Next pass",
+      subtitle: plan.nextPassGoal,
+    };
+  }
+
+  return {
+    kind: "fallback",
+    title: "Open plan for pass detail",
+  };
 }
 
 export function getPassStatusVariant(

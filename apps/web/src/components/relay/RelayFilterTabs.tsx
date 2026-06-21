@@ -12,6 +12,9 @@ interface RelayFilterTabsProps {
   items: RelayFilterTabItem[];
   onValueChange: (value: string) => void;
   className?: string;
+  listClassName?: string;
+  triggerClassName?: string;
+  countClassName?: string;
 }
 
 export function RelayFilterTabs({
@@ -19,22 +22,33 @@ export function RelayFilterTabs({
   items,
   onValueChange,
   className,
+  listClassName,
+  triggerClassName,
+  countClassName,
 }: RelayFilterTabsProps) {
   return (
     <Tabs value={value} onValueChange={onValueChange} className={className}>
       <TabsList
         variant="line"
-        className="w-full justify-start gap-3 overflow-x-auto rounded-none border-b border-[var(--relay-row-border)] px-0 pb-1"
+        className={cn(
+          "w-full justify-start gap-3 overflow-x-auto rounded-none border-b border-[var(--relay-row-border)] px-0 pb-1",
+          listClassName,
+        )}
       >
         {items.map((item) => (
           <TabsTrigger
             key={item.value}
             value={item.value}
-            className="shrink-0 rounded-none px-0 pb-2 text-xs font-medium"
+            className={cn(
+              "shrink-0 rounded-none px-0 pb-2 text-xs font-medium",
+              triggerClassName,
+            )}
           >
             <span>{item.label}</span>
             {typeof item.count === "number" ? (
-              <span className={cn("text-[11px] text-muted-foreground")}>
+              <span
+                className={cn("text-[11px] text-muted-foreground", countClassName)}
+              >
                 {item.count}
               </span>
             ) : null}
