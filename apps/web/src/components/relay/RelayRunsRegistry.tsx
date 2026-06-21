@@ -1,16 +1,15 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronRight } from "lucide-react";
 
-import { RelayAttentionBadge } from "@/components/relay/RelayAttentionBadge";
 import {
   RelayFilterTabs,
   type RelayFilterTabItem,
 } from "@/components/relay/RelayFilterTabs";
-import { RelayMonoText } from "@/components/relay/RelayMeta";
-import { RelayStageLabel } from "@/components/relay/RelayStageLabel";
-import { StatusBadge } from "@/components/relay/StatusBadge";
+import {
+  RelayRunCompactRow,
+  RelayRunTableRow,
+} from "@/components/relay/RelayRunsRegistryRows";
 import {
   getRelayAttentionReason,
   type RelayAttentionReason,
@@ -19,9 +18,6 @@ import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  formatRunDate,
-  formatRunDateRelative,
-  getActiveStepRoute,
   type RelayRun,
   type RelayRunStatus,
 } from "@/features/relay-runs";
@@ -91,82 +87,6 @@ function compareRunsByUpdatedAtDesc(a: RelayRun, b: RelayRun): number {
 const registryColumns =
   "minmax(20rem,2.4fr) minmax(10rem,1fr) minmax(9rem,0.8fr) minmax(12rem,1fr) minmax(8rem,0.8fr) minmax(10rem,0.9fr) 2.5rem";
 
-function RelayRunCompactRow({ run }: { run: RelayRun }) {
-  const to = getActiveStepRoute(run);
-  const attentionReason = getRunAttentionReason(run);
-  const attentionCountValue =
-    attentionReason === "validation-failed" && run.validationSummary.errors > 0
-      ? run.validationSummary.errors
-      : undefined;
-
-  return (
-    <Link
-      to={to}
-      aria-label={`Open workbench for ${run.title}`}
-      className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-3 transition-colors hover:bg-[var(--relay-panel-hover-bg)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--relay-accent)]"
-    >
-      <div className="flex min-w-0 items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-foreground">
-            {run.title}
-          </p>
-          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <RelayMonoText className="text-[11px] text-muted-foreground">
-              {run.id}
-            </RelayMonoText>
-            {run.packetId ? (
-              <RelayMonoText className="min-w-0 break-words text-[11px] text-muted-foreground">
-                {run.packetId}
-              </RelayMonoText>
-            ) : null}
-          </div>
-        </div>
-        <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <StatusBadge status={run.status} />
-        <RelayStageLabel step={run.activeStep} />
-        <RelayAttentionBadge
-          reason={attentionReason}
-          compact
-          count={attentionCountValue}
-        />
-      </div>
-
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <div className="min-w-0">
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-            Executor
-          </p>
-          <RelayMonoText className="mt-1 block break-words text-[11px] text-foreground">
-            {run.executor}
-          </RelayMonoText>
-        </div>
-        <div className="min-w-0">
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-            Updated
-          </p>
-          <span
-            className="mt-1 block text-[11px] text-muted-foreground"
-            title={formatRunDate(run.updatedAt)}
-          >
-            {formatRunDateRelative(run.updatedAt)}
-          </span>
-        </div>
-        <div className="min-w-0">
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-            Attention
-          </p>
-          <span className="mt-1 block text-[11px] text-muted-foreground">
-            {attentionReason === "none" ? "None" : "Needs review"}
-          </span>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
 export function RelayRunsRegistry({
   runs,
   isLoading = false,
@@ -231,7 +151,7 @@ export function RelayRunsRegistry({
             {rows.length}
           </span>
           {attentionCount > 0 ? (
-            <span className="font-mono text-[11px] text-warning">
+            <span className="font-mono text-[11px] text-[var(--warning)]">
               {attentionCount} need attention
             </span>
           ) : null}
@@ -373,9 +293,23 @@ export function RelayRunsRegistry({
           <div className="min-h-0 flex h-full flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto p-3 lg:hidden">
               <div className="flex flex-col gap-3">
-                {filteredRuns.map((run) => (
-                  <RelayRunCompactRow key={run.id} run={run} />
-                ))}
+                {filteredRuns.map((run) => {
+                  const attentionReason = getRunAttentionReason(run);
+                  const attentionCountValue =
+                    attentionReason === "validation-failed" &&
+                    run.validationSummary.errors > 0
+                      ? run.validationSummary.errors
+                      : undefined;
+
+                  return (
+                    <RelayRunCompactRow
+                      key={run.id}
+                      run={run}
+                      attentionReason={attentionReason}
+                      attentionCountValue={attentionCountValue}
+                    />
+                  );
+                })}
               </div>
             </div>
 
@@ -404,7 +338,6 @@ export function RelayRunsRegistry({
                   >
                     {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                       const run = filteredRuns[virtualRow.index];
-                      const to = getActiveStepRoute(run);
                       const attentionReason = getRunAttentionReason(run);
                       const attentionCountValue =
                         attentionReason === "validation-failed" &&
@@ -413,73 +346,17 @@ export function RelayRunsRegistry({
                           : undefined;
 
                       return (
-                        <Link
+                        <RelayRunTableRow
                           key={run.id}
-                          to={to}
-                          aria-label={`Open workbench for ${run.title}`}
-                          className="absolute left-0 grid w-full items-center border-b border-[var(--relay-row-border)] text-sm transition-colors hover:bg-[var(--relay-panel-hover-bg)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--relay-accent)]"
+                          run={run}
+                          attentionReason={attentionReason}
+                          attentionCountValue={attentionCountValue}
+                          columns={registryColumns}
                           style={{
-                            gridTemplateColumns: registryColumns,
                             height: `${virtualRow.size}px`,
                             transform: `translateY(${virtualRow.start}px)`,
                           }}
-                        >
-                          <div className="min-w-0 px-4 py-3">
-                            <div className="min-w-0 space-y-1">
-                              <p className="truncate font-medium text-foreground">
-                                {run.title}
-                              </p>
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                <RelayMonoText className="text-[11px] text-muted-foreground">
-                                  {run.id}
-                                </RelayMonoText>
-                                {run.packetId ? (
-                                  <>
-                                    <span className="text-[11px] text-muted-foreground">
-                                      /
-                                    </span>
-                                    <RelayMonoText className="truncate text-[11px] text-muted-foreground">
-                                      {run.packetId}
-                                    </RelayMonoText>
-                                  </>
-                                ) : null}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="px-4 py-3">
-                            <StatusBadge status={run.status} />
-                          </div>
-
-                          <div className="px-4 py-3">
-                            <RelayStageLabel step={run.activeStep} />
-                          </div>
-
-                          <div className="px-4 py-3">
-                            <RelayMonoText>{run.executor}</RelayMonoText>
-                          </div>
-
-                          <div className="px-4 py-3">
-                            <span
-                              className="text-xs text-muted-foreground"
-                              title={formatRunDate(run.updatedAt)}
-                            >
-                              {formatRunDateRelative(run.updatedAt)}
-                            </span>
-                          </div>
-
-                          <div className="px-4 py-3">
-                            <RelayAttentionBadge
-                              reason={attentionReason}
-                              compact
-                              count={attentionCountValue}
-                            />
-                          </div>
-
-                          <div className="flex justify-end px-4 py-3 text-muted-foreground">
-                            <ChevronRight className="size-4" />
-                          </div>
-                        </Link>
+                        />
                       );
                     })}
                   </div>

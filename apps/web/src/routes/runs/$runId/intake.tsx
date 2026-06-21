@@ -52,7 +52,6 @@ export const Route = createFileRoute("/runs/$runId/intake")({
 function IntakePage() {
   const { runId } = Route.useParams();
 
-  // Real data loading through the Pass 2 API client queries
   const {
     data: run,
     isLoading: isLoadingRun,

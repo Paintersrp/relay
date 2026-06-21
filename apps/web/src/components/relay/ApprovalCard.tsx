@@ -49,14 +49,13 @@ export function ApprovalCard({ gate, className }: ApprovalCardProps) {
         )}
         {gate.state === 'pending' && (
           <>
-            {/* Pass 1: approval actions are disabled mock controls. Real submission is Pass 4. */}
             <div className="flex items-center gap-2 mt-1">
               <Button
                 variant="outline"
                 size="sm"
                 disabled
                 className="gap-1.5 opacity-50 cursor-not-allowed"
-                title="Approval submission is not implemented in Pass 1"
+                title="Approval submission is not available yet"
               >
                 <ThumbsUp className="w-3.5 h-3.5" />
                 Approve
@@ -66,14 +65,14 @@ export function ApprovalCard({ gate, className }: ApprovalCardProps) {
                 size="sm"
                 disabled
                 className="gap-1.5 opacity-50 cursor-not-allowed text-destructive/60"
-                title="Rejection is not implemented in Pass 1"
+                title="Rejection is not available yet"
               >
                 <ThumbsDown className="w-3.5 h-3.5" />
                 Reject
               </Button>
             </div>
             <p className="text-xs text-muted-foreground/60">
-              Approval gate actions are read-only in Pass 1. Real handoff submission wiring is Pass 4.
+              Approval gate actions are read-only until submission wiring is available.
             </p>
           </>
         )}

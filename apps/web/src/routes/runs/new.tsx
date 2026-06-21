@@ -401,19 +401,17 @@ function NewRunPage() {
               <div className="flex min-h-0 flex-1 flex-col">
                 {!hasHandoff ? (
                   <>
-                    <div className="flex flex-1 items-start justify-center px-8 pt-[28vh] text-center">
-                      <div className="flex max-w-xs flex-col items-center text-center">
-                        <Circle className="h-8 w-8 text-muted-foreground/30" />
-                        <p className="mt-4 text-sm text-foreground">
-                          Metadata will be extracted after parsing.
-                        </p>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          Paste or upload a Planner handoff to review derived fields before creating the run.
-                        </p>
-                      </div>
+                    <div className="flex flex-1 items-start justify-center px-5 pt-6 lg:pt-[24vh]">
+                      <RelayStateBanner
+                        tone="empty"
+                        title="Awaiting Planner handoff"
+                        description="Paste or upload a Planner handoff to review derived fields before creating the run."
+                        density="compact"
+                        className="w-full max-w-sm"
+                      />
                     </div>
                     <div className="border-t border-[var(--relay-row-border)] px-5 py-3 text-xs text-muted-foreground">
-                      Awaiting Planner handoff
+                      Metadata extraction pending
                     </div>
                   </>
                 ) : (

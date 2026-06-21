@@ -42,22 +42,22 @@ export function ValidationPanel({ summary, className }: ValidationPanelProps) {
       <CardContent className="p-3 pt-0">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
-            <XCircle className={cn('w-4 h-4', hasErrors ? 'text-red-400' : 'text-muted-foreground/40')} />
-            <span className={cn('text-sm font-medium tabular-nums', hasErrors ? 'text-red-400' : 'text-muted-foreground')}>
+            <XCircle className={cn('w-4 h-4', hasErrors ? 'text-[var(--destructive)]' : 'text-muted-foreground/40')} />
+            <span className={cn('text-sm font-medium tabular-nums', hasErrors ? 'text-[var(--destructive)]' : 'text-muted-foreground')}>
               {errors}
             </span>
             <span className="text-xs text-muted-foreground">errors</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <AlertTriangle className={cn('w-4 h-4', hasWarnings ? 'text-yellow-400' : 'text-muted-foreground/40')} />
-            <span className={cn('text-sm font-medium tabular-nums', hasWarnings ? 'text-yellow-400' : 'text-muted-foreground')}>
+            <AlertTriangle className={cn('w-4 h-4', hasWarnings ? 'text-[var(--warning)]' : 'text-muted-foreground/40')} />
+            <span className={cn('text-sm font-medium tabular-nums', hasWarnings ? 'text-[var(--warning)]' : 'text-muted-foreground')}>
               {warnings}
             </span>
             <span className="text-xs text-muted-foreground">warnings</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <CheckCircle2 className={cn('w-4 h-4', passed > 0 ? 'text-emerald-400' : 'text-muted-foreground/40')} />
-            <span className={cn('text-sm font-medium tabular-nums', passed > 0 ? 'text-emerald-400' : 'text-muted-foreground')}>
+            <CheckCircle2 className={cn('w-4 h-4', passed > 0 ? 'text-[var(--success)]' : 'text-muted-foreground/40')} />
+            <span className={cn('text-sm font-medium tabular-nums', passed > 0 ? 'text-[var(--success)]' : 'text-muted-foreground')}>
               {passed}
             </span>
             <span className="text-xs text-muted-foreground">passed</span>

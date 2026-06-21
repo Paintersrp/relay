@@ -1,7 +1,3 @@
-// ============================================================
-// Relay Mock Data — Pass 2 normalized mock runs.
-// ============================================================
-
 import type { RelayRun, RelayArtifact, RelayRunEvent } from "./types";
 
 const STEP_LABELS = {
@@ -14,9 +10,9 @@ const STEP_LABELS = {
 export const mockRelayRuns: RelayRun[] = [
   {
     id: "intake_needs_review",
-    name: "Add run workbench shell — Pass 1 scaffold",
-    title: "Add run workbench shell — Pass 1 scaffold",
-    packetId: "packet-2026-06-16-relay-pass-1-tanstack-start-workbench-shell",
+    name: "Add run workbench shell scaffold",
+    title: "Add run workbench shell scaffold",
+    packetId: "packet-2026-06-16-relay-run-workbench-shell",
     repo: "Paintersrp/relay",
     branch: "feature/tanstack-frontend",
     worktree: "relay-frontend-wt",
@@ -47,7 +43,7 @@ export const mockRelayRuns: RelayRun[] = [
     approvalGate: {
       label: "Intake Review",
       state: "pending",
-      note: "Pass 2 — approval gates are mock/read-only. Real gate wiring is Pass 4.",
+      note: "Approval gates are read-only until submission wiring is available.",
     },
     artifacts: [
       {
@@ -104,9 +100,9 @@ export const mockRelayRuns: RelayRun[] = [
   },
   {
     id: "brief_ready_for_review",
-    name: "Define frontend API contract — Pass 2 schema",
-    title: "Define frontend API contract — Pass 2 schema",
-    packetId: "packet-2026-06-16-relay-pass-2-frontend-api-contract",
+    name: "Define frontend API contract schema",
+    title: "Define frontend API contract schema",
+    packetId: "packet-2026-06-16-relay-frontend-api-contract",
     repo: "Paintersrp/relay",
     branch: "feature/api-contract",
     worktree: "relay-api-contract-wt",
@@ -136,7 +132,7 @@ export const mockRelayRuns: RelayRun[] = [
     approvalGate: {
       label: "Brief Review",
       state: "pending",
-      note: "Pass 2 — approval gates are mock/read-only. Real gate wiring is Pass 4.",
+      note: "Approval gates are read-only until submission wiring is available.",
     },
     artifacts: [
       {
@@ -202,9 +198,9 @@ export const mockRelayRuns: RelayRun[] = [
   },
   {
     id: "executor_running",
-    name: "Add read-only Go backend JSON endpoints — Pass 3",
-    title: "Add read-only Go backend JSON endpoints — Pass 3",
-    packetId: "packet-2026-06-16-relay-pass-3-backend-json-endpoints",
+    name: "Add read-only Go backend JSON endpoints",
+    title: "Add read-only Go backend JSON endpoints",
+    packetId: "packet-2026-06-16-relay-backend-json-endpoints",
     repo: "Paintersrp/relay",
     branch: "feature/backend-json",
     worktree: "relay-backend-json-wt",
@@ -312,7 +308,7 @@ export const mockRelayRuns: RelayRun[] = [
     approvalGate: {
       label: "Audit Decision",
       state: "pending",
-      note: "Pass 2 — approval gates are mock/read-only. Real gate wiring is Pass 4.",
+      note: "Approval gates are read-only until submission wiring is available.",
     },
     artifacts: [
       {
@@ -399,7 +395,6 @@ export function getActiveStepRoute(run: RelayRun): string {
   return `/runs/${run.id}/${run.activeStep}`;
 }
 
-// Pass 2 helpers
 export function getMockRelayRuns(): RelayRun[] {
   return JSON.parse(JSON.stringify(mockRelayRuns));
 }

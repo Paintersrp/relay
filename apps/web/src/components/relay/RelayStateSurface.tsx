@@ -59,18 +59,18 @@ const TONE_STYLES: Record<
   },
   warning: {
     icon: AlertTriangle,
-    accentClass: 'text-yellow-400',
-    borderClass: 'border-l-yellow-500/60',
+    accentClass: 'text-[var(--warning)]',
+    borderClass: 'border-l-[var(--warning)]',
   },
   danger: {
     icon: AlertCircle,
-    accentClass: 'text-red-400',
-    borderClass: 'border-l-red-500/60',
+    accentClass: 'text-[var(--destructive)]',
+    borderClass: 'border-l-[var(--destructive)]',
   },
   success: {
     icon: CheckCircle2,
-    accentClass: 'text-emerald-400',
-    borderClass: 'border-l-emerald-500/60',
+    accentClass: 'text-[var(--success)]',
+    borderClass: 'border-l-[var(--success)]',
   },
   blocked: {
     icon: Ban,

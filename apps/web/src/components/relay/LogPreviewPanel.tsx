@@ -36,19 +36,19 @@ export function LogPreviewPanel({ logPreview, className }: LogPreviewPanelProps)
             <div className="min-w-0 p-3 font-mono text-xs">
               <div className="overflow-x-auto">
                 <div className="min-w-max space-y-0.5">
-              {logPreview.lines.map((line, i) => (
-                <div
-                  key={i}
-                  className="text-emerald-300/80 leading-relaxed whitespace-pre"
-                >
-                  {line}
-                </div>
-              ))}
-              {logPreview.truncated && (
-                <div className="text-muted-foreground/50 italic">
-                  … output truncated. Full log available in Pass 3.
-                </div>
-              )}
+                  {logPreview.lines.map((line, i) => (
+                    <div
+                      key={i}
+                      className="text-emerald-300/80 leading-relaxed whitespace-pre"
+                    >
+                      {line}
+                    </div>
+                  ))}
+                  {logPreview.truncated && (
+                    <div className="text-muted-foreground/50 italic">
+                      … output truncated. Inspect the run logs or artifacts for full output.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

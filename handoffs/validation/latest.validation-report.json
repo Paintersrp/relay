@@ -1,31 +1,96 @@
 {
-  "schema_version": "2.0.0",
+  "schema_version": "3.0.0",
   "report_kind": "relay_make_validate_latest",
   "status": "passed",
-  "created_at": "2026-06-21T10:11:28Z",
-  "base_commit_short": "c359b21dfac4",
-  "base_commit_sha": "c359b21dfac4255714100a90be9ac1224304584e",
-  "local_output_dir": "data/validation/c359b21dfac4/20260621T101128Z",
+  "created_at": "2026-06-21T10:40:05Z",
+  "base_commit_short": "ab8544196e05",
+  "base_commit_sha": "ab8544196e05fedf7f56c2d8de4277845e7833ca",
   "validated_source_snapshot": {
-    "captured_at": "2026-06-21T10:12:07.939Z",
+    "captured_at": "2026-06-21T10:40:35.790Z",
     "model": "base_commit_plus_worktree_diff_excluding_validation_report_artifacts",
     "worktree_dirty": true,
-    "diff_sha256": "c8a097d846854bc282fb9f4f75061c406f5d4fa00c4cc1ba79bcb9bacd5a7f65",
+    "diff_sha256": "0949968cd7b3b3221227a7491f241233efbd7ebde3e2bf403b575c45e0ea0e1b",
     "diff_name_status": [
+      {
+        "status": "M",
+        "path": "apps/web/src/components/relay/ApprovalCard.tsx"
+      },
+      {
+        "status": "M",
+        "path": "apps/web/src/components/relay/LogPreviewPanel.tsx"
+      },
+      {
+        "status": "M",
+        "path": "apps/web/src/components/relay/RelayRunsRegistry.tsx"
+      },
+      {
+        "status": "??",
+        "path": "apps/web/src/components/relay/RelayRunsRegistryRows.tsx"
+      },
+      {
+        "status": "M",
+        "path": "apps/web/src/components/relay/RelayStateSurface.tsx"
+      },
+      {
+        "status": "M",
+        "path": "apps/web/src/components/relay/RunEvidenceBrowser.tsx"
+      },
+      {
+        "status": "M",
+        "path": "apps/web/src/components/relay/ValidationPanel.tsx"
+      },
+      {
+        "status": "M",
+        "path": "apps/web/src/features/relay-runs/mock-data.ts"
+      },
+      {
+        "status": "M",
+        "path": "apps/web/src/routes/runs/$runId/intake.tsx"
+      },
+      {
+        "status": "M",
+        "path": "apps/web/src/routes/runs/new.tsx"
+      },
+      {
+        "status": "M",
+        "path": "apps/web/src/styles.css"
+      },
       {
         "status": "M",
         "path": "scripts/validate.sh"
       }
     ],
-    "diff_stat": "scripts/validate.sh | 289 ++++++++++++++++++++++++++++++++++++++++++++++------\n 1 file changed, 257 insertions(+), 32 deletions(-)",
+    "diff_stat": "apps/web/src/components/relay/ApprovalCard.tsx     |   7 +-\n apps/web/src/components/relay/LogPreviewPanel.tsx  |  26 +-\n .../web/src/components/relay/RelayRunsRegistry.tsx | 179 ++----------\n .../web/src/components/relay/RelayStateSurface.tsx |  12 +-\n .../src/components/relay/RunEvidenceBrowser.tsx    |  10 +-\n apps/web/src/components/relay/ValidationPanel.tsx  |  12 +-\n apps/web/src/features/relay-runs/mock-data.ts      |  29 +-\n apps/web/src/routes/runs/$runId/intake.tsx         |   1 -\n apps/web/src/routes/runs/new.tsx                   |  20 +-\n apps/web/src/styles.css                            | 140 +++++----\n scripts/validate.sh                                | 313 ++++++---------------\n 11 files changed, 246 insertions(+), 503 deletions(-)",
     "status_porcelain": [
-      " M scripts/validate.sh"
+      " M [REDACTED_SECRET].tsx",
+      " M apps/web/src/components/relay/ApprovalCard.tsx",
+      " M apps/web/src/components/relay/LogPreviewPanel.tsx",
+      " M apps/web/src/components/relay/RelayRunsRegistry.tsx",
+      " M apps/web/src/components/relay/RelayStateSurface.tsx",
+      " M apps/web/src/components/relay/ValidationPanel.tsx",
+      " M apps/web/src/features/relay-runs/mock-data.ts",
+      " M apps/web/src/routes/runs/$runId/intake.tsx",
+      " M apps/web/src/routes/runs/new.tsx",
+      " M apps/web/src/styles.css",
+      " M scripts/validate.sh",
+      "?? [REDACTED_SECRET].tsx"
     ]
   },
   "post_report_status_porcelain": [
+    " M [REDACTED_SECRET].tsx",
+    " M apps/web/src/components/relay/ApprovalCard.tsx",
+    " M apps/web/src/components/relay/LogPreviewPanel.tsx",
+    " M apps/web/src/components/relay/RelayRunsRegistry.tsx",
+    " M apps/web/src/components/relay/RelayStateSurface.tsx",
+    " M apps/web/src/components/relay/ValidationPanel.tsx",
+    " M apps/web/src/features/relay-runs/mock-data.ts",
+    " M apps/web/src/routes/runs/$runId/intake.tsx",
+    " M apps/web/src/routes/runs/new.tsx",
+    " M apps/web/src/styles.css",
     " M handoffs/validation/latest.validation-report.json",
     " M handoffs/validation/latest.validation-summary.md",
-    " M scripts/validate.sh"
+    " M scripts/validate.sh",
+    "?? [REDACTED_SECRET].tsx"
   ],
   "report_files": [
     "handoffs/validation/latest.validation-report.json",
@@ -36,46 +101,51 @@
       "step": 1,
       "name": "go-fmt-executor",
       "command": "go fmt ./internal/executor",
+      "started_at": "2026-06-21T10:40:05.191Z",
+      "completed_at": "2026-06-21T10:40:05.925Z",
       "exit_code": 0,
       "status": "passed",
-      "local_log": "data/validation/c359b21dfac4/20260621T101128Z/01-go-fmt-executor.log",
       "output_tail": "$ go fmt ./internal/executor\nexit_code: 0\n"
     },
     {
       "step": 2,
       "name": "go-test-executor",
       "command": "go test ./internal/executor/...",
+      "started_at": "2026-06-21T10:40:05.925Z",
+      "completed_at": "2026-06-21T10:40:07.248Z",
       "exit_code": 0,
       "status": "passed",
-      "local_log": "data/validation/c359b21dfac4/20260621T101128Z/02-go-test-executor.log",
       "output_tail": "$ go test ./internal/executor/...\nok  \trelay/internal/executor\t(cached)\nexit_code: 0\n"
     },
     {
       "step": 3,
       "name": "go-test-all",
       "command": "go test ./...",
+      "started_at": "2026-06-21T10:40:07.248Z",
+      "completed_at": "2026-06-21T10:40:16.745Z",
       "exit_code": 0,
       "status": "passed",
-      "local_log": "data/validation/c359b21dfac4/20260621T101128Z/03-go-test-all.log",
-      "output_tail": "$ go test ./...\n?   \trelay/cmd/mcp-smoke\t[no test files]\n?   \trelay/cmd/mcpserver\t[no test files]\n?   \trelay/cmd/relay\t[no test files]\nok  \trelay/internal/api\t(cached)\n?   \trelay/internal/artifacts\t[no test files]\nok  \trelay/internal/auditor\t(cached)\nok  \trelay/internal/compiler\t(cached)\nok  \trelay/internal/config\t(cached)\nok  \trelay/internal/db\t(cached)\n?   \trelay/internal/devreload\t[no test files]\nok  \trelay/internal/events\t(cached)\nok  \trelay/internal/executor\t(cached)\nok  \trelay/internal/handlers\t5.160s\nok  \trelay/internal/instructions\t(cached)\nok  \trelay/internal/intake\t(cached)\nok  \trelay/internal/mcp\t(cached)\nok  \trelay/internal/pipeline\t(cached)\nok  \trelay/internal/renderer\t(cached)\nok  \trelay/internal/repairer\t3.739s\nok  \trelay/internal/repos\t(cached)\nok  \trelay/internal/server\t(cached)\n?   \trelay/internal/store\t[no test files]\n?   \trelay/internal/store/generated\t[no test files]\nok  \trelay/internal/validation\t(cached)\nok  \trelay/internal/validationrunner\t(cached)\nok  \trelay/internal/views\t(cached)\nexit_code: 0\n"
+      "output_tail": "$ go test ./...\n?   \trelay/cmd/mcp-smoke\t[no test files]\n?   \trelay/cmd/mcpserver\t[no test files]\n?   \trelay/cmd/relay\t[no test files]\nok  \trelay/internal/api\t(cached)\n?   \trelay/internal/artifacts\t[no test files]\nok  \trelay/internal/auditor\t(cached)\nok  \trelay/internal/compiler\t(cached)\nok  \trelay/internal/config\t(cached)\nok  \trelay/internal/db\t(cached)\n?   \trelay/internal/devreload\t[no test files]\nok  \trelay/internal/events\t(cached)\nok  \trelay/internal/executor\t(cached)\nok  \trelay/internal/handlers\t2.619s\nok  \trelay/internal/instructions\t(cached)\nok  \trelay/internal/intake\t(cached)\nok  \trelay/internal/mcp\t(cached)\nok  \trelay/internal/pipeline\t(cached)\nok  \trelay/internal/renderer\t(cached)\nok  \trelay/internal/repairer\t2.159s\nok  \trelay/internal/repos\t(cached)\nok  \trelay/internal/server\t(cached)\n?   \trelay/internal/store\t[no test files]\n?   \trelay/internal/store/generated\t[no test files]\nok  \trelay/internal/validation\t(cached)\nok  \trelay/internal/validationrunner\t(cached)\nok  \trelay/internal/views\t(cached)\nexit_code: 0\n"
     },
     {
       "step": 4,
       "name": "web-typecheck",
       "command": "cd apps/web && npm run typecheck",
+      "started_at": "2026-06-21T10:40:16.745Z",
+      "completed_at": "2026-06-21T10:40:26.571Z",
       "exit_code": 0,
       "status": "passed",
-      "local_log": "data/validation/c359b21dfac4/20260621T101128Z/04-web-typecheck.log",
       "output_tail": "$ cd apps/web && npm run typecheck\n\n> relay-web@0.1.0 typecheck\n> tsc --noEmit\n\nexit_code: 0\n"
     },
     {
       "step": 5,
       "name": "web-build",
       "command": "cd apps/web && npm run build",
+      "started_at": "2026-06-21T10:40:26.571Z",
+      "completed_at": "2026-06-21T10:40:35.790Z",
       "exit_code": 0,
       "status": "passed",
-      "local_log": "data/validation/c359b21dfac4/20260621T101128Z/05-web-build.log",
-      "output_tail": "\u001b[32m✓ built in 3.63s\u001b[39m\n\u001b[36mvite v8.0.16 \u001b[32mbuilding ssr environment for production...\u001b[36m\u001b[39m\n\u001b[2K\rtransforming...\n[@tanstack/devtools-vite] Removed devtools code from: /src/routes/__root.tsx\n\n✓ 102 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/server/assets/start-CKmjcLTR.js                        0.22 kB │ gzip:  0.17 kB\ndist/server/assets/empty-plugin-adapters-DzrEkdBF.js        0.28 kB │ gzip:  0.18 kB\ndist/server/assets/_runId-CKFcRbG2.js                       0.33 kB │ gzip:  0.22 kB\ndist/server/assets/audit-B8-mZqmg.js                        0.35 kB │ gzip:  0.22 kB\ndist/server/assets/intake-Dsz5Y_ly.js                       0.35 kB │ gzip:  0.22 kB\ndist/server/assets/execute-DF3F4VSO.js                      0.35 kB │ gzip:  0.22 kB\ndist/server/assets/prepare-BHVFkngE.js                      0.35 kB │ gzip:  0.22 kB\ndist/server/assets/skeleton-CUn9_ilv.js                     0.36 kB │ gzip:  0.26 kB\ndist/server/assets/label-BQt6ba5O.js                        0.58 kB │ gzip:  0.37 kB\ndist/server/assets/textarea-BedmS6sP.js                     0.88 kB │ gzip:  0.47 kB\ndist/server/assets/input-CWcLPfGx.js                        0.99 kB │ gzip:  0.52 kB\ndist/server/assets/AppPageFrame-ZDKvYQzE.js                 1.71 kB │ gzip:  0.64 kB\ndist/server/assets/_runId-BLqqTA_X.js                       1.97 kB │ gzip:  0.82 kB\ndist/server/assets/button-Dfa7Q3hT.js                       3.26 kB │ gzip:  1.12 kB\ndist/server/assets/_tanstack-start-manifest_v-DDaCVqqh.js   3.36 kB │ gzip:  0.80 kB\ndist/server/assets/RelayStateSurface-CCX8j0Nd.js            4.24 kB │ gzip:  1.11 kB\ndist/server/assets/ArtifactInspectorDialog-aY30epDv.js      7.11 kB │ gzip:  2.15 kB\ndist/server/assets/router-Dtg9VlWU.js                       7.14 kB │ gzip:  2.23 kB\ndist/server/assets/tabs-Beh0n8CW.js                         9.72 kB │ gzip:  2.47 kB\ndist/server/assets/relay-runs-WRGBDluB.js                  13.92 kB │ gzip:  3.83 kB\ndist/server/assets/new-ibpGsrNp.js                         18.66 kB │ gzip:  4.31 kB\ndist/server/assets/runs-BFWEGiR6.js                        22.86 kB │ gzip:  4.37 kB\ndist/server/assets/execute-DkiuXdBK.js                     28.82 kB │ gzip:  5.73 kB\ndist/server/assets/prepare-Ca6HEglh.js                     31.27 kB │ gzip:  5.76 kB\ndist/server/assets/intake-c-QmTLrh.js                      34.55 kB │ gzip:  7.39 kB\ndist/server/assets/separator-CJ6L16NM.js                   51.63 kB │ gzip: 10.84 kB\ndist/server/assets/audit-DYhULT0O.js                       52.15 kB │ gzip:  8.92 kB\ndist/server/server.js                                      60.76 kB │ gzip: 15.42 kB\n\n\u001b[32m✓ built in 2.11s\u001b[39m\nexit_code: 0\n"
+      "output_tail": "\u001b[32m✓ built in 2.53s\u001b[39m\n\u001b[36mvite v8.0.16 \u001b[32mbuilding ssr environment for production...\u001b[36m\u001b[39m\n\u001b[2K\rtransforming...\n[@tanstack/devtools-vite] Removed devtools code from: /src/routes/__root.tsx\n\n✓ 103 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/server/assets/start-CKmjcLTR.js                        0.22 kB │ gzip:  0.17 kB\ndist/server/assets/empty-plugin-adapters-DzrEkdBF.js        0.28 kB │ gzip:  0.18 kB\ndist/server/assets/_runId-CKFcRbG2.js                       0.33 kB │ gzip:  0.22 kB\ndist/server/assets/audit-DjbN5gw8.js                        0.35 kB │ gzip:  0.22 kB\ndist/server/assets/intake-BCmAx_ub.js                       0.35 kB │ gzip:  0.22 kB\ndist/server/assets/execute-DNm_eeIF.js                      0.35 kB │ gzip:  0.22 kB\ndist/server/assets/prepare-D1a9sTPU.js                      0.35 kB │ gzip:  0.22 kB\ndist/server/assets/skeleton-CUn9_ilv.js                     0.36 kB │ gzip:  0.26 kB\ndist/server/assets/label-BQt6ba5O.js                        0.58 kB │ gzip:  0.37 kB\ndist/server/assets/textarea-BedmS6sP.js                     0.88 kB │ gzip:  0.47 kB\ndist/server/assets/input-CWcLPfGx.js                        0.99 kB │ gzip:  0.52 kB\ndist/server/assets/AppPageFrame-ZDKvYQzE.js                 1.71 kB │ gzip:  0.64 kB\ndist/server/assets/_runId-BLqqTA_X.js                       1.97 kB │ gzip:  0.82 kB\ndist/server/assets/button-Dfa7Q3hT.js                       3.26 kB │ gzip:  1.12 kB\ndist/server/assets/_tanstack-start-manifest_v-Bw2qK6Bu.js   3.36 kB │ gzip:  0.80 kB\ndist/server/assets/RelayStateSurface-DmgmmpQC.js            4.28 kB │ gzip:  1.11 kB\ndist/server/assets/ArtifactInspectorDialog-SGhv1Uxv.js      7.11 kB │ gzip:  2.15 kB\ndist/server/assets/router-C91GbCLy.js                       7.14 kB │ gzip:  2.23 kB\ndist/server/assets/tabs-Beh0n8CW.js                         9.72 kB │ gzip:  2.47 kB\ndist/server/assets/relay-runs-WRGBDluB.js                  13.92 kB │ gzip:  3.83 kB\ndist/server/assets/new-B6qargoT.js                         18.33 kB │ gzip:  4.27 kB\ndist/server/assets/runs-DWteL3Sz.js                        22.67 kB │ gzip:  4.35 kB\ndist/server/assets/execute-S50NAEhq.js                     28.82 kB │ gzip:  5.72 kB\ndist/server/assets/prepare-4ofHYr4K.js                     31.27 kB │ gzip:  5.76 kB\ndist/server/assets/intake-DoFYQWjc.js                      34.55 kB │ gzip:  7.38 kB\ndist/server/assets/separator-aZvcWPfU.js                   51.75 kB │ gzip: 10.85 kB\ndist/server/assets/audit-DrKQpNrJ.js                       52.15 kB │ gzip:  8.91 kB\ndist/server/server.js                                      60.76 kB │ gzip: 15.42 kB\n\n\u001b[32m✓ built in 1.41s\u001b[39m\nexit_code: 0\n"
     }
   ]
 }

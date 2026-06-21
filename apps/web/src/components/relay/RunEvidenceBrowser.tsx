@@ -229,7 +229,7 @@ function deriveVerification(artifact: RelayArtifact): VerificationInfo {
   ) {
     return {
       label: 'failed',
-      className: 'text-red-400',
+      className: 'text-[var(--destructive)]',
       icon: <XCircle className='h-3 w-3' />,
     }
   }
@@ -240,7 +240,7 @@ function deriveVerification(artifact: RelayArtifact): VerificationInfo {
   ) {
     return {
       label: 'pending',
-      className: 'text-yellow-400',
+      className: 'text-[var(--warning)]',
       icon: <Clock className='h-3 w-3' />,
     }
   }
@@ -254,7 +254,7 @@ function deriveVerification(artifact: RelayArtifact): VerificationInfo {
   ) {
     return {
       label: 'verified',
-      className: 'text-emerald-400',
+      className: 'text-[var(--success)]',
       icon: <CheckCircle2 className='h-3 w-3' />,
     }
   }
@@ -825,7 +825,7 @@ function PreviewTab({
   if (error && !content) {
     return (
       <div>
-        <p className='text-xs text-red-400'>Failed to load artifact content.</p>
+        <p className='text-xs text-[var(--destructive)]'>Failed to load artifact content.</p>
         <p className='mt-1 font-mono text-[11px] text-muted-foreground/70'>
           {(error as Error)?.message || 'Unknown error'}
         </p>
@@ -875,7 +875,7 @@ function RawTab({
   if (error && !content) {
     return (
       <div>
-        <p className='text-xs text-red-400'>Failed to load artifact content.</p>
+        <p className='text-xs text-[var(--destructive)]'>Failed to load artifact content.</p>
         <p className='mt-1 font-mono text-[11px] text-muted-foreground/70'>
           {(error as Error)?.message || 'Unknown error'}
         </p>
