@@ -44,6 +44,8 @@ func setupExecutorTestStore(t *testing.T) *store.Store {
 			branch_name TEXT NOT NULL DEFAULT '',
 			base_commit TEXT NOT NULL DEFAULT '',
 			head_commit TEXT NOT NULL DEFAULT '',
+			plan_row_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+			plan_pass_row_id INTEGER REFERENCES plan_passes(id) ON DELETE SET NULL,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);

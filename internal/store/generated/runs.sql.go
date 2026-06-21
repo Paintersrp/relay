@@ -7,23 +7,38 @@ package generated
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createRun = `-- name: CreateRun :one
-INSERT INTO runs (repo_id, title, status, recommended_model, selected_model, executor_adapter, branch_name, base_commit, head_commit)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter
+INSERT INTO runs (
+  repo_id,
+  title,
+  status,
+  recommended_model,
+  selected_model,
+  executor_adapter,
+  branch_name,
+  base_commit,
+  head_commit,
+  plan_row_id,
+  plan_pass_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id
 `
 
 type CreateRunParams struct {
-	RepoID           int64  `json:"repo_id"`
-	Title            string `json:"title"`
-	Status           string `json:"status"`
-	RecommendedModel string `json:"recommended_model"`
-	SelectedModel    string `json:"selected_model"`
-	ExecutorAdapter  string `json:"executor_adapter"`
-	BranchName       string `json:"branch_name"`
-	BaseCommit       string `json:"base_commit"`
-	HeadCommit       string `json:"head_commit"`
+	RepoID           int64         `json:"repo_id"`
+	Title            string        `json:"title"`
+	Status           string        `json:"status"`
+	RecommendedModel string        `json:"recommended_model"`
+	SelectedModel    string        `json:"selected_model"`
+	ExecutorAdapter  string        `json:"executor_adapter"`
+	BranchName       string        `json:"branch_name"`
+	BaseCommit       string        `json:"base_commit"`
+	HeadCommit       string        `json:"head_commit"`
+	PlanRowID        sql.NullInt64 `json:"plan_row_id"`
+	PlanPassRowID    sql.NullInt64 `json:"plan_pass_row_id"`
 }
 
 func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, error) {
@@ -37,6 +52,8 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, erro
 		arg.BranchName,
 		arg.BaseCommit,
 		arg.HeadCommit,
+		arg.PlanRowID,
+		arg.PlanPassRowID,
 	)
 	var i Run
 	err := row.Scan(
@@ -52,12 +69,14 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, erro
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ExecutorAdapter,
+		&i.PlanRowID,
+		&i.PlanPassRowID,
 	)
 	return i, err
 }
 
 const getRun = `-- name: GetRun :one
-SELECT id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter FROM runs WHERE id = ?
+SELECT id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id FROM runs WHERE id = ?
 `
 
 func (q *Queries) GetRun(ctx context.Context, id int64) (Run, error) {
@@ -76,12 +95,14 @@ func (q *Queries) GetRun(ctx context.Context, id int64) (Run, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ExecutorAdapter,
+		&i.PlanRowID,
+		&i.PlanPassRowID,
 	)
 	return i, err
 }
 
 const listRecentRuns = `-- name: ListRecentRuns :many
-SELECT id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter FROM runs ORDER BY updated_at DESC LIMIT ?
+SELECT id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id FROM runs ORDER BY updated_at DESC LIMIT ?
 `
 
 func (q *Queries) ListRecentRuns(ctx context.Context, limit int64) ([]Run, error) {
@@ -106,6 +127,8 @@ func (q *Queries) ListRecentRuns(ctx context.Context, limit int64) ([]Run, error
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ExecutorAdapter,
+			&i.PlanRowID,
+			&i.PlanPassRowID,
 		); err != nil {
 			return nil, err
 		}
@@ -195,7 +218,7 @@ func (q *Queries) ListRecentRunsWithRepo(ctx context.Context, limit int64) ([]Li
 }
 
 const listRunsByRepo = `-- name: ListRunsByRepo :many
-SELECT id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter FROM runs WHERE repo_id = ? ORDER BY updated_at DESC
+SELECT id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id FROM runs WHERE repo_id = ? ORDER BY updated_at DESC
 `
 
 func (q *Queries) ListRunsByRepo(ctx context.Context, repoID int64) ([]Run, error) {
@@ -220,6 +243,8 @@ func (q *Queries) ListRunsByRepo(ctx context.Context, repoID int64) ([]Run, erro
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ExecutorAdapter,
+			&i.PlanRowID,
+			&i.PlanPassRowID,
 		); err != nil {
 			return nil, err
 		}
@@ -235,7 +260,7 @@ func (q *Queries) ListRunsByRepo(ctx context.Context, repoID int64) ([]Run, erro
 }
 
 const updateRunBranch = `-- name: UpdateRunBranch :one
-UPDATE runs SET branch_name = ?, base_commit = ?, head_commit = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter
+UPDATE runs SET branch_name = ?, base_commit = ?, head_commit = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id
 `
 
 type UpdateRunBranchParams struct {
@@ -266,12 +291,14 @@ func (q *Queries) UpdateRunBranch(ctx context.Context, arg UpdateRunBranchParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ExecutorAdapter,
+		&i.PlanRowID,
+		&i.PlanPassRowID,
 	)
 	return i, err
 }
 
 const updateRunExecutorAdapter = `-- name: UpdateRunExecutorAdapter :one
-UPDATE runs SET executor_adapter = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter
+UPDATE runs SET executor_adapter = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id
 `
 
 type UpdateRunExecutorAdapterParams struct {
@@ -295,12 +322,14 @@ func (q *Queries) UpdateRunExecutorAdapter(ctx context.Context, arg UpdateRunExe
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ExecutorAdapter,
+		&i.PlanRowID,
+		&i.PlanPassRowID,
 	)
 	return i, err
 }
 
 const updateRunModel = `-- name: UpdateRunModel :one
-UPDATE runs SET recommended_model = ?, selected_model = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter
+UPDATE runs SET recommended_model = ?, selected_model = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id
 `
 
 type UpdateRunModelParams struct {
@@ -325,12 +354,14 @@ func (q *Queries) UpdateRunModel(ctx context.Context, arg UpdateRunModelParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ExecutorAdapter,
+		&i.PlanRowID,
+		&i.PlanPassRowID,
 	)
 	return i, err
 }
 
 const updateRunRepo = `-- name: UpdateRunRepo :one
-UPDATE runs SET repo_id = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter
+UPDATE runs SET repo_id = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id
 `
 
 type UpdateRunRepoParams struct {
@@ -354,12 +385,14 @@ func (q *Queries) UpdateRunRepo(ctx context.Context, arg UpdateRunRepoParams) (R
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ExecutorAdapter,
+		&i.PlanRowID,
+		&i.PlanPassRowID,
 	)
 	return i, err
 }
 
 const updateRunStatus = `-- name: UpdateRunStatus :one
-UPDATE runs SET status = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter
+UPDATE runs SET status = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id
 `
 
 type UpdateRunStatusParams struct {
@@ -383,12 +416,14 @@ func (q *Queries) UpdateRunStatus(ctx context.Context, arg UpdateRunStatusParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ExecutorAdapter,
+		&i.PlanRowID,
+		&i.PlanPassRowID,
 	)
 	return i, err
 }
 
 const updateRunTitle = `-- name: UpdateRunTitle :one
-UPDATE runs SET title = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter
+UPDATE runs SET title = ?, updated_at = datetime('now') WHERE id = ? RETURNING id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id
 `
 
 type UpdateRunTitleParams struct {
@@ -412,6 +447,8 @@ func (q *Queries) UpdateRunTitle(ctx context.Context, arg UpdateRunTitleParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ExecutorAdapter,
+		&i.PlanRowID,
+		&i.PlanPassRowID,
 	)
 	return i, err
 }

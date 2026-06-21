@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"relay/internal/artifacts"
+	"relay/internal/plans"
 	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -32,6 +34,61 @@ func TestAPI(t *testing.T) {
 	repo, err := s.CreateRepo("test-repo", filepath.Join(dir, "repo"))
 	if err != nil {
 		t.Fatalf("failed to create repo: %v", err)
+	}
+
+	createPlan := func(t *testing.T, planID string) {
+		t.Helper()
+		plan := plans.PlannerPassPlan{
+			PlanMeta: plans.PlanMeta{
+				PlanID:        planID,
+				SchemaVersion: "1.0.0",
+				CreatedAt:     "2026-06-21T00:00:00Z",
+				Title:         "Run association test plan",
+				Goal:          "Verify run plan/pass associations",
+				RepoTarget:    repo.Name,
+				BranchContext: "main",
+				Status:        "active",
+			},
+			SourceIntent: plans.SourceIntent{
+				Summary: "Seed a managed plan for run association tests.",
+			},
+			Passes: []plans.PlanPassInput{
+				{
+					PassID:                 "PASS-001",
+					Sequence:               1,
+					Name:                   "First pass",
+					Goal:                   "Associate the first pass.",
+					IntendedExecutionScope: []string{"internal/api/api.go"},
+					NonGoals:               []string{"No lifecycle changes"},
+					Dependencies:           []string{},
+					Status:                 "planned",
+				},
+				{
+					PassID:                 "PASS-002",
+					Sequence:               2,
+					Name:                   "Second pass",
+					Goal:                   "Associate the second pass.",
+					IntendedExecutionScope: []string{"internal/mcp/tool_create_run.go"},
+					NonGoals:               []string{"No lifecycle changes"},
+					Dependencies:           []string{"PASS-001"},
+					Status:                 "planned",
+				},
+			},
+		}
+		raw, err := json.Marshal(plan)
+		if err != nil {
+			t.Fatalf("marshal plan: %v", err)
+		}
+		result, err := plans.NewService(s).SubmitPlan(context.Background(), plans.SubmitPlanRequest{
+			RawJSON:            raw,
+			SourceArtifactPath: "handoffs/planner/association-test.json",
+		})
+		if err != nil {
+			t.Fatalf("submit plan: %v", err)
+		}
+		if !result.Report.Valid {
+			t.Fatalf("expected seeded plan to validate, got issues: %+v", result.Report.Issues)
+		}
 	}
 
 	run, err := s.CreateRun(repo.ID, "Test Run Title", "draft", "gpt-4o", "gpt-4o", "main")
@@ -237,6 +294,136 @@ func TestAPI(t *testing.T) {
 
 		if resp.RunID != runIDStr {
 			t.Errorf("expected runId %s, got %s", runIDStr, resp.RunID)
+		}
+	})
+
+	t.Run("POST /api/intake/planner-handoff - Success (Plan Only)", func(t *testing.T) {
+		createPlan(t, "plan-api-plan-only")
+
+		body := `{"planner_handoff_markdown":"---\ntitle: Planned Handoff\nrepo: test-repo\nbranch: main\n---\n# Planned Handoff\nGoal: test","repo":"test-repo","planId":"plan-api-plan-only"}`
+		req := httptest.NewRequest("POST", "/api/intake/planner-handoff", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp PlannerHandoffIntakeResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp.PlanID != "plan-api-plan-only" {
+			t.Fatalf("expected planId to echo, got %q", resp.PlanID)
+		}
+		if resp.PassID != "" {
+			t.Fatalf("expected empty passId, got %q", resp.PassID)
+		}
+
+		createdRunID, err := strconv.ParseInt(resp.RunID, 10, 64)
+		if err != nil {
+			t.Fatalf("parse run id: %v", err)
+		}
+		createdRun, err := s.GetRun(createdRunID)
+		if err != nil {
+			t.Fatalf("get created run: %v", err)
+		}
+		planRow, err := s.GetPlanByPlanID("plan-api-plan-only")
+		if err != nil {
+			t.Fatalf("get seeded plan: %v", err)
+		}
+		if !createdRun.PlanRowID.Valid || createdRun.PlanRowID.Int64 != planRow.ID {
+			t.Fatalf("expected plan_row_id=%d, got %+v", planRow.ID, createdRun.PlanRowID)
+		}
+		if createdRun.PlanPassRowID.Valid {
+			t.Fatalf("expected empty plan_pass_row_id, got %+v", createdRun.PlanPassRowID)
+		}
+	})
+
+	t.Run("POST /api/intake/planner-handoff - Success (Plan and Pass)", func(t *testing.T) {
+		createPlan(t, "plan-api-plan-pass")
+
+		body := `{"planner_handoff_markdown":"---\ntitle: Pass Handoff\nrepo: test-repo\nbranch: main\n---\n# Pass Handoff\nGoal: test","repo":"test-repo","planId":"plan-api-plan-pass","passId":"PASS-002"}`
+		req := httptest.NewRequest("POST", "/api/intake/planner-handoff", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp PlannerHandoffIntakeResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp.PlanID != "plan-api-plan-pass" || resp.PassID != "PASS-002" {
+			t.Fatalf("expected echoed plan/pass ids, got %q / %q", resp.PlanID, resp.PassID)
+		}
+
+		createdRunID, err := strconv.ParseInt(resp.RunID, 10, 64)
+		if err != nil {
+			t.Fatalf("parse run id: %v", err)
+		}
+		createdRun, err := s.GetRun(createdRunID)
+		if err != nil {
+			t.Fatalf("get created run: %v", err)
+		}
+		planRow, err := s.GetPlanByPlanID("plan-api-plan-pass")
+		if err != nil {
+			t.Fatalf("get seeded plan: %v", err)
+		}
+		passRow, err := s.GetPlanPassByPassID(planRow.ID, "PASS-002")
+		if err != nil {
+			t.Fatalf("get seeded pass: %v", err)
+		}
+		if !createdRun.PlanRowID.Valid || createdRun.PlanRowID.Int64 != planRow.ID {
+			t.Fatalf("expected plan_row_id=%d, got %+v", planRow.ID, createdRun.PlanRowID)
+		}
+		if !createdRun.PlanPassRowID.Valid || createdRun.PlanPassRowID.Int64 != passRow.ID {
+			t.Fatalf("expected plan_pass_row_id=%d, got %+v", passRow.ID, createdRun.PlanPassRowID)
+		}
+		if passRow.Status != "planned" {
+			t.Fatalf("expected pass status to remain planned, got %q", passRow.Status)
+		}
+	})
+
+	t.Run("POST /api/intake/planner-handoff - passId without planId (400)", func(t *testing.T) {
+		body := `{"planner_handoff_markdown":"---\ntitle: Invalid Pass Handoff\nrepo: test-repo\nbranch: main\n---\n# Invalid Pass Handoff\nGoal: test","repo":"test-repo","passId":"PASS-001"}`
+		req := httptest.NewRequest("POST", "/api/intake/planner-handoff", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("POST /api/intake/planner-handoff - unknown planId (404)", func(t *testing.T) {
+		body := `{"planner_handoff_markdown":"---\ntitle: Unknown Plan Handoff\nrepo: test-repo\nbranch: main\n---\n# Unknown Plan Handoff\nGoal: test","repo":"test-repo","planId":"plan-missing"}`
+		req := httptest.NewRequest("POST", "/api/intake/planner-handoff", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("POST /api/intake/planner-handoff - pass not in plan (404)", func(t *testing.T) {
+		createPlan(t, "plan-api-pass-mismatch")
+
+		body := `{"planner_handoff_markdown":"---\ntitle: Mismatch Handoff\nrepo: test-repo\nbranch: main\n---\n# Mismatch Handoff\nGoal: test","repo":"test-repo","planId":"plan-api-pass-mismatch","passId":"PASS-999"}`
+		req := httptest.NewRequest("POST", "/api/intake/planner-handoff", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d. Body: %s", w.Code, w.Body.String())
 		}
 	})
 

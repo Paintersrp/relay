@@ -189,6 +189,14 @@ func (s *Store) CreateRun(repoID int64, title, status, recommendedModel, selecte
 }
 
 func (s *Store) CreateRunWithExecutorAdapter(repoID int64, title, status, recommendedModel, selectedModel, executorAdapter, branchName string) (*Run, error) {
+	return s.CreateRunWithAssociation(repoID, title, status, recommendedModel, selectedModel, executorAdapter, branchName, sql.NullInt64{}, sql.NullInt64{})
+}
+
+func (s *Store) CreateRunWithAssociation(
+	repoID int64,
+	title, status, recommendedModel, selectedModel, executorAdapter, branchName string,
+	planRowID, planPassRowID sql.NullInt64,
+) (*Run, error) {
 	if executorAdapter == "" {
 		executorAdapter = DefaultExecutorAdapter
 	}
@@ -202,6 +210,8 @@ func (s *Store) CreateRunWithExecutorAdapter(repoID int64, title, status, recomm
 		BranchName:       branchName,
 		BaseCommit:       "",
 		HeadCommit:       "",
+		PlanRowID:        planRowID,
+		PlanPassRowID:    planPassRowID,
 	})
 	if err != nil {
 		return nil, err
@@ -284,6 +294,25 @@ func (s *Store) UpdateRunExecutorAdapter(id int64, executorAdapter string) (*Run
 		return nil, err
 	}
 	return &run, nil
+}
+
+func (s *Store) GetPlanByPlanID(planID string) (*Plan, error) {
+	plan, err := s.queries.GetPlanByPlanID(context.Background(), planID)
+	if err != nil {
+		return nil, err
+	}
+	return &plan, nil
+}
+
+func (s *Store) GetPlanPassByPassID(planRowID int64, passID string) (*PlanPass, error) {
+	pass, err := s.queries.GetPlanPassByPassID(context.Background(), generated.GetPlanPassByPassIDParams{
+		PlanRowID: planRowID,
+		PassID:    passID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &pass, nil
 }
 
 // Artifacts

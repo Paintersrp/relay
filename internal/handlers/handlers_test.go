@@ -50,9 +50,12 @@ func setupTestStore(t *testing.T) *store.Store {
 			status TEXT NOT NULL DEFAULT 'draft',
 			recommended_model TEXT NOT NULL DEFAULT '',
 			selected_model TEXT NOT NULL DEFAULT '',
+			executor_adapter TEXT NOT NULL DEFAULT 'opencode_go',
 			branch_name TEXT NOT NULL DEFAULT '',
 			base_commit TEXT NOT NULL DEFAULT '',
 			head_commit TEXT NOT NULL DEFAULT '',
+			plan_row_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+			plan_pass_row_id INTEGER REFERENCES plan_passes(id) ON DELETE SET NULL,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);

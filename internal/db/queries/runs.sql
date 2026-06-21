@@ -1,6 +1,18 @@
 -- name: CreateRun :one
-INSERT INTO runs (repo_id, title, status, recommended_model, selected_model, executor_adapter, branch_name, base_commit, head_commit)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
+INSERT INTO runs (
+  repo_id,
+  title,
+  status,
+  recommended_model,
+  selected_model,
+  executor_adapter,
+  branch_name,
+  base_commit,
+  head_commit,
+  plan_row_id,
+  plan_pass_row_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
 
 -- name: GetRun :one
 SELECT * FROM runs WHERE id = ?;

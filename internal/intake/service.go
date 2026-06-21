@@ -1,6 +1,7 @@
 package intake
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -34,6 +35,10 @@ type CreateRunInput struct {
 	Name string
 	// Source tags the creation origin (e.g., "mcp_chat", "api"). Default "api".
 	Source string
+	// PlanID optionally associates the run to an existing Relay plan.
+	PlanID string
+	// PassID optionally associates the run to an existing Relay plan pass.
+	PassID string
 }
 
 // ValidationSummary carries intake validation results.
@@ -51,6 +56,8 @@ type CreateRunOutput struct {
 	ReviewURL         string            `json:"review_url"`
 	ArtifactKinds     []string          `json:"artifact_kinds"`
 	ValidationSummary ValidationSummary `json:"validation_summary"`
+	PlanID            string            `json:"plan_id,omitempty"`
+	PassID            string            `json:"pass_id,omitempty"`
 }
 
 // CreateRunFromHandoff creates a new Relay run from planner handoff markdown.
@@ -114,13 +121,27 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 		recommendedModel = "deepseek-v4-flash"
 	}
 	selectedModel := recommendedModel
+	association, err := ResolveRunPlanAssociation(context.Background(), svc.store, input.PlanID, input.PassID)
+	if err != nil {
+		return nil, err
+	}
 
 	status := "intake_received"
 	if len(warnings) > 0 {
 		status = "intake_needs_review"
 	}
 
-	run, err := svc.store.CreateRun(repo.ID, title, status, recommendedModel, selectedModel, branchContext)
+	run, err := svc.store.CreateRunWithAssociation(
+		repo.ID,
+		title,
+		status,
+		recommendedModel,
+		selectedModel,
+		store.DefaultExecutorAdapter,
+		branchContext,
+		association.PlanRowID,
+		association.PlanPassRowID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create run: %w", err)
 	}
@@ -161,6 +182,12 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 		"source":         source,
 		"created_from":   "intake_service",
 	}
+	if association.PlanID != "" {
+		configMap["plan_id"] = association.PlanID
+	}
+	if association.PassID != "" {
+		configMap["pass_id"] = association.PassID
+	}
 	configJSON, _ := json.MarshalIndent(configMap, "", "  ")
 	_ = svc.store.DeleteArtifactsByRunKind(run.ID, "run_config")
 	if path, werr := artifacts.Write(run.ID, "run_config", "run_config.json", configJSON); werr == nil {
@@ -194,6 +221,8 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 			Blockers: blockers,
 			Passed:   len(warnings) == 0 && len(blockers) == 0,
 		},
+		PlanID: association.PlanID,
+		PassID: association.PassID,
 	}, nil
 }
 

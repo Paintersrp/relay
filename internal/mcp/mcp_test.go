@@ -527,6 +527,181 @@ func TestHandleCreateRunFromPlannerHandoff_Success(t *testing.T) {
 	}
 }
 
+func TestHandleCreateRunFromPlannerHandoff_PlanOnlyAssociation(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	planArgs, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+	})
+	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
+	if planResult.IsError {
+		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
+	}
+
+	args, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": "---\ntitle: Planned Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Planned Run\n\nContent.",
+		"repo_target":              "test-repo",
+		"plan_id":                  "plan-123",
+	})
+	result := srv.HandleCreateRunFromPlannerHandoff(args)
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.Content[0].Text)
+	}
+
+	var out createRunOutput
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &out); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if out.PlanID != "plan-123" {
+		t.Fatalf("expected plan_id to echo, got %q", out.PlanID)
+	}
+	if out.PassID != "" {
+		t.Fatalf("expected empty pass_id, got %q", out.PassID)
+	}
+
+	run, err := deps.Store.GetRun(out.RunID)
+	if err != nil {
+		t.Fatalf("get created run: %v", err)
+	}
+	plan, err := deps.Store.GetPlanByPlanID("plan-123")
+	if err != nil {
+		t.Fatalf("get plan by plan_id: %v", err)
+	}
+	if !run.PlanRowID.Valid || run.PlanRowID.Int64 != plan.ID {
+		t.Fatalf("expected plan_row_id=%d, got %+v", plan.ID, run.PlanRowID)
+	}
+	if run.PlanPassRowID.Valid {
+		t.Fatalf("expected empty plan_pass_row_id, got %+v", run.PlanPassRowID)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoff_PlanPassAssociation(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	planArgs, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+	})
+	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
+	if planResult.IsError {
+		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
+	}
+
+	args, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": "---\ntitle: Pass Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Pass Run\n\nContent.",
+		"repo_target":              "test-repo",
+		"plan_id":                  "plan-123",
+		"pass_id":                  "PASS-002",
+	})
+	result := srv.HandleCreateRunFromPlannerHandoff(args)
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.Content[0].Text)
+	}
+
+	var out createRunOutput
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &out); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if out.PlanID != "plan-123" || out.PassID != "PASS-002" {
+		t.Fatalf("expected echoed plan/pass ids, got %q / %q", out.PlanID, out.PassID)
+	}
+
+	run, err := deps.Store.GetRun(out.RunID)
+	if err != nil {
+		t.Fatalf("get created run: %v", err)
+	}
+	plan, err := deps.Store.GetPlanByPlanID("plan-123")
+	if err != nil {
+		t.Fatalf("get plan by plan_id: %v", err)
+	}
+	pass, err := deps.Store.GetPlanPassByPassID(plan.ID, "PASS-002")
+	if err != nil {
+		t.Fatalf("get pass by plan/pass id: %v", err)
+	}
+	if !run.PlanRowID.Valid || run.PlanRowID.Int64 != plan.ID {
+		t.Fatalf("expected plan_row_id=%d, got %+v", plan.ID, run.PlanRowID)
+	}
+	if !run.PlanPassRowID.Valid || run.PlanPassRowID.Int64 != pass.ID {
+		t.Fatalf("expected plan_pass_row_id=%d, got %+v", pass.ID, run.PlanPassRowID)
+	}
+	if pass.Status != "planned" {
+		t.Fatalf("expected pass status to remain planned, got %q", pass.Status)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoff_PassWithoutPlanRejected(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	args, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": "---\ntitle: Invalid Run\nrepo_target: test-repo\n---\n\n# Invalid Run\n\nContent.",
+		"repo_target":              "test-repo",
+		"pass_id":                  "PASS-001",
+	})
+	result := srv.HandleCreateRunFromPlannerHandoff(args)
+	if !result.IsError {
+		t.Fatal("expected validation error for pass without plan")
+	}
+	if !contains(result.Content[0].Text, "VALIDATION_ERROR") {
+		t.Fatalf("expected VALIDATION_ERROR, got: %s", result.Content[0].Text)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+		t.Fatalf("expected no run rows, got %d", got)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoff_UnknownPlanRejected(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	args, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": "---\ntitle: Missing Plan Run\nrepo_target: test-repo\n---\n\n# Missing Plan Run\n\nContent.",
+		"repo_target":              "test-repo",
+		"plan_id":                  "plan-missing",
+	})
+	result := srv.HandleCreateRunFromPlannerHandoff(args)
+	if !result.IsError {
+		t.Fatal("expected not found error for unknown plan")
+	}
+	if !contains(result.Content[0].Text, "NOT_FOUND") {
+		t.Fatalf("expected NOT_FOUND, got: %s", result.Content[0].Text)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+		t.Fatalf("expected no run rows, got %d", got)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoff_UnknownPassRejected(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	planArgs, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+	})
+	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
+	if planResult.IsError {
+		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
+	}
+
+	args, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": "---\ntitle: Missing Pass Run\nrepo_target: test-repo\n---\n\n# Missing Pass Run\n\nContent.",
+		"repo_target":              "test-repo",
+		"plan_id":                  "plan-123",
+		"pass_id":                  "PASS-999",
+	})
+	result := srv.HandleCreateRunFromPlannerHandoff(args)
+	if !result.IsError {
+		t.Fatal("expected not found error for unknown pass")
+	}
+	if !contains(result.Content[0].Text, "NOT_FOUND") {
+		t.Fatalf("expected NOT_FOUND, got: %s", result.Content[0].Text)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+		t.Fatalf("expected no run rows, got %d", got)
+	}
+}
+
 // --- list_open_runs tests ---
 
 func TestHandleListOpenRuns_NoDeps(t *testing.T) {

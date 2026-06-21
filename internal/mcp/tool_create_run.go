@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -28,6 +29,10 @@ type createRunInput struct {
 	Source string `json:"source,omitempty"`
 	// ClientTraceID is an optional opaque trace identifier from the calling client.
 	ClientTraceID string `json:"client_trace_id,omitempty"`
+	// PlanID optionally associates the run to an existing Relay plan.
+	PlanID string `json:"plan_id,omitempty"`
+	// PassID optionally associates the run to an existing Relay plan pass.
+	PassID string `json:"pass_id,omitempty"`
 }
 
 // createRunOutput is the structured success payload for create_run_from_planner_handoff.
@@ -40,6 +45,8 @@ type createRunOutput struct {
 	ReviewURL         string                   `json:"review_url"`
 	ArtifactKinds     []string                 `json:"artifact_kinds"`
 	ValidationSummary intake.ValidationSummary `json:"validation_summary"`
+	PlanID            string                   `json:"plan_id,omitempty"`
+	PassID            string                   `json:"pass_id,omitempty"`
 }
 
 // HandleCreateRunFromPlannerHandoff implements the create_run_from_planner_handoff MCP tool.
@@ -69,8 +76,14 @@ func (s *Server) HandleCreateRunFromPlannerHandoff(rawArgs json.RawMessage) Tool
 		BranchContext: input.BranchContext,
 		Name:          input.Name,
 		Source:        source,
+		PlanID:        input.PlanID,
+		PassID:        input.PassID,
 	})
 	if err != nil {
+		var inputErr *intake.InputError
+		if errors.As(err, &inputErr) {
+			return toolErr(fmt.Sprintf("%s: %s", inputErr.Code, inputErr.Message))
+		}
 		return toolErr(fmt.Sprintf("INTAKE_ERROR: %s", err))
 	}
 
@@ -83,6 +96,8 @@ func (s *Server) HandleCreateRunFromPlannerHandoff(rawArgs json.RawMessage) Tool
 		ReviewURL:         out.ReviewURL,
 		ArtifactKinds:     out.ArtifactKinds,
 		ValidationSummary: out.ValidationSummary,
+		PlanID:            out.PlanID,
+		PassID:            out.PassID,
 	}
 
 	text, err := marshalTool(result)
@@ -120,6 +135,14 @@ var createRunSchema = json.RawMessage(`{
     "client_trace_id": {
       "type": "string",
       "description": "Optional opaque trace identifier from the calling MCP client."
+    },
+    "plan_id": {
+      "type": "string",
+      "description": "Optional Relay plan identifier to associate with the created run."
+    },
+    "pass_id": {
+      "type": "string",
+      "description": "Optional Relay pass identifier to associate with the created run. Requires plan_id."
     }
   }
 }`)

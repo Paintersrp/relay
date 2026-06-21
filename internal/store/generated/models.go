@@ -106,18 +106,20 @@ type RepoRoot struct {
 }
 
 type Run struct {
-	ID               int64  `json:"id"`
-	RepoID           int64  `json:"repo_id"`
-	Title            string `json:"title"`
-	Status           string `json:"status"`
-	RecommendedModel string `json:"recommended_model"`
-	SelectedModel    string `json:"selected_model"`
-	BranchName       string `json:"branch_name"`
-	BaseCommit       string `json:"base_commit"`
-	HeadCommit       string `json:"head_commit"`
-	CreatedAt        string `json:"created_at"`
-	UpdatedAt        string `json:"updated_at"`
-	ExecutorAdapter  string `json:"executor_adapter"`
+	ID               int64         `json:"id"`
+	RepoID           int64         `json:"repo_id"`
+	Title            string        `json:"title"`
+	Status           string        `json:"status"`
+	RecommendedModel string        `json:"recommended_model"`
+	SelectedModel    string        `json:"selected_model"`
+	BranchName       string        `json:"branch_name"`
+	BaseCommit       string        `json:"base_commit"`
+	HeadCommit       string        `json:"head_commit"`
+	CreatedAt        string        `json:"created_at"`
+	UpdatedAt        string        `json:"updated_at"`
+	ExecutorAdapter  string        `json:"executor_adapter"`
+	PlanRowID        sql.NullInt64 `json:"plan_row_id"`
+	PlanPassRowID    sql.NullInt64 `json:"plan_pass_row_id"`
 }
 
 type ValidationExecution struct {

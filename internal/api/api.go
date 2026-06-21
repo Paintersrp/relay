@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -1072,6 +1073,10 @@ type PlannerHandoffIntakeRequest struct {
 	Source                 string `json:"source,omitempty"`
 	ExecutorAdapter        string `json:"executorAdapter,omitempty"`
 	ExecutorAdapter2       string `json:"executor_adapter,omitempty"`
+	PlanID                 string `json:"planId,omitempty"`
+	PlanIDSnake            string `json:"plan_id,omitempty"`
+	PassID                 string `json:"passId,omitempty"`
+	PassIDSnake            string `json:"pass_id,omitempty"`
 }
 
 type PlannerHandoffIntakeResponse struct {
@@ -1082,6 +1087,8 @@ type PlannerHandoffIntakeResponse struct {
 	LifecycleState string                `json:"lifecycleState,omitempty"`
 	CreatedAt      string                `json:"createdAt,omitempty"`
 	ReviewURL      string                `json:"review_url"`
+	PlanID         string                `json:"planId,omitempty"`
+	PassID         string                `json:"passId,omitempty"`
 	Artifacts      []RelayArtifact       `json:"artifacts,omitempty"`
 	Validation     RelayValidationResult `json:"validation"`
 }
@@ -1164,6 +1171,18 @@ func resolveIntakeExecutorAdapter(req PlannerHandoffIntakeRequest, metadata map[
 	}
 
 	return "opencode_go", false, nil
+}
+
+func resolveIntakePlanInputs(req PlannerHandoffIntakeRequest) (string, string) {
+	planID := strings.TrimSpace(req.PlanID)
+	if planID == "" {
+		planID = strings.TrimSpace(req.PlanIDSnake)
+	}
+	passID := strings.TrimSpace(req.PassID)
+	if passID == "" {
+		passID = strings.TrimSpace(req.PassIDSnake)
+	}
+	return planID, passID
 }
 
 // POST /api/intake/planner-handoff
@@ -1252,12 +1271,17 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
+	planID, passID := resolveIntakePlanInputs(req)
 
 	var run *generated.Run
 	isNew := false
 
 	runIDStr := req.RunID
 	if runIDStr != "" {
+		if planID != "" || passID != "" {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "planId/passId may only be set when creating a new run")
+			return
+		}
 		runIDInt, err := strconv.ParseInt(runIDStr, 10, 64)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run_id format")
@@ -1274,12 +1298,40 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 		if len(warnings) > 0 {
 			status = "intake_needs_review"
 		}
-		r, err := h.store.CreateRunWithExecutorAdapter(repo.ID, title, status, recommendedModel, selectedModel, executorAdapter, branchContext)
+		association, err := intake.ResolveRunPlanAssociation(r.Context(), h.store, planID, passID)
+		if err != nil {
+			var inputErr *intake.InputError
+			if errors.As(err, &inputErr) {
+				statusCode := http.StatusBadRequest
+				errorCode := "BAD_REQUEST"
+				if inputErr.Code == intake.ErrCodeNotFound {
+					statusCode = http.StatusNotFound
+					errorCode = "NOT_FOUND"
+				}
+				writeError(w, statusCode, errorCode, inputErr.Message)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to resolve plan association: "+err.Error())
+			return
+		}
+		r, err := h.store.CreateRunWithAssociation(
+			repo.ID,
+			title,
+			status,
+			recommendedModel,
+			selectedModel,
+			executorAdapter,
+			branchContext,
+			association.PlanRowID,
+			association.PlanPassRowID,
+		)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create run: "+err.Error())
 			return
 		}
 		run = r
+		planID = association.PlanID
+		passID = association.PassID
 	}
 
 	if !isNew {
@@ -1340,6 +1392,12 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 		"created_from":     "intake_endpoint",
 		"executor_adapter": executorAdapter,
 	}
+	if planID != "" {
+		configMap["plan_id"] = planID
+	}
+	if passID != "" {
+		configMap["pass_id"] = passID
+	}
 	configJSON, _ := json.MarshalIndent(configMap, "", "  ")
 	path, err = artifacts.Write(run.ID, "run_config", "run_config.json", configJSON)
 	if err == nil {
@@ -1396,6 +1454,8 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 		LifecycleState: mappedRun.LifecycleState,
 		CreatedAt:      mappedRun.CreatedAt,
 		ReviewURL:      reviewURL,
+		PlanID:         planID,
+		PassID:         passID,
 		Artifacts:      relayArtifacts,
 		Validation:     valResult,
 	}
