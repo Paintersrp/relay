@@ -209,12 +209,23 @@ export function getPassStatusVariant(
 }
 
 export function formatPlanDate(iso: string): string {
-  return dateFormatter.format(new Date(iso));
+  const date = new Date(iso);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+
+  return dateFormatter.format(date);
 }
 
 export function formatPlanDateRelative(iso: string): string {
   const now = Date.now();
   const then = new Date(iso).getTime();
+
+  if (Number.isNaN(then)) {
+    return "Unknown";
+  }
+
   const diffSeconds = Math.round((then - now) / 1000);
   const diffMinutes = Math.round(diffSeconds / 60);
   const diffHours = Math.round(diffMinutes / 60);

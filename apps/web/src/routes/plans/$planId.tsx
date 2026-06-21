@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 
-import { AppPageFrame } from "@/components/relay/AppPageFrame";
 import { RelayPlanDetail } from "@/components/relay/RelayPlanDetail";
 import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
 import { Button } from "@/components/ui/button";
@@ -17,20 +16,19 @@ function PlanDetailPage() {
   const { data, isLoading, error } = useQuery(planDetailQueryOptions(planId));
 
   return (
-    <AppPageFrame
-      title="Plans"
-      description="Managed multi-pass orchestration plans"
-      bodyClassName="min-h-0 overflow-y-auto p-0"
-    >
+    <section className="min-h-0 flex-1 overflow-y-auto bg-[var(--relay-page-body-bg)]">
       {isLoading ? (
-        <div className="space-y-6 p-6">
-          <Skeleton className="h-6 w-40" />
-          <Skeleton className="h-32 w-full rounded-2xl" />
-          <div className="grid gap-6 xl:grid-cols-2">
-            <Skeleton className="h-44 w-full rounded-2xl" />
-            <Skeleton className="h-44 w-full rounded-2xl" />
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 sm:p-6">
+          <Skeleton className="h-5 w-64" />
+          <div className="space-y-3">
+            <Skeleton className="h-8 w-96 max-w-full" />
+            <Skeleton className="h-4 w-full max-w-3xl" />
+            <Skeleton className="h-4 w-full max-w-4xl" />
           </div>
-          <Skeleton className="h-56 w-full rounded-2xl" />
+          <Skeleton className="h-32 w-full rounded-xl" />
+          <Skeleton className="h-24 w-full rounded-xl" />
+          <Skeleton className="h-72 w-full rounded-xl" />
+          <Skeleton className="h-40 w-full rounded-xl" />
         </div>
       ) : null}
 
@@ -73,6 +71,6 @@ function PlanDetailPage() {
           completionReady={data.completionReady}
         />
       ) : null}
-    </AppPageFrame>
+    </section>
   );
 }

@@ -20,7 +20,7 @@ describe("relay-plans api", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("getPlans({ status: 'active', limit: 25 }) calls /api/plans with query params", async () => {
+  it("getPlans({ limit: 100 }) calls /api/plans with the limit query param", async () => {
     const fetchSpy = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -28,10 +28,24 @@ describe("relay-plans api", () => {
     });
     globalThis.fetch = fetchSpy;
 
-    await getPlans({ status: "active", limit: 25 });
+    await getPlans({ limit: 100 });
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toContain("/api/plans?status=active&limit=25");
+    expect(fetchSpy.mock.calls[0][0]).toContain("/api/plans?limit=100");
+  });
+
+  it("getPlans({ status: 'active', limit: 50 }) calls /api/plans with both query params", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ success: true, count: 0, plans: [] }),
+    });
+    globalThis.fetch = fetchSpy;
+
+    await getPlans({ status: "active", limit: 50 });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toContain("/api/plans?status=active&limit=50");
   });
 
   it("getPlans() calls /api/plans without a query string", async () => {

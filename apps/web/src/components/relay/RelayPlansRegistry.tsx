@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, Plus } from "lucide-react";
+import { AlertTriangle, ChevronRight, Plus } from "lucide-react";
 
 import { RelayFilterTabs, type RelayFilterTabItem } from "@/components/relay/RelayFilterTabs";
 import { RelayMonoText } from "@/components/relay/RelayMeta";
@@ -75,7 +75,7 @@ function getRegistryProgress(plan: PlanAPIReadPlan) {
         ? "0 / 0"
         : typeof completed === "number"
           ? `${completed} / ${total}`
-          : `— / ${total}`,
+          : `- / ${total}`,
   };
 }
 
@@ -287,7 +287,7 @@ export function RelayPlansRegistry({
   const attentionCount = rows.filter((plan) => getPlanAttention(plan) !== "none").length;
 
   const filterItems: RelayFilterTabItem[] = [
-    { value: "all", label: "All Plans", count: rows.length },
+    { value: "all", label: "All", count: rows.length },
     {
       value: "active",
       label: "Active",
@@ -324,17 +324,16 @@ export function RelayPlansRegistry({
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--relay-row-border)] px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 className="text-sm font-semibold text-foreground">Plans</h2>
-          <span className="text-[11px] font-medium text-muted-foreground">
-            {rows.length}
+          <span className="text-sm font-semibold text-foreground">
+            {rows.length} plan{rows.length === 1 ? "" : "s"}
           </span>
           {attentionCount > 0 ? (
-            <span className="text-[11px] font-medium text-[var(--warning)]">
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--warning)]">
+              <AlertTriangle className="size-3" />
               {attentionCount} need attention
             </span>
           ) : null}
         </div>
-        <span className="text-xs font-medium text-muted-foreground">Updated</span>
       </div>
 
       <div className="pt-2">
@@ -370,15 +369,15 @@ export function RelayPlansRegistry({
             <div className="hidden min-h-0 flex-1 overflow-x-auto overflow-y-hidden lg:flex">
               <div className="flex h-full min-h-0 min-w-[1120px] flex-1 flex-col">
                 <div
-                  className="grid shrink-0 border-b border-[var(--relay-row-border)] py-2 text-xs font-semibold text-foreground"
+                  className="grid shrink-0 border-b border-[var(--relay-row-border)] py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground"
                   style={{ gridTemplateColumns: registryColumns }}
                 >
-                  <div className="px-4">Plan</div>
-                  <div className="px-4">Status</div>
-                  <div className="px-4">Progress</div>
-                  <div className="px-4">Current / Next</div>
-                  <div className="px-4">Updated</div>
-                  <div className="px-4">Attention</div>
+                  <div className="px-4">PLAN</div>
+                  <div className="px-4">STATUS</div>
+                  <div className="px-4">PROGRESS</div>
+                  <div className="px-4">CURRENT / NEXT PASS</div>
+                  <div className="px-4">UPDATED</div>
+                  <div className="px-4">ATTENTION</div>
                   <div className="pr-2" />
                 </div>
 
@@ -480,15 +479,15 @@ export function RelayPlansRegistry({
             <div className="hidden min-h-0 flex-1 overflow-x-auto overflow-y-hidden lg:flex">
               <div className="flex h-full min-h-0 min-w-[1120px] flex-1 flex-col">
                 <div
-                  className="grid shrink-0 border-b border-[var(--relay-row-border)] py-2 text-xs font-semibold text-foreground"
+                  className="grid shrink-0 border-b border-[var(--relay-row-border)] py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground"
                   style={{ gridTemplateColumns: registryColumns }}
                 >
-                  <div className="px-4">Plan</div>
-                  <div className="px-4">Status</div>
-                  <div className="px-4">Progress</div>
-                  <div className="px-4">Current / Next</div>
-                  <div className="px-4">Updated</div>
-                  <div className="px-4">Attention</div>
+                  <div className="px-4">PLAN</div>
+                  <div className="px-4">STATUS</div>
+                  <div className="px-4">PROGRESS</div>
+                  <div className="px-4">CURRENT / NEXT PASS</div>
+                  <div className="px-4">UPDATED</div>
+                  <div className="px-4">ATTENTION</div>
                   <div className="pr-2" />
                 </div>
 

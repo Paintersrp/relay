@@ -27,7 +27,7 @@ function PlansListPage() {
           title="Plan submission arrives in UI-PLAN-03"
         >
           <Plus className="size-3.5" />
-          + New Plan
+          New Plan
         </Button>
       }
       bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
