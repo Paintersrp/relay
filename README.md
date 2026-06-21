@@ -11,7 +11,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | Capability | Description |
 | --- | --- |
 | UI Handoff Intake | Create runs by pasting/uploading handoffs in the React UI |
-| MCP Handoff Intake | Create runs via the current Planner Project-facing MCP action (`create_run_from_planner_handoff`) after user confirmation |
+| MCP Submission Intake | Submit reviewed Planner handoffs and reviewed Planner pass plans via the current Planner Project-facing MCP actions after user confirmation |
 | Managed Plans (backend) | Optional plan/pass orchestration: validate and submit Planner pass plans, associate runs to passes, read-only plan and pass APIs |
 | Run Storage | Run metadata and artifact storage |
 | Intake Review | Parse and validate handoff structure before execution |
@@ -32,7 +32,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | Branch Management | Automatic branch/worktree creation |
 | Repair | Automatic validation failure repair |
 | Audit | Automatic AI audit/closeout |
-| Additional Project-Facing MCP Actions | Project-facing MCP exposure beyond `create_run_from_planner_handoff` is configuration-dependent; local/dev/server MCP inventory includes additional tools |
+| Additional Project-Facing MCP Actions | Project-facing MCP exposure beyond `create_run_from_planner_handoff` and `submit_planner_pass_plan` is configuration-dependent; local/dev/server MCP inventory includes additional tools |
 
 ### Run Actions
 
@@ -69,8 +69,8 @@ These are human-readable documentation definitions only and do not add schema fi
 - **Managed plan**: A reviewed Planner pass plan persisted by Relay as a `plans` record with derived `plan_passes`. Plans are optional; standalone runs remain valid.
 - **Pass**: A unit of work within a managed plan, represented as a `plan_passes` record with a sequence, scope, goals, and a status (`planned`, `in_progress`, `completed`, `skipped`). Passes are created automatically from a submitted plan; they are not created ad hoc.
 - **Pass-associated run**: A run linked to a specific plan pass via `plan_id`/`pass_id` (or `planId`/`passId`). Creating the run moves the pass from `planned` to `in_progress`; audit acceptance moves it to `completed`; audit revision keeps/returns it to `in_progress`.
-- **Current Project-facing MCP action**: The single `create_run_from_planner_handoff` action available to the Planner by default.
-- **Local/dev MCP server tool inventory**: Additional MCP tools including `submit_planner_pass_plan` used for local development and validation. These are not automatically Planner Project-facing unless external Project configuration explicitly exposes them.
+- **Current Project-facing MCP actions**: `create_run_from_planner_handoff` for reviewed Planner handoffs and `submit_planner_pass_plan` for reviewed structured Plans of Passes.
+- **Local/dev MCP server tool inventory**: Additional MCP tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` used for local development and validation. These are not automatically Planner Project-facing unless external Project configuration explicitly exposes them.
 
 ## Managed Plans (Backend)
 
@@ -78,7 +78,7 @@ Managed plans are an optional orchestration layer in Relay. A **managed plan** i
 
 Key behaviors:
 
-- Submit a plan with `POST /api/plans` or the local/dev MCP tool `submit_planner_pass_plan`. Passes are created automatically from the submitted plan; they are not created ad hoc.
+- Submit a plan with `POST /api/plans` or the Planner-facing MCP tool `submit_planner_pass_plan`. Passes are created automatically from the submitted plan; they are not created ad hoc.
 - Multiple runs may be associated with the same pass over time for revisions or tweaks.
 - Pass lifecycle is driven by existing run/audit behavior:
   - Passes start as `planned`.
@@ -94,7 +94,7 @@ Read-only plan endpoints: `GET /api/plans`, `GET /api/plans/{planId}`, and `GET 
 
 Relay's current workflow is:
 
-1. Optionally submit a managed plan via `POST /api/plans` or the local/dev MCP tool `submit_planner_pass_plan`. Plans are optional; standalone runs remain valid.
+1. Optionally submit a managed plan via `POST /api/plans` or the Planner-facing MCP tool `submit_planner_pass_plan`. Plans are optional; standalone runs remain valid.
 2. Create a run from a Planner handoff through the React UI or current Planner Project-facing MCP action (`create_run_from_planner_handoff`). Runs may be standalone, associated only to a plan, or associated to a specific pass via `plan_id`/`pass_id`.
 3. Build Intake Review.
 4. Detect model, branch, repo, scoped files, validation commands, final output contract, commit suggestions, warnings, and blockers.
@@ -113,19 +113,22 @@ Relay does not stage files, commit, push, or mutate git on the user's behalf.
 
 ## MCP Bridge & Current Project Action
 
-Relay includes an MCP (Model Context Protocol) integration. The **current Planner Project-facing MCP Action** is exactly as follows:
+Relay includes an MCP (Model Context Protocol) integration. The **current Planner Project-facing MCP Actions** are exactly as follows:
 
 *   **Action:** `create_run_from_planner_handoff` — submit a reviewed Planner handoff artifact/content to Relay.
 *   **Result:** Relay creates and starts a new run from that handoff, and owns all downstream processing.
 *   **User Confirmation:** The Planner must explicitly ask for user confirmation after handoff creation before invoking this MCP run-creation action.
+*   **Action:** `submit_planner_pass_plan` — validate and persist a reviewed Planner pass plan artifact/content to Relay.
+*   **Result:** Relay creates managed `plans` and derived `plan_passes` records only; it does not create runs or dispatch executors.
+*   **User Confirmation:** The Planner must explicitly ask for user confirmation after the plan artifact is reviewed before invoking this MCP plan-submission action.
 
-The local/dev/server MCP tool inventory also registers `submit_planner_pass_plan` (validate and persist a reviewed Planner pass plan) alongside the existing local/dev tools. This tool is **not** automatically a Planner Project-facing action unless external Project configuration explicitly exposes it. Planner use of any MCP tool requires active tool configuration and explicit user confirmation.
+The local/dev/server MCP tool inventory also registers additional tools beyond those Planner-facing submission actions. Planner use of any MCP tool requires active tool configuration and explicit user confirmation.
 
 No Planner-facing status, list, audit, or dispatch MCP tools are currently available by default unless Project configuration deliberately changes. The local/dev/server tools documented in `docs/mcp.md` are not automatically Project-facing Planner actions.
 
 ## Safety Boundaries
 
-The current Planner Project-facing MCP action does **not** expose or claim availability for:
+The current Planner Project-facing MCP actions do **not** expose or claim availability for:
 *   Status queries or run listing
 *   Audit packet submission
 *   Executor dispatch

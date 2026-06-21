@@ -2,21 +2,22 @@
 
 > [!IMPORTANT]
 > **Current GPT-Facing MCP Action Surface:**
-> The current Planner Project-facing MCP action is **only** `create_run_from_planner_handoff` by default. It submits a reviewed Planner handoff to Relay to create/start a run.
+> The current Planner Project-facing MCP actions are `create_run_from_planner_handoff` and `submit_planner_pass_plan` by default. The first submits a reviewed Planner handoff to Relay to create/start a run; the second submits a reviewed structured Plan of Passes JSON to create managed plan/pass records.
 > 
-> The Planner does **not** have multiple project-facing MCP actions by default. It cannot invoke status queries, run listing, audits, plan submission, or downstream dispatch via MCP unless external Project configuration explicitly exposes those tools. Other tools such as `submit_planner_pass_plan`, `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
+> The Planner does **not** have status-query, run-listing, audit-submission, or downstream-dispatch MCP actions by default. Tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
 
 ---
 
 ## Current GPT-Facing Action vs. Local/Dev Tool Inventory
 
-1.  **Project MCP Action (Production/GPT-Facing):**
+1.  **Project MCP Actions (Production/GPT-Facing):**
     *   **Action:** `create_run_from_planner_handoff` — Submits a reviewed Planner handoff to Relay. Relay creates/starts the run and handles all downstream compiler, validator, and executor tasks.
-    *   **User Gating:** Requires explicit user confirmation in chat before submission.
-2.  **Local/Dev/Server Tool Inventory (Optional/Developer-Only):**
-    *   The `mcpserver` implementation registers `submit_planner_pass_plan` and other tools (status, list, audits) used for local debugging, unit/smoke testing, or command-line developer workflows.
+    *   **Action:** `submit_planner_pass_plan` — Submits a reviewed structured Plan of Passes JSON artifact to Relay. Relay creates managed plan/pass records only.
+    *   **User Gating:** Each submission action requires explicit user confirmation in chat before invocation.
+2.  **Local/Dev/Server Tool Inventory (Optional/Developer-Only beyond the two submission actions):**
+    *   The `mcpserver` implementation also registers status/list/audit tools used for local debugging, unit/smoke testing, or command-line developer workflows.
     *   `submit_planner_pass_plan` creates plan/pass records only and does not create runs, dispatch executors, mutate git, or read chat context.
-    *   These are **not** currently exposed to the Planner Project unless the specific project configuration is modified to expose them.
+    *   The additional status/list/audit tools are **not** currently exposed to the Planner Project unless the specific project configuration is modified to expose them.
 
 ---
 
@@ -117,7 +118,7 @@ The MCP server uses WAL mode and shares the database safely with the Go HTTP dae
 
 ## Registered Tools (Developer Tool Inventory)
 
-Exactly 6 tools are registered in the local/dev MCP server. Note that **only tool #2 (`create_run_from_planner_handoff`)** is currently exposed as a Project MCP action for the GPT-facing Planner by default. The others, including `submit_planner_pass_plan`, are kept for local debugging, testing, or future expansion, and are only Project-facing if external configuration explicitly exposes them. No shell execution, arbitrary file access, or git mutation tools are exposed.
+Exactly 6 tools are registered in the local/dev MCP server. Note that **tools #2 (`create_run_from_planner_handoff`) and #6 (`submit_planner_pass_plan`)** are currently exposed as Project MCP actions for the GPT-facing Planner by default. The remaining status/list/audit tools are kept for local debugging, testing, or future expansion, and are only Project-facing if external configuration explicitly exposes them. No shell execution, arbitrary file access, or git mutation tools are exposed.
 
 ### 1. `submit_test_audit_packet`
 
@@ -312,13 +313,13 @@ The MCP subprocess and the HTTP daemon (`cmd/relay`) share the same SQLite datab
 
 - **Pass 13A (feasibility):** Added `submit_test_audit_packet` to prove stdio MCP bridge works. Gated real tools.
 - **Pass 16 (real tools):** Implemented the 4 run/audit tools (`create_run_from_planner_handoff`, `list_open_runs`, `get_run_status`, `submit_audit_packet`), wired MCP server to real Relay DB, added executable `make mcp-smoke` harness.
-- **Pass 16+ managed plans:** Added `submit_planner_pass_plan` for local/dev plan submission and updated smoke/docs to cover the 6-tool inventory.
+- **Pass 16+ managed plans:** Added `submit_planner_pass_plan` for Planner-facing plan submission and updated smoke/docs to cover the 6-tool inventory.
 
 ---
 
 ## ChatGPT Remote MCP Validation
 
-> **Dev-Only Note:** This section describes local development validation of the remote `/mcp` endpoint and may exercise broader dev/server tool inventory, but does not redefine the current Planner Project-facing MCP action surface. For the Planner Project, the current action remains only `create_run_from_planner_handoff` unless Project configuration deliberately changes.
+> **Dev-Only Note:** This section describes local development validation of the remote `/mcp` endpoint and may exercise broader dev/server tool inventory, but does not redefine the current Planner Project-facing MCP action surface. For the Planner Project, the current submission actions are `create_run_from_planner_handoff` and `submit_planner_pass_plan` unless Project configuration deliberately changes.
 
 Relay exposes `/mcp` through the Go daemon (`cmd/relay`) for ChatGPT-facing remote MCP access. During local development, ChatGPT connects through an HTTPS tunnel (e.g. `ssh -R` or `ngrok`) that forwards to the local daemon.
 
@@ -335,7 +336,7 @@ Run these checks against a local development instance of the Go daemon with an H
 1. **Daemon starts without error** — `go run ./cmd/relay` binds on the configured port.
 2. **Tunnel is reachable** — `curl -s -o /dev/null -w "%{http_code}" <tunnel-url>/mcp` returns `200` or `405`.
 3. **ChatGPT can discover tools** — ChatGPT session successfully calls `tools/list` on the remote `/mcp` endpoint.
-4. **Tools respond without auth errors** — Each tool returns a structured response, not an auth/403 body, in a local/dev validation configuration. Note that tools such as `submit_test_audit_packet`, `create_run_from_planner_handoff`, `submit_planner_pass_plan`, `list_open_runs`, `get_run_status`, and `submit_audit_packet` are used here but are **not** the current Planner Project action inventory unless configuration explicitly exposes them.
+4. **Tools respond without auth errors** — Each tool returns a structured response, not an auth/403 body, in a local/dev validation configuration. Note that tools such as `submit_test_audit_packet`, `list_open_runs`, `get_run_status`, and `submit_audit_packet` are used here but are **not** the current Planner Project action inventory unless configuration explicitly exposes them. `create_run_from_planner_handoff` and `submit_planner_pass_plan` are the current Planner-facing submission actions.
 5. **Artifact written to disk** — After calling a write tool, confirm an artifact file appears under `$RELAY_ARTIFACTS_DIR`.
 6. **Run state persisted** — After a write tool, `get_run_status` returns the expected updated state.
 7. **No credentials leaked** — Review tunnel and daemon logs; confirm no tokens, keys, or signed URLs appear in the output.

@@ -4,7 +4,7 @@ This document describes how to configure and use Relay's remote MCP endpoint to 
 
 ## Overview
 
-Relay exposes a secure Model Context Protocol (MCP) endpoint over HTTPS. This allows ChatGPT to serve as a companion client that can retrieve status, list runs, dispatch planner handoffs, and submit review audits directly into your local or private Relay environment.
+Relay exposes a secure Model Context Protocol (MCP) endpoint over HTTPS. This allows ChatGPT to serve as a companion client that can retrieve status, list runs, submit reviewed planner handoffs, submit reviewed planner pass plans, and submit review audits directly into your local or private Relay environment.
 
 ```
 ChatGPT conversation
@@ -103,12 +103,13 @@ Expected Response:
 
 ## Approved Tools
 
-The connector registers exactly five approved tools:
+The connector registers exactly six approved tools:
 
 | Tool Name | When ChatGPT Should Call It | Description / Capabilities |
 | :--- | :--- | :--- |
 | `submit_test_audit_packet` | When validating connectivity | Feasibility gate check tool. Writes a synthetic audit packet directly to run ID `0` to prove write access. |
 | `create_run_from_planner_handoff` | When the user asks to send a handoff | Submits planner handoff markdown from the current chat to Relay as a new run. ChatGPT extracts the handoff text from the conversation and passes it as the payload. |
+| `submit_planner_pass_plan` | When the user asks to submit a reviewed plan | Submits reviewed Planner pass plan JSON from the current chat to Relay. ChatGPT extracts the reviewed plan JSON and passes it as the payload. |
 | `list_open_runs` | When the user asks what runs exist | Lists active non-terminal runs. Returns a bounded summary (ID, title, repository, branch, status, lifecycle state, updated time, review URL). |
 | `get_run_status` | When the user asks for a run status | Retrieves a detailed lifecycle snapshot of a single run by ID. |
 | `submit_audit_packet` | When the user asks to submit an audit | Submits a completed audit packet (markdown) and decision back into Relay for an active run. |
@@ -117,6 +118,8 @@ The connector registers exactly five approved tools:
 
 - **Example Prompt**: *"Send my current implementation handoff to Relay"*
   - **ChatGPT Action**: Call `create_run_from_planner_handoff` with the extracted markdown of the handoff.
+- **Example Prompt**: *"Submit this reviewed plan of passes to Relay"*
+  - **ChatGPT Action**: Call `submit_planner_pass_plan` with the extracted reviewed plan JSON.
 - **Example Prompt**: *"What runs are currently active in my Relay workbench?"*
   - **ChatGPT Action**: Call `list_open_runs`.
 - **Example Prompt**: *"Get the status of run #42"*
