@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/resizable'
 import { StatusBadge } from './StatusBadge'
 import { RunStepper } from './RunStepper'
+import { RelayStateSurface } from './RelayStateSurface'
 import { cn } from '@/lib/utils'
 import { ArrowLeft } from 'lucide-react'
 
@@ -59,16 +60,39 @@ function hasPanelContent(content: React.ReactNode): boolean {
 }
 
 function getInspectorFallback(tab: InspectorPanelKey): React.ReactNode {
-  const label = INSPECTOR_TABS.find((item) => item.key === tab)?.label ?? tab
+  const fallbackCopy: Record<
+    InspectorPanelKey,
+    { title: string; description: string }
+  > = {
+    logs: {
+      title: 'No logs captured',
+      description: 'Relay has not recorded log events for this run yet.',
+    },
+    artifacts: {
+      title: 'No artifacts captured',
+      description:
+        'Artifacts will appear after intake, compile, execute, or audit stages produce evidence.',
+    },
+    validation: {
+      title: 'Validation not run',
+      description:
+        'Validation results will appear after Relay captures validation output.',
+    },
+    audit: {
+      title: 'No audit data',
+      description:
+        'Audit evidence and decisions will appear when the run reaches audit.',
+    },
+  }
+
+  const copy = fallbackCopy[tab]
   return (
-    <div className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-3">
-      <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-2 text-sm text-muted-foreground">
-        No {label.toLowerCase()} data is available for this run.
-      </p>
-    </div>
+    <RelayStateSurface
+      tone="empty"
+      title={copy.title}
+      description={copy.description}
+      className="bg-[var(--relay-inspector-bg)]"
+    />
   )
 }
 

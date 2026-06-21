@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { RelayStateSurface } from '@/components/relay/RelayStateSurface'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { CheckCircle2, Clock, FileText, XCircle } from 'lucide-react'
@@ -750,19 +751,12 @@ export function RunEvidenceBrowser({
 
   if (artifacts.length === 0) {
     return (
-      <div
-        className={cn(
-          'flex h-full min-h-0 flex-col rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4',
-          className,
-        )}
-      >
-        <p className='font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground'>
-          No evidence artifacts captured
-        </p>
-        <p className='mt-2 text-sm text-muted-foreground'>
-          This run has no artifacts available yet.
-        </p>
-      </div>
+      <RelayStateSurface
+        tone='empty'
+        title='No artifacts captured'
+        description='This run has no evidence artifacts available yet.'
+        className={className}
+      />
     )
   }
 

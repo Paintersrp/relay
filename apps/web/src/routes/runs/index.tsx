@@ -9,7 +9,7 @@ export const Route = createFileRoute("/runs/")({
 });
 
 function RunsListPage() {
-  const { data: runs, isLoading } = useQuery(runsListQueryOptions);
+  const { data: runs, isLoading, error } = useQuery(runsListQueryOptions);
 
   return (
     <AppPageFrame
@@ -17,7 +17,7 @@ function RunsListPage() {
       description="Handoff orchestration runs"
       bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
     >
-      <RelayRunsRegistry runs={runs} isLoading={isLoading} />
+      <RelayRunsRegistry runs={runs} isLoading={isLoading} error={error} />
     </AppPageFrame>
   );
 }

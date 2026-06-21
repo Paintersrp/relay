@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import {
@@ -26,12 +26,16 @@ import type {
 } from "@/features/relay-runs";
 import { RELAY_AUDIT_DECISION_VALUES } from "@/features/relay-runs";
 import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
+import { RelayStateBanner } from "@/components/relay/RelayStateSurface";
+import {
+  RunWorkbenchLoadFailedState,
+  RunWorkbenchLoadingState,
+} from "@/components/relay/RunWorkbenchStates";
 import { ValidationPanel } from "@/components/relay/ValidationPanel";
 import { ArtifactPreviewCard } from "@/components/relay/ArtifactPreviewCard";
 import { RunEvidenceBrowser } from "@/components/relay/RunEvidenceBrowser";
 import { LogPreviewPanel } from "@/components/relay/LogPreviewPanel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,7 +51,6 @@ import {
   Terminal,
   CheckCircle2,
   Send,
-  ArrowLeft,
   RefreshCw,
   FileCode,
 } from "lucide-react";
@@ -69,34 +72,16 @@ function AuditPage() {
   const { data: events } = useQuery(runEventsQueryOptions(runId));
 
   if (isLoadingRun || isLoadingArtifacts) {
-    return (
-      <div className="flex flex-col gap-3 p-6 max-w-4xl mx-auto">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-4 w-96" />
-        <Skeleton className="h-4 w-48" />
-        <Skeleton className="h-64 w-full mt-6" />
-      </div>
-    );
+    return <RunWorkbenchLoadingState label="Loading run" />;
   }
 
   if (errorRun || !run) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center min-h-[50vh]">
-        <div className="text-4xl">⚠️</div>
-        <h1 className="text-lg font-semibold">
-          Run not found or error loading
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          Failed to load run details from backend. Please verify the backend is
-          running and the run ID is correct.
-        </p>
-        <Button variant="outline" size="sm" asChild>
-          <Link to="/runs">
-            <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
-            Back to Runs
-          </Link>
-        </Button>
-      </div>
+      <RunWorkbenchLoadFailedState
+        title="Run failed to load"
+        description="Relay could not load this run. Return to the runs registry and reopen the workbench."
+        backToRuns
+      />
     );
   }
 
@@ -396,6 +381,14 @@ function AuditMainContent({
   const localValidationPassed = runStatus === "validation_passed";
   const localValidationFailed = runStatus === "validation_failed";
   const localValidationAccepted = runStatus === "validation_failed_accepted";
+  const isAuditReadyStatus =
+    runStatus === "audit_ready" || runStatus === "audit_ready_for_review";
+  const isAuditBlockedStatus =
+    runStatus === "blocked" ||
+    runStatus.includes("rejected") ||
+    (runStatus.includes("failed") &&
+      runStatus !== "validation_failed" &&
+      runStatus !== "validation_failed_accepted");
 
   const validationRunJsonArt = artifacts.find(
     (a) => a.storageKind === "validation_run_json",
@@ -559,10 +552,39 @@ function AuditMainContent({
   return (
     <div className="flex flex-col gap-4">
       {mutationError && (
-        <div className="flex items-start gap-1.5 text-xs text-red-400 bg-red-950/20 border border-red-900/30 rounded p-2.5">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span>{mutationError}</span>
-        </div>
+        <RelayStateBanner
+          tone="danger"
+          title="Audit action failed"
+          description={mutationError}
+        />
+      )}
+      {isAuditReadyStatus && (
+        <RelayStateBanner
+          tone="success"
+          title="Audit ready"
+          description="Relay has enough evidence to review the audit packet and finish this run."
+        />
+      )}
+      {runStatus === "revision_required" && (
+        <RelayStateBanner
+          tone="warning"
+          title="Revision required"
+          description={
+            auditData.revisionRequirements[0] ||
+            "Audit revisions were requested. Update the run output and regenerate the audit packet."
+          }
+        />
+      )}
+      {!isAuditReadyStatus && isAuditBlockedStatus && (
+        <RelayStateBanner
+          tone="blocked"
+          title={runStatus.includes("failed") ? "Audit failed" : "Audit blocked"}
+          description={
+            auditData.blockers[0] ||
+            "Relay cannot close this run until the audit blockers are resolved."
+          }
+          metadata={`Current status: ${runStatus}`}
+        />
       )}
 
       {/* Local Validation Required Panel */}

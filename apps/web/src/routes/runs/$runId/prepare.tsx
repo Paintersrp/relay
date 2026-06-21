@@ -14,12 +14,19 @@ import {
 } from "@/features/relay-runs";
 import type { RepairValidationResponse } from "@/features/relay-runs";
 import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
+import {
+  RelayInlineState,
+  RelayStateBanner,
+} from "@/components/relay/RelayStateSurface";
+import {
+  RunWorkbenchLoadFailedState,
+  RunWorkbenchLoadingState,
+} from "@/components/relay/RunWorkbenchStates";
 import { ValidationPanel } from "@/components/relay/ValidationPanel";
 import { LogPreviewPanel } from "@/components/relay/LogPreviewPanel";
 import { RunEvidenceBrowser } from "@/components/relay/RunEvidenceBrowser";
 import { ArtifactInspectorDialog } from "@/components/relay/ArtifactInspectorDialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
@@ -30,7 +37,6 @@ import {
   AlertTriangle,
   AlertCircle,
   Clock,
-  ArrowLeft,
   ArrowRight,
   ShieldCheck,
   FileText,
@@ -59,34 +65,16 @@ function PreparePage() {
   );
 
   if (isLoadingRun || isLoadingArtifacts || isLoadingEvents) {
-    return (
-      <div className="flex flex-col gap-3 p-6 max-w-4xl mx-auto">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-4 w-96" />
-        <Skeleton className="h-4 w-48" />
-        <Skeleton className="h-64 w-full mt-6" />
-      </div>
-    );
+    return <RunWorkbenchLoadingState label="Loading run" />;
   }
 
   if (errorRun || !run) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center min-h-[50vh]">
-        <div className="text-4xl">⚠️</div>
-        <h1 className="text-lg font-semibold">
-          Run not found or error loading
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          Failed to load run details from backend. Please verify the backend is
-          running and the run ID is correct.
-        </p>
-        <Button variant="outline" size="sm" asChild>
-          <Link to="/runs">
-            <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
-            Back to Runs
-          </Link>
-        </Button>
-      </div>
+      <RunWorkbenchLoadFailedState
+        title="Run failed to load"
+        description="Relay could not load this run. Return to the runs registry and reopen the workbench."
+        backToRuns
+      />
     );
   }
 
@@ -318,12 +306,12 @@ function PrepareMainContent({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Mutation Error Banner */}
       {mutationError && (
-        <div className="flex items-start gap-1.5 text-xs text-red-400 bg-red-950/20 border border-red-900/30 rounded p-2.5">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span>{mutationError}</span>
-        </div>
+        <RelayStateBanner
+          tone="danger"
+          title="Prepare action failed"
+          description={mutationError}
+        />
       )}
 
       {/* Section 1: Compiler Result */}
@@ -423,6 +411,13 @@ function PrepareMainContent({
       >
         {packetValidationArt ? (
           <div className="flex flex-col gap-2">
+            {packetValidationReport?.errors?.length > 0 ? (
+              <RelayStateBanner
+                tone="danger"
+                title="Validation failed"
+                description={`Compile failed packet validation with ${packetValidationReport.errors.length} error${packetValidationReport.errors.length !== 1 ? "s" : ""}. Review the report before continuing.`}
+              />
+            ) : null}
             <div className="flex items-center gap-4 text-xs">
               <span className="flex items-center gap-1">
                 {packetValidationReport?.valid === true ? (
@@ -489,25 +484,17 @@ function PrepareMainContent({
               )}
           </div>
         ) : isPacketValidationFailed ? (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2 text-xs bg-red-950/20 border border-red-900/30 rounded p-3 text-red-400">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span className="italic">
-                Compile failed packet validation. Review Validation Report or
-                Logs below.
-              </span>
-            </div>
-          </div>
+          <RelayStateBanner
+            tone="danger"
+            title="Validation failed"
+            description="Compile failed packet validation. Review the validation report or logs below."
+          />
         ) : (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
-              <Clock className="w-4 h-4 shrink-0" />
-              <span className="italic">
-                Packet validation report not available. Compile must be run
-                first.
-              </span>
-            </div>
-          </div>
+          <RelayInlineState
+            tone="empty"
+            title="Validation report unavailable"
+            description="Packet validation report not available. Compile must be run first."
+          />
         )}
         {packetValidationArt && (
           <ArtifactInspectorDialog
@@ -592,29 +579,21 @@ function PrepareMainContent({
           )}
 
           {repairResult !== null && repairResult.blockedReason && (
-            <div className="flex items-start gap-2 text-xs bg-red-950/20 border border-red-900/30 rounded p-3">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-400" />
-              <div>
-                <p className="font-semibold text-red-400">Repair blocked</p>
-                <p className="text-red-300/80">{repairResult.blockedReason}</p>
-              </div>
-            </div>
+            <RelayStateBanner
+              tone="blocked"
+              title="Repair blocked"
+              description={repairResult.blockedReason}
+            />
           )}
 
           {repairResult !== null &&
             !repairResult.blockedReason &&
             repairResult.ineligibleReason && (
-              <div className="flex items-start gap-2 text-xs bg-yellow-950/20 border border-yellow-900/30 rounded p-3">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-yellow-400" />
-                <div>
-                  <p className="font-semibold text-yellow-400">
-                    Repair ineligible
-                  </p>
-                  <p className="text-yellow-300/80">
-                    {repairResult.ineligibleReason}
-                  </p>
-                </div>
-              </div>
+              <RelayStateBanner
+                tone="warning"
+                title="Repair ineligible"
+                description={repairResult.ineligibleReason}
+              />
             )}
 
           {repairResult !== null &&
@@ -641,13 +620,11 @@ function PrepareMainContent({
             !repairResult.ineligibleReason &&
             repairResult.reValidationValid === undefined &&
             repairResult.error && (
-              <div className="flex items-start gap-2 text-xs bg-red-950/20 border border-red-900/30 rounded p-3">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-400" />
-                <div>
-                  <p className="font-semibold text-red-400">Repair error</p>
-                  <p className="text-red-300/80">{repairResult.error}</p>
-                </div>
-              </div>
+              <RelayStateBanner
+                tone="blocked"
+                title="Repair error"
+                description={repairResult.error}
+              />
             )}
 
           {repairResult !== null &&
@@ -898,12 +875,6 @@ function PrepareMainContent({
                 className="h-16 text-xs bg-background/50 resize-none"
                 disabled={isPending}
               />
-              {mutationError && (
-                <div className="flex items-start gap-1.5 text-xs text-red-400 bg-red-950/20 border border-red-900/30 rounded p-2">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  <span>{mutationError}</span>
-                </div>
-              )}
               <Button
                 variant="default"
                 size="sm"

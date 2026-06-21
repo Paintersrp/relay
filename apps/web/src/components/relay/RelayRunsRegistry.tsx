@@ -15,6 +15,8 @@ import {
   getRelayAttentionReason,
   type RelayAttentionReason,
 } from "@/components/relay/relayVisualState";
+import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   formatRunDate,
@@ -36,6 +38,7 @@ type RunsRegistryFilter =
 interface RelayRunsRegistryProps {
   runs?: RelayRun[];
   isLoading?: boolean;
+  error?: unknown;
   className?: string;
 }
 
@@ -91,6 +94,7 @@ const registryColumns =
 export function RelayRunsRegistry({
   runs,
   isLoading = false,
+  error,
   className,
 }: RelayRunsRegistryProps) {
   const [filter, setFilter] = React.useState<RunsRegistryFilter>("all");
@@ -219,15 +223,53 @@ export function RelayRunsRegistry({
             </div>
           ) : null}
 
-          {!isLoading && filteredRuns.length === 0 ? (
+          {!isLoading && error ? (
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <RelayStateSurface
+                tone="danger"
+                title="Runs failed to load"
+                description="Relay could not load the runs registry. Check the API process and try again."
+              />
+            </div>
+          ) : null}
+
+          {!isLoading && !error && rows.length === 0 ? (
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <RelayStateSurface
+                tone="empty"
+                title="No runs yet"
+                description="Create a run from a Planner handoff to start Relay orchestration."
+                action={
+                  <Button size="sm" asChild>
+                    <Link to="/runs/new">New Run</Link>
+                  </Button>
+                }
+              />
+            </div>
+          ) : null}
+
+          {!isLoading && !error && rows.length > 0 && filteredRuns.length === 0 ? (
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <div className="flex min-h-full items-center justify-center border-b border-[var(--relay-row-border)] px-4 py-12 text-sm text-muted-foreground">
-                No runs match this filter.
+              <div className="p-4">
+                <RelayStateSurface
+                  tone="empty"
+                  title="No runs match this filter"
+                  description="Switch filters to view the rest of the run registry."
+                  action={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFilter("all")}
+                    >
+                      Show all runs
+                    </Button>
+                  }
+                />
               </div>
             </div>
           ) : null}
 
-          {!isLoading && filteredRuns.length > 0 ? (
+          {!isLoading && !error && filteredRuns.length > 0 ? (
             <div
               ref={scrollParentRef}
               className="min-h-0 flex-1 overflow-y-auto"

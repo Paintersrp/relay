@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import {
@@ -13,11 +13,18 @@ import {
 } from "@/features/relay-runs";
 import type { RelayExecutorPhase } from "@/features/relay-runs";
 import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
+import {
+  RelayInlineState,
+  RelayStateBanner,
+} from "@/components/relay/RelayStateSurface";
+import {
+  RunWorkbenchLoadFailedState,
+  RunWorkbenchLoadingState,
+} from "@/components/relay/RunWorkbenchStates";
 import { ValidationPanel } from "@/components/relay/ValidationPanel";
 import { LogPreviewPanel } from "@/components/relay/LogPreviewPanel";
 import { RunEvidenceBrowser } from "@/components/relay/RunEvidenceBrowser";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,14 +34,12 @@ import {
   CheckCircle2,
   FileCode,
   Terminal,
-  AlertCircle,
   AlertTriangle,
   Play,
   XCircle,
   RefreshCw,
   StopCircle,
   Clock,
-  ArrowLeft,
   FileText,
 } from "lucide-react";
 
@@ -57,34 +62,16 @@ function ExecutePage() {
   );
 
   if (isLoadingRun || isLoadingArtifacts || isLoadingEvents) {
-    return (
-      <div className="flex flex-col gap-3 p-6 max-w-4xl mx-auto">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-4 w-96" />
-        <Skeleton className="h-4 w-48" />
-        <Skeleton className="h-64 w-full mt-6" />
-      </div>
-    );
+    return <RunWorkbenchLoadingState label="Loading run" />;
   }
 
   if (errorRun || !run) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center min-h-[50vh]">
-        <div className="text-4xl">⚠️</div>
-        <h1 className="text-lg font-semibold">
-          Run not found or error loading
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          Failed to load run details from backend. Please verify the backend is
-          running and the run ID is correct.
-        </p>
-        <Button variant="outline" size="sm" asChild>
-          <Link to="/runs">
-            <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
-            Back to Runs
-          </Link>
-        </Button>
-      </div>
+      <RunWorkbenchLoadFailedState
+        title="Run failed to load"
+        description="Relay could not load this run. Return to the runs registry and reopen the workbench."
+        backToRuns
+      />
     );
   }
 
@@ -432,12 +419,12 @@ function ExecuteMainContent({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Mutation Error Banner */}
       {mutationError && (
-        <div className="flex items-start gap-1.5 text-xs text-red-400 bg-red-950/20 border border-red-900/30 rounded p-2.5">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span>{mutationError}</span>
-        </div>
+        <RelayStateBanner
+          tone="danger"
+          title="Executor action failed"
+          description={mutationError}
+        />
       )}
 
       {/* Agent Status */}
@@ -483,45 +470,42 @@ function ExecuteMainContent({
             below.
           </p>
         )}
-        {executorPhase === "blocked" && (
-          <p className="text-xs text-red-400/70 mt-1">
-            Executor reported a blocking issue. Review result artifacts for
-            details.
-          </p>
-        )}
-        {executorPhase === "failed" && (
-          <p className="text-xs text-red-400/70 mt-1">
-            Executor encountered a failure. Review error artifacts and consider
-            recovery options.
-          </p>
-        )}
         {executorPhase === "idle" && (
           <p className="text-xs text-muted-foreground/70 mt-1">
             Ready to dispatch executor. Click Start to begin the agent run.
           </p>
         )}
-        {executorPhase === "unavailable" && (
-          <p className="text-xs text-muted-foreground/70 mt-1">
-            Execution is not available for this run. Current status: {runStatus}
-            .
-          </p>
-        )}
 
         {preflightBlocked && (
-          <div className="mt-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-2.5 text-xs text-yellow-700 dark:text-yellow-300">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <div className="flex flex-col gap-1">
-                <span className="font-medium">Executor preflight blocked before launch.</span>
-                <span className="text-yellow-700/80 dark:text-yellow-300/80">
-                  Relay did not start the executor CLI. Fix local daemon readiness, binary path, workdir, or prompt-file availability, then retry.
-                </span>
-                <span className="font-mono text-[11px] text-yellow-700/70 dark:text-yellow-300/70">
-                  Evidence: {(preflightCommandLogArt || commandLogArt)?.filename || "command_log"} / {(preflightResultArt || executorResultArt)?.filename || "executor_result"}
-                </span>
-              </div>
-            </div>
-          </div>
+          <RelayStateBanner
+            tone="blocked"
+            title="Executor blocked"
+            description="Relay did not start the executor CLI. Fix local daemon readiness, binary path, workdir, or prompt-file availability, then retry."
+            metadata={`Evidence: ${(preflightCommandLogArt || commandLogArt)?.filename || "command_log"} / ${(preflightResultArt || executorResultArt)?.filename || "executor_result"}`}
+            className="mt-3"
+          />
+        )}
+        {!preflightBlocked &&
+          (executorPhase === "blocked" || executorPhase === "failed") && (
+            <RelayStateBanner
+              tone="blocked"
+              title="Executor blocked"
+              description={
+                executorPhase === "failed"
+                  ? "Executor encountered a failure. Review error artifacts and consider recovery options."
+                  : "Executor reported a blocking issue. Review result artifacts for details."
+              }
+              metadata={`Current status: ${runStatus}`}
+              className="mt-3"
+            />
+          )}
+        {executorPhase === "unavailable" && (
+          <RelayInlineState
+            tone="empty"
+            title="Execution unavailable"
+            description={`Execution is not available for this run. Current status: ${runStatus}.`}
+            className="mt-3"
+          />
         )}
 
         {/* Action Buttons */}

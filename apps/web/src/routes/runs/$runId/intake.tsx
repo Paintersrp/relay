@@ -8,11 +8,18 @@ import {
   approveIntake,
 } from "@/features/relay-runs";
 import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
+import {
+  RelayInlineState,
+  RelayStateBanner,
+} from "@/components/relay/RelayStateSurface";
+import {
+  RunWorkbenchLoadFailedState,
+  RunWorkbenchLoadingState,
+} from "@/components/relay/RunWorkbenchStates";
 import { ValidationPanel } from "@/components/relay/ValidationPanel";
 import { LogPreviewPanel } from "@/components/relay/LogPreviewPanel";
 import { RunEvidenceBrowser } from "@/components/relay/RunEvidenceBrowser";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
@@ -32,9 +39,6 @@ import {
   AlertTriangle,
   Server,
   FolderGit2,
-  AlertCircle,
-  Clock,
-  ArrowLeft,
   ArrowRight,
   ShieldCheck,
   ShieldX,
@@ -62,35 +66,17 @@ function IntakePage() {
   );
 
   if (isLoadingRun || isLoadingArtifacts || isLoadingEvents) {
-    return (
-      <div className="flex flex-col gap-3 p-6 max-w-4xl mx-auto">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-4 w-96" />
-        <Skeleton className="h-4 w-48" />
-        <Skeleton className="h-64 w-full mt-6" />
-      </div>
-    );
+    return <RunWorkbenchLoadingState label="Loading run" />;
   }
 
   // Handle run details missing or load errors
   if (errorRun || !run) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center min-h-[50vh]">
-        <div className="text-4xl">⚠️</div>
-        <h1 className="text-lg font-semibold">
-          Run not found or error loading
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          Failed to load run details from backend. Please verify the backend is
-          running and the run ID is correct.
-        </p>
-        <Button variant="outline" size="sm" asChild>
-          <Link to="/runs">
-            <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
-            Back to Runs
-          </Link>
-        </Button>
-      </div>
+      <RunWorkbenchLoadFailedState
+        title="Run failed to load"
+        description="Relay could not load this run. Return to the runs registry and reopen the workbench."
+        backToRuns
+      />
     );
   }
 
@@ -270,6 +256,14 @@ function IntakeMainContent({ run, artifacts }: { run: any; artifacts: any[] }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {mutationError && (
+        <RelayStateBanner
+          tone="danger"
+          title="Intake review failed"
+          description={mutationError}
+        />
+      )}
+
       {/* Section: Incoming Handoff */}
       <Section
         title="Incoming Handoff"
@@ -331,14 +325,12 @@ function IntakeMainContent({ run, artifacts }: { run: any; artifacts: any[] }) {
         </div>
 
         {!hasFrontmatter && (
-          <div className="mt-3 p-3 bg-yellow-950/20 border border-yellow-900/40 rounded text-xs text-yellow-400 leading-normal flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>
-              No YAML frontmatter was parsed from the submitted handoff. Relay
-              used explicit MCP/API arguments and fallback defaults where
-              available.
-            </span>
-          </div>
+          <RelayStateBanner
+            tone="warning"
+            title="No YAML frontmatter parsed"
+            description="No YAML frontmatter was parsed from the submitted handoff. Relay used explicit MCP/API arguments and fallback defaults where available."
+            className="mt-3"
+          />
         )}
 
         <div className="flex flex-col gap-2 mt-4">
@@ -719,13 +711,11 @@ function IntakeMainContent({ run, artifacts }: { run: any; artifacts: any[] }) {
       >
         <div className="flex flex-col gap-3 mt-1">
           {!isReviewable && (
-            <div className="flex items-center gap-2 p-2.5 rounded bg-muted/40 border border-border/50 text-xs text-muted-foreground leading-normal">
-              <Clock className="w-4 h-4 shrink-0" />
-              <span>
-                Intake review is not active. Run is currently in{" "}
-                <strong>{run.state || run.status}</strong> state.
-              </span>
-            </div>
+            <RelayInlineState
+              tone="warning"
+              title="Intake review inactive"
+              description={`Run is currently in ${run.state || run.status} state.`}
+            />
           )}
 
           {isReviewable && (
@@ -744,13 +734,6 @@ function IntakeMainContent({ run, artifacts }: { run: any; artifacts: any[] }) {
                 className="h-16 text-xs bg-background/50 resize-none"
                 disabled={isPending}
               />
-
-              {mutationError && (
-                <div className="flex items-start gap-1.5 text-xs text-red-400 bg-red-950/20 border border-red-900/30 rounded p-2">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  <span>{mutationError}</span>
-                </div>
-              )}
 
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 <Button

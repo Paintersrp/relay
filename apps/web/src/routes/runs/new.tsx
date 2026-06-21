@@ -1,12 +1,12 @@
 import { useState, type ChangeEvent, type FormEvent } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { ArrowLeft, AlertCircle, AlertTriangle, CheckCircle2, Circle, Loader2, Upload } from "lucide-react";
+import { ArrowLeft, AlertTriangle, CheckCircle2, Circle, Loader2, Upload } from "lucide-react";
 import { AppPageFrame } from "@/components/relay/AppPageFrame";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { RelayStateBanner } from "@/components/relay/RelayStateSurface";
 import { submitPlannerHandoff, RelayApiError } from "@/features/relay-runs";
 import { cn } from "@/lib/utils";
 
@@ -225,11 +225,11 @@ function NewRunPage() {
                 <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto">
                   {errorMsg && (
                     <div className="shrink-0 px-4 pt-4">
-                      <Alert variant="destructive">
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>Submission Failed</AlertTitle>
-                        <AlertDescription className="text-xs">{errorMsg}</AlertDescription>
-                      </Alert>
+                      <RelayStateBanner
+                        tone="danger"
+                        title="Handoff submission failed"
+                        description={errorMsg}
+                      />
                     </div>
                   )}
 
@@ -414,6 +414,14 @@ function NewRunPage() {
                 ) : (
                   <>
                     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                      {hasHandoff && detectedMetadata.detectedCount === 0 ? (
+                        <RelayStateBanner
+                          tone="warning"
+                          title="Metadata incomplete"
+                          description="Relay did not detect structured handoff metadata. Submission can continue, but defaults or explicit overrides may be used."
+                          className="mb-4"
+                        />
+                      ) : null}
                       <MetadataRow label="source" value={detectedMetadata.source} />
                       <MetadataRow
                         label="repo_target"

@@ -32,3 +32,7 @@ VITE_RELAY_API_BASE_URL=http://localhost:8080
 ```
 
 The current prototype uses mock data only. Run the existing Go backend on port 8080 during future API integration passes.
+
+## todo
+
+drift detection
