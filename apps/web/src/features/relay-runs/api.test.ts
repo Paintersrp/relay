@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
-import { getRun, getRuns, validateRun, RelayApiError } from './api';
+import {
+  getRun,
+  getRuns,
+  validateRun,
+  RelayApiError,
+  submitPlannerHandoff,
+} from './api';
 import { runsListQueryOptions, runDetailQueryOptions } from './queries';
 
 describe('Relay API Client Boundary (Real Data Wiring)', () => {
@@ -95,5 +101,24 @@ describe('Relay API Client Boundary (Real Data Wiring)', () => {
     expect(fetchSpy.mock.calls[0][1]?.method).toBe('POST');
     expect(res.success).toBe(true);
     expect(res.status).toBe('passed');
+  });
+
+  it("submitPlannerHandoff rejects passId without planId before fetch", async () => {
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy;
+
+    await expect(
+      submitPlannerHandoff({
+        planner_handoff_markdown: "# handoff",
+        passId: "UI-PLAN-01",
+      }),
+    ).rejects.toMatchObject({
+      name: "RelayApiError",
+      status: 400,
+      endpoint: "/api/intake/planner-handoff",
+      method: "POST",
+    });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

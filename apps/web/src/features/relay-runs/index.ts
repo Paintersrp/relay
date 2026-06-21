@@ -33,6 +33,7 @@ export {
   prepareCommitMessage,
   closeRun,
   submitPlannerHandoff,
+  assertValidPlannerHandoffPlanAssociation,
   RelayApiError,
   repairValidation,
   API_BASE_URL,
@@ -70,6 +71,8 @@ export type {
   RelayCommitSummary,
   RelayAuditActions,
   RelayAuditPageData,
+  PlannerHandoffIntakeRequest,
+  PlannerHandoffIntakeResponse,
 } from './types'
 export {
   RELAY_AUDIT_DECISION_VALUES,

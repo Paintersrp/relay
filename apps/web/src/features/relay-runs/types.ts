@@ -180,6 +180,12 @@ export interface PlannerHandoffIntakeRequest {
   run_id?: string;
   name?: string;
 
+  // Optional managed-plan association fields
+  planId?: string;
+  passId?: string;
+  plan_id?: string;
+  pass_id?: string;
+
   // Compatibility aliases
   repo?: string;
   branch?: string;
@@ -198,6 +204,10 @@ export interface PlannerHandoffIntakeResponse {
   lifecycleState: RelayRunLifecycleState;
   createdAt: string;
   review_url?: string;
+  planId?: string;
+  passId?: string;
+  plan_id?: string;
+  pass_id?: string;
 }
 
 // Canonical API Error shape

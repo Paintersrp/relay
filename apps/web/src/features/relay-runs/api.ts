@@ -204,6 +204,37 @@ async function postJson<TReq, TRes>(path: string, body?: TReq): Promise<TRes> {
   }
 }
 
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
+export function assertValidPlannerHandoffPlanAssociation(
+  req: PlannerHandoffIntakeRequest,
+): void {
+  const planId = firstNonEmptyString(req.planId, req.plan_id);
+  const passId = firstNonEmptyString(req.passId, req.pass_id);
+
+  if (passId && !planId) {
+    throw new RelayApiError(
+      "Planner handoff intake plan association is invalid: passId/pass_id requires planId/plan_id.",
+      400,
+      "/api/intake/planner-handoff",
+      "POST",
+      {
+        error: "invalid_plan_association",
+        message: "passId/pass_id requires planId/plan_id.",
+        code: "INVALID_PLAN_ASSOCIATION",
+      },
+    );
+  }
+}
+
 // GET endpoints
 export async function getRuns(): Promise<RelayRun[]> {
   const runs = await getJson<any[]>("/api/runs");
@@ -235,6 +266,8 @@ export async function getRunEvents(id: string): Promise<RelayRunEvent[]> {
 export async function submitPlannerHandoff(
   req: PlannerHandoffIntakeRequest
 ): Promise<PlannerHandoffIntakeResponse> {
+  assertValidPlannerHandoffPlanAssociation(req);
+
   return postJson<PlannerHandoffIntakeRequest, PlannerHandoffIntakeResponse>(
     "/api/intake/planner-handoff",
     req
