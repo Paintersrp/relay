@@ -200,6 +200,22 @@ type PlanAPIPass struct {
 	UpdatedAt              string   `json:"updatedAt"`
 }
 
+type PlanAPIReadPlan struct {
+	PlanAPIPlan
+	PassCount       int  `json:"passCount"`
+	CompletionReady bool `json:"completionReady"`
+}
+
+type PlanReadAPIResponse struct {
+	Success         bool              `json:"success"`
+	Count           int               `json:"count,omitempty"`
+	Plans           []PlanAPIReadPlan `json:"plans,omitempty"`
+	Plan            *PlanAPIReadPlan  `json:"plan,omitempty"`
+	Passes          []PlanAPIPass     `json:"passes,omitempty"`
+	Pass            *PlanAPIPass      `json:"pass,omitempty"`
+	CompletionReady bool              `json:"completionReady"`
+}
+
 // Helpers for mappings
 
 func parseAndFormatTime(value string) string {
@@ -772,6 +788,15 @@ func mapPlanPassToAPI(pass store.PlanPass) PlanAPIPass {
 	}
 }
 
+func buildPlanAPIReadPlan(plan store.Plan, passes []store.PlanPass, completionReady bool) PlanAPIReadPlan {
+	apiPlan := mapPlanToAPI(plan)
+	return PlanAPIReadPlan{
+		PlanAPIPlan:     apiPlan,
+		PassCount:       len(passes),
+		CompletionReady: completionReady,
+	}
+}
+
 func decodeStoredStringSlice(value string) []string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -880,6 +905,129 @@ func (h *APIHandler) SubmitPlan(w http.ResponseWriter, r *http.Request) {
 		Plan:       &apiPlan,
 		Passes:     apiPasses,
 		Validation: result.Report,
+	})
+}
+
+// GET /api/plans
+func (h *APIHandler) ListPlans(w http.ResponseWriter, r *http.Request) {
+	const defaultLimit int64 = 50
+	const maxLimit int64 = 100
+
+	validStatuses := map[string]bool{"active": true, "complete": true, "abandoned": true}
+
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	if status != "" && !validStatuses[status] {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid status filter")
+		return
+	}
+
+	limit := defaultLimit
+	limitStr := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if limitStr != "" {
+		parsed, err := strconv.ParseInt(limitStr, 10, 64)
+		if err != nil || parsed <= 0 {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid limit")
+			return
+		}
+		if parsed > maxLimit {
+			parsed = maxLimit
+		}
+		limit = parsed
+	}
+
+	var planRows []store.Plan
+	var err error
+	if status == "" {
+		planRows, err = h.store.ListPlans(limit)
+	} else {
+		planRows, err = h.store.ListPlansByStatus(status, limit)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list plans")
+		return
+	}
+
+	apiPlans := make([]PlanAPIReadPlan, 0, len(planRows))
+	for _, plan := range planRows {
+		passes, _ := h.store.ListPlanPassesByPlan(plan.ID)
+		ready, _ := h.lifecycleService.CompletionReady(plan.ID)
+		apiPlans = append(apiPlans, buildPlanAPIReadPlan(plan, passes, ready))
+	}
+
+	writeJSON(w, http.StatusOK, PlanReadAPIResponse{
+		Success: true,
+		Count:   len(apiPlans),
+		Plans:   apiPlans,
+	})
+}
+
+// GET /api/plans/{planId}
+func (h *APIHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
+	planID := strings.TrimSpace(chi.URLParam(r, "planId"))
+	if planID == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Plan ID is required")
+		return
+	}
+
+	plan, err := h.store.GetPlanByPlanID(planID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found", planID))
+		return
+	}
+
+	passes, err := h.store.ListPlanPassesByPlan(plan.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list plan passes")
+		return
+	}
+
+	ready, _ := h.lifecycleService.CompletionReady(plan.ID)
+
+	apiPasses := make([]PlanAPIPass, 0, len(passes))
+	for _, pass := range passes {
+		apiPasses = append(apiPasses, mapPlanPassToAPI(pass))
+	}
+
+	readPlan := buildPlanAPIReadPlan(*plan, passes, ready)
+	writeJSON(w, http.StatusOK, PlanReadAPIResponse{
+		Success:         true,
+		Plan:            &readPlan,
+		Passes:          apiPasses,
+		CompletionReady: ready,
+	})
+}
+
+// GET /api/plans/{planId}/passes/{passId}
+func (h *APIHandler) GetPlanPass(w http.ResponseWriter, r *http.Request) {
+	planID := strings.TrimSpace(chi.URLParam(r, "planId"))
+	passID := strings.TrimSpace(chi.URLParam(r, "passId"))
+	if planID == "" || passID == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Plan ID and pass ID are required")
+		return
+	}
+
+	plan, err := h.store.GetPlanByPlanID(planID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found", planID))
+		return
+	}
+
+	pass, err := h.store.GetPlanPassByPassID(plan.ID, passID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Pass with ID %q not found", passID))
+		return
+	}
+
+	passes, _ := h.store.ListPlanPassesByPlan(plan.ID)
+	ready, _ := h.lifecycleService.CompletionReady(plan.ID)
+
+	readPlan := buildPlanAPIReadPlan(*plan, passes, ready)
+	apiPass := mapPlanPassToAPI(*pass)
+	writeJSON(w, http.StatusOK, PlanReadAPIResponse{
+		Success:         true,
+		Plan:            &readPlan,
+		Pass:            &apiPass,
+		CompletionReady: ready,
 	})
 }
 

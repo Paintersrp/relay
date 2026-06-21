@@ -304,6 +304,17 @@ func (s *Store) GetPlanByPlanID(planID string) (*Plan, error) {
 	return &plan, nil
 }
 
+func (s *Store) ListPlans(limit int64) ([]Plan, error) {
+	return s.queries.ListPlans(context.Background(), limit)
+}
+
+func (s *Store) ListPlansByStatus(status string, limit int64) ([]Plan, error) {
+	return s.queries.ListPlansByStatus(context.Background(), generated.ListPlansByStatusParams{
+		Status: status,
+		Limit:  limit,
+	})
+}
+
 func (s *Store) GetPlanPass(id int64) (*PlanPass, error) {
 	pass, err := s.queries.GetPlanPass(context.Background(), id)
 	if err != nil {

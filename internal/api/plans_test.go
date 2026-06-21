@@ -259,6 +259,9 @@ func newPlanAPITestServer(t *testing.T) (*APIHandler, *store.Store, http.Handler
 	router.Route("/api", func(r chi.Router) {
 		r.Post("/plans/validate", apiH.ValidatePlan)
 		r.Post("/plans", apiH.SubmitPlan)
+		r.Get("/plans", apiH.ListPlans)
+		r.Get("/plans/{planId}", apiH.GetPlan)
+		r.Get("/plans/{planId}/passes/{passId}", apiH.GetPlanPass)
 	})
 
 	return apiH, st, router
@@ -346,4 +349,306 @@ func countRows(t *testing.T, db *sql.DB, table string) int {
 		t.Fatalf("count rows for %s: %v", table, err)
 	}
 	return count
+}
+
+func submitValidPlan(t *testing.T, router http.Handler, sourceArtifactPath string) string {
+	t.Helper()
+
+	body := marshalPlanAPIRequest(t, validPlanAPIPayload(t), sourceArtifactPath)
+	req := httptest.NewRequest(http.MethodPost, "/api/plans", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected submit to return 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp PlanAPIResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode submit response: %v", err)
+	}
+	if resp.Plan == nil {
+		t.Fatal("expected plan in submit response")
+	}
+	return resp.Plan.PlanID
+}
+
+func TestListPlansEmpty(t *testing.T) {
+	t.Parallel()
+
+	_, _, router := newPlanAPITestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/plans", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp PlanReadAPIResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("expected success=true, got false")
+	}
+	if len(resp.Plans) != 0 {
+		t.Fatalf("expected 0 plans, got %d", len(resp.Plans))
+	}
+}
+
+func TestListPlansAfterSubmit(t *testing.T) {
+	t.Parallel()
+
+	_, st, router := newPlanAPITestServer(t)
+
+	planID := submitValidPlan(t, router, "handoffs/plans/2026-06-21_managed-plans.planner-pass-plan.json")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/plans", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp PlanReadAPIResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("expected success=true, got false")
+	}
+	if resp.Count != 1 {
+		t.Fatalf("expected count=1, got %d", resp.Count)
+	}
+	if len(resp.Plans) != 1 {
+		t.Fatalf("expected 1 plan, got %d", len(resp.Plans))
+	}
+	plan := resp.Plans[0]
+	if plan.PlanID != planID {
+		t.Fatalf("expected planId %q, got %q", planID, plan.PlanID)
+	}
+	if plan.Status != "active" {
+		t.Fatalf("expected status active, got %q", plan.Status)
+	}
+	if plan.PassCount != 2 {
+		t.Fatalf("expected passCount 2, got %d", plan.PassCount)
+	}
+	if plan.CompletionReady {
+		t.Fatal("expected completionReady=false for non-terminal passes")
+	}
+	if plan.SourceArtifactPath != "handoffs/plans/2026-06-21_managed-plans.planner-pass-plan.json" {
+		t.Fatalf("unexpected sourceArtifactPath %q", plan.SourceArtifactPath)
+	}
+	if got := countRows(t, st.DB(), "plans"); got != 1 {
+		t.Fatalf("expected 1 plan row, got %d", got)
+	}
+}
+
+func TestListPlansStatusFilterAndLimitValidation(t *testing.T) {
+	t.Parallel()
+
+	_, _, router := newPlanAPITestServer(t)
+
+	submitValidPlan(t, router, "")
+
+	cases := []struct {
+		name       string
+		path       string
+		wantStatus int
+		wantCount  int
+	}{
+		{name: "active status", path: "/api/plans?status=active", wantStatus: http.StatusOK, wantCount: 1},
+		{name: "invalid status", path: "/api/plans?status=invalid", wantStatus: http.StatusBadRequest},
+		{name: "zero limit", path: "/api/plans?limit=0", wantStatus: http.StatusBadRequest},
+		{name: "non-numeric limit", path: "/api/plans?limit=abc", wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("expected %d, got %d: %s", tc.wantStatus, rec.Code, rec.Body.String())
+			}
+			if tc.wantStatus != http.StatusOK {
+				var errResp RelayApiErrorShape
+				if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
+					t.Fatalf("decode error response: %v", err)
+				}
+				if errResp.Error != "BAD_REQUEST" {
+					t.Fatalf("expected BAD_REQUEST, got %q", errResp.Error)
+				}
+				return
+			}
+			var resp PlanReadAPIResponse
+			if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if len(resp.Plans) != tc.wantCount {
+				t.Fatalf("expected %d plans, got %d", tc.wantCount, len(resp.Plans))
+			}
+		})
+	}
+}
+
+func TestGetPlanDetailAndPassOrdering(t *testing.T) {
+	t.Parallel()
+
+	_, _, router := newPlanAPITestServer(t)
+
+	submitValidPlan(t, router, "")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/plans/plan-123", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp PlanReadAPIResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("expected success=true, got false")
+	}
+	if resp.Plan == nil {
+		t.Fatal("expected plan in response")
+	}
+	if resp.Plan.PlanID != "plan-123" {
+		t.Fatalf("expected planId plan-123, got %q", resp.Plan.PlanID)
+	}
+	if resp.Plan.PassCount != 2 {
+		t.Fatalf("expected passCount 2, got %d", resp.Plan.PassCount)
+	}
+	if len(resp.Passes) != 2 {
+		t.Fatalf("expected 2 passes, got %d", len(resp.Passes))
+	}
+	if resp.Passes[0].PassID != "PASS-001" || resp.Passes[1].PassID != "PASS-002" {
+		t.Fatalf("unexpected pass order: %+v", resp.Passes)
+	}
+	if resp.CompletionReady {
+		t.Fatal("expected completionReady=false")
+	}
+
+	// Unknown plan returns 404
+	req = httptest.NewRequest(http.MethodGet, "/api/plans/plan-999", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGetPlanPassDetail(t *testing.T) {
+	t.Parallel()
+
+	_, _, router := newPlanAPITestServer(t)
+
+	submitValidPlan(t, router, "")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/plans/plan-123/passes/PASS-002", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp PlanReadAPIResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("expected success=true, got false")
+	}
+	if resp.Plan == nil {
+		t.Fatal("expected parent plan in response")
+	}
+	if resp.Plan.PlanID != "plan-123" {
+		t.Fatalf("expected parent planId plan-123, got %q", resp.Plan.PlanID)
+	}
+	if resp.Pass == nil {
+		t.Fatal("expected pass in response")
+	}
+	if resp.Pass.PassID != "PASS-002" {
+		t.Fatalf("expected passId PASS-002, got %q", resp.Pass.PassID)
+	}
+	if len(resp.Pass.Dependencies) != 1 || resp.Pass.Dependencies[0] != "PASS-001" {
+		t.Fatalf("unexpected pass dependencies: %+v", resp.Pass.Dependencies)
+	}
+
+	// Unknown pass returns 404
+	req = httptest.NewRequest(http.MethodGet, "/api/plans/plan-123/passes/PASS-999", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCompletionReadyComputedWithoutMutatingPlanStatus(t *testing.T) {
+	t.Parallel()
+
+	_, st, router := newPlanAPITestServer(t)
+
+	submitValidPlan(t, router, "")
+
+	plan, err := st.GetPlanByPlanID("plan-123")
+	if err != nil {
+		t.Fatalf("get plan: %v", err)
+	}
+
+	passes, err := st.ListPlanPassesByPlan(plan.ID)
+	if err != nil {
+		t.Fatalf("list passes: %v", err)
+	}
+	if len(passes) != 2 {
+		t.Fatalf("expected 2 passes, got %d", len(passes))
+	}
+
+	// Mark all passes terminal without changing plan.status.
+	terminalStatuses := []string{"completed", "skipped"}
+	for i, pass := range passes {
+		if _, err := st.UpdatePlanPassStatus(pass.ID, terminalStatuses[i%len(terminalStatuses)]); err != nil {
+			t.Fatalf("update pass status: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/plans/plan-123", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp PlanReadAPIResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.CompletionReady {
+		t.Fatal("expected completionReady=true when all passes are terminal")
+	}
+	if resp.Plan == nil || resp.Plan.Status != "active" {
+		t.Fatalf("expected plan status to remain active, got %+v", resp.Plan)
+	}
+
+	// Plan status in DB must still be active.
+	reloaded, err := st.GetPlanByPlanID("plan-123")
+	if err != nil {
+		t.Fatalf("reload plan: %v", err)
+	}
+	if reloaded.Status != "active" {
+		t.Fatalf("expected stored plan status active, got %q", reloaded.Status)
+	}
 }
