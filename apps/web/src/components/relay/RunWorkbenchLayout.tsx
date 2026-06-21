@@ -14,8 +14,17 @@ import { RelayStateSurface } from './RelayStateSurface'
 import { cn } from '@/lib/utils'
 import { ArrowLeft } from 'lucide-react'
 
-type InspectorPanelKey = 'logs' | 'artifacts' | 'validation' | 'audit'
+type InspectorPanelKey =
+  | 'details'
+  | 'logs'
+  | 'artifacts'
+  | 'validation'
+  | 'audit'
 type InspectorPanels = Partial<Record<InspectorPanelKey, React.ReactNode>>
+type InspectorTabConfig = {
+  key: InspectorPanelKey
+  label: string
+}
 
 interface RunWorkbenchLayoutProps {
   run: RelayRun
@@ -27,10 +36,12 @@ interface RunWorkbenchLayoutProps {
   sideContent?: React.ReactNode
   /** Run-local inspector panels. When provided, overrides `sideContent`. */
   inspectorPanels?: InspectorPanels
+  inspectorTabs?: InspectorTabConfig[]
+  initialInspectorTab?: InspectorPanelKey
   className?: string
 }
 
-const INSPECTOR_TABS: { key: InspectorPanelKey; label: string }[] = [
+const DEFAULT_INSPECTOR_TABS: InspectorTabConfig[] = [
   { key: 'logs', label: 'Logs' },
   { key: 'artifacts', label: 'Artifacts' },
   { key: 'validation', label: 'Validation' },
@@ -65,6 +76,10 @@ function getInspectorFallback(tab: InspectorPanelKey): React.ReactNode {
     InspectorPanelKey,
     { title: string; description: string }
   > = {
+    details: {
+      title: 'No intake details available',
+      description: 'Relay has not captured detailed intake context for this run yet.',
+    },
     logs: {
       title: 'No logs captured',
       description: 'Relay has not recorded log events for this run yet.',
@@ -98,10 +113,12 @@ function getInspectorFallback(tab: InspectorPanelKey): React.ReactNode {
 }
 
 function InspectorTabStrip({
+  tabs,
   activeTab,
   onTabChange,
   className,
 }: {
+  tabs: InspectorTabConfig[]
   activeTab?: InspectorPanelKey
   onTabChange: (tab: InspectorPanelKey) => void
   className?: string
@@ -109,7 +126,7 @@ function InspectorTabStrip({
   return (
     <div className={cn('overflow-x-auto', className)}>
       <div className="flex min-w-max items-center gap-4">
-        {INSPECTOR_TABS.map((tab) => {
+        {tabs.map((tab) => {
           const active = tab.key === activeTab
 
           return (
@@ -141,10 +158,21 @@ export function RunWorkbenchLayout({
   mainContent,
   sideContent,
   inspectorPanels,
+  inspectorTabs,
+  initialInspectorTab,
   className,
 }: RunWorkbenchLayoutProps) {
+  const resolvedTabs = React.useMemo(
+    () =>
+      inspectorTabs && inspectorTabs.length > 0
+        ? inspectorTabs
+        : DEFAULT_INSPECTOR_TABS,
+    [inspectorTabs],
+  )
   const [activeInspectorTab, setActiveInspectorTab] =
-    React.useState<InspectorPanelKey>('logs')
+    React.useState<InspectorPanelKey>(
+      () => initialInspectorTab ?? resolvedTabs[0]?.key ?? 'logs',
+    )
 
   const isRunning =
     run.status === 'executor_dispatched' || run.status === 'executor_running'
@@ -155,11 +183,17 @@ export function RunWorkbenchLayout({
   const resolvedPanels: InspectorPanels =
     inspectorPanels ?? (sideContent ? { logs: sideContent } : {})
 
-  const resolvedActiveTab = INSPECTOR_TABS.some(
+  React.useEffect(() => {
+    if (!resolvedTabs.some((tab) => tab.key === activeInspectorTab)) {
+      setActiveInspectorTab(resolvedTabs[0]?.key ?? 'logs')
+    }
+  }, [activeInspectorTab, resolvedTabs])
+
+  const resolvedActiveTab = resolvedTabs.some(
     (tab) => tab.key === activeInspectorTab,
   )
     ? activeInspectorTab
-    : INSPECTOR_TABS[0]?.key
+    : resolvedTabs[0]?.key
 
   const activePanelContent = resolvedActiveTab
     ? resolvedPanels[resolvedActiveTab]
@@ -275,6 +309,7 @@ export function RunWorkbenchLayout({
                 <div className="overflow-hidden rounded border border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]">
                   <div className="border-b border-[var(--relay-row-border)] px-3 pt-2">
                     <InspectorTabStrip
+                      tabs={resolvedTabs}
                       activeTab={resolvedActiveTab}
                       onTabChange={setActiveInspectorTab}
                     />
@@ -306,6 +341,7 @@ export function RunWorkbenchLayout({
             <aside className="flex h-full min-h-0 w-full flex-col border-l border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]">
               <div className="flex h-10 shrink-0 items-center border-b border-[var(--relay-row-border)] px-3">
                 <InspectorTabStrip
+                  tabs={resolvedTabs}
                   activeTab={resolvedActiveTab}
                   onTabChange={setActiveInspectorTab}
                   className="min-w-0 flex-1"

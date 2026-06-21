@@ -87,7 +87,10 @@ function getExecutionProfile(value: string) {
 
 function getModelOptionsForProfile(profileValue: string, currentModel?: string) {
   const profile = getExecutionProfile(profileValue);
-  const modelOptions = [...profile.models];
+  const modelOptions: SelectOption[] = profile.models.map((option) => ({
+    value: option.value,
+    label: option.label,
+  }));
 
   if (
     currentModel &&
@@ -413,6 +416,49 @@ function InlineHint({
   );
 }
 
+function InspectorSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-3 py-3">
+      <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+        {title}
+      </p>
+      <div className="mt-3 flex flex-col gap-2.5">{children}</div>
+    </section>
+  );
+}
+
+function InspectorField({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span
+        className={[
+          "max-w-[60%] text-right text-sm text-foreground",
+          mono ? "font-mono text-[12px]" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export function useRunIntakeReviewController({
   run,
   artifacts,
@@ -678,6 +724,142 @@ export function useRunIntakeReviewController({
     preflightSummary,
     isApproved,
   };
+}
+
+export function RunIntakeDetailsPanel({
+  controller,
+}: {
+  controller: RunIntakeReviewController;
+}) {
+  const {
+    run,
+    hasFrontmatter,
+    repo,
+    repoTarget,
+    branch,
+    branchContext,
+    targetWorktree,
+    executorAdapter,
+    model,
+    repoSource,
+    branchSource,
+    executorSource,
+    modelSource,
+    preflightSummary,
+    validationSummary,
+    summaryStatusTone,
+  } = controller;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <InspectorSection title="Handoff">
+        <div className="flex flex-wrap gap-2">
+          <RunStageSummaryChip
+            label="Status"
+            value={run.status}
+            tone={summaryStatusTone}
+            mono
+          />
+          <RunStageSummaryChip
+            label="Frontmatter"
+            value={hasFrontmatter ? "Parsed" : "Missing"}
+            tone={hasFrontmatter ? "success" : "warning"}
+          />
+        </div>
+        <InspectorField label="Title" value={run.title} />
+        <InspectorField
+          label="Packet ID"
+          value={run.packetId || "—"}
+          mono
+        />
+      </InspectorSection>
+
+      <InspectorSection title="Configuration">
+        <InspectorField
+          label="Repository"
+          value={repo || repoTarget || "—"}
+          mono
+        />
+        <InspectorField
+          label="Branch"
+          value={branch || branchContext || "—"}
+          mono
+        />
+        <InspectorField
+          label="Worktree"
+          value={targetWorktree || "default"}
+          mono
+        />
+        <InspectorField
+          label="Execution Profile"
+          value={executorAdapter || "—"}
+          mono
+        />
+        <InspectorField
+          label="Target Model"
+          value={model || "—"}
+          mono
+        />
+      </InspectorSection>
+
+      <InspectorSection title="Provenance">
+        <InspectorField
+          label="Repository source"
+          value={repoSource || "—"}
+          mono
+        />
+        <InspectorField
+          label="Branch source"
+          value={branchSource || "—"}
+          mono
+        />
+        <InspectorField
+          label="Execution profile source"
+          value={executorSource || "—"}
+          mono
+        />
+        <InspectorField
+          label="Model source"
+          value={modelSource || "—"}
+          mono
+        />
+      </InspectorSection>
+
+      <InspectorSection title="Readiness Summary">
+        <div className="flex flex-wrap gap-2">
+          <RunStageSummaryChip
+            label="Preflight"
+            value={preflightSummary}
+            tone={
+              (validationSummary?.errors ?? 0) === 0 ? "success" : "warning"
+            }
+          />
+          <RunStageSummaryChip
+            label="Validation"
+            value={`${validationSummary?.errors ?? 0} errors`}
+            tone={
+              (validationSummary?.errors ?? 0) > 0 ? "warning" : "success"
+            }
+          />
+        </div>
+        <InspectorField
+          label="Errors"
+          value={validationSummary?.errors ?? 0}
+          mono
+        />
+        <InspectorField
+          label="Warnings"
+          value={validationSummary?.warnings ?? 0}
+          mono
+        />
+        <InspectorField
+          label="Passed"
+          value={validationSummary?.passed ?? 0}
+          mono
+        />
+      </InspectorSection>
+    </div>
+  );
 }
 
 export function RunIntakeStageActions({
@@ -1086,38 +1268,11 @@ export function RunIntakeReviewPanel({
               )}
             </div>
 
-            <div className="mt-4 rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-3">
-              <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-                Validation Summary
-              </p>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                <div className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-2.5 py-2">
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">
-                    Errors
-                  </p>
-                  <p className="mt-1 text-base font-semibold text-foreground">
-                    {validationSummary?.errors ?? 0}
-                  </p>
-                </div>
-                <div className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-2.5 py-2">
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">
-                    Warnings
-                  </p>
-                  <p className="mt-1 text-base font-semibold text-foreground">
-                    {validationSummary?.warnings ?? 0}
-                  </p>
-                </div>
-                <div className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-2.5 py-2">
-                  <p className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">
-                    Passed
-                  </p>
-                  <p className="mt-1 text-base font-semibold text-foreground">
-                    {validationSummary?.passed ?? 0}
-                  </p>
-                </div>
-              </div>
-
-              {readinessIssues.length > 0 ? (
+            {readinessIssues.length > 0 ? (
+              <div className="mt-4 rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-3">
+                <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                  Current Issues
+                </p>
                 <div className="mt-3 space-y-2">
                   {readinessIssues.map((issue, index) => (
                     <div
@@ -1145,8 +1300,8 @@ export function RunIntakeReviewPanel({
                     </div>
                   ))}
                 </div>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
           </aside>
         </div>
       </section>

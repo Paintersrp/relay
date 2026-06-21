@@ -1,28 +1,40 @@
 {
   "schema_version": "3.0.0",
   "report_kind": "relay_make_validate_latest",
-  "status": "failed",
-  "created_at": "2026-06-21T16:01:29Z",
-  "base_commit_short": "a9950a3b3142",
-  "base_commit_sha": "a9950a3b3142e9b3fef23714fa2d236ac311655a",
+  "status": "passed",
+  "created_at": "2026-06-21T17:30:04Z",
+  "base_commit_short": "40fe42d32eaf",
+  "base_commit_sha": "40fe42d32eaf3d080fbec871a6e698b765e8a878",
   "validated_source_snapshot": {
-    "captured_at": "2026-06-21T16:03:15.701Z",
+    "captured_at": "2026-06-21T17:30:56.513Z",
     "model": "base_commit_plus_worktree_diff_excluding_validation_report_artifacts",
     "worktree_dirty": true,
-    "diff_sha256": "f276182aa683ca570553850e9e7a8e56264df8e983c6de03749e3b924bf58062",
+    "diff_sha256": "12f23045e8bfd2fe904bd1e90a640c3e99d84b703d2977b7aec1fd160180b955",
     "diff_name_status": [
       {
         "status": "M",
         "path": "apps/web/src/components/relay/RunIntakeReviewPanel.tsx"
+      },
+      {
+        "status": "M",
+        "path": "apps/web/src/components/relay/RunWorkbenchLayout.tsx"
+      },
+      {
+        "status": "M",
+        "path": "apps/web/src/routes/runs/$runId/intake.tsx"
       }
     ],
-    "diff_stat": ".../src/components/relay/RunIntakeReviewPanel.tsx  | 108 ++++++++++++++-------\n 1 file changed, 71 insertions(+), 37 deletions(-)",
+    "diff_stat": ".../src/components/relay/RunIntakeReviewPanel.tsx  | 225 +++++++++++++++++----\n .../src/components/relay/RunWorkbenchLayout.tsx    |  48 ++++-\n apps/web/src/routes/runs/$runId/intake.tsx         |   9 +\n 3 files changed, 241 insertions(+), 41 deletions(-)",
     "status_porcelain": [
-      " M apps/web/src/components/relay/RunIntakeReviewPanel.tsx"
+      " M apps/web/src/components/relay/RunIntakeReviewPanel.tsx",
+      " M apps/web/src/components/relay/RunWorkbenchLayout.tsx",
+      " M apps/web/src/routes/runs/$runId/intake.tsx"
     ]
   },
   "post_report_status_porcelain": [
     " M apps/web/src/components/relay/RunIntakeReviewPanel.tsx",
+    " M apps/web/src/components/relay/RunWorkbenchLayout.tsx",
+    " M apps/web/src/routes/runs/$runId/intake.tsx",
     " M handoffs/validation/latest.validation-report.json",
     " M handoffs/validation/latest.validation-summary.md"
   ],
@@ -35,8 +47,8 @@
       "step": 1,
       "name": "go-fmt-executor",
       "command": "go fmt ./internal/executor",
-      "started_at": "2026-06-21T16:01:29.741Z",
-      "completed_at": "2026-06-21T16:01:42.737Z",
+      "started_at": "2026-06-21T17:30:04.468Z",
+      "completed_at": "2026-06-21T17:30:04.787Z",
       "exit_code": 0,
       "status": "passed",
       "output_tail": "$ go fmt ./internal/executor\nexit_code: 0\n"
@@ -45,41 +57,41 @@
       "step": 2,
       "name": "go-test-executor",
       "command": "go test ./internal/executor/...",
-      "started_at": "2026-06-21T16:01:42.738Z",
-      "completed_at": "2026-06-21T16:01:57.037Z",
+      "started_at": "2026-06-21T17:30:04.788Z",
+      "completed_at": "2026-06-21T17:30:05.762Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "$ go test ./internal/executor/...\nok  \trelay/internal/executor\t5.429s\nexit_code: 0\n"
+      "output_tail": "$ go test ./internal/executor/...\nok  \trelay/internal/executor\t(cached)\nexit_code: 0\n"
     },
     {
       "step": 3,
       "name": "go-test-all",
       "command": "go test ./...",
-      "started_at": "2026-06-21T16:01:57.037Z",
-      "completed_at": "2026-06-21T16:02:45.640Z",
+      "started_at": "2026-06-21T17:30:05.762Z",
+      "completed_at": "2026-06-21T17:30:39.941Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "$ go test ./...\n?   \trelay/cmd/mcp-smoke\t[no test files]\n?   \trelay/cmd/mcpserver\t[no test files]\n?   \trelay/cmd/relay\t[no test files]\nok  \trelay/internal/api\t8.864s\n?   \trelay/internal/artifacts\t[no test files]\nok  \trelay/internal/auditor\t6.936s\nok  \trelay/internal/compiler\t6.811s\nok  \trelay/internal/config\t(cached)\nok  \trelay/internal/db\t5.877s\n?   \trelay/internal/devreload\t[no test files]\nok  \trelay/internal/events\t(cached)\nok  \trelay/internal/executor\t(cached)\nok  \trelay/internal/handlers\t9.019s\nok  \trelay/internal/instructions\t(cached)\nok  \trelay/internal/intake\t3.966s\nok  \trelay/internal/mcp\t9.060s\nok  \trelay/internal/pipeline\t(cached)\nok  \trelay/internal/renderer\t6.370s\nok  \trelay/internal/repairer\t6.151s\nok  \trelay/internal/repos\t24.553s\nok  \trelay/internal/server\t2.521s\n?   \trelay/internal/store\t[no test files]\n?   \trelay/internal/store/generated\t[no test files]\nok  \trelay/internal/validation\t(cached)\nok  \trelay/internal/validationrunner\t2.934s\nok  \trelay/internal/views\t(cached)\nexit_code: 0\n"
+      "output_tail": "$ go test ./...\n?   \trelay/cmd/mcp-smoke\t[no test files]\n?   \trelay/cmd/mcpserver\t[no test files]\n?   \trelay/cmd/relay\t[no test files]\nok  \trelay/internal/api\t(cached)\n?   \trelay/internal/artifacts\t[no test files]\nok  \trelay/internal/auditor\t(cached)\nok  \trelay/internal/compiler\t(cached)\nok  \trelay/internal/config\t(cached)\nok  \trelay/internal/db\t(cached)\n?   \trelay/internal/devreload\t[no test files]\nok  \trelay/internal/events\t(cached)\nok  \trelay/internal/executor\t(cached)\nok  \trelay/internal/handlers\t3.002s\nok  \trelay/internal/instructions\t(cached)\nok  \trelay/internal/intake\t(cached)\nok  \trelay/internal/mcp\t(cached)\nok  \trelay/internal/pipeline\t(cached)\nok  \trelay/internal/plans\t(cached)\nok  \trelay/internal/renderer\t(cached)\nok  \trelay/internal/repairer\t2.598s\nok  \trelay/internal/repos\t(cached)\nok  \trelay/internal/server\t(cached)\n?   \trelay/internal/store\t[no test files]\n?   \trelay/internal/store/generated\t[no test files]\nok  \trelay/internal/validation\t(cached)\nok  \trelay/internal/validationrunner\t(cached)\nok  \trelay/internal/views\t(cached)\nexit_code: 0\n"
     },
     {
       "step": 4,
       "name": "web-typecheck",
       "command": "cd apps/web && npm run typecheck",
-      "started_at": "2026-06-21T16:02:45.640Z",
-      "completed_at": "2026-06-21T16:02:58.261Z",
-      "exit_code": 2,
-      "status": "failed",
-      "output_tail": "$ cd apps/web && npm run typecheck\n\n> relay-web@0.1.0 typecheck\n> tsc --noEmit\n\nsrc/components/relay/RunIntakeReviewPanel.tsx(97,7): error TS2322: Type 'string' is not assignable to type '\"codex\" | \"antigravity\" | \"deepseek-v4-flash\" | \"deepseek/deepseek-chat-v3-0324:free\" | \"anthropic/claude-sonnet-4-5\" | \"openrouter/auto\"'.\nsrc/components/relay/RunIntakeReviewPanel.tsx(98,7): error TS2322: Type '`${string} (current)`' is not assignable to type '\"OpenRouter Auto\" | \"DeepSeek V4 Flash\" | \"DeepSeek Chat V3 0324\" | \"Claude Sonnet 4.5\" | \"Codex Default\" | \"Antigravity Default\"'.\nexit_code: 2\n"
+      "started_at": "2026-06-21T17:30:39.941Z",
+      "completed_at": "2026-06-21T17:30:49.069Z",
+      "exit_code": 0,
+      "status": "passed",
+      "output_tail": "$ cd apps/web && npm run typecheck\n\n> relay-web@0.1.0 typecheck\n> tsc --noEmit\n\nexit_code: 0\n"
     },
     {
       "step": 5,
       "name": "web-build",
       "command": "cd apps/web && npm run build",
-      "started_at": "2026-06-21T16:02:58.261Z",
-      "completed_at": "2026-06-21T16:03:15.701Z",
+      "started_at": "2026-06-21T17:30:49.069Z",
+      "completed_at": "2026-06-21T17:30:56.512Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "\u001b[32m✓ built in 2.75s\u001b[39m\n\u001b[36mvite v8.0.16 \u001b[32mbuilding ssr environment for production...\u001b[36m\u001b[39m\n\u001b[2K\rtransforming...\n[@tanstack/devtools-vite] Removed devtools code from: /src/routes/__root.tsx\n\n✓ 105 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/server/assets/start-CKmjcLTR.js                        0.22 kB │ gzip:  0.17 kB\ndist/server/assets/empty-plugin-adapters-DzrEkdBF.js        0.28 kB │ gzip:  0.18 kB\ndist/server/assets/_runId-CKFcRbG2.js                       0.33 kB │ gzip:  0.22 kB\ndist/server/assets/audit-BgDxQ6zz.js                        0.35 kB │ gzip:  0.22 kB\ndist/server/assets/intake-C4qS4V7o.js                       0.35 kB │ gzip:  0.22 kB\ndist/server/assets/execute-Db9UtsaE.js                      0.35 kB │ gzip:  0.22 kB\ndist/server/assets/prepare-BdH-MO12.js                      0.35 kB │ gzip:  0.22 kB\ndist/server/assets/skeleton-CUn9_ilv.js                     0.36 kB │ gzip:  0.26 kB\ndist/server/assets/separator-DIYOQsyi.js                    0.58 kB │ gzip:  0.35 kB\ndist/server/assets/label-BQt6ba5O.js                        0.58 kB │ gzip:  0.37 kB\ndist/server/assets/textarea-BedmS6sP.js                     0.88 kB │ gzip:  0.47 kB\ndist/server/assets/AppPageFrame-ZDKvYQzE.js                 1.71 kB │ gzip:  0.64 kB\ndist/server/assets/_runId-BLqqTA_X.js                       1.97 kB │ gzip:  0.82 kB\ndist/server/assets/button-Dfa7Q3hT.js                       3.26 kB │ gzip:  1.12 kB\ndist/server/assets/_tanstack-start-manifest_v-BgQAvrt4.js   3.29 kB │ gzip:  0.78 kB\ndist/server/assets/RelayStateSurface-DmgmmpQC.js            4.28 kB │ gzip:  1.11 kB\ndist/server/assets/ArtifactInspectorDialog-DSR6xAYo.js      7.12 kB │ gzip:  2.16 kB\ndist/server/assets/router-MESKhR8R.js                       7.14 kB │ gzip:  2.23 kB\ndist/server/assets/tabs-CCJt98-B.js                         9.72 kB │ gzip:  2.46 kB\ndist/server/assets/relay-runs-WRGBDluB.js                  13.92 kB │ gzip:  3.83 kB\ndist/server/assets/new-CHyEzjXt.js                         19.15 kB │ gzip:  4.54 kB\ndist/server/assets/runs-e5-SbTPo.js                        22.69 kB │ gzip:  4.35 kB\ndist/server/assets/execute-CQAHReCI.js                     28.87 kB │ gzip:  5.74 kB\ndist/server/assets/prepare-kkb87XbI.js                     31.32 kB │ gzip:  5.77 kB\ndist/server/assets/intake-BahbWzUk.js                      43.09 kB │ gzip:  8.83 kB\ndist/server/assets/LogPreviewPanel-BMjywARt.js             51.65 kB │ gzip: 10.84 kB\ndist/server/assets/audit-B80PWohD.js                       52.20 kB │ gzip:  8.93 kB\ndist/server/server.js                                      60.76 kB │ gzip: 15.42 kB\n\n\u001b[32m✓ built in 1.48s\u001b[39m\nexit_code: 0\n"
+      "output_tail": "\u001b[32m✓ built in 2.52s\u001b[39m\n\u001b[36mvite v8.0.16 \u001b[32mbuilding ssr environment for production...\u001b[36m\u001b[39m\n\u001b[2K\rtransforming...\n[@tanstack/devtools-vite] Removed devtools code from: /src/routes/__root.tsx\n\n✓ 105 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/server/assets/start-CKmjcLTR.js                        0.22 kB │ gzip:  0.17 kB\ndist/server/assets/empty-plugin-adapters-DzrEkdBF.js        0.28 kB │ gzip:  0.18 kB\ndist/server/assets/_runId-CKFcRbG2.js                       0.33 kB │ gzip:  0.22 kB\ndist/server/assets/audit-C8B72Fc4.js                        0.35 kB │ gzip:  0.22 kB\ndist/server/assets/intake-B037KZCr.js                       0.35 kB │ gzip:  0.22 kB\ndist/server/assets/execute-POqRdUaX.js                      0.35 kB │ gzip:  0.22 kB\ndist/server/assets/prepare-DhNEPmJ9.js                      0.35 kB │ gzip:  0.22 kB\ndist/server/assets/skeleton-CUn9_ilv.js                     0.36 kB │ gzip:  0.26 kB\ndist/server/assets/separator-DIYOQsyi.js                    0.58 kB │ gzip:  0.35 kB\ndist/server/assets/label-BQt6ba5O.js                        0.58 kB │ gzip:  0.37 kB\ndist/server/assets/textarea-BedmS6sP.js                     0.88 kB │ gzip:  0.47 kB\ndist/server/assets/AppPageFrame-ZDKvYQzE.js                 1.71 kB │ gzip:  0.64 kB\ndist/server/assets/_runId-BLqqTA_X.js                       1.97 kB │ gzip:  0.82 kB\ndist/server/assets/button-Dfa7Q3hT.js                       3.26 kB │ gzip:  1.12 kB\ndist/server/assets/_tanstack-start-manifest_v-CKBorg6M.js   3.29 kB │ gzip:  0.79 kB\ndist/server/assets/RelayStateSurface-DmgmmpQC.js            4.28 kB │ gzip:  1.11 kB\ndist/server/assets/ArtifactInspectorDialog-DByld_Oy.js      7.12 kB │ gzip:  2.16 kB\ndist/server/assets/router-DaMqOX20.js                       7.14 kB │ gzip:  2.23 kB\ndist/server/assets/tabs-CCJt98-B.js                         9.72 kB │ gzip:  2.46 kB\ndist/server/assets/relay-runs-WRGBDluB.js                  13.92 kB │ gzip:  3.83 kB\ndist/server/assets/new-CHyEzjXt.js                         19.15 kB │ gzip:  4.54 kB\ndist/server/assets/runs-e5-SbTPo.js                        22.69 kB │ gzip:  4.35 kB\ndist/server/assets/execute-DuHTUfY-.js                     28.87 kB │ gzip:  5.74 kB\ndist/server/assets/prepare-B07rjoJl.js                     31.32 kB │ gzip:  5.77 kB\ndist/server/assets/intake-CM7_6e-R.js                      46.20 kB │ gzip:  9.30 kB\ndist/server/assets/audit-B5b3ntMr.js                       52.20 kB │ gzip:  8.92 kB\ndist/server/assets/LogPreviewPanel-DKIkGOci.js             52.27 kB │ gzip: 10.97 kB\ndist/server/server.js                                      60.76 kB │ gzip: 15.42 kB\n\n\u001b[32m✓ built in 1.35s\u001b[39m\nexit_code: 0\n"
     }
   ]
 }

@@ -9,6 +9,7 @@ import {
   runEventsQueryOptions,
 } from "@/features/relay-runs";
 import {
+  RunIntakeDetailsPanel,
   RunIntakeReviewPanel,
   RunIntakeStageActions,
   useRunIntakeReviewController,
@@ -108,7 +109,15 @@ function IntakeWorkbench({
       currentStep="intake"
       stageActions={<RunIntakeStageActions controller={intakeReview} />}
       mainContent={<RunIntakeReviewPanel controller={intakeReview} />}
+      initialInspectorTab="details"
+      inspectorTabs={[
+        { key: "details", label: "Details" },
+        { key: "artifacts", label: "Artifacts" },
+        { key: "validation", label: "Validation" },
+        { key: "logs", label: "Logs" },
+      ]}
       inspectorPanels={{
+        details: <RunIntakeDetailsPanel controller={intakeReview} />,
         logs: <LogPreviewPanel logPreview={logPreview} />,
         artifacts: (
           <RunEvidenceBrowser
