@@ -5,9 +5,9 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  CircleAlert,
   ExternalLink,
   FileText,
-  FolderGit2,
   Server,
   ShieldCheck,
   ShieldX,
@@ -16,11 +16,7 @@ import {
 import type { RelayArtifact, RelayRun } from "@/features/relay-runs";
 import { approveIntake } from "@/features/relay-runs";
 import { RelayStateBanner } from "@/components/relay/RelayStateSurface";
-import {
-  RunStageSection,
-  RunStageSummaryCard,
-  RunStageSummaryChip,
-} from "@/components/relay/RunStagePrimitives";
+import { RunStageSummaryChip } from "@/components/relay/RunStagePrimitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -110,6 +106,18 @@ function renderRepoValue(value: string) {
   }
 
   return value;
+}
+
+function renderStatusTone(
+  tone: "default" | "info" | "success" | "warning" | "danger",
+) {
+  if (tone === "success") {
+    return "success" as const;
+  }
+  if (tone === "warning" || tone === "danger") {
+    return "warning" as const;
+  }
+  return "default" as const;
 }
 
 function InlineHint({
@@ -233,6 +241,7 @@ export function useRunIntakeReviewController({
     mutate({
       requestPayload: {
         action,
+        notes: "",
         overrides: {
           model: model !== run.model ? model.trim() : undefined,
           repo: repo !== run.repo ? repo.trim() : undefined,
@@ -304,6 +313,7 @@ export function useRunIntakeReviewController({
   const validationSummary = run.validationSummary;
   const validationIssues = validationSummary?.issues || [];
   const summaryStatusTone = getStatusTone(run.status);
+  const readinessIssues = validationIssues.slice(0, 3);
 
   const preflightChecks = validationSummary
     ? [
@@ -338,6 +348,8 @@ export function useRunIntakeReviewController({
     preflightChecks.length > 0
       ? `${preflightPassedCount}/${preflightChecks.length} checks OK`
       : "Preflight pending";
+  const isApproved =
+    run.status === "approved_for_prepare" || run.activeStep === "prepare";
 
   return {
     run,
@@ -369,10 +381,12 @@ export function useRunIntakeReviewController({
     executorSource,
     validationSource,
     validationSummary,
+    readinessIssues,
     summaryStatusTone,
     preflightChecks,
     preflightPassedCount,
     preflightSummary,
+    isApproved,
   };
 }
 
@@ -458,10 +472,12 @@ export function RunIntakeReviewPanel({
     executorSource,
     validationSource,
     validationSummary,
+    readinessIssues,
     summaryStatusTone,
     preflightChecks,
     preflightPassedCount,
     preflightSummary,
+    isApproved,
   } = controller;
 
   return (
@@ -474,72 +490,297 @@ export function RunIntakeReviewPanel({
         />
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <RunStageSummaryCard
-          eyebrow="Incoming Handoff"
-          title={run.title}
-          description={run.packetId || "No packet ID captured"}
-          icon={<FileText className="h-4 w-4" />}
-          status={
-            <RunStageSummaryChip
-              value={run.status}
-              tone={summaryStatusTone}
-              mono
-            />
-          }
-          className="xl:col-span-1"
-        >
-          <div className="flex flex-wrap gap-2">
-            <RunStageSummaryChip label="Source" value={configSource} />
-            <RunStageSummaryChip label="Created" value={createdFrom} />
-            <RunStageSummaryChip
-              value={hasFrontmatter ? "Frontmatter parsed" : "No frontmatter"}
-              tone={hasFrontmatter ? "success" : "warning"}
-            />
-          </div>
-        </RunStageSummaryCard>
-        <RunStageSummaryCard
-          eyebrow="Repository / Workspace"
-          title={renderRepoValue(repo || repoTarget || " - ")}
-          description={branch || branchContext || " - "}
-          icon={<FolderGit2 className="h-4 w-4" />}
-        >
-          <div className="flex flex-wrap gap-2">
-            <RunStageSummaryChip
-              label="Worktree"
-              value={worktree || " - "}
-              mono
-            />
-          </div>
-        </RunStageSummaryCard>
-        <RunStageSummaryCard
-          eyebrow="Execution"
-          title={model || run.model || " - "}
-          description={executorAdapter || run.executorAdapter || " - "}
-          icon={<Server className="h-4 w-4" />}
-        />
-        <RunStageSummaryCard
-          eyebrow="Validation / Preflight"
-          title={`${validationSummary?.errors ?? 0} errors`}
-          description={`${validationSummary?.warnings ?? 0} warnings · ${validationSummary?.passed ?? 0} passed`}
-          icon={<ShieldCheck className="h-4 w-4" />}
-        >
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap gap-2">
-              <RunStageSummaryChip
-                label="Preflight"
-                value={preflightSummary}
-                tone={
-                  preflightChecks.length > 0 &&
-                  preflightPassedCount === preflightChecks.length
-                    ? "success"
-                    : "warning"
-                }
-              />
+      <section className="overflow-hidden rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
+        <div className="grid gap-0 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(28rem,1.7fr)_minmax(15rem,0.95fr)]">
+          <aside className="min-w-0 border-b border-[var(--relay-row-border)] px-4 py-4 lg:border-r lg:border-b-0">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="mt-0.5 shrink-0 text-muted-foreground">
+                <FileText className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                  Handoff
+                </p>
+                <div className="mt-2 space-y-2">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      {run.title}
+                    </p>
+                    <p className="mt-1 font-mono text-[12px] text-muted-foreground">
+                      {run.packetId || "No packet ID captured"}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <RunStageSummaryChip
+                      value={run.status}
+                      tone={summaryStatusTone}
+                      mono
+                    />
+                    <RunStageSummaryChip
+                      value={
+                        hasFrontmatter ? "Frontmatter parsed" : "No frontmatter"
+                      }
+                      tone={hasFrontmatter ? "success" : "warning"}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
-            {preflightChecks.length > 0 ? (
-              <div className="grid gap-2">
-                {preflightChecks.map((check) => (
+
+            <div className="mt-4 grid gap-2">
+              <div className="rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-2.5">
+                <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                  Source
+                </p>
+                <div className="mt-2 text-sm text-foreground">{configSource}</div>
+              </div>
+              <div className="rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-2.5">
+                <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                  Created By
+                </p>
+                <div className="mt-2 text-sm text-foreground">{createdFrom}</div>
+              </div>
+              <div className="rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-2.5">
+                <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                  Target Snapshot
+                </p>
+                <div className="mt-2 space-y-1 text-sm text-foreground">
+                  <div className="min-w-0 break-words">
+                    {renderRepoValue(repo || repoTarget || " - ")}
+                  </div>
+                  <div className="font-mono text-[12px] text-muted-foreground">
+                    {branch || branchContext || " - "}
+                  </div>
+                  <div className="font-mono text-[12px] text-muted-foreground">
+                    Worktree: {worktree || "default"}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <section className="min-w-0 border-b border-[var(--relay-row-border)] px-4 py-4 lg:border-r lg:border-b-0">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="mt-0.5 shrink-0 text-muted-foreground">
+                <Server className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      Run Configuration
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Adjust the execution target and workspace details before
+                      approving the intake.
+                    </p>
+                  </div>
+                  <RunStageSummaryChip
+                    label="Preflight"
+                    value={preflightSummary}
+                    tone={
+                      preflightChecks.length > 0 &&
+                      preflightPassedCount === preflightChecks.length
+                        ? "success"
+                        : "warning"
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <p className="mt-4 text-xs text-muted-foreground">
+              Review the editable intake configuration first. Provenance stays
+              inline with each control so the operating surface remains focused.
+            </p>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="override-repo"
+                  className="text-xs text-muted-foreground"
+                >
+                  Repository Target Path
+                </Label>
+                <Input
+                  id="override-repo"
+                  value={repo}
+                  onChange={(event) => setRepo(event.target.value)}
+                  placeholder="e.g. d:\\Code\\relay"
+                  disabled={isPending || !isReviewable}
+                />
+                <InlineHint
+                  source={repoSource}
+                  detail={
+                    repoTarget && repoTarget !== repo ? (
+                      <>
+                        Resolved intake target:{" "}
+                        <span className="font-mono text-[11px]">{repoTarget}</span>
+                      </>
+                    ) : undefined
+                  }
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="override-branch"
+                  className="text-xs text-muted-foreground"
+                >
+                  Branch / Worktree Context
+                </Label>
+                <Input
+                  id="override-branch"
+                  value={branch}
+                  onChange={(event) => setBranch(event.target.value)}
+                  placeholder="e.g. main"
+                  disabled={isPending || !isReviewable}
+                />
+                <InlineHint
+                  source={branchSource}
+                  detail={
+                    branchContext && branchContext !== branch ? (
+                      <>
+                        Resolved intake branch:{" "}
+                        <span className="font-mono text-[11px]">
+                          {branchContext}
+                        </span>
+                      </>
+                    ) : undefined
+                  }
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="override-worktree"
+                  className="text-xs text-muted-foreground"
+                >
+                  Worktree Override
+                </Label>
+                <Input
+                  id="override-worktree"
+                  value={worktree}
+                  onChange={(event) => setWorktree(event.target.value)}
+                  placeholder="e.g. my-worktree"
+                  disabled={isPending || !isReviewable}
+                />
+                <InlineHint
+                  source={worktreeSource}
+                  detail={
+                    !worktree && !worktreeSource
+                      ? "Optional override; Relay will use the run workspace when left blank."
+                      : undefined
+                  }
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="override-model"
+                  className="text-xs text-muted-foreground"
+                >
+                  Target Model
+                </Label>
+                <Input
+                  id="override-model"
+                  value={model}
+                  onChange={(event) => setModel(event.target.value)}
+                  placeholder="e.g. deepseek-v4-flash"
+                  disabled={isPending || !isReviewable}
+                />
+                <InlineHint source={modelSource} />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="override-executor"
+                  className="text-xs text-muted-foreground"
+                >
+                  Executor Adapter
+                </Label>
+                <Select
+                  value={executorAdapter}
+                  onValueChange={setExecutorAdapter}
+                  disabled={isPending || !isReviewable}
+                >
+                  <SelectTrigger id="override-executor">
+                    <SelectValue placeholder="Select executor adapter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="opencode_go">OpenCode (Go)</SelectItem>
+                      <SelectItem value="codex">Codex (TypeScript)</SelectItem>
+                      <SelectItem value="antigravity">
+                        Antigravity (Go)
+                      </SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                {executorAdapter === "codex" ? (
+                  <p className="text-xs text-muted-foreground">
+                    Codex dispatch uses the local Codex CLI configuration and
+                    authentication available to the Relay daemon.
+                  </p>
+                ) : null}
+                {executorAdapter === "antigravity" ? (
+                  <p className="text-xs text-muted-foreground">
+                    Antigravity dispatch uses the local Antigravity CLI
+                    configuration and authentication available to the Relay
+                    daemon.
+                  </p>
+                ) : null}
+                <InlineHint source={executorSource} />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="override-validation"
+                  className="text-xs text-muted-foreground"
+                >
+                  Validation Commands
+                </Label>
+                <Input
+                  id="override-validation"
+                  value={validationCommands}
+                  onChange={(event) => setValidationCommands(event.target.value)}
+                  placeholder="e.g. go test ./..."
+                  disabled={isPending || !isReviewable}
+                />
+                <InlineHint source={validationSource} />
+              </div>
+            </div>
+          </section>
+
+          <aside className="min-w-0 px-4 py-4">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="mt-0.5 shrink-0 text-muted-foreground">
+                <ShieldCheck className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                  Readiness
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <RunStageSummaryChip
+                    label="Frontmatter"
+                    value={hasFrontmatter ? "Parsed" : "Missing"}
+                    tone={hasFrontmatter ? "success" : "warning"}
+                  />
+                  <RunStageSummaryChip
+                    label="Validation"
+                    value={`${validationSummary?.errors ?? 0} errors`}
+                    tone={
+                      (validationSummary?.errors ?? 0) > 0 ? "warning" : "success"
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-2">
+              {preflightChecks.length > 0 ? (
+                preflightChecks.map((check) => (
                   <div
                     key={check.label}
                     className="flex flex-wrap items-center justify-between gap-2 rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-2"
@@ -557,174 +798,95 @@ export function RunIntakeReviewPanel({
                       tone={check.pass ? "success" : "warning"}
                     />
                   </div>
-                ))}
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Preflight not available from current intake data.
+                </p>
+              )}
+            </div>
+
+            <div className="mt-4 rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-3">
+              <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                Validation Summary
+              </p>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <div className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-2.5 py-2">
+                  <p className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">
+                    Errors
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-foreground">
+                    {validationSummary?.errors ?? 0}
+                  </p>
+                </div>
+                <div className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-2.5 py-2">
+                  <p className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">
+                    Warnings
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-foreground">
+                    {validationSummary?.warnings ?? 0}
+                  </p>
+                </div>
+                <div className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-2.5 py-2">
+                  <p className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">
+                    Passed
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-foreground">
+                    {validationSummary?.passed ?? 0}
+                  </p>
+                </div>
               </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Preflight not available from current intake data.
+
+              {readinessIssues.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {readinessIssues.map((issue, index) => (
+                    <div
+                      key={`${issue.code}-${index}`}
+                      className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-3 py-2"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <RunStageSummaryChip
+                          value={issue.severity}
+                          tone={renderStatusTone(
+                            issue.severity === "error"
+                              ? "danger"
+                              : issue.severity === "warning"
+                                ? "warning"
+                                : "default",
+                          )}
+                        />
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          {issue.code}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-foreground">
+                        {issue.message}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      {isApproved ? (
+        <div className="rounded border border-[var(--success)]/35 bg-[var(--success)]/10 px-4 py-3">
+          <div className="flex items-start gap-3">
+            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-[var(--success)]" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">
+                Intake approved
               </p>
-            )}
-          </div>
-        </RunStageSummaryCard>
-      </div>
-
-      <RunStageSection
-        title="Run Configuration"
-        subtitle="Adjust the execution target and workspace details before approving the intake."
-        icon={<Server className="h-4 w-4" />}
-        contentClassName="flex flex-col gap-4"
-      >
-        <p className="text-xs text-muted-foreground">
-          Review the editable intake configuration first. Provenance is shown
-          inline with each field instead of in separate context panels.
-        </p>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="override-repo" className="text-xs text-muted-foreground">
-              Repository Target Path
-            </Label>
-            <Input
-              id="override-repo"
-              value={repo}
-              onChange={(event) => setRepo(event.target.value)}
-              placeholder="e.g. d:\\Code\\relay"
-              disabled={isPending || !isReviewable}
-            />
-            <InlineHint
-              source={repoSource}
-              detail={
-                repoTarget && repoTarget !== repo ? (
-                  <>
-                    Resolved intake target:{" "}
-                    <span className="font-mono text-[11px]">{repoTarget}</span>
-                  </>
-                ) : undefined
-              }
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label
-              htmlFor="override-branch"
-              className="text-xs text-muted-foreground"
-            >
-              Branch / Worktree Context
-            </Label>
-            <Input
-              id="override-branch"
-              value={branch}
-              onChange={(event) => setBranch(event.target.value)}
-              placeholder="e.g. main"
-              disabled={isPending || !isReviewable}
-            />
-            <InlineHint
-              source={branchSource}
-              detail={
-                branchContext && branchContext !== branch ? (
-                  <>
-                    Resolved intake branch:{" "}
-                    <span className="font-mono text-[11px]">{branchContext}</span>
-                  </>
-                ) : undefined
-              }
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label
-              htmlFor="override-worktree"
-              className="text-xs text-muted-foreground"
-            >
-              Worktree Override
-            </Label>
-            <Input
-              id="override-worktree"
-              value={worktree}
-              onChange={(event) => setWorktree(event.target.value)}
-              placeholder="e.g. my-worktree"
-              disabled={isPending || !isReviewable}
-            />
-            <InlineHint
-              source={worktreeSource}
-              detail={
-                !worktree && !worktreeSource
-                  ? "Optional override; Relay will use the run workspace when left blank."
-                  : undefined
-              }
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="override-model" className="text-xs text-muted-foreground">
-              Target Model
-            </Label>
-            <Input
-              id="override-model"
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              placeholder="e.g. deepseek-v4-flash"
-              disabled={isPending || !isReviewable}
-            />
-            <InlineHint source={modelSource} />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label
-              htmlFor="override-executor"
-              className="text-xs text-muted-foreground"
-            >
-              Executor Adapter
-            </Label>
-            <Select
-              value={executorAdapter}
-              onValueChange={setExecutorAdapter}
-              disabled={isPending || !isReviewable}
-            >
-              <SelectTrigger id="override-executor">
-                <SelectValue placeholder="Select executor adapter" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="opencode_go">OpenCode (Go)</SelectItem>
-                  <SelectItem value="codex">Codex (TypeScript)</SelectItem>
-                  <SelectItem value="antigravity">Antigravity (Go)</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            {executorAdapter === "codex" ? (
-              <p className="text-xs text-muted-foreground">
-                Codex dispatch uses the local Codex CLI configuration and
-                authentication available to the Relay daemon.
+              <p className="mt-1 text-sm text-muted-foreground">
+                This run is ready to move into Compile / Render with the current
+                configuration.
               </p>
-            ) : null}
-            {executorAdapter === "antigravity" ? (
-              <p className="text-xs text-muted-foreground">
-                Antigravity dispatch uses the local Antigravity CLI
-                configuration and authentication available to the Relay daemon.
-              </p>
-            ) : null}
-            <InlineHint source={executorSource} />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label
-              htmlFor="override-validation"
-              className="text-xs text-muted-foreground"
-            >
-              Validation Commands
-            </Label>
-            <Input
-              id="override-validation"
-              value={validationCommands}
-              onChange={(event) => setValidationCommands(event.target.value)}
-              placeholder="e.g. go test ./..."
-              disabled={isPending || !isReviewable}
-            />
-            <InlineHint source={validationSource} />
+            </div>
           </div>
         </div>
-      </RunStageSection>
+      ) : null}
     </div>
   );
 }

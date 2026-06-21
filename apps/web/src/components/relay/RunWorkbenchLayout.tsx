@@ -230,14 +230,16 @@ export function RunWorkbenchLayout({
 
       {/* Stage rail */}
       <div className="shrink-0 border-b border-[var(--relay-row-border)]">
-        <div className="flex min-h-10 items-center justify-between gap-3 px-4">
+        <div className="flex min-h-10 min-w-0 flex-wrap items-center justify-between gap-3 px-4">
           <RunStepper
             runId={run.id}
             activeStep={activeShellStep}
             isRunning={isRunning}
-            className="min-w-0 flex-1"
+            className="min-w-0 flex-1 px-0"
           />
-          {stageActions ? <div className="shrink-0">{stageActions}</div> : null}
+          {stageActions ? (
+            <div className="flex shrink-0 items-center gap-2">{stageActions}</div>
+          ) : null}
         </div>
       </div>
 
