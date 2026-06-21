@@ -1,26 +1,14 @@
 # Latest Relay Validation Report
 
 - status: passed
-- base_commit: f3c50ca0ec81cccbdf178a6aee06544a10f5b808
-- validated_source_snapshot: 9b5789b303ddf71223f5b21af937a2819a9228bc7cd99af480e0c2b707c46f5e
+- base_commit: f14ecb4ee9dd17122580dd56f438d00a9e7535c5
+- validated_source_snapshot: 224f2f99d19a425e58b357695a1bfd52b998ad8f46dfa5568e871d6bb2b79c1c
 - worktree_dirty: true
-- created_at: 2026-06-21T11:32:07Z
+- created_at: 2026-06-21T11:51:17Z
 
 ## Validated source changes
 
-- M apps/web/src/components/relay/LogPreviewPanel.tsx
-- M apps/web/src/components/relay/RelayAttentionBadge.tsx
-- M apps/web/src/components/relay/RelayFilterTabs.tsx
-- M apps/web/src/components/relay/RelayPanelTabs.tsx
-- M apps/web/src/components/relay/RelayRunsRegistry.tsx
-- M apps/web/src/components/relay/RelayRunsRegistryRows.tsx
-- M apps/web/src/components/relay/RelayStageLabel.tsx
-- M apps/web/src/components/relay/RelayStatusIndicator.tsx
-- M apps/web/src/components/relay/RunEvidenceBrowser.tsx
-- M apps/web/src/components/relay/RunStepper.tsx
-- M apps/web/src/components/relay/RunWorkbenchLayout.tsx
-- M apps/web/src/components/relay/StatusBadge.tsx
-- M apps/web/src/styles.css
+- ?? apps/web/src/components/relay/RunStagePrimitives.tsx
 
 ## Commands
 
