@@ -5,9 +5,9 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
-  CircleAlert,
   ExternalLink,
   FileText,
+  ListChecks,
   Server,
   ShieldCheck,
   ShieldX,
@@ -16,7 +16,14 @@ import {
 import type { RelayArtifact, RelayRun } from "@/features/relay-runs";
 import { approveIntake } from "@/features/relay-runs";
 import { RelayStateBanner } from "@/components/relay/RelayStateSurface";
-import { RunStageSummaryChip } from "@/components/relay/RunStagePrimitives";
+import {
+  RunStageInspectorSection,
+  RunStageKeyValueRow,
+  RunStagePipeline,
+  RunStageStateCard,
+  RunStageSummaryCard,
+  RunStageSummaryChip,
+} from "@/components/relay/RunStagePrimitives";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -27,6 +34,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  getIntakeDisplayState,
+  getIntakePipelineStatuses,
+  getIntakeStateCardCopy,
+  INTAKE_PIPELINE_STEPS,
+} from "./runIntakeVisualState";
 
 interface RunIntakeReviewPanelProps {
   run: RelayRun;
@@ -440,49 +453,6 @@ function InlineHint({
   );
 }
 
-function InspectorSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-3 py-3">
-      <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-        {title}
-      </p>
-      <div className="mt-3 flex flex-col gap-2.5">{children}</div>
-    </section>
-  );
-}
-
-function InspectorField({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: React.ReactNode;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span
-        className={[
-          "max-w-[60%] text-right text-sm text-foreground",
-          mono ? "font-mono text-[12px]" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
 export function useRunIntakeReviewController({
   run,
   artifacts,
@@ -693,6 +663,15 @@ export function useRunIntakeReviewController({
       : "Preflight pending";
   const isApproved =
     run.status === "approved_for_prepare" || run.activeStep === "prepare";
+  const intakeDisplayState = getIntakeDisplayState(run);
+  const intakePipelineStatuses = getIntakePipelineStatuses({
+    run,
+    repo,
+    branch,
+    executorAdapter,
+    model,
+  });
+  const intakeStateCardCopy = getIntakeStateCardCopy(intakeDisplayState);
 
   const previousRepoRef = React.useRef(repo);
   React.useEffect(() => {
@@ -747,6 +726,9 @@ export function useRunIntakeReviewController({
     preflightPassedCount,
     preflightSummary,
     isApproved,
+    intakeDisplayState,
+    intakePipelineStatuses,
+    intakeStateCardCopy,
   };
 }
 
@@ -776,7 +758,10 @@ export function RunIntakeDetailsPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      <InspectorSection title="Handoff">
+      <RunStageInspectorSection
+        title="Handoff"
+        contentClassName="flex flex-col gap-2.5"
+      >
         <div className="flex flex-wrap gap-2">
           <RunStageSummaryChip
             label="Status"
@@ -790,66 +775,75 @@ export function RunIntakeDetailsPanel({
             tone={hasFrontmatter ? "success" : "warning"}
           />
         </div>
-        <InspectorField label="Title" value={run.title} />
-        <InspectorField
+        <RunStageKeyValueRow label="Title" value={run.title} />
+        <RunStageKeyValueRow
           label="Packet ID"
           value={run.packetId || "—"}
           mono
         />
-      </InspectorSection>
+      </RunStageInspectorSection>
 
-      <InspectorSection title="Configuration">
-        <InspectorField
+      <RunStageInspectorSection
+        title="Configuration"
+        contentClassName="flex flex-col gap-2.5"
+      >
+        <RunStageKeyValueRow
           label="Repository"
           value={repo || repoTarget || "—"}
           mono
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Branch"
           value={branch || branchContext || "—"}
           mono
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Worktree"
           value={targetWorktree || "default"}
           mono
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Execution Profile"
           value={executorAdapter || "—"}
           mono
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Target Model"
           value={model || "—"}
           mono
         />
-      </InspectorSection>
+      </RunStageInspectorSection>
 
-      <InspectorSection title="Provenance">
-        <InspectorField
+      <RunStageInspectorSection
+        title="Provenance"
+        contentClassName="flex flex-col gap-2.5"
+      >
+        <RunStageKeyValueRow
           label="Repository source"
           value={repoSource || "—"}
           mono
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Branch source"
           value={branchSource || "—"}
           mono
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Execution profile source"
           value={executorSource || "—"}
           mono
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Model source"
           value={modelSource || "—"}
           mono
         />
-      </InspectorSection>
+      </RunStageInspectorSection>
 
-      <InspectorSection title="Readiness Summary">
+      <RunStageInspectorSection
+        title="Readiness Summary"
+        contentClassName="flex flex-col gap-2.5"
+      >
         <div className="flex flex-wrap gap-2">
           <RunStageSummaryChip
             label="Preflight"
@@ -866,22 +860,22 @@ export function RunIntakeDetailsPanel({
             }
           />
         </div>
-        <InspectorField
+        <RunStageKeyValueRow
           label="Errors"
           value={validationSummary?.errors ?? 0}
           mono
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Warnings"
           value={validationSummary?.warnings ?? 0}
           mono
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Passed"
           value={validationSummary?.passed ?? 0}
           mono
         />
-      </InspectorSection>
+      </RunStageInspectorSection>
     </div>
   );
 }
@@ -972,6 +966,8 @@ export function RunIntakeReviewPanel({
     preflightPassedCount,
     preflightSummary,
     isApproved,
+    intakePipelineStatuses,
+    intakeStateCardCopy,
   } = controller;
 
   return (
@@ -983,6 +979,45 @@ export function RunIntakeReviewPanel({
           description={mutationError}
         />
       ) : null}
+
+      <RunStageStateCard
+        tone={intakeStateCardCopy.tone}
+        eyebrow={intakeStateCardCopy.eyebrow}
+        title={intakeStateCardCopy.title}
+        message={intakeStateCardCopy.message}
+      >
+        <div className="flex flex-wrap gap-2">
+          <RunStageSummaryChip value={run.status} tone={summaryStatusTone} mono />
+          <RunStageSummaryChip
+            value={isApproved ? "Ready for Compile / Render" : preflightSummary}
+            tone={isApproved ? "success" : summaryStatusTone}
+          />
+        </div>
+      </RunStageStateCard>
+
+      <RunStageSummaryCard
+        eyebrow="Intake Pipeline"
+        title="Review progression"
+        description="Handoff, configuration, executor, model, and approval readiness."
+        icon={<ListChecks className="h-4 w-4" />}
+        status={
+          <RunStageSummaryChip
+            label="Preflight"
+            value={preflightSummary}
+            tone={
+              preflightChecks.length > 0 &&
+              preflightPassedCount === preflightChecks.length
+                ? "success"
+                : "warning"
+            }
+          />
+        }
+      >
+        <RunStagePipeline
+          steps={INTAKE_PIPELINE_STEPS}
+          statuses={intakePipelineStatuses}
+        />
+      </RunStageSummaryCard>
 
       <section className="overflow-hidden rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
         <div className="grid gap-0 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(28rem,1.7fr)_minmax(15rem,0.95fr)]">
@@ -1330,22 +1365,6 @@ export function RunIntakeReviewPanel({
         </div>
       </section>
 
-      {isApproved ? (
-        <div className="rounded border border-[var(--success)]/35 bg-[var(--success)]/10 px-4 py-3">
-          <div className="flex items-start gap-3">
-            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-[var(--success)]" />
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">
-                Intake approved
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                This run is ready to move into Compile / Render with the current
-                configuration.
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
