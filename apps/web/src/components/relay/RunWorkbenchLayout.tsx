@@ -16,6 +16,10 @@ import {
   RunPlanContextHeader,
   hasRunPlanContext,
 } from './RunPlanContext'
+import {
+  RunStageHeader,
+  RunStageInspectorTabStrip,
+} from './RunStagePrimitives'
 import { cn } from '@/lib/utils'
 import { ArrowLeft } from 'lucide-react'
 
@@ -114,45 +118,6 @@ function getInspectorFallback(tab: InspectorPanelKey): React.ReactNode {
       description={copy.description}
       className="bg-[var(--relay-inspector-bg)]"
     />
-  )
-}
-
-function InspectorTabStrip({
-  tabs,
-  activeTab,
-  onTabChange,
-  className,
-}: {
-  tabs: InspectorTabConfig[]
-  activeTab?: InspectorPanelKey
-  onTabChange: (tab: InspectorPanelKey) => void
-  className?: string
-}) {
-  return (
-    <div className={cn('overflow-x-auto', className)}>
-      <div className="flex min-w-max items-center gap-4">
-        {tabs.map((tab) => {
-          const active = tab.key === activeTab
-
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => onTabChange(tab.key)}
-              className={cn(
-                'flex h-10 items-center border-b-2 text-[11px] font-medium transition-colors',
-                active
-                  ? 'border-[var(--relay-accent)] text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-              aria-pressed={active}
-            >
-              {tab.label}
-            </button>
-          )
-        })}
-      </div>
-    </div>
   )
 }
 
@@ -297,26 +262,18 @@ export function RunWorkbenchLayout({
           className="min-w-0"
         >
           <main className="h-full min-w-0 overflow-y-auto">
-            <div className="border-b border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-4 py-3">
-              <div className="flex min-w-0 items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-[var(--relay-accent)]">
-                    {activeStageCopy.title}
-                  </h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {activeStageCopy.description}
-                  </p>
-                </div>
-                <StatusBadge status={run.status} className="shrink-0" />
-              </div>
-            </div>
+            <RunStageHeader
+              title={activeStageCopy.title}
+              description={activeStageCopy.description}
+              status={<StatusBadge status={run.status} className="shrink-0" />}
+            />
             <div className="min-w-0 px-4 py-4">
               {mainContent}
 
               <section className="mt-4 lg:hidden">
                 <div className="overflow-hidden rounded border border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]">
                   <div className="border-b border-[var(--relay-row-border)] px-3 pt-2">
-                    <InspectorTabStrip
+                    <RunStageInspectorTabStrip
                       tabs={resolvedTabs}
                       activeTab={resolvedActiveTab}
                       onTabChange={setActiveInspectorTab}
@@ -352,7 +309,7 @@ export function RunWorkbenchLayout({
           >
             <aside className="flex h-full min-h-0 w-full flex-col border-l border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]">
               <div className="flex h-10 shrink-0 items-center border-b border-[var(--relay-row-border)] px-3">
-                <InspectorTabStrip
+                <RunStageInspectorTabStrip
                   tabs={resolvedTabs}
                   activeTab={resolvedActiveTab}
                   onTabChange={setActiveInspectorTab}
