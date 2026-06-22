@@ -32,13 +32,15 @@ describe("relayPlanVisualState", () => {
     );
 
     expect(summary).toMatchObject({
+      total: 2,
+      completed: 1,
       label: "1 / 2",
       filledDots: 1,
       dotCount: 2,
     });
   });
 
-  it("treats completionReady as fully terminal when counts are missing", () => {
+  it("treats completionReady as fully complete when counts are missing", () => {
     const summary = getPlanProgressSummary(
       buildPlan({ completionReady: true, completedPassCount: undefined }),
     );
@@ -54,7 +56,7 @@ describe("relayPlanVisualState", () => {
     expect(summary.filledDots).toBe(0);
   });
 
-  it("counts skipped passes as terminal", () => {
+  it("does not count skipped passes toward visible completed progress", () => {
     const summary = getPlanProgressSummary(
       buildPlan({
         passCount: 3,
@@ -63,8 +65,11 @@ describe("relayPlanVisualState", () => {
       }),
     );
 
-    expect(summary.label).toBe("2 / 3");
-    expect(summary.terminal).toBe(2);
+    expect(summary.label).toBe("1 / 3");
+    expect(summary.completed).toBe(1);
+    expect(summary.skipped).toBe(1);
+    expect(summary.terminal).toBe(1);
+    expect(summary.filledDots).toBe(1);
   });
 
   it("clamps overcounts to the total pass count", () => {
@@ -99,12 +104,32 @@ describe("relayPlanVisualState", () => {
     });
   });
 
-  it("uses the explicit fallback only when pass summary fields are absent", () => {
+  it("uses an em dash fallback when pass summary fields are absent", () => {
     expect(getPlanRegistryPassSummary(buildPlan())).toMatchObject({
       kind: "fallback",
-      title: "Open plan for pass detail",
+      title: "—",
     });
+  });
 
+  it("renders complete plans as ALL COMPLETE", () => {
+    expect(
+      getPlanRegistryPassSummary(buildPlan({ status: "complete", completionReady: true })),
+    ).toMatchObject({
+      kind: "fallback",
+      title: "ALL COMPLETE",
+    });
+  });
+
+  it("renders abandoned plans as an em dash", () => {
+    expect(
+      getPlanRegistryPassSummary(buildPlan({ status: "abandoned" })),
+    ).toMatchObject({
+      kind: "fallback",
+      title: "—",
+    });
+  });
+
+  it("uses next pass summary when current pass fields are absent", () => {
     expect(
       getPlanRegistryPassSummary(
         buildPlan({

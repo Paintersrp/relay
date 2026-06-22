@@ -47,7 +47,11 @@ export function RelayFilterTabs({
             <span>{item.label}</span>
             {typeof item.count === "number" ? (
               <span
-                className={cn("text-[11px] text-muted-foreground", countClassName)}
+                data-active={item.value === value ? "" : undefined}
+                className={cn(
+                  "inline-flex items-center justify-center font-mono text-[10px] leading-none",
+                  countClassName,
+                )}
               >
                 {item.count}
               </span>

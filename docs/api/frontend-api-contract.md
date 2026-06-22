@@ -192,6 +192,16 @@ type PlanAPIPass = {
 type PlanAPIReadPlan = PlanAPIPlan & {
   passCount: number
   completionReady: boolean
+  completedPassCount?: number
+  inProgressPassCount?: number
+  plannedPassCount?: number
+  skippedPassCount?: number
+  currentPassId?: string
+  currentPassName?: string
+  currentPassGoal?: string
+  nextPassId?: string
+  nextPassName?: string
+  nextPassGoal?: string
 }
 ```
 

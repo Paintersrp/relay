@@ -231,22 +231,35 @@ export function getPlanProgressSummary(plan: PlanAPIReadPlan): PlanProgressSumma
     total,
   );
   const skipped = clampCount(plan.skippedPassCount ?? 0, total);
-  const terminal = clampCount(completed + skipped, total);
 
   return {
     total,
     completed,
     skipped,
-    terminal,
-    label: `${terminal} / ${total}`,
+    terminal: completed,
+    label: `${completed} / ${total}`,
     dotCount: total,
-    filledDots: terminal,
+    filledDots: completed,
   };
 }
 
 export function getPlanRegistryPassSummary(
   plan: PlanAPIReadPlan,
 ): PlanRegistryPassSummary {
+  if (plan.status === "complete") {
+    return {
+      kind: "fallback",
+      title: "ALL COMPLETE",
+    };
+  }
+
+  if (plan.status === "abandoned") {
+    return {
+      kind: "fallback",
+      title: "—",
+    };
+  }
+
   if (plan.currentPassName || plan.currentPassId || plan.currentPassGoal) {
     return {
       kind: "current",
@@ -267,7 +280,7 @@ export function getPlanRegistryPassSummary(
 
   return {
     kind: "fallback",
-    title: "Open plan for pass detail",
+    title: "—",
   };
 }
 

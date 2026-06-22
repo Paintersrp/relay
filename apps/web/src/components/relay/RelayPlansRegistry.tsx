@@ -1,9 +1,11 @@
 import * as React from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight, Plus } from "lucide-react";
 
-import { RelayFilterTabs, type RelayFilterTabItem } from "@/components/relay/RelayFilterTabs";
-import { RelayMonoText } from "@/components/relay/RelayMeta";
+import {
+  RelayFilterTabs,
+  type RelayFilterTabItem,
+} from "@/components/relay/RelayFilterTabs";
 import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
 import {
   formatPlanDate,
@@ -12,12 +14,9 @@ import {
   getPlanAttentionLabel,
   getPlanProgressSummary,
   getPlanRegistryPassSummary,
-  getPlanAttentionVariant,
   getPlanStatusLabel,
-  getPlanStatusVariant,
   type RelayPlanRegistryFilter,
 } from "@/components/relay/relayPlanVisualState";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PlanAPIReadPlan } from "@/features/relay-plans";
@@ -30,12 +29,8 @@ interface RelayPlansRegistryProps {
   className?: string;
 }
 
-const registryColumns =
-  "minmax(19rem,2.1fr) minmax(8rem,0.9fr) minmax(10rem,1fr) minmax(12rem,1.2fr) minmax(8rem,0.8fr) minmax(10rem,0.9fr) 2.5rem";
-const planBadgeClassName =
-  "rounded-[3px] px-2 py-0.5 text-[11px] font-medium leading-4";
-const planMetaTextClassName =
-  "font-mono text-[11px] leading-4 text-muted-foreground";
+const planPillBase =
+  "inline-flex items-center gap-1 whitespace-nowrap rounded-sm border px-2 py-0.5 text-[10px] font-medium tracking-wide";
 
 function comparePlansByUpdatedAtDesc(a: PlanAPIReadPlan, b: PlanAPIReadPlan): number {
   return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
@@ -65,80 +60,113 @@ function getFilterMatch(
   }
 }
 
-function PlanStatusBadge({ plan }: { plan: PlanAPIReadPlan }) {
-  const primaryLabel = plan.completionReady ? "Completion Ready" : getPlanStatusLabel(plan.status);
-  const primaryVariant = plan.completionReady ? "warning" : getPlanStatusVariant(plan.status);
+function getPlanStatusPillClassName(plan: PlanAPIReadPlan): string {
+  if (plan.completionReady) {
+    return "border-warning/35 bg-warning/14 text-warning";
+  }
+
+  switch (plan.status) {
+    case "active":
+      return "border-running/30 bg-running/12 text-running";
+    case "complete":
+      return "border-success/30 bg-success/12 text-success";
+    case "abandoned":
+      return "border-border bg-muted/40 text-muted-foreground";
+  }
+}
+
+function getPlanAttentionPillClassName(attention: ReturnType<typeof getPlanAttention>): string {
+  switch (attention) {
+    case "completion-ready":
+      return "border-warning/35 bg-warning/14 text-warning";
+    case "in-progress":
+      return "border-running/30 bg-running/12 text-running";
+    case "next-pass-ready":
+      return "border-info/30 bg-info/12 text-info";
+    case "no-runnable-pass":
+      return "border-destructive/30 bg-destructive/10 text-destructive";
+    case "abandoned":
+      return "border-border bg-muted/40 text-muted-foreground";
+    case "none":
+      return "";
+  }
+}
+
+function PlanStatusPill({ plan }: { plan: PlanAPIReadPlan }) {
+  const label = plan.completionReady ? "Completion Ready" : getPlanStatusLabel(plan.status);
 
   return (
-    <Badge variant={primaryVariant} className={planBadgeClassName}>
-      {primaryLabel}
-    </Badge>
+    <span className={cn(planPillBase, getPlanStatusPillClassName(plan))}>
+      {label}
+    </span>
   );
 }
 
-function PlanAttentionBadge({ plan }: { plan: PlanAPIReadPlan }) {
+function PlanAttentionPill({ plan }: { plan: PlanAPIReadPlan }) {
   const attention = getPlanAttention(plan);
 
   if (attention === "none") {
-    return <span className="text-xs text-muted-foreground">None</span>;
+    return null;
   }
 
   return (
-    <Badge
-      variant={getPlanAttentionVariant(attention)}
-      className={planBadgeClassName}
-    >
+    <span className={cn(planPillBase, getPlanAttentionPillClassName(attention))}>
+      <AlertTriangle className="h-[9px] w-[9px]" />
       {getPlanAttentionLabel(attention)}
-    </Badge>
+    </span>
   );
 }
 
 function PlanMetadataLine({ plan }: { plan: PlanAPIReadPlan }) {
+  const segments = [plan.planId, plan.repoTarget, plan.branchContext];
+
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-      <RelayMonoText className={planMetaTextClassName}>{plan.planId}</RelayMonoText>
-      <span className="text-[11px] leading-4 text-muted-foreground">/</span>
-      <RelayMonoText className={cn(planMetaTextClassName, "break-words")}>
-        {plan.repoTarget}
-      </RelayMonoText>
-      <span className="text-[11px] leading-4 text-muted-foreground">/</span>
-      <RelayMonoText className={planMetaTextClassName}>{plan.branchContext}</RelayMonoText>
+    <div className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 font-mono text-[10px] leading-4 text-muted-foreground">
+      {segments.map((value, index) => (
+        <span key={`${plan.id}-${index}`} className="inline-flex max-w-full items-center gap-1">
+          {index > 0 ? <span className="text-muted-foreground/55">/</span> : null}
+          <span className="break-all">{value}</span>
+        </span>
+      ))}
     </div>
   );
 }
 
 function PlanProgressDots({ plan }: { plan: PlanAPIReadPlan }) {
   const progress = getPlanProgressSummary(plan);
-  const visibleDotCount = Math.min(progress.dotCount, 10);
-  const filledDots =
+  const visibleSegments = Math.min(progress.dotCount, 10);
+  const filledSegments =
     progress.dotCount <= 10
       ? progress.filledDots
-      : progress.filledDots === 0
-        ? 0
-        : Math.min(
-            visibleDotCount,
-            Math.max(
-              1,
-              Math.round((progress.filledDots / Math.max(progress.dotCount, 1)) * visibleDotCount),
+      : Math.min(
+          visibleSegments,
+          Math.max(
+            0,
+            Math.round(
+              (progress.filledDots / Math.max(progress.dotCount, 1)) * visibleSegments,
             ),
-          );
+          ),
+        );
 
   return (
     <div className="flex items-center gap-2">
-      <div className="flex items-center gap-1" aria-hidden="true">
-        {Array.from({ length: visibleDotCount }).map((_, index) => (
+      <div className="flex gap-px" aria-hidden="true">
+        {Array.from({ length: visibleSegments }).map((_, index) => (
           <span
             key={index}
             className={cn(
-              "h-1.5 w-1.5 rounded-full",
-              index < filledDots
-                ? "bg-[var(--relay-accent)]"
+              "h-1.5 rounded-sm",
+              index < filledSegments
+                ? "bg-info/70"
                 : "bg-[var(--relay-row-border)]",
             )}
+            style={{ width: "9px" }}
           />
         ))}
       </div>
-      <span className="font-mono text-xs text-muted-foreground">{progress.label}</span>
+      <span className="font-mono text-[10px] tabular-nums whitespace-nowrap text-muted-foreground">
+        {progress.label}
+      </span>
     </div>
   );
 }
@@ -146,9 +174,9 @@ function PlanProgressDots({ plan }: { plan: PlanAPIReadPlan }) {
 function PlanProgressDotsSkeleton() {
   return (
     <div className="flex items-center gap-2">
-      <div className="flex items-center gap-1" aria-hidden="true">
+      <div className="flex gap-px" aria-hidden="true">
         {Array.from({ length: 4 }).map((_, index) => (
-          <Skeleton key={index} className="h-1.5 w-1.5 rounded-full" />
+          <Skeleton key={index} className="h-1.5 w-[9px] rounded-sm" />
         ))}
       </div>
       <Skeleton className="h-3 w-10" />
@@ -160,42 +188,44 @@ function PlanPassSummary({ plan }: { plan: PlanAPIReadPlan }) {
   const summary = getPlanRegistryPassSummary(plan);
 
   if (summary.kind === "fallback") {
-    return <span className="text-xs text-muted-foreground">{summary.title}</span>;
+    if (summary.title === "ALL COMPLETE") {
+      return (
+        <span className="font-mono text-[10px] tracking-[0.18em] text-success/70">
+          {summary.title}
+        </span>
+      );
+    }
+
+    return <span className="text-sm text-muted-foreground">—</span>;
   }
 
-  const kindLabel = summary.kind === "current" ? "Current" : "Next";
-  const titleText = summary.subtitle ? `${summary.title} - ${summary.subtitle}` : summary.title;
+  const tooltip = summary.subtitle ? `${summary.title}\n${summary.subtitle}` : summary.title;
+  const passId = summary.passId ?? (summary.kind === "current" ? "CURRENT" : "NEXT");
 
   return (
-    <div className="min-w-0 space-y-0.5">
-      <div className="flex items-center gap-1.5 text-[11px] leading-4 text-muted-foreground">
-        <span className="h-1.5 w-1.5 rounded-full bg-[var(--relay-row-border)]" aria-hidden="true" />
-        {summary.passId ? (
-          <>
-            <RelayMonoText className={planMetaTextClassName}>{summary.passId}</RelayMonoText>
-            <span className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground/80">
-              {kindLabel}
-            </span>
-          </>
-        ) : (
-          <span className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground/80">
-            {kindLabel}
-          </span>
+    <div className="flex max-w-[200px] items-start gap-1.5">
+      <span
+        className={cn(
+          "mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full",
+          summary.kind === "current" ? "bg-info" : "bg-[var(--relay-row-border)]",
         )}
+        aria-hidden="true"
+      />
+      <div className="min-w-0">
+        <div className="truncate font-mono text-[10px] leading-4 text-muted-foreground">
+          {passId}
+        </div>
+        <div className="truncate text-[11px] leading-snug text-foreground/85" title={tooltip}>
+          {summary.title}
+        </div>
       </div>
-      <p className="truncate text-xs text-foreground" title={titleText}>
-        {summary.title}
-      </p>
-      {summary.subtitle ? (
-        <p className="truncate text-[11px] text-muted-foreground" title={summary.subtitle}>
-          {summary.subtitle}
-        </p>
-      ) : null}
     </div>
   );
 }
 
 function RelayPlanCompactRow({ plan }: { plan: PlanAPIReadPlan }) {
+  const attention = getPlanAttention(plan);
+  const attentionLabel = getPlanAttentionLabel(attention);
 
   return (
     <Link
@@ -206,19 +236,21 @@ function RelayPlanCompactRow({ plan }: { plan: PlanAPIReadPlan }) {
     >
       <div className="flex min-w-0 items-start gap-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-foreground">{plan.title}</p>
+          <p className="truncate text-sm font-medium leading-snug text-foreground">
+            {plan.title}
+          </p>
           <PlanMetadataLine plan={plan} />
         </div>
         <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <PlanStatusBadge plan={plan} />
-        <PlanAttentionBadge plan={plan} />
+        <PlanStatusPill plan={plan} />
+        <PlanAttentionPill plan={plan} />
       </div>
 
       <div className="mt-3 space-y-2">
-        <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+        <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
           Progress
         </span>
         <PlanProgressDots plan={plan} />
@@ -226,7 +258,7 @@ function RelayPlanCompactRow({ plan }: { plan: PlanAPIReadPlan }) {
 
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
             Current / Next
           </p>
           <div className="mt-1 min-w-0">
@@ -234,7 +266,7 @@ function RelayPlanCompactRow({ plan }: { plan: PlanAPIReadPlan }) {
           </div>
         </div>
         <div className="min-w-0">
-          <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
             Updated
           </p>
           <span
@@ -245,11 +277,11 @@ function RelayPlanCompactRow({ plan }: { plan: PlanAPIReadPlan }) {
           </span>
         </div>
         <div className="min-w-0">
-          <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
             Attention
           </p>
           <span className="mt-1 block text-[11px] text-muted-foreground">
-            {getPlanAttentionLabel(getPlanAttention(plan))}
+            {attention === "none" ? "None" : attentionLabel}
           </span>
         </div>
       </div>
@@ -258,50 +290,122 @@ function RelayPlanCompactRow({ plan }: { plan: PlanAPIReadPlan }) {
 }
 
 function RelayPlanTableRow({ plan }: { plan: PlanAPIReadPlan }) {
+  const router = useRouter();
+
+  const openPlan = React.useCallback(() => {
+    void router.navigate({ to: "/plans/$planId", params: { planId: plan.planId } });
+  }, [plan.planId, router]);
+
   return (
-    <Link
-      to="/plans/$planId"
-      params={{ planId: plan.planId }}
+    <tr
+      role="link"
+      tabIndex={0}
       aria-label={`Open plan ${plan.title}`}
-      className="grid items-center border-b border-[var(--relay-row-border)] text-sm transition-colors hover:bg-[var(--relay-panel-hover-bg)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--relay-accent)]"
-      style={{ gridTemplateColumns: registryColumns }}
+      className="group cursor-pointer border-b border-[var(--relay-row-border)] transition-colors hover:bg-[var(--relay-panel-hover-bg)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--relay-accent)]"
+      onClick={openPlan}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openPlan();
+        }
+      }}
     >
-      <div className="min-w-0 px-4 py-4">
+      <td className="px-6 py-3.5 pr-3 align-middle">
         <div className="min-w-0">
-          <p className="truncate font-semibold text-foreground">{plan.title}</p>
+          <p className="truncate text-sm font-medium leading-snug text-foreground">
+            {plan.title}
+          </p>
           <PlanMetadataLine plan={plan} />
         </div>
-      </div>
+      </td>
 
-      <div className="px-4 py-4">
-        <PlanStatusBadge plan={plan} />
-      </div>
+      <td className="px-4 py-3.5 align-middle">
+        <PlanStatusPill plan={plan} />
+      </td>
 
-      <div className="px-4 py-4">
+      <td className="px-4 py-3.5 align-middle">
         <PlanProgressDots plan={plan} />
-      </div>
+      </td>
 
-      <div className="min-w-0 px-4 py-4">
+      <td className="px-4 py-3.5 align-middle">
         <PlanPassSummary plan={plan} />
-      </div>
+      </td>
 
-      <div className="px-4 py-4">
-        <span
-          className="text-xs text-muted-foreground"
-          title={formatPlanDate(plan.updatedAt)}
-        >
+      <td className="px-4 py-3.5 align-middle">
+        <span className="whitespace-nowrap text-[11px] text-muted-foreground" title={formatPlanDate(plan.updatedAt)}>
           {formatPlanDateRelative(plan.updatedAt)}
         </span>
-      </div>
+      </td>
 
-      <div className="px-4 py-4">
-        <PlanAttentionBadge plan={plan} />
-      </div>
+      <td className="px-4 py-3.5 align-middle">
+        <PlanAttentionPill plan={plan} />
+      </td>
 
-      <div className="flex justify-end px-4 py-4 text-muted-foreground">
-        <ChevronRight className="size-4" />
-      </div>
-    </Link>
+      <td className="px-3 py-3.5 text-right align-middle">
+        <ChevronRight className="inline-block size-[13px] text-muted-foreground transition-colors group-hover:text-foreground/60" />
+      </td>
+    </tr>
+  );
+}
+
+function TableHeader() {
+  return (
+    <thead>
+      <tr className="border-b border-[var(--relay-row-border)]">
+        <th className="px-6 py-2 text-left text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          Plan
+        </th>
+        <th className="px-4 py-2 text-left text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          Status
+        </th>
+        <th className="px-4 py-2 text-left text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          Progress
+        </th>
+        <th className="px-4 py-2 text-left text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          Current / Next Pass
+        </th>
+        <th className="px-4 py-2 text-left text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          Updated
+        </th>
+        <th className="px-4 py-2 text-left text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+          Attention
+        </th>
+        <th className="px-3 py-2" />
+      </tr>
+    </thead>
+  );
+}
+
+function TableSkeletonRows() {
+  return (
+    <tbody>
+      {Array.from({ length: 4 }).map((_, index) => (
+        <tr key={`plan-table-loading-${index}`} className="border-b border-[var(--relay-row-border)]">
+          <td className="px-6 py-3.5">
+            <Skeleton className="h-4 w-56" />
+            <Skeleton className="mt-1.5 h-3 w-48" />
+          </td>
+          <td className="px-4 py-3.5">
+            <Skeleton className="h-5 w-24 rounded-sm" />
+          </td>
+          <td className="px-4 py-3.5">
+            <PlanProgressDotsSkeleton />
+          </td>
+          <td className="px-4 py-3.5">
+            <Skeleton className="h-4 w-28" />
+          </td>
+          <td className="px-4 py-3.5">
+            <Skeleton className="h-4 w-16" />
+          </td>
+          <td className="px-4 py-3.5">
+            <Skeleton className="h-5 w-24 rounded-sm" />
+          </td>
+          <td className="px-3 py-3.5">
+            <Skeleton className="ml-auto h-4 w-4" />
+          </td>
+        </tr>
+      ))}
+    </tbody>
   );
 }
 
@@ -353,47 +457,45 @@ export function RelayPlansRegistry({
         className,
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--relay-row-border)] px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="text-sm font-semibold text-foreground">
-            {rows.length} plan{rows.length === 1 ? "" : "s"}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--relay-row-border)] px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-3 text-xs">
+          <span className="text-muted-foreground">
+            <span className="font-mono text-foreground">{rows.length}</span> plans
           </span>
           {attentionCount > 0 ? (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--warning)]">
+            <span className="inline-flex items-center gap-1 text-warning">
               <AlertTriangle className="size-3" />
-              {attentionCount} need attention
+              <span className="font-medium">{attentionCount}</span> need attention
             </span>
           ) : null}
         </div>
       </div>
 
-      <div>
-        <RelayFilterTabs
-          value={filter}
-          items={filterItems}
-          onValueChange={(value) => setFilter(value as RelayPlanRegistryFilter)}
-          listClassName="gap-1 px-4 pb-0"
-          triggerClassName="h-auto flex-none gap-2 rounded-none border-b-2 border-transparent px-0 pb-3 pt-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground after:hidden data-active:border-foreground data-active:text-foreground"
-          countClassName="rounded-[3px] bg-foreground px-1.5 py-0.5 text-[10px] leading-none text-background"
-        />
-      </div>
+      <RelayFilterTabs
+        value={filter}
+        items={filterItems}
+        onValueChange={(value) => setFilter(value as RelayPlanRegistryFilter)}
+        listClassName="gap-0 px-4 pb-0"
+        triggerClassName="h-auto flex-none gap-1.5 rounded-none border-b-2 border-transparent px-3 py-2.5 text-[12px] font-medium text-muted-foreground after:bottom-[-1px] after:h-px after:bg-info hover:text-foreground data-active:border-info data-active:text-foreground"
+        countClassName="rounded-sm bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground data-active:bg-info/12 data-active:text-info"
+      />
 
       <div className="min-h-0 flex-1">
         {isLoading ? (
-          <div className="min-h-0 flex h-full flex-col">
+          <div className="flex h-full min-h-0 flex-col">
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 lg:hidden">
               {Array.from({ length: 4 }).map((_, index) => (
                 <div
                   key={`plan-compact-loading-${index}`}
                   className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-3"
                 >
-                    <div className="space-y-2">
-                      <Skeleton className="h-4 w-40" />
-                      <Skeleton className="h-3 w-52" />
-                      <PlanProgressDotsSkeleton />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-40" />
+                    <Skeleton className="h-3 w-52" />
+                    <PlanProgressDotsSkeleton />
                     <div className="flex flex-wrap gap-2 pt-1">
-                      <Skeleton className="h-6 w-24" />
-                      <Skeleton className="h-6 w-28" />
+                      <Skeleton className="h-5 w-24 rounded-sm" />
+                      <Skeleton className="h-5 w-28 rounded-sm" />
                     </div>
                   </div>
                 </div>
@@ -401,55 +503,20 @@ export function RelayPlansRegistry({
             </div>
 
             <div className="hidden min-h-0 flex-1 overflow-x-auto overflow-y-hidden lg:flex">
-              <div className="flex h-full min-h-0 min-w-[1120px] flex-1 flex-col">
-                <div
-                  className="grid shrink-0 border-b border-[var(--relay-row-border)] py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground"
-                  style={{ gridTemplateColumns: registryColumns }}
-                >
-                  <div className="px-4">PLAN</div>
-                  <div className="px-4">STATUS</div>
-                  <div className="px-4">PROGRESS</div>
-                  <div className="px-4">CURRENT / NEXT PASS</div>
-                  <div className="px-4">UPDATED</div>
-                  <div className="px-4">ATTENTION</div>
-                  <div className="pr-2" />
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  {Array.from({ length: 4 }).map((_, index) => (
-                    <div
-                      key={`plan-table-loading-${index}`}
-                      className="grid border-b border-[var(--relay-row-border)]"
-                      style={{ gridTemplateColumns: registryColumns }}
-                    >
-                      <div className="px-4 py-3">
-                        <Skeleton className="h-4 w-56" />
-                        <Skeleton className="mt-2 h-3 w-40" />
-                      </div>
-                      <div className="px-4 py-3">
-                        <Skeleton className="h-6 w-24" />
-                      </div>
-                      <div className="px-4 py-3">
-                        <Skeleton className="h-4 w-16" />
-                        <div className="mt-2">
-                          <PlanProgressDotsSkeleton />
-                        </div>
-                      </div>
-                      <div className="px-4 py-3">
-                        <Skeleton className="h-4 w-28" />
-                      </div>
-                      <div className="px-4 py-3">
-                        <Skeleton className="h-4 w-20" />
-                      </div>
-                      <div className="px-4 py-3">
-                        <Skeleton className="h-6 w-24" />
-                      </div>
-                      <div className="px-4 py-3">
-                        <Skeleton className="ml-auto h-4 w-4" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              <div className="flex min-h-0 h-full min-w-[980px] flex-1 flex-col">
+                <table className="w-full table-fixed border-collapse">
+                  <colgroup>
+                    <col style={{ width: "34%" }} />
+                    <col style={{ width: "11%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "23%" }} />
+                    <col style={{ width: "8%" }} />
+                    <col style={{ width: "8%" }} />
+                    <col style={{ width: "4%" }} />
+                  </colgroup>
+                  <TableHeader />
+                  <TableSkeletonRows />
+                </table>
               </div>
             </div>
           </div>
@@ -503,7 +570,7 @@ export function RelayPlansRegistry({
         ) : null}
 
         {!isLoading && !error && filteredPlans.length > 0 ? (
-          <div className="min-h-0 flex h-full flex-col">
+          <div className="flex h-full min-h-0 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto p-3 lg:hidden">
               <div className="flex flex-col gap-3">
                 {filteredPlans.map((plan) => (
@@ -513,39 +580,37 @@ export function RelayPlansRegistry({
             </div>
 
             <div className="hidden min-h-0 flex-1 overflow-x-auto overflow-y-hidden lg:flex">
-              <div className="flex h-full min-h-0 min-w-[1120px] flex-1 flex-col">
-                <div
-                  className="grid shrink-0 border-b border-[var(--relay-row-border)] py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground"
-                  style={{ gridTemplateColumns: registryColumns }}
-                >
-                  <div className="px-4">PLAN</div>
-                  <div className="px-4">STATUS</div>
-                  <div className="px-4">PROGRESS</div>
-                  <div className="px-4">CURRENT / NEXT PASS</div>
-                  <div className="px-4">UPDATED</div>
-                  <div className="px-4">ATTENTION</div>
-                  <div className="pr-2" />
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  {filteredPlans.map((plan) => (
-                    <RelayPlanTableRow key={plan.id} plan={plan} />
-                  ))}
-                </div>
+              <div className="flex min-h-0 h-full min-w-[980px] flex-1 flex-col">
+                <table className="w-full table-fixed border-collapse">
+                  <colgroup>
+                    <col style={{ width: "34%" }} />
+                    <col style={{ width: "11%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "23%" }} />
+                    <col style={{ width: "8%" }} />
+                    <col style={{ width: "8%" }} />
+                    <col style={{ width: "4%" }} />
+                  </colgroup>
+                  <TableHeader />
+                  <tbody>
+                    {filteredPlans.map((plan) => (
+                      <RelayPlanTableRow key={plan.id} plan={plan} />
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
         ) : null}
       </div>
 
-      <div className="flex shrink-0 items-center justify-between border-t border-[var(--relay-row-border)] px-4 py-2 text-[11px] font-medium text-muted-foreground">
-        <span>
-          {filteredPlans.length} plan{filteredPlans.length === 1 ? "" : "s"}
+      <div className="flex shrink-0 items-center justify-between border-t border-[var(--relay-row-border)] px-4 py-2 text-[10px] text-muted-foreground">
+        <span className="font-mono">
+          {rows.length} plan{rows.length === 1 ? "" : "s"}
         </span>
         <span>
-          {filter === "all"
-            ? "Showing all managed plans"
-            : `Filtered from ${rows.length} total`}
+          Showing {filteredPlans.length}
+          {filter === "all" ? "" : ` of ${rows.length}`}
         </span>
       </div>
     </div>
