@@ -11,7 +11,7 @@ import {
   validateRun,
   evaluateExecuteValidationAction,
 } from "@/features/relay-runs";
-import type { RelayExecutorPhase } from "@/features/relay-runs";
+import type { RelayArtifact, RelayExecutorPhase, RelayRun } from "@/features/relay-runs";
 import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
 import {
   RelayInlineState,
@@ -24,6 +24,14 @@ import {
 import { ValidationPanel } from "@/components/relay/ValidationPanel";
 import { LogPreviewPanel } from "@/components/relay/LogPreviewPanel";
 import { RunEvidenceBrowser } from "@/components/relay/RunEvidenceBrowser";
+import {
+  RunStageInspectorSection,
+  RunStageKeyValueRow,
+  RunStagePipeline,
+  RunStageStateCard,
+  RunStageSummaryCard,
+  RunStageSummaryChip,
+} from "@/components/relay/RunStagePrimitives";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +50,12 @@ import {
   Clock,
   FileText,
 } from "lucide-react";
+import {
+  EXECUTE_PIPELINE_STEPS,
+  getExecuteDisplayState,
+  getExecutePipelineStatuses,
+  getExecuteStateCardCopy,
+} from "./runExecuteVisualState";
 
 export const Route = createFileRoute("/runs/$runId/execute")({
   component: ExecutePage,
@@ -91,24 +105,34 @@ function ExecutePage() {
     lines: formattedLogs.slice(-50),
     truncated: formattedLogs.length > 50,
   };
+  const resolvedArtifacts = artifacts || [];
+  const resolvedEvents = events || [];
 
   return (
     <RunWorkbenchLayout
       run={{
         ...run,
-        artifacts: artifacts || [],
-        latestEvents: events || [],
+        artifacts: resolvedArtifacts,
+        latestEvents: resolvedEvents,
         logPreview,
       }}
       currentStep="execute"
-      mainContent={<ExecuteMainContent run={run} artifacts={artifacts || []} />}
+      mainContent={<ExecuteMainContent run={run} artifacts={resolvedArtifacts} />}
+      initialInspectorTab="details"
+      inspectorTabs={[
+        { key: "details", label: "Details" },
+        { key: "artifacts", label: "Artifacts" },
+        { key: "validation", label: "Validation" },
+        { key: "logs", label: "Logs" },
+      ]}
       inspectorPanels={{
+        details: <ExecuteDetailsPanel run={run} artifacts={resolvedArtifacts} />,
         logs: <LogPreviewPanel logPreview={logPreview} />,
         artifacts: (
           <RunEvidenceBrowser
             runId={run.id}
-            artifacts={artifacts || []}
-            events={events || []}
+            artifacts={resolvedArtifacts}
+            events={resolvedEvents}
           />
         ),
         validation: <ValidationPanel summary={run.validationSummary} />,
@@ -207,7 +231,7 @@ function ExecuteMainContent({
   run,
   artifacts,
 }: {
-  run: any;
+  run: RelayRun;
   artifacts: any[];
 }) {
   const queryClient = useQueryClient();
@@ -370,6 +394,23 @@ function ExecuteMainContent({
     cancelMutation.isPending ||
     recoverMutation.isPending ||
     validateMutation.isPending;
+  const executeVisualStateInput = {
+    run,
+    executorPhase,
+    preflightBlocked,
+    executePending: startMutation.isPending,
+    cancelPending: cancelMutation.isPending,
+    recoverPending: recoverMutation.isPending,
+    validatePending: validateMutation.isPending,
+    hasResultArtifacts: resultArtifacts.length > 0,
+    hasDiffArtifacts: diffArtifacts.length > 0,
+    hasValidationArtifacts: validationArtifacts.length > 0,
+  };
+  const executeDisplayState = getExecuteDisplayState(executeVisualStateInput);
+  const executePipelineStatuses = getExecutePipelineStatuses(
+    executeVisualStateInput,
+  );
+  const executeStateCardCopy = getExecuteStateCardCopy(executeDisplayState);
 
   const handleStart = () => {
     setMutationError(null);
@@ -426,6 +467,51 @@ function ExecuteMainContent({
           description={mutationError}
         />
       )}
+
+      <RunStageStateCard
+        tone={executeStateCardCopy.tone}
+        eyebrow={executeStateCardCopy.eyebrow}
+        title={executeStateCardCopy.title}
+        message={executeStateCardCopy.message}
+      />
+
+      <RunStageSummaryCard
+        eyebrow="Execute Pipeline"
+        title="Executor progression"
+        description="Brief approval, dispatch, execution, result capture, and audit readiness."
+      >
+        <div className="mb-3 flex flex-wrap gap-2">
+          <RunStageSummaryChip label="Status" value={runStatus} mono />
+          <RunStageSummaryChip
+            label="Executor"
+            value={formatPhaseLabel(executorPhase)}
+            tone={getExecutorPhaseTone(executorPhase)}
+          />
+          <RunStageSummaryChip
+            label="Result"
+            value={getArtifactSummaryLabel(resultArtifacts.length)}
+            tone={resultArtifacts.length > 0 ? "success" : "default"}
+          />
+          <RunStageSummaryChip
+            label="Validation"
+            value={getValidationSummaryLabel(
+              localValidationIsRunning,
+              validationArtifacts.length,
+            )}
+            tone={
+              localValidationIsRunning
+                ? "info"
+                : validationArtifacts.length > 0
+                  ? "success"
+                  : "default"
+            }
+          />
+        </div>
+        <RunStagePipeline
+          steps={EXECUTE_PIPELINE_STEPS}
+          statuses={executePipelineStatuses}
+        />
+      </RunStageSummaryCard>
 
       {/* Agent Status */}
       <Section
@@ -911,6 +997,177 @@ function ExecuteMainContent({
       </Section>
     </div>
   );
+}
+
+function ExecuteDetailsPanel({
+  run,
+  artifacts,
+}: {
+  run: RelayRun;
+  artifacts: RelayArtifact[];
+}) {
+  const runStatus = (run.status || "") as string;
+  const runLifecycle = (run.lifecycleState || "") as string;
+  const executorPhase = deriveExecutorPhase(runStatus, runLifecycle);
+  const resultArtifacts = artifacts.filter(isResultArtifact);
+  const diffArtifacts = artifacts.filter(isDiffArtifact);
+  const validationArtifacts = artifacts.filter(isValidationArtifact);
+  const commandLogArt = resultArtifacts.find(isCommandLogArtifact);
+  const preflightResultArt = resultArtifacts.find(
+    (artifact) =>
+      isExecutorResultArtifact(artifact) &&
+      artifactPreviewHas(artifact, "executor preflight failed"),
+  );
+  const preflightCommandLogArt = resultArtifacts.find(
+    (artifact) =>
+      isCommandLogArtifact(artifact) &&
+      artifactPreviewHas(artifact, "Preflight: BLOCKED"),
+  );
+  const preflightBlocked =
+    (executorPhase === "blocked" || executorPhase === "failed") &&
+    Boolean(preflightResultArt || preflightCommandLogArt);
+  const primaryResultArt =
+    resultArtifacts.find(
+      (artifact) =>
+        artifact.filename?.includes("executor_result") ||
+        artifact.label?.includes("Executor Result"),
+    ) || resultArtifacts[0];
+  const primaryDiffArt =
+    diffArtifacts.find(
+      (artifact) =>
+        artifact.filename?.includes("git_diff_patch") ||
+        artifact.label?.includes("Git Diff Patch"),
+    ) || diffArtifacts[0];
+  const primaryValidationArt =
+    validationArtifacts.find(
+      (artifact) =>
+        artifact.filename?.includes("validation_run") ||
+        artifact.label?.includes("Validation Report"),
+    ) || validationArtifacts[0];
+
+  return (
+    <div className="flex flex-col gap-3">
+      <RunStageInspectorSection title="Run State">
+        <RunStageKeyValueRow label="Status" value={runStatus} mono />
+        <RunStageKeyValueRow label="Lifecycle" value={runLifecycle} mono />
+        <RunStageKeyValueRow label="Active step" value="Execute" />
+      </RunStageInspectorSection>
+
+      <RunStageInspectorSection title="Executor">
+        <RunStageKeyValueRow
+          label="Phase"
+          value={formatExecutorPhaseLabel(executorPhase)}
+        />
+        <RunStageKeyValueRow
+          label="Adapter"
+          value={run.executorAdapter || run.executor || "-"}
+          mono
+        />
+        <RunStageKeyValueRow label="Model" value={run.model || "-"} mono />
+      </RunStageInspectorSection>
+
+      <RunStageInspectorSection title="Dispatch">
+        <RunStageKeyValueRow
+          label="Start"
+          value={
+            runStatus === "approved_for_executor"
+              ? "Available"
+              : `Unavailable from ${runStatus}`
+          }
+        />
+        <RunStageKeyValueRow
+          label="Preflight"
+          value={preflightBlocked ? "Blocked" : "No blocker detected"}
+        />
+        <RunStageKeyValueRow
+          label="Command log"
+          value={formatArtifactLocation(preflightCommandLogArt || commandLogArt)}
+          mono
+        />
+      </RunStageInspectorSection>
+
+      <RunStageInspectorSection title="Result">
+        <RunStageKeyValueRow
+          label="Result"
+          value={formatArtifactLocation(primaryResultArt)}
+          mono
+        />
+        <RunStageKeyValueRow
+          label="Changed files"
+          value={formatArtifactCount(diffArtifacts.length)}
+        />
+        <RunStageKeyValueRow
+          label="Diff"
+          value={formatArtifactLocation(primaryDiffArt)}
+          mono
+        />
+      </RunStageInspectorSection>
+
+      <RunStageInspectorSection title="Validation">
+        <RunStageKeyValueRow
+          label="State"
+          value={getValidationSummaryLabel(
+            runStatus === "local_validation_running",
+            validationArtifacts.length,
+          )}
+        />
+        <RunStageKeyValueRow
+          label="Evidence"
+          value={formatArtifactCount(validationArtifacts.length)}
+        />
+        <RunStageKeyValueRow
+          label="Report"
+          value={formatArtifactLocation(primaryValidationArt)}
+          mono
+        />
+      </RunStageInspectorSection>
+    </div>
+  );
+}
+
+function formatExecutorPhaseLabel(phase: RelayExecutorPhase): string {
+  const labels: Record<RelayExecutorPhase, string> = {
+    idle: "Awaiting Start",
+    dispatched: "Dispatching",
+    running: "Executing",
+    done: "Completed",
+    blocked: "Blocked",
+    failed: "Failed",
+    unavailable: "Unavailable",
+  };
+  return labels[phase];
+}
+
+function getExecutorPhaseTone(
+  phase: RelayExecutorPhase,
+): "default" | "success" | "warning" | "danger" | "info" {
+  if (phase === "done") return "success";
+  if (phase === "running" || phase === "dispatched") return "info";
+  if (phase === "blocked" || phase === "failed") return "danger";
+  if (phase === "idle") return "warning";
+  return "default";
+}
+
+function getArtifactSummaryLabel(count: number): string {
+  return count > 0 ? formatArtifactCount(count) : "Pending";
+}
+
+function getValidationSummaryLabel(
+  isRunning: boolean,
+  artifactCount: number,
+): string {
+  if (isRunning) return "Running";
+  if (artifactCount > 0) return formatArtifactCount(artifactCount);
+  return "Pending";
+}
+
+function formatArtifactCount(count: number): string {
+  if (count === 1) return "1 artifact";
+  return `${count} artifacts`;
+}
+
+function formatArtifactLocation(artifact?: RelayArtifact): string {
+  return artifact?.path || artifact?.filename || "-";
 }
 
 function Section({
