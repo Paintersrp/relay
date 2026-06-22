@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { AlertTriangle } from "lucide-react";
 
 import {
   RelayFilterTabs,
@@ -85,7 +86,7 @@ function compareRunsByUpdatedAtDesc(a: RelayRun, b: RelayRun): number {
 }
 
 const registryColumns =
-  "minmax(20rem,2.4fr) minmax(10rem,1fr) minmax(9rem,0.8fr) minmax(12rem,1fr) minmax(8rem,0.8fr) minmax(10rem,0.9fr) 2.5rem";
+  "minmax(22rem,3.8fr) minmax(8rem,1.3fr) minmax(8rem,1.3fr) minmax(7rem,1fr) minmax(7rem,0.9fr) minmax(9rem,1.2fr) 2.5rem";
 
 export function RelayRunsRegistry({
   runs,
@@ -140,30 +141,46 @@ export function RelayRunsRegistry({
   return (
     <div
       className={cn(
-        "flex min-h-0 flex-1 flex-col overflow-hidden border-t border-[var(--relay-row-border)] bg-[var(--relay-content-bg)]",
+        "flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--relay-content-bg)] text-foreground",
         className,
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--relay-row-border)] px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <h2 className="text-sm font-semibold text-foreground">Runs</h2>
-          <span className="text-[11px] font-medium text-muted-foreground">
-            {rows.length}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--relay-row-border)] px-6 py-2.5 bg-[var(--surface-inset)]">
+        <div className="flex min-w-0 items-center gap-3 text-xs">
+          <span className="text-muted-foreground">
+            <span className="font-mono font-medium text-foreground">{rows.length}</span> runs
           </span>
           {attentionCount > 0 ? (
-            <span className="text-[11px] font-medium text-[var(--warning)]">
-              {attentionCount} need attention
+            <span className="flex items-center gap-1.5 text-warning" data-testid="attention-count">
+              <AlertTriangle className="size-3 text-warning/80" />
+              <span className="font-medium">{attentionCount}</span> need attention
             </span>
           ) : null}
         </div>
-        <span className="text-xs font-medium text-muted-foreground">Updated</span>
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">Updated</span>
       </div>
 
-      <div className="pt-2">
+      <div className="px-6 border-b border-[var(--relay-row-border)]">
         <RelayFilterTabs
           value={filter}
           items={filterItems}
           onValueChange={(value) => setFilter(value as RunsRegistryFilter)}
+          listClassName="border-b-0 px-0 pb-0 gap-0"
+          triggerClassName={cn(
+            "px-3 pb-2.5 pt-2.5 text-xs rounded-none border-b-2 border-transparent transition-colors whitespace-nowrap shrink-0",
+            "data-active:border-[var(--primary)] data-active:text-foreground text-muted-foreground hover:text-foreground/80",
+            "after:bg-[var(--primary)]! after:opacity-0! data-active:after:opacity-0!"
+          )}
+          countClassName={(item, isActive) =>
+            cn(
+              "font-mono text-[9px] px-1.5 py-0.5 rounded-sm ml-1.5",
+              isActive
+                ? "bg-[var(--primary)]/20 text-[var(--primary)]"
+                : (item.count ?? 0) > 0
+                ? "bg-[var(--surface-inset)] text-muted-foreground/80"
+                : "bg-[var(--surface-inset)]/60 text-muted-foreground/40"
+            )
+          }
         />
       </div>
 
@@ -192,10 +209,10 @@ export function RelayRunsRegistry({
             <div className="hidden min-h-0 flex-1 overflow-x-auto overflow-y-hidden lg:flex">
               <div className="flex h-full min-h-0 min-w-[980px] flex-1 flex-col">
                 <div
-                  className="grid shrink-0 border-b border-[var(--relay-row-border)] py-2 text-xs font-semibold text-foreground"
+                  className="grid shrink-0 border-b border-[var(--relay-row-border)] py-2 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider"
                   style={{ gridTemplateColumns: registryColumns }}
                 >
-                  <div className="px-4">Run</div>
+                  <div className="px-6">Run</div>
                   <div className="px-4">Status</div>
                   <div className="px-4">Stage</div>
                   <div className="px-4">Executor</div>
@@ -211,7 +228,7 @@ export function RelayRunsRegistry({
                       className="grid border-b border-[var(--relay-row-border)]"
                       style={{ gridTemplateColumns: registryColumns }}
                     >
-                      <div className="px-4 py-3">
+                      <div className="px-6 py-3.5 pr-3">
                         <div className="space-y-2">
                           <Skeleton className="h-4 w-56" />
                           <Skeleton className="h-3 w-40" />
@@ -316,10 +333,10 @@ export function RelayRunsRegistry({
             <div className="hidden min-h-0 flex-1 overflow-x-auto overflow-y-hidden lg:flex">
               <div className="flex h-full min-h-0 min-w-[980px] flex-1 flex-col">
                 <div
-                  className="grid shrink-0 border-b border-[var(--relay-row-border)] py-2 text-xs font-semibold text-foreground"
+                  className="grid shrink-0 border-b border-[var(--relay-row-border)] py-2 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider"
                   style={{ gridTemplateColumns: registryColumns }}
                 >
-                  <div className="px-4">Run</div>
+                  <div className="px-6">Run</div>
                   <div className="px-4">Status</div>
                   <div className="px-4">Stage</div>
                   <div className="px-4">Executor</div>
@@ -367,16 +384,18 @@ export function RelayRunsRegistry({
         ) : null}
       </div>
 
-      <div className="flex shrink-0 items-center justify-between border-t border-[var(--relay-row-border)] px-4 py-2 text-[11px] font-medium text-muted-foreground">
-        <span>
-          {filteredRuns.length} run{filteredRuns.length === 1 ? "" : "s"}
-        </span>
-        <span>
-          {filter === "all"
-            ? "Showing all runs"
-            : `Filtered from ${rows.length} total`}
-        </span>
-      </div>
+      {!isLoading && !error && filteredRuns.length > 0 && (
+        <div
+          className="px-6 py-2 border-t border-[var(--relay-row-border)] flex items-center justify-between flex-shrink-0 text-[10px] text-muted-foreground/60"
+          data-testid="table-footer"
+        >
+          <span className="font-mono">{rows.length} runs</span>
+          <span>
+            Showing {filteredRuns.length}
+            {filter !== "all" ? ` of ${rows.length}` : ""}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

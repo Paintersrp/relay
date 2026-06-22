@@ -14,7 +14,7 @@ interface RelayFilterTabsProps {
   className?: string;
   listClassName?: string;
   triggerClassName?: string;
-  countClassName?: string;
+  countClassName?: string | ((item: RelayFilterTabItem, isActive: boolean) => string);
 }
 
 export function RelayFilterTabs({
@@ -35,29 +35,36 @@ export function RelayFilterTabs({
           listClassName,
         )}
       >
-        {items.map((item) => (
-          <TabsTrigger
-            key={item.value}
-            value={item.value}
-            className={cn(
-              "shrink-0 rounded-none px-0 pb-2 text-xs font-medium",
-              triggerClassName,
-            )}
-          >
-            <span>{item.label}</span>
-            {typeof item.count === "number" ? (
-              <span
-                data-active={item.value === value ? "" : undefined}
-                className={cn(
-                  "inline-flex items-center justify-center font-mono text-[10px] leading-none",
-                  countClassName,
-                )}
-              >
-                {item.count}
-              </span>
-            ) : null}
-          </TabsTrigger>
-        ))}
+        {items.map((item) => {
+          const isActive = item.value === value;
+          const resolvedCountClassName = typeof countClassName === "function"
+            ? countClassName(item, isActive)
+            : countClassName;
+
+          return (
+            <TabsTrigger
+              key={item.value}
+              value={item.value}
+              className={cn(
+                "shrink-0 rounded-none px-0 pb-2 text-xs font-medium",
+                triggerClassName,
+              )}
+            >
+              <span>{item.label}</span>
+              {typeof item.count === "number" ? (
+                <span
+                  data-active={isActive ? "" : undefined}
+                  className={cn(
+                    "inline-flex items-center justify-center font-mono text-[10px] leading-none",
+                    resolvedCountClassName,
+                  )}
+                >
+                  {item.count}
+                </span>
+              ) : null}
+            </TabsTrigger>
+          );
+        })}
       </TabsList>
     </Tabs>
   );

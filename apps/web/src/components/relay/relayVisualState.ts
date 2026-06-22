@@ -23,10 +23,10 @@ export interface RelayVisualStatusConfig {
 }
 
 export const RELAY_STAGE_LABELS: Record<RelayRunStep, string> = {
-  intake: "Intake",
-  prepare: "Compile / Render",
-  execute: "Execute",
-  audit: "Audit",
+  intake: "INTAKE",
+  prepare: "COMPILE / RENDER",
+  execute: "EXECUTE",
+  audit: "AUDIT",
 };
 
 export const RELAY_ARTIFACT_KIND_LABELS: Partial<Record<RelayArtifactKind, string>> = {

@@ -1,13 +1,7 @@
 import type { ComponentProps } from "react";
-
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 import { AlertTriangle } from "lucide-react";
-
-import {
-  getRelayAttentionLabel,
-  type RelayAttentionReason,
-} from "./relayVisualState";
+import { cn } from "@/lib/utils";
+import type { RelayAttentionReason } from "./relayVisualState";
 
 interface RelayAttentionBadgeProps extends ComponentProps<"span"> {
   reason: RelayAttentionReason;
@@ -15,31 +9,33 @@ interface RelayAttentionBadgeProps extends ComponentProps<"span"> {
   compact?: boolean;
 }
 
-function getAttentionVariant(reason: RelayAttentionReason) {
+function getAttentionConfig(reason: RelayAttentionReason) {
   switch (reason) {
     case "executor-blocked":
+      return {
+        label: "Blocked",
+        cls: "border-destructive/30 bg-destructive/10 text-destructive",
+      };
     case "validation-failed":
-      return "destructive" as const;
+      return {
+        label: "Validation",
+        cls: "border-warning/35 bg-warning/14 text-warning",
+      };
     case "audit-required":
+      return {
+        label: "Audit",
+        cls: "border-info/30 bg-info/12 text-info",
+      };
     case "intake-review":
-      return "warning" as const;
+      return {
+        label: "Review",
+        cls: "border-warning/35 bg-warning/14 text-warning",
+      };
     default:
-      return "outline" as const;
-  }
-}
-
-function getCompactLabel(reason: RelayAttentionReason) {
-  switch (reason) {
-    case "executor-blocked":
-      return "Blocked";
-    case "validation-failed":
-      return "Validation";
-    case "audit-required":
-      return "Audit";
-    case "intake-review":
-      return "Review";
-    default:
-      return "";
+      return {
+        label: "",
+        cls: "",
+      };
   }
 }
 
@@ -54,17 +50,29 @@ export function RelayAttentionBadge({
     return null;
   }
 
-  const label = compact ? getCompactLabel(reason) : getRelayAttentionLabel(reason);
+  const cfg = getAttentionConfig(reason);
+  if (!cfg.cls) return null;
+
+  let displayLabel = cfg.label;
+  if (reason === "validation-failed") {
+    if (typeof count === "number") {
+      displayLabel = count > 1 ? `${count} Validation` : `1 Validation`;
+    } else {
+      displayLabel = "Validation";
+    }
+  }
 
   return (
-    <Badge
-      variant={getAttentionVariant(reason)}
-      className={cn("gap-1 text-[11px] font-medium", className)}
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-medium whitespace-nowrap border",
+        cfg.cls,
+        className
+      )}
       {...props}
     >
-      <AlertTriangle className="size-3" />
-      {typeof count === "number" ? <span>{count}</span> : null}
-      <span>{label}</span>
-    </Badge>
+      <AlertTriangle className="size-[9px]" />
+      <span>{displayLabel}</span>
+    </span>
   );
 }
