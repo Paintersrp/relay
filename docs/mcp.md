@@ -5,6 +5,8 @@
 > The current Planner Project-facing MCP actions are `create_run_from_planner_handoff` and `submit_planner_pass_plan` by default. The first submits a reviewed Planner handoff to Relay to create/start a run; the second submits a reviewed structured Plan of Passes JSON to create managed plan/pass records.
 > 
 > The Planner does **not** have status-query, run-listing, audit-submission, or downstream-dispatch MCP actions by default. Tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
+>
+> Relay now stores project/repository registry and source-policy configuration in the backend, but that PASS-002 groundwork does **not** expose Planner-facing context-broker MCP tools yet.
 
 ---
 

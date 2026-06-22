@@ -13,6 +13,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | UI Handoff Intake | Create runs by pasting/uploading handoffs in the React UI |
 | MCP Submission Intake | Submit reviewed Planner handoffs and reviewed Planner pass plans via the current Planner Project-facing MCP actions after user confirmation |
 | Managed Plans (backend) | Optional plan/pass orchestration: validate and submit Planner pass plans, associate runs to passes, read-only plan and pass APIs |
+| Project Registry Backend | Durable project and project-repository registry with stored repository roles (`primary`, `reference`, `contracts`, `docs`) and persisted safe source policy fields |
 | Run Storage | Run metadata and artifact storage |
 | Intake Review | Parse and validate handoff structure before execution |
 | Agent Prompt | Preparation and handoff transformation for agents |
@@ -33,6 +34,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | Repair | Automatic validation failure repair |
 | Audit | Automatic AI audit/closeout |
 | Additional Project-Facing MCP Actions | Project-facing MCP exposure beyond `create_run_from_planner_handoff` and `submit_planner_pass_plan` is configuration-dependent; local/dev/server MCP inventory includes additional tools |
+| Context Broker Source Tools | Source snapshots, file inventory/search/read, context packets, and Planner-facing context broker MCP tools remain future work |
 
 ### Run Actions
 

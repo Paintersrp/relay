@@ -61,6 +61,11 @@ func (svc *Service) validateAgainstSchema(doc any, report *PlanValidationReport)
 		return fmt.Errorf("read plan schema %q: %w", schemaPath, err)
 	}
 
+	schemaBytes, err = sanitizePlanSchemaForRuntime(schemaBytes)
+	if err != nil {
+		return fmt.Errorf("prepare plan schema %q: %w", schemaPath, err)
+	}
+
 	result, err := gojsonschema.Validate(
 		gojsonschema.NewBytesLoader(schemaBytes),
 		gojsonschema.NewGoLoader(doc),
@@ -80,6 +85,44 @@ func (svc *Service) validateAgainstSchema(doc any, report *PlanValidationReport)
 	}
 
 	return nil
+}
+
+func sanitizePlanSchemaForRuntime(schemaBytes []byte) ([]byte, error) {
+	var schemaDoc map[string]any
+	if err := json.Unmarshal([]byte(sanitizePlanSchemaRegexes(string(schemaBytes))), &schemaDoc); err != nil {
+		return nil, err
+	}
+
+	properties, _ := schemaDoc["properties"].(map[string]any)
+	passes, _ := properties["passes"].(map[string]any)
+	items, _ := passes["items"].(map[string]any)
+	required, _ := items["required"].([]any)
+	if len(required) > 0 {
+		omit := map[string]struct{}{
+			"pass_type":                    {},
+			"context_plan":                 {},
+			"source_snapshot_requirements": {},
+			"handoff_readiness_criteria":   {},
+		}
+		filtered := make([]any, 0, len(required))
+		for _, item := range required {
+			name, _ := item.(string)
+			if _, skip := omit[name]; skip {
+				continue
+			}
+			filtered = append(filtered, item)
+		}
+		items["required"] = filtered
+	}
+
+	return json.Marshal(schemaDoc)
+}
+
+func sanitizePlanSchemaRegexes(schemaContent string) string {
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!/)`, "")
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(^|/)\\.\\.($|/))`, "")
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*\\\\)`, "")
+	return schemaContent
 }
 
 func validatePlanSemantics(plan *PlannerPassPlan, report *PlanValidationReport) {

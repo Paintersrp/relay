@@ -19,6 +19,7 @@ import (
 	"relay/internal/executor"
 	"relay/internal/intake"
 	"relay/internal/plans"
+	"relay/internal/projects"
 	"relay/internal/renderer"
 	"relay/internal/repairer"
 	"relay/internal/store"
@@ -34,6 +35,7 @@ type APIHandler struct {
 	log              *slog.Logger
 	eventHub         *events.Hub
 	planService      *plans.Service
+	projectService   *projects.Service
 	lifecycleService *plans.RunLifecycleService
 }
 
@@ -47,6 +49,7 @@ func NewAPIHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *APIHan
 		log:              log,
 		eventHub:         eventHub,
 		planService:      plans.NewService(s),
+		projectService:   projects.NewService(s),
 		lifecycleService: plans.NewRunLifecycleService(s),
 	}
 }

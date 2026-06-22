@@ -84,6 +84,35 @@ type PlanPass struct {
 	UpdatedAt                  string `json:"updated_at"`
 }
 
+type Project struct {
+	ID                  int64  `json:"id"`
+	ProjectID           string `json:"project_id"`
+	Name                string `json:"name"`
+	Description         string `json:"description"`
+	Status              string `json:"status"`
+	DefaultRepositoryID string `json:"default_repository_id"`
+	CreatedAt           string `json:"created_at"`
+	UpdatedAt           string `json:"updated_at"`
+}
+
+type ProjectRepository struct {
+	ID               int64  `json:"id"`
+	ProjectRowID     int64  `json:"project_row_id"`
+	RepoID           string `json:"repo_id"`
+	Role             string `json:"role"`
+	LocalPath        string `json:"local_path"`
+	RemoteLabel      string `json:"remote_label"`
+	RemoteUrl        string `json:"remote_url"`
+	DefaultBranch    string `json:"default_branch"`
+	AllowedRootsJson string `json:"allowed_roots_json"`
+	IgnoredGlobsJson string `json:"ignored_globs_json"`
+	MaxFileSizeBytes int64  `json:"max_file_size_bytes"`
+	IncludeUntracked int64  `json:"include_untracked"`
+	Enabled          int64  `json:"enabled"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
+}
+
 type Repo struct {
 	ID                        int64  `json:"id"`
 	Name                      string `json:"name"`
