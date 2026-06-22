@@ -247,6 +247,15 @@ export interface RelayRunSummary {
   state: string;
 }
 
+export interface RelayRunPlanContext {
+  planId?: string;
+  planTitle?: string;
+  passId?: string;
+  passName?: string;
+  passSequence?: number;
+  passStatus?: string;
+}
+
 // Canonical RelayRun struct
 export interface RelayRun {
   id: RelayRunId;
@@ -266,6 +275,7 @@ export interface RelayRun {
   latestEvents: RelayRunEvent[];
   statusSeverity: RelayRunStatusSeverity;
   state: string;
+  planContext?: RelayRunPlanContext;
 
   // Legacy field support to prevent breaking current views
   title: string;

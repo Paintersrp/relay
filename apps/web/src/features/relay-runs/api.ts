@@ -8,6 +8,7 @@ import type {
   PlannerHandoffIntakeResponse,
   RelayApiErrorShape,
   RelayAuditDecisionValue,
+  RelayRunPlanContext,
   RelayValidationResult,
   RelayValidationCommand,
 } from "./types";
@@ -88,65 +89,6 @@ async function getJson<T>(path: string): Promise<T> {
 }
 
 /**
- * Helper to normalize backend runs with defaults for frontend UI-only optional fields.
- */
-export function normalizeRun(run: any): RelayRun {
-  if (!run) return run;
-
-  const defaultStepLabels = {
-    intake: "Intake / Configure",
-    prepare: "Compile / Render",
-    execute: "Execute",
-    audit: "Audit / Close",
-  };
-
-  const defaultValidation: RelayValidationResult = {
-    errors: 0,
-    warnings: 0,
-    passed: 0,
-    issues: [],
-  };
-
-  return {
-    ...run,
-    id: String(run.id),
-    name: run.name || `Run ${run.id}`,
-    repo: run.repo || "",
-    branch: run.branch || "",
-    status: run.status || "draft",
-    activeStep: run.activeStep || "intake",
-    lifecycleState: run.lifecycleState || "intake",
-    createdAt: run.createdAt || new Date().toISOString(),
-    updatedAt: run.updatedAt || new Date().toISOString(),
-    summary: run.summary || "",
-    model: run.model || "gpt-4o",
-    riskLevel: run.riskLevel || "low",
-    validation: run.validation || defaultValidation,
-    artifacts: run.artifacts || [],
-    latestEvents: run.latestEvents || [],
-    statusSeverity: run.statusSeverity || "neutral",
-    state: run.state || "Draft",
-    title: run.title || run.name || `Run ${run.id}`,
-    packetId: run.packetId || "",
-    executorAdapter: run.executorAdapter || run.executor || "opencode_go",
-    executor: run.executor || run.executorAdapter || "opencode_go",
-    validationSummary: run.validationSummary || run.validation || defaultValidation,
-    approvalGate: run.approvalGate || {
-      label: "Intake Approval",
-      state: "pending",
-    },
-    logPreview: run.logPreview || {
-      lines: [],
-      truncated: false,
-    },
-    stepLabels: {
-      ...defaultStepLabels,
-      ...run.stepLabels,
-    },
-  };
-}
-
-/**
  * Executes a POST request. Strictly forbids mock success; throws descriptive
  * RelayApiError on failure, unavailable daemon, or non-2xx response.
  */
@@ -212,6 +154,101 @@ function firstNonEmptyString(...values: unknown[]): string | undefined {
   }
 
   return undefined;
+}
+
+function optionalNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value.trim());
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeRunPlanContext(run: any): RelayRunPlanContext | undefined {
+  const planId = firstNonEmptyString(run.planId, run.plan_id);
+  const passId = firstNonEmptyString(run.passId, run.pass_id);
+
+  if (!planId && !passId) {
+    return undefined;
+  }
+
+  return {
+    planId,
+    planTitle: firstNonEmptyString(run.planTitle, run.plan_title),
+    passId,
+    passName: firstNonEmptyString(run.passName, run.pass_name),
+    passSequence: optionalNumber(run.passSequence, run.pass_sequence),
+    passStatus: firstNonEmptyString(run.passStatus, run.pass_status),
+  };
+}
+
+/**
+ * Helper to normalize backend runs with defaults for frontend UI-only optional fields.
+ */
+export function normalizeRun(run: any): RelayRun {
+  if (!run) return run;
+
+  const defaultStepLabels = {
+    intake: "Intake / Configure",
+    prepare: "Compile / Render",
+    execute: "Execute",
+    audit: "Audit / Close",
+  };
+
+  const defaultValidation: RelayValidationResult = {
+    errors: 0,
+    warnings: 0,
+    passed: 0,
+    issues: [],
+  };
+
+  return {
+    ...run,
+    id: String(run.id),
+    name: run.name || `Run ${run.id}`,
+    repo: run.repo || "",
+    branch: run.branch || "",
+    status: run.status || "draft",
+    activeStep: run.activeStep || "intake",
+    lifecycleState: run.lifecycleState || "intake",
+    createdAt: run.createdAt || new Date().toISOString(),
+    updatedAt: run.updatedAt || new Date().toISOString(),
+    summary: run.summary || "",
+    model: run.model || "gpt-4o",
+    riskLevel: run.riskLevel || "low",
+    validation: run.validation || defaultValidation,
+    artifacts: run.artifacts || [],
+    latestEvents: run.latestEvents || [],
+    statusSeverity: run.statusSeverity || "neutral",
+    state: run.state || "Draft",
+    planContext: normalizeRunPlanContext(run),
+    title: run.title || run.name || `Run ${run.id}`,
+    packetId: run.packetId || "",
+    executorAdapter: run.executorAdapter || run.executor || "opencode_go",
+    executor: run.executor || run.executorAdapter || "opencode_go",
+    validationSummary: run.validationSummary || run.validation || defaultValidation,
+    approvalGate: run.approvalGate || {
+      label: "Intake Approval",
+      state: "pending",
+    },
+    logPreview: run.logPreview || {
+      lines: [],
+      truncated: false,
+    },
+    stepLabels: {
+      ...defaultStepLabels,
+      ...run.stepLabels,
+    },
+  };
 }
 
 export function assertValidPlannerHandoffPlanAssociation(

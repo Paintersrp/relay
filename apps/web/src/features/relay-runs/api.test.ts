@@ -36,6 +36,73 @@ describe('Relay API Client Boundary (Real Data Wiring)', () => {
     expect(run?.name).toBe('Real Run 58');
   });
 
+  it("getRun normalizes snake_case plan/pass association fields", async () => {
+    const mockRun = {
+      id: 58,
+      name: "Associated Run",
+      plan_id: "plan-1",
+      pass_id: "PASS-001",
+      pass_name: "First pass",
+      pass_status: "in_progress",
+    };
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify(mockRun),
+    });
+    globalThis.fetch = fetchSpy;
+
+    const run = await getRun("58");
+
+    expect(run?.planContext).toMatchObject({
+      planId: "plan-1",
+      passId: "PASS-001",
+      passName: "First pass",
+      passStatus: "in_progress",
+    });
+  });
+
+  it("getRun normalizes camelCase plan/pass association fields", async () => {
+    const mockRun = {
+      id: 59,
+      name: "Associated Run",
+      planId: "plan-2",
+      planTitle: "Plan Two",
+      passId: "PASS-002",
+      passName: "Second pass",
+      passSequence: "2",
+      passStatus: "ready",
+    };
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify(mockRun),
+    });
+    globalThis.fetch = fetchSpy;
+
+    const run = await getRun("59");
+
+    expect(run?.planContext).toMatchObject({
+      planId: "plan-2",
+      planTitle: "Plan Two",
+      passId: "PASS-002",
+      passName: "Second pass",
+      passSequence: 2,
+      passStatus: "ready",
+    });
+  });
+
+  it("getRun leaves planContext undefined for standalone runs", async () => {
+    const mockRun = { id: 60, name: "Standalone Run" };
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify(mockRun),
+    });
+    globalThis.fetch = fetchSpy;
+
+    const run = await getRun("60");
+
+    expect(run?.planContext).toBeUndefined();
+  });
+
   it("GET /api/runs/58 returning 404 surfaces a RelayApiError instead of mock/null fallback", async () => {
     const fetchSpy = vi.fn().mockResolvedValue({
       ok: false,

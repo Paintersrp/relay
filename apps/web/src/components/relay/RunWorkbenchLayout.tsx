@@ -11,6 +11,11 @@ import {
 import { StatusBadge } from './StatusBadge'
 import { RunStepper } from './RunStepper'
 import { RelayStateSurface } from './RelayStateSurface'
+import {
+  RunPlanContextCard,
+  RunPlanContextHeader,
+  hasRunPlanContext,
+} from './RunPlanContext'
 import { cn } from '@/lib/utils'
 import { ArrowLeft } from 'lucide-react'
 
@@ -251,6 +256,9 @@ export function RunWorkbenchLayout({
                 </>
               ) : null}
             </div>
+            {hasRunPlanContext(run.planContext) ? (
+              <RunPlanContextHeader context={run.planContext} />
+            ) : null}
           </div>
 
           <div className="hidden shrink-0 items-center gap-4 text-right text-[11px] text-muted-foreground lg:flex">
@@ -316,6 +324,10 @@ export function RunWorkbenchLayout({
                   </div>
                   <div className="p-3">
                     <div className="flex min-w-0 flex-col gap-3">
+                      {resolvedActiveTab === 'details' &&
+                      hasRunPlanContext(run.planContext) ? (
+                        <RunPlanContextCard context={run.planContext} />
+                      ) : null}
                       {activePanel}
                     </div>
                   </div>
@@ -349,7 +361,13 @@ export function RunWorkbenchLayout({
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                <div className="flex flex-col gap-3">{activePanel}</div>
+                <div className="flex flex-col gap-3">
+                  {resolvedActiveTab === 'details' &&
+                  hasRunPlanContext(run.planContext) ? (
+                    <RunPlanContextCard context={run.planContext} />
+                  ) : null}
+                  {activePanel}
+                </div>
               </div>
             </aside>
           </ResizablePanel>

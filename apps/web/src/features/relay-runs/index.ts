@@ -50,6 +50,7 @@ export type {
 } from './api'
 export type {
   RelayRun,
+  RelayRunPlanContext,
   RelayArtifact,
   RelayArtifactKind,
   RelayRunStatus,
