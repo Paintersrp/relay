@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 
 import { RelayPlanDetail } from "@/components/relay/RelayPlanDetail";
 import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
@@ -13,8 +13,14 @@ export const Route = createFileRoute("/plans/$planId")({
 
 function PlanDetailPage() {
   const { planId } = Route.useParams();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isPassDetailRoute = pathname.startsWith(`/plans/${planId}/passes/`);
   const { data, isLoading, error } = useQuery(planDetailQueryOptions(planId));
   const shellClassName = "mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5";
+
+  if (isPassDetailRoute) {
+    return <Outlet />;
+  }
 
   return (
     <section className="min-h-0 flex-1 overflow-y-auto bg-[var(--relay-page-body-bg)]">

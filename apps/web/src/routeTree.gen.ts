@@ -20,7 +20,7 @@ import { Route as RunsRunIdPrepareRouteImport } from './routes/runs/$runId/prepa
 import { Route as RunsRunIdIntakeRouteImport } from './routes/runs/$runId/intake'
 import { Route as RunsRunIdExecuteRouteImport } from './routes/runs/$runId/execute'
 import { Route as RunsRunIdAuditRouteImport } from './routes/runs/$runId/audit'
-import { Route as PlansPlanIdPassesPassIdRouteImport } from './routes/plans/$planId/passes/$passId'
+import { Route as PlansPlanIdPassesPassIdRouteImport } from './routes/plans/$planId.passes.$passId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
