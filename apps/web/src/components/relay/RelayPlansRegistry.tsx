@@ -539,15 +539,11 @@ export function RelayPlansRegistry({
               title="No managed plans yet"
               description="Plans will appear here once Relay receives validated multi-pass plan records."
               action={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled
-                  title="Plan submission arrives in UI-PLAN-03"
-                >
-                  <Plus className="size-3.5" />
-                  New Plan arrives in UI-PLAN-03
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/plans/new">
+                    <Plus className="size-3.5" />
+                    New Plan
+                  </Link>
                 </Button>
               }
             />

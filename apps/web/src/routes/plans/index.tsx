@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 
 import { AppPageFrame } from "@/components/relay/AppPageFrame";
@@ -20,14 +20,14 @@ function PlansListPage() {
       description="Managed multi-pass orchestration plans"
       actions={
         <Button
-          type="button"
+          asChild
           variant="outline"
           size="sm"
-          disabled
-          title="Plan submission arrives in UI-PLAN-03"
         >
-          <Plus className="size-3.5" />
-          New Plan
+          <Link to="/plans/new">
+            <Plus className="size-3.5" />
+            New Plan
+          </Link>
         </Button>
       }
       bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"

@@ -85,15 +85,15 @@ export function AppShell({ children, className }: AppShellProps) {
         </nav>
 
         <Button
-          type="button"
+          asChild
           variant="outline"
           size="sm"
-          disabled
-          title="Plan submission arrives in UI-PLAN-03"
           className="h-8 shrink-0 gap-1.5 px-2 text-[var(--relay-topbar-fg)] sm:px-3"
         >
-          <Plus className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">New Plan</span>
+          <Link to="/plans/new" aria-label="New Plan">
+            <Plus className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">New Plan</span>
+          </Link>
         </Button>
 
         <Button
