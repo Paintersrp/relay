@@ -35,6 +35,7 @@ export interface RelayPlanDetailProgress {
   terminal: number;
   segmentCount: number;
   completedSegments: number;
+  skippedSegments: number;
   inProgressSegments: number;
 }
 
@@ -180,7 +181,8 @@ export function getPlanDetailCardState(args: {
       eyebrow: "COMPLETION READY",
       eyebrowClassName: "text-[var(--warning)]",
       accentClassName: "bg-[var(--warning)]",
-      title: "All passes complete — plan ready for review",
+      title: "All passes terminal — ready for closeout review",
+      subtitle: "Plan status remains active until a supported completion action exists.",
     };
   }
 
@@ -216,6 +218,7 @@ export function getPlanDetailProgress(
       ...counts,
       segmentCount: 0,
       completedSegments: 0,
+      skippedSegments: 0,
       inProgressSegments: 0,
     };
   }
@@ -227,11 +230,18 @@ export function getPlanDetailProgress(
           segmentCount,
           Math.round((counts.completed / counts.total) * maxSegments),
         );
+  const skippedSegments =
+    counts.total <= maxSegments
+      ? counts.skipped
+      : Math.min(
+          Math.max(0, segmentCount - completedSegments),
+          Math.round((counts.skipped / counts.total) * maxSegments),
+        );
   const inProgressSegments =
     counts.total <= maxSegments
       ? counts.inProgress
       : Math.min(
-          Math.max(0, segmentCount - completedSegments),
+          Math.max(0, segmentCount - completedSegments - skippedSegments),
           Math.round((counts.inProgress / counts.total) * maxSegments),
         );
 
@@ -239,6 +249,7 @@ export function getPlanDetailProgress(
     ...counts,
     segmentCount,
     completedSegments,
+    skippedSegments,
     inProgressSegments,
   };
 }
@@ -343,17 +354,28 @@ export function getPlanStatusVariant(status: PlanAPIStatus): BadgeProps["variant
 
 export function getPlanProgressSummary(plan: PlanAPIReadPlan): PlanProgressSummary {
   const total = Math.max(0, plan.passCount ?? 0);
+  const completedCount = plan.completedPassCount;
+  const skippedCount = plan.skippedPassCount;
+  const hasCompletedCount = typeof completedCount === "number";
+  const hasSkippedCount = typeof skippedCount === "number";
   const completed = clampCount(
-    typeof plan.completedPassCount === "number"
-      ? plan.completedPassCount
+    hasCompletedCount
+      ? completedCount
       : plan.completionReady
-        ? total
+        ? hasSkippedCount
+          ? 0
+          : total
         : 0,
     total,
   );
   const inProgress = clampCount(plan.inProgressPassCount ?? 0, total);
   const planned = clampCount(plan.plannedPassCount ?? 0, total);
-  const skipped = clampCount(plan.skippedPassCount ?? 0, total);
+  const skipped = clampCount(skippedCount ?? 0, total);
+  const explicitTerminal = hasCompletedCount || hasSkippedCount;
+  const terminal = plan.completionReady && !explicitTerminal
+    ? total
+    : clampCount(completed + skipped, total);
+  const filledDots = plan.completionReady ? terminal : completed;
 
   return {
     total,
@@ -361,10 +383,10 @@ export function getPlanProgressSummary(plan: PlanAPIReadPlan): PlanProgressSumma
     inProgress,
     planned,
     skipped,
-    terminal: completed,
-    label: `${completed} / ${total}`,
+    terminal,
+    label: `${filledDots} / ${total}`,
     dotCount: total,
-    filledDots: completed,
+    filledDots,
   };
 }
 
@@ -382,6 +404,14 @@ export function getPlanRegistryPassSummary(
     return {
       kind: "fallback",
       title: "—",
+    };
+  }
+
+  if (plan.completionReady) {
+    return {
+      kind: "fallback",
+      title: "READY FOR CLOSEOUT",
+      subtitle: "All passes terminal",
     };
   }
 

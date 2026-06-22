@@ -43,6 +43,9 @@ function buildCopyContext(args: {
     `Branch: ${plan.branchContext}`,
     `Status: ${plan.status}`,
     `Completion ready: ${completionReady ? "yes" : "no"}`,
+    `Terminal passes: ${counts.terminal} of ${counts.total}`,
+    `Completed passes: ${counts.completed}`,
+    `Skipped passes: ${counts.skipped}`,
     currentPass ? `Current pass: ${currentPass.passId} - ${currentPass.name}` : "",
     currentPass?.goal ? `Current pass goal: ${currentPass.goal}` : "",
     currentPass?.intendedExecutionScope.length
@@ -192,7 +195,7 @@ export function RelayPlanDetail({
               {cardState.title}
             </div>
             {cardState.subtitle ? (
-              <div className="mt-1 max-w-xl truncate text-xs text-muted-foreground">
+              <div className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
                 {cardState.subtitle}
               </div>
             ) : null}
@@ -242,7 +245,14 @@ export function RelayPlanDetail({
                 className = "bg-[var(--success)]/70";
               } else if (
                 index <
-                progress.completedSegments + progress.inProgressSegments
+                progress.completedSegments + progress.skippedSegments
+              ) {
+                className = "bg-muted-foreground/55";
+              } else if (
+                index <
+                progress.completedSegments +
+                  progress.skippedSegments +
+                  progress.inProgressSegments
               ) {
                 className = "bg-[var(--relay-accent)]/80";
               }
@@ -259,6 +269,14 @@ export function RelayPlanDetail({
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px]">
             <span className="text-muted-foreground">{progress.total} passes</span>
+            {completionReady && plan.status === "active" ? (
+              <>
+                <span className="text-muted-foreground/60">·</span>
+                <span className="text-warning">
+                  {progress.terminal} terminal, ready for closeout
+                </span>
+              </>
+            ) : null}
             {progress.completed > 0 ? (
               <>
                 <span className="text-muted-foreground/60">·</span>

@@ -64,11 +64,37 @@ describe("relayPlanVisualState", () => {
     });
   });
 
-  it("treats completionReady as fully complete when counts are missing", () => {
+  it("counts skipped terminal passes toward completion-ready progress", () => {
     const summary = getPlanProgressSummary(
-      buildPlan({ completionReady: true, completedPassCount: undefined }),
+      buildPlan({
+        passCount: 3,
+        completedPassCount: 2,
+        skippedPassCount: 1,
+        completionReady: true,
+      }),
     );
 
+    expect(summary).toMatchObject({
+      total: 3,
+      completed: 2,
+      skipped: 1,
+      terminal: 3,
+      label: "3 / 3",
+      filledDots: 3,
+      dotCount: 3,
+    });
+  });
+
+  it("treats completionReady as fully terminal when counts are missing", () => {
+    const summary = getPlanProgressSummary(
+      buildPlan({
+        completionReady: true,
+        completedPassCount: undefined,
+        skippedPassCount: undefined,
+      }),
+    );
+
+    expect(summary.terminal).toBe(2);
     expect(summary.label).toBe("2 / 2");
     expect(summary.filledDots).toBe(2);
   });
@@ -92,7 +118,7 @@ describe("relayPlanVisualState", () => {
     expect(summary.label).toBe("1 / 3");
     expect(summary.completed).toBe(1);
     expect(summary.skipped).toBe(1);
-    expect(summary.terminal).toBe(1);
+    expect(summary.terminal).toBe(2);
     expect(summary.filledDots).toBe(1);
   });
 
@@ -150,6 +176,24 @@ describe("relayPlanVisualState", () => {
     expect(getPlanRegistryPassSummary(buildPlan())).toMatchObject({
       kind: "fallback",
       title: "—",
+    });
+  });
+
+  it("renders active completion-ready plans as ready for closeout", () => {
+    expect(
+      getPlanRegistryPassSummary(
+        buildPlan({
+          status: "active",
+          completionReady: true,
+          passCount: 3,
+          completedPassCount: 2,
+          skippedPassCount: 1,
+        }),
+      ),
+    ).toMatchObject({
+      kind: "fallback",
+      title: "READY FOR CLOSEOUT",
+      subtitle: "All passes terminal",
     });
   });
 
@@ -239,6 +283,7 @@ describe("relayPlanVisualState", () => {
       total: 3,
       segmentCount: 3,
       completedSegments: 1,
+      skippedSegments: 1,
       inProgressSegments: 1,
     });
   });
@@ -253,6 +298,7 @@ describe("relayPlanVisualState", () => {
       terminal: 0,
       segmentCount: 0,
       completedSegments: 0,
+      skippedSegments: 0,
       inProgressSegments: 0,
     });
   });
@@ -285,15 +331,18 @@ describe("relayPlanVisualState", () => {
     });
   });
 
-  it("maps completion-ready plans to the review-ready card state", () => {
+  it("maps active completion-ready plans to the review-ready card state", () => {
+    const plan = buildPlan({ status: "active" });
     const state = getPlanDetailCardState({
-      plan: buildPlan(),
+      plan,
       completionReady: true,
     });
 
+    expect(plan.status).toBe("active");
     expect(state).toMatchObject({
       key: "completion_ready",
-      title: "All passes complete — plan ready for review",
+      title: "All passes terminal — ready for closeout review",
+      subtitle: "Plan status remains active until a supported completion action exists.",
     });
   });
 

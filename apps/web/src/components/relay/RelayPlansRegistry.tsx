@@ -196,6 +196,21 @@ function PlanPassSummary({ plan }: { plan: PlanAPIReadPlan }) {
       );
     }
 
+    if (summary.title !== "—") {
+      return (
+        <div className="min-w-0">
+          <div className="font-mono text-[10px] leading-4 tracking-[0.16em] text-warning">
+            {summary.title}
+          </div>
+          {summary.subtitle ? (
+            <div className="truncate text-[11px] leading-snug text-muted-foreground">
+              {summary.subtitle}
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+
     return <span className="text-sm text-muted-foreground">—</span>;
   }
 
@@ -465,7 +480,7 @@ export function RelayPlansRegistry({
           {attentionCount > 0 ? (
             <span className="inline-flex items-center gap-1 text-warning">
               <AlertTriangle className="size-3" />
-              <span className="font-medium">{attentionCount}</span> need attention
+              <span className="font-medium">{attentionCount}</span> need review
             </span>
           ) : null}
         </div>
