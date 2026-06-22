@@ -186,18 +186,31 @@ type PlanAPIPlan struct {
 }
 
 type PlanAPIPass struct {
-	ID                     string   `json:"id"`
-	PlanRowID              string   `json:"planRowId"`
-	PassID                 string   `json:"passId"`
-	Sequence               int64    `json:"sequence"`
-	Name                   string   `json:"name"`
-	Goal                   string   `json:"goal"`
-	IntendedExecutionScope []string `json:"intendedExecutionScope"`
-	NonGoals               []string `json:"nonGoals"`
-	Dependencies           []string `json:"dependencies"`
-	Status                 string   `json:"status"`
-	CreatedAt              string   `json:"createdAt"`
-	UpdatedAt              string   `json:"updatedAt"`
+	ID                     string              `json:"id"`
+	PlanRowID              string              `json:"planRowId"`
+	PassID                 string              `json:"passId"`
+	Sequence               int64               `json:"sequence"`
+	Name                   string              `json:"name"`
+	Goal                   string              `json:"goal"`
+	IntendedExecutionScope []string            `json:"intendedExecutionScope"`
+	NonGoals               []string            `json:"nonGoals"`
+	Dependencies           []string            `json:"dependencies"`
+	Status                 string              `json:"status"`
+	AssociatedRunIDs       []string            `json:"associatedRunIds"`
+	AssociatedRuns         []PlanAPIRunSummary `json:"associatedRuns"`
+	CreatedAt              string              `json:"createdAt"`
+	UpdatedAt              string              `json:"updatedAt"`
+}
+
+type PlanAPIRunSummary struct {
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	Status         string `json:"status"`
+	LifecycleState string `json:"lifecycleState"`
+	ActiveStep     string `json:"activeStep"`
+	WorkbenchPath  string `json:"workbenchPath"`
+	CreatedAt      string `json:"createdAt"`
+	UpdatedAt      string `json:"updatedAt"`
 }
 
 type PlanAPIReadPlan struct {
@@ -771,7 +784,76 @@ func mapPlanToAPI(plan store.Plan) PlanAPIPlan {
 	}
 }
 
-func mapPlanPassToAPI(pass store.PlanPass) PlanAPIPass {
+func resolveRunStep(status string) string {
+	switch status {
+	case "draft", "needs_cleanup",
+		"intake_received", "intake_needs_review",
+		"validated", "needs_review",
+		"intake_approved", "intake_rejected", "intake_blocked":
+		return "intake"
+	case "approved_for_prepare",
+		"packet_ready", "packet_validated", "packet_validation_failed",
+		"repair_validated",
+		"brief_ready_for_review", "brief_validation_failed":
+		return "prepare"
+	case "approved_for_executor",
+		"executor_dispatched",
+		"executor_running", "executor_done", "executor_blocked",
+		"executor_error", "executor_cancelled",
+		"agent_done", "agent_blocked", "agent_result_needs_review",
+		"local_validation_running":
+		return "execute"
+	case "validation_passed", "validation_failed_accepted", "validation_failed",
+		"audit_ready", "audit_ready_for_review",
+		"revision_required",
+		"accepted", "accepted_with_warnings",
+		"completed",
+		"audit_pending", "audit_generated", "audit_submitted",
+		"audit_approved", "audit_approved_with_warnings",
+		"audit_revision_requested", "audit_closed", "closed":
+		return "audit"
+	case "blocked":
+		return "intake"
+	default:
+		return "intake"
+	}
+}
+
+func resolveRunLifecycleState(status string) string {
+	switch status {
+	case "executor_blocked", "agent_blocked", "validation_failed", "blocked":
+		return "failed"
+	case "completed":
+		return "completed"
+	default:
+		return resolveRunStep(status)
+	}
+}
+
+func mapRunToPlanAPIRunSummary(run store.Run) PlanAPIRunSummary {
+	idStr := strconv.FormatInt(run.ID, 10)
+	activeStep := resolveRunStep(run.Status)
+	return PlanAPIRunSummary{
+		ID:             idStr,
+		Title:          run.Title,
+		Status:         run.Status,
+		LifecycleState: resolveRunLifecycleState(run.Status),
+		ActiveStep:     activeStep,
+		WorkbenchPath:  fmt.Sprintf("/runs/%s/%s", idStr, activeStep),
+		CreatedAt:      parseAndFormatTime(run.CreatedAt),
+		UpdatedAt:      parseAndFormatTime(run.UpdatedAt),
+	}
+}
+
+func mapPlanPassToAPI(pass store.PlanPass, associatedRuns []store.Run) PlanAPIPass {
+	runSummaries := make([]PlanAPIRunSummary, 0, len(associatedRuns))
+	runIDs := make([]string, 0, len(associatedRuns))
+	for _, run := range associatedRuns {
+		summary := mapRunToPlanAPIRunSummary(run)
+		runSummaries = append(runSummaries, summary)
+		runIDs = append(runIDs, summary.ID)
+	}
+
 	return PlanAPIPass{
 		ID:                     strconv.FormatInt(pass.ID, 10),
 		PlanRowID:              strconv.FormatInt(pass.PlanRowID, 10),
@@ -783,6 +865,8 @@ func mapPlanPassToAPI(pass store.PlanPass) PlanAPIPass {
 		NonGoals:               decodeStoredStringSlice(pass.NonGoalsJson),
 		Dependencies:           decodeStoredStringSlice(pass.DependenciesJson),
 		Status:                 pass.Status,
+		AssociatedRunIDs:       runIDs,
+		AssociatedRuns:         runSummaries,
 		CreatedAt:              parseAndFormatTime(pass.CreatedAt),
 		UpdatedAt:              parseAndFormatTime(pass.UpdatedAt),
 	}
@@ -896,7 +980,7 @@ func (h *APIHandler) SubmitPlan(w http.ResponseWriter, r *http.Request) {
 
 	apiPasses := make([]PlanAPIPass, 0, len(result.Passes))
 	for _, pass := range result.Passes {
-		apiPasses = append(apiPasses, mapPlanPassToAPI(pass))
+		apiPasses = append(apiPasses, mapPlanPassToAPI(pass, nil))
 	}
 	apiPlan := mapPlanToAPI(result.Plan)
 
@@ -981,11 +1065,23 @@ func (h *APIHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	associatedRuns, err := h.store.ListRunsByPlan(plan.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list associated runs")
+		return
+	}
+	runsByPass := make(map[int64][]store.Run)
+	for _, run := range associatedRuns {
+		if run.PlanPassRowID.Valid {
+			runsByPass[run.PlanPassRowID.Int64] = append(runsByPass[run.PlanPassRowID.Int64], run)
+		}
+	}
+
 	ready, _ := h.lifecycleService.CompletionReady(plan.ID)
 
 	apiPasses := make([]PlanAPIPass, 0, len(passes))
 	for _, pass := range passes {
-		apiPasses = append(apiPasses, mapPlanPassToAPI(pass))
+		apiPasses = append(apiPasses, mapPlanPassToAPI(pass, runsByPass[pass.ID]))
 	}
 
 	readPlan := buildPlanAPIReadPlan(*plan, passes, ready)
@@ -1021,8 +1117,14 @@ func (h *APIHandler) GetPlanPass(w http.ResponseWriter, r *http.Request) {
 	passes, _ := h.store.ListPlanPassesByPlan(plan.ID)
 	ready, _ := h.lifecycleService.CompletionReady(plan.ID)
 
+	associatedRuns, err := h.store.ListRunsByPlanPass(pass.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list associated runs")
+		return
+	}
+
 	readPlan := buildPlanAPIReadPlan(*plan, passes, ready)
-	apiPass := mapPlanPassToAPI(*pass)
+	apiPass := mapPlanPassToAPI(*pass, associatedRuns)
 	writeJSON(w, http.StatusOK, PlanReadAPIResponse{
 		Success:         true,
 		Plan:            &readPlan,

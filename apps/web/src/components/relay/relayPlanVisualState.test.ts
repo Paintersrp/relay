@@ -43,6 +43,8 @@ function buildPass(overrides: Partial<PlanAPIPass> = {}): PlanAPIPass {
     nonGoals: [],
     dependencies: [],
     status: "planned",
+    associatedRunIds: [],
+    associatedRuns: [],
     createdAt: "2026-06-21T00:00:00Z",
     updatedAt: "2026-06-21T00:00:00Z",
     ...overrides,

@@ -53,6 +53,17 @@ export interface PlanAPIPlan {
   updatedAt: string;
 }
 
+export interface PlanAPIRunSummary {
+  id: string;
+  title: string;
+  status: string;
+  lifecycleState: string;
+  activeStep: string;
+  workbenchPath: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PlanAPIPass {
   id: string;
   planRowId: string;
@@ -64,6 +75,8 @@ export interface PlanAPIPass {
   nonGoals: string[];
   dependencies: string[];
   status: PlanAPIPassStatus;
+  associatedRunIds: string[];
+  associatedRuns: PlanAPIRunSummary[];
   createdAt: string;
   updatedAt: string;
 }

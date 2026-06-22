@@ -10,6 +10,7 @@ export {
 export type {
   PlanAPIPlan,
   PlanAPIPass,
+  PlanAPIRunSummary,
   PlanAPIReadPlan,
   PlanAPIStatus,
   PlanAPIPassStatus,

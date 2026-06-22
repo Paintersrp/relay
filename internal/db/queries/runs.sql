@@ -43,6 +43,16 @@ LIMIT ?;
 -- name: ListRunsByRepo :many
 SELECT * FROM runs WHERE repo_id = ? ORDER BY updated_at DESC;
 
+-- name: ListRunsByPlan :many
+SELECT * FROM runs
+WHERE plan_row_id = ?
+ORDER BY updated_at DESC, id DESC;
+
+-- name: ListRunsByPlanPass :many
+SELECT * FROM runs
+WHERE plan_pass_row_id = ?
+ORDER BY updated_at DESC, id DESC;
+
 -- name: UpdateRunStatus :one
 UPDATE runs SET status = ?, updated_at = datetime('now') WHERE id = ? RETURNING *;
 

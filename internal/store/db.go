@@ -235,6 +235,14 @@ func (s *Store) ListRecentRunsWithRepo(limit int) ([]DashboardRun, error) {
 	return s.queries.ListRecentRunsWithRepo(context.Background(), int64(limit))
 }
 
+func (s *Store) ListRunsByPlan(planRowID int64) ([]Run, error) {
+	return s.queries.ListRunsByPlan(context.Background(), sql.NullInt64{Int64: planRowID, Valid: true})
+}
+
+func (s *Store) ListRunsByPlanPass(planPassRowID int64) ([]Run, error) {
+	return s.queries.ListRunsByPlanPass(context.Background(), sql.NullInt64{Int64: planPassRowID, Valid: true})
+}
+
 func (s *Store) UpdateRunStatus(id int64, status string) (*Run, error) {
 	run, err := s.queries.UpdateRunStatus(context.Background(), generated.UpdateRunStatusParams{
 		Status: status,

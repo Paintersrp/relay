@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"relay/internal/api"
 	"relay/internal/store"
@@ -145,7 +146,38 @@ func run() error {
 	h.check("submit persisted 2 passes", countRows(h.st.DB(), "plan_passes") == 2)
 
 	// -------------------------------------------------------
-	// 3. List plans and verify passCount/completionReady.
+	// 3. Create a pass-associated run for read-side association checks.
+	// -------------------------------------------------------
+	plan, err := st.GetPlanByPlanID("plan-api-smoke-plan")
+	if err != nil {
+		return fmt.Errorf("lookup submitted plan: %w", err)
+	}
+	passTwo, err := st.GetPlanPassByPassID(plan.ID, "PASS-002")
+	if err != nil {
+		return fmt.Errorf("lookup PASS-002: %w", err)
+	}
+	repo, err := st.CreateRepo("smoke-test-repo", "smoke-test-repo")
+	if err != nil {
+		return fmt.Errorf("create smoke repo: %w", err)
+	}
+	run, err := st.CreateRunWithAssociation(
+		repo.ID,
+		"Associated smoke run",
+		"intake_received",
+		"deepseek-v4-flash",
+		"deepseek-v4-flash",
+		store.DefaultExecutorAdapter,
+		"main",
+		sql.NullInt64{Int64: plan.ID, Valid: true},
+		sql.NullInt64{Int64: passTwo.ID, Valid: true},
+	)
+	if err != nil {
+		return fmt.Errorf("create associated smoke run: %w", err)
+	}
+	runID := strconv.FormatInt(run.ID, 10)
+
+	// -------------------------------------------------------
+	// 4. List plans and verify passCount/completionReady.
 	// -------------------------------------------------------
 	rec = h.get("/api/plans")
 	h.check("list status 200", rec.Code == http.StatusOK)
@@ -165,7 +197,7 @@ func run() error {
 	}
 
 	// -------------------------------------------------------
-	// 4. Get plan detail and verify pass ordering.
+	// 5. Get plan detail and verify pass ordering and associated runs.
 	// -------------------------------------------------------
 	rec = h.get("/api/plans/plan-api-smoke-plan")
 	h.check("detail status 200", rec.Code == http.StatusOK)
@@ -180,11 +212,23 @@ func run() error {
 	h.check("detail returned 2 passes", len(detailResp.Passes) == 2)
 	if len(detailResp.Passes) == 2 {
 		h.check("detail pass order", detailResp.Passes[0].PassID == "PASS-001" && detailResp.Passes[1].PassID == "PASS-002")
+		h.check("detail PASS-001 has no associated run ids", len(detailResp.Passes[0].AssociatedRunIDs) == 0)
+		h.check("detail PASS-001 has no associated runs", len(detailResp.Passes[0].AssociatedRuns) == 0)
+		h.check("detail PASS-002 has one associated run id", len(detailResp.Passes[1].AssociatedRunIDs) == 1)
+		h.check("detail PASS-002 has one associated run", len(detailResp.Passes[1].AssociatedRuns) == 1)
+		if len(detailResp.Passes[1].AssociatedRuns) == 1 {
+			summary := detailResp.Passes[1].AssociatedRuns[0]
+			h.check("detail associated run id matches", summary.ID == runID)
+			h.check("detail associated run id list matches", detailResp.Passes[1].AssociatedRunIDs[0] == runID)
+			h.check("detail associated run status", summary.Status == "intake_received")
+			h.check("detail associated run activeStep", summary.ActiveStep == "intake")
+			h.check("detail associated run workbenchPath", summary.WorkbenchPath == "/runs/"+runID+"/intake")
+		}
 	}
 	h.check("detail completionReady false", !detailResp.CompletionReady)
 
 	// -------------------------------------------------------
-	// 5. Get pass detail and verify dependency resolution.
+	// 6. Get pass detail and verify dependency resolution and associated runs.
 	// -------------------------------------------------------
 	rec = h.get("/api/plans/plan-api-smoke-plan/passes/PASS-002")
 	h.check("pass detail status 200", rec.Code == http.StatusOK)
@@ -199,12 +243,22 @@ func run() error {
 	if passResp.Pass != nil {
 		h.check("pass detail passId PASS-002", passResp.Pass.PassID == "PASS-002")
 		h.check("pass detail dependencies include PASS-001", len(passResp.Pass.Dependencies) == 1 && passResp.Pass.Dependencies[0] == "PASS-001")
+		h.check("pass detail has one associated run id", len(passResp.Pass.AssociatedRunIDs) == 1)
+		h.check("pass detail has one associated run", len(passResp.Pass.AssociatedRuns) == 1)
+		if len(passResp.Pass.AssociatedRuns) == 1 {
+			summary := passResp.Pass.AssociatedRuns[0]
+			h.check("pass detail associated run id matches", summary.ID == runID)
+			h.check("pass detail associated run id list matches", passResp.Pass.AssociatedRunIDs[0] == runID)
+			h.check("pass detail associated run status", summary.Status == "intake_received")
+			h.check("pass detail associated run activeStep", summary.ActiveStep == "intake")
+			h.check("pass detail associated run workbenchPath", summary.WorkbenchPath == "/runs/"+runID+"/intake")
+		}
 	}
 
 	// -------------------------------------------------------
-	// 6. Mark passes terminal and verify completionReady without mutating plan.status.
+	// 7. Mark passes terminal and verify completionReady without mutating plan.status.
 	// -------------------------------------------------------
-	plan, err := st.GetPlanByPlanID("plan-api-smoke-plan")
+	plan, err = st.GetPlanByPlanID("plan-api-smoke-plan")
 	if err != nil {
 		return fmt.Errorf("lookup submitted plan: %w", err)
 	}

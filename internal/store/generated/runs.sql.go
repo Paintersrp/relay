@@ -217,6 +217,94 @@ func (q *Queries) ListRecentRunsWithRepo(ctx context.Context, limit int64) ([]Li
 	return items, nil
 }
 
+const listRunsByPlan = `-- name: ListRunsByPlan :many
+SELECT id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id FROM runs
+WHERE plan_row_id = ?
+ORDER BY updated_at DESC, id DESC
+`
+
+func (q *Queries) ListRunsByPlan(ctx context.Context, planRowID sql.NullInt64) ([]Run, error) {
+	rows, err := q.db.QueryContext(ctx, listRunsByPlan, planRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Run{}
+	for rows.Next() {
+		var i Run
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepoID,
+			&i.Title,
+			&i.Status,
+			&i.RecommendedModel,
+			&i.SelectedModel,
+			&i.BranchName,
+			&i.BaseCommit,
+			&i.HeadCommit,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ExecutorAdapter,
+			&i.PlanRowID,
+			&i.PlanPassRowID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRunsByPlanPass = `-- name: ListRunsByPlanPass :many
+SELECT id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id FROM runs
+WHERE plan_pass_row_id = ?
+ORDER BY updated_at DESC, id DESC
+`
+
+func (q *Queries) ListRunsByPlanPass(ctx context.Context, planPassRowID sql.NullInt64) ([]Run, error) {
+	rows, err := q.db.QueryContext(ctx, listRunsByPlanPass, planPassRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Run{}
+	for rows.Next() {
+		var i Run
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepoID,
+			&i.Title,
+			&i.Status,
+			&i.RecommendedModel,
+			&i.SelectedModel,
+			&i.BranchName,
+			&i.BaseCommit,
+			&i.HeadCommit,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ExecutorAdapter,
+			&i.PlanRowID,
+			&i.PlanPassRowID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRunsByRepo = `-- name: ListRunsByRepo :many
 SELECT id, repo_id, title, status, recommended_model, selected_model, branch_name, base_commit, head_commit, created_at, updated_at, executor_adapter, plan_row_id, plan_pass_row_id FROM runs WHERE repo_id = ? ORDER BY updated_at DESC
 `
