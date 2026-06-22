@@ -29,6 +29,14 @@ import {
   RunWorkbenchLoadFailedState,
   RunWorkbenchLoadingState,
 } from "@/components/relay/RunWorkbenchStates";
+import {
+  RunStageInspectorSection,
+  RunStageKeyValueRow,
+  RunStagePipeline,
+  RunStageStateCard,
+  RunStageSummaryCard,
+  RunStageSummaryChip,
+} from "@/components/relay/RunStagePrimitives";
 import { ValidationPanel } from "@/components/relay/ValidationPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,6 +53,12 @@ import {
   ShieldCheck,
   Wrench,
 } from "lucide-react";
+import {
+  COMPILE_RENDER_PIPELINE_STEPS,
+  getCompileRenderDisplayState,
+  getCompileRenderPipelineStatuses,
+  getCompileRenderStateCardCopy,
+} from "./runCompileRenderVisualState";
 
 type PacketValidationIssue = {
   code?: string;
@@ -309,6 +323,30 @@ function useCompileRenderController({
     approveMutation.isPending ||
     repairMutation.isPending;
 
+  const compileRenderVisualStateInput = {
+    run,
+    repairEligible,
+    repairResult,
+    compilePending: compileMutation.isPending,
+    repairPending: repairMutation.isPending,
+    renderBriefPending: renderBriefMutation.isPending,
+    approvePending: approveMutation.isPending,
+    hasPassingBriefValidationReport:
+      briefValidationReport?.status === "passed",
+    hasFailingBriefValidationReport: Boolean(
+      briefValidationArt && briefValidationReport?.status !== "passed",
+    ),
+  };
+  const compileRenderDisplayState = getCompileRenderDisplayState(
+    compileRenderVisualStateInput,
+  );
+  const compileRenderPipelineStatuses = getCompileRenderPipelineStatuses(
+    compileRenderVisualStateInput,
+  );
+  const compileRenderStateCardCopy = getCompileRenderStateCardCopy(
+    compileRenderDisplayState,
+  );
+
   const handleCompile = () => {
     setMutationError(null);
     compileMutation.mutate();
@@ -365,6 +403,9 @@ function useCompileRenderController({
     canApproveBrief,
     compileAttempted,
     isPending,
+    compileRenderDisplayState,
+    compileRenderPipelineStatuses,
+    compileRenderStateCardCopy,
     compileMutation,
     renderBriefMutation,
     approveMutation,
@@ -531,6 +572,8 @@ function CompileRenderMainContent({
     canApproveBrief,
     compileAttempted,
     isPending,
+    compileRenderPipelineStatuses,
+    compileRenderStateCardCopy,
   } = controller;
 
   const packetValidationErrors = packetValidationReport?.errors || [];
@@ -544,6 +587,42 @@ function CompileRenderMainContent({
           description={mutationError}
         />
       ) : null}
+
+      <RunStageStateCard
+        tone={compileRenderStateCardCopy.tone}
+        eyebrow={compileRenderStateCardCopy.eyebrow}
+        title={compileRenderStateCardCopy.title}
+        message={compileRenderStateCardCopy.message}
+      />
+
+      <RunStageSummaryCard
+        eyebrow="Compile / Render Pipeline"
+        title="Packet-to-brief progression"
+        description="Compile, validation, repair, brief rendering, brief validation, and approval readiness."
+      >
+        <div className="mb-3 flex flex-wrap gap-2">
+          <RunStageSummaryChip label="Status" value={status} mono />
+          <RunStageSummaryChip
+            label="Compile"
+            value={getCompileSummaryLabel(controller)}
+            tone={getCompileSummaryTone(controller)}
+          />
+          <RunStageSummaryChip
+            label="Packet"
+            value={getPacketValidationStateLabel(controller)}
+            tone={getPacketValidationStateTone(controller)}
+          />
+          <RunStageSummaryChip
+            label="Approval"
+            value={getApprovalStateLabel(controller)}
+            tone={getApprovalStateTone(controller)}
+          />
+        </div>
+        <RunStagePipeline
+          steps={COMPILE_RENDER_PIPELINE_STEPS}
+          statuses={compileRenderPipelineStatuses}
+        />
+      </RunStageSummaryCard>
 
       <div className="grid gap-3 md:grid-cols-4">
         <SummaryTile
@@ -931,68 +1010,68 @@ function CompileRenderDetailsPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      <InspectorSection title="Run State">
-        <InspectorField label="Status" value={controller.status} mono />
-        <InspectorField label="Active step" value="Compile / Render" />
-        <InspectorField
+      <RunStageInspectorSection title="Run State">
+        <RunStageKeyValueRow label="Status" value={controller.status} mono />
+        <RunStageKeyValueRow label="Active step" value="Compile / Render" />
+        <RunStageKeyValueRow
           label="Executor adapter"
           value={run.executorAdapter || run.executor || "—"}
           mono
         />
-        <InspectorField label="Selected model" value={run.model || "—"} mono />
-      </InspectorSection>
+        <RunStageKeyValueRow label="Selected model" value={run.model || "—"} mono />
+      </RunStageInspectorSection>
 
-      <InspectorSection title="Compiled Packet">
-        <InspectorField
+      <RunStageInspectorSection title="Compiled Packet">
+        <RunStageKeyValueRow
           label="Canonical packet"
           value={formatArtifactLocation(canonicalPacketArt)}
           mono
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Validation status"
           value={getPacketValidationStateLabel(controller)}
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Validation report"
           value={formatArtifactLocation(packetValidationArt)}
           mono
         />
-      </InspectorSection>
+      </RunStageInspectorSection>
 
-      <InspectorSection title="Repair">
-        <InspectorField
+      <RunStageInspectorSection title="Repair">
+        <RunStageKeyValueRow
           label="Eligibility"
           value={getRepairEligibilityLabel(controller)}
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Latest repair result"
           value={getRepairResultLabel(controller)}
         />
-      </InspectorSection>
+      </RunStageInspectorSection>
 
-      <InspectorSection title="Executor Brief">
-        <InspectorField
+      <RunStageInspectorSection title="Executor Brief">
+        <RunStageKeyValueRow
           label="Brief artifact"
           value={formatArtifactLocation(executorBriefArt)}
           mono
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Validation status"
           value={getBriefValidationStateLabel(controller)}
         />
-        <InspectorField
+        <RunStageKeyValueRow
           label="Validation report"
           value={formatArtifactLocation(briefValidationArt)}
           mono
         />
-      </InspectorSection>
+      </RunStageInspectorSection>
 
-      <InspectorSection title="Approval">
-        <InspectorField
+      <RunStageInspectorSection title="Approval">
+        <RunStageKeyValueRow
           label="Approval state"
           value={getApprovalStateLabel(controller)}
         />
-      </InspectorSection>
+      </RunStageInspectorSection>
     </div>
   );
 }
@@ -1058,49 +1137,6 @@ function StatusLine({
     <div className="flex items-start justify-between gap-3">
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="text-right text-sm text-foreground">{value}</span>
-    </div>
-  );
-}
-
-function InspectorSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-3 py-3">
-      <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-        {title}
-      </p>
-      <div className="mt-3 flex flex-col gap-2.5">{children}</div>
-    </section>
-  );
-}
-
-function InspectorField({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: React.ReactNode;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span
-        className={[
-          "max-w-[60%] text-right text-sm text-foreground",
-          mono ? "font-mono text-[12px]" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      >
-        {value}
-      </span>
     </div>
   );
 }
