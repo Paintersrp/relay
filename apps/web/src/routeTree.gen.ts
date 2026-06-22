@@ -20,6 +20,7 @@ import { Route as RunsRunIdPrepareRouteImport } from './routes/runs/$runId/prepa
 import { Route as RunsRunIdIntakeRouteImport } from './routes/runs/$runId/intake'
 import { Route as RunsRunIdExecuteRouteImport } from './routes/runs/$runId/execute'
 import { Route as RunsRunIdAuditRouteImport } from './routes/runs/$runId/audit'
+import { Route as PlansPlanIdPassesPassIdRouteImport } from './routes/plans/$planId/passes/$passId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -76,10 +77,15 @@ const RunsRunIdAuditRoute = RunsRunIdAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => RunsRunIdRoute,
 } as any)
+const PlansPlanIdPassesPassIdRoute = PlansPlanIdPassesPassIdRouteImport.update({
+  id: '/passes/$passId',
+  path: '/passes/$passId',
+  getParentRoute: () => PlansPlanIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/plans/$planId': typeof PlansPlanIdRoute
+  '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
   '/runs/$runId': typeof RunsRunIdRouteWithChildren
   '/runs/new': typeof RunsNewRoute
@@ -89,10 +95,11 @@ export interface FileRoutesByFullPath {
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
   '/runs/$runId/intake': typeof RunsRunIdIntakeRoute
   '/runs/$runId/prepare': typeof RunsRunIdPrepareRoute
+  '/plans/$planId/passes/$passId': typeof PlansPlanIdPassesPassIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/plans/$planId': typeof PlansPlanIdRoute
+  '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
   '/runs/$runId': typeof RunsRunIdRouteWithChildren
   '/runs/new': typeof RunsNewRoute
@@ -102,11 +109,12 @@ export interface FileRoutesByTo {
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
   '/runs/$runId/intake': typeof RunsRunIdIntakeRoute
   '/runs/$runId/prepare': typeof RunsRunIdPrepareRoute
+  '/plans/$planId/passes/$passId': typeof PlansPlanIdPassesPassIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/plans/$planId': typeof PlansPlanIdRoute
+  '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
   '/runs/$runId': typeof RunsRunIdRouteWithChildren
   '/runs/new': typeof RunsNewRoute
@@ -116,6 +124,7 @@ export interface FileRoutesById {
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
   '/runs/$runId/intake': typeof RunsRunIdIntakeRoute
   '/runs/$runId/prepare': typeof RunsRunIdPrepareRoute
+  '/plans/$planId/passes/$passId': typeof PlansPlanIdPassesPassIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
     | '/runs/$runId/execute'
     | '/runs/$runId/intake'
     | '/runs/$runId/prepare'
+    | '/plans/$planId/passes/$passId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -144,6 +154,7 @@ export interface FileRouteTypes {
     | '/runs/$runId/execute'
     | '/runs/$runId/intake'
     | '/runs/$runId/prepare'
+    | '/plans/$planId/passes/$passId'
   id:
     | '__root__'
     | '/'
@@ -157,11 +168,12 @@ export interface FileRouteTypes {
     | '/runs/$runId/execute'
     | '/runs/$runId/intake'
     | '/runs/$runId/prepare'
+    | '/plans/$planId/passes/$passId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  PlansPlanIdRoute: typeof PlansPlanIdRoute
+  PlansPlanIdRoute: typeof PlansPlanIdRouteWithChildren
   PlansNewRoute: typeof PlansNewRoute
   RunsRunIdRoute: typeof RunsRunIdRouteWithChildren
   RunsNewRoute: typeof RunsNewRoute
@@ -248,8 +260,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RunsRunIdAuditRouteImport
       parentRoute: typeof RunsRunIdRoute
     }
+    '/plans/$planId/passes/$passId': {
+      id: '/plans/$planId/passes/$passId'
+      path: '/passes/$passId'
+      fullPath: '/plans/$planId/passes/$passId'
+      preLoaderRoute: typeof PlansPlanIdPassesPassIdRouteImport
+      parentRoute: typeof PlansPlanIdRoute
+    }
   }
 }
+
+interface PlansPlanIdRouteChildren {
+  PlansPlanIdPassesPassIdRoute: typeof PlansPlanIdPassesPassIdRoute
+}
+
+const PlansPlanIdRouteChildren: PlansPlanIdRouteChildren = {
+  PlansPlanIdPassesPassIdRoute: PlansPlanIdPassesPassIdRoute,
+}
+
+const PlansPlanIdRouteWithChildren = PlansPlanIdRoute._addFileChildren(
+  PlansPlanIdRouteChildren,
+)
 
 interface RunsRunIdRouteChildren {
   RunsRunIdAuditRoute: typeof RunsRunIdAuditRoute
@@ -271,7 +302,7 @@ const RunsRunIdRouteWithChildren = RunsRunIdRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  PlansPlanIdRoute: PlansPlanIdRoute,
+  PlansPlanIdRoute: PlansPlanIdRouteWithChildren,
   PlansNewRoute: PlansNewRoute,
   RunsRunIdRoute: RunsRunIdRouteWithChildren,
   RunsNewRoute: RunsNewRoute,

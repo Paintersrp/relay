@@ -215,14 +215,17 @@ export function RelayPlanDetail({
               </Button>
               {currentPass ? (
                 <Button
-                  type="button"
+                  asChild
                   variant="outline"
                   size="xs"
-                  disabled
-                  title="Pass detail arrives in UI-PLAN-04"
                   className="rounded-sm px-3 text-[11px]"
                 >
-                  Open current pass
+                  <Link
+                    to="/plans/$planId/passes/$passId"
+                    params={{ planId: plan.planId, passId: currentPass.passId }}
+                  >
+                    Open current pass
+                  </Link>
                 </Button>
               ) : null}
             </div>
@@ -295,7 +298,7 @@ export function RelayPlanDetail({
               Passes — {sortedPasses.length}
             </span>
           </div>
-          <RelayPlanPassTimeline passes={sortedPasses} />
+          <RelayPlanPassTimeline planId={plan.planId} passes={sortedPasses} />
         </section>
       ) : (
         <RelayStateSurface

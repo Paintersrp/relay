@@ -121,4 +121,37 @@ describe('Relay API Client Boundary (Real Data Wiring)', () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it("submitPlannerHandoff accepts planId with passId and posts association fields", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          success: true,
+          runId: "42",
+          status: "intake_received",
+          lifecycleState: "intake",
+          createdAt: "2026-06-21T00:00:00Z",
+        }),
+    });
+    globalThis.fetch = fetchSpy;
+
+    await submitPlannerHandoff({
+      planner_handoff_markdown: "# handoff",
+      planId: "plan-ui-04",
+      passId: "pass-detail",
+      plan_id: "plan-ui-04",
+      pass_id: "pass-detail",
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const request = fetchSpy.mock.calls[0][1];
+    expect(request?.method).toBe("POST");
+    expect(JSON.parse(String(request?.body))).toMatchObject({
+      planId: "plan-ui-04",
+      passId: "pass-detail",
+      plan_id: "plan-ui-04",
+      pass_id: "pass-detail",
+    });
+  });
 });

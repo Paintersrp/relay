@@ -278,7 +278,12 @@ export function RelayRunsRegistry({
               description="Create a run from a Planner handoff to start Relay orchestration."
               action={
                 <Button size="sm" asChild>
-                  <Link to="/runs/new">New Run</Link>
+                  <Link
+                    to="/runs/new"
+                    search={{ planId: undefined, passId: undefined }}
+                  >
+                    New Run
+                  </Link>
                 </Button>
               }
             />

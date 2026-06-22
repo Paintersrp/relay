@@ -104,7 +104,11 @@ export function AppShell({ children, className }: AppShellProps) {
             newRunActive && "ring-1 ring-[var(--relay-accent)]/45",
           )}
         >
-          <Link to="/runs/new" aria-label="New Run">
+          <Link
+            to="/runs/new"
+            search={{ planId: undefined, passId: undefined }}
+            aria-label="New Run"
+          >
             <Plus className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">New Run</span>
           </Link>

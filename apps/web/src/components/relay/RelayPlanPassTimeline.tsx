@@ -1,4 +1,5 @@
-import { Copy, ExternalLink, Plus } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Copy, ExternalLink } from "lucide-react";
 
 import {
   getPassStatusLabel,
@@ -11,6 +12,7 @@ import type { PlanAPIPass } from "@/features/relay-plans";
 import { cn } from "@/lib/utils";
 
 interface RelayPlanPassTimelineProps {
+  planId: string;
   passes: PlanAPIPass[];
 }
 
@@ -53,27 +55,29 @@ function getRowAccentClass(pass: PlanAPIPass, unmetDependencies: string[]): stri
 
 function getActionConfig(pass: PlanAPIPass, unmetDependencies: string[]) {
   if (pass.status === "planned" && unmetDependencies.length > 0) {
-    return { kind: "waiting" as const, label: "Waiting" };
+    return {
+      label: "Open",
+      title: "Open blocked pass detail",
+      icon: <ExternalLink className="size-3" />,
+    };
   }
 
   if (pass.status === "planned") {
     return {
-      kind: "button" as const,
-      label: "Create run",
-      title: "Run association arrives in UI-PLAN-04",
-      icon: <Plus className="size-3" />,
+      label: "Open",
+      title: "Open pass detail",
+      icon: <ExternalLink className="size-3" />,
     };
   }
 
   return {
-    kind: "button" as const,
     label: pass.status === "in_progress" ? "Open" : "View",
-    title: "Pass detail arrives in UI-PLAN-04",
+    title: "Open pass detail",
     icon: <ExternalLink className="size-3" />,
   };
 }
 
-export function RelayPlanPassTimeline({ passes }: RelayPlanPassTimelineProps) {
+export function RelayPlanPassTimeline({ planId, passes }: RelayPlanPassTimelineProps) {
   const sortedPasses = sortPassesBySequence(passes);
 
   if (sortedPasses.length === 0) {
@@ -179,23 +183,21 @@ export function RelayPlanPassTimeline({ passes }: RelayPlanPassTimelineProps) {
                   No run yet
                 </span>
 
-                {action.kind === "waiting" ? (
-                  <span className="inline-flex h-6 items-center rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-2 text-[11px] text-muted-foreground">
-                    {action.label}
-                  </span>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    disabled
-                    title={action.title}
-                    className="rounded-sm px-2 text-[11px]"
+                <Button
+                  asChild
+                  variant="outline"
+                  size="xs"
+                  title={action.title}
+                  className="rounded-sm px-2 text-[11px]"
+                >
+                  <Link
+                    to="/plans/$planId/passes/$passId"
+                    params={{ planId, passId: pass.passId }}
                   >
                     {action.icon}
                     {action.label}
-                  </Button>
-                )}
+                  </Link>
+                </Button>
 
                 <Button
                   type="button"

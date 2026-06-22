@@ -1,4 +1,5 @@
 import { useState, type ChangeEvent, type FormEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { ArrowLeft, AlertTriangle, CheckCircle2, Circle, Loader2, Upload } from "lucide-react";
 import { AppPageFrame } from "@/components/relay/AppPageFrame";
@@ -7,10 +8,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RelayStateBanner } from "@/components/relay/RelayStateSurface";
+import { relayPlanKeys } from "@/features/relay-plans";
 import { submitPlannerHandoff, RelayApiError } from "@/features/relay-runs";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/runs/new")({
+  validateSearch: (search) => ({
+    planId: typeof search.planId === "string" ? search.planId : undefined,
+    passId: typeof search.passId === "string" ? search.passId : undefined,
+  }),
   component: NewRunPage,
 });
 
@@ -107,6 +113,8 @@ function MetadataRow({
 
 function NewRunPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const { planId, passId } = Route.useSearch();
   const [markdown, setMarkdown] = useState("");
   const [repo, setRepo] = useState("");
   const [branch, setBranch] = useState("");
@@ -117,7 +125,8 @@ function NewRunPage() {
 
   const detectedMetadata = detectHandoffMetadata(markdown);
   const hasHandoff = markdown.trim().length > 0;
-  const isFormValid = hasHandoff;
+  const hasInvalidAssociation = Boolean(passId && !planId);
+  const isFormValid = hasHandoff && !hasInvalidAssociation;
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -139,6 +148,11 @@ function NewRunPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (hasInvalidAssociation) {
+      setErrorMsg("Invalid managed-plan association: passId requires planId.");
+      return;
+    }
+
     if (!markdown.trim()) {
       setErrorMsg("Planner handoff markdown is required.");
       return;
@@ -148,13 +162,30 @@ function NewRunPage() {
     setErrorMsg(null);
 
     try {
+      const associationPayload = planId
+        ? {
+            planId,
+            plan_id: planId,
+            ...(passId ? { passId, pass_id: passId } : {}),
+          }
+        : {};
       const response = await submitPlannerHandoff({
         planner_handoff_markdown: markdown,
         repo_target: repo.trim() || undefined,
         branch_context: branch.trim() || undefined,
         name: name.trim() || undefined,
         source: source.trim() || undefined,
+        ...associationPayload,
       });
+
+      if (planId) {
+        await queryClient.invalidateQueries({ queryKey: relayPlanKeys.detail(planId) });
+        if (passId) {
+          await queryClient.invalidateQueries({
+            queryKey: relayPlanKeys.pass(planId, passId),
+          });
+        }
+      }
 
       if (response.review_url) {
         window.location.href = response.review_url;
@@ -237,6 +268,34 @@ function NewRunPage() {
                       />
                     </div>
                   )}
+
+                  {hasInvalidAssociation ? (
+                    <div className="shrink-0 px-4 pt-4">
+                      <RelayStateBanner
+                        tone="danger"
+                        title="Invalid managed-plan association"
+                        description="Invalid managed-plan association: passId requires planId."
+                        density="compact"
+                      />
+                    </div>
+                  ) : null}
+
+                  {planId && !hasInvalidAssociation ? (
+                    <div className="shrink-0 px-4 pt-4">
+                      <RelayStateBanner
+                        tone="info"
+                        title="Managed Plan Association"
+                        description="This run will be associated with the selected managed plan pass after Relay accepts the handoff."
+                        metadata={
+                          <span className="flex flex-wrap gap-x-3 gap-y-1">
+                            <span>planId: {planId}</span>
+                            {passId ? <span>passId: {passId}</span> : null}
+                          </span>
+                        }
+                        density="compact"
+                      />
+                    </div>
+                  ) : null}
 
                   <div className="flex min-h-0 flex-1 flex-col px-4 pt-3 pb-4">
                     <div>
