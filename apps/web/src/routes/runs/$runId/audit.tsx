@@ -17,12 +17,15 @@ import {
   acceptFailedValidation,
 } from "@/features/relay-runs";
 import type {
+  RelayArtifact,
   RelayAuditDecisionValue,
   RelayAuditInputSummaryInfo,
   RelayAuditPacketInfo,
   RelayAuditDecisionStatus,
   RelayCommitSummary,
   RelayAuditActions,
+  RelayRun,
+  RelayRunEvent,
 } from "@/features/relay-runs";
 import { RELAY_AUDIT_DECISION_VALUES } from "@/features/relay-runs";
 import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
@@ -35,6 +38,14 @@ import { ValidationPanel } from "@/components/relay/ValidationPanel";
 import { ArtifactPreviewCard } from "@/components/relay/ArtifactPreviewCard";
 import { RunEvidenceBrowser } from "@/components/relay/RunEvidenceBrowser";
 import { LogPreviewPanel } from "@/components/relay/LogPreviewPanel";
+import {
+  RunStageInspectorSection,
+  RunStageKeyValueRow,
+  RunStagePipeline,
+  RunStageStateCard,
+  RunStageSummaryCard,
+  RunStageSummaryChip,
+} from "@/components/relay/RunStagePrimitives";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +65,12 @@ import {
   RefreshCw,
   FileCode,
 } from "lucide-react";
+import {
+  AUDIT_PIPELINE_STEPS,
+  getAuditDisplayState,
+  getAuditPipelineStatuses,
+  getAuditStateCardCopy,
+} from "./runAuditVisualState";
 
 export const Route = createFileRoute("/runs/$runId/audit")({
   component: AuditPage,
@@ -101,30 +118,46 @@ function AuditPage() {
     lines: formattedLogs.slice(-50),
     truncated: formattedLogs.length > 50,
   };
+  const resolvedArtifacts = artifacts || [];
+  const resolvedEvents = events || [];
 
   return (
     <RunWorkbenchLayout
       run={{
         ...run,
-        artifacts: artifacts || [],
-        latestEvents: events || [],
+        artifacts: resolvedArtifacts,
+        latestEvents: resolvedEvents,
         logPreview,
       }}
       currentStep="audit"
       mainContent={
         <AuditMainContent
           run={run}
-          artifacts={artifacts || []}
-          events={events || []}
+          artifacts={resolvedArtifacts}
+          events={resolvedEvents}
         />
       }
+      initialInspectorTab="details"
+      inspectorTabs={[
+        { key: "details", label: "Details" },
+        { key: "artifacts", label: "Artifacts" },
+        { key: "validation", label: "Validation" },
+        { key: "logs", label: "Logs" },
+      ]}
       inspectorPanels={{
+        details: (
+          <AuditDetailsPanel
+            run={run}
+            artifacts={resolvedArtifacts}
+            events={resolvedEvents}
+          />
+        ),
         logs: <LogPreviewPanel logPreview={logPreview} />,
         artifacts: (
           <RunEvidenceBrowser
             runId={run.id}
-            artifacts={artifacts || []}
-            events={events || []}
+            artifacts={resolvedArtifacts}
+            events={resolvedEvents}
           />
         ),
         validation: <ValidationPanel summary={run.validationSummary} />,
@@ -134,9 +167,9 @@ function AuditPage() {
 }
 
 function deriveAuditData(
-  run: any,
-  artifacts: any[],
-  events: any[],
+  run: RelayRun,
+  artifacts: RelayArtifact[],
+  events: RelayRunEvent[],
 ): {
   inputSummary: RelayAuditInputSummaryInfo;
   generatedPacket: RelayAuditPacketInfo;
@@ -345,9 +378,9 @@ function AuditMainContent({
   artifacts,
   events,
 }: {
-  run: any;
-  artifacts: any[];
-  events: any[];
+  run: RelayRun;
+  artifacts: RelayArtifact[];
+  events: RelayRunEvent[];
 }) {
   const queryClient = useQueryClient();
   const { runId } = Route.useParams();
@@ -371,11 +404,12 @@ function AuditMainContent({
     [run, artifacts, events],
   );
 
-  const runStatus = run.status || "";
-  const { hasFinalValidationEvidence } = evaluateValidationGate(
-    artifacts,
-    runStatus,
-  );
+  const runStatus = (run.status || "") as string;
+  const { hasFinalValidationEvidence, validationAllowsAudit } =
+    evaluateValidationGate(
+      artifacts as Array<{ storageKind: string }>,
+      runStatus,
+    );
 
   const localValidationIsRunning = runStatus === "local_validation_running";
   const localValidationPassed = runStatus === "validation_passed";
@@ -513,6 +547,36 @@ function AuditMainContent({
     prepareCommitMutation.isPending ||
     closeMutation.isPending ||
     acceptFailureMutation.isPending;
+  const auditVisualStateInput = {
+    run,
+    hasFinalValidationEvidence,
+    validationAllowsAudit,
+    hasAuditPacket:
+      auditData.generatedPacket.available || Boolean(auditData.manualPacket),
+    hasInputSummary: auditData.inputSummary.available,
+    hasWarnings:
+      auditData.warnings.length > 0 || auditData.generatedPacket.warnings.length > 0,
+    generatePending: generateMutation.isPending,
+    validatePending: validateMutation.isPending,
+    manualSubmitPending: submitManualMutation.isPending,
+    approvePending: approveMutation.isPending,
+    revisionPending: revisionMutation.isPending,
+    commitMessagePending: prepareCommitMutation.isPending,
+    closePending: closeMutation.isPending,
+    acceptFailurePending: acceptFailureMutation.isPending,
+    isAuditCandidate: isAuditCandidateStatus(runStatus),
+    isAuditReady: isAuditReadyStatus,
+    isAccepted:
+      runStatus === "accepted" || runStatus === "accepted_with_warnings",
+    isCompleted:
+      runStatus === "completed" || run.lifecycleState === "completed",
+    isRevisionRequired: runStatus === "revision_required",
+    hasRevisionRequirements: auditData.revisionRequirements.length > 0,
+    hasBlockers: auditData.blockers.length > 0,
+  };
+  const auditDisplayState = getAuditDisplayState(auditVisualStateInput);
+  const auditPipelineStatuses = getAuditPipelineStatuses(auditVisualStateInput);
+  const auditStateCardCopy = getAuditStateCardCopy(auditDisplayState);
 
   const handleGenerateAudit = () => {
     if (!auditData.actions.canGenerateAudit) return;
@@ -558,6 +622,51 @@ function AuditMainContent({
           description={mutationError}
         />
       )}
+
+      <RunStageStateCard
+        tone={auditStateCardCopy.tone}
+        eyebrow={auditStateCardCopy.eyebrow}
+        title={auditStateCardCopy.title}
+        message={auditStateCardCopy.message}
+      />
+
+      <RunStageSummaryCard
+        eyebrow="Audit / Closeout Pipeline"
+        title="Closeout progression"
+        description="Executor evidence, validation review, audit packet preparation, approval, and explicit run closeout."
+      >
+        <div className="mb-3 flex flex-wrap gap-2">
+          <RunStageSummaryChip label="Status" value={runStatus} mono />
+          <RunStageSummaryChip
+            label="Validation"
+            value={getAuditValidationLabel(
+              runStatus,
+              hasFinalValidationEvidence,
+              validationAllowsAudit,
+            )}
+            tone={getAuditValidationTone(
+              runStatus,
+              hasFinalValidationEvidence,
+              validationAllowsAudit,
+            )}
+          />
+          <RunStageSummaryChip
+            label="Packet"
+            value={getAuditPacketLabel(auditData)}
+            tone={getAuditPacketTone(auditData)}
+          />
+          <RunStageSummaryChip
+            label="Decision"
+            value={getAuditDecisionLabel(runStatus, auditData)}
+            tone={getAuditDecisionTone(runStatus, auditData)}
+          />
+        </div>
+        <RunStagePipeline
+          steps={AUDIT_PIPELINE_STEPS}
+          statuses={auditPipelineStatuses}
+        />
+      </RunStageSummaryCard>
+
       {isAuditReadyStatus && (
         <RelayStateBanner
           tone="success"
@@ -1482,6 +1591,264 @@ function AuditMainContent({
       </Section>
     </div>
   );
+}
+
+function AuditDetailsPanel({
+  run,
+  artifacts,
+  events,
+}: {
+  run: RelayRun;
+  artifacts: RelayArtifact[];
+  events: RelayRunEvent[];
+}) {
+  const auditData = deriveAuditData(run, artifacts, events);
+  const runStatus = (run.status || "") as string;
+  const { hasFinalValidationEvidence, validationAllowsAudit } =
+    evaluateValidationGate(
+      artifacts as Array<{ storageKind: string }>,
+      runStatus,
+    );
+  const primaryValidationArtifact =
+    artifacts.find((artifact) => artifact.storageKind === "validation_run_json") ||
+    artifacts.find(
+      (artifact) => artifact.storageKind === "validation_failure_acceptance_json",
+    ) ||
+    artifacts.find((artifact) => artifact.storageKind === "validation_stdout");
+  const primaryEvidenceArtifact =
+    artifacts.find((artifact) => artifact.kind === "result") ||
+    artifacts.find((artifact) => artifact.kind === "diff") ||
+    artifacts.find((artifact) => artifact.kind === "validation");
+  const primaryAuditPacketArtifact =
+    artifacts.find(
+      (artifact) =>
+        artifact.kind === "audit" &&
+        (artifact.filename?.includes("audit_packet") ||
+          artifact.path?.includes("audit_packet") ||
+          artifact.label === "Audit Packet"),
+    ) || artifacts.find((artifact) => artifact.id === auditData.manualPacket?.artifactId);
+  const primaryCommitArtifact = artifacts.find(
+    (artifact) =>
+      artifact.kind === "audit" &&
+      (artifact.filename?.includes("commit_message") ||
+        artifact.path?.includes("commit_message")),
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      <RunStageInspectorSection title="Run State">
+        <RunStageKeyValueRow label="Status" value={runStatus} mono />
+        <RunStageKeyValueRow
+          label="Lifecycle"
+          value={run.lifecycleState || "-"}
+          mono
+        />
+        <RunStageKeyValueRow label="Active step" value="Audit / Closeout" />
+      </RunStageInspectorSection>
+
+      <RunStageInspectorSection title="Validation">
+        <RunStageKeyValueRow
+          label="Gate"
+          value={getAuditValidationLabel(
+            runStatus,
+            hasFinalValidationEvidence,
+            validationAllowsAudit,
+          )}
+        />
+        <RunStageKeyValueRow
+          label="Evidence"
+          value={formatArtifactCount(
+            artifacts.filter(
+              (artifact) =>
+                artifact.kind === "validation" ||
+                String(artifact.storageKind || "").startsWith("validation_"),
+            ).length,
+          )}
+        />
+        <RunStageKeyValueRow
+          label="Report"
+          value={formatArtifactLocation(primaryValidationArtifact)}
+          mono
+        />
+      </RunStageInspectorSection>
+
+      <RunStageInspectorSection title="Evidence">
+        <RunStageKeyValueRow
+          label="Input summary"
+          value={
+            auditData.inputSummary.available
+              ? auditData.inputSummary.artifactPath
+              : "Pending"
+          }
+          mono
+        />
+        <RunStageKeyValueRow
+          label="Captured"
+          value={formatArtifactCount(auditData.inputSummary.evidenceIncluded.length)}
+        />
+        <RunStageKeyValueRow
+          label="Primary"
+          value={formatArtifactLocation(primaryEvidenceArtifact)}
+          mono
+        />
+      </RunStageInspectorSection>
+
+      <RunStageInspectorSection title="Audit Packet">
+        <RunStageKeyValueRow
+          label="State"
+          value={getAuditPacketLabel(auditData)}
+        />
+        <RunStageKeyValueRow
+          label="Source"
+          value={
+            auditData.manualPacket
+              ? "Manual submission present"
+              : auditData.generatedPacket.available
+                ? "Generated packet"
+                : "Not available"
+          }
+        />
+        <RunStageKeyValueRow
+          label="Artifact"
+          value={
+            auditData.manualPacket?.artifactPath ||
+            auditData.generatedPacket.artifactPath ||
+            formatArtifactLocation(primaryAuditPacketArtifact)
+          }
+          mono
+        />
+      </RunStageInspectorSection>
+
+      <RunStageInspectorSection title="Decision">
+        <RunStageKeyValueRow
+          label="State"
+          value={getAuditDecisionLabel(runStatus, auditData)}
+        />
+        <RunStageKeyValueRow
+          label="Source"
+          value={formatAuditDecisionSource(auditData.decision.source)}
+        />
+        <RunStageKeyValueRow
+          label="Notes"
+          value={auditData.decision.notes || "—"}
+        />
+      </RunStageInspectorSection>
+
+      <RunStageInspectorSection title="Closeout">
+        <RunStageKeyValueRow
+          label="Commit msg"
+          value={
+            auditData.commitSummary.commitMessageAvailable ? "Prepared" : "Pending"
+          }
+        />
+        <RunStageKeyValueRow
+          label="Artifact"
+          value={formatArtifactLocation(primaryCommitArtifact)}
+          mono
+        />
+        <RunStageKeyValueRow
+          label="Close run"
+          value={run.lifecycleState === "completed" ? "Completed" : "Pending"}
+        />
+      </RunStageInspectorSection>
+    </div>
+  );
+}
+
+function getAuditValidationLabel(
+  runStatus: string,
+  hasFinalValidationEvidence: boolean,
+  validationAllowsAudit: boolean,
+): string {
+  if (runStatus === "local_validation_running") return "Running";
+  if (runStatus === "validation_failed") return "Failed";
+  if (runStatus === "validation_failed_accepted") return "Accepted failure";
+  if (runStatus === "validation_passed" || validationAllowsAudit) return "Passed";
+  if (!hasFinalValidationEvidence) return "Required";
+  return "Review required";
+}
+
+function getAuditValidationTone(
+  runStatus: string,
+  hasFinalValidationEvidence: boolean,
+  validationAllowsAudit: boolean,
+): "default" | "info" | "success" | "warning" | "danger" {
+  if (runStatus === "local_validation_running") return "info";
+  if (runStatus === "validation_failed") return "danger";
+  if (runStatus === "validation_failed_accepted") return "warning";
+  if (runStatus === "validation_passed" || validationAllowsAudit) return "success";
+  if (!hasFinalValidationEvidence) return "warning";
+  return "default";
+}
+
+function getAuditPacketLabel(
+  auditData: ReturnType<typeof deriveAuditData>,
+): string {
+  if (auditData.manualPacket) return "Manual packet ready";
+  if (auditData.generatedPacket.available) return "Generated packet ready";
+  if (auditData.inputSummary.available) return "Ready to generate";
+  return "Pending";
+}
+
+function getAuditPacketTone(
+  auditData: ReturnType<typeof deriveAuditData>,
+): "default" | "success" | "warning" {
+  if (auditData.manualPacket) return "warning";
+  if (auditData.generatedPacket.available) return "success";
+  return "default";
+}
+
+function getAuditDecisionLabel(
+  runStatus: string,
+  auditData: ReturnType<typeof deriveAuditData>,
+): string {
+  if (runStatus === "completed") return "Run closed";
+  if (runStatus === "accepted_with_warnings") return "Accepted with warnings";
+  if (runStatus === "accepted") return "Accepted";
+  if (runStatus === "revision_required") return "Revision required";
+  if (auditData.decision.currentDecision) return auditData.decision.currentDecision;
+  if (auditData.decision.source === "generated") return "Awaiting review";
+  if (auditData.decision.source === "manual") return "Manual packet submitted";
+  return "Pending";
+}
+
+function getAuditDecisionTone(
+  runStatus: string,
+  auditData: ReturnType<typeof deriveAuditData>,
+): "default" | "success" | "warning" {
+  if (runStatus === "accepted" || runStatus === "completed") return "success";
+  if (
+    runStatus === "accepted_with_warnings" ||
+    runStatus === "revision_required" ||
+    auditData.decision.source === "manual"
+  ) {
+    return "warning";
+  }
+  return "default";
+}
+
+function formatAuditDecisionSource(
+  source: RelayAuditDecisionStatus["source"],
+): string {
+  switch (source) {
+    case "approved":
+      return "Approved in Relay";
+    case "generated":
+      return "Generated packet";
+    case "manual":
+      return "Manual packet";
+    case "none":
+      return "No decision";
+  }
+}
+
+function formatArtifactCount(count: number): string {
+  if (count === 1) return "1 artifact";
+  return `${count} artifacts`;
+}
+
+function formatArtifactLocation(artifact?: RelayArtifact): string {
+  return artifact?.path || artifact?.filename || "-";
 }
 
 function Section({
