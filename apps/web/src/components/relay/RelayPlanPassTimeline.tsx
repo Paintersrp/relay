@@ -1,12 +1,12 @@
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { RelayMonoText } from "@/components/relay/RelayMeta";
+import { Copy, ExternalLink, Plus } from "lucide-react";
+
 import {
   getPassStatusLabel,
-  getPassStatusVariant,
   getUnmetDependencies,
   sortPassesBySequence,
 } from "@/components/relay/relayPlanVisualState";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { PlanAPIPass } from "@/features/relay-plans";
 import { cn } from "@/lib/utils";
 
@@ -14,144 +14,201 @@ interface RelayPlanPassTimelineProps {
   passes: PlanAPIPass[];
 }
 
-function getRowTone(pass: PlanAPIPass, unmetDependencies: string[]): string {
-  if (pass.status === "completed") {
-    return "border-[var(--success)]/35 bg-[var(--relay-panel-bg)]";
-  }
-
-  if (pass.status === "in_progress") {
-    return "border-[var(--relay-accent)]/45 bg-[var(--relay-panel-hover-bg)]";
-  }
-
-  if (unmetDependencies.length > 0) {
-    return "border-destructive/35 bg-destructive/5";
-  }
-
-  return "border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]";
+function copyText(text: string) {
+  void navigator.clipboard?.writeText(text);
 }
 
-function getRailTone(pass: PlanAPIPass, unmetDependencies: string[]): string {
-  if (pass.status === "completed") return "bg-[var(--success)]";
-  if (pass.status === "in_progress") return "bg-[var(--relay-accent)]";
-  if (pass.status === "skipped") return "bg-muted-foreground";
-  if (unmetDependencies.length > 0) return "bg-destructive";
-  return "bg-[var(--relay-row-border)]";
-}
-
-function getActionLabel(pass: PlanAPIPass): string {
+function getStatusDotClass(pass: PlanAPIPass): string {
   switch (pass.status) {
-    case "in_progress":
-      return "Open";
     case "completed":
-    case "skipped":
-      return "View";
+      return "bg-[var(--success)]";
+    case "in_progress":
+      return "bg-[var(--relay-accent)]";
     case "planned":
-      return "Waiting";
+      return "bg-muted-foreground/70";
+    case "skipped":
+      return "bg-muted-foreground/45";
   }
+}
+
+function getStatusBadgeClass(pass: PlanAPIPass): string {
+  switch (pass.status) {
+    case "completed":
+      return "border-[var(--success)]/35 bg-[var(--success)]/10 text-[var(--success)]";
+    case "in_progress":
+      return "border-[var(--relay-accent)]/35 bg-[var(--relay-accent)]/10 text-[var(--relay-accent)]";
+    case "planned":
+      return "border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] text-muted-foreground";
+    case "skipped":
+      return "border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] text-muted-foreground/80";
+  }
+}
+
+function getRowAccentClass(pass: PlanAPIPass, unmetDependencies: string[]): string | null {
+  if (pass.status === "in_progress") return "bg-[var(--relay-accent)]";
+  if (unmetDependencies.length > 0) return "bg-destructive";
+  if (pass.status === "completed") return "bg-[var(--success)]/65";
+  return null;
+}
+
+function getActionConfig(pass: PlanAPIPass, unmetDependencies: string[]) {
+  if (pass.status === "planned" && unmetDependencies.length > 0) {
+    return { kind: "waiting" as const, label: "Waiting" };
+  }
+
+  if (pass.status === "planned") {
+    return {
+      kind: "button" as const,
+      label: "Create run",
+      title: "Run association arrives in UI-PLAN-04",
+      icon: <Plus className="size-3" />,
+    };
+  }
+
+  return {
+    kind: "button" as const,
+    label: pass.status === "in_progress" ? "Open" : "View",
+    title: "Pass detail arrives in UI-PLAN-04",
+    icon: <ExternalLink className="size-3" />,
+  };
 }
 
 export function RelayPlanPassTimeline({ passes }: RelayPlanPassTimelineProps) {
   const sortedPasses = sortPassesBySequence(passes);
 
+  if (sortedPasses.length === 0) {
+    return (
+      <div className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-5 py-8 text-center text-xs text-muted-foreground">
+        No passes defined
+      </div>
+    );
+  }
+
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
-      {sortedPasses.map((pass, index) => {
+    <div className="overflow-hidden border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
+      {sortedPasses.map((pass) => {
         const unmetDependencies = getUnmetDependencies(pass, sortedPasses);
-        const isLast = index === sortedPasses.length - 1;
+        const accentClass = getRowAccentClass(pass, unmetDependencies);
+        const isCompleted = pass.status === "completed";
+        const isCurrent = pass.status === "in_progress";
+        const action = getActionConfig(pass, unmetDependencies);
 
         return (
           <article
             key={pass.id}
             className={cn(
-              "relative grid gap-4 border-b p-4 last:border-b-0 lg:grid-cols-[3rem_minmax(0,1fr)_8rem]",
-              getRowTone(pass, unmetDependencies),
+              "relative border-b border-[var(--relay-row-border)] transition-colors last:border-b-0",
+              isCurrent && "bg-[var(--relay-panel-hover-bg)]",
             )}
           >
-            <div className="relative flex lg:justify-center">
-              {!isLast ? (
-                <span className="absolute left-[1.125rem] top-10 hidden h-[calc(100%+1rem)] w-px bg-[var(--relay-row-border)] lg:block" />
-              ) : null}
-              <span
-                className={cn(
-                  "z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-background",
-                  getRailTone(pass, unmetDependencies),
-                )}
-              >
-                {pass.sequence}
-              </span>
-            </div>
+            {accentClass ? (
+              <div className={cn("absolute inset-y-0 left-0 w-[2px]", accentClass)} />
+            ) : null}
 
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="min-w-0 text-base font-semibold text-foreground">
-                  {pass.name}
-                </h3>
-                <Badge
-                  variant={getPassStatusVariant(pass.status)}
-                  className="text-[11px] font-medium"
-                >
-                  {getPassStatusLabel(pass.status)}
-                </Badge>
-                {unmetDependencies.length > 0 ? (
-                  <Badge variant="destructive" className="text-[11px] font-medium">
-                    Blocked
+            <div className="flex flex-col gap-3 py-3 pr-4 pl-5 sm:flex-row sm:items-start">
+              <div className="flex w-5 shrink-0 flex-col items-center gap-1.5 pt-0.5">
+                <span className="font-mono text-[10px] leading-none text-muted-foreground">
+                  {pass.sequence}
+                </span>
+                <span className={cn("h-1.5 w-1.5 rounded-full", getStatusDotClass(pass))} />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span
+                    className={cn(
+                      "text-[13px] font-medium leading-snug",
+                      isCompleted ? "text-muted-foreground" : "text-foreground",
+                    )}
+                  >
+                    {pass.name}
+                  </span>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {pass.passId}
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "h-auto rounded-sm px-1.5 py-px text-[9px] font-medium tracking-wide",
+                      getStatusBadgeClass(pass),
+                    )}
+                  >
+                    {getPassStatusLabel(pass.status)}
                   </Badge>
+                </div>
+
+                {!isCompleted && pass.goal ? (
+                  <div className="mt-0.5 truncate text-[11px] leading-snug text-muted-foreground">
+                    {pass.goal}
+                  </div>
+                ) : null}
+
+                {isCurrent && pass.intendedExecutionScope.length > 0 ? (
+                  <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                    {pass.intendedExecutionScope.join(", ")}
+                  </div>
+                ) : null}
+
+                {unmetDependencies.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-1">
+                    {unmetDependencies.map((dependency) => (
+                      <span
+                        key={`${pass.id}-${dependency}`}
+                        className="inline-flex items-center rounded-sm border border-destructive/35 bg-destructive/10 px-1.5 py-px font-mono text-[10px] text-destructive"
+                      >
+                        Blocked by {dependency}
+                      </span>
+                    ))}
+                  </div>
+                ) : pass.dependencies.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-1">
+                    {pass.dependencies.map((dependency) => (
+                      <span
+                        key={`${pass.id}-${dependency}`}
+                        className="inline-flex items-center rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-1.5 py-px font-mono text-[10px] text-muted-foreground"
+                      >
+                        {dependency}
+                      </span>
+                    ))}
+                  </div>
                 ) : null}
               </div>
 
-              <RelayMonoText className="mt-1 block text-[11px] text-muted-foreground">
-                {pass.passId}
-              </RelayMonoText>
-
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{pass.goal}</p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {pass.intendedExecutionScope.map((scope) => (
-                  <span
-                    key={scope}
-                    className="rounded-full border border-[var(--relay-row-border)] bg-[var(--relay-panel-hover-bg)] px-2 py-1 font-mono text-[11px] text-muted-foreground"
-                  >
-                    {scope}
-                  </span>
-                ))}
-              </div>
-
-              {pass.dependencies.length > 0 || unmetDependencies.length > 0 ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {pass.dependencies.map((dependency) => (
-                    <Badge key={dependency} variant="outline" className="text-[11px]">
-                      Depends on {dependency}
-                    </Badge>
-                  ))}
-                  {unmetDependencies.map((dependency) => (
-                    <Badge
-                      key={`${pass.id}-${dependency}`}
-                      variant="destructive"
-                      className="text-[11px]"
-                    >
-                      Blocked by {dependency}
-                    </Badge>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="flex items-start lg:justify-end">
-              {pass.status === "planned" ? (
-                <span className="rounded-md border border-[var(--relay-row-border)] px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                  {unmetDependencies.length > 0 ? "Blocked" : getActionLabel(pass)}
+              <div className="flex shrink-0 items-center gap-2 self-start sm:pt-0.5">
+                <span className="min-w-[68px] text-right font-mono text-[10px] text-muted-foreground/80">
+                  No run yet
                 </span>
-              ) : (
+
+                {action.kind === "waiting" ? (
+                  <span className="inline-flex h-6 items-center rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-2 text-[11px] text-muted-foreground">
+                    {action.label}
+                  </span>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    disabled
+                    title={action.title}
+                    className="rounded-sm px-2 text-[11px]"
+                  >
+                    {action.icon}
+                    {action.label}
+                  </Button>
+                )}
+
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled
-                  title="Pass detail arrives in UI-PLAN-04"
+                  variant="ghost"
+                  size="icon-xs"
+                  className="rounded-sm text-muted-foreground hover:text-foreground"
+                  onClick={() => copyText(pass.passId)}
+                  title={`Copy ${pass.passId}`}
                 >
-                  {getActionLabel(pass)}
+                  <Copy className="size-3" />
+                  <span className="sr-only">Copy pass ID</span>
                 </Button>
-              )}
+              </div>
             </div>
           </article>
         );

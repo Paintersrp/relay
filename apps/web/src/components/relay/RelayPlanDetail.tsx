@@ -1,31 +1,24 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Copy, Workflow } from "lucide-react";
+import { ArrowLeft, Copy } from "lucide-react";
 
-import { RelayMetaRow, RelayMonoText } from "@/components/relay/RelayMeta";
 import { RelayPlanPassTimeline } from "@/components/relay/RelayPlanPassTimeline";
 import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
 import {
   formatPlanDate,
   formatPlanDateRelative,
   getCurrentPass,
-  getNextRunnablePass,
   getPassStatusCounts,
+  getPlanDetailCardState,
+  getPlanDetailProgress,
   getPlanStatusLabel,
   getPlanStatusVariant,
   sortPassesBySequence,
 } from "@/components/relay/relayPlanVisualState";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { PlanAPIPass, PlanAPIReadPlan } from "@/features/relay-plans";
+import { cn } from "@/lib/utils";
 
 interface RelayPlanDetailProps {
   plan: PlanAPIReadPlan;
@@ -35,64 +28,30 @@ interface RelayPlanDetailProps {
 
 type CopyState = "idle" | "copied" | "failed";
 
-function getHeroState(
-  currentPass: PlanAPIPass | undefined,
-  nextPass: PlanAPIPass | undefined,
-  completionReady: boolean,
-  passCount: number,
-) {
-  if (currentPass) {
-    return {
-      eyebrow: "Current Pass",
-      title: currentPass.name,
-      subtitle: currentPass.goal,
-      badgeLabel: "Plan Active",
-      badgeVariant: "running" as const,
-      meta: currentPass.passId,
-    };
-  }
+function buildCopyContext(args: {
+  plan: PlanAPIReadPlan;
+  completionReady: boolean;
+  counts: ReturnType<typeof getPassStatusCounts>;
+  currentPass?: PlanAPIPass;
+}) {
+  const { plan, completionReady, counts, currentPass } = args;
 
-  if (nextPass) {
-    return {
-      eyebrow: "Next Runnable Pass",
-      title: nextPass.name,
-      subtitle: nextPass.goal,
-      badgeLabel: "Next Pass Ready",
-      badgeVariant: "info" as const,
-      meta: nextPass.passId,
-    };
-  }
-
-  if (completionReady) {
-    return {
-      eyebrow: "Plan State",
-      title: "Plan completion ready",
-      subtitle: "All passes are terminal and the plan is ready for completion handling.",
-      badgeLabel: "Completion Ready",
-      badgeVariant: "warning" as const,
-      meta: undefined,
-    };
-  }
-
-  if (passCount === 0) {
-    return {
-      eyebrow: "Plan State",
-      title: "No passes in plan",
-      subtitle: "This managed plan does not contain any pass records yet.",
-      badgeLabel: "Empty",
-      badgeVariant: "secondary" as const,
-      meta: undefined,
-    };
-  }
-
-  return {
-    eyebrow: "Plan State",
-    title: "No runnable pass",
-    subtitle: "Remaining work is blocked by unmet dependencies or waiting state transitions.",
-    badgeLabel: "Needs Attention",
-    badgeVariant: "destructive" as const,
-    meta: undefined,
-  };
+  return [
+    `Plan: ${plan.title}`,
+    `Plan ID: ${plan.planId}`,
+    `Repository: ${plan.repoTarget}`,
+    `Branch: ${plan.branchContext}`,
+    `Status: ${plan.status}`,
+    `Completion ready: ${completionReady ? "yes" : "no"}`,
+    currentPass ? `Current pass: ${currentPass.passId} - ${currentPass.name}` : "",
+    currentPass?.goal ? `Current pass goal: ${currentPass.goal}` : "",
+    currentPass?.intendedExecutionScope.length
+      ? `Current pass scope: ${currentPass.intendedExecutionScope.join(", ")}`
+      : "",
+    `Passes: ${counts.completed} completed, ${counts.inProgress} in progress, ${counts.planned} planned, ${counts.skipped} skipped`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function RelayPlanDetail({
@@ -102,269 +61,301 @@ export function RelayPlanDetail({
 }: RelayPlanDetailProps) {
   const sortedPasses = React.useMemo(() => sortPassesBySequence(passes), [passes]);
   const counts = React.useMemo(() => getPassStatusCounts(sortedPasses), [sortedPasses]);
+  const progress = React.useMemo(
+    () => getPlanDetailProgress(sortedPasses),
+    [sortedPasses],
+  );
   const currentPass = React.useMemo(() => getCurrentPass(sortedPasses), [sortedPasses]);
-  const nextPass = React.useMemo(() => getNextRunnablePass(sortedPasses), [sortedPasses]);
-  const heroState = getHeroState(currentPass, nextPass, completionReady, sortedPasses.length);
-  const [copyState, setCopyState] = React.useState<CopyState>("idle");
+  const cardState = React.useMemo(
+    () => getPlanDetailCardState({ plan, completionReady, currentPass }),
+    [plan, completionReady, currentPass],
+  );
+  const [planIdCopyState, setPlanIdCopyState] = React.useState<CopyState>("idle");
+  const [contextCopyState, setContextCopyState] = React.useState<CopyState>("idle");
 
-  const progressSegments =
-    counts.total > 0
-      ? [
-          { label: "Completed", value: counts.completed, className: "bg-[var(--success)]" },
-          { label: "In Progress", value: counts.inProgress, className: "bg-[var(--relay-accent)]" },
-          { label: "Planned", value: counts.planned, className: "bg-[var(--info)]" },
-          { label: "Skipped", value: counts.skipped, className: "bg-muted-foreground/50" },
-        ]
-      : [];
-
-  const copyContext = async () => {
-    const context = [
-      `Plan: ${plan.title}`,
-      `Plan ID: ${plan.planId}`,
-      `Repository: ${plan.repoTarget}`,
-      `Branch: ${plan.branchContext}`,
-      `Status: ${plan.status}`,
-      `Completion ready: ${completionReady ? "yes" : "no"}`,
-      currentPass ? `Current pass: ${currentPass.passId} - ${currentPass.name}` : "",
-      `Passes: ${counts.completed} completed, ${counts.inProgress} in progress, ${counts.planned} planned, ${counts.skipped} skipped`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
+  const copyPlanId = async () => {
     try {
       if (!navigator.clipboard) {
         throw new Error("Clipboard API unavailable");
       }
 
-      await navigator.clipboard.writeText(context);
-      setCopyState("copied");
+      await navigator.clipboard.writeText(plan.planId);
+      setPlanIdCopyState("copied");
     } catch {
-      setCopyState("failed");
+      setPlanIdCopyState("failed");
+    }
+  };
+
+  const copyContext = async () => {
+    try {
+      if (!navigator.clipboard) {
+        throw new Error("Clipboard API unavailable");
+      }
+
+      await navigator.clipboard.writeText(
+        buildCopyContext({ plan, completionReady, counts, currentPass }),
+      );
+      setContextCopyState("copied");
+    } catch {
+      setContextCopyState("failed");
     }
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 sm:p-6">
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink asChild>
-              <Link to="/plans" className="inline-flex items-center gap-1">
-                <ArrowLeft className="size-3.5" />
-                Plans
-              </Link>
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage>{plan.title}</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5">
+      <section className="border-b border-[var(--relay-row-border)] pb-4">
+        <div className="mb-3 flex items-center gap-1.5 text-xs">
+          <Link
+            to="/plans"
+            className="inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="size-3" />
+            Plans
+          </Link>
+          <span className="text-muted-foreground/60">·</span>
+          <span className="max-w-xs truncate text-[11px] text-muted-foreground sm:max-w-sm">
+            {plan.title}
+          </span>
+        </div>
 
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="min-w-0 text-2xl font-semibold leading-tight tracking-tight text-foreground">
+        <div className="mb-2.5 flex flex-wrap items-start gap-2.5">
+          <h1 className="min-w-0 text-xl font-semibold tracking-tight text-foreground">
             {plan.title}
           </h1>
-          <Badge variant={getPlanStatusVariant(plan.status)} className="text-[11px] font-medium">
+          <Badge
+            variant={getPlanStatusVariant(plan.status)}
+            className="h-auto rounded-sm px-2 py-0.5 text-[10px] font-medium tracking-wide"
+          >
             {getPlanStatusLabel(plan.status)}
           </Badge>
-          {completionReady ? (
-            <Badge variant="warning" className="text-[11px] font-medium">
+          {completionReady && plan.status === "active" ? (
+            <Badge
+              variant="warning"
+              className="h-auto rounded-sm px-2 py-0.5 text-[10px] font-medium tracking-wide"
+            >
               Completion Ready
             </Badge>
           ) : null}
         </div>
 
-        <p className="max-w-4xl text-sm leading-6 text-muted-foreground">{plan.goal}</p>
-
-        <RelayMetaRow className="gap-x-3 gap-y-2">
-          <RelayMonoText>{plan.planId}</RelayMonoText>
-          <RelayMonoText>{plan.repoTarget}</RelayMonoText>
-          <RelayMonoText>{plan.branchContext}</RelayMonoText>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+          <button
+            type="button"
+            onClick={copyPlanId}
+            className="group inline-flex items-center gap-1 font-mono text-muted-foreground transition-colors hover:text-foreground"
+            title="Copy plan ID"
+          >
+            <span>{plan.planId}</span>
+            <Copy className="size-3 opacity-50 transition-opacity group-hover:opacity-100" />
+            {planIdCopyState === "copied" ? (
+              <span className="text-[10px] text-[var(--success)]">Copied</span>
+            ) : null}
+            {planIdCopyState === "failed" ? (
+              <span className="text-[10px] text-destructive">Copy failed</span>
+            ) : null}
+          </button>
+          <span className="text-muted-foreground/60">·</span>
+          <span className="font-mono text-muted-foreground">{plan.repoTarget}</span>
+          <span className="text-muted-foreground/60">/</span>
+          <span className="font-mono text-muted-foreground">{plan.branchContext}</span>
           {plan.sourceArtifactPath ? (
-            <RelayMonoText className="break-all">{plan.sourceArtifactPath}</RelayMonoText>
+            <>
+              <span className="text-muted-foreground/60">·</span>
+              <span className="max-w-[280px] truncate font-mono text-muted-foreground">
+                {plan.sourceArtifactPath}
+              </span>
+            </>
           ) : null}
-          <span title={formatPlanDate(plan.updatedAt)}>
+          <span className="text-muted-foreground/60">·</span>
+          <span className="text-muted-foreground" title={formatPlanDate(plan.updatedAt)}>
             Updated {formatPlanDateRelative(plan.updatedAt)}
           </span>
-          <span title={formatPlanDate(plan.createdAt)}>
-            Created {formatPlanDate(plan.createdAt)}
-          </span>
-        </RelayMetaRow>
-      </section>
-
-      <section className="rounded-xl border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--relay-row-border)] bg-[var(--relay-panel-hover-bg)] text-[var(--relay-accent)]">
-              <Workflow className="size-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                {heroState.eyebrow}
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <h2 className="min-w-0 text-lg font-semibold text-foreground">
-                  {heroState.title}
-                </h2>
-                <Badge variant={heroState.badgeVariant} className="text-[11px] font-medium">
-                  {heroState.badgeLabel}
-                </Badge>
-                {heroState.meta ? (
-                  <RelayMonoText className="text-[11px] text-muted-foreground">
-                    {heroState.meta}
-                  </RelayMonoText>
-                ) : null}
-              </div>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {heroState.subtitle}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={copyContext}>
-              <Copy className="size-3.5" />
-              {copyState === "copied"
-                ? "Copied"
-                : copyState === "failed"
-                  ? "Copy failed"
-                  : "Copy context"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled
-              title="Pass detail arrives in UI-PLAN-04"
-            >
-              Open current pass
-            </Button>
-          </div>
         </div>
       </section>
 
-      <section className="rounded-xl border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-              Progress Summary
-            </p>
-            <h2 className="mt-1 text-lg font-semibold text-foreground">
-              {counts.completed + counts.skipped} of {counts.total} terminal
-            </h2>
+      <section className="relative border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-5 py-4">
+        <div
+          className={cn("absolute inset-y-0 left-0 w-[2px]", cardState.accentClassName)}
+        />
+
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1 pl-1">
+            <div
+              className={cn(
+                "font-mono text-[10px] uppercase tracking-[0.18em]",
+                cardState.eyebrowClassName,
+              )}
+            >
+              {cardState.eyebrow}
+            </div>
+            <div className="mt-1 text-sm font-medium leading-snug text-foreground">
+              {cardState.title}
+            </div>
+            {cardState.subtitle ? (
+              <div className="mt-1 max-w-xl truncate text-xs text-muted-foreground">
+                {cardState.subtitle}
+              </div>
+            ) : null}
           </div>
-          {completionReady ? (
-            <Badge variant="warning" className="text-[11px] font-medium">
-              Completion Ready
-            </Badge>
+
+          {plan.status === "active" ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="rounded-sm px-3 text-[11px]"
+                onClick={copyContext}
+              >
+                {contextCopyState === "copied"
+                  ? "Copied"
+                  : contextCopyState === "failed"
+                    ? "Copy failed"
+                    : "Copy context"}
+              </Button>
+              {currentPass ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  disabled
+                  title="Pass detail arrives in UI-PLAN-04"
+                  className="rounded-sm px-3 text-[11px]"
+                >
+                  Open current pass
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </div>
-
-        <div className="mt-4 h-3 overflow-hidden rounded-full bg-[var(--relay-row-border)]">
-          {progressSegments.length > 0 ? (
-            <div className="flex h-full w-full">
-              {progressSegments.map((segment) =>
-                segment.value > 0 ? (
-                  <div
-                    key={segment.label}
-                    className={segment.className}
-                    style={{ width: `${(segment.value / counts.total) * 100}%` }}
-                    title={`${segment.label}: ${segment.value}`}
-                  />
-                ) : null,
-              )}
-            </div>
-          ) : (
-            <div className="h-full w-full bg-[var(--relay-row-border)]" />
-          )}
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {[
-            ["Total", counts.total],
-            ["Completed", counts.completed],
-            ["In Progress", counts.inProgress],
-            ["Planned", counts.planned],
-            ["Skipped", counts.skipped],
-          ].map(([label, value]) => (
-            <div
-              key={label}
-              className="rounded-lg border border-[var(--relay-row-border)] bg-[var(--relay-panel-hover-bg)] p-3"
-            >
-              <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-                {label}
-              </p>
-              <p className="mt-1 text-lg font-semibold text-foreground">{value}</p>
-            </div>
-          ))}
-        </div>
       </section>
 
-      {sortedPasses.length > 0 ? (
-        <section className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                Pass Timeline
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-foreground">Execution passes</h2>
-            </div>
-            <span className="text-sm text-muted-foreground">{sortedPasses.length} passes</span>
+      {progress.total > 0 ? (
+        <section className="flex flex-wrap items-center gap-4 border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-5 py-3">
+          <div className="flex gap-px">
+            {Array.from({ length: progress.segmentCount }).map((_, index) => {
+              let className = "bg-[var(--relay-row-border)]";
+              if (index < progress.completedSegments) {
+                className = "bg-[var(--success)]/70";
+              } else if (
+                index <
+                progress.completedSegments + progress.inProgressSegments
+              ) {
+                className = "bg-[var(--relay-accent)]/80";
+              }
+
+              return (
+                <div
+                  key={`progress-segment-${index}`}
+                  className={cn("h-1.5 rounded-[1px]", className)}
+                  style={{ width: "8px" }}
+                />
+              );
+            })}
           </div>
 
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px]">
+            <span className="text-muted-foreground">{progress.total} passes</span>
+            {progress.completed > 0 ? (
+              <>
+                <span className="text-muted-foreground/60">·</span>
+                <span className="text-[var(--success)]">
+                  {progress.completed} completed
+                </span>
+              </>
+            ) : null}
+            {progress.inProgress > 0 ? (
+              <>
+                <span className="text-muted-foreground/60">·</span>
+                <span className="text-[var(--relay-accent)]">
+                  {progress.inProgress} in progress
+                </span>
+              </>
+            ) : null}
+            {progress.planned > 0 ? (
+              <>
+                <span className="text-muted-foreground/60">·</span>
+                <span className="text-muted-foreground">{progress.planned} planned</span>
+              </>
+            ) : null}
+            {progress.skipped > 0 ? (
+              <>
+                <span className="text-muted-foreground/60">·</span>
+                <span className="text-muted-foreground/80">{progress.skipped} skipped</span>
+              </>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {sortedPasses.length > 0 ? (
+        <section>
+          <div className="mb-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              Passes — {sortedPasses.length}
+            </span>
+          </div>
           <RelayPlanPassTimeline passes={sortedPasses} />
         </section>
       ) : (
         <RelayStateSurface
           tone="empty"
           title="No passes available"
-          description="This plan detail record loaded successfully, but it does not include any pass entries yet."
+          description="This plan detail loaded successfully, but it does not include any pass entries yet."
         />
       )}
 
-      <section className="rounded-xl border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4">
-        <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-          Plan Context
-        </p>
-        <div className="mt-4 grid gap-4 text-sm md:grid-cols-2">
-          <div>
-            <p className="text-xs font-medium text-muted-foreground">Source intent</p>
-            <p className="mt-1 leading-6 text-foreground">
+      <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
+        <div className="border-b border-[var(--relay-row-border)] px-5 py-2.5">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            Plan Context
+          </span>
+        </div>
+
+        {plan.sourceIntentSummary || plan.goal ? (
+          <div className="border-b border-[var(--relay-row-border)] px-5 py-3">
+            <div className="mb-1.5 text-[10px] text-muted-foreground">Source intent</div>
+            <div className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
               {plan.sourceIntentSummary || plan.goal}
-            </p>
+            </div>
           </div>
-          <div className="space-y-3">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Plan ID</p>
-              <RelayMonoText className="mt-1 block break-all">{plan.planId}</RelayMonoText>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Repository</p>
-              <RelayMonoText className="mt-1 block break-all">{plan.repoTarget}</RelayMonoText>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Branch</p>
-              <RelayMonoText className="mt-1 block break-all">{plan.branchContext}</RelayMonoText>
-            </div>
-            {plan.sourceArtifactPath ? (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground">
-                  Source artifact path
-                </p>
-                <RelayMonoText className="mt-1 block break-all">
-                  {plan.sourceArtifactPath}
-                </RelayMonoText>
-              </div>
-            ) : null}
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Updated</p>
-              <span className="mt-1 block text-muted-foreground">
-                {formatPlanDate(plan.updatedAt)}
+        ) : null}
+
+        <div className="flex flex-wrap gap-x-8 gap-y-3 px-5 py-3">
+          {plan.sourceArtifactPath ? (
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] text-muted-foreground">Artifact</span>
+              <span className="break-all font-mono text-[11px] text-foreground">
+                {plan.sourceArtifactPath}
               </span>
             </div>
+          ) : null}
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] text-muted-foreground">Repo</span>
+            <span className="break-all font-mono text-[11px] text-foreground">
+              {plan.repoTarget}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] text-muted-foreground">Branch</span>
+            <span className="break-all font-mono text-[11px] text-foreground">
+              {plan.branchContext}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] text-muted-foreground">Plan ID</span>
+            <span className="break-all font-mono text-[11px] text-foreground">
+              {plan.planId}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] text-muted-foreground">Updated</span>
+            <span
+              className="text-[11px] text-muted-foreground"
+              title={formatPlanDate(plan.updatedAt)}
+            >
+              {formatPlanDateRelative(plan.updatedAt)}
+            </span>
           </div>
         </div>
       </section>

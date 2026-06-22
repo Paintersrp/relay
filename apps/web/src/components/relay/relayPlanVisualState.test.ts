@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import type { PlanAPIReadPlan } from "@/features/relay-plans";
+import type { PlanAPIPass, PlanAPIReadPlan } from "@/features/relay-plans";
 import {
+  getCurrentPass,
+  getNextRunnablePass,
+  getPassStatusCounts,
+  getPlanDetailCardState,
+  getPlanDetailProgress,
   getPlanProgressSummary,
   getPlanRegistryPassSummary,
+  getUnmetDependencies,
 } from "./relayPlanVisualState";
 
 function buildPlan(overrides: Partial<PlanAPIReadPlan> = {}): PlanAPIReadPlan {
@@ -21,6 +27,24 @@ function buildPlan(overrides: Partial<PlanAPIReadPlan> = {}): PlanAPIReadPlan {
     updatedAt: "2026-06-21T00:00:00Z",
     passCount: 2,
     completionReady: false,
+    ...overrides,
+  };
+}
+
+function buildPass(overrides: Partial<PlanAPIPass> = {}): PlanAPIPass {
+  return {
+    id: "pass-row-1",
+    planRowId: "plan-row-1",
+    passId: "pass-1",
+    sequence: 1,
+    name: "Inspect target",
+    goal: "Align the detail layout",
+    intendedExecutionScope: ["apps/web/src/components/relay"],
+    nonGoals: [],
+    dependencies: [],
+    status: "planned",
+    createdAt: "2026-06-21T00:00:00Z",
+    updatedAt: "2026-06-21T00:00:00Z",
     ...overrides,
   };
 }
@@ -70,6 +94,24 @@ describe("relayPlanVisualState", () => {
     expect(summary.skipped).toBe(1);
     expect(summary.terminal).toBe(1);
     expect(summary.filledDots).toBe(1);
+  });
+
+  it("counts completed, in-progress, planned, skipped, and terminal passes accurately", () => {
+    const counts = getPassStatusCounts([
+      buildPass({ status: "completed" }),
+      buildPass({ id: "pass-row-2", passId: "pass-2", sequence: 2, status: "in_progress" }),
+      buildPass({ id: "pass-row-3", passId: "pass-3", sequence: 3, status: "planned" }),
+      buildPass({ id: "pass-row-4", passId: "pass-4", sequence: 4, status: "skipped" }),
+    ]);
+
+    expect(counts).toMatchObject({
+      completed: 1,
+      inProgress: 1,
+      planned: 1,
+      skipped: 1,
+      terminal: 2,
+      total: 4,
+    });
   });
 
   it("clamps overcounts to the total pass count", () => {
@@ -143,6 +185,139 @@ describe("relayPlanVisualState", () => {
       passId: "pass-2",
       title: "Implementation",
       subtitle: "Apply the scoped UI changes",
+    });
+  });
+
+  it("returns unmet dependencies for missing or non-terminal passes only", () => {
+    const passes = [
+      buildPass({ passId: "pass-1", status: "completed" }),
+      buildPass({ id: "pass-row-2", passId: "pass-2", sequence: 2, status: "planned" }),
+      buildPass({
+        id: "pass-row-3",
+        passId: "pass-3",
+        sequence: 3,
+        dependencies: ["pass-1", "pass-2", "pass-404"],
+      }),
+    ];
+
+    expect(getUnmetDependencies(passes[2], passes)).toEqual(["pass-2", "pass-404"]);
+  });
+
+  it("selects the first runnable planned pass", () => {
+    const passes = [
+      buildPass({ passId: "pass-1", status: "completed" }),
+      buildPass({
+        id: "pass-row-2",
+        passId: "pass-2",
+        sequence: 2,
+        dependencies: ["pass-1"],
+      }),
+      buildPass({
+        id: "pass-row-3",
+        passId: "pass-3",
+        sequence: 3,
+        dependencies: ["pass-9"],
+      }),
+    ];
+
+    expect(getNextRunnablePass(passes)?.passId).toBe("pass-2");
+  });
+
+  it("maps detail progress counts and segments from real pass statuses", () => {
+    const progress = getPlanDetailProgress([
+      buildPass({ status: "completed" }),
+      buildPass({ id: "pass-row-2", passId: "pass-2", sequence: 2, status: "in_progress" }),
+      buildPass({ id: "pass-row-3", passId: "pass-3", sequence: 3, status: "skipped" }),
+    ]);
+
+    expect(progress).toMatchObject({
+      completed: 1,
+      inProgress: 1,
+      planned: 0,
+      skipped: 1,
+      terminal: 2,
+      total: 3,
+      segmentCount: 3,
+      completedSegments: 1,
+      inProgressSegments: 1,
+    });
+  });
+
+  it("returns safe zero detail progress for empty pass lists", () => {
+    expect(getPlanDetailProgress([])).toMatchObject({
+      total: 0,
+      completed: 0,
+      inProgress: 0,
+      planned: 0,
+      skipped: 0,
+      terminal: 0,
+      segmentCount: 0,
+      completedSegments: 0,
+      inProgressSegments: 0,
+    });
+  });
+
+  it("maps an active current pass to the plan detail card state", () => {
+    const currentPass = buildPass({ status: "in_progress", name: "Execute remediation" });
+    const state = getPlanDetailCardState({
+      plan: buildPlan(),
+      completionReady: false,
+      currentPass: getCurrentPass([currentPass]),
+    });
+
+    expect(state).toMatchObject({
+      key: "active",
+      eyebrow: "PLAN ACTIVE",
+      title: "Execute remediation",
+      subtitle: "Align the detail layout",
+    });
+  });
+
+  it("maps an active plan without a current pass to the idle active card state", () => {
+    const state = getPlanDetailCardState({
+      plan: buildPlan(),
+      completionReady: false,
+    });
+
+    expect(state).toMatchObject({
+      key: "active",
+      title: "No pass currently in progress",
+    });
+  });
+
+  it("maps completion-ready plans to the review-ready card state", () => {
+    const state = getPlanDetailCardState({
+      plan: buildPlan(),
+      completionReady: true,
+    });
+
+    expect(state).toMatchObject({
+      key: "completion_ready",
+      title: "All passes complete — plan ready for review",
+    });
+  });
+
+  it("maps complete plans to the complete card state", () => {
+    const state = getPlanDetailCardState({
+      plan: buildPlan({ status: "complete" }),
+      completionReady: true,
+    });
+
+    expect(state).toMatchObject({
+      key: "complete",
+      title: "All planned passes completed successfully",
+    });
+  });
+
+  it("maps abandoned plans to the abandoned card state", () => {
+    const state = getPlanDetailCardState({
+      plan: buildPlan({ status: "abandoned" }),
+      completionReady: false,
+    });
+
+    expect(state).toMatchObject({
+      key: "abandoned",
+      title: "This plan is no longer active",
     });
   });
 });

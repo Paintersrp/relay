@@ -14,26 +14,26 @@ export const Route = createFileRoute("/plans/$planId")({
 function PlanDetailPage() {
   const { planId } = Route.useParams();
   const { data, isLoading, error } = useQuery(planDetailQueryOptions(planId));
+  const shellClassName = "mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5";
 
   return (
     <section className="min-h-0 flex-1 overflow-y-auto bg-[var(--relay-page-body-bg)]">
       {isLoading ? (
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 sm:p-6">
-          <Skeleton className="h-5 w-64" />
-          <div className="space-y-3">
-            <Skeleton className="h-8 w-96 max-w-full" />
-            <Skeleton className="h-4 w-full max-w-3xl" />
+        <div className={shellClassName}>
+          <div className="space-y-3 border-b border-[var(--relay-row-border)] pb-4">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-7 w-80 max-w-full" />
             <Skeleton className="h-4 w-full max-w-4xl" />
           </div>
-          <Skeleton className="h-32 w-full rounded-xl" />
-          <Skeleton className="h-24 w-full rounded-xl" />
-          <Skeleton className="h-72 w-full rounded-xl" />
-          <Skeleton className="h-40 w-full rounded-xl" />
+          <Skeleton className="h-28 w-full rounded" />
+          <Skeleton className="h-14 w-full rounded" />
+          <Skeleton className="h-72 w-full rounded" />
+          <Skeleton className="h-36 w-full rounded" />
         </div>
       ) : null}
 
       {!isLoading && error ? (
-        <div className="p-6">
+        <div className={shellClassName}>
           <RelayStateSurface
             tone="danger"
             title="Plan failed to load"
@@ -49,7 +49,7 @@ function PlanDetailPage() {
       ) : null}
 
       {!isLoading && !error && (!data?.plan || !data.passes) ? (
-        <div className="p-6">
+        <div className={shellClassName}>
           <RelayStateSurface
             tone="empty"
             title="Plan not available"

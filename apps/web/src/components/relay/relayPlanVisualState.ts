@@ -17,11 +17,34 @@ export type RelayPlanRegistryFilter =
 export interface PlanProgressSummary {
   total: number;
   completed: number;
+  inProgress: number;
+  planned: number;
   skipped: number;
   terminal: number;
   label: string;
   dotCount: number;
   filledDots: number;
+}
+
+export interface RelayPlanDetailProgress {
+  total: number;
+  completed: number;
+  inProgress: number;
+  planned: number;
+  skipped: number;
+  terminal: number;
+  segmentCount: number;
+  completedSegments: number;
+  inProgressSegments: number;
+}
+
+export interface RelayPlanDetailCardState {
+  key: "active" | "completion_ready" | "complete" | "abandoned";
+  eyebrow: string;
+  eyebrowClassName: string;
+  accentClassName: string;
+  title: string;
+  subtitle?: string;
 }
 
 export type PlanRegistryPassSummary =
@@ -85,6 +108,7 @@ export function getPassStatusCounts(passes: PlanAPIPass[]) {
       }
 
       counts.total += 1;
+      counts.terminal = counts.completed + counts.skipped;
       return counts;
     },
     {
@@ -92,6 +116,7 @@ export function getPassStatusCounts(passes: PlanAPIPass[]) {
       skipped: 0,
       inProgress: 0,
       planned: 0,
+      terminal: 0,
       total: 0,
     },
   );
@@ -120,6 +145,102 @@ export function getNextRunnablePass(
     (pass) =>
       pass.status === "planned" && getUnmetDependencies(pass, passes).length === 0,
   );
+}
+
+export function getPlanDetailCardState(args: {
+  plan: Pick<PlanAPIReadPlan, "status">;
+  completionReady: boolean;
+  currentPass?: Pick<PlanAPIPass, "name" | "goal">;
+}): RelayPlanDetailCardState {
+  const { plan, completionReady, currentPass } = args;
+
+  if (plan.status === "abandoned") {
+    return {
+      key: "abandoned",
+      eyebrow: "PLAN ABANDONED",
+      eyebrowClassName: "text-muted-foreground",
+      accentClassName: "bg-muted-foreground/45",
+      title: "This plan is no longer active",
+    };
+  }
+
+  if (plan.status === "complete") {
+    return {
+      key: "complete",
+      eyebrow: "PLAN COMPLETE",
+      eyebrowClassName: "text-[var(--success)]",
+      accentClassName: "bg-[var(--success)]",
+      title: "All planned passes completed successfully",
+    };
+  }
+
+  if (completionReady) {
+    return {
+      key: "completion_ready",
+      eyebrow: "COMPLETION READY",
+      eyebrowClassName: "text-[var(--warning)]",
+      accentClassName: "bg-[var(--warning)]",
+      title: "All passes complete — plan ready for review",
+    };
+  }
+
+  if (currentPass) {
+    return {
+      key: "active",
+      eyebrow: "PLAN ACTIVE",
+      eyebrowClassName: "text-[var(--relay-accent)]",
+      accentClassName: "bg-[var(--relay-accent)]",
+      title: currentPass.name,
+      subtitle: currentPass.goal,
+    };
+  }
+
+  return {
+    key: "active",
+    eyebrow: "PLAN ACTIVE",
+    eyebrowClassName: "text-[var(--relay-accent)]",
+    accentClassName: "bg-[var(--relay-accent)]",
+    title: "No pass currently in progress",
+  };
+}
+
+export function getPlanDetailProgress(
+  passes: PlanAPIPass[],
+  maxSegments = 12,
+): RelayPlanDetailProgress {
+  const counts = getPassStatusCounts(passes);
+  const segmentCount = counts.total > 0 ? Math.min(counts.total, maxSegments) : 0;
+
+  if (segmentCount === 0) {
+    return {
+      ...counts,
+      segmentCount: 0,
+      completedSegments: 0,
+      inProgressSegments: 0,
+    };
+  }
+
+  const completedSegments =
+    counts.total <= maxSegments
+      ? counts.completed
+      : Math.min(
+          segmentCount,
+          Math.round((counts.completed / counts.total) * maxSegments),
+        );
+  const inProgressSegments =
+    counts.total <= maxSegments
+      ? counts.inProgress
+      : Math.min(
+          Math.max(0, segmentCount - completedSegments),
+          Math.round((counts.inProgress / counts.total) * maxSegments),
+        );
+
+  return {
+    ...counts,
+    segmentCount,
+    completedSegments,
+    inProgressSegments,
+  };
 }
 
 export function getPlanStatusLabel(status: PlanAPIStatus): string {
@@ -230,11 +351,15 @@ export function getPlanProgressSummary(plan: PlanAPIReadPlan): PlanProgressSumma
         : 0,
     total,
   );
+  const inProgress = clampCount(plan.inProgressPassCount ?? 0, total);
+  const planned = clampCount(plan.plannedPassCount ?? 0, total);
   const skipped = clampCount(plan.skippedPassCount ?? 0, total);
 
   return {
     total,
     completed,
+    inProgress,
+    planned,
     skipped,
     terminal: completed,
     label: `${completed} / ${total}`,
