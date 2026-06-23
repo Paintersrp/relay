@@ -63,8 +63,8 @@ func TestServerToolsList_ContextBrokerEnabled(t *testing.T) {
 			t.Fatalf("expected broker tool %q when enabled", name)
 		}
 	}
-	if len(list.Tools) != 20 {
-		t.Fatalf("expected 20 total tools when broker is enabled, got %d", len(list.Tools))
+	if len(list.Tools) != 25 {
+		t.Fatalf("expected 25 total tools when broker is enabled, got %d", len(list.Tools))
 	}
 }
 
@@ -101,20 +101,25 @@ func TestContextBrokerToolSchemasAreBoundedAndSafe(t *testing.T) {
 func TestContextBrokerToolsRejectUnknownFields(t *testing.T) {
 	fixture := setupBrokerFixture(t)
 	argsByTool := map[string]string{
-		"get_project":                   `{"project_id":"relay","unexpected":true}`,
-		"get_plan":                      `{"plan_id":"plan-123","unexpected":true}`,
-		"get_pass":                      `{"plan_id":"plan-123","pass_id":"PASS-001","unexpected":true}`,
-		"get_pass_context":              `{"plan_id":"plan-123","pass_id":"PASS-001","unexpected":true}`,
-		"create_source_snapshot":        `{"project_id":"relay","unexpected":true}`,
-		"list_project_files":            `{"project_id":"relay","unexpected":true}`,
-		"search_project_files":          `{"project_id":"relay","pattern":"needle","unexpected":true}`,
-		"read_project_file":             `{"project_id":"relay","repo_id":"relay","path":"src/app.txt","unexpected":true}`,
-		"get_repository_git_status":     `{"project_id":"relay","repo_id":"relay","unexpected":true}`,
-		"get_repository_recent_commit":  `{"project_id":"relay","repo_id":"relay","unexpected":true}`,
-		"list_repository_changed_files": `{"project_id":"relay","repo_id":"relay","mode":"worktree","unexpected":true}`,
-		"get_repository_diff":           `{"project_id":"relay","repo_id":"relay","mode":"worktree","unexpected":true}`,
-		"create_context_packet":         `{"project_id":"relay","task_slug":"broker-unknown","source_snapshot_id":"srcsnap-test","include_inventory":true,"unexpected":true}`,
-		"get_context_packet":            `{"context_packet_id":"ctxpkt-test","unexpected":true}`,
+		"get_project":                      `{"project_id":"relay","unexpected":true}`,
+		"get_plan":                         `{"plan_id":"plan-123","unexpected":true}`,
+		"get_pass":                         `{"plan_id":"plan-123","pass_id":"PASS-001","unexpected":true}`,
+		"get_pass_context":                 `{"plan_id":"plan-123","pass_id":"PASS-001","unexpected":true}`,
+		"create_source_snapshot":           `{"project_id":"relay","unexpected":true}`,
+		"list_project_files":               `{"project_id":"relay","unexpected":true}`,
+		"search_project_files":             `{"project_id":"relay","pattern":"needle","unexpected":true}`,
+		"read_project_file":                `{"project_id":"relay","repo_id":"relay","path":"src/app.txt","unexpected":true}`,
+		"get_repository_git_status":        `{"project_id":"relay","repo_id":"relay","unexpected":true}`,
+		"get_repository_recent_commit":     `{"project_id":"relay","repo_id":"relay","unexpected":true}`,
+		"list_repository_changed_files":    `{"project_id":"relay","repo_id":"relay","mode":"worktree","unexpected":true}`,
+		"get_repository_diff":              `{"project_id":"relay","repo_id":"relay","mode":"worktree","unexpected":true}`,
+		"create_context_packet":            `{"project_id":"relay","task_slug":"broker-unknown","source_snapshot_id":"srcsnap-test","include_inventory":true,"unexpected":true}`,
+		"get_context_packet":               `{"context_packet_id":"ctxpkt-test","unexpected":true}`,
+		"search_project_context_memory":    `{"project_id":"relay","unexpected":true}`,
+		"list_project_context_records":     `{"project_id":"relay","unexpected":true}`,
+		"get_project_context_record":       `{"project_id":"relay","record_id":"ctxmem-test","unexpected":true}`,
+		"create_project_context_record":    `{"project_id":"relay","kind":"decision","title":"Durable","body":"Important durable context.","dedupe_reason":"Checked existing context first.","unexpected":true}`,
+		"supersede_project_context_record": `{"project_id":"relay","record_id":"ctxmem-test","kind":"decision","title":"Durable","body":"Important durable context.","dedupe_reason":"Checked existing context first.","unexpected":true}`,
 	}
 	for toolName, raw := range argsByTool {
 		t.Run(toolName, func(t *testing.T) {
@@ -866,6 +871,11 @@ func brokerToolNames() []string {
 		"get_repository_diff",
 		"create_context_packet",
 		"get_context_packet",
+		"search_project_context_memory",
+		"list_project_context_records",
+		"get_project_context_record",
+		"create_project_context_record",
+		"supersede_project_context_record",
 	}
 }
 

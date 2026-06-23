@@ -110,6 +110,11 @@ func TestServerToolsList_ExactMatch(t *testing.T) {
 		"get_repository_diff",
 		"create_context_packet",
 		"get_context_packet",
+		"search_project_context_memory",
+		"list_project_context_records",
+		"get_project_context_record",
+		"create_project_context_record",
+		"supersede_project_context_record",
 	}
 
 	if len(list.Tools) != len(expectedTools) {
@@ -165,6 +170,11 @@ func TestServerToolsList_BrokerEnabled_ExactMatch(t *testing.T) {
 		"get_repository_diff",
 		"create_context_packet",
 		"get_context_packet",
+		"search_project_context_memory",
+		"list_project_context_records",
+		"get_project_context_record",
+		"create_project_context_record",
+		"supersede_project_context_record",
 	}
 
 	if len(list.Tools) != len(expectedTools) {

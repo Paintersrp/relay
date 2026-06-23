@@ -258,6 +258,31 @@ func (s *Server) handleToolsCall(req Request) Response {
 			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 		}
 		result = s.HandleGetContextPacket(args)
+	case "search_project_context_memory":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleSearchProjectContextMemory(args)
+	case "list_project_context_records":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleListProjectContextRecords(args)
+	case "get_project_context_record":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGetProjectContextRecord(args)
+	case "create_project_context_record":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleCreateProjectContextRecord(args)
+	case "supersede_project_context_record":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleSupersedeProjectContextRecord(args)
 	default:
 		return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 	}

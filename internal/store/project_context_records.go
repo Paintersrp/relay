@@ -16,7 +16,7 @@ type SearchProjectContextRecordsParams = generated.SearchProjectContextRecordsPa
 type MarkProjectContextRecordSupersededParams = generated.MarkProjectContextRecordSupersededParams
 
 type SupersedeProjectContextRecordParams struct {
-	Create   CreateProjectContextRecordParams
+	Create  CreateProjectContextRecordParams
 	MarkOld MarkProjectContextRecordSupersededParams
 }
 

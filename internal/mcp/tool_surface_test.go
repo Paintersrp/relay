@@ -30,6 +30,11 @@ func TestDefaultLocalOperatorToolSurfaceIncludesAllSafeTools(t *testing.T) {
 		"get_repository_diff",
 		"create_context_packet",
 		"get_context_packet",
+		"search_project_context_memory",
+		"list_project_context_records",
+		"get_project_context_record",
+		"create_project_context_record",
+		"supersede_project_context_record",
 	}
 
 	if !reflect.DeepEqual(gotNames, expected) {
@@ -69,6 +74,11 @@ func TestRestrictedToolSurfaceHidesBrokerTools(t *testing.T) {
 		"get_repository_diff",
 		"create_context_packet",
 		"get_context_packet",
+		"search_project_context_memory",
+		"list_project_context_records",
+		"get_project_context_record",
+		"create_project_context_record",
+		"supersede_project_context_record",
 	}
 	for _, name := range gotNames {
 		for _, broker := range brokerTools {
@@ -128,6 +138,38 @@ func TestRestrictedGitBrokerToolCallIsUnknown(t *testing.T) {
 
 	if resp.Error == nil {
 		t.Fatal("expected error calling git broker tool in restricted mode, got success")
+	}
+	if resp.Error.Code != CodeMethodNotFound {
+		t.Errorf("expected error code %d (CodeMethodNotFound), got %d", CodeMethodNotFound, resp.Error.Code)
+	}
+	if !strings.Contains(resp.Error.Message, "unknown tool") {
+		t.Errorf("expected error message to contain 'unknown tool', got %q", resp.Error.Message)
+	}
+}
+
+func TestRestrictedMemoryBrokerToolCallIsUnknown(t *testing.T) {
+	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileRestricted})
+
+	reqJSON := `{
+		"jsonrpc": "2.0",
+		"id": 1,
+		"method": "tools/call",
+		"params": {
+			"name": "create_project_context_record",
+			"arguments": {
+				"project_id": "relay",
+				"kind": "decision",
+				"title": "Durable context",
+				"body": "Important long-form project context.",
+				"dedupe_reason": "Checked existing context first."
+			}
+		}
+	}`
+
+	resp := srv.handleLine([]byte(reqJSON))
+
+	if resp.Error == nil {
+		t.Fatal("expected error calling memory broker tool in restricted mode, got success")
 	}
 	if resp.Error.Code != CodeMethodNotFound {
 		t.Errorf("expected error code %d (CodeMethodNotFound), got %d", CodeMethodNotFound, resp.Error.Code)

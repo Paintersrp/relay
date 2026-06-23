@@ -27,14 +27,6 @@ WHERE project_row_id = ? AND context_record_id = ?;
 -- name: ListProjectContextRecords :many
 SELECT * FROM project_context_records
 WHERE project_row_id = ?
-  AND (sqlc.arg('kinds_json') = '' OR kind IN (SELECT value FROM json_each(sqlc.arg('kinds_json'))))
-  AND (sqlc.arg('statuses_json') = '' OR status IN (SELECT value FROM json_each(sqlc.arg('statuses_json'))))
-  AND (sqlc.arg('importance_json') = '' OR importance IN (SELECT value FROM json_each(sqlc.arg('importance_json'))))
-  AND (sqlc.arg('tags_json_filter') = '' OR EXISTS (
-    SELECT 1
-    FROM json_each(tags_json) record_tags
-    JOIN json_each(sqlc.arg('tags_json_filter')) requested_tags ON record_tags.value = requested_tags.value
-  ))
 ORDER BY
   CASE importance
     WHEN 'critical' THEN 4
@@ -49,15 +41,6 @@ LIMIT ?;
 -- name: SearchProjectContextRecords :many
 SELECT * FROM project_context_records
 WHERE project_row_id = ?
-  AND (sqlc.arg('query') = '' OR title LIKE '%' || sqlc.arg('query') || '%' OR body LIKE '%' || sqlc.arg('query') || '%')
-  AND (sqlc.arg('kinds_json') = '' OR kind IN (SELECT value FROM json_each(sqlc.arg('kinds_json'))))
-  AND (sqlc.arg('statuses_json') = '' OR status IN (SELECT value FROM json_each(sqlc.arg('statuses_json'))))
-  AND (sqlc.arg('importance_json') = '' OR importance IN (SELECT value FROM json_each(sqlc.arg('importance_json'))))
-  AND (sqlc.arg('tags_json_filter') = '' OR EXISTS (
-    SELECT 1
-    FROM json_each(tags_json) record_tags
-    JOIN json_each(sqlc.arg('tags_json_filter')) requested_tags ON record_tags.value = requested_tags.value
-  ))
 ORDER BY
   CASE importance
     WHEN 'critical' THEN 4

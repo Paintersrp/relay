@@ -39,16 +39,15 @@ func (s *Service) SearchProjectContextMemory(ctx context.Context, input SearchIn
 	}
 	limit, queryLimit := boundedLimit(input.Limit)
 	rows, err := s.store.SearchProjectContextRecords(ctx, store.SearchProjectContextRecordsParams{
-		ProjectRowID:   project.ID,
-		Query:          strings.TrimSpace(input.Query),
-		KindsJson:      filterJSON(input.Kinds),
-		StatusesJson:   filterJSON(statuses),
-		ImportanceJson: filterJSON(input.Importance),
-		TagsJsonFilter: filterJSON(normalizeTags(input.Tags)),
-		Limit:          int64(queryLimit),
+		ProjectRowID: project.ID,
+		Limit:        int64(MaxScanLimit),
 	})
 	if err != nil {
 		return SearchResult{}, err
+	}
+	rows = filterRows(rows, strings.TrimSpace(input.Query), input.Kinds, statuses, input.Importance, normalizeTags(input.Tags))
+	if len(rows) > queryLimit {
+		rows = rows[:queryLimit]
 	}
 	records, truncated := recordsFromRows(rows, limit, input.IncludeBody)
 	return SearchResult{ProjectID: project.ProjectID, Records: records, Limit: limit, Truncated: truncated, IncludeBody: input.IncludeBody}, nil
@@ -65,15 +64,15 @@ func (s *Service) ListProjectContextRecords(ctx context.Context, input ListInput
 	}
 	limit, queryLimit := boundedLimit(input.Limit)
 	rows, err := s.store.ListProjectContextRecords(ctx, store.ListProjectContextRecordsParams{
-		ProjectRowID:   project.ID,
-		KindsJson:      filterJSON(input.Kinds),
-		StatusesJson:   filterJSON(statuses),
-		ImportanceJson: filterJSON(input.Importance),
-		TagsJsonFilter: filterJSON(normalizeTags(input.Tags)),
-		Limit:          int64(queryLimit),
+		ProjectRowID: project.ID,
+		Limit:        int64(MaxScanLimit),
 	})
 	if err != nil {
 		return ListResult{}, err
+	}
+	rows = filterRows(rows, "", input.Kinds, statuses, input.Importance, normalizeTags(input.Tags))
+	if len(rows) > queryLimit {
+		rows = rows[:queryLimit]
 	}
 	records, truncated := recordsFromRows(rows, limit, false)
 	return ListResult{ProjectID: project.ProjectID, Records: records, Limit: limit, Truncated: truncated}, nil
@@ -142,16 +141,16 @@ func (s *Service) SupersedeProjectContextRecord(ctx context.Context, input Super
 		return nil, []ValidationIssue{issue("record_id", "not_active", "only active project context records can be superseded")}, nil
 	}
 	createInput := CreateInput{
-		ProjectID:     input.ProjectID,
-		Kind:          input.Kind,
-		Title:         input.Title,
-		Body:          input.Body,
-		Importance:    input.Importance,
-		Tags:          input.Tags,
-		Source:        input.Source,
-		CreatedBy:     input.CreatedBy,
-		DedupeReason:  input.DedupeReason,
-		SupersedesID:  old.ContextRecordID,
+		ProjectID:    input.ProjectID,
+		Kind:         input.Kind,
+		Title:        input.Title,
+		Body:         input.Body,
+		Importance:   input.Importance,
+		Tags:         input.Tags,
+		Source:       input.Source,
+		CreatedBy:    input.CreatedBy,
+		DedupeReason: input.DedupeReason,
+		SupersedesID: old.ContextRecordID,
 	}
 	_, issues, normalized, err := s.normalizeCreate(ctx, createInput)
 	if err != nil || len(issues) > 0 {
@@ -374,17 +373,62 @@ func boundedLimit(limit int) (int, int) {
 	return limit, limit + 1
 }
 
-func filterJSON(values []string) string {
-	if len(values) == 0 {
-		return ""
-	}
-	b, _ := json.Marshal(values)
-	return string(b)
-}
-
 func normalizeTags(values []string) []string {
 	tags, _ := normalizeTagsWithIssues(values)
 	return tags
+}
+
+func filterRows(rows []store.ProjectContextRecord, query string, kinds, statuses, importance, tags []string) []store.ProjectContextRecord {
+	kindSet := stringSet(kinds)
+	statusSet := stringSet(statuses)
+	importanceSet := stringSet(importance)
+	tagSet := stringSet(tags)
+	query = strings.ToLower(strings.TrimSpace(query))
+	filtered := make([]store.ProjectContextRecord, 0, len(rows))
+	for _, row := range rows {
+		if len(kindSet) > 0 && !setContains(kindSet, row.Kind) {
+			continue
+		}
+		if len(statusSet) > 0 && !setContains(statusSet, row.Status) {
+			continue
+		}
+		if len(importanceSet) > 0 && !setContains(importanceSet, row.Importance) {
+			continue
+		}
+		if len(tagSet) > 0 && !recordHasAnyTag(row.TagsJson, tagSet) {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(row.Title), query) && !strings.Contains(strings.ToLower(row.Body), query) {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	return filtered
+}
+
+func stringSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out[value] = struct{}{}
+		}
+	}
+	return out
+}
+
+func setContains(values map[string]struct{}, value string) bool {
+	_, ok := values[value]
+	return ok
+}
+
+func recordHasAnyTag(raw string, wanted map[string]struct{}) bool {
+	for _, tag := range decodeTags(raw) {
+		if setContains(wanted, tag) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeTagsWithIssues(values []string) ([]string, []ValidationIssue) {

@@ -36,6 +36,7 @@ const (
 
 	DefaultLimit = 20
 	MaxLimit     = 50
+	MaxScanLimit = 500
 
 	MaxTitleRunes   = 180
 	MaxBodyRunes    = 32768
@@ -113,16 +114,16 @@ type GetInput struct {
 }
 
 type CreateInput struct {
-	ProjectID     string
-	Kind          string
-	Title         string
-	Body          string
-	Importance    string
-	Tags          []string
-	Source        string
-	CreatedBy     string
-	DedupeReason  string
-	SupersedesID  string
+	ProjectID    string
+	Kind         string
+	Title        string
+	Body         string
+	Importance   string
+	Tags         []string
+	Source       string
+	CreatedBy    string
+	DedupeReason string
+	SupersedesID string
 }
 
 type SupersedeInput struct {

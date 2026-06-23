@@ -831,6 +831,11 @@ func contextBrokerToolDefinitions() []ToolDefinition {
 		ToolGetRepositoryDiff,
 		ToolCreateContextPacket,
 		ToolGetContextPacket,
+		ToolSearchProjectContextMemory,
+		ToolListProjectContextRecords,
+		ToolGetProjectContextRecord,
+		ToolCreateProjectContextRecord,
+		ToolSupersedeProjectContextRecord,
 	}
 }
 

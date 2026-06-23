@@ -172,14 +172,6 @@ func (q *Queries) GetProjectContextRecordByRecordID(ctx context.Context, arg Get
 const listProjectContextRecords = `-- name: ListProjectContextRecords :many
 SELECT id, context_record_id, project_row_id, project_id, kind, title, body, body_hash, status, importance, tags_json, source, created_by, dedupe_reason, redaction_status, supersedes_record_id, superseded_by_record_id, created_at, updated_at FROM project_context_records
 WHERE project_row_id = ?
-  AND (?3 = '' OR kind IN (SELECT value FROM json_each(?3)))
-  AND (?4 = '' OR status IN (SELECT value FROM json_each(?4)))
-  AND (?5 = '' OR importance IN (SELECT value FROM json_each(?5)))
-  AND (?6 = '' OR EXISTS (
-    SELECT 1
-    FROM json_each(tags_json) record_tags
-    JOIN json_each(?6) requested_tags ON record_tags.value = requested_tags.value
-  ))
 ORDER BY
   CASE importance
     WHEN 'critical' THEN 4
@@ -193,23 +185,12 @@ LIMIT ?
 `
 
 type ListProjectContextRecordsParams struct {
-	ProjectRowID   int64       `json:"project_row_id"`
-	KindsJson      interface{} `json:"kinds_json"`
-	StatusesJson   interface{} `json:"statuses_json"`
-	ImportanceJson interface{} `json:"importance_json"`
-	TagsJsonFilter interface{} `json:"tags_json_filter"`
-	Limit          int64       `json:"limit"`
+	ProjectRowID int64 `json:"project_row_id"`
+	Limit        int64 `json:"limit"`
 }
 
 func (q *Queries) ListProjectContextRecords(ctx context.Context, arg ListProjectContextRecordsParams) ([]ProjectContextRecord, error) {
-	rows, err := q.db.QueryContext(ctx, listProjectContextRecords,
-		arg.ProjectRowID,
-		arg.KindsJson,
-		arg.StatusesJson,
-		arg.ImportanceJson,
-		arg.TagsJsonFilter,
-		arg.Limit,
-	)
+	rows, err := q.db.QueryContext(ctx, listProjectContextRecords, arg.ProjectRowID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -297,15 +278,6 @@ func (q *Queries) MarkProjectContextRecordSuperseded(ctx context.Context, arg Ma
 const searchProjectContextRecords = `-- name: SearchProjectContextRecords :many
 SELECT id, context_record_id, project_row_id, project_id, kind, title, body, body_hash, status, importance, tags_json, source, created_by, dedupe_reason, redaction_status, supersedes_record_id, superseded_by_record_id, created_at, updated_at FROM project_context_records
 WHERE project_row_id = ?
-  AND (?3 = '' OR title LIKE '%' || ?3 || '%' OR body LIKE '%' || ?3 || '%')
-  AND (?4 = '' OR kind IN (SELECT value FROM json_each(?4)))
-  AND (?5 = '' OR status IN (SELECT value FROM json_each(?5)))
-  AND (?6 = '' OR importance IN (SELECT value FROM json_each(?6)))
-  AND (?7 = '' OR EXISTS (
-    SELECT 1
-    FROM json_each(tags_json) record_tags
-    JOIN json_each(?7) requested_tags ON record_tags.value = requested_tags.value
-  ))
 ORDER BY
   CASE importance
     WHEN 'critical' THEN 4
@@ -319,25 +291,12 @@ LIMIT ?
 `
 
 type SearchProjectContextRecordsParams struct {
-	ProjectRowID   int64       `json:"project_row_id"`
-	Query          interface{} `json:"query"`
-	KindsJson      interface{} `json:"kinds_json"`
-	StatusesJson   interface{} `json:"statuses_json"`
-	ImportanceJson interface{} `json:"importance_json"`
-	TagsJsonFilter interface{} `json:"tags_json_filter"`
-	Limit          int64       `json:"limit"`
+	ProjectRowID int64 `json:"project_row_id"`
+	Limit        int64 `json:"limit"`
 }
 
 func (q *Queries) SearchProjectContextRecords(ctx context.Context, arg SearchProjectContextRecordsParams) ([]ProjectContextRecord, error) {
-	rows, err := q.db.QueryContext(ctx, searchProjectContextRecords,
-		arg.ProjectRowID,
-		arg.Query,
-		arg.KindsJson,
-		arg.StatusesJson,
-		arg.ImportanceJson,
-		arg.TagsJsonFilter,
-		arg.Limit,
-	)
+	rows, err := q.db.QueryContext(ctx, searchProjectContextRecords, arg.ProjectRowID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
