@@ -1,4 +1,4 @@
-﻿package plans
+package plans
 
 import (
 	"context"
@@ -262,8 +262,13 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 			}), nil
 
 		case StatusPassBlocked:
-			// This pass is blocked; continue scanning.
-			continue
+			// A blocked pass prevents safe continuation. Only skipped or completed
+			// passes may be bypassed by next-pass selection.
+			return blockerResponse(WorkBlocker{
+				Code:        BlockerNoEligiblePass,
+				Message:     fmt.Sprintf("pass %q (seq %d) is blocked and prevents selecting a later pass", pass.PassID, pass.Sequence),
+				Recoverable: true,
+			}), nil
 
 		case StatusPassPlanned, StatusPassReadyForPlanner:
 			// Candidate -- check dependencies, runs, and context.

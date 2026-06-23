@@ -1,4 +1,4 @@
-﻿package plans
+package plans
 
 import (
 	"context"
@@ -129,7 +129,7 @@ func seedPlan(t *testing.T, st *store.Store, projectID, planID string) *store.Pl
 				Dependencies:           []string{"PASS-001"},
 				Status:                 "planned",
 				PassType:               "backend_vertical_slice",
-				ContextPlan: noContextRequirementsPlan(),
+				ContextPlan:            noContextRequirementsPlan(),
 				SourceSnapshotRequirements: SourceSnapshotRequirements{
 					RequireGitStatus:   boolPtr(false),
 					RequireCommitSHA:   boolPtr(false),
@@ -701,5 +701,29 @@ func TestGetNextPassWork_ReadyForPlannerIsEligible(t *testing.T) {
 	}
 	if resp.SelectedPass.PassID != "PASS-001" {
 		t.Fatalf("expected PASS-001, got %q", resp.SelectedPass.PassID)
+	}
+}
+
+func TestGetNextPassWork_BlockedPassPreventsAdvancement(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	seedPlan(t, st, "relay", "plan-blocked")
+
+	setPassStatus(t, st, "plan-blocked", "PASS-001", StatusPassBlocked)
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-blocked",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertBlockerCode(t, resp, BlockerNoEligiblePass)
+	if resp.SelectedPass != nil {
+		t.Fatalf("expected no selected pass when PASS-001 is blocked, got %+v", resp.SelectedPass)
+	}
+	if resp.SuggestedRunSubmission != nil {
+		t.Fatalf("expected no suggested run submission when PASS-001 is blocked, got %+v", resp.SuggestedRunSubmission)
 	}
 }
