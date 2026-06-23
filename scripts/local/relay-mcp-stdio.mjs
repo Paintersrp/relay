@@ -257,8 +257,10 @@ function runSelfTest(commandSpec) {
         return;
       }
 
+      const hasID = Object.prototype.hasOwnProperty.call(parsed, 'id');
       const id = parsed?.id;
-      if (id === undefined || id === null) {
+      if (!hasID || id === null || id === undefined) {
+        finish(new ValidationError(`Relay MCP produced an unexpected response without a valid id during self-test: ${trimmedLine}`));
         return;
       }
 
@@ -340,7 +342,7 @@ function runSelfTest(commandSpec) {
 
         send({
           jsonrpc: '2.0',
-          method: 'initialized',
+          method: 'notifications/initialized',
           params: {},
         });
 

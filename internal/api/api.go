@@ -2813,6 +2813,7 @@ func (h *APIHandler) buildAuditStatus(idStr string, run *store.Run) (*RelayAudit
 	decisionRecord := readAuditDecisionRecord(artifactsByRun, "audit_decision_json")
 
 	valSvc := validationrunner.NewService(h.store)
+	requiredValidation, _ := valSvc.RequiredCommandsInPacket(run.ID)
 	hasFinalValidationEvidence := valSvc.HasValidationArtifacts(run.ID)
 	hasAcceptanceArtifact := hasArtifactKind(artifactsByRun, "validation_failure_acceptance_json")
 	validationAllowsAudit := hasFinalValidationEvidence &&
@@ -2821,8 +2822,7 @@ func (h *APIHandler) buildAuditStatus(idStr string, run *store.Run) (*RelayAudit
 	canGenerateAudit := false
 	switch run.Status {
 	case executor.StatusExecutorDone, executor.StatusExecutorBlocked:
-		required, _ := valSvc.RequiredCommandsInPacket(run.ID)
-		canGenerateAudit = !required || validationAllowsAudit
+		canGenerateAudit = !requiredValidation || validationAllowsAudit
 	case "validation_passed", "validation_failed_accepted":
 		canGenerateAudit = validationAllowsAudit
 	}
@@ -2851,6 +2851,10 @@ func (h *APIHandler) buildAuditStatus(idStr string, run *store.Run) (*RelayAudit
 	switch run.Status {
 	case "local_validation_running":
 		blockers = append(blockers, "Local validation is still running.")
+	case executor.StatusExecutorDone, executor.StatusExecutorBlocked:
+		if requiredValidation && !hasFinalValidationEvidence {
+			blockers = append(blockers, "Audit generation requires existing validation artifacts. Run validation explicitly via POST /api/runs/"+idStr+"/validate before generating audit.")
+		}
 	case "validation_failed":
 		blockers = append(blockers, "Validation failed. Accept the failed validation with a reason or rerun validation before generating audit.")
 	case "revision_required":
@@ -2993,27 +2997,14 @@ func (h *APIHandler) GenerateAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If run is executor_done or executor_blocked and validation artifacts are missing, run validation first
+	// Audit generation is artifact-backed only. Required validation must be run explicitly first.
 	run, err := h.store.GetRun(id)
 	if err == nil && (run.Status == executor.StatusExecutorDone || run.Status == executor.StatusExecutorBlocked) {
 		valSvc := validationrunner.NewService(h.store)
 		required, _ := valSvc.RequiredCommandsInPacket(id)
 		if required && !valSvc.HasValidationArtifacts(id) {
-			_, valErr := valSvc.RunValidation(r.Context(), id)
-			if valErr != nil {
-				_, _ = h.store.CreateEvent(id, "warn", "Auto-validation before audit failed: "+valErr.Error())
-			}
-			// Re-check: if validation still lacks complete artifacts, block audit
-			if !valSvc.HasValidationArtifacts(id) {
-				writeError(w, http.StatusConflict, "CONFLICT", "Auto-validation before audit failed: required validation artifacts are missing — run validation explicitly via POST /api/runs/"+idStr+"/validate")
-				return
-			}
-			// Check post-validation run status
-			updatedRun, _ := h.store.GetRun(id)
-			if updatedRun != nil && updatedRun.Status == "validation_failed" {
-				writeError(w, http.StatusConflict, "CONFLICT", "Auto-validation before audit failed: required validation commands failed — run validation explicitly via POST /api/runs/"+idStr+"/validate")
-				return
-			}
+			writeError(w, http.StatusConflict, "CONFLICT", "Audit generation requires existing validation artifacts. Run validation explicitly via POST /api/runs/"+idStr+"/validate before generating audit.")
+			return
 		}
 	}
 

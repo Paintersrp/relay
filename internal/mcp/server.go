@@ -99,21 +99,30 @@ func (s *Server) handleLine(line []byte) Response {
 // handleLineWithSkip dispatches a single JSON-RPC 2.0 request line.
 // skip is true for notifications that must not produce a response.
 func (s *Server) handleLineWithSkip(line []byte) (resp Response, skip bool) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(line, &envelope); err != nil {
+		return errResponse(nil, CodeParseError, "parse error: "+err.Error()), false
+	}
+
 	var req Request
 	if err := json.Unmarshal(line, &req); err != nil {
-		return errResponse(nil, CodeParseError, "parse error: "+err.Error()), false
+		return errResponse(nil, CodeInvalidRequest, "invalid request: "+err.Error()), false
 	}
 
 	if s.log != nil {
 		s.log.Debug("mcp request", "method", req.Method)
 	}
 
+	if _, hasID := envelope["id"]; !hasID {
+		if s.log != nil {
+			s.log.Debug("mcp notification ignored", "method", req.Method)
+		}
+		return Response{}, true
+	}
+
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req), false
-	case "initialized":
-		// Notification per MCP spec — no ID, no response written.
-		return Response{}, true
 	case "tools/list":
 		return s.handleToolsList(req), false
 	case "tools/call":

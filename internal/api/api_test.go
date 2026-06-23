@@ -859,6 +859,153 @@ func TestAPI(t *testing.T) {
 		s.CreateArtifact(auditRun.ID, "executor_result", execResultPath, "text/plain")
 	}
 
+	t.Run("AUDIT: Generate Audit requires explicit validation artifacts and does not auto-run validation", func(t *testing.T) {
+		run, err := s.CreateRun(repo.ID, "Audit Missing Validation", "executor_done", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create audit missing validation run: %v", err)
+		}
+		runIDStr := strconv.FormatInt(run.ID, 10)
+
+		executorResultPath, err := artifacts.Write(run.ID, "executor_result", "executor_result.txt", []byte("STATUS: DONE\nBuild status: pass\nTest status: pass\nCount of LOC changed: 3\n"))
+		if err != nil {
+			t.Fatalf("write executor result: %v", err)
+		}
+		if _, err := s.CreateArtifact(run.ID, "executor_result", executorResultPath, "text/plain"); err != nil {
+			t.Fatalf("create executor result artifact: %v", err)
+		}
+
+		requiredValidationPacket := []byte(`{
+			"execution_payload": {
+				"goal": "test explicit validation gating",
+				"scope": "audit endpoint behavior",
+				"non_goals": [],
+				"file_targets": [],
+				"validation_commands": [
+					{
+						"id": "V1",
+						"command": "cmd /c exit 0",
+						"required": true,
+						"purpose": "prove validation stays explicit",
+						"success_signal": "0",
+						"failure_handling": "block"
+					}
+				]
+			},
+			"audit_seed": {
+				"audit_checklist": []
+			}
+		}`)
+		packetPath, err := artifacts.Write(run.ID, "canonical_packet", "canonical_packet.json", requiredValidationPacket)
+		if err != nil {
+			t.Fatalf("write canonical packet: %v", err)
+		}
+		if _, err := s.CreateArtifact(run.ID, "canonical_packet", packetPath, "application/json"); err != nil {
+			t.Fatalf("create canonical packet artifact: %v", err)
+		}
+
+		req := httptest.NewRequest("POST", "/api/runs/"+runIDStr+"/audit", nil)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusConflict {
+			t.Fatalf("expected 409, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		expectedMessage := "Audit generation requires existing validation artifacts. Run validation explicitly via POST /api/runs/" + runIDStr + "/validate before generating audit."
+		if resp["message"] != expectedMessage {
+			t.Fatalf("expected message %q, got %v", expectedMessage, resp["message"])
+		}
+
+		events, err := s.ListEventsByRun(run.ID)
+		if err != nil {
+			t.Fatalf("list events: %v", err)
+		}
+		for _, event := range events {
+			if strings.Contains(event.Message, "Auto-validation before audit failed") {
+				t.Fatalf("unexpected auto-validation event: %q", event.Message)
+			}
+		}
+
+		for _, kind := range []string{"validation_run_json", "validation_stdout", "validation_stderr"} {
+			arts, err := s.ListArtifactsByRunKind(run.ID, kind)
+			if err != nil {
+				t.Fatalf("list %s artifacts: %v", kind, err)
+			}
+			if len(arts) != 0 {
+				t.Fatalf("expected no %s artifacts, found %d", kind, len(arts))
+			}
+		}
+	})
+
+	t.Run("AUDIT: Status endpoint reports missing validation evidence blocker", func(t *testing.T) {
+		run, err := s.CreateRun(repo.ID, "Audit Status Missing Validation", "executor_done", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create status test run: %v", err)
+		}
+		runIDStr := strconv.FormatInt(run.ID, 10)
+
+		requiredValidationPacket := []byte(`{
+			"execution_payload": {
+				"goal": "test audit status gating",
+				"scope": "audit status endpoint behavior",
+				"non_goals": [],
+				"file_targets": [],
+				"validation_commands": [
+					{
+						"id": "V1",
+						"command": "cmd /c exit 0",
+						"required": true,
+						"purpose": "status blocker",
+						"success_signal": "0",
+						"failure_handling": "block"
+					}
+				]
+			},
+			"audit_seed": {
+				"audit_checklist": []
+			}
+		}`)
+		packetPath, err := artifacts.Write(run.ID, "canonical_packet", "canonical_packet.json", requiredValidationPacket)
+		if err != nil {
+			t.Fatalf("write canonical packet: %v", err)
+		}
+		if _, err := s.CreateArtifact(run.ID, "canonical_packet", packetPath, "application/json"); err != nil {
+			t.Fatalf("create canonical packet artifact: %v", err)
+		}
+
+		req := httptest.NewRequest("GET", "/api/runs/"+runIDStr+"/audit/status", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp RelayAuditStatus
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp.CanGenerateAudit {
+			t.Fatal("expected canGenerateAudit=false when required validation artifacts are missing")
+		}
+		expectedBlocker := "Audit generation requires existing validation artifacts. Run validation explicitly via POST /api/runs/" + runIDStr + "/validate before generating audit."
+		found := false
+		for _, blocker := range resp.Blockers {
+			if blocker == expectedBlocker {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected blocker %q, got %+v", expectedBlocker, resp.Blockers)
+		}
+	})
+
 	t.Run("AUDIT: Generate Audit succeeds from executor_done", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/api/runs/"+auditIDStr+"/audit", nil)
 		req.Header.Set("Content-Type", "application/json")
