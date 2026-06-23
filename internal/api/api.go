@@ -3513,3 +3513,80 @@ func (h *APIHandler) GetNextPassWork(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, resp)
 }
+
+// GetNextAuditWork returns the next eligible audit-ready work packet for a
+// project-scoped plan. It is a read-only endpoint.
+//
+// Route: GET /api/projects/{projectId}/plans/{planId}/next-audit-work
+func (h *APIHandler) GetNextAuditWork(w http.ResponseWriter, r *http.Request) {
+	projectID := strings.TrimSpace(chi.URLParam(r, "projectId"))
+	planID := strings.TrimSpace(chi.URLParam(r, "planId"))
+	passID, ok := resolveOptionalQueryAlias(r, "passId", "pass_id")
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, plans.NextAuditWorkResponse{
+			OK:   false,
+			Tool: plans.NextAuditWorkTool,
+			Blockers: []plans.WorkBlocker{{
+				Code:        plans.BlockerUnsafeRequest,
+				Message:     "passId and pass_id query parameters conflict",
+				Recoverable: true,
+			}},
+		})
+		return
+	}
+	runID, ok := resolveOptionalQueryAlias(r, "runId", "run_id")
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, plans.NextAuditWorkResponse{
+			OK:   false,
+			Tool: plans.NextAuditWorkTool,
+			Blockers: []plans.WorkBlocker{{
+				Code:        plans.BlockerUnsafeRequest,
+				Message:     "runId and run_id query parameters conflict",
+				Recoverable: true,
+			}},
+		})
+		return
+	}
+
+	response, err := h.orchestratorWorkService.GetNextAuditWork(r.Context(), plans.NextAuditWorkRequest{
+		ProjectID: projectID,
+		PlanID:    planID,
+		PassID:    passID,
+		RunID:     runID,
+	})
+	if err != nil {
+		h.log.Error("GetNextAuditWork internal error", "projectId", projectID, "planId", planID, "error", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "an unexpected error occurred")
+		return
+	}
+
+	status := http.StatusOK
+	if !response.OK && hasOnlyUnsafeRequestBlockers(response.Blockers) {
+		status = http.StatusBadRequest
+	}
+	writeJSON(w, status, response)
+}
+
+func resolveOptionalQueryAlias(r *http.Request, camel, snake string) (string, bool) {
+	valCamel := r.URL.Query().Get(camel)
+	valSnake := r.URL.Query().Get(snake)
+	if valCamel != "" && valSnake != "" && valCamel != valSnake {
+		return "", false
+	}
+	if valCamel != "" {
+		return valCamel, true
+	}
+	return valSnake, true
+}
+
+func hasOnlyUnsafeRequestBlockers(blockers []plans.WorkBlocker) bool {
+	if len(blockers) == 0 {
+		return false
+	}
+	for _, b := range blockers {
+		if b.Code != plans.BlockerUnsafeRequest {
+			return false
+		}
+	}
+	return true
+}
