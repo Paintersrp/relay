@@ -53,7 +53,14 @@ func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 		ToolGetRunStatus,
 		ToolSubmitAuditPacket,
 	}
+	if s.contextBrokerEnabled() {
+		s.tools = append(s.tools, contextBrokerToolDefinitions()...)
+	}
 	return s
+}
+
+func (s *Server) contextBrokerEnabled() bool {
+	return s != nil && s.deps != nil && s.deps.ContextBrokerEnabled
 }
 
 // Serve reads JSON-RPC 2.0 requests from r and writes responses to w until r
@@ -164,6 +171,56 @@ func (s *Server) handleToolsCall(req Request) Response {
 		result = s.HandleGetRunStatus(args)
 	case "submit_audit_packet":
 		result = s.HandleSubmitAuditPacket(args)
+	case "get_project":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGetProject(args)
+	case "get_plan":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGetPlan(args)
+	case "get_pass":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGetPass(args)
+	case "get_pass_context":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGetPassContext(args)
+	case "create_source_snapshot":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleCreateSourceSnapshot(args)
+	case "list_project_files":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleListProjectFiles(args)
+	case "search_project_files":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleSearchProjectFiles(args)
+	case "read_project_file":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleReadProjectFile(args)
+	case "create_context_packet":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleCreateContextPacket(args)
+	case "get_context_packet":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGetContextPacket(args)
 	default:
 		return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 	}
