@@ -93,11 +93,8 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
 
-	// Expose ChatGPT-facing remote MCP endpoint
-	mcpDeps := &mcp.MCPDeps{
-		Store: s,
-		Log:   log,
-	}
+	// Expose ChatGPT-facing remote MCP endpoint.
+	mcpDeps := mcp.NewDepsFromEnv(s, log)
 	mcpSrv := mcp.NewServer(log, mcpDeps)
 	mcpHandler := mcp.NewHTTPHandler(mcpSrv, log)
 	r.Handle("/mcp", mcpHandler)

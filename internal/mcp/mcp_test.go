@@ -192,7 +192,7 @@ func TestHandleSubmitTestAuditPacket_NoGitOrShellMutation(t *testing.T) {
 
 // TestServerToolsList_Pass16 verifies that the MCP server advertises exactly 6 tools.
 func TestServerToolsList_Pass16(t *testing.T) {
-	srv := NewServer(discardLogger())
+	srv := NewServer(discardLogger(), &MCPDeps{ToolProfile: ToolProfileRestricted})
 	req := Request{
 		JSONRPC: JSONRPCVersion,
 		ID:      json.RawMessage(`1`),

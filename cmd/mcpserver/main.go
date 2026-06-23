@@ -31,7 +31,6 @@ package main
 import (
 	"log/slog"
 	"os"
-	"strconv"
 
 	"relay/internal/artifacts"
 	"relay/internal/config"
@@ -73,19 +72,8 @@ func main() {
 		"artifacts_dir", artifactsDir,
 	)
 
-	deps := &mcp.MCPDeps{
-		Store:                s,
-		Log:                  log,
-		ContextBrokerEnabled: false,
-	}
-	if raw := os.Getenv("RELAY_MCP_CONTEXT_BROKER_ENABLED"); raw != "" {
-		enabled, parseErr := strconv.ParseBool(raw)
-		if parseErr != nil {
-			log.Warn("invalid RELAY_MCP_CONTEXT_BROKER_ENABLED value", "value", raw, "error", parseErr)
-		} else {
-			deps.ContextBrokerEnabled = enabled
-		}
-	}
+	deps := mcp.NewDepsFromEnv(s, log)
+	log.Info("relay MCP profile selected", "mcp_profile", deps.ToolProfile)
 
 	srv := mcp.NewServer(log, deps)
 	if err := srv.Serve(os.Stdin, os.Stdout); err != nil {

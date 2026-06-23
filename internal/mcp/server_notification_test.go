@@ -96,6 +96,16 @@ func TestServerToolsList_ExactMatch(t *testing.T) {
 		"list_open_runs",
 		"get_run_status",
 		"submit_audit_packet",
+		"get_project",
+		"get_plan",
+		"get_pass",
+		"get_pass_context",
+		"create_source_snapshot",
+		"list_project_files",
+		"search_project_files",
+		"read_project_file",
+		"create_context_packet",
+		"get_context_packet",
 	}
 
 	if len(list.Tools) != len(expectedTools) {
@@ -111,6 +121,7 @@ func TestServerToolsList_ExactMatch(t *testing.T) {
 
 func TestServerToolsList_BrokerEnabled_ExactMatch(t *testing.T) {
 	deps := setupTestDeps(t)
+	deps.ToolProfile = ToolProfileLocalOperator
 	deps.ContextBrokerEnabled = true
 	srv := NewServer(discardLogger(), deps)
 	req := Request{

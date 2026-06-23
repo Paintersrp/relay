@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 )
 
 // Server is the MCP stdio server. It reads newline-delimited JSON-RPC 2.0
@@ -60,7 +61,14 @@ func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 }
 
 func (s *Server) contextBrokerEnabled() bool {
-	return s != nil && s.deps != nil && s.deps.ContextBrokerEnabled
+	if s == nil {
+		return false
+	}
+	profile := ToolProfileLocalOperator
+	if s.deps != nil && strings.TrimSpace(string(s.deps.ToolProfile)) != "" {
+		profile = s.deps.ToolProfile
+	}
+	return profile.ContextBrokerEnabled()
 }
 
 // Serve reads JSON-RPC 2.0 requests from r and writes responses to w until r

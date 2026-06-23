@@ -36,6 +36,7 @@ type brokerErrorEnvelope struct {
 
 func TestServerToolsList_ContextBrokerDisabled(t *testing.T) {
 	deps := setupTestDeps(t)
+	deps.ToolProfile = ToolProfileRestricted
 	deps.ContextBrokerEnabled = false
 	srv := NewServer(discardLogger(), deps)
 
@@ -52,6 +53,7 @@ func TestServerToolsList_ContextBrokerDisabled(t *testing.T) {
 
 func TestServerToolsList_ContextBrokerEnabled(t *testing.T) {
 	deps := setupTestDeps(t)
+	deps.ToolProfile = ToolProfileLocalOperator
 	deps.ContextBrokerEnabled = true
 	srv := NewServer(discardLogger(), deps)
 

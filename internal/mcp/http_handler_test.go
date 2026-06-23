@@ -111,6 +111,7 @@ func TestHTTPHandler_Auth(t *testing.T) {
 
 func TestHTTPHandler_Protocol(t *testing.T) {
 	deps := setupTestDeps(t)
+	deps.ToolProfile = ToolProfileRestricted
 	srv := NewServer(discardLogger(), deps)
 	h := &HTTPHandler{
 		server:      srv,
@@ -419,3 +420,105 @@ func TestHTTPHandler_Protocol(t *testing.T) {
 		}
 	})
 }
+
+func TestHTTPHandlerToolsListUsesServerToolSurface(t *testing.T) {
+	t.Setenv("RELAY_MCP_DISABLE_AUTH", "true")
+
+	t.Run("LocalOperatorProfileIncludesBrokerTools", func(t *testing.T) {
+		srv := NewServer(discardLogger(), &MCPDeps{ToolProfile: ToolProfileLocalOperator})
+		h := NewHTTPHandler(srv, discardLogger())
+
+		body := mustMarshal(t, Request{
+			JSONRPC: JSONRPCVersion,
+			ID:      json.RawMessage(`1`),
+			Method:  "tools/list",
+		})
+		req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+
+		var resp Response
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal response: %v", err)
+		}
+
+		var toolsResult ToolsListResult
+		b, _ := json.Marshal(resp.Result)
+		if err := json.Unmarshal(b, &toolsResult); err != nil {
+			t.Fatalf("unmarshal tools: %v", err)
+		}
+
+		hasGetProject := false
+		hasCreateContextPacket := false
+		for _, tool := range toolsResult.Tools {
+			if tool.Name == "get_project" {
+				hasGetProject = true
+			}
+			if tool.Name == "create_context_packet" {
+				hasCreateContextPacket = true
+			}
+		}
+
+		if !hasGetProject || !hasCreateContextPacket {
+			t.Errorf("expected get_project and create_context_packet in local-operator tool surface")
+		}
+	})
+
+	t.Run("RestrictedProfileExcludesBrokerTools", func(t *testing.T) {
+		srv := NewServer(discardLogger(), &MCPDeps{ToolProfile: ToolProfileRestricted})
+		h := NewHTTPHandler(srv, discardLogger())
+
+		body := mustMarshal(t, Request{
+			JSONRPC: JSONRPCVersion,
+			ID:      json.RawMessage(`2`),
+			Method:  "tools/list",
+		})
+		req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+
+		var resp Response
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal response: %v", err)
+		}
+
+		var toolsResult ToolsListResult
+		b, _ := json.Marshal(resp.Result)
+		if err := json.Unmarshal(b, &toolsResult); err != nil {
+			t.Fatalf("unmarshal tools: %v", err)
+		}
+
+		hasGetProject := false
+		hasCreateContextPacket := false
+		hasCreateRun := false
+		for _, tool := range toolsResult.Tools {
+			if tool.Name == "get_project" {
+				hasGetProject = true
+			}
+			if tool.Name == "create_context_packet" {
+				hasCreateContextPacket = true
+			}
+			if tool.Name == "create_run_from_planner_handoff" {
+				hasCreateRun = true
+			}
+		}
+
+		if hasGetProject || hasCreateContextPacket {
+			t.Errorf("did not expect get_project or create_context_packet in restricted tool surface")
+		}
+		if !hasCreateRun {
+			t.Errorf("expected create_run_from_planner_handoff to be present in restricted tool surface")
+		}
+	})
+}
+
