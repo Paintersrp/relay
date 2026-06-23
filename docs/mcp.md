@@ -195,6 +195,7 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 - When `plan_id`/`pass_id` point to an existing open plan/pass, the new run is associated with that pass and the pass status moves to `in_progress` only after run creation and provenance persistence succeed.
 - Audit acceptance for an associated run moves the pass to `completed`.
 - Audit revision for an associated run keeps/returns the pass to `in_progress`.
+- Compatibility note: this documents current pre-PASS-002 runtime behavior. The project-scoped orchestrator contract defines `revision_required` as a distinct pass/work state that blocks advancement and returns the same managed pass/run for repair or follow-up. Later runtime passes own migrating persistence and transition behavior from this current `in_progress` fallback to the expanded state model.
 - Provenance records include the handoff SHA-256, byte length, bounded handoff metadata, source/client trace data, optional plan/pass association, and optional `context_packet_id` / `source_snapshot_id`.
 
 ---
