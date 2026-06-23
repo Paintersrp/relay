@@ -174,6 +174,74 @@ func TestReadProjectFileDefaultLineCapTruncates(t *testing.T) {
 	}
 }
 
+func TestReadProjectFileBlocksWhenFileChangedAfterSnapshot(t *testing.T) {
+	requireGit(t)
+	service, snapshotID, repoRoot := setupSourceSnapshotFixtureWithRoot(t, sourceFixtureOptions{})
+
+	original, err := service.ReadProjectFile(t.Context(), BoundedFileReadInput{
+		ProjectID:        "relay",
+		SourceSnapshotID: snapshotID,
+		RepoID:           "relay",
+		Path:             "src/app.txt",
+	})
+	if err != nil {
+		t.Fatalf("ReadProjectFile original error: %v", err)
+	}
+	if original.ContentHash == "" || original.CurrentHash == "" || original.ContentHash != original.CurrentHash {
+		t.Fatalf("expected matching snapshot/current hash before mutation, got %+v", original)
+	}
+
+	writeFile(t, filepath.Join(repoRoot, "src", "app.txt"), "line one\nchanged\nline three\n")
+	changed, err := service.ReadProjectFile(t.Context(), BoundedFileReadInput{
+		ProjectID:        "relay",
+		SourceSnapshotID: snapshotID,
+		RepoID:           "relay",
+		Path:             "src/app.txt",
+	})
+	if err != nil {
+		t.Fatalf("ReadProjectFile changed error: %v", err)
+	}
+	if len(changed.Blockers) != 1 || changed.Blockers[0].Code != SourceBlockerSnapshotFileChanged {
+		t.Fatalf("expected source_snapshot_file_changed blocker, got %+v", changed.Blockers)
+	}
+	if changed.Content != "" || changed.SnippetHash != "" {
+		t.Fatalf("expected no stale content/snippet hash, got %+v", changed)
+	}
+	if changed.ContentHash != original.ContentHash {
+		t.Fatalf("expected snapshot hash to be preserved, got original=%s changed=%s", original.ContentHash, changed.ContentHash)
+	}
+	if changed.CurrentHash == "" || changed.CurrentHash == changed.ContentHash {
+		t.Fatalf("expected diagnostic current hash to differ, got %+v", changed)
+	}
+}
+
+func TestReadProjectFileStreamsBoundedLineRange(t *testing.T) {
+	requireGit(t)
+	service, snapshotID := setupSourceSnapshotFixture(t, sourceFixtureOptions{longFileLines: defaultReadMaxLines + 5})
+
+	result, err := service.ReadProjectFile(t.Context(), BoundedFileReadInput{
+		ProjectID:        "relay",
+		SourceSnapshotID: snapshotID,
+		RepoID:           "relay",
+		Path:             "src/long.txt",
+		LineStart:        10,
+		LineEnd:          12,
+		MaxBytes:         8,
+	})
+	if err != nil {
+		t.Fatalf("ReadProjectFile error: %v", err)
+	}
+	if len(result.Blockers) != 0 {
+		t.Fatalf("unexpected blockers: %+v", result.Blockers)
+	}
+	if result.LineStart != 10 || result.LineEnd != 12 {
+		t.Fatalf("unexpected line range: %+v", result)
+	}
+	if result.Content != "x\nx\nx\n" || result.Truncated {
+		t.Fatalf("expected bounded requested range without truncation, got %+v", result)
+	}
+}
+
 type sourceFixtureOptions struct {
 	withPrivateKey bool
 	withBinary     bool
@@ -181,6 +249,12 @@ type sourceFixtureOptions struct {
 }
 
 func setupSourceSnapshotFixture(t *testing.T, opts sourceFixtureOptions) (*Service, string) {
+	t.Helper()
+	service, snapshotID, _ := setupSourceSnapshotFixtureWithRoot(t, opts)
+	return service, snapshotID
+}
+
+func setupSourceSnapshotFixtureWithRoot(t *testing.T, opts sourceFixtureOptions) (*Service, string, string) {
 	t.Helper()
 	service, projectService, _ := newSourceTestServices(t)
 	repoRoot := setupGitRepo(t)
@@ -243,7 +317,7 @@ func setupSourceSnapshotFixture(t *testing.T, opts sourceFixtureOptions) (*Servi
 	if err != nil {
 		t.Fatalf("CreateSourceSnapshot error: %v", err)
 	}
-	return service, snapshot.SourceSnapshotID
+	return service, snapshot.SourceSnapshotID, repoRoot
 }
 
 func hasInventoryPath(result *FileInventoryResult, path string, included bool, reason string) bool {

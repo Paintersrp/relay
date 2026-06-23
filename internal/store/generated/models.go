@@ -45,6 +45,47 @@ type Check struct {
 	CreatedAt   string `json:"created_at"`
 }
 
+type ContextPacket struct {
+	ID                 int64  `json:"id"`
+	ContextPacketID    string `json:"context_packet_id"`
+	ProjectID          string `json:"project_id"`
+	PlanID             string `json:"plan_id"`
+	PassID             string `json:"pass_id"`
+	TaskSlug           string `json:"task_slug"`
+	SourceSnapshotID   string `json:"source_snapshot_id"`
+	Status             string `json:"status"`
+	PacketJsonPath     string `json:"packet_json_path"`
+	PacketMarkdownPath string `json:"packet_markdown_path"`
+	CoverageReportPath string `json:"coverage_report_path"`
+	SourceCount        int64  `json:"source_count"`
+	CoveredSeedCount   int64  `json:"covered_seed_count"`
+	BlockedSeedCount   int64  `json:"blocked_seed_count"`
+	MissingSeedCount   int64  `json:"missing_seed_count"`
+	Truncated          int64  `json:"truncated"`
+	BlockersJson       string `json:"blockers_json"`
+	CreatedAt          string `json:"created_at"`
+}
+
+type ContextPacketSource struct {
+	ID                 int64  `json:"id"`
+	ContextPacketRowID int64  `json:"context_packet_row_id"`
+	SourceID           string `json:"source_id"`
+	SourceType         string `json:"source_type"`
+	ProjectID          string `json:"project_id"`
+	RepoID             string `json:"repo_id"`
+	SourceSnapshotID   string `json:"source_snapshot_id"`
+	Path               string `json:"path"`
+	LineStart          int64  `json:"line_start"`
+	LineEnd            int64  `json:"line_end"`
+	ContentHash        string `json:"content_hash"`
+	SnippetHash        string `json:"snippet_hash"`
+	RedactionStatus    string `json:"redaction_status"`
+	Truncated          int64  `json:"truncated"`
+	GeneratedAt        string `json:"generated_at"`
+	Reason             string `json:"reason"`
+	CreatedAt          string `json:"created_at"`
+}
+
 type Event struct {
 	ID           int64  `json:"id"`
 	RunID        int64  `json:"run_id"`

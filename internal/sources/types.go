@@ -22,13 +22,14 @@ const (
 	SourceOperationStatusBlocked = "blocked"
 	SourceOperationStatusPartial = "partial"
 
-	SourceBlockerUnsafePath       = "unsafe_path"
-	SourceBlockerExcludedPath     = "excluded_path"
-	SourceBlockerOversized        = "oversized"
-	SourceBlockerBinary           = "binary"
-	SourceBlockerRedactionBlocked = "redaction_blocked"
-	SourceBlockerSnapshotMissing  = "source_snapshot_missing"
-	SourceBlockerRipgrepMissing   = "ripgrep_unavailable"
+	SourceBlockerUnsafePath          = "unsafe_path"
+	SourceBlockerExcludedPath        = "excluded_path"
+	SourceBlockerOversized           = "oversized"
+	SourceBlockerBinary              = "binary"
+	SourceBlockerRedactionBlocked    = "redaction_blocked"
+	SourceBlockerSnapshotMissing     = "source_snapshot_missing"
+	SourceBlockerSnapshotFileChanged = "source_snapshot_file_changed"
+	SourceBlockerRipgrepMissing      = "ripgrep_unavailable"
 )
 
 type SourceSnapshotInput struct {
@@ -194,6 +195,7 @@ type BoundedFileReadResult struct {
 	LineEnd          int
 	Content          string
 	ContentHash      string
+	CurrentHash      string
 	SnippetHash      string
 	RedactionStatus  string
 	Truncated        bool

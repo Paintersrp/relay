@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -67,7 +68,15 @@ var allowedKinds = map[string]bool{
 	"repair_output":                      true,
 	"repaired_packet":                    true,
 	"repair_validation_report":           true,
+	"context_packet_json":                true,
+	"context_packet_markdown":            true,
+	"context_coverage_report_json":       true,
 }
+
+var (
+	contextDatePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	contextSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,119}$`)
+)
 
 func SetBaseDir(dir string) {
 	BaseDir = dir
@@ -130,4 +139,60 @@ func Delete(runID int64, kind, filename string) error {
 		return err
 	}
 	return os.Remove(p)
+}
+
+func ContextDir() string {
+	return filepath.Join(BaseDir, "handoffs", "context")
+}
+
+func ContextPath(dateYYYYMMDD string, taskSlug string, kind string) (string, error) {
+	if !allowedKinds[kind] {
+		return "", fmt.Errorf("unknown artifact kind: %s", kind)
+	}
+	if !contextDatePattern.MatchString(dateYYYYMMDD) {
+		return "", fmt.Errorf("invalid context artifact date: %s", dateYYYYMMDD)
+	}
+	if !contextSlugPattern.MatchString(taskSlug) {
+		return "", fmt.Errorf("invalid context artifact slug: %s", taskSlug)
+	}
+	suffix, ok := contextKindSuffix(kind)
+	if !ok {
+		return "", fmt.Errorf("artifact kind is not a context artifact: %s", kind)
+	}
+	filename := dateYYYYMMDD + "_" + taskSlug + suffix
+	if strings.Contains(filename, "..") || filepath.IsAbs(filename) || strings.ContainsAny(filename, `/\`) {
+		return "", fmt.Errorf("invalid context artifact filename: %s", filename)
+	}
+	dir := ContextDir()
+	p := filepath.Join(dir, filename)
+	cleanDir := filepath.Clean(dir)
+	cleanPath := filepath.Clean(p)
+	if cleanPath != filepath.Join(cleanDir, filepath.Base(cleanPath)) || !strings.HasPrefix(cleanPath, cleanDir+string(filepath.Separator)) {
+		return "", fmt.Errorf("context artifact path escapes directory: %s", p)
+	}
+	return p, nil
+}
+
+func WriteContext(dateYYYYMMDD string, taskSlug string, kind string, data []byte) (string, error) {
+	p, err := ContextPath(dateYYYYMMDD, taskSlug, kind)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(ContextDir(), 0755); err != nil {
+		return "", err
+	}
+	return p, os.WriteFile(p, data, 0644)
+}
+
+func contextKindSuffix(kind string) (string, bool) {
+	switch kind {
+	case "context_packet_json":
+		return ".context-packet.json", true
+	case "context_packet_markdown":
+		return ".context-packet.md", true
+	case "context_coverage_report_json":
+		return ".context-coverage-report.json", true
+	default:
+		return "", false
+	}
 }

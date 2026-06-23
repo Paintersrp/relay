@@ -1,11 +1,15 @@
 package sources
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -235,19 +239,41 @@ func (s *Service) ReadProjectFile(ctx context.Context, input BoundedFileReadInpu
 		return result, nil
 	}
 
-	data, err := os.ReadFile(absolutePath)
+	file, err := os.Open(absolutePath)
 	if err != nil {
 		return nil, err
 	}
-	if isBinarySample(data) {
+	defer file.Close()
+
+	sample := make([]byte, 8192)
+	n, err := file.Read(sample)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	if isBinarySample(sample[:n]) {
 		result.Blockers = append(result.Blockers, SourceBlocker{RepoID: repoID, Code: SourceBlockerBinary, Message: "binary file content is not returned"})
 		return result, nil
 	}
-	if computedHash := sha256HexBytes(data); computedHash != "" {
-		result.ContentHash = computedHash
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	currentHash, err := streamFileSHA256(file)
+	if err != nil {
+		return nil, err
+	}
+	result.CurrentHash = currentHash
+	if snapshotFile.ContentHash != "" && currentHash != "" && snapshotFile.ContentHash != currentHash {
+		result.Blockers = append(result.Blockers, SourceBlocker{RepoID: repoID, Code: SourceBlockerSnapshotFileChanged, Message: "current file hash differs from source snapshot hash"})
+		return result, nil
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, err
 	}
 
-	content, lineStart, lineEnd, truncated := boundedLineContent(data, input.LineStart, input.LineEnd, input.MaxBytes)
+	content, lineStart, lineEnd, truncated, err := streamBoundedLineContent(file, input.LineStart, input.LineEnd, input.MaxBytes)
+	if err != nil {
+		return nil, err
+	}
 	redacted, status := redactSourceContent(content)
 	if status == RedactionStatusBlocked {
 		result.RedactionStatus = status
@@ -336,6 +362,81 @@ func isBinarySample(data []byte) bool {
 		data = data[:8192]
 	}
 	return bytes.IndexByte(data, 0) >= 0
+}
+
+func streamFileSHA256(r io.Reader) (string, error) {
+	hash := sha256.New()
+	if _, err := io.Copy(hash, r); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func streamBoundedLineContent(r io.Reader, requestedStart, requestedEnd, requestedMaxBytes int) (string, int, int, bool, error) {
+	maxBytes := boundedPositive(requestedMaxBytes, defaultReadMaxBytes, hardReadMaxBytes)
+	start := requestedStart
+	if start <= 0 {
+		start = 1
+	}
+	end := requestedEnd
+	if end <= 0 {
+		end = start + defaultReadMaxLines - 1
+	}
+	if end < start {
+		end = start
+	}
+	if end-start+1 > hardReadMaxLines {
+		end = start + hardReadMaxLines - 1
+	}
+
+	reader := bufio.NewReader(r)
+	var out bytes.Buffer
+	lineNo := 0
+	lastWritten := start - 1
+	truncated := false
+	for {
+		next, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			return "", start, lastWritten, false, err
+		}
+		if err == io.EOF && next == "" {
+			break
+		}
+		lineNo++
+		if lineNo < start {
+			if err == io.EOF {
+				break
+			}
+			continue
+		}
+		if lineNo > end {
+			if requestedEnd <= 0 || end-start+1 >= hardReadMaxLines {
+				truncated = true
+			}
+			break
+		}
+		if out.Len()+len(next) > maxBytes {
+			remaining := maxBytes - out.Len()
+			if remaining > 0 {
+				out.WriteString(next[:remaining])
+			}
+			lastWritten = lineNo
+			truncated = true
+			break
+		}
+		out.WriteString(next)
+		lastWritten = lineNo
+		if err == io.EOF {
+			break
+		}
+	}
+	if requestedEnd <= 0 && lineNo > end {
+		truncated = true
+	}
+	if start > lineNo {
+		return "", start, start - 1, false, nil
+	}
+	return out.String(), start, lastWritten, truncated, nil
 }
 
 func boundedLineContent(data []byte, requestedStart, requestedEnd, requestedMaxBytes int) (string, int, int, bool) {

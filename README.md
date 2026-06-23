@@ -15,6 +15,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | Managed Plans (backend) | Optional plan/pass orchestration: validate and submit Planner pass plans, associate runs to passes, read-only plan and pass APIs |
 | Project Registry Backend | Durable project and project-repository registry with stored repository roles (`primary`, `reference`, `contracts`, `docs`) and persisted safe source policy fields |
 | Source Snapshot Backend | Internal-only source provenance service for registered repositories: durable source snapshots, git status, latest commit, changed files, bounded diff evidence, optional file metadata/hash capture, snapshot-backed file inventory, bounded file reads, and rg-backed source search |
+| Context Packet Backend | Internal-only context packet and context coverage report generation from source snapshots, file inventory, bounded reads, and search results; writes pre-run `handoffs/context` artifacts and SQLite metadata |
 | Run Storage | Run metadata and artifact storage |
 | Intake Review | Parse and validate handoff structure before execution |
 | Agent Prompt | Preparation and handoff transformation for agents |
@@ -35,7 +36,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | Repair | Automatic validation failure repair |
 | Audit | Automatic AI audit/closeout |
 | Additional Project-Facing MCP Actions | Project-facing MCP exposure beyond `create_run_from_planner_handoff` and `submit_planner_pass_plan` is configuration-dependent; local/dev/server MCP inventory includes additional tools |
-| Context Broker Source Tools | Context packets and Planner-facing context broker MCP tools remain future work; file inventory/search/read currently exist only as internal source service primitives |
+| Context Broker MCP Tools | Planner-facing context broker MCP tools remain future work until PASS-007; file inventory/search/read and context packet generation currently exist only as internal backend services |
 
 ### Run Actions
 
@@ -135,12 +136,15 @@ The current Planner Project-facing MCP actions do **not** expose or claim availa
 *   Status queries or run listing
 *   Audit packet submission
 *   Executor dispatch
+*   Context packet creation, source inventory, source search, bounded file read, or context broker tools
 *   Shell execution or command running
 *   Arbitrary file access or file reads/writes
 *   Git operations (commits, pushes, branch creation)
 *   Secrets, tokens, auth headers, private keys, signed URLs, tunnel URLs, cookies, credentials, or other sensitive material in handoffs or MCP payloads
 
 Any broader list of tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` that may exist in the `mcpserver` or local development contexts are strictly local/dev/server MCP tool inventory or future/internal capabilities. They are **not** current Planner Project actions unless project configuration explicitly changes. MCP run submission also does not use executor briefs, canonical packets, validation reports, repair reports, audit packets, or surrounding chat context as the payload.
+
+PASS-005 adds internal context packet and context coverage report generation only. Context packet creation is not run submission, canonical packet compilation, or executor dispatch. Planner-facing context broker MCP tools remain future work until PASS-007; by default the current GPT-facing Planner MCP actions remain `create_run_from_planner_handoff` and `submit_planner_pass_plan`.
 
 ## Stack
 

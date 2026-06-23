@@ -6,7 +6,7 @@
 > 
 > The Planner does **not** have status-query, run-listing, audit-submission, or downstream-dispatch MCP actions by default. Tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
 >
-> Relay now stores project/repository registry, source-policy configuration, internal source snapshot/git evidence backend state, and internal file inventory/search/read service primitives, but PASS-004 still does **not** expose Planner-facing context-broker MCP tools yet.
+> Relay now stores project/repository registry, source-policy configuration, internal source snapshot/git evidence backend state, internal file inventory/search/read service primitives, and internal PASS-005 context packet/context coverage report generation. These context packet services are not run submission, canonical packet compilation, or executor dispatch, and they do **not** expose Planner-facing context-broker MCP tools yet; that remains future work until PASS-007.
 
 ---
 
@@ -122,7 +122,7 @@ The MCP server uses WAL mode and shares the database safely with the Go HTTP dae
 
 Exactly 6 tools are registered in the local/dev MCP server. Note that **tools #2 (`create_run_from_planner_handoff`) and #6 (`submit_planner_pass_plan`)** are currently exposed as Project MCP actions for the GPT-facing Planner by default. The remaining status/list/audit tools are kept for local debugging, testing, or future expansion, and are only Project-facing if external configuration explicitly exposes them. No shell execution, arbitrary file access, or git mutation tools are exposed.
 
-PASS-004 adds internal source context service primitives for snapshot-backed file inventory, bounded file reads, and rg-backed source search. These primitives are not registered as MCP tools in this pass; Planner-facing context broker MCP tools remain future work.
+PASS-005 adds internal source context service primitives and context packet generation for snapshot-backed file inventory, bounded file reads, rg-backed source search, context packet artifacts, and context coverage report artifacts. These primitives are not registered as MCP tools in this pass. Context packet creation is not run submission, canonical packet compilation, or executor dispatch; Planner-facing context broker MCP tools remain future work until PASS-007.
 
 ### 1. `submit_test_audit_packet`
 
