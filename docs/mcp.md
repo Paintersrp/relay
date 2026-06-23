@@ -444,6 +444,7 @@ The MCP subprocess and the HTTP daemon (`cmd/relay`) share the same SQLite datab
 - **Pass 16 (real tools):** Implemented the 4 run/audit tools (`create_run_from_planner_handoff`, `list_open_runs`, `get_run_status`, `submit_audit_packet`), wired MCP server to real Relay DB, added executable `make mcp-smoke` harness.
 - **Pass 16+ managed plans:** Added `submit_planner_pass_plan` for Planner-facing plan submission and updated smoke/docs to cover the 6-tool inventory.
 - **PASS-007 context broker:** Completed operator-facing documentation for local setup, registration, profiles, safety boundaries, and workflows.
+- **PASS-008 compatibility cleanup:** Completed validation of standalone/managed compatibility, database auto-migrations with foreign keys, retained legacy redirects/routes, and local-only release verification scripting.
 
 ---
 

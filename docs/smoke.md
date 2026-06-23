@@ -14,6 +14,14 @@ To run the entire smoke verification suite (including Go E2E/mcp/server tests, l
 npm run smoke
 ```
 
+### Release Verification
+
+For final release-hardening verification, run the comprehensive release smoke script. This script verifies all Go tests, local script connector tests, React typecheck/vitest suites, React build bundles, root smoke suites, and validation reports:
+
+```bash
+bash scripts/release-smoke.sh
+```
+
 ### Individual Components
 
 You can run individual test suites for specific parts of the project:

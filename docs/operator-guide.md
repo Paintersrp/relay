@@ -212,6 +212,14 @@ To verify the health of the entire local setup, run the smoke test suite:
 npm run smoke
 ```
 
+### Release Verification
+
+For final release-hardening verification, run the comprehensive release smoke script. This script verifies all Go tests, local script connector tests, React typecheck/vitest suites, React build bundles, root smoke suites, and validation reports:
+
+```bash
+bash scripts/release-smoke.sh
+```
+
 ### Component Validation
 
 You can also run narrow validation checks:
