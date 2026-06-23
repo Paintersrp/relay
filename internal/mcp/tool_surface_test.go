@@ -30,6 +30,9 @@ func TestDefaultLocalOperatorToolSurfaceIncludesAllSafeTools(t *testing.T) {
 		"get_repository_diff",
 		"create_context_packet",
 		"get_context_packet",
+		"create_local_audit",
+		"get_local_audit",
+		"list_project_local_audits",
 		"search_project_context_memory",
 		"list_project_context_records",
 		"get_project_context_record",
@@ -74,6 +77,9 @@ func TestRestrictedToolSurfaceHidesBrokerTools(t *testing.T) {
 		"get_repository_diff",
 		"create_context_packet",
 		"get_context_packet",
+		"create_local_audit",
+		"get_local_audit",
+		"list_project_local_audits",
 		"search_project_context_memory",
 		"list_project_context_records",
 		"get_project_context_record",
@@ -170,6 +176,35 @@ func TestRestrictedMemoryBrokerToolCallIsUnknown(t *testing.T) {
 
 	if resp.Error == nil {
 		t.Fatal("expected error calling memory broker tool in restricted mode, got success")
+	}
+	if resp.Error.Code != CodeMethodNotFound {
+		t.Errorf("expected error code %d (CodeMethodNotFound), got %d", CodeMethodNotFound, resp.Error.Code)
+	}
+	if !strings.Contains(resp.Error.Message, "unknown tool") {
+		t.Errorf("expected error message to contain 'unknown tool', got %q", resp.Error.Message)
+	}
+}
+
+func TestRestrictedLocalAuditBrokerToolCallIsUnknown(t *testing.T) {
+	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileRestricted})
+
+	reqJSON := `{
+		"jsonrpc": "2.0",
+		"id": 1,
+		"method": "tools/call",
+		"params": {
+			"name": "create_local_audit",
+			"arguments": {
+				"mode": "full_repository",
+				"project_id": "relay"
+			}
+		}
+	}`
+
+	resp := srv.handleLine([]byte(reqJSON))
+
+	if resp.Error == nil {
+		t.Fatal("expected error calling local audit broker tool in restricted mode, got success")
 	}
 	if resp.Error.Code != CodeMethodNotFound {
 		t.Errorf("expected error code %d (CodeMethodNotFound), got %d", CodeMethodNotFound, resp.Error.Code)

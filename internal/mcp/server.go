@@ -258,6 +258,21 @@ func (s *Server) handleToolsCall(req Request) Response {
 			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 		}
 		result = s.HandleGetContextPacket(args)
+	case "create_local_audit":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleCreateLocalAudit(args)
+	case "get_local_audit":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGetLocalAudit(args)
+	case "list_project_local_audits":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleListProjectLocalAudits(args)
 	case "search_project_context_memory":
 		if !s.contextBrokerEnabled() {
 			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))

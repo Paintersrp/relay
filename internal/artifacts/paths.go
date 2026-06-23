@@ -74,6 +74,9 @@ var allowedKinds = map[string]bool{
 	"context_packet_json":                true,
 	"context_packet_markdown":            true,
 	"context_coverage_report_json":       true,
+	"local_audit_manifest_json":          true,
+	"local_audit_packet":                 true,
+	"local_audit_input_summary":          true,
 }
 
 var (
@@ -195,6 +198,62 @@ func contextKindSuffix(kind string) (string, bool) {
 		return ".context-packet.md", true
 	case "context_coverage_report_json":
 		return ".context-coverage-report.json", true
+	default:
+		return "", false
+	}
+}
+
+func AuditDir() string {
+	return filepath.Join(BaseDir, "handoffs", "audits")
+}
+
+func AuditPath(dateYYYYMMDD string, taskSlug string, kind string) (string, error) {
+	if !allowedKinds[kind] {
+		return "", fmt.Errorf("unknown artifact kind: %s", kind)
+	}
+	if !contextDatePattern.MatchString(dateYYYYMMDD) {
+		return "", fmt.Errorf("invalid audit artifact date: %s", dateYYYYMMDD)
+	}
+	if !contextSlugPattern.MatchString(taskSlug) {
+		return "", fmt.Errorf("invalid audit artifact slug: %s", taskSlug)
+	}
+	suffix, ok := auditKindSuffix(kind)
+	if !ok {
+		return "", fmt.Errorf("artifact kind is not a local audit artifact: %s", kind)
+	}
+	filename := dateYYYYMMDD + "_" + taskSlug + suffix
+	if strings.Contains(filename, "..") || filepath.IsAbs(filename) || strings.ContainsAny(filename, `/\`) {
+		return "", fmt.Errorf("invalid audit artifact filename: %s", filename)
+	}
+	dir := AuditDir()
+	p := filepath.Join(dir, filename)
+	cleanDir := filepath.Clean(dir)
+	cleanPath := filepath.Clean(p)
+	if cleanPath != filepath.Join(cleanDir, filepath.Base(cleanPath)) || !strings.HasPrefix(cleanPath, cleanDir+string(filepath.Separator)) {
+		return "", fmt.Errorf("audit artifact path escapes directory: %s", p)
+	}
+	return p, nil
+}
+
+func WriteAudit(dateYYYYMMDD string, taskSlug string, kind string, data []byte) (string, error) {
+	p, err := AuditPath(dateYYYYMMDD, taskSlug, kind)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(AuditDir(), 0755); err != nil {
+		return "", err
+	}
+	return p, os.WriteFile(p, data, 0644)
+}
+
+func auditKindSuffix(kind string) (string, bool) {
+	switch kind {
+	case "local_audit_manifest_json":
+		return ".local-audit-manifest.json", true
+	case "local_audit_packet":
+		return ".local-audit-packet.md", true
+	case "local_audit_input_summary":
+		return ".local-audit-input-summary.md", true
 	default:
 		return "", false
 	}

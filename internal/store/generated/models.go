@@ -99,6 +99,27 @@ type Event struct {
 	CreatedAt    string `json:"created_at"`
 }
 
+type LocalAudit struct {
+	ID               int64  `json:"id"`
+	AuditID          string `json:"audit_id"`
+	ProjectRowID     int64  `json:"project_row_id"`
+	ProjectID        string `json:"project_id"`
+	Mode             string `json:"mode"`
+	Title            string `json:"title"`
+	Status           string `json:"status"`
+	PlanID           string `json:"plan_id"`
+	PassID           string `json:"pass_id"`
+	SourceSnapshotID string `json:"source_snapshot_id"`
+	ContextPacketID  string `json:"context_packet_id"`
+	ManifestPath     string `json:"manifest_path"`
+	PacketPath       string `json:"packet_path"`
+	InputSummaryPath string `json:"input_summary_path"`
+	BlockersJson     string `json:"blockers_json"`
+	WarningsJson     string `json:"warnings_json"`
+	CreatedAt        string `json:"created_at"`
+	CompletedAt      string `json:"completed_at"`
+}
+
 type Plan struct {
 	ID                       int64  `json:"id"`
 	PlanID                   string `json:"plan_id"`

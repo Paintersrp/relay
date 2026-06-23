@@ -2,6 +2,20 @@ package auditor
 
 import "time"
 
+type LocalAuditMode string
+type LocalAuditStatus string
+
+const (
+	LocalAuditModeRecentCommit        LocalAuditMode = "recent_commit"
+	LocalAuditModeSelectedPassChanges LocalAuditMode = "selected_pass_changes"
+	LocalAuditModeFeatureSlice        LocalAuditMode = "feature_slice"
+	LocalAuditModeFullRepository      LocalAuditMode = "full_repository"
+
+	LocalAuditStatusCreated LocalAuditStatus = "created"
+	LocalAuditStatusPartial LocalAuditStatus = "partial"
+	LocalAuditStatusBlocked LocalAuditStatus = "blocked"
+)
+
 // Decision is the auditor's recommended action for a run.
 type Decision string
 

@@ -100,6 +100,10 @@ func isAllowedGitCommand(args []string) bool {
 		return true
 	case len(args) == 5 && args[0] == "diff" && args[1] == "--cached" && args[2] == "--name-status" && args[3] == "--no-ext-diff" && args[4] == "-z":
 		return true
+	case len(args) == 6 && args[0] == "show" && args[1] == "--name-status" && args[2] == "--format=" && args[3] == "--no-ext-diff" && args[4] == "-z" && args[5] == "HEAD":
+		return true
+	case len(args) == 6 && args[0] == "show" && args[1] == "--format=" && args[2] == "--no-ext-diff" && strings.HasPrefix(args[3], "--unified=") && args[4] == "HEAD" && args[5] == "--":
+		return validUnifiedArg(args[3])
 	case len(args) == 4 && args[0] == "diff" && args[1] == "--no-ext-diff" && strings.HasPrefix(args[2], "--unified=") && args[3] == "--":
 		return validUnifiedArg(args[2])
 	case len(args) == 5 && args[0] == "diff" && args[1] == "--cached" && args[2] == "--no-ext-diff" && strings.HasPrefix(args[3], "--unified=") && args[4] == "--":
@@ -214,6 +218,15 @@ func (s *Service) GetChangedFiles(ctx context.Context, repo store.ProjectReposit
 	return parseNameStatusZ(result.stdout, repo.RepoID, mode == DiffModeStaged)
 }
 
+func (s *Service) GetRecentCommitChangedFiles(ctx context.Context, repo store.ProjectRepository) ([]ChangedFile, error) {
+	result, err := runGitCommand(ctx, repo.LocalPath, defaultGitStdoutLimit, defaultGitStderrLimit,
+		"show", "--name-status", "--format=", "--no-ext-diff", "-z", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	return parseNameStatusZ(result.stdout, repo.RepoID, false)
+}
+
 func (s *Service) GetBoundedDiff(ctx context.Context, repo store.ProjectRepository, mode string, maxBytes int, contextLines int) (BoundedDiff, error) {
 	if maxBytes <= 0 {
 		maxBytes = defaultDiffMaxBytes
@@ -242,6 +255,38 @@ func (s *Service) GetBoundedDiff(ctx context.Context, repo store.ProjectReposito
 	return BoundedDiff{
 		RepoID:          repo.RepoID,
 		Mode:            mode,
+		Content:         content,
+		ContentHash:     sha256HexString(content),
+		Truncated:       truncated,
+		MaxBytes:        maxBytes,
+		RedactionStatus: redactionStatus,
+	}, nil
+}
+
+func (s *Service) GetRecentCommitBoundedDiff(ctx context.Context, repo store.ProjectRepository, maxBytes int, contextLines int) (BoundedDiff, error) {
+	if maxBytes <= 0 {
+		maxBytes = defaultDiffMaxBytes
+	}
+	if contextLines <= 0 {
+		contextLines = defaultDiffContextLines
+	}
+
+	args := []string{"show", "--format=", "--no-ext-diff", fmt.Sprintf("--unified=%d", contextLines), "HEAD", "--"}
+	result, runErr := runGitCommand(ctx, repo.LocalPath, maxBytes, defaultGitStderrLimit, args...)
+	truncated := false
+	if runErr != nil {
+		var gitErr *GitCommandError
+		if errors.As(runErr, &gitErr) && gitErr.Truncated {
+			truncated = true
+		} else {
+			return BoundedDiff{RepoID: repo.RepoID, Mode: DiffModeRecentCommit, MaxBytes: maxBytes}, runErr
+		}
+	}
+
+	content, redactionStatus := redactSourceContent(string(result.stdout))
+	return BoundedDiff{
+		RepoID:          repo.RepoID,
+		Mode:            DiffModeRecentCommit,
 		Content:         content,
 		ContentHash:     sha256HexString(content),
 		Truncated:       truncated,

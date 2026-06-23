@@ -10,8 +10,9 @@ const (
 	SnapshotStatusPartial = "partial"
 	SnapshotStatusBlocked = "blocked"
 
-	DiffModeWorktree = "worktree"
-	DiffModeStaged   = "staged"
+	DiffModeWorktree     = "worktree"
+	DiffModeStaged       = "staged"
+	DiffModeRecentCommit = "recent_commit"
 
 	RedactionStatusNotNeeded  = "not_needed"
 	RedactionStatusRedacted   = "redacted"

@@ -44,9 +44,28 @@ func TestIsAllowedGitCommandAllowsReadOnlyEvidenceCommands(t *testing.T) {
 		{"diff", "--cached", "--name-status", "--no-ext-diff", "-z"},
 		{"diff", "--no-ext-diff", "--unified=3", "--"},
 		{"diff", "--cached", "--no-ext-diff", "--unified=3", "--"},
+		{"show", "--name-status", "--format=", "--no-ext-diff", "-z", "HEAD"},
+		{"show", "--format=", "--no-ext-diff", "--unified=3", "HEAD", "--"},
 	} {
 		if !isAllowedGitCommand(args) {
 			t.Fatalf("expected git %s to be allowed", strings.Join(args, " "))
+		}
+	}
+}
+
+func TestIsAllowedGitCommandRejectsRecentCommitVariants(t *testing.T) {
+	t.Parallel()
+
+	for _, args := range [][]string{
+		{"show", "HEAD"},
+		{"show", "--name-status", "--format=", "--no-ext-diff", "-z", "HEAD~1"},
+		{"show", "--format=", "--no-ext-diff", "--unified=3", "abc123", "--"},
+		{"show", "--format=", "--no-ext-diff", "--unified=3", "HEAD", "--", "internal"},
+		{"diff", "internal/foo.go"},
+		{"branch"},
+	} {
+		if isAllowedGitCommand(args) {
+			t.Fatalf("expected git %s to be rejected", strings.Join(args, " "))
 		}
 	}
 }
@@ -168,6 +187,43 @@ func TestGetBoundedDiffRedactsAndTruncates(t *testing.T) {
 	}
 	if diff.RedactionStatus != RedactionStatusRedacted {
 		t.Fatalf("expected redaction status redacted, got %q", diff.RedactionStatus)
+	}
+}
+
+func TestGetRecentCommitEvidence(t *testing.T) {
+	requireGit(t)
+	root := setupGitRepo(t)
+	service := NewService(nil)
+
+	if err := os.WriteFile(filepath.Join(root, "committed.txt"), []byte("updated\n"), 0644); err != nil {
+		t.Fatalf("WriteFile committed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "added.txt"), []byte("Authorization: Bearer super-secret-token\n"), 0644); err != nil {
+		t.Fatalf("WriteFile added: %v", err)
+	}
+	runGit(t, root, "git", "add", ".")
+	runGit(t, root, "git", "commit", "-m", "second commit")
+
+	files, err := service.GetRecentCommitChangedFiles(t.Context(), store.ProjectRepository{RepoID: "relay", LocalPath: root})
+	if err != nil {
+		t.Fatalf("GetRecentCommitChangedFiles error: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("expected two changed files, got %+v", files)
+	}
+
+	diff, err := service.GetRecentCommitBoundedDiff(t.Context(), store.ProjectRepository{RepoID: "relay", LocalPath: root}, 4096, 3)
+	if err != nil {
+		t.Fatalf("GetRecentCommitBoundedDiff error: %v", err)
+	}
+	if diff.Mode != DiffModeRecentCommit || diff.ContentHash == "" {
+		t.Fatalf("unexpected recent commit diff metadata: %+v", diff)
+	}
+	if strings.Contains(diff.Content, "super-secret-token") {
+		t.Fatalf("expected recent commit diff to be redacted, got %q", diff.Content)
+	}
+	if diff.RedactionStatus != RedactionStatusRedacted {
+		t.Fatalf("expected redacted status, got %q", diff.RedactionStatus)
 	}
 }
 
