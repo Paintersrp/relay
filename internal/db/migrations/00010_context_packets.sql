@@ -2,10 +2,12 @@
 CREATE TABLE context_packets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     context_packet_id TEXT NOT NULL UNIQUE,
+    project_row_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     project_id TEXT NOT NULL,
     plan_id TEXT NOT NULL DEFAULT '',
     pass_id TEXT NOT NULL DEFAULT '',
     task_slug TEXT NOT NULL,
+    source_snapshot_row_id INTEGER NOT NULL REFERENCES source_snapshots(id) ON DELETE CASCADE,
     source_snapshot_id TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('created', 'partial', 'blocked')),
     packet_json_path TEXT NOT NULL,
@@ -17,7 +19,9 @@ CREATE TABLE context_packets (
     missing_seed_count INTEGER NOT NULL DEFAULT 0,
     truncated INTEGER NOT NULL DEFAULT 0,
     blockers_json TEXT NOT NULL DEFAULT '[]',
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    summary_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE context_packet_sources (

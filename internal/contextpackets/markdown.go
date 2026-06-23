@@ -20,6 +20,40 @@ func renderMarkdown(packet ContextPacket) string {
 	fmt.Fprintf(&b, "- Status: `%s`\n", packet.Status)
 	fmt.Fprintf(&b, "- Generated at: `%s`\n\n", packet.GeneratedAt)
 
+	b.WriteString("## Summary\n\n")
+	b.WriteString("| Field | Value |\n")
+	b.WriteString("|---|---|\n")
+	fmt.Fprintf(&b, "| Source Count | %d |\n", packet.Summary.SourceCount)
+	fmt.Fprintf(&b, "| Covered Seed Count | %d |\n", packet.Summary.CoveredSeedCount)
+	fmt.Fprintf(&b, "| Blocked Seed Count | %d |\n", packet.Summary.BlockedSeedCount)
+	fmt.Fprintf(&b, "| Missing Seed Count | %d |\n", packet.Summary.MissingSeedCount)
+	fmt.Fprintf(&b, "| Truncated | %t |\n", packet.Summary.Truncated)
+	fmt.Fprintf(&b, "| Max Sources | %d |\n", packet.Summary.MaxSources)
+	fmt.Fprintf(&b, "| Max Total Bytes | %d |\n", packet.Summary.MaxTotalBytes)
+	fmt.Fprintf(&b, "| Total Source Bytes | %d |\n", packet.Summary.TotalSourceBytes)
+	fmt.Fprintf(&b, "| Inventory Included | %t |\n\n", packet.Summary.InventoryIncluded)
+
+	b.WriteString("## Coverage\n\n")
+	b.WriteString("| Seed | Type | Required | Status | Sources | Blockers |\n")
+	b.WriteString("|---|---|---|---|---|---|\n")
+	for _, entry := range packet.Coverage {
+		var blockerMsgs []string
+		for _, blk := range entry.Blockers {
+			blockerMsgs = append(blockerMsgs, fmt.Sprintf("%s: %s", blk.Code, blk.Message))
+		}
+		blockersStr := strings.Join(blockerMsgs, "; ")
+		if entry.MissingCause != "" {
+			if blockersStr != "" {
+				blockersStr += "; "
+			}
+			blockersStr += "missing cause: " + entry.MissingCause
+		}
+		sourcesStr := strings.Join(entry.SourceIDs, ", ")
+		fmt.Fprintf(&b, "| %s | %s | %t | %s | %s | %s |\n",
+			entry.SeedID, entry.SeedType, entry.Required, entry.Status, sourcesStr, blockersStr)
+	}
+	b.WriteString("\n")
+
 	b.WriteString("## Sources\n\n")
 	for _, source := range packet.Sources {
 		fmt.Fprintf(&b, "### %s\n\n", source.SourceID)

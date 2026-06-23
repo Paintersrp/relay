@@ -10,20 +10,40 @@ import (
 func TestContextPacketStoreCreateGetList(t *testing.T) {
 	st := newTestStore(t)
 
+	project, err := st.CreateProject("relay", "Relay", "", "active", "")
+	if err != nil {
+		t.Fatalf("CreateProject error: %v", err)
+	}
+
+	snapshot, err := st.CreateSourceSnapshot(CreateSourceSnapshotParams{
+		SourceSnapshotID: "srcsnap_test",
+		ProjectRowID:     project.ID,
+		ProjectID:        "relay",
+		SnapshotKind:     "clean_commit",
+		Status:           "created",
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot error: %v", err)
+	}
+
 	packet, err := st.CreateContextPacket(CreateContextPacketParams{
-		ContextPacketID:    "ctxpkt_test",
-		ProjectID:          "relay",
-		PlanID:             "plan-1",
-		PassID:             "PASS-005",
-		TaskSlug:           "packet",
-		SourceSnapshotID:   "srcsnap_test",
-		Status:             "created",
-		PacketJSONPath:     "handoffs/context/packet.context-packet.json",
-		PacketMarkdownPath: "handoffs/context/packet.context-packet.md",
-		CoverageReportPath: "handoffs/context/packet.context-coverage-report.json",
-		SourceCount:        1,
-		CoveredSeedCount:   1,
-		BlockersJSON:       "[]",
+		ContextPacketID:     "ctxpkt_test",
+		ProjectRowID:        project.ID,
+		ProjectID:           "relay",
+		PlanID:              "plan-1",
+		PassID:              "PASS-005",
+		TaskSlug:            "packet",
+		SourceSnapshotRowID: snapshot.ID,
+		SourceSnapshotID:    "srcsnap_test",
+		Status:              "created",
+		PacketJSONPath:      "handoffs/context/packet.context-packet.json",
+		PacketMarkdownPath:  "handoffs/context/packet.context-packet.md",
+		CoverageReportPath:  "handoffs/context/packet.context-coverage-report.json",
+		SourceCount:         1,
+		CoveredSeedCount:    1,
+		BlockersJSON:        "[]",
+		SummaryJSON:         "{}",
+		CompletedAt:         "2026-06-22 00:00:00",
 	})
 	if err != nil {
 		t.Fatalf("CreateContextPacket error: %v", err)

@@ -1,10 +1,12 @@
 -- name: CreateContextPacket :one
 INSERT INTO context_packets (
   context_packet_id,
+  project_row_id,
   project_id,
   plan_id,
   pass_id,
   task_slug,
+  source_snapshot_row_id,
   source_snapshot_id,
   status,
   packet_json_path,
@@ -15,9 +17,11 @@ INSERT INTO context_packets (
   blocked_seed_count,
   missing_seed_count,
   truncated,
-  blockers_json
+  blockers_json,
+  summary_json,
+  completed_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetContextPacketByID :one

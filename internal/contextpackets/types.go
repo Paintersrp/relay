@@ -7,6 +7,8 @@ const (
 	ContextPacketStatusPartial = "partial"
 	ContextPacketStatusBlocked = "blocked"
 
+	ContextPacketSchemaVersion = "1.0.0"
+
 	SourceTypeFileRead    = "file_read"
 	SourceTypeSearchMatch = "search_match"
 	SourceTypeInventory   = "inventory"
@@ -73,6 +75,7 @@ type ContextPacketResult struct {
 }
 
 type ContextPacket struct {
+	SchemaVersion    string                  `json:"schema_version"`
 	ContextPacketID  string                  `json:"context_packet_id"`
 	ProjectID        string                  `json:"project_id"`
 	PlanID           string                  `json:"plan_id,omitempty"`
@@ -83,6 +86,7 @@ type ContextPacket struct {
 	GeneratedAt      string                  `json:"generated_at"`
 	Summary          ContextPacketSummary    `json:"summary"`
 	Sources          []ContextSource         `json:"sources"`
+	Coverage         []ContextCoverageEntry  `json:"coverage"`
 	Blockers         []sources.SourceBlocker `json:"blockers,omitempty"`
 }
 
@@ -118,6 +122,7 @@ type ContextSource struct {
 }
 
 type ContextCoverageReport struct {
+	SchemaVersion    string                 `json:"schema_version"`
 	ContextPacketID  string                 `json:"context_packet_id"`
 	ProjectID        string                 `json:"project_id"`
 	PlanID           string                 `json:"plan_id,omitempty"`

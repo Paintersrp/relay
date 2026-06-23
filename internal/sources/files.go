@@ -439,55 +439,6 @@ func streamBoundedLineContent(r io.Reader, requestedStart, requestedEnd, request
 	return out.String(), start, lastWritten, truncated, nil
 }
 
-func boundedLineContent(data []byte, requestedStart, requestedEnd, requestedMaxBytes int) (string, int, int, bool) {
-	maxBytes := boundedPositive(requestedMaxBytes, defaultReadMaxBytes, hardReadMaxBytes)
-	lines := bytes.SplitAfter(data, []byte("\n"))
-	if len(lines) == 1 && len(lines[0]) == 0 {
-		lines = nil
-	}
-	start := requestedStart
-	if start <= 0 {
-		start = 1
-	}
-	end := requestedEnd
-	if end <= 0 {
-		end = start + defaultReadMaxLines - 1
-	}
-	if end < start {
-		end = start
-	}
-	if end-start+1 > hardReadMaxLines {
-		end = start + hardReadMaxLines - 1
-	}
-	truncated := false
-	if requestedEnd <= 0 && end-start+1 >= defaultReadMaxLines && len(lines) > end {
-		truncated = true
-	}
-	if start > len(lines) {
-		return "", start, start - 1, false
-	}
-	if end > len(lines) {
-		end = len(lines)
-	}
-	var out bytes.Buffer
-	for i := start - 1; i < end; i++ {
-		next := lines[i]
-		if out.Len()+len(next) > maxBytes {
-			remaining := maxBytes - out.Len()
-			if remaining > 0 {
-				out.Write(next[:remaining])
-			}
-			truncated = true
-			break
-		}
-		out.Write(next)
-	}
-	if end < len(lines) && (requestedEnd > 0 || requestedEnd <= 0) && end-start+1 >= hardReadMaxLines {
-		truncated = true
-	}
-	return out.String(), start, end, truncated
-}
-
 func repoIDSet(values []string) map[string]struct{} {
 	if len(values) == 0 {
 		return nil

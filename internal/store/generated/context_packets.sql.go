@@ -12,10 +12,12 @@ import (
 const createContextPacket = `-- name: CreateContextPacket :one
 INSERT INTO context_packets (
   context_packet_id,
+  project_row_id,
   project_id,
   plan_id,
   pass_id,
   task_slug,
+  source_snapshot_row_id,
   source_snapshot_id,
   status,
   packet_json_path,
@@ -26,38 +28,46 @@ INSERT INTO context_packets (
   blocked_seed_count,
   missing_seed_count,
   truncated,
-  blockers_json
+  blockers_json,
+  summary_json,
+  completed_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, context_packet_id, project_id, plan_id, pass_id, task_slug, source_snapshot_id, status, packet_json_path, packet_markdown_path, coverage_report_path, source_count, covered_seed_count, blocked_seed_count, missing_seed_count, truncated, blockers_json, created_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, context_packet_id, project_row_id, project_id, plan_id, pass_id, task_slug, source_snapshot_row_id, source_snapshot_id, status, packet_json_path, packet_markdown_path, coverage_report_path, source_count, covered_seed_count, blocked_seed_count, missing_seed_count, truncated, blockers_json, summary_json, created_at, completed_at
 `
 
 type CreateContextPacketParams struct {
-	ContextPacketID    string `json:"context_packet_id"`
-	ProjectID          string `json:"project_id"`
-	PlanID             string `json:"plan_id"`
-	PassID             string `json:"pass_id"`
-	TaskSlug           string `json:"task_slug"`
-	SourceSnapshotID   string `json:"source_snapshot_id"`
-	Status             string `json:"status"`
-	PacketJsonPath     string `json:"packet_json_path"`
-	PacketMarkdownPath string `json:"packet_markdown_path"`
-	CoverageReportPath string `json:"coverage_report_path"`
-	SourceCount        int64  `json:"source_count"`
-	CoveredSeedCount   int64  `json:"covered_seed_count"`
-	BlockedSeedCount   int64  `json:"blocked_seed_count"`
-	MissingSeedCount   int64  `json:"missing_seed_count"`
-	Truncated          int64  `json:"truncated"`
-	BlockersJson       string `json:"blockers_json"`
+	ContextPacketID     string `json:"context_packet_id"`
+	ProjectRowID        int64  `json:"project_row_id"`
+	ProjectID           string `json:"project_id"`
+	PlanID              string `json:"plan_id"`
+	PassID              string `json:"pass_id"`
+	TaskSlug            string `json:"task_slug"`
+	SourceSnapshotRowID int64  `json:"source_snapshot_row_id"`
+	SourceSnapshotID    string `json:"source_snapshot_id"`
+	Status              string `json:"status"`
+	PacketJsonPath      string `json:"packet_json_path"`
+	PacketMarkdownPath  string `json:"packet_markdown_path"`
+	CoverageReportPath  string `json:"coverage_report_path"`
+	SourceCount         int64  `json:"source_count"`
+	CoveredSeedCount    int64  `json:"covered_seed_count"`
+	BlockedSeedCount    int64  `json:"blocked_seed_count"`
+	MissingSeedCount    int64  `json:"missing_seed_count"`
+	Truncated           int64  `json:"truncated"`
+	BlockersJson        string `json:"blockers_json"`
+	SummaryJson         string `json:"summary_json"`
+	CompletedAt         string `json:"completed_at"`
 }
 
 func (q *Queries) CreateContextPacket(ctx context.Context, arg CreateContextPacketParams) (ContextPacket, error) {
 	row := q.db.QueryRowContext(ctx, createContextPacket,
 		arg.ContextPacketID,
+		arg.ProjectRowID,
 		arg.ProjectID,
 		arg.PlanID,
 		arg.PassID,
 		arg.TaskSlug,
+		arg.SourceSnapshotRowID,
 		arg.SourceSnapshotID,
 		arg.Status,
 		arg.PacketJsonPath,
@@ -69,15 +79,19 @@ func (q *Queries) CreateContextPacket(ctx context.Context, arg CreateContextPack
 		arg.MissingSeedCount,
 		arg.Truncated,
 		arg.BlockersJson,
+		arg.SummaryJson,
+		arg.CompletedAt,
 	)
 	var i ContextPacket
 	err := row.Scan(
 		&i.ID,
 		&i.ContextPacketID,
+		&i.ProjectRowID,
 		&i.ProjectID,
 		&i.PlanID,
 		&i.PassID,
 		&i.TaskSlug,
+		&i.SourceSnapshotRowID,
 		&i.SourceSnapshotID,
 		&i.Status,
 		&i.PacketJsonPath,
@@ -89,7 +103,9 @@ func (q *Queries) CreateContextPacket(ctx context.Context, arg CreateContextPack
 		&i.MissingSeedCount,
 		&i.Truncated,
 		&i.BlockersJson,
+		&i.SummaryJson,
 		&i.CreatedAt,
+		&i.CompletedAt,
 	)
 	return i, err
 }
@@ -176,7 +192,7 @@ func (q *Queries) CreateContextPacketSource(ctx context.Context, arg CreateConte
 }
 
 const getContextPacketByID = `-- name: GetContextPacketByID :one
-SELECT id, context_packet_id, project_id, plan_id, pass_id, task_slug, source_snapshot_id, status, packet_json_path, packet_markdown_path, coverage_report_path, source_count, covered_seed_count, blocked_seed_count, missing_seed_count, truncated, blockers_json, created_at FROM context_packets WHERE context_packet_id = ?
+SELECT id, context_packet_id, project_row_id, project_id, plan_id, pass_id, task_slug, source_snapshot_row_id, source_snapshot_id, status, packet_json_path, packet_markdown_path, coverage_report_path, source_count, covered_seed_count, blocked_seed_count, missing_seed_count, truncated, blockers_json, summary_json, created_at, completed_at FROM context_packets WHERE context_packet_id = ?
 `
 
 func (q *Queries) GetContextPacketByID(ctx context.Context, contextPacketID string) (ContextPacket, error) {
@@ -185,10 +201,12 @@ func (q *Queries) GetContextPacketByID(ctx context.Context, contextPacketID stri
 	err := row.Scan(
 		&i.ID,
 		&i.ContextPacketID,
+		&i.ProjectRowID,
 		&i.ProjectID,
 		&i.PlanID,
 		&i.PassID,
 		&i.TaskSlug,
+		&i.SourceSnapshotRowID,
 		&i.SourceSnapshotID,
 		&i.Status,
 		&i.PacketJsonPath,
@@ -200,7 +218,9 @@ func (q *Queries) GetContextPacketByID(ctx context.Context, contextPacketID stri
 		&i.MissingSeedCount,
 		&i.Truncated,
 		&i.BlockersJson,
+		&i.SummaryJson,
 		&i.CreatedAt,
+		&i.CompletedAt,
 	)
 	return i, err
 }
@@ -251,7 +271,7 @@ func (q *Queries) ListContextPacketSources(ctx context.Context, contextPacketRow
 }
 
 const listContextPacketsByProject = `-- name: ListContextPacketsByProject :many
-SELECT id, context_packet_id, project_id, plan_id, pass_id, task_slug, source_snapshot_id, status, packet_json_path, packet_markdown_path, coverage_report_path, source_count, covered_seed_count, blocked_seed_count, missing_seed_count, truncated, blockers_json, created_at FROM context_packets WHERE project_id = ? ORDER BY created_at DESC, id DESC
+SELECT id, context_packet_id, project_row_id, project_id, plan_id, pass_id, task_slug, source_snapshot_row_id, source_snapshot_id, status, packet_json_path, packet_markdown_path, coverage_report_path, source_count, covered_seed_count, blocked_seed_count, missing_seed_count, truncated, blockers_json, summary_json, created_at, completed_at FROM context_packets WHERE project_id = ? ORDER BY created_at DESC, id DESC
 `
 
 func (q *Queries) ListContextPacketsByProject(ctx context.Context, projectID string) ([]ContextPacket, error) {
@@ -266,10 +286,12 @@ func (q *Queries) ListContextPacketsByProject(ctx context.Context, projectID str
 		if err := rows.Scan(
 			&i.ID,
 			&i.ContextPacketID,
+			&i.ProjectRowID,
 			&i.ProjectID,
 			&i.PlanID,
 			&i.PassID,
 			&i.TaskSlug,
+			&i.SourceSnapshotRowID,
 			&i.SourceSnapshotID,
 			&i.Status,
 			&i.PacketJsonPath,
@@ -281,7 +303,9 @@ func (q *Queries) ListContextPacketsByProject(ctx context.Context, projectID str
 			&i.MissingSeedCount,
 			&i.Truncated,
 			&i.BlockersJson,
+			&i.SummaryJson,
 			&i.CreatedAt,
+			&i.CompletedAt,
 		); err != nil {
 			return nil, err
 		}

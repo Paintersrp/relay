@@ -10,22 +10,26 @@ type ContextPacket = generated.ContextPacket
 type ContextPacketSource = generated.ContextPacketSource
 
 type CreateContextPacketParams struct {
-	ContextPacketID    string
-	ProjectID          string
-	PlanID             string
-	PassID             string
-	TaskSlug           string
-	SourceSnapshotID   string
-	Status             string
-	PacketJSONPath     string
-	PacketMarkdownPath string
-	CoverageReportPath string
-	SourceCount        int64
-	CoveredSeedCount   int64
-	BlockedSeedCount   int64
-	MissingSeedCount   int64
-	Truncated          int64
-	BlockersJSON       string
+	ContextPacketID     string
+	ProjectRowID        int64
+	ProjectID           string
+	PlanID              string
+	PassID              string
+	TaskSlug            string
+	SourceSnapshotRowID int64
+	SourceSnapshotID    string
+	Status              string
+	PacketJSONPath      string
+	PacketMarkdownPath  string
+	CoverageReportPath  string
+	SourceCount         int64
+	CoveredSeedCount    int64
+	BlockedSeedCount    int64
+	MissingSeedCount    int64
+	Truncated           int64
+	BlockersJSON        string
+	SummaryJSON         string
+	CompletedAt         string
 }
 
 type CreateContextPacketSourceParams struct {
@@ -48,22 +52,26 @@ type CreateContextPacketSourceParams struct {
 
 func (s *Store) CreateContextPacket(params CreateContextPacketParams) (*ContextPacket, error) {
 	row, err := s.queries.CreateContextPacket(context.Background(), generated.CreateContextPacketParams{
-		ContextPacketID:    params.ContextPacketID,
-		ProjectID:          params.ProjectID,
-		PlanID:             params.PlanID,
-		PassID:             params.PassID,
-		TaskSlug:           params.TaskSlug,
-		SourceSnapshotID:   params.SourceSnapshotID,
-		Status:             params.Status,
-		PacketJsonPath:     params.PacketJSONPath,
-		PacketMarkdownPath: params.PacketMarkdownPath,
-		CoverageReportPath: params.CoverageReportPath,
-		SourceCount:        params.SourceCount,
-		CoveredSeedCount:   params.CoveredSeedCount,
-		BlockedSeedCount:   params.BlockedSeedCount,
-		MissingSeedCount:   params.MissingSeedCount,
-		Truncated:          params.Truncated,
-		BlockersJson:       params.BlockersJSON,
+		ContextPacketID:     params.ContextPacketID,
+		ProjectRowID:        params.ProjectRowID,
+		ProjectID:           params.ProjectID,
+		PlanID:              params.PlanID,
+		PassID:              params.PassID,
+		TaskSlug:            params.TaskSlug,
+		SourceSnapshotRowID: params.SourceSnapshotRowID,
+		SourceSnapshotID:    params.SourceSnapshotID,
+		Status:              params.Status,
+		PacketJsonPath:      params.PacketJSONPath,
+		PacketMarkdownPath:  params.PacketMarkdownPath,
+		CoverageReportPath:  params.CoverageReportPath,
+		SourceCount:         params.SourceCount,
+		CoveredSeedCount:    params.CoveredSeedCount,
+		BlockedSeedCount:    params.BlockedSeedCount,
+		MissingSeedCount:    params.MissingSeedCount,
+		Truncated:           params.Truncated,
+		BlockersJson:        params.BlockersJSON,
+		SummaryJson:         params.SummaryJSON,
+		CompletedAt:         params.CompletedAt,
 	})
 	if err != nil {
 		return nil, err

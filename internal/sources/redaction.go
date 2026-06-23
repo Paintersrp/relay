@@ -48,3 +48,8 @@ func redactSourceContent(input string) (string, string) {
 	}
 	return result, RedactionStatusNotNeeded
 }
+
+// RedactSourceContent performs the same redaction and blocking scans as the internal helper.
+func RedactSourceContent(input string) (string, string) {
+	return redactSourceContent(input)
+}

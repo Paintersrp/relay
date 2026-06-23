@@ -398,3 +398,131 @@ func mustPacketRow(t *testing.T, st *store.Store, contextPacketID string) *store
 	}
 	return row
 }
+
+func TestCreateContextPacketRequiresAtLeastOneSourceRequest(t *testing.T) {
+	fixture := setupContextPacketFixture(t, fixtureOptions{})
+	_, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
+		ProjectID:        "relay",
+		SourceSnapshotID: fixture.snapshotID,
+	})
+	if err == nil || !strings.Contains(err.Error(), "at least one seed file, seed search, or inventory request is required") {
+		t.Fatalf("expected error for empty request, got: %v", err)
+	}
+}
+
+func TestCreateContextPacketArtifactsIncludeSchemaVersion(t *testing.T) {
+	fixture := setupContextPacketFixture(t, fixtureOptions{})
+	result, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
+		ProjectID:        "relay",
+		SourceSnapshotID: fixture.snapshotID,
+		SeedFiles: []ContextSeedFile{{
+			RepoID:    "relay",
+			Path:      "src/app.txt",
+			LineStart: 1,
+			LineEnd:   2,
+			Required:  true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket error: %v", err)
+	}
+	packet := readPacketArtifact(t, result.PacketJSONPath)
+	if packet.SchemaVersion != "1.0.0" {
+		t.Fatalf("expected schema version 1.0.0 in packet JSON, got: %s", packet.SchemaVersion)
+	}
+	data, err := os.ReadFile(result.CoverageReportPath)
+	if err != nil {
+		t.Fatalf("os.ReadFile coverage report error: %v", err)
+	}
+	var report ContextCoverageReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("Unmarshal coverage report: %v", err)
+	}
+	if report.SchemaVersion != "1.0.0" {
+		t.Fatalf("expected schema version 1.0.0 in coverage report, got: %s", report.SchemaVersion)
+	}
+}
+
+func TestCreateContextPacketJSONIncludesCoverage(t *testing.T) {
+	fixture := setupContextPacketFixture(t, fixtureOptions{})
+	result, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
+		ProjectID:        "relay",
+		SourceSnapshotID: fixture.snapshotID,
+		SeedFiles: []ContextSeedFile{{
+			RepoID:    "relay",
+			Path:      "src/app.txt",
+			LineStart: 1,
+			LineEnd:   2,
+			Required:  true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket error: %v", err)
+	}
+	packet := readPacketArtifact(t, result.PacketJSONPath)
+	if len(packet.Coverage) != 1 || packet.Coverage[0].SeedID != "file:1" {
+		t.Fatalf("expected embedded coverage with 1 entry, got: %+v", packet.Coverage)
+	}
+}
+
+func TestFinalRedactionScanBlocksAndRedacts(t *testing.T) {
+	srcs := []ContextSource{
+		{
+			SourceID:   "src_token",
+			SourceType: SourceTypeFileRead,
+			RepoID:     "relay",
+			Path:       "src/token.txt",
+			Content:    "Authorization: bearer abcdef123\n",
+		},
+		{
+			SourceID:   "src_private",
+			SourceType: SourceTypeFileRead,
+			RepoID:     "relay",
+			Path:       "src/private.txt",
+			Content:    "-----BEGIN RSA PRIVATE KEY-----\nsecret_key_material\n",
+		},
+	}
+	blockers := []sources.SourceBlocker{}
+	coverage := []ContextCoverageEntry{
+		{
+			SeedID:    "file:1",
+			SeedType:  "file",
+			Required:  false,
+			Status:    CoverageStatusCovered,
+			SourceIDs: []string{"src_token"},
+		},
+		{
+			SeedID:    "file:2",
+			SeedType:  "file",
+			Required:  true,
+			Status:    CoverageStatusCovered,
+			SourceIDs: []string{"src_private"},
+		},
+	}
+
+	finalSources, finalBlockers, finalCoverage := runFinalRedactionScan(srcs, blockers, coverage)
+
+	// src_private should be blocked and omitted, src_token should be redacted and included
+	if len(finalSources) != 1 || finalSources[0].SourceID != "src_token" {
+		t.Fatalf("expected final sources to contain only src_token, got: %+v", finalSources)
+	}
+	if !strings.Contains(finalSources[0].Content, "[REDACTED_AUTH_HEADER]") {
+		t.Fatalf("expected token redaction, got: %s", finalSources[0].Content)
+	}
+	if finalSources[0].RedactionStatus != sources.RedactionStatusRedacted {
+		t.Fatalf("expected redaction status redacted, got: %s", finalSources[0].RedactionStatus)
+	}
+
+	// 1 blocker added
+	if len(finalBlockers) != 1 || finalBlockers[0].Code != sources.SourceBlockerRedactionBlocked {
+		t.Fatalf("expected 1 blocked blocker, got: %+v", finalBlockers)
+	}
+
+	// Coverage: file:1 remains covered (redaction is allowed), file:2 becomes blocked (required seed file containing blocked key)
+	if finalCoverage[0].Status != CoverageStatusCovered {
+		t.Fatalf("expected optional redacted file coverage status to be covered, got: %s", finalCoverage[0].Status)
+	}
+	if finalCoverage[1].Status != CoverageStatusBlocked {
+		t.Fatalf("expected required blocked file coverage status to be blocked, got: %s", finalCoverage[1].Status)
+	}
+}

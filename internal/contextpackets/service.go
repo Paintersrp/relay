@@ -52,11 +52,36 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 	if projectID == "" {
 		return nil, fmt.Errorf("project_id is required")
 	}
+
+	// Validate that at least one source request (seed files, seed searches, or inventory) is present
+	if !input.IncludeInventory && len(input.SeedFiles) == 0 && len(input.SeedSearches) == 0 {
+		return nil, fmt.Errorf("at least one seed file, seed search, or inventory request is required")
+	}
+
+	// Lookup project row ID to satisfy foreign key constraints
+	project, err := s.store.GetProjectByProjectID(projectID)
+	if err != nil {
+		return nil, fmt.Errorf("lookup project by ID %s: %w", projectID, err)
+	}
+	projectRowID := project.ID
+
 	taskSlug := normalizeTaskSlug(input.TaskSlug)
 	maxSources := boundedPositive(input.MaxSources, defaultMaxSources, hardMaxSources)
 	maxTotalBytes := boundedPositive(input.MaxTotalBytes, defaultMaxTotalBytes, hardMaxTotalBytes)
 	generatedAt := nowSQLUTC()
-	contextPacketID := "ctxpkt_" + uuid.NewString()
+
+	// Align context packet ID generation to format: ctxpkt-YYYY-MM-DD-<short-random>
+	datePart := generatedAt
+	if len(datePart) >= len("2006-01-02") {
+		datePart = datePart[:len("2006-01-02")]
+	} else {
+		datePart = time.Now().UTC().Format("2006-01-02")
+	}
+	randomPart := uuid.NewString()
+	if len(randomPart) > 8 {
+		randomPart = randomPart[:8]
+	}
+	contextPacketID := fmt.Sprintf("ctxpkt-%s-%s", datePart, randomPart)
 
 	builder := packetBuilder{
 		projectID:        projectID,
@@ -262,6 +287,15 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 		coverage = append(coverage, entry)
 	}
 
+	builder.sources, blockers, coverage = runFinalRedactionScan(builder.sources, blockers, coverage)
+
+	// Recalculate total bytes
+	totalBytes := 0
+	for _, src := range builder.sources {
+		totalBytes += len([]byte(src.Content)) + len([]byte(src.Snippet))
+	}
+	builder.totalBytes = totalBytes
+
 	truncated := builder.truncated || hasAnyTruncatedCoverage(coverage)
 	covered, blocked, missing := coverageCounts(coverage)
 	status := statusFromCoverage(coverage, truncated)
@@ -276,7 +310,19 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 		TotalSourceBytes:  builder.totalBytes,
 		InventoryIncluded: input.IncludeInventory,
 	}
+
+	// Lookup source snapshot row ID
+	var snapshotRowID int64
+	if builder.sourceSnapshotID != "" {
+		snapshot, err := s.store.GetSourceSnapshotByID(builder.sourceSnapshotID)
+		if err != nil {
+			return nil, fmt.Errorf("lookup source snapshot by ID %s: %w", builder.sourceSnapshotID, err)
+		}
+		snapshotRowID = snapshot.ID
+	}
+
 	packet := ContextPacket{
+		SchemaVersion:    ContextPacketSchemaVersion,
 		ContextPacketID:  contextPacketID,
 		ProjectID:        projectID,
 		PlanID:           strings.TrimSpace(input.PlanID),
@@ -287,9 +333,11 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 		GeneratedAt:      generatedAt,
 		Summary:          summary,
 		Sources:          builder.sources,
+		Coverage:         coverage,
 		Blockers:         blockers,
 	}
 	report := ContextCoverageReport{
+		SchemaVersion:    ContextPacketSchemaVersion,
 		ContextPacketID:  contextPacketID,
 		ProjectID:        projectID,
 		PlanID:           packet.PlanID,
@@ -310,23 +358,32 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 	if err != nil {
 		return nil, err
 	}
+	summaryJSON, err := json.Marshal(summary)
+	if err != nil {
+		return nil, err
+	}
+
 	row, err := s.store.CreateContextPacket(store.CreateContextPacketParams{
-		ContextPacketID:    contextPacketID,
-		ProjectID:          projectID,
-		PlanID:             packet.PlanID,
-		PassID:             packet.PassID,
-		TaskSlug:           taskSlug,
-		SourceSnapshotID:   builder.sourceSnapshotID,
-		Status:             status,
-		PacketJSONPath:     packetJSONPath,
-		PacketMarkdownPath: packetMarkdownPath,
-		CoverageReportPath: coverageReportPath,
-		SourceCount:        int64(summary.SourceCount),
-		CoveredSeedCount:   int64(summary.CoveredSeedCount),
-		BlockedSeedCount:   int64(summary.BlockedSeedCount),
-		MissingSeedCount:   int64(summary.MissingSeedCount),
-		Truncated:          boolToInt64(summary.Truncated),
-		BlockersJSON:       string(blockersJSON),
+		ContextPacketID:     contextPacketID,
+		ProjectRowID:        projectRowID,
+		ProjectID:           projectID,
+		PlanID:              packet.PlanID,
+		PassID:              packet.PassID,
+		TaskSlug:            taskSlug,
+		SourceSnapshotRowID: snapshotRowID,
+		SourceSnapshotID:    builder.sourceSnapshotID,
+		Status:              status,
+		PacketJSONPath:      packetJSONPath,
+		PacketMarkdownPath:  packetMarkdownPath,
+		CoverageReportPath:  coverageReportPath,
+		SourceCount:         int64(summary.SourceCount),
+		CoveredSeedCount:    int64(summary.CoveredSeedCount),
+		BlockedSeedCount:    int64(summary.BlockedSeedCount),
+		MissingSeedCount:    int64(summary.MissingSeedCount),
+		Truncated:           boolToInt64(summary.Truncated),
+		BlockersJSON:        string(blockersJSON),
+		SummaryJSON:         string(summaryJSON),
+		CompletedAt:         generatedAt,
 	})
 	if err != nil {
 		return nil, err
@@ -458,4 +515,92 @@ func boolToInt64(value bool) int64 {
 
 func nowSQLUTC() string {
 	return time.Now().UTC().Format("2006-01-02 15:04:05")
+}
+
+func sha256HexString(val string) string {
+	sum := sha256.Sum256([]byte(val))
+	return hex.EncodeToString(sum[:])
+}
+
+func runFinalRedactionScan(srcs []ContextSource, blockers []sources.SourceBlocker, coverage []ContextCoverageEntry) ([]ContextSource, []sources.SourceBlocker, []ContextCoverageEntry) {
+	var finalSources []ContextSource
+	blockedSourceIDs := make(map[string]sources.SourceBlocker)
+
+	for _, source := range srcs {
+		isBlocked := false
+		var newContent, newSnippet string
+		var contentStatus, snippetStatus string
+
+		if source.Content != "" {
+			var st string
+			newContent, st = sources.RedactSourceContent(source.Content)
+			if st == sources.RedactionStatusBlocked {
+				isBlocked = true
+			} else if st == sources.RedactionStatusRedacted {
+				contentStatus = st
+			}
+		}
+		if source.Snippet != "" && !isBlocked {
+			var st string
+			newSnippet, st = sources.RedactSourceContent(source.Snippet)
+			if st == sources.RedactionStatusBlocked {
+				isBlocked = true
+			} else if st == sources.RedactionStatusRedacted {
+				snippetStatus = st
+			}
+		}
+
+		if isBlocked {
+			blocker := sources.SourceBlocker{
+				RepoID:  source.RepoID,
+				Code:    sources.SourceBlockerRedactionBlocked,
+				Message: fmt.Sprintf("source content for %s contains blocked secret material", source.Path),
+			}
+			blockedSourceIDs[source.SourceID] = blocker
+			blockers = append(blockers, blocker)
+		} else {
+			if contentStatus == sources.RedactionStatusRedacted {
+				source.Content = newContent
+				source.RedactionStatus = sources.RedactionStatusRedacted
+				if source.SourceType == SourceTypeFileRead {
+					source.SnippetHash = sha256HexString(newContent)
+				}
+			}
+			if snippetStatus == sources.RedactionStatusRedacted {
+				source.Snippet = newSnippet
+				source.RedactionStatus = sources.RedactionStatusRedacted
+				if source.SourceType == SourceTypeSearchMatch {
+					source.SnippetHash = sha256HexString(newSnippet)
+				}
+			}
+			finalSources = append(finalSources, source)
+		}
+	}
+
+	// Update coverage entries to reflect blocked/removed sources
+	for idx, entry := range coverage {
+		var newSourceIDs []string
+		entryBlocked := false
+		var entryBlockers []sources.SourceBlocker
+
+		for _, srcID := range entry.SourceIDs {
+			if blocker, ok := blockedSourceIDs[srcID]; ok {
+				entryBlocked = true
+				entryBlockers = append(entryBlockers, blocker)
+			} else {
+				newSourceIDs = append(newSourceIDs, srcID)
+			}
+		}
+
+		if entryBlocked {
+			coverage[idx].SourceIDs = newSourceIDs
+			coverage[idx].Blockers = append(coverage[idx].Blockers, entryBlockers...)
+			if entry.Required {
+				coverage[idx].Status = CoverageStatusBlocked
+			} else {
+				coverage[idx].Status = CoverageStatusPartial
+			}
+		}
+	}
+	return finalSources, blockers, coverage
 }

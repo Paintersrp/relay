@@ -46,24 +46,28 @@ type Check struct {
 }
 
 type ContextPacket struct {
-	ID                 int64  `json:"id"`
-	ContextPacketID    string `json:"context_packet_id"`
-	ProjectID          string `json:"project_id"`
-	PlanID             string `json:"plan_id"`
-	PassID             string `json:"pass_id"`
-	TaskSlug           string `json:"task_slug"`
-	SourceSnapshotID   string `json:"source_snapshot_id"`
-	Status             string `json:"status"`
-	PacketJsonPath     string `json:"packet_json_path"`
-	PacketMarkdownPath string `json:"packet_markdown_path"`
-	CoverageReportPath string `json:"coverage_report_path"`
-	SourceCount        int64  `json:"source_count"`
-	CoveredSeedCount   int64  `json:"covered_seed_count"`
-	BlockedSeedCount   int64  `json:"blocked_seed_count"`
-	MissingSeedCount   int64  `json:"missing_seed_count"`
-	Truncated          int64  `json:"truncated"`
-	BlockersJson       string `json:"blockers_json"`
-	CreatedAt          string `json:"created_at"`
+	ID                  int64  `json:"id"`
+	ContextPacketID     string `json:"context_packet_id"`
+	ProjectRowID        int64  `json:"project_row_id"`
+	ProjectID           string `json:"project_id"`
+	PlanID              string `json:"plan_id"`
+	PassID              string `json:"pass_id"`
+	TaskSlug            string `json:"task_slug"`
+	SourceSnapshotRowID int64  `json:"source_snapshot_row_id"`
+	SourceSnapshotID    string `json:"source_snapshot_id"`
+	Status              string `json:"status"`
+	PacketJsonPath      string `json:"packet_json_path"`
+	PacketMarkdownPath  string `json:"packet_markdown_path"`
+	CoverageReportPath  string `json:"coverage_report_path"`
+	SourceCount         int64  `json:"source_count"`
+	CoveredSeedCount    int64  `json:"covered_seed_count"`
+	BlockedSeedCount    int64  `json:"blocked_seed_count"`
+	MissingSeedCount    int64  `json:"missing_seed_count"`
+	Truncated           int64  `json:"truncated"`
+	BlockersJson        string `json:"blockers_json"`
+	SummaryJson         string `json:"summary_json"`
+	CreatedAt           string `json:"created_at"`
+	CompletedAt         string `json:"completed_at"`
 }
 
 type ContextPacketSource struct {
