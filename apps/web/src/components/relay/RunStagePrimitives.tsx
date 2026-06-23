@@ -163,7 +163,7 @@ export function RunStageSummaryChip({
       )}
     >
       {label ? (
-        <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+        <span className="shrink-0 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
           {label}
         </span>
       ) : null}
@@ -537,7 +537,7 @@ export function RunStageInspectorTabStrip<TTab extends InspectorTabKey>({
               type="button"
               onClick={() => onTabChange(tab.key)}
               className={cn(
-                "flex h-10 items-center border-b-2 text-[11px] font-medium transition-colors",
+                "flex h-12 items-center border-b-2 text-[13px] font-medium transition-colors",
                 active
                   ? "border-[var(--relay-accent)] text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground",
@@ -579,7 +579,7 @@ export function RunStageSection({
         className,
       )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--relay-row-border)] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--relay-row-border)] p-5">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-start gap-3">
             {icon ? (
@@ -598,7 +598,7 @@ export function RunStageSection({
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
 
-      <div className={cn("min-w-0 p-4", contentClassName)}>{children}</div>
+      <div className={cn("min-w-0 p-5", contentClassName)}>{children}</div>
     </section>
   );
 }
@@ -636,11 +636,11 @@ export function RunStageKeyValueGrid({
           className="min-w-0 rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-2.5"
         >
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-            <p className="min-w-0 flex-1 text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+            <p className="min-w-0 flex-1 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
               {row.label}
             </p>
             {row.source ? (
-              <span className="inline-flex shrink-0 rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-2 py-0.5 text-[11px] text-muted-foreground">
+              <span className="inline-flex shrink-0 rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-2 py-0.5 text-xs text-muted-foreground">
                 {row.source}
               </span>
             ) : null}
@@ -648,7 +648,7 @@ export function RunStageKeyValueGrid({
           <div
             className={cn(
               "mt-2 min-w-0 break-words text-sm text-foreground",
-              row.mono && "font-mono text-[13px]",
+              row.mono && "font-mono text-[14px]",
               row.emphasis && "font-semibold",
             )}
           >
@@ -744,13 +744,13 @@ export function RunStageProvenanceTable({
       <table className="min-w-[40rem] w-full border-collapse text-sm">
         <thead className="bg-[var(--surface-inset)]/60">
           <tr>
-            <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+            <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
               Field
             </th>
-            <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+            <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
               Value
             </th>
-            <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+            <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
               Source
             </th>
           </tr>
@@ -767,13 +767,13 @@ export function RunStageProvenanceTable({
               <td
                 className={cn(
                   "px-3 py-2.5 text-sm text-foreground",
-                  row.valueMono && "font-mono text-[13px]",
+                  row.valueMono && "font-mono text-[14px]",
                 )}
               >
                 {row.value}
               </td>
               <td className="px-3 py-2.5">
-                <span className="inline-flex rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)] px-2 py-0.5 text-[11px] text-muted-foreground">
+                <span className="inline-flex rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)] px-2 py-0.5 text-xs text-muted-foreground">
                   {row.source}
                 </span>
               </td>
@@ -918,7 +918,7 @@ export function RunStageFindingRow({
           className="capitalize"
         />
         {code ? (
-          <span className="font-mono text-[11px] text-muted-foreground">
+          <span className="font-mono text-xs text-muted-foreground">
             {code}
           </span>
         ) : null}

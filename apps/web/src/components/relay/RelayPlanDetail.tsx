@@ -115,7 +115,7 @@ export function RelayPlanDetail({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5">
       <section className="border-b border-[var(--relay-row-border)] pb-4">
         <div className="mb-3 flex items-center gap-1.5 text-xs">
           <Link
@@ -126,32 +126,32 @@ export function RelayPlanDetail({
             Plans
           </Link>
           <span className="text-muted-foreground/60">·</span>
-          <span className="max-w-xs truncate text-[11px] text-muted-foreground sm:max-w-sm">
+          <span className="max-w-xs truncate text-xs text-muted-foreground sm:max-w-sm">
             {plan.title}
           </span>
         </div>
 
         <div className="mb-2.5 flex flex-wrap items-start gap-2.5">
-          <h1 className="min-w-0 text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="min-w-0 text-2xl font-semibold tracking-tight text-foreground">
             {plan.title}
           </h1>
           <Badge
             variant={getPlanStatusVariant(plan.status)}
-            className="h-auto rounded-sm px-2 py-0.5 text-[10px] font-medium tracking-wide"
+            className="h-auto rounded-sm px-2 py-0.5 text-[11px] font-medium tracking-wide"
           >
             {getPlanStatusLabel(plan.status)}
           </Badge>
           {completionReady && plan.status === "active" ? (
             <Badge
               variant="warning"
-              className="h-auto rounded-sm px-2 py-0.5 text-[10px] font-medium tracking-wide"
+              className="h-auto rounded-sm px-2 py-0.5 text-[11px] font-medium tracking-wide"
             >
               Completion Ready
             </Badge>
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
           <button
             type="button"
             onClick={copyPlanId}
@@ -161,10 +161,10 @@ export function RelayPlanDetail({
             <span>{plan.planId}</span>
             <Copy className="size-3 opacity-50 transition-opacity group-hover:opacity-100" />
             {planIdCopyState === "copied" ? (
-              <span className="text-[10px] text-[var(--success)]">Copied</span>
+              <span className="text-[11px] text-[var(--success)]">Copied</span>
             ) : null}
             {planIdCopyState === "failed" ? (
-              <span className="text-[10px] text-destructive">Copy failed</span>
+              <span className="text-[11px] text-destructive">Copy failed</span>
             ) : null}
           </button>
           <span className="text-muted-foreground/60">·</span>
@@ -195,7 +195,7 @@ export function RelayPlanDetail({
           <div className="min-w-0 flex-1 pl-1">
             <div
               className={cn(
-                "font-mono text-[10px] uppercase tracking-[0.18em]",
+                "font-mono text-[11px] uppercase tracking-[0.18em]",
                 cardState.eyebrowClassName,
               )}
             >
@@ -217,7 +217,7 @@ export function RelayPlanDetail({
                 type="button"
                 variant="outline"
                 size="xs"
-                className="rounded-sm px-3 text-[11px]"
+                className="rounded-sm px-3 text-xs"
                 onClick={copyContext}
               >
                 {contextCopyState === "copied"
@@ -231,7 +231,7 @@ export function RelayPlanDetail({
                   asChild
                   variant="outline"
                   size="xs"
-                  className="rounded-sm px-3 text-[11px]"
+                  className="rounded-sm px-3 text-xs"
                 >
                   <Link
                     to="/plans/$planId/passes/$passId"
@@ -250,7 +250,7 @@ export function RelayPlanDetail({
         <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-5 py-4">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                 {currentPass ? "Current Pass Context" : "Next Pass Context"}
               </div>
               <div className="mt-1 text-sm font-medium text-foreground">
@@ -268,7 +268,7 @@ export function RelayPlanDetail({
               asChild
               variant="outline"
               size="xs"
-              className="rounded-sm px-3 text-[11px]"
+              className="rounded-sm px-3 text-xs"
             >
               <Link
                 to="/plans/$planId/passes/$passId"
@@ -279,7 +279,7 @@ export function RelayPlanDetail({
             </Button>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
+          <div className="mt-4 flex flex-wrap gap-2 text-xs">
             <span className="rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-2 py-1 text-foreground">
               {focusPassContextSummary.requiredRepositoryCount} repos
             </span>
@@ -330,7 +330,7 @@ export function RelayPlanDetail({
             })}
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11px]">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-xs">
             <span className="text-muted-foreground">{progress.total} passes</span>
             {completionReady && plan.status === "active" ? (
               <>
@@ -375,7 +375,7 @@ export function RelayPlanDetail({
       {sortedPasses.length > 0 ? (
         <section>
           <div className="mb-2">
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
               Passes — {sortedPasses.length}
             </span>
           </div>
@@ -391,14 +391,14 @@ export function RelayPlanDetail({
 
       <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
         <div className="border-b border-[var(--relay-row-border)] px-5 py-2.5">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             Plan Context
           </span>
         </div>
 
         {plan.sourceIntentSummary || plan.goal ? (
           <div className="border-b border-[var(--relay-row-border)] px-5 py-3">
-            <div className="mb-1.5 text-[10px] text-muted-foreground">Source intent</div>
+            <div className="mb-1.5 text-[11px] text-muted-foreground">Source intent</div>
             <div className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
               {plan.sourceIntentSummary || plan.goal}
             </div>
@@ -408,34 +408,34 @@ export function RelayPlanDetail({
         <div className="flex flex-wrap gap-x-8 gap-y-3 px-5 py-3">
           {plan.sourceArtifactPath ? (
             <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] text-muted-foreground">Artifact</span>
-              <span className="break-all font-mono text-[11px] text-foreground">
+              <span className="text-[11px] text-muted-foreground">Artifact</span>
+              <span className="break-all font-mono text-xs text-foreground">
                 {plan.sourceArtifactPath}
               </span>
             </div>
           ) : null}
           <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] text-muted-foreground">Repo</span>
-            <span className="break-all font-mono text-[11px] text-foreground">
+            <span className="text-[11px] text-muted-foreground">Repo</span>
+            <span className="break-all font-mono text-xs text-foreground">
               {plan.repoTarget}
             </span>
           </div>
           <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] text-muted-foreground">Branch</span>
-            <span className="break-all font-mono text-[11px] text-foreground">
+            <span className="text-[11px] text-muted-foreground">Branch</span>
+            <span className="break-all font-mono text-xs text-foreground">
               {plan.branchContext}
             </span>
           </div>
           <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] text-muted-foreground">Plan ID</span>
-            <span className="break-all font-mono text-[11px] text-foreground">
+            <span className="text-[11px] text-muted-foreground">Plan ID</span>
+            <span className="break-all font-mono text-xs text-foreground">
               {plan.planId}
             </span>
           </div>
           <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] text-muted-foreground">Updated</span>
+            <span className="text-[11px] text-muted-foreground">Updated</span>
             <span
-              className="text-[11px] text-muted-foreground"
+              className="text-xs text-muted-foreground"
               title={formatPlanDate(plan.updatedAt)}
             >
               {formatPlanDateRelative(plan.updatedAt)}

@@ -190,27 +190,27 @@ export function RunWorkbenchLayout({
     >
       {/* Compact run header */}
       <header className="shrink-0 border-b border-[var(--relay-row-border)] bg-[var(--relay-page-header-bg)]">
-        <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
+        <div className="flex min-h-[4.5rem] items-center justify-between gap-4 px-4 py-3">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
               <Button
                 variant="ghost"
                 size="sm"
                 asChild
-                className="-ml-2 h-7 shrink-0 gap-1.5 px-2 text-xs"
+                className="-ml-2 h-8 shrink-0 gap-1.5 px-2 text-sm"
               >
                 <Link to="/runs">
-                  <ArrowLeft className="h-3.5 w-3.5" />
+                  <ArrowLeft className="h-4 w-4" />
                   Runs
                 </Link>
               </Button>
-              <h1 className="truncate text-base font-semibold leading-tight text-foreground">
+              <h1 className="truncate text-lg font-semibold leading-tight text-foreground">
                 {run.title}
               </h1>
               <StatusBadge status={run.status} className="shrink-0" />
             </div>
 
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
               <span>{run.id}</span>
               {run.packetId ? (
                 <>
@@ -232,7 +232,7 @@ export function RunWorkbenchLayout({
             ) : null}
           </div>
 
-          <div className="hidden shrink-0 items-center gap-4 text-right text-[11px] text-muted-foreground lg:flex">
+          <div className="hidden shrink-0 items-center gap-4 text-right text-xs text-muted-foreground lg:flex">
             <span className="font-mono">{run.executor}</span>
             <span className="font-medium" title={formatRunDate(run.updatedAt)}>
               Updated {formatRunDateRelative(run.updatedAt)}
@@ -243,7 +243,7 @@ export function RunWorkbenchLayout({
 
       {/* Stage rail */}
       <div className="shrink-0 border-b border-[var(--relay-row-border)]">
-        <div className="flex min-h-10 min-w-0 flex-wrap items-center justify-between gap-3 px-4">
+        <div className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-3 px-4">
           <RunStepper
             runId={run.id}
             activeStep={activeShellStep}
@@ -273,7 +273,7 @@ export function RunWorkbenchLayout({
               description={activeStageCopy.description}
               status={<StatusBadge status={run.status} className="shrink-0" />}
             />
-            <div className="min-w-0 px-4 py-4">
+            <div className="min-w-0 px-6 py-5">
               {mainContent}
 
               <section className="mt-4 lg:hidden">
@@ -285,7 +285,7 @@ export function RunWorkbenchLayout({
                       onTabChange={setActiveInspectorTab}
                     />
                   </div>
-                  <div className="p-3">
+                  <div className="p-4">
                     <div className="flex min-w-0 flex-col gap-3">
                       {resolvedActiveTab === 'details' &&
                       hasRunPlanContext(run.planContext) ? (
@@ -314,7 +314,7 @@ export function RunWorkbenchLayout({
             className="hidden min-h-0 lg:flex"
           >
             <aside className="flex h-full min-h-0 w-full flex-col border-l border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]">
-              <div className="flex h-10 shrink-0 items-center border-b border-[var(--relay-row-border)] px-3">
+              <div className="flex h-12 shrink-0 items-center border-b border-[var(--relay-row-border)] px-3">
                 <RunStageInspectorTabStrip
                   tabs={resolvedTabs}
                   activeTab={resolvedActiveTab}
@@ -323,7 +323,7 @@ export function RunWorkbenchLayout({
                 />
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
                 <div className="flex flex-col gap-3">
                   {resolvedActiveTab === 'details' &&
                   hasRunPlanContext(run.planContext) ? (

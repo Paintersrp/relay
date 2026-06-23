@@ -131,9 +131,9 @@ export function RelayPlanPassTimeline({ planId, passes }: RelayPlanPassTimelineP
               <div className={cn("absolute inset-y-0 left-0 w-[2px]", accentClass)} />
             ) : null}
 
-            <div className="flex flex-col gap-3 py-3 pr-4 pl-5 sm:flex-row sm:items-start">
+            <div className="flex flex-col gap-3 py-3.5 pr-4 pl-5 sm:flex-row sm:items-start">
               <div className="flex w-5 shrink-0 flex-col items-center gap-1.5 pt-0.5">
-                <span className="font-mono text-[10px] leading-none text-muted-foreground">
+                <span className="font-mono text-[11px] leading-none text-muted-foreground">
                   {pass.sequence}
                 </span>
                 <span className={cn("h-1.5 w-1.5 rounded-full", getStatusDotClass(pass))} />
@@ -143,19 +143,19 @@ export function RelayPlanPassTimeline({ planId, passes }: RelayPlanPassTimelineP
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span
                     className={cn(
-                      "text-[13px] font-medium leading-snug",
+                      "text-sm font-medium leading-snug",
                       isCompleted ? "text-muted-foreground" : "text-foreground",
                     )}
                   >
                     {pass.name}
                   </span>
-                  <span className="font-mono text-[10px] text-muted-foreground">
+                  <span className="font-mono text-[11px] text-muted-foreground">
                     {pass.passId}
                   </span>
                   <Badge
                     variant="outline"
                     className={cn(
-                      "h-auto rounded-sm px-1.5 py-px text-[9px] font-medium tracking-wide",
+                      "h-auto rounded-sm px-1.5 py-px text-[10px] font-medium tracking-wide",
                       getStatusBadgeClass(pass),
                     )}
                   >
@@ -164,13 +164,13 @@ export function RelayPlanPassTimeline({ planId, passes }: RelayPlanPassTimelineP
                 </div>
 
                 {!isCompleted && pass.goal ? (
-                  <div className="mt-0.5 truncate text-[11px] leading-snug text-muted-foreground">
+                  <div className="mt-0.5 truncate text-xs leading-snug text-muted-foreground">
                     {pass.goal}
                   </div>
                 ) : null}
 
                 {isCurrent && pass.intendedExecutionScope.length > 0 ? (
-                  <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                  <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
                     {pass.intendedExecutionScope.join(", ")}
                   </div>
                 ) : null}
@@ -180,7 +180,7 @@ export function RelayPlanPassTimeline({ planId, passes }: RelayPlanPassTimelineP
                     {unmetDependencies.map((dependency) => (
                       <span
                         key={`${pass.id}-${dependency}`}
-                        className="inline-flex items-center rounded-sm border border-destructive/35 bg-destructive/10 px-1.5 py-px font-mono text-[10px] text-destructive"
+                        className="inline-flex items-center rounded-sm border border-destructive/35 bg-destructive/10 px-1.5 py-px font-mono text-[11px] text-destructive"
                       >
                         Blocked by {dependency}
                       </span>
@@ -191,7 +191,7 @@ export function RelayPlanPassTimeline({ planId, passes }: RelayPlanPassTimelineP
                     {pass.dependencies.map((dependency) => (
                       <span
                         key={`${pass.id}-${dependency}`}
-                        className="inline-flex items-center rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-1.5 py-px font-mono text-[10px] text-muted-foreground"
+                        className="inline-flex items-center rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-1.5 py-px font-mono text-[11px] text-muted-foreground"
                       >
                         {dependency}
                       </span>
@@ -204,14 +204,14 @@ export function RelayPlanPassTimeline({ planId, passes }: RelayPlanPassTimelineP
                 {hasAssociatedRuns && primaryRun ? (
                   <a
                     href={primaryRun.workbenchPath}
-                    className="inline-flex min-w-[110px] items-center justify-end gap-1 rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-2 py-1 text-right font-mono text-[10px] text-foreground transition-colors hover:bg-[var(--relay-panel-hover-bg)]"
+                    className="inline-flex min-w-[110px] items-center justify-end gap-1 rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-2 py-1 text-right font-mono text-[11px] text-foreground transition-colors hover:bg-[var(--relay-panel-hover-bg)]"
                     title={`Open run ${primaryRun.id}`}
                   >
                     <ExternalLink className="size-3 text-muted-foreground" />
                     <span>{getAssociatedRunSummaryLabel(pass)}</span>
                   </a>
                 ) : (
-                  <span className="min-w-[68px] text-right font-mono text-[10px] text-muted-foreground/80">
+                  <span className="min-w-[68px] text-right font-mono text-[11px] text-muted-foreground/80">
                     No run yet
                   </span>
                 )}
@@ -221,7 +221,7 @@ export function RelayPlanPassTimeline({ planId, passes }: RelayPlanPassTimelineP
                   variant="outline"
                   size="xs"
                   title={action.title}
-                  className="rounded-sm px-2 text-[11px]"
+                  className="rounded-sm px-2 text-xs"
                 >
                   <Link
                     to="/plans/$planId/passes/$passId"

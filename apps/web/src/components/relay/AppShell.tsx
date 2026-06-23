@@ -35,16 +35,16 @@ export function AppShell({ children, className }: AppShellProps) {
         className,
       )}
     >
-      <header className="flex h-13 min-w-0 shrink-0 items-center gap-2 overflow-hidden border-b border-[var(--relay-topbar-border)] bg-[var(--relay-topbar-bg)] px-3 sm:px-4">
+      <header className="flex h-14 min-w-0 shrink-0 items-center gap-2 overflow-hidden border-b border-[var(--relay-topbar-border)] bg-[var(--relay-topbar-bg)] px-3 sm:px-4">
         <Link
           to="/runs"
           className="flex min-w-0 items-center gap-2.5 text-[var(--relay-topbar-fg)]"
           aria-label="Relay runs"
         >
-          <span className="flex h-6 w-6 items-center justify-center rounded border border-[var(--relay-accent)]/35 bg-[var(--relay-accent)]/10 text-[var(--relay-accent)]">
-            <ArrowRight className="h-3.5 w-3.5" />
+          <span className="flex h-7 w-7 items-center justify-center rounded border border-[var(--relay-accent)]/35 bg-[var(--relay-accent)]/10 text-[var(--relay-accent)]">
+            <ArrowRight className="h-4 w-4" />
           </span>
-          <span className="truncate text-sm font-semibold leading-none tracking-tight">
+          <span className="truncate text-[15px] font-semibold leading-none tracking-tight">
             Relay
           </span>
         </Link>
@@ -53,7 +53,7 @@ export function AppShell({ children, className }: AppShellProps) {
           ·
         </span>
 
-        <span className="hidden font-mono text-xs text-[var(--relay-topbar-muted-fg)] sm:inline">
+        <span className="hidden font-mono text-[13px] text-[var(--relay-topbar-muted-fg)] sm:inline">
           v1.0.4-stable
         </span>
 
@@ -62,7 +62,7 @@ export function AppShell({ children, className }: AppShellProps) {
             to="/plans"
             aria-current={plansActive ? "page" : undefined}
             className={cn(
-              "rounded px-3 py-1.5 text-xs font-medium transition-colors",
+              "rounded px-3 py-1.5 text-[13px] font-medium transition-colors",
               plansActive
                 ? "bg-[var(--relay-topbar-active-bg)] text-[var(--relay-topbar-active-fg)]"
                 : "text-[var(--relay-topbar-muted-fg)] hover:bg-[var(--relay-topbar-hover-bg)] hover:text-[var(--relay-topbar-fg)]",
@@ -74,7 +74,7 @@ export function AppShell({ children, className }: AppShellProps) {
             to="/runs"
             aria-current={runsActive ? "page" : undefined}
             className={cn(
-              "rounded px-3 py-1.5 text-xs font-medium transition-colors",
+              "rounded px-3 py-1.5 text-[13px] font-medium transition-colors",
               runsActive
                 ? "bg-[var(--relay-topbar-active-bg)] text-[var(--relay-topbar-active-fg)]"
                 : "text-[var(--relay-topbar-muted-fg)] hover:bg-[var(--relay-topbar-hover-bg)] hover:text-[var(--relay-topbar-fg)]",
