@@ -6,11 +6,9 @@
 > 
 > The Planner does **not** have status-query, run-listing, audit-submission, or downstream-dispatch MCP actions by default. Tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
 >
-> Relay now stores project/repository registry, source-policy configuration, internal source snapshot/git evidence backend state, internal file inventory/search/read service primitives, internal PASS-005 context packet/context coverage report generation, and full Plan v2 managed plan/pass validation plus persistence metadata. These context packet services are not run submission, canonical packet compilation, or executor dispatch, and they do **not** expose Planner-facing context-broker MCP tools yet; that remains future work until PASS-007.
+> Relay implements a profile-based tool registration system. Under the default `RELAY_MCP_PROFILE=local-operator` configuration, Relay registers 22 additional retrieval-only context-broker tools (e.g. `get_project`, `get_plan`, `get_pass`, snapshotting, and context packets) to support local-first workflows. These context broker tools stay separate from submission actions, and do not create runs, submit plans, dispatch executors, mutate git, run shell commands, or expose arbitrary filesystem access.
 >
-> PASS-007 is now implemented: Relay can expose a **gated** context-broker MCP surface for retrieval-only Planner context work when `RELAY_MCP_CONTEXT_BROKER_ENABLED=true`. Broker tools remain disabled by default, stay separate from submission actions, and do not create runs, submit plans, dispatch executors, mutate git, run shell commands, or expose arbitrary filesystem access.
->
-> The Relay web UI now shows read-only managed pass context, planner handoff provenance, context packet IDs, source snapshot IDs, associated runs, and links to safe persisted source-context artifacts. This UI visibility does **not** invoke MCP broker tools directly, does **not** create context packets/source snapshots, and does **not** render raw source file contents.
+> The Relay web UI shows read-only managed pass context, planner handoff provenance, context packet IDs, source snapshot IDs, associated runs, and links to safe persisted source-context artifacts. This UI visibility does **not** invoke MCP broker tools directly, does **not** create context packets/source snapshots, and does **not** render raw source file contents.
 
 ---
 
@@ -115,6 +113,18 @@ Add to `claude_desktop_config.json`:
       "env": {
         "RELAY_DB_PATH": "/path/to/data/relay.sqlite",
         "RELAY_ARTIFACTS_DIR": "/path/to/data/artifacts"
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "relay": {
+      "command": "/path/to/bin/relay-mcpserver",
+      "args": [],
+      "env": {
+        "RELAY_DB_PATH": "/path/to/data/relay.sqlite",
+        "RELAY_ARTIFACTS_DIR": "/path/to/data/artifacts"
       }
     }
   }
@@ -127,7 +137,8 @@ Add to `claude_desktop_config.json`:
 |----------|---------|-------------|
 | `RELAY_DB_PATH` | `data/relay.sqlite` | Path to the Relay SQLite database |
 | `RELAY_ARTIFACTS_DIR` | `data/artifacts` | Path to artifact storage directory |
-| `RELAY_MCP_CONTEXT_BROKER_ENABLED` | `false` | When `true`, also register the PASS-007 retrieval-only context broker tools |
+| `RELAY_MCP_PROFILE` | `local-operator` | Active tool profile: `local-operator` (enables context broker tools) or `restricted` (hides broker tools). |
+| `RELAY_MCP_CONTEXT_BROKER_ENABLED` | (unset) | Legacy fallback if `RELAY_MCP_PROFILE` is unset (`true` maps to `local-operator`, `false` maps to `restricted`). |
 
 The MCP server uses WAL mode and shares the database safely with the Go HTTP daemon.
 
@@ -135,9 +146,7 @@ The MCP server uses WAL mode and shares the database safely with the Go HTTP dae
 
 ## Registered Tools (Developer Tool Inventory)
 
-By default, exactly 6 tools are registered in the local/dev MCP server. Note that **tools #2 (`create_run_from_planner_handoff`) and #6 (`submit_planner_pass_plan`)** are currently exposed as Project MCP actions for the GPT-facing Planner by default. The remaining status/list/audit tools are kept for local debugging, testing, or future expansion, and are only Project-facing if external configuration explicitly exposes them.
-
-When `RELAY_MCP_CONTEXT_BROKER_ENABLED=true`, Relay additionally registers 10 PASS-007 context broker tools for bounded retrieval and context packet creation. These broker tools are retrieval/context tools only: they do not submit plans, create runs, dispatch executors, mutate git, expose shell execution, or expose arbitrary filesystem access.
+The registered tool set is determined by the `RELAY_MCP_PROFILE` environment variable. By default, under the `local-operator` profile, the server registers both the core submission tools and the 22 context broker tools. Under the `restricted` profile, only the 6 core submission/status tools are registered.
 
 ### 1. `submit_test_audit_packet`
 
@@ -292,9 +301,9 @@ No full artifact contents, no log dumps, no secrets, and no full handoff markdow
 
 ---
 
-## Gated Context Broker Tools (PASS-007)
+## Gated Context Broker Tools
 
-These tools are registered only when `RELAY_MCP_CONTEXT_BROKER_ENABLED=true`.
+These tools are registered when the `RELAY_MCP_PROFILE` is set to `local-operator`.
 
 ### `get_project`
 
@@ -322,11 +331,27 @@ Returns bounded snapshot-backed file inventory rows with provenance fields inclu
 
 ### `search_project_files`
 
-Runs bounded fixed-string search only and returns provenance-rich matches. No arbitrary shell args, no arbitrary roots, and no regex mode are exposed in PASS-007.
+Runs bounded fixed-string search only and returns provenance-rich matches. No arbitrary shell args, no arbitrary roots, and no regex mode are exposed.
 
 ### `read_project_file`
 
 Returns a bounded repository-relative file read from a source snapshot with provenance, redaction status, truncation state, and blockers such as `source_snapshot_file_changed`.
+
+### `get_repository_git_status`
+
+Returns the current git status (`git status --short`) for a registered repository, including tracked/untracked changes.
+
+### `get_repository_recent_commit`
+
+Returns metadata for the most recent git commit in a registered repository.
+
+### `list_repository_changed_files`
+
+Lists files changed between the repository head and the target comparison ref.
+
+### `get_repository_diff`
+
+Returns a bounded git diff patch for modified files within the repository.
 
 ### `create_context_packet`
 
@@ -335,6 +360,38 @@ Creates a bounded context packet from seed file reads, seed searches, and option
 ### `get_context_packet`
 
 Returns stored context packet metadata and optional source metadata rows. It does not read and return full packet or markdown artifact contents.
+
+### `create_local_audit`
+
+Creates a local-only run audit record from captured validation results and git diff state.
+
+### `get_local_audit`
+
+Retrieves metadata and results for a specific local audit run.
+
+### `list_project_local_audits`
+
+Lists recent local audit runs executed for the project.
+
+### `search_project_context_memory`
+
+Searches project-level context memory records matching keywords.
+
+### `list_project_context_records`
+
+Lists all context memory records stored for a project.
+
+### `get_project_context_record`
+
+Retrieves content and metadata for a specific project context memory record.
+
+### `create_project_context_record`
+
+Stores a new project context memory record.
+
+### `supersede_project_context_record`
+
+Archives or supersedes an existing project context memory record.
 
 ---
 
@@ -356,8 +413,8 @@ Returns stored context packet metadata and optional source metadata rows. It doe
 - **No git mutation.** No commit, push, stage, merge, branch, checkout, reset, or worktree operations.
 - **No run closure.** `submit_audit_packet` applies a status transition and writes artifacts but does not close or complete runs.
 - **No run/executor/git side effects from plan submission.** `submit_planner_pass_plan` creates plan/pass records only and does not create runs, dispatch executors, mutate git, or read chat context.
-- **Broker retrieval is bounded and gated.** PASS-007 broker tools are disabled by default, register only under explicit configuration, reject unknown input fields, and return bounded structured JSON with provenance fields.
-- **No shell or arbitrary filesystem access from broker tools.** PASS-007 broker tools wrap registered project repositories, snapshot-backed file inventory/search/read, and context packet services only.
+- **Broker retrieval is bounded and gated.** Context broker tools are enabled by default under the `local-operator` profile, register only under explicit profile selection, reject unknown input fields, and return bounded structured JSON with provenance fields.
+- **No shell or arbitrary filesystem access from broker tools.** Context broker tools wrap registered project repositories, snapshot-backed file inventory/search/read, git status/diff, and context packet services only.
 - **Bounded outputs.** No tool dumps full artifact contents, log files, or secret values.
 - **Credential exclusion.** Tool descriptions warn callers not to pass secrets, tokens, auth headers, private keys, API keys, or signed URLs.
 
@@ -389,7 +446,7 @@ The MCP subprocess and the HTTP daemon (`cmd/relay`) share the same SQLite datab
 - **Pass 13A (feasibility):** Added `submit_test_audit_packet` to prove stdio MCP bridge works. Gated real tools.
 - **Pass 16 (real tools):** Implemented the 4 run/audit tools (`create_run_from_planner_handoff`, `list_open_runs`, `get_run_status`, `submit_audit_packet`), wired MCP server to real Relay DB, added executable `make mcp-smoke` harness.
 - **Pass 16+ managed plans:** Added `submit_planner_pass_plan` for Planner-facing plan submission and updated smoke/docs to cover the 6-tool inventory.
-- **PASS-007 context broker:** Added 10 gated retrieval/context tools over project, plan/pass, source snapshot, snapshot-backed inventory/search/read, and context packet services. Broker tools are disabled by default and must be explicitly enabled with `RELAY_MCP_CONTEXT_BROKER_ENABLED=true`.
+- **PASS-007 context broker:** Completed operator-facing documentation for local setup, registration, profiles, safety boundaries, and workflows.
 
 ---
 

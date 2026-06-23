@@ -17,7 +17,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | Project Registry Backend | Durable project and project-repository registry with stored repository roles (`primary`, `reference`, `contracts`, `docs`) and persisted safe source policy fields |
 | Source Snapshot Backend | Internal-only source provenance service for registered repositories: durable source snapshots, git status, latest commit, changed files, bounded diff evidence, optional file metadata/hash capture, snapshot-backed file inventory, bounded file reads, and rg-backed source search |
 | Context Packet Backend | Internal-only context packet and context coverage report generation from source snapshots, file inventory, bounded reads, and search results; writes pre-run `handoffs/context` artifacts and SQLite metadata |
-| Gated MCP Context Broker | Optional PASS-007 MCP retrieval surface for project, plan/pass, source snapshot, snapshot-backed inventory/search/read, and context packet metadata when explicitly enabled |
+| MCP Context Broker | Bounded retrieval-only MCP surface for project, plan/pass, source snapshot, snapshot-backed inventory/search/read, and context packet metadata, enabled by default under the local-operator profile |
 | Run Storage | Run metadata and artifact storage |
 | Intake Review | Parse and validate handoff structure before execution |
 | Agent Prompt | Preparation and handoff transformation for agents |
@@ -38,7 +38,6 @@ Relay is a local-first handoff/run orchestration workbench.
 | Repair | Automatic validation failure repair |
 | Audit | Automatic AI audit/closeout |
 | Additional Project-Facing MCP Actions | Project-facing MCP exposure beyond `create_run_from_planner_handoff` and `submit_planner_pass_plan` is configuration-dependent; local/dev/server MCP inventory includes additional tools |
-| Context Broker MCP Tools | Disabled by default; when explicitly enabled, PASS-007 exposes bounded retrieval/context MCP tools separate from the default submission actions |
 
 ### Run Actions
 
@@ -72,6 +71,15 @@ Relay's audit workflow is local-only and artifact-backed:
 - Decisions of `blocked` and `manual_review_required` map the run status to `revision_required` while preserving the original decision in `audit_decision_json`.
 - Audit acceptance does not automatically prepare commit artifacts or close the run. Those remain explicit post-audit closeout actions.
 - GitHub PRs, CI, and Actions are not used as audit evidence sources.
+
+## Operator Documentation
+
+For detailed local operator workflows and setup guides, please refer to the following:
+
+*   [Operator Guide](file:///d:/Code/relay/docs/operator-guide.md) — Central manual for local process, registration, port layout, profiles, and workflows.
+*   [ChatGPT Local MCP Tunnel Setup](file:///d:/Code/relay/docs/chatgpt-mcp-local.md) — Launcher scripts, environments, and credentials.
+*   [MCP Specification](file:///d:/Code/relay/docs/mcp.md) — Profiles, tool registry, and safety boundaries.
+*   [Smoke Testing Guide](file:///d:/Code/relay/docs/smoke.md) — Verification suite and port layouts.
 
 ## Core Concepts
 
@@ -145,7 +153,7 @@ Relay includes an MCP (Model Context Protocol) integration. The **current Planne
 
 The local/dev/server MCP tool inventory also registers additional tools beyond those Planner-facing submission actions. Planner use of any MCP tool requires active tool configuration and explicit user confirmation.
 
-No Planner-facing status, list, audit, or dispatch MCP tools are currently available by default unless Project configuration deliberately changes. PASS-007 also adds an explicitly gated context-broker surface that can be enabled for retrieval-only planning context work; those broker tools remain separate from the default submission actions. The local/dev/server tools documented in `docs/mcp.md` are not automatically Project-facing Planner actions.
+No Planner-facing status, list, audit, or dispatch MCP tools are currently available by default unless Project configuration deliberately changes. The context broker surface is active under the default `local-operator` profile for retrieval-only planning context work; those broker tools remain separate from the default submission actions. The local/dev/server tools documented in `docs/mcp.md` are not automatically Project-facing Planner actions.
 
 ## Safety Boundaries
 
@@ -153,7 +161,7 @@ The current Planner Project-facing MCP actions do **not** expose or claim availa
 *   Status queries or run listing
 *   Audit packet submission
 *   Executor dispatch
-*   Context packet creation, source inventory, source search, bounded file read, or context broker tools unless the context-broker profile is explicitly enabled
+*   Context packet creation, source inventory, source search, bounded file read, or context broker tools unless the `local-operator` profile is enabled
 *   Shell execution or command running
 *   Arbitrary file access or file reads/writes
 *   Git operations (commits, pushes, branch creation)
@@ -161,7 +169,7 @@ The current Planner Project-facing MCP actions do **not** expose or claim availa
 
 Any broader list of tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` that may exist in the `mcpserver` or local development contexts are strictly local/dev/server MCP tool inventory or future/internal capabilities. They are **not** current Planner Project actions unless project configuration explicitly changes. MCP run submission also does not use executor briefs, canonical packets, validation reports, repair reports, audit packets, or surrounding chat context as the payload; it persists the reviewed planner handoff markdown plus bounded provenance metadata instead.
 
-PASS-007 adds gated context broker MCP tools over the existing internal source/context services. These broker tools are disabled by default, are retrieval/context only, and do not replace the default GPT-facing Planner MCP actions `create_run_from_planner_handoff` and `submit_planner_pass_plan`.
+The context broker MCP tools (retrieval/context only) are enabled by default under the `local-operator` profile, and do not replace the default GPT-facing Planner MCP actions `create_run_from_planner_handoff` and `submit_planner_pass_plan`.
 
 ## Stack
 
@@ -315,11 +323,11 @@ A run can be created from the New Handoff source picker by uploading a `.txt` / 
 
 Relay derives the run title from the handoff's first `#` heading. If no H1 heading exists, the run is named `Untitled handoff`.
 
-### Local repository discovery
+### Project and Repository Registration
 
-Relay discovers local Git repositories from configured scan roots.
-The default scan root is `D:/Code`.
-Open `/settings/repos` to manage scan roots and review discovered repositories. The New Handoff page lets you select a discovered repo or use manual repo name/path entry.
+For modern plan/run tracking, you should register repositories within a project using the **Projects UI** (`/projects`) in the React workbench or by calling project repository APIs directly. See the [Operator Guide](file:///d:/Code/relay/docs/operator-guide.md) for more details.
+
+Legacy local git repository discovery from configured scan roots (e.g. `D:/Code`) remains available under Settings (`/settings/repos`). The New Handoff page lets you select a discovered repository or enter a manual repository name and local path.
 
 ### Intake review
 
