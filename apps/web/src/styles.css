@@ -1,19 +1,19 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource/fira-sans/400.css";
-@import "@fontsource/fira-sans/500.css";
-@import "@fontsource/fira-sans/600.css";
-@import "@fontsource/fira-sans/700.css";
-@import "@fontsource/jetbrains-mono/400.css";
-@import "@fontsource/jetbrains-mono/500.css";
-@import "@fontsource/jetbrains-mono/600.css";
+@import "@fontsource/geist/400.css";
+@import "@fontsource/geist/500.css";
+@import "@fontsource/geist/600.css";
+@import "@fontsource/geist/700.css";
+@import "@fontsource/geist-mono/400.css";
+@import "@fontsource/geist-mono/500.css";
+@import "@fontsource/geist-mono/600.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --font-heading: var(--font-sans);
 
   --color-background: var(--background);
@@ -41,6 +41,7 @@
   --color-destructive-foreground: var(--destructive-foreground);
 
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
 
@@ -88,118 +89,114 @@
 }
 
 :root,
-[data-theme="abyss-cobalt"] {
+[data-theme="tokyo-night"] {
   color-scheme: dark;
 
   /*
-    Relay Unified Dark Surface
+    Relay Tokyo Night Dark Theme
 
     Intent:
-    - One dark-neutral operator-console surface family.
-    - Minimal tonal elevation shifts.
-    - Cobalt only for active/focus/primary interaction.
-    - Status colors remain semantic and restrained.
+    - Tokyo Night-inspired dark palette.
+    - Highly readable semantic and status colors on dark backgrounds.
   */
 
   --radius: 0.35rem;
 
   /* Foundation */
-  --background: oklch(0.045 0.004 260);
-  --foreground: oklch(0.945 0.004 260);
+  --background: oklch(0.2 0.03 265);
+  --foreground: oklch(0.93 0.02 250);
+  --surface: oklch(0.24 0.035 265);
+  --surface-2: oklch(0.28 0.04 265);
+  --card: oklch(0.26 0.04 265);
+  --card-foreground: oklch(0.93 0.02 250);
+  --popover: oklch(0.26 0.04 265);
+  --popover-foreground: oklch(0.93 0.02 250);
+  --primary: oklch(0.78 0.13 220);
+  --primary-foreground: oklch(0.18 0.03 265);
+  --secondary: oklch(0.3 0.04 265);
+  --secondary-foreground: oklch(0.93 0.02 250);
+  --muted: oklch(0.28 0.035 265);
+  --muted-foreground: oklch(0.7 0.03 255);
+  --accent: oklch(0.75 0.16 295);
+  --accent-foreground: oklch(0.18 0.03 265);
+  --gold: oklch(0.78 0.13 220);
+  --gold-soft: oklch(0.85 0.1 220);
+  --border: oklch(0.34 0.04 265);
+  --border-strong: oklch(0.42 0.05 265);
+  --input: oklch(0.34 0.04 265);
+  --ring: oklch(0.78 0.13 220);
+  --info: oklch(0.78 0.13 220);
+  --sidebar: oklch(0.21 0.03 265);
+  --sidebar-border: oklch(0.34 0.04 265);
 
-  /* Unified surface ladder */
-  --surface-base: oklch(0.055 0.005 260);
-  --surface-panel: oklch(0.078 0.007 260);
-  --surface-raised: oklch(0.105 0.010 260);
-  --surface-inset: oklch(0.034 0.004 260);
-
-  /* Compatibility aliases: keep the surface family small */
-  --surface-shell: var(--surface-base);
+  /* Surface ladder aliases */
+  --surface-base: var(--background);
+  --surface-panel: var(--surface);
+  --surface-raised: var(--surface-2);
+  --surface-inset: oklch(0.17 0.025 265);
+  --surface-shell: var(--background);
   --surface-1: var(--surface-base);
-  --surface-2: var(--surface-panel);
   --surface-3: var(--surface-raised);
   --surface-elevated: var(--surface-raised);
-  --surface-panel-hover: var(--surface-raised);
+  --surface-panel-hover: color-mix(in oklch, var(--surface-raised) 88%, var(--primary) 12%);
 
-  /* shadcn semantic surfaces */
-  --card: var(--surface-panel);
-  --card-foreground: var(--foreground);
-  --popover: var(--surface-panel);
-  --popover-foreground: var(--foreground);
-
-  /* Primary interaction accent */
-  --primary: oklch(0.66 0.22 266);
-  --primary-foreground: oklch(0.985 0.004 260);
-
-  /* Neutral UI lanes */
-  --secondary: var(--surface-raised);
-  --secondary-foreground: var(--foreground);
-  --muted: oklch(0.095 0.008 260);
-  --muted-foreground: oklch(0.69 0.012 260);
-  --accent: color-mix(in oklch, var(--primary) 16%, var(--surface-raised));
-  --accent-foreground: var(--foreground);
-
-  /* Structure */
-  --border: oklch(0.245 0.012 260 / 58%);
-  --input: oklch(0.145 0.010 260);
-  --ring: oklch(0.66 0.22 266 / 68%);
-
-  /* Existing local font stack; no dependency change in this pass */
-  --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+  /* Typography */
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
-  /* Shadow tokens from supplied theme direction */
-  --shadow-color: oklch(0.2571 0.1161 272.24);
-  --shadow-2xs: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.07);
-  --shadow-xs: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.07);
-  --shadow-sm: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 1px 2px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
-  --shadow: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 1px 2px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
-  --shadow-md: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 2px 4px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
-  --shadow-lg: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 4px 6px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
-  --shadow-xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.15), 0.25px 8px 10px -1px hsl(236.5829 64.2250% 21.4383% / 0.15);
-  --shadow-2xl: 0.25px 1px 3px 0px hsl(236.5829 64.2250% 21.4383% / 0.38);
+  /* Shadows (neutralized toward Tokyo Night ink/cyan) */
+  --shadow-color: oklch(0.20 0.03 265);
+  --shadow-2xs: 0.25px 1px 3px 0px oklch(0.20 0.03 265 / 0.07);
+  --shadow-xs: 0.25px 1px 3px 0px oklch(0.20 0.03 265 / 0.07);
+  --shadow-sm: 0.25px 1px 3px 0px oklch(0.20 0.03 265 / 0.15), 0.25px 1px 2px -1px oklch(0.20 0.03 265 / 0.15);
+  --shadow: 0.25px 1px 3px 0px oklch(0.20 0.03 265 / 0.15), 0.25px 1px 2px -1px oklch(0.20 0.03 265 / 0.15);
+  --shadow-md: 0.25px 1px 3px 0px oklch(0.20 0.03 265 / 0.15), 0.25px 2px 4px -1px oklch(0.20 0.03 265 / 0.15);
+  --shadow-lg: 0.25px 1px 3px 0px oklch(0.20 0.03 265 / 0.15), 0.25px 4px 6px -1px oklch(0.20 0.03 265 / 0.15);
+  --shadow-xl: 0.25px 1px 3px 0px oklch(0.20 0.03 265 / 0.15), 0.25px 8px 10px -1px oklch(0.20 0.03 265 / 0.15);
+  --shadow-2xl: 0.25px 1px 3px 0px oklch(0.20 0.03 265 / 0.38);
 
-  /* Run status tokens: semantic lanes, not structural accents */
-  --run-running: var(--primary);
-  --run-blocked: oklch(0.65 0.20 25);
-  --run-complete: oklch(0.70 0.16 155);
-  --run-audit: oklch(0.78 0.16 82);
-  --run-idle: oklch(0.42 0.010 260);
-
-  --success: oklch(0.70 0.16 155);
-  --success-foreground: oklch(0.055 0.014 155);
-  --warning: oklch(0.78 0.16 82);
-  --warning-foreground: oklch(0.07 0.010 82);
+  /* Status Colors */
+  --success: oklch(0.76 0.14 155);
+  --success-foreground: oklch(0.16 0.03 265);
+  --warning: oklch(0.84 0.14 82);
+  --warning-foreground: oklch(0.16 0.03 265);
+  --destructive: oklch(0.70 0.18 25);
+  --destructive-foreground: oklch(0.98 0.02 25);
   --info: var(--primary);
   --info-foreground: var(--primary-foreground);
-  --running: var(--run-running);
+  --running: var(--primary);
   --running-foreground: var(--primary-foreground);
-  --destructive: oklch(0.65 0.20 25);
-  --destructive-foreground: oklch(0.98 0.006 25);
+
+  /* Run status aliases */
+  --run-running: var(--primary);
+  --run-blocked: var(--warning);
+  --run-complete: var(--success);
+  --run-audit: var(--accent);
+  --run-idle: oklch(0.47 0.035 260);
 
   /* Charts */
   --chart-1: var(--primary);
-  --chart-2: var(--success);
-  --chart-3: var(--warning);
-  --chart-4: var(--destructive);
-  --chart-5: oklch(0.62 0.12 300);
+  --chart-2: var(--accent);
+  --chart-3: var(--success);
+  --chart-4: var(--warning);
+  --chart-5: var(--destructive);
 
   /* Sidebar / topbar */
-  --sidebar: var(--surface-base);
+  --sidebar: oklch(0.21 0.03 265);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
   --sidebar-accent: var(--surface-raised);
   --sidebar-accent-foreground: var(--foreground);
-  --sidebar-border: var(--border);
+  --sidebar-border: oklch(0.34 0.04 265);
   --sidebar-ring: var(--ring);
 
   /* Relay Shell Tokens */
   --relay-shell-bg: var(--background);
   --relay-content-bg: var(--surface-base);
   --relay-panel-bg: var(--surface-panel);
-  --relay-panel-hover-bg: var(--surface-raised);
+  --relay-panel-hover-bg: var(--surface-panel-hover);
   --relay-border: var(--border);
   --relay-accent: var(--primary);
   --relay-accent-foreground: var(--primary-foreground);
@@ -210,7 +207,7 @@
   --relay-topbar-muted-fg: var(--muted-foreground);
   --relay-topbar-active-bg: var(--primary);
   --relay-topbar-active-fg: var(--primary-foreground);
-  --relay-topbar-hover-bg: var(--surface-raised);
+  --relay-topbar-hover-bg: var(--surface-panel-hover);
 
   --relay-page-header-bg: var(--surface-base);
   --relay-page-border: var(--border);
@@ -222,11 +219,11 @@
   --relay-status-blocked: var(--run-blocked);
   --relay-status-complete: var(--run-complete);
   --relay-status-audit: var(--run-audit);
-  --relay-status-validation: var(--run-blocked);
+  --relay-status-validation: var(--warning);
   --relay-status-neutral: var(--run-idle);
 
   --relay-row-border: var(--border);
-  --relay-row-hover-bg: var(--surface-raised);
+  --relay-row-hover-bg: var(--surface-panel-hover);
   --relay-splitpane-border: var(--border);
   --relay-splitpane-sidebar-bg: var(--surface-base);
   --relay-inspector-bg: var(--surface-base);

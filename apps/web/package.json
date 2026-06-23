@@ -11,8 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fontsource/fira-sans": "latest",
-    "@fontsource/jetbrains-mono": "latest",
+    "@fontsource/geist": "latest",
+    "@fontsource/geist-mono": "latest",
     "@radix-ui/react-checkbox": "latest",
     "@radix-ui/react-dialog": "latest",
     "@radix-ui/react-label": "latest",
