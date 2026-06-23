@@ -30,19 +30,21 @@ The backend is a local Go daemon using `net/http`, `chi`, `database/sql`, SQLite
 
 ## Key Components
 
-- **Go API (`internal/api`, `cmd/relay`)** - exposes run, plan, project, artifact, validation, repair, and smoke endpoints through `chi`.
-- **Store and DB (`internal/store`, `internal/db`)** - owns SQLite access, migrations, sqlc query sources, and generated data models.
-- **Plan services (`internal/plans`, `internal/intake`)** - validate planner pass plans, persist plan/pass rows, compute lifecycle readiness, and resolve optional run association.
-- **Pipeline services (`internal/compiler`, `internal/pipeline`, `internal/executor`, `internal/auditor`, `internal/validation*`)** - transform handoffs into executable artifacts, run agents/validation, and collect audit evidence.
-- **Workbench (`apps/web/src`)** - React Query plus TanStack Router UI for plans, passes, runs, execution, validation, artifacts, and audit state.
-- **Contracts (`relay-contracts/`)** - source-controlled planner/pipeline contracts, schemas, policies, templates, and examples.
+- Go API in `internal/api` and `cmd/relay` exposes run, plan, project, artifact, validation, repair, and smoke endpoints through `chi`.
+- Store and DB code in `internal/store` and `internal/db` own SQLite access, migrations, sqlc query sources, and generated data models.
+- Plan services in `internal/plans` and `internal/intake` validate planner pass plans, persist plan/pass rows, compute lifecycle readiness, and resolve optional run association.
+- Pipeline services in `internal/compiler`, `internal/pipeline`, `internal/executor`, `internal/auditor`, and `internal/validation*` transform handoffs into executable artifacts, run agents and validation, and collect audit evidence.
+- The workbench in `apps/web/src` provides React Query plus TanStack Router UI for plans, passes, runs, execution, validation, artifacts, and audit state.
+- Contracts under `relay-contracts/` hold source-controlled planner and pipeline contracts, schemas, policies, templates, and examples.
 
-## External Dependencies
+## Runtime Integrations and Storage
 
-- **SQLite via `modernc.org/sqlite`** - local-first runtime database; migrations run through Go auto-migration and goose-compatible files.
-- **Filesystem artifacts** - large run outputs and packets are written to disk while metadata remains in SQLite.
-- **Repo source services** - local git/rg/filesystem discovery feeds source snapshots and run context.
-- **Agent adapters** - Codex, OpenCode, Antigravity, and related executor paths are represented in `internal/executor` and pipeline code.
+| Area | Role in Relay |
+|---|---|
+| SQLite storage | `modernc.org/sqlite` backs the local-first runtime database; migrations run through Go auto-migration and goose-compatible files. |
+| Filesystem artifacts | Large run outputs and packets are written to disk while metadata remains in SQLite. |
+| Source services | Local git, ripgrep, and filesystem discovery feed source snapshots and run context. |
+| Agent execution paths | Codex, OpenCode, Antigravity, and related executor paths are represented in `internal/executor` and pipeline code. |
 
 ## What Does NOT Exist Here
 

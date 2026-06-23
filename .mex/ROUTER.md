@@ -32,7 +32,7 @@ Read `AGENTS.md`, then this file. Load `context/architecture.md` first for imple
 - React/TanStack Start workbench in `apps/web` with run registry/workbench routes and managed plan registry/detail/pass detail routes.
 - Managed plan submission/read APIs exist for `/api/plans`, `/api/plans/{planId}`, and `/api/plans/{planId}/passes/{passId}`.
 - Runs may be standalone or optionally associated to a plan and pass through nullable `runs.plan_row_id` and `runs.plan_pass_row_id`.
-- Source-controlled contracts, schemas, policies, templates, and examples live under `relay-contracts/`.
+- Contract materials may also exist in a local `relay-contracts/` reference directory, but the canonical contract source is the Paintersrp relay-contracts GitHub repository.
 
 **Not Built / Incomplete:**
 - `.mex` is not a replacement for relay-contracts, database state, canonical packets, run artifacts, or audit evidence.
@@ -40,7 +40,7 @@ Read `AGENTS.md`, then this file. Load `context/architecture.md` first for imple
 - Root templ/htmx UI remains present as legacy/utility surface while `apps/web` is the primary workbench.
 
 **Known Drift Notes:**
-- The mex installer brief may describe stale or incomplete project structure. Treat checked-out Relay source and the canonical `Paintersrp/relay-contracts` repository as authoritative.
+- The mex installer brief may describe stale or incomplete project structure. Treat checked-out Relay source and the canonical Paintersrp relay-contracts GitHub repository as authoritative; use any local `relay-contracts/` directory only as a reference snapshot unless explicitly confirmed current.
 - The repo is currently hybrid: root Go/templ/htmx build scripts plus `apps/web` React/TanStack Start. Treat checked-out files as authoritative.
 
 ## Routing Table

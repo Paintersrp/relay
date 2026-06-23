@@ -23,20 +23,23 @@ last_updated: 2026-06-23
 
 ## Core Technologies
 
-- **Go 1.25.7** - primary backend/runtime module `relay`.
-- **`net/http` + `github.com/go-chi/chi/v5`** - HTTP routing for API and server surfaces.
-- **SQLite (`modernc.org/sqlite`)** - local database opened by `internal/store` with WAL and foreign keys.
-- **sqlc v2 config** - query sources in `internal/db/queries`, migrations in `internal/db/migrations`, generated Go in `internal/store/generated`.
-- **templ** - root/server-rendered views under `internal/views`; generated `_templ.go` files are output.
-- **Root htmx/Alpine/Tailwind/esbuild** - legacy/utility UI bundle from `web/src` to `web/static`.
-- **React/TanStack Start/Vite** - primary `apps/web` workbench.
+| Area | Current stack |
+|---|---|
+| Backend runtime | Go module `relay`; HTTP routing through `net/http` and `github.com/go-chi/chi/v5`. |
+| Local storage | SQLite through `modernc.org/sqlite`; the store opens the DB with WAL and foreign keys. |
+| Data access generation | `sqlc.yaml` config reads query sources from `internal/db/queries`, migrations from `internal/db/migrations`, and generates Go code in `internal/store/generated`. |
+| Server-rendered utility surface | `templ` views live under `internal/views`; generated `_templ.go` files are output. |
+| Root frontend bundle | `web/src` builds legacy/utility assets into `web/static` using Tailwind, esbuild, htmx, Alpine, TypeScript, and concurrently-run dev scripts. |
+| Primary workbench | `apps/web` is the React/TanStack Start workbench using Vite/Vitest and TanStack Router/Query/Table/Virtual/Form. |
 
-## Key Libraries
+## Manifest-Backed Libraries
 
-- **Go:** `github.com/a-h/templ`, `github.com/go-chi/chi/v5`, `modernc.org/sqlite`, `github.com/pressly/goose/v3` (indirect but used by migration tooling).
-- **Root frontend:** `tailwindcss`, `@tailwindcss/cli`, `esbuild`, `typescript`, `htmx.org`, `alpinejs`, `concurrently`.
-- **apps/web:** React, React DOM, TanStack Start/Router/Query/Table/Virtual/Form, Vite, Vitest, Radix UI, lucide-react, shadcn, zod, Tailwind.
-- **Dev scripts:** root `npm run build` builds legacy CSS/JS; `npm run build:web` delegates to `apps/web`; `make validate` runs `scripts/validate.sh`.
+| Manifest area | Libraries and tools to expect |
+|---|---|
+| Go module | `github.com/a-h/templ`, `github.com/go-chi/chi/v5`, `modernc.org/sqlite`, and migration tooling including `github.com/pressly/goose/v3`. |
+| Root package | `tailwindcss`, `@tailwindcss/cli`, `esbuild`, `typescript`, `htmx.org`, `alpinejs`, and `concurrently`. |
+| `apps/web` package | React, React DOM, TanStack Start/Router/Query/Table/Virtual/Form, Vite, Vitest, Radix UI, lucide-react, shadcn-style components, zod, and Tailwind. |
+| Validation scripts | Root `npm run build` builds legacy CSS/JS; `npm run build:web` delegates to `apps/web`; `make validate` runs `scripts/validate.sh`. |
 
 ## What We Deliberately Do NOT Use
 
