@@ -153,6 +153,28 @@ type Project struct {
 	UpdatedAt           string `json:"updated_at"`
 }
 
+type ProjectContextRecord struct {
+	ID                   int64  `json:"id"`
+	ContextRecordID      string `json:"context_record_id"`
+	ProjectRowID         int64  `json:"project_row_id"`
+	ProjectID            string `json:"project_id"`
+	Kind                 string `json:"kind"`
+	Title                string `json:"title"`
+	Body                 string `json:"body"`
+	BodyHash             string `json:"body_hash"`
+	Status               string `json:"status"`
+	Importance           string `json:"importance"`
+	TagsJson             string `json:"tags_json"`
+	Source               string `json:"source"`
+	CreatedBy            string `json:"created_by"`
+	DedupeReason         string `json:"dedupe_reason"`
+	RedactionStatus      string `json:"redaction_status"`
+	SupersedesRecordID   string `json:"supersedes_record_id"`
+	SupersededByRecordID string `json:"superseded_by_record_id"`
+	CreatedAt            string `json:"created_at"`
+	UpdatedAt            string `json:"updated_at"`
+}
+
 type ProjectRepository struct {
 	ID               int64  `json:"id"`
 	ProjectRowID     int64  `json:"project_row_id"`
