@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -35,7 +36,7 @@ func (svc *Service) ValidatePlanJSON(ctx context.Context, raw []byte) (*PlannerP
 
 	var plan PlannerPassPlan
 	if err := json.Unmarshal(raw, &plan); err != nil {
-		report.addIssue(IssuePlanJSONSyntax, "$", fmt.Sprintf("invalid JSON syntax: %v", err))
+		report.addIssue(IssuePlanSchemaInvalid, "$", fmt.Sprintf("plan JSON does not match the Plan v2 structure: %v", err))
 		return nil, report, nil
 	}
 
@@ -93,28 +94,6 @@ func sanitizePlanSchemaForRuntime(schemaBytes []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	properties, _ := schemaDoc["properties"].(map[string]any)
-	passes, _ := properties["passes"].(map[string]any)
-	items, _ := passes["items"].(map[string]any)
-	required, _ := items["required"].([]any)
-	if len(required) > 0 {
-		omit := map[string]struct{}{
-			"pass_type":                    {},
-			"context_plan":                 {},
-			"source_snapshot_requirements": {},
-			"handoff_readiness_criteria":   {},
-		}
-		filtered := make([]any, 0, len(required))
-		for _, item := range required {
-			name, _ := item.(string)
-			if _, skip := omit[name]; skip {
-				continue
-			}
-			filtered = append(filtered, item)
-		}
-		items["required"] = filtered
-	}
-
 	return json.Marshal(schemaDoc)
 }
 
@@ -125,13 +104,43 @@ func sanitizePlanSchemaRegexes(schemaContent string) string {
 	return schemaContent
 }
 
+var contextFileReadSegmentPattern = regexp.MustCompile(`^[A-Za-z0-9._@+=:-]+$`)
+
+func isSafeRepoRelativePath(path string) bool {
+	if path == "" || len(path) > 260 {
+		return false
+	}
+	if strings.HasPrefix(path, "/") || strings.Contains(path, `\`) {
+		return false
+	}
+
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." || !contextFileReadSegmentPattern.MatchString(part) {
+			return false
+		}
+	}
+
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md", ".txt", ".json", ".xml", ".go", ".ts", ".tsx", ".js", ".jsx", ".css", ".html", ".yml", ".yaml", ".sql", ".toml", ".mod", ".sum":
+		return true
+	default:
+		return false
+	}
+}
+
 func validatePlanSemantics(plan *PlannerPassPlan, report *PlanValidationReport) {
 	validateNonEmptyString(report, "$.plan_meta.plan_id", plan.PlanMeta.PlanID, "plan_meta.plan_id")
+	validateNonEmptyString(report, "$.plan_meta.schema_version", plan.PlanMeta.SchemaVersion, "plan_meta.schema_version")
 	validateNonEmptyString(report, "$.plan_meta.title", plan.PlanMeta.Title, "plan_meta.title")
 	validateNonEmptyString(report, "$.plan_meta.goal", plan.PlanMeta.Goal, "plan_meta.goal")
 	validateNonEmptyString(report, "$.plan_meta.repo_target", plan.PlanMeta.RepoTarget, "plan_meta.repo_target")
 	validateNonEmptyString(report, "$.plan_meta.branch_context", plan.PlanMeta.BranchContext, "plan_meta.branch_context")
 	validateNonEmptyString(report, "$.source_intent.summary", plan.SourceIntent.Summary, "source_intent.summary")
+	validatePlanV2SchemaVersion(report, plan.PlanMeta.SchemaVersion)
 
 	if strings.TrimSpace(plan.PlanMeta.Status) != "active" {
 		report.addIssue(
@@ -140,6 +149,9 @@ func validatePlanSemantics(plan *PlannerPassPlan, report *PlanValidationReport) 
 			"plan_meta.status must be \"active\" for initial submission",
 		)
 	}
+	validateProjectContext(report, "$.plan_meta.project_context", plan.PlanMeta.ProjectContext)
+	validateMCPCapabilityProfile(report, "$.plan_meta.mcp_capability_profile", plan.PlanMeta.MCPCapabilityProfile)
+	validateGlobalContextRules(report, "$.global_context_rules", plan.GlobalContextRules)
 
 	if len(plan.Passes) == 0 {
 		report.addIssue(IssuePlanEmptyRequiredArray, "$.passes", "passes must contain at least one pass")
@@ -156,6 +168,10 @@ func validatePlanSemantics(plan *PlannerPassPlan, report *PlanValidationReport) 
 		validateNonEmptyString(report, passPath+".goal", pass.Goal, "passes.goal")
 		validateRequiredStringSlice(report, passPath+".intended_execution_scope", pass.IntendedExecutionScope, "passes.intended_execution_scope")
 		validateRequiredStringSlice(report, passPath+".non_goals", pass.NonGoals, "passes.non_goals")
+		validateNonEmptyString(report, passPath+".pass_type", pass.PassType, "passes.pass_type")
+		validateContextPlan(report, passPath+".context_plan", pass.ContextPlan)
+		validateSourceSnapshotRequirements(report, passPath+".source_snapshot_requirements", pass.SourceSnapshotRequirements)
+		validateRequiredStringSlice(report, passPath+".handoff_readiness_criteria", pass.HandoffReadinessCriteria, "passes.handoff_readiness_criteria")
 
 		if pass.Sequence < 1 {
 			report.addIssue(IssuePlanEmptyRequiredValue, passPath+".sequence", "passes.sequence must be greater than or equal to 1")
@@ -233,9 +249,100 @@ func validatePlanSemantics(plan *PlannerPassPlan, report *PlanValidationReport) 
 	}
 }
 
+func validatePlanV2SchemaVersion(report *PlanValidationReport, schemaVersion string) {
+	parts := strings.Split(strings.TrimSpace(schemaVersion), ".")
+	if len(parts) == 0 || parts[0] != "2" {
+		report.addIssue(
+			IssuePlanSchemaInvalid,
+			"$.plan_meta.schema_version",
+			"plan_meta.schema_version must be Plan v2-compatible (major version 2)",
+		)
+	}
+}
+
+func validateProjectContext(report *PlanValidationReport, path string, projectContext *ProjectContext) {
+	if projectContext == nil {
+		return
+	}
+
+	validateNonEmptyString(report, path+".primary_project", projectContext.PrimaryProject, "plan_meta.project_context.primary_project")
+	validateNonEmptyString(report, path+".primary_repository", projectContext.PrimaryRepository, "plan_meta.project_context.primary_repository")
+	validateNonEmptyString(report, path+".github_role", projectContext.GitHubRole, "plan_meta.project_context.github_role")
+}
+
+func validateMCPCapabilityProfile(report *PlanValidationReport, path string, profile *MCPCapabilityProfile) {
+	if profile == nil {
+		return
+	}
+
+	validateNonEmptyString(report, path+".profile_id", profile.ProfileID, "plan_meta.mcp_capability_profile.profile_id")
+	validateNonEmptyString(report, path+".mode", profile.Mode, "plan_meta.mcp_capability_profile.mode")
+	validateRequiredBool(report, path+".context_broker_enabled", profile.ContextBrokerEnabled, "plan_meta.mcp_capability_profile.context_broker_enabled")
+}
+
+func validateGlobalContextRules(report *PlanValidationReport, path string, rules *GlobalContextRules) {
+	if rules == nil {
+		return
+	}
+
+	validateNonEmptyString(report, path+".default_source_of_truth", rules.DefaultSourceOfTruth, "global_context_rules.default_source_of_truth")
+	validateNonEmptyString(report, path+".planner_context_boundary", rules.PlannerContextBoundary, "global_context_rules.planner_context_boundary")
+	validateRequiredStringSlice(report, path+".forbidden_context_domains", rules.ForbiddenContextDomains, "global_context_rules.forbidden_context_domains")
+}
+
+func validateContextPlan(report *PlanValidationReport, path string, contextPlan ContextPlan) {
+	validateRequiredStringSlice(report, path+".required_repositories", contextPlan.RequiredRepositories, "passes.context_plan.required_repositories")
+	validateRequiredStringSlice(report, path+".context_coverage_expectations", contextPlan.ContextCoverageExpectations, "passes.context_plan.context_coverage_expectations")
+	validateRequiredStringSlice(report, path+".blocked_if_missing", contextPlan.BlockedIfMissing, "passes.context_plan.blocked_if_missing")
+
+	if len(contextPlan.SeedSearchTerms) == 0 {
+		report.addIssue(IssuePlanEmptyRequiredArray, path+".seed_search_terms", "passes.context_plan.seed_search_terms must contain at least one item")
+	} else {
+		for idx, term := range contextPlan.SeedSearchTerms {
+			termPath := fmt.Sprintf("%s.seed_search_terms[%d]", path, idx)
+			validateNonEmptyString(report, termPath+".repo_id", term.RepoID, "passes.context_plan.seed_search_terms.repo_id")
+			validateNonEmptyString(report, termPath+".query", term.Query, "passes.context_plan.seed_search_terms.query")
+			validateNonEmptyString(report, termPath+".purpose", term.Purpose, "passes.context_plan.seed_search_terms.purpose")
+			validateRequiredBool(report, termPath+".required", term.Required, "passes.context_plan.seed_search_terms.required")
+		}
+	}
+
+	if len(contextPlan.SeedFilesToRead) == 0 {
+		report.addIssue(IssuePlanEmptyRequiredArray, path+".seed_files_to_read", "passes.context_plan.seed_files_to_read must contain at least one item")
+		return
+	}
+
+	for idx, fileRead := range contextPlan.SeedFilesToRead {
+		filePath := fmt.Sprintf("%s.seed_files_to_read[%d]", path, idx)
+		validateNonEmptyString(report, filePath+".repo_id", fileRead.RepoID, "passes.context_plan.seed_files_to_read.repo_id")
+		validateNonEmptyString(report, filePath+".path", fileRead.Path, "passes.context_plan.seed_files_to_read.path")
+		validateNonEmptyString(report, filePath+".purpose", fileRead.Purpose, "passes.context_plan.seed_files_to_read.purpose")
+		validateRequiredBool(report, filePath+".required", fileRead.Required, "passes.context_plan.seed_files_to_read.required")
+		if trimmedPath := strings.TrimSpace(fileRead.Path); trimmedPath != "" && !isSafeRepoRelativePath(trimmedPath) {
+			report.addIssue(
+				IssuePlanSchemaInvalid,
+				filePath+".path",
+				"context file read paths must be safe repo-relative paths with an allowed extension",
+			)
+		}
+	}
+}
+
+func validateSourceSnapshotRequirements(report *PlanValidationReport, path string, requirements SourceSnapshotRequirements) {
+	validateRequiredBool(report, path+".require_git_status", requirements.RequireGitStatus, "passes.source_snapshot_requirements.require_git_status")
+	validateRequiredBool(report, path+".require_commit_sha", requirements.RequireCommitSHA, "passes.source_snapshot_requirements.require_commit_sha")
+	validateRequiredBool(report, path+".allow_dirty_worktree", requirements.AllowDirtyWorktree, "passes.source_snapshot_requirements.allow_dirty_worktree")
+}
+
 func validateNonEmptyString(report *PlanValidationReport, path string, value string, fieldName string) {
 	if strings.TrimSpace(value) == "" {
 		report.addIssue(IssuePlanEmptyRequiredValue, path, fmt.Sprintf("%s must be non-empty", fieldName))
+	}
+}
+
+func validateRequiredBool(report *PlanValidationReport, path string, value *bool, fieldName string) {
+	if value == nil {
+		report.addIssue(IssuePlanEmptyRequiredValue, path, fmt.Sprintf("%s must be provided", fieldName))
 	}
 }
 

@@ -19,22 +19,34 @@ INSERT INTO plans (
   branch_context,
   status,
   source_intent_summary,
-  source_artifact_path
+  source_artifact_path,
+  plan_meta_json,
+  project_context_json,
+  mcp_capability_profile_json,
+  global_context_rules_json,
+  submission_note,
+  raw_plan_json
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json
 `
 
 type CreatePlanParams struct {
-	PlanID              string `json:"plan_id"`
-	SchemaVersion       string `json:"schema_version"`
-	Title               string `json:"title"`
-	Goal                string `json:"goal"`
-	RepoTarget          string `json:"repo_target"`
-	BranchContext       string `json:"branch_context"`
-	Status              string `json:"status"`
-	SourceIntentSummary string `json:"source_intent_summary"`
-	SourceArtifactPath  string `json:"source_artifact_path"`
+	PlanID                   string `json:"plan_id"`
+	SchemaVersion            string `json:"schema_version"`
+	Title                    string `json:"title"`
+	Goal                     string `json:"goal"`
+	RepoTarget               string `json:"repo_target"`
+	BranchContext            string `json:"branch_context"`
+	Status                   string `json:"status"`
+	SourceIntentSummary      string `json:"source_intent_summary"`
+	SourceArtifactPath       string `json:"source_artifact_path"`
+	PlanMetaJson             string `json:"plan_meta_json"`
+	ProjectContextJson       string `json:"project_context_json"`
+	McpCapabilityProfileJson string `json:"mcp_capability_profile_json"`
+	GlobalContextRulesJson   string `json:"global_context_rules_json"`
+	SubmissionNote           string `json:"submission_note"`
+	RawPlanJson              string `json:"raw_plan_json"`
 }
 
 func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error) {
@@ -48,6 +60,12 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, e
 		arg.Status,
 		arg.SourceIntentSummary,
 		arg.SourceArtifactPath,
+		arg.PlanMetaJson,
+		arg.ProjectContextJson,
+		arg.McpCapabilityProfileJson,
+		arg.GlobalContextRulesJson,
+		arg.SubmissionNote,
+		arg.RawPlanJson,
 	)
 	var i Plan
 	err := row.Scan(
@@ -63,6 +81,12 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, e
 		&i.SourceArtifactPath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PlanMetaJson,
+		&i.ProjectContextJson,
+		&i.McpCapabilityProfileJson,
+		&i.GlobalContextRulesJson,
+		&i.SubmissionNote,
+		&i.RawPlanJson,
 	)
 	return i, err
 }
@@ -77,22 +101,36 @@ INSERT INTO plan_passes (
   intended_execution_scope_json,
   non_goals_json,
   dependencies_json,
-  status
+  status,
+  pass_type,
+  context_plan_json,
+  source_snapshot_requirements_json,
+  handoff_readiness_criteria_json,
+  risk_level,
+  context_budget_json,
+  raw_pass_json
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, plan_row_id, pass_id, sequence, name, goal, intended_execution_scope_json, non_goals_json, dependencies_json, status, created_at, updated_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, plan_row_id, pass_id, sequence, name, goal, intended_execution_scope_json, non_goals_json, dependencies_json, status, created_at, updated_at, pass_type, context_plan_json, source_snapshot_requirements_json, handoff_readiness_criteria_json, risk_level, context_budget_json, raw_pass_json
 `
 
 type CreatePlanPassParams struct {
-	PlanRowID                  int64  `json:"plan_row_id"`
-	PassID                     string `json:"pass_id"`
-	Sequence                   int64  `json:"sequence"`
-	Name                       string `json:"name"`
-	Goal                       string `json:"goal"`
-	IntendedExecutionScopeJson string `json:"intended_execution_scope_json"`
-	NonGoalsJson               string `json:"non_goals_json"`
-	DependenciesJson           string `json:"dependencies_json"`
-	Status                     string `json:"status"`
+	PlanRowID                      int64  `json:"plan_row_id"`
+	PassID                         string `json:"pass_id"`
+	Sequence                       int64  `json:"sequence"`
+	Name                           string `json:"name"`
+	Goal                           string `json:"goal"`
+	IntendedExecutionScopeJson     string `json:"intended_execution_scope_json"`
+	NonGoalsJson                   string `json:"non_goals_json"`
+	DependenciesJson               string `json:"dependencies_json"`
+	Status                         string `json:"status"`
+	PassType                       string `json:"pass_type"`
+	ContextPlanJson                string `json:"context_plan_json"`
+	SourceSnapshotRequirementsJson string `json:"source_snapshot_requirements_json"`
+	HandoffReadinessCriteriaJson   string `json:"handoff_readiness_criteria_json"`
+	RiskLevel                      string `json:"risk_level"`
+	ContextBudgetJson              string `json:"context_budget_json"`
+	RawPassJson                    string `json:"raw_pass_json"`
 }
 
 func (q *Queries) CreatePlanPass(ctx context.Context, arg CreatePlanPassParams) (PlanPass, error) {
@@ -106,6 +144,13 @@ func (q *Queries) CreatePlanPass(ctx context.Context, arg CreatePlanPassParams) 
 		arg.NonGoalsJson,
 		arg.DependenciesJson,
 		arg.Status,
+		arg.PassType,
+		arg.ContextPlanJson,
+		arg.SourceSnapshotRequirementsJson,
+		arg.HandoffReadinessCriteriaJson,
+		arg.RiskLevel,
+		arg.ContextBudgetJson,
+		arg.RawPassJson,
 	)
 	var i PlanPass
 	err := row.Scan(
@@ -121,12 +166,19 @@ func (q *Queries) CreatePlanPass(ctx context.Context, arg CreatePlanPassParams) 
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PassType,
+		&i.ContextPlanJson,
+		&i.SourceSnapshotRequirementsJson,
+		&i.HandoffReadinessCriteriaJson,
+		&i.RiskLevel,
+		&i.ContextBudgetJson,
+		&i.RawPassJson,
 	)
 	return i, err
 }
 
 const getPlan = `-- name: GetPlan :one
-SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at FROM plans WHERE id = ?
+SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json FROM plans WHERE id = ?
 `
 
 func (q *Queries) GetPlan(ctx context.Context, id int64) (Plan, error) {
@@ -145,12 +197,18 @@ func (q *Queries) GetPlan(ctx context.Context, id int64) (Plan, error) {
 		&i.SourceArtifactPath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PlanMetaJson,
+		&i.ProjectContextJson,
+		&i.McpCapabilityProfileJson,
+		&i.GlobalContextRulesJson,
+		&i.SubmissionNote,
+		&i.RawPlanJson,
 	)
 	return i, err
 }
 
 const getPlanByPlanID = `-- name: GetPlanByPlanID :one
-SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at FROM plans WHERE plan_id = ?
+SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json FROM plans WHERE plan_id = ?
 `
 
 func (q *Queries) GetPlanByPlanID(ctx context.Context, planID string) (Plan, error) {
@@ -169,12 +227,18 @@ func (q *Queries) GetPlanByPlanID(ctx context.Context, planID string) (Plan, err
 		&i.SourceArtifactPath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PlanMetaJson,
+		&i.ProjectContextJson,
+		&i.McpCapabilityProfileJson,
+		&i.GlobalContextRulesJson,
+		&i.SubmissionNote,
+		&i.RawPlanJson,
 	)
 	return i, err
 }
 
 const getPlanPass = `-- name: GetPlanPass :one
-SELECT id, plan_row_id, pass_id, sequence, name, goal, intended_execution_scope_json, non_goals_json, dependencies_json, status, created_at, updated_at FROM plan_passes WHERE id = ?
+SELECT id, plan_row_id, pass_id, sequence, name, goal, intended_execution_scope_json, non_goals_json, dependencies_json, status, created_at, updated_at, pass_type, context_plan_json, source_snapshot_requirements_json, handoff_readiness_criteria_json, risk_level, context_budget_json, raw_pass_json FROM plan_passes WHERE id = ?
 `
 
 func (q *Queries) GetPlanPass(ctx context.Context, id int64) (PlanPass, error) {
@@ -193,12 +257,19 @@ func (q *Queries) GetPlanPass(ctx context.Context, id int64) (PlanPass, error) {
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PassType,
+		&i.ContextPlanJson,
+		&i.SourceSnapshotRequirementsJson,
+		&i.HandoffReadinessCriteriaJson,
+		&i.RiskLevel,
+		&i.ContextBudgetJson,
+		&i.RawPassJson,
 	)
 	return i, err
 }
 
 const getPlanPassByPassID = `-- name: GetPlanPassByPassID :one
-SELECT id, plan_row_id, pass_id, sequence, name, goal, intended_execution_scope_json, non_goals_json, dependencies_json, status, created_at, updated_at FROM plan_passes WHERE plan_row_id = ? AND pass_id = ?
+SELECT id, plan_row_id, pass_id, sequence, name, goal, intended_execution_scope_json, non_goals_json, dependencies_json, status, created_at, updated_at, pass_type, context_plan_json, source_snapshot_requirements_json, handoff_readiness_criteria_json, risk_level, context_budget_json, raw_pass_json FROM plan_passes WHERE plan_row_id = ? AND pass_id = ?
 `
 
 type GetPlanPassByPassIDParams struct {
@@ -222,12 +293,19 @@ func (q *Queries) GetPlanPassByPassID(ctx context.Context, arg GetPlanPassByPass
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PassType,
+		&i.ContextPlanJson,
+		&i.SourceSnapshotRequirementsJson,
+		&i.HandoffReadinessCriteriaJson,
+		&i.RiskLevel,
+		&i.ContextBudgetJson,
+		&i.RawPassJson,
 	)
 	return i, err
 }
 
 const listPlanPassesByPlan = `-- name: ListPlanPassesByPlan :many
-SELECT id, plan_row_id, pass_id, sequence, name, goal, intended_execution_scope_json, non_goals_json, dependencies_json, status, created_at, updated_at FROM plan_passes WHERE plan_row_id = ? ORDER BY sequence ASC
+SELECT id, plan_row_id, pass_id, sequence, name, goal, intended_execution_scope_json, non_goals_json, dependencies_json, status, created_at, updated_at, pass_type, context_plan_json, source_snapshot_requirements_json, handoff_readiness_criteria_json, risk_level, context_budget_json, raw_pass_json FROM plan_passes WHERE plan_row_id = ? ORDER BY sequence ASC
 `
 
 func (q *Queries) ListPlanPassesByPlan(ctx context.Context, planRowID int64) ([]PlanPass, error) {
@@ -252,6 +330,13 @@ func (q *Queries) ListPlanPassesByPlan(ctx context.Context, planRowID int64) ([]
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PassType,
+			&i.ContextPlanJson,
+			&i.SourceSnapshotRequirementsJson,
+			&i.HandoffReadinessCriteriaJson,
+			&i.RiskLevel,
+			&i.ContextBudgetJson,
+			&i.RawPassJson,
 		); err != nil {
 			return nil, err
 		}
@@ -267,7 +352,7 @@ func (q *Queries) ListPlanPassesByPlan(ctx context.Context, planRowID int64) ([]
 }
 
 const listPlanPassesByStatus = `-- name: ListPlanPassesByStatus :many
-SELECT id, plan_row_id, pass_id, sequence, name, goal, intended_execution_scope_json, non_goals_json, dependencies_json, status, created_at, updated_at FROM plan_passes WHERE plan_row_id = ? AND status = ? ORDER BY sequence ASC
+SELECT id, plan_row_id, pass_id, sequence, name, goal, intended_execution_scope_json, non_goals_json, dependencies_json, status, created_at, updated_at, pass_type, context_plan_json, source_snapshot_requirements_json, handoff_readiness_criteria_json, risk_level, context_budget_json, raw_pass_json FROM plan_passes WHERE plan_row_id = ? AND status = ? ORDER BY sequence ASC
 `
 
 type ListPlanPassesByStatusParams struct {
@@ -297,6 +382,13 @@ func (q *Queries) ListPlanPassesByStatus(ctx context.Context, arg ListPlanPasses
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PassType,
+			&i.ContextPlanJson,
+			&i.SourceSnapshotRequirementsJson,
+			&i.HandoffReadinessCriteriaJson,
+			&i.RiskLevel,
+			&i.ContextBudgetJson,
+			&i.RawPassJson,
 		); err != nil {
 			return nil, err
 		}
@@ -312,7 +404,7 @@ func (q *Queries) ListPlanPassesByStatus(ctx context.Context, arg ListPlanPasses
 }
 
 const listPlans = `-- name: ListPlans :many
-SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at FROM plans ORDER BY updated_at DESC, id DESC LIMIT ?
+SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json FROM plans ORDER BY updated_at DESC, id DESC LIMIT ?
 `
 
 func (q *Queries) ListPlans(ctx context.Context, limit int64) ([]Plan, error) {
@@ -337,6 +429,12 @@ func (q *Queries) ListPlans(ctx context.Context, limit int64) ([]Plan, error) {
 			&i.SourceArtifactPath,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PlanMetaJson,
+			&i.ProjectContextJson,
+			&i.McpCapabilityProfileJson,
+			&i.GlobalContextRulesJson,
+			&i.SubmissionNote,
+			&i.RawPlanJson,
 		); err != nil {
 			return nil, err
 		}
@@ -352,7 +450,7 @@ func (q *Queries) ListPlans(ctx context.Context, limit int64) ([]Plan, error) {
 }
 
 const listPlansByStatus = `-- name: ListPlansByStatus :many
-SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at FROM plans WHERE status = ? ORDER BY updated_at DESC, id DESC LIMIT ?
+SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json FROM plans WHERE status = ? ORDER BY updated_at DESC, id DESC LIMIT ?
 `
 
 type ListPlansByStatusParams struct {
@@ -382,6 +480,12 @@ func (q *Queries) ListPlansByStatus(ctx context.Context, arg ListPlansByStatusPa
 			&i.SourceArtifactPath,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PlanMetaJson,
+			&i.ProjectContextJson,
+			&i.McpCapabilityProfileJson,
+			&i.GlobalContextRulesJson,
+			&i.SubmissionNote,
+			&i.RawPlanJson,
 		); err != nil {
 			return nil, err
 		}
@@ -400,7 +504,7 @@ const updatePlanPassStatus = `-- name: UpdatePlanPassStatus :one
 UPDATE plan_passes
 SET status = ?, updated_at = datetime('now')
 WHERE id = ?
-RETURNING id, plan_row_id, pass_id, sequence, name, goal, intended_execution_scope_json, non_goals_json, dependencies_json, status, created_at, updated_at
+RETURNING id, plan_row_id, pass_id, sequence, name, goal, intended_execution_scope_json, non_goals_json, dependencies_json, status, created_at, updated_at, pass_type, context_plan_json, source_snapshot_requirements_json, handoff_readiness_criteria_json, risk_level, context_budget_json, raw_pass_json
 `
 
 type UpdatePlanPassStatusParams struct {
@@ -424,6 +528,13 @@ func (q *Queries) UpdatePlanPassStatus(ctx context.Context, arg UpdatePlanPassSt
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PassType,
+		&i.ContextPlanJson,
+		&i.SourceSnapshotRequirementsJson,
+		&i.HandoffReadinessCriteriaJson,
+		&i.RiskLevel,
+		&i.ContextBudgetJson,
+		&i.RawPassJson,
 	)
 	return i, err
 }
@@ -432,7 +543,7 @@ const updatePlanStatus = `-- name: UpdatePlanStatus :one
 UPDATE plans
 SET status = ?, updated_at = datetime('now')
 WHERE id = ?
-RETURNING id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at
+RETURNING id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json
 `
 
 type UpdatePlanStatusParams struct {
@@ -456,6 +567,12 @@ func (q *Queries) UpdatePlanStatus(ctx context.Context, arg UpdatePlanStatusPara
 		&i.SourceArtifactPath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PlanMetaJson,
+		&i.ProjectContextJson,
+		&i.McpCapabilityProfileJson,
+		&i.GlobalContextRulesJson,
+		&i.SubmissionNote,
+		&i.RawPlanJson,
 	)
 	return i, err
 }

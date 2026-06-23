@@ -100,33 +100,46 @@ type Event struct {
 }
 
 type Plan struct {
-	ID                  int64  `json:"id"`
-	PlanID              string `json:"plan_id"`
-	SchemaVersion       string `json:"schema_version"`
-	Title               string `json:"title"`
-	Goal                string `json:"goal"`
-	RepoTarget          string `json:"repo_target"`
-	BranchContext       string `json:"branch_context"`
-	Status              string `json:"status"`
-	SourceIntentSummary string `json:"source_intent_summary"`
-	SourceArtifactPath  string `json:"source_artifact_path"`
-	CreatedAt           string `json:"created_at"`
-	UpdatedAt           string `json:"updated_at"`
+	ID                       int64  `json:"id"`
+	PlanID                   string `json:"plan_id"`
+	SchemaVersion            string `json:"schema_version"`
+	Title                    string `json:"title"`
+	Goal                     string `json:"goal"`
+	RepoTarget               string `json:"repo_target"`
+	BranchContext            string `json:"branch_context"`
+	Status                   string `json:"status"`
+	SourceIntentSummary      string `json:"source_intent_summary"`
+	SourceArtifactPath       string `json:"source_artifact_path"`
+	CreatedAt                string `json:"created_at"`
+	UpdatedAt                string `json:"updated_at"`
+	PlanMetaJson             string `json:"plan_meta_json"`
+	ProjectContextJson       string `json:"project_context_json"`
+	McpCapabilityProfileJson string `json:"mcp_capability_profile_json"`
+	GlobalContextRulesJson   string `json:"global_context_rules_json"`
+	SubmissionNote           string `json:"submission_note"`
+	RawPlanJson              string `json:"raw_plan_json"`
 }
 
 type PlanPass struct {
-	ID                         int64  `json:"id"`
-	PlanRowID                  int64  `json:"plan_row_id"`
-	PassID                     string `json:"pass_id"`
-	Sequence                   int64  `json:"sequence"`
-	Name                       string `json:"name"`
-	Goal                       string `json:"goal"`
-	IntendedExecutionScopeJson string `json:"intended_execution_scope_json"`
-	NonGoalsJson               string `json:"non_goals_json"`
-	DependenciesJson           string `json:"dependencies_json"`
-	Status                     string `json:"status"`
-	CreatedAt                  string `json:"created_at"`
-	UpdatedAt                  string `json:"updated_at"`
+	ID                             int64  `json:"id"`
+	PlanRowID                      int64  `json:"plan_row_id"`
+	PassID                         string `json:"pass_id"`
+	Sequence                       int64  `json:"sequence"`
+	Name                           string `json:"name"`
+	Goal                           string `json:"goal"`
+	IntendedExecutionScopeJson     string `json:"intended_execution_scope_json"`
+	NonGoalsJson                   string `json:"non_goals_json"`
+	DependenciesJson               string `json:"dependencies_json"`
+	Status                         string `json:"status"`
+	CreatedAt                      string `json:"created_at"`
+	UpdatedAt                      string `json:"updated_at"`
+	PassType                       string `json:"pass_type"`
+	ContextPlanJson                string `json:"context_plan_json"`
+	SourceSnapshotRequirementsJson string `json:"source_snapshot_requirements_json"`
+	HandoffReadinessCriteriaJson   string `json:"handoff_readiness_criteria_json"`
+	RiskLevel                      string `json:"risk_level"`
+	ContextBudgetJson              string `json:"context_budget_json"`
+	RawPassJson                    string `json:"raw_pass_json"`
 }
 
 type Project struct {

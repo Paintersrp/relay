@@ -63,16 +63,43 @@ func (svc *Service) SubmitPlan(ctx context.Context, req SubmitPlanRequest) (*Sub
 	}()
 
 	txQueries := generated.New(tx)
+	planMetaJSON, err := marshalJSONValue(plan.PlanMeta)
+	if err != nil {
+		result.Report.addIssue(IssuePlanStorageFailed, "$.plan_meta", "failed to encode plan_meta")
+		return result, fmt.Errorf("marshal plan_meta: %w", err)
+	}
+	projectContextJSON, err := marshalOptionalJSONObject(plan.PlanMeta.ProjectContext)
+	if err != nil {
+		result.Report.addIssue(IssuePlanStorageFailed, "$.plan_meta.project_context", "failed to encode project_context")
+		return result, fmt.Errorf("marshal project_context: %w", err)
+	}
+	mcpCapabilityProfileJSON, err := marshalOptionalJSONObject(plan.PlanMeta.MCPCapabilityProfile)
+	if err != nil {
+		result.Report.addIssue(IssuePlanStorageFailed, "$.plan_meta.mcp_capability_profile", "failed to encode mcp_capability_profile")
+		return result, fmt.Errorf("marshal mcp_capability_profile: %w", err)
+	}
+	globalContextRulesJSON, err := marshalOptionalJSONObject(plan.GlobalContextRules)
+	if err != nil {
+		result.Report.addIssue(IssuePlanStorageFailed, "$.global_context_rules", "failed to encode global_context_rules")
+		return result, fmt.Errorf("marshal global_context_rules: %w", err)
+	}
+
 	createdPlan, err := txQueries.CreatePlan(ctx, generated.CreatePlanParams{
-		PlanID:              plan.PlanMeta.PlanID,
-		SchemaVersion:       plan.PlanMeta.SchemaVersion,
-		Title:               plan.PlanMeta.Title,
-		Goal:                plan.PlanMeta.Goal,
-		RepoTarget:          plan.PlanMeta.RepoTarget,
-		BranchContext:       plan.PlanMeta.BranchContext,
-		Status:              plan.PlanMeta.Status,
-		SourceIntentSummary: plan.SourceIntent.Summary,
-		SourceArtifactPath:  req.SourceArtifactPath,
+		PlanID:                   plan.PlanMeta.PlanID,
+		SchemaVersion:            plan.PlanMeta.SchemaVersion,
+		Title:                    plan.PlanMeta.Title,
+		Goal:                     plan.PlanMeta.Goal,
+		RepoTarget:               plan.PlanMeta.RepoTarget,
+		BranchContext:            plan.PlanMeta.BranchContext,
+		Status:                   plan.PlanMeta.Status,
+		SourceIntentSummary:      plan.SourceIntent.Summary,
+		SourceArtifactPath:       req.SourceArtifactPath,
+		PlanMetaJson:             planMetaJSON,
+		ProjectContextJson:       projectContextJSON,
+		McpCapabilityProfileJson: mcpCapabilityProfileJSON,
+		GlobalContextRulesJson:   globalContextRulesJSON,
+		SubmissionNote:           plan.PlanMeta.SubmissionNote,
+		RawPlanJson:              string(req.RawJSON),
 	})
 	if err != nil {
 		result.Report.addIssue(IssuePlanStorageFailed, "$.plan_meta.plan_id", "failed to store plan")
@@ -101,17 +128,49 @@ func (svc *Service) SubmitPlan(ctx context.Context, req SubmitPlanRequest) (*Sub
 			result.Report.addIssue(IssuePlanStorageFailed, "$.passes", "failed to encode dependencies")
 			return result, fmt.Errorf("marshal dependencies for %q: %w", pass.PassID, err)
 		}
+		contextPlanJSON, err := marshalJSONValue(pass.ContextPlan)
+		if err != nil {
+			result.Report.addIssue(IssuePlanStorageFailed, "$.passes", "failed to encode context_plan")
+			return result, fmt.Errorf("marshal context_plan for %q: %w", pass.PassID, err)
+		}
+		sourceSnapshotRequirementsJSON, err := marshalJSONValue(pass.SourceSnapshotRequirements)
+		if err != nil {
+			result.Report.addIssue(IssuePlanStorageFailed, "$.passes", "failed to encode source_snapshot_requirements")
+			return result, fmt.Errorf("marshal source_snapshot_requirements for %q: %w", pass.PassID, err)
+		}
+		handoffReadinessCriteriaJSON, err := marshalJSONValue(pass.HandoffReadinessCriteria)
+		if err != nil {
+			result.Report.addIssue(IssuePlanStorageFailed, "$.passes", "failed to encode handoff_readiness_criteria")
+			return result, fmt.Errorf("marshal handoff_readiness_criteria for %q: %w", pass.PassID, err)
+		}
+		contextBudgetJSON, err := marshalOptionalJSONObject(pass.ContextBudget)
+		if err != nil {
+			result.Report.addIssue(IssuePlanStorageFailed, "$.passes", "failed to encode context_budget")
+			return result, fmt.Errorf("marshal context_budget for %q: %w", pass.PassID, err)
+		}
+		rawPassJSON, err := marshalJSONValue(pass)
+		if err != nil {
+			result.Report.addIssue(IssuePlanStorageFailed, "$.passes", "failed to encode raw pass JSON")
+			return result, fmt.Errorf("marshal raw pass for %q: %w", pass.PassID, err)
+		}
 
 		createdPass, err := txQueries.CreatePlanPass(ctx, generated.CreatePlanPassParams{
-			PlanRowID:                  createdPlan.ID,
-			PassID:                     pass.PassID,
-			Sequence:                   pass.Sequence,
-			Name:                       pass.Name,
-			Goal:                       pass.Goal,
-			IntendedExecutionScopeJson: intendedJSON,
-			NonGoalsJson:               nonGoalsJSON,
-			DependenciesJson:           dependenciesJSON,
-			Status:                     pass.Status,
+			PlanRowID:                      createdPlan.ID,
+			PassID:                         pass.PassID,
+			Sequence:                       pass.Sequence,
+			Name:                           pass.Name,
+			Goal:                           pass.Goal,
+			IntendedExecutionScopeJson:     intendedJSON,
+			NonGoalsJson:                   nonGoalsJSON,
+			DependenciesJson:               dependenciesJSON,
+			Status:                         pass.Status,
+			PassType:                       pass.PassType,
+			ContextPlanJson:                contextPlanJSON,
+			SourceSnapshotRequirementsJson: sourceSnapshotRequirementsJSON,
+			HandoffReadinessCriteriaJson:   handoffReadinessCriteriaJSON,
+			RiskLevel:                      pass.RiskLevel,
+			ContextBudgetJson:              contextBudgetJSON,
+			RawPassJson:                    rawPassJSON,
 		})
 		if err != nil {
 			result.Report.addIssue(IssuePlanStorageFailed, "$.passes", "failed to store plan passes")
@@ -138,4 +197,19 @@ func marshalStringSlice(values []string) (string, error) {
 		return "", err
 	}
 	return string(encoded), nil
+}
+
+func marshalJSONValue(value any) (string, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func marshalOptionalJSONObject(value any) (string, error) {
+	if value == nil {
+		return "{}", nil
+	}
+	return marshalJSONValue(value)
 }

@@ -12,7 +12,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | --- | --- |
 | UI Handoff Intake | Create runs by pasting/uploading handoffs in the React UI |
 | MCP Submission Intake | Submit reviewed Planner handoffs and reviewed Planner pass plans via the current Planner Project-facing MCP actions after user confirmation |
-| Managed Plans (backend) | Optional plan/pass orchestration: validate and submit Planner pass plans, associate runs to passes, read-only plan and pass APIs |
+| Managed Plans (backend) | Optional plan/pass orchestration: validate full Plan v2 Planner pass plans, persist plan/pass broker metadata, associate runs to passes, and serve read-only plan/pass APIs |
 | Project Registry Backend | Durable project and project-repository registry with stored repository roles (`primary`, `reference`, `contracts`, `docs`) and persisted safe source policy fields |
 | Source Snapshot Backend | Internal-only source provenance service for registered repositories: durable source snapshots, git status, latest commit, changed files, bounded diff evidence, optional file metadata/hash capture, snapshot-backed file inventory, bounded file reads, and rg-backed source search |
 | Context Packet Backend | Internal-only context packet and context coverage report generation from source snapshots, file inventory, bounded reads, and search results; writes pre-run `handoffs/context` artifacts and SQLite metadata |
@@ -83,6 +83,7 @@ Managed plans are an optional orchestration layer in Relay. A **managed plan** i
 Key behaviors:
 
 - Submit a plan with `POST /api/plans` or the Planner-facing MCP tool `submit_planner_pass_plan`. Passes are created automatically from the submitted plan; they are not created ad hoc.
+- Relay validates full Plan v2 managed plan/pass fields at submission time and persists durable JSON metadata for pass context, source snapshot requirements, and handoff readiness criteria.
 - Multiple runs may be associated with the same pass over time for revisions or tweaks.
 - Pass lifecycle is driven by existing run/audit behavior:
   - Passes start as `planned`.

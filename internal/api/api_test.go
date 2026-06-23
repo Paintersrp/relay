@@ -39,19 +39,32 @@ func TestAPI(t *testing.T) {
 
 	createPlan := func(t *testing.T, planID string) {
 		t.Helper()
+		boolPtr := func(value bool) *bool { return &value }
 		plan := plans.PlannerPassPlan{
 			PlanMeta: plans.PlanMeta{
 				PlanID:        planID,
-				SchemaVersion: "1.0.0",
+				SchemaVersion: "2.0.0",
 				CreatedAt:     "2026-06-21T00:00:00Z",
 				Title:         "Run association test plan",
 				Goal:          "Verify run plan/pass associations",
 				RepoTarget:    repo.Name,
 				BranchContext: "main",
 				Status:        "active",
+				MCPCapabilityProfile: &plans.MCPCapabilityProfile{
+					ProfileID:            "relay-api-run-association-tests",
+					Mode:                 "submission_only",
+					ContextBrokerEnabled: boolPtr(false),
+				},
 			},
 			SourceIntent: plans.SourceIntent{
 				Summary: "Seed a managed plan for run association tests.",
+			},
+			GlobalContextRules: &plans.GlobalContextRules{
+				DefaultSourceOfTruth:   "Relay managed plan rows.",
+				PlannerContextBoundary: "Run association tests do not expose broker tools.",
+				ForbiddenContextDomains: []string{
+					"GitHub issues",
+				},
 			},
 			Passes: []plans.PlanPassInput{
 				{
@@ -63,6 +76,24 @@ func TestAPI(t *testing.T) {
 					NonGoals:               []string{"No lifecycle changes"},
 					Dependencies:           []string{},
 					Status:                 "planned",
+					PassType:               "backend_vertical_slice",
+					ContextPlan: plans.ContextPlan{
+						RequiredRepositories: []string{"relay"},
+						SeedSearchTerms: []plans.ContextSearchTerm{
+							{RepoID: "relay", Query: "CreateRunWithAssociation", Purpose: "Locate association flow.", Required: boolPtr(true)},
+						},
+						SeedFilesToRead: []plans.ContextFileRead{
+							{RepoID: "relay", Path: "internal/api/api.go", Purpose: "Exercise run association behavior.", Required: boolPtr(true)},
+						},
+						ContextCoverageExpectations: []string{"Plan-only and pass-associated runs stay distinct."},
+						BlockedIfMissing:            []string{"Association code cannot be found."},
+					},
+					SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+						RequireGitStatus:   boolPtr(true),
+						RequireCommitSHA:   boolPtr(false),
+						AllowDirtyWorktree: boolPtr(true),
+					},
+					HandoffReadinessCriteria: []string{"Associated runs can transition a pass to in_progress."},
 				},
 				{
 					PassID:                 "PASS-002",
@@ -73,6 +104,24 @@ func TestAPI(t *testing.T) {
 					NonGoals:               []string{"No lifecycle changes"},
 					Dependencies:           []string{"PASS-001"},
 					Status:                 "planned",
+					PassType:               "mcp_vertical_slice",
+					ContextPlan: plans.ContextPlan{
+						RequiredRepositories: []string{"relay"},
+						SeedSearchTerms: []plans.ContextSearchTerm{
+							{RepoID: "relay", Query: "submit_planner_pass_plan", Purpose: "Keep plan submission aligned with MCP.", Required: boolPtr(true)},
+						},
+						SeedFilesToRead: []plans.ContextFileRead{
+							{RepoID: "relay", Path: "internal/mcp/server.go", Purpose: "Confirm no new broker tools are involved.", Required: boolPtr(true)},
+						},
+						ContextCoverageExpectations: []string{"Run association works without changing the MCP tool surface."},
+						BlockedIfMissing:            []string{"MCP association code cannot be found."},
+					},
+					SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+						RequireGitStatus:   boolPtr(true),
+						RequireCommitSHA:   boolPtr(false),
+						AllowDirtyWorktree: boolPtr(true),
+					},
+					HandoffReadinessCriteria: []string{"Plan pass association remains explicit and bounded."},
 				},
 			},
 		}

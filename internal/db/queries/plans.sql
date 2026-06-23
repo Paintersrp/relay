@@ -8,9 +8,15 @@ INSERT INTO plans (
   branch_context,
   status,
   source_intent_summary,
-  source_artifact_path
+  source_artifact_path,
+  plan_meta_json,
+  project_context_json,
+  mcp_capability_profile_json,
+  global_context_rules_json,
+  submission_note,
+  raw_plan_json
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetPlan :one
@@ -41,9 +47,16 @@ INSERT INTO plan_passes (
   intended_execution_scope_json,
   non_goals_json,
   dependencies_json,
-  status
+  status,
+  pass_type,
+  context_plan_json,
+  source_snapshot_requirements_json,
+  handoff_readiness_criteria_json,
+  risk_level,
+  context_budget_json,
+  raw_pass_json
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetPlanPass :one

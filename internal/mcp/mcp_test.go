@@ -1095,16 +1095,28 @@ func validPlannerPassPlan() plans.PlannerPassPlan {
 	return plans.PlannerPassPlan{
 		PlanMeta: plans.PlanMeta{
 			PlanID:        "plan-123",
-			SchemaVersion: "1.0.0",
+			SchemaVersion: "2.0.0",
 			CreatedAt:     "2026-06-21T16:10:00Z",
 			Title:         "Relay plan submission service",
 			Goal:          "Store validated planner plans",
 			RepoTarget:    "Paintersrp/relay",
 			BranchContext: "main",
 			Status:        "active",
+			MCPCapabilityProfile: &plans.MCPCapabilityProfile{
+				ProfileID:            "relay-mcp-tests",
+				Mode:                 "submission_only",
+				ContextBrokerEnabled: mcpBoolPtr(false),
+			},
 		},
 		SourceIntent: plans.SourceIntent{
 			Summary: "Add a backend service for validated plan submission.",
+		},
+		GlobalContextRules: &plans.GlobalContextRules{
+			DefaultSourceOfTruth:   "Relay managed plan records.",
+			PlannerContextBoundary: "MCP tests validate plan submission without broker tool exposure.",
+			ForbiddenContextDomains: []string{
+				"GitHub issues",
+			},
 		},
 		Passes: []plans.PlanPassInput{
 			{
@@ -1116,6 +1128,24 @@ func validPlannerPassPlan() plans.PlannerPassPlan {
 				NonGoals:               []string{"No API routes"},
 				Dependencies:           []string{},
 				Status:                 "planned",
+				PassType:               "schema_contract",
+				ContextPlan: plans.ContextPlan{
+					RequiredRepositories: []string{"relay"},
+					SeedSearchTerms: []plans.ContextSearchTerm{
+						{RepoID: "relay", Query: "submit_planner_pass_plan", Purpose: "Locate the MCP submission flow.", Required: mcpBoolPtr(true)},
+					},
+					SeedFilesToRead: []plans.ContextFileRead{
+						{RepoID: "relay", Path: "internal/mcp/plan_tools.go", Purpose: "Keep submission semantics bounded.", Required: mcpBoolPtr(true)},
+					},
+					ContextCoverageExpectations: []string{"Planner plan submission creates plan/pass records only."},
+					BlockedIfMissing:            []string{"Plan submission tool wiring cannot be read."},
+				},
+				SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+					RequireGitStatus:   mcpBoolPtr(true),
+					RequireCommitSHA:   mcpBoolPtr(false),
+					AllowDirtyWorktree: mcpBoolPtr(true),
+				},
+				HandoffReadinessCriteria: []string{"MCP submission rejects incomplete Plan v2 passes."},
 			},
 			{
 				PassID:                 "PASS-002",
@@ -1126,6 +1156,24 @@ func validPlannerPassPlan() plans.PlannerPassPlan {
 				NonGoals:               []string{"No UI changes"},
 				Dependencies:           []string{"PASS-001"},
 				Status:                 "planned",
+				PassType:               "backend_vertical_slice",
+				ContextPlan: plans.ContextPlan{
+					RequiredRepositories: []string{"relay"},
+					SeedSearchTerms: []plans.ContextSearchTerm{
+						{RepoID: "relay", Query: "CreatePlanPass", Purpose: "Locate persistence fields.", Required: mcpBoolPtr(true)},
+					},
+					SeedFilesToRead: []plans.ContextFileRead{
+						{RepoID: "relay", Path: "internal/plans/service.go", Purpose: "Persist full Plan v2 JSON metadata.", Required: mcpBoolPtr(true)},
+					},
+					ContextCoverageExpectations: []string{"Stored pass rows preserve later workflow context."},
+					BlockedIfMissing:            []string{"Persistence wiring cannot be read."},
+				},
+				SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+					RequireGitStatus:   mcpBoolPtr(true),
+					RequireCommitSHA:   mcpBoolPtr(false),
+					AllowDirtyWorktree: mcpBoolPtr(true),
+				},
+				HandoffReadinessCriteria: []string{"Stored pass rows preserve context for later runs."},
 			},
 		},
 	}
@@ -1173,3 +1221,7 @@ func nil_slog(t *testing.T) *slog.Logger {
 type discardWriter struct{}
 
 func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+func mcpBoolPtr(value bool) *bool {
+	return &value
+}

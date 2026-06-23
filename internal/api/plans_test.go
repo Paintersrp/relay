@@ -273,16 +273,28 @@ func validPlanAPIPayload(t *testing.T) plans.PlannerPassPlan {
 	return plans.PlannerPassPlan{
 		PlanMeta: plans.PlanMeta{
 			PlanID:        "plan-123",
-			SchemaVersion: "1.0.0",
+			SchemaVersion: "2.0.0",
 			CreatedAt:     "2026-06-21T00:00:00Z",
 			Title:         "Managed plan",
 			Goal:          "Implement managed plan flow",
 			RepoTarget:    "Paintersrp/relay",
 			BranchContext: "main",
 			Status:        "active",
+			MCPCapabilityProfile: &plans.MCPCapabilityProfile{
+				ProfileID:            "relay-plan-api-tests",
+				Mode:                 "submission_only",
+				ContextBrokerEnabled: planAPIBoolPtr(false),
+			},
 		},
 		SourceIntent: plans.SourceIntent{
 			Summary: "Implement managed plan support across phases.",
+		},
+		GlobalContextRules: &plans.GlobalContextRules{
+			DefaultSourceOfTruth:   "Relay managed plan records.",
+			PlannerContextBoundary: "Plan API tests validate backend behavior only.",
+			ForbiddenContextDomains: []string{
+				"GitHub issues",
+			},
 		},
 		Passes: []plans.PlanPassInput{
 			{
@@ -294,6 +306,24 @@ func validPlanAPIPayload(t *testing.T) plans.PlannerPassPlan {
 				NonGoals:               []string{"Example non-goal."},
 				Dependencies:           []string{},
 				Status:                 "planned",
+				PassType:               "backend_vertical_slice",
+				ContextPlan: plans.ContextPlan{
+					RequiredRepositories: []string{"relay"},
+					SeedSearchTerms: []plans.ContextSearchTerm{
+						{RepoID: "relay", Query: "plans validate", Purpose: "Locate validation flow.", Required: planAPIBoolPtr(true)},
+					},
+					SeedFilesToRead: []plans.ContextFileRead{
+						{RepoID: "relay", Path: "internal/plans/validator.go", Purpose: "Validate plans.", Required: planAPIBoolPtr(true)},
+					},
+					ContextCoverageExpectations: []string{"Validation remains fail-closed for Plan v2."},
+					BlockedIfMissing:            []string{"Validation code cannot be located."},
+				},
+				SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+					RequireGitStatus:   planAPIBoolPtr(true),
+					RequireCommitSHA:   planAPIBoolPtr(false),
+					AllowDirtyWorktree: planAPIBoolPtr(true),
+				},
+				HandoffReadinessCriteria: []string{"Validation and persistence requirements are captured."},
 			},
 			{
 				PassID:                 "PASS-002",
@@ -304,6 +334,24 @@ func validPlanAPIPayload(t *testing.T) plans.PlannerPassPlan {
 				NonGoals:               []string{"No UI changes."},
 				Dependencies:           []string{"PASS-001"},
 				Status:                 "planned",
+				PassType:               "schema_contract",
+				ContextPlan: plans.ContextPlan{
+					RequiredRepositories: []string{"relay"},
+					SeedSearchTerms: []plans.ContextSearchTerm{
+						{RepoID: "relay", Query: "CreatePlanPass", Purpose: "Locate persistence flow.", Required: planAPIBoolPtr(true)},
+					},
+					SeedFilesToRead: []plans.ContextFileRead{
+						{RepoID: "relay", Path: "internal/plans/service.go", Purpose: "Persist plan fields.", Required: planAPIBoolPtr(true)},
+					},
+					ContextCoverageExpectations: []string{"Pass metadata is stored transactionally."},
+					BlockedIfMissing:            []string{"Service persistence code cannot be located."},
+				},
+				SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+					RequireGitStatus:   planAPIBoolPtr(true),
+					RequireCommitSHA:   planAPIBoolPtr(false),
+					AllowDirtyWorktree: planAPIBoolPtr(true),
+				},
+				HandoffReadinessCriteria: []string{"Stored pass rows preserve later workflow context."},
 			},
 		},
 	}
@@ -349,6 +397,10 @@ func countRows(t *testing.T, db *sql.DB, table string) int {
 		t.Fatalf("count rows for %s: %v", table, err)
 	}
 	return count
+}
+
+func planAPIBoolPtr(value bool) *bool {
+	return &value
 }
 
 func submitValidPlan(t *testing.T, router http.Handler, sourceArtifactPath string) string {

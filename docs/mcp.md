@@ -6,7 +6,7 @@
 > 
 > The Planner does **not** have status-query, run-listing, audit-submission, or downstream-dispatch MCP actions by default. Tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
 >
-> Relay now stores project/repository registry, source-policy configuration, internal source snapshot/git evidence backend state, internal file inventory/search/read service primitives, and internal PASS-005 context packet/context coverage report generation. These context packet services are not run submission, canonical packet compilation, or executor dispatch, and they do **not** expose Planner-facing context-broker MCP tools yet; that remains future work until PASS-007.
+> Relay now stores project/repository registry, source-policy configuration, internal source snapshot/git evidence backend state, internal file inventory/search/read service primitives, internal PASS-005 context packet/context coverage report generation, and full Plan v2 managed plan/pass validation plus persistence metadata. These context packet services are not run submission, canonical packet compilation, or executor dispatch, and they do **not** expose Planner-facing context-broker MCP tools yet; that remains future work until PASS-007.
 
 ---
 
@@ -246,7 +246,7 @@ No full artifact contents, no log dumps, no secrets.
 
 ### 6. `submit_planner_pass_plan`
 
-**Purpose:** Submit a reviewed Planner pass plan JSON artifact to Relay. This creates `plans` and derived `plan_passes` records only; it does not create runs, attach runs to passes, dispatch executors, mutate git, or read chat context.
+**Purpose:** Submit a reviewed Planner pass plan JSON artifact to Relay. This creates `plans` and derived `plan_passes` records only, validates the full Plan v2 schema-backed payload, and stores plan/pass context metadata for later workflows; it does not create runs, attach runs to passes, dispatch executors, mutate git, or read chat context.
 
 **The LLM should call this tool when:**
 - The user asks to submit a Planner pass plan JSON to Relay.

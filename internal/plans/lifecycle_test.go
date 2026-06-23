@@ -227,16 +227,28 @@ func submitLifecyclePlan(t *testing.T, st *store.Store, planID string) *store.Pl
 	plan := PlannerPassPlan{
 		PlanMeta: PlanMeta{
 			PlanID:        planID,
-			SchemaVersion: "1.0.0",
+			SchemaVersion: "2.0.0",
 			CreatedAt:     "2026-06-21T00:00:00Z",
 			Title:         "Lifecycle Test Plan",
 			Goal:          "Exercise lifecycle transitions.",
 			RepoTarget:    "test-repo",
 			BranchContext: "main",
 			Status:        "active",
+			MCPCapabilityProfile: &MCPCapabilityProfile{
+				ProfileID:            "relay-plan-tests",
+				Mode:                 "submission_only",
+				ContextBrokerEnabled: lifecycleBoolPtr(false),
+			},
 		},
 		SourceIntent: SourceIntent{
 			Summary: "Seed plan for lifecycle tests.",
+		},
+		GlobalContextRules: &GlobalContextRules{
+			DefaultSourceOfTruth:   "Relay managed plan rows.",
+			PlannerContextBoundary: "Lifecycle tests seed plans without broker tool exposure.",
+			ForbiddenContextDomains: []string{
+				"GitHub issues",
+			},
 		},
 		Passes: []PlanPassInput{
 			{
@@ -248,6 +260,34 @@ func submitLifecyclePlan(t *testing.T, st *store.Store, planID string) *store.Pl
 				NonGoals:               []string{"No UI changes"},
 				Dependencies:           []string{},
 				Status:                 "planned",
+				PassType:               "backend_vertical_slice",
+				ContextPlan: ContextPlan{
+					RequiredRepositories: []string{"relay"},
+					SeedSearchTerms: []ContextSearchTerm{
+						{
+							RepoID:   "relay",
+							Query:    "RunLifecycleService",
+							Purpose:  "Locate lifecycle behavior.",
+							Required: lifecycleBoolPtr(true),
+						},
+					},
+					SeedFilesToRead: []ContextFileRead{
+						{
+							RepoID:   "relay",
+							Path:     "internal/plans/lifecycle.go",
+							Purpose:  "Exercise lifecycle transitions.",
+							Required: lifecycleBoolPtr(true),
+						},
+					},
+					ContextCoverageExpectations: []string{"Lifecycle status changes remain deterministic."},
+					BlockedIfMissing:            []string{"Lifecycle code cannot be read."},
+				},
+				SourceSnapshotRequirements: SourceSnapshotRequirements{
+					RequireGitStatus:   lifecycleBoolPtr(true),
+					RequireCommitSHA:   lifecycleBoolPtr(false),
+					AllowDirtyWorktree: lifecycleBoolPtr(true),
+				},
+				HandoffReadinessCriteria: []string{"Pass status transitions remain consistent."},
 			},
 			{
 				PassID:                 "PASS-002",
@@ -258,6 +298,34 @@ func submitLifecyclePlan(t *testing.T, st *store.Store, planID string) *store.Pl
 				NonGoals:               []string{"No UI changes"},
 				Dependencies:           []string{"PASS-001"},
 				Status:                 "planned",
+				PassType:               "testing_release_hardening",
+				ContextPlan: ContextPlan{
+					RequiredRepositories: []string{"relay"},
+					SeedSearchTerms: []ContextSearchTerm{
+						{
+							RepoID:   "relay",
+							Query:    "CompletionReady",
+							Purpose:  "Verify completion logic.",
+							Required: lifecycleBoolPtr(true),
+						},
+					},
+					SeedFilesToRead: []ContextFileRead{
+						{
+							RepoID:   "relay",
+							Path:     "internal/plans/lifecycle_test.go",
+							Purpose:  "Drive completion readiness coverage.",
+							Required: lifecycleBoolPtr(true),
+						},
+					},
+					ContextCoverageExpectations: []string{"Completion readiness is true only when all passes are terminal."},
+					BlockedIfMissing:            []string{"Lifecycle tests cannot inspect pass status."},
+				},
+				SourceSnapshotRequirements: SourceSnapshotRequirements{
+					RequireGitStatus:   lifecycleBoolPtr(true),
+					RequireCommitSHA:   lifecycleBoolPtr(false),
+					AllowDirtyWorktree: lifecycleBoolPtr(true),
+				},
+				HandoffReadinessCriteria: []string{"Completion readiness logic can be verified with seeded plan rows."},
 			},
 		},
 	}
@@ -319,4 +387,8 @@ func createLifecycleRunWithPass(t *testing.T, st *store.Store, planID, passID, p
 	}
 
 	return run, updatedPass
+}
+
+func lifecycleBoolPtr(value bool) *bool {
+	return &value
 }
