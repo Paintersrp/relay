@@ -17,6 +17,10 @@ function isPlansActive(pathname: string): boolean {
   return pathname === "/plans" || pathname.startsWith("/plans/");
 }
 
+function isProjectsActive(pathname: string): boolean {
+  return pathname === "/projects" || pathname.startsWith("/projects/");
+}
+
 function isNewRunActive(pathname: string): boolean {
   return pathname === "/runs/new";
 }
@@ -27,6 +31,7 @@ export function AppShell({ children, className }: AppShellProps) {
   const plansActive = isPlansActive(pathname);
   const runsActive = isRunsActive(pathname) && !isNewRunActive(pathname);
   const newRunActive = isNewRunActive(pathname);
+  const projectsActive = isProjectsActive(pathname);
 
   return (
     <div
@@ -58,6 +63,18 @@ export function AppShell({ children, className }: AppShellProps) {
         </span>
 
         <nav aria-label="Primary" className="ml-auto flex shrink-0 items-center gap-1">
+          <Link
+            to="/projects"
+            aria-current={projectsActive ? "page" : undefined}
+            className={cn(
+              "rounded px-3 py-1.5 text-[13px] font-medium transition-colors",
+              projectsActive
+                ? "bg-[var(--relay-topbar-active-bg)] text-[var(--relay-topbar-active-fg)]"
+                : "text-[var(--relay-topbar-muted-fg)] hover:bg-[var(--relay-topbar-hover-bg)] hover:text-[var(--relay-topbar-fg)]",
+            )}
+          >
+            Projects
+          </Link>
           <Link
             to="/plans"
             aria-current={plansActive ? "page" : undefined}
