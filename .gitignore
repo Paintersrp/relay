@@ -65,3 +65,12 @@ apps/web/.output/
 apps/web/dist/
 apps/web/.env
 apps/web/.env.local
+
+# mex transient output
+.mex/.cache/
+.mex/cache/
+.mex/reports/
+.mex/tmp/
+.mex/*.log
+.mex/*.jsonl
+.mex/check-output*.json

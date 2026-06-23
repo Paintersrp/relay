@@ -40,7 +40,7 @@ Read `AGENTS.md`, then this file. Load `context/architecture.md` first for imple
 - Root templ/htmx UI remains present as legacy/utility surface while `apps/web` is the primary workbench.
 
 **Known Drift Notes:**
-- The installer brief names a legacy surgical implementation handoff instructions path under docs/instructions, but that file is not present in this checkout; current instruction assets are under `internal/instructions/` and contracts under `relay-contracts/`.
+- The mex installer brief may describe stale or incomplete project structure. Treat checked-out Relay source and the canonical `Paintersrp/relay-contracts` repository as authoritative.
 - The repo is currently hybrid: root Go/templ/htmx build scripts plus `apps/web` React/TanStack Start. Treat checked-out files as authoritative.
 
 ## Routing Table

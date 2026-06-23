@@ -25,24 +25,29 @@ last_updated: 2026-06-23
 
 `relay-contracts/` is authoritative for Planner/pipeline behavior. `.mex` summarizes implementation-facing implications and points to source files; it must not duplicate whole contract documents.
 
-## Important Paths
+## Important Source-Controlled Contract Paths
 
-- `relay-contracts/agents/instructions/planner_agent_instructions.md`
-- `relay-contracts/agents/knowledge/planner_github_knowledge_manifest.json`
-- `relay-contracts/contracts/planner_handoff_markdown_contract.md`
-- `relay-contracts/contracts/planner_pass_plan_contract.md`
-- `relay-contracts/contracts/planner_to_compiler_contract.md`
-- `relay-contracts/contracts/canonical_packet_contract.md`
-- `relay-contracts/contracts/executor_brief_contract.md`
-- `relay-contracts/contracts/executor_result_contract.md`
-- `relay-contracts/contracts/audit_packet_contract.md`
-- `relay-contracts/contracts/pipeline_artifact_model.md`
-- `relay-contracts/schema/planner_pass_plan.schema.json`
-- `relay-contracts/schema/canonical_packet.schema.json`
-- `relay-contracts/schema/executor_result.schema.json`
-- `relay-contracts/schema/audit_packet.schema.json`
-- `relay-contracts/policies/*`
-- `relay-contracts/templates/*`
+Canonical contract repository: `Paintersrp/relay-contracts`.
+
+Fetch these from that repository when producing Planner handoffs, auditing contract behavior, or discussing current Planner/pipeline rules:
+
+- `agents/knowledge/planner_github_knowledge_manifest.json`
+- `agents/instructions/planner_agent_instructions.md`
+- `contracts/planner_to_compiler_contract.md`
+- `contracts/planner_mcp_run_submission_contract.md`
+- `contracts/planner_mcp_plan_submission_contract.md`
+- `contracts/planner_pass_plan_contract.md`
+- `contracts/pipeline_artifact_model.md`
+- `templates/planner_handoff_template.md`
+- `schema/planner_handoff_manifest.schema.json`
+- `schema/canonical_packet.schema.json`
+- `schema/planner_pass_plan.schema.json`
+- `policies/artifact_naming_policy.md`
+- `policies/pipeline_lifecycle_policy.md`
+- `policies/security_redaction_policy.md`
+- `policies/human_approval_gate_policy.md`
+
+Do not assume these files exist inside `Paintersrp/relay` unless they are intentionally vendored or mounted.
 
 ## Implementation Implications
 
