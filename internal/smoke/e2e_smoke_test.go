@@ -30,7 +30,8 @@ var smokePlanJSON = `{
     "goal": "Verify E2E path.",
     "repo_target": "smoke-test-repo",
     "branch_context": "main",
-    "status": "active"
+    "status": "active",
+    "project_id": "smoke-project"
   },
   "source_intent": {
     "summary": "Synthetic E2E smoke plan."
@@ -112,9 +113,14 @@ func TestE2EPipelineSmoke(t *testing.T) {
 	rs := repos.NewService(s, logger)
 	handler := server.BuildRoutes(s, rs, logger)
 
+	// Create project for validation/submission
+	if _, err := s.CreateProject("smoke-project", "Smoke Project", "E2E Smoke Project", "active", ""); err != nil {
+		t.Fatalf("failed to create project: %v", err)
+	}
+
 	// 1. Submit Plan v2 JSON to /api/plans
 	t.Log("1. Submit Plan v2 JSON")
-	planPayload := fmt.Sprintf(`{"plan":%s,"sourceArtifactPath":"handoffs/plans/e2e-smoke-plan.json"}`, smokePlanJSON)
+	planPayload := fmt.Sprintf(`{"plan":%s,"sourceArtifactPath":"handoffs/plans/e2e-smoke-plan.json","projectId":"smoke-project"}`, smokePlanJSON)
 	req := httptest.NewRequest("POST", "/api/plans", strings.NewReader(planPayload))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

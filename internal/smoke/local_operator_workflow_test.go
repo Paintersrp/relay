@@ -209,6 +209,7 @@ func submitSmokePlan(t *testing.T, handler http.Handler) {
 			RepoTarget:    "smoke-relay",
 			BranchContext: "main",
 			Status:        "active",
+			ProjectID:     "smoke-relay",
 			MCPCapabilityProfile: &plans.MCPCapabilityProfile{
 				ProfileID:            "pass-006-local-smoke",
 				Mode:                 "submission_only",
@@ -250,6 +251,7 @@ func submitSmokePlan(t *testing.T, handler http.Handler) {
 	postJSON(t, handler, "/api/plans", http.StatusCreated, map[string]any{
 		"plan":               plan,
 		"sourceArtifactPath": "handoffs/plans/pass-006-smoke.json",
+		"projectId":          "smoke-relay",
 	}, nil)
 }
 

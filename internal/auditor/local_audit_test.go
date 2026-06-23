@@ -21,7 +21,7 @@ func TestLocalAuditServiceCreatesAllModes(t *testing.T) {
 	st := newLocalAuditTestStore(t, dir)
 	repoRoot := setupLocalAuditGitRepo(t)
 	project := createLocalAuditProject(t, st, repoRoot)
-	insertLocalAuditPlan(t, st)
+	insertLocalAuditPlan(t, st, project)
 
 	if err := os.WriteFile(filepath.Join(repoRoot, "committed.txt"), []byte("updated\n"), 0644); err != nil {
 		t.Fatalf("write committed: %v", err)
@@ -148,9 +148,11 @@ func createLocalAuditProject(t *testing.T, st *store.Store, repoRoot string) *st
 	return project
 }
 
-func insertLocalAuditPlan(t *testing.T, st *store.Store) {
+func insertLocalAuditPlan(t *testing.T, st *store.Store, project *store.Project) {
 	t.Helper()
-	res, err := st.DB().ExecContext(t.Context(), `INSERT INTO plans (plan_id, title, goal, status, raw_plan_json) VALUES ('plan-1', 'Plan', 'Goal', 'active', '{}')`)
+	res, err := st.DB().ExecContext(t.Context(), `
+INSERT INTO plans (plan_id, title, goal, status, raw_plan_json, project_row_id, project_id)
+VALUES ('plan-1', 'Plan', 'Goal', 'active', '{}', ?, ?)`, project.ID, project.ProjectID)
 	if err != nil {
 		t.Fatalf("insert plan: %v", err)
 	}

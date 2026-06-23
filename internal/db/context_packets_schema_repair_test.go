@@ -182,11 +182,58 @@ func createRepairParents(t *testing.T, db *sql.DB) {
 	execRepairSQL(t, db, `
 CREATE TABLE projects (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	project_id TEXT NOT NULL UNIQUE
+	project_id TEXT NOT NULL UNIQUE,
+	name TEXT NOT NULL DEFAULT '',
+	description TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'active',
+	default_repository_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE source_snapshots (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	source_snapshot_id TEXT NOT NULL UNIQUE
+);
+CREATE TABLE plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id TEXT NOT NULL UNIQUE,
+    schema_version TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    goal TEXT NOT NULL DEFAULT '',
+    repo_target TEXT NOT NULL DEFAULT '',
+    branch_context TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'complete', 'abandoned')),
+    source_intent_summary TEXT NOT NULL DEFAULT '',
+    source_artifact_path TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    plan_meta_json TEXT NOT NULL DEFAULT '{}',
+    project_context_json TEXT NOT NULL DEFAULT '{}',
+    mcp_capability_profile_json TEXT NOT NULL DEFAULT '{}',
+    global_context_rules_json TEXT NOT NULL DEFAULT '{}',
+    submission_note TEXT NOT NULL DEFAULT '',
+    raw_plan_json TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE plan_passes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_row_id INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    pass_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL CHECK (sequence >= 1),
+    name TEXT NOT NULL DEFAULT '',
+    goal TEXT NOT NULL DEFAULT '',
+    intended_execution_scope_json TEXT NOT NULL DEFAULT '[]',
+    non_goals_json TEXT NOT NULL DEFAULT '[]',
+    dependencies_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'in_progress', 'completed', 'skipped')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    pass_type TEXT NOT NULL DEFAULT '',
+    context_plan_json TEXT NOT NULL DEFAULT '{}',
+    source_snapshot_requirements_json TEXT NOT NULL DEFAULT '{}',
+    handoff_readiness_criteria_json TEXT NOT NULL DEFAULT '[]',
+    risk_level TEXT NOT NULL DEFAULT 'low' CHECK (risk_level IN ('low', 'medium', 'high')),
+    context_budget_json TEXT NOT NULL DEFAULT '{}',
+    raw_pass_json TEXT NOT NULL DEFAULT '{}',
+    UNIQUE(plan_row_id, pass_id),
+    UNIQUE(plan_row_id, sequence)
 );
 `)
 }
