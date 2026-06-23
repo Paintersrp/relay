@@ -17,7 +17,8 @@
     "dev": "concurrently \"npm:dev:css\" \"npm:dev:js\" \"npm:dev:templ\" \"npm:dev:server\"",
     "dev:web": "cd apps/web && npm run dev",
     "build:web": "cd apps/web && npm run build",
-    "validate": "make validate"
+    "validate": "make validate",
+    "smoke": "go test ./internal/smoke && go test ./internal/mcp && go test ./internal/server && npm --prefix apps/web run typecheck && npm --prefix apps/web test"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.0.0",

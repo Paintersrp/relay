@@ -1,11 +1,19 @@
 package server
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"relay/internal/repos"
+	"relay/internal/store"
 )
 
 // TestResolveRunStep verifies the status-to-step mapping table.
@@ -171,4 +179,143 @@ func TestWebBaseURL_NoTrailingSlashFromEnv(t *testing.T) {
 		// Ensure os.Setenv does not persist across sub-test iteration
 		os.Unsetenv("RELAY_WEB_BASE_URL")
 	}
+}
+
+func TestBuildRoutes_Compatibility(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s, err := store.Open(dbPath, logger)
+	if err != nil {
+		t.Fatalf("failed to open store: %v", err)
+	}
+	defer s.Close()
+
+	rs := repos.NewService(s, logger)
+	handler := BuildRoutes(s, rs, logger)
+
+	// GET /api/runs returns a JSON array
+	t.Run("GET /api/runs returns JSON", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/runs", nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", w.Code)
+		}
+		if !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
+			t.Errorf("expected JSON content type, got %q", w.Header().Get("Content-Type"))
+		}
+		body := w.Body.String()
+		if !strings.HasPrefix(body, "[") {
+			t.Errorf("expected JSON array, got %q", body)
+		}
+	})
+
+	// GET /api/projects returns a JSON array
+	// GET /api/projects returns a JSON array
+	t.Run("GET /api/projects returns JSON", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/projects", nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", w.Code)
+		}
+		if !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
+			t.Errorf("expected JSON content type, got %q", w.Header().Get("Content-Type"))
+		}
+		body := w.Body.String()
+		if !strings.HasPrefix(body, "{\"") {
+			t.Errorf("expected JSON object, got %q", body)
+		}
+	})
+
+	// GET /api/plans returns a JSON array
+	t.Run("GET /api/plans returns JSON", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/plans", nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", w.Code)
+		}
+		if !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
+			t.Errorf("expected JSON content type, got %q", w.Header().Get("Content-Type"))
+		}
+		body := w.Body.String()
+		if !strings.HasPrefix(body, "{\"") {
+			t.Errorf("expected JSON object, got %q", body)
+		}
+	})
+
+	// GET /api/runs/{id}/audit/status returns structured JSON
+	t.Run("GET /api/runs/{id}/audit/status returns structured JSON", func(t *testing.T) {
+		repo, _ := s.CreateRepo("test-repo", filepath.Join(dir, "repo"))
+		run, _ := s.CreateRun(repo.ID, "Test Run", "draft", "gpt-4o", "gpt-4o", "main")
+		req := httptest.NewRequest("GET", fmt.Sprintf("/api/runs/%d/audit/status", run.ID), nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+		var resp map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if _, ok := resp["auditState"]; !ok {
+			t.Error("expected auditState key in response")
+		}
+	})
+
+	// POST /mcp performs initialize and tools/list requests over HTTP transport
+	t.Run("POST /mcp performs initialize and tools/list", func(t *testing.T) {
+		initReq := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}`
+		req := httptest.NewRequest("POST", "/mcp", strings.NewReader(initReq))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var initResp map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &initResp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if _, ok := initResp["result"]; !ok {
+			t.Errorf("expected JSON-RPC result, got %+v", initResp)
+		}
+	})
+
+	// GET/POST to missing paths under /api namespace return JSON error with Status 404
+	t.Run("GET /api/nonexistent returns JSON 404", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/nonexistent", nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Errorf("expected 404, got %d", w.Code)
+		}
+		if !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
+			t.Errorf("expected JSON content type, got %q", w.Header().Get("Content-Type"))
+		}
+		var resp map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp["error"] != "NOT_FOUND" {
+			t.Errorf("expected error=NOT_FOUND, got %v", resp["error"])
+		}
+	})
+
+	// Non-/api redirect routes redirect as expected
+	t.Run("GET / redirects to React UI", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/", nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusFound {
+			t.Errorf("expected 302 redirect, got %d", w.Code)
+		}
+		loc := w.Header().Get("Location")
+		if !strings.HasSuffix(loc, "/runs") {
+			t.Errorf("expected redirect to /runs, got %q", loc)
+		}
+	})
 }

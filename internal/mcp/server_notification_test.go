@@ -70,3 +70,108 @@ func TestHandleLineWithSkipUnknownRequestStillErrors(t *testing.T) {
 		t.Fatalf("expected method-not-found error, got %+v", resp.Error)
 	}
 }
+
+func TestServerToolsList_ExactMatch(t *testing.T) {
+	srv := NewServer(discardLogger())
+	req := Request{
+		JSONRPC: JSONRPCVersion,
+		ID:      json.RawMessage(`1`),
+		Method:  "tools/list",
+	}
+	resp := srv.handleLine(mustMarshal(t, req))
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %v", resp.Error)
+	}
+
+	var list ToolsListResult
+	b, _ := json.Marshal(resp.Result)
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatalf("unmarshal tools list: %v", err)
+	}
+
+	expectedTools := []string{
+		"submit_test_audit_packet",
+		"create_run_from_planner_handoff",
+		"submit_planner_pass_plan",
+		"list_open_runs",
+		"get_run_status",
+		"submit_audit_packet",
+	}
+
+	if len(list.Tools) != len(expectedTools) {
+		t.Fatalf("expected exactly %d tools, got %d", len(expectedTools), len(list.Tools))
+	}
+
+	for i, name := range expectedTools {
+		if list.Tools[i].Name != name {
+			t.Fatalf("expected tool at %d to be %q, got %q", i, name, list.Tools[i].Name)
+		}
+	}
+}
+
+func TestServerToolsList_BrokerEnabled_ExactMatch(t *testing.T) {
+	deps := setupTestDeps(t)
+	deps.ContextBrokerEnabled = true
+	srv := NewServer(discardLogger(), deps)
+	req := Request{
+		JSONRPC: JSONRPCVersion,
+		ID:      json.RawMessage(`1`),
+		Method:  "tools/list",
+	}
+	resp := srv.handleLine(mustMarshal(t, req))
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %v", resp.Error)
+	}
+
+	var list ToolsListResult
+	b, _ := json.Marshal(resp.Result)
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatalf("unmarshal tools list: %v", err)
+	}
+
+	expectedTools := []string{
+		"submit_test_audit_packet",
+		"create_run_from_planner_handoff",
+		"submit_planner_pass_plan",
+		"list_open_runs",
+		"get_run_status",
+		"submit_audit_packet",
+		"get_project",
+		"get_plan",
+		"get_pass",
+		"get_pass_context",
+		"create_source_snapshot",
+		"list_project_files",
+		"search_project_files",
+		"read_project_file",
+		"create_context_packet",
+		"get_context_packet",
+	}
+
+	if len(list.Tools) != len(expectedTools) {
+		t.Fatalf("expected exactly %d tools, got %d", len(expectedTools), len(list.Tools))
+	}
+
+	for i, name := range expectedTools {
+		if list.Tools[i].Name != name {
+			t.Fatalf("expected tool at %d to be %q, got %q", i, name, list.Tools[i].Name)
+		}
+	}
+}
+
+func TestHandleLineWithSkipPingRequestResponds(t *testing.T) {
+	srv := NewServer(discardLogger())
+	req := Request{
+		JSONRPC: JSONRPCVersion,
+		ID:      json.RawMessage(`1`),
+		Method:  "ping",
+	}
+	resp, skip := srv.handleLineWithSkip(mustMarshal(t, req))
+	if skip {
+		t.Fatal("expected ping request with id not to be skipped")
+	}
+	if resp.Error != nil {
+		t.Fatalf("expected ping success, got error %+v", resp.Error)
+	}
+}
+

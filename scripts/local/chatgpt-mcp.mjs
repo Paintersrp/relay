@@ -116,6 +116,44 @@ function getConfig() {
     throw new ValidationError(`TUNNEL_MCP_TRANSPORT must be one of: ${Array.from(ALLOWED_TUNNEL_MCP_TRANSPORTS).join(', ')}`);
   }
 
+  const tunnelHealthListenAddr = process.env.TUNNEL_HEALTH_LISTEN_ADDR || DEFAULT_TUNNEL_HEALTH_LISTEN_ADDR;
+  
+  // Extract port from health listener
+  const healthPortMatch = tunnelHealthListenAddr.match(/:(\d+)$/);
+  const healthPort = healthPortMatch ? healthPortMatch[1] : '';
+
+  // Extract port from Relay API/web URL (defaulting to 8080)
+  let apiPort = '8080';
+  const apiBaseUrl = process.env.RELAY_API_BASE_URL || process.env.RELAY_WEB_BASE_URL || '';
+  if (apiBaseUrl) {
+    const apiPortMatch = apiBaseUrl.match(/:(\d+)/);
+    if (apiPortMatch) {
+      apiPort = apiPortMatch[1];
+    }
+  }
+
+  // Extract port from RELAY_MCP_URL (defaulting to 8081)
+  let mcpPort = '8081';
+  const mcpUrl = process.env.RELAY_MCP_URL || DEFAULT_RELAY_MCP_URL;
+  if (mcpUrl) {
+    const mcpPortMatch = mcpUrl.match(/:(\d+)/);
+    if (mcpPortMatch) {
+      mcpPort = mcpPortMatch[1];
+    }
+  }
+
+  const vitePort = '5173';
+
+  if (healthPort) {
+    if (healthPort === apiPort) {
+      console.warn(`\x1b[33mWARNING: tunnel-client health/admin listener port (${healthPort}) matches Relay API port (${apiPort}). This will cause a port collision!\x1b[0m`);
+    } else if (healthPort === mcpPort) {
+      console.warn(`\x1b[33mWARNING: tunnel-client health/admin listener port (${healthPort}) matches Relay MCP port (${mcpPort}). This will cause a port collision!\x1b[0m`);
+    } else if (healthPort === vitePort) {
+      console.warn(`\x1b[33mWARNING: tunnel-client health/admin listener port (${healthPort}) matches Vite dev server port (${vitePort}). This will cause a port collision!\x1b[0m`);
+    }
+  }
+
   return {
     envPath: ENV_PATH,
     envLocalPath: ENV_LOCAL_PATH,
@@ -128,7 +166,7 @@ function getConfig() {
     relayMcpStdioLauncherPath: RELAY_MCP_STDIO_LAUNCHER_PATH,
     tunnelClientPath: process.env.TUNNEL_CLIENT_PATH || '',
     controlPlaneApiKey: process.env.CONTROL_PLANE_API_KEY || '',
-    tunnelHealthListenAddr: process.env.TUNNEL_HEALTH_LISTEN_ADDR || DEFAULT_TUNNEL_HEALTH_LISTEN_ADDR,
+    tunnelHealthListenAddr,
   };
 }
 
@@ -231,6 +269,40 @@ async function runStart(config, options) {
 }
 
 async function runDoctor(config, options) {
+  const healthPortMatch = config.tunnelHealthListenAddr.match(/:(\d+)$/);
+  const healthPort = healthPortMatch ? healthPortMatch[1] : '';
+
+  let apiPort = '8080';
+  const apiBaseUrl = process.env.RELAY_API_BASE_URL || process.env.RELAY_WEB_BASE_URL || '';
+  if (apiBaseUrl) {
+    const apiPortMatch = apiBaseUrl.match(/:(\d+)/);
+    if (apiPortMatch) {
+      apiPort = apiPortMatch[1];
+    }
+  }
+
+  let mcpPort = '8081';
+  const mcpUrl = config.relayMcpUrl || '';
+  if (mcpUrl) {
+    const mcpPortMatch = mcpUrl.match(/:(\d+)/);
+    if (mcpPortMatch) {
+      mcpPort = mcpPortMatch[1];
+    }
+  }
+
+  const vitePort = '5173';
+
+  let collisionReason = null;
+  if (healthPort) {
+    if (healthPort === apiPort) {
+      collisionReason = 'collides with Relay API port (8080)';
+    } else if (healthPort === mcpPort) {
+      collisionReason = 'collides with Relay MCP HTTP port (8081)';
+    } else if (healthPort === vitePort) {
+      collisionReason = 'collides with Vite dev server port (5173)';
+    }
+  }
+
   const diagnostics = {
     envPathPresent: existsSync(config.envPath),
     envLocalPathPresent: existsSync(config.envLocalPath),
@@ -239,6 +311,7 @@ async function runDoctor(config, options) {
     tunnelClientPath: null,
     tunnelClientResolved: false,
     localCheck: null,
+    healthPortCollision: collisionReason ? `WARNING (${collisionReason})` : 'ok',
   };
 
   try {
@@ -316,6 +389,7 @@ function printDiagnostics(config, diagnostics) {
   console.log(`control-plane key configured: ${diagnostics.controlPlaneApiKeyConfigured ? 'yes' : 'no'}`);
   console.log(`tunnel-client path: ${diagnostics.tunnelClientPath ?? 'unresolved'}`);
   console.log(`tunnel-client health/admin listener: ${config.tunnelHealthListenAddr}`);
+  console.log(`health/admin port collision check: ${diagnostics.healthPortCollision}`);
 }
 
 function requireConfiguredTunnelId(config) {
