@@ -64,6 +64,41 @@ export interface PlanAPIRunSummary {
   updatedAt: string;
 }
 
+export interface PlanAPIContextSearchTerm {
+  repoId: string;
+  query: string;
+  purpose: string;
+  required?: boolean;
+}
+
+export interface PlanAPIContextFileRead {
+  repoId: string;
+  path: string;
+  purpose: string;
+  required?: boolean;
+}
+
+export interface PlanAPIContextPlan {
+  requiredRepositories: string[];
+  seedSearchTerms: PlanAPIContextSearchTerm[];
+  seedFilesToRead: PlanAPIContextFileRead[];
+  contextCoverageExpectations: string[];
+  blockedIfMissing: string[];
+}
+
+export interface PlanAPISourceSnapshotRequirements {
+  requireGitStatus?: boolean;
+  requireCommitSha?: boolean;
+  allowDirtyWorktree?: boolean;
+}
+
+export interface PlanAPIContextBudget {
+  maxFiles?: number;
+  maxBytes?: number;
+  maxSearchResults?: number;
+  maxContextLines?: number;
+}
+
 export interface PlanAPIPass {
   id: string;
   planRowId: string;
@@ -79,6 +114,13 @@ export interface PlanAPIPass {
   associatedRuns: PlanAPIRunSummary[];
   createdAt: string;
   updatedAt: string;
+  passType?: string;
+  contextPlan?: PlanAPIContextPlan;
+  sourceSnapshotRequirements?: PlanAPISourceSnapshotRequirements;
+  handoffReadinessCriteria?: string[];
+  riskLevel?: string;
+  contextBudget?: PlanAPIContextBudget;
+  contextParseWarnings?: string[];
 }
 
 export interface PlanAPIReadPlan extends PlanAPIPlan {

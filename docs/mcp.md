@@ -9,6 +9,8 @@
 > Relay now stores project/repository registry, source-policy configuration, internal source snapshot/git evidence backend state, internal file inventory/search/read service primitives, internal PASS-005 context packet/context coverage report generation, and full Plan v2 managed plan/pass validation plus persistence metadata. These context packet services are not run submission, canonical packet compilation, or executor dispatch, and they do **not** expose Planner-facing context-broker MCP tools yet; that remains future work until PASS-007.
 >
 > PASS-007 is now implemented: Relay can expose a **gated** context-broker MCP surface for retrieval-only Planner context work when `RELAY_MCP_CONTEXT_BROKER_ENABLED=true`. Broker tools remain disabled by default, stay separate from submission actions, and do not create runs, submit plans, dispatch executors, mutate git, run shell commands, or expose arbitrary filesystem access.
+>
+> The Relay web UI now shows read-only managed pass context, planner handoff provenance, context packet IDs, source snapshot IDs, associated runs, and links to safe persisted source-context artifacts. This UI visibility does **not** invoke MCP broker tools directly, does **not** create context packets/source snapshots, and does **not** render raw source file contents.
 
 ---
 

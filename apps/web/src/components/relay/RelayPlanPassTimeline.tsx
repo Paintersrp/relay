@@ -16,6 +16,26 @@ interface RelayPlanPassTimelineProps {
   passes: PlanAPIPass[];
 }
 
+export function getPrimaryAssociatedRun(pass: PlanAPIPass) {
+  return pass.associatedRuns[0];
+}
+
+export function getAssociatedRunSummaryLabel(pass: PlanAPIPass): string {
+  const runCount = pass.associatedRuns.length;
+  if (runCount === 0) {
+    return "No run yet";
+  }
+
+  const primaryRun = getPrimaryAssociatedRun(pass);
+  if (!primaryRun) {
+    return `${runCount} run${runCount === 1 ? "" : "s"}`;
+  }
+
+  return runCount === 1
+    ? `${primaryRun.id} • ${getPassStatusLabel(pass.status)}`
+    : `${runCount} runs • ${primaryRun.id}`;
+}
+
 function copyText(text: string) {
   void navigator.clipboard?.writeText(text);
 }
@@ -96,6 +116,8 @@ export function RelayPlanPassTimeline({ planId, passes }: RelayPlanPassTimelineP
         const isCompleted = pass.status === "completed";
         const isCurrent = pass.status === "in_progress";
         const action = getActionConfig(pass, unmetDependencies);
+        const primaryRun = getPrimaryAssociatedRun(pass);
+        const hasAssociatedRuns = pass.associatedRuns.length > 0;
 
         return (
           <article
@@ -179,9 +201,20 @@ export function RelayPlanPassTimeline({ planId, passes }: RelayPlanPassTimelineP
               </div>
 
               <div className="flex shrink-0 items-center gap-2 self-start sm:pt-0.5">
-                <span className="min-w-[68px] text-right font-mono text-[10px] text-muted-foreground/80">
-                  No run yet
-                </span>
+                {hasAssociatedRuns && primaryRun ? (
+                  <a
+                    href={primaryRun.workbenchPath}
+                    className="inline-flex min-w-[110px] items-center justify-end gap-1 rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-2 py-1 text-right font-mono text-[10px] text-foreground transition-colors hover:bg-[var(--relay-panel-hover-bg)]"
+                    title={`Open run ${primaryRun.id}`}
+                  >
+                    <ExternalLink className="size-3 text-muted-foreground" />
+                    <span>{getAssociatedRunSummaryLabel(pass)}</span>
+                  </a>
+                ) : (
+                  <span className="min-w-[68px] text-right font-mono text-[10px] text-muted-foreground/80">
+                    No run yet
+                  </span>
+                )}
 
                 <Button
                   asChild

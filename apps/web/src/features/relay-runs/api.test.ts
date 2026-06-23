@@ -90,6 +90,65 @@ describe('Relay API Client Boundary (Real Data Wiring)', () => {
     });
   });
 
+  it("getRun normalizes nested planContext and provenance metadata", async () => {
+    const mockRun = {
+      id: 61,
+      name: "Provenance Run",
+      planContext: {
+        planId: "plan-ctx",
+        planTitle: "Context Plan",
+        planRowId: "11",
+        passId: "PASS-009",
+        passName: "Source visibility",
+        passRowId: "19",
+        passSequence: 9,
+        passStatus: "in_progress",
+        sourceArtifactPath:
+          "handoffs/planner/2026-06-23_source-visibility.planner-handoff.md",
+        contextPacketId: "ctxpkt-123",
+        sourceSnapshotId: "srcsnap-456",
+        plannerHandoffSha256: "abc123",
+      },
+      provenance: {
+        plannerHandoffSha256: "abc123",
+        plannerHandoffBytes: 321,
+        sourceArtifactPath:
+          "handoffs/planner/2026-06-23_source-visibility.planner-handoff.md",
+        source: "mcp_chat",
+        clientTraceId: "trace-123",
+        planId: "plan-ctx",
+        passId: "PASS-009",
+        contextPacketId: "ctxpkt-123",
+        sourceSnapshotId: "srcsnap-456",
+        artifactKind: "planner_handoff_provenance_json",
+      },
+    };
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify(mockRun),
+    });
+    globalThis.fetch = fetchSpy;
+
+    const run = await getRun("61");
+
+    expect(run?.planContext).toMatchObject({
+      planId: "plan-ctx",
+      planRowId: "11",
+      passId: "PASS-009",
+      passRowId: "19",
+      contextPacketId: "ctxpkt-123",
+      sourceSnapshotId: "srcsnap-456",
+      plannerHandoffSha256: "abc123",
+    });
+    expect(run?.provenance).toMatchObject({
+      plannerHandoffSha256: "abc123",
+      plannerHandoffBytes: 321,
+      source: "mcp_chat",
+      clientTraceId: "trace-123",
+      artifactKind: "planner_handoff_provenance_json",
+    });
+  });
+
   it("getRun leaves planContext undefined for standalone runs", async () => {
     const mockRun = { id: 60, name: "Standalone Run" };
     const fetchSpy = vi.fn().mockResolvedValue({

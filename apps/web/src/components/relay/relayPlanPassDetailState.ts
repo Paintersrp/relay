@@ -76,9 +76,15 @@ export function buildPassContextText({
     `Pass goal: ${pass.goal}`,
     `Repository: ${plan.repoTarget}`,
     `Branch: ${plan.branchContext}`,
+    `Pass type: ${pass.passType || "unspecified"}`,
+    `Risk level: ${pass.riskLevel || "unspecified"}`,
     `Intended execution scope: ${pass.intendedExecutionScope.length > 0 ? pass.intendedExecutionScope.join(", ") : "none"}`,
     `Non-goals: ${pass.nonGoals.length > 0 ? pass.nonGoals.join(", ") : "none"}`,
     `Dependencies: ${pass.dependencies.length > 0 ? pass.dependencies.join(", ") : "none"}`,
     `Blocking dependencies: ${blockingDependencies.length > 0 ? blockingDependencies.map((dependency) => dependency.passId).join(", ") : "none"}`,
+    `Required repositories: ${pass.contextPlan?.requiredRepositories.length ? pass.contextPlan.requiredRepositories.join(", ") : "none"}`,
+    `Seed searches: ${pass.contextPlan?.seedSearchTerms.length ?? 0}`,
+    `Seed files: ${pass.contextPlan?.seedFilesToRead.length ?? 0}`,
+    `Readiness criteria: ${pass.handoffReadinessCriteria?.length ? pass.handoffReadinessCriteria.join(", ") : "none"}`,
   ].join("\n");
 }

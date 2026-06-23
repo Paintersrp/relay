@@ -51,8 +51,10 @@ export type {
 export type {
   RelayRun,
   RelayRunPlanContext,
+  RelayRunProvenance,
   RelayArtifact,
   RelayArtifactKind,
+  RelaySourceVisibilitySummary,
   RelayRunStatus,
   RelayRunStep,
   RelayRunEvent,

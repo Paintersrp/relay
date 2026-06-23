@@ -22,6 +22,7 @@ import {
 import { ValidationPanel } from "@/components/relay/ValidationPanel";
 import { LogPreviewPanel } from "@/components/relay/LogPreviewPanel";
 import { RunEvidenceBrowser } from "@/components/relay/RunEvidenceBrowser";
+import { RunSourceContextPanel } from "@/components/relay/RunSourceContextPanel";
 
 export const Route = createFileRoute("/runs/$runId/intake")({
   component: IntakePage,
@@ -112,12 +113,14 @@ function IntakeWorkbench({
       initialInspectorTab="details"
       inspectorTabs={[
         { key: "details", label: "Details" },
+        { key: "source", label: "Source Context" },
         { key: "artifacts", label: "Artifacts" },
         { key: "validation", label: "Validation" },
         { key: "logs", label: "Logs" },
       ]}
       inspectorPanels={{
         details: <RunIntakeDetailsPanel controller={intakeReview} />,
+        source: <RunSourceContextPanel run={run} artifacts={artifacts || []} />,
         logs: <LogPreviewPanel logPreview={logPreview} />,
         artifacts: (
           <RunEvidenceBrowser

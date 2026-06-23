@@ -250,10 +250,41 @@ export interface RelayRunSummary {
 export interface RelayRunPlanContext {
   planId?: string;
   planTitle?: string;
+  planRowId?: string;
   passId?: string;
   passName?: string;
+  passRowId?: string;
   passSequence?: number;
   passStatus?: string;
+  sourceArtifactPath?: string;
+  contextPacketId?: string;
+  sourceSnapshotId?: string;
+  plannerHandoffSha256?: string;
+}
+
+export interface RelayRunProvenance {
+  plannerHandoffSha256?: string;
+  plannerHandoffBytes?: number;
+  sourceArtifactPath?: string;
+  source?: string;
+  clientTraceId?: string;
+  planId?: string;
+  passId?: string;
+  contextPacketId?: string;
+  sourceSnapshotId?: string;
+  artifactKind?: "planner_handoff_provenance_json";
+}
+
+export interface RelaySourceVisibilitySummary {
+  contextPacketId?: string;
+  sourceSnapshotId?: string;
+  sourceArtifactPath?: string;
+  plannerHandoffSha256?: string;
+  coverageReportArtifact?: RelayArtifact;
+  contextPacketArtifact?: RelayArtifact;
+  provenanceArtifact?: RelayArtifact;
+  blockers?: string[];
+  warnings?: string[];
 }
 
 // Canonical RelayRun struct
@@ -276,6 +307,7 @@ export interface RelayRun {
   statusSeverity: RelayRunStatusSeverity;
   state: string;
   planContext?: RelayRunPlanContext;
+  provenance?: RelayRunProvenance;
 
   // Legacy field support to prevent breaking current views
   title: string;

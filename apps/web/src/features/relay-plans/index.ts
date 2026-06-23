@@ -8,9 +8,14 @@ export {
 } from "./queries";
 
 export type {
+  PlanAPIContextBudget,
+  PlanAPIContextFileRead,
+  PlanAPIContextPlan,
+  PlanAPIContextSearchTerm,
   PlanAPIPlan,
   PlanAPIPass,
   PlanAPIRunSummary,
+  PlanAPISourceSnapshotRequirements,
   PlanAPIReadPlan,
   PlanAPIStatus,
   PlanAPIPassStatus,

@@ -588,6 +588,25 @@ func TestGetPlanDetailAndPassOrdering(t *testing.T) {
 	if resp.Passes[0].PassID != "PASS-001" || resp.Passes[1].PassID != "PASS-002" {
 		t.Fatalf("unexpected pass order: %+v", resp.Passes)
 	}
+	if resp.Passes[0].PassType != "backend_vertical_slice" {
+		t.Fatalf("expected passType to be returned, got %q", resp.Passes[0].PassType)
+	}
+	if len(resp.Passes[0].ContextPlan.RequiredRepositories) != 1 ||
+		resp.Passes[0].ContextPlan.RequiredRepositories[0] != "relay" {
+		t.Fatalf("expected parsed required repositories, got %+v", resp.Passes[0].ContextPlan.RequiredRepositories)
+	}
+	if got := len(resp.Passes[0].ContextPlan.SeedSearchTerms); got != 1 {
+		t.Fatalf("expected parsed seed searches, got %d", got)
+	}
+	if got := len(resp.Passes[0].HandoffReadinessCriteria); got != 1 {
+		t.Fatalf("expected parsed readiness criteria, got %d", got)
+	}
+	if resp.Plan.CurrentPassID != "" {
+		t.Fatalf("expected no current pass, got %q", resp.Plan.CurrentPassID)
+	}
+	if resp.Plan.NextPassID != "PASS-001" {
+		t.Fatalf("expected nextPassId PASS-001, got %q", resp.Plan.NextPassID)
+	}
 	if resp.CompletionReady {
 		t.Fatal("expected completionReady=false")
 	}
@@ -637,6 +656,13 @@ func TestGetPlanPassDetail(t *testing.T) {
 	}
 	if len(resp.Pass.Dependencies) != 1 || resp.Pass.Dependencies[0] != "PASS-001" {
 		t.Fatalf("unexpected pass dependencies: %+v", resp.Pass.Dependencies)
+	}
+	if resp.Pass.ContextPlan.SeedFilesToRead[0].Path != "internal/plans/service.go" {
+		t.Fatalf("expected parsed seed file path, got %+v", resp.Pass.ContextPlan.SeedFilesToRead)
+	}
+	if resp.Pass.SourceSnapshotRequirements.RequireGitStatus == nil ||
+		!*resp.Pass.SourceSnapshotRequirements.RequireGitStatus {
+		t.Fatalf("expected source snapshot requirements to be returned, got %+v", resp.Pass.SourceSnapshotRequirements)
 	}
 
 	// Unknown pass returns 404
@@ -702,5 +728,57 @@ func TestCompletionReadyComputedWithoutMutatingPlanStatus(t *testing.T) {
 	}
 	if reloaded.Status != "active" {
 		t.Fatalf("expected stored plan status active, got %q", reloaded.Status)
+	}
+}
+
+func TestGetPlanPassDetailMalformedPersistedJSONReturnsWarning(t *testing.T) {
+	t.Parallel()
+
+	_, st, router := newPlanAPITestServer(t)
+
+	submitValidPlan(t, router, "")
+
+	plan, err := st.GetPlanByPlanID("plan-123")
+	if err != nil {
+		t.Fatalf("get plan: %v", err)
+	}
+	pass, err := st.GetPlanPassByPassID(plan.ID, "PASS-001")
+	if err != nil {
+		t.Fatalf("get pass: %v", err)
+	}
+
+	if _, err := st.DB().Exec(
+		`UPDATE plan_passes
+		 SET context_plan_json = '{bad json',
+		     handoff_readiness_criteria_json = 'not-json'
+		 WHERE id = ?`,
+		pass.ID,
+	); err != nil {
+		t.Fatalf("corrupt persisted plan pass json: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/plans/plan-123/passes/PASS-001", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp PlanReadAPIResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Pass == nil {
+		t.Fatal("expected pass in response")
+	}
+	if len(resp.Pass.ContextParseWarnings) != 2 {
+		t.Fatalf("expected bounded parse warnings, got %+v", resp.Pass.ContextParseWarnings)
+	}
+	if len(resp.Pass.ContextPlan.RequiredRepositories) != 0 {
+		t.Fatalf("expected empty context plan fallback, got %+v", resp.Pass.ContextPlan)
+	}
+	if len(resp.Pass.HandoffReadinessCriteria) != 0 {
+		t.Fatalf("expected empty readiness criteria fallback, got %+v", resp.Pass.HandoffReadinessCriteria)
 	}
 }

@@ -8,6 +8,7 @@ import {
   Play,
 } from "lucide-react";
 
+import { PlanPassContextPanel } from "@/components/relay/PlanPassContextPanel";
 import { RelayStateBanner } from "@/components/relay/RelayStateSurface";
 import {
   buildPassContextText,
@@ -39,17 +40,6 @@ interface RelayPlanPassDetailProps {
 }
 
 type CopyState = "idle" | "copied" | "failed";
-
-type RunLinkedPass = PlanAPIPass & {
-  runId?: string;
-  run_id?: string;
-  associatedRunId?: string;
-  associated_run_id?: string;
-  runIds?: string[];
-  run_ids?: string[];
-  associatedRunIds?: string[];
-  associated_run_ids?: string[];
-};
 
 function copyText(text: string, onStateChange: (state: CopyState) => void) {
   void (async () => {
@@ -111,29 +101,6 @@ function getStateCopy(state: RelayPlanPassDetailState, blocking: PassBlockingDep
   }
 }
 
-function getAssociatedRunIds(pass: PlanAPIPass): string[] {
-  const runLinkedPass = pass as RunLinkedPass;
-  const candidateValues = [
-    runLinkedPass.runId,
-    runLinkedPass.run_id,
-    runLinkedPass.associatedRunId,
-    runLinkedPass.associated_run_id,
-    ...(runLinkedPass.runIds ?? []),
-    ...(runLinkedPass.run_ids ?? []),
-    ...(runLinkedPass.associatedRunIds ?? []),
-    ...(runLinkedPass.associated_run_ids ?? []),
-  ];
-
-  return Array.from(
-    new Set(
-      candidateValues.filter(
-        (candidate): candidate is string =>
-          typeof candidate === "string" && candidate.trim().length > 0,
-      ),
-    ),
-  );
-}
-
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3 border-b border-[var(--relay-row-border)] py-2.5 last:border-b-0">
@@ -178,7 +145,7 @@ export function RelayPlanPassDetail({
   );
   const stateCopy = getStateCopy(detailState, blockingDependencies);
   const runnable = canCreateRunForPass(pass, sortedPasses);
-  const associatedRunIds = getAssociatedRunIds(pass);
+  const associatedRuns = pass.associatedRuns ?? [];
   const [passIdCopyState, setPassIdCopyState] = React.useState<CopyState>("idle");
   const [planIdCopyState, setPlanIdCopyState] = React.useState<CopyState>("idle");
   const [contextCopyState, setContextCopyState] = React.useState<CopyState>("idle");
@@ -434,6 +401,8 @@ export function RelayPlanPassDetail({
             </div>
           </section>
 
+          <PlanPassContextPanel pass={pass} />
+
           <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
             <SectionHeader>Dependencies</SectionHeader>
             <div className="divide-y divide-[var(--relay-row-border)]">
@@ -483,29 +452,35 @@ export function RelayPlanPassDetail({
           <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
             <SectionHeader>Associated Runs</SectionHeader>
             <div className="px-5 py-4">
-              {associatedRunIds.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {associatedRunIds.map((runId) => (
-                    <Button
-                      key={runId}
-                      asChild
-                      variant="outline"
-                      size="xs"
-                      className="rounded-sm px-3 text-[11px]"
+              {associatedRuns.length > 0 ? (
+                <div className="grid gap-2">
+                  {associatedRuns.map((run) => (
+                    <a
+                      key={run.id}
+                      href={run.workbenchPath}
+                      className="flex items-center justify-between gap-3 rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-3 py-2 text-xs text-foreground hover:bg-[var(--relay-panel-hover-bg)]"
                     >
-                      <Link to="/runs/$runId" params={{ runId }}>
+                      <div className="min-w-0">
+                        <div className="font-mono">{run.id}</div>
+                        <div className="mt-1 text-muted-foreground">
+                          {run.title || run.status}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="text-[11px] text-muted-foreground">
+                          {run.status}
+                        </span>
                         <ExternalLink className="size-3" />
-                        {runId}
-                      </Link>
-                    </Button>
+                      </div>
+                    </a>
                   ))}
                 </div>
               ) : (
                 <RelayStateBanner
                   tone="empty"
                   density="compact"
-                  title="No run data returned"
-                  description="Associated run data is not returned by the current Plan Pass API."
+                  title="No associated runs"
+                  description="Relay has not recorded any runs for this pass yet."
                 />
               )}
             </div>
@@ -523,27 +498,27 @@ export function RelayPlanPassDetail({
               <DetailRow label="Repo" value={plan.repoTarget} />
               <DetailRow label="Dependencies" value={pass.dependencies.length} />
               <DetailRow label="Blocking" value={blockingDependencies.length} />
+              <DetailRow label="Runs" value={associatedRuns.length} />
             </div>
           </section>
 
           <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
             <SectionHeader>Runs</SectionHeader>
             <div className="space-y-3 px-5 py-4">
-              {associatedRunIds.length > 0 ? (
-                associatedRunIds.map((runId) => (
-                  <Link
-                    key={runId}
-                    to="/runs/$runId"
-                    params={{ runId }}
+              {associatedRuns.length > 0 ? (
+                associatedRuns.map((run) => (
+                  <a
+                    key={run.id}
+                    href={run.workbenchPath}
                     className="flex items-center justify-between gap-2 rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-3 py-2 text-xs text-foreground hover:bg-[var(--relay-panel-hover-bg)]"
                   >
-                    <span className="font-mono">{runId}</span>
+                    <span className="font-mono">{run.id}</span>
                     <ExternalLink className="size-3 text-muted-foreground" />
-                  </Link>
+                  </a>
                 ))
               ) : (
                 <div className="text-xs leading-relaxed text-muted-foreground">
-                  No associated run IDs are present in the pass payload.
+                  No associated runs are present in the pass payload.
                 </div>
               )}
               {runnable ? (

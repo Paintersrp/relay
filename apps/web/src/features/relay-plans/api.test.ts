@@ -104,6 +104,94 @@ describe("relay-plans api", () => {
     );
   });
 
+  it("getPlan normalizes pass context fields from snake_case payloads", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          success: true,
+          plan: { id: "1", planId: "plan-1" },
+          passes: [
+            {
+              id: "2",
+              plan_row_id: "1",
+              pass_id: "PASS-009",
+              sequence: 9,
+              name: "Source visibility",
+              goal: "Expose source visibility",
+              intended_execution_scope: ["apps/web"],
+              non_goals: ["No workflow changes"],
+              dependencies: ["PASS-008"],
+              status: "planned",
+              associated_runs: [],
+              pass_type: "ui_visibility",
+              context_plan: {
+                required_repositories: ["relay", "relay-contracts"],
+                seed_search_terms: [
+                  {
+                    repo_id: "relay",
+                    query: "context packet",
+                    purpose: "Locate source visibility surfaces",
+                    required: true,
+                  },
+                ],
+                seed_files_to_read: [
+                  {
+                    repo_id: "relay",
+                    path: "apps/web/src/routes/runs/$runId/intake.tsx",
+                    purpose: "Add panel",
+                    required: true,
+                  },
+                ],
+                context_coverage_expectations: ["Show metadata only"],
+                blocked_if_missing: ["No persisted provenance"],
+              },
+              source_snapshot_requirements: {
+                require_git_status: true,
+                require_commit_sha: false,
+                allow_dirty_worktree: true,
+              },
+              handoff_readiness_criteria: ["Source metadata is visible"],
+              context_budget: {
+                max_files: 8,
+                max_search_results: 12,
+              },
+              context_parse_warnings: ["example warning"],
+            },
+          ],
+          completionReady: false,
+        }),
+    });
+    globalThis.fetch = fetchSpy;
+
+    const response = await getPlan("plan-1");
+
+    expect(response.passes[0]).toMatchObject({
+      passType: "ui_visibility",
+      contextPlan: {
+        requiredRepositories: ["relay", "relay-contracts"],
+        seedSearchTerms: [{ repoId: "relay", query: "context packet" }],
+        seedFilesToRead: [
+          { repoId: "relay", path: "apps/web/src/routes/runs/$runId/intake.tsx" },
+        ],
+        contextCoverageExpectations: ["Show metadata only"],
+        blockedIfMissing: ["No persisted provenance"],
+      },
+      sourceSnapshotRequirements: {
+        requireGitStatus: true,
+        requireCommitSha: false,
+        allowDirtyWorktree: true,
+      },
+      handoffReadinessCriteria: ["Source metadata is visible"],
+      contextBudget: {
+        maxFiles: 8,
+        maxSearchResults: 12,
+      },
+      contextParseWarnings: ["example warning"],
+    });
+  });
+
   it("validatePlan posts plan JSON to /api/plans/validate", async () => {
     const fetchSpy = vi.fn().mockResolvedValue({
       ok: true,

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -104,6 +105,71 @@ type RelayRun struct {
 	LogPreview            RelayLogPreview       `json:"logPreview"`
 	StepLabels            map[string]string     `json:"stepLabels"`
 	LatestExecutionStatus string                `json:"latestExecutionStatus,omitempty"` // active execution phase: "starting" | "running" | "completed" | "failed" | ""
+	PlanContext           *RelayRunPlanContext  `json:"planContext,omitempty"`
+	Provenance            *RelayRunProvenance   `json:"provenance,omitempty"`
+}
+
+type RelayRunPlanContext struct {
+	PlanID               string `json:"planId,omitempty"`
+	PlanTitle            string `json:"planTitle,omitempty"`
+	PlanRowID            string `json:"planRowId,omitempty"`
+	PassID               string `json:"passId,omitempty"`
+	PassName             string `json:"passName,omitempty"`
+	PassRowID            string `json:"passRowId,omitempty"`
+	PassSequence         *int64 `json:"passSequence,omitempty"`
+	PassStatus           string `json:"passStatus,omitempty"`
+	SourceArtifactPath   string `json:"sourceArtifactPath,omitempty"`
+	ContextPacketID      string `json:"contextPacketId,omitempty"`
+	SourceSnapshotID     string `json:"sourceSnapshotId,omitempty"`
+	PlannerHandoffSHA256 string `json:"plannerHandoffSha256,omitempty"`
+}
+
+type RelayRunProvenance struct {
+	PlannerHandoffSHA256 string `json:"plannerHandoffSha256,omitempty"`
+	PlannerHandoffBytes  *int64 `json:"plannerHandoffBytes,omitempty"`
+	SourceArtifactPath   string `json:"sourceArtifactPath,omitempty"`
+	Source               string `json:"source,omitempty"`
+	ClientTraceID        string `json:"clientTraceId,omitempty"`
+	PlanID               string `json:"planId,omitempty"`
+	PassID               string `json:"passId,omitempty"`
+	ContextPacketID      string `json:"contextPacketId,omitempty"`
+	SourceSnapshotID     string `json:"sourceSnapshotId,omitempty"`
+	ArtifactKind         string `json:"artifactKind,omitempty"`
+}
+
+type PlanAPIContextSearchTerm struct {
+	RepoID   string `json:"repoId"`
+	Query    string `json:"query"`
+	Purpose  string `json:"purpose"`
+	Required *bool  `json:"required,omitempty"`
+}
+
+type PlanAPIContextFileRead struct {
+	RepoID   string `json:"repoId"`
+	Path     string `json:"path"`
+	Purpose  string `json:"purpose"`
+	Required *bool  `json:"required,omitempty"`
+}
+
+type PlanAPIContextPlan struct {
+	RequiredRepositories        []string                   `json:"requiredRepositories"`
+	SeedSearchTerms             []PlanAPIContextSearchTerm `json:"seedSearchTerms"`
+	SeedFilesToRead             []PlanAPIContextFileRead   `json:"seedFilesToRead"`
+	ContextCoverageExpectations []string                   `json:"contextCoverageExpectations"`
+	BlockedIfMissing            []string                   `json:"blockedIfMissing"`
+}
+
+type PlanAPISourceSnapshotRequirements struct {
+	RequireGitStatus   *bool `json:"requireGitStatus,omitempty"`
+	RequireCommitSHA   *bool `json:"requireCommitSha,omitempty"`
+	AllowDirtyWorktree *bool `json:"allowDirtyWorktree,omitempty"`
+}
+
+type PlanAPIContextBudget struct {
+	MaxFiles         *int64 `json:"maxFiles,omitempty"`
+	MaxBytes         *int64 `json:"maxBytes,omitempty"`
+	MaxSearchResults *int64 `json:"maxSearchResults,omitempty"`
+	MaxContextLines  *int64 `json:"maxContextLines,omitempty"`
 }
 
 type RelayValidationResult struct {
@@ -189,20 +255,27 @@ type PlanAPIPlan struct {
 }
 
 type PlanAPIPass struct {
-	ID                     string              `json:"id"`
-	PlanRowID              string              `json:"planRowId"`
-	PassID                 string              `json:"passId"`
-	Sequence               int64               `json:"sequence"`
-	Name                   string              `json:"name"`
-	Goal                   string              `json:"goal"`
-	IntendedExecutionScope []string            `json:"intendedExecutionScope"`
-	NonGoals               []string            `json:"nonGoals"`
-	Dependencies           []string            `json:"dependencies"`
-	Status                 string              `json:"status"`
-	AssociatedRunIDs       []string            `json:"associatedRunIds"`
-	AssociatedRuns         []PlanAPIRunSummary `json:"associatedRuns"`
-	CreatedAt              string              `json:"createdAt"`
-	UpdatedAt              string              `json:"updatedAt"`
+	ID                         string                            `json:"id"`
+	PlanRowID                  string                            `json:"planRowId"`
+	PassID                     string                            `json:"passId"`
+	Sequence                   int64                             `json:"sequence"`
+	Name                       string                            `json:"name"`
+	Goal                       string                            `json:"goal"`
+	IntendedExecutionScope     []string                          `json:"intendedExecutionScope"`
+	NonGoals                   []string                          `json:"nonGoals"`
+	Dependencies               []string                          `json:"dependencies"`
+	Status                     string                            `json:"status"`
+	AssociatedRunIDs           []string                          `json:"associatedRunIds"`
+	AssociatedRuns             []PlanAPIRunSummary               `json:"associatedRuns"`
+	CreatedAt                  string                            `json:"createdAt"`
+	UpdatedAt                  string                            `json:"updatedAt"`
+	PassType                   string                            `json:"passType,omitempty"`
+	ContextPlan                PlanAPIContextPlan                `json:"contextPlan"`
+	SourceSnapshotRequirements PlanAPISourceSnapshotRequirements `json:"sourceSnapshotRequirements"`
+	HandoffReadinessCriteria   []string                          `json:"handoffReadinessCriteria"`
+	RiskLevel                  string                            `json:"riskLevel,omitempty"`
+	ContextBudget              PlanAPIContextBudget              `json:"contextBudget"`
+	ContextParseWarnings       []string                          `json:"contextParseWarnings,omitempty"`
 }
 
 type PlanAPIRunSummary struct {
@@ -218,8 +291,18 @@ type PlanAPIRunSummary struct {
 
 type PlanAPIReadPlan struct {
 	PlanAPIPlan
-	PassCount       int  `json:"passCount"`
-	CompletionReady bool `json:"completionReady"`
+	PassCount           int    `json:"passCount"`
+	CompletionReady     bool   `json:"completionReady"`
+	CompletedPassCount  int    `json:"completedPassCount"`
+	InProgressPassCount int    `json:"inProgressPassCount"`
+	PlannedPassCount    int    `json:"plannedPassCount"`
+	SkippedPassCount    int    `json:"skippedPassCount"`
+	CurrentPassID       string `json:"currentPassId,omitempty"`
+	CurrentPassName     string `json:"currentPassName,omitempty"`
+	CurrentPassGoal     string `json:"currentPassGoal,omitempty"`
+	NextPassID          string `json:"nextPassId,omitempty"`
+	NextPassName        string `json:"nextPassName,omitempty"`
+	NextPassGoal        string `json:"nextPassGoal,omitempty"`
 }
 
 type PlanReadAPIResponse struct {
@@ -294,6 +377,14 @@ func mapArtifactKindAndLabel(kind string) (string, string) {
 		return "handoff", "Parsed Frontmatter"
 	case "run_config":
 		return "handoff", "Run Configuration"
+	case "planner_handoff_provenance_json":
+		return "handoff", "Planner Handoff Provenance"
+	case "context_packet_json":
+		return "handoff", "Context Packet (JSON)"
+	case "context_packet_markdown":
+		return "handoff", "Context Packet (Markdown)"
+	case "context_coverage_report_json":
+		return "validation", "Context Coverage Report (JSON)"
 	case "intake_validation_report":
 		return "validation", "Intake Validation Report"
 	case "agent_prompt":
@@ -712,6 +803,94 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 		packetID = "packet-" + idStr
 	}
 
+	var planContext *RelayRunPlanContext
+	var provenance *RelayRunProvenance
+
+	if run.PlanRowID.Valid || run.PlanPassRowID.Valid {
+		planContext = &RelayRunPlanContext{}
+	}
+
+	if run.PlanRowID.Valid {
+		planContext = ensureRunPlanContext(planContext)
+		planContext.PlanRowID = strconv.FormatInt(run.PlanRowID.Int64, 10)
+		if plan, err := h.store.GetPlan(run.PlanRowID.Int64); err == nil && plan != nil {
+			planContext.PlanID = plan.PlanID
+			planContext.PlanTitle = plan.Title
+		}
+	}
+
+	if run.PlanPassRowID.Valid {
+		planContext = ensureRunPlanContext(planContext)
+		planContext.PassRowID = strconv.FormatInt(run.PlanPassRowID.Int64, 10)
+		if pass, err := h.store.GetPlanPass(run.PlanPassRowID.Int64); err == nil && pass != nil {
+			planContext.PassID = pass.PassID
+			planContext.PassName = pass.Name
+			planContext.PassSequence = &pass.Sequence
+			planContext.PassStatus = pass.Status
+			if planContext.PlanRowID == "" {
+				planContext.PlanRowID = strconv.FormatInt(pass.PlanRowID, 10)
+			}
+			if planContext.PlanID == "" || planContext.PlanTitle == "" {
+				if plan, err := h.store.GetPlan(pass.PlanRowID); err == nil && plan != nil {
+					if planContext.PlanID == "" {
+						planContext.PlanID = plan.PlanID
+					}
+					if planContext.PlanTitle == "" {
+						planContext.PlanTitle = plan.Title
+					}
+				}
+			}
+		}
+	}
+
+	if row, err := h.store.GetRunSubmissionProvenanceByRun(run.ID); err == nil && row != nil {
+		plannerHandoffBytes := row.PlannerHandoffBytes
+		provenance = &RelayRunProvenance{
+			PlannerHandoffSHA256: row.PlannerHandoffSha256,
+			PlannerHandoffBytes:  &plannerHandoffBytes,
+			SourceArtifactPath:   row.SourceArtifactPath,
+			Source:               row.Source,
+			ClientTraceID:        row.ClientTraceID,
+			PlanID:               row.PlanID,
+			PassID:               row.PassID,
+			ContextPacketID:      row.ContextPacketID,
+			SourceSnapshotID:     row.SourceSnapshotID,
+			ArtifactKind:         "planner_handoff_provenance_json",
+		}
+
+		planContext = ensureRunPlanContext(planContext)
+		if planContext.PlanID == "" {
+			planContext.PlanID = row.PlanID
+		}
+		if planContext.PassID == "" {
+			planContext.PassID = row.PassID
+		}
+		if planContext.PlanRowID == "" && row.PlanRowID.Valid {
+			planContext.PlanRowID = strconv.FormatInt(row.PlanRowID.Int64, 10)
+		}
+		if planContext.PassRowID == "" && row.PlanPassRowID.Valid {
+			planContext.PassRowID = strconv.FormatInt(row.PlanPassRowID.Int64, 10)
+		}
+		if planContext.SourceArtifactPath == "" {
+			planContext.SourceArtifactPath = row.SourceArtifactPath
+		}
+		if planContext.ContextPacketID == "" {
+			planContext.ContextPacketID = row.ContextPacketID
+		}
+		if planContext.SourceSnapshotID == "" {
+			planContext.SourceSnapshotID = row.SourceSnapshotID
+		}
+		if planContext.PlannerHandoffSHA256 == "" {
+			planContext.PlannerHandoffSHA256 = row.PlannerHandoffSha256
+		}
+	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		h.log.Warn("failed to load run provenance", slog.Int64("run_id", run.ID), slog.String("error", err.Error()))
+	}
+
+	if !hasRelayRunPlanContext(planContext) {
+		planContext = nil
+	}
+
 	return RelayRun{
 		ID:                    idStr,
 		Name:                  run.Title,
@@ -740,6 +919,8 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 		LogPreview:            buildLogPreview(events),
 		StepLabels:            stepLabels,
 		LatestExecutionStatus: latestExecutionStatus,
+		PlanContext:           planContext,
+		Provenance:            provenance,
 	}
 }
 
@@ -849,6 +1030,7 @@ func mapRunToPlanAPIRunSummary(run store.Run) PlanAPIRunSummary {
 }
 
 func mapPlanPassToAPI(pass store.PlanPass, associatedRuns []store.Run) PlanAPIPass {
+	contextPlan, sourceRequirements, readinessCriteria, contextBudget, warnings := decodePlanPassContext(pass)
 	runSummaries := make([]PlanAPIRunSummary, 0, len(associatedRuns))
 	runIDs := make([]string, 0, len(associatedRuns))
 	for _, run := range associatedRuns {
@@ -858,29 +1040,73 @@ func mapPlanPassToAPI(pass store.PlanPass, associatedRuns []store.Run) PlanAPIPa
 	}
 
 	return PlanAPIPass{
-		ID:                     strconv.FormatInt(pass.ID, 10),
-		PlanRowID:              strconv.FormatInt(pass.PlanRowID, 10),
-		PassID:                 pass.PassID,
-		Sequence:               pass.Sequence,
-		Name:                   pass.Name,
-		Goal:                   pass.Goal,
-		IntendedExecutionScope: decodeStoredStringSlice(pass.IntendedExecutionScopeJson),
-		NonGoals:               decodeStoredStringSlice(pass.NonGoalsJson),
-		Dependencies:           decodeStoredStringSlice(pass.DependenciesJson),
-		Status:                 pass.Status,
-		AssociatedRunIDs:       runIDs,
-		AssociatedRuns:         runSummaries,
-		CreatedAt:              parseAndFormatTime(pass.CreatedAt),
-		UpdatedAt:              parseAndFormatTime(pass.UpdatedAt),
+		ID:                         strconv.FormatInt(pass.ID, 10),
+		PlanRowID:                  strconv.FormatInt(pass.PlanRowID, 10),
+		PassID:                     pass.PassID,
+		Sequence:                   pass.Sequence,
+		Name:                       pass.Name,
+		Goal:                       pass.Goal,
+		IntendedExecutionScope:     decodeStoredStringSlice(pass.IntendedExecutionScopeJson),
+		NonGoals:                   decodeStoredStringSlice(pass.NonGoalsJson),
+		Dependencies:               decodeStoredStringSlice(pass.DependenciesJson),
+		Status:                     pass.Status,
+		AssociatedRunIDs:           runIDs,
+		AssociatedRuns:             runSummaries,
+		CreatedAt:                  parseAndFormatTime(pass.CreatedAt),
+		UpdatedAt:                  parseAndFormatTime(pass.UpdatedAt),
+		PassType:                   strings.TrimSpace(pass.PassType),
+		ContextPlan:                contextPlan,
+		SourceSnapshotRequirements: sourceRequirements,
+		HandoffReadinessCriteria:   readinessCriteria,
+		RiskLevel:                  strings.TrimSpace(pass.RiskLevel),
+		ContextBudget:              contextBudget,
+		ContextParseWarnings:       warnings,
 	}
 }
 
 func buildPlanAPIReadPlan(plan store.Plan, passes []store.PlanPass, completionReady bool) PlanAPIReadPlan {
 	apiPlan := mapPlanToAPI(plan)
+	var completedPassCount int
+	var inProgressPassCount int
+	var plannedPassCount int
+	var skippedPassCount int
+	var currentPass *store.PlanPass
+	var nextPass *store.PlanPass
+
+	for i := range passes {
+		pass := &passes[i]
+		switch pass.Status {
+		case "completed":
+			completedPassCount++
+		case "in_progress":
+			inProgressPassCount++
+			if currentPass == nil || pass.Sequence < currentPass.Sequence {
+				currentPass = pass
+			}
+		case "planned":
+			plannedPassCount++
+			if nextPass == nil || pass.Sequence < nextPass.Sequence {
+				nextPass = pass
+			}
+		case "skipped":
+			skippedPassCount++
+		}
+	}
+
 	return PlanAPIReadPlan{
-		PlanAPIPlan:     apiPlan,
-		PassCount:       len(passes),
-		CompletionReady: completionReady,
+		PlanAPIPlan:         apiPlan,
+		PassCount:           len(passes),
+		CompletionReady:     completionReady,
+		CompletedPassCount:  completedPassCount,
+		InProgressPassCount: inProgressPassCount,
+		PlannedPassCount:    plannedPassCount,
+		SkippedPassCount:    skippedPassCount,
+		CurrentPassID:       planPassField(currentPass, func(pass *store.PlanPass) string { return pass.PassID }),
+		CurrentPassName:     planPassField(currentPass, func(pass *store.PlanPass) string { return pass.Name }),
+		CurrentPassGoal:     planPassField(currentPass, func(pass *store.PlanPass) string { return pass.Goal }),
+		NextPassID:          planPassField(nextPass, func(pass *store.PlanPass) string { return pass.PassID }),
+		NextPassName:        planPassField(nextPass, func(pass *store.PlanPass) string { return pass.Name }),
+		NextPassGoal:        planPassField(nextPass, func(pass *store.PlanPass) string { return pass.Goal }),
 	}
 }
 
@@ -898,6 +1124,151 @@ func decodeStoredStringSlice(value string) []string {
 		return []string{}
 	}
 	return items
+}
+
+func ensureRunPlanContext(context *RelayRunPlanContext) *RelayRunPlanContext {
+	if context != nil {
+		return context
+	}
+	return &RelayRunPlanContext{}
+}
+
+func hasRelayRunPlanContext(context *RelayRunPlanContext) bool {
+	return context != nil && (context.PlanID != "" || context.PassID != "" || context.PlanRowID != "" || context.PassRowID != "")
+}
+
+func cloneStringSlice(items []string) []string {
+	if len(items) == 0 {
+		return []string{}
+	}
+	return append([]string{}, items...)
+}
+
+func appendParseWarning(warnings *[]string, field string) {
+	if len(*warnings) >= 4 {
+		return
+	}
+	*warnings = append(*warnings, fmt.Sprintf("%s could not be decoded from persisted JSON; using an empty value.", field))
+}
+
+func decodeJSONValue[T any](value string, target *T) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return json.Unmarshal([]byte(trimmed), target)
+}
+
+func mapContextSearchTermToAPI(term plans.ContextSearchTerm) PlanAPIContextSearchTerm {
+	return PlanAPIContextSearchTerm{
+		RepoID:   term.RepoID,
+		Query:    term.Query,
+		Purpose:  term.Purpose,
+		Required: term.Required,
+	}
+}
+
+func mapContextFileReadToAPI(file plans.ContextFileRead) PlanAPIContextFileRead {
+	return PlanAPIContextFileRead{
+		RepoID:   file.RepoID,
+		Path:     file.Path,
+		Purpose:  file.Purpose,
+		Required: file.Required,
+	}
+}
+
+func mapContextPlanToAPI(contextPlan plans.ContextPlan) PlanAPIContextPlan {
+	searchTerms := make([]PlanAPIContextSearchTerm, 0, len(contextPlan.SeedSearchTerms))
+	for _, term := range contextPlan.SeedSearchTerms {
+		searchTerms = append(searchTerms, mapContextSearchTermToAPI(term))
+	}
+
+	filesToRead := make([]PlanAPIContextFileRead, 0, len(contextPlan.SeedFilesToRead))
+	for _, file := range contextPlan.SeedFilesToRead {
+		filesToRead = append(filesToRead, mapContextFileReadToAPI(file))
+	}
+
+	return PlanAPIContextPlan{
+		RequiredRepositories:        cloneStringSlice(contextPlan.RequiredRepositories),
+		SeedSearchTerms:             searchTerms,
+		SeedFilesToRead:             filesToRead,
+		ContextCoverageExpectations: cloneStringSlice(contextPlan.ContextCoverageExpectations),
+		BlockedIfMissing:            cloneStringSlice(contextPlan.BlockedIfMissing),
+	}
+}
+
+func mapSourceSnapshotRequirementsToAPI(requirements plans.SourceSnapshotRequirements) PlanAPISourceSnapshotRequirements {
+	return PlanAPISourceSnapshotRequirements{
+		RequireGitStatus:   requirements.RequireGitStatus,
+		RequireCommitSHA:   requirements.RequireCommitSHA,
+		AllowDirtyWorktree: requirements.AllowDirtyWorktree,
+	}
+}
+
+func mapContextBudgetToAPI(budget plans.ContextBudget) PlanAPIContextBudget {
+	return PlanAPIContextBudget{
+		MaxFiles:         budget.MaxFiles,
+		MaxBytes:         budget.MaxBytes,
+		MaxSearchResults: budget.MaxSearchResults,
+		MaxContextLines:  budget.MaxContextLines,
+	}
+}
+
+func decodePlanPassContext(pass store.PlanPass) (
+	PlanAPIContextPlan,
+	PlanAPISourceSnapshotRequirements,
+	[]string,
+	PlanAPIContextBudget,
+	[]string,
+) {
+	contextPlan := PlanAPIContextPlan{
+		RequiredRepositories:        []string{},
+		SeedSearchTerms:             []PlanAPIContextSearchTerm{},
+		SeedFilesToRead:             []PlanAPIContextFileRead{},
+		ContextCoverageExpectations: []string{},
+		BlockedIfMissing:            []string{},
+	}
+	sourceRequirements := PlanAPISourceSnapshotRequirements{}
+	readinessCriteria := []string{}
+	contextBudget := PlanAPIContextBudget{}
+	warnings := []string{}
+
+	var storedContextPlan plans.ContextPlan
+	if err := decodeJSONValue(pass.ContextPlanJson, &storedContextPlan); err != nil {
+		appendParseWarning(&warnings, "contextPlan")
+	} else {
+		contextPlan = mapContextPlanToAPI(storedContextPlan)
+	}
+
+	var storedSourceRequirements plans.SourceSnapshotRequirements
+	if err := decodeJSONValue(pass.SourceSnapshotRequirementsJson, &storedSourceRequirements); err != nil {
+		appendParseWarning(&warnings, "sourceSnapshotRequirements")
+	} else {
+		sourceRequirements = mapSourceSnapshotRequirementsToAPI(storedSourceRequirements)
+	}
+
+	if trimmed := strings.TrimSpace(pass.HandoffReadinessCriteriaJson); trimmed != "" {
+		if err := json.Unmarshal([]byte(trimmed), &readinessCriteria); err != nil {
+			appendParseWarning(&warnings, "handoffReadinessCriteria")
+			readinessCriteria = []string{}
+		}
+	}
+
+	var storedContextBudget plans.ContextBudget
+	if err := decodeJSONValue(pass.ContextBudgetJson, &storedContextBudget); err != nil {
+		appendParseWarning(&warnings, "contextBudget")
+	} else {
+		contextBudget = mapContextBudgetToAPI(storedContextBudget)
+	}
+
+	return contextPlan, sourceRequirements, readinessCriteria, contextBudget, warnings
+}
+
+func planPassField(pass *store.PlanPass, selector func(*store.PlanPass) string) string {
+	if pass == nil {
+		return ""
+	}
+	return selector(pass)
 }
 
 func hasPlanIssue(report plans.PlanValidationReport, code string) bool {

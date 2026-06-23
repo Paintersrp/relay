@@ -8,6 +8,7 @@ import type {
   PlannerHandoffIntakeResponse,
   RelayApiErrorShape,
   RelayAuditDecisionValue,
+  RelayRunProvenance,
   RelayRunPlanContext,
   RelayValidationResult,
   RelayValidationCommand,
@@ -173,21 +174,159 @@ function optionalNumber(...values: unknown[]): number | undefined {
   return undefined;
 }
 
-function normalizeRunPlanContext(run: any): RelayRunPlanContext | undefined {
-  const planId = firstNonEmptyString(run.planId, run.plan_id);
-  const passId = firstNonEmptyString(run.passId, run.pass_id);
+function normalizeRunProvenance(run: any): RelayRunProvenance | undefined {
+  const provenance = run?.provenance ?? run?.provenance_summary ?? run?.provenanceSummary;
 
-  if (!planId && !passId) {
+  const plannerHandoffSha256 = firstNonEmptyString(
+    provenance?.plannerHandoffSha256,
+    provenance?.planner_handoff_sha256,
+  );
+  const sourceArtifactPath = firstNonEmptyString(
+    provenance?.sourceArtifactPath,
+    provenance?.source_artifact_path,
+  );
+  const source = firstNonEmptyString(provenance?.source);
+  const clientTraceId = firstNonEmptyString(
+    provenance?.clientTraceId,
+    provenance?.client_trace_id,
+  );
+  const planId = firstNonEmptyString(provenance?.planId, provenance?.plan_id);
+  const passId = firstNonEmptyString(provenance?.passId, provenance?.pass_id);
+  const contextPacketId = firstNonEmptyString(
+    provenance?.contextPacketId,
+    provenance?.context_packet_id,
+  );
+  const sourceSnapshotId = firstNonEmptyString(
+    provenance?.sourceSnapshotId,
+    provenance?.source_snapshot_id,
+  );
+  const plannerHandoffBytes = optionalNumber(
+    provenance?.plannerHandoffBytes,
+    provenance?.planner_handoff_bytes,
+  );
+  const artifactKind = firstNonEmptyString(
+    provenance?.artifactKind,
+    provenance?.artifact_kind,
+  );
+
+  if (
+    !plannerHandoffSha256 &&
+    !sourceArtifactPath &&
+    !planId &&
+    !passId &&
+    !contextPacketId &&
+    !sourceSnapshotId
+  ) {
+    return undefined;
+  }
+
+  return {
+    plannerHandoffSha256,
+    plannerHandoffBytes,
+    sourceArtifactPath,
+    source,
+    clientTraceId,
+    planId,
+    passId,
+    contextPacketId,
+    sourceSnapshotId,
+    artifactKind:
+      artifactKind === "planner_handoff_provenance_json"
+        ? "planner_handoff_provenance_json"
+        : undefined,
+  };
+}
+
+function normalizeRunPlanContext(run: any): RelayRunPlanContext | undefined {
+  const planContext = run?.planContext ?? run?.plan_context;
+  const provenance = normalizeRunProvenance(run);
+  const planId = firstNonEmptyString(
+    planContext?.planId,
+    planContext?.plan_id,
+    run.planId,
+    run.plan_id,
+    provenance?.planId,
+  );
+  const passId = firstNonEmptyString(
+    planContext?.passId,
+    planContext?.pass_id,
+    run.passId,
+    run.pass_id,
+    provenance?.passId,
+  );
+
+  if (
+    !planId &&
+    !passId &&
+    !firstNonEmptyString(
+      planContext?.contextPacketId,
+      planContext?.context_packet_id,
+      provenance?.contextPacketId,
+    ) &&
+    !firstNonEmptyString(
+      planContext?.sourceSnapshotId,
+      planContext?.source_snapshot_id,
+      provenance?.sourceSnapshotId,
+    )
+  ) {
     return undefined;
   }
 
   return {
     planId,
-    planTitle: firstNonEmptyString(run.planTitle, run.plan_title),
+    planTitle: firstNonEmptyString(
+      planContext?.planTitle,
+      planContext?.plan_title,
+      run.planTitle,
+      run.plan_title,
+    ),
+    planRowId: firstNonEmptyString(
+      planContext?.planRowId,
+      planContext?.plan_row_id,
+    ),
     passId,
-    passName: firstNonEmptyString(run.passName, run.pass_name),
-    passSequence: optionalNumber(run.passSequence, run.pass_sequence),
-    passStatus: firstNonEmptyString(run.passStatus, run.pass_status),
+    passName: firstNonEmptyString(
+      planContext?.passName,
+      planContext?.pass_name,
+      run.passName,
+      run.pass_name,
+    ),
+    passRowId: firstNonEmptyString(
+      planContext?.passRowId,
+      planContext?.pass_row_id,
+    ),
+    passSequence: optionalNumber(
+      planContext?.passSequence,
+      planContext?.pass_sequence,
+      run.passSequence,
+      run.pass_sequence,
+    ),
+    passStatus: firstNonEmptyString(
+      planContext?.passStatus,
+      planContext?.pass_status,
+      run.passStatus,
+      run.pass_status,
+    ),
+    sourceArtifactPath: firstNonEmptyString(
+      planContext?.sourceArtifactPath,
+      planContext?.source_artifact_path,
+      provenance?.sourceArtifactPath,
+    ),
+    contextPacketId: firstNonEmptyString(
+      planContext?.contextPacketId,
+      planContext?.context_packet_id,
+      provenance?.contextPacketId,
+    ),
+    sourceSnapshotId: firstNonEmptyString(
+      planContext?.sourceSnapshotId,
+      planContext?.source_snapshot_id,
+      provenance?.sourceSnapshotId,
+    ),
+    plannerHandoffSha256: firstNonEmptyString(
+      planContext?.plannerHandoffSha256,
+      planContext?.planner_handoff_sha256,
+      provenance?.plannerHandoffSha256,
+    ),
   };
 }
 
@@ -231,6 +370,7 @@ export function normalizeRun(run: any): RelayRun {
     statusSeverity: run.statusSeverity || "neutral",
     state: run.state || "Draft",
     planContext: normalizeRunPlanContext(run),
+    provenance: normalizeRunProvenance(run),
     title: run.title || run.name || `Run ${run.id}`,
     packetId: run.packetId || "",
     executorAdapter: run.executorAdapter || run.executor || "opencode_go",

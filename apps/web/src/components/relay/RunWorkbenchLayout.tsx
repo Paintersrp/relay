@@ -25,6 +25,7 @@ import { ArrowLeft } from 'lucide-react'
 
 type InspectorPanelKey =
   | 'details'
+  | 'source'
   | 'logs'
   | 'artifacts'
   | 'validation'
@@ -88,6 +89,11 @@ function getInspectorFallback(tab: InspectorPanelKey): React.ReactNode {
     details: {
       title: 'No intake details available',
       description: 'Relay has not captured detailed intake context for this run yet.',
+    },
+    source: {
+      title: 'No source context recorded',
+      description:
+        'Relay has not stored planner provenance, source snapshot metadata, or context packet visibility for this run yet.',
     },
     logs: {
       title: 'No logs captured',

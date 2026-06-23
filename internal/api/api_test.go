@@ -233,6 +233,103 @@ func TestAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("GET /api/runs/{id} includes bounded provenance and plan context", func(t *testing.T) {
+		createPlan(t, "plan-api-run-provenance")
+
+		planRow, err := s.GetPlanByPlanID("plan-api-run-provenance")
+		if err != nil {
+			t.Fatalf("get plan row: %v", err)
+		}
+		passRow, err := s.GetPlanPassByPassID(planRow.ID, "PASS-001")
+		if err != nil {
+			t.Fatalf("get pass row: %v", err)
+		}
+
+		associatedRun, err := s.CreateRunWithAssociation(
+			repo.ID,
+			"Run With Provenance",
+			"intake_needs_review",
+			"gpt-4o",
+			"gpt-4o",
+			"opencode_go",
+			"main",
+			sql.NullInt64{Int64: planRow.ID, Valid: true},
+			sql.NullInt64{Int64: passRow.ID, Valid: true},
+		)
+		if err != nil {
+			t.Fatalf("create associated run: %v", err)
+		}
+
+		if _, err := s.CreateRunSubmissionProvenance(store.CreateRunSubmissionProvenanceParams{
+			RunID:                associatedRun.ID,
+			PlannerHandoffSha256: "abc123def456abc123def456abc123def456abc123def456abc123def456abcd",
+			PlannerHandoffBytes:  321,
+			Source:               "mcp_chat",
+			ClientTraceID:        "trace-123",
+			SourceArtifactPath:   "handoffs/planner/2026-06-23_source-visibility.planner-handoff.md",
+			RepoTarget:           repo.Name,
+			BranchContext:        "main",
+			PlanID:               planRow.PlanID,
+			PassID:               passRow.PassID,
+			PlanRowID:            sql.NullInt64{Int64: planRow.ID, Valid: true},
+			PlanPassRowID:        sql.NullInt64{Int64: passRow.ID, Valid: true},
+			ManagedPlanPass:      "PASS-009",
+			ManagedPlanPassName:  "UI project, pass context, and source visibility",
+			ContextPacketID:      "ctxpkt-123",
+			SourceSnapshotID:     "srcsnap-456",
+			HandoffMetadataJSON:  `{"handoff_id":"planner-handoff-2026-06-23-source-visibility"}`,
+			SubmissionArgsJSON:   `{"plan_id":"plan-api-run-provenance","pass_id":"PASS-001"}`,
+		}); err != nil {
+			t.Fatalf("create provenance row: %v", err)
+		}
+
+		runIDStr := strconv.FormatInt(associatedRun.ID, 10)
+		req := httptest.NewRequest("GET", "/api/runs/"+runIDStr, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+
+		var relayRun RelayRun
+		if err := json.NewDecoder(w.Body).Decode(&relayRun); err != nil {
+			t.Fatalf("failed to decode run: %v", err)
+		}
+		if relayRun.PlanContext == nil {
+			t.Fatal("expected planContext to be present")
+		}
+		if relayRun.PlanContext.PlanID != "plan-api-run-provenance" {
+			t.Fatalf("expected planId to be populated, got %+v", relayRun.PlanContext)
+		}
+		if relayRun.PlanContext.PassID != "PASS-001" {
+			t.Fatalf("expected passId to be populated, got %+v", relayRun.PlanContext)
+		}
+		if relayRun.PlanContext.ContextPacketID != "ctxpkt-123" {
+			t.Fatalf("expected contextPacketId, got %+v", relayRun.PlanContext)
+		}
+		if relayRun.Provenance == nil {
+			t.Fatal("expected provenance to be present")
+		}
+		if relayRun.Provenance.ArtifactKind != "planner_handoff_provenance_json" {
+			t.Fatalf("expected provenance artifact kind, got %+v", relayRun.Provenance)
+		}
+		if relayRun.Provenance.SourceArtifactPath != "handoffs/planner/2026-06-23_source-visibility.planner-handoff.md" {
+			t.Fatalf("unexpected source artifact path: %+v", relayRun.Provenance)
+		}
+		if relayRun.Provenance.SourceSnapshotID != "srcsnap-456" {
+			t.Fatalf("unexpected source snapshot id: %+v", relayRun.Provenance)
+		}
+		if relayRun.Provenance.PlannerHandoffSHA256 == "" {
+			t.Fatal("expected handoff hash in provenance")
+		}
+
+		bodyText := w.Body.String()
+		if strings.Contains(bodyText, "planner_handoff_markdown") {
+			t.Fatalf("run response should not include full handoff markdown: %s", bodyText)
+		}
+	})
+
 	t.Run("GET /api/runs/{id} - NOT FOUND", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/runs/999999", nil)
 		w := httptest.NewRecorder()

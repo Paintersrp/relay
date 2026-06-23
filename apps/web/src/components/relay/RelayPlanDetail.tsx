@@ -2,12 +2,14 @@ import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Copy } from "lucide-react";
 
+import { summarizePlanPassContext } from "@/components/relay/PlanPassContextPanel";
 import { RelayPlanPassTimeline } from "@/components/relay/RelayPlanPassTimeline";
 import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
 import {
   formatPlanDate,
   formatPlanDateRelative,
   getCurrentPass,
+  getNextRunnablePass,
   getPassStatusCounts,
   getPlanDetailCardState,
   getPlanDetailProgress,
@@ -69,6 +71,14 @@ export function RelayPlanDetail({
     [sortedPasses],
   );
   const currentPass = React.useMemo(() => getCurrentPass(sortedPasses), [sortedPasses]);
+  const focusPass = React.useMemo(
+    () => currentPass ?? getNextRunnablePass(sortedPasses),
+    [currentPass, sortedPasses],
+  );
+  const focusPassContextSummary = React.useMemo(
+    () => (focusPass ? summarizePlanPassContext(focusPass) : undefined),
+    [focusPass],
+  );
   const cardState = React.useMemo(
     () => getPlanDetailCardState({ plan, completionReady, currentPass }),
     [plan, completionReady, currentPass],
@@ -235,6 +245,59 @@ export function RelayPlanDetail({
           ) : null}
         </div>
       </section>
+
+      {focusPass && focusPassContextSummary ? (
+        <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-5 py-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                {currentPass ? "Current Pass Context" : "Next Pass Context"}
+              </div>
+              <div className="mt-1 text-sm font-medium text-foreground">
+                {focusPass.name}
+              </div>
+              <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {focusPass.passType
+                  ? `${focusPass.passType} · `
+                  : ""}
+                {focusPass.goal}
+              </div>
+            </div>
+
+            <Button
+              asChild
+              variant="outline"
+              size="xs"
+              className="rounded-sm px-3 text-[11px]"
+            >
+              <Link
+                to="/plans/$planId/passes/$passId"
+                params={{ planId: plan.planId, passId: focusPass.passId }}
+              >
+                Open pass context
+              </Link>
+            </Button>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
+            <span className="rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-2 py-1 text-foreground">
+              {focusPassContextSummary.requiredRepositoryCount} repos
+            </span>
+            <span className="rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-2 py-1 text-foreground">
+              {focusPassContextSummary.seedSearchCount} seed searches
+            </span>
+            <span className="rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-2 py-1 text-foreground">
+              {focusPassContextSummary.seedFileCount} seed files
+            </span>
+            <span className="rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-2 py-1 text-foreground">
+              {focusPassContextSummary.readinessCriteriaCount} readiness criteria
+            </span>
+            <span className="rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-2 py-1 text-foreground">
+              {focusPassContextSummary.blockedIfMissingCount} blockers if missing
+            </span>
+          </div>
+        </section>
+      ) : null}
 
       {progress.total > 0 ? (
         <section className="flex flex-wrap items-center gap-4 border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-5 py-3">
