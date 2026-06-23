@@ -112,6 +112,7 @@ export function buildRunSourceVisibilitySummary(
 ): RelaySourceVisibilitySummary {
   const provenance = run.provenance;
   const planContext = run.planContext;
+  const sourceContext = run.sourceContext;
   const warnings: string[] = [];
   const blockers: string[] = [];
 
@@ -131,9 +132,14 @@ export function buildRunSourceVisibilitySummary(
     sourceArtifactPath:
       provenance?.sourceArtifactPath ?? planContext?.sourceArtifactPath,
     contextPacketId:
-      provenance?.contextPacketId ?? planContext?.contextPacketId,
+      sourceContext?.contextPacketId ??
+      provenance?.contextPacketId ??
+      planContext?.contextPacketId,
     sourceSnapshotId:
-      provenance?.sourceSnapshotId ?? planContext?.sourceSnapshotId,
+      sourceContext?.sourceSnapshotId ??
+      provenance?.sourceSnapshotId ??
+      planContext?.sourceSnapshotId,
+    coverageReportPath: sourceContext?.coverageReportPath,
     provenanceArtifact,
     contextPacketArtifact,
     coverageReportArtifact,
@@ -176,6 +182,12 @@ export function RunSourceContextPanel({
     [artifacts, run],
   );
   const markdownArtifact = firstArtifactByKind(artifacts, "context_packet_markdown");
+  const readinessLabel =
+    summary.contextPacketId && summary.sourceSnapshotId
+      ? "Context ready"
+      : summary.contextPacketId || summary.sourceSnapshotId
+        ? "Context missing"
+        : "No source context recorded";
   const hasSummaryData = Boolean(
     summary.plannerHandoffSha256 ||
       summary.sourceArtifactPath ||
@@ -201,7 +213,7 @@ export function RunSourceContextPanel({
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <RunStageInspectorSection
-        title="Source Context"
+        title={readinessLabel}
         description="Read-only source grounding and provenance for this run."
         actions={<FileSearch className="size-4 text-muted-foreground" />}
       >
@@ -245,6 +257,11 @@ export function RunSourceContextPanel({
           <RunStageKeyValueRow
             label="Snapshot"
             value={summary.sourceSnapshotId}
+            mono
+          />
+          <RunStageKeyValueRow
+            label="Coverage"
+            value={summary.coverageReportPath}
             mono
           />
         </dl>

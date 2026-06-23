@@ -3,8 +3,10 @@ package intake
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,6 +46,10 @@ type CreateRunInput struct {
 	PlanID string
 	// PassID optionally associates the run to an existing Relay plan pass.
 	PassID string
+	// ContextPacketID optionally records the source context packet used to prepare the handoff.
+	ContextPacketID string
+	// SourceSnapshotID optionally records the source snapshot used to prepare the handoff.
+	SourceSnapshotID string
 }
 
 type ProvenanceSummary struct {
@@ -61,6 +67,11 @@ type ValidationSummary struct {
 	Warnings []string `json:"warnings"`
 	Blockers []string `json:"blockers"`
 	Passed   bool     `json:"passed"`
+}
+
+type runSourceContextProvenance struct {
+	ContextPacketID  string
+	SourceSnapshotID string
 }
 
 // CreateRunOutput holds the result of a successful run creation.
@@ -141,6 +152,10 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 		return nil, err
 	}
 	if err := validateAssociationAgainstHandoffMetadata(association, metadata, repoTarget, branchContext); err != nil {
+		return nil, err
+	}
+	provenanceIDs, err := svc.ResolveRunSourceContextProvenance(association, metadata, input)
+	if err != nil {
 		return nil, err
 	}
 
@@ -286,8 +301,8 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 		PlanPassRowID:        association.PlanPassRowID,
 		ManagedPlanPass:      metadata["managed_plan_pass"],
 		ManagedPlanPassName:  metadata["managed_plan_pass_name"],
-		ContextPacketID:      metadata["context_packet_id"],
-		SourceSnapshotID:     metadata["source_snapshot_id"],
+		ContextPacketID:      provenanceIDs.ContextPacketID,
+		SourceSnapshotID:     provenanceIDs.SourceSnapshotID,
 		HandoffMetadataJson:  handoffMetadataJSON,
 		SubmissionArgsJson:   submissionArgsJSON,
 	}); err != nil {
@@ -308,8 +323,8 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 		"pass_id":                association.PassID,
 		"managed_plan_pass":      metadata["managed_plan_pass"],
 		"managed_plan_pass_name": metadata["managed_plan_pass_name"],
-		"context_packet_id":      metadata["context_packet_id"],
-		"source_snapshot_id":     metadata["source_snapshot_id"],
+		"context_packet_id":      provenanceIDs.ContextPacketID,
+		"source_snapshot_id":     provenanceIDs.SourceSnapshotID,
 		"handoff_metadata":       metadata,
 		"submission_args":        map[string]interface{}{"has_plan_id": association.PlanID != "", "has_pass_id": association.PassID != "", "has_client_trace_id": strings.TrimSpace(input.ClientTraceID) != "", "source": source},
 	}
@@ -372,8 +387,8 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 			SourceArtifactPath:   sourceArtifactPath,
 			PlanID:               association.PlanID,
 			PassID:               association.PassID,
-			ContextPacketID:      metadata["context_packet_id"],
-			SourceSnapshotID:     metadata["source_snapshot_id"],
+			ContextPacketID:      provenanceIDs.ContextPacketID,
+			SourceSnapshotID:     provenanceIDs.SourceSnapshotID,
 			ArtifactKind:         "planner_handoff_provenance_json",
 		},
 	}, nil
@@ -436,6 +451,80 @@ func validateAssociationAgainstHandoffMetadata(association RunPlanAssociation, m
 		}
 	}
 	return nil
+}
+
+func (svc *Service) ResolveRunSourceContextProvenance(association RunPlanAssociation, metadata map[string]string, input CreateRunInput) (runSourceContextProvenance, error) {
+	explicitContextPacketID := strings.TrimSpace(input.ContextPacketID)
+	explicitSourceSnapshotID := strings.TrimSpace(input.SourceSnapshotID)
+	result := runSourceContextProvenance{
+		ContextPacketID:  firstNonEmpty(explicitContextPacketID, metadata["context_packet_id"]),
+		SourceSnapshotID: firstNonEmpty(explicitSourceSnapshotID, metadata["source_snapshot_id"]),
+	}
+	if err := validateProvenanceID("context_packet_id", result.ContextPacketID); err != nil {
+		return runSourceContextProvenance{}, err
+	}
+	if err := validateProvenanceID("source_snapshot_id", result.SourceSnapshotID); err != nil {
+		return runSourceContextProvenance{}, err
+	}
+	if result.ContextPacketID == "" && result.SourceSnapshotID == "" {
+		return result, nil
+	}
+	if explicitContextPacketID == "" && explicitSourceSnapshotID == "" {
+		return result, nil
+	}
+	if svc.store == nil {
+		return runSourceContextProvenance{}, fmt.Errorf("store is required")
+	}
+
+	var packet *store.ContextPacket
+	if explicitContextPacketID != "" {
+		row, err := svc.store.GetContextPacketByID(explicitContextPacketID)
+		if err != nil {
+			return runSourceContextProvenance{}, provenanceLookupError("context_packet_id", explicitContextPacketID, err)
+		}
+		packet = row
+		if association.PlanID != "" && row.PlanID != "" && row.PlanID != association.PlanID {
+			return runSourceContextProvenance{}, &InputError{Code: ErrCodeValidation, Message: fmt.Sprintf("context_packet_id %q belongs to plan_id %q, not %q", explicitContextPacketID, row.PlanID, association.PlanID)}
+		}
+		if association.PassID != "" && row.PassID != "" && row.PassID != association.PassID {
+			return runSourceContextProvenance{}, &InputError{Code: ErrCodeValidation, Message: fmt.Sprintf("context_packet_id %q belongs to pass_id %q, not %q", explicitContextPacketID, row.PassID, association.PassID)}
+		}
+		result.ContextPacketID = row.ContextPacketID
+		if explicitSourceSnapshotID == "" {
+			result.SourceSnapshotID = row.SourceSnapshotID
+		} else if row.SourceSnapshotID != "" && row.SourceSnapshotID != result.SourceSnapshotID {
+			return runSourceContextProvenance{}, &InputError{Code: ErrCodeValidation, Message: fmt.Sprintf("source_snapshot_id %q does not match context packet snapshot %q", result.SourceSnapshotID, row.SourceSnapshotID)}
+		}
+	}
+
+	if explicitSourceSnapshotID != "" || (explicitContextPacketID != "" && result.SourceSnapshotID != "") {
+		row, err := svc.store.GetSourceSnapshotByID(result.SourceSnapshotID)
+		if err != nil {
+			return runSourceContextProvenance{}, provenanceLookupError("source_snapshot_id", result.SourceSnapshotID, err)
+		}
+		if packet != nil && packet.ProjectID != "" && row.ProjectID != "" && packet.ProjectID != row.ProjectID {
+			return runSourceContextProvenance{}, &InputError{Code: ErrCodeValidation, Message: fmt.Sprintf("source_snapshot_id %q belongs to project_id %q, not context packet project_id %q", result.SourceSnapshotID, row.ProjectID, packet.ProjectID)}
+		}
+	}
+	return result, nil
+}
+
+func validateProvenanceID(field string, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if filepath.IsAbs(value) || strings.ContainsAny(value, `/\:`) {
+		return &InputError{Code: ErrCodeValidation, Message: fmt.Sprintf("%s must be a safe identifier, not a path", field)}
+	}
+	return nil
+}
+
+func provenanceLookupError(field string, value string, err error) error {
+	if errors.Is(err, sql.ErrNoRows) {
+		return &InputError{Code: ErrCodeNotFound, Message: fmt.Sprintf("%s %q was not found", field, value)}
+	}
+	return fmt.Errorf("lookup %s %q: %w", field, value, err)
 }
 
 func validateFieldConflict(field string, handoffValue string, planValue string) error {

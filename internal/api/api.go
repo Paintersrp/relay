@@ -1,7 +1,9 @@
 package api
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -78,35 +80,36 @@ func CORSMiddleware(next http.Handler) http.Handler {
 // Shared Models matching TypeScript contract
 
 type RelayRun struct {
-	ID                    string                `json:"id"`
-	Name                  string                `json:"name"`
-	Repo                  string                `json:"repo"`
-	Branch                string                `json:"branch"`
-	ActiveStep            string                `json:"activeStep"`     // "intake" | "prepare" | "execute" | "audit"
-	Status                string                `json:"status"`         // canonical workflow state for action gating
-	LifecycleState        string                `json:"lifecycleState"` // "intake" | "prepare" | "execute" | "audit" | "completed" | "failed"
-	CreatedAt             string                `json:"createdAt"`      // ISO-8601
-	UpdatedAt             string                `json:"updatedAt"`      // ISO-8601
-	Summary               string                `json:"summary"`
-	Model                 string                `json:"model"`
-	RiskLevel             string                `json:"riskLevel"` // "low" | "medium" | "high" | "critical"
-	Validation            RelayValidationResult `json:"validation"`
-	Artifacts             []RelayArtifact       `json:"artifacts"`
-	LatestEvents          []RelayRunEvent       `json:"latestEvents"`
-	StatusSeverity        string                `json:"statusSeverity"` // "neutral" | "info" | "success" | "warning" | "danger"
-	State                 string                `json:"state"`
-	Title                 string                `json:"title"`
-	PacketID              string                `json:"packetId"`
-	Worktree              string                `json:"worktree,omitempty"`
-	Executor              string                `json:"executor"`
-	ExecutorAdapter       string                `json:"executorAdapter"`
-	ValidationSummary     RelayValidationResult `json:"validationSummary"`
-	ApprovalGate          RelayApprovalGate     `json:"approvalGate"`
-	LogPreview            RelayLogPreview       `json:"logPreview"`
-	StepLabels            map[string]string     `json:"stepLabels"`
-	LatestExecutionStatus string                `json:"latestExecutionStatus,omitempty"` // active execution phase: "starting" | "running" | "completed" | "failed" | ""
-	PlanContext           *RelayRunPlanContext  `json:"planContext,omitempty"`
-	Provenance            *RelayRunProvenance   `json:"provenance,omitempty"`
+	ID                    string                 `json:"id"`
+	Name                  string                 `json:"name"`
+	Repo                  string                 `json:"repo"`
+	Branch                string                 `json:"branch"`
+	ActiveStep            string                 `json:"activeStep"`     // "intake" | "prepare" | "execute" | "audit"
+	Status                string                 `json:"status"`         // canonical workflow state for action gating
+	LifecycleState        string                 `json:"lifecycleState"` // "intake" | "prepare" | "execute" | "audit" | "completed" | "failed"
+	CreatedAt             string                 `json:"createdAt"`      // ISO-8601
+	UpdatedAt             string                 `json:"updatedAt"`      // ISO-8601
+	Summary               string                 `json:"summary"`
+	Model                 string                 `json:"model"`
+	RiskLevel             string                 `json:"riskLevel"` // "low" | "medium" | "high" | "critical"
+	Validation            RelayValidationResult  `json:"validation"`
+	Artifacts             []RelayArtifact        `json:"artifacts"`
+	LatestEvents          []RelayRunEvent        `json:"latestEvents"`
+	StatusSeverity        string                 `json:"statusSeverity"` // "neutral" | "info" | "success" | "warning" | "danger"
+	State                 string                 `json:"state"`
+	Title                 string                 `json:"title"`
+	PacketID              string                 `json:"packetId"`
+	Worktree              string                 `json:"worktree,omitempty"`
+	Executor              string                 `json:"executor"`
+	ExecutorAdapter       string                 `json:"executorAdapter"`
+	ValidationSummary     RelayValidationResult  `json:"validationSummary"`
+	ApprovalGate          RelayApprovalGate      `json:"approvalGate"`
+	LogPreview            RelayLogPreview        `json:"logPreview"`
+	StepLabels            map[string]string      `json:"stepLabels"`
+	LatestExecutionStatus string                 `json:"latestExecutionStatus,omitempty"` // active execution phase: "starting" | "running" | "completed" | "failed" | ""
+	PlanContext           *RelayRunPlanContext   `json:"planContext,omitempty"`
+	Provenance            *RelayRunProvenance    `json:"provenance,omitempty"`
+	SourceContext         *RelayRunSourceContext `json:"source_context,omitempty"`
 }
 
 type RelayRunPlanContext struct {
@@ -135,6 +138,15 @@ type RelayRunProvenance struct {
 	ContextPacketID      string `json:"contextPacketId,omitempty"`
 	SourceSnapshotID     string `json:"sourceSnapshotId,omitempty"`
 	ArtifactKind         string `json:"artifactKind,omitempty"`
+}
+
+type RelayRunSourceContext struct {
+	PlanID             string `json:"plan_id,omitempty"`
+	PassID             string `json:"pass_id,omitempty"`
+	SourceSnapshotID   string `json:"source_snapshot_id,omitempty"`
+	ContextPacketID    string `json:"context_packet_id,omitempty"`
+	CoverageReportPath string `json:"coverage_report_path,omitempty"`
+	RecordedAt         string `json:"recorded_at,omitempty"`
 }
 
 type PlanAPIContextSearchTerm struct {
@@ -861,6 +873,7 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 
 	var planContext *RelayRunPlanContext
 	var provenance *RelayRunProvenance
+	var sourceContext *RelayRunSourceContext
 
 	if run.PlanRowID.Valid || run.PlanPassRowID.Valid {
 		planContext = &RelayRunPlanContext{}
@@ -913,6 +926,21 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 			SourceSnapshotID:     row.SourceSnapshotID,
 			ArtifactKind:         "planner_handoff_provenance_json",
 		}
+		sourceContext = &RelayRunSourceContext{
+			PlanID:           row.PlanID,
+			PassID:           row.PassID,
+			ContextPacketID:  row.ContextPacketID,
+			SourceSnapshotID: row.SourceSnapshotID,
+			RecordedAt:       parseAndFormatTime(row.CreatedAt),
+		}
+		if row.ContextPacketID != "" {
+			if packet, err := h.store.GetContextPacketByID(row.ContextPacketID); err == nil && packet != nil {
+				sourceContext.CoverageReportPath = brokerSafeArtifactPathForAPI(packet.CoverageReportPath)
+				if sourceContext.SourceSnapshotID == "" {
+					sourceContext.SourceSnapshotID = packet.SourceSnapshotID
+				}
+			}
+		}
 
 		planContext = ensureRunPlanContext(planContext)
 		if planContext.PlanID == "" {
@@ -946,6 +974,9 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 	if !hasRelayRunPlanContext(planContext) {
 		planContext = nil
 	}
+	if sourceContext != nil && sourceContext.PlanID == "" && sourceContext.PassID == "" && sourceContext.ContextPacketID == "" && sourceContext.SourceSnapshotID == "" {
+		sourceContext = nil
+	}
 
 	return RelayRun{
 		ID:                    idStr,
@@ -977,6 +1008,7 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 		LatestExecutionStatus: latestExecutionStatus,
 		PlanContext:           planContext,
 		Provenance:            provenance,
+		SourceContext:         sourceContext,
 	}
 }
 
@@ -1732,6 +1764,10 @@ type PlannerHandoffIntakeRequest struct {
 	PlanIDSnake            string `json:"plan_id,omitempty"`
 	PassID                 string `json:"passId,omitempty"`
 	PassIDSnake            string `json:"pass_id,omitempty"`
+	ContextPacketID        string `json:"contextPacketId,omitempty"`
+	ContextPacketIDSnake   string `json:"context_packet_id,omitempty"`
+	SourceSnapshotID       string `json:"sourceSnapshotId,omitempty"`
+	SourceSnapshotIDSnake  string `json:"source_snapshot_id,omitempty"`
 }
 
 type PlannerHandoffIntakeResponse struct {
@@ -1840,6 +1876,40 @@ func resolveIntakePlanInputs(req PlannerHandoffIntakeRequest) (string, string) {
 	return planID, passID
 }
 
+func resolveIntakeSourceContextInputs(req PlannerHandoffIntakeRequest) (string, string) {
+	contextPacketID := strings.TrimSpace(req.ContextPacketID)
+	if contextPacketID == "" {
+		contextPacketID = strings.TrimSpace(req.ContextPacketIDSnake)
+	}
+	sourceSnapshotID := strings.TrimSpace(req.SourceSnapshotID)
+	if sourceSnapshotID == "" {
+		sourceSnapshotID = strings.TrimSpace(req.SourceSnapshotIDSnake)
+	}
+	return contextPacketID, sourceSnapshotID
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func brokerSafeArtifactPathForAPI(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" || filepath.IsAbs(path) {
+		return ""
+	}
+	clean := filepath.ToSlash(filepath.Clean(path))
+	if clean == "." || strings.HasPrefix(clean, "../") || clean == ".." {
+		return ""
+	}
+	return clean
+}
+
 // POST /api/intake/planner-handoff
 func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request) {
 	var req PlannerHandoffIntakeRequest
@@ -1929,6 +1999,11 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 	planID, passID := resolveIntakePlanInputs(req)
 
 	var run *generated.Run
+	var association intake.RunPlanAssociation
+	var sourceContextIDs struct {
+		ContextPacketID  string
+		SourceSnapshotID string
+	}
 	isNew := false
 
 	runIDStr := req.RunID
@@ -1953,7 +2028,7 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 		if len(warnings) > 0 {
 			status = "intake_needs_review"
 		}
-		association, err := intake.ResolveRunPlanAssociation(r.Context(), h.store, planID, passID)
+		association, err = intake.ResolveRunPlanAssociation(r.Context(), h.store, planID, passID)
 		if err != nil {
 			var inputErr *intake.InputError
 			if errors.As(err, &inputErr) {
@@ -1969,6 +2044,28 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to resolve plan association: "+err.Error())
 			return
 		}
+		contextPacketID, sourceSnapshotID := resolveIntakeSourceContextInputs(req)
+		validatedSourceContext, err := intake.NewService(h.store).ResolveRunSourceContextProvenance(association, metadata, intake.CreateRunInput{
+			ContextPacketID:  contextPacketID,
+			SourceSnapshotID: sourceSnapshotID,
+		})
+		if err != nil {
+			var inputErr *intake.InputError
+			if errors.As(err, &inputErr) {
+				statusCode := http.StatusBadRequest
+				errorCode := "BAD_REQUEST"
+				if inputErr.Code == intake.ErrCodeNotFound {
+					statusCode = http.StatusNotFound
+					errorCode = "NOT_FOUND"
+				}
+				writeError(w, statusCode, errorCode, inputErr.Message)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to validate source context: "+err.Error())
+			return
+		}
+		sourceContextIDs.ContextPacketID = validatedSourceContext.ContextPacketID
+		sourceContextIDs.SourceSnapshotID = validatedSourceContext.SourceSnapshotID
 		r, err := h.store.CreateRunWithAssociation(
 			repo.ID,
 			title,
@@ -2077,6 +2174,39 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 	path, err = artifacts.Write(run.ID, "intake_validation_report", "intake_validation_report.json", reportJSON)
 	if err == nil {
 		_, _ = h.store.CreateArtifact(run.ID, "intake_validation_report", path, "application/json")
+	}
+
+	if isNew {
+		handoffHash := sha256.Sum256([]byte(markdown))
+		handoffSHA := hex.EncodeToString(handoffHash[:])
+		sourceArtifactPath := firstNonEmptyString(metadata["source_artifact_path"], metadata["intended_handoff_path"])
+		handoffMetadataJSON, _ := json.Marshal(metadata)
+		submissionArgsJSON, _ := json.Marshal(map[string]interface{}{
+			"has_plan_id":            planID != "",
+			"has_pass_id":            passID != "",
+			"has_context_packet_id":  sourceContextIDs.ContextPacketID != "",
+			"has_source_snapshot_id": sourceContextIDs.SourceSnapshotID != "",
+			"source":                 sourceStr,
+		})
+		_, _ = h.store.CreateRunSubmissionProvenance(store.CreateRunSubmissionProvenanceParams{
+			RunID:                run.ID,
+			PlannerHandoffSha256: handoffSHA,
+			PlannerHandoffBytes:  int64(len([]byte(markdown))),
+			Source:               sourceStr,
+			SourceArtifactPath:   sourceArtifactPath,
+			RepoTarget:           repoTarget,
+			BranchContext:        branchContext,
+			PlanID:               planID,
+			PassID:               passID,
+			PlanRowID:            association.PlanRowID,
+			PlanPassRowID:        association.PlanPassRowID,
+			ManagedPlanPass:      metadata["managed_plan_pass"],
+			ManagedPlanPassName:  metadata["managed_plan_pass_name"],
+			ContextPacketID:      sourceContextIDs.ContextPacketID,
+			SourceSnapshotID:     sourceContextIDs.SourceSnapshotID,
+			HandoffMetadataJSON:  string(handoffMetadataJSON),
+			SubmissionArgsJSON:   string(submissionArgsJSON),
+		})
 	}
 
 	_, _ = h.store.CreateEvent(run.ID, "info", "Handoff intake receipt: planner handoff registered")

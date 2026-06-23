@@ -183,6 +183,15 @@ func TestHandleGetPassContextReturnsPlanV2Context(t *testing.T) {
 			ContextPacketID string `json:"context_packet_id"`
 		} `json:"latest_context_packet"`
 		CoverageReadiness map[string]bool `json:"coverage_readiness"`
+		HandoffReadiness  struct {
+			Status                 string `json:"status"`
+			ReadyForHandoff        bool   `json:"ready_for_handoff"`
+			RequiresSourceSnapshot bool   `json:"requires_source_snapshot"`
+			RequiresContextPacket  bool   `json:"requires_context_packet"`
+			SourceSnapshotID       string `json:"source_snapshot_id"`
+			ContextPacketID        string `json:"context_packet_id"`
+			CoverageReportPath     string `json:"coverage_report_path"`
+		} `json:"handoff_readiness"`
 	}
 	if err := json.Unmarshal(success.Result, &payload); err != nil {
 		t.Fatalf("unmarshal pass context payload: %v", err)
@@ -201,6 +210,111 @@ func TestHandleGetPassContextReturnsPlanV2Context(t *testing.T) {
 	}
 	if !payload.CoverageReadiness["source_snapshot_available"] || !payload.CoverageReadiness["context_packet_available"] || !payload.CoverageReadiness["ready_for_handoff"] {
 		t.Fatalf("unexpected readiness flags: %+v", payload.CoverageReadiness)
+	}
+	if payload.HandoffReadiness.Status != "ready" || !payload.HandoffReadiness.ReadyForHandoff || !payload.HandoffReadiness.RequiresSourceSnapshot || !payload.HandoffReadiness.RequiresContextPacket {
+		t.Fatalf("unexpected handoff readiness: %+v", payload.HandoffReadiness)
+	}
+	if payload.HandoffReadiness.SourceSnapshotID != fixture.snapshotID || payload.HandoffReadiness.ContextPacketID != packetID || payload.HandoffReadiness.CoverageReportPath == "" {
+		t.Fatalf("expected source/context IDs in handoff readiness, got %+v", payload.HandoffReadiness)
+	}
+}
+
+func TestHandleGetPassContextBlocksWhenContextPacketMissing(t *testing.T) {
+	fixture := setupBrokerFixture(t)
+	result := callTool(t, fixture.server, ToolGetPassContext.Name, json.RawMessage(`{
+		"plan_id":"plan-123",
+		"pass_id":"PASS-001",
+		"include_latest_source_snapshot":true,
+		"include_latest_context_packet":true
+	}`))
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.Content[0].Text)
+	}
+
+	success := decodeBrokerSuccess(t, result)
+	var payload struct {
+		LatestSourceSnapshot *struct {
+			SourceSnapshotID string `json:"source_snapshot_id"`
+		} `json:"latest_source_snapshot"`
+		LatestContextPacket *struct {
+			ContextPacketID string `json:"context_packet_id"`
+		} `json:"latest_context_packet"`
+		HandoffReadiness struct {
+			Status          string `json:"status"`
+			ReadyForHandoff bool   `json:"ready_for_handoff"`
+			MissingEvidence []struct {
+				Code string `json:"code"`
+			} `json:"missing_evidence"`
+			NextActions []struct {
+				Tool string `json:"tool"`
+			} `json:"next_actions"`
+		} `json:"handoff_readiness"`
+	}
+	if err := json.Unmarshal(success.Result, &payload); err != nil {
+		t.Fatalf("unmarshal pass context payload: %v", err)
+	}
+	if payload.LatestSourceSnapshot == nil || payload.LatestSourceSnapshot.SourceSnapshotID != fixture.snapshotID {
+		t.Fatalf("expected latest snapshot metadata, got %+v", payload)
+	}
+	if payload.LatestContextPacket != nil {
+		t.Fatalf("did not expect context packet metadata before packet creation: %+v", payload.LatestContextPacket)
+	}
+	if payload.HandoffReadiness.Status != "blocked" || payload.HandoffReadiness.ReadyForHandoff {
+		t.Fatalf("expected blocked readiness, got %+v", payload.HandoffReadiness)
+	}
+	if len(payload.HandoffReadiness.MissingEvidence) == 0 || payload.HandoffReadiness.MissingEvidence[0].Code != "context_packet_missing" {
+		t.Fatalf("expected context_packet_missing evidence, got %+v", payload.HandoffReadiness.MissingEvidence)
+	}
+	if len(payload.HandoffReadiness.NextActions) == 0 || payload.HandoffReadiness.NextActions[0].Tool != "create_context_packet" {
+		t.Fatalf("expected create_context_packet next action, got %+v", payload.HandoffReadiness.NextActions)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoffValidatesExplicitSourceContext(t *testing.T) {
+	fixture := setupBrokerFixture(t)
+	packetID := createContextPacketViaTool(t, fixture, "run-provenance")
+	markdown := "---\ntitle: Source Context Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Source Context Run\n\nGrounded handoff."
+
+	validArgs, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": markdown,
+		"repo_target":              "test-repo",
+		"plan_id":                  "plan-123",
+		"pass_id":                  "PASS-001",
+		"context_packet_id":        packetID,
+		"source_snapshot_id":       fixture.snapshotID,
+	})
+	validResult := fixture.server.HandleCreateRunFromPlannerHandoff(validArgs)
+	if validResult.IsError {
+		t.Fatalf("expected valid provenance to create run, got: %s", validResult.Content[0].Text)
+	}
+	var out createRunOutput
+	if err := json.Unmarshal([]byte(validResult.Content[0].Text), &out); err != nil {
+		t.Fatalf("unmarshal create run output: %v", err)
+	}
+	if out.Provenance.ContextPacketID != packetID || out.Provenance.SourceSnapshotID != fixture.snapshotID {
+		t.Fatalf("expected output provenance IDs, got %+v", out.Provenance)
+	}
+	row, err := fixture.deps.Store.GetRunSubmissionProvenanceByRun(out.RunID)
+	if err != nil {
+		t.Fatalf("GetRunSubmissionProvenanceByRun error: %v", err)
+	}
+	if row.ContextPacketID != packetID || row.SourceSnapshotID != fixture.snapshotID {
+		t.Fatalf("expected stored provenance IDs, got %+v", row)
+	}
+
+	invalidArgs, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": markdown,
+		"repo_target":              "test-repo",
+		"plan_id":                  "plan-123",
+		"pass_id":                  "PASS-001",
+		"context_packet_id":        "ctxpkt-missing",
+	})
+	invalidResult := fixture.server.HandleCreateRunFromPlannerHandoff(invalidArgs)
+	if !invalidResult.IsError {
+		t.Fatal("expected missing explicit context_packet_id to be rejected")
+	}
+	if !strings.Contains(invalidResult.Content[0].Text, "NOT_FOUND") {
+		t.Fatalf("expected NOT_FOUND for missing context packet, got %s", invalidResult.Content[0].Text)
 	}
 }
 
@@ -648,6 +762,7 @@ func setupBrokerFixture(t *testing.T) brokerFixture {
 
 func createContextPacketViaTool(t *testing.T, fixture brokerFixture, slug string) string {
 	t.Helper()
+	runsBefore := countTableRows(t, fixture.deps.Store.DB(), "runs")
 	result := callTool(t, fixture.server, ToolCreateContextPacket.Name, json.RawMessage(`{
 		"project_id":"relay",
 		"plan_id":"plan-123",
@@ -700,6 +815,9 @@ func createContextPacketViaTool(t *testing.T, fixture brokerFixture, slug string
 	}
 	if row.SourceCount == 0 {
 		t.Fatalf("expected stored context packet sources, got %+v", row)
+	}
+	if runsAfter := countTableRows(t, fixture.deps.Store.DB(), "runs"); runsAfter != runsBefore {
+		t.Fatalf("create_context_packet should not create runs: before=%d after=%d", runsBefore, runsAfter)
 	}
 	return payload.ContextPacketID
 }

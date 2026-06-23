@@ -637,6 +637,29 @@ type brokerPassContextResult struct {
 	LatestSourceSnapshot       *brokerSourceSnapshotMetadata `json:"latest_source_snapshot,omitempty"`
 	LatestContextPacket        *brokerContextPacketMetadata  `json:"latest_context_packet,omitempty"`
 	CoverageReadiness          map[string]bool               `json:"coverage_readiness"`
+	HandoffReadiness           brokerHandoffReadinessResult  `json:"handoff_readiness"`
+}
+
+type brokerMissingEvidenceResult struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type brokerNextContextActionResult struct {
+	Tool   string `json:"tool"`
+	Reason string `json:"reason"`
+}
+
+type brokerHandoffReadinessResult struct {
+	Status                 string                          `json:"status"`
+	ReadyForHandoff        bool                            `json:"ready_for_handoff"`
+	RequiresSourceSnapshot bool                            `json:"requires_source_snapshot"`
+	RequiresContextPacket  bool                            `json:"requires_context_packet"`
+	SourceSnapshotID       string                          `json:"source_snapshot_id,omitempty"`
+	ContextPacketID        string                          `json:"context_packet_id,omitempty"`
+	CoverageReportPath     string                          `json:"coverage_report_path,omitempty"`
+	MissingEvidence        []brokerMissingEvidenceResult   `json:"missing_evidence,omitempty"`
+	NextActions            []brokerNextContextActionResult `json:"next_actions,omitempty"`
 }
 
 type brokerRepositorySnapshotResult struct {
@@ -1003,27 +1026,29 @@ func (s *Server) HandleGetPassContext(rawArgs json.RawMessage) ToolCallResult {
 		projectID = plan.RepoTarget
 	}
 	result.ProjectID = projectID
-	if args.IncludeLatestSourceSnapshot {
-		metadata, ok, err := s.loadLatestSourceSnapshotMetadata(projectID)
-		if err != nil {
-			return brokerWrappedErr(err)
-		}
-		if ok {
-			result.LatestSourceSnapshot = metadata
-			result.CoverageReadiness["source_snapshot_available"] = true
-		}
+	latestSnapshot, snapshotOK, err := s.loadLatestSourceSnapshotMetadata(projectID)
+	if err != nil {
+		return brokerWrappedErr(err)
 	}
-	if args.IncludeLatestContextPacket {
-		metadata, ok, err := s.loadLatestContextPacketMetadata(projectID, plan.PlanID, pass.PassID)
-		if err != nil {
-			return brokerWrappedErr(err)
+	if snapshotOK {
+		if args.IncludeLatestSourceSnapshot {
+			result.LatestSourceSnapshot = latestSnapshot
 		}
-		if ok {
-			result.LatestContextPacket = metadata
-			result.CoverageReadiness["context_packet_available"] = true
-		}
+		result.CoverageReadiness["source_snapshot_available"] = true
 	}
-	result.CoverageReadiness["ready_for_handoff"] = result.CoverageReadiness["source_snapshot_available"] && result.CoverageReadiness["context_packet_available"]
+
+	latestPacket, packetOK, err := s.loadLatestContextPacketMetadata(projectID, plan.PlanID, pass.PassID)
+	if err != nil {
+		return brokerWrappedErr(err)
+	}
+	if packetOK {
+		if args.IncludeLatestContextPacket {
+			result.LatestContextPacket = latestPacket
+		}
+		result.CoverageReadiness["context_packet_available"] = true
+	}
+	result.HandoffReadiness = brokerBuildHandoffReadiness(pass, plan, latestSnapshot, latestPacket, contextPlan, sourceRequirements)
+	result.CoverageReadiness["ready_for_handoff"] = result.HandoffReadiness.ReadyForHandoff
 	return brokerToolOK(ToolGetPassContext.Name, result)
 }
 
@@ -1395,6 +1420,137 @@ func (s *Server) loadLatestContextPacketMetadata(projectID string, planID string
 		}
 	}
 	return nil, false, nil
+}
+
+func brokerBuildHandoffReadiness(pass *store.PlanPass, plan *store.Plan, latestSnapshot *brokerSourceSnapshotMetadata, latestPacket *brokerContextPacketMetadata, contextPlan json.RawMessage, sourceRequirements json.RawMessage) brokerHandoffReadinessResult {
+	requiresContextPacket := brokerContextPlanRequiresPacket(contextPlan)
+	requiresSourceSnapshot := requiresContextPacket || brokerSourceRequirementsRequireSnapshot(sourceRequirements)
+	result := brokerHandoffReadinessResult{
+		Status:                 "ready",
+		ReadyForHandoff:        true,
+		RequiresSourceSnapshot: requiresSourceSnapshot,
+		RequiresContextPacket:  requiresContextPacket,
+	}
+	if latestSnapshot != nil {
+		result.SourceSnapshotID = latestSnapshot.SourceSnapshotID
+	}
+	if latestPacket != nil {
+		result.ContextPacketID = latestPacket.ContextPacketID
+		result.CoverageReportPath = brokerSafeArtifactPath(latestPacket.CoverageReportPath)
+		if result.SourceSnapshotID == "" {
+			result.SourceSnapshotID = latestPacket.SourceSnapshotID
+		}
+	}
+
+	if requiresSourceSnapshot && latestSnapshot == nil {
+		result.MissingEvidence = append(result.MissingEvidence, brokerMissingEvidenceResult{
+			Code:    "source_snapshot_missing",
+			Message: "A source snapshot is required before context packet evidence can ground this pass handoff.",
+		})
+		result.NextActions = append(result.NextActions, brokerNextContextActionResult{
+			Tool:   "create_source_snapshot",
+			Reason: "Capture the selected pass repository source state before gathering context evidence.",
+		})
+	}
+	if requiresContextPacket && latestPacket == nil {
+		result.MissingEvidence = append(result.MissingEvidence, brokerMissingEvidenceResult{
+			Code:    "context_packet_missing",
+			Message: "A context packet is required because the selected pass defines context evidence expectations.",
+		})
+		tool := "create_context_packet"
+		reason := "Gather bounded source evidence from the selected pass context plan."
+		if requiresSourceSnapshot && latestSnapshot == nil {
+			tool = "create_source_snapshot"
+			reason = "Create a source snapshot first; context packet creation requires a snapshot ID."
+		}
+		result.NextActions = append(result.NextActions, brokerNextContextActionResult{Tool: tool, Reason: reason})
+	}
+	if latestPacket != nil {
+		switch {
+		case latestPacket.Status == contextpackets.ContextPacketStatusBlocked || latestPacket.BlockedSeedCount > 0:
+			result.MissingEvidence = append(result.MissingEvidence, brokerMissingEvidenceResult{
+				Code:    "context_packet_blocked",
+				Message: "The latest context packet has blocked required evidence; review its coverage report before creating the handoff.",
+			})
+			result.NextActions = append(result.NextActions, brokerNextContextActionResult{
+				Tool:   "get_context_packet",
+				Reason: "Inspect context packet coverage and blockers.",
+			})
+		case latestPacket.Status == contextpackets.ContextPacketStatusPartial:
+			result.MissingEvidence = append(result.MissingEvidence, brokerMissingEvidenceResult{
+				Code:    "context_packet_incomplete",
+				Message: "The latest context packet is partial; optional or truncated evidence should be reviewed before handoff creation.",
+			})
+		}
+	}
+
+	if len(result.MissingEvidence) > 0 {
+		result.Status = "blocked"
+		result.ReadyForHandoff = false
+		if latestPacket != nil && latestPacket.Status == contextpackets.ContextPacketStatusPartial && latestPacket.BlockedSeedCount == 0 {
+			onlyPartial := len(result.MissingEvidence) == 1 && result.MissingEvidence[0].Code == "context_packet_incomplete"
+			if onlyPartial {
+				result.Status = "ready"
+				result.ReadyForHandoff = true
+			}
+		}
+	}
+	_ = pass
+	_ = plan
+	return result
+}
+
+func brokerContextPlanRequiresPacket(contextPlan json.RawMessage) bool {
+	if len(bytes.TrimSpace(contextPlan)) == 0 || bytes.Equal(bytes.TrimSpace(contextPlan), []byte("{}")) {
+		return false
+	}
+	var value interface{}
+	if err := json.Unmarshal(contextPlan, &value); err != nil {
+		return false
+	}
+	return brokerJSONHasNonEmptyArray(value,
+		"seed_files", "seedFiles", "seed_files_to_read", "seedFilesToRead",
+		"seed_searches", "seedSearches", "seed_search_terms", "seedSearchTerms",
+		"context_coverage_expectations", "contextCoverageExpectations",
+		"blocked_if_missing", "blockedIfMissing",
+	)
+}
+
+func brokerSourceRequirementsRequireSnapshot(sourceRequirements json.RawMessage) bool {
+	var value map[string]interface{}
+	if err := json.Unmarshal(sourceRequirements, &value); err != nil {
+		return false
+	}
+	return brokerJSONBool(value, "require_git_status", "requireGitStatus") ||
+		brokerJSONBool(value, "require_commit_sha", "requireCommitSha", "require_commit_SHA")
+}
+
+func brokerJSONHasNonEmptyArray(value interface{}, keys ...string) bool {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for _, key := range keys {
+			if arr, ok := typed[key].([]interface{}); ok && len(arr) > 0 {
+				return true
+			}
+		}
+		for _, nested := range typed {
+			if brokerJSONHasNonEmptyArray(nested, keys...) {
+				return true
+			}
+		}
+	case []interface{}:
+		return len(typed) > 0
+	}
+	return false
+}
+
+func brokerJSONBool(value map[string]interface{}, keys ...string) bool {
+	for _, key := range keys {
+		if b, ok := value[key].(bool); ok && b {
+			return true
+		}
+	}
+	return false
 }
 
 func brokerBuildPassResult(plan *store.Plan, pass *store.PlanPass) (brokerPassResult, error) {

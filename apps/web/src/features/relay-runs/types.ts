@@ -275,9 +275,19 @@ export interface RelayRunProvenance {
   artifactKind?: "planner_handoff_provenance_json";
 }
 
+export interface RelayRunSourceContext {
+  planId?: string;
+  passId?: string;
+  sourceSnapshotId?: string;
+  contextPacketId?: string;
+  coverageReportPath?: string;
+  recordedAt?: string;
+}
+
 export interface RelaySourceVisibilitySummary {
   contextPacketId?: string;
   sourceSnapshotId?: string;
+  coverageReportPath?: string;
   sourceArtifactPath?: string;
   plannerHandoffSha256?: string;
   coverageReportArtifact?: RelayArtifact;
@@ -308,6 +318,7 @@ export interface RelayRun {
   state: string;
   planContext?: RelayRunPlanContext;
   provenance?: RelayRunProvenance;
+  sourceContext?: RelayRunSourceContext;
 
   // Legacy field support to prevent breaking current views
   title: string;

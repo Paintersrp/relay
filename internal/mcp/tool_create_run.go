@@ -33,6 +33,10 @@ type createRunInput struct {
 	PlanID string `json:"plan_id,omitempty"`
 	// PassID optionally associates the run to an existing Relay plan pass.
 	PassID string `json:"pass_id,omitempty"`
+	// SourceSnapshotID optionally records the source snapshot used to prepare the handoff.
+	SourceSnapshotID string `json:"source_snapshot_id,omitempty"`
+	// ContextPacketID optionally records the context packet used to prepare the handoff.
+	ContextPacketID string `json:"context_packet_id,omitempty"`
 }
 
 // createRunOutput is the structured success payload for create_run_from_planner_handoff.
@@ -72,14 +76,16 @@ func (s *Server) HandleCreateRunFromPlannerHandoff(rawArgs json.RawMessage) Tool
 
 	svc := intake.NewService(s.deps.Store)
 	out, err := svc.CreateRunFromHandoff(intake.CreateRunInput{
-		Markdown:      input.PlannerHandoffMarkdown,
-		RepoTarget:    input.RepoTarget,
-		BranchContext: input.BranchContext,
-		Name:          input.Name,
-		Source:        source,
-		ClientTraceID: input.ClientTraceID,
-		PlanID:        input.PlanID,
-		PassID:        input.PassID,
+		Markdown:         input.PlannerHandoffMarkdown,
+		RepoTarget:       input.RepoTarget,
+		BranchContext:    input.BranchContext,
+		Name:             input.Name,
+		Source:           source,
+		ClientTraceID:    input.ClientTraceID,
+		PlanID:           input.PlanID,
+		PassID:           input.PassID,
+		ContextPacketID:  input.ContextPacketID,
+		SourceSnapshotID: input.SourceSnapshotID,
 	})
 	if err != nil {
 		var inputErr *intake.InputError
@@ -146,6 +152,14 @@ var createRunSchema = json.RawMessage(`{
     "pass_id": {
       "type": "string",
       "description": "Optional Relay pass identifier to associate with the created run. Requires plan_id."
+    },
+    "source_snapshot_id": {
+      "type": "string",
+      "description": "Optional source snapshot identifier used to prepare the reviewed handoff."
+    },
+    "context_packet_id": {
+      "type": "string",
+      "description": "Optional context packet identifier used to prepare the reviewed handoff."
     }
   }
 }`)

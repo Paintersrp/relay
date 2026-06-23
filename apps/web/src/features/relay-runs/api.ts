@@ -11,6 +11,7 @@ import type {
   RelayAuditStatus,
   RelayRunProvenance,
   RelayRunPlanContext,
+  RelayRunSourceContext,
   RelayValidationResult,
   RelayValidationCommand,
 } from "./types";
@@ -331,6 +332,55 @@ function normalizeRunPlanContext(run: any): RelayRunPlanContext | undefined {
   };
 }
 
+function normalizeRunSourceContext(run: any): RelayRunSourceContext | undefined {
+  const sourceContext = run?.sourceContext ?? run?.source_context;
+  const provenance = normalizeRunProvenance(run);
+  const planContext = normalizeRunPlanContext(run);
+  const planId = firstNonEmptyString(
+    sourceContext?.planId,
+    sourceContext?.plan_id,
+    planContext?.planId,
+    provenance?.planId,
+  );
+  const passId = firstNonEmptyString(
+    sourceContext?.passId,
+    sourceContext?.pass_id,
+    planContext?.passId,
+    provenance?.passId,
+  );
+  const contextPacketId = firstNonEmptyString(
+    sourceContext?.contextPacketId,
+    sourceContext?.context_packet_id,
+    planContext?.contextPacketId,
+    provenance?.contextPacketId,
+  );
+  const sourceSnapshotId = firstNonEmptyString(
+    sourceContext?.sourceSnapshotId,
+    sourceContext?.source_snapshot_id,
+    planContext?.sourceSnapshotId,
+    provenance?.sourceSnapshotId,
+  );
+
+  if (!planId && !passId && !contextPacketId && !sourceSnapshotId) {
+    return undefined;
+  }
+
+  return {
+    planId,
+    passId,
+    contextPacketId,
+    sourceSnapshotId,
+    coverageReportPath: firstNonEmptyString(
+      sourceContext?.coverageReportPath,
+      sourceContext?.coverage_report_path,
+    ),
+    recordedAt: firstNonEmptyString(
+      sourceContext?.recordedAt,
+      sourceContext?.recorded_at,
+    ),
+  };
+}
+
 /**
  * Helper to normalize backend runs with defaults for frontend UI-only optional fields.
  */
@@ -372,6 +422,7 @@ export function normalizeRun(run: any): RelayRun {
     state: run.state || "Draft",
     planContext: normalizeRunPlanContext(run),
     provenance: normalizeRunProvenance(run),
+    sourceContext: normalizeRunSourceContext(run),
     title: run.title || run.name || `Run ${run.id}`,
     packetId: run.packetId || "",
     executorAdapter: run.executorAdapter || run.executor || "opencode_go",
