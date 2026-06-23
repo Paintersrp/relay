@@ -17,6 +17,18 @@ const (
 	RedactionStatusRedacted   = "redacted"
 	RedactionStatusBlocked    = "blocked"
 	RedactionStatusNotScanned = "not_scanned"
+
+	SourceOperationStatusOK      = "ok"
+	SourceOperationStatusBlocked = "blocked"
+	SourceOperationStatusPartial = "partial"
+
+	SourceBlockerUnsafePath       = "unsafe_path"
+	SourceBlockerExcludedPath     = "excluded_path"
+	SourceBlockerOversized        = "oversized"
+	SourceBlockerBinary           = "binary"
+	SourceBlockerRedactionBlocked = "redaction_blocked"
+	SourceBlockerSnapshotMissing  = "source_snapshot_missing"
+	SourceBlockerRipgrepMissing   = "ripgrep_unavailable"
 )
 
 type SourceSnapshotInput struct {
@@ -91,4 +103,100 @@ type BoundedDiff struct {
 	Truncated       bool
 	MaxBytes        int
 	RedactionStatus string
+}
+
+type FileInventoryInput struct {
+	ProjectID        string
+	SourceSnapshotID string
+	RepoIDs          []string
+	IncludeExcluded  bool
+	IncludeDisabled  bool
+	MaxResults       int
+}
+
+type SourceFileRecord struct {
+	ProjectID        string
+	RepoID           string
+	SourceSnapshotID string
+	Path             string
+	SizeBytes        int64
+	ContentHash      string
+	HashAlgorithm    string
+	Tracked          bool
+	Included         bool
+	ExclusionReason  string
+	RedactionStatus  string
+	IndexedAt        string
+}
+
+type FileInventoryResult struct {
+	ProjectID        string
+	SourceSnapshotID string
+	Files            []SourceFileRecord
+	Truncated        bool
+	Blockers         []SourceBlocker
+	GeneratedAt      string
+}
+
+type SourceSearchInput struct {
+	ProjectID        string
+	SourceSnapshotID string
+	RepoIDs          []string
+	Pattern          string
+	Literal          bool
+	CaseSensitive    bool
+	ContextLines     int
+	MaxResults       int
+	MaxBytes         int
+	IncludeExcluded  bool
+}
+
+type SourceSearchMatch struct {
+	ProjectID        string
+	RepoID           string
+	SourceSnapshotID string
+	Path             string
+	LineStart        int
+	LineEnd          int
+	Snippet          string
+	SnippetHash      string
+	ContentHash      string
+	RedactionStatus  string
+	Truncated        bool
+	GeneratedAt      string
+}
+
+type SourceSearchResult struct {
+	ProjectID        string
+	SourceSnapshotID string
+	Matches          []SourceSearchMatch
+	Truncated        bool
+	Blockers         []SourceBlocker
+	GeneratedAt      string
+}
+
+type BoundedFileReadInput struct {
+	ProjectID        string
+	SourceSnapshotID string
+	RepoID           string
+	Path             string
+	LineStart        int
+	LineEnd          int
+	MaxBytes         int
+}
+
+type BoundedFileReadResult struct {
+	ProjectID        string
+	RepoID           string
+	SourceSnapshotID string
+	Path             string
+	LineStart        int
+	LineEnd          int
+	Content          string
+	ContentHash      string
+	SnippetHash      string
+	RedactionStatus  string
+	Truncated        bool
+	GeneratedAt      string
+	Blockers         []SourceBlocker
 }

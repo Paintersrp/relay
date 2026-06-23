@@ -166,6 +166,46 @@ func TestGetBoundedDiffBlocksPrivateKey(t *testing.T) {
 	}
 }
 
+func TestGetBoundedDiffBlocksTruncatedPrivateKeyStart(t *testing.T) {
+	requireGit(t)
+	root := setupGitRepo(t)
+	service := NewService(nil)
+
+	privateKeyStart := "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n"
+	if err := os.WriteFile(filepath.Join(root, "committed.txt"), []byte(privateKeyStart), 0644); err != nil {
+		t.Fatalf("WriteFile committed: %v", err)
+	}
+
+	diff, err := service.GetBoundedDiff(t.Context(), store.ProjectRepository{RepoID: "relay", LocalPath: root}, DiffModeWorktree, 4096, 3)
+	if err != nil {
+		t.Fatalf("GetBoundedDiff error: %v", err)
+	}
+	if diff.RedactionStatus != RedactionStatusBlocked {
+		t.Fatalf("expected blocked redaction status, got %q", diff.RedactionStatus)
+	}
+	if diff.Content != "" {
+		t.Fatalf("expected blocked diff content to be empty, got %q", diff.Content)
+	}
+}
+
+func TestRedactSourceContentUsesPolicySpecificMarkers(t *testing.T) {
+	content := "Authorization: Bearer secret\napi_key = abc123\ntoken: xyz\npassword: open-sesame\n"
+	redacted, status := redactSourceContent(content)
+	if status != RedactionStatusRedacted {
+		t.Fatalf("expected redacted status, got %q", status)
+	}
+	for _, forbidden := range []string{"secret", "abc123", "xyz", "open-sesame", "[REDACTED]\n"} {
+		if strings.Contains(redacted, forbidden) {
+			t.Fatalf("expected %q to be absent from %q", forbidden, redacted)
+		}
+	}
+	for _, marker := range []string{"[REDACTED_AUTH_HEADER]", "[REDACTED_TOKEN]", "[REDACTED_SECRET]"} {
+		if !strings.Contains(redacted, marker) {
+			t.Fatalf("expected marker %s in %q", marker, redacted)
+		}
+	}
+}
+
 func requireGit(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
