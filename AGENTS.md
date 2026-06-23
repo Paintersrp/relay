@@ -2,38 +2,90 @@
 
 ## Project
 
-Relay is a local-first handoff orchestration web app.
+Relay is a local-first handoff/run orchestration workbench.
 
-Relay accepts surgical implementation handoffs, stores run metadata/artifacts, prepares prompts for repo agents, captures run outputs, and generates audit packets for review.
+Relay accepts reviewed Planner handoffs and managed Plan/Pass artifacts, stores run metadata and filesystem-backed artifacts, prepares execution prompts, captures run outputs, and generates validation/audit evidence for review and closeout.
+
+## Authority Order
+
+When instructions conflict, use this order:
+
+1. Current user/task instructions
+2. The selected Planner handoff or canonical packet for the run, when provided
+3. Checked-out source code and tests
+4. The canonical relay-contracts GitHub repository for Planner/pipeline behavior
+5. Older repo notes, prior chat, or stale instructions
+
+Do not treat repo-local notes as more authoritative than:
+
+- checked-out source code
+- Planner handoffs
+- canonical packets
+- Relay DB state
+- run artifacts
+- audit evidence
+- relay-contracts source files
+
+## Planner / Pipeline Contract Source
+
+For Planner handoffs, pass plans, canonical packets, validation reports, executor briefs, audit packets, policy behavior, and schema behavior, use the canonical relay-contracts source.
 
 ## Stack
 
-Use:
+Relay is a hybrid repo.
+
+Backend and root/runtime stack:
 
 - Go `net/http`
 - `chi`
-- `templ`
 - `encoding/json`
 - `log/slog`
 - `database/sql`
-- SQLite
+- SQLite through `modernc.org/sqlite`
 - `sqlc`
 - `goose`
-- `htmx`
+- `templ`
+- htmx
 - Alpine
 - Tailwind CSS
 - TypeScript browser bundle
 - filesystem-backed run artifacts
 
-## Surgical implementation handoff source of truth
+The root Go/templ/htmx UI remains present as a legacy/utility surface.
 
-For implementation handoffs, repo-agent handoffs, Cline/Codex/OpenCode/SWE prompts, and surgical implementation instructions, use:
+The primary modern workbench is under `apps/web` and uses React/TanStack Start with related TanStack libraries.
 
-`docs/instructions/surgical-implementation-handoff-instructions.md`
+Do not remove legacy root `web/`, templ views, root npm scripts, or generated templ output unless the current task explicitly decommissions them.
 
-That file is the canonical format and precision standard. Do not rely on chat memory for the handoff structure.
+## Generated Files
 
-## RTK shell command rule
+Do not edit generated files directly.
+
+In particular:
+
+- Do not hand-edit `apps/web/src/routeTree.gen.ts`.
+- Do not hand-edit `internal/store/generated/*`.
+- For sqlc changes, update SQL/query sources and regenerate.
+- For route tree changes, update route files and regenerate through normal frontend tooling.
+- Do not hand-edit generated `*_templ.go` files without changing source templates and regenerating.
+
+## Run / Plan Behavior
+
+Runs may be standalone.
+
+Managed plan/pass association is optional and should remain nullable-compatible unless the selected handoff explicitly changes that behavior.
+
+Do not require every run to belong to a plan or pass.
+
+A managed plan stores a Planner pass plan JSON submission as a `plans` row plus ordered `plan_passes` rows. A run may be associated to a plan and optionally one pass through nullable `runs.plan_row_id` and `runs.plan_pass_row_id`.
+
+## Repo Reference
+
+For deeper repo orientation, see `docs/agent-reference.md`.
+
+That file is a human-maintained reference only. It does not override the current task, source code, Planner handoffs, canonical packets, Relay DB state, run artifacts, audit evidence, or relay-contracts.
+
+## RTK Shell Command Rule
 
 Use RTK for noisy shell commands when available.
 
@@ -65,87 +117,43 @@ rtk.exe test "go vet ./..."
 rtk.exe test "npm run build"
 ```
 
-If `rtk.exe` is unavailable, use the same commands with `rtk`:
-
-```bash
-rtk git status
-rtk git diff
-rtk test "templ generate"
-rtk test "sqlc generate"
-rtk test "go test ./..."
-rtk test "npm run build"
-```
+If `rtk.exe` is unavailable, use the same commands with `rtk`.
 
 If neither `rtk.exe` nor `rtk` is available, run the normal command directly.
 
-Preserve full error detail when a build, typecheck, generation, migration, or test command fails. If RTK output is too compact to diagnose a failure, inspect the relevant source file or rerun the narrow failing command without RTK.
+## Validation Commands
 
-## Repo hygiene rules
+Use the narrowest relevant validation first, then broader validation when risk warrants.
 
-- Work from source files, not generated output.
-- Do not edit dependency output, coverage output, local runtime data, or build output unless explicitly requested.
-- Do not edit `node_modules/`, `coverage/`, `bin/`, `tmp/`, generated frontend assets, or local data artifacts unless the task explicitly requires it.
-- Do not manually edit generated Go files from `templ` or `sqlc`. Update the source `.templ`, SQL query, or migration files, then regenerate.
-- Generated Go files from `templ` and `sqlc` may be committed after regeneration unless the repo later documents a different policy.
-- Make focused, surgical changes.
-- Preserve existing behavior unless the task explicitly asks to change it.
-- Avoid unrelated formatting churn.
-- Prefer boring, readable code over clever abstractions.
-
-## Working rules
-
-- Follow the current handoff exactly.
-- When creating or updating an implementation handoff, follow `docs/instructions/surgical-implementation-handoff-instructions.md`.
-- Handoffs should remove implementation decisions whenever the required behavior is known.
-- Do not invent exact file paths in handoffs; use known paths or mark proposed paths clearly.
-- Keep changes scoped to the requested task.
-- Do not add unrelated architecture or cleanup.
-- Do not implement future pipeline stages unless explicitly requested.
-- Use server-rendered HTML through `templ`.
-- Use `templ` for server-rendered views.
-- Do not introduce a SPA framework.
-- Do not introduce React, Vue, Svelte, TanStack Start, Echo, Gin, or Fiber unless explicitly requested.
-- Keep large artifacts on disk and metadata in SQLite.
-- Use htmx for server-driven interactions.
-- Use Alpine only for local UI state such as tabs, collapsible panels, dropdowns, and small confirmation toggles.
-- Do not store run lifecycle state in Alpine.
-- Use Tailwind for styling.
-- Use TypeScript for browser-side behavior.
-- Run the requested validation commands when available.
-- Report blockers instead of guessing around missing tools, missing commands, or unclear requirements.
-
-## Validation expectations
-
-When relevant, prioritize:
+Common commands:
 
 ```bash
-go fmt ./...
-templ generate
-sqlc generate
 go test ./...
-go vet ./...
-goose -dir internal/db/migrations sqlite3 data/relay.sqlite up
-npm run build
+make validate
+make plan-api-smoke
+cd apps/web && npm run typecheck
+cd apps/web && npm run test
+cd apps/web && npm run build
 ```
 
-If the project uses `make`, prefer documented `make` targets when available.
+For managed plan API/store changes, prefer:
 
-If `make` is unavailable, run the underlying direct commands instead and do not treat missing `make` as a blocker unless the task specifically requires Makefile validation.
-
-If the project uses different script names, run the documented equivalents.
-
-If a validation command cannot be run, report the exact command and reason.
-
-## Completion response format
-
-When the task is complete, reply with only:
-
-```text
-DONE or BLOCKED
-Build status
-Test status
-Count of LOC changed
-Blocker/error only if BLOCKED
+```bash
+make plan-api-smoke
+go test ./...
 ```
 
-Keep output minimal.
+For `apps/web` changes, prefer:
+
+```bash
+cd apps/web && npm run typecheck
+cd apps/web && npm run test
+```
+
+## Scope Discipline
+
+Keep implementation changes bounded to the current task or selected Planner handoff.
+
+Do not introduce future-pass work, unrelated cleanup, framework changes, route rewrites, schema changes, lifecycle behavior changes, or generated-file churn unless explicitly requested.
+
+If repo instructions are stale, update only the stale instruction text needed for the current task.
