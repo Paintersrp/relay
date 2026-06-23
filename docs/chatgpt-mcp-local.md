@@ -31,6 +31,7 @@ TUNNEL_MCP_TRANSPORT=stdio
 
 Optional values:
 
+- `TUNNEL_HEALTH_LISTEN_ADDR` to override the tunnel-client health/admin listener (defaults to `127.0.0.1:8082` to avoid collisions with Relay's default `8080`)
 - `TUNNEL_CLIENT_PATH` if `tunnel-client` is not already on `PATH`
 - `RELAY_MCP_SERVER_BIN` if you want the stdio launcher to use a prebuilt Relay MCP binary instead of `go run ./cmd/mcpserver`
 - `RELAY_MCP_STDIO_COMMAND` only if you need to override the generated launcher command
@@ -59,7 +60,7 @@ npm run chatgpt-mcp:start
 
 This starts `tunnel-client run --profile <profile>`. The tunnel profile then launches Relay MCP through stdio for you. No second Relay terminal is required in the default path.
 
-The tunnel-client local admin UI may still be available at `http://127.0.0.1:8080/ui`. That UI is not Relay MCP.
+The tunnel-client local admin UI may still be available at `http://127.0.0.1:8082/ui`. That UI is not Relay MCP, and using `8082` prevents port collisions with Relay's web/API port `8080`.
 
 ## Diagnose failures
 

@@ -18,6 +18,7 @@ const ENV_EXAMPLE_PATH = join(REPO_ROOT, '.env.example');
 const DEFAULT_PROFILE = 'relay-mcp';
 const DEFAULT_RELAY_MCP_URL = 'http://127.0.0.1:8081/mcp';
 const DEFAULT_TUNNEL_MCP_TRANSPORT = 'stdio';
+const DEFAULT_TUNNEL_HEALTH_LISTEN_ADDR = '127.0.0.1:8082';
 const RELAY_MCP_STDIO_LAUNCHER_PATH = join(REPO_ROOT, 'scripts', 'local', 'relay-mcp-stdio.mjs');
 const ALLOWED_TUNNEL_MCP_TRANSPORTS = new Set(['stdio', 'http']);
 
@@ -127,6 +128,7 @@ function getConfig() {
     relayMcpStdioLauncherPath: RELAY_MCP_STDIO_LAUNCHER_PATH,
     tunnelClientPath: process.env.TUNNEL_CLIENT_PATH || '',
     controlPlaneApiKey: process.env.CONTROL_PLANE_API_KEY || '',
+    tunnelHealthListenAddr: process.env.TUNNEL_HEALTH_LISTEN_ADDR || DEFAULT_TUNNEL_HEALTH_LISTEN_ADDR,
   };
 }
 
@@ -158,6 +160,7 @@ function printHelp(config) {
   console.log('');
   console.log('Default transport: stdio');
   console.log(`Relay MCP command: ${config.relayMcpStdioCommand}`);
+  console.log(`Tunnel health/admin listener: ${config.tunnelHealthListenAddr}`);
   console.log('HTTP mode is available for advanced/dev use by setting TUNNEL_MCP_TRANSPORT=http and RELAY_MCP_URL.');
   console.log('');
   console.log('Commands:');
@@ -190,7 +193,7 @@ async function runInit(config, options) {
 
   exitCode = await runTunnelClient(
     tunnelClient,
-    ['doctor', '--profile', config.tunnelProfile, '--explain'],
+    ['doctor', '--profile', config.tunnelProfile, '--explain', '--health.listen-addr', config.tunnelHealthListenAddr],
     config.controlPlaneApiKey
   );
   return exitCode;
@@ -214,9 +217,15 @@ async function runStart(config, options) {
   }
   console.log(`tunnel ID configured: ${isConfiguredTunnelId(config.tunnelId) ? 'yes' : 'no'}`);
 
+  let displayAddr = config.tunnelHealthListenAddr;
+  if (displayAddr.startsWith(':')) {
+    displayAddr = `127.0.0.1${displayAddr}`;
+  }
+  console.log(`tunnel-client health/admin: http://${displayAddr}/ui`);
+
   return runTunnelClient(
     tunnelClient,
-    ['run', '--profile', config.tunnelProfile],
+    ['run', '--profile', config.tunnelProfile, '--health.listen-addr', config.tunnelHealthListenAddr],
     config.controlPlaneApiKey
   );
 }
@@ -286,7 +295,7 @@ async function runDoctor(config, options) {
 
   return runTunnelClient(
     diagnostics.tunnelClientPath,
-    ['doctor', '--profile', config.tunnelProfile, '--explain'],
+    ['doctor', '--profile', config.tunnelProfile, '--explain', '--health.listen-addr', config.tunnelHealthListenAddr],
     config.controlPlaneApiKey
   );
 }
@@ -306,6 +315,7 @@ function printDiagnostics(config, diagnostics) {
   console.log(`tunnel ID configured: ${diagnostics.tunnelIdConfigured ? 'yes' : 'no'}`);
   console.log(`control-plane key configured: ${diagnostics.controlPlaneApiKeyConfigured ? 'yes' : 'no'}`);
   console.log(`tunnel-client path: ${diagnostics.tunnelClientPath ?? 'unresolved'}`);
+  console.log(`tunnel-client health/admin listener: ${config.tunnelHealthListenAddr}`);
 }
 
 function requireConfiguredTunnelId(config) {
