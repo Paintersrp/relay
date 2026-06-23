@@ -76,10 +76,10 @@ Relay's audit workflow is local-only and artifact-backed:
 
 For detailed local operator workflows and setup guides, please refer to the following:
 
-*   [Operator Guide](file:///d:/Code/relay/docs/operator-guide.md) — Central manual for local process, registration, port layout, profiles, and workflows.
-*   [ChatGPT Local MCP Tunnel Setup](file:///d:/Code/relay/docs/chatgpt-mcp-local.md) — Launcher scripts, environments, and credentials.
-*   [MCP Specification](file:///d:/Code/relay/docs/mcp.md) — Profiles, tool registry, and safety boundaries.
-*   [Smoke Testing Guide](file:///d:/Code/relay/docs/smoke.md) — Verification suite and port layouts.
+*   [Operator Guide](docs/operator-guide.md) — Central manual for local process, registration, port layout, profiles, and workflows.
+*   [ChatGPT Local MCP Tunnel Setup](docs/chatgpt-mcp-local.md) — Launcher scripts, environments, and credentials.
+*   [MCP Specification](docs/mcp.md) — Profiles, tool registry, and safety boundaries.
+*   [Smoke Testing Guide](docs/smoke.md) — Verification suite and port layouts.
 
 ## Core Concepts
 
@@ -325,7 +325,7 @@ Relay derives the run title from the handoff's first `#` heading. If no H1 headi
 
 ### Project and Repository Registration
 
-For modern plan/run tracking, you should register repositories within a project using the **Projects UI** (`/projects`) in the React workbench or by calling project repository APIs directly. See the [Operator Guide](file:///d:/Code/relay/docs/operator-guide.md) for more details.
+For modern plan/run tracking, you should register repositories within a project using the **Projects UI** (`/projects`) in the React workbench or by calling project repository APIs directly. See the [Operator Guide](docs/operator-guide.md) for more details.
 
 Legacy local git repository discovery from configured scan roots (e.g. `D:/Code`) remains available under Settings (`/settings/repos`). The New Handoff page lets you select a discovered repository or enter a manual repository name and local path.
 

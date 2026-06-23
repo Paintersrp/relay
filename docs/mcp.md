@@ -112,19 +112,8 @@ Add to `claude_desktop_config.json`:
       "args": [],
       "env": {
         "RELAY_DB_PATH": "/path/to/data/relay.sqlite",
-        "RELAY_ARTIFACTS_DIR": "/path/to/data/artifacts"
-
-Add to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "relay": {
-      "command": "/path/to/bin/relay-mcpserver",
-      "args": [],
-      "env": {
-        "RELAY_DB_PATH": "/path/to/data/relay.sqlite",
-        "RELAY_ARTIFACTS_DIR": "/path/to/data/artifacts"
+        "RELAY_ARTIFACTS_DIR": "/path/to/data/artifacts",
+        "RELAY_MCP_PROFILE": "local-operator"
       }
     }
   }
@@ -364,6 +353,14 @@ Returns stored context packet metadata and optional source metadata rows. It doe
 ### `create_local_audit`
 
 Creates a local-only run audit record from captured validation results and git diff state.
+
+Accepts one of the following modes:
+- `recent_commit`: Reviewing the most recent commit in one registered repository.
+- `selected_pass_changes`: Reviewing current local changes for a managed plan/pass before or after a pass-associated run.
+- `feature_slice`: Reviewing a bounded feature/system slice by repository-relative paths or search terms.
+- `full_repository`: Performing a broad local repository health/audit scan without remote evidence.
+
+Outputs remain local-only, bounded, and artifact-backed.
 
 ### `get_local_audit`
 

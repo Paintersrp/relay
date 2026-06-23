@@ -2,7 +2,7 @@
 
 This guide details the local, deterministic smoke tests and port layout configurations for the Relay workbench.
 
-For detailed local operator workflows and setup guides, please refer to the [Relay Operator Guide](file:///d:/Code/relay/docs/operator-guide.md).
+For detailed local operator workflows and setup guides, please refer to the [Relay Operator Guide](operator-guide.md).
 
 ---
 

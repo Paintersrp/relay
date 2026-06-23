@@ -191,6 +191,17 @@ Relay's audit workflows are local-first and artifact-backed:
 *   Audit acceptance does **not** automatically close the run or commit code. Operators must manually execute `git commit` using conventional messages suggested by the workbench.
 *   Relay never mutates the git repository, pushes branches, or creates PRs.
 
+### Local Audit Modes
+
+| Mode | Use when | Evidence gathered |
+|---|---|---|
+| `recent_commit` | Reviewing the most recent commit in one registered repository. | Head commit metadata, changed files, bounded/redacted recent-commit diff, and local-only audit artifacts. |
+| `selected_pass_changes` | Reviewing current local changes for a managed plan/pass before or after a pass-associated run. | Registered repository git status, worktree or staged changed files/diff evidence, plan/pass identifiers, and local-only audit artifacts. |
+| `feature_slice` | Reviewing a bounded feature/system slice by repository-relative paths or search terms. | Snapshot-backed file reads, fixed-string search evidence, selected file inventory, git status, and local-only audit artifacts. |
+| `full_repository` | Performing a broad local repository health/audit scan without remote evidence. | Source snapshot inventory, repository git status, bounded metadata summaries, blockers/warnings, and local-only audit artifacts. |
+
+Local audit modes are read-only. They do not create PRs, run GitHub Actions, mutate git, run arbitrary shell commands, or replace the normal run audit/decision gates.
+
 ---
 
 ## Smoke Checks

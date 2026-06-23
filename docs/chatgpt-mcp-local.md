@@ -2,7 +2,7 @@
 
 This document details the configuration and operations for running the ChatGPT local tunnel connector with Relay.
 
-For a broader overview of the local operator layout and setup, please refer to the [Relay Operator Guide](file:///d:/Code/relay/docs/operator-guide.md). For detailed Model Context Protocol specifications and tool list, see the [MCP Specification](file:///d:/Code/relay/docs/mcp.md).
+For a broader overview of the local operator layout and setup, please refer to the [Relay Operator Guide](operator-guide.md). For detailed Model Context Protocol specifications and tool list, see the [MCP Specification](mcp.md).
 
 ---
 
