@@ -119,6 +119,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 		r.Post("/projects/{projectId}/repositories/{repoId}/update", apiH.UpdateProjectRepository)
 		r.Post("/projects/{projectId}/repositories/{repoId}/set-enabled", apiH.SetProjectRepositoryEnabled)
 		r.Get("/projects/{projectId}/audits", apiH.ListProjectLocalAudits)
+		r.Get("/projects/{projectId}/plans/{planId}/next-pass-work", apiH.GetNextPassWork)
 		r.Post("/audits/local", apiH.CreateLocalAudit)
 		r.Get("/audits/local/{auditId}", apiH.GetLocalAudit)
 		r.Post("/plans/validate", apiH.ValidatePlan)

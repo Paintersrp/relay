@@ -34,12 +34,13 @@ import (
 )
 
 type APIHandler struct {
-	store            *store.Store
-	log              *slog.Logger
-	eventHub         *events.Hub
-	planService      *plans.Service
-	projectService   *projects.Service
-	lifecycleService *plans.RunLifecycleService
+	store                  *store.Store
+	log                    *slog.Logger
+	eventHub               *events.Hub
+	planService            *plans.Service
+	projectService         *projects.Service
+	lifecycleService       *plans.RunLifecycleService
+	orchestratorWorkService *plans.OrchestratorWorkService
 }
 
 func NewAPIHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *APIHandler {
@@ -48,12 +49,13 @@ func NewAPIHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *APIHan
 		eventHub = hub[0]
 	}
 	return &APIHandler{
-		store:            s,
-		log:              log,
-		eventHub:         eventHub,
-		planService:      plans.NewService(s),
-		projectService:   projects.NewService(s),
-		lifecycleService: plans.NewRunLifecycleService(s),
+		store:                   s,
+		log:                     log,
+		eventHub:                eventHub,
+		planService:             plans.NewService(s),
+		projectService:          projects.NewService(s),
+		lifecycleService:        plans.NewRunLifecycleService(s),
+		orchestratorWorkService: plans.NewOrchestratorWorkService(s),
 	}
 }
 
@@ -3479,4 +3481,35 @@ func (h *APIHandler) CloseRun(w http.ResponseWriter, r *http.Request) {
 		"lifecycleState": mappedRun.LifecycleState,
 		"updatedAt":      mappedRun.UpdatedAt,
 	})
+}
+
+// GetNextPassWork returns the next eligible Planner work packet for a
+// project-scoped managed plan. It is a read-only endpoint.
+//
+// Route: GET /api/projects/{projectId}/plans/{planId}/next-pass-work
+//
+// HTTP 400 is returned only when the request itself is malformed (unsafe_request blocker).
+// All other business blockers (unknown_project, plan_not_active, etc.) return HTTP 200
+// with ok=false and a structured blockers array so the caller can distinguish them.
+func (h *APIHandler) GetNextPassWork(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectId")
+	planID := chi.URLParam(r, "planId")
+
+	resp, err := h.orchestratorWorkService.GetNextPassWork(r.Context(), plans.NextPassWorkRequest{
+		ProjectID: projectID,
+		PlanID:    planID,
+	})
+	if err != nil {
+		h.log.Error("GetNextPassWork internal error", "projectId", projectID, "planId", planID, "error", err)
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "an unexpected error occurred")
+		return
+	}
+
+	// HTTP 400 only for the unsafe_request blocker; everything else is a 200.
+	if !resp.OK && len(resp.Blockers) > 0 && resp.Blockers[0].Code == plans.BlockerUnsafeRequest {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", resp.Blockers[0].Message)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }

@@ -2,35 +2,71 @@
   "schema_version": "3.0.0",
   "report_kind": "relay_make_validate_latest",
   "status": "passed",
-  "created_at": "2026-06-23T21:20:59Z",
-  "base_commit_short": "734bdd9e83f0",
-  "base_commit_sha": "734bdd9e83f0e563c268c03861926a4cf5d251b0",
+  "created_at": "2026-06-23T22:35:03Z",
+  "base_commit_short": "6b034476cba5",
+  "base_commit_sha": "6b034476cba5eb47926a92c76e37b812c9f5a09e",
   "validated_source_snapshot": {
-    "captured_at": "2026-06-23T21:21:57.308Z",
+    "captured_at": "2026-06-23T22:37:11.731Z",
     "model": "base_commit_plus_worktree_diff_excluding_validation_report_artifacts",
     "worktree_dirty": true,
-    "diff_sha256": "3c6669effb92099cfc1e361c73d87082bd3357cd9fbf8ee72491d3838f8e91be",
+    "diff_sha256": "a9e840727c5d8094ecbaaad725b5b9c0678f6655c32970c1935c948fc147189c",
     "diff_name_status": [
       {
         "status": "M",
-        "path": "docs/mcp.md"
+        "path": "internal/api/api.go"
+      },
+      {
+        "status": "??",
+        "path": "internal/api/next_pass_work_test.go"
       },
       {
         "status": "M",
-        "path": "relay-contracts"
+        "path": "internal/db/queries/context_packets.sql"
+      },
+      {
+        "status": "??",
+        "path": "internal/plans/work_packets_test.go"
+      },
+      {
+        "status": "??",
+        "path": "internal/plans/work_packets.go"
+      },
+      {
+        "status": "M",
+        "path": "internal/server/routes.go"
+      },
+      {
+        "status": "M",
+        "path": "internal/store/context_packets.go"
+      },
+      {
+        "status": "M",
+        "path": "internal/store/generated/context_packets.sql.go"
       }
     ],
-    "diff_stat": "docs/mcp.md     | 8 ++++++++\n relay-contracts | 0\n 2 files changed, 8 insertions(+)",
+    "diff_stat": "internal/api/api.go                             | 57 +++++++++++++++++++------\n internal/db/queries/context_packets.sql         |  6 +++\n internal/server/routes.go                       |  1 +\n internal/store/context_packets.go               | 12 ++++++\n internal/store/generated/context_packets.sql.go | 43 +++++++++++++++++++\n 5 files changed, 107 insertions(+), 12 deletions(-)",
     "status_porcelain": [
-      " M docs/mcp.md",
-      " M relay-contracts"
+      " M internal/api/api.go",
+      " M internal/db/queries/context_packets.sql",
+      " M internal/server/routes.go",
+      " M internal/store/context_packets.go",
+      " M internal/store/generated/context_packets.sql.go",
+      "?? internal/api/next_pass_work_test.go",
+      "?? internal/plans/work_packets_test.go",
+      "?? internal/plans/work_packets.go"
     ]
   },
   "post_report_status_porcelain": [
-    " M docs/mcp.md",
     " M handoffs/validation/latest.validation-report.json",
     " M handoffs/validation/latest.validation-summary.md",
-    " M relay-contracts"
+    " M internal/api/api.go",
+    " M internal/db/queries/context_packets.sql",
+    " M internal/server/routes.go",
+    " M internal/store/context_packets.go",
+    " M internal/store/generated/context_packets.sql.go",
+    "?? internal/api/next_pass_work_test.go",
+    "?? internal/plans/work_packets_test.go",
+    "?? internal/plans/work_packets.go"
   ],
   "report_files": [
     "handoffs/validation/latest.validation-report.json",
@@ -41,8 +77,8 @@
       "step": 1,
       "name": "go-fmt-executor",
       "command": "go fmt ./internal/executor",
-      "started_at": "2026-06-23T21:20:59.308Z",
-      "completed_at": "2026-06-23T21:20:59.567Z",
+      "started_at": "2026-06-23T22:35:03.780Z",
+      "completed_at": "2026-06-23T22:35:04.313Z",
       "exit_code": 0,
       "status": "passed",
       "output_tail": "$ go fmt ./internal/executor\nexit_code: 0\n"
@@ -51,28 +87,28 @@
       "step": 2,
       "name": "go-test-executor",
       "command": "go test ./internal/executor/...",
-      "started_at": "2026-06-23T21:20:59.568Z",
-      "completed_at": "2026-06-23T21:21:00.513Z",
+      "started_at": "2026-06-23T22:35:04.314Z",
+      "completed_at": "2026-06-23T22:35:15.448Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "$ go test ./internal/executor/...\nok  \trelay/internal/executor\t(cached)\nexit_code: 0\n"
+      "output_tail": "$ go test ./internal/executor/...\nok  \trelay/internal/executor\t7.125s\nexit_code: 0\n"
     },
     {
       "step": 3,
       "name": "go-test-all",
       "command": "go test ./...",
-      "started_at": "2026-06-23T21:21:00.513Z",
-      "completed_at": "2026-06-23T21:21:39.289Z",
+      "started_at": "2026-06-23T22:35:15.448Z",
+      "completed_at": "2026-06-23T22:36:12.201Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "$ go test ./...\n?   \trelay/cmd/mcp-smoke\t[no test files]\n?   \trelay/cmd/mcpserver\t[no test files]\n?   \trelay/cmd/plan-api-smoke\t[no test files]\n?   \trelay/cmd/relay\t[no test files]\nok  \trelay/internal/api\t8.232s\nok  \trelay/internal/artifacts\t(cached)\nok  \trelay/internal/auditor\t(cached)\nok  \trelay/internal/compiler\t(cached)\nok  \trelay/internal/config\t(cached)\nok  \trelay/internal/contextpackets\t(cached)\nok  \trelay/internal/db\t(cached)\n?   \trelay/internal/devreload\t[no test files]\nok  \trelay/internal/events\t(cached)\nok  \trelay/internal/executor\t(cached)\nok  \trelay/internal/handlers\t5.593s\nok  \trelay/internal/instructions\t(cached)\nok  \trelay/internal/intake\t(cached)\nok  \trelay/internal/mcp\t21.215s\nok  \trelay/internal/pipeline\t(cached)\nok  \trelay/internal/plans\t6.111s\nok  \trelay/internal/projectmemory\t(cached)\nok  \trelay/internal/projects\t(cached)\nok  \trelay/internal/renderer\t(cached)\nok  \trelay/internal/repairer\t3.469s\nok  \trelay/internal/repos\t(cached)\nok  \trelay/internal/server\t(cached)\nok  \trelay/internal/smoke\t6.516s\nok  \trelay/internal/sources\t(cached)\nok  \trelay/internal/store\t(cached)\n?   \trelay/internal/store/generated\t[no test files]\nok  \trelay/internal/validation\t(cached)\nok  \trelay/internal/validationrunner\t(cached)\nok  \trelay/internal/views\t(cached)\nexit_code: 0\n"
+      "output_tail": "$ go test ./...\n?   \trelay/cmd/mcp-smoke\t[no test files]\n?   \trelay/cmd/mcpserver\t[no test files]\n?   \trelay/cmd/plan-api-smoke\t[no test files]\n?   \trelay/cmd/relay\t[no test files]\nok  \trelay/internal/api\t7.764s\nok  \trelay/internal/artifacts\t(cached)\nok  \trelay/internal/auditor\t6.662s\nok  \trelay/internal/compiler\t(cached)\nok  \trelay/internal/config\t(cached)\nok  \trelay/internal/contextpackets\t8.459s\nok  \trelay/internal/db\t(cached)\n?   \trelay/internal/devreload\t[no test files]\nok  \trelay/internal/events\t(cached)\nok  \trelay/internal/executor\t(cached)\nok  \trelay/internal/handlers\t(cached)\nok  \trelay/internal/instructions\t(cached)\nok  \trelay/internal/intake\t(cached)\nok  \trelay/internal/mcp\t24.673s\nok  \trelay/internal/pipeline\t(cached)\nok  \trelay/internal/plans\t(cached)\nok  \trelay/internal/projectmemory\t(cached)\nok  \trelay/internal/projects\t(cached)\nok  \trelay/internal/renderer\t(cached)\nok  \trelay/internal/repairer\t4.013s\nok  \trelay/internal/repos\t(cached)\nok  \trelay/internal/server\t(cached)\nok  \trelay/internal/smoke\t4.765s\nok  \trelay/internal/sources\t15.368s\nok  \trelay/internal/store\t(cached)\n?   \trelay/internal/store/generated\t[no test files]\nok  \trelay/internal/validation\t(cached)\nok  \trelay/internal/validationrunner\t(cached)\nok  \trelay/internal/views\t(cached)\nexit_code: 0\n"
     },
     {
       "step": 4,
       "name": "web-typecheck",
       "command": "cd apps/web && npm run typecheck",
-      "started_at": "2026-06-23T21:21:39.289Z",
-      "completed_at": "2026-06-23T21:21:47.925Z",
+      "started_at": "2026-06-23T22:36:12.202Z",
+      "completed_at": "2026-06-23T22:36:23.053Z",
       "exit_code": 0,
       "status": "passed",
       "output_tail": "$ cd apps/web && npm run typecheck\n\n> relay-web@0.1.0 typecheck\n> tsc --noEmit\n\nexit_code: 0\n"
@@ -81,11 +117,11 @@
       "step": 5,
       "name": "web-build",
       "command": "cd apps/web && npm run build",
-      "started_at": "2026-06-23T21:21:47.926Z",
-      "completed_at": "2026-06-23T21:21:57.307Z",
+      "started_at": "2026-06-23T22:36:23.053Z",
+      "completed_at": "2026-06-23T22:37:11.730Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runAuditVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runAuditVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runCompileRenderVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runCompileRenderVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runExecuteVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runExecuteVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\n\u001b[33m\u001b[33m[PLUGIN_TIMINGS] \u001b[0mYour build spent significant time in plugins. Here is a breakdown:\n  - tanstack-start-core:import-protection (78%)\n  - tanstack-start-core:import-protection-transform-cache (16%)\n  - @tanstack/devtools:remove-devtools-on-build (6%)\nSee https://rolldown.rs/options/checks#plugintimings for more details.\n\u001b[39m\nexit_code: 0\n"
+      "output_tail": "  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runAuditVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runAuditVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runCompileRenderVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runCompileRenderVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runExecuteVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runExecuteVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\n\u001b[33m\u001b[33m[PLUGIN_TIMINGS] \u001b[0mYour build spent significant time in plugins. Here is a breakdown:\n  - tanstack-start-core:import-protection (69%)\n  - tanstack-start-core:import-protection-transform-cache (21%)\n  - @tanstack/devtools:remove-devtools-on-build (7%)\nSee https://rolldown.rs/options/checks#plugintimings for more details.\n\u001b[39m\nexit_code: 0\n"
     }
   ]
 }

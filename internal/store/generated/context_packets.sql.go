@@ -225,6 +225,49 @@ func (q *Queries) GetContextPacketByID(ctx context.Context, contextPacketID stri
 	return i, err
 }
 
+const getLatestContextPacketForPass = `-- name: GetLatestContextPacketForPass :one
+SELECT id, context_packet_id, project_row_id, project_id, plan_id, pass_id, task_slug, source_snapshot_row_id, source_snapshot_id, status, packet_json_path, packet_markdown_path, coverage_report_path, source_count, covered_seed_count, blocked_seed_count, missing_seed_count, truncated, blockers_json, summary_json, created_at, completed_at FROM context_packets
+WHERE project_id = ? AND plan_id = ? AND pass_id = ?
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type GetLatestContextPacketForPassParams struct {
+	ProjectID string `json:"project_id"`
+	PlanID    string `json:"plan_id"`
+	PassID    string `json:"pass_id"`
+}
+
+func (q *Queries) GetLatestContextPacketForPass(ctx context.Context, arg GetLatestContextPacketForPassParams) (ContextPacket, error) {
+	row := q.db.QueryRowContext(ctx, getLatestContextPacketForPass, arg.ProjectID, arg.PlanID, arg.PassID)
+	var i ContextPacket
+	err := row.Scan(
+		&i.ID,
+		&i.ContextPacketID,
+		&i.ProjectRowID,
+		&i.ProjectID,
+		&i.PlanID,
+		&i.PassID,
+		&i.TaskSlug,
+		&i.SourceSnapshotRowID,
+		&i.SourceSnapshotID,
+		&i.Status,
+		&i.PacketJsonPath,
+		&i.PacketMarkdownPath,
+		&i.CoverageReportPath,
+		&i.SourceCount,
+		&i.CoveredSeedCount,
+		&i.BlockedSeedCount,
+		&i.MissingSeedCount,
+		&i.Truncated,
+		&i.BlockersJson,
+		&i.SummaryJson,
+		&i.CreatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
 const listContextPacketSources = `-- name: ListContextPacketSources :many
 SELECT id, context_packet_row_id, source_id, source_type, project_id, repo_id, source_snapshot_id, path, line_start, line_end, content_hash, snippet_hash, redaction_status, truncated, generated_at, reason, created_at FROM context_packet_sources WHERE context_packet_row_id = ? ORDER BY id ASC
 `

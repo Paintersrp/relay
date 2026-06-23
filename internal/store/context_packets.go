@@ -118,3 +118,15 @@ func (s *Store) CreateContextPacketSource(params CreateContextPacketSourceParams
 func (s *Store) ListContextPacketSources(contextPacketRowID int64) ([]ContextPacketSource, error) {
 	return s.queries.ListContextPacketSources(context.Background(), contextPacketRowID)
 }
+
+func (s *Store) GetLatestContextPacketForPass(projectID, planID, passID string) (*ContextPacket, error) {
+	packet, err := s.queries.GetLatestContextPacketForPass(context.Background(), generated.GetLatestContextPacketForPassParams{
+		ProjectID: projectID,
+		PlanID:    planID,
+		PassID:    passID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &packet, nil
+}

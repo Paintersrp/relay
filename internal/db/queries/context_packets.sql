@@ -53,3 +53,9 @@ RETURNING *;
 
 -- name: ListContextPacketSources :many
 SELECT * FROM context_packet_sources WHERE context_packet_row_id = ? ORDER BY id ASC;
+
+-- name: GetLatestContextPacketForPass :one
+SELECT * FROM context_packets
+WHERE project_id = ? AND plan_id = ? AND pass_id = ?
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
