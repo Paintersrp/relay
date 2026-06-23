@@ -16,7 +16,10 @@ const ENV_LOCAL_PATH = join(REPO_ROOT, '.env.local');
 const ENV_FILE_PATHS = [ENV_PATH, ENV_LOCAL_PATH];
 const ENV_EXAMPLE_PATH = join(REPO_ROOT, '.env.example');
 const DEFAULT_PROFILE = 'relay-mcp';
-const DEFAULT_RELAY_MCP_URL = 'http://127.0.0.1:8080/mcp';
+const DEFAULT_RELAY_MCP_URL = 'http://127.0.0.1:8081/mcp';
+const DEFAULT_TUNNEL_MCP_TRANSPORT = 'stdio';
+const RELAY_MCP_STDIO_LAUNCHER_PATH = join(REPO_ROOT, 'scripts', 'local', 'relay-mcp-stdio.mjs');
+const ALLOWED_TUNNEL_MCP_TRANSPORTS = new Set(['stdio', 'http']);
 
 class ValidationError extends Error {
   constructor(message) {
@@ -107,13 +110,21 @@ function parseOptions(args) {
 }
 
 function getConfig() {
+  const tunnelMcpTransport = process.env.TUNNEL_MCP_TRANSPORT || DEFAULT_TUNNEL_MCP_TRANSPORT;
+  if (!ALLOWED_TUNNEL_MCP_TRANSPORTS.has(tunnelMcpTransport)) {
+    throw new ValidationError(`TUNNEL_MCP_TRANSPORT must be one of: ${Array.from(ALLOWED_TUNNEL_MCP_TRANSPORTS).join(', ')}`);
+  }
+
   return {
     envPath: ENV_PATH,
     envLocalPath: ENV_LOCAL_PATH,
     envExamplePath: ENV_EXAMPLE_PATH,
     tunnelProfile: process.env.TUNNEL_PROFILE || DEFAULT_PROFILE,
     tunnelId: process.env.TUNNEL_ID || '',
+    tunnelMcpTransport,
     relayMcpUrl: process.env.RELAY_MCP_URL || DEFAULT_RELAY_MCP_URL,
+    relayMcpStdioCommand: process.env.RELAY_MCP_STDIO_COMMAND || buildDefaultRelayMcpCommand(),
+    relayMcpStdioLauncherPath: RELAY_MCP_STDIO_LAUNCHER_PATH,
     tunnelClientPath: process.env.TUNNEL_CLIENT_PATH || '',
     controlPlaneApiKey: process.env.CONTROL_PLANE_API_KEY || '',
   };
@@ -141,9 +152,13 @@ function printHelp(config) {
   console.log('Setup flow:');
   console.log(`1. Copy ${config.envExamplePath} to ${config.envPath} or ${config.envLocalPath}.`);
   console.log('2. Fill TUNNEL_ID and CONTROL_PLANE_API_KEY.');
-  console.log('3. Start Relay: go run ./cmd/relay');
-  console.log('4. Run npm run chatgpt-mcp:init');
-  console.log('5. Run npm run chatgpt-mcp:start');
+  console.log('3. Run npm run chatgpt-mcp:init once.');
+  console.log('4. Run npm run chatgpt-mcp:start for daily use.');
+  console.log('5. Keep that single terminal open while ChatGPT uses the connector.');
+  console.log('');
+  console.log('Default transport: stdio');
+  console.log(`Relay MCP command: ${config.relayMcpStdioCommand}`);
+  console.log('HTTP mode is available for advanced/dev use by setting TUNNEL_MCP_TRANSPORT=http and RELAY_MCP_URL.');
   console.log('');
   console.log('Commands:');
   console.log('  node scripts/local/chatgpt-mcp.mjs init [--skip-relay-check]');
@@ -157,15 +172,18 @@ async function runInit(config, options) {
   requireConfiguredApiKey(config, 'init');
 
   const tunnelClient = resolveTunnelClient(config);
-  if (!options.skipRelayCheck) {
+  if (config.tunnelMcpTransport === 'http' && !options.skipRelayCheck) {
     await assertRelayReachable(config.relayMcpUrl);
   }
 
-  let exitCode = await runTunnelClient(
-    tunnelClient,
-    ['init', '--profile', config.tunnelProfile, '--tunnel-id', config.tunnelId, '--mcp-server-url', config.relayMcpUrl],
-    config.controlPlaneApiKey
-  );
+  const initArgs = ['init', '--force', '--profile', config.tunnelProfile, '--tunnel-id', config.tunnelId];
+  if (config.tunnelMcpTransport === 'stdio') {
+    initArgs.push('--mcp-command', config.relayMcpStdioCommand);
+  } else {
+    initArgs.push('--mcp-server-url', config.relayMcpUrl);
+  }
+
+  let exitCode = await runTunnelClient(tunnelClient, initArgs, config.controlPlaneApiKey);
   if (exitCode !== 0) {
     return exitCode;
   }
@@ -182,13 +200,18 @@ async function runStart(config, options) {
   requireConfiguredApiKey(config, 'start');
 
   const tunnelClient = resolveTunnelClient(config);
-  if (!options.skipRelayCheck) {
+  if (config.tunnelMcpTransport === 'http' && !options.skipRelayCheck) {
     await assertRelayReachable(config.relayMcpUrl);
   }
 
   console.log('command: start');
   console.log(`profile: ${config.tunnelProfile}`);
-  console.log(`Relay MCP URL: ${config.relayMcpUrl}`);
+  console.log(`MCP transport: ${config.tunnelMcpTransport}`);
+  if (config.tunnelMcpTransport === 'stdio') {
+    console.log(`Relay MCP command: ${config.relayMcpStdioCommand}`);
+  } else {
+    console.log(`Relay MCP URL: ${config.relayMcpUrl}`);
+  }
   console.log(`tunnel ID configured: ${isConfiguredTunnelId(config.tunnelId) ? 'yes' : 'no'}`);
 
   return runTunnelClient(
@@ -206,7 +229,7 @@ async function runDoctor(config, options) {
     controlPlaneApiKeyConfigured: isConfiguredApiKey(config.controlPlaneApiKey),
     tunnelClientPath: null,
     tunnelClientResolved: false,
-    relayPing: null,
+    localCheck: null,
   };
 
   try {
@@ -221,14 +244,25 @@ async function runDoctor(config, options) {
   }
 
   if (options.skipRelayCheck) {
-    diagnostics.relayPing = 'skipped (--skip-relay-check)';
+    diagnostics.localCheck = 'skipped (--skip-relay-check)';
+  } else if (config.tunnelMcpTransport === 'stdio') {
+    try {
+      await runRelayMcpSelfTest(config);
+      diagnostics.localCheck = 'ok';
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        diagnostics.localCheck = error.message;
+      } else {
+        throw error;
+      }
+    }
   } else {
     try {
       await assertRelayReachable(config.relayMcpUrl);
-      diagnostics.relayPing = 'ok';
+      diagnostics.localCheck = 'ok';
     } catch (error) {
       if (error instanceof ValidationError) {
-        diagnostics.relayPing = error.message;
+        diagnostics.localCheck = error.message;
       } else {
         throw error;
       }
@@ -246,7 +280,7 @@ async function runDoctor(config, options) {
     return 1;
   }
 
-  if (!options.skipRelayCheck && diagnostics.relayPing !== 'ok') {
+  if (!options.skipRelayCheck && diagnostics.localCheck !== 'ok') {
     return 1;
   }
 
@@ -261,11 +295,17 @@ function printDiagnostics(config, diagnostics) {
   console.log(`env file (.env): ${diagnostics.envPathPresent ? 'present' : 'missing'}`);
   console.log(`env file (.env.local): ${diagnostics.envLocalPathPresent ? 'present' : 'missing'}`);
   console.log(`profile: ${config.tunnelProfile}`);
-  console.log(`Relay MCP URL: ${config.relayMcpUrl}`);
+  console.log(`MCP transport: ${config.tunnelMcpTransport}`);
+  if (config.tunnelMcpTransport === 'stdio') {
+    console.log(`Relay MCP command: ${config.relayMcpStdioCommand}`);
+    console.log(`local stdio self-test: ${diagnostics.localCheck ?? 'not run'}`);
+  } else {
+    console.log(`Relay MCP URL: ${config.relayMcpUrl}`);
+    console.log(`local /mcp ping: ${diagnostics.localCheck ?? 'not run'}`);
+  }
   console.log(`tunnel ID configured: ${diagnostics.tunnelIdConfigured ? 'yes' : 'no'}`);
   console.log(`control-plane key configured: ${diagnostics.controlPlaneApiKeyConfigured ? 'yes' : 'no'}`);
   console.log(`tunnel-client path: ${diagnostics.tunnelClientPath ?? 'unresolved'}`);
-  console.log(`local /mcp ping: ${diagnostics.relayPing ?? 'not run'}`);
 }
 
 function requireConfiguredTunnelId(config) {
@@ -419,7 +459,7 @@ function postJsonRpcPing(relayMcpUrl) {
     );
 
     request.on('timeout', () => {
-      request.destroy(new ValidationError(`Relay /mcp is not reachable at ${relayMcpUrl}. Start Relay first, for example: go run ./cmd/relay`));
+      request.destroy(new ValidationError(`Relay /mcp is not reachable at ${relayMcpUrl}. Start the Relay HTTP daemon first, for example: go run ./cmd/relay`));
     });
 
     request.on('error', (error) => {
@@ -431,7 +471,7 @@ function postJsonRpcPing(relayMcpUrl) {
       if (error && typeof error === 'object' && 'code' in error) {
         const errorCode = String(error.code);
         if (errorCode === 'ECONNREFUSED' || errorCode === 'ETIMEDOUT') {
-          rejectPromise(new ValidationError(`Relay /mcp is not reachable at ${relayMcpUrl}. Start Relay first, for example: go run ./cmd/relay`));
+          rejectPromise(new ValidationError(`Relay /mcp is not reachable at ${relayMcpUrl}. Start the Relay HTTP daemon first, for example: go run ./cmd/relay`));
           return;
         }
       }
@@ -441,6 +481,79 @@ function postJsonRpcPing(relayMcpUrl) {
 
     request.write(body);
     request.end();
+  });
+}
+
+function buildDefaultRelayMcpCommand() {
+  const nodePath = normalizeCommandPathForTunnel(process.execPath);
+  const launcherPath = normalizeCommandPathForTunnel(RELAY_MCP_STDIO_LAUNCHER_PATH);
+  return `${quoteCommandArgument(nodePath)} ${quoteCommandArgument(launcherPath)}`;
+}
+
+function quoteCommandArgument(value) {
+  if (value === '') {
+    return '""';
+  }
+
+  if (process.platform !== 'win32' && !/[ \t"\n]/u.test(value)) {
+    return value;
+  }
+
+  return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1')}"`;
+}
+
+function normalizeCommandPathForTunnel(value) {
+  if (process.platform !== 'win32') {
+    return value;
+  }
+
+  return value.replace(/\\/g, '/');
+}
+
+function runRelayMcpSelfTest(config) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(process.execPath, [config.relayMcpStdioLauncherPath, '--self-test'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+    });
+
+    let stdoutBuffer = '';
+    let stderrBuffer = '';
+
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      stdoutBuffer += chunk;
+    });
+
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => {
+      stderrBuffer += chunk;
+      process.stderr.write(chunk);
+    });
+
+    child.on('error', (error) => {
+      rejectPromise(new ValidationError(`Failed to start Relay MCP stdio self-test: ${error.message}`));
+    });
+
+    child.on('close', (code, signal) => {
+      if (stdoutBuffer.trim()) {
+        rejectPromise(new ValidationError(`Relay MCP stdio self-test wrote unexpected stdout: ${stdoutBuffer.trim()}`));
+        return;
+      }
+
+      if (signal) {
+        rejectPromise(new ValidationError(`Relay MCP stdio self-test exited due to signal ${signal}.`));
+        return;
+      }
+
+      if ((code ?? 1) !== 0) {
+        const suffix = stderrBuffer.trim() ? ` ${stderrBuffer.trim()}` : '';
+        rejectPromise(new ValidationError(`Relay MCP stdio self-test failed with exit code ${code ?? 1}.${suffix}`));
+        return;
+      }
+
+      resolvePromise();
+    });
   });
 }
 
