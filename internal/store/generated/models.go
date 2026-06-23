@@ -151,6 +151,53 @@ type Run struct {
 	PlanPassRowID    sql.NullInt64 `json:"plan_pass_row_id"`
 }
 
+type SourceSnapshot struct {
+	ID               int64  `json:"id"`
+	SourceSnapshotID string `json:"source_snapshot_id"`
+	ProjectRowID     int64  `json:"project_row_id"`
+	ProjectID        string `json:"project_id"`
+	SnapshotKind     string `json:"snapshot_kind"`
+	Status           string `json:"status"`
+	CreatedAt        string `json:"created_at"`
+	CompletedAt      string `json:"completed_at"`
+	SummaryJson      string `json:"summary_json"`
+}
+
+type SourceSnapshotFile struct {
+	ID                            int64  `json:"id"`
+	SourceSnapshotRepositoryRowID int64  `json:"source_snapshot_repository_row_id"`
+	Path                          string `json:"path"`
+	SizeBytes                     int64  `json:"size_bytes"`
+	ContentHash                   string `json:"content_hash"`
+	HashAlgorithm                 string `json:"hash_algorithm"`
+	Tracked                       int64  `json:"tracked"`
+	Included                      int64  `json:"included"`
+	ExclusionReason               string `json:"exclusion_reason"`
+	RedactionStatus               string `json:"redaction_status"`
+	CreatedAt                     string `json:"created_at"`
+}
+
+type SourceSnapshotRepository struct {
+	ID                     int64  `json:"id"`
+	SourceSnapshotRowID    int64  `json:"source_snapshot_row_id"`
+	ProjectRepositoryRowID int64  `json:"project_repository_row_id"`
+	RepoID                 string `json:"repo_id"`
+	Role                   string `json:"role"`
+	LocalPath              string `json:"local_path"`
+	DefaultBranch          string `json:"default_branch"`
+	CurrentBranch          string `json:"current_branch"`
+	HeadSha                string `json:"head_sha"`
+	Dirty                  int64  `json:"dirty"`
+	StagedCount            int64  `json:"staged_count"`
+	UnstagedCount          int64  `json:"unstaged_count"`
+	UntrackedCount         int64  `json:"untracked_count"`
+	ChangedFileCount       int64  `json:"changed_file_count"`
+	GitStatusAvailable     int64  `json:"git_status_available"`
+	GitError               string `json:"git_error"`
+	StatusPorcelainHash    string `json:"status_porcelain_hash"`
+	IndexedAt              string `json:"indexed_at"`
+}
+
 type ValidationExecution struct {
 	ID         int64          `json:"id"`
 	RunID      int64          `json:"run_id"`

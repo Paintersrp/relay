@@ -28,7 +28,20 @@ func TestAutoMigrateCreatesAllTables(t *testing.T) {
 		t.Fatalf("auto-migrate: %v", err)
 	}
 
-	expectedTables := []string{"repos", "runs", "artifacts", "events", "checks", "repo_roots", "agent_executions", "projects", "project_repositories"}
+	expectedTables := []string{
+		"repos",
+		"runs",
+		"artifacts",
+		"events",
+		"checks",
+		"repo_roots",
+		"agent_executions",
+		"projects",
+		"project_repositories",
+		"source_snapshots",
+		"source_snapshot_repositories",
+		"source_snapshot_files",
+	}
 	for _, table := range expectedTables {
 		var name string
 		err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name)

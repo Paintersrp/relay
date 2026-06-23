@@ -6,7 +6,7 @@
 > 
 > The Planner does **not** have status-query, run-listing, audit-submission, or downstream-dispatch MCP actions by default. Tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
 >
-> Relay now stores project/repository registry and source-policy configuration in the backend, but that PASS-002 groundwork does **not** expose Planner-facing context-broker MCP tools yet.
+> Relay now stores project/repository registry, source-policy configuration, and internal source snapshot/git evidence backend state, but PASS-003 still does **not** expose Planner-facing context-broker MCP tools yet.
 
 ---
 
