@@ -411,6 +411,78 @@ func TestGetNextAuditWork_ExplicitPassIDSelectsLatestRun(t *testing.T) {
 	}
 }
 
+func TestGetNextAuditWork_PassIDSelectsLatestAuditReadyRunIgnoresNewerNonAuditReadyRun(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	plan := seedPlan(t, st, "relay", "plan-passid-audit-ready-filter")
+	pass, err := st.GetPlanPassByPassID(plan.ID, "PASS-001")
+	if err != nil {
+		t.Fatalf("GetPass: %v", err)
+	}
+
+	repo, err := st.CreateRepo("test-repo", t.TempDir())
+	if err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+
+	// Create run 1 with audit_ready status.
+	run1, err := st.CreateRunWithAssociation(
+		repo.ID,
+		"older audit-ready run",
+		"audit_ready",
+		"", "", "", "main",
+		sql.NullInt64{Int64: plan.ID, Valid: true},
+		sql.NullInt64{Int64: pass.ID, Valid: true},
+	)
+	if err != nil {
+		t.Fatalf("CreateRun1: %v", err)
+	}
+	if _, err := st.CreateArtifact(run1.ID, "audit_packet", "packet.md", "text/markdown"); err != nil {
+		t.Fatalf("CreateArtifact packet: %v", err)
+	}
+	if _, err := st.CreateArtifact(run1.ID, "audit_evidence_manifest_json", "manifest.json", "application/json"); err != nil {
+		t.Fatalf("CreateArtifact manifest: %v", err)
+	}
+
+	// Create run 2 with non-audit-ready status (newer, higher ID).
+	run2, err := st.CreateRunWithAssociation(
+		repo.ID,
+		"newer non-audit-ready run",
+		"in_progress",
+		"", "", "", "main",
+		sql.NullInt64{Int64: plan.ID, Valid: true},
+		sql.NullInt64{Int64: pass.ID, Valid: true},
+	)
+	if err != nil {
+		t.Fatalf("CreateRun2: %v", err)
+	}
+	if run2.ID <= run1.ID {
+		t.Fatalf("expected run2 ID %d to be greater than run1 ID %d", run2.ID, run1.ID)
+	}
+
+	resp, err := svc.GetNextAuditWork(context.Background(), NextAuditWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-passid-audit-ready-filter",
+		PassID:    "PASS-001",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected ok=true, got blockers: %+v", resp.Blockers)
+	}
+	if resp.SelectedPass == nil || resp.SelectedPass.PassID != "PASS-001" {
+		t.Fatalf("expected selected PASS-001, got %+v", resp.SelectedPass)
+	}
+	if resp.SelectedRun == nil {
+		t.Fatal("expected selected run")
+	}
+	if resp.SelectedRun.RunID != strconv.FormatInt(run1.ID, 10) {
+		t.Fatalf("expected older audit-ready run %d, got %s", run1.ID, resp.SelectedRun.RunID)
+	}
+}
+
 func TestGetNextAuditWork_AutomaticEarliestSequenceSelection_Success(t *testing.T) {
 	t.Parallel()
 

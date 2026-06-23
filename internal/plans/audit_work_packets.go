@@ -242,30 +242,40 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 			}), nil
 		}
 
-		// Select latest run for this pass.
+		// Select the latest audit-ready run for this pass that has not already been finalized.
 		runs, err := svc.store.ListRunsByPlanPass(pass.ID)
 		if err != nil {
 			return NextAuditWorkResponse{}, fmt.Errorf("list runs for pass %q: %w", passID, err)
 		}
 
-		if len(runs) == 0 {
+		var candidate *store.Run
+		for i := range runs {
+			r := &runs[i]
+			if r.Status != "audit_ready" && r.Status != "audit_ready_for_review" {
+				continue
+			}
+			finalized, err := svc.isRunFinalized(r, pass.Status)
+			if err != nil {
+				return NextAuditWorkResponse{}, err
+			}
+			if finalized {
+				continue
+			}
+			if candidate == nil || r.ID > candidate.ID {
+				candidate = r
+			}
+		}
+
+		if candidate == nil {
 			return auditBlockerResponse(WorkBlocker{
 				Code:        BlockerNoAuditWork,
-				Message:     fmt.Sprintf("no runs found for pass %q", passID),
+				Message:     fmt.Sprintf("no audit-ready non-finalized runs found for pass %q", passID),
 				Recoverable: true,
 			}), nil
 		}
 
-		// Find the latest run (highest ID).
-		var latestRun store.Run
-		for i := range runs {
-			if latestRun.ID == 0 || runs[i].ID > latestRun.ID {
-				latestRun = runs[i]
-			}
-		}
-
 		selectedPass = pass
-		selectedRun = &latestRun
+		selectedRun = candidate
 
 	} else {
 		// Automatic selection.
