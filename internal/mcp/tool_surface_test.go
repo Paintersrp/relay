@@ -24,6 +24,10 @@ func TestDefaultLocalOperatorToolSurfaceIncludesAllSafeTools(t *testing.T) {
 		"list_project_files",
 		"search_project_files",
 		"read_project_file",
+		"get_repository_git_status",
+		"get_repository_recent_commit",
+		"list_repository_changed_files",
+		"get_repository_diff",
 		"create_context_packet",
 		"get_context_packet",
 	}
@@ -59,6 +63,10 @@ func TestRestrictedToolSurfaceHidesBrokerTools(t *testing.T) {
 		"list_project_files",
 		"search_project_files",
 		"read_project_file",
+		"get_repository_git_status",
+		"get_repository_recent_commit",
+		"list_repository_changed_files",
+		"get_repository_diff",
 		"create_context_packet",
 		"get_context_packet",
 	}
@@ -73,7 +81,7 @@ func TestRestrictedToolSurfaceHidesBrokerTools(t *testing.T) {
 
 func TestRestrictedBrokerToolCallIsUnknown(t *testing.T) {
 	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileRestricted})
-	
+
 	reqJSON := `{
 		"jsonrpc": "2.0",
 		"id": 1,
@@ -83,17 +91,47 @@ func TestRestrictedBrokerToolCallIsUnknown(t *testing.T) {
 			"arguments": {}
 		}
 	}`
-	
+
 	resp := srv.handleLine([]byte(reqJSON))
-	
+
 	if resp.Error == nil {
 		t.Fatal("expected error calling broker tool in restricted mode, got success")
 	}
-	
+
 	if resp.Error.Code != CodeMethodNotFound {
 		t.Errorf("expected error code %d (CodeMethodNotFound), got %d", CodeMethodNotFound, resp.Error.Code)
 	}
-	
+
+	if !strings.Contains(resp.Error.Message, "unknown tool") {
+		t.Errorf("expected error message to contain 'unknown tool', got %q", resp.Error.Message)
+	}
+}
+
+func TestRestrictedGitBrokerToolCallIsUnknown(t *testing.T) {
+	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileRestricted})
+
+	reqJSON := `{
+		"jsonrpc": "2.0",
+		"id": 1,
+		"method": "tools/call",
+		"params": {
+			"name": "get_repository_diff",
+			"arguments": {
+				"project_id": "relay",
+				"repo_id": "relay",
+				"mode": "worktree"
+			}
+		}
+	}`
+
+	resp := srv.handleLine([]byte(reqJSON))
+
+	if resp.Error == nil {
+		t.Fatal("expected error calling git broker tool in restricted mode, got success")
+	}
+	if resp.Error.Code != CodeMethodNotFound {
+		t.Errorf("expected error code %d (CodeMethodNotFound), got %d", CodeMethodNotFound, resp.Error.Code)
+	}
 	if !strings.Contains(resp.Error.Message, "unknown tool") {
 		t.Errorf("expected error message to contain 'unknown tool', got %q", resp.Error.Message)
 	}

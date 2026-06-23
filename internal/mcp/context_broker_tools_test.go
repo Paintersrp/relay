@@ -63,8 +63,8 @@ func TestServerToolsList_ContextBrokerEnabled(t *testing.T) {
 			t.Fatalf("expected broker tool %q when enabled", name)
 		}
 	}
-	if len(list.Tools) != 16 {
-		t.Fatalf("expected 16 total tools when broker is enabled, got %d", len(list.Tools))
+	if len(list.Tools) != 20 {
+		t.Fatalf("expected 20 total tools when broker is enabled, got %d", len(list.Tools))
 	}
 }
 
@@ -101,16 +101,20 @@ func TestContextBrokerToolSchemasAreBoundedAndSafe(t *testing.T) {
 func TestContextBrokerToolsRejectUnknownFields(t *testing.T) {
 	fixture := setupBrokerFixture(t)
 	argsByTool := map[string]string{
-		"get_project":            `{"project_id":"relay","unexpected":true}`,
-		"get_plan":               `{"plan_id":"plan-123","unexpected":true}`,
-		"get_pass":               `{"plan_id":"plan-123","pass_id":"PASS-001","unexpected":true}`,
-		"get_pass_context":       `{"plan_id":"plan-123","pass_id":"PASS-001","unexpected":true}`,
-		"create_source_snapshot": `{"project_id":"relay","unexpected":true}`,
-		"list_project_files":     `{"project_id":"relay","unexpected":true}`,
-		"search_project_files":   `{"project_id":"relay","pattern":"needle","unexpected":true}`,
-		"read_project_file":      `{"project_id":"relay","repo_id":"relay","path":"src/app.txt","unexpected":true}`,
-		"create_context_packet":  `{"project_id":"relay","task_slug":"broker-unknown","source_snapshot_id":"srcsnap-test","include_inventory":true,"unexpected":true}`,
-		"get_context_packet":     `{"context_packet_id":"ctxpkt-test","unexpected":true}`,
+		"get_project":                   `{"project_id":"relay","unexpected":true}`,
+		"get_plan":                      `{"plan_id":"plan-123","unexpected":true}`,
+		"get_pass":                      `{"plan_id":"plan-123","pass_id":"PASS-001","unexpected":true}`,
+		"get_pass_context":              `{"plan_id":"plan-123","pass_id":"PASS-001","unexpected":true}`,
+		"create_source_snapshot":        `{"project_id":"relay","unexpected":true}`,
+		"list_project_files":            `{"project_id":"relay","unexpected":true}`,
+		"search_project_files":          `{"project_id":"relay","pattern":"needle","unexpected":true}`,
+		"read_project_file":             `{"project_id":"relay","repo_id":"relay","path":"src/app.txt","unexpected":true}`,
+		"get_repository_git_status":     `{"project_id":"relay","repo_id":"relay","unexpected":true}`,
+		"get_repository_recent_commit":  `{"project_id":"relay","repo_id":"relay","unexpected":true}`,
+		"list_repository_changed_files": `{"project_id":"relay","repo_id":"relay","mode":"worktree","unexpected":true}`,
+		"get_repository_diff":           `{"project_id":"relay","repo_id":"relay","mode":"worktree","unexpected":true}`,
+		"create_context_packet":         `{"project_id":"relay","task_slug":"broker-unknown","source_snapshot_id":"srcsnap-test","include_inventory":true,"unexpected":true}`,
+		"get_context_packet":            `{"context_packet_id":"ctxpkt-test","unexpected":true}`,
 	}
 	for toolName, raw := range argsByTool {
 		t.Run(toolName, func(t *testing.T) {
@@ -357,6 +361,177 @@ func TestHandleReadProjectFileReturnsProvenanceAndStaleBlocker(t *testing.T) {
 	}
 }
 
+func TestHandleRepositoryGitToolsReturnBoundedEvidence(t *testing.T) {
+	fixture := setupBrokerFixture(t)
+	brokerWriteFile(t, filepath.Join(fixture.repoRoot, "src", "changed.txt"), "changed one\n")
+	brokerWriteFile(t, filepath.Join(fixture.repoRoot, "src", "changed-two.txt"), "changed two\n")
+	brokerRunGit(t, fixture.repoRoot, "add", "src/changed.txt", "src/changed-two.txt")
+	brokerWriteFile(t, filepath.Join(fixture.repoRoot, "src", "app.txt"), "line one\nchanged\nneedle\n")
+
+	statusResult := callTool(t, fixture.server, ToolGetRepositoryGitStatus.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"repo_id":"relay"
+	}`))
+	if statusResult.IsError {
+		t.Fatalf("unexpected status error: %s", statusResult.Content[0].Text)
+	}
+	statusSuccess := decodeBrokerSuccess(t, statusResult)
+	var statusPayload struct {
+		ProjectID          string `json:"project_id"`
+		RepoID             string `json:"repo_id"`
+		GeneratedAt        string `json:"generated_at"`
+		RedactionStatus    string `json:"redaction_status"`
+		Truncated          bool   `json:"truncated"`
+		Dirty              bool   `json:"dirty"`
+		StagedCount        int    `json:"staged_count"`
+		UnstagedCount      int    `json:"unstaged_count"`
+		GitStatusAvailable bool   `json:"git_status_available"`
+	}
+	if err := json.Unmarshal(statusSuccess.Result, &statusPayload); err != nil {
+		t.Fatalf("unmarshal status payload: %v", err)
+	}
+	if statusPayload.ProjectID != "relay" || statusPayload.RepoID != "relay" || statusPayload.GeneratedAt == "" || statusPayload.RedactionStatus != sources.RedactionStatusNotNeeded || statusPayload.Truncated {
+		t.Fatalf("unexpected status provenance: %+v", statusPayload)
+	}
+	if !statusPayload.Dirty || statusPayload.StagedCount != 2 || statusPayload.UnstagedCount == 0 || !statusPayload.GitStatusAvailable {
+		t.Fatalf("unexpected status counts: %+v", statusPayload)
+	}
+
+	commitResult := callTool(t, fixture.server, ToolGetRepositoryRecentCommit.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"repo_id":"relay"
+	}`))
+	if commitResult.IsError {
+		t.Fatalf("unexpected recent commit error: %s", commitResult.Content[0].Text)
+	}
+	if strings.Contains(commitResult.Content[0].Text, "author_email") || strings.Contains(commitResult.Content[0].Text, fixture.repoRoot) {
+		t.Fatalf("recent commit leaked disallowed data: %s", commitResult.Content[0].Text)
+	}
+
+	filesResult := callTool(t, fixture.server, ToolListRepositoryChangedFiles.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"repo_id":"relay",
+		"mode":"staged",
+		"max_results":1
+	}`))
+	if filesResult.IsError {
+		t.Fatalf("unexpected changed files error: %s", filesResult.Content[0].Text)
+	}
+	filesSuccess := decodeBrokerSuccess(t, filesResult)
+	var filesPayload struct {
+		ProjectID       string `json:"project_id"`
+		RepoID          string `json:"repo_id"`
+		GeneratedAt     string `json:"generated_at"`
+		RedactionStatus string `json:"redaction_status"`
+		Truncated       bool   `json:"truncated"`
+		Mode            string `json:"mode"`
+		MaxResults      int    `json:"max_results"`
+		Files           []struct {
+			Path string `json:"path"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal(filesSuccess.Result, &filesPayload); err != nil {
+		t.Fatalf("unmarshal changed files payload: %v", err)
+	}
+	if filesPayload.ProjectID != "relay" || filesPayload.RepoID != "relay" || filesPayload.GeneratedAt == "" || filesPayload.RedactionStatus != sources.RedactionStatusNotNeeded {
+		t.Fatalf("unexpected changed files provenance: %+v", filesPayload)
+	}
+	if filesPayload.Mode != sources.DiffModeStaged || filesPayload.MaxResults != 1 || len(filesPayload.Files) != 1 || !filesPayload.Truncated {
+		t.Fatalf("expected capped changed files result, got %+v", filesPayload)
+	}
+
+	diffResult := callTool(t, fixture.server, ToolGetRepositoryDiff.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"repo_id":"relay",
+		"mode":"worktree",
+		"max_bytes":128,
+		"context_lines":1
+	}`))
+	if diffResult.IsError {
+		t.Fatalf("unexpected diff error: %s", diffResult.Content[0].Text)
+	}
+	if strings.Contains(diffResult.Content[0].Text, fixture.repoRoot) || strings.Contains(diffResult.Content[0].Text, "local_path") {
+		t.Fatalf("diff leaked local path data: %s", diffResult.Content[0].Text)
+	}
+	diffSuccess := decodeBrokerSuccess(t, diffResult)
+	var diffPayload struct {
+		ProjectID       string `json:"project_id"`
+		RepoID          string `json:"repo_id"`
+		GeneratedAt     string `json:"generated_at"`
+		RedactionStatus string `json:"redaction_status"`
+		Truncated       bool   `json:"truncated"`
+		Mode            string `json:"mode"`
+		Content         string `json:"content"`
+		ContentHash     string `json:"content_hash"`
+		MaxBytes        int    `json:"max_bytes"`
+	}
+	if err := json.Unmarshal(diffSuccess.Result, &diffPayload); err != nil {
+		t.Fatalf("unmarshal diff payload: %v", err)
+	}
+	if diffPayload.ProjectID != "relay" || diffPayload.RepoID != "relay" || diffPayload.GeneratedAt == "" || diffPayload.Mode != sources.DiffModeWorktree {
+		t.Fatalf("unexpected diff provenance: %+v", diffPayload)
+	}
+	if diffPayload.MaxBytes != 128 || diffPayload.ContentHash == "" || diffPayload.RedactionStatus == "" || diffPayload.Content == "" {
+		t.Fatalf("expected bounded diff metadata and content, got %+v", diffPayload)
+	}
+}
+
+func TestHandleRepositoryGitToolsValidateScopeAndMode(t *testing.T) {
+	fixture := setupBrokerFixture(t)
+	for name, raw := range map[string]json.RawMessage{
+		"missing project": json.RawMessage(`{"repo_id":"relay"}`),
+		"missing repo":    json.RawMessage(`{"project_id":"relay"}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			result := callTool(t, fixture.server, ToolGetRepositoryGitStatus.Name, raw)
+			if !result.IsError {
+				t.Fatalf("expected validation error")
+			}
+			errEnvelope := decodeBrokerError(t, result)
+			if errEnvelope.Error.Code != "VALIDATION_ERROR" {
+				t.Fatalf("expected VALIDATION_ERROR, got %+v", errEnvelope)
+			}
+		})
+	}
+
+	result := callTool(t, fixture.server, ToolGetRepositoryDiff.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"repo_id":"relay",
+		"mode":"everything"
+	}`))
+	if !result.IsError {
+		t.Fatalf("expected unsupported mode error")
+	}
+	if errEnvelope := decodeBrokerError(t, result); errEnvelope.Error.Code != "VALIDATION_ERROR" {
+		t.Fatalf("expected VALIDATION_ERROR, got %+v", errEnvelope)
+	}
+
+	result = callTool(t, fixture.server, ToolGetRepositoryGitStatus.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"repo_id":"unknown"
+	}`))
+	if !result.IsError {
+		t.Fatalf("expected unknown repo error")
+	}
+	if errEnvelope := decodeBrokerError(t, result); errEnvelope.Error.Code != "NOT_FOUND" {
+		t.Fatalf("expected NOT_FOUND, got %+v", errEnvelope)
+	}
+}
+
+func TestHandleRepositoryGitToolsRequireStore(t *testing.T) {
+	srv := NewServer(discardLogger(), &MCPDeps{ContextBrokerEnabled: true})
+	result := callTool(t, srv, ToolGetRepositoryGitStatus.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"repo_id":"relay"
+	}`))
+	if !result.IsError {
+		t.Fatalf("expected dependency error")
+	}
+	if errEnvelope := decodeBrokerError(t, result); errEnvelope.Error.Code != "DEPENDENCY_ERROR" {
+		t.Fatalf("expected DEPENDENCY_ERROR, got %+v", errEnvelope)
+	}
+}
+
 func TestHandleCreateAndGetContextPacketMetadata(t *testing.T) {
 	fixture := setupBrokerFixture(t)
 	packetID := createContextPacketViaTool(t, fixture, "metadata")
@@ -567,6 +742,10 @@ func brokerToolNames() []string {
 		"list_project_files",
 		"search_project_files",
 		"read_project_file",
+		"get_repository_git_status",
+		"get_repository_recent_commit",
+		"list_repository_changed_files",
+		"get_repository_diff",
 		"create_context_packet",
 		"get_context_packet",
 	}

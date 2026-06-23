@@ -802,6 +802,10 @@ func contextBrokerToolDefinitions() []ToolDefinition {
 		ToolListProjectFiles,
 		ToolSearchProjectFiles,
 		ToolReadProjectFile,
+		ToolGetRepositoryGitStatus,
+		ToolGetRepositoryRecentCommit,
+		ToolListRepositoryChangedFiles,
+		ToolGetRepositoryDiff,
 		ToolCreateContextPacket,
 		ToolGetContextPacket,
 	}

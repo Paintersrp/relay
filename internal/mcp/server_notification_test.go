@@ -104,6 +104,10 @@ func TestServerToolsList_ExactMatch(t *testing.T) {
 		"list_project_files",
 		"search_project_files",
 		"read_project_file",
+		"get_repository_git_status",
+		"get_repository_recent_commit",
+		"list_repository_changed_files",
+		"get_repository_diff",
 		"create_context_packet",
 		"get_context_packet",
 	}
@@ -155,6 +159,10 @@ func TestServerToolsList_BrokerEnabled_ExactMatch(t *testing.T) {
 		"list_project_files",
 		"search_project_files",
 		"read_project_file",
+		"get_repository_git_status",
+		"get_repository_recent_commit",
+		"list_repository_changed_files",
+		"get_repository_diff",
 		"create_context_packet",
 		"get_context_packet",
 	}
@@ -185,4 +193,3 @@ func TestHandleLineWithSkipPingRequestResponds(t *testing.T) {
 		t.Fatalf("expected ping success, got error %+v", resp.Error)
 	}
 }
-

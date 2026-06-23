@@ -13,14 +13,41 @@ import (
 func TestIsAllowedGitCommandRejectsMutation(t *testing.T) {
 	t.Parallel()
 
-	if isAllowedGitCommand([]string{"commit", "-m", "bad"}) {
-		t.Fatal("expected commit to be rejected")
+	for _, args := range [][]string{
+		{"checkout", "main"},
+		{"reset", "--hard"},
+		{"push", "origin", "main"},
+		{"commit", "-m", "bad"},
+		{"merge", "main"},
+		{"rebase", "main"},
+		{"tag", "v1.0.0"},
+		{"add", "."},
+		{"restore", "."},
+		{"clean", "-fd"},
+	} {
+		if isAllowedGitCommand(args) {
+			t.Fatalf("expected git %s to be rejected", strings.Join(args, " "))
+		}
 	}
-	if isAllowedGitCommand([]string{"checkout", "main"}) {
-		t.Fatal("expected checkout to be rejected")
-	}
-	if !isAllowedGitCommand([]string{"rev-parse", "HEAD"}) {
-		t.Fatal("expected rev-parse HEAD to be allowed")
+}
+
+func TestIsAllowedGitCommandAllowsReadOnlyEvidenceCommands(t *testing.T) {
+	t.Parallel()
+
+	for _, args := range [][]string{
+		{"rev-parse", "--abbrev-ref", "HEAD"},
+		{"rev-parse", "HEAD"},
+		{"status", "--porcelain=v1", "-z"},
+		{"ls-files", "-z"},
+		{"show", "-s", "--format=%H%x00%an%x00%ae%x00%aI%x00%s", "HEAD"},
+		{"diff", "--name-status", "--no-ext-diff", "-z"},
+		{"diff", "--cached", "--name-status", "--no-ext-diff", "-z"},
+		{"diff", "--no-ext-diff", "--unified=3", "--"},
+		{"diff", "--cached", "--no-ext-diff", "--unified=3", "--"},
+	} {
+		if !isAllowedGitCommand(args) {
+			t.Fatalf("expected git %s to be allowed", strings.Join(args, " "))
+		}
 	}
 }
 

@@ -228,6 +228,26 @@ func (s *Server) handleToolsCall(req Request) Response {
 			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 		}
 		result = s.HandleReadProjectFile(args)
+	case "get_repository_git_status":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGetRepositoryGitStatus(args)
+	case "get_repository_recent_commit":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGetRepositoryRecentCommit(args)
+	case "list_repository_changed_files":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleListRepositoryChangedFiles(args)
+	case "get_repository_diff":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGetRepositoryDiff(args)
 	case "create_context_packet":
 		if !s.contextBrokerEnabled() {
 			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
