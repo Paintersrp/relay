@@ -379,11 +379,15 @@ The MCP subprocess and the HTTP daemon (`cmd/relay`) share the same SQLite datab
 
 > **Dev-Only Note:** This section describes local development validation of the remote `/mcp` endpoint and may exercise broader dev/server tool inventory, but does not redefine the current Planner Project-facing MCP action surface. For the Planner Project, the current submission actions are `create_run_from_planner_handoff` and `submit_planner_pass_plan` unless Project configuration deliberately changes.
 
-Relay exposes `/mcp` through the Go daemon (`cmd/relay`) for ChatGPT-facing remote MCP access. During local development, ChatGPT connects through an HTTPS tunnel (e.g. `ssh -R` or `ngrok`) that forwards to the local daemon.
+### ChatGPT Local Tunnel
+
+Relay exposes `/mcp` through the Go daemon (`cmd/relay`) for ChatGPT-facing remote MCP access. For local development, the preferred repo workflow is the Node-based OpenAI Secure MCP Tunnel flow documented in `docs/chatgpt-mcp-local.md`, which forwards ChatGPT traffic to Relay's existing `cmd/relay` `/mcp` endpoint.
+
+Configure the tunnel variables in the repo root `.env` or `.env.local` files, using `.env.example` as the placeholder template.
 
 The current `/mcp` endpoint uses No Auth; this is a temporary development proof only. Production use **must** restore authentication before exposing the endpoint beyond local validation.
 
-Local stdio MCP (the `relay-mcpserver` binary), if retained, is optional/dev-only and is not the primary ChatGPT integration path. Remote HTTPS MCP is the intended ChatGPT integration channel.
+Local stdio MCP (the `relay-mcpserver` binary), if retained, is optional/dev-only and is not the primary ChatGPT tunnel path. GPT-facing action boundaries remain unchanged. Remote HTTPS MCP through the existing `/mcp` endpoint is the intended ChatGPT integration channel.
 
 ---
 
