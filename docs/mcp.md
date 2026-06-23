@@ -157,8 +157,8 @@ When `RELAY_MCP_CONTEXT_BROKER_ENABLED=true`, Relay additionally registers 10 PA
 ```json
 {
   "planner_handoff_markdown": "string (required) — full handoff markdown content",
-  "repo_target": "string (optional) — falls back to frontmatter repo/repo_target",
-  "branch_context": "string (optional) — falls back to frontmatter branch_context or 'main'",
+  "repo_target": "string (optional) — falls back to handoff metadata/frontmatter repo_target",
+  "branch_context": "string (optional) — falls back to handoff metadata/frontmatter branch_context or 'main'",
   "name": "string (optional) — run title",
   "source": "string (optional) — default 'mcp_chat'",
   "client_trace_id": "string (optional)",
@@ -167,15 +167,17 @@ When `RELAY_MCP_CONTEXT_BROKER_ENABLED=true`, Relay additionally registers 10 PA
 }
 ```
 
-**Output:** `ok`, `tool`, `run_id`, `status`, `lifecycle_state`, `review_url`, `artifact_kinds`, `validation_summary`, `plan_id` (when associated), `pass_id` (when associated)
+**Output:** `ok`, `tool`, `run_id`, `status`, `lifecycle_state`, `review_url`, `artifact_kinds`, `validation_summary`, `plan_id` (when associated), `pass_id` (when associated), `provenance`
 
-**Uses:** same intake semantics as `POST /api/intake/planner-handoff`. Creates real run/artifacts/checks/events through existing Relay store services.
+**Uses:** durable planner handoff markdown as the only submission payload. Creates real run/artifacts/checks/events plus a `run_submission_provenance` row and `planner_handoff_provenance.json` artifact.
 
 **Plan/pass association behavior:**
 - `pass_id` requires `plan_id`.
-- When `plan_id`/`pass_id` point to an existing plan/pass, the new run is associated with that pass and the pass status moves to `in_progress`.
+- Unknown `plan_id`, unknown `pass_id`, terminal pass status (`completed`/`skipped`), or explicit handoff/plan metadata conflicts reject submission and create no run.
+- When `plan_id`/`pass_id` point to an existing open plan/pass, the new run is associated with that pass and the pass status moves to `in_progress` only after run creation and provenance persistence succeed.
 - Audit acceptance for an associated run moves the pass to `completed`.
 - Audit revision for an associated run keeps/returns the pass to `in_progress`.
+- Provenance records include the handoff SHA-256, byte length, bounded handoff metadata, source/client trace data, optional plan/pass association, and optional `context_packet_id` / `source_snapshot_id`.
 
 ---
 
@@ -208,9 +210,9 @@ No artifact content, no logs, no diffs are returned.
 }
 ```
 
-**Output:** `ok`, `tool`, `run_id`, `title`, `repo`, `branch`, `status`, `lifecycle_state`, `active_step`, `artifact_kinds` (names only), `latest_event_summaries` (latest 10 messages/levels), `review_url`
+**Output:** `ok`, `tool`, `run_id`, `title`, `repo`, `branch`, `status`, `lifecycle_state`, `active_step`, `artifact_kinds` (names only), `latest_event_summaries` (latest 10 messages/levels), `review_url`, optional `plan_id`, `pass_id`, optional `plan_row_id`, `plan_pass_row_id`, and bounded `provenance`
 
-No full artifact contents, no log dumps, no secrets.
+No full artifact contents, no log dumps, no secrets, and no full handoff markdown.
 
 ---
 

@@ -47,6 +47,7 @@ type createRunOutput struct {
 	ValidationSummary intake.ValidationSummary `json:"validation_summary"`
 	PlanID            string                   `json:"plan_id,omitempty"`
 	PassID            string                   `json:"pass_id,omitempty"`
+	Provenance        intake.ProvenanceSummary `json:"provenance"`
 }
 
 // HandleCreateRunFromPlannerHandoff implements the create_run_from_planner_handoff MCP tool.
@@ -76,6 +77,7 @@ func (s *Server) HandleCreateRunFromPlannerHandoff(rawArgs json.RawMessage) Tool
 		BranchContext: input.BranchContext,
 		Name:          input.Name,
 		Source:        source,
+		ClientTraceID: input.ClientTraceID,
 		PlanID:        input.PlanID,
 		PassID:        input.PassID,
 	})
@@ -98,6 +100,7 @@ func (s *Server) HandleCreateRunFromPlannerHandoff(rawArgs json.RawMessage) Tool
 		ValidationSummary: out.ValidationSummary,
 		PlanID:            out.PlanID,
 		PassID:            out.PassID,
+		Provenance:        out.Provenance,
 	}
 
 	text, err := marshalTool(result)

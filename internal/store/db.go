@@ -312,6 +312,14 @@ func (s *Store) GetPlanByPlanID(planID string) (*Plan, error) {
 	return &plan, nil
 }
 
+func (s *Store) GetPlan(id int64) (*Plan, error) {
+	plan, err := s.queries.GetPlan(context.Background(), id)
+	if err != nil {
+		return nil, err
+	}
+	return &plan, nil
+}
+
 func (s *Store) ListPlans(limit int64) ([]Plan, error) {
 	return s.queries.ListPlans(context.Background(), limit)
 }

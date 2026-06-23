@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -525,6 +527,12 @@ func TestHandleCreateRunFromPlannerHandoff_Success(t *testing.T) {
 	if !contains(out.ReviewURL, "/runs/") {
 		t.Errorf("expected review_url to contain /runs/, got %q", out.ReviewURL)
 	}
+	if out.Provenance.PlannerHandoffSHA256 == "" {
+		t.Fatal("expected provenance hash in create run output")
+	}
+	if out.Provenance.ArtifactKind != "planner_handoff_provenance_json" {
+		t.Fatalf("expected provenance artifact kind, got %q", out.Provenance.ArtifactKind)
+	}
 }
 
 func TestHandleCreateRunFromPlannerHandoff_PlanOnlyAssociation(t *testing.T) {
@@ -699,6 +707,341 @@ func TestHandleCreateRunFromPlannerHandoff_UnknownPassRejected(t *testing.T) {
 	}
 	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 		t.Fatalf("expected no run rows, got %d", got)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoff_PassNotOpenRejected(t *testing.T) {
+	for _, status := range []string{"completed", "skipped"} {
+		t.Run(status, func(t *testing.T) {
+			deps := setupTestDeps(t)
+			srv := NewServer(discardLogger(), deps)
+
+			planArgs, _ := json.Marshal(map[string]string{
+				"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+			})
+			planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
+			if planResult.IsError {
+				t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
+			}
+
+			plan, err := deps.Store.GetPlanByPlanID("plan-123")
+			if err != nil {
+				t.Fatalf("get plan: %v", err)
+			}
+			pass, err := deps.Store.GetPlanPassByPassID(plan.ID, "PASS-001")
+			if err != nil {
+				t.Fatalf("get pass: %v", err)
+			}
+			if _, err := deps.Store.UpdatePlanPassStatus(pass.ID, status); err != nil {
+				t.Fatalf("seed pass status %q: %v", status, err)
+			}
+
+			args, _ := json.Marshal(map[string]string{
+				"planner_handoff_markdown": "---\ntitle: Closed Pass Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Closed Pass Run\n\nContent.",
+				"repo_target":              "test-repo",
+				"plan_id":                  "plan-123",
+				"pass_id":                  "PASS-001",
+			})
+			result := srv.HandleCreateRunFromPlannerHandoff(args)
+			if !result.IsError {
+				t.Fatal("expected closed pass to reject associated run creation")
+			}
+			if !contains(result.Content[0].Text, "PASS_NOT_OPEN") {
+				t.Fatalf("expected PASS_NOT_OPEN, got: %s", result.Content[0].Text)
+			}
+			if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+				t.Fatalf("expected no run rows, got %d", got)
+			}
+			if got := countTableRows(t, deps.Store.DB(), "run_submission_provenance"); got != 0 {
+				t.Fatalf("expected no provenance rows, got %d", got)
+			}
+
+			reloadedPass, err := deps.Store.GetPlanPass(pass.ID)
+			if err != nil {
+				t.Fatalf("reload pass: %v", err)
+			}
+			if reloadedPass.Status != status {
+				t.Fatalf("expected pass to remain %q, got %q", status, reloadedPass.Status)
+			}
+		})
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoff_ManagedPassMismatchRejected(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	planArgs, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+	})
+	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
+	if planResult.IsError {
+		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
+	}
+
+	markdown := "# Planner Handoff: Mismatch\n\n" +
+		"## Artifact Metadata\n\n" +
+		"```yaml\n" +
+		"repo_target: test-repo\n" +
+		"branch_context: main\n" +
+		"managed_plan_pass: PASS-001\n" +
+		"managed_plan_pass_name: First pass\n" +
+		"```\n\n" +
+		"# Body\n"
+	args, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": markdown,
+		"plan_id":                  "plan-123",
+		"pass_id":                  "PASS-002",
+	})
+	result := srv.HandleCreateRunFromPlannerHandoff(args)
+	if !result.IsError {
+		t.Fatal("expected managed_plan_pass mismatch to reject associated run creation")
+	}
+	if !contains(result.Content[0].Text, "VALIDATION_ERROR") {
+		t.Fatalf("expected VALIDATION_ERROR, got: %s", result.Content[0].Text)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+		t.Fatalf("expected no run rows, got %d", got)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoff_PlanRepoConflictRejected(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	planArgs, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+	})
+	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
+	if planResult.IsError {
+		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
+	}
+
+	args, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": "---\ntitle: Repo Conflict Run\nrepo_target: other-repo\nbranch_context: main\n---\n\n# Repo Conflict Run\n\nContent.",
+		"repo_target":              "other-repo",
+		"plan_id":                  "plan-123",
+	})
+	result := srv.HandleCreateRunFromPlannerHandoff(args)
+	if !result.IsError {
+		t.Fatal("expected conflicting repo_target to reject plan-associated run creation")
+	}
+	if !contains(result.Content[0].Text, "VALIDATION_ERROR") {
+		t.Fatalf("expected VALIDATION_ERROR, got: %s", result.Content[0].Text)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+		t.Fatalf("expected no run rows, got %d", got)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoff_ProvenanceRecorded(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	planArgs, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+	})
+	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
+	if planResult.IsError {
+		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
+	}
+
+	markdown := "# Planner Handoff: Provenance\n\n" +
+		"## Artifact Metadata\n\n" +
+		"```yaml\n" +
+		"handoff_id: planner-handoff-2026-06-23-provenance\n" +
+		"repo_target: test-repo\n" +
+		"branch_context: main\n" +
+		"intended_handoff_path: handoffs/planner/2026-06-23_provenance.planner-handoff.md\n" +
+		"managed_plan_pass: PASS-002\n" +
+		"managed_plan_pass_name: Store plans\n" +
+		"context_packet_id: ctxpkt-123\n" +
+		"source_snapshot_id: srcsnap-456\n" +
+		"```\n\n" +
+		"<context_snapshot>\n" +
+		"Only durable execution context belongs here.\n" +
+		"</context_snapshot>\n"
+
+	args, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": markdown,
+		"plan_id":                  "plan-123",
+		"pass_id":                  "PASS-002",
+		"client_trace_id":          "trace-123",
+		"source":                   "mcp_test",
+	})
+	result := srv.HandleCreateRunFromPlannerHandoff(args)
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.Content[0].Text)
+	}
+
+	var out createRunOutput
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &out); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if out.Provenance.SourceArtifactPath != "handoffs/planner/2026-06-23_provenance.planner-handoff.md" {
+		t.Fatalf("unexpected provenance source_artifact_path: %q", out.Provenance.SourceArtifactPath)
+	}
+	if out.Provenance.ContextPacketID != "ctxpkt-123" {
+		t.Fatalf("unexpected context_packet_id: %q", out.Provenance.ContextPacketID)
+	}
+	if out.Provenance.SourceSnapshotID != "srcsnap-456" {
+		t.Fatalf("unexpected source_snapshot_id: %q", out.Provenance.SourceSnapshotID)
+	}
+	if !contains(strings.Join(out.ArtifactKinds, ","), "planner_handoff_provenance_json") {
+		t.Fatalf("expected provenance artifact kind in output, got %+v", out.ArtifactKinds)
+	}
+
+	row, err := deps.Store.GetRunSubmissionProvenanceByRun(out.RunID)
+	if err != nil {
+		t.Fatalf("load provenance row: %v", err)
+	}
+	sum := sha256.Sum256([]byte(markdown))
+	if row.PlannerHandoffSha256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("unexpected provenance hash: %q", row.PlannerHandoffSha256)
+	}
+	if row.PlanID != "plan-123" || row.PassID != "PASS-002" {
+		t.Fatalf("unexpected plan/pass in provenance row: %q / %q", row.PlanID, row.PassID)
+	}
+	if row.ClientTraceID != "trace-123" {
+		t.Fatalf("unexpected client trace id: %q", row.ClientTraceID)
+	}
+	if row.SourceArtifactPath != "handoffs/planner/2026-06-23_provenance.planner-handoff.md" {
+		t.Fatalf("unexpected source artifact path: %q", row.SourceArtifactPath)
+	}
+	if contains(row.HandoffMetadataJson, "# Planner Handoff") {
+		t.Fatalf("handoff metadata JSON should not contain full handoff markdown: %s", row.HandoffMetadataJson)
+	}
+
+	artifactBytes, err := artifacts.Read(out.RunID, "planner_handoff_provenance_json", "planner_handoff_provenance.json")
+	if err != nil {
+		t.Fatalf("read provenance artifact: %v", err)
+	}
+	artifactText := string(artifactBytes)
+	if !contains(artifactText, `"planner_handoff_sha256"`) {
+		t.Fatalf("expected hash field in provenance artifact, got: %s", artifactText)
+	}
+	if contains(artifactText, "<context_snapshot>") {
+		t.Fatalf("provenance artifact should not embed full handoff markdown: %s", artifactText)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoff_ArtifactFailureRollsBackPassTransition(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	planArgs, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+	})
+	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
+	if planResult.IsError {
+		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
+	}
+
+	plan, err := deps.Store.GetPlanByPlanID("plan-123")
+	if err != nil {
+		t.Fatalf("get plan: %v", err)
+	}
+	pass, err := deps.Store.GetPlanPassByPassID(plan.ID, "PASS-001")
+	if err != nil {
+		t.Fatalf("get pass: %v", err)
+	}
+
+	blockingPath := filepath.Join(t.TempDir(), "artifact-file")
+	if err := os.WriteFile(blockingPath, []byte("block"), 0644); err != nil {
+		t.Fatalf("create blocking file: %v", err)
+	}
+	artifacts.SetBaseDir(blockingPath)
+	t.Cleanup(func() { artifacts.SetBaseDir("data/artifacts") })
+
+	args, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": "---\ntitle: Rollback Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Rollback Run\n\nContent.",
+		"repo_target":              "test-repo",
+		"plan_id":                  "plan-123",
+		"pass_id":                  "PASS-001",
+	})
+	result := srv.HandleCreateRunFromPlannerHandoff(args)
+	if !result.IsError {
+		t.Fatal("expected artifact write failure to surface as tool error")
+	}
+	if !contains(result.Content[0].Text, "INTAKE_ERROR") {
+		t.Fatalf("expected INTAKE_ERROR, got: %s", result.Content[0].Text)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+		t.Fatalf("expected no run rows, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "run_submission_provenance"); got != 0 {
+		t.Fatalf("expected no provenance rows, got %d", got)
+	}
+	reloadedPass, err := deps.Store.GetPlanPass(pass.ID)
+	if err != nil {
+		t.Fatalf("reload pass: %v", err)
+	}
+	if reloadedPass.Status != "planned" {
+		t.Fatalf("expected pass to remain planned after rollback, got %q", reloadedPass.Status)
+	}
+}
+
+func TestHandleGetRunStatus_IncludesProvenance(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	planArgs, _ := json.Marshal(map[string]string{
+		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+	})
+	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
+	if planResult.IsError {
+		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
+	}
+
+	markdown := "# Planner Handoff: Status\n\n" +
+		"## Artifact Metadata\n\n" +
+		"```yaml\n" +
+		"repo_target: test-repo\n" +
+		"branch_context: main\n" +
+		"intended_handoff_path: handoffs/planner/2026-06-23_status.planner-handoff.md\n" +
+		"managed_plan_pass: PASS-001\n" +
+		"context_packet_id: ctxpkt-status\n" +
+		"source_snapshot_id: srcsnap-status\n" +
+		"```\n"
+
+	createArgs, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": markdown,
+		"plan_id":                  "plan-123",
+		"pass_id":                  "PASS-001",
+	})
+	createResult := srv.HandleCreateRunFromPlannerHandoff(createArgs)
+	if createResult.IsError {
+		t.Fatalf("create run failed: %s", createResult.Content[0].Text)
+	}
+
+	var createOut createRunOutput
+	if err := json.Unmarshal([]byte(createResult.Content[0].Text), &createOut); err != nil {
+		t.Fatalf("unmarshal create output: %v", err)
+	}
+
+	statusResult := srv.HandleGetRunStatus(json.RawMessage(fmt.Sprintf(`{"run_id":"%d"}`, createOut.RunID)))
+	if statusResult.IsError {
+		t.Fatalf("get run status failed: %s", statusResult.Content[0].Text)
+	}
+
+	var out runStatusOutput
+	if err := json.Unmarshal([]byte(statusResult.Content[0].Text), &out); err != nil {
+		t.Fatalf("unmarshal status output: %v", err)
+	}
+	if out.PlanID != "plan-123" || out.PassID != "PASS-001" {
+		t.Fatalf("expected associated plan/pass ids, got %q / %q", out.PlanID, out.PassID)
+	}
+	if out.PlanRowID == nil || out.PlanPassRowID == nil {
+		t.Fatalf("expected plan row ids in status output, got %+v / %+v", out.PlanRowID, out.PlanPassRowID)
+	}
+	if out.Provenance == nil {
+		t.Fatal("expected provenance summary in run status output")
+	}
+	if out.Provenance.SourceArtifactPath != "handoffs/planner/2026-06-23_status.planner-handoff.md" {
+		t.Fatalf("unexpected provenance source_artifact_path: %q", out.Provenance.SourceArtifactPath)
+	}
+	if out.Provenance.ContextPacketID != "ctxpkt-status" || out.Provenance.SourceSnapshotID != "srcsnap-status" {
+		t.Fatalf("unexpected provenance summary: %+v", out.Provenance)
 	}
 }
 
@@ -1099,7 +1442,7 @@ func validPlannerPassPlan() plans.PlannerPassPlan {
 			CreatedAt:     "2026-06-21T16:10:00Z",
 			Title:         "Relay plan submission service",
 			Goal:          "Store validated planner plans",
-			RepoTarget:    "Paintersrp/relay",
+			RepoTarget:    "test-repo",
 			BranchContext: "main",
 			Status:        "active",
 			MCPCapabilityProfile: &plans.MCPCapabilityProfile{

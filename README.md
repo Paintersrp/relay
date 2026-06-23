@@ -73,7 +73,8 @@ These are human-readable documentation definitions only and do not add schema fi
 - **Audit handoff**: A compact markdown artifact containing run metadata, agent results, validation results, and git diff evidence intended for review.
 - **Managed plan**: A reviewed Planner pass plan persisted by Relay as a `plans` record with derived `plan_passes`. Plans are optional; standalone runs remain valid.
 - **Pass**: A unit of work within a managed plan, represented as a `plan_passes` record with a sequence, scope, goals, and a status (`planned`, `in_progress`, `completed`, `skipped`). Passes are created automatically from a submitted plan; they are not created ad hoc.
-- **Pass-associated run**: A run linked to a specific plan pass via `plan_id`/`pass_id` (or `planId`/`passId`). Creating the run moves the pass from `planned` to `in_progress`; audit acceptance moves it to `completed`; audit revision keeps/returns it to `in_progress`.
+- **Pass-associated run**: A run linked to a specific plan pass via `plan_id`/`pass_id` (or `planId`/`passId`). Association is fail-closed: invalid plan/pass references, terminal passes, or explicit handoff/plan metadata conflicts create no run. Successful submission moves the pass from `planned` to `in_progress`; audit acceptance moves it to `completed`; audit revision keeps/returns it to `in_progress`.
+- **Run submission provenance**: Durable intake evidence stored as a `run_submission_provenance` row plus `planner_handoff_provenance.json`, capturing the submitted handoff hash, bounded metadata, source/client trace data, and optional managed pass/context references without duplicating the full handoff content.
 - **Current Project-facing MCP actions**: `create_run_from_planner_handoff` for reviewed Planner handoffs and `submit_planner_pass_plan` for reviewed structured Plans of Passes.
 - **Local/dev MCP server tool inventory**: Additional MCP tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` used for local development and validation. These are not automatically Planner Project-facing unless external Project configuration explicitly exposes them.
 
@@ -102,18 +103,19 @@ Relay's current workflow is:
 
 1. Optionally submit a managed plan via `POST /api/plans` or the Planner-facing MCP tool `submit_planner_pass_plan`. Plans are optional; standalone runs remain valid.
 2. Create a run from a Planner handoff through the React UI or current Planner Project-facing MCP action (`create_run_from_planner_handoff`). Runs may be standalone, associated only to a plan, or associated to a specific pass via `plan_id`/`pass_id`.
-3. Build Intake Review.
-4. Detect model, branch, repo, scoped files, validation commands, final output contract, commit suggestions, warnings, and blockers.
-5. Warn or block when the selected repo does not match the handoff scope.
-6. Generate a transformed Agent Prompt or execution-preparation artifact for the running repo agent.
-7. Store the original handoff and generated artifacts separately.
-8. Perform manual agent result intake or current user-triggered execution path.
-9. Run validation locally.
-10. Store validation evidence.
-11. Inspect git diff for local changes.
-12. Generate audit handoff for review.
-13. Prepare git commit message suggestion based on handoff, audit, and diff evidence.
-14. Review and manually run `git commit` in the repo.
+3. Persist the reviewed handoff as the intake payload. The current Planner-facing MCP submission path also records bounded run-submission provenance (hash, metadata, association, and optional context references).
+4. Build Intake Review.
+5. Detect model, branch, repo, scoped files, validation commands, final output contract, commit suggestions, warnings, and blockers.
+6. Warn or block when the selected repo does not match the handoff scope.
+7. Generate a transformed Agent Prompt or execution-preparation artifact for the running repo agent.
+8. Store the original handoff and generated artifacts separately.
+9. Perform manual agent result intake or current user-triggered execution path.
+10. Run validation locally.
+11. Store validation evidence.
+12. Inspect git diff for local changes.
+13. Generate audit handoff for review.
+14. Prepare git commit message suggestion based on handoff, audit, and diff evidence.
+15. Review and manually run `git commit` in the repo.
 
 Relay does not stage files, commit, push, or mutate git on the user's behalf.
 
@@ -122,7 +124,7 @@ Relay does not stage files, commit, push, or mutate git on the user's behalf.
 Relay includes an MCP (Model Context Protocol) integration. The **current Planner Project-facing MCP Actions** are exactly as follows:
 
 *   **Action:** `create_run_from_planner_handoff` — submit a reviewed Planner handoff artifact/content to Relay.
-*   **Result:** Relay creates and starts a new run from that handoff, and owns all downstream processing.
+*   **Result:** Relay creates and starts a new run from that handoff, records bounded submission provenance, and owns all downstream processing.
 *   **User Confirmation:** The Planner must explicitly ask for user confirmation after handoff creation before invoking this MCP run-creation action.
 *   **Action:** `submit_planner_pass_plan` — validate and persist a reviewed Planner pass plan artifact/content to Relay.
 *   **Result:** Relay creates managed `plans` and derived `plan_passes` records only; it does not create runs or dispatch executors.
@@ -144,7 +146,7 @@ The current Planner Project-facing MCP actions do **not** expose or claim availa
 *   Git operations (commits, pushes, branch creation)
 *   Secrets, tokens, auth headers, private keys, signed URLs, tunnel URLs, cookies, credentials, or other sensitive material in handoffs or MCP payloads
 
-Any broader list of tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` that may exist in the `mcpserver` or local development contexts are strictly local/dev/server MCP tool inventory or future/internal capabilities. They are **not** current Planner Project actions unless project configuration explicitly changes. MCP run submission also does not use executor briefs, canonical packets, validation reports, repair reports, audit packets, or surrounding chat context as the payload.
+Any broader list of tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` that may exist in the `mcpserver` or local development contexts are strictly local/dev/server MCP tool inventory or future/internal capabilities. They are **not** current Planner Project actions unless project configuration explicitly changes. MCP run submission also does not use executor briefs, canonical packets, validation reports, repair reports, audit packets, or surrounding chat context as the payload; it persists the reviewed planner handoff markdown plus bounded provenance metadata instead.
 
 PASS-007 adds gated context broker MCP tools over the existing internal source/context services. These broker tools are disabled by default, are retrieval/context only, and do not replace the default GPT-facing Planner MCP actions `create_run_from_planner_handoff` and `submit_planner_pass_plan`.
 

@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 )
@@ -22,18 +24,30 @@ type eventSummary struct {
 // runStatusOutput is the bounded snapshot returned by get_run_status.
 // Full artifact contents and logs are never included.
 type runStatusOutput struct {
-	OK                   bool           `json:"ok"`
-	Tool                 string         `json:"tool"`
-	RunID                string         `json:"run_id"`
-	Title                string         `json:"title"`
-	Repo                 string         `json:"repo"`
-	Branch               string         `json:"branch"`
-	Status               string         `json:"status"`
-	LifecycleState       string         `json:"lifecycle_state"`
-	ActiveStep           string         `json:"active_step"`
-	ArtifactKinds        []string       `json:"artifact_kinds"`
-	LatestEventSummaries []eventSummary `json:"latest_event_summaries"`
-	ReviewURL            string         `json:"review_url"`
+	OK                   bool                     `json:"ok"`
+	Tool                 string                   `json:"tool"`
+	RunID                string                   `json:"run_id"`
+	Title                string                   `json:"title"`
+	Repo                 string                   `json:"repo"`
+	Branch               string                   `json:"branch"`
+	Status               string                   `json:"status"`
+	LifecycleState       string                   `json:"lifecycle_state"`
+	ActiveStep           string                   `json:"active_step"`
+	ArtifactKinds        []string                 `json:"artifact_kinds"`
+	LatestEventSummaries []eventSummary           `json:"latest_event_summaries"`
+	ReviewURL            string                   `json:"review_url"`
+	PlanID               string                   `json:"plan_id,omitempty"`
+	PassID               string                   `json:"pass_id,omitempty"`
+	PlanRowID            *int64                   `json:"plan_row_id,omitempty"`
+	PlanPassRowID        *int64                   `json:"plan_pass_row_id,omitempty"`
+	Provenance           *statusProvenanceSummary `json:"provenance,omitempty"`
+}
+
+type statusProvenanceSummary struct {
+	PlannerHandoffSHA256 string `json:"planner_handoff_sha256"`
+	SourceArtifactPath   string `json:"source_artifact_path,omitempty"`
+	ContextPacketID      string `json:"context_packet_id,omitempty"`
+	SourceSnapshotID     string `json:"source_snapshot_id,omitempty"`
 }
 
 // HandleGetRunStatus implements the get_run_status MCP tool.
@@ -97,6 +111,47 @@ func (s *Server) HandleGetRunStatus(rawArgs json.RawMessage) ToolCallResult {
 	activeStep := activeStepFromStatus(run.Status)
 	idStr := strconv.FormatInt(run.ID, 10)
 
+	var planID string
+	var passID string
+	var planRowID *int64
+	var planPassRowID *int64
+	if run.PlanRowID.Valid {
+		planRowID = &run.PlanRowID.Int64
+		if plan, perr := s.deps.Store.GetPlan(run.PlanRowID.Int64); perr == nil && plan != nil {
+			planID = plan.PlanID
+		}
+	}
+	if run.PlanPassRowID.Valid {
+		planPassRowID = &run.PlanPassRowID.Int64
+		if pass, perr := s.deps.Store.GetPlanPass(run.PlanPassRowID.Int64); perr == nil && pass != nil {
+			passID = pass.PassID
+		}
+	}
+
+	var provenance *statusProvenanceSummary
+	if row, perr := s.deps.Store.GetRunSubmissionProvenanceByRun(runIDInt); perr == nil {
+		if row.PlanID != "" {
+			planID = row.PlanID
+		}
+		if row.PassID != "" {
+			passID = row.PassID
+		}
+		if row.PlanRowID.Valid {
+			planRowID = &row.PlanRowID.Int64
+		}
+		if row.PlanPassRowID.Valid {
+			planPassRowID = &row.PlanPassRowID.Int64
+		}
+		provenance = &statusProvenanceSummary{
+			PlannerHandoffSHA256: row.PlannerHandoffSha256,
+			SourceArtifactPath:   row.SourceArtifactPath,
+			ContextPacketID:      row.ContextPacketID,
+			SourceSnapshotID:     row.SourceSnapshotID,
+		}
+	} else if !errors.Is(perr, sql.ErrNoRows) {
+		return toolErr(fmt.Sprintf("INTERNAL_ERROR: load run provenance: %s", perr))
+	}
+
 	result := runStatusOutput{
 		OK:                   true,
 		Tool:                 "get_run_status",
@@ -110,6 +165,11 @@ func (s *Server) HandleGetRunStatus(rawArgs json.RawMessage) ToolCallResult {
 		ArtifactKinds:        artifactKinds,
 		LatestEventSummaries: eventSummaries,
 		ReviewURL:            fmt.Sprintf("/runs/%s/intake", idStr),
+		PlanID:               planID,
+		PassID:               passID,
+		PlanRowID:            planRowID,
+		PlanPassRowID:        planPassRowID,
+		Provenance:           provenance,
 	}
 
 	text, err := marshalTool(result)

@@ -49,6 +49,7 @@ var allowedKinds = map[string]bool{
 	"git_push_dry_run_json":              true,
 	"git_push_result_json":               true,
 	"planner_handoff":                    true,
+	"planner_handoff_provenance_json":    true,
 	"parsed_frontmatter":                 true,
 	"run_config":                         true,
 	"intake_validation_report":           true,

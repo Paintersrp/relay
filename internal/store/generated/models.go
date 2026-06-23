@@ -209,6 +209,29 @@ type Run struct {
 	PlanPassRowID    sql.NullInt64 `json:"plan_pass_row_id"`
 }
 
+type RunSubmissionProvenance struct {
+	ID                   int64         `json:"id"`
+	RunID                int64         `json:"run_id"`
+	PlannerHandoffSha256 string        `json:"planner_handoff_sha256"`
+	PlannerHandoffBytes  int64         `json:"planner_handoff_bytes"`
+	Source               string        `json:"source"`
+	ClientTraceID        string        `json:"client_trace_id"`
+	SourceArtifactPath   string        `json:"source_artifact_path"`
+	RepoTarget           string        `json:"repo_target"`
+	BranchContext        string        `json:"branch_context"`
+	PlanID               string        `json:"plan_id"`
+	PassID               string        `json:"pass_id"`
+	PlanRowID            sql.NullInt64 `json:"plan_row_id"`
+	PlanPassRowID        sql.NullInt64 `json:"plan_pass_row_id"`
+	ManagedPlanPass      string        `json:"managed_plan_pass"`
+	ManagedPlanPassName  string        `json:"managed_plan_pass_name"`
+	ContextPacketID      string        `json:"context_packet_id"`
+	SourceSnapshotID     string        `json:"source_snapshot_id"`
+	HandoffMetadataJson  string        `json:"handoff_metadata_json"`
+	SubmissionArgsJson   string        `json:"submission_args_json"`
+	CreatedAt            string        `json:"created_at"`
+}
+
 type SourceSnapshot struct {
 	ID               int64  `json:"id"`
 	SourceSnapshotID string `json:"source_snapshot_id"`
