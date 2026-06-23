@@ -4,11 +4,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ArrowRight,
-  CheckCircle2,
   ExternalLink,
-  FileText,
   ListChecks,
-  Server,
   ShieldCheck,
   ShieldX,
 } from "lucide-react";
@@ -23,8 +20,17 @@ import {
   RunStageStateCard,
   RunStageSummaryCard,
   RunStageSummaryChip,
+  RunStageContentSection,
+  RunStageEvidenceRow,
+  RunStageEvidenceList,
+  RunStageFindingRow,
+  RunStageFindingList,
+  RunStageActivityRow,
+  RunStageActivityList,
+  RunStageMainStack,
 } from "@/components/relay/RunStagePrimitives";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -422,18 +428,6 @@ function renderRepoValue(value: string) {
   return value;
 }
 
-function renderStatusTone(
-  tone: "default" | "info" | "success" | "warning" | "danger",
-) {
-  if (tone === "success") {
-    return "success" as const;
-  }
-  if (tone === "warning" || tone === "danger") {
-    return "warning" as const;
-  }
-  return "default" as const;
-}
-
 function InlineHint({
   source,
   detail,
@@ -729,6 +723,8 @@ export function useRunIntakeReviewController({
     intakeDisplayState,
     intakePipelineStatuses,
     intakeStateCardCopy,
+    artifacts: artifacts || [],
+    latestEvents: run.latestEvents || [],
   };
 }
 
@@ -938,7 +934,6 @@ export function RunIntakeReviewPanel({
     mutationError,
     isPending,
     isReviewable,
-    hasFrontmatter,
     model,
     setModel,
     repo,
@@ -959,7 +954,6 @@ export function RunIntakeReviewPanel({
     branchOptions,
     currentModelOptions,
     targetWorktree,
-    validationSummary,
     readinessIssues,
     summaryStatusTone,
     preflightChecks,
@@ -968,10 +962,12 @@ export function RunIntakeReviewPanel({
     isApproved,
     intakePipelineStatuses,
     intakeStateCardCopy,
+    artifacts,
+    latestEvents,
   } = controller;
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <RunStageMainStack>
       {mutationError ? (
         <RelayStateBanner
           tone="danger"
@@ -994,6 +990,22 @@ export function RunIntakeReviewPanel({
           />
         </div>
       </RunStageStateCard>
+
+      {run.planContext ? (
+        <RunStageContentSection
+          eyebrow="Plan"
+          title="Plan Context"
+          description="Managed plan/pass association returned for this run."
+          status={run.planContext.passStatus ? <Badge variant="outline">{run.planContext.passStatus}</Badge> : null}
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <RunStageKeyValueRow label="Plan Title" value={run.planContext.planTitle || run.planContext.planId || "—"} />
+            <RunStageKeyValueRow label="Plan ID" value={run.planContext.planId || "—"} mono />
+            <RunStageKeyValueRow label="Pass Name" value={run.planContext.passName || run.planContext.passId || "—"} />
+            <RunStageKeyValueRow label="Pass ID" value={run.planContext.passId || "—"} mono />
+          </div>
+        </RunStageContentSection>
+      ) : null}
 
       <RunStageSummaryCard
         eyebrow="Intake Pipeline"
@@ -1019,352 +1031,243 @@ export function RunIntakeReviewPanel({
         />
       </RunStageSummaryCard>
 
-      <section className="overflow-hidden rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
-        <div className="grid gap-0 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(28rem,1.7fr)_minmax(15rem,0.95fr)]">
-          <aside className="min-w-0 border-b border-[var(--relay-row-border)] px-4 py-4 lg:border-r lg:border-b-0">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="mt-0.5 shrink-0 text-muted-foreground">
-                <FileText className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                  Handoff
-                </p>
-                <div className="mt-2 space-y-2">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">
-                      {run.title}
-                    </p>
-                    <p className="mt-1 font-mono text-[12px] text-muted-foreground">
-                      {run.packetId || "No packet ID captured"}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <RunStageSummaryChip
-                      value={run.status}
-                      tone={summaryStatusTone}
-                      mono
-                    />
-                    <RunStageSummaryChip
-                      value={
-                        hasFrontmatter ? "Frontmatter parsed" : "No frontmatter"
-                      }
-                      tone={hasFrontmatter ? "success" : "warning"}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-2">
-              <div className="rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-2.5">
-                <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-                  Source
-                </p>
-                <div className="mt-2 text-sm text-foreground">{configSource}</div>
-              </div>
-              <div className="rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-2.5">
-                <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-                  Created By
-                </p>
-                <div className="mt-2 text-sm text-foreground">{createdFrom}</div>
-              </div>
-              <div className="rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-2.5">
-                <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-                  Target Snapshot
-                </p>
-                <div className="mt-2 space-y-1 text-sm text-foreground">
-                  <div className="min-w-0 break-words">
-                    {renderRepoValue(repo || repoTarget || " - ")}
-                  </div>
-                  <div className="font-mono text-[12px] text-muted-foreground">
-                    {branch || branchContext || " - "}
-                  </div>
-                  <div className="font-mono text-[12px] text-muted-foreground">
-                    Worktree: {targetWorktree || "default"}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </aside>
-
-          <section className="min-w-0 border-b border-[var(--relay-row-border)] px-4 py-4 lg:border-r lg:border-b-0">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="mt-0.5 shrink-0 text-muted-foreground">
-                <Server className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                      Run Configuration
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Adjust the execution target details before approving the
-                      intake.
-                    </p>
-                  </div>
-                  <RunStageSummaryChip
-                    label="Preflight"
-                    value={preflightSummary}
-                    tone={
-                      preflightChecks.length > 0 &&
-                      preflightPassedCount === preflightChecks.length
-                        ? "success"
-                        : "warning"
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-
-            <p className="mt-4 text-xs text-muted-foreground">
-              Review the editable intake configuration first. Provenance stays
-              inline with each control so the operating surface remains focused.
-            </p>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <Label
-                  htmlFor="override-repo"
-                  className="text-xs text-muted-foreground"
-                >
-                  Repository
-                </Label>
-                <Select
-                  value={repo}
-                  onValueChange={setRepo}
-                  disabled={isPending || !isReviewable}
-                >
-                  <SelectTrigger id="override-repo">
-                    <SelectValue placeholder="Select repository" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {repoOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <InlineHint
-                  source={repoSource}
-                  detail={
-                    repoTarget && repoTarget !== repo ? (
-                      <>
-                        Resolved intake target:{" "}
-                        <span className="font-mono text-[11px]">{repoTarget}</span>
-                      </>
-                    ) : undefined
-                  }
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label
-                  htmlFor="override-branch"
-                  className="text-xs text-muted-foreground"
-                >
-                  Branch
-                </Label>
-                <Select
-                  value={branch}
-                  onValueChange={setBranch}
-                  disabled={isPending || !isReviewable}
-                >
-                  <SelectTrigger id="override-branch">
-                    <SelectValue placeholder="Select branch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {branchOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <InlineHint
-                  source={branchSource}
-                  detail={
-                    branchContext && branchContext !== branch ? (
-                      <>
-                        Resolved intake branch:{" "}
-                        <span className="font-mono text-[11px]">
-                          {branchContext}
-                        </span>
-                      </>
-                    ) : undefined
-                  }
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label
-                  htmlFor="override-executor"
-                  className="text-xs text-muted-foreground"
-                >
-                  Execution Profile
-                </Label>
-                <Select
-                  value={executorAdapter}
-                  onValueChange={handleExecutionProfileChange}
-                  disabled={isPending || !isReviewable}
-                >
-                  <SelectTrigger id="override-executor">
-                    <SelectValue placeholder="Select execution profile" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {EXECUTION_PROFILE_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                {executorAdapter === "codex" ? (
-                  <p className="text-xs text-muted-foreground">
-                    Codex dispatch uses the local Codex CLI configuration and
-                    authentication available to the Relay daemon.
-                  </p>
-                ) : null}
-                {executorAdapter === "antigravity" ? (
-                  <p className="text-xs text-muted-foreground">
-                    Antigravity dispatch uses the local Antigravity CLI
-                    configuration and authentication available to the Relay
-                    daemon.
-                  </p>
-                ) : null}
-                <InlineHint source={executorSource} />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label
-                  htmlFor="override-model"
-                  className="text-xs text-muted-foreground"
-                >
-                  Target Model
-                </Label>
-                <Select
-                  value={model}
-                  onValueChange={setModel}
-                  disabled={isPending || !isReviewable}
-                >
-                  <SelectTrigger id="override-model">
-                    <SelectValue placeholder="Select target model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {currentModelOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <InlineHint source={modelSource} />
-              </div>
-            </div>
-          </section>
-
-          <aside className="min-w-0 px-4 py-4">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="mt-0.5 shrink-0 text-muted-foreground">
-                <ShieldCheck className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                  Readiness
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <RunStageSummaryChip
-                    label="Frontmatter"
-                    value={hasFrontmatter ? "Parsed" : "Missing"}
-                    tone={hasFrontmatter ? "success" : "warning"}
-                  />
-                  <RunStageSummaryChip
-                    label="Validation"
-                    value={`${validationSummary?.errors ?? 0} errors`}
-                    tone={
-                      (validationSummary?.errors ?? 0) > 0 ? "warning" : "success"
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-2">
-              {preflightChecks.length > 0 ? (
-                preflightChecks.map((check) => (
-                  <div
-                    key={check.label}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-2"
-                  >
-                    <div className="flex min-w-0 items-center gap-2 text-sm text-foreground">
-                      {check.pass ? (
-                        <CheckCircle2 className="h-4 w-4 shrink-0" />
-                      ) : (
-                        <AlertTriangle className="h-4 w-4 shrink-0" />
-                      )}
-                      <span className="min-w-0 flex-1">{check.label}</span>
-                    </div>
-                    <RunStageSummaryChip
-                      value={check.pass ? "OK" : "Review"}
-                      tone={check.pass ? "success" : "warning"}
-                    />
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Preflight not available from current intake data.
-                </p>
-              )}
-            </div>
-
-            {readinessIssues.length > 0 ? (
-              <div className="mt-4 rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-3">
-                <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-                  Current Issues
-                </p>
-                <div className="mt-3 space-y-2">
-                  {readinessIssues.map((issue, index) => (
-                    <div
-                      key={`${issue.code}-${index}`}
-                      className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-3 py-2"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <RunStageSummaryChip
-                          value={issue.severity}
-                          tone={renderStatusTone(
-                            issue.severity === "error"
-                              ? "danger"
-                              : issue.severity === "warning"
-                                ? "warning"
-                                : "default",
-                          )}
-                        />
-                        <span className="font-mono text-[11px] text-muted-foreground">
-                          {issue.code}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-xs text-foreground">
-                        {issue.message}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </aside>
+      <RunStageContentSection
+        eyebrow="Handoff"
+        title="Handoff Summary"
+        description="Core details of the submitted run handoff."
+      >
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="flex flex-col gap-2.5">
+            <RunStageKeyValueRow label="Title" value={run.title} />
+            <RunStageKeyValueRow label="Packet ID" value={run.packetId || "No packet ID captured"} mono />
+            <RunStageKeyValueRow label="Status" value={run.status} mono />
+          </div>
+          <div className="flex flex-col gap-2.5">
+            <RunStageKeyValueRow label="Source" value={configSource} />
+            <RunStageKeyValueRow label="Created By" value={createdFrom} />
+          </div>
+          <div className="flex flex-col gap-2.5">
+            <RunStageKeyValueRow label="Target Repo" value={repoTarget ? renderRepoValue(repoTarget) : "—"} />
+            <RunStageKeyValueRow label="Target Branch" value={branchContext || "—"} mono />
+            <RunStageKeyValueRow label="Worktree" value={targetWorktree || "default"} mono />
+          </div>
         </div>
-      </section>
+      </RunStageContentSection>
 
-    </div>
+      <RunStageContentSection
+        eyebrow="Configuration"
+        title="Run Configuration Overrides"
+        description="Adjust repository, branch, execution profile, and target model overrides before approval."
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="override-repo" className="text-xs text-muted-foreground">
+              Repository Override
+            </Label>
+            <Select value={repo} onValueChange={setRepo} disabled={isPending || !isReviewable}>
+              <SelectTrigger id="override-repo">
+                <SelectValue placeholder="Select repository" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {repoOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <InlineHint
+              source={repoSource}
+              detail={
+                repoTarget && repoTarget !== repo ? (
+                  <>
+                    Resolved intake target: <span className="font-mono text-[11px]">{repoTarget}</span>
+                  </>
+                ) : undefined
+              }
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="override-branch" className="text-xs text-muted-foreground">
+              Branch Override
+            </Label>
+            <Select value={branch} onValueChange={setBranch} disabled={isPending || !isReviewable}>
+              <SelectTrigger id="override-branch">
+                <SelectValue placeholder="Select branch" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {branchOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <InlineHint
+              source={branchSource}
+              detail={
+                branchContext && branchContext !== branch ? (
+                  <>
+                    Resolved intake branch: <span className="font-mono text-[11px]">{branchContext}</span>
+                  </>
+                ) : undefined
+              }
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="override-executor" className="text-xs text-muted-foreground">
+              Execution Profile
+            </Label>
+            <Select value={executorAdapter} onValueChange={handleExecutionProfileChange} disabled={isPending || !isReviewable}>
+              <SelectTrigger id="override-executor">
+                <SelectValue placeholder="Select execution profile" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {EXECUTION_PROFILE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <InlineHint source={executorSource} />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="override-model" className="text-xs text-muted-foreground">
+              Target Model
+            </Label>
+            <Select value={model} onValueChange={setModel} disabled={isPending || !isReviewable}>
+              <SelectTrigger id="override-model">
+                <SelectValue placeholder="Select target model" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {currentModelOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <InlineHint source={modelSource} />
+          </div>
+        </div>
+      </RunStageContentSection>
+
+      <RunStageContentSection
+        eyebrow="Readiness"
+        title="Preflight Checks"
+        description="Automatic health and access checks executed upon handoff ingestion."
+        status={
+          <RunStageSummaryChip
+            value={preflightSummary}
+            tone={
+              preflightChecks.length > 0 &&
+              preflightPassedCount === preflightChecks.length
+                ? "success"
+                : "warning"
+            }
+          />
+        }
+      >
+        <div className="grid gap-2 sm:grid-cols-2">
+          {preflightChecks.length > 0 ? (
+            preflightChecks.map((check) => (
+              <RunStageEvidenceRow
+                key={check.label}
+                label={check.label}
+                status={
+                  <RunStageSummaryChip
+                    value={check.pass ? "OK" : "Review"}
+                    tone={check.pass ? "success" : "warning"}
+                  />
+                }
+              />
+            ))
+          ) : (
+            <p className="text-xs text-muted-foreground italic col-span-2">
+              Preflight not available from current intake data.
+            </p>
+          )}
+        </div>
+      </RunStageContentSection>
+
+      {readinessIssues.length > 0 ? (
+        <RunStageContentSection
+          eyebrow="Issues"
+          title="Current Validation Issues"
+          description="Blocking errors or warning issues discovered during preflight validation."
+        >
+          <RunStageFindingList>
+            {readinessIssues.map((issue, index) => (
+              <RunStageFindingRow
+                key={`${issue.code}-${index}`}
+                severity={issue.severity === "error" ? "error" : "warning"}
+                code={issue.code}
+                message={issue.message}
+              />
+            ))}
+          </RunStageFindingList>
+        </RunStageContentSection>
+      ) : null}
+
+      <RunStageContentSection
+        eyebrow="Activity"
+        title="Recent Activity"
+        description="Recent events logged for this run's intake stage."
+      >
+        {latestEvents && latestEvents.length > 0 ? (
+          <RunStageActivityList>
+            {latestEvents.slice(-5).map((e: any, i: number) => {
+              const timeStr = new Date(e.createdAt).toLocaleTimeString("en-US", {
+                hour12: false,
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              });
+              return (
+                <RunStageActivityRow
+                  key={i}
+                  timestamp={timeStr}
+                  message={e.message}
+                />
+              );
+            })}
+          </RunStageActivityList>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">No recent activity.</p>
+        )}
+      </RunStageContentSection>
+
+      <RunStageContentSection
+        eyebrow="Artifacts"
+        title="Intake Artifacts"
+        description="Files generated or submitted during the intake stage."
+      >
+        {artifacts && artifacts.length > 0 ? (
+          <RunStageEvidenceList>
+            {artifacts.map((art: any) => (
+              <RunStageEvidenceRow
+                key={art.id}
+                label={art.filename || art.label}
+                value={art.sizeHint || ""}
+              />
+            ))}
+          </RunStageEvidenceList>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">No artifacts found.</p>
+        )}
+      </RunStageContentSection>
+    </RunStageMainStack>
   );
 }

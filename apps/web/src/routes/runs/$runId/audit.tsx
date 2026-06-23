@@ -45,11 +45,14 @@ import {
   RunStageKeyValueRow,
   RunStagePipeline,
   RunStageStateCard,
-  RunStageSummaryCard,
   RunStageSummaryChip,
+  RunStageContentSection,
+  RunStageEvidenceRow,
+  RunStageEvidenceList,
+  RunStageFindingRow,
+  RunStageFindingList,
+  RunStageMainStack,
 } from "@/components/relay/RunStagePrimitives";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -60,12 +63,9 @@ import {
   XSquare,
   CheckSquare,
   Loader2,
-  AlertCircle,
-  Terminal,
   CheckCircle2,
   Send,
   RefreshCw,
-  FileCode,
 } from "lucide-react";
 import {
   AUDIT_PIPELINE_STEPS,
@@ -667,10 +667,8 @@ function AuditMainContent({
     if (!acceptanceReason.trim()) return;
     setMutationError(null);
     acceptFailureMutation.mutate(acceptanceReason);
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
+  };  return (
+    <RunStageMainStack>
       {mutationError && (
         <RelayStateBanner
           tone="danger"
@@ -693,14 +691,8 @@ function AuditMainContent({
         eyebrow={auditStateCardCopy.eyebrow}
         title={auditStateCardCopy.title}
         message={auditStateCardCopy.message}
-      />
-
-      <RunStageSummaryCard
-        eyebrow="Audit / Closeout Pipeline"
-        title="Closeout progression"
-        description="Executor evidence, validation review, audit packet preparation, approval, and explicit run closeout."
       >
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           <RunStageSummaryChip label="Status" value={runStatus} mono />
           <RunStageSummaryChip
             label="Validation"
@@ -726,11 +718,18 @@ function AuditMainContent({
             tone={getAuditDecisionTone(runStatus, auditData)}
           />
         </div>
+      </RunStageStateCard>
+
+      <RunStageContentSection
+        eyebrow="Audit / Closeout Pipeline"
+        title="Closeout progression"
+        description="Executor evidence, validation review, audit packet preparation, approval, and explicit run closeout."
+      >
         <RunStagePipeline
           steps={AUDIT_PIPELINE_STEPS}
           statuses={auditPipelineStatuses}
         />
-      </RunStageSummaryCard>
+      </RunStageContentSection>
 
       {isAuditReadyStatus && (
         <RelayStateBanner
@@ -761,48 +760,13 @@ function AuditMainContent({
         />
       )}
 
-      <Section
-        title="Local Audit Evidence"
-        icon={<ShieldCheck className="w-4 h-4 text-emerald-400" />}
-      >
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="default" className="text-xs">
-              Local only
-            </Badge>
-            <span className="text-xs text-muted-foreground">
-              Audit evidence is derived from Relay artifacts only. GitHub PRs,
-              CI, and Actions are not used.
-            </span>
-          </div>
-          <div className="grid grid-cols-1 gap-2 text-[11px] text-muted-foreground sm:grid-cols-2">
-            <div>
-              <span className="font-medium">Workflow state:</span>{" "}
-              {auditData.auditState || "fallback"}
-            </div>
-            <div>
-              <span className="font-medium">Evidence manifest:</span>{" "}
-              {auditData.evidenceManifestArtifact?.filename || "Pending"}
-            </div>
-          </div>
-          {auditData.evidenceManifestArtifact && (
-            <ArtifactPreviewCard
-              artifact={auditData.evidenceManifestArtifact}
-              runId={runId}
-              className="max-w-full"
-            />
-          )}
-        </div>
-      </Section>
-
-      <Separator />
-
       {/* Local Validation Required Panel */}
-      <Section
+      <RunStageContentSection
+        eyebrow="Validation"
         title="Local Validation Required"
-        icon={<ShieldCheck className="w-4 h-4 text-purple-400" />}
+        description="Run local validation before generating the audit packet."
       >
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {!hasFinalValidationEvidence &&
             !localValidationIsRunning &&
             !localValidationFailed && (
@@ -817,16 +781,16 @@ function AuditMainContent({
             </p>
           )}
           {localValidationFailed && (
-            <p className="text-xs text-red-400">
+            <p className="text-xs text-destructive">
               Local validation failed. Review validation artifacts before
               continuing.
             </p>
           )}
           {localValidationPassed && (
-            <p className="text-xs text-emerald-400">Local validation passed.</p>
+            <p className="text-xs text-success">Local validation passed.</p>
           )}
           {localValidationAccepted && (
-            <p className="text-xs text-yellow-400">
+            <p className="text-xs text-warning">
               Local validation failed but was accepted.
             </p>
           )}
@@ -837,71 +801,71 @@ function AuditMainContent({
             validationProgressJsonArt ||
             validationStdoutArt ||
             validationStderrArt) && (
-            <div className="flex flex-col gap-1.5 mt-2 border-t border-border/40 pt-2">
-              <span className="text-[11px] font-medium text-muted-foreground/70">
+            <RunStageEvidenceList className="mt-2 border-t border-[var(--relay-row-border)] pt-3">
+              <span className="text-[11px] font-medium text-muted-foreground">
                 Validation Evidence:
               </span>
               {validationRunJsonArt && (
-                <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="text-muted-foreground">
-                    Validation Result:
-                  </span>
-                  <ArtifactPreviewCard
-                    artifact={validationRunJsonArt}
-                    runId={runId}
-                    className="flex-1 max-w-xs"
-                  />
-                </div>
+                <RunStageEvidenceRow
+                  label="Validation Result"
+                  value={
+                    <ArtifactPreviewCard
+                      artifact={validationRunJsonArt}
+                      runId={runId}
+                      className="max-w-xs"
+                    />
+                  }
+                />
               )}
               {validationFailureAcceptanceJsonArt && (
-                <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="text-muted-foreground">
-                    Failure Acceptance:
-                  </span>
-                  <ArtifactPreviewCard
-                    artifact={validationFailureAcceptanceJsonArt}
-                    runId={runId}
-                    className="flex-1 max-w-xs"
-                  />
-                </div>
+                <RunStageEvidenceRow
+                  label="Failure Acceptance"
+                  value={
+                    <ArtifactPreviewCard
+                      artifact={validationFailureAcceptanceJsonArt}
+                      runId={runId}
+                      className="max-w-xs"
+                    />
+                  }
+                />
               )}
               {validationProgressJsonArt && (
-                <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="text-muted-foreground">
-                    Validation Progress:
-                  </span>
-                  <ArtifactPreviewCard
-                    artifact={validationProgressJsonArt}
-                    runId={runId}
-                    className="flex-1 max-w-xs"
-                  />
-                </div>
+                <RunStageEvidenceRow
+                  label="Validation Progress"
+                  value={
+                    <ArtifactPreviewCard
+                      artifact={validationProgressJsonArt}
+                      runId={runId}
+                      className="max-w-xs"
+                    />
+                  }
+                />
               )}
               {validationStdoutArt && (
-                <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="text-muted-foreground">
-                    Validation Output:
-                  </span>
-                  <ArtifactPreviewCard
-                    artifact={validationStdoutArt}
-                    runId={runId}
-                    className="flex-1 max-w-xs"
-                  />
-                </div>
+                <RunStageEvidenceRow
+                  label="Validation Output"
+                  value={
+                    <ArtifactPreviewCard
+                      artifact={validationStdoutArt}
+                      runId={runId}
+                      className="max-w-xs"
+                    />
+                  }
+                />
               )}
               {validationStderrArt && (
-                <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="text-muted-foreground">
-                    Validation Error Output:
-                  </span>
-                  <ArtifactPreviewCard
-                    artifact={validationStderrArt}
-                    runId={runId}
-                    className="flex-1 max-w-xs"
-                  />
-                </div>
+                <RunStageEvidenceRow
+                  label="Validation Error Output"
+                  value={
+                    <ArtifactPreviewCard
+                      artifact={validationStderrArt}
+                      runId={runId}
+                      className="max-w-xs"
+                    />
+                  }
+                />
               )}
-            </div>
+            </RunStageEvidenceList>
           )}
 
           {/* Action Button */}
@@ -935,8 +899,8 @@ function AuditMainContent({
           )}
 
           {localValidationFailed && hasFinalValidationEvidence && (
-            <div className="flex flex-col gap-2 mt-2 border-t border-border/40 pt-2">
-              <span className="text-[11px] font-medium text-muted-foreground/70">
+            <div className="flex flex-col gap-2 mt-2 border-t border-[var(--relay-row-border)] pt-3">
+              <span className="text-[11px] font-medium text-muted-foreground">
                 Accept Failed Validation:
               </span>
               {!showAcceptanceForm ? (
@@ -947,19 +911,19 @@ function AuditMainContent({
                   disabled={activeMutation}
                   className="w-fit gap-1.5"
                 >
-                  <AlertTriangle className="w-3.5 h-3.5 text-yellow-400" />
+                  <AlertTriangle className="w-3.5 h-3.5 text-warning" />
                   Accept Failure...
                 </Button>
               ) : (
-                <div className="flex flex-col gap-2 p-3 bg-yellow-950/10 border border-yellow-900/30 rounded">
-                  <span className="text-xs font-medium text-yellow-400/90">
+                <div className="flex flex-col gap-2 p-3 bg-warning/5 border border-warning/30 rounded">
+                  <span className="text-xs font-medium text-warning">
                     Provide Acceptance Reason:
                   </span>
                   <Textarea
                     placeholder="Enter reason for accepting this validation failure..."
                     value={acceptanceReason}
                     onChange={(e) => setAcceptanceReason(e.target.value)}
-                    className="text-xs h-16 bg-background border-yellow-900/50 focus-visible:ring-yellow-800"
+                    className="text-xs h-16 bg-background border-[var(--relay-row-border)] focus-visible:ring-warning"
                     disabled={activeMutation}
                   />
                   <div className="flex items-center gap-2">
@@ -993,17 +957,18 @@ function AuditMainContent({
             </div>
           )}
         </div>
-      </Section>
+      </RunStageContentSection>
 
       {/* Audit Input Summary */}
-      <Section
+      <RunStageContentSection
+        eyebrow="Evidence"
         title="Audit Input Summary"
-        icon={<FileText className="w-4 h-4" />}
+        description="Summary of executor outputs and evidence prepared for the audit packet."
       >
         {auditData.inputSummary.available ? (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-success" />
               <span className="text-xs font-mono text-muted-foreground">
                 {auditData.inputSummary.artifactPath}
               </span>
@@ -1016,26 +981,28 @@ function AuditMainContent({
               )}
             </div>
             {auditData.inputSummary.preview && (
-              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-[var(--relay-row-border)] max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
                 {auditData.inputSummary.preview}
               </pre>
             )}
-            <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
-              <span className="text-[11px] font-medium text-muted-foreground/70">
+            <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+              <span className="text-[11px] font-medium text-muted-foreground">
                 Evidence included:
               </span>
               {auditData.inputSummary.evidenceIncluded.length > 0 ? (
-                auditData.inputSummary.evidenceIncluded
-                  .slice(0, 10)
-                  .map((e: string, i: number) => (
-                    <span
-                      key={i}
-                      className="flex items-center gap-1 text-[11px]"
-                    >
-                      <CheckSquare className="w-3 h-3 text-emerald-400/70" />
-                      {e}
-                    </span>
-                  ))
+                <div className="flex flex-col gap-1">
+                  {auditData.inputSummary.evidenceIncluded
+                    .slice(0, 10)
+                    .map((e: string, i: number) => (
+                      <span
+                        key={i}
+                        className="flex items-center gap-1 text-[11px]"
+                      >
+                        <ShieldCheck className="w-3 h-3 text-success" />
+                        {e}
+                      </span>
+                    ))}
+                </div>
               ) : (
                 <span className="italic text-[11px] text-muted-foreground/50">
                   No evidence artifacts found.
@@ -1043,7 +1010,7 @@ function AuditMainContent({
               )}
             </div>
             {auditData.inputSummary.missingEvidence.length > 0 && (
-              <div className="flex flex-col gap-0.5 text-xs text-yellow-400/80">
+              <div className="flex flex-col gap-1 text-xs text-warning">
                 <span className="text-[11px] font-medium">
                   Missing evidence:
                 </span>
@@ -1081,7 +1048,7 @@ function AuditMainContent({
                   Regenerate Audit Summary
                 </Button>
                 {!auditData.actions.canGenerateAudit && (
-                  <p className="text-xs text-yellow-500/90 mt-1">
+                  <p className="text-xs text-warning mt-1">
                     {auditData.actions.generateAuditUnavailableReason ||
                       "Audit generation is blocked by validation requirements."}
                   </p>
@@ -1123,7 +1090,7 @@ function AuditMainContent({
                   <ShieldCheck className="w-3.5 h-3.5" />
                   Generate Audit
                 </Button>
-                <p className="text-xs text-yellow-500/90 mt-1">
+                <p className="text-xs text-warning mt-1">
                   {auditData.actions.generateAuditUnavailableReason ||
                     "Audit generation is blocked by validation requirements."}
                 </p>
@@ -1136,434 +1103,442 @@ function AuditMainContent({
             )}
           </div>
         )}
-      </Section>
+      </RunStageContentSection>
 
-      <Separator />
+      {/* Local Audit Evidence */}
+      <RunStageContentSection
+        eyebrow="Evidence"
+        title="Local Audit Evidence"
+        description="Audit evidence is derived from Relay artifacts only."
+      >
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="default" className="text-xs">
+              Local only
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              GitHub PRs, CI, and Actions are not used.
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 text-xs text-muted-foreground sm:grid-cols-2">
+            <RunStageKeyValueRow
+              label="Workflow state"
+              value={auditData.auditState || "fallback"}
+            />
+            <RunStageKeyValueRow
+              label="Evidence manifest"
+              value={auditData.evidenceManifestArtifact?.filename || "Pending"}
+              mono
+            />
+          </div>
+          {auditData.evidenceManifestArtifact && (
+            <ArtifactPreviewCard
+              artifact={auditData.evidenceManifestArtifact}
+              runId={runId}
+              className="max-w-full"
+            />
+          )}
+        </div>
+      </RunStageContentSection>
 
       {/* Audit Packet */}
-      <Section
+      <RunStageContentSection
+        eyebrow="Packet"
         title="Audit Packet"
-        icon={<ShieldCheck className="w-4 h-4 text-yellow-400" />}
+        description="The generated or manual audit packet review."
       >
-        {auditData.generatedPacket.available ? (
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2">
-              <Badge variant="destructive" className="text-xs">
-                Generated
-              </Badge>
-              <span className="text-xs font-mono text-muted-foreground truncate">
-                {auditData.generatedPacket.artifactPath}
-              </span>
-              {auditData.generatedPacket.generatedAt && (
-                <span className="text-[11px] text-muted-foreground/60">
-                  {new Date(
-                    auditData.generatedPacket.generatedAt,
-                  ).toLocaleString()}
+        <div className="flex flex-col gap-3">
+          {auditData.generatedPacket.available ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <Badge variant="default" className="text-xs bg-emerald-600 hover:bg-emerald-700 text-black">
+                  Generated
+                </Badge>
+                <span className="text-xs font-mono text-muted-foreground truncate">
+                  {auditData.generatedPacket.artifactPath}
                 </span>
+                {auditData.generatedPacket.generatedAt && (
+                  <span className="text-[11px] text-muted-foreground/60">
+                    {new Date(
+                      auditData.generatedPacket.generatedAt,
+                    ).toLocaleString()}
+                  </span>
+                )}
+              </div>
+              {auditData.generatedPacket.preview && (
+                <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-[var(--relay-row-border)] max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+                  {auditData.generatedPacket.preview}
+                </pre>
+              )}
+              {auditData.generatedPacket.warnings.length > 0 && (
+                <div className="flex flex-col gap-1 text-xs text-warning">
+                  {auditData.generatedPacket.warnings.map(
+                    (w: string, i: number) => (
+                      <span
+                        key={i}
+                        className="flex items-center gap-1 text-[11px]"
+                      >
+                        <AlertTriangle className="w-3 h-3" />
+                        {w}
+                      </span>
+                    ),
+                  )}
+                </div>
+              )}
+              {auditData.generatedPacket.decision && (
+                <div className="flex items-center gap-2 text-xs">
+                  <Badge variant="secondary" className="text-xs">
+                    Decision: {auditData.generatedPacket.decision}
+                  </Badge>
+                </div>
               )}
             </div>
-            {auditData.generatedPacket.preview && (
-              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
-                {auditData.generatedPacket.preview}
-              </pre>
-            )}
-            {auditData.generatedPacket.warnings.length > 0 && (
-              <div className="flex flex-col gap-0.5 text-xs text-yellow-400/80">
-                {auditData.generatedPacket.warnings.map(
-                  (w: string, i: number) => (
-                    <span
-                      key={i}
-                      className="flex items-center gap-1 text-[11px]"
-                    >
-                      <AlertTriangle className="w-3 h-3" />
-                      {w}
-                    </span>
-                  ),
-                )}
-              </div>
-            )}
-            {auditData.generatedPacket.decision && (
-              <div className="flex items-center gap-2 text-xs">
+          ) : (
+            <p className="text-xs text-muted-foreground italic">
+              No generated audit packet available.
+            </p>
+          )}
+
+          {auditData.manualPacket && (
+            <div className="flex flex-col gap-2 mt-3 pt-3 border-t border-[var(--relay-row-border)]">
+              <div className="flex items-center gap-2">
                 <Badge variant="secondary" className="text-xs">
-                  Decision: {auditData.generatedPacket.decision}
+                  Manual Submission
                 </Badge>
+                <span className="text-xs font-mono text-muted-foreground truncate">
+                  {auditData.manualPacket.artifactPath}
+                </span>
               </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground italic">
-            No generated audit packet available.
-          </p>
-        )}
-
-        {auditData.manualPacket && (
-          <div className="flex flex-col gap-1.5 mt-3 pt-3 border-t border-border/40">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-xs">
-                Manual Submission
-              </Badge>
-              <span className="text-xs font-mono text-muted-foreground truncate">
-                {auditData.manualPacket.artifactPath}
-              </span>
+              {auditData.manualPacket.preview && (
+                <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-[var(--relay-row-border)] max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+                  {auditData.manualPacket.preview}
+                </pre>
+              )}
             </div>
-            {auditData.manualPacket.preview && (
-              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
-                {auditData.manualPacket.preview}
-              </pre>
-            )}
-          </div>
-        )}
+          )}
 
-        {auditData.actions.canSubmitManual && (
-          <div className="mt-3">
-            {!showManualSubmit ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowManualSubmit(true)}
-                disabled={activeMutation}
-                className="w-fit gap-1.5"
-              >
-                <Send className="w-3.5 h-3.5" />
-                Submit Manual Audit Decision
-              </Button>
-            ) : (
-              <div className="flex flex-col gap-2 p-3 bg-muted/20 rounded border border-border/40">
-                <p className="text-xs font-medium text-muted-foreground">
+          {auditData.actions.canSubmitManual && (
+            <div className="mt-3">
+              {!showManualSubmit ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowManualSubmit(true)}
+                  disabled={activeMutation}
+                  className="w-fit gap-1.5"
+                >
+                  <Send className="w-3.5 h-3.5" />
                   Submit Manual Audit Decision
-                </p>
-                <Textarea
-                  className="text-xs font-mono min-h-[120px]"
-                  placeholder="Paste audit packet markdown content..."
-                  value={manualPacketMarkdown}
-                  onChange={(e) => setManualPacketMarkdown(e.target.value)}
-                />
-                <div className="flex flex-col gap-1">
-                  <label className="text-[11px] text-muted-foreground">
-                    Decision
-                  </label>
-                  <select
-                    className="text-xs bg-background border border-border/60 rounded px-2 py-1.5"
-                    value={manualDecision}
-                    onChange={(e) => setManualDecision(e.target.value)}
-                  >
-                    <option value="">Select decision...</option>
-                    {RELAY_AUDIT_DECISION_VALUES.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
+                </Button>
+              ) : (
+                <div className="flex flex-col gap-2 p-3 bg-muted/20 rounded border border-[var(--relay-row-border)]">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Submit Manual Audit Decision
+                  </p>
+                  <Textarea
+                    className="text-xs font-mono min-h-[120px]"
+                    placeholder="Paste audit packet markdown content..."
+                    value={manualPacketMarkdown}
+                    onChange={(e) => setManualPacketMarkdown(e.target.value)}
+                  />
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] text-muted-foreground">
+                      Decision
+                    </label>
+                    <select
+                      className="text-xs bg-background border border-[var(--relay-row-border)] rounded px-2 py-1.5 text-foreground"
+                      value={manualDecision}
+                      onChange={(e) => setManualDecision(e.target.value)}
+                    >
+                      <option value="">Select decision...</option>
+                      {RELAY_AUDIT_DECISION_VALUES.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <Textarea
+                    className="text-xs min-h-[60px]"
+                    placeholder="Optional notes..."
+                    value={manualNotes}
+                    onChange={(e) => setManualNotes(e.target.value)}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleSubmitManual}
+                      disabled={
+                        activeMutation ||
+                        !manualDecision ||
+                        !manualPacketMarkdown.trim()
+                      }
+                      className="w-fit gap-1.5"
+                    >
+                      {submitManualMutation.isPending ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                      Submit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowManualSubmit(false);
+                        setManualPacketMarkdown("");
+                        setManualDecision("");
+                        setManualNotes("");
+                      }}
+                      disabled={activeMutation}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
-                <Textarea
-                  className="text-xs min-h-[60px]"
-                  placeholder="Optional notes..."
-                  value={manualNotes}
-                  onChange={(e) => setManualNotes(e.target.value)}
-                />
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={handleSubmitManual}
-                    disabled={
-                      activeMutation ||
-                      !manualDecision ||
-                      !manualPacketMarkdown.trim()
-                    }
-                    className="w-fit gap-1.5"
-                  >
-                    {submitManualMutation.isPending ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Send className="w-3.5 h-3.5" />
-                    )}
-                    Submit
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setShowManualSubmit(false);
-                      setManualPacketMarkdown("");
-                      setManualDecision("");
-                      setManualNotes("");
-                    }}
-                    disabled={activeMutation}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
+              )}
+            </div>
+          )}
+
+          {!auditData.generatedPacket.available &&
+            !auditData.manualPacket &&
+            !auditData.actions.canSubmitManual && (
+              <p className="text-xs text-muted-foreground/60 italic mt-1">
+                No audit packet available and manual submission is not enabled for
+                this run.
+              </p>
             )}
-          </div>
-        )}
-
-        {!auditData.generatedPacket.available &&
-          !auditData.manualPacket &&
-          !auditData.actions.canSubmitManual && (
-            <p className="text-xs text-muted-foreground/60 italic mt-1">
-              No audit packet available and manual submission is not enabled for
-              this run.
-            </p>
-          )}
-      </Section>
-
-      <Separator />
-
-      {/* Audit Decision */}
-      <Section
-        title="Audit Decision Actions"
-        icon={<CheckSquare className="w-4 h-4 text-emerald-400" />}
-      >
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge
-            variant={
-              auditData.decision.source === "approved"
-                ? "default"
-                : auditData.decision.source === "manual"
-                  ? "destructive"
-                  : auditData.decision.source === "generated"
-                    ? "secondary"
-                    : "outline"
-            }
-            className="text-xs"
-          >
-            {auditData.decision.source === "approved"
-              ? "Approved"
-              : auditData.decision.source === "manual"
-                ? "Manual Decision Submitted"
-                : auditData.decision.source === "generated"
-                  ? "Generated Recommendation"
-                  : "No Decision"}
-          </Badge>
-          {auditData.decision.currentDecision && (
-            <span className="text-xs font-mono text-muted-foreground">
-              {auditData.decision.currentDecision}
-            </span>
-          )}
-          {auditData.decision.approvedAt && (
-            <span className="text-xs text-muted-foreground/60">
-              {new Date(auditData.decision.approvedAt).toLocaleString()}
-            </span>
-          )}
         </div>
-        {auditData.decision.notes && (
-          <p className="text-xs text-muted-foreground mt-1">
-            {auditData.decision.notes}
-          </p>
-        )}
-
-        <div className="flex items-center gap-2 flex-wrap mt-2">
-          {auditData.actions.canApproveAudit && !showApproveForm && (
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => setShowApproveForm(true)}
-              disabled={activeMutation}
-              className="w-fit gap-1.5"
-            >
-              <CheckSquare className="w-3.5 h-3.5" />
-              Approve Audit
-            </Button>
-          )}
-          {auditData.actions.canRequestRevision && !showRevisionForm && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowRevisionForm(true)}
-              disabled={activeMutation}
-              className="w-fit gap-1.5 text-destructive/80"
-            >
-              <XSquare className="w-3.5 h-3.5" />
-              Request Revision
-            </Button>
-          )}
-        </div>
-
-        {showApproveForm && (
-          <div className="flex flex-col gap-2 p-3 bg-muted/20 rounded border border-border/40 mt-2">
-            <p className="text-xs font-medium text-muted-foreground">
-              Approve Audit
-            </p>
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] text-muted-foreground">
-                Decision
-              </label>
-              <select
-                className="text-xs bg-background border border-border/60 rounded px-2 py-1.5"
-                value={approveDecision}
-                onChange={(e) =>
-                  setApproveDecision(
-                    e.target.value as "accepted" | "accepted_with_warnings",
-                  )
-                }
-              >
-                <option value="accepted">Accepted</option>
-                <option value="accepted_with_warnings">
-                  Accepted with Warnings
-                </option>
-              </select>
-            </div>
-            <Textarea
-              className="text-xs min-h-[60px]"
-              placeholder="Optional approval notes..."
-              value={approveNotes}
-              onChange={(e) => setApproveNotes(e.target.value)}
-            />
-            <div className="flex items-center gap-2">
-              <Button
-                variant="default"
-                size="sm"
-                onClick={handleApproveAudit}
-                disabled={activeMutation}
-                className="w-fit gap-1.5"
-              >
-                {approveMutation.isPending ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <CheckSquare className="w-3.5 h-3.5" />
-                )}
-                Confirm Approval
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowApproveForm(false);
-                  setApproveNotes("");
-                }}
-                disabled={activeMutation}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {showRevisionForm && (
-          <div className="flex flex-col gap-2 p-3 bg-muted/20 rounded border border-border/40 mt-2">
-            <p className="text-xs font-medium text-muted-foreground">
-              Request Revision
-            </p>
-            <Textarea
-              className="text-xs min-h-[60px]"
-              placeholder="Describe what needs revision..."
-              value={revisionReason}
-              onChange={(e) => setRevisionReason(e.target.value)}
-            />
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRequestRevision}
-                disabled={activeMutation}
-                className="w-fit gap-1.5 text-destructive/80"
-              >
-                {revisionMutation.isPending ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <XSquare className="w-3.5 h-3.5" />
-                )}
-                Submit Revision Request
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowRevisionForm(false);
-                  setRevisionReason("");
-                }}
-                disabled={activeMutation}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {!auditData.actions.canApproveAudit &&
-          !auditData.actions.canRequestRevision &&
-          auditData.decision.source === "none" && (
-            <p className="text-xs text-muted-foreground/60 italic mt-1">
-              Generate an audit packet or submit a manual audit to enable
-              decision actions.
-            </p>
-          )}
-      </Section>
-
-      <Separator />
+      </RunStageContentSection>
 
       {/* Warnings / Revision Requirements */}
       {(auditData.warnings.length > 0 ||
         auditData.revisionRequirements.length > 0 ||
         auditData.blockers.length > 0) && (
-        <>
-          <Section
-            title="Warnings / Revision Requirements"
-            icon={<AlertTriangle className="w-4 h-4 text-yellow-400" />}
-          >
-            {auditData.blockers.length > 0 && (
-              <div className="flex flex-col gap-1">
-                <p className="text-xs font-medium text-red-400">Blockers</p>
-                {auditData.blockers.map((b: string, i: number) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-1.5 text-xs text-red-400/80"
-                  >
-                    <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
-                    <span>{b}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {auditData.revisionRequirements.length > 0 && (
-              <div className="flex flex-col gap-1 mt-2">
-                <p className="text-xs font-medium text-yellow-400">
-                  Revision Requirements
-                </p>
-                {auditData.revisionRequirements.map((r: string, i: number) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-1.5 text-xs text-yellow-400/80"
-                  >
-                    <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
-                    <span>{r}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {auditData.warnings.length > 0 && (
-              <div className="flex flex-col gap-1 mt-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Warnings
-                </p>
-                {auditData.warnings.map((w: string, i: number) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-1.5 text-xs text-yellow-400/70"
-                  >
-                    <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
-                    <span>{w}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Section>
-          <Separator />
-        </>
+        <RunStageContentSection
+          eyebrow="Findings"
+          title="Warnings & Revision Requirements"
+          description="Outstanding blockers, revision requirements, or warnings that must be reviewed."
+        >
+          <RunStageFindingList>
+            {auditData.blockers.map((b: string, i: number) => (
+              <RunStageFindingRow
+                key={`blocker-${i}`}
+                severity="error"
+                message={b}
+              />
+            ))}
+            {auditData.revisionRequirements.map((r: string, i: number) => (
+              <RunStageFindingRow
+                key={`rev-${i}`}
+                severity="warning"
+                message={r}
+              />
+            ))}
+            {auditData.warnings.map((w: string, i: number) => (
+              <RunStageFindingRow
+                key={`warn-${i}`}
+                severity="info"
+                message={w}
+              />
+            ))}
+          </RunStageFindingList>
+        </RunStageContentSection>
       )}
 
-      {/* Commit Summary */}
-      <Section
-        title="Post-Audit Closeout: Commit Summary"
-        icon={<FileCode className="w-4 h-4" />}
+      {/* Audit Decision */}
+      <RunStageContentSection
+        eyebrow="Decision"
+        title="Audit Decision Actions"
+        description="Accept the audit candidate and record final decision notes, or request revision."
       >
-        <div className="flex flex-col gap-1.5">
-          <p className="text-[11px] text-muted-foreground/70">
-            These are post-audit closeout actions. Accepting an audit does not
-            automatically prepare a commit message or close the run.
-          </p>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge
+              variant={
+                auditData.decision.source === "approved"
+                  ? "default"
+                  : auditData.decision.source === "manual"
+                    ? "destructive"
+                    : auditData.decision.source === "generated"
+                      ? "secondary"
+                      : "outline"
+              }
+              className="text-xs"
+            >
+              {auditData.decision.source === "approved"
+                ? "Approved"
+                : auditData.decision.source === "manual"
+                  ? "Manual Decision Submitted"
+                  : auditData.decision.source === "generated"
+                    ? "Generated Recommendation"
+                    : "No Decision"}
+            </Badge>
+            {auditData.decision.currentDecision && (
+              <span className="text-xs font-mono text-muted-foreground">
+                {auditData.decision.currentDecision}
+              </span>
+            )}
+            {auditData.decision.approvedAt && (
+              <span className="text-xs text-muted-foreground/60">
+                {new Date(auditData.decision.approvedAt).toLocaleString()}
+              </span>
+            )}
+          </div>
+          {auditData.decision.notes && (
+            <p className="text-xs text-muted-foreground mt-1">
+              {auditData.decision.notes}
+            </p>
+          )}
+
+          <div className="flex items-center gap-2 flex-wrap mt-1">
+            {auditData.actions.canApproveAudit && !showApproveForm && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setShowApproveForm(true)}
+                disabled={activeMutation}
+                className="w-fit gap-1.5"
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                Approve Audit
+              </Button>
+            )}
+            {auditData.actions.canRequestRevision && !showRevisionForm && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowRevisionForm(true)}
+                disabled={activeMutation}
+                className="w-fit gap-1.5 text-destructive/80"
+              >
+                <XSquare className="w-3.5 h-3.5" />
+                Request Revision
+              </Button>
+            )}
+          </div>
+
+          {showApproveForm && (
+            <div className="flex flex-col gap-2 p-3 bg-muted/20 rounded border border-[var(--relay-row-border)] mt-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                Approve Audit
+              </p>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] text-muted-foreground">
+                  Decision
+                </label>
+                <select
+                  className="text-xs bg-background border border-[var(--relay-row-border)] rounded px-2 py-1.5 text-foreground"
+                  value={approveDecision}
+                  onChange={(e) =>
+                    setApproveDecision(
+                      e.target.value as "accepted" | "accepted_with_warnings",
+                    )
+                  }
+                >
+                  <option value="accepted">Accepted</option>
+                  <option value="accepted_with_warnings">
+                    Accepted with Warnings
+                  </option>
+                </select>
+              </div>
+              <Textarea
+                className="text-xs min-h-[60px]"
+                placeholder="Optional approval notes..."
+                value={approveNotes}
+                onChange={(e) => setApproveNotes(e.target.value)}
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleApproveAudit}
+                  disabled={activeMutation}
+                  className="w-fit gap-1.5"
+                >
+                  {approveMutation.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <CheckSquare className="w-3.5 h-3.5" />
+                  )}
+                  Confirm Approval
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowApproveForm(false);
+                    setApproveNotes("");
+                  }}
+                  disabled={activeMutation}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {showRevisionForm && (
+            <div className="flex flex-col gap-2 p-3 bg-muted/20 rounded border border-[var(--relay-row-border)] mt-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                Request Revision
+              </p>
+              <Textarea
+                className="text-xs min-h-[60px]"
+                placeholder="Describe what needs revision..."
+                value={revisionReason}
+                onChange={(e) => setRevisionReason(e.target.value)}
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRequestRevision}
+                  disabled={activeMutation}
+                  className="w-fit gap-1.5 text-destructive/80"
+                >
+                  {revisionMutation.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <XSquare className="w-3.5 h-3.5" />
+                  )}
+                  Submit Revision Request
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowRevisionForm(false);
+                    setRevisionReason("");
+                  }}
+                  disabled={activeMutation}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {!auditData.actions.canApproveAudit &&
+            !auditData.actions.canRequestRevision &&
+            auditData.decision.source === "none" && (
+              <p className="text-xs text-muted-foreground/60 italic mt-1">
+                Generate an audit packet or submit a manual audit to enable
+                decision actions.
+              </p>
+            )}
+        </div>
+      </RunStageContentSection>
+
+      {/* Commit Summary */}
+      <RunStageContentSection
+        eyebrow="Closeout"
+        title="Post-Audit Closeout: Commit Summary"
+        description="Prepare a suggested commit message artifact for review. No git operations occur."
+      >
+        <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <Badge
               variant={
@@ -1584,23 +1559,23 @@ function AuditMainContent({
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-2 text-[11px] text-muted-foreground sm:grid-cols-3">
-            <div>
-              <span className="font-medium">Changed files:</span>{" "}
-              {auditData.commitSummary.changedFileArtifactIds.length}
-            </div>
-            <div>
-              <span className="font-medium">Validation:</span>{" "}
-              {auditData.commitSummary.validationSummary}
-            </div>
-            <div>
-              <span className="font-medium">Audit:</span>{" "}
-              {auditData.commitSummary.auditDecisionSummary}
-            </div>
+          <div className="grid grid-cols-1 gap-4 text-xs text-muted-foreground sm:grid-cols-3">
+            <RunStageKeyValueRow
+              label="Changed files"
+              value={String(auditData.commitSummary.changedFileArtifactIds.length)}
+            />
+            <RunStageKeyValueRow
+              label="Validation"
+              value={auditData.commitSummary.validationSummary}
+            />
+            <RunStageKeyValueRow
+              label="Audit"
+              value={auditData.commitSummary.auditDecisionSummary}
+            />
           </div>
 
           {auditData.commitSummary.commitMessagePreview && (
-            <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-32 overflow-y-auto whitespace-pre-wrap text-foreground">
+            <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-[var(--relay-row-border)] max-h-32 overflow-y-auto whitespace-pre-wrap text-foreground">
               {auditData.commitSummary.commitMessagePreview}
             </pre>
           )}
@@ -1621,22 +1596,16 @@ function AuditMainContent({
               Prepare Commit Message
             </Button>
           )}
-
-          <p className="text-[11px] text-muted-foreground/50 italic">
-            Preparing a commit message only writes a suggested artifact. No git
-            commit, push, or staging occurs.
-          </p>
         </div>
-      </Section>
-
-      <Separator />
+      </RunStageContentSection>
 
       {/* Close Run */}
-      <Section
+      <RunStageContentSection
+        eyebrow="Closeout"
         title="Post-Audit Closeout: Close Run"
-        icon={<Terminal className="w-4 h-4" />}
+        description="Mark the run as complete. This updates Relay state only and preserves all evidence."
       >
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <Badge
               variant={
@@ -1683,24 +1652,19 @@ function AuditMainContent({
           {auditData.actions.closeRunUnavailableReason &&
             run.lifecycleState !== "completed" && (
               <p className="text-xs text-muted-foreground/60 italic mt-1 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
+                <AlertTriangle className="w-3 h-3 text-warning" />
                 {auditData.actions.closeRunUnavailableReason}
               </p>
             )}
 
           {run.lifecycleState === "completed" && (
-            <p className="text-xs text-emerald-400/70 mt-1">
+            <p className="text-xs text-success mt-1">
               Run is closed. All artifacts and evidence are preserved.
             </p>
           )}
-
-          <p className="text-[11px] text-muted-foreground/50 italic mt-1">
-            Closing a run updates Relay run state only. No git commit, push, or
-            repo mutation occurs.
-          </p>
         </div>
-      </Section>
-    </div>
+      </RunStageContentSection>
+    </RunStageMainStack>
   );
 }
 
@@ -1967,26 +1931,3 @@ function formatArtifactLocation(artifact?: RelayArtifact): string {
   return artifact?.path || artifact?.filename || "-";
 }
 
-function Section({
-  title,
-  icon,
-  children,
-}: {
-  title: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="min-w-0 border-border/60 bg-card/20">
-      <CardHeader className="p-3 pb-2">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          {icon}
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="min-w-0 p-3 pt-0 flex flex-col gap-1.5">
-        {children}
-      </CardContent>
-    </Card>
-  );
-}

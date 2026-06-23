@@ -14,7 +14,6 @@ import {
 import type { RelayArtifact, RelayExecutorPhase, RelayRun } from "@/features/relay-runs";
 import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
 import {
-  RelayInlineState,
   RelayStateBanner,
 } from "@/components/relay/RelayStateSurface";
 import {
@@ -31,9 +30,11 @@ import {
   RunStageStateCard,
   RunStageSummaryCard,
   RunStageSummaryChip,
+  RunStageContentSection,
+  RunStageEvidenceRow,
+  RunStageEvidenceList,
+  RunStageMainStack,
 } from "@/components/relay/RunStagePrimitives";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -48,7 +49,6 @@ import {
   RefreshCw,
   StopCircle,
   Clock,
-  FileText,
 } from "lucide-react";
 import {
   EXECUTE_PIPELINE_STEPS,
@@ -459,7 +459,7 @@ function ExecuteMainContent({
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <RunStageMainStack>
       {mutationError && (
         <RelayStateBanner
           tone="danger"
@@ -473,7 +473,118 @@ function ExecuteMainContent({
         eyebrow={executeStateCardCopy.eyebrow}
         title={executeStateCardCopy.title}
         message={executeStateCardCopy.message}
-      />
+        action={
+          <div className="flex items-center gap-2">
+            {actionAvailability.canStart && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleStart}
+                disabled={activeMutation}
+                className="w-fit gap-1.5"
+              >
+                {startMutation.isPending ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Play className="w-3.5 h-3.5" />
+                )}
+                {runStatus === "approved_for_executor"
+                  ? "Start Executor"
+                  : "Restart Executor"}
+              </Button>
+            )}
+
+            {actionAvailability.canCancel && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCancel}
+                disabled={activeMutation}
+                className="w-fit gap-1.5"
+                title={actionAvailability.cancelUnavailableReason}
+              >
+                {cancelMutation.isPending ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <StopCircle className="w-3.5 h-3.5" />
+                )}
+                Cancel
+              </Button>
+            )}
+
+            {actionAvailability.canRecover && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRecover}
+                disabled={activeMutation}
+                className="w-fit gap-1.5"
+                title={actionAvailability.recoverUnavailableReason}
+              >
+                {recoverMutation.isPending ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3.5 h-3.5" />
+                )}
+                Recover
+              </Button>
+            )}
+          </div>
+        }
+      >
+        <div className="flex items-center gap-2 mt-2">
+          <Badge
+            variant={formatPhaseBadgeVariant(executorPhase) as any}
+            className="text-xs"
+          >
+            {formatPhaseLabel(executorPhase)}
+          </Badge>
+          <span className="text-xs text-muted-foreground flex items-center gap-1.5 font-mono">
+            <span>{run.executorAdapter || run.executor}</span>
+            <span className="opacity-50">/</span>
+            <span>{run.model}</span>
+          </span>
+        </div>
+
+        {preflightBlocked && (
+          <RelayStateBanner
+            tone="blocked"
+            title="Executor blocked"
+            description="Relay did not start the executor CLI. Fix local daemon readiness, binary path, workdir, or prompt-file availability, then retry."
+            metadata={`Evidence: ${(preflightCommandLogArt || commandLogArt)?.filename || "command_log"} / ${(preflightResultArt || executorResultArt)?.filename || "executor_result"}`}
+            className="mt-3"
+          />
+        )}
+        {!preflightBlocked &&
+          (executorPhase === "blocked" || executorPhase === "failed") && (
+            <RelayStateBanner
+              tone="blocked"
+              title="Executor blocked"
+              description={
+                executorPhase === "failed"
+                  ? "Executor encountered a failure. Review error artifacts and consider recovery options."
+                  : "Executor reported a blocking issue. Review result artifacts for details."
+              }
+              metadata={`Current status: ${runStatus}`}
+              className="mt-3"
+            />
+          )}
+
+        {actionAvailability.canCancel &&
+          actionAvailability.cancelUnavailableReason && (
+            <p className="text-xs text-muted-foreground/60 italic mt-1 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 text-yellow-400" />
+              {actionAvailability.cancelUnavailableReason}
+            </p>
+          )}
+        {actionAvailability.canRecover &&
+          actionAvailability.recoverUnavailableReason && (
+            <p className="text-xs text-muted-foreground/60 italic mt-1 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 text-yellow-400" />
+              {actionAvailability.recoverUnavailableReason}
+            </p>
+          )}
+      </RunStageStateCard>
 
       <RunStageSummaryCard
         eyebrow="Execute Pipeline"
@@ -513,168 +624,13 @@ function ExecuteMainContent({
         />
       </RunStageSummaryCard>
 
-      {/* Agent Status */}
-      <Section
-        title="Agent Status"
-        icon={
-          executorPhase === "running" || executorPhase === "dispatched" ? (
-            <Loader2 className="w-4 h-4 text-violet-400 animate-spin" />
-          ) : executorPhase === "done" ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          ) : executorPhase === "blocked" || executorPhase === "failed" ? (
-            <XCircle className="w-4 h-4 text-red-400" />
-          ) : (
-            <Clock className="w-4 h-4 text-muted-foreground" />
-          )
-        }
+      <RunStageContentSection
+        eyebrow="Logs"
+        title="Recent Activity & Live Logs"
+        description="Live execution events and output captured from the running executor."
       >
-        <div className="flex items-center gap-2">
-          <Badge
-            variant={formatPhaseBadgeVariant(executorPhase) as any}
-            className="text-xs"
-          >
-            {formatPhaseLabel(executorPhase)}
-          </Badge>
-          <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-            <span className="font-mono">
-              {run.executorAdapter || run.executor}
-            </span>
-            <span className="opacity-50">/</span>
-            <span>{run.model}</span>
-          </span>
-        </div>
-
-        {executorPhase === "running" && (
-          <p className="text-xs text-muted-foreground/70 mt-1">
-            Executor is actively running. Live log streaming via SSE is not yet
-            available; refresh to see latest output.
-          </p>
-        )}
-        {executorPhase === "done" && (
-          <p className="text-xs text-emerald-400/70 mt-1">
-            Executor completed successfully. Review changed files and result
-            below.
-          </p>
-        )}
-        {executorPhase === "idle" && (
-          <p className="text-xs text-muted-foreground/70 mt-1">
-            Ready to dispatch executor. Click Start to begin the agent run.
-          </p>
-        )}
-
-        {preflightBlocked && (
-          <RelayStateBanner
-            tone="blocked"
-            title="Executor blocked"
-            description="Relay did not start the executor CLI. Fix local daemon readiness, binary path, workdir, or prompt-file availability, then retry."
-            metadata={`Evidence: ${(preflightCommandLogArt || commandLogArt)?.filename || "command_log"} / ${(preflightResultArt || executorResultArt)?.filename || "executor_result"}`}
-            className="mt-3"
-          />
-        )}
-        {!preflightBlocked &&
-          (executorPhase === "blocked" || executorPhase === "failed") && (
-            <RelayStateBanner
-              tone="blocked"
-              title="Executor blocked"
-              description={
-                executorPhase === "failed"
-                  ? "Executor encountered a failure. Review error artifacts and consider recovery options."
-                  : "Executor reported a blocking issue. Review result artifacts for details."
-              }
-              metadata={`Current status: ${runStatus}`}
-              className="mt-3"
-            />
-          )}
-        {executorPhase === "unavailable" && (
-          <RelayInlineState
-            tone="empty"
-            title="Execution unavailable"
-            description={`Execution is not available for this run. Current status: ${runStatus}.`}
-            className="mt-3"
-          />
-        )}
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2 mt-2">
-          {actionAvailability.canStart && (
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleStart}
-              disabled={activeMutation}
-              className="w-fit gap-1.5"
-            >
-              {startMutation.isPending ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Play className="w-3.5 h-3.5" />
-              )}
-              {runStatus === "approved_for_executor"
-                ? "Start Executor"
-                : "Restart Executor"}
-            </Button>
-          )}
-
-          {actionAvailability.canCancel && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCancel}
-              disabled={activeMutation}
-              className="w-fit gap-1.5"
-              title={actionAvailability.cancelUnavailableReason}
-            >
-              {cancelMutation.isPending ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <StopCircle className="w-3.5 h-3.5" />
-              )}
-              Cancel
-            </Button>
-          )}
-
-          {actionAvailability.canRecover && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRecover}
-              disabled={activeMutation}
-              className="w-fit gap-1.5"
-              title={actionAvailability.recoverUnavailableReason}
-            >
-              {recoverMutation.isPending ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="w-3.5 h-3.5" />
-              )}
-              Recover
-            </Button>
-          )}
-        </div>
-
-        {/* Unsupported action hints */}
-        {actionAvailability.canCancel &&
-          actionAvailability.cancelUnavailableReason && (
-            <p className="text-xs text-muted-foreground/60 italic mt-1 flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3" />
-              {actionAvailability.cancelUnavailableReason}
-            </p>
-          )}
-        {actionAvailability.canRecover &&
-          actionAvailability.recoverUnavailableReason && (
-            <p className="text-xs text-muted-foreground/60 italic mt-1 flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3" />
-              {actionAvailability.recoverUnavailableReason}
-            </p>
-          )}
-      </Section>
-
-      <Separator />
-
-      {/* Live Logs */}
-      <Section title="Live Logs" icon={<Terminal className="w-4 h-4" />}>
         {run.logPreview.lines.length > 0 ? (
-          <ScrollArea className="h-48 w-full rounded-md border border-border/50 bg-black/30">
+          <ScrollArea className="h-48 w-full rounded-md border border-[var(--relay-row-border)] bg-[var(--relay-code-bg)]">
             <div className="min-w-0 p-3 font-mono text-xs">
               <div className="overflow-x-auto">
                 <div className="min-w-max space-y-0.5">
@@ -688,8 +644,7 @@ function ExecuteMainContent({
                   ))}
                   {run.logPreview.truncated && (
                     <div className="text-muted-foreground/50 italic">
-                      … output truncated. Full log available via raw artifact
-                      content endpoint.
+                      … output truncated. Full log available via raw artifact content endpoint.
                     </div>
                   )}
                 </div>
@@ -697,7 +652,7 @@ function ExecuteMainContent({
             </div>
           </ScrollArea>
         ) : (
-          <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs bg-[var(--surface-inset)]/30 border border-dashed rounded p-3 text-muted-foreground">
             <Terminal className="w-3.5 h-3.5 shrink-0" />
             <span className="italic">
               {executorPhase === "idle"
@@ -707,79 +662,72 @@ function ExecuteMainContent({
           </div>
         )}
 
-        {/* Executor log artifact links */}
         {resultArtifacts.filter(isExecutorLogArtifact).length > 0 && (
-          <div className="flex flex-col gap-1 mt-1">
+          <div className="flex flex-col gap-1 mt-2">
             <p className="text-[11px] text-muted-foreground/60 italic">
               Executor log artifacts on disk:
             </p>
-            {resultArtifacts
-              .filter(isExecutorLogArtifact)
-              .slice(0, 3)
-              .map((a: any) => (
-                <div
-                  key={a.id}
-                  className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground/70"
-                >
-                  <FileText className="w-3 h-3 shrink-0" />
-                  <span className="truncate">{a.filename}</span>
-                  {a.sizeHint && (
-                    <span className="shrink-0">({a.sizeHint})</span>
-                  )}
-                </div>
-              ))}
+            <RunStageEvidenceList>
+              {resultArtifacts
+                .filter(isExecutorLogArtifact)
+                .slice(0, 3)
+                .map((a: any) => (
+                  <RunStageEvidenceRow
+                    key={a.id}
+                    label={a.filename}
+                    value={a.sizeHint || ""}
+                  />
+                ))}
+            </RunStageEvidenceList>
           </div>
         )}
-      </Section>
+      </RunStageContentSection>
 
-      <Separator />
-
-      {/* Validation Commands */}
-      <Section
+      <RunStageContentSection
+        eyebrow="Validation"
         title="Validation Commands"
-        icon={<CheckCircle2 className="w-4 h-4" />}
+        description="Validation commands run after executor completion. Results are captured as artifacts."
+        actions={
+          canRunValidation ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleValidate}
+              disabled={activeMutation}
+              className="gap-1.5"
+            >
+              {validateMutation.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Play className="w-3.5 h-3.5" />
+              )}
+              Run Validation
+            </Button>
+          ) : undefined
+        }
       >
-        <p className="text-xs text-muted-foreground">
-          Validation commands are run after executor completion. Results are
-          captured as artifacts.
-        </p>
-        <div className="flex flex-col gap-1 mt-1">
+        <div className="flex flex-col gap-3">
           {validationArtifacts.length > 0 ? (
-            validationArtifacts.slice(0, 5).map((a: any) => (
-              <div
-                key={a.id}
-                className="flex items-center gap-2 text-xs font-mono p-1.5 bg-muted/20 rounded border border-border/40"
-              >
-                <Badge
-                  variant={
+            <RunStageEvidenceList>
+              {validationArtifacts.slice(0, 5).map((a: any) => (
+                <RunStageEvidenceRow
+                  key={a.id}
+                  label={a.filename || a.label}
+                  value={
                     a.storageKind === "validation_run_json"
-                      ? "default"
+                      ? "Validation Result"
                       : a.storageKind === "validation_progress_json"
-                        ? "secondary"
+                        ? "Validation Progress"
                         : a.status === "ready"
-                          ? "default"
-                          : "secondary"
+                          ? "Captured"
+                          : a.status
                   }
-                  className="text-xs shrink-0"
-                >
-                  {a.storageKind === "validation_run_json"
-                    ? "Validation Result"
-                    : a.storageKind === "validation_progress_json"
-                      ? "Validation Progress"
-                      : a.status === "ready"
-                        ? "Captured"
-                        : a.status}
-                </Badge>
-                <code className="flex-1 text-muted-foreground truncate">
-                  {a.filename || a.label}
-                </code>
-                {a.sizeHint && (
-                  <span className="text-muted-foreground/60">{a.sizeHint}</span>
-                )}
-              </div>
-            ))
+                  status={a.sizeHint ? <span className="text-muted-foreground/60 text-xs">{a.sizeHint}</span> : null}
+                />
+              ))}
+            </RunStageEvidenceList>
           ) : (
-            <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs bg-[var(--surface-inset)]/30 border border-dashed rounded p-3 text-muted-foreground">
               <Clock className="w-3.5 h-3.5 shrink-0" />
               <span className="italic">
                 {localValidationIsRunning
@@ -800,24 +748,6 @@ function ExecuteMainContent({
             </div>
           )}
 
-          {canRunValidation && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleValidate}
-              disabled={activeMutation}
-              className="w-fit gap-1.5 mt-2"
-            >
-              {validateMutation.isPending ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Play className="w-3.5 h-3.5" />
-              )}
-              Run Validation
-            </Button>
-          )}
-
-          {/* Show summary counts from run validation */}
           {(run.validationSummary?.errors > 0 ||
             run.validationSummary?.warnings > 0 ||
             run.validationSummary?.passed > 0) && (
@@ -851,46 +781,36 @@ function ExecuteMainContent({
               )}
             </div>
           )}
+
+          {primaryValidationArt?.preview && (
+            <div className="mt-2">
+              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-[var(--relay-code-bg)] p-2.5 rounded border border-[var(--relay-row-border)] max-h-32 overflow-y-auto whitespace-pre-wrap text-foreground">
+                {primaryValidationArt.preview}
+              </pre>
+            </div>
+          )}
         </div>
+      </RunStageContentSection>
 
-        {primaryValidationArt?.preview && (
-          <div className="mt-2">
-            <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-32 overflow-y-auto whitespace-pre-wrap text-foreground">
-              {primaryValidationArt.preview}
-            </pre>
-          </div>
-        )}
-      </Section>
-
-      <Separator />
-
-      {/* Changed Files */}
-      <Section title="Changed Files" icon={<FileCode className="w-4 h-4" />}>
+      <RunStageContentSection
+        eyebrow="Diff"
+        title="Changed Files"
+        description="Changes made to the target repository workspace by the executor."
+      >
         {diffArtifacts.length > 0 ? (
           <div className="flex flex-col gap-2">
-            {/* Individual diff artifact entries */}
-            {diffArtifacts.slice(0, 5).map((a: any) => (
-              <div
-                key={a.id}
-                className="flex items-center justify-between p-2 bg-muted/20 rounded border border-border/40 text-xs font-mono"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileCode className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                  <span className="text-muted-foreground truncate">
-                    {a.filename || a.label}
-                  </span>
-                </div>
-                {a.sizeHint && (
-                  <span className="text-muted-foreground/60 shrink-0 ml-2">
-                    {a.sizeHint}
-                  </span>
-                )}
-              </div>
-            ))}
+            <RunStageEvidenceList>
+              {diffArtifacts.slice(0, 5).map((a: any) => (
+                <RunStageEvidenceRow
+                  key={a.id}
+                  label={a.filename || a.label}
+                  value={a.sizeHint || ""}
+                />
+              ))}
+            </RunStageEvidenceList>
 
-            {/* Preview for primary diff artifact */}
             {primaryDiffArt?.preview && (
-              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-[var(--relay-code-bg)] p-2.5 rounded border border-[var(--relay-row-border)] max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
                 {primaryDiffArt.preview}
               </pre>
             )}
@@ -900,7 +820,7 @@ function ExecuteMainContent({
             </p>
           </div>
         ) : (
-          <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs bg-[var(--surface-inset)]/30 border border-dashed rounded p-3 text-muted-foreground">
             <FileCode className="w-3.5 h-3.5 shrink-0" />
             <span className="italic">
               {executorPhase === "idle"
@@ -911,22 +831,17 @@ function ExecuteMainContent({
             </span>
           </div>
         )}
-      </Section>
+      </RunStageContentSection>
 
-      <Separator />
-
-      {/* Executor Result */}
-      <Section
+      <RunStageContentSection
+        eyebrow="Result"
         title="Executor Result"
-        icon={<CheckCircle2 className="w-4 h-4 text-muted-foreground" />}
+        description="Final captured result output and terminal code of the running executor."
       >
         {primaryResultArt ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <Badge
-                variant={executorPhase === "done" ? "default" : "secondary"}
-                className="text-xs"
-              >
+              <Badge variant={executorPhase === "done" ? "default" : "secondary"}>
                 {preflightBlocked
                   ? "Preflight Blocked"
                   : executorPhase === "done"
@@ -945,45 +860,38 @@ function ExecuteMainContent({
               )}
             </div>
 
-            {/* Parsed result preview */}
             {primaryResultArt.preview ? (
-              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-muted/40 p-2.5 rounded border border-border/40 max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
+              <pre className="max-w-full overflow-x-auto text-[11px] font-mono bg-[var(--relay-code-bg)] p-2.5 rounded border border-[var(--relay-row-border)] max-h-48 overflow-y-auto whitespace-pre-wrap text-foreground">
                 {primaryResultArt.preview}
               </pre>
             ) : (
-              <div className="text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
-                <span className="italic">
-                  Result content preview not available.
-                </span>
+              <div className="text-xs bg-[var(--surface-inset)]/30 border border-dashed rounded p-3 text-muted-foreground">
+                <span className="italic">Result content preview not available.</span>
               </div>
             )}
 
-            {/* Show other result artifacts as references */}
             {resultArtifacts.length > 1 && (
-              <div className="flex flex-col gap-1 mt-1">
+              <div className="flex flex-col gap-1 mt-2">
                 <p className="text-[11px] text-muted-foreground/60 italic">
                   Additional result artifacts:
                 </p>
-                {resultArtifacts
-                  .filter((a: any) => a.id !== primaryResultArt.id)
-                  .slice(0, 3)
-                  .map((a: any) => (
-                    <div
-                      key={a.id}
-                      className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground/70"
-                    >
-                      <FileText className="w-3 h-3 shrink-0" />
-                      <span className="truncate">{a.filename}</span>
-                      {a.sizeHint && (
-                        <span className="shrink-0">({a.sizeHint})</span>
-                      )}
-                    </div>
-                  ))}
+                <RunStageEvidenceList>
+                  {resultArtifacts
+                    .filter((a: any) => a.id !== primaryResultArt.id)
+                    .slice(0, 3)
+                    .map((a: any) => (
+                      <RunStageEvidenceRow
+                        key={a.id}
+                        label={a.filename}
+                        value={a.sizeHint || ""}
+                      />
+                    ))}
+                </RunStageEvidenceList>
               </div>
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-2 text-xs bg-muted/30 border border-dashed rounded p-3 text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs bg-[var(--surface-inset)]/30 border border-dashed rounded p-3 text-muted-foreground">
             <Clock className="w-3.5 h-3.5 shrink-0" />
             <span className="italic">
               {executorPhase === "idle"
@@ -994,8 +902,8 @@ function ExecuteMainContent({
             </span>
           </div>
         )}
-      </Section>
-    </div>
+      </RunStageContentSection>
+    </RunStageMainStack>
   );
 }
 
@@ -1170,26 +1078,3 @@ function formatArtifactLocation(artifact?: RelayArtifact): string {
   return artifact?.path || artifact?.filename || "-";
 }
 
-function Section({
-  title,
-  icon,
-  children,
-}: {
-  title: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="min-w-0 border-border/60 bg-card/20">
-      <CardHeader className="p-3 pb-2">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          {icon}
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="min-w-0 p-3 pt-0 flex flex-col gap-1.5">
-        {children}
-      </CardContent>
-    </Card>
-  );
-}

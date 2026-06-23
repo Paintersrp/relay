@@ -95,7 +95,10 @@ function IntakeWorkbench({
     truncated: formattedLogs.length > 50,
   };
   const intakeReview = useRunIntakeReviewController({
-    run,
+    run: {
+      ...run,
+      latestEvents: events || [],
+    },
     artifacts: artifacts || [],
   });
 

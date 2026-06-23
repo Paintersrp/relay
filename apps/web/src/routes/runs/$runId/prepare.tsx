@@ -36,16 +36,22 @@ import {
   RunStageStateCard,
   RunStageSummaryCard,
   RunStageSummaryChip,
+  RunStageContentSection,
+  RunStageEvidenceRow,
+  RunStageEvidenceList,
+  RunStageFindingRow,
+  RunStageFindingList,
+  RunStageActivityRow,
+  RunStageActivityList,
+  RunStageMainStack,
 } from "@/components/relay/RunStagePrimitives";
 import { ValidationPanel } from "@/components/relay/ValidationPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowRight,
-  CheckCircle2,
   FileText,
   Loader2,
   Play,
@@ -121,7 +127,10 @@ function PreparePage() {
   const resolvedArtifacts = artifacts || [];
   const resolvedEvents = events || [];
   const controller = useCompileRenderController({
-    run,
+    run: {
+      ...run,
+      latestEvents: resolvedEvents,
+    },
     artifacts: resolvedArtifacts,
   });
 
@@ -415,6 +424,7 @@ function useCompileRenderController({
     handleRenderBrief,
     handleAttemptRepair,
     handleApproveBrief,
+    latestEvents: run.latestEvents || [],
   };
 }
 
@@ -567,19 +577,19 @@ function CompileRenderMainContent({
     isApprovedForPrepare,
     isPacketValidationFailed,
     isPacketValidated,
-    isBriefReadyForReview,
     isApprovedForExecutor,
     canApproveBrief,
     compileAttempted,
     isPending,
     compileRenderPipelineStatuses,
     compileRenderStateCardCopy,
+    latestEvents,
   } = controller;
 
   const packetValidationErrors = packetValidationReport?.errors || [];
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <RunStageMainStack>
       {mutationError ? (
         <RelayStateBanner
           tone="danger"
@@ -624,56 +634,29 @@ function CompileRenderMainContent({
         />
       </RunStageSummaryCard>
 
-      <div className="grid gap-3 md:grid-cols-4">
-        <SummaryTile
-          label="Compiled Packet"
-          value={getCompileSummaryLabel(controller)}
-          tone={getCompileSummaryTone(controller)}
-        />
-        <SummaryTile
-          label="Packet Validation"
-          value={getPacketValidationStateLabel(controller)}
-          tone={getPacketValidationStateTone(controller)}
-        />
-        <SummaryTile
-          label="Executor Brief"
-          value={getExecutorBriefSummaryLabel(controller)}
-          tone={getExecutorBriefSummaryTone(controller)}
-        />
-        <SummaryTile
-          label="Approval"
-          value={getApprovalStateLabel(controller)}
-          tone={getApprovalStateTone(controller)}
-        />
-      </div>
-
-      <Section
+      <RunStageContentSection
+        eyebrow="Compile"
         title="Compiled Packet"
-        icon={<CheckCircle2 className="h-4 w-4 text-emerald-400" />}
+        description="The source handoff compiled into a canonical run execution packet."
+        status={
+          <Badge
+            variant={
+              isPacketValidationFailed
+                ? "destructive"
+                : compileAttempted
+                  ? "success"
+                  : "secondary"
+            }
+          >
+            {getCompileSummaryLabel(controller)}
+          </Badge>
+        }
       >
         <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant={
-                isPacketValidationFailed
-                  ? "destructive"
-                  : compileAttempted
-                    ? "success"
-                    : "secondary"
-              }
-              className="text-xs"
-            >
-              {getCompileSummaryLabel(controller)}
-            </Badge>
-            <span className="text-xs text-muted-foreground">
-              Current status: <code className="font-mono">{status}</code>
-            </span>
-          </div>
-
           {canonicalPacketArt ? (
-            <ArtifactPathRow
-              label="Canonical packet"
-              artifact={canonicalPacketArt}
+            <RunStageEvidenceRow
+              label="Canonical Packet"
+              value={canonicalPacketArt.path || canonicalPacketArt.filename}
             />
           ) : (
             <RelayInlineState
@@ -688,166 +671,112 @@ function CompileRenderMainContent({
           )}
 
           {isPacketValidationFailed ? (
-            <>
+            <div className="flex flex-col gap-2">
               <RelayStateBanner
                 tone="danger"
                 title="Validation failed"
-                description={`Compile failed packet validation with ${packetValidationErrors.length || 0} error${packetValidationErrors.length === 1 ? "" : "s"}. Review the report before retrying compile or attempting repair.`}
+                description={`Compile failed packet validation with ${packetValidationErrors.length || 0} error${packetValidationErrors.length === 1 ? "" : "s"}. Review the report below.`}
               />
-              {packetValidationArt ? (
-                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                  <span>
-                    Report:{" "}
-                    <code className="font-mono">{packetValidationArt.path}</code>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowValidationInspector(true)}
-                    className="font-medium text-foreground underline-offset-4 hover:underline"
-                  >
-                    Inspect report
-                  </button>
-                </div>
-              ) : null}
               {packetValidationErrors.length > 0 ? (
-                <div className="flex max-h-40 flex-col gap-1.5 overflow-y-auto rounded border border-border/40 bg-muted/20 p-3">
+                <RunStageFindingList>
                   {packetValidationErrors.map((error, index) => (
-                    <div
+                    <RunStageFindingRow
                       key={`${error.code || "issue"}-${index}`}
-                      className="flex items-start gap-2 text-xs leading-normal text-foreground/85"
-                    >
-                      <span className="shrink-0 font-bold text-red-400">
-                        [{error.code || "ERROR"}]
-                      </span>
-                      <span>{error.message || "Validation issue captured."}</span>
-                    </div>
+                      severity="error"
+                      code={error.code}
+                      message={error.message || "Validation issue captured."}
+                    />
                   ))}
-                </div>
+                </RunStageFindingList>
               ) : null}
-            </>
+            </div>
           ) : compileAttempted ? (
             <p className="text-sm text-muted-foreground">
-              Compile output is present. Review packet validation, repair status,
-              and executor brief readiness below.
+              Compile output is present. Review packet validation and brief readiness below.
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Compile has not run yet. The stage rail owns the compile action for
-              this step.
+              Compile has not run yet. The stage rail owns the compile action.
             </p>
           )}
         </div>
-      </Section>
+      </RunStageContentSection>
 
-      <Section
-        title="Packet Validation & Repair"
-        icon={<Wrench className="h-4 w-4 text-yellow-400" />}
-      >
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-          <div className="flex min-w-0 flex-col gap-3">
-            {packetValidationArt ? (
-              <>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant={
-                      packetValidationReport?.valid === true
-                        ? "success"
-                        : isPacketValidationFailed
-                          ? "destructive"
-                          : "secondary"
-                    }
-                    className="text-xs"
-                  >
-                    {getPacketValidationStateLabel(controller)}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    Validation report captured for this compile pass.
-                  </span>
-                </div>
-                <ArtifactPathRow
-                  label="Validation report"
-                  artifact={packetValidationArt}
+      {(isPacketValidationFailed || status === "repair_validated" || repairResult != null) ? (
+        <RunStageContentSection
+          eyebrow="Repair"
+          title="Packet Validation & Repair"
+          description="Constrained repair options for packet validation failures."
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <RunStageKeyValueRow
+                label="Eligibility"
+                value={getRepairEligibilityLabel(controller)}
+              />
+              <RunStageKeyValueRow
+                label="Latest result"
+                value={getRepairResultLabel(controller)}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {getRepairGuidance(controller, repairEligibility.reason)}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              {status === "repair_validated" || repairResult?.reValidationValid ? (
+                <RelayInlineState
+                  tone="success"
+                  title="Repair validated"
+                  description="Repair passed validation. The packet can move forward to executor brief rendering."
                 />
-              </>
-            ) : (
-              <RelayInlineState
-                tone="empty"
-                title="Validation report unavailable"
-                description={
-                  compileAttempted
-                    ? "Relay has not captured a packet validation report for the current compile result."
-                    : "Compile must run before packet validation details are available."
-                }
-              />
-            )}
+              ) : null}
+
+              {repairResult?.blockedReason ? (
+                <RelayStateBanner
+                  tone="blocked"
+                  title="Repair blocked"
+                  description={repairResult.blockedReason}
+                />
+              ) : null}
+
+              {repairResult?.ineligibleReason ? (
+                <RelayStateBanner
+                  tone="warning"
+                  title="Repair ineligible"
+                  description={repairResult.ineligibleReason}
+                />
+              ) : null}
+
+              {repairResult &&
+              !repairResult.blockedReason &&
+              !repairResult.ineligibleReason &&
+              repairResult.reValidationValid === false ? (
+                <RelayStateBanner
+                  tone="danger"
+                  title="Repair attempted but validation failed"
+                  description={
+                    repairResult.reValidationError ||
+                    "Repair did not produce a validation-passing packet."
+                  }
+                />
+              ) : null}
+            </div>
           </div>
+        </RunStageContentSection>
+      ) : null}
 
-          <div className="flex min-w-0 flex-col gap-3 rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 p-3">
-            <StatusLine
-              label="Repair eligibility"
-              value={getRepairEligibilityLabel(controller)}
-            />
-            <StatusLine
-              label="Latest repair result"
-              value={getRepairResultLabel(controller)}
-            />
-            <p className="text-xs text-muted-foreground">
-              {getRepairGuidance(controller, repairEligibility.reason)}
-            </p>
-
-            {status === "repair_validated" || repairResult?.reValidationValid ? (
-              <RelayInlineState
-                tone="success"
-                title="Repair validated"
-                description="Repair passed validation. The packet can move forward to executor brief rendering."
-              />
-            ) : null}
-
-            {repairResult?.blockedReason ? (
-              <RelayStateBanner
-                tone="blocked"
-                title="Repair blocked"
-                description={repairResult.blockedReason}
-              />
-            ) : null}
-
-            {repairResult?.ineligibleReason ? (
-              <RelayStateBanner
-                tone="warning"
-                title="Repair ineligible"
-                description={repairResult.ineligibleReason}
-              />
-            ) : null}
-
-            {repairResult &&
-            !repairResult.blockedReason &&
-            !repairResult.ineligibleReason &&
-            repairResult.reValidationValid === false ? (
-              <RelayStateBanner
-                tone="danger"
-                title="Repair attempted but validation still failed"
-                description={
-                  repairResult.reValidationError ||
-                  "Repair did not produce a validation-passing packet."
-                }
-              />
-            ) : null}
-          </div>
-        </div>
-      </Section>
-
-      <Section
+      <RunStageContentSection
+        eyebrow="Brief"
         title="Executor Brief"
-        icon={<FileText className="h-4 w-4 text-blue-400" />}
+        description="The executor instructions rendered from the validated packet."
+        status={
+          <Badge variant={executorBriefArt ? "success" : "secondary"}>
+            {getExecutorBriefSummaryLabel(controller)}
+          </Badge>
+        }
       >
         <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant={executorBriefArt ? "success" : "secondary"}
-              className="text-xs"
-            >
-              {getExecutorBriefSummaryLabel(controller)}
-            </Badge>
+          <div className="flex flex-wrap gap-2">
             <Badge
               variant={
                 briefValidationReport?.status === "passed"
@@ -864,12 +793,12 @@ function CompileRenderMainContent({
 
           {executorBriefArt ? (
             <>
-              <ArtifactPathRow
-                label="Executor brief"
-                artifact={executorBriefArt}
+              <RunStageEvidenceRow
+                label="Executor Brief"
+                value={executorBriefArt.path || executorBriefArt.filename}
               />
               {executorBriefArt.preview ? (
-                <pre className="max-h-48 overflow-y-auto rounded border border-border/40 bg-muted/30 p-3 font-mono text-[11px] whitespace-pre-wrap text-foreground">
+                <pre className="max-h-48 overflow-y-auto rounded border border-border/40 bg-[var(--relay-code-bg)] p-3 font-mono text-[11px] whitespace-pre-wrap text-foreground">
                   {executorBriefArt.preview}
                 </pre>
               ) : (
@@ -892,51 +821,28 @@ function CompileRenderMainContent({
             />
           )}
 
-          {briefValidationArt ? (
-            <ArtifactPathRow
-              label="Brief validation report"
-              artifact={briefValidationArt}
-            />
-          ) : null}
-
           {briefValidationReport?.issues?.length ? (
-            <div className="flex max-h-40 flex-col gap-1.5 overflow-y-auto rounded border border-border/40 bg-muted/20 p-3">
+            <RunStageFindingList>
               {briefValidationReport.issues.map((issue, index) => (
-                <div
+                <RunStageFindingRow
                   key={`${issue.severity || "issue"}-${index}`}
-                  className="flex items-start gap-2 text-xs leading-normal text-foreground/85"
-                >
-                  <span
-                    className={
-                      issue.severity === "error"
-                        ? "shrink-0 font-bold text-red-400"
-                        : "shrink-0 font-bold text-yellow-400"
-                    }
-                  >
-                    [{(issue.severity || "issue").toUpperCase()}]
-                  </span>
-                  <span>{issue.message || "Validation issue captured."}</span>
-                </div>
+                  severity={issue.severity === "error" ? "error" : "warning"}
+                  message={issue.message || "Validation issue captured."}
+                />
               ))}
-            </div>
+            </RunStageFindingList>
           ) : briefValidationReport?.status === "passed" ? (
             <p className="text-sm text-muted-foreground">
               Brief validation passed with no reported issues.
             </p>
           ) : null}
-
-          {!executorBriefArt && !isPacketValidated && !isBriefReadyForReview ? (
-            <p className="text-sm text-muted-foreground">
-              This area becomes active after compile validation succeeds or a
-              repair pass validates the packet.
-            </p>
-          ) : null}
         </div>
-      </Section>
+      </RunStageContentSection>
 
-      <Section
+      <RunStageContentSection
+        eyebrow="Approval"
         title="Approval"
-        icon={<ShieldCheck className="h-4 w-4 text-primary" />}
+        description="Approve the compiled executor brief to advance to the execution stage."
       >
         <div className="flex flex-col gap-3">
           {isApprovedForExecutor ? (
@@ -981,7 +887,71 @@ function CompileRenderMainContent({
             />
           )}
         </div>
-      </Section>
+      </RunStageContentSection>
+
+      <RunStageContentSection
+        eyebrow="Artifacts"
+        title="Generated Artifacts"
+        description="Files generated or compiled during this stage."
+      >
+        <RunStageEvidenceList>
+          {canonicalPacketArt ? (
+            <RunStageEvidenceRow
+              label="Canonical Packet"
+              value={canonicalPacketArt.filename}
+            />
+          ) : null}
+          {packetValidationArt ? (
+            <RunStageEvidenceRow
+              label="Packet Validation Report"
+              value={packetValidationArt.filename}
+            />
+          ) : null}
+          {executorBriefArt ? (
+            <RunStageEvidenceRow
+              label="Executor Brief"
+              value={executorBriefArt.filename}
+            />
+          ) : null}
+          {briefValidationArt ? (
+            <RunStageEvidenceRow
+              label="Brief Validation Report"
+              value={briefValidationArt.filename}
+            />
+          ) : null}
+          {!canonicalPacketArt && !packetValidationArt && !executorBriefArt && !briefValidationArt ? (
+            <p className="text-xs text-muted-foreground italic">No artifacts generated yet.</p>
+          ) : null}
+        </RunStageEvidenceList>
+      </RunStageContentSection>
+
+      <RunStageContentSection
+        eyebrow="Activity"
+        title="Recent Activity"
+        description="Recent events logged during compile/render stage."
+      >
+        {latestEvents && latestEvents.length > 0 ? (
+          <RunStageActivityList>
+            {latestEvents.slice(-5).map((e: any, i: number) => {
+              const timeStr = new Date(e.createdAt).toLocaleTimeString("en-US", {
+                hour12: false,
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              });
+              return (
+                <RunStageActivityRow
+                  key={i}
+                  timestamp={timeStr}
+                  message={e.message}
+                />
+              );
+            })}
+          </RunStageActivityList>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">No recent activity.</p>
+        )}
+      </RunStageContentSection>
 
       {packetValidationArt ? (
         <ArtifactInspectorDialog
@@ -991,7 +961,7 @@ function CompileRenderMainContent({
           onOpenChange={setShowValidationInspector}
         />
       ) : null}
-    </div>
+    </RunStageMainStack>
   );
 }
 
@@ -1076,94 +1046,6 @@ function CompileRenderDetailsPanel({
   );
 }
 
-function SummaryTile({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: "default" | "success" | "warning" | "danger";
-}) {
-  const toneClasses: Record<typeof tone, string> = {
-    default: "border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]",
-    success: "border-[var(--success)]/35 bg-[var(--success)]/10",
-    warning: "border-[var(--warning)]/35 bg-[var(--warning)]/10",
-    danger: "border-[var(--destructive)]/35 bg-[var(--destructive)]/10",
-  };
-
-  return (
-    <div
-      className={`rounded border px-3 py-2.5 ${toneClasses[tone]}`}
-    >
-      <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-2 text-sm font-semibold text-foreground">{value}</p>
-    </div>
-  );
-}
-
-function ArtifactPathRow({
-  label,
-  artifact,
-}: {
-  label: string;
-  artifact: RelayArtifact;
-}) {
-  return (
-    <div className="rounded border border-[var(--relay-row-border)] bg-[var(--surface-inset)]/40 px-3 py-2.5">
-      <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-2 break-words font-mono text-[12px] text-foreground">
-        {artifact.path || artifact.filename || "—"}
-      </p>
-      {artifact.sizeHint ? (
-        <p className="mt-1 text-xs text-muted-foreground">{artifact.sizeHint}</p>
-      ) : null}
-    </div>
-  );
-}
-
-function StatusLine({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-right text-sm text-foreground">{value}</span>
-    </div>
-  );
-}
-
-function Section({
-  title,
-  icon,
-  children,
-}: {
-  title: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="min-w-0 border-border/60 bg-card/20">
-      <CardHeader className="p-4 pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          {icon}
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex min-w-0 flex-col gap-3 p-4 pt-0">
-        {children}
-      </CardContent>
-    </Card>
-  );
-}
 
 function findArtifact(
   artifacts: RelayArtifact[],
@@ -1319,17 +1201,6 @@ function getExecutorBriefSummaryLabel(
   return "Pending";
 }
 
-function getExecutorBriefSummaryTone(
-  controller: CompileRenderController,
-): "default" | "success" | "warning" | "danger" {
-  if (controller.executorBriefArt) {
-    return "success";
-  }
-  if (controller.canRenderBrief) {
-    return "warning";
-  }
-  return "default";
-}
 
 function getBriefValidationStateLabel(
   controller: CompileRenderController,

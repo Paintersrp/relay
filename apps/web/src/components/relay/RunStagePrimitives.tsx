@@ -784,3 +784,213 @@ export function RunStageProvenanceTable({
     </div>
   );
 }
+
+export interface RunStageContentSectionProps {
+  eyebrow?: React.ReactNode;
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  status?: React.ReactNode;
+  actions?: React.ReactNode;
+  children?: React.ReactNode;
+  className?: string;
+  contentClassName?: string;
+}
+
+export function RunStageContentSection({
+  eyebrow,
+  title,
+  description,
+  status,
+  actions,
+  children,
+  className,
+  contentClassName,
+}: RunStageContentSectionProps) {
+  return (
+    <section
+      className={cn(
+        "min-w-0 rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]",
+        className,
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--relay-row-border)] p-4">
+        <div className="min-w-0 flex-1">
+          {eyebrow ? (
+            <p className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground mb-1">
+              {eyebrow}
+            </p>
+          ) : null}
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            {title}
+            {status ? <span className="shrink-0">{status}</span> : null}
+          </h3>
+          {description ? (
+            <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+          ) : null}
+        </div>
+        {actions ? <div className="shrink-0 flex items-center gap-2">{actions}</div> : null}
+      </div>
+      {children ? (
+        <div className={cn("min-w-0 p-4", contentClassName)}>{children}</div>
+      ) : null}
+    </section>
+  );
+}
+
+export interface RunStageEvidenceRowProps {
+  icon?: React.ReactNode;
+  label: React.ReactNode;
+  value?: React.ReactNode;
+  status?: React.ReactNode;
+  className?: string;
+}
+
+export function RunStageEvidenceRow({
+  icon,
+  label,
+  value,
+  status,
+  className,
+}: RunStageEvidenceRowProps) {
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between p-2 bg-[var(--surface-inset)]/40 rounded border border-[var(--relay-row-border)] text-xs font-mono min-w-0 gap-3",
+        className,
+      )}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        {icon ? <span className="text-muted-foreground shrink-0">{icon}</span> : null}
+        <span className="text-muted-foreground truncate">{label}</span>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {value ? <span className="text-foreground">{value}</span> : null}
+        {status ?? null}
+      </div>
+    </div>
+  );
+}
+
+export interface RunStageEvidenceListProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export function RunStageEvidenceList({
+  children,
+  className,
+}: RunStageEvidenceListProps) {
+  return <div className={cn("flex flex-col gap-2", className)}>{children}</div>;
+}
+
+export interface RunStageFindingRowProps {
+  severity: "warning" | "error" | "info" | "default";
+  code?: React.ReactNode;
+  message: React.ReactNode;
+  className?: string;
+}
+
+export function RunStageFindingRow({
+  severity,
+  code,
+  message,
+  className,
+}: RunStageFindingRowProps) {
+  const toneMap: Record<RunStageFindingRowProps["severity"], RunStageTone> = {
+    error: "danger",
+    warning: "warning",
+    info: "info",
+    default: "default",
+  };
+  const toneClass = TONE_CLASS[toneMap[severity]];
+  return (
+    <div
+      className={cn(
+        "rounded border bg-[var(--relay-panel-bg)] p-3 flex flex-col gap-2",
+        toneClass.border,
+        className,
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <RunStageSummaryChip
+          value={severity}
+          tone={toneMap[severity]}
+          className="capitalize"
+        />
+        {code ? (
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {code}
+          </span>
+        ) : null}
+      </div>
+      <p className="text-xs text-foreground leading-normal">{message}</p>
+    </div>
+  );
+}
+
+export interface RunStageFindingListProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export function RunStageFindingList({
+  children,
+  className,
+}: RunStageFindingListProps) {
+  return <div className={cn("flex flex-col gap-2", className)}>{children}</div>;
+}
+
+export interface RunStageActivityRowProps {
+  timestamp: React.ReactNode;
+  message: React.ReactNode;
+  className?: string;
+}
+
+export function RunStageActivityRow({
+  timestamp,
+  message,
+  className,
+}: RunStageActivityRowProps) {
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-3 py-1.5 text-xs border-b border-[var(--relay-row-border)] last:border-b-0 leading-relaxed text-foreground/85 font-mono",
+        className,
+      )}
+    >
+      <span className="text-muted-foreground shrink-0 select-none">
+        {timestamp}
+      </span>
+      <span className="min-w-0 flex-1 break-words">{message}</span>
+    </div>
+  );
+}
+
+export interface RunStageActivityListProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export function RunStageActivityList({
+  children,
+  className,
+}: RunStageActivityListProps) {
+  return <div className={cn("flex flex-col", className)}>{children}</div>;
+}
+
+export interface RunStageMainStackProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export function RunStageMainStack({
+  children,
+  className,
+}: RunStageMainStackProps) {
+  return (
+    <div className={cn("flex min-w-0 flex-col gap-4 max-w-5xl mx-auto w-full", className)}>
+      {children}
+    </div>
+  );
+}
+
