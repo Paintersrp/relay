@@ -195,11 +195,82 @@ type Evidence struct {
 	RevisionRequirements []RevisionRequirement `json:"revisionRequirements"`
 }
 
+type AuditManifestPacket struct {
+	PacketID               string   `json:"packet_id"`
+	GoalPresent            bool     `json:"goal_present"`
+	ScopePresent           bool     `json:"scope_present"`
+	NonGoalsPresent        bool     `json:"non_goals_present"`
+	FileTargets            []string `json:"file_targets"`
+	ValidationCommandCount int      `json:"validation_command_count"`
+	AuditChecklistCount    int      `json:"audit_checklist_count"`
+	MissingFields          []string `json:"missing_fields"`
+}
+
+type AuditManifestExecutorResult struct {
+	Present          bool   `json:"present"`
+	ArtifactPath     string `json:"artifact_path"`
+	PreviewTruncated bool   `json:"preview_truncated"`
+}
+
+type AuditManifestValidationResult struct {
+	ID              string      `json:"id"`
+	Required        bool        `json:"required"`
+	Status          CheckResult `json:"status"`
+	RawArtifactPath string      `json:"raw_artifact_path"`
+}
+
+type AuditManifestChangedFiles struct {
+	Present      bool   `json:"present"`
+	SourceKind   string `json:"source_kind"`
+	Count        int    `json:"count"`
+	ArtifactPath string `json:"artifact_path"`
+}
+
+type AuditManifestDiff struct {
+	Present          bool   `json:"present"`
+	ArtifactPath     string `json:"artifact_path"`
+	PreviewTruncated bool   `json:"preview_truncated"`
+}
+
+type AuditManifestAcceptanceEvidence struct {
+	Present      bool   `json:"present"`
+	ArtifactPath string `json:"artifact_path"`
+}
+
+type AuditManifestEvidence struct {
+	ExecutorResult     AuditManifestExecutorResult     `json:"executor_result"`
+	ValidationResults  []AuditManifestValidationResult `json:"validation_results"`
+	ChangedFiles       AuditManifestChangedFiles       `json:"changed_files"`
+	GitDiff            AuditManifestDiff               `json:"git_diff"`
+	AcceptanceEvidence AuditManifestAcceptanceEvidence `json:"acceptance_evidence"`
+}
+
+type AuditManifestRemoteEvidence struct {
+	GitHubPR      string `json:"github_pr"`
+	GitHubCI      string `json:"github_ci"`
+	GitHubActions string `json:"github_actions"`
+}
+
+type AuditEvidenceManifest struct {
+	SchemaVersion         string                      `json:"schema_version"`
+	RunID                 int64                       `json:"run_id"`
+	RunStatusAtCollection string                      `json:"run_status_at_collection"`
+	GeneratedAt           time.Time                   `json:"generated_at"`
+	Packet                AuditManifestPacket         `json:"packet"`
+	Evidence              AuditManifestEvidence       `json:"evidence"`
+	Warnings              []EvidenceWarning           `json:"warnings"`
+	RevisionRequirements  []RevisionRequirement       `json:"revision_requirements"`
+	PreliminaryDecision   Decision                    `json:"preliminary_decision"`
+	LocalOnly             bool                        `json:"local_only"`
+	RemoteEvidence        AuditManifestRemoteEvidence `json:"remote_evidence"`
+}
+
 // GeneratedAudit is the output of a successful audit generation pass.
 type GeneratedAudit struct {
 	RunID                int64     `json:"runId"`
 	Status               string    `json:"status"`
 	InputSummary         string    `json:"inputSummary"`
+	EvidenceManifest     string    `json:"evidenceManifest"`
 	AuditPacket          string    `json:"auditPacket"`
 	Decision             Decision  `json:"decision"`
 	CreatedAt            time.Time `json:"createdAt"`
@@ -213,6 +284,42 @@ type ManualAuditSubmission struct {
 	AuditPacketMarkdown string   `json:"auditPacketMarkdown"`
 	Decision            Decision `json:"decision"`
 	Notes               string   `json:"notes"`
+}
+
+type DecisionSubmission struct {
+	RunID               int64    `json:"run_id"`
+	Decision            Decision `json:"decision"`
+	AuditPacketMarkdown string   `json:"audit_packet_markdown"`
+	Notes               string   `json:"notes"`
+	Source              string   `json:"source"`
+	ClientTraceID       string   `json:"client_trace_id"`
+}
+
+type AuditDecisionRecord struct {
+	SchemaVersion        string    `json:"schema_version"`
+	RunID                int64     `json:"run_id"`
+	SubmittedAt          time.Time `json:"submitted_at"`
+	RunStatusBefore      string    `json:"run_status_before"`
+	RunStatusAfter       string    `json:"run_status_after"`
+	Decision             Decision  `json:"decision"`
+	MappedStatus         string    `json:"mapped_status"`
+	Notes                string    `json:"notes,omitempty"`
+	Source               string    `json:"source"`
+	ClientTraceID        string    `json:"client_trace_id,omitempty"`
+	AuditPacketPath      string    `json:"audit_packet_path,omitempty"`
+	RevisionArtifactPath string    `json:"revision_artifact_path,omitempty"`
+	LocalOnly            bool      `json:"local_only"`
+}
+
+type DecisionResult struct {
+	RunID                int64     `json:"run_id"`
+	Status               string    `json:"status"`
+	LifecycleState       string    `json:"lifecycle_state"`
+	Decision             Decision  `json:"decision"`
+	AuditPacketPath      string    `json:"audit_packet_path,omitempty"`
+	DecisionArtifactPath string    `json:"decision_artifact_path"`
+	RevisionArtifactPath string    `json:"revision_artifact_path,omitempty"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 // MaxPreviewBytes is the bounded preview limit for raw artifact content.

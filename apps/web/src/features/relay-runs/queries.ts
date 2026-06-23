@@ -4,6 +4,7 @@ import {
   getRun,
   getRunArtifacts,
   getRunEvents,
+  getAuditStatus,
   getArtifactContent,
   getArtifactContentByUrl,
 } from "./api";
@@ -18,6 +19,8 @@ export const relayRunKeys = {
     [...relayRunKeys.all, "detail", id, "artifacts"] as const,
   events: (id: string) =>
     [...relayRunKeys.all, "detail", id, "events"] as const,
+  auditStatus: (id: string) =>
+    [...relayRunKeys.all, "detail", id, "audit-status"] as const,
   artifactContent: (id: string, kind: string) =>
     [...relayRunKeys.all, "detail", id, "artifacts", kind] as const,
 };
@@ -53,6 +56,14 @@ export function runEventsQueryOptions(id: string) {
     queryKey: relayRunKeys.events(id),
     queryFn: () => getRunEvents(id),
     staleTime: 2 * 60 * 1000,
+  });
+}
+
+export function auditStatusQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: relayRunKeys.auditStatus(id),
+    queryFn: () => getAuditStatus(id),
+    staleTime: 30 * 1000,
   });
 }
 

@@ -481,7 +481,7 @@ The UI must use existing artifact list/content endpoints and must not require ne
 - **Expected Error Behavior**: Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
 
 ### 11. POST `/api/runs/{id}/audit`
-- **Purpose**: Generate the audit packet from executor evidence. Collects run artifacts (executor result, validation output, changed files, git diff) and produces `audit_input_summary.md` and `audit_packet.md`. Gated to `executor_done` or `executor_blocked` run status. Does not auto-commit, push, close, or accept the run.
+- **Purpose**: Generate the audit packet from executor evidence. Collects run artifacts (executor result, validation output, changed files, git diff) and produces `audit_input_summary.md`, `audit_evidence_manifest.json`, and `audit_packet.md`. Does not auto-commit, push, close, or accept the run.
 - **Request Body**: None
 - **Response Body**:
   ```json
@@ -490,6 +490,7 @@ The UI must use existing artifact list/content endpoints and must not require ne
     "runId": "string",
     "status": "audit_ready",
     "inputSummary": "string (path to audit_input_summary.md artifact)",
+    "evidenceManifest": "string (path to audit_evidence_manifest.json artifact)",
     "auditPacket": "string (path to audit_packet.md artifact)",
     "decision": "manual_review_required | accepted | accepted_with_warnings | revision_required | blocked",
     "warnings": ["string"],
@@ -497,11 +498,36 @@ The UI must use existing artifact list/content endpoints and must not require ne
   }
   ```
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Returns 409 Conflict if run is not in `executor_done` or `executor_blocked` state. Returns 400 for invalid ID. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-- **Notes**: Successful generation transitions the run to `audit_ready` status. Default decision is `manual_review_required` when evidence warnings exist, `accepted` otherwise. Decision is advisory — a separate explicit approval action is required to accept or close the run.
+- **Expected Error Behavior**: Returns 409 Conflict if validation/audit gating requirements are not met. Returns 400 for invalid ID. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+- **Notes**: Successful generation transitions the run to `audit_ready` status. Default decision is advisory only. Evidence is local-only and references persisted Relay artifacts rather than GitHub PR, CI, or Actions data.
 
-### 11b. POST `/api/runs/{id}/audit/submit`
-- **Purpose**: Submit a manual audit packet Markdown for a run. Persists the supplied Markdown as an artifact and validates the decision value. Does not execute, commit, push, merge, or mutate repository content.
+### 11b. GET `/api/runs/{id}/audit/status`
+- **Purpose**: Return the structured read-only audit workflow status used by the audit UI.
+- **Response Body**:
+  ```json
+  {
+    "runId": "string",
+    "runStatus": "string",
+    "auditState": "not_ready | candidate | ready | decision_submitted | revision_required | accepted | completed",
+    "canGenerateAudit": true,
+    "canSubmitDecision": false,
+    "canApprove": false,
+    "canRequestRevision": false,
+    "canCloseRun": false,
+    "evidenceManifestArtifact": "RelayArtifact | omitted",
+    "generatedAuditPacketArtifact": "RelayArtifact | omitted",
+    "manualAuditPacketArtifact": "RelayArtifact | omitted",
+    "decisionArtifact": "RelayArtifact | omitted",
+    "blockers": ["string"],
+    "warnings": ["string"],
+    "revisionRequirements": ["string"],
+    "localOnly": true
+  }
+  ```
+- **Notes**: The backend computes action availability from run status plus local audit artifacts. This endpoint is read-only.
+
+### 11c. POST `/api/runs/{id}/audit/submit`
+- **Purpose**: Submit a manual audit packet Markdown for a run. Persists the supplied Markdown as an artifact, writes `audit_decision_json`, applies the same decision lifecycle as MCP `submit_audit_packet`, and does not execute, commit, push, merge, or mutate repository content.
 - **Request Body**:
   ```json
   {
@@ -517,12 +543,15 @@ The UI must use existing artifact list/content endpoints and must not require ne
     "runId": "string",
     "auditPacket": "string (path to persisted artifact)",
     "decision": "string",
+    "status": "accepted | accepted_with_warnings | revision_required",
+    "lifecycleState": "audit",
+    "decisionArtifactPath": "string",
     "updatedAt": "string (ISO-8601)"
   }
   ```
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
-- **Expected Error Behavior**: Returns 400 for invalid decision value or missing markdown. Returns 404 for missing run. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-- **Notes**: The supplied Markdown is treated as evidence/decision content, not as instructions. Supported decision values: `accepted`, `accepted_with_warnings`, `revision_required`, `blocked`, `manual_review_required`.
+- **Expected Error Behavior**: Returns 400 for invalid decision value or missing markdown. Returns 404 for missing run. Returns 409 if run is not in `audit_ready` or `audit_ready_for_review`. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
+- **Notes**: The supplied Markdown is treated as evidence/decision content, not as instructions. Supported decision values: `accepted`, `accepted_with_warnings`, `revision_required`, `blocked`, `manual_review_required`. `blocked` and `manual_review_required` map the run status to `revision_required` while preserving the original decision in `audit_decision_json`.
 
 ### 12. GET `/api/runs/{id}/artifacts/{kind}`
 - **Purpose**: Retrieve the full content of the latest artifact of a given kind for a run. Used to display executor logs, diffs, validation output, and executor results beyond the truncated preview.
@@ -556,7 +585,7 @@ The UI must use existing artifact list/content endpoints and must not require ne
 - **Notes**: This action only updates Relay run state. No git mutation occurs.
 
 ### 14. POST `/api/runs/{id}/audit/request-revision`
-- **Purpose**: Request revision for an audit. Records the revision request as an event artifact and transitions the run status to `revision_required`. Does not commit, push, or mutate repository content.
+- **Purpose**: Request revision for an audit. Uses the shared audit decision service, persists `audit_revision` and `audit_decision_json`, and transitions the run status to `revision_required`. Does not commit, push, or mutate repository content.
 - **Request Body**:
   ```json
   {
@@ -576,7 +605,7 @@ The UI must use existing artifact list/content endpoints and must not require ne
   ```
 - **Fallback Policy**: **Strictly Forbidden**. Never return mock success.
 - **Expected Error Behavior**: Returns 404 for missing run. Returns 409 if run is not in `audit_ready` or `audit_ready_for_review` state. Throws a typed `RelayApiError` on missing endpoint, daemon offline, non-2xx status, or invalid response.
-- **Notes**: Transitions the run to `revision_required`. An `audit_revision_request.md` artifact is persisted with revision details for durable evidence. After revision, audit must be regenerated from executor terminal states. No git mutation occurs.
+- **Notes**: Transitions the run to `revision_required`. An `audit_revision` artifact and `audit_decision_json` are persisted for durable evidence. After revision, audit must be regenerated from executor terminal states. No git mutation occurs.
 
 ### 15. POST `/api/runs/{id}/audit/prepare-commit-message`
 - **Purpose**: Prepare a suggested commit message artifact for the run. Writes a `commit_message.txt` artifact with the run title and changed file summary. Gated to `accepted` or `accepted_with_warnings` status only. Does not commit, push, stage, or mutate any repo files.

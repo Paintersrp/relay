@@ -3,6 +3,7 @@ package auditor
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"relay/internal/artifacts"
@@ -123,6 +124,7 @@ func (svc *Service) Generate(runID int64) (*GeneratedAudit, error) {
 	}
 
 	decision := DetermineDefaultDecision(ev)
+	generatedAt := time.Now().UTC()
 
 	// Write audit_input_summary.md
 	inputSummary := GenerateInputSummary(ev)
@@ -130,7 +132,22 @@ func (svc *Service) Generate(runID int64) (*GeneratedAudit, error) {
 	if err != nil {
 		return nil, fmt.Errorf("write audit input summary: %w", err)
 	}
-	_, _ = svc.store.CreateArtifact(runID, "audit_input_summary", summaryPath, "text/markdown")
+	if _, err := svc.store.CreateArtifact(runID, "audit_input_summary", summaryPath, "text/markdown"); err != nil {
+		return nil, fmt.Errorf("create audit input summary artifact: %w", err)
+	}
+
+	manifest := BuildEvidenceManifest(ev, decision, generatedAt)
+	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal audit evidence manifest: %w", err)
+	}
+	manifestPath, err := artifacts.Write(runID, "audit_evidence_manifest_json", "audit_evidence_manifest.json", manifestBytes)
+	if err != nil {
+		return nil, fmt.Errorf("write audit evidence manifest: %w", err)
+	}
+	if _, err := svc.store.CreateArtifact(runID, "audit_evidence_manifest_json", manifestPath, "application/json"); err != nil {
+		return nil, fmt.Errorf("create audit evidence manifest artifact: %w", err)
+	}
 
 	// Write audit_packet.md
 	packet := GenerateAuditPacket(ev, decision)
@@ -138,7 +155,9 @@ func (svc *Service) Generate(runID int64) (*GeneratedAudit, error) {
 	if err != nil {
 		return nil, fmt.Errorf("write audit packet: %w", err)
 	}
-	_, _ = svc.store.CreateArtifact(runID, "audit_packet", packetPath, "text/markdown")
+	if _, err := svc.store.CreateArtifact(runID, "audit_packet", packetPath, "text/markdown"); err != nil {
+		return nil, fmt.Errorf("create audit packet artifact: %w", err)
+	}
 
 	// Transition to audit_ready — this is NOT acceptance; it signals readiness for human review.
 	updatedRun, err := svc.store.UpdateRunStatus(runID, "audit_ready")
@@ -155,10 +174,76 @@ func (svc *Service) Generate(runID int64) (*GeneratedAudit, error) {
 		RunID:                runID,
 		Status:               updatedRun.Status,
 		InputSummary:         summaryPath,
+		EvidenceManifest:     manifestPath,
 		AuditPacket:          packetPath,
 		Decision:             decision,
-		CreatedAt:            time.Now().UTC(),
+		CreatedAt:            generatedAt,
 		Warnings:             warnings,
 		RevisionRequirements: revReqs,
 	}, nil
+}
+
+func BuildEvidenceManifest(ev *Evidence, decision Decision, generatedAt time.Time) AuditEvidenceManifest {
+	validationResults := make([]AuditManifestValidationResult, 0, len(ev.ValidationResults))
+	for _, result := range ev.ValidationResults {
+		validationResults = append(validationResults, AuditManifestValidationResult{
+			ID:              result.ID,
+			Required:        result.Required,
+			Status:          result.Status,
+			RawArtifactPath: result.RawArtifactPath,
+		})
+	}
+
+	return AuditEvidenceManifest{
+		SchemaVersion:         "1.0.0",
+		RunID:                 ev.RunID,
+		RunStatusAtCollection: ev.RunStatus,
+		GeneratedAt:           generatedAt,
+		Packet: AuditManifestPacket{
+			PacketID:               ev.Packet.PacketID,
+			GoalPresent:            strings.TrimSpace(ev.Packet.Goal) != "",
+			ScopePresent:           strings.TrimSpace(ev.Packet.Scope) != "",
+			NonGoalsPresent:        strings.TrimSpace(ev.Packet.NonGoals) != "",
+			FileTargets:            append([]string(nil), ev.Packet.FileTargets...),
+			ValidationCommandCount: len(ev.Packet.ValidationCommands),
+			AuditChecklistCount:    len(ev.Packet.AuditChecklist),
+			MissingFields:          append([]string(nil), ev.Packet.MissingFields...),
+		},
+		Evidence: AuditManifestEvidence{
+			ExecutorResult: AuditManifestExecutorResult{
+				Present:          ev.ExecutorResult.Present,
+				ArtifactPath:     ev.ExecutorResult.RawArtifactPath,
+				PreviewTruncated: previewWasTruncated(ev.ExecutorResult.Content),
+			},
+			ValidationResults: validationResults,
+			ChangedFiles: AuditManifestChangedFiles{
+				Present:      ev.ChangedFiles.Present,
+				SourceKind:   ev.ChangedFiles.SourceKind,
+				Count:        len(ev.ChangedFiles.Files),
+				ArtifactPath: ev.ChangedFiles.RawArtifactPath,
+			},
+			GitDiff: AuditManifestDiff{
+				Present:          ev.GitDiff.Present,
+				ArtifactPath:     ev.GitDiff.RawArtifactPath,
+				PreviewTruncated: previewWasTruncated(ev.GitDiff.Preview),
+			},
+			AcceptanceEvidence: AuditManifestAcceptanceEvidence{
+				Present:      ev.AcceptanceEvidence.Present,
+				ArtifactPath: ev.AcceptanceEvidence.RawArtifactPath,
+			},
+		},
+		Warnings:             append([]EvidenceWarning(nil), ev.Warnings...),
+		RevisionRequirements: append([]RevisionRequirement(nil), ev.RevisionRequirements...),
+		PreliminaryDecision:  decision,
+		LocalOnly:            true,
+		RemoteEvidence: AuditManifestRemoteEvidence{
+			GitHubPR:      "not_used",
+			GitHubCI:      "not_used",
+			GitHubActions: "not_used",
+		},
+	}
+}
+
+func previewWasTruncated(preview string) bool {
+	return strings.Contains(preview, "...[truncated]")
 }

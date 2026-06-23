@@ -62,6 +62,17 @@ Relay is a local-first handoff/run orchestration workbench.
 | `prepare-git-commit`                  | Implemented                          |
 | `generate-audit-packet`               | Future                               |
 
+### Local Audit Workflow
+
+Relay's audit workflow is local-only and artifact-backed:
+
+- Audit generation writes `audit_input_summary.md`, `audit_evidence_manifest.json`, and `audit_packet.md`.
+- `GET /api/runs/{id}/audit/status` is the read-only preflight/status source for the audit UI.
+- Manual audit submission from HTTP and `submit_audit_packet` from MCP use the same decision service and persist `audit_decision_json`.
+- Decisions of `blocked` and `manual_review_required` map the run status to `revision_required` while preserving the original decision in `audit_decision_json`.
+- Audit acceptance does not automatically prepare commit artifacts or close the run. Those remain explicit post-audit closeout actions.
+- GitHub PRs, CI, and Actions are not used as audit evidence sources.
+
 ## Core Concepts
 
 These are human-readable documentation definitions only and do not add schema fields or runtime semantics.

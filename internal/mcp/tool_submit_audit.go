@@ -2,14 +2,12 @@ package mcp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
-	"relay/internal/artifacts"
 	"relay/internal/auditor"
-	"relay/internal/plans"
 )
 
 // submitAuditInput is the expected input for submit_audit_packet.
@@ -53,11 +51,6 @@ var supportedAuditDecisions = map[string]bool{
 	"manual_review_required": true,
 }
 
-// terminalStatuses are run statuses that should not receive new audit handbacks.
-var terminalStatuses = map[string]bool{
-	"completed": true,
-}
-
 // HandleSubmitAuditPacket implements the submit_audit_packet MCP tool.
 //
 // Safe state transitions applied:
@@ -98,78 +91,36 @@ func (s *Server) HandleSubmitAuditPacket(rawArgs json.RawMessage) ToolCallResult
 		return toolErr(fmt.Sprintf("VALIDATION_ERROR: run_id must be a numeric string, got %q", input.RunID))
 	}
 
-	run, err := s.deps.Store.GetRun(runIDInt)
-	if err != nil {
-		return toolErr(fmt.Sprintf("NOT_FOUND: run %q not found: %s", input.RunID, err))
-	}
-
-	// Reject terminal runs.
-	if terminalStatuses[run.Status] {
-		return toolErr(fmt.Sprintf("STATE_ERROR: run %q is in terminal status %q and cannot accept an audit handback", input.RunID, run.Status))
-	}
-
-	// Write bounded audit handback artifact through Relay artifact conventions.
-	// Reuse auditor.SubmissionService.SubmitManual to share artifact-write semantics.
-	submissionSvc := auditor.NewSubmissionService(s.deps.Store)
-	_, serr := submissionSvc.SubmitManual(auditor.ManualAuditSubmission{
+	submitResult, err := auditor.NewSubmissionService(s.deps.Store).SubmitDecision(auditor.DecisionSubmission{
 		RunID:               runIDInt,
-		AuditPacketMarkdown: input.AuditPacketMarkdown,
 		Decision:            auditor.Decision(input.Decision),
+		AuditPacketMarkdown: input.AuditPacketMarkdown,
 		Notes:               input.Notes,
+		Source:              "mcp",
+		ClientTraceID:       input.ClientTraceID,
 	})
-	if serr != nil {
-		return toolErr(fmt.Sprintf("SUBMISSION_ERROR: %s", serr))
+	if err != nil {
+		switch {
+		case strings.Contains(err.Error(), "get run:"):
+			return toolErr(fmt.Sprintf("NOT_FOUND: %s", err))
+		case errors.Is(err, auditor.ErrCompletedRun), errors.Is(err, auditor.ErrAuditDecisionNotReady):
+			return toolErr(fmt.Sprintf("STATE_ERROR: %s", err))
+		case errors.Is(err, auditor.ErrUnsupportedDecision), strings.Contains(err.Error(), "audit_packet_markdown is required"):
+			return toolErr(fmt.Sprintf("VALIDATION_ERROR: %s", err))
+		default:
+			return toolErr(fmt.Sprintf("SUBMISSION_ERROR: %s", err))
+		}
 	}
 
-	// Write a secondary MCP-specific audit handback artifact for provenance.
-	mcpHandbackContent := fmt.Sprintf(
-		"# MCP Audit Handback\n\n"+
-			"## Metadata\n\n"+
-			"- Tool: submit_audit_packet\n"+
-			"- Run ID: %s\n"+
-			"- Decision: %s\n"+
-			"- Submitted: %s\n"+
-			"- Source: MCP chat handback (Pass 16)\n\n"+
-			"## Notes\n\n%s\n\n"+
-			"## Submitted Packet Content\n\n%s\n",
-		input.RunID,
-		input.Decision,
-		time.Now().UTC().Format(time.RFC3339),
-		input.Notes,
-		input.AuditPacketMarkdown,
-	)
-	_, _ = artifacts.Write(runIDInt, "audit_packet", "mcp_audit_handback.md", []byte(mcpHandbackContent))
-
-	// Safe status transition.
-	targetStatus, eventNote := auditDecisionToStatus(input.Decision)
-	updatedRun, serr := s.deps.Store.UpdateRunStatus(runIDInt, targetStatus)
-	if serr != nil {
-		return toolErr(fmt.Sprintf("STATUS_ERROR: failed to apply status transition to %q: %s", targetStatus, serr))
-	}
-	if serr := plans.NewRunLifecycleService(s.deps.Store).ApplyAuditDecision(updatedRun, targetStatus); serr != nil {
-		return toolErr(fmt.Sprintf("STATUS_ERROR: failed to update associated pass status for %q: %s", targetStatus, serr))
-	}
-
-	// Create run event noting MCP audit handback.
-	eventMsg := fmt.Sprintf("MCP audit handback: decision=%s → status=%s", input.Decision, targetStatus)
-	if eventNote != "" {
-		eventMsg += fmt.Sprintf(" (%s)", eventNote)
-	}
-	if input.Notes != "" {
-		eventMsg += fmt.Sprintf("; notes: %s", input.Notes)
-	}
-	_, _ = s.deps.Store.CreateEvent(runIDInt, "info", eventMsg)
-
-	idStr := strconv.FormatInt(run.ID, 10)
 	result := submitAuditOutput{
 		OK:             true,
 		Tool:           "submit_audit_packet",
-		RunID:          idStr,
+		RunID:          input.RunID,
 		Decision:       input.Decision,
-		Status:         updatedRun.Status,
-		LifecycleState: lifecycleStateFromStatus(updatedRun.Status),
+		Status:         submitResult.Status,
+		LifecycleState: submitResult.LifecycleState,
 		ArtifactKind:   "audit_packet",
-		ReviewURL:      fmt.Sprintf("/runs/%s/intake", idStr),
+		ReviewURL:      fmt.Sprintf("/runs/%s/audit", input.RunID),
 	}
 
 	text, err := marshalTool(result)
@@ -179,7 +130,6 @@ func (s *Server) HandleSubmitAuditPacket(rawArgs json.RawMessage) ToolCallResult
 	return toolOK(text)
 }
 
-// auditDecisionToStatus maps an audit decision to the target run status and an optional note.
 func auditDecisionToStatus(decision string) (status string, note string) {
 	switch decision {
 	case "accepted":
@@ -189,11 +139,11 @@ func auditDecisionToStatus(decision string) (status string, note string) {
 	case "revision_required":
 		return "revision_required", ""
 	case "blocked":
-		return "revision_required", "decision was blocked; mapped to revision_required"
+		return "revision_required", "decision preserved as blocked"
 	case "manual_review_required":
-		return "revision_required", "decision was manual_review_required; mapped to revision_required"
+		return "revision_required", "decision preserved as manual_review_required"
 	default:
-		return "revision_required", "unknown decision; defaulting to revision_required"
+		return "revision_required", "decision preserved as revision_required"
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -329,6 +330,14 @@ func TestHTTPHandler_Protocol(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("created run %q not found in list_open_runs", runIDStr)
+		}
+
+		runIDInt, err := strconv.ParseInt(runIDStr, 10, 64)
+		if err != nil {
+			t.Fatalf("parse created run id: %v", err)
+		}
+		if _, err := deps.Store.UpdateRunStatus(runIDInt, "audit_ready"); err != nil {
+			t.Fatalf("set audit_ready: %v", err)
 		}
 
 		// 4. Submit audit packet.

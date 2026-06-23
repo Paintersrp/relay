@@ -1256,6 +1256,9 @@ func TestHandleSubmitAuditPacket_FullFlow(t *testing.T) {
 	}
 
 	runIDStr := fmt.Sprintf("%d", createOut.RunID)
+	if _, err := deps.Store.UpdateRunStatus(createOut.RunID, "audit_ready"); err != nil {
+		t.Fatalf("set audit_ready: %v", err)
+	}
 
 	// Now submit an audit packet.
 	auditArgs, _ := json.Marshal(map[string]string{
@@ -1321,6 +1324,9 @@ func TestHandleSubmitAuditPacket_AssociatedPassLifecycle(t *testing.T) {
 	}
 	if pass.Status != "in_progress" {
 		t.Fatalf("expected pass to be in_progress after run creation, got %q", pass.Status)
+	}
+	if _, err := deps.Store.UpdateRunStatus(createOut.RunID, "audit_ready"); err != nil {
+		t.Fatalf("set audit_ready: %v", err)
 	}
 
 	auditArgs, _ := json.Marshal(map[string]string{

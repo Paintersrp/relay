@@ -200,6 +200,25 @@ type RelayArtifact struct {
 	Preview     string `json:"preview,omitempty"`
 }
 
+type RelayAuditStatus struct {
+	RunID                        string         `json:"runId"`
+	RunStatus                    string         `json:"runStatus"`
+	AuditState                   string         `json:"auditState"`
+	CanGenerateAudit             bool           `json:"canGenerateAudit"`
+	CanSubmitDecision            bool           `json:"canSubmitDecision"`
+	CanApprove                   bool           `json:"canApprove"`
+	CanRequestRevision           bool           `json:"canRequestRevision"`
+	CanCloseRun                  bool           `json:"canCloseRun"`
+	EvidenceManifestArtifact     *RelayArtifact `json:"evidenceManifestArtifact,omitempty"`
+	GeneratedAuditPacketArtifact *RelayArtifact `json:"generatedAuditPacketArtifact,omitempty"`
+	ManualAuditPacketArtifact    *RelayArtifact `json:"manualAuditPacketArtifact,omitempty"`
+	DecisionArtifact             *RelayArtifact `json:"decisionArtifact,omitempty"`
+	Blockers                     []string       `json:"blockers"`
+	Warnings                     []string       `json:"warnings"`
+	RevisionRequirements         []string       `json:"revisionRequirements"`
+	LocalOnly                    bool           `json:"localOnly"`
+}
+
 type RelayRunEvent struct {
 	ID        string                 `json:"id"`
 	RunID     string                 `json:"runId"`
@@ -431,6 +450,12 @@ func mapArtifactKindAndLabel(kind string) (string, string) {
 		return "audit", "Commit Message (Text)"
 	case "commit_suggestion_json":
 		return "audit", "Commit Suggestion (JSON)"
+	case "audit_evidence_manifest_json":
+		return "audit", "Audit Evidence Manifest (JSON)"
+	case "audit_decision_json":
+		return "audit", "Audit Decision (JSON)"
+	case "audit_revision":
+		return "audit", "Audit Revision"
 	case "repair_request_json":
 		return "validation", "Repair Request (JSON)"
 	case "repair_prompt":
@@ -461,6 +486,37 @@ func mapArtifactKindAndLabel(kind string) (string, string) {
 			return "audit", strings.Title(strings.ReplaceAll(kind, "_", " "))
 		}
 		return "result", strings.Title(strings.ReplaceAll(kind, "_", " "))
+	}
+}
+
+func buildRelayArtifact(idStr string, art store.Artifact) RelayArtifact {
+	k, l := mapArtifactKindAndLabel(art.Kind)
+	filename := filepath.Base(art.Path)
+	sizeHint := getFileSizeHint(art.Path)
+
+	preview := ""
+	if art.MimeType == "text/plain" || art.MimeType == "application/json" || art.MimeType == "text/markdown" {
+		if data, err := os.ReadFile(art.Path); err == nil {
+			if len(data) > 500 {
+				preview = string(data[:500]) + "..."
+			} else {
+				preview = string(data)
+			}
+		}
+	}
+
+	return RelayArtifact{
+		ID:          strconv.FormatInt(art.ID, 10),
+		Label:       l,
+		Path:        fmt.Sprintf("/api/runs/%s/artifacts/%s", idStr, art.Kind),
+		Kind:        k,
+		StorageKind: art.Kind,
+		ContentURL:  fmt.Sprintf("/api/runs/%s/artifacts/%s", idStr, art.Kind),
+		SizeHint:    sizeHint,
+		CreatedAt:   parseAndFormatTime(art.CreatedAt),
+		Status:      "ready",
+		Filename:    filename,
+		Preview:     preview,
 	}
 }
 
@@ -1581,34 +1637,7 @@ func (h *APIHandler) ListArtifacts(w http.ResponseWriter, r *http.Request) {
 
 	result := make([]RelayArtifact, 0)
 	for _, art := range artifacts {
-		k, l := mapArtifactKindAndLabel(art.Kind)
-		filename := filepath.Base(art.Path)
-		sizeHint := getFileSizeHint(art.Path)
-
-		preview := ""
-		if art.MimeType == "text/plain" || art.MimeType == "application/json" || art.MimeType == "text/markdown" {
-			if data, err := os.ReadFile(art.Path); err == nil {
-				if len(data) > 500 {
-					preview = string(data[:500]) + "..."
-				} else {
-					preview = string(data)
-				}
-			}
-		}
-
-		result = append(result, RelayArtifact{
-			ID:          strconv.FormatInt(art.ID, 10),
-			Label:       l,
-			Path:        fmt.Sprintf("/api/runs/%s/artifacts/%s", idStr, art.Kind),
-			Kind:        k,
-			StorageKind: art.Kind,
-			ContentURL:  fmt.Sprintf("/api/runs/%s/artifacts/%s", idStr, art.Kind),
-			SizeHint:    sizeHint,
-			CreatedAt:   parseAndFormatTime(art.CreatedAt),
-			Status:      "ready",
-			Filename:    filename,
-			Preview:     preview,
-		})
+		result = append(result, buildRelayArtifact(idStr, art))
 	}
 	writeJSON(w, http.StatusOK, result)
 }
@@ -2720,6 +2749,241 @@ func (h *APIHandler) RepairValidation(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (h *APIHandler) GetAuditStatus(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
+		return
+	}
+
+	run, err := h.store.GetRun(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
+		return
+	}
+
+	status, err := h.buildAuditStatus(idStr, run)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to build audit status: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, status)
+}
+
+func (h *APIHandler) buildAuditStatus(idStr string, run *store.Run) (*RelayAuditStatus, error) {
+	artifactsByRun, err := h.store.ListArtifactsByRun(run.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	var evidenceManifestArtifact *RelayArtifact
+	var generatedAuditPacketArtifact *RelayArtifact
+	var manualAuditPacketArtifact *RelayArtifact
+	var decisionArtifact *RelayArtifact
+
+	for _, art := range artifactsByRun {
+		relay := buildRelayArtifact(idStr, art)
+		switch art.Kind {
+		case "audit_evidence_manifest_json":
+			if evidenceManifestArtifact == nil {
+				copy := relay
+				evidenceManifestArtifact = &copy
+			}
+		case "audit_decision_json":
+			if decisionArtifact == nil {
+				copy := relay
+				decisionArtifact = &copy
+			}
+		case "audit_packet":
+			if strings.Contains(strings.ToLower(filepath.Base(art.Path)), "manual") {
+				if manualAuditPacketArtifact == nil {
+					copy := relay
+					manualAuditPacketArtifact = &copy
+				}
+			} else if generatedAuditPacketArtifact == nil {
+				copy := relay
+				generatedAuditPacketArtifact = &copy
+			}
+		}
+	}
+
+	manifest := readAuditEvidenceManifest(artifactsByRun, "audit_evidence_manifest_json")
+	decisionRecord := readAuditDecisionRecord(artifactsByRun, "audit_decision_json")
+
+	valSvc := validationrunner.NewService(h.store)
+	hasFinalValidationEvidence := valSvc.HasValidationArtifacts(run.ID)
+	hasAcceptanceArtifact := hasArtifactKind(artifactsByRun, "validation_failure_acceptance_json")
+	validationAllowsAudit := hasFinalValidationEvidence &&
+		(run.Status == "validation_passed" || (run.Status == "validation_failed_accepted" && hasAcceptanceArtifact))
+
+	canGenerateAudit := false
+	switch run.Status {
+	case executor.StatusExecutorDone, executor.StatusExecutorBlocked:
+		required, _ := valSvc.RequiredCommandsInPacket(run.ID)
+		canGenerateAudit = !required || validationAllowsAudit
+	case "validation_passed", "validation_failed_accepted":
+		canGenerateAudit = validationAllowsAudit
+	}
+
+	canSubmitDecision := run.Status == "audit_ready" || run.Status == "audit_ready_for_review"
+	canApprove := canSubmitDecision
+	canRequestRevision := canSubmitDecision
+	canCloseRun := run.Status == "accepted" || run.Status == "accepted_with_warnings"
+
+	blockers := make([]string, 0)
+	warnings := make([]string, 0)
+	revisionRequirements := make([]string, 0)
+
+	if manifest != nil {
+		for _, warning := range manifest.Warnings {
+			warnings = append(warnings, warning.Message)
+			if warning.Severity == auditor.SeverityBlocker || warning.Severity == auditor.SeverityError {
+				blockers = append(blockers, warning.Message)
+			}
+		}
+		for _, requirement := range manifest.RevisionRequirements {
+			revisionRequirements = append(revisionRequirements, requirement.Reason)
+		}
+	}
+
+	switch run.Status {
+	case "local_validation_running":
+		blockers = append(blockers, "Local validation is still running.")
+	case "validation_failed":
+		blockers = append(blockers, "Validation failed. Accept the failed validation with a reason or rerun validation before generating audit.")
+	case "revision_required":
+		blockers = append(blockers, "Revision is required before audit closeout can continue.")
+	}
+
+	if decisionRecord != nil && strings.TrimSpace(decisionRecord.Notes) != "" &&
+		(decisionRecord.Decision == auditor.DecisionRevisionRequired ||
+			decisionRecord.Decision == auditor.DecisionBlocked ||
+			decisionRecord.Decision == auditor.DecisionManualReviewRequired) {
+		revisionRequirements = append(revisionRequirements, decisionRecord.Notes)
+	}
+
+	auditState := "not_ready"
+	switch run.Status {
+	case executor.StatusExecutorDone, executor.StatusExecutorBlocked, "validation_passed", "validation_failed_accepted":
+		if canGenerateAudit {
+			auditState = "candidate"
+		}
+	case "audit_ready", "audit_ready_for_review":
+		if manualAuditPacketArtifact != nil || decisionArtifact != nil {
+			auditState = "decision_submitted"
+		} else {
+			auditState = "ready"
+		}
+	case "revision_required":
+		auditState = "revision_required"
+	case "accepted", "accepted_with_warnings":
+		auditState = "accepted"
+	case "completed":
+		auditState = "completed"
+	}
+
+	return &RelayAuditStatus{
+		RunID:                        idStr,
+		RunStatus:                    run.Status,
+		AuditState:                   auditState,
+		CanGenerateAudit:             canGenerateAudit,
+		CanSubmitDecision:            canSubmitDecision,
+		CanApprove:                   canApprove,
+		CanRequestRevision:           canRequestRevision,
+		CanCloseRun:                  canCloseRun,
+		EvidenceManifestArtifact:     evidenceManifestArtifact,
+		GeneratedAuditPacketArtifact: generatedAuditPacketArtifact,
+		ManualAuditPacketArtifact:    manualAuditPacketArtifact,
+		DecisionArtifact:             decisionArtifact,
+		Blockers:                     uniqueStrings(blockers),
+		Warnings:                     uniqueStrings(warnings),
+		RevisionRequirements:         uniqueStrings(revisionRequirements),
+		LocalOnly:                    true,
+	}, nil
+}
+
+func hasArtifactKind(artifactsByRun []store.Artifact, kind string) bool {
+	for _, art := range artifactsByRun {
+		if art.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func readAuditEvidenceManifest(artifactsByRun []store.Artifact, kind string) *auditor.AuditEvidenceManifest {
+	for _, art := range artifactsByRun {
+		if art.Kind != kind {
+			continue
+		}
+		data, err := os.ReadFile(art.Path)
+		if err != nil {
+			return nil
+		}
+		var manifest auditor.AuditEvidenceManifest
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			return nil
+		}
+		return &manifest
+	}
+	return nil
+}
+
+func readAuditDecisionRecord(artifactsByRun []store.Artifact, kind string) *auditor.AuditDecisionRecord {
+	for _, art := range artifactsByRun {
+		if art.Kind != kind {
+			continue
+		}
+		data, err := os.ReadFile(art.Path)
+		if err != nil {
+			return nil
+		}
+		var record auditor.AuditDecisionRecord
+		if err := json.Unmarshal(data, &record); err != nil {
+			return nil
+		}
+		return &record
+	}
+	return nil
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func writeAuditDecisionError(w http.ResponseWriter, err error) {
+	if err == nil {
+		return
+	}
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
+	case errors.Is(err, auditor.ErrUnsupportedDecision):
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	case strings.Contains(err.Error(), "audit_packet_markdown is required"):
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	case errors.Is(err, auditor.ErrCompletedRun), errors.Is(err, auditor.ErrAuditDecisionNotReady):
+		writeError(w, http.StatusConflict, "CONFLICT", err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+	}
+}
+
 // POST /api/runs/{id}/audit
 func (h *APIHandler) GenerateAudit(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
@@ -2761,14 +3025,15 @@ func (h *APIHandler) GenerateAudit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":        true,
-		"runId":          idStr,
-		"status":         result.Status,
-		"inputSummary":   result.InputSummary,
-		"auditPacket":    result.AuditPacket,
-		"decision":       result.Decision,
-		"warnings":       result.Warnings,
-		"lifecycleState": "audit",
+		"success":          true,
+		"runId":            idStr,
+		"status":           result.Status,
+		"inputSummary":     result.InputSummary,
+		"evidenceManifest": result.EvidenceManifest,
+		"auditPacket":      result.AuditPacket,
+		"decision":         result.Decision,
+		"warnings":         result.Warnings,
+		"lifecycleState":   "audit",
 	})
 }
 
@@ -2793,25 +3058,29 @@ func (h *APIHandler) SubmitAuditPacket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	subSvc := auditor.NewSubmissionService(h.store)
-	input := auditor.ManualAuditSubmission{
+	input := auditor.DecisionSubmission{
 		RunID:               id,
 		AuditPacketMarkdown: req.AuditPacketMarkdown,
 		Decision:            auditor.Decision(req.Decision),
 		Notes:               req.Notes,
+		Source:              "api",
 	}
 
-	result, err := subSvc.SubmitManual(input)
+	result, err := subSvc.SubmitDecision(input)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		writeAuditDecisionError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":     true,
-		"runId":       idStr,
-		"auditPacket": result.AuditPacket,
-		"decision":    result.Decision,
-		"updatedAt":   result.CreatedAt.Format(time.RFC3339),
+		"success":              true,
+		"runId":                idStr,
+		"auditPacket":          result.AuditPacketPath,
+		"decision":             result.Decision,
+		"status":               result.Status,
+		"lifecycleState":       result.LifecycleState,
+		"decisionArtifactPath": result.DecisionArtifactPath,
+		"updatedAt":            result.CreatedAt.Format(time.RFC3339),
 	})
 }
 
@@ -2821,17 +3090,6 @@ func (h *APIHandler) ApproveAudit(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid run ID format")
-		return
-	}
-
-	run, err := h.store.GetRun(id)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
-		return
-	}
-
-	if run.Status != "audit_ready" && run.Status != "audit_ready_for_review" && run.Status != "accepted_with_warnings" {
-		writeError(w, http.StatusConflict, "CONFLICT", fmt.Sprintf("Run status is %q, must be audit_ready to approve", run.Status))
 		return
 	}
 
@@ -2849,40 +3107,23 @@ func (h *APIHandler) ApproveAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nextStatus := req.Decision
-	eventMsg := "Audit approved"
-	if req.Decision == "accepted_with_warnings" {
-		eventMsg = "Audit approved with warnings"
-	}
-	if req.Notes != "" {
-		eventMsg = fmt.Sprintf("%s: %s", eventMsg, req.Notes)
-	}
-
-	updatedRun, err := h.store.UpdateRunStatus(id, nextStatus)
+	result, err := auditor.NewSubmissionService(h.store).SubmitDecision(auditor.DecisionSubmission{
+		RunID:    id,
+		Decision: auditor.Decision(req.Decision),
+		Notes:    req.Notes,
+		Source:   "api",
+	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run status")
+		writeAuditDecisionError(w, err)
 		return
 	}
-	if err := h.lifecycleService.ApplyAuditDecision(updatedRun, nextStatus); err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update associated pass status: "+err.Error())
-		return
-	}
-
-	_, _ = h.store.CreateEvent(id, "status_change", eventMsg)
-
-	repoName := "Unknown Repo"
-	if repo, err := h.store.GetRepo(updatedRun.RepoID); err == nil && repo != nil {
-		repoName = repo.Name
-	}
-	mappedRun := h.mapRunToRelayRun(*updatedRun, repoName)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":        true,
 		"runId":          idStr,
-		"status":         mappedRun.Status,
-		"lifecycleState": mappedRun.LifecycleState,
-		"state":          mappedRun.State,
-		"updatedAt":      mappedRun.UpdatedAt,
+		"status":         result.Status,
+		"lifecycleState": result.LifecycleState,
+		"updatedAt":      result.CreatedAt.Format(time.RFC3339),
 	})
 }
 
@@ -2895,17 +3136,6 @@ func (h *APIHandler) RequestAuditRevision(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	run, err := h.store.GetRun(id)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
-		return
-	}
-
-	if run.Status != "audit_ready" && run.Status != "audit_ready_for_review" {
-		writeError(w, http.StatusConflict, "CONFLICT", fmt.Sprintf("Run status is %q, cannot request revision in this state", run.Status))
-		return
-	}
-
 	var req struct {
 		Notes  string `json:"notes"`
 		Reason string `json:"reason"`
@@ -2915,47 +3145,32 @@ func (h *APIHandler) RequestAuditRevision(w http.ResponseWriter, r *http.Request
 		req.Reason = ""
 	}
 
-	eventMsg := "Audit revision requested"
-	if req.Reason != "" {
-		eventMsg = fmt.Sprintf("%s: %s", eventMsg, req.Reason)
-	}
-	if req.Notes != "" {
-		eventMsg = fmt.Sprintf("%s (%s)", eventMsg, req.Notes)
-	}
-
-	_, _ = h.store.CreateEvent(id, "status_change", eventMsg)
-
-	// Persist revision details as an artifact for durable evidence
-	revisionData := fmt.Sprintf("# Audit Revision Request\n\n- Run ID: %d\n- Reason: %s\n- Notes: %s\n- Requested: %s\n",
-		id, req.Reason, req.Notes, time.Now().UTC().Format(time.RFC3339))
-	revisionPath, revErr := artifacts.Write(id, "audit_revision", "audit_revision_request.md", []byte(revisionData))
-	if revErr == nil {
-		_, _ = h.store.CreateArtifact(id, "audit_revision", revisionPath, "text/markdown")
+	notes := strings.TrimSpace(req.Reason)
+	if strings.TrimSpace(req.Notes) != "" {
+		if notes != "" {
+			notes += " (" + strings.TrimSpace(req.Notes) + ")"
+		} else {
+			notes = strings.TrimSpace(req.Notes)
+		}
 	}
 
-	// Transition run status to revision_required
-	updatedRun, err := h.store.UpdateRunStatus(id, "revision_required")
+	result, err := auditor.NewSubmissionService(h.store).SubmitDecision(auditor.DecisionSubmission{
+		RunID:    id,
+		Decision: auditor.DecisionRevisionRequired,
+		Notes:    notes,
+		Source:   "api",
+	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run status")
+		writeAuditDecisionError(w, err)
 		return
 	}
-	if err := h.lifecycleService.ApplyAuditDecision(updatedRun, "revision_required"); err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update associated pass status: "+err.Error())
-		return
-	}
-
-	repoName := "Unknown Repo"
-	if repo, err := h.store.GetRepo(updatedRun.RepoID); err == nil && repo != nil {
-		repoName = repo.Name
-	}
-	mappedRun := h.mapRunToRelayRun(*updatedRun, repoName)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":        true,
 		"runId":          idStr,
-		"status":         mappedRun.Status,
-		"lifecycleState": mappedRun.LifecycleState,
-		"updatedAt":      mappedRun.UpdatedAt,
+		"status":         result.Status,
+		"lifecycleState": result.LifecycleState,
+		"updatedAt":      result.CreatedAt.Format(time.RFC3339),
 	})
 }
 

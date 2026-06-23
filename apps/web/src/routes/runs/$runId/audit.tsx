@@ -5,6 +5,7 @@ import {
   runDetailQueryOptions,
   runArtifactsQueryOptions,
   runEventsQueryOptions,
+  auditStatusQueryOptions,
   auditRun,
   validateRun,
   submitManualAuditPacket,
@@ -26,6 +27,7 @@ import type {
   RelayAuditActions,
   RelayRun,
   RelayRunEvent,
+  RelayAuditStatus,
 } from "@/features/relay-runs";
 import { RELAY_AUDIT_DECISION_VALUES } from "@/features/relay-runs";
 import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
@@ -87,6 +89,9 @@ function AuditPage() {
     runArtifactsQueryOptions(runId),
   );
   const { data: events } = useQuery(runEventsQueryOptions(runId));
+  const { data: auditStatus, error: auditStatusError } = useQuery(
+    auditStatusQueryOptions(runId),
+  );
 
   if (isLoadingRun || isLoadingArtifacts) {
     return <RunWorkbenchLoadingState label="Loading run" />;
@@ -135,6 +140,8 @@ function AuditPage() {
           run={run}
           artifacts={resolvedArtifacts}
           events={resolvedEvents}
+          auditStatus={auditStatus}
+          auditStatusError={auditStatusError ? String(auditStatusError) : null}
         />
       }
       initialInspectorTab="details"
@@ -150,6 +157,7 @@ function AuditPage() {
             run={run}
             artifacts={resolvedArtifacts}
             events={resolvedEvents}
+            auditStatus={auditStatus}
           />
         ),
         logs: <LogPreviewPanel logPreview={logPreview} />,
@@ -170,6 +178,7 @@ function deriveAuditData(
   run: RelayRun,
   artifacts: RelayArtifact[],
   events: RelayRunEvent[],
+  auditStatus?: RelayAuditStatus,
 ): {
   inputSummary: RelayAuditInputSummaryInfo;
   generatedPacket: RelayAuditPacketInfo;
@@ -180,6 +189,10 @@ function deriveAuditData(
   warnings: string[];
   revisionRequirements: string[];
   blockers: string[];
+  evidenceManifestArtifact?: RelayArtifact;
+  decisionArtifact?: RelayArtifact;
+  localOnly: boolean;
+  auditState?: RelayAuditStatus["auditState"];
 } {
   const auditInputArts = artifacts
     .filter(
@@ -203,12 +216,18 @@ function deriveAuditData(
         a.path?.includes("audit_packet") ||
         a.label === "Audit Packet"),
   );
-  const genPacketArt = packetArts.find(
+  const fallbackGeneratedPacket = packetArts.find(
     (a: any) => !a.filename?.includes("manual") && !a.path?.includes("manual"),
   );
-  const manualPacketArt = packetArts.find(
+  const fallbackManualPacket = packetArts.find(
     (a: any) => a.filename?.includes("manual") || a.path?.includes("manual"),
   );
+  const genPacketArt =
+    auditStatus?.generatedAuditPacketArtifact || fallbackGeneratedPacket;
+  const manualPacketArt =
+    auditStatus?.manualAuditPacketArtifact || fallbackManualPacket;
+  const evidenceManifestArtifact = auditStatus?.evidenceManifestArtifact;
+  const decisionArtifact = auditStatus?.decisionArtifact;
 
   const hasRevisionEvent = events.some((e: any) =>
     e.message?.includes("Audit revision requested"),
@@ -252,10 +271,50 @@ function deriveAuditData(
     e.message?.includes("Manual audit packet submitted"),
   );
 
-  const auditDecision = run.approvalGate?.state === "approved";
-  const decisionValue: RelayAuditDecisionValue | undefined = isAccepted
-    ? "accepted"
-    : undefined;
+  const parsedDecision = parseDecisionArtifactPreview(decisionArtifact);
+  const decisionValue: RelayAuditDecisionValue | undefined =
+    parsedDecision.currentDecision ||
+    (runStatus === "accepted_with_warnings"
+      ? "accepted_with_warnings"
+      : isAccepted
+        ? "accepted"
+        : undefined);
+  const decisionSource: RelayAuditDecisionStatus["source"] = decisionArtifact
+    ? "approved"
+    : manualPacketArt
+      ? "manual"
+      : hasGenerateEvent || genPacketArt
+        ? "generated"
+        : "none";
+  const warnings =
+    auditStatus?.warnings ||
+    (run.validationSummary?.warnings > 0
+      ? (run.validationSummary?.issues || [])
+          .filter((i: any) => i.severity === "warning")
+          .map((i: any) => i.message)
+      : []);
+  const revisionRequirements =
+    auditStatus?.revisionRequirements ||
+    (hasRevisionEvent
+      ? events
+          .filter((e: any) => e.message?.includes("Audit revision requested"))
+          .map((e: any) => e.message)
+      : []);
+  const blockers =
+    auditStatus?.blockers ||
+    (isBlocked
+      ? ["Run is blocked and cannot proceed to close."]
+      : isRevisionRequired
+        ? ["Revision requested — audit must be regenerated."]
+        : []);
+  const canSubmitManual = auditStatus?.canSubmitDecision ?? (isAuditReady && !isAccepted && !isCompleted && !isRevisionRequired);
+  const canApproveAudit = auditStatus?.canApprove ?? ((hasGenerateEvent || hasManualSubmitEvent) &&
+    isAuditReady &&
+    !isCompleted &&
+    !isRevisionRequired);
+  const canRequestRevision = auditStatus?.canRequestRevision ?? (isAuditReady && !isCompleted && !isRevisionRequired);
+  const canCloseRun = auditStatus?.canCloseRun ?? (isAccepted && !isCompleted);
+  const canGenerateAudit = auditStatus?.canGenerateAudit ?? (isAuditCandidate && !isCompleted && validationAllowsAudit);
 
   return {
     inputSummary: {
@@ -267,7 +326,9 @@ function deriveAuditData(
       evidenceIncluded: evidenceArtifacts.map(
         (a: any) => a.label || a.filename,
       ),
-      missingEvidence: [],
+      missingEvidence: blockers.filter((blocker) =>
+        blocker.toLowerCase().includes("evidence"),
+      ),
     },
     generatedPacket: {
       artifactId: genPacketArt?.id || "",
@@ -276,12 +337,7 @@ function deriveAuditData(
       isManual: false,
       generatedAt: genPacketArt?.createdAt,
       preview: genPacketArt?.preview,
-      warnings:
-        run.validationSummary?.warnings > 0
-          ? (run.validationSummary?.issues || [])
-              .filter((i: any) => i.severity === "warning")
-              .map((i: any) => i.message)
-          : [],
+      warnings,
     },
     manualPacket: manualPacketArt
       ? {
@@ -296,15 +352,9 @@ function deriveAuditData(
       : undefined,
     decision: {
       currentDecision: decisionValue,
-      source: isCompleted
-        ? "approved"
-        : hasManualSubmitEvent
-          ? "manual"
-          : hasGenerateEvent
-            ? "generated"
-            : "none",
-      approvedAt: run.updatedAt,
-      notes: run.approvalGate?.note,
+      source: decisionSource,
+      approvedAt: decisionArtifact?.createdAt || run.updatedAt,
+      notes: parsedDecision.notes || run.approvalGate?.note,
     },
     commitSummary: {
       changedFileArtifactIds: changedFileArts.map((a: any) => a.id),
@@ -315,36 +365,29 @@ function deriveAuditData(
       auditDecisionSummary: decisionValue || "Pending review",
     },
     actions: {
-      canGenerateAudit:
-        isAuditCandidate && !isCompleted && validationAllowsAudit,
-      canSubmitManual:
-        isAuditReady && !isAccepted && !isCompleted && !isRevisionRequired,
-      canApproveAudit:
-        (hasGenerateEvent || hasManualSubmitEvent) &&
-        isAuditReady &&
-        !auditDecision &&
-        !isCompleted &&
-        !isRevisionRequired,
-      canRequestRevision: isAuditReady && !isCompleted && !isRevisionRequired,
+      canGenerateAudit,
+      canSubmitManual,
+      canApproveAudit,
+      canRequestRevision,
       canPrepareCommitMessage: isAccepted && !isCompleted,
-      canCloseRun: isAccepted && !isCompleted,
+      canCloseRun,
       generateAuditUnavailableReason: !isAuditCandidate
         ? `Current status: ${runStatus}. Audit generation is not available for this lifecycle stage.`
         : isCompleted
           ? undefined
-          : !validationAllowsAudit
+          : !canGenerateAudit
             ? `Current status: ${runStatus}. Audit generation requires a passed or accepted-failed local validation result.`
             : undefined,
       submitManualUnavailableReason:
-        !isAuditReady || isRevisionRequired
+        !canSubmitManual
           ? `Current status: ${runStatus}`
           : undefined,
       approveAuditUnavailableReason:
-        !isAuditReady || isRevisionRequired
+        !canApproveAudit
           ? `Current status: ${runStatus}`
           : undefined,
       requestRevisionUnavailableReason:
-        !isAuditReady || isRevisionRequired
+        !canRequestRevision
           ? `Current status: ${runStatus}`
           : undefined,
       prepareCommitMessageUnavailableReason: !isAccepted
@@ -352,35 +395,48 @@ function deriveAuditData(
         : undefined,
       closeRunUnavailableReason: !isAccepted
         ? `Audit must be approved first (status must be accepted or accepted_with_warnings). Current: ${runStatus}`
-        : undefined,
+          : undefined,
     },
-    warnings:
-      run.validationSummary?.warnings > 0
-        ? (run.validationSummary?.issues || [])
-            .filter((i: any) => i.severity === "warning")
-            .map((i: any) => i.message)
-        : [],
-    revisionRequirements: hasRevisionEvent
-      ? events
-          .filter((e: any) => e.message?.includes("Audit revision requested"))
-          .map((e: any) => e.message)
-      : [],
-    blockers: isBlocked
-      ? ["Run is blocked and cannot proceed to close."]
-      : isRevisionRequired
-        ? ["Revision requested — audit must be regenerated."]
-        : [],
+    warnings,
+    revisionRequirements,
+    blockers,
+    evidenceManifestArtifact,
+    decisionArtifact,
+    localOnly: auditStatus?.localOnly ?? true,
+    auditState: auditStatus?.auditState,
   };
+}
+
+function parseDecisionArtifactPreview(artifact?: RelayArtifact): {
+  currentDecision?: RelayAuditDecisionValue;
+  notes?: string;
+} {
+  if (!artifact?.preview) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(artifact.preview);
+    return {
+      currentDecision: parsed?.decision as RelayAuditDecisionValue | undefined,
+      notes: typeof parsed?.notes === "string" ? parsed.notes : undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
 function AuditMainContent({
   run,
   artifacts,
   events,
+  auditStatus,
+  auditStatusError,
 }: {
   run: RelayRun;
   artifacts: RelayArtifact[];
   events: RelayRunEvent[];
+  auditStatus?: RelayAuditStatus;
+  auditStatusError: string | null;
 }) {
   const queryClient = useQueryClient();
   const { runId } = Route.useParams();
@@ -400,8 +456,8 @@ function AuditMainContent({
   const [showAcceptanceForm, setShowAcceptanceForm] = useState(false);
 
   const auditData = useMemo(
-    () => deriveAuditData(run, artifacts, events),
-    [run, artifacts, events],
+    () => deriveAuditData(run, artifacts, events, auditStatus),
+    [run, artifacts, events, auditStatus],
   );
 
   const runStatus = (run.status || "") as string;
@@ -623,6 +679,15 @@ function AuditMainContent({
         />
       )}
 
+      {auditStatusError && (
+        <RelayStateBanner
+          tone="warning"
+          title="Structured audit status unavailable"
+          description="Relay fell back to artifact-based audit details for this view."
+          metadata={auditStatusError}
+        />
+      )}
+
       <RunStageStateCard
         tone={auditStateCardCopy.tone}
         eyebrow={auditStateCardCopy.eyebrow}
@@ -695,6 +760,42 @@ function AuditMainContent({
           metadata={`Current status: ${runStatus}`}
         />
       )}
+
+      <Section
+        title="Local Audit Evidence"
+        icon={<ShieldCheck className="w-4 h-4 text-emerald-400" />}
+      >
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="default" className="text-xs">
+              Local only
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              Audit evidence is derived from Relay artifacts only. GitHub PRs,
+              CI, and Actions are not used.
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-2 text-[11px] text-muted-foreground sm:grid-cols-2">
+            <div>
+              <span className="font-medium">Workflow state:</span>{" "}
+              {auditData.auditState || "fallback"}
+            </div>
+            <div>
+              <span className="font-medium">Evidence manifest:</span>{" "}
+              {auditData.evidenceManifestArtifact?.filename || "Pending"}
+            </div>
+          </div>
+          {auditData.evidenceManifestArtifact && (
+            <ArtifactPreviewCard
+              artifact={auditData.evidenceManifestArtifact}
+              runId={runId}
+              className="max-w-full"
+            />
+          )}
+        </div>
+      </Section>
+
+      <Separator />
 
       {/* Local Validation Required Panel */}
       <Section
@@ -1124,12 +1225,12 @@ function AuditMainContent({
                 className="w-fit gap-1.5"
               >
                 <Send className="w-3.5 h-3.5" />
-                Submit Manual Audit Packet
+                Submit Manual Audit Decision
               </Button>
             ) : (
               <div className="flex flex-col gap-2 p-3 bg-muted/20 rounded border border-border/40">
                 <p className="text-xs font-medium text-muted-foreground">
-                  Submit Manual Audit Packet
+                  Submit Manual Audit Decision
                 </p>
                 <Textarea
                   className="text-xs font-mono min-h-[120px]"
@@ -1212,7 +1313,7 @@ function AuditMainContent({
 
       {/* Audit Decision */}
       <Section
-        title="Audit Decision"
+        title="Audit Decision Actions"
         icon={<CheckSquare className="w-4 h-4 text-emerald-400" />}
       >
         <div className="flex items-center gap-2 flex-wrap">
@@ -1454,8 +1555,15 @@ function AuditMainContent({
       )}
 
       {/* Commit Summary */}
-      <Section title="Commit Summary" icon={<FileCode className="w-4 h-4" />}>
+      <Section
+        title="Post-Audit Closeout: Commit Summary"
+        icon={<FileCode className="w-4 h-4" />}
+      >
         <div className="flex flex-col gap-1.5">
+          <p className="text-[11px] text-muted-foreground/70">
+            These are post-audit closeout actions. Accepting an audit does not
+            automatically prepare a commit message or close the run.
+          </p>
           <div className="flex items-center gap-2">
             <Badge
               variant={
@@ -1524,7 +1632,10 @@ function AuditMainContent({
       <Separator />
 
       {/* Close Run */}
-      <Section title="Close Run" icon={<Terminal className="w-4 h-4" />}>
+      <Section
+        title="Post-Audit Closeout: Close Run"
+        icon={<Terminal className="w-4 h-4" />}
+      >
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
             <Badge
@@ -1597,12 +1708,14 @@ function AuditDetailsPanel({
   run,
   artifacts,
   events,
+  auditStatus,
 }: {
   run: RelayRun;
   artifacts: RelayArtifact[];
   events: RelayRunEvent[];
+  auditStatus?: RelayAuditStatus;
 }) {
-  const auditData = deriveAuditData(run, artifacts, events);
+  const auditData = deriveAuditData(run, artifacts, events, auditStatus);
   const runStatus = (run.status || "") as string;
   const { hasFinalValidationEvidence, validationAllowsAudit } =
     evaluateValidationGate(
@@ -1687,6 +1800,11 @@ function AuditDetailsPanel({
           value={formatArtifactCount(auditData.inputSummary.evidenceIncluded.length)}
         />
         <RunStageKeyValueRow
+          label="Manifest"
+          value={formatArtifactLocation(auditData.evidenceManifestArtifact)}
+          mono
+        />
+        <RunStageKeyValueRow
           label="Primary"
           value={formatArtifactLocation(primaryEvidenceArtifact)}
           mono
@@ -1700,13 +1818,7 @@ function AuditDetailsPanel({
         />
         <RunStageKeyValueRow
           label="Source"
-          value={
-            auditData.manualPacket
-              ? "Manual submission present"
-              : auditData.generatedPacket.available
-                ? "Generated packet"
-                : "Not available"
-          }
+          value={auditData.localOnly ? "Local-only artifacts" : "Not available"}
         />
         <RunStageKeyValueRow
           label="Artifact"
@@ -1723,6 +1835,10 @@ function AuditDetailsPanel({
         <RunStageKeyValueRow
           label="State"
           value={getAuditDecisionLabel(runStatus, auditData)}
+        />
+        <RunStageKeyValueRow
+          label="Workflow"
+          value={auditData.auditState || "-"}
         />
         <RunStageKeyValueRow
           label="Source"

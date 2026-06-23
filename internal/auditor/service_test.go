@@ -1,6 +1,7 @@
 package auditor
 
 import (
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -124,6 +125,10 @@ func TestService_Generate_Gating(t *testing.T) {
 		if err != nil || len(packetArts) == 0 {
 			t.Fatal("expected audit_packet artifact in store")
 		}
+		manifestArts, err := s.ListArtifactsByRunKind(run.ID, "audit_evidence_manifest_json")
+		if err != nil || len(manifestArts) == 0 {
+			t.Fatal("expected audit_evidence_manifest_json artifact in store")
+		}
 
 		// Read generated audit content from disk
 		summaryContent, err := os.ReadFile(summaryArts[0].Path)
@@ -189,6 +194,10 @@ func TestService_Generate_Gating(t *testing.T) {
 		if err != nil || len(packetArts) == 0 {
 			t.Fatal("expected audit_packet artifact in store")
 		}
+		manifestArts, err := s.ListArtifactsByRunKind(run.ID, "audit_evidence_manifest_json")
+		if err != nil || len(manifestArts) == 0 {
+			t.Fatal("expected audit_evidence_manifest_json artifact in store")
+		}
 
 		// Read generated audit content from disk
 		summaryContent, err := os.ReadFile(summaryArts[0].Path)
@@ -211,6 +220,27 @@ func TestService_Generate_Gating(t *testing.T) {
 		}
 		if !strings.Contains(string(packetContent), "validation_stdout") {
 			t.Error("audit packet should reference validation_stdout")
+		}
+
+		manifestContent, err := os.ReadFile(manifestArts[0].Path)
+		if err != nil {
+			t.Fatalf("read audit_evidence_manifest_json: %v", err)
+		}
+		var manifest AuditEvidenceManifest
+		if err := json.Unmarshal(manifestContent, &manifest); err != nil {
+			t.Fatalf("unmarshal audit_evidence_manifest_json: %v", err)
+		}
+		if manifest.SchemaVersion != "1.0.0" {
+			t.Fatalf("expected schema_version 1.0.0, got %q", manifest.SchemaVersion)
+		}
+		if !manifest.LocalOnly {
+			t.Fatal("expected local_only=true")
+		}
+		if strings.Contains(string(manifestContent), "STATUS: DONE") {
+			t.Fatal("manifest should not contain raw executor output")
+		}
+		if strings.Contains(string(manifestContent), "diff --git") {
+			t.Fatal("manifest should not contain raw diff content")
 		}
 	})
 }

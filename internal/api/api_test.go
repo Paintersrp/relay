@@ -167,6 +167,7 @@ func TestAPI(t *testing.T) {
 		r.Get("/runs/{id}", apiH.GetRun)
 		r.Get("/runs/{id}/artifacts", apiH.ListArtifacts)
 		r.Get("/runs/{id}/events", apiH.ListEvents)
+		r.Get("/runs/{id}/audit/status", apiH.GetAuditStatus)
 		r.Post("/intake/planner-handoff", apiH.IntakePlannerHandoff)
 		r.Post("/runs/{id}/approve-intake", apiH.ApproveIntake)
 		r.Post("/runs/{id}/prepare", apiH.PrepareRun)
@@ -895,6 +896,33 @@ func TestAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("AUDIT: Status endpoint reports ready state and manifest", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/runs/"+auditIDStr+"/audit/status", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp["auditState"] != "ready" {
+			t.Fatalf("expected auditState ready, got %v", resp["auditState"])
+		}
+		if resp["localOnly"] != true {
+			t.Fatalf("expected localOnly=true, got %v", resp["localOnly"])
+		}
+		if resp["canSubmitDecision"] != true {
+			t.Fatalf("expected canSubmitDecision=true, got %v", resp["canSubmitDecision"])
+		}
+		if resp["evidenceManifestArtifact"] == nil {
+			t.Fatal("expected evidenceManifestArtifact in status response")
+		}
+	})
+
 	// Reset to audit_ready for review action tests
 	_, err = s.UpdateRunStatus(auditRun.ID, "audit_ready")
 	if err != nil {
@@ -926,6 +954,10 @@ func TestAPI(t *testing.T) {
 		arts, err := s.ListArtifactsByRunKind(auditRun.ID, "audit_revision")
 		if err != nil || len(arts) == 0 {
 			t.Error("expected audit_revision artifact to exist")
+		}
+		decisionArts, err := s.ListArtifactsByRunKind(auditRun.ID, "audit_decision_json")
+		if err != nil || len(decisionArts) == 0 {
+			t.Fatal("expected audit_decision_json artifact to exist")
 		}
 	})
 
@@ -1033,6 +1065,30 @@ func TestAPI(t *testing.T) {
 		}
 		if resp["status"] != "accepted" {
 			t.Errorf("expected status accepted, got %q", resp["status"])
+		}
+	})
+
+	t.Run("AUDIT: Status endpoint reports accepted closeout state", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/runs/"+auditIDStr+"/audit/status", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp["auditState"] != "accepted" {
+			t.Fatalf("expected auditState accepted, got %v", resp["auditState"])
+		}
+		if resp["canCloseRun"] != true {
+			t.Fatalf("expected canCloseRun=true, got %v", resp["canCloseRun"])
+		}
+		if resp["decisionArtifact"] == nil {
+			t.Fatal("expected decisionArtifact in status response")
 		}
 	})
 

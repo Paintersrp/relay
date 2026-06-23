@@ -17,6 +17,8 @@ var allowedKinds = map[string]bool{
 	"agent_prompt":                       true,
 	"audit_packet":                       true,
 	"audit_input_summary":                true,
+	"audit_evidence_manifest_json":       true,
+	"audit_decision_json":                true,
 	"opencode_handoff_packet":            true,
 	"agent_result_raw":                   true,
 	"agent_result_json":                  true,

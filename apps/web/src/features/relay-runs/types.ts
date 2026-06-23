@@ -385,6 +385,34 @@ export interface RelayAuditDecisionStatus {
   notes?: string;
 }
 
+export type RelayAuditWorkflowState =
+  | "not_ready"
+  | "candidate"
+  | "ready"
+  | "decision_submitted"
+  | "revision_required"
+  | "accepted"
+  | "completed";
+
+export interface RelayAuditStatus {
+  runId: string;
+  runStatus: string;
+  auditState: RelayAuditWorkflowState;
+  canGenerateAudit: boolean;
+  canSubmitDecision: boolean;
+  canApprove: boolean;
+  canRequestRevision: boolean;
+  canCloseRun: boolean;
+  evidenceManifestArtifact?: RelayArtifact;
+  generatedAuditPacketArtifact?: RelayArtifact;
+  manualAuditPacketArtifact?: RelayArtifact;
+  decisionArtifact?: RelayArtifact;
+  blockers: string[];
+  warnings: string[];
+  revisionRequirements: string[];
+  localOnly: true;
+}
+
 export interface RelayCommitSummary {
   changedFileArtifactIds: string[];
   commitMessageArtifactId?: string;

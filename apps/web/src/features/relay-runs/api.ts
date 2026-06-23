@@ -8,6 +8,7 @@ import type {
   PlannerHandoffIntakeResponse,
   RelayApiErrorShape,
   RelayAuditDecisionValue,
+  RelayAuditStatus,
   RelayRunProvenance,
   RelayRunPlanContext,
   RelayValidationResult,
@@ -428,15 +429,55 @@ export async function getRun(id: string): Promise<RelayRun | null> {
 
 export async function getRunArtifacts(id: string): Promise<RelayArtifact[]> {
   const artifacts = await getJson<any[]>(`/api/runs/${id}/artifacts`);
-  return (artifacts || []).map((art) => ({
-    ...art,
-    status: art.status || "ready",
-    filename: art.filename || art.path?.split("/").pop() || "",
-  }));
+  return (artifacts || []).map(normalizeArtifact);
 }
 
 export async function getRunEvents(id: string): Promise<RelayRunEvent[]> {
   return getJson<RelayRunEvent[]>(`/api/runs/${id}/events`);
+}
+
+function normalizeArtifact(art: any): RelayArtifact {
+  return {
+    ...art,
+    status: art.status || "ready",
+    filename: art.filename || art.path?.split("/").pop() || "",
+  };
+}
+
+export function normalizeAuditStatus(status: any): RelayAuditStatus {
+  return {
+    runId: String(status?.runId ?? ""),
+    runStatus: status?.runStatus ?? "",
+    auditState: status?.auditState ?? "not_ready",
+    canGenerateAudit: Boolean(status?.canGenerateAudit),
+    canSubmitDecision: Boolean(status?.canSubmitDecision),
+    canApprove: Boolean(status?.canApprove),
+    canRequestRevision: Boolean(status?.canRequestRevision),
+    canCloseRun: Boolean(status?.canCloseRun),
+    evidenceManifestArtifact: status?.evidenceManifestArtifact
+      ? normalizeArtifact(status.evidenceManifestArtifact)
+      : undefined,
+    generatedAuditPacketArtifact: status?.generatedAuditPacketArtifact
+      ? normalizeArtifact(status.generatedAuditPacketArtifact)
+      : undefined,
+    manualAuditPacketArtifact: status?.manualAuditPacketArtifact
+      ? normalizeArtifact(status.manualAuditPacketArtifact)
+      : undefined,
+    decisionArtifact: status?.decisionArtifact
+      ? normalizeArtifact(status.decisionArtifact)
+      : undefined,
+    blockers: Array.isArray(status?.blockers) ? status.blockers : [],
+    warnings: Array.isArray(status?.warnings) ? status.warnings : [],
+    revisionRequirements: Array.isArray(status?.revisionRequirements)
+      ? status.revisionRequirements
+      : [],
+    localOnly: true,
+  };
+}
+
+export async function getAuditStatus(id: string): Promise<RelayAuditStatus> {
+  const status = await getJson<any>(`/api/runs/${id}/audit/status`);
+  return normalizeAuditStatus(status);
 }
 
 // POST endpoints (mutations)
@@ -596,6 +637,9 @@ export interface SubmitManualAuditResponse {
   runId: string;
   auditPacket: string;
   decision: RelayAuditDecisionValue;
+  status: string;
+  lifecycleState: string;
+  decisionArtifactPath?: string;
   updatedAt: string;
 }
 

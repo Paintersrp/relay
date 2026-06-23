@@ -259,6 +259,12 @@ No full artifact contents, no log dumps, no secrets, and no full handoff markdow
 
 **Output:** `ok`, `tool`, `run_id`, `decision`, `status`, `lifecycle_state`, `artifact_kind`, `review_url`
 
+**Shared audit semantics:**
+- The MCP tool now uses the same backend decision-submission service as the HTTP audit endpoints.
+- When Markdown is provided, Relay persists a manual `audit_packet` artifact plus `audit_decision_json`.
+- `blocked` and `manual_review_required` preserve the original decision in `audit_decision_json` while mapping the run status to `revision_required`.
+- Audit evidence remains local-only and artifact-backed. GitHub PRs, CI, and Actions are not read or required.
+
 **Does NOT:** close the run, commit, push, stage, merge, branch, checkout, reset, or mutate the target repository.
 
 ### 6. `submit_planner_pass_plan`
