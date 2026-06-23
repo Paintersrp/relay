@@ -23,6 +23,14 @@
     *   `submit_planner_pass_plan` creates plan/pass records only and does not create runs, dispatch executors, mutate git, or read chat context.
     *   The additional status/list/audit tools are **not** currently exposed to the Planner Project unless the specific project configuration is modified to expose them.
 
+## Project-Orchestrator Work Tools (Contract-Defined, Not Registered Yet)
+
+*   `get_next_pass_work` and `get_next_audit_work` are defined by the `Paintersrp/relay-contracts` repository at `contracts/planner_mcp_orchestrator_work_contract.md`.
+*   They serve as retrieval-only work-packet surfaces for project-scoped sequential orchestration.
+*   They require `project_id` and `plan_id`. `get_next_audit_work` also accepts optional `pass_id` and `run_id`.
+*   These tools are **not currently registered** in the `Paintersrp/relay` MCP server, and will be implemented in a subsequent vertical slice.
+*   They do not submit plans, create runs, generate handoffs, generate audit judgments, apply audit decisions, dispatch executors, run shell commands, mutate git, or read/write arbitrary filesystem paths.
+
 ---
 
 ## How It Works
