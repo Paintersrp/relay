@@ -139,6 +139,8 @@ type Plan struct {
 	GlobalContextRulesJson   string `json:"global_context_rules_json"`
 	SubmissionNote           string `json:"submission_note"`
 	RawPlanJson              string `json:"raw_plan_json"`
+	ProjectRowID             int64  `json:"project_row_id"`
+	ProjectID                string `json:"project_id"`
 }
 
 type PlanPass struct {

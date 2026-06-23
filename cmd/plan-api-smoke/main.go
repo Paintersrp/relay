@@ -34,13 +34,18 @@ import (
 var smokePlanJSON = `{
   "plan_meta": {
     "plan_id": "plan-api-smoke-plan",
-    "schema_version": "1.0.0",
+    "schema_version": "2.0.0",
     "created_at": "2026-06-21T00:00:00Z",
     "title": "Plan API Smoke Plan",
     "goal": "Verify managed plan HTTP API smoke coverage.",
     "repo_target": "smoke-test-repo",
     "branch_context": "main",
-    "status": "active"
+    "status": "active",
+    "project_context": {
+      "primary_project": "relay",
+      "primary_repository": "relay",
+      "github_role": "repo_host_and_origin_only"
+    }
   },
   "source_intent": {
     "summary": "Synthetic smoke plan for managed-plan HTTP API coverage."
@@ -54,7 +59,25 @@ var smokePlanJSON = `{
       "intended_execution_scope": ["cmd/plan-api-smoke/main.go"],
       "non_goals": ["No production data mutation"],
       "dependencies": [],
-      "status": "planned"
+      "status": "planned",
+      "pass_type": "backend_vertical_slice",
+      "context_plan": {
+        "required_repositories": ["relay"],
+        "seed_search_terms": [
+          {"repo_id": "relay", "query": "main", "purpose": "Locate entrypoint.", "required": true}
+        ],
+        "seed_files_to_read": [
+          {"repo_id": "relay", "path": "cmd/plan-api-smoke/main.go", "purpose": "Inspect smoke harness.", "required": true}
+        ],
+        "context_coverage_expectations": ["Coverage is checked."],
+        "blocked_if_missing": ["Smoke script is missing."]
+      },
+      "source_snapshot_requirements": {
+        "require_git_status": true,
+        "require_commit_sha": false,
+        "allow_dirty_worktree": true
+      },
+      "handoff_readiness_criteria": ["Validation checks pass."]
     },
     {
       "pass_id": "PASS-002",
@@ -64,7 +87,25 @@ var smokePlanJSON = `{
       "intended_execution_scope": ["docs/api/frontend-api-contract.md"],
       "non_goals": ["No UI changes"],
       "dependencies": ["PASS-001"],
-      "status": "planned"
+      "status": "planned",
+      "pass_type": "testing_release_hardening",
+      "context_plan": {
+        "required_repositories": ["relay"],
+        "seed_search_terms": [
+          {"repo_id": "relay", "query": "main", "purpose": "Locate entrypoint.", "required": true}
+        ],
+        "seed_files_to_read": [
+          {"repo_id": "relay", "path": "cmd/plan-api-smoke/main.go", "purpose": "Inspect smoke harness.", "required": true}
+        ],
+        "context_coverage_expectations": ["Coverage is checked."],
+        "blocked_if_missing": ["Smoke script is missing."]
+      },
+      "source_snapshot_requirements": {
+        "require_git_status": true,
+        "require_commit_sha": false,
+        "allow_dirty_worktree": true
+      },
+      "handoff_readiness_criteria": ["Validation checks pass."]
     }
   ]
 }`
@@ -98,6 +139,10 @@ func run() error {
 	}
 	defer st.Close()
 
+	if _, err := st.CreateProject("relay", "Relay", "Smoke test project", "active", ""); err != nil {
+		return fmt.Errorf("create smoke project: %w", err)
+	}
+
 	apiH := api.NewAPIHandler(st, logger)
 	r := chi.NewRouter()
 	r.Route("/api", func(r chi.Router) {
@@ -121,6 +166,9 @@ func run() error {
 	var validateResp api.PlanAPIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &validateResp); err != nil {
 		return fmt.Errorf("decode validate response: %w", err)
+	}
+	if !validateResp.Validation.Valid {
+		fmt.Printf("SMOKE TEST VALIDATION ISSUES: %+v\n", validateResp.Validation.Issues)
 	}
 	h.check("validate success true", validateResp.Success)
 	h.check("validate validation valid", validateResp.Validation.Valid)

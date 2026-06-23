@@ -125,6 +125,8 @@ type RelayRunPlanContext struct {
 	ContextPacketID      string `json:"contextPacketId,omitempty"`
 	SourceSnapshotID     string `json:"sourceSnapshotId,omitempty"`
 	PlannerHandoffSHA256 string `json:"plannerHandoffSha256,omitempty"`
+	ProjectID            string `json:"projectId,omitempty"`
+	ProjectRowID         string `json:"projectRowId,omitempty"`
 }
 
 type RelayRunProvenance struct {
@@ -261,6 +263,7 @@ type RelayApiErrorShape struct {
 type PlanAPIRequest struct {
 	Plan               json.RawMessage `json:"plan"`
 	SourceArtifactPath string          `json:"sourceArtifactPath,omitempty"`
+	ProjectID          string          `json:"projectId,omitempty"`
 }
 
 type PlanAPIResponse struct {
@@ -283,6 +286,8 @@ type PlanAPIPlan struct {
 	SourceArtifactPath  string `json:"sourceArtifactPath,omitempty"`
 	CreatedAt           string `json:"createdAt"`
 	UpdatedAt           string `json:"updatedAt"`
+	ProjectRowID        string `json:"projectRowId,omitempty"`
+	ProjectID           string `json:"projectId,omitempty"`
 }
 
 type PlanAPIPass struct {
@@ -885,6 +890,8 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 		if plan, err := h.store.GetPlan(run.PlanRowID.Int64); err == nil && plan != nil {
 			planContext.PlanID = plan.PlanID
 			planContext.PlanTitle = plan.Title
+			planContext.ProjectID = plan.ProjectID
+			planContext.ProjectRowID = strconv.FormatInt(plan.ProjectRowID, 10)
 		}
 	}
 
@@ -899,7 +906,7 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 			if planContext.PlanRowID == "" {
 				planContext.PlanRowID = strconv.FormatInt(pass.PlanRowID, 10)
 			}
-			if planContext.PlanID == "" || planContext.PlanTitle == "" {
+			if planContext.PlanID == "" || planContext.PlanTitle == "" || planContext.ProjectID == "" {
 				if plan, err := h.store.GetPlan(pass.PlanRowID); err == nil && plan != nil {
 					if planContext.PlanID == "" {
 						planContext.PlanID = plan.PlanID
@@ -907,6 +914,8 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 					if planContext.PlanTitle == "" {
 						planContext.PlanTitle = plan.Title
 					}
+					planContext.ProjectID = plan.ProjectID
+					planContext.ProjectRowID = strconv.FormatInt(plan.ProjectRowID, 10)
 				}
 			}
 		}
@@ -1053,6 +1062,8 @@ func mapPlanToAPI(plan store.Plan) PlanAPIPlan {
 		SourceArtifactPath:  plan.SourceArtifactPath,
 		CreatedAt:           parseAndFormatTime(plan.CreatedAt),
 		UpdatedAt:           parseAndFormatTime(plan.UpdatedAt),
+		ProjectRowID:        strconv.FormatInt(plan.ProjectRowID, 10),
+		ProjectID:           plan.ProjectID,
 	}
 }
 
@@ -1388,10 +1399,37 @@ func (h *APIHandler) ValidatePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, report, err := h.planService.ValidatePlanJSON(r.Context(), rawPlan)
+	plan, report, err := h.planService.ValidatePlanJSON(r.Context(), rawPlan)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
+	}
+
+	if report.Valid {
+		projectID := plans.ResolvePlanProjectID(req.ProjectID, plan)
+		if projectID == "" {
+			report.AddIssue(
+				plans.IssuePlanProjectRequired,
+				"$.plan_meta.project_id",
+				"project_id is required",
+			)
+		} else {
+			project, err := h.store.GetProjectByProjectID(projectID)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					report.AddIssue(
+						plans.IssuePlanProjectUnknown,
+						"$.plan_meta.project_id",
+						fmt.Sprintf("project_id %q is unknown", projectID),
+					)
+				} else {
+					writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", fmt.Sprintf("lookup project: %v", err))
+					return
+				}
+			}
+			_ = project
+		}
+		report.Finalize()
 	}
 
 	writeJSON(w, http.StatusOK, PlanAPIResponse{
@@ -1421,6 +1459,7 @@ func (h *APIHandler) SubmitPlan(w http.ResponseWriter, r *http.Request) {
 	result, err := h.planService.SubmitPlan(r.Context(), plans.SubmitPlanRequest{
 		RawJSON:            rawPlan,
 		SourceArtifactPath: req.SourceArtifactPath,
+		ProjectID:          req.ProjectID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
@@ -1481,12 +1520,39 @@ func (h *APIHandler) ListPlans(w http.ResponseWriter, r *http.Request) {
 		limit = parsed
 	}
 
+	projectIDStr := strings.TrimSpace(r.URL.Query().Get("projectId"))
+	var projectRowID int64 = 0
+	if projectIDStr != "" {
+		project, err := h.store.GetProjectByProjectID(projectIDStr)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeJSON(w, http.StatusOK, PlanReadAPIResponse{
+					Success: true,
+					Count:   0,
+					Plans:   []PlanAPIReadPlan{},
+				})
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to lookup project")
+			return
+		}
+		projectRowID = project.ID
+	}
+
 	var planRows []store.Plan
 	var err error
-	if status == "" {
-		planRows, err = h.store.ListPlans(limit)
+	if projectRowID > 0 {
+		if status == "" {
+			planRows, err = h.store.ListPlansByProject(projectRowID, limit)
+		} else {
+			planRows, err = h.store.ListPlansByProjectAndStatus(projectRowID, status, limit)
+		}
 	} else {
-		planRows, err = h.store.ListPlansByStatus(status, limit)
+		if status == "" {
+			planRows, err = h.store.ListPlans(limit)
+		} else {
+			planRows, err = h.store.ListPlansByStatus(status, limit)
+		}
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list plans")
@@ -1518,6 +1584,12 @@ func (h *APIHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
 	plan, err := h.store.GetPlanByPlanID(planID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found", planID))
+		return
+	}
+
+	projectIDStr := strings.TrimSpace(r.URL.Query().Get("projectId"))
+	if projectIDStr != "" && plan.ProjectID != projectIDStr {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found in project %q", planID, projectIDStr))
 		return
 	}
 
@@ -1567,6 +1639,12 @@ func (h *APIHandler) GetPlanPass(w http.ResponseWriter, r *http.Request) {
 	plan, err := h.store.GetPlanByPlanID(planID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found", planID))
+		return
+	}
+
+	projectIDStr := strings.TrimSpace(r.URL.Query().Get("projectId"))
+	if projectIDStr != "" && plan.ProjectID != projectIDStr {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found in project %q", planID, projectIDStr))
 		return
 	}
 

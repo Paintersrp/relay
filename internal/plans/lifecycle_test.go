@@ -87,7 +87,7 @@ func TestRunLifecycleService(t *testing.T) {
 		}
 	})
 
-	t.Run("revision required keeps pass in progress", func(t *testing.T) {
+	t.Run("revision required maps to revision_required status", func(t *testing.T) {
 		run, pass := createLifecycleRunWithPass(t, st, "plan-lifecycle-revision", "PASS-001", "planned")
 
 		if err := svc.ApplyAuditDecision(run, "revision_required"); err != nil {
@@ -98,8 +98,28 @@ func TestRunLifecycleService(t *testing.T) {
 		if err != nil {
 			t.Fatalf("get pass: %v", err)
 		}
-		if updatedPass.Status != "in_progress" {
-			t.Fatalf("expected in_progress, got %q", updatedPass.Status)
+		if updatedPass.Status != "revision_required" {
+			t.Fatalf("expected revision_required, got %q", updatedPass.Status)
+		}
+	})
+
+	t.Run("blocked decisions map to blocked status", func(t *testing.T) {
+		for _, decision := range []string{"blocked", "manual_review_required", "rejected"} {
+			t.Run(decision, func(t *testing.T) {
+				run, pass := createLifecycleRunWithPass(t, st, "plan-lifecycle-blocked-"+decision, "PASS-001", "in_progress")
+
+				if err := svc.ApplyAuditDecision(run, decision); err != nil {
+					t.Fatalf("apply audit decision: %v", err)
+				}
+
+				updatedPass, err := st.GetPlanPass(pass.ID)
+				if err != nil {
+					t.Fatalf("get pass: %v", err)
+				}
+				if updatedPass.Status != "blocked" {
+					t.Fatalf("expected blocked, got %q", updatedPass.Status)
+				}
+			})
 		}
 	})
 
@@ -216,6 +236,10 @@ func setupLifecycleTestService(t *testing.T) (*RunLifecycleService, *store.Store
 
 	if _, err := st.CreateRepo("test-repo", filepath.Join(dir, "repo")); err != nil {
 		t.Fatalf("create repo: %v", err)
+	}
+
+	if _, err := st.CreateProject("test-project", "Test Project", "", "active", ""); err != nil {
+		t.Fatalf("create project: %v", err)
 	}
 
 	return NewRunLifecycleService(st), st
@@ -338,6 +362,7 @@ func submitLifecyclePlan(t *testing.T, st *store.Store, planID string) *store.Pl
 	result, err := NewService(st).SubmitPlan(context.Background(), SubmitPlanRequest{
 		RawJSON:            raw,
 		SourceArtifactPath: "handoffs/planner/lifecycle-test.json",
+		ProjectID:          "test-project",
 	})
 	if err != nil {
 		t.Fatalf("submit plan: %v", err)

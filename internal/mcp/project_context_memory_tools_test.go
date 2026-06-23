@@ -137,16 +137,20 @@ func setupMemoryFixture(t *testing.T) brokerFixture {
 	deps.ContextBrokerEnabled = true
 	srv := NewServer(discardLogger(), deps)
 	projectService := projects.NewService(deps.Store)
-	project, issues, err := projectService.CreateProject(t.Context(), projects.ProjectInput{
-		ProjectID: "relay",
-		Name:      "Relay",
-		Status:    projects.ProjectStatusActive,
-	})
+	project, err := projectService.GetProjectByProjectID(t.Context(), "relay")
 	if err != nil {
-		t.Fatalf("CreateProject error: %v", err)
-	}
-	if len(issues) != 0 {
-		t.Fatalf("unexpected project issues: %+v", issues)
+		var issues []projects.ProjectValidationIssue
+		project, issues, err = projectService.CreateProject(t.Context(), projects.ProjectInput{
+			ProjectID: "relay",
+			Name:      "Relay",
+			Status:    projects.ProjectStatusActive,
+		})
+		if err != nil {
+			t.Fatalf("CreateProject error: %v", err)
+		}
+		if len(issues) != 0 {
+			t.Fatalf("unexpected project issues: %+v", issues)
+		}
 	}
 	return brokerFixture{deps: deps, server: srv, projectID: project.ProjectID}
 }

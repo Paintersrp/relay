@@ -38,6 +38,31 @@ func (svc *Service) SubmitPlan(ctx context.Context, req SubmitPlanRequest) (*Sub
 		return result, nil
 	}
 
+	projectID := ResolvePlanProjectID(req.ProjectID, plan)
+	if projectID == "" {
+		result.Report.addIssue(
+			IssuePlanProjectRequired,
+			"$.plan_meta.project_id",
+			"project_id is required",
+		)
+		result.Report.finalize()
+		return result, nil
+	}
+
+	project, err := svc.store.GetProjectByProjectID(projectID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			result.Report.addIssue(
+				IssuePlanProjectUnknown,
+				"$.plan_meta.project_id",
+				fmt.Sprintf("project_id %q is unknown", projectID),
+			)
+			result.Report.finalize()
+			return result, nil
+		}
+		return result, fmt.Errorf("lookup project %q: %w", projectID, err)
+	}
+
 	queries := generated.New(svc.store.DB())
 	if _, err := queries.GetPlanByPlanID(ctx, plan.PlanMeta.PlanID); err == nil {
 		result.Report.addIssue(
@@ -100,6 +125,8 @@ func (svc *Service) SubmitPlan(ctx context.Context, req SubmitPlanRequest) (*Sub
 		GlobalContextRulesJson:   globalContextRulesJSON,
 		SubmissionNote:           plan.PlanMeta.SubmissionNote,
 		RawPlanJson:              string(req.RawJSON),
+		ProjectRowID:             project.ID,
+		ProjectID:                project.ProjectID,
 	})
 	if err != nil {
 		result.Report.addIssue(IssuePlanStorageFailed, "$.plan_meta.plan_id", "failed to store plan")

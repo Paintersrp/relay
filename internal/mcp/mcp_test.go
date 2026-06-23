@@ -37,6 +37,9 @@ func setupTestStore(t *testing.T) *store.Store {
 		t.Fatalf("open test store: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
+	if _, err := s.CreateProject("relay", "Relay", "Default Test Project", "active", ""); err != nil {
+		t.Fatalf("create test project: %v", err)
+	}
 	return s
 }
 
@@ -1451,6 +1454,7 @@ func validPlannerPassPlan() plans.PlannerPassPlan {
 			RepoTarget:    "test-repo",
 			BranchContext: "main",
 			Status:        "active",
+			ProjectID:     "relay",
 			MCPCapabilityProfile: &plans.MCPCapabilityProfile{
 				ProfileID:            "relay-mcp-tests",
 				Mode:                 "submission_only",

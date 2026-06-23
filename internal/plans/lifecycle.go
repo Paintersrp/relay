@@ -25,12 +25,13 @@ func (svc *RunLifecycleService) MarkAssociatedPassInProgress(run *store.Run) err
 	}
 
 	switch pass.Status {
-	case "planned":
+	case "planned", "ready_for_planner", "handoff_ready", "run_created", "revision_required":
 		_, err := svc.store.UpdatePlanPassStatus(pass.ID, "in_progress")
 		if err != nil {
 			return fmt.Errorf("update plan pass to in_progress: %w", err)
 		}
-	case "in_progress", "completed", "skipped":
+	default:
+		// "in_progress", "audit_ready", "completed", "blocked", "skipped", etc. remain unchanged
 		return nil
 	}
 
@@ -82,17 +83,17 @@ func (svc *RunLifecycleService) CompletionReady(planRowID int64) (bool, error) {
 }
 
 func planPassStatusForAuditDecision(currentStatus string, decision string) (string, error) {
+	if currentStatus == "completed" || currentStatus == "skipped" {
+		return "", nil
+	}
+
 	switch decision {
 	case "accepted", "accepted_with_warnings":
-		if currentStatus == "skipped" || currentStatus == "completed" {
-			return "", nil
-		}
 		return "completed", nil
 	case "revision_required":
-		if currentStatus == "skipped" || currentStatus == "completed" {
-			return "", nil
-		}
-		return "in_progress", nil
+		return "revision_required", nil
+	case "blocked", "manual_review_required", "rejected":
+		return "blocked", nil
 	default:
 		return "", fmt.Errorf("unsupported audit decision %q", decision)
 	}

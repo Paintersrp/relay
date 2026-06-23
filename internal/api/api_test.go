@@ -32,6 +32,10 @@ func TestAPI(t *testing.T) {
 	}
 	defer s.Close()
 
+	if _, err := s.CreateProject("relay", "Relay", "", "active", ""); err != nil {
+		t.Fatalf("failed to create project: %v", err)
+	}
+
 	repo, err := s.CreateRepo("test-repo", filepath.Join(dir, "repo"))
 	if err != nil {
 		t.Fatalf("failed to create repo: %v", err)
@@ -132,6 +136,7 @@ func TestAPI(t *testing.T) {
 		result, err := plans.NewService(s).SubmitPlan(context.Background(), plans.SubmitPlanRequest{
 			RawJSON:            raw,
 			SourceArtifactPath: "handoffs/planner/association-test.json",
+			ProjectID:          "relay",
 		})
 		if err != nil {
 			t.Fatalf("submit plan: %v", err)
@@ -1108,7 +1113,7 @@ func TestAPI(t *testing.T) {
 		}
 	})
 
-	t.Run("AUDIT: Associated pass stays in_progress on revision and completes on acceptance", func(t *testing.T) {
+	t.Run("AUDIT: Associated pass transitions to revision_required on revision and completes on acceptance", func(t *testing.T) {
 		createPlan(t, "plan-api-audit-pass")
 
 		planRow, err := s.GetPlanByPlanID("plan-api-audit-pass")
@@ -1151,8 +1156,8 @@ func TestAPI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("get pass after revision: %v", err)
 		}
-		if passAfterRevision.Status != "in_progress" {
-			t.Fatalf("expected pass to stay in_progress after revision, got %q", passAfterRevision.Status)
+		if passAfterRevision.Status != "revision_required" {
+			t.Fatalf("expected pass to transition to revision_required after revision, got %q", passAfterRevision.Status)
 		}
 
 		if _, err := s.UpdateRunStatus(associatedRun.ID, "audit_ready"); err != nil {

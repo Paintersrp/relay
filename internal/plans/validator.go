@@ -177,7 +177,7 @@ func validatePlanSemantics(plan *PlannerPassPlan, report *PlanValidationReport) 
 			report.addIssue(IssuePlanEmptyRequiredValue, passPath+".sequence", "passes.sequence must be greater than or equal to 1")
 		}
 
-		if strings.TrimSpace(pass.Status) != "planned" {
+		if !IsInitialPlanPassStatus(strings.TrimSpace(pass.Status)) {
 			report.addIssue(
 				IssuePlanPassStatusInvalid,
 				passPath+".status",
@@ -438,4 +438,32 @@ func (r *PlanValidationReport) finalize() {
 		return
 	}
 	r.Valid = false
+}
+
+func (r *PlanValidationReport) AddIssue(code string, path string, message string) {
+	r.addIssue(code, path, message)
+}
+
+func (r *PlanValidationReport) Finalize() {
+	r.finalize()
+}
+
+func IsInitialPlanPassStatus(status string) bool {
+	return status == "planned"
+}
+
+func ResolvePlanProjectID(explicitProjectID string, plan *PlannerPassPlan) string {
+	if explicitProjectID != "" {
+		return explicitProjectID
+	}
+	if plan == nil {
+		return ""
+	}
+	if plan.PlanMeta.ProjectID != "" {
+		return plan.PlanMeta.ProjectID
+	}
+	if plan.PlanMeta.ProjectContext != nil && plan.PlanMeta.ProjectContext.PrimaryProject != "" {
+		return plan.PlanMeta.ProjectContext.PrimaryProject
+	}
+	return ""
 }

@@ -712,18 +712,22 @@ func setupBrokerFixture(t *testing.T) brokerFixture {
 	brokerRunGit(t, repoRoot, "add", ".")
 	brokerRunGit(t, repoRoot, "commit", "-m", "broker fixture")
 
-	project, issues, err := projectService.CreateProject(t.Context(), projects.ProjectInput{
-		ProjectID: "relay",
-		Name:      "Relay",
-		Status:    projects.ProjectStatusActive,
-	})
+	project, err := projectService.GetProjectByProjectID(t.Context(), "relay")
 	if err != nil {
-		t.Fatalf("CreateProject error: %v", err)
+		var issues []projects.ProjectValidationIssue
+		project, issues, err = projectService.CreateProject(t.Context(), projects.ProjectInput{
+			ProjectID: "relay",
+			Name:      "Relay",
+			Status:    projects.ProjectStatusActive,
+		})
+		if err != nil {
+			t.Fatalf("CreateProject error: %v", err)
+		}
+		if len(issues) != 0 {
+			t.Fatalf("unexpected project issues: %+v", issues)
+		}
 	}
-	if len(issues) != 0 {
-		t.Fatalf("unexpected project issues: %+v", issues)
-	}
-	_, issues, err = projectService.UpsertProjectRepository(t.Context(), project.ProjectID, projects.ProjectRepositoryInput{
+	_, repoIssues, err := projectService.UpsertProjectRepository(t.Context(), project.ProjectID, projects.ProjectRepositoryInput{
 		RepoID:           "relay",
 		Role:             projects.RepositoryRolePrimary,
 		LocalPath:        repoRoot,
@@ -736,8 +740,8 @@ func setupBrokerFixture(t *testing.T) brokerFixture {
 	if err != nil {
 		t.Fatalf("UpsertProjectRepository error: %v", err)
 	}
-	if len(issues) != 0 {
-		t.Fatalf("unexpected repository issues: %+v", issues)
+	if len(repoIssues) != 0 {
+		t.Fatalf("unexpected repository issues: %+v", repoIssues)
 	}
 
 	snapshot, err := sourceService.CreateSourceSnapshot(t.Context(), sources.SourceSnapshotInput{

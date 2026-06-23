@@ -332,6 +332,32 @@ func (s *Store) ListPlansByStatus(status string, limit int64) ([]Plan, error) {
 	})
 }
 
+func (s *Store) GetPlanByProjectAndPlanID(projectRowID int64, planID string) (*Plan, error) {
+	plan, err := s.queries.GetPlanByProjectAndPlanID(context.Background(), generated.GetPlanByProjectAndPlanIDParams{
+		ProjectRowID: projectRowID,
+		PlanID:       planID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &plan, nil
+}
+
+func (s *Store) ListPlansByProject(projectRowID int64, limit int64) ([]Plan, error) {
+	return s.queries.ListPlansByProject(context.Background(), generated.ListPlansByProjectParams{
+		ProjectRowID: projectRowID,
+		Limit:        limit,
+	})
+}
+
+func (s *Store) ListPlansByProjectAndStatus(projectRowID int64, status string, limit int64) ([]Plan, error) {
+	return s.queries.ListPlansByProjectAndStatus(context.Background(), generated.ListPlansByProjectAndStatusParams{
+		ProjectRowID: projectRowID,
+		Status:       status,
+		Limit:        limit,
+	})
+}
+
 func (s *Store) GetPlanPass(id int64) (*PlanPass, error) {
 	pass, err := s.queries.GetPlanPass(context.Background(), id)
 	if err != nil {

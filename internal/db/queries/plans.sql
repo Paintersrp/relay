@@ -14,9 +14,11 @@ INSERT INTO plans (
   mcp_capability_profile_json,
   global_context_rules_json,
   submission_note,
-  raw_plan_json
+  raw_plan_json,
+  project_row_id,
+  project_id
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetPlan :one
@@ -76,3 +78,12 @@ UPDATE plan_passes
 SET status = ?, updated_at = datetime('now')
 WHERE id = ?
 RETURNING *;
+
+-- name: GetPlanByProjectAndPlanID :one
+SELECT * FROM plans WHERE project_row_id = ? AND plan_id = ?;
+
+-- name: ListPlansByProject :many
+SELECT * FROM plans WHERE project_row_id = ? ORDER BY updated_at DESC, id DESC LIMIT ?;
+
+-- name: ListPlansByProjectAndStatus :many
+SELECT * FROM plans WHERE project_row_id = ? AND status = ? ORDER BY updated_at DESC, id DESC LIMIT ?;

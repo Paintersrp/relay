@@ -25,10 +25,12 @@ INSERT INTO plans (
   mcp_capability_profile_json,
   global_context_rules_json,
   submission_note,
-  raw_plan_json
+  raw_plan_json,
+  project_row_id,
+  project_id
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json, project_row_id, project_id
 `
 
 type CreatePlanParams struct {
@@ -47,6 +49,8 @@ type CreatePlanParams struct {
 	GlobalContextRulesJson   string `json:"global_context_rules_json"`
 	SubmissionNote           string `json:"submission_note"`
 	RawPlanJson              string `json:"raw_plan_json"`
+	ProjectRowID             int64  `json:"project_row_id"`
+	ProjectID                string `json:"project_id"`
 }
 
 func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error) {
@@ -66,6 +70,8 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, e
 		arg.GlobalContextRulesJson,
 		arg.SubmissionNote,
 		arg.RawPlanJson,
+		arg.ProjectRowID,
+		arg.ProjectID,
 	)
 	var i Plan
 	err := row.Scan(
@@ -87,6 +93,8 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, e
 		&i.GlobalContextRulesJson,
 		&i.SubmissionNote,
 		&i.RawPlanJson,
+		&i.ProjectRowID,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -178,7 +186,7 @@ func (q *Queries) CreatePlanPass(ctx context.Context, arg CreatePlanPassParams) 
 }
 
 const getPlan = `-- name: GetPlan :one
-SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json FROM plans WHERE id = ?
+SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json, project_row_id, project_id FROM plans WHERE id = ?
 `
 
 func (q *Queries) GetPlan(ctx context.Context, id int64) (Plan, error) {
@@ -203,12 +211,14 @@ func (q *Queries) GetPlan(ctx context.Context, id int64) (Plan, error) {
 		&i.GlobalContextRulesJson,
 		&i.SubmissionNote,
 		&i.RawPlanJson,
+		&i.ProjectRowID,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const getPlanByPlanID = `-- name: GetPlanByPlanID :one
-SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json FROM plans WHERE plan_id = ?
+SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json, project_row_id, project_id FROM plans WHERE plan_id = ?
 `
 
 func (q *Queries) GetPlanByPlanID(ctx context.Context, planID string) (Plan, error) {
@@ -233,6 +243,45 @@ func (q *Queries) GetPlanByPlanID(ctx context.Context, planID string) (Plan, err
 		&i.GlobalContextRulesJson,
 		&i.SubmissionNote,
 		&i.RawPlanJson,
+		&i.ProjectRowID,
+		&i.ProjectID,
+	)
+	return i, err
+}
+
+const getPlanByProjectAndPlanID = `-- name: GetPlanByProjectAndPlanID :one
+SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json, project_row_id, project_id FROM plans WHERE project_row_id = ? AND plan_id = ?
+`
+
+type GetPlanByProjectAndPlanIDParams struct {
+	ProjectRowID int64  `json:"project_row_id"`
+	PlanID       string `json:"plan_id"`
+}
+
+func (q *Queries) GetPlanByProjectAndPlanID(ctx context.Context, arg GetPlanByProjectAndPlanIDParams) (Plan, error) {
+	row := q.db.QueryRowContext(ctx, getPlanByProjectAndPlanID, arg.ProjectRowID, arg.PlanID)
+	var i Plan
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.SchemaVersion,
+		&i.Title,
+		&i.Goal,
+		&i.RepoTarget,
+		&i.BranchContext,
+		&i.Status,
+		&i.SourceIntentSummary,
+		&i.SourceArtifactPath,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PlanMetaJson,
+		&i.ProjectContextJson,
+		&i.McpCapabilityProfileJson,
+		&i.GlobalContextRulesJson,
+		&i.SubmissionNote,
+		&i.RawPlanJson,
+		&i.ProjectRowID,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -404,7 +453,7 @@ func (q *Queries) ListPlanPassesByStatus(ctx context.Context, arg ListPlanPasses
 }
 
 const listPlans = `-- name: ListPlans :many
-SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json FROM plans ORDER BY updated_at DESC, id DESC LIMIT ?
+SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json, project_row_id, project_id FROM plans ORDER BY updated_at DESC, id DESC LIMIT ?
 `
 
 func (q *Queries) ListPlans(ctx context.Context, limit int64) ([]Plan, error) {
@@ -435,6 +484,115 @@ func (q *Queries) ListPlans(ctx context.Context, limit int64) ([]Plan, error) {
 			&i.GlobalContextRulesJson,
 			&i.SubmissionNote,
 			&i.RawPlanJson,
+			&i.ProjectRowID,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlansByProject = `-- name: ListPlansByProject :many
+SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json, project_row_id, project_id FROM plans WHERE project_row_id = ? ORDER BY updated_at DESC, id DESC LIMIT ?
+`
+
+type ListPlansByProjectParams struct {
+	ProjectRowID int64 `json:"project_row_id"`
+	Limit        int64 `json:"limit"`
+}
+
+func (q *Queries) ListPlansByProject(ctx context.Context, arg ListPlansByProjectParams) ([]Plan, error) {
+	rows, err := q.db.QueryContext(ctx, listPlansByProject, arg.ProjectRowID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Plan{}
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.SchemaVersion,
+			&i.Title,
+			&i.Goal,
+			&i.RepoTarget,
+			&i.BranchContext,
+			&i.Status,
+			&i.SourceIntentSummary,
+			&i.SourceArtifactPath,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PlanMetaJson,
+			&i.ProjectContextJson,
+			&i.McpCapabilityProfileJson,
+			&i.GlobalContextRulesJson,
+			&i.SubmissionNote,
+			&i.RawPlanJson,
+			&i.ProjectRowID,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlansByProjectAndStatus = `-- name: ListPlansByProjectAndStatus :many
+SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json, project_row_id, project_id FROM plans WHERE project_row_id = ? AND status = ? ORDER BY updated_at DESC, id DESC LIMIT ?
+`
+
+type ListPlansByProjectAndStatusParams struct {
+	ProjectRowID int64  `json:"project_row_id"`
+	Status       string `json:"status"`
+	Limit        int64  `json:"limit"`
+}
+
+func (q *Queries) ListPlansByProjectAndStatus(ctx context.Context, arg ListPlansByProjectAndStatusParams) ([]Plan, error) {
+	rows, err := q.db.QueryContext(ctx, listPlansByProjectAndStatus, arg.ProjectRowID, arg.Status, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Plan{}
+	for rows.Next() {
+		var i Plan
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlanID,
+			&i.SchemaVersion,
+			&i.Title,
+			&i.Goal,
+			&i.RepoTarget,
+			&i.BranchContext,
+			&i.Status,
+			&i.SourceIntentSummary,
+			&i.SourceArtifactPath,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PlanMetaJson,
+			&i.ProjectContextJson,
+			&i.McpCapabilityProfileJson,
+			&i.GlobalContextRulesJson,
+			&i.SubmissionNote,
+			&i.RawPlanJson,
+			&i.ProjectRowID,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -450,7 +608,7 @@ func (q *Queries) ListPlans(ctx context.Context, limit int64) ([]Plan, error) {
 }
 
 const listPlansByStatus = `-- name: ListPlansByStatus :many
-SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json FROM plans WHERE status = ? ORDER BY updated_at DESC, id DESC LIMIT ?
+SELECT id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json, project_row_id, project_id FROM plans WHERE status = ? ORDER BY updated_at DESC, id DESC LIMIT ?
 `
 
 type ListPlansByStatusParams struct {
@@ -486,6 +644,8 @@ func (q *Queries) ListPlansByStatus(ctx context.Context, arg ListPlansByStatusPa
 			&i.GlobalContextRulesJson,
 			&i.SubmissionNote,
 			&i.RawPlanJson,
+			&i.ProjectRowID,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -543,7 +703,7 @@ const updatePlanStatus = `-- name: UpdatePlanStatus :one
 UPDATE plans
 SET status = ?, updated_at = datetime('now')
 WHERE id = ?
-RETURNING id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json
+RETURNING id, plan_id, schema_version, title, goal, repo_target, branch_context, status, source_intent_summary, source_artifact_path, created_at, updated_at, plan_meta_json, project_context_json, mcp_capability_profile_json, global_context_rules_json, submission_note, raw_plan_json, project_row_id, project_id
 `
 
 type UpdatePlanStatusParams struct {
@@ -573,6 +733,8 @@ func (q *Queries) UpdatePlanStatus(ctx context.Context, arg UpdatePlanStatusPara
 		&i.GlobalContextRulesJson,
 		&i.SubmissionNote,
 		&i.RawPlanJson,
+		&i.ProjectRowID,
+		&i.ProjectID,
 	)
 	return i, err
 }

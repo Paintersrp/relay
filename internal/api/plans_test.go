@@ -254,6 +254,11 @@ func newPlanAPITestServer(t *testing.T) (*APIHandler, *store.Store, http.Handler
 		}
 	})
 
+	// Create default test project "relay"
+	if _, err := st.CreateProject("relay", "Relay", "Default Test Project", "active", ""); err != nil {
+		t.Fatalf("st.CreateProject: %v", err)
+	}
+
 	apiH := NewAPIHandler(st, logger)
 	router := chi.NewRouter()
 	router.Route("/api", func(r chi.Router) {
@@ -280,6 +285,7 @@ func validPlanAPIPayload(t *testing.T) plans.PlannerPassPlan {
 			RepoTarget:    "Paintersrp/relay",
 			BranchContext: "main",
 			Status:        "active",
+			ProjectID:     "relay",
 			MCPCapabilityProfile: &plans.MCPCapabilityProfile{
 				ProfileID:            "relay-plan-api-tests",
 				Mode:                 "submission_only",

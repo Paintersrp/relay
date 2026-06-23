@@ -19,6 +19,22 @@ const (
 	IssuePlanEmptyRequiredValue         = "PLAN_EMPTY_REQUIRED_VALUE"
 	IssuePlanEmptyRequiredArray         = "PLAN_EMPTY_REQUIRED_ARRAY"
 	IssuePlanStorageFailed              = "PLAN_STORAGE_FAILED"
+	IssuePlanProjectRequired            = "PLAN_PROJECT_REQUIRED"
+	IssuePlanProjectUnknown             = "PLAN_PROJECT_UNKNOWN"
+	IssuePlanPassStatusInvalidRuntime   = "PLAN_PASS_STATUS_INVALID_RUNTIME"
+)
+
+const (
+	StatusPassPlanned          = "planned"
+	StatusPassReadyForPlanner  = "ready_for_planner"
+	StatusPassHandoffReady     = "handoff_ready"
+	StatusPassRunCreated       = "run_created"
+	StatusPassInProgress       = "in_progress"
+	StatusPassAuditReady       = "audit_ready"
+	StatusPassCompleted        = "completed"
+	StatusPassRevisionRequired = "revision_required"
+	StatusPassBlocked          = "blocked"
+	StatusPassSkipped          = "skipped"
 )
 
 type PlannerPassPlan struct {
@@ -37,6 +53,7 @@ type PlanMeta struct {
 	RepoTarget           string                `json:"repo_target"`
 	BranchContext        string                `json:"branch_context"`
 	Status               string                `json:"status"`
+	ProjectID            string                `json:"project_id,omitempty"`
 	ProjectContext       *ProjectContext       `json:"project_context,omitempty"`
 	MCPCapabilityProfile *MCPCapabilityProfile `json:"mcp_capability_profile,omitempty"`
 	SubmissionNote       string                `json:"submission_note,omitempty"`
@@ -124,6 +141,7 @@ type ContextBudget struct {
 type SubmitPlanRequest struct {
 	RawJSON            []byte
 	SourceArtifactPath string
+	ProjectID          string
 }
 
 type SubmitPlanResult struct {

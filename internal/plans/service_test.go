@@ -398,6 +398,11 @@ func newTestService(t *testing.T) (*Service, *store.Store) {
 		}
 	})
 
+	// Create default test project "relay"
+	if _, err := st.CreateProject("relay", "Relay", "Default Test Project", "active", ""); err != nil {
+		t.Fatalf("st.CreateProject: %v", err)
+	}
+
 	return NewService(st), st
 }
 
@@ -659,4 +664,60 @@ func boolPtr(value bool) *bool {
 
 func int64Ptr(value int64) *int64 {
 	return &value
+}
+
+func TestSubmitPlanRequiresProject(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newTestService(t)
+
+	// Test 1: project ID resolved to "non-existent"
+	plan := validPlannerPassPlan()
+	plan.PlanMeta.ProjectContext.PrimaryProject = "non-existent"
+	raw := mustMarshalPlan(t, plan)
+
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{
+		RawJSON: raw,
+	})
+	if err != nil {
+		t.Fatalf("SubmitPlan error: %v", err)
+	}
+	if result.Report.Valid {
+		t.Fatal("expected invalid report due to unknown project")
+	}
+	assertIssueCode(t, result.Report, IssuePlanProjectUnknown)
+
+	// Test 2: explicit project ID is used and exists
+	if _, err := st.CreateProject("another-project", "Another", "", "active", ""); err != nil {
+		t.Fatalf("CreateProject failed: %v", err)
+	}
+	result, err = svc.SubmitPlan(context.Background(), SubmitPlanRequest{
+		RawJSON:   raw,
+		ProjectID: "another-project",
+	})
+	if err != nil {
+		t.Fatalf("SubmitPlan error: %v", err)
+	}
+	if !result.Report.Valid {
+		t.Fatalf("expected valid report, got: %+v", result.Report.Issues)
+	}
+	if result.Plan.ProjectID != "another-project" {
+		t.Errorf("expected ProjectID another-project, got %q", result.Plan.ProjectID)
+	}
+
+	// Test 3: project ID is entirely missing
+	planNoProj := validPlannerPassPlan()
+	planNoProj.PlanMeta.ProjectContext = nil
+	rawNoProj := mustMarshalPlan(t, planNoProj)
+
+	result, err = svc.SubmitPlan(context.Background(), SubmitPlanRequest{
+		RawJSON: rawNoProj,
+	})
+	if err != nil {
+		t.Fatalf("SubmitPlan error: %v", err)
+	}
+	if result.Report.Valid {
+		t.Fatal("expected invalid report due to missing project")
+	}
+	assertIssueCode(t, result.Report, IssuePlanProjectRequired)
 }
