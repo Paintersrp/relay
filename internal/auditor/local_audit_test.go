@@ -77,6 +77,44 @@ func TestLocalAuditServiceCreatesAllModes(t *testing.T) {
 	}
 }
 
+func TestLocalAuditServiceRejectsTraversalPathBeforeArtifacts(t *testing.T) {
+	requireLocalAuditGit(t)
+	dir := t.TempDir()
+	artifacts.SetBaseDir(filepath.Join(dir, "artifacts"))
+	st := newLocalAuditTestStore(t, dir)
+	repoRoot := setupLocalAuditGitRepo(t)
+	project := createLocalAuditProject(t, st, repoRoot)
+
+	svc := NewLocalAuditService(st)
+	_, err := svc.Create(t.Context(), LocalAuditInput{
+		Mode:      string(LocalAuditModeFeatureSlice),
+		ProjectID: project.ProjectID,
+		RepoIDs:   []string{"relay"},
+		Paths:     []string{"../outside.txt"},
+	})
+	if err == nil {
+		t.Fatal("expected traversal path to be rejected")
+	}
+	if !strings.Contains(err.Error(), "repository-relative") {
+		t.Fatalf("expected path validation error, got %v", err)
+	}
+	if got := countLocalAuditRows(t, st); got != 0 {
+		t.Fatalf("expected no local audit rows after rejected input, got %d", got)
+	}
+	if entries, err := os.ReadDir(filepath.Join(dir, "artifacts")); err == nil && len(entries) != 0 {
+		t.Fatalf("expected no local audit artifacts after rejected input, got %d entries", len(entries))
+	}
+}
+
+func countLocalAuditRows(t *testing.T, st *store.Store) int {
+	t.Helper()
+	var count int
+	if err := st.DB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM local_audits`).Scan(&count); err != nil {
+		t.Fatalf("count local_audits: %v", err)
+	}
+	return count
+}
+
 func newLocalAuditTestStore(t *testing.T, dir string) *store.Store {
 	t.Helper()
 	st, err := store.Open(filepath.Join(dir, "relay.sqlite"), slog.New(slog.NewTextHandler(io.Discard, nil)))

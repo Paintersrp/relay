@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -453,19 +454,39 @@ func TestHTTPHandlerToolsListUsesServerToolSurface(t *testing.T) {
 			t.Fatalf("unmarshal tools: %v", err)
 		}
 
-		hasGetProject := false
-		hasCreateContextPacket := false
-		for _, tool := range toolsResult.Tools {
-			if tool.Name == "get_project" {
-				hasGetProject = true
-			}
-			if tool.Name == "create_context_packet" {
-				hasCreateContextPacket = true
-			}
+		gotNames := toolNamesFromList(toolsResult.Tools)
+		expected := []string{
+			"submit_test_audit_packet",
+			"create_run_from_planner_handoff",
+			"submit_planner_pass_plan",
+			"list_open_runs",
+			"get_run_status",
+			"submit_audit_packet",
+			"get_project",
+			"get_plan",
+			"get_pass",
+			"get_pass_context",
+			"create_source_snapshot",
+			"list_project_files",
+			"search_project_files",
+			"read_project_file",
+			"get_repository_git_status",
+			"get_repository_recent_commit",
+			"list_repository_changed_files",
+			"get_repository_diff",
+			"create_context_packet",
+			"get_context_packet",
+			"create_local_audit",
+			"get_local_audit",
+			"list_project_local_audits",
+			"search_project_context_memory",
+			"list_project_context_records",
+			"get_project_context_record",
+			"create_project_context_record",
+			"supersede_project_context_record",
 		}
-
-		if !hasGetProject || !hasCreateContextPacket {
-			t.Errorf("expected get_project and create_context_packet in local-operator tool surface")
+		if !reflect.DeepEqual(gotNames, expected) {
+			t.Errorf("expected tools:\n%v\ngot:\n%v", expected, gotNames)
 		}
 	})
 
@@ -498,27 +519,25 @@ func TestHTTPHandlerToolsListUsesServerToolSurface(t *testing.T) {
 			t.Fatalf("unmarshal tools: %v", err)
 		}
 
-		hasGetProject := false
-		hasCreateContextPacket := false
-		hasCreateRun := false
-		for _, tool := range toolsResult.Tools {
-			if tool.Name == "get_project" {
-				hasGetProject = true
-			}
-			if tool.Name == "create_context_packet" {
-				hasCreateContextPacket = true
-			}
-			if tool.Name == "create_run_from_planner_handoff" {
-				hasCreateRun = true
-			}
+		gotNames := toolNamesFromList(toolsResult.Tools)
+		expected := []string{
+			"submit_test_audit_packet",
+			"create_run_from_planner_handoff",
+			"submit_planner_pass_plan",
+			"list_open_runs",
+			"get_run_status",
+			"submit_audit_packet",
 		}
-
-		if hasGetProject || hasCreateContextPacket {
-			t.Errorf("did not expect get_project or create_context_packet in restricted tool surface")
-		}
-		if !hasCreateRun {
-			t.Errorf("expected create_run_from_planner_handoff to be present in restricted tool surface")
+		if !reflect.DeepEqual(gotNames, expected) {
+			t.Errorf("expected tools:\n%v\ngot:\n%v", expected, gotNames)
 		}
 	})
 }
 
+func toolNamesFromList(tools []ToolDefinition) []string {
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	return names
+}
