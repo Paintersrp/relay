@@ -357,7 +357,6 @@ func mustMarshalJSON(t *testing.T, v interface{}) json.RawMessage {
 	return data
 }
 
-
 // ----------------------------------------------------------------------------
 // PASS-008 additions: schema strictness, store-less blockers, and
 // success-through-tool coverage for the orchestrator work tools.
@@ -559,10 +558,10 @@ func TestOrchestratorWorkTools_HandlersReturnStructuredBlockersWithoutStore(t *t
 	srv := NewServer(nil, &MCPDeps{Store: nil, ToolProfile: ToolProfileLocalOperator})
 
 	cases := []struct {
-		name    string
-		tool    string
-		call    func(json.RawMessage) ToolCallResult
-		args    string
+		name string
+		tool string
+		call func(json.RawMessage) ToolCallResult
+		args string
 	}{
 		{
 			name: "get_next_pass_work",

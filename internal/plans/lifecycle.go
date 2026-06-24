@@ -2,8 +2,11 @@ package plans
 
 import (
 	"fmt"
+	"time"
 
 	"relay/internal/store"
+
+	"github.com/google/uuid"
 )
 
 type RunLifecycleService struct {
@@ -120,13 +123,136 @@ func (svc *RunLifecycleService) ApplyAuditDecision(run *store.Run, decision stri
 	if err != nil {
 		return err
 	}
-	if targetStatus == "" || targetStatus == pass.Status {
+	if targetStatus != "" && targetStatus != pass.Status {
+		if _, err := svc.store.UpdatePlanPassStatus(pass.ID, targetStatus); err != nil {
+			return fmt.Errorf("update plan pass to %s: %w", targetStatus, err)
+		}
+	}
+
+	// Map the explicit audit decision onto a scheduled refactor candidate, if any.
+	// This runs only at this audit/lifecycle boundary -- never during read-only
+	// work-packet retrieval.
+	if err := svc.applyRefactorCandidateAuditMapping(pass, decision); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// refactorCandidateStatusForAuditDecision maps an explicit audit decision to a
+// scheduled refactor candidate target status. An empty status means "no candidate
+// mutation": blocked, manual_review_required, and rejected outcomes must never
+// auto-reject, defer, or reset a candidate; those require an explicit user
+// decision through the candidate lifecycle.
+func refactorCandidateStatusForAuditDecision(decision string) (status string, reason string) {
+	switch decision {
+	case "accepted":
+		return refactorCandidateStatusCompleted, "scheduled refactor pass audit accepted"
+	case "accepted_with_warnings":
+		return refactorCandidateStatusCompletedWithWarnings, "scheduled refactor pass audit accepted with warnings"
+	case "revision_required":
+		return refactorCandidateStatusScheduledRevisionRequired, "scheduled refactor pass audit revision required"
+	default:
+		return "", ""
+	}
+}
+
+// applyRefactorCandidateAuditMapping applies the candidate status outcome for a
+// scheduled refactor pass after an explicit audit decision. It is a no-op for
+// non-refactor passes and for decisions that must not mutate a candidate.
+func (svc *RunLifecycleService) applyRefactorCandidateAuditMapping(pass *store.PlanPass, decision string) error {
+	targetStatus, reason := refactorCandidateStatusForAuditDecision(decision)
+	if targetStatus == "" {
+		return nil
+	}
+	return svc.applyScheduledRefactorCandidateTransition(pass, targetStatus, reason)
+}
+
+// ApplyRefactorCandidateForSkippedPass maps a skipped scheduled refactor pass to
+// a deferred candidate. It is a service-only lifecycle helper: this pass does not
+// introduce a public skip route, so this helper exists for an existing/future
+// skip flow to call. It is a no-op for non-refactor passes and for candidates
+// that are not in an active scheduled state.
+func (svc *RunLifecycleService) ApplyRefactorCandidateForSkippedPass(pass *store.PlanPass) error {
+	return svc.applyScheduledRefactorCandidateTransition(pass, refactorCandidateStatusDeferred, "scheduled refactor pass skipped")
+}
+
+// applyScheduledRefactorCandidateTransition resolves the scheduled refactor
+// candidate behind a pass and applies a target status. It fails closed on a
+// stale/mismatched schedule reference, never downgrades terminal candidates, and
+// is idempotent (re-applying the same status is a no-op).
+func (svc *RunLifecycleService) applyScheduledRefactorCandidateTransition(pass *store.PlanPass, targetStatus, reason string) error {
+	meta, err := refactorMetadataFromPass(pass)
+	if err != nil {
+		return fmt.Errorf("resolve refactor metadata for pass %q: %w", pass.PassID, err)
+	}
+	if meta == nil {
 		return nil
 	}
 
-	_, err = svc.store.UpdatePlanPassStatus(pass.ID, targetStatus)
+	plan, err := svc.store.GetPlan(pass.PlanRowID)
 	if err != nil {
-		return fmt.Errorf("update plan pass to %s: %w", targetStatus, err)
+		return fmt.Errorf("get plan for refactor candidate mapping: %w", err)
+	}
+	project, err := svc.store.GetProject(plan.ProjectRowID)
+	if err != nil {
+		return fmt.Errorf("get project for refactor candidate mapping: %w", err)
+	}
+
+	candidate, err := svc.store.GetRefactorCandidateByCandidateID(project.ID, meta.CandidateID)
+	if err != nil {
+		return fmt.Errorf("lookup refactor candidate %q: %w", meta.CandidateID, err)
+	}
+
+	// Only actively scheduled candidates are mapped. Terminal candidates
+	// (completed/completed_with_warnings) and user-decided states are never
+	// downgraded or overwritten by lifecycle synchronization.
+	switch candidate.Status {
+	case refactorCandidateStatusScheduled, refactorCandidateStatusScheduledRevisionRequired:
+		// proceed
+	default:
+		return nil
+	}
+	if candidate.Status == targetStatus {
+		// Idempotent: avoid duplicate status events on re-application.
+		return nil
+	}
+
+	// Fail closed if the scheduling reference no longer matches this plan/pass.
+	if _, blocker, err := validateRefactorSchedule(svc.store, project, plan, pass); err != nil {
+		return err
+	} else if blocker != nil {
+		return fmt.Errorf("cannot map scheduled refactor pass outcome to candidate: %s", blocker.Message)
+	}
+
+	params := store.UpdateRefactorCandidateStatusMetadataParams{
+		ProjectRowID: project.ID,
+		CandidateID:  candidate.CandidateID,
+		Status:       targetStatus,
+	}
+	switch targetStatus {
+	case refactorCandidateStatusCompleted, refactorCandidateStatusCompletedWithWarnings:
+		params.CompletedAt = time.Now().UTC().Format(time.RFC3339)
+	case refactorCandidateStatusDeferred:
+		params.DeferReason = reason
+	}
+
+	if _, err := svc.store.UpdateRefactorCandidateStatusMetadata(params); err != nil {
+		return fmt.Errorf("update refactor candidate %q to %s: %w", candidate.CandidateID, targetStatus, err)
+	}
+
+	_, err = svc.store.CreateRefactorCandidateStatusEvent(store.CreateRefactorCandidateStatusEventParams{
+		EventID:        "revent-" + uuid.NewString(),
+		ProjectRowID:   project.ID,
+		ProjectID:      project.ProjectID,
+		CandidateRowID: candidate.ID,
+		EventType:      targetStatus,
+		FromStatus:     candidate.Status,
+		ToStatus:       targetStatus,
+		Reason:         reason,
+	})
+	if err != nil {
+		return fmt.Errorf("record refactor candidate status event: %w", err)
 	}
 
 	return nil

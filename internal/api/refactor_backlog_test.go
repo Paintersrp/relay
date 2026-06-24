@@ -215,7 +215,6 @@ func TestRefactorCandidateAPIInvalidLimit(t *testing.T) {
 	}
 }
 
-
 func TestRefactorCandidateMarkScheduledAPISuccess(t *testing.T) {
 	st, router := newRefactorAPITestServer(t)
 	seedRefactorProject(t, st, "relay")

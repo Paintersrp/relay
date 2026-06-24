@@ -30,6 +30,24 @@ const (
 	BlockerUnsafeRequest                = "unsafe_request"
 )
 
+// Refactor scheduling constants. These mirror the schema-approved refactor
+// candidate metadata values and the refactor backlog candidate/schedule-ref
+// status strings. They are duplicated here (rather than imported from
+// internal/refactors) because internal/refactors already depends on this
+// package; importing it back would create an import cycle.
+const (
+	refactorCandidateSource            = "refactor_backlog_candidate"
+	refactorSchedulingExistingPlan     = "existing_plan_bonus_pass"
+	refactorSchedulingGeneratedPlan    = "generated_refactor_only_plan"
+	refactorScheduleRefStatusScheduled = "scheduled"
+
+	refactorCandidateStatusScheduled                 = "scheduled"
+	refactorCandidateStatusScheduledRevisionRequired = "scheduled_revision_required"
+	refactorCandidateStatusCompleted                 = "completed"
+	refactorCandidateStatusCompletedWithWarnings     = "completed_with_warnings"
+	refactorCandidateStatusDeferred                  = "deferred"
+)
+
 // terminalRunStatuses are run states that do not block pass selection.
 var terminalRunStatuses = map[string]bool{
 	"accepted":               true,
@@ -79,11 +97,26 @@ type WorkPlanSummary struct {
 
 // WorkPassSummary contains bounded pass metadata.
 type WorkPassSummary struct {
-	PassID   string `json:"pass_id"`
-	Sequence int64  `json:"sequence"`
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	Goal     string `json:"goal,omitempty"`
+	PassID            string                         `json:"pass_id"`
+	Sequence          int64                          `json:"sequence"`
+	Name              string                         `json:"name"`
+	Status            string                         `json:"status"`
+	Goal              string                         `json:"goal,omitempty"`
+	RefactorCandidate *WorkRefactorCandidateMetadata `json:"refactor_candidate,omitempty"`
+}
+
+// WorkRefactorCandidateMetadata is the bounded refactor-candidate reference
+// exposed for a scheduled refactor pass. It carries only the schema-approved
+// scheduling reference plus resolved status flags; it never includes raw
+// candidate bodies, raw pass JSON, prompts, file contents, logs, or audit
+// judgments.
+type WorkRefactorCandidateMetadata struct {
+	CandidateID            string   `json:"candidate_id"`
+	Source                 string   `json:"source"`
+	SchedulingMode         string   `json:"scheduling_mode"`
+	SourceDiscoveryTaskIDs []string `json:"source_discovery_task_ids,omitempty"`
+	CandidateStatus        string   `json:"candidate_status,omitempty"`
+	ScheduleRefStatus      string   `json:"schedule_ref_status,omitempty"`
 }
 
 // WorkDependencyStatus describes one dependency pass's readiness.
@@ -453,6 +486,26 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		terminalRunSummaries = []WorkRunSummary{}
 	}
 
+	// Scheduled refactor passes are normal managed passes. Validate the schedule
+	// reference (read-only) and attach bounded refactor metadata. Stale/missing/
+	// mismatched references block selection without any auto-repair.
+	refMeta, refBlocker, err := validateRefactorSchedule(svc.store, project, plan, pass)
+	if err != nil {
+		return NextPassWorkResponse{}, err
+	}
+	if refBlocker != nil {
+		return blockerResponse(*refBlocker), nil
+	}
+
+	selectedPass := &WorkPassSummary{
+		PassID:            pass.PassID,
+		Sequence:          pass.Sequence,
+		Name:              pass.Name,
+		Status:            pass.Status,
+		Goal:              pass.Goal,
+		RefactorCandidate: refMeta,
+	}
+
 	return NextPassWorkResponse{
 		OK:   true,
 		Tool: NextPassWorkTool,
@@ -465,13 +518,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 			Status: plan.Status,
 			Title:  plan.Title,
 		},
-		SelectedPass: &WorkPassSummary{
-			PassID:   pass.PassID,
-			Sequence: pass.Sequence,
-			Name:     pass.Name,
-			Status:   pass.Status,
-			Goal:     pass.Goal,
-		},
+		SelectedPass:     selectedPass,
 		DependencyStatus: depStatuses,
 		AssociatedRuns:   terminalRunSummaries,
 		Context: &WorkContextSummary{
@@ -574,4 +621,124 @@ func isUnsafePath(s string) bool {
 		strings.Contains(s, "\\") ||
 		strings.Contains(s, "..") ||
 		strings.Contains(s, "\x00")
+}
+
+// refactorMetadataFromPass extracts the schema-approved refactor candidate
+// metadata from a pass's raw_pass_json. It returns (nil, nil) when the pass is
+// not a refactor pass. It fails closed (returns an error) when a pass that is a
+// refactor pass carries missing or malformed refactor metadata, so callers never
+// silently treat malformed refactor metadata as absent.
+func refactorMetadataFromPass(pass *store.PlanPass) (*RefactorCandidateMetadata, error) {
+	if pass == nil {
+		return nil, nil
+	}
+
+	if strings.TrimSpace(pass.RawPassJson) == "" {
+		if pass.PassType == "refactor" {
+			return nil, fmt.Errorf("refactor pass %q is missing raw refactor metadata", pass.PassID)
+		}
+		return nil, nil
+	}
+
+	var raw PlanPassInput
+	if err := json.Unmarshal([]byte(pass.RawPassJson), &raw); err != nil {
+		if pass.PassType == "refactor" {
+			return nil, fmt.Errorf("refactor pass %q raw_pass_json is malformed: %w", pass.PassID, err)
+		}
+		return nil, nil
+	}
+
+	if raw.RefactorCandidate == nil {
+		if pass.PassType == "refactor" || raw.PassType == "refactor" {
+			return nil, fmt.Errorf("refactor pass %q is missing refactor_candidate metadata", pass.PassID)
+		}
+		return nil, nil
+	}
+
+	meta := raw.RefactorCandidate
+	if strings.TrimSpace(meta.CandidateID) == "" ||
+		meta.Source != refactorCandidateSource ||
+		(meta.SchedulingMode != refactorSchedulingExistingPlan && meta.SchedulingMode != refactorSchedulingGeneratedPlan) {
+		return nil, fmt.Errorf("refactor pass %q has invalid refactor_candidate metadata", pass.PassID)
+	}
+
+	return meta, nil
+}
+
+// staleRefactorBlocker builds the contract-compatible stale-scheduling blocker.
+func staleRefactorBlocker(reason string) *WorkBlocker {
+	return &WorkBlocker{
+		Code:        BlockerUnsafeRequest,
+		Message:     "stale refactor scheduling reference: " + reason,
+		Recoverable: true,
+	}
+}
+
+// validateRefactorSchedule resolves and validates the scheduling reference for a
+// scheduled refactor pass. It is read-only and never creates, cancels, completes,
+// or repairs schedule refs.
+//
+// Return semantics:
+//   - (nil, nil, nil): the pass is not a scheduled refactor pass.
+//   - (nil, blocker, nil): the pass is a refactor pass but its scheduling
+//     reference is missing, mismatched, or stale.
+//   - (meta, nil, nil): the pass is a valid scheduled refactor pass; meta carries
+//     bounded refactor metadata for the response.
+//   - (nil, nil, err): an unexpected store failure occurred.
+func validateRefactorSchedule(st *store.Store, project *store.Project, plan *store.Plan, pass *store.PlanPass) (*WorkRefactorCandidateMetadata, *WorkBlocker, error) {
+	meta, err := refactorMetadataFromPass(pass)
+	if err != nil {
+		// Malformed refactor metadata on a refactor pass is unsafe, not absent.
+		return nil, staleRefactorBlocker(err.Error()), nil
+	}
+	if meta == nil {
+		return nil, nil, nil
+	}
+
+	candidate, err := st.GetRefactorCandidateByCandidateID(project.ID, meta.CandidateID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, staleRefactorBlocker(fmt.Sprintf("candidate %q not found in project %q", meta.CandidateID, project.ProjectID)), nil
+		}
+		return nil, nil, fmt.Errorf("lookup refactor candidate %q: %w", meta.CandidateID, err)
+	}
+
+	switch candidate.Status {
+	case refactorCandidateStatusScheduled, refactorCandidateStatusScheduledRevisionRequired:
+		// Active scheduled candidate -- eligible for orchestrator selection/audit.
+	default:
+		return nil, staleRefactorBlocker(fmt.Sprintf("candidate %q status is %q; expected scheduled or scheduled_revision_required", meta.CandidateID, candidate.Status)), nil
+	}
+
+	active, err := st.GetActiveRefactorCandidateScheduleRef(project.ID, candidate.ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("lookup active schedule ref for candidate %q: %w", meta.CandidateID, err)
+	}
+	if active == nil {
+		return nil, staleRefactorBlocker(fmt.Sprintf("candidate %q has no active schedule reference", meta.CandidateID)), nil
+	}
+	if active.Status != refactorScheduleRefStatusScheduled {
+		return nil, staleRefactorBlocker(fmt.Sprintf("schedule reference for candidate %q has status %q; expected scheduled", meta.CandidateID, active.Status)), nil
+	}
+	if active.PlanID != plan.PlanID {
+		return nil, staleRefactorBlocker(fmt.Sprintf("schedule reference plan %q does not match selected plan %q", active.PlanID, plan.PlanID)), nil
+	}
+	if active.PassID != pass.PassID {
+		return nil, staleRefactorBlocker(fmt.Sprintf("schedule reference pass %q does not match selected pass %q", active.PassID, pass.PassID)), nil
+	}
+	if active.PlanRowID.Valid && active.PlanRowID.Int64 != plan.ID {
+		return nil, staleRefactorBlocker(fmt.Sprintf("schedule reference plan row %d does not match selected plan row %d", active.PlanRowID.Int64, plan.ID)), nil
+	}
+	if active.PlanPassRowID.Valid && active.PlanPassRowID.Int64 != pass.ID {
+		return nil, staleRefactorBlocker(fmt.Sprintf("schedule reference pass row %d does not match selected pass row %d", active.PlanPassRowID.Int64, pass.ID)), nil
+	}
+
+	return &WorkRefactorCandidateMetadata{
+		CandidateID:            meta.CandidateID,
+		Source:                 meta.Source,
+		SchedulingMode:         meta.SchedulingMode,
+		SourceDiscoveryTaskIDs: meta.SourceDiscoveryTaskIDs,
+		CandidateStatus:        candidate.Status,
+		ScheduleRefStatus:      active.Status,
+	}, nil, nil
 }

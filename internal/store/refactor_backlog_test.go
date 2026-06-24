@@ -401,7 +401,6 @@ func TestRefactorCandidateRejectsCrossProjectLinking(t *testing.T) {
 	}
 }
 
-
 // TestRefactorDiscoveryTaskTargetScopeValidation verifies the structured
 // target scope contract is enforced on create and update, and that the
 // "superseded" discovery status is accepted.

@@ -438,14 +438,25 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 
 	runIDStr := fmt.Sprintf("%d", selectedRun.ID)
 
+	// Scheduled refactor passes are audited as normal managed passes. Validate the
+	// schedule reference (read-only) and attach bounded refactor metadata. Stale/
+	// missing/mismatched references block audit retrieval without any auto-repair.
+	refMeta, refBlocker, err := validateRefactorSchedule(svc.store, project, plan, selectedPass)
+	if err != nil {
+		return NextAuditWorkResponse{}, err
+	}
+	if refBlocker != nil {
+		return auditBlockerResponse(*refBlocker), nil
+	}
+
 	payloadGuidance := &AuditDecisionPayloadGuidance{
 		PrimaryRoute: AuditDecisionRoute{
 			Method: "POST",
 			Path:   fmt.Sprintf("/api/runs/%s/audit/submit", runIDStr),
 			BodyShape: map[string]string{
 				"audit_packet_markdown": "string required when submitting manual packet text",
-				"decision":               "accepted | accepted_with_warnings | revision_required | blocked | manual_review_required",
-				"notes":                  "string optional",
+				"decision":              "accepted | accepted_with_warnings | revision_required | blocked | manual_review_required",
+				"notes":                 "string optional",
 			},
 		},
 		ConvenienceRoutes: []AuditDecisionRoute{
@@ -475,11 +486,12 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 			Title:  plan.Title,
 		},
 		SelectedPass: &WorkPassSummary{
-			PassID:   selectedPass.PassID,
-			Sequence: selectedPass.Sequence,
-			Name:     selectedPass.Name,
-			Status:   selectedPass.Status,
-			Goal:     selectedPass.Goal,
+			PassID:            selectedPass.PassID,
+			Sequence:          selectedPass.Sequence,
+			Name:              selectedPass.Name,
+			Status:            selectedPass.Status,
+			Goal:              selectedPass.Goal,
+			RefactorCandidate: refMeta,
 		},
 		SelectedRun: &AuditWorkRunSummary{
 			RunID:          runIDStr,

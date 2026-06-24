@@ -390,7 +390,6 @@ func mustGetProjectRowID(t *testing.T, st *store.Store, projectID string) int64 
 	return project.ID
 }
 
-
 func validScheduleInput() CandidateScheduleInput {
 	return CandidateScheduleInput{
 		ScheduleKind: "existing_plan_bonus_pass",

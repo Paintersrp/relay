@@ -13,8 +13,8 @@ const (
 	ToolProfileLocalOperator ToolProfile = "local-operator"
 	ToolProfileRestricted    ToolProfile = "restricted"
 
-	EnvMCPProfile                    = "RELAY_MCP_PROFILE"
-	EnvLegacyContextBrokerEnabled    = "RELAY_MCP_CONTEXT_BROKER_ENABLED"
+	EnvMCPProfile                 = "RELAY_MCP_PROFILE"
+	EnvLegacyContextBrokerEnabled = "RELAY_MCP_CONTEXT_BROKER_ENABLED"
 )
 
 func NormalizeToolProfile(raw string) (ToolProfile, bool) {
