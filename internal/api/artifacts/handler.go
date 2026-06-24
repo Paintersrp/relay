@@ -32,7 +32,11 @@ func (h *Handler) ListArtifacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exists, _ := h.runs.RunExists(r.Context(), id)
+	exists, err := h.runs.RunExists(r.Context(), id)
+	if err != nil {
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to lookup run")
+		return
+	}
 	if !exists {
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Run with ID %d not found", id))
 		return
