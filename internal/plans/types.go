@@ -22,6 +22,7 @@ const (
 	IssuePlanProjectRequired            = "PLAN_PROJECT_REQUIRED"
 	IssuePlanProjectUnknown             = "PLAN_PROJECT_UNKNOWN"
 	IssuePlanPassStatusInvalidRuntime   = "PLAN_PASS_STATUS_INVALID_RUNTIME"
+	IssuePlanRefactorMetadataInvalid    = "PLAN_REFACTOR_METADATA_INVALID"
 )
 
 const (
@@ -57,6 +58,28 @@ type PlanMeta struct {
 	ProjectContext       *ProjectContext       `json:"project_context,omitempty"`
 	MCPCapabilityProfile *MCPCapabilityProfile `json:"mcp_capability_profile,omitempty"`
 	SubmissionNote       string                `json:"submission_note,omitempty"`
+	RefactorPlanMetadata *RefactorPlanMetadata `json:"refactor_plan_metadata,omitempty"`
+}
+
+// RefactorPlanMetadata captures optional metadata for generated refactor-only
+// plans. It never authorizes automatic submission, run creation, or hidden
+// execution; it only preserves the schema-approved provenance of selected
+// refactor candidates.
+type RefactorPlanMetadata struct {
+	Source             string   `json:"source"`
+	SourceCandidateIDs []string `json:"source_candidate_ids"`
+	SubmissionPolicy   string   `json:"submission_policy"`
+	Notes              string   `json:"notes,omitempty"`
+}
+
+// RefactorCandidateMetadata captures the schema-approved reference linking a
+// scheduled refactor pass back to a refactor backlog candidate. Presence of this
+// metadata does not create, schedule, complete, or mutate candidate records.
+type RefactorCandidateMetadata struct {
+	CandidateID            string   `json:"candidate_id"`
+	Source                 string   `json:"source"`
+	SchedulingMode         string   `json:"scheduling_mode"`
+	SourceDiscoveryTaskIDs []string `json:"source_discovery_task_ids,omitempty"`
 }
 
 type SourceIntent struct {
@@ -101,6 +124,7 @@ type PlanPassInput struct {
 	HandoffReadinessCriteria   []string                   `json:"handoff_readiness_criteria"`
 	RiskLevel                  string                     `json:"risk_level,omitempty"`
 	ContextBudget              *ContextBudget             `json:"context_budget,omitempty"`
+	RefactorCandidate          *RefactorCandidateMetadata `json:"refactor_candidate,omitempty"`
 }
 
 type ContextPlan struct {

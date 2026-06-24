@@ -152,6 +152,7 @@ func validatePlanSemantics(plan *PlannerPassPlan, report *PlanValidationReport) 
 	validateProjectContext(report, "$.plan_meta.project_context", plan.PlanMeta.ProjectContext)
 	validateMCPCapabilityProfile(report, "$.plan_meta.mcp_capability_profile", plan.PlanMeta.MCPCapabilityProfile)
 	validateGlobalContextRules(report, "$.global_context_rules", plan.GlobalContextRules)
+	validateRefactorPlanMetadata(report, "$.plan_meta.refactor_plan_metadata", plan.PlanMeta.RefactorPlanMetadata)
 
 	if len(plan.Passes) == 0 {
 		report.addIssue(IssuePlanEmptyRequiredArray, "$.passes", "passes must contain at least one pass")
@@ -172,6 +173,7 @@ func validatePlanSemantics(plan *PlannerPassPlan, report *PlanValidationReport) 
 		validateContextPlan(report, passPath+".context_plan", pass.ContextPlan)
 		validateSourceSnapshotRequirements(report, passPath+".source_snapshot_requirements", pass.SourceSnapshotRequirements)
 		validateRequiredStringSlice(report, passPath+".handoff_readiness_criteria", pass.HandoffReadinessCriteria, "passes.handoff_readiness_criteria")
+		validateRefactorCandidate(report, passPath, pass.PassType, pass.RefactorCandidate)
 
 		if pass.Sequence < 1 {
 			report.addIssue(IssuePlanEmptyRequiredValue, passPath+".sequence", "passes.sequence must be greater than or equal to 1")
@@ -288,6 +290,118 @@ func validateGlobalContextRules(report *PlanValidationReport, path string, rules
 	validateNonEmptyString(report, path+".default_source_of_truth", rules.DefaultSourceOfTruth, "global_context_rules.default_source_of_truth")
 	validateNonEmptyString(report, path+".planner_context_boundary", rules.PlannerContextBoundary, "global_context_rules.planner_context_boundary")
 	validateRequiredStringSlice(report, path+".forbidden_context_domains", rules.ForbiddenContextDomains, "global_context_rules.forbidden_context_domains")
+}
+
+func validateRefactorPlanMetadata(report *PlanValidationReport, path string, metadata *RefactorPlanMetadata) {
+	if metadata == nil {
+		return
+	}
+
+	if strings.TrimSpace(metadata.Source) != "selected_refactor_candidates" {
+		report.addIssue(
+			IssuePlanRefactorMetadataInvalid,
+			path+".source",
+			"plan_meta.refactor_plan_metadata.source must be \"selected_refactor_candidates\"",
+		)
+	}
+
+	if strings.TrimSpace(metadata.SubmissionPolicy) != "review_required_no_auto_submit" {
+		report.addIssue(
+			IssuePlanRefactorMetadataInvalid,
+			path+".submission_policy",
+			"plan_meta.refactor_plan_metadata.submission_policy must be \"review_required_no_auto_submit\"",
+		)
+	}
+
+	validateNonEmptyUniqueStrings(
+		report,
+		path+".source_candidate_ids",
+		metadata.SourceCandidateIDs,
+		"plan_meta.refactor_plan_metadata.source_candidate_ids",
+		true,
+	)
+}
+
+func validateRefactorCandidate(report *PlanValidationReport, passPath string, passType string, candidate *RefactorCandidateMetadata) {
+	path := passPath + ".refactor_candidate"
+	isRefactorPass := strings.TrimSpace(passType) == "refactor"
+
+	if !isRefactorPass {
+		if candidate != nil {
+			report.addIssue(
+				IssuePlanRefactorMetadataInvalid,
+				path,
+				"refactor_candidate is only allowed when pass_type is \"refactor\"",
+			)
+		}
+		return
+	}
+
+	if candidate == nil {
+		report.addIssue(
+			IssuePlanRefactorMetadataInvalid,
+			path,
+			"refactor_candidate is required when pass_type is \"refactor\"",
+		)
+		return
+	}
+
+	validateNonEmptyString(report, path+".candidate_id", candidate.CandidateID, "passes.refactor_candidate.candidate_id")
+
+	if strings.TrimSpace(candidate.Source) != "refactor_backlog_candidate" {
+		report.addIssue(
+			IssuePlanRefactorMetadataInvalid,
+			path+".source",
+			"passes.refactor_candidate.source must be \"refactor_backlog_candidate\"",
+		)
+	}
+
+	switch strings.TrimSpace(candidate.SchedulingMode) {
+	case "existing_plan_bonus_pass", "generated_refactor_only_plan":
+	default:
+		report.addIssue(
+			IssuePlanRefactorMetadataInvalid,
+			path+".scheduling_mode",
+			"passes.refactor_candidate.scheduling_mode must be \"existing_plan_bonus_pass\" or \"generated_refactor_only_plan\"",
+		)
+	}
+
+	if candidate.SourceDiscoveryTaskIDs != nil {
+		validateNonEmptyUniqueStrings(
+			report,
+			path+".source_discovery_task_ids",
+			candidate.SourceDiscoveryTaskIDs,
+			"passes.refactor_candidate.source_discovery_task_ids",
+			false,
+		)
+	}
+}
+
+// validateNonEmptyUniqueStrings reports empty or duplicate entries in a string
+// slice using the refactor metadata issue code. When requireNonEmptySlice is
+// true, an absent or empty slice is also reported.
+func validateNonEmptyUniqueStrings(report *PlanValidationReport, path string, values []string, fieldName string, requireNonEmptySlice bool) {
+	if len(values) == 0 {
+		if requireNonEmptySlice {
+			report.addIssue(IssuePlanRefactorMetadataInvalid, path, fmt.Sprintf("%s must contain at least one item", fieldName))
+		}
+		return
+	}
+
+	seen := make(map[string]struct{}, len(values))
+	for idx, value := range values {
+		itemPath := fmt.Sprintf("%s[%d]", path, idx)
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			report.addIssue(IssuePlanRefactorMetadataInvalid, itemPath, fmt.Sprintf("%s items must be non-empty", fieldName))
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			report.addIssue(IssuePlanRefactorMetadataInvalid, itemPath, fmt.Sprintf("%s items must be unique", fieldName))
+			continue
+		}
+		seen[trimmed] = struct{}{}
+	}
 }
 
 func validateContextPlan(report *PlanValidationReport, path string, contextPlan ContextPlan) {
