@@ -306,23 +306,23 @@ type RefactorCandidateStatusEvent struct {
 }
 
 type RefactorDiscoveryTask struct {
-	ID           int64  `json:"id"`
-	TaskID       string `json:"task_id"`
-	ProjectRowID int64  `json:"project_row_id"`
-	ProjectID    string `json:"project_id"`
-	Title        string `json:"title"`
-	Prompt       string `json:"prompt"`
-	Scope        string `json:"scope"`
-	Priority     string `json:"priority"`
-	Status       string `json:"status"`
-	TagsJson     string `json:"tags_json"`
-	CreatedFrom  string `json:"created_from"`
-	MetadataJson string `json:"metadata_json"`
-	ClosedReason string `json:"closed_reason"`
-	CompletedAt  string `json:"completed_at"`
-	ClosedAt     string `json:"closed_at"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
+	ID              int64  `json:"id"`
+	TaskID          string `json:"task_id"`
+	ProjectRowID    int64  `json:"project_row_id"`
+	ProjectID       string `json:"project_id"`
+	Title           string `json:"title"`
+	Prompt          string `json:"prompt"`
+	TargetScopeJson string `json:"target_scope_json"`
+	Priority        string `json:"priority"`
+	Status          string `json:"status"`
+	TagsJson        string `json:"tags_json"`
+	CreatedFrom     string `json:"created_from"`
+	MetadataJson    string `json:"metadata_json"`
+	ClosedReason    string `json:"closed_reason"`
+	CompletedAt     string `json:"completed_at"`
+	ClosedAt        string `json:"closed_at"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
 }
 
 type Repo struct {

@@ -351,7 +351,7 @@ INSERT INTO refactor_discovery_tasks (
   project_id,
   title,
   prompt,
-  scope,
+  target_scope_json,
   priority,
   status,
   tags_json,
@@ -362,24 +362,24 @@ INSERT INTO refactor_discovery_tasks (
   closed_at
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, task_id, project_row_id, project_id, title, prompt, scope, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at
+RETURNING id, task_id, project_row_id, project_id, title, prompt, target_scope_json, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at
 `
 
 type CreateRefactorDiscoveryTaskParams struct {
-	TaskID       string `json:"task_id"`
-	ProjectRowID int64  `json:"project_row_id"`
-	ProjectID    string `json:"project_id"`
-	Title        string `json:"title"`
-	Prompt       string `json:"prompt"`
-	Scope        string `json:"scope"`
-	Priority     string `json:"priority"`
-	Status       string `json:"status"`
-	TagsJson     string `json:"tags_json"`
-	CreatedFrom  string `json:"created_from"`
-	MetadataJson string `json:"metadata_json"`
-	ClosedReason string `json:"closed_reason"`
-	CompletedAt  string `json:"completed_at"`
-	ClosedAt     string `json:"closed_at"`
+	TaskID          string `json:"task_id"`
+	ProjectRowID    int64  `json:"project_row_id"`
+	ProjectID       string `json:"project_id"`
+	Title           string `json:"title"`
+	Prompt          string `json:"prompt"`
+	TargetScopeJson string `json:"target_scope_json"`
+	Priority        string `json:"priority"`
+	Status          string `json:"status"`
+	TagsJson        string `json:"tags_json"`
+	CreatedFrom     string `json:"created_from"`
+	MetadataJson    string `json:"metadata_json"`
+	ClosedReason    string `json:"closed_reason"`
+	CompletedAt     string `json:"completed_at"`
+	ClosedAt        string `json:"closed_at"`
 }
 
 func (q *Queries) CreateRefactorDiscoveryTask(ctx context.Context, arg CreateRefactorDiscoveryTaskParams) (RefactorDiscoveryTask, error) {
@@ -389,7 +389,7 @@ func (q *Queries) CreateRefactorDiscoveryTask(ctx context.Context, arg CreateRef
 		arg.ProjectID,
 		arg.Title,
 		arg.Prompt,
-		arg.Scope,
+		arg.TargetScopeJson,
 		arg.Priority,
 		arg.Status,
 		arg.TagsJson,
@@ -407,7 +407,7 @@ func (q *Queries) CreateRefactorDiscoveryTask(ctx context.Context, arg CreateRef
 		&i.ProjectID,
 		&i.Title,
 		&i.Prompt,
-		&i.Scope,
+		&i.TargetScopeJson,
 		&i.Priority,
 		&i.Status,
 		&i.TagsJson,
@@ -570,7 +570,7 @@ func (q *Queries) GetRefactorCandidateByRowID(ctx context.Context, arg GetRefact
 }
 
 const getRefactorDiscoveryTaskByRowID = `-- name: GetRefactorDiscoveryTaskByRowID :one
-SELECT id, task_id, project_row_id, project_id, title, prompt, scope, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at FROM refactor_discovery_tasks
+SELECT id, task_id, project_row_id, project_id, title, prompt, target_scope_json, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at FROM refactor_discovery_tasks
 WHERE project_row_id = ? AND id = ?
 `
 
@@ -589,7 +589,7 @@ func (q *Queries) GetRefactorDiscoveryTaskByRowID(ctx context.Context, arg GetRe
 		&i.ProjectID,
 		&i.Title,
 		&i.Prompt,
-		&i.Scope,
+		&i.TargetScopeJson,
 		&i.Priority,
 		&i.Status,
 		&i.TagsJson,
@@ -605,7 +605,7 @@ func (q *Queries) GetRefactorDiscoveryTaskByRowID(ctx context.Context, arg GetRe
 }
 
 const getRefactorDiscoveryTaskByTaskID = `-- name: GetRefactorDiscoveryTaskByTaskID :one
-SELECT id, task_id, project_row_id, project_id, title, prompt, scope, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at FROM refactor_discovery_tasks
+SELECT id, task_id, project_row_id, project_id, title, prompt, target_scope_json, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at FROM refactor_discovery_tasks
 WHERE project_row_id = ? AND task_id = ?
 `
 
@@ -624,7 +624,7 @@ func (q *Queries) GetRefactorDiscoveryTaskByTaskID(ctx context.Context, arg GetR
 		&i.ProjectID,
 		&i.Title,
 		&i.Prompt,
-		&i.Scope,
+		&i.TargetScopeJson,
 		&i.Priority,
 		&i.Status,
 		&i.TagsJson,
@@ -1002,7 +1002,7 @@ func (q *Queries) ListRefactorDiscoveryTaskCandidateLinks(ctx context.Context, a
 }
 
 const listRefactorDiscoveryTasksByProject = `-- name: ListRefactorDiscoveryTasksByProject :many
-SELECT id, task_id, project_row_id, project_id, title, prompt, scope, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at FROM refactor_discovery_tasks
+SELECT id, task_id, project_row_id, project_id, title, prompt, target_scope_json, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at FROM refactor_discovery_tasks
 WHERE project_row_id = ?
 ORDER BY updated_at DESC, id DESC
 LIMIT ?
@@ -1029,7 +1029,7 @@ func (q *Queries) ListRefactorDiscoveryTasksByProject(ctx context.Context, arg L
 			&i.ProjectID,
 			&i.Title,
 			&i.Prompt,
-			&i.Scope,
+			&i.TargetScopeJson,
 			&i.Priority,
 			&i.Status,
 			&i.TagsJson,
@@ -1055,7 +1055,7 @@ func (q *Queries) ListRefactorDiscoveryTasksByProject(ctx context.Context, arg L
 }
 
 const listRefactorDiscoveryTasksByProjectAndStatus = `-- name: ListRefactorDiscoveryTasksByProjectAndStatus :many
-SELECT id, task_id, project_row_id, project_id, title, prompt, scope, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at FROM refactor_discovery_tasks
+SELECT id, task_id, project_row_id, project_id, title, prompt, target_scope_json, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at FROM refactor_discovery_tasks
 WHERE project_row_id = ? AND status = ?
 ORDER BY updated_at DESC, id DESC
 LIMIT ?
@@ -1083,7 +1083,7 @@ func (q *Queries) ListRefactorDiscoveryTasksByProjectAndStatus(ctx context.Conte
 			&i.ProjectID,
 			&i.Title,
 			&i.Prompt,
-			&i.Scope,
+			&i.TargetScopeJson,
 			&i.Priority,
 			&i.Status,
 			&i.TagsJson,
@@ -1409,31 +1409,31 @@ UPDATE refactor_discovery_tasks
 SET
   title = ?,
   prompt = ?,
-  scope = ?,
+  target_scope_json = ?,
   priority = ?,
   tags_json = ?,
   metadata_json = ?,
   updated_at = datetime('now')
 WHERE project_row_id = ? AND task_id = ?
-RETURNING id, task_id, project_row_id, project_id, title, prompt, scope, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at
+RETURNING id, task_id, project_row_id, project_id, title, prompt, target_scope_json, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at
 `
 
 type UpdateRefactorDiscoveryTaskParams struct {
-	Title        string `json:"title"`
-	Prompt       string `json:"prompt"`
-	Scope        string `json:"scope"`
-	Priority     string `json:"priority"`
-	TagsJson     string `json:"tags_json"`
-	MetadataJson string `json:"metadata_json"`
-	ProjectRowID int64  `json:"project_row_id"`
-	TaskID       string `json:"task_id"`
+	Title           string `json:"title"`
+	Prompt          string `json:"prompt"`
+	TargetScopeJson string `json:"target_scope_json"`
+	Priority        string `json:"priority"`
+	TagsJson        string `json:"tags_json"`
+	MetadataJson    string `json:"metadata_json"`
+	ProjectRowID    int64  `json:"project_row_id"`
+	TaskID          string `json:"task_id"`
 }
 
 func (q *Queries) UpdateRefactorDiscoveryTask(ctx context.Context, arg UpdateRefactorDiscoveryTaskParams) (RefactorDiscoveryTask, error) {
 	row := q.db.QueryRowContext(ctx, updateRefactorDiscoveryTask,
 		arg.Title,
 		arg.Prompt,
-		arg.Scope,
+		arg.TargetScopeJson,
 		arg.Priority,
 		arg.TagsJson,
 		arg.MetadataJson,
@@ -1448,7 +1448,7 @@ func (q *Queries) UpdateRefactorDiscoveryTask(ctx context.Context, arg UpdateRef
 		&i.ProjectID,
 		&i.Title,
 		&i.Prompt,
-		&i.Scope,
+		&i.TargetScopeJson,
 		&i.Priority,
 		&i.Status,
 		&i.TagsJson,
@@ -1472,7 +1472,7 @@ SET
   closed_at = ?,
   updated_at = datetime('now')
 WHERE project_row_id = ? AND task_id = ?
-RETURNING id, task_id, project_row_id, project_id, title, prompt, scope, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at
+RETURNING id, task_id, project_row_id, project_id, title, prompt, target_scope_json, priority, status, tags_json, created_from, metadata_json, closed_reason, completed_at, closed_at, created_at, updated_at
 `
 
 type UpdateRefactorDiscoveryTaskStatusParams struct {
@@ -1501,7 +1501,7 @@ func (q *Queries) UpdateRefactorDiscoveryTaskStatus(ctx context.Context, arg Upd
 		&i.ProjectID,
 		&i.Title,
 		&i.Prompt,
-		&i.Scope,
+		&i.TargetScopeJson,
 		&i.Priority,
 		&i.Status,
 		&i.TagsJson,

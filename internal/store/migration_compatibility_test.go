@@ -54,7 +54,7 @@ func TestMigrationCompatibility(t *testing.T) {
 	assertTableColumns(t, db, "context_packets", []string{"id", "context_packet_id", "project_row_id", "project_id", "plan_id", "pass_id", "task_slug", "source_snapshot_row_id", "status"})
 	assertTableColumns(t, db, "project_context_records", []string{"id", "context_record_id", "project_row_id", "project_id", "kind", "title", "body", "status"})
 	assertTableColumns(t, db, "local_audits", []string{"id", "audit_id", "project_row_id", "project_id", "mode", "status", "manifest_path"})
-	assertTableColumns(t, db, "refactor_discovery_tasks", []string{"id", "task_id", "project_row_id", "project_id", "title", "prompt", "status"})
+	assertTableColumns(t, db, "refactor_discovery_tasks", []string{"id", "task_id", "project_row_id", "project_id", "title", "prompt", "target_scope_json", "status"})
 	assertTableColumns(t, db, "refactor_candidates", []string{"id", "candidate_id", "project_row_id", "project_id", "title", "proposed_pass_name", "proposed_pass_goal", "status"})
 	assertTableColumns(t, db, "refactor_candidate_discovery_links", []string{"id", "link_id", "project_row_id", "project_id", "candidate_row_id", "discovery_task_row_id"})
 	assertTableColumns(t, db, "refactor_candidate_dependencies", []string{"id", "dependency_id", "project_row_id", "project_id", "candidate_row_id", "depends_on_candidate_row_id"})

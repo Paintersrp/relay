@@ -65,16 +65,16 @@ func validateJSONObject(field, value string) error {
 
 func validateRefactorDiscoveryTaskStatus(status string) error {
 	switch status {
-	case "open", "completed", "closed":
+	case "open", "completed", "closed", "superseded":
 		return nil
 	default:
-		return fmt.Errorf("invalid discovery task status %q (allowed: open, completed, closed)", status)
+		return fmt.Errorf("invalid discovery task status %q (allowed: open, completed, closed, superseded)", status)
 	}
 }
 
 func validateRefactorCandidateStatus(status string) error {
 	switch status {
-	case "ready", "scheduled", "completed", "completed_with_warnings", "revision_required", "deferred", "rejected", "superseded":
+	case "ready", "scheduled", "scheduled_revision_required", "completed", "completed_with_warnings", "deferred", "rejected", "superseded":
 		return nil
 	default:
 		return fmt.Errorf("invalid refactor candidate status %q", status)
@@ -103,6 +103,70 @@ func validateProjectScope(projectRowID int64, projectID string) error {
 	}
 	if strings.TrimSpace(projectID) == "" {
 		return errors.New("project_id is required")
+	}
+	return nil
+}
+
+// validateProjectOwnership enforces that the supplied project_row_id and
+// project_id refer to the same projects row. This closes the gap where a caller
+// could persist a refactor backlog record under a row ID that does not match the
+// human-facing project ID, leaving ambiguous project ownership for later
+// consumers (MCP/UI/orchestrator).
+func (s *Store) validateProjectOwnership(projectRowID int64, projectID string) error {
+	if err := validateProjectScope(projectRowID, projectID); err != nil {
+		return err
+	}
+	project, err := s.GetProject(projectRowID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("project row %d not found", projectRowID)
+		}
+		return err
+	}
+	if project.ProjectID != projectID {
+		return fmt.Errorf("project_id %q does not match project row %d (expected %q)", projectID, projectRowID, project.ProjectID)
+	}
+	return nil
+}
+
+// allowedRefactorTargetScopeKinds is the contract-defined set of discovery task
+// target scope kinds.
+var allowedRefactorTargetScopeKinds = map[string]bool{
+	"repository": true,
+	"subsystem":  true,
+	"directory":  true,
+	"file_set":   true,
+	"plan":       true,
+	"pass":       true,
+}
+
+// validateTargetScopeJSON enforces the structured discovery task target scope
+// contract: a JSON object with a valid "kind" and a non-empty "values" array of
+// non-empty strings.
+func validateTargetScopeJSON(value string) error {
+	if strings.TrimSpace(value) == "" {
+		return errors.New("target_scope_json is required and must be a JSON object with kind and values")
+	}
+	var scope struct {
+		Kind   *string  `json:"kind"`
+		Values []string `json:"values"`
+	}
+	if err := json.Unmarshal([]byte(value), &scope); err != nil {
+		return fmt.Errorf("target_scope_json must be a valid {kind, values} object: %w", err)
+	}
+	if scope.Kind == nil || strings.TrimSpace(*scope.Kind) == "" {
+		return errors.New("target_scope_json.kind is required")
+	}
+	if !allowedRefactorTargetScopeKinds[*scope.Kind] {
+		return fmt.Errorf("invalid target_scope_json.kind %q (allowed: repository, subsystem, directory, file_set, plan, pass)", *scope.Kind)
+	}
+	if len(scope.Values) == 0 {
+		return errors.New("target_scope_json.values must be a non-empty array")
+	}
+	for i, v := range scope.Values {
+		if strings.TrimSpace(v) == "" {
+			return fmt.Errorf("target_scope_json.values[%d] must be a non-empty string", i)
+		}
 	}
 	return nil
 }
@@ -145,29 +209,53 @@ func (s *Store) refactorDiscoveryTaskRowInProject(projectRowID, taskRowID int64)
 	return err
 }
 
+// validateSupersededByReference enforces that a non-empty supersession reference
+// points to an existing candidate in the same project and is not the candidate
+// itself. Empty references are allowed (no supersession recorded). This keeps
+// supersession metadata consistent with the same-project validation already
+// applied to dependencies and discovery links, without applying any candidate
+// lifecycle/promotion behavior.
+func (s *Store) validateSupersededByReference(projectRowID int64, candidateID, supersededByCandidateID string) error {
+	ref := strings.TrimSpace(supersededByCandidateID)
+	if ref == "" {
+		return nil
+	}
+	if ref == candidateID {
+		return errors.New("superseded_by_candidate_id must not reference the candidate itself")
+	}
+	_, err := s.queries.GetRefactorCandidateByCandidateID(context.Background(), generated.GetRefactorCandidateByCandidateIDParams{
+		ProjectRowID: projectRowID,
+		CandidateID:  ref,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("superseded_by_candidate_id %q not found in project %d", ref, projectRowID)
+	}
+	return err
+}
+
 // ---------------------------------------------------------------------------
 // Discovery tasks
 // ---------------------------------------------------------------------------
 
 type CreateRefactorDiscoveryTaskParams struct {
-	TaskID       string
-	ProjectRowID int64
-	ProjectID    string
-	Title        string
-	Prompt       string
-	Scope        string
-	Priority     string
-	Status       string
-	TagsJSON     string
-	CreatedFrom  string
-	MetadataJSON string
-	ClosedReason string
-	CompletedAt  string
-	ClosedAt     string
+	TaskID          string
+	ProjectRowID    int64
+	ProjectID       string
+	Title           string
+	Prompt          string
+	TargetScopeJSON string
+	Priority        string
+	Status          string
+	TagsJSON        string
+	CreatedFrom     string
+	MetadataJSON    string
+	ClosedReason    string
+	CompletedAt     string
+	ClosedAt        string
 }
 
 func (s *Store) CreateRefactorDiscoveryTask(params CreateRefactorDiscoveryTaskParams) (*RefactorDiscoveryTask, error) {
-	if err := validateProjectScope(params.ProjectRowID, params.ProjectID); err != nil {
+	if err := s.validateProjectOwnership(params.ProjectRowID, params.ProjectID); err != nil {
 		return nil, err
 	}
 	if err := validateRequiredString("task_id", params.TaskID); err != nil {
@@ -177,6 +265,9 @@ func (s *Store) CreateRefactorDiscoveryTask(params CreateRefactorDiscoveryTaskPa
 		return nil, err
 	}
 	if err := validateRequiredString("prompt", params.Prompt); err != nil {
+		return nil, err
+	}
+	if err := validateTargetScopeJSON(params.TargetScopeJSON); err != nil {
 		return nil, err
 	}
 
@@ -211,20 +302,20 @@ func (s *Store) CreateRefactorDiscoveryTask(params CreateRefactorDiscoveryTaskPa
 	}
 
 	row, err := s.queries.CreateRefactorDiscoveryTask(context.Background(), generated.CreateRefactorDiscoveryTaskParams{
-		TaskID:       params.TaskID,
-		ProjectRowID: params.ProjectRowID,
-		ProjectID:    params.ProjectID,
-		Title:        params.Title,
-		Prompt:       params.Prompt,
-		Scope:        params.Scope,
-		Priority:     priority,
-		Status:       status,
-		TagsJson:     tagsJSON,
-		CreatedFrom:  createdFrom,
-		MetadataJson: metadataJSON,
-		ClosedReason: params.ClosedReason,
-		CompletedAt:  params.CompletedAt,
-		ClosedAt:     params.ClosedAt,
+		TaskID:          params.TaskID,
+		ProjectRowID:    params.ProjectRowID,
+		ProjectID:       params.ProjectID,
+		Title:           params.Title,
+		Prompt:          params.Prompt,
+		TargetScopeJson: params.TargetScopeJSON,
+		Priority:        priority,
+		Status:          status,
+		TagsJson:        tagsJSON,
+		CreatedFrom:     createdFrom,
+		MetadataJson:    metadataJSON,
+		ClosedReason:    params.ClosedReason,
+		CompletedAt:     params.CompletedAt,
+		ClosedAt:        params.ClosedAt,
 	})
 	if err != nil {
 		return nil, err
@@ -259,14 +350,14 @@ func (s *Store) ListRefactorDiscoveryTasksByProjectAndStatus(projectRowID int64,
 }
 
 type UpdateRefactorDiscoveryTaskParams struct {
-	ProjectRowID int64
-	TaskID       string
-	Title        string
-	Prompt       string
-	Scope        string
-	Priority     string
-	TagsJSON     string
-	MetadataJSON string
+	ProjectRowID    int64
+	TaskID          string
+	Title           string
+	Prompt          string
+	TargetScopeJSON string
+	Priority        string
+	TagsJSON        string
+	MetadataJSON    string
 }
 
 func (s *Store) UpdateRefactorDiscoveryTask(params UpdateRefactorDiscoveryTaskParams) (*RefactorDiscoveryTask, error) {
@@ -280,6 +371,9 @@ func (s *Store) UpdateRefactorDiscoveryTask(params UpdateRefactorDiscoveryTaskPa
 		return nil, err
 	}
 	if err := validateRequiredString("prompt", params.Prompt); err != nil {
+		return nil, err
+	}
+	if err := validateTargetScopeJSON(params.TargetScopeJSON); err != nil {
 		return nil, err
 	}
 	priority := params.Priority
@@ -302,14 +396,14 @@ func (s *Store) UpdateRefactorDiscoveryTask(params UpdateRefactorDiscoveryTaskPa
 	}
 
 	row, err := s.queries.UpdateRefactorDiscoveryTask(context.Background(), generated.UpdateRefactorDiscoveryTaskParams{
-		Title:        params.Title,
-		Prompt:       params.Prompt,
-		Scope:        params.Scope,
-		Priority:     priority,
-		TagsJson:     tagsJSON,
-		MetadataJson: metadataJSON,
-		ProjectRowID: params.ProjectRowID,
-		TaskID:       params.TaskID,
+		Title:           params.Title,
+		Prompt:          params.Prompt,
+		TargetScopeJson: params.TargetScopeJSON,
+		Priority:        priority,
+		TagsJson:        tagsJSON,
+		MetadataJson:    metadataJSON,
+		ProjectRowID:    params.ProjectRowID,
+		TaskID:          params.TaskID,
 	})
 	if err != nil {
 		return nil, err
@@ -437,7 +531,7 @@ func validatePassReadyCandidateFields(
 }
 
 func (s *Store) CreateRefactorCandidate(params CreateRefactorCandidateParams) (*RefactorCandidate, error) {
-	if err := validateProjectScope(params.ProjectRowID, params.ProjectID); err != nil {
+	if err := s.validateProjectOwnership(params.ProjectRowID, params.ProjectID); err != nil {
 		return nil, err
 	}
 	if err := validateRequiredString("candidate_id", params.CandidateID); err != nil {
@@ -616,6 +710,9 @@ func (s *Store) UpdateRefactorCandidateStatusMetadata(params UpdateRefactorCandi
 	if err := validateRefactorCandidateStatus(params.Status); err != nil {
 		return nil, err
 	}
+	if err := s.validateSupersededByReference(params.ProjectRowID, params.CandidateID, params.SupersededByCandidateID); err != nil {
+		return nil, err
+	}
 
 	row, err := s.queries.UpdateRefactorCandidateStatusMetadata(context.Background(), generated.UpdateRefactorCandidateStatusMetadataParams{
 		Status:                  params.Status,
@@ -649,7 +746,7 @@ type CreateRefactorCandidateDiscoveryLinkParams struct {
 }
 
 func (s *Store) CreateRefactorCandidateDiscoveryLink(params CreateRefactorCandidateDiscoveryLinkParams) (*RefactorCandidateDiscoveryLink, error) {
-	if err := validateProjectScope(params.ProjectRowID, params.ProjectID); err != nil {
+	if err := s.validateProjectOwnership(params.ProjectRowID, params.ProjectID); err != nil {
 		return nil, err
 	}
 	if err := validateRequiredString("link_id", params.LinkID); err != nil {
@@ -705,7 +802,7 @@ type CreateRefactorCandidateDependencyParams struct {
 }
 
 func (s *Store) CreateRefactorCandidateDependency(params CreateRefactorCandidateDependencyParams) (*RefactorCandidateDependency, error) {
-	if err := validateProjectScope(params.ProjectRowID, params.ProjectID); err != nil {
+	if err := s.validateProjectOwnership(params.ProjectRowID, params.ProjectID); err != nil {
 		return nil, err
 	}
 	if err := validateRequiredString("dependency_id", params.DependencyID); err != nil {
@@ -777,10 +874,10 @@ type CreateRefactorCandidateScheduleRefParams struct {
 
 func validateScheduleKind(kind string) error {
 	switch kind {
-	case "existing_plan_bonus_pass", "refactor_only_plan":
+	case "existing_plan_bonus_pass", "generated_refactor_only_plan":
 		return nil
 	default:
-		return fmt.Errorf("invalid schedule_kind %q (allowed: existing_plan_bonus_pass, refactor_only_plan)", kind)
+		return fmt.Errorf("invalid schedule_kind %q (allowed: existing_plan_bonus_pass, generated_refactor_only_plan)", kind)
 	}
 }
 
@@ -794,7 +891,7 @@ func validateScheduleRefStatus(status string) error {
 }
 
 func (s *Store) CreateRefactorCandidateScheduleRef(params CreateRefactorCandidateScheduleRefParams) (*RefactorCandidateScheduleRef, error) {
-	if err := validateProjectScope(params.ProjectRowID, params.ProjectID); err != nil {
+	if err := s.validateProjectOwnership(params.ProjectRowID, params.ProjectID); err != nil {
 		return nil, err
 	}
 	if err := validateRequiredString("schedule_ref_id", params.ScheduleRefID); err != nil {
@@ -906,7 +1003,7 @@ type CreateRefactorCandidateStatusEventParams struct {
 
 func validateRefactorCandidateEventType(eventType string) error {
 	switch eventType {
-	case "created", "updated", "deferred", "rejected", "superseded", "scheduled", "completed", "completed_with_warnings", "revision_required", "reopened":
+	case "created", "updated", "deferred", "rejected", "superseded", "scheduled", "completed", "completed_with_warnings", "scheduled_revision_required", "reopened":
 		return nil
 	default:
 		return fmt.Errorf("invalid status event type %q", eventType)
@@ -914,7 +1011,7 @@ func validateRefactorCandidateEventType(eventType string) error {
 }
 
 func (s *Store) CreateRefactorCandidateStatusEvent(params CreateRefactorCandidateStatusEventParams) (*RefactorCandidateStatusEvent, error) {
-	if err := validateProjectScope(params.ProjectRowID, params.ProjectID); err != nil {
+	if err := s.validateProjectOwnership(params.ProjectRowID, params.ProjectID); err != nil {
 		return nil, err
 	}
 	if err := validateRequiredString("event_id", params.EventID); err != nil {
