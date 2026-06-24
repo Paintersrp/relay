@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"relay/internal/api/shared"
-	"relay/internal/store"
+	appprojects "relay/internal/app/projects"
 )
 
-func mapProjectToAPI(project store.Project) ProjectAPIProject {
+func mapProjectToAPI(project appprojects.Project) ProjectAPIProject {
 	return ProjectAPIProject{
 		ProjectID:           project.ProjectID,
 		Name:                project.Name,
@@ -20,7 +20,7 @@ func mapProjectToAPI(project store.Project) ProjectAPIProject {
 	}
 }
 
-func mapProjectRepositoriesToAPI(rows []store.ProjectRepository) []ProjectAPIRepository {
+func mapProjectRepositoriesToAPI(rows []appprojects.ProjectRepository) []ProjectAPIRepository {
 	items := make([]ProjectAPIRepository, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, mapProjectRepositoryToAPI(row))
@@ -28,7 +28,7 @@ func mapProjectRepositoriesToAPI(rows []store.ProjectRepository) []ProjectAPIRep
 	return items
 }
 
-func mapProjectRepositoryToAPI(repo store.ProjectRepository) ProjectAPIRepository {
+func mapProjectRepositoryToAPI(repo appprojects.ProjectRepository) ProjectAPIRepository {
 	return ProjectAPIRepository{
 		RepoID:           repo.RepoID,
 		Role:             repo.Role,

@@ -1,5 +1,7 @@
 package projects
 
+import "relay/internal/store"
+
 const (
 	RepositoryRolePrimary    = "primary"
 	RepositoryRoleReference  = "reference"
@@ -13,6 +15,9 @@ const (
 	MaxAllowedFileSizeBytes  = 10485760
 	DefaultListProjectsLimit = 50
 )
+
+type Project = store.Project
+type ProjectRepository = store.ProjectRepository
 
 type ProjectInput struct {
 	ProjectID           string `json:"project_id"`

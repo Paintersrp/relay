@@ -38,6 +38,10 @@ const (
 	StatusPassSkipped          = "skipped"
 )
 
+type Plan = store.Plan
+type PlanPass = store.PlanPass
+type Run = store.Run
+
 type PlannerPassPlan struct {
 	PlanMeta           PlanMeta            `json:"plan_meta"`
 	SourceIntent       SourceIntent        `json:"source_intent"`

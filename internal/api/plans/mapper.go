@@ -8,10 +8,9 @@ import (
 
 	"relay/internal/api/shared"
 	appplans "relay/internal/app/plans"
-	"relay/internal/store"
 )
 
-func mapPlanToAPI(plan store.Plan) PlanAPIPlan {
+func mapPlanToAPI(plan appplans.Plan) PlanAPIPlan {
 	return PlanAPIPlan{
 		ID:                  strconv.FormatInt(plan.ID, 10),
 		PlanID:              plan.PlanID,
@@ -30,7 +29,7 @@ func mapPlanToAPI(plan store.Plan) PlanAPIPlan {
 	}
 }
 
-func mapRunToPlanAPIRunSummary(run store.Run) PlanAPIRunSummary {
+func mapRunToPlanAPIRunSummary(run appplans.Run) PlanAPIRunSummary {
 	idStr := strconv.FormatInt(run.ID, 10)
 	activeStep := resolveRunStep(run.Status)
 	return PlanAPIRunSummary{
@@ -45,7 +44,7 @@ func mapRunToPlanAPIRunSummary(run store.Run) PlanAPIRunSummary {
 	}
 }
 
-func mapPlanPassToAPI(pass store.PlanPass, associatedRuns []store.Run) PlanAPIPass {
+func mapPlanPassToAPI(pass appplans.PlanPass, associatedRuns []appplans.Run) PlanAPIPass {
 	contextPlan, sourceRequirements, readinessCriteria, contextBudget, warnings := decodePlanPassContext(pass)
 	runSummaries := make([]PlanAPIRunSummary, 0, len(associatedRuns))
 	runIDs := make([]string, 0, len(associatedRuns))
@@ -80,14 +79,14 @@ func mapPlanPassToAPI(pass store.PlanPass, associatedRuns []store.Run) PlanAPIPa
 	}
 }
 
-func buildPlanAPIReadPlan(plan store.Plan, passes []store.PlanPass, completionReady bool) PlanAPIReadPlan {
+func buildPlanAPIReadPlan(plan appplans.Plan, passes []appplans.PlanPass, completionReady bool) PlanAPIReadPlan {
 	apiPlan := mapPlanToAPI(plan)
 	var completedPassCount int
 	var inProgressPassCount int
 	var plannedPassCount int
 	var skippedPassCount int
-	var currentPass *store.PlanPass
-	var nextPass *store.PlanPass
+	var currentPass *appplans.PlanPass
+	var nextPass *appplans.PlanPass
 
 	for i := range passes {
 		pass := &passes[i]
@@ -117,18 +116,18 @@ func buildPlanAPIReadPlan(plan store.Plan, passes []store.PlanPass, completionRe
 		InProgressPassCount: inProgressPassCount,
 		PlannedPassCount:    plannedPassCount,
 		SkippedPassCount:    skippedPassCount,
-		CurrentPassID:       planPassField(currentPass, func(p *store.PlanPass) string { return p.PassID }),
-		CurrentPassName:     planPassField(currentPass, func(p *store.PlanPass) string { return p.Name }),
-		CurrentPassGoal:     planPassField(currentPass, func(p *store.PlanPass) string { return p.Goal }),
-		NextPassID:          planPassField(nextPass, func(p *store.PlanPass) string { return p.PassID }),
-		NextPassName:        planPassField(nextPass, func(p *store.PlanPass) string { return p.Name }),
-		NextPassGoal:        planPassField(nextPass, func(p *store.PlanPass) string { return p.Goal }),
+		CurrentPassID:       planPassField(currentPass, func(p *appplans.PlanPass) string { return p.PassID }),
+		CurrentPassName:     planPassField(currentPass, func(p *appplans.PlanPass) string { return p.Name }),
+		CurrentPassGoal:     planPassField(currentPass, func(p *appplans.PlanPass) string { return p.Goal }),
+		NextPassID:          planPassField(nextPass, func(p *appplans.PlanPass) string { return p.PassID }),
+		NextPassName:        planPassField(nextPass, func(p *appplans.PlanPass) string { return p.Name }),
+		NextPassGoal:        planPassField(nextPass, func(p *appplans.PlanPass) string { return p.Goal }),
 	}
 }
 
 // decodePlanPassContext decodes stored JSON fields from a plan pass row into
 // API presentation DTOs.
-func decodePlanPassContext(pass store.PlanPass) (
+func decodePlanPassContext(pass appplans.PlanPass) (
 	PlanAPIContextPlan,
 	PlanAPISourceSnapshotRequirements,
 	[]string,
@@ -293,7 +292,7 @@ func decodeJSONValue[T any](value string, target *T) error {
 	return json.Unmarshal([]byte(trimmed), target)
 }
 
-func planPassField(pass *store.PlanPass, selector func(*store.PlanPass) string) string {
+func planPassField(pass *appplans.PlanPass, selector func(*appplans.PlanPass) string) string {
 	if pass == nil {
 		return ""
 	}
