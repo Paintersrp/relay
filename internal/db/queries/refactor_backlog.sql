@@ -5,7 +5,7 @@ INSERT INTO refactor_discovery_tasks (
   project_id,
   title,
   prompt,
-  scope,
+  target_scope_json,
   priority,
   status,
   tags_json,
@@ -43,7 +43,7 @@ UPDATE refactor_discovery_tasks
 SET
   title = ?,
   prompt = ?,
-  scope = ?,
+  target_scope_json = ?,
   priority = ?,
   tags_json = ?,
   metadata_json = ?,

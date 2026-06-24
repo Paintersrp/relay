@@ -8,9 +8,9 @@ CREATE TABLE refactor_discovery_tasks (
     project_id TEXT NOT NULL,
     title TEXT NOT NULL,
     prompt TEXT NOT NULL,
-    scope TEXT NOT NULL DEFAULT '',
+    target_scope_json TEXT NOT NULL,
     priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high')),
-    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'completed', 'closed')),
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'completed', 'closed', 'superseded')),
     tags_json TEXT NOT NULL DEFAULT '[]',
     created_from TEXT NOT NULL DEFAULT 'manual',
     metadata_json TEXT NOT NULL DEFAULT '{}',
@@ -21,7 +21,14 @@ CREATE TABLE refactor_discovery_tasks (
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(project_row_id, task_id),
     CHECK (json_valid(tags_json) AND json_type(tags_json) = 'array'),
-    CHECK (json_valid(metadata_json) AND json_type(metadata_json) = 'object')
+    CHECK (json_valid(metadata_json) AND json_type(metadata_json) = 'object'),
+    CHECK (
+        json_valid(target_scope_json)
+        AND json_type(target_scope_json) = 'object'
+        AND json_extract(target_scope_json, '$.kind') IN ('repository', 'subsystem', 'directory', 'file_set', 'plan', 'pass')
+        AND json_type(target_scope_json, '$.values') = 'array'
+        AND json_array_length(target_scope_json, '$.values') >= 1
+    )
 );
 
 -- Refactor candidates are pass-shaped backlog entries. Pass-ready fields are enforced
@@ -45,7 +52,7 @@ CREATE TABLE refactor_candidates (
     audit_focus_json TEXT NOT NULL,
     constraints_json TEXT NOT NULL DEFAULT '[]',
     risk_level TEXT NOT NULL CHECK (risk_level IN ('low', 'medium', 'high')),
-    status TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'scheduled', 'completed', 'completed_with_warnings', 'revision_required', 'deferred', 'rejected', 'superseded')),
+    status TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'scheduled', 'scheduled_revision_required', 'completed', 'completed_with_warnings', 'deferred', 'rejected', 'superseded')),
     dependency_notes TEXT NOT NULL DEFAULT '',
     defer_reason TEXT NOT NULL DEFAULT '',
     deferred_until TEXT NOT NULL DEFAULT '',
@@ -105,7 +112,7 @@ CREATE TABLE refactor_candidate_schedule_refs (
     project_row_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     project_id TEXT NOT NULL,
     candidate_row_id INTEGER NOT NULL REFERENCES refactor_candidates(id) ON DELETE CASCADE,
-    schedule_kind TEXT NOT NULL CHECK (schedule_kind IN ('existing_plan_bonus_pass', 'refactor_only_plan')),
+    schedule_kind TEXT NOT NULL CHECK (schedule_kind IN ('existing_plan_bonus_pass', 'generated_refactor_only_plan')),
     status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'stale', 'completed', 'cancelled')),
     plan_row_id INTEGER,
     plan_pass_row_id INTEGER,
@@ -126,7 +133,7 @@ CREATE TABLE refactor_candidate_status_events (
     project_row_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     project_id TEXT NOT NULL,
     candidate_row_id INTEGER NOT NULL REFERENCES refactor_candidates(id) ON DELETE CASCADE,
-    event_type TEXT NOT NULL CHECK (event_type IN ('created', 'updated', 'deferred', 'rejected', 'superseded', 'scheduled', 'completed', 'completed_with_warnings', 'revision_required', 'reopened')),
+    event_type TEXT NOT NULL CHECK (event_type IN ('created', 'updated', 'deferred', 'rejected', 'superseded', 'scheduled', 'completed', 'completed_with_warnings', 'scheduled_revision_required', 'reopened')),
     from_status TEXT NOT NULL DEFAULT '',
     to_status TEXT NOT NULL DEFAULT '',
     reason TEXT NOT NULL DEFAULT '',
