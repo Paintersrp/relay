@@ -58,21 +58,29 @@ function copyText(text: string, onStateChange: (state: CopyState) => void) {
 
 function getStateCopy(state: RelayPlanPassDetailState, blocking: PassBlockingDependency[]) {
   switch (state) {
-    case "ready":
+    case "ready_for_planner":
       return {
-        eyebrow: "PASS READY",
-        title: "Ready for run creation",
-        description: "All dependencies are terminal or absent.",
+        eyebrow: "READY FOR PLANNER",
+        title: "Ready for planner handoff",
+        description: "All dependencies are terminal. Use Continue Plan to request next-pass work.",
+        tone: "info" as const,
+        accentClassName: "bg-[var(--relay-accent)]",
+      };
+    case "handoff_ready":
+      return {
+        eyebrow: "HANDOFF READY",
+        title: "Reviewed handoff exists",
+        description: "A reviewed Planner handoff is ready for run submission.",
         tone: "success" as const,
         accentClassName: "bg-[var(--success)]",
       };
-    case "blocked":
+    case "run_created":
       return {
-        eyebrow: "PASS BLOCKED",
-        title: "Waiting on dependency",
-        description: `Blocking dependencies: ${blocking.map((item) => item.passId).join(", ")}`,
-        tone: "blocked" as const,
-        accentClassName: "bg-destructive",
+        eyebrow: "RUN CREATED",
+        title: "Pass-associated run exists",
+        description: "A run has been created for this pass. View run workbench.",
+        tone: "info" as const,
+        accentClassName: "bg-[var(--relay-accent)]",
       };
     case "in_progress":
       return {
@@ -81,6 +89,30 @@ function getStateCopy(state: RelayPlanPassDetailState, blocking: PassBlockingDep
         description: "Relay owns the current run state for this pass.",
         tone: "info" as const,
         accentClassName: "bg-[var(--relay-accent)]",
+      };
+    case "audit_ready":
+      return {
+        eyebrow: "AUDIT READY",
+        title: "Audit packet/evidence ready",
+        description: "Run is ready for audit review. Use Audit Ready to request next-audit work.",
+        tone: "warning" as const,
+        accentClassName: "bg-[var(--warning)]",
+      };
+    case "revision_required":
+      return {
+        eyebrow: "REVISION REQUIRED",
+        title: "Same pass needs repair/follow-up",
+        description: "This pass must be repaired or followed up before any later pass can proceed.",
+        tone: "warning" as const,
+        accentClassName: "bg-[var(--warning)]",
+      };
+    case "blocked":
+      return {
+        eyebrow: "PASS BLOCKED",
+        title: "Pass is blocked",
+        description: "Show blocker; no hidden continuation.",
+        tone: "blocked" as const,
+        accentClassName: "bg-destructive",
       };
     case "completed":
       return {
@@ -97,6 +129,14 @@ function getStateCopy(state: RelayPlanPassDetailState, blocking: PassBlockingDep
         description: "Run creation is disabled for skipped passes.",
         tone: "empty" as const,
         accentClassName: "bg-muted-foreground/45",
+      };
+    case "dependency_blocked":
+      return {
+        eyebrow: "DEPENDENCY BLOCKED",
+        title: "Waiting on dependency",
+        description: `Blocking dependencies: ${blocking.map((item) => item.passId).join(", ")}`,
+        tone: "blocked" as const,
+        accentClassName: "bg-destructive",
       };
   }
 }

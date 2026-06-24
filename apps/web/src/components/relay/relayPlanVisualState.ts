@@ -86,6 +86,17 @@ export function isTerminalPassStatus(status: PlanAPIPassStatus): boolean {
   return status === "completed" || status === "skipped";
 }
 
+export function isActivePassStatus(status: PlanAPIPassStatus): boolean {
+  return (
+    status === "handoff_ready" ||
+    status === "run_created" ||
+    status === "in_progress" ||
+    status === "audit_ready" ||
+    status === "revision_required" ||
+    status === "blocked"
+  );
+}
+
 export function sortPassesBySequence(passes: PlanAPIPass[]): PlanAPIPass[] {
   return [...passes].sort((a, b) => a.sequence - b.sequence);
 }
@@ -106,6 +117,24 @@ export function getPassStatusCounts(passes: PlanAPIPass[]) {
         case "planned":
           counts.planned += 1;
           break;
+        case "ready_for_planner":
+          counts.readyForPlanner += 1;
+          break;
+        case "handoff_ready":
+          counts.handoffReady += 1;
+          break;
+        case "run_created":
+          counts.runCreated += 1;
+          break;
+        case "audit_ready":
+          counts.auditReady += 1;
+          break;
+        case "revision_required":
+          counts.revisionRequired += 1;
+          break;
+        case "blocked":
+          counts.blocked += 1;
+          break;
       }
 
       counts.total += 1;
@@ -117,6 +146,12 @@ export function getPassStatusCounts(passes: PlanAPIPass[]) {
       skipped: 0,
       inProgress: 0,
       planned: 0,
+      readyForPlanner: 0,
+      handoffReady: 0,
+      runCreated: 0,
+      auditReady: 0,
+      revisionRequired: 0,
+      blocked: 0,
       terminal: 0,
       total: 0,
     },
@@ -124,7 +159,7 @@ export function getPassStatusCounts(passes: PlanAPIPass[]) {
 }
 
 export function getCurrentPass(passes: PlanAPIPass[]): PlanAPIPass | undefined {
-  return sortPassesBySequence(passes).find((pass) => pass.status === "in_progress");
+  return sortPassesBySequence(passes).find((pass) => isActivePassStatus(pass.status));
 }
 
 export function getUnmetDependencies(
@@ -144,7 +179,8 @@ export function getNextRunnablePass(
 ): PlanAPIPass | undefined {
   return sortPassesBySequence(passes).find(
     (pass) =>
-      pass.status === "planned" && getUnmetDependencies(pass, passes).length === 0,
+      (pass.status === "planned" || pass.status === "ready_for_planner") &&
+      getUnmetDependencies(pass, passes).length === 0,
   );
 }
 
@@ -269,12 +305,26 @@ export function getPassStatusLabel(status: PlanAPIPassStatus): string {
   switch (status) {
     case "planned":
       return "Planned";
+    case "ready_for_planner":
+      return "Ready for Planner";
+    case "handoff_ready":
+      return "Handoff Ready";
+    case "run_created":
+      return "Run Created";
     case "in_progress":
       return "In Progress";
+    case "audit_ready":
+      return "Audit Ready";
     case "completed":
       return "Completed";
+    case "revision_required":
+      return "Revision Required";
+    case "blocked":
+      return "Blocked";
     case "skipped":
       return "Skipped";
+    default:
+      return `Unknown: ${status}`;
   }
 }
 
@@ -445,12 +495,26 @@ export function getPassStatusVariant(
   switch (status) {
     case "planned":
       return "outline";
+    case "ready_for_planner":
+      return "info";
+    case "handoff_ready":
+      return "warning";
+    case "run_created":
+      return "running";
     case "in_progress":
       return "running";
+    case "audit_ready":
+      return "warning";
     case "completed":
       return "success";
+    case "revision_required":
+      return "warning";
+    case "blocked":
+      return "destructive";
     case "skipped":
       return "secondary";
+    default:
+      return "outline";
   }
 }
 

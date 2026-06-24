@@ -45,11 +45,21 @@ function getStatusDotClass(pass: PlanAPIPass): string {
     case "completed":
       return "bg-[var(--success)]";
     case "in_progress":
+    case "run_created":
       return "bg-[var(--relay-accent)]";
     case "planned":
+    case "ready_for_planner":
       return "bg-muted-foreground/70";
+    case "handoff_ready":
+    case "audit_ready":
+    case "revision_required":
+      return "bg-[var(--warning)]";
+    case "blocked":
+      return "bg-destructive";
     case "skipped":
       return "bg-muted-foreground/45";
+    default:
+      return "bg-muted-foreground/70";
   }
 }
 
@@ -58,11 +68,21 @@ function getStatusBadgeClass(pass: PlanAPIPass): string {
     case "completed":
       return "border-[var(--success)]/35 bg-[var(--success)]/10 text-[var(--success)]";
     case "in_progress":
+    case "run_created":
       return "border-[var(--relay-accent)]/35 bg-[var(--relay-accent)]/10 text-[var(--relay-accent)]";
+    case "handoff_ready":
+    case "audit_ready":
+    case "revision_required":
+      return "border-[var(--warning)]/35 bg-[var(--warning)]/10 text-[var(--warning)]";
+    case "blocked":
+      return "border-destructive/35 bg-destructive/10 text-destructive";
     case "planned":
+    case "ready_for_planner":
       return "border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] text-muted-foreground";
     case "skipped":
       return "border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] text-muted-foreground/80";
+    default:
+      return "border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] text-muted-foreground";
   }
 }
 

@@ -4,6 +4,7 @@ import { ArrowLeft, Copy } from "lucide-react";
 
 import { summarizePlanPassContext } from "@/components/relay/PlanPassContextPanel";
 import { RelayPlanPassTimeline } from "@/components/relay/RelayPlanPassTimeline";
+import { RelayPlanWorkflowPanel } from "@/components/relay/RelayPlanWorkflowPanel";
 import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
 import {
   formatPlanDate,
@@ -171,6 +172,23 @@ export function RelayPlanDetail({
           <span className="font-mono text-muted-foreground">{plan.repoTarget}</span>
           <span className="text-muted-foreground/60">/</span>
           <span className="font-mono text-muted-foreground">{plan.branchContext}</span>
+          {plan.projectId ? (
+            <>
+              <span className="text-muted-foreground/60">·</span>
+              <Link
+                to="/projects/$projectId"
+                params={{ projectId: plan.projectId }}
+                className="text-[var(--relay-accent)] hover:underline"
+              >
+                Project: {plan.projectId}
+              </Link>
+            </>
+          ) : plan.status === "active" ? (
+            <>
+              <span className="text-muted-foreground/60">·</span>
+              <span className="text-muted-foreground">Project: unavailable</span>
+            </>
+          ) : null}
           {plan.sourceArtifactPath ? (
             <>
               <span className="text-muted-foreground/60">·</span>
@@ -185,6 +203,10 @@ export function RelayPlanDetail({
           </span>
         </div>
       </section>
+
+      {plan.status === "active" && (
+        <RelayPlanWorkflowPanel plan={plan} passes={passes} />
+      )}
 
       <section className="relative border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-5 py-4">
         <div

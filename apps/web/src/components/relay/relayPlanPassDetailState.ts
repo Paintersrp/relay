@@ -1,11 +1,16 @@
 import type { PlanAPIPass, PlanAPIPlan, PlanAPIReadPlan } from "@/features/relay-plans";
 
 export type RelayPlanPassDetailState =
-  | "ready"
-  | "blocked"
+  | "ready_for_planner"
+  | "handoff_ready"
+  | "run_created"
   | "in_progress"
+  | "audit_ready"
+  | "revision_required"
+  | "blocked"
   | "completed"
-  | "skipped";
+  | "skipped"
+  | "dependency_blocked";
 
 export interface PassBlockingDependency {
   passId: string;
@@ -41,15 +46,33 @@ export function getPassDetailState(
   if (pass.status === "in_progress") return "in_progress";
   if (pass.status === "completed") return "completed";
   if (pass.status === "skipped") return "skipped";
+  if (pass.status === "ready_for_planner") return "ready_for_planner";
+  if (pass.status === "handoff_ready") return "handoff_ready";
+  if (pass.status === "run_created") return "run_created";
+  if (pass.status === "audit_ready") return "audit_ready";
+  if (pass.status === "revision_required") return "revision_required";
+  if (pass.status === "blocked") return "blocked";
 
-  return getPassBlockingDependencies(pass, allPasses).length > 0 ? "blocked" : "ready";
+  return getPassBlockingDependencies(pass, allPasses).length > 0
+    ? "dependency_blocked"
+    : "ready_for_planner";
+}
+
+export function canRequestPlannerWork(
+  pass: PlanAPIPass,
+  allPasses: PlanAPIPass[],
+): boolean {
+  return (
+    (pass.status === "planned" || pass.status === "ready_for_planner") &&
+    getPassBlockingDependencies(pass, allPasses).length === 0
+  );
 }
 
 export function canCreateRunForPass(
   pass: PlanAPIPass,
-  allPasses: PlanAPIPass[],
+  _allPasses: PlanAPIPass[],
 ): boolean {
-  return pass.status === "planned" && getPassBlockingDependencies(pass, allPasses).length === 0;
+  return pass.status === "handoff_ready";
 }
 
 export function getCreateRunSearch(

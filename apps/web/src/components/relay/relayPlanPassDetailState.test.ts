@@ -50,8 +50,8 @@ describe("relayPlanPassDetailState", () => {
   it("marks a planned pass with no dependencies as ready and runnable", () => {
     const pass = buildPass();
 
-    expect(getPassDetailState(pass, [pass])).toBe("ready");
-    expect(canCreateRunForPass(pass, [pass])).toBe(true);
+    expect(getPassDetailState(pass, [pass])).toBe("ready_for_planner");
+    expect(canCreateRunForPass(pass, [pass])).toBe(false);
   });
 
   it("marks a planned pass with unfinished or missing dependencies as blocked", () => {
@@ -63,7 +63,7 @@ describe("relayPlanPassDetailState", () => {
       dependencies: ["pass-1", "pass-404"],
     });
 
-    expect(getPassDetailState(pass, [dependency, pass])).toBe("blocked");
+    expect(getPassDetailState(pass, [dependency, pass])).toBe("dependency_blocked");
     expect(canCreateRunForPass(pass, [dependency, pass])).toBe(false);
     expect(getPassBlockingDependencies(pass, [dependency, pass]).map((item) => item.passId)).toEqual([
       "pass-1",
@@ -87,7 +87,7 @@ describe("relayPlanPassDetailState", () => {
     });
 
     expect(getPassBlockingDependencies(pass, [completed, skipped, pass])).toEqual([]);
-    expect(getPassDetailState(pass, [completed, skipped, pass])).toBe("ready");
+    expect(getPassDetailState(pass, [completed, skipped, pass])).toBe("ready_for_planner");
   });
 
   it("derives in-progress, completed, and skipped states exactly", () => {

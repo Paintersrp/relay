@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatPlanDate } from "@/components/relay/relayPlanVisualState";
+import { RelayProjectPlansPanel } from "./RelayProjectPlansPanel";
 import { RelayProjectRepositoryForm } from "./RelayProjectRepositoryForm";
 import {
   setProjectRepositoryEnabled,
@@ -150,6 +151,9 @@ export function RelayProjectDetail({ project }: RelayProjectDetailProps) {
           Repository readiness is shown from saved configuration only; validation/refresh is not available in this pass.
         </p>
       </div>
+
+      {/* Project-scoped managed plans */}
+      <RelayProjectPlansPanel projectId={project.projectId} />
 
       {/* Repositories section */}
       <div className="space-y-4">

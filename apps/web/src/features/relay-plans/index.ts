@@ -1,10 +1,20 @@
-export { getPlan, getPlanPass, getPlans, submitPlan, validatePlan } from "./api";
+export {
+  getPlan,
+  getPlanPass,
+  getPlans,
+  submitPlan,
+  validatePlan,
+  getNextPassWork,
+  getNextAuditWork,
+} from "./api";
 
 export {
   relayPlanKeys,
   plansListQueryOptions,
   planDetailQueryOptions,
   planPassDetailQueryOptions,
+  nextPassWorkQueryOptions,
+  nextAuditWorkQueryOptions,
 } from "./queries";
 
 export type {
@@ -33,4 +43,19 @@ export type {
   PlanListResponse,
   PlanDetailResponse,
   PlanPassDetailResponse,
+  WorkBlocker,
+  WorkProjectSummary,
+  WorkPlanSummary,
+  WorkPassSummary,
+  WorkDependencyStatus,
+  WorkRunSummary,
+  WorkContextSummary,
+  SuggestedRunSubmission,
+  NextPassWorkResponse,
+  WorkArtifactReference,
+  AuditPriorPassContext,
+  AuditDecisionRoute,
+  AuditDecisionPayloadGuidance,
+  NextAuditWorkFilters,
+  NextAuditWorkResponse,
 } from "./types";

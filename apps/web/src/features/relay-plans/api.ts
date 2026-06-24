@@ -2,6 +2,9 @@ import { API_BASE_URL, RelayApiError } from "@/features/relay-runs";
 import type { RelayApiErrorShape } from "@/features/relay-runs/types";
 
 import type {
+  NextAuditWorkFilters,
+  NextAuditWorkResponse,
+  NextPassWorkResponse,
   PlanAPIContextBudget,
   PlanAPIContextFileRead,
   PlanAPIContextPlan,
@@ -331,6 +334,7 @@ export async function getPlans(
 
   if (filters.status) params.set("status", filters.status);
   if (typeof filters.limit === "number") params.set("limit", String(filters.limit));
+  if (filters.projectId) params.set("projectId", filters.projectId);
 
   const query = params.toString();
   const response = await getPlanJson<PlanListResponse>(
@@ -343,9 +347,16 @@ export async function getPlans(
   };
 }
 
-export async function getPlan(planId: string): Promise<PlanDetailResponse> {
+export async function getPlan(
+  planId: string,
+  options: { projectId?: string } = {},
+): Promise<PlanDetailResponse> {
+  const params = new URLSearchParams();
+  if (options.projectId) params.set("projectId", options.projectId);
+  const query = params.toString();
+
   const response = await getPlanJson<PlanDetailResponse>(
-    `/api/plans/${encodeURIComponent(planId)}`,
+    `/api/plans/${encodeURIComponent(planId)}${query ? `?${query}` : ""}`,
   );
 
   return normalizePlanDetailResponse(response);
@@ -354,10 +365,197 @@ export async function getPlan(planId: string): Promise<PlanDetailResponse> {
 export async function getPlanPass(
   planId: string,
   passId: string,
+  options: { projectId?: string } = {},
 ): Promise<PlanPassDetailResponse> {
+  const params = new URLSearchParams();
+  if (options.projectId) params.set("projectId", options.projectId);
+  const query = params.toString();
+
   const response = await getPlanJson<PlanPassDetailResponse>(
-    `/api/plans/${encodeURIComponent(planId)}/passes/${encodeURIComponent(passId)}`,
+    `/api/plans/${encodeURIComponent(planId)}/passes/${encodeURIComponent(passId)}${query ? `?${query}` : ""}`,
   );
 
   return normalizePlanPassDetailResponse(response);
+}
+
+// Work-packet normalizers
+
+function normalizeWorkBlocker(blocker: any) {
+  return {
+    code: firstNonEmptyString(blocker?.code) || "",
+    message: firstNonEmptyString(blocker?.message) || "",
+    recoverable: normalizeBoolean(blocker?.recoverable) ?? false,
+  };
+}
+
+function normalizeWorkProjectSummary(project: any) {
+  return {
+    projectId: firstNonEmptyString(project?.projectId, project?.project_id) || "",
+    name: firstNonEmptyString(project?.name) || "",
+  };
+}
+
+function normalizeWorkPlanSummary(plan: any) {
+  return {
+    planId: firstNonEmptyString(plan?.planId, plan?.plan_id) || "",
+    status: firstNonEmptyString(plan?.status) || "",
+    title: firstNonEmptyString(plan?.title),
+  };
+}
+
+function normalizeWorkPassSummary(pass: any) {
+  return {
+    passId: firstNonEmptyString(pass?.passId, pass?.pass_id) || "",
+    sequence: optionalNumber(pass?.sequence) || 0,
+    name: firstNonEmptyString(pass?.name) || "",
+    status: firstNonEmptyString(pass?.status) || "planned",
+    goal: firstNonEmptyString(pass?.goal),
+  };
+}
+
+function normalizeWorkDependencyStatus(dep: any) {
+  return {
+    passId: firstNonEmptyString(dep?.passId, dep?.pass_id) || "",
+    status: firstNonEmptyString(dep?.status) || "",
+    satisfied: normalizeBoolean(dep?.satisfied) ?? false,
+  };
+}
+
+function normalizeWorkRunSummary(run: any) {
+  return {
+    runId: firstNonEmptyString(run?.runId, run?.run_id) || "",
+    title: firstNonEmptyString(run?.title),
+    status: firstNonEmptyString(run?.status) || "",
+    lifecycleState: firstNonEmptyString(run?.lifecycleState, run?.lifecycle_state) || "",
+    activeStep: firstNonEmptyString(run?.activeStep, run?.active_step) || "",
+    workbenchPath: firstNonEmptyString(run?.workbenchPath, run?.workbench_path),
+  };
+}
+
+function normalizeWorkContextSummary(context: any) {
+  return {
+    contextPlan: normalizeContextPlan(context?.contextPlan ?? context?.context_plan),
+    sourceSnapshotId: firstNonEmptyString(context?.sourceSnapshotId, context?.source_snapshot_id),
+    sourceSnapshotStatus: firstNonEmptyString(context?.sourceSnapshotStatus, context?.source_snapshot_status),
+    contextPacketId: firstNonEmptyString(context?.contextPacketId, context?.context_packet_id),
+    contextPacketStatus: firstNonEmptyString(context?.contextPacketStatus, context?.context_packet_status),
+    coverageReportPath: firstNonEmptyString(context?.coverageReportPath, context?.coverage_report_path),
+    contextReady: normalizeBoolean(context?.contextReady ?? context?.context_ready) ?? false,
+  };
+}
+
+function normalizeSuggestedRunSubmission(submission: any) {
+  return {
+    tool: firstNonEmptyString(submission?.tool) || "create_run_from_planner_handoff",
+    arguments: {
+      planId: firstNonEmptyString(submission?.arguments?.planId, submission?.arguments?.plan_id) || "",
+      passId: firstNonEmptyString(submission?.arguments?.passId, submission?.arguments?.pass_id) || "",
+    },
+  };
+}
+
+function normalizeWorkArtifactReference(artifact: any) {
+  return {
+    kind: firstNonEmptyString(artifact?.kind) || "",
+    label: firstNonEmptyString(artifact?.label) || "",
+    filename: firstNonEmptyString(artifact?.filename) || "",
+    contentUrl: firstNonEmptyString(artifact?.contentUrl, artifact?.content_url) || "",
+    status: firstNonEmptyString(artifact?.status) || "",
+    createdAt: firstNonEmptyString(artifact?.createdAt, artifact?.created_at),
+  };
+}
+
+function normalizeNextPassWorkResponse(response: any): NextPassWorkResponse {
+  return {
+    ok: normalizeBoolean(response?.ok) ?? false,
+    tool: firstNonEmptyString(response?.tool) || "get_next_pass_work",
+    project: response?.project ? normalizeWorkProjectSummary(response.project) : undefined,
+    plan: response?.plan ? normalizeWorkPlanSummary(response.plan) : undefined,
+    selectedPass: response?.selectedPass || response?.selected_pass
+      ? normalizeWorkPassSummary(response.selectedPass ?? response.selected_pass)
+      : undefined,
+    dependencyStatus: Array.isArray(response?.dependencyStatus ?? response?.dependency_status)
+      ? (response.dependencyStatus ?? response.dependency_status).map(normalizeWorkDependencyStatus)
+      : undefined,
+    associatedRuns: Array.isArray(response?.associatedRuns ?? response?.associated_runs)
+      ? (response.associatedRuns ?? response.associated_runs).map(normalizeWorkRunSummary)
+      : undefined,
+    context: response?.context ? normalizeWorkContextSummary(response.context) : undefined,
+    handoffReadinessCriteria: normalizeStringArray(
+      response?.handoffReadinessCriteria ?? response?.handoff_readiness_criteria
+    ),
+    suggestedRunSubmission: response?.suggestedRunSubmission || response?.suggested_run_submission
+      ? normalizeSuggestedRunSubmission(response.suggestedRunSubmission ?? response.suggested_run_submission)
+      : undefined,
+    blockers: Array.isArray(response?.blockers)
+      ? response.blockers.map(normalizeWorkBlocker)
+      : [],
+  };
+}
+
+function normalizeNextAuditWorkResponse(response: any): NextAuditWorkResponse {
+  return {
+    ok: normalizeBoolean(response?.ok) ?? false,
+    tool: firstNonEmptyString(response?.tool) || "get_next_audit_work",
+    project: response?.project ? normalizeWorkProjectSummary(response.project) : undefined,
+    plan: response?.plan ? normalizeWorkPlanSummary(response.plan) : undefined,
+    selectedPass: response?.selectedPass || response?.selected_pass
+      ? normalizeWorkPassSummary(response.selectedPass ?? response.selected_pass)
+      : undefined,
+    selectedRun: response?.selectedRun || response?.selected_run
+      ? normalizeWorkRunSummary(response.selectedRun ?? response.selected_run)
+      : undefined,
+    executorResultReferences: Array.isArray(response?.executorResultReferences ?? response?.executor_result_references)
+      ? (response.executorResultReferences ?? response.executor_result_references).map(normalizeWorkArtifactReference)
+      : undefined,
+    validationReportReferences: Array.isArray(response?.validationReportReferences ?? response?.validation_report_references)
+      ? (response.validationReportReferences ?? response.validation_report_references).map(normalizeWorkArtifactReference)
+      : undefined,
+    auditPacketReferences: Array.isArray(response?.auditPacketReferences ?? response?.audit_packet_references)
+      ? (response.auditPacketReferences ?? response.audit_packet_references).map(normalizeWorkArtifactReference)
+      : undefined,
+    diffEvidenceReferences: Array.isArray(response?.diffEvidenceReferences ?? response?.diff_evidence_references)
+      ? (response.diffEvidenceReferences ?? response.diff_evidence_references).map(normalizeWorkArtifactReference)
+      : undefined,
+    priorPassContext: response?.priorPassContext || response?.prior_pass_context
+      ? {
+          priorPasses: Array.isArray((response.priorPassContext ?? response.prior_pass_context)?.priorPasses ?? (response.priorPassContext ?? response.prior_pass_context)?.prior_passes)
+            ? ((response.priorPassContext ?? response.prior_pass_context).priorPasses ?? (response.priorPassContext ?? response.prior_pass_context).prior_passes).map(normalizeWorkPassSummary)
+            : [],
+        }
+      : undefined,
+    allowedDecisions: normalizeStringArray(response?.allowedDecisions ?? response?.allowed_decisions),
+    submitDecisionPayloadGuidance: response?.submitDecisionPayloadGuidance ?? response?.submit_decision_payload_guidance,
+    blockers: Array.isArray(response?.blockers)
+      ? response.blockers.map(normalizeWorkBlocker)
+      : [],
+  };
+}
+
+// Work-packet API calls
+
+export async function getNextPassWork(
+  projectId: string,
+  planId: string,
+): Promise<NextPassWorkResponse> {
+  const response = await getPlanJson<any>(
+    `/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(planId)}/next-pass-work`,
+  );
+  return normalizeNextPassWorkResponse(response);
+}
+
+export async function getNextAuditWork(
+  projectId: string,
+  planId: string,
+  filters: NextAuditWorkFilters = {},
+): Promise<NextAuditWorkResponse> {
+  const params = new URLSearchParams();
+  if (filters.passId) params.set("passId", filters.passId);
+  if (filters.runId) params.set("runId", filters.runId);
+  const query = params.toString();
+
+  const response = await getPlanJson<any>(
+    `/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(planId)}/next-audit-work${query ? `?${query}` : ""}`,
+  );
+  return normalizeNextAuditWorkResponse(response);
 }

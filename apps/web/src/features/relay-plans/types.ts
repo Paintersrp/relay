@@ -2,8 +2,14 @@ export type PlanAPIStatus = "active" | "complete" | "abandoned";
 
 export type PlanAPIPassStatus =
   | "planned"
+  | "ready_for_planner"
+  | "handoff_ready"
+  | "run_created"
   | "in_progress"
+  | "audit_ready"
   | "completed"
+  | "revision_required"
+  | "blocked"
   | "skipped";
 
 export interface PlannerPassPlanMeta {
@@ -51,6 +57,8 @@ export interface PlanAPIPlan {
   sourceArtifactPath?: string;
   createdAt: string;
   updatedAt: string;
+  projectRowId?: string;
+  projectId?: string;
 }
 
 export interface PlanAPIRunSummary {
@@ -176,6 +184,7 @@ export interface SubmitPlanResponse {
 export interface PlanListFilters {
   status?: PlanAPIStatus;
   limit?: number;
+  projectId?: string;
 }
 
 export interface PlanListResponse {
@@ -197,3 +206,126 @@ export interface PlanPassDetailResponse {
   pass: PlanAPIPass;
   completionReady: boolean;
 }
+
+// Work-packet response types
+
+export interface WorkBlocker {
+  code: string;
+  message: string;
+  recoverable: boolean;
+}
+
+export interface WorkProjectSummary {
+  projectId: string;
+  name: string;
+}
+
+export interface WorkPlanSummary {
+  planId: string;
+  status: string;
+  title?: string;
+}
+
+export interface WorkPassSummary {
+  passId: string;
+  sequence: number;
+  name: string;
+  status: PlanAPIPassStatus | string;
+  goal?: string;
+}
+
+export interface WorkDependencyStatus {
+  passId: string;
+  status: string;
+  satisfied: boolean;
+}
+
+export interface WorkRunSummary {
+  runId: string;
+  title?: string;
+  status: string;
+  lifecycleState: string;
+  activeStep: string;
+  workbenchPath?: string;
+}
+
+export interface WorkContextSummary {
+  contextPlan: PlanAPIContextPlan;
+  sourceSnapshotId?: string;
+  sourceSnapshotStatus?: string;
+  contextPacketId?: string;
+  contextPacketStatus?: string;
+  coverageReportPath?: string;
+  contextReady: boolean;
+}
+
+export interface SuggestedRunSubmission {
+  tool: "create_run_from_planner_handoff" | string;
+  arguments: {
+    planId: string;
+    passId: string;
+  };
+}
+
+export interface NextPassWorkResponse {
+  ok: boolean;
+  tool: "get_next_pass_work" | string;
+  project?: WorkProjectSummary;
+  plan?: WorkPlanSummary;
+  selectedPass?: WorkPassSummary;
+  dependencyStatus?: WorkDependencyStatus[];
+  associatedRuns?: WorkRunSummary[];
+  context?: WorkContextSummary;
+  handoffReadinessCriteria?: string[];
+  suggestedRunSubmission?: SuggestedRunSubmission;
+  blockers: WorkBlocker[];
+}
+
+export interface WorkArtifactReference {
+  kind: string;
+  label: string;
+  filename: string;
+  contentUrl: string;
+  status: string;
+  createdAt?: string;
+}
+
+export interface AuditPriorPassContext {
+  priorPasses: WorkPassSummary[];
+}
+
+export interface AuditDecisionRoute {
+  method: string;
+  path: string;
+  bodyShape?: unknown;
+  allowedDecisions?: string[];
+  decision?: string;
+}
+
+export interface AuditDecisionPayloadGuidance {
+  primaryRoute: AuditDecisionRoute;
+  convenienceRoutes?: AuditDecisionRoute[];
+}
+
+export interface NextAuditWorkFilters {
+  passId?: string;
+  runId?: string;
+}
+
+export interface NextAuditWorkResponse {
+  ok: boolean;
+  tool: "get_next_audit_work" | string;
+  project?: WorkProjectSummary;
+  plan?: WorkPlanSummary;
+  selectedPass?: WorkPassSummary;
+  selectedRun?: WorkRunSummary;
+  executorResultReferences?: WorkArtifactReference[];
+  validationReportReferences?: WorkArtifactReference[];
+  auditPacketReferences?: WorkArtifactReference[];
+  diffEvidenceReferences?: WorkArtifactReference[];
+  priorPassContext?: AuditPriorPassContext;
+  allowedDecisions?: string[];
+  submitDecisionPayloadGuidance?: AuditDecisionPayloadGuidance;
+  blockers: WorkBlocker[];
+}
+
