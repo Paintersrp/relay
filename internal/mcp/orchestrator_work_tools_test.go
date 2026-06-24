@@ -1,10 +1,13 @@
 package mcp
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"relay/internal/plans"
@@ -352,4 +355,363 @@ func mustMarshalJSON(t *testing.T, v interface{}) json.RawMessage {
 		t.Fatalf("marshal json: %v", err)
 	}
 	return data
+}
+
+
+// ----------------------------------------------------------------------------
+// PASS-008 additions: schema strictness, store-less blockers, and
+// success-through-tool coverage for the orchestrator work tools.
+// ----------------------------------------------------------------------------
+
+// schemaMap decodes a raw JSON schema into a generic map for assertions.
+func schemaMap(t *testing.T, raw json.RawMessage) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal schema: %v", err)
+	}
+	return m
+}
+
+// decodeToolJSON parses the first text content block of a tool result as JSON.
+func decodeToolJSON(t *testing.T, result ToolCallResult) map[string]any {
+	t.Helper()
+	if len(result.Content) == 0 {
+		t.Fatal("expected at least one content block")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+		t.Fatalf("unmarshal tool JSON: %v", err)
+	}
+	return payload
+}
+
+// seedMCPOrchestratorPlan submits a valid two-pass plan for project "relay"
+// (which it also creates) using the real plans service, with no required
+// context inputs so PASS-001 is immediately selectable.
+func seedMCPOrchestratorPlan(t *testing.T, st *store.Store, planID string) *store.Plan {
+	t.Helper()
+
+	if _, err := st.CreateProject("relay", "Relay", "Orchestrator MCP test project", "active", ""); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	noReqContext := func() plans.ContextPlan {
+		return plans.ContextPlan{
+			RequiredRepositories: []string{"relay"},
+			SeedSearchTerms: []plans.ContextSearchTerm{
+				{RepoID: "relay", Query: "orchestrator work", Purpose: "Optional context.", Required: mcpBoolPtr(false)},
+			},
+			SeedFilesToRead: []plans.ContextFileRead{
+				{RepoID: "relay", Path: "internal/plans/work_packets.go", Purpose: "Optional file.", Required: mcpBoolPtr(false)},
+			},
+			ContextCoverageExpectations: []string{"Coverage is best-effort."},
+			BlockedIfMissing:            []string{"Not blocked if missing."},
+		}
+	}
+	noReqSnapshot := plans.SourceSnapshotRequirements{
+		RequireGitStatus:   mcpBoolPtr(false),
+		RequireCommitSHA:   mcpBoolPtr(false),
+		AllowDirtyWorktree: mcpBoolPtr(true),
+	}
+
+	plan := plans.PlannerPassPlan{
+		PlanMeta: plans.PlanMeta{
+			PlanID:        planID,
+			SchemaVersion: "2.0.0",
+			CreatedAt:     "2026-06-23T00:00:00Z",
+			Title:         "Orchestrator MCP test plan",
+			Goal:          "Exercise orchestrator work tools through MCP.",
+			RepoTarget:    "Paintersrp/relay",
+			BranchContext: "main",
+			Status:        "active",
+			ProjectID:     "relay",
+			MCPCapabilityProfile: &plans.MCPCapabilityProfile{
+				ProfileID:            "test-profile",
+				Mode:                 "submission_only",
+				ContextBrokerEnabled: mcpBoolPtr(false),
+			},
+		},
+		SourceIntent: plans.SourceIntent{Summary: "MCP orchestrator work tool test plan."},
+		GlobalContextRules: &plans.GlobalContextRules{
+			DefaultSourceOfTruth:    "Relay managed plan.",
+			PlannerContextBoundary:  "Test only.",
+			ForbiddenContextDomains: []string{"GitHub issues"},
+		},
+		Passes: []plans.PlanPassInput{
+			{
+				PassID:                     "PASS-001",
+				Sequence:                   1,
+				Name:                       "First pass",
+				Goal:                       "First pass goal",
+				IntendedExecutionScope:     []string{"internal/plans"},
+				NonGoals:                   []string{"No UI"},
+				Dependencies:               []string{},
+				Status:                     "planned",
+				PassType:                   "backend_vertical_slice",
+				ContextPlan:                noReqContext(),
+				SourceSnapshotRequirements: noReqSnapshot,
+				HandoffReadinessCriteria:   []string{"Pass 1 complete"},
+			},
+			{
+				PassID:                     "PASS-002",
+				Sequence:                   2,
+				Name:                       "Second pass",
+				Goal:                       "Second pass goal",
+				IntendedExecutionScope:     []string{"internal/plans"},
+				NonGoals:                   []string{"No UI"},
+				Dependencies:               []string{"PASS-001"},
+				Status:                     "planned",
+				PassType:                   "backend_vertical_slice",
+				ContextPlan:                noReqContext(),
+				SourceSnapshotRequirements: noReqSnapshot,
+				HandoffReadinessCriteria:   []string{"Pass 2 complete"},
+			},
+		},
+	}
+
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	result, err := plans.NewService(st).SubmitPlan(context.Background(), plans.SubmitPlanRequest{RawJSON: raw, ProjectID: "relay"})
+	if err != nil {
+		t.Fatalf("SubmitPlan: %v", err)
+	}
+	if !result.Report.Valid {
+		t.Fatalf("SubmitPlan invalid: %+v", result.Report.Issues)
+	}
+
+	created, err := st.GetPlanByPlanID(planID)
+	if err != nil {
+		t.Fatalf("GetPlanByPlanID: %v", err)
+	}
+	return created
+}
+
+func TestOrchestratorWorkTools_SchemasAreStrictAndScoped(t *testing.T) {
+	t.Parallel()
+
+	// get_next_pass_work schema.
+	passSchema := schemaMap(t, ToolGetNextPassWork.InputSchema)
+	if additional, _ := passSchema["additionalProperties"].(bool); additional {
+		t.Error("get_next_pass_work schema must set additionalProperties:false")
+	}
+	passRequired := requiredSet(t, passSchema)
+	for _, field := range []string{"project_id", "plan_id"} {
+		if !passRequired[field] {
+			t.Errorf("get_next_pass_work schema must require %q", field)
+		}
+	}
+
+	// get_next_audit_work schema.
+	auditSchema := schemaMap(t, ToolGetNextAuditWork.InputSchema)
+	if additional, _ := auditSchema["additionalProperties"].(bool); additional {
+		t.Error("get_next_audit_work schema must set additionalProperties:false")
+	}
+	auditRequired := requiredSet(t, auditSchema)
+	for _, field := range []string{"project_id", "plan_id"} {
+		if !auditRequired[field] {
+			t.Errorf("get_next_audit_work schema must require %q", field)
+		}
+	}
+	auditProps, _ := auditSchema["properties"].(map[string]any)
+	for _, optional := range []string{"pass_id", "run_id"} {
+		if _, ok := auditProps[optional]; !ok {
+			t.Errorf("get_next_audit_work schema must define optional %q", optional)
+		}
+		if auditRequired[optional] {
+			t.Errorf("get_next_audit_work schema must not require %q", optional)
+		}
+	}
+
+	// Neither schema may expose mutation-oriented properties.
+	mutationProps := []string{"planner_handoff_markdown", "audit_packet_markdown", "decision", "command", "path", "repo_path"}
+	for _, schema := range []map[string]any{passSchema, auditSchema} {
+		props, _ := schema["properties"].(map[string]any)
+		for _, banned := range mutationProps {
+			if _, ok := props[banned]; ok {
+				t.Errorf("schema must not expose mutation-oriented property %q", banned)
+			}
+		}
+	}
+}
+
+// requiredSet extracts the "required" array of a schema map as a set.
+func requiredSet(t *testing.T, schema map[string]any) map[string]bool {
+	t.Helper()
+	set := map[string]bool{}
+	raw, ok := schema["required"].([]any)
+	if !ok {
+		return set
+	}
+	for _, item := range raw {
+		if s, ok := item.(string); ok {
+			set[s] = true
+		}
+	}
+	return set
+}
+
+func TestOrchestratorWorkTools_HandlersReturnStructuredBlockersWithoutStore(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(nil, &MCPDeps{Store: nil, ToolProfile: ToolProfileLocalOperator})
+
+	cases := []struct {
+		name    string
+		tool    string
+		call    func(json.RawMessage) ToolCallResult
+		args    string
+	}{
+		{
+			name: "get_next_pass_work",
+			tool: plans.NextPassWorkTool,
+			call: srv.HandleGetNextPassWork,
+			args: `{"project_id":"relay","plan_id":"plan-x"}`,
+		},
+		{
+			name: "get_next_audit_work",
+			tool: plans.NextAuditWorkTool,
+			call: srv.HandleGetNextAuditWork,
+			args: `{"project_id":"relay","plan_id":"plan-x"}`,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := tc.call(json.RawMessage(tc.args))
+			if !result.IsError {
+				t.Fatal("expected IsError=true when store is unavailable")
+			}
+			payload := decodeToolJSON(t, result)
+			if ok, _ := payload["ok"].(bool); ok {
+				t.Error("expected ok=false")
+			}
+			if tool, _ := payload["tool"].(string); tool != tc.tool {
+				t.Errorf("tool = %q, want %q", tool, tc.tool)
+			}
+			blockers, _ := payload["blockers"].([]any)
+			if len(blockers) == 0 {
+				t.Fatal("expected at least one blocker")
+			}
+			first, _ := blockers[0].(map[string]any)
+			if code, _ := first["code"].(string); code != plans.BlockerUnsafeRequest {
+				t.Errorf("blocker code = %q, want %q", code, plans.BlockerUnsafeRequest)
+			}
+		})
+	}
+}
+
+func TestOrchestratorWorkTools_GetNextPassWorkSuccessThroughTool(t *testing.T) {
+	t.Parallel()
+
+	st := setupOrchestratorTestStore(t)
+	plan := seedMCPOrchestratorPlan(t, st, "plan-mcp-passwork")
+	_ = plan
+
+	srv := NewServer(nil, &MCPDeps{Store: st, ToolProfile: ToolProfileLocalOperator})
+
+	result := srv.HandleGetNextPassWork(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-passwork"}`))
+	if result.IsError {
+		t.Fatalf("expected IsError=false, got error result: %+v", result.Content)
+	}
+
+	var resp plans.NextPassWorkResponse
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected ok=true, got blockers: %+v", resp.Blockers)
+	}
+	if resp.Tool != plans.NextPassWorkTool {
+		t.Errorf("tool = %q, want %q", resp.Tool, plans.NextPassWorkTool)
+	}
+	if resp.SelectedPass == nil || resp.SelectedPass.PassID != "PASS-001" {
+		t.Fatalf("expected PASS-001 selected, got %+v", resp.SelectedPass)
+	}
+	if resp.SuggestedRunSubmission == nil {
+		t.Fatal("expected suggested_run_submission")
+	}
+
+	// The suggested run submission must include only plan_id and pass_id.
+	payload := decodeToolJSON(t, result)
+	suggested, _ := payload["suggested_run_submission"].(map[string]any)
+	args, _ := suggested["arguments"].(map[string]any)
+	if len(args) != 2 {
+		t.Fatalf("expected exactly 2 suggested arguments (plan_id, pass_id), got %d: %v", len(args), args)
+	}
+	if _, ok := args["plan_id"]; !ok {
+		t.Error("suggested arguments missing plan_id")
+	}
+	if _, ok := args["pass_id"]; !ok {
+		t.Error("suggested arguments missing pass_id")
+	}
+}
+
+func TestOrchestratorWorkTools_GetNextAuditWorkSuccessThroughTool(t *testing.T) {
+	t.Parallel()
+
+	st := setupOrchestratorTestStore(t)
+	plan := seedMCPOrchestratorPlan(t, st, "plan-mcp-auditwork")
+
+	repo, err := st.CreateRepo("test-repo", t.TempDir())
+	if err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+	pass1, err := st.GetPlanPassByPassID(plan.ID, "PASS-001")
+	if err != nil {
+		t.Fatalf("GetPlanPassByPassID: %v", err)
+	}
+	run, err := st.CreateRunWithAssociation(
+		repo.ID,
+		"audit-ready run",
+		"audit_ready",
+		"", "", "opencode_go", "main",
+		sql.NullInt64{Int64: plan.ID, Valid: true},
+		sql.NullInt64{Int64: pass1.ID, Valid: true},
+	)
+	if err != nil {
+		t.Fatalf("CreateRunWithAssociation: %v", err)
+	}
+	if _, err := st.CreateArtifact(run.ID, "audit_packet", "packet.md", "text/markdown"); err != nil {
+		t.Fatalf("CreateArtifact audit_packet: %v", err)
+	}
+	if _, err := st.CreateArtifact(run.ID, "audit_evidence_manifest_json", "manifest.json", "application/json"); err != nil {
+		t.Fatalf("CreateArtifact audit_evidence_manifest_json: %v", err)
+	}
+	if _, err := st.UpdatePlanPassStatus(pass1.ID, plans.StatusPassAuditReady); err != nil {
+		t.Fatalf("UpdatePlanPassStatus: %v", err)
+	}
+
+	srv := NewServer(nil, &MCPDeps{Store: st, ToolProfile: ToolProfileLocalOperator})
+
+	result := srv.HandleGetNextAuditWork(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-auditwork"}`))
+	if result.IsError {
+		t.Fatalf("expected IsError=false, got error result: %+v", result.Content)
+	}
+
+	var resp plans.NextAuditWorkResponse
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected ok=true, got blockers: %+v", resp.Blockers)
+	}
+	if resp.Tool != plans.NextAuditWorkTool {
+		t.Errorf("tool = %q, want %q", resp.Tool, plans.NextAuditWorkTool)
+	}
+	if resp.SelectedRun == nil || resp.SelectedRun.RunID == "" {
+		t.Fatalf("expected a selected run, got %+v", resp.SelectedRun)
+	}
+	if len(resp.AllowedDecisions) == 0 {
+		t.Error("expected allowed_decisions in response")
+	}
+
+	// The response must not dump full artifact content; only references.
+	if strings.Contains(result.Content[0].Text, "\"content\":") {
+		t.Error("audit work response must not embed full artifact content")
+	}
 }

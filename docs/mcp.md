@@ -34,6 +34,8 @@
 *   These tools do not submit plans, create runs, generate handoffs, generate audit judgments, apply audit decisions, dispatch executors, run shell commands, mutate git, or read/write arbitrary filesystem paths.
 *   They remain separate from submission tools (`submit_planner_pass_plan`, `create_run_from_planner_handoff`, `submit_audit_packet`) and are retrieval-only.
 
+For the end-to-end operator loop that combines these retrieval tools with the Relay web UI, reviewed Planner handoffs, audit handbacks, and human gates, see [`docs/project-orchestrator-workflow.md`](project-orchestrator-workflow.md).
+
 ---
 
 ## How It Works
@@ -457,6 +459,7 @@ The MCP subprocess and the HTTP daemon (`cmd/relay`) share the same SQLite datab
 - **Pass 16+ managed plans:** Added `submit_planner_pass_plan` for Planner-facing plan submission and updated smoke/docs to cover the 6-tool inventory.
 - **PASS-007 context broker:** Completed operator-facing documentation for local setup, registration, profiles, safety boundaries, and workflows.
 - **PASS-008 compatibility cleanup:** Completed validation of standalone/managed compatibility, database auto-migrations with foreign keys, retained legacy redirects/routes, and local-only release verification scripting.
+- **Project orchestrator PASS-008:** Added end-to-end orchestrator workflow hardening tests and operator documentation for Continue Plan, Audit Ready, MCP work-packet retrieval, and human-gated advancement.
 
 ---
 
