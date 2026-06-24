@@ -15,7 +15,9 @@ import (
 	"testing"
 	"time"
 
+	auditsapi "relay/internal/api/audits"
 	"relay/internal/artifacts"
+	appaudits "relay/internal/app/audits"
 	appplans "relay/internal/app/plans"
 	"relay/internal/store"
 
@@ -165,6 +167,8 @@ func TestAPI(t *testing.T) {
 	artifacts.SetBaseDir(dir)
 
 	apiH := NewAPIHandler(s, logger)
+	auditSvc := appaudits.NewService(s, nil)
+	auditH := auditsapi.NewHandler(auditSvc)
 	r := chi.NewRouter()
 	r.Route("/api", func(r chi.Router) {
 		r.Use(CORSMiddleware)
@@ -172,16 +176,10 @@ func TestAPI(t *testing.T) {
 		r.Get("/runs/{id}", apiH.GetRun)
 		r.Get("/runs/{id}/artifacts", apiH.ListArtifacts)
 		r.Get("/runs/{id}/events", apiH.ListEvents)
-		r.Get("/runs/{id}/audit/status", apiH.GetAuditStatus)
+		auditsapi.MountRoutes(r, auditH)
 		r.Post("/intake/planner-handoff", apiH.IntakePlannerHandoff)
 		r.Post("/runs/{id}/approve-intake", apiH.ApproveIntake)
 		r.Post("/runs/{id}/prepare", apiH.PrepareRun)
-		r.Post("/runs/{id}/audit", apiH.GenerateAudit)
-		r.Post("/runs/{id}/audit/submit", apiH.SubmitAuditPacket)
-		r.Post("/runs/{id}/audit/approve", apiH.ApproveAudit)
-		r.Post("/runs/{id}/audit/request-revision", apiH.RequestAuditRevision)
-		r.Post("/runs/{id}/audit/prepare-commit-message", apiH.PrepareCommitMessage)
-		r.Post("/runs/{id}/audit/close", apiH.CloseRun)
 		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)
@@ -1007,7 +1005,7 @@ func TestAPI(t *testing.T) {
 			t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
 		}
 
-		var resp RelayAuditStatus
+		var resp auditsapi.RelayAuditStatus
 		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}

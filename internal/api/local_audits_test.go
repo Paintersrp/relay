@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	auditsapi "relay/internal/api/audits"
+	appaudits "relay/internal/app/audits"
 	"relay/internal/artifacts"
 	"relay/internal/store"
 
@@ -107,11 +109,10 @@ func newLocalAuditAPITestServer(t *testing.T) (*APIHandler, *store.Store, http.H
 	t.Cleanup(func() { _ = st.Close() })
 	repoRoot := setupAPILocalAuditGitRepo(t)
 	apiH := NewAPIHandler(st, logger)
+	auditH := auditsapi.NewHandler(appaudits.NewService(st, nil))
 	router := chi.NewRouter()
 	router.Route("/api", func(r chi.Router) {
-		r.Post("/audits/local", apiH.CreateLocalAudit)
-		r.Get("/audits/local/{auditId}", apiH.GetLocalAudit)
-		r.Get("/projects/{projectId}/audits", apiH.ListProjectLocalAudits)
+		auditsapi.MountRoutes(r, auditH)
 	})
 	return apiH, st, router, repoRoot
 }

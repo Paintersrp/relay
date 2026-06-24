@@ -1,14 +1,12 @@
 package audits
 
 import (
-	rootapi "relay/internal/api"
-
 	"github.com/go-chi/chi/v5"
 )
 
 // MountRoutes registers local audit and run audit routes on r against the
-// existing *rootapi.APIHandler methods. PASS-001 route composition only.
-func MountRoutes(r chi.Router, h *rootapi.APIHandler) {
+// audit feature handler.
+func MountRoutes(r chi.Router, h *Handler) {
 	r.Post("/audits/local", h.CreateLocalAudit)
 	r.Get("/audits/local/{auditId}", h.GetLocalAudit)
 	r.Get("/projects/{projectId}/audits", h.ListProjectLocalAudits)

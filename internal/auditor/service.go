@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
+	appplans "relay/internal/app/plans"
 	"relay/internal/artifacts"
 	"relay/internal/executor"
-	"relay/internal/plans"
 	"relay/internal/store"
 	"relay/internal/validationrunner"
 )
@@ -165,7 +165,7 @@ func (svc *Service) Generate(runID int64) (*GeneratedAudit, error) {
 	if err != nil {
 		return nil, fmt.Errorf("update run status to audit_ready: %w", err)
 	}
-	if err := plans.NewRunLifecycleService(svc.store).SyncAssociatedPassForRunStatus(updatedRun); err != nil {
+	if err := appplans.NewRunLifecycleService(svc.store).SyncAssociatedPassForRunStatus(updatedRun); err != nil {
 		return nil, fmt.Errorf("sync associated pass status: %w", err)
 	}
 

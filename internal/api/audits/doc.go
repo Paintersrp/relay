@@ -1,6 +1,6 @@
-// Package audits is a transport adapter route-mounting skeleton for PASS-001.
+// Package audits owns the HTTP transport layer for the audits feature.
 //
-// It registers local audit and run audit JSON API routes against the existing
-// *api.APIHandler methods. It must not contain business logic, DTOs, mappers,
-// presenters, or persistence access in PASS-001.
+// It provides handlers, DTOs, and route mounting for local audits, run audit
+// status, audit packet generation, audit decision submission, and run closeout.
+// Business logic lives in internal/app/audits.
 package audits

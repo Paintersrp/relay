@@ -14,7 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	auditsapi "relay/internal/api/audits"
 	"relay/internal/artifacts"
+	appaudits "relay/internal/app/audits"
 	appplans "relay/internal/app/plans"
 	"relay/internal/store"
 	"relay/internal/validationrunner"
@@ -45,15 +47,13 @@ func newProgressionTestServer(t *testing.T) (*store.Store, http.Handler) {
 	artifacts.SetBaseDir(dir)
 
 	apiH := NewAPIHandler(st, logger)
+	auditH := auditsapi.NewHandler(appaudits.NewService(st, nil))
 	router := chi.NewRouter()
 	router.Route("/api", func(r chi.Router) {
 		r.Post("/intake/planner-handoff", apiH.IntakePlannerHandoff)
 		r.Post("/runs/{id}/approve-intake", apiH.ApproveIntake)
 		r.Post("/runs/{id}/validate/accept-failure", apiH.AcceptFailedValidation)
-		r.Post("/runs/{id}/audit/submit", apiH.SubmitAuditPacket)
-		r.Post("/runs/{id}/audit/approve", apiH.ApproveAudit)
-		r.Post("/runs/{id}/audit/request-revision", apiH.RequestAuditRevision)
-		r.Post("/runs/{id}/audit/close", apiH.CloseRun)
+		auditsapi.MountRoutes(r, auditH)
 	})
 
 	return st, router
