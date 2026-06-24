@@ -49,6 +49,8 @@ For the end-to-end operator loop that combines these retrieval tools with the Re
 *   These tools preserve the same safety boundaries as the rest of the MCP surface: no shell execution, no arbitrary filesystem reads, no git mutation, no model calls, no automatic plan submission, and no run creation.
 *   `submit_planner_pass_plan` remains the only plan-submission action and still requires explicit user review and confirmation. `create_run_from_planner_handoff` remains the only reviewed handoff-to-run action and still requires explicit user confirmation. There is no separate refactor submission action, and refactor metadata does not authorize automatic submission.
 
+For the full refactor backlog concept overview, candidate lifecycle, promotion and generated refactor-only plan workflows, and audit-derived candidate completion behavior, see [`docs/refactor-backlog.md`](refactor-backlog.md). The refactor backlog hardening (backend service, orchestrator/audit mapping, and these MCP tools) is covered by the deterministic, local-only release smoke suite, runnable through `npm run release:smoke` (wrapping `scripts/release-smoke.sh`).
+
 ---
 
 ## How It Works
@@ -473,6 +475,7 @@ The MCP subprocess and the HTTP daemon (`cmd/relay`) share the same SQLite datab
 - **PASS-007 context broker:** Completed operator-facing documentation for local setup, registration, profiles, safety boundaries, and workflows.
 - **PASS-008 compatibility cleanup:** Completed validation of standalone/managed compatibility, database auto-migrations with foreign keys, retained legacy redirects/routes, and local-only release verification scripting.
 - **Project orchestrator PASS-008:** Added end-to-end orchestrator workflow hardening tests and operator documentation for Continue Plan, Audit Ready, MCP work-packet retrieval, and human-gated advancement.
+- **Refactor backlog PASS-008 (tests/docs/release hardening):** Added the refactor backlog concept/workflow documentation (`docs/refactor-backlog.md`), operator-guide manual QA checklist and `revision_required` clarification, and the `npm run release:smoke` release validation alias. No new MCP tools, routes, product behavior, or expanded scope were introduced.
 
 ---
 

@@ -8,6 +8,10 @@ node - <<'NODE'
 const { spawnSync } = require('child_process');
 
 const commands = [
+  // PASS-008: explicit refactor backlog hardening slice (backend service,
+  // orchestrator/audit mapping, and MCP local-operator tools) runs first so a
+  // refactor backlog regression fails fast before the broader suite.
+  'go test ./internal/refactors ./internal/plans ./internal/mcp',
   'go test ./...',
   'npm run test:local-scripts',
   'npm --prefix apps/web run typecheck',

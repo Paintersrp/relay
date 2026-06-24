@@ -19,7 +19,8 @@
     "build:web": "cd apps/web && npm run build",
     "validate": "make validate",
     "test:local-scripts": "node --test scripts/local/chatgpt-mcp.test.mjs",
-    "smoke": "go test ./internal/smoke && go test ./internal/mcp && go test ./internal/server && npm run test:local-scripts && npm --prefix apps/web run typecheck && npm --prefix apps/web test"
+    "smoke": "go test ./internal/smoke && go test ./internal/mcp && go test ./internal/server && npm run test:local-scripts && npm --prefix apps/web run typecheck && npm --prefix apps/web test",
+    "release:smoke": "bash scripts/release-smoke.sh"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.0.0",

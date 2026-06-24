@@ -155,7 +155,70 @@ Relay supports an optional managed plan orchestration layer where runs can be as
 4.  **State Transitions**:
     *   Creating an associated run moves the pass from `planned` to `in_progress`.
     *   Accepting the run's audit moves the pass to `completed`.
-    *   Requesting revision on the run's audit keeps or returns the pass to `in_progress`.
+    *   Requesting revision on the run's audit moves the pass to `revision_required`. This is a distinct blocker state: the orchestrator keeps the same pass and run selected for repair or follow-up and does **not** advance to a later pass until the pass is repaired and re-audited. (Older notes that described revision as merely returning the pass to `in_progress` predate the project-scoped orchestrator runtime.)
+
+---
+
+## Refactor Backlog Workflow
+
+Relay includes a project-scoped refactor backlog for capturing refactor ideas,
+developing them into pass-ready candidates, and feeding them into the normal
+managed plan/pass/run/audit lifecycle. See [`docs/refactor-backlog.md`](refactor-backlog.md)
+for the full concept overview, candidate lifecycle/status table, promotion and
+generated refactor-only plan workflows, and MCP safety boundaries.
+
+Key operator points:
+
+*   A **discovery task** is a human-authored analysis prompt (a question to
+    investigate). A **refactor candidate** is a pass-ready proposal (an answer
+    ready to become a `pass_type: "refactor"` pass). They are distinct records.
+*   **Promotion** slots a `ready` candidate into an existing active managed plan as
+    a normal refactor pass and marks the candidate `scheduled`. It never submits a
+    plan or creates a run.
+*   **Generated refactor-only plans are reviewable artifacts only.** Generation
+    leaves selected candidates `ready` and never auto-submits; acting on the plan
+    still requires a separate, user-confirmed `submit_planner_pass_plan`.
+*   **Candidate completion is audit-derived** from the scheduled managed pass:
+    `accepted` → `completed`, `accepted_with_warnings` → `completed_with_warnings`,
+    `revision_required` → `scheduled_revision_required` (same pass/run stays
+    selected), `skipped` → `deferred`. `blocked`/`manual_review_required`/`rejected`
+    never silently complete a candidate.
+*   There are **no sidecars in v1** and **no autonomous repository analysis**.
+*   The refactor MCP tools are local-operator-only and hidden under the restricted
+    profile.
+
+### Refactor Backlog Manual QA Checklist
+
+Component/browser UI testing dependencies are not installed in `apps/web` (only
+Vitest unit tests for the pure status/form helpers), so the end-to-end UI workflow
+is validated manually. With the backend daemon and React workbench running:
+
+1.  **Create a discovery task.** On the project's refactor backlog page, create a
+    discovery task with a title, analysis prompt, and target scope. Confirm it
+    appears as `Open` and offers edit/complete/close actions.
+2.  **Create a pass-ready candidate.** Create a candidate and confirm the form
+    rejects missing pass-ready fields (e.g. empty `target_files` or invalid
+    `risk_level`) with field-level validation messages, then succeeds once
+    complete and shows as `Ready`.
+3.  **Promote a candidate into an existing plan.** Use the placement
+    suggestion/promote control on a `Ready` candidate against an active plan.
+    Confirm the candidate becomes `Scheduled`, the schedule reference shows the
+    plan/pass, and no run was created.
+4.  **Generate a refactor-only plan.** Select one or more `Ready` candidates and
+    generate a refactor-only plan. Confirm the result shows JSON and Markdown
+    artifact paths and a `review_required_no_auto_submit` policy, that the
+    candidates remain `Ready`, and that no plan was submitted and no run created.
+5.  **Complete a scheduled refactor candidate via audit.** Take the scheduled
+    refactor pass's run through audit with an `accepted` decision and confirm the
+    candidate moves to `Completed` (or `Completed with warnings` for
+    `accepted_with_warnings`).
+6.  **Request revision and confirm same-pass selection.** On a scheduled refactor
+    pass's run, request revision and confirm the candidate shows `Revision
+    required`, the pass is `revision_required`, and the orchestrator keeps the same
+    pass/run selected rather than advancing.
+7.  **Confirm restricted MCP profile hides refactor tools.** With
+    `RELAY_MCP_PROFILE=restricted`, confirm the refactor backlog tools are absent
+    from `tools/list` and that calling one returns an unknown-tool error.
 
 ---
 
@@ -215,6 +278,12 @@ npm run smoke
 ### Release Verification
 
 For final release-hardening verification, run the comprehensive release smoke script. This script verifies all Go tests, local script connector tests, React typecheck/vitest suites, React build bundles, root smoke suites, and validation reports:
+
+```bash
+npm run release:smoke
+```
+
+This root script wraps `scripts/release-smoke.sh`; you can also invoke the script directly:
 
 ```bash
 bash scripts/release-smoke.sh
