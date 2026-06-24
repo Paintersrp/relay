@@ -1245,11 +1245,11 @@ func buildGeneratedPlan(projectID, planID, title string, now time.Time, orderedC
 				PrimaryProject:     projectID,
 				PrimaryRepository:  generatedPlanRepoID,
 				ContractRepository: "relay-contracts",
-				GitHubRole:         "local-first",
+				GitHubRole:         "repo_host_and_origin_only",
 			},
 			MCPCapabilityProfile: &plans.MCPCapabilityProfile{
 				ProfileID:            "relay-local-project-orchestrator-v1",
-				Mode:                 "local_first_context_broker",
+				Mode:                 "hybrid",
 				ContextBrokerEnabled: boolPtr(true),
 				Notes:                "Generated refactor-only plan artifact; review required before submission.",
 			},

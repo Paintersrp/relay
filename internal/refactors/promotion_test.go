@@ -453,6 +453,34 @@ func TestGenerateRefactorOnlyPlanArtifactOnly(t *testing.T) {
 		t.Fatalf("generated plan should be valid, issues=%+v", report.Issues)
 	}
 
+	// Generated plan metadata uses schema-valid values (PASS-004 repair).
+	var plan plans.PlannerPassPlan
+	if err := json.Unmarshal(jsonBytes, &plan); err != nil {
+		t.Fatalf("unmarshal generated plan failed: %v", err)
+	}
+	if plan.PlanMeta.ProjectContext == nil {
+		t.Fatal("expected project_context")
+	}
+	if plan.PlanMeta.ProjectContext.GitHubRole != "repo_host_and_origin_only" {
+		t.Fatalf("expected schema-valid github_role, got %q", plan.PlanMeta.ProjectContext.GitHubRole)
+	}
+	if plan.PlanMeta.MCPCapabilityProfile == nil {
+		t.Fatal("expected mcp_capability_profile")
+	}
+	if plan.PlanMeta.MCPCapabilityProfile.Mode != "hybrid" {
+		t.Fatalf("expected schema-valid mcp mode, got %q", plan.PlanMeta.MCPCapabilityProfile.Mode)
+	}
+	if plan.PlanMeta.RefactorPlanMetadata == nil ||
+		plan.PlanMeta.RefactorPlanMetadata.SubmissionPolicy != "review_required_no_auto_submit" {
+		t.Fatalf("expected review-required refactor plan metadata, got %+v", plan.PlanMeta.RefactorPlanMetadata)
+	}
+
+	// Regression guard: previously emitted schema-invalid strings must be absent.
+	jsonText := string(jsonBytes)
+	if contains(jsonText, "local-first") || contains(jsonText, "local_first_context_broker") {
+		t.Fatalf("generated plan contains schema-invalid metadata values: %s", jsonText)
+	}
+
 	// Markdown clearly states review required / not submitted.
 	md := string(mdBytes)
 	if !contains(md, "Review required") || !contains(md, "not") {
