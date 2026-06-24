@@ -185,3 +185,120 @@ func TestApplyRefactorCandidateForSkippedPassDefersCandidate(t *testing.T) {
 		t.Fatalf("expected candidate deferred, got %q", got)
 	}
 }
+
+// passStatusByID reads the current status of a pass by plan id and pass id.
+func passStatusByID(t *testing.T, st *store.Store, planID, passID string) string {
+	t.Helper()
+	plan, err := st.GetPlanByPlanID(planID)
+	if err != nil {
+		t.Fatalf("GetPlanByPlanID %q: %v", planID, err)
+	}
+	pass, err := st.GetPlanPassByPassID(plan.ID, passID)
+	if err != nil {
+		t.Fatalf("GetPlanPassByPassID %q: %v", passID, err)
+	}
+	return pass.Status
+}
+
+// TestApplyAuditDecision_RefactorMismatchedScheduleRefLeavesPassAndCandidateUnchanged
+// proves the fail-closed ordering repair: when an accepted decision targets a
+// scheduled refactor pass whose active schedule ref points at a different pass,
+// ApplyAuditDecision must error before mutating the managed pass status or the
+// candidate status, and must not record a candidate status event.
+func TestApplyAuditDecision_RefactorMismatchedScheduleRefLeavesPassAndCandidateUnchanged(t *testing.T) {
+	svc, st := setupLifecycleTestService(t)
+	planID := "plan-refactor-stale-accept"
+	run, project := setupRefactorLifecycle(t, svc, st, planID, "cand-stale-accept", StatusPassAuditReady)
+
+	// Point the active schedule ref at a different pass than the seeded PASS-001.
+	if _, err := st.DB().Exec(
+		`UPDATE refactor_candidate_schedule_refs SET pass_id = 'PASS-404' WHERE project_row_id = ? AND candidate_row_id = (SELECT id FROM refactor_candidates WHERE project_row_id = ? AND candidate_id = ?)`,
+		project.ID, project.ID, "cand-stale-accept",
+	); err != nil {
+		t.Fatalf("mismatch schedule ref: %v", err)
+	}
+
+	eventsBefore := countRows(t, st.DB(), "refactor_candidate_status_events")
+
+	if err := svc.ApplyAuditDecision(run, "accepted"); err == nil {
+		t.Fatal("expected error for mismatched schedule ref, got nil")
+	}
+
+	if got := candidateStatus(t, st, project, "cand-stale-accept"); got != "scheduled" {
+		t.Fatalf("expected candidate to remain scheduled, got %q", got)
+	}
+	if got := passStatusByID(t, st, planID, "PASS-001"); got != StatusPassAuditReady {
+		t.Fatalf("expected pass to remain %q, got %q", StatusPassAuditReady, got)
+	}
+	if after := countRows(t, st.DB(), "refactor_candidate_status_events"); after != eventsBefore {
+		t.Fatalf("stale-ref failure recorded %d candidate event(s); expected 0", after-eventsBefore)
+	}
+}
+
+// TestApplyAuditDecision_RefactorMissingScheduleRefLeavesPassAndCandidateUnchanged
+// proves a missing active schedule ref on an accepted_with_warnings decision
+// fails closed without partial mutation.
+func TestApplyAuditDecision_RefactorMissingScheduleRefLeavesPassAndCandidateUnchanged(t *testing.T) {
+	svc, st := setupLifecycleTestService(t)
+	planID := "plan-refactor-missing-warn"
+	run, project := setupRefactorLifecycle(t, svc, st, planID, "cand-missing-warn", StatusPassAuditReady)
+
+	// Remove the active schedule ref entirely; the candidate stays scheduled.
+	if _, err := st.DB().Exec(
+		`DELETE FROM refactor_candidate_schedule_refs WHERE project_row_id = ? AND candidate_row_id = (SELECT id FROM refactor_candidates WHERE project_row_id = ? AND candidate_id = ?)`,
+		project.ID, project.ID, "cand-missing-warn",
+	); err != nil {
+		t.Fatalf("delete schedule ref: %v", err)
+	}
+
+	eventsBefore := countRows(t, st.DB(), "refactor_candidate_status_events")
+
+	if err := svc.ApplyAuditDecision(run, "accepted_with_warnings"); err == nil {
+		t.Fatal("expected error for missing schedule ref, got nil")
+	}
+
+	if got := candidateStatus(t, st, project, "cand-missing-warn"); got != "scheduled" {
+		t.Fatalf("expected candidate to remain scheduled, got %q", got)
+	}
+	if got := passStatusByID(t, st, planID, "PASS-001"); got != StatusPassAuditReady {
+		t.Fatalf("expected pass to remain %q, got %q", StatusPassAuditReady, got)
+	}
+	if after := countRows(t, st.DB(), "refactor_candidate_status_events"); after != eventsBefore {
+		t.Fatalf("missing-ref failure recorded %d candidate event(s); expected 0", after-eventsBefore)
+	}
+}
+
+// TestApplyAuditDecision_RefactorMalformedMetadataLeavesPassUnchanged proves a
+// refactor pass with malformed raw_pass_json on a revision_required decision
+// fails closed before any managed pass status mutation.
+func TestApplyAuditDecision_RefactorMalformedMetadataLeavesPassUnchanged(t *testing.T) {
+	svc, st := setupLifecycleTestService(t)
+	planID := "plan-refactor-malformed-revision"
+	run, _ := setupRefactorLifecycle(t, svc, st, planID, "cand-malformed-revision", StatusPassAuditReady)
+
+	// Corrupt the refactor metadata while keeping the pass typed as refactor.
+	plan, err := st.GetPlanByPlanID(planID)
+	if err != nil {
+		t.Fatalf("GetPlanByPlanID: %v", err)
+	}
+	pass, err := st.GetPlanPassByPassID(plan.ID, "PASS-001")
+	if err != nil {
+		t.Fatalf("GetPlanPassByPassID: %v", err)
+	}
+	if _, err := st.DB().Exec(`UPDATE plan_passes SET raw_pass_json = '{not-json' WHERE id = ?`, pass.ID); err != nil {
+		t.Fatalf("corrupt raw pass: %v", err)
+	}
+
+	eventsBefore := countRows(t, st.DB(), "refactor_candidate_status_events")
+
+	if err := svc.ApplyAuditDecision(run, "revision_required"); err == nil {
+		t.Fatal("expected error for malformed refactor metadata, got nil")
+	}
+
+	if got := passStatusByID(t, st, planID, "PASS-001"); got != StatusPassAuditReady {
+		t.Fatalf("expected pass to remain %q, got %q", StatusPassAuditReady, got)
+	}
+	if after := countRows(t, st.DB(), "refactor_candidate_status_events"); after != eventsBefore {
+		t.Fatalf("malformed-metadata failure recorded %d candidate event(s); expected 0", after-eventsBefore)
+	}
+}

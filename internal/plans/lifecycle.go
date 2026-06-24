@@ -123,17 +123,28 @@ func (svc *RunLifecycleService) ApplyAuditDecision(run *store.Run, decision stri
 	if err != nil {
 		return err
 	}
+
+	// Preflight the scheduled refactor candidate mapping BEFORE mutating the
+	// managed pass status. For audit decisions that map a candidate status, a
+	// stale/missing/mismatched/malformed scheduling reference must fail closed
+	// here so neither the pass status nor the candidate status is partially
+	// mutated. This runs only at this audit/lifecycle boundary -- never during
+	// read-only work-packet retrieval.
+	prepared, err := svc.prepareRefactorCandidateAuditMapping(pass, decision)
+	if err != nil {
+		return err
+	}
+
 	if targetStatus != "" && targetStatus != pass.Status {
 		if _, err := svc.store.UpdatePlanPassStatus(pass.ID, targetStatus); err != nil {
 			return fmt.Errorf("update plan pass to %s: %w", targetStatus, err)
 		}
 	}
 
-	// Map the explicit audit decision onto a scheduled refactor candidate, if any.
-	// This runs only at this audit/lifecycle boundary -- never during read-only
-	// work-packet retrieval.
-	if err := svc.applyRefactorCandidateAuditMapping(pass, decision); err != nil {
-		return err
+	if prepared != nil && !prepared.noop {
+		if err := svc.applyPreparedRefactorCandidateTransition(prepared); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -157,15 +168,33 @@ func refactorCandidateStatusForAuditDecision(decision string) (status string, re
 	}
 }
 
-// applyRefactorCandidateAuditMapping applies the candidate status outcome for a
-// scheduled refactor pass after an explicit audit decision. It is a no-op for
-// non-refactor passes and for decisions that must not mutate a candidate.
-func (svc *RunLifecycleService) applyRefactorCandidateAuditMapping(pass *store.PlanPass, decision string) error {
+// preparedRefactorCandidateTransition carries the resolved, validated state for
+// a scheduled refactor candidate transition. It is produced by a read-only
+// preflight and consumed by the mutation step, so validation can happen before
+// any managed pass status update. A prepared transition with noop set true means
+// the preflight resolved a refactor candidate that requires no mutation (terminal
+// candidate, non-active candidate, or already at the target status).
+type preparedRefactorCandidateTransition struct {
+	project      *store.Project
+	plan         *store.Plan
+	pass         *store.PlanPass
+	candidate    *store.RefactorCandidate
+	targetStatus string
+	reason       string
+	noop         bool
+}
+
+// prepareRefactorCandidateAuditMapping maps an explicit audit decision to a
+// scheduled refactor candidate target status and runs the read-only preflight.
+// It returns (nil, nil) for decisions that must not mutate a candidate and for
+// non-refactor passes. It returns an error when the pass is a scheduled refactor
+// pass whose scheduling reference is missing, mismatched, stale, or malformed.
+func (svc *RunLifecycleService) prepareRefactorCandidateAuditMapping(pass *store.PlanPass, decision string) (*preparedRefactorCandidateTransition, error) {
 	targetStatus, reason := refactorCandidateStatusForAuditDecision(decision)
 	if targetStatus == "" {
-		return nil
+		return nil, nil
 	}
-	return svc.applyScheduledRefactorCandidateTransition(pass, targetStatus, reason)
+	return svc.prepareScheduledRefactorCandidateTransition(pass, targetStatus, reason)
 }
 
 // ApplyRefactorCandidateForSkippedPass maps a skipped scheduled refactor pass to
@@ -182,26 +211,44 @@ func (svc *RunLifecycleService) ApplyRefactorCandidateForSkippedPass(pass *store
 // stale/mismatched schedule reference, never downgrades terminal candidates, and
 // is idempotent (re-applying the same status is a no-op).
 func (svc *RunLifecycleService) applyScheduledRefactorCandidateTransition(pass *store.PlanPass, targetStatus, reason string) error {
+	prepared, err := svc.prepareScheduledRefactorCandidateTransition(pass, targetStatus, reason)
+	if err != nil {
+		return err
+	}
+	if prepared == nil || prepared.noop {
+		return nil
+	}
+	return svc.applyPreparedRefactorCandidateTransition(prepared)
+}
+
+// prepareScheduledRefactorCandidateTransition is the read-only preflight for a
+// scheduled refactor candidate transition. It resolves refactor metadata, plan,
+// project, and candidate, and validates the active schedule reference WITHOUT
+// mutating any state. It fails closed (returns an error) on a stale/mismatched/
+// malformed scheduling reference, returns (nil, nil) for non-refactor passes, and
+// returns a noop prepared transition for terminal/non-active candidates and for
+// candidates already at the target status.
+func (svc *RunLifecycleService) prepareScheduledRefactorCandidateTransition(pass *store.PlanPass, targetStatus, reason string) (*preparedRefactorCandidateTransition, error) {
 	meta, err := refactorMetadataFromPass(pass)
 	if err != nil {
-		return fmt.Errorf("resolve refactor metadata for pass %q: %w", pass.PassID, err)
+		return nil, fmt.Errorf("resolve refactor metadata for pass %q: %w", pass.PassID, err)
 	}
 	if meta == nil {
-		return nil
+		return nil, nil
 	}
 
 	plan, err := svc.store.GetPlan(pass.PlanRowID)
 	if err != nil {
-		return fmt.Errorf("get plan for refactor candidate mapping: %w", err)
+		return nil, fmt.Errorf("get plan for refactor candidate mapping: %w", err)
 	}
 	project, err := svc.store.GetProject(plan.ProjectRowID)
 	if err != nil {
-		return fmt.Errorf("get project for refactor candidate mapping: %w", err)
+		return nil, fmt.Errorf("get project for refactor candidate mapping: %w", err)
 	}
 
 	candidate, err := svc.store.GetRefactorCandidateByCandidateID(project.ID, meta.CandidateID)
 	if err != nil {
-		return fmt.Errorf("lookup refactor candidate %q: %w", meta.CandidateID, err)
+		return nil, fmt.Errorf("lookup refactor candidate %q: %w", meta.CandidateID, err)
 	}
 
 	// Only actively scheduled candidates are mapped. Terminal candidates
@@ -211,19 +258,38 @@ func (svc *RunLifecycleService) applyScheduledRefactorCandidateTransition(pass *
 	case refactorCandidateStatusScheduled, refactorCandidateStatusScheduledRevisionRequired:
 		// proceed
 	default:
-		return nil
+		return &preparedRefactorCandidateTransition{noop: true}, nil
 	}
 	if candidate.Status == targetStatus {
 		// Idempotent: avoid duplicate status events on re-application.
-		return nil
+		return &preparedRefactorCandidateTransition{noop: true}, nil
 	}
 
 	// Fail closed if the scheduling reference no longer matches this plan/pass.
 	if _, blocker, err := validateRefactorSchedule(svc.store, project, plan, pass); err != nil {
-		return err
+		return nil, err
 	} else if blocker != nil {
-		return fmt.Errorf("cannot map scheduled refactor pass outcome to candidate: %s", blocker.Message)
+		return nil, fmt.Errorf("cannot map scheduled refactor pass outcome to candidate: %s", blocker.Message)
 	}
+
+	return &preparedRefactorCandidateTransition{
+		project:      project,
+		plan:         plan,
+		pass:         pass,
+		candidate:    candidate,
+		targetStatus: targetStatus,
+		reason:       reason,
+	}, nil
+}
+
+// applyPreparedRefactorCandidateTransition mutates the candidate status and
+// records a status event for a validated, non-noop prepared transition. It must
+// only be called after a successful preflight.
+func (svc *RunLifecycleService) applyPreparedRefactorCandidateTransition(prepared *preparedRefactorCandidateTransition) error {
+	project := prepared.project
+	candidate := prepared.candidate
+	targetStatus := prepared.targetStatus
+	reason := prepared.reason
 
 	params := store.UpdateRefactorCandidateStatusMetadataParams{
 		ProjectRowID: project.ID,
@@ -241,7 +307,7 @@ func (svc *RunLifecycleService) applyScheduledRefactorCandidateTransition(pass *
 		return fmt.Errorf("update refactor candidate %q to %s: %w", candidate.CandidateID, targetStatus, err)
 	}
 
-	_, err = svc.store.CreateRefactorCandidateStatusEvent(store.CreateRefactorCandidateStatusEventParams{
+	_, err := svc.store.CreateRefactorCandidateStatusEvent(store.CreateRefactorCandidateStatusEventParams{
 		EventID:        "revent-" + uuid.NewString(),
 		ProjectRowID:   project.ID,
 		ProjectID:      project.ProjectID,
