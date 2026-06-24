@@ -1,66 +1,79 @@
 package artifacts
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestContextPathUsesNamingPolicy(t *testing.T) {
-	oldBase := BaseDir
-	SetBaseDir(t.TempDir())
-	t.Cleanup(func() { SetBaseDir(oldBase) })
-
-	path, err := ContextPath("2026-06-22", "context-packets-coverage-reports", "context_packet_json")
+func TestPlanPathValidJSON(t *testing.T) {
+	got, err := PlanPath("2026-06-24", "refactor-plan-relay-5e7a9c02", "planner_pass_plan_json")
 	if err != nil {
-		t.Fatalf("ContextPath error: %v", err)
+		t.Fatalf("PlanPath returned unexpected error: %v", err)
 	}
-	want := filepath.Join(BaseDir, "handoffs", "context", "2026-06-22_context-packets-coverage-reports.context-packet.json")
-	if path != want {
-		t.Fatalf("expected %q, got %q", want, path)
+	want := filepath.Join(BaseDir, "handoffs", "plans", "2026-06-24_refactor-plan-relay-5e7a9c02.planner-pass-plan.json")
+	if got != want {
+		t.Fatalf("PlanPath = %q, want %q", got, want)
 	}
 }
 
-func TestWriteContextWritesBelowContextDir(t *testing.T) {
-	oldBase := BaseDir
-	SetBaseDir(t.TempDir())
-	t.Cleanup(func() { SetBaseDir(oldBase) })
-
-	path, err := WriteContext("2026-06-22", "packet", "context_coverage_report_json", []byte(`{"ok":true}`))
+func TestPlanPathValidMarkdown(t *testing.T) {
+	got, err := PlanPath("2026-06-24", "refactor-plan-relay-5e7a9c02", "planner_pass_plan_markdown")
 	if err != nil {
-		t.Fatalf("WriteContext error: %v", err)
+		t.Fatalf("PlanPath returned unexpected error: %v", err)
 	}
-	if !strings.HasPrefix(filepath.Clean(path), filepath.Clean(ContextDir())+string(filepath.Separator)) {
-		t.Fatalf("expected path below context dir, got %q", path)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile error: %v", err)
-	}
-	if string(data) != `{"ok":true}` {
-		t.Fatalf("unexpected artifact content: %q", string(data))
+	if !strings.HasSuffix(got, ".planner-pass-plan.md") {
+		t.Fatalf("expected markdown suffix, got %q", got)
 	}
 }
 
-func TestContextPathRejectsUnsafeInputs(t *testing.T) {
+func TestPlanPathRejectsInvalidInputs(t *testing.T) {
 	cases := []struct {
 		name string
 		date string
 		slug string
 		kind string
 	}{
-		{name: "bad date", date: "20260622", slug: "packet", kind: "context_packet_json"},
-		{name: "traversal slug", date: "2026-06-22", slug: "../packet", kind: "context_packet_json"},
-		{name: "absolute slug", date: "2026-06-22", slug: "/packet", kind: "context_packet_json"},
-		{name: "unknown kind", date: "2026-06-22", slug: "packet", kind: "planner_handoff"},
-		{name: "empty slug", date: "2026-06-22", slug: "", kind: "context_packet_json"},
+		{"bad date", "2026/06/24", "refactor-plan-relay", "planner_pass_plan_json"},
+		{"short date", "26-6-24", "refactor-plan-relay", "planner_pass_plan_json"},
+		{"bad slug uppercase", "2026-06-24", "Refactor-Plan", "planner_pass_plan_json"},
+		{"bad slug slash", "2026-06-24", "refactor/plan", "planner_pass_plan_json"},
+		{"bad slug dotdot", "2026-06-24", "..", "planner_pass_plan_json"},
+		{"unknown kind", "2026-06-24", "refactor-plan-relay", "not_a_kind"},
+		{"non-plan kind", "2026-06-24", "refactor-plan-relay", "context_packet_json"},
+		{"empty slug", "2026-06-24", "", "planner_pass_plan_json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if path, err := ContextPath(tc.date, tc.slug, tc.kind); err == nil {
-				t.Fatalf("expected error, got path %q", path)
+			if _, err := PlanPath(tc.date, tc.slug, tc.kind); err == nil {
+				t.Fatalf("expected error for %s, got nil", tc.name)
 			}
 		})
+	}
+}
+
+func TestPlanPathStaysWithinPlanDir(t *testing.T) {
+	got, err := PlanPath("2026-06-24", "refactor-plan-relay-5e7a9c02", "planner_pass_plan_json")
+	if err != nil {
+		t.Fatalf("PlanPath returned unexpected error: %v", err)
+	}
+	cleanDir := filepath.Clean(PlanDir())
+	if !strings.HasPrefix(filepath.Clean(got), cleanDir+string(filepath.Separator)) {
+		t.Fatalf("plan path %q escapes plan dir %q", got, cleanDir)
+	}
+}
+
+func TestWritePlanRoundTrips(t *testing.T) {
+	orig := BaseDir
+	t.Cleanup(func() { SetBaseDir(orig) })
+	SetBaseDir(t.TempDir())
+
+	data := []byte(`{"plan_meta":{}}`)
+	p, err := WritePlan("2026-06-24", "refactor-plan-relay-abcd1234", "planner_pass_plan_json", data)
+	if err != nil {
+		t.Fatalf("WritePlan returned unexpected error: %v", err)
+	}
+	if !strings.HasSuffix(p, "2026-06-24_refactor-plan-relay-abcd1234.planner-pass-plan.json") {
+		t.Fatalf("unexpected written path %q", p)
 	}
 }

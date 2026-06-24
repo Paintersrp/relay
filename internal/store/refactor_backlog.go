@@ -599,6 +599,20 @@ func (s *Store) GetRefactorCandidateByCandidateID(projectRowID int64, candidateI
 	return &row, nil
 }
 
+// GetRefactorCandidateByRowID resolves a candidate by its internal row ID within
+// a project. It is used to translate dependency row references back to candidate
+// records (status/candidate_id) for same-project dependency validation.
+func (s *Store) GetRefactorCandidateByRowID(projectRowID int64, rowID int64) (*RefactorCandidate, error) {
+	row, err := s.queries.GetRefactorCandidateByRowID(context.Background(), generated.GetRefactorCandidateByRowIDParams{
+		ProjectRowID: projectRowID,
+		ID:           rowID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
 func (s *Store) ListRefactorCandidatesByProject(projectRowID int64, limit int64) ([]RefactorCandidate, error) {
 	return s.queries.ListRefactorCandidatesByProject(context.Background(), generated.ListRefactorCandidatesByProjectParams{
 		ProjectRowID: projectRowID,
