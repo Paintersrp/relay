@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"relay/internal/api"
+	projectsapi "relay/internal/api/projects"
 	"relay/internal/artifacts"
 	"relay/internal/mcp"
 	"relay/internal/plans"
@@ -57,7 +58,7 @@ func TestLocalOperatorSmoke_ContextPacketRunProvenance(t *testing.T) {
 		"enabled":             true,
 	}, nil)
 
-	var projectResp api.ProjectAPIResponse
+	var projectResp projectsapi.ProjectAPIResponse
 	getJSON(t, handler, "/api/projects/smoke-relay", http.StatusOK, &projectResp)
 	if projectResp.Project == nil || len(projectResp.Project.Repositories) != 1 {
 		t.Fatalf("expected registered project repository, got %+v", projectResp)

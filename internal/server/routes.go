@@ -16,6 +16,7 @@ import (
 	projectsapi "relay/internal/api/projects"
 	runsapi "relay/internal/api/runs"
 	"relay/internal/api/shared"
+	appprojects "relay/internal/app/projects"
 	"relay/internal/devreload"
 	"relay/internal/events"
 	"relay/internal/handlers"
@@ -93,6 +94,32 @@ func resolveRunStep(status string) string {
 	}
 }
 
+// mountProjectRefactorRoutes registers project-scoped refactor backlog routes
+// against the legacy root API handler. PASS-002 preserves these route paths and
+// their existing handlers; refactor backlog implementation is not migrated in
+// this pass.
+func mountProjectRefactorRoutes(r chi.Router, h *api.APIHandler) {
+	r.Get("/projects/{projectId}/refactor/discovery-tasks", h.ListRefactorDiscoveryTasks)
+	r.Post("/projects/{projectId}/refactor/discovery-tasks", h.CreateRefactorDiscoveryTask)
+	r.Get("/projects/{projectId}/refactor/discovery-tasks/{taskId}", h.GetRefactorDiscoveryTask)
+	r.Post("/projects/{projectId}/refactor/discovery-tasks/{taskId}/update", h.UpdateRefactorDiscoveryTask)
+	r.Post("/projects/{projectId}/refactor/discovery-tasks/{taskId}/complete", h.CompleteRefactorDiscoveryTask)
+	r.Post("/projects/{projectId}/refactor/discovery-tasks/{taskId}/close", h.CloseRefactorDiscoveryTask)
+	r.Post("/projects/{projectId}/refactor/discovery-tasks/{taskId}/supersede", h.SupersedeRefactorDiscoveryTask)
+
+	r.Get("/projects/{projectId}/refactor/candidates", h.ListRefactorCandidates)
+	r.Post("/projects/{projectId}/refactor/candidates", h.CreateRefactorCandidate)
+	r.Get("/projects/{projectId}/refactor/candidates/{candidateId}", h.GetRefactorCandidate)
+	r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/update", h.UpdateRefactorCandidate)
+	r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/defer", h.DeferRefactorCandidate)
+	r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/reject", h.RejectRefactorCandidate)
+	r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/supersede", h.SupersedeRefactorCandidate)
+	r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/mark-scheduled", h.MarkScheduledRefactorCandidate)
+	r.Get("/projects/{projectId}/refactor/candidates/{candidateId}/placement-suggestion", h.GetRefactorCandidatePlacementSuggestion)
+	r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/promote", h.PromoteRefactorCandidate)
+	r.Post("/projects/{projectId}/refactor/plans/generate", h.GenerateRefactorOnlyPlan)
+}
+
 func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
@@ -110,12 +137,14 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 
 	// JSON API adapter routes
 	apiH := api.NewAPIHandler(s, log, eventHub)
+	projectH := projectsapi.NewHandler(appprojects.NewService(s))
 	r.Route("/api", func(r chi.Router) {
 		r.Use(shared.CORSMiddleware)
 		runsapi.MountRoutes(r, apiH)
 		artifactsapi.MountRoutes(r, apiH)
 		intakeapi.MountRoutes(r, apiH)
-		projectsapi.MountRoutes(r, apiH)
+		projectsapi.MountRoutes(r, projectH)
+		mountProjectRefactorRoutes(r, apiH)
 		plansapi.MountRoutes(r, apiH)
 		auditsapi.MountRoutes(r, apiH)
 		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {

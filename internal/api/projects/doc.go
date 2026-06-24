@@ -1,6 +1,7 @@
-// Package projects is a transport adapter route-mounting skeleton for PASS-001.
+// Package projects is the project feature HTTP transport adapter.
 //
-// It registers project, repository, and project-scoped refactor JSON API routes
-// against the existing *api.APIHandler methods. It must not contain business
-// logic, DTOs, mappers, presenters, or persistence access in PASS-001.
+// It owns project and project-repository API DTOs, request/response mappers,
+// the validation error response helper, HTTP handlers, and the project route
+// mounter. It delegates all business behavior to relay/internal/app/projects
+// and must not import root relay/internal/api or perform persistence directly.
 package projects

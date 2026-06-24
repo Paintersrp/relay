@@ -1,4 +1,4 @@
-package api
+package projects
 
 import (
 	"bytes"
@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"relay/internal/api/shared"
+	appprojects "relay/internal/app/projects"
 	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -18,7 +20,7 @@ import (
 func TestProjectAPIFlow(t *testing.T) {
 	t.Parallel()
 
-	_, _, router := newProjectAPITestServer(t)
+	router := newProjectAPITestServer(t)
 
 	createBody := []byte(`{"project_id":"relay","name":"Relay","description":"Registry test","status":"active"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/projects", bytes.NewReader(createBody))
@@ -95,7 +97,7 @@ func TestProjectAPIFlow(t *testing.T) {
 func TestProjectAPIRejectsInvalidRepositoryConfig(t *testing.T) {
 	t.Parallel()
 
-	_, _, router := newProjectAPITestServer(t)
+	router := newProjectAPITestServer(t)
 
 	createBody := []byte(`{"project_id":"relay","name":"Relay","status":"active"}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/projects", bytes.NewReader(createBody))
@@ -116,7 +118,7 @@ func TestProjectAPIRejectsInvalidRepositoryConfig(t *testing.T) {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var errResp RelayApiErrorShape
+	var errResp shared.ErrorShape
 	if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
 		t.Fatalf("decode error response: %v", err)
 	}
@@ -125,7 +127,7 @@ func TestProjectAPIRejectsInvalidRepositoryConfig(t *testing.T) {
 	}
 }
 
-func newProjectAPITestServer(t *testing.T) (*APIHandler, *store.Store, http.Handler) {
+func newProjectAPITestServer(t *testing.T) http.Handler {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -140,16 +142,11 @@ func newProjectAPITestServer(t *testing.T) (*APIHandler, *store.Store, http.Hand
 		}
 	})
 
-	apiH := NewAPIHandler(st, logger)
+	h := NewHandler(appprojects.NewService(st))
 	router := chi.NewRouter()
 	router.Route("/api", func(r chi.Router) {
-		r.Get("/projects", apiH.ListProjects)
-		r.Post("/projects", apiH.CreateProject)
-		r.Get("/projects/{projectId}", apiH.GetProject)
-		r.Post("/projects/{projectId}/repositories", apiH.UpsertProjectRepository)
-		r.Post("/projects/{projectId}/repositories/{repoId}/update", apiH.UpdateProjectRepository)
-		r.Post("/projects/{projectId}/repositories/{repoId}/set-enabled", apiH.SetProjectRepositoryEnabled)
+		MountRoutes(r, h)
 	})
 
-	return apiH, st, router
+	return router
 }
