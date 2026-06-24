@@ -534,6 +534,115 @@ func (s *Service) SupersedeCandidate(ctx context.Context, projectID, candidateID
 	return &res, nil, nil
 }
 
+// MarkCandidateScheduled records that a ready candidate has been slotted into a
+// managed plan/pass. It is a passive scheduling boundary: it persists a schedule
+// reference, flips the candidate status to scheduled, and appends a status event.
+// It does not create or mutate any plan, pass, or run record; PASS-004 owns
+// creating/selecting those records before calling this method.
+func (s *Service) MarkCandidateScheduled(ctx context.Context, projectID, candidateID string, input CandidateScheduleInput) (*CandidateResult, []ValidationIssue, error) {
+	_ = ctx
+	if issues := validateCandidateScheduleInput(input); len(issues) > 0 {
+		return nil, issues, nil
+	}
+
+	project, existing, issues, err := s.loadCandidateForTransition(projectID, candidateID, CandidateStatusReady)
+	if err != nil || len(issues) > 0 {
+		return nil, issues, err
+	}
+
+	active, err := s.store.GetActiveRefactorCandidateScheduleRef(project.ID, existing.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if active != nil {
+		return nil, []ValidationIssue{{
+			Field:   "status",
+			Code:    CodeInvalidTransition,
+			Message: "candidate already has an active schedule reference",
+		}}, nil
+	}
+
+	scheduleRefID := strings.TrimSpace(input.ScheduleRefID)
+	if scheduleRefID == "" {
+		scheduleRefID = "rsched-" + uuid.NewString()
+	}
+
+	if _, err := s.store.CreateRefactorCandidateScheduleRef(store.CreateRefactorCandidateScheduleRefParams{
+		ScheduleRefID:  scheduleRefID,
+		ProjectRowID:   project.ID,
+		ProjectID:      project.ProjectID,
+		CandidateRowID: existing.ID,
+		ScheduleKind:   strings.TrimSpace(input.ScheduleKind),
+		PlanID:         strings.TrimSpace(input.PlanID),
+		PassID:         strings.TrimSpace(input.PassID),
+		RunID:          strings.TrimSpace(input.RunID),
+		Note:           input.Note,
+	}); err != nil {
+		return nil, nil, err
+	}
+
+	row, err := s.store.UpdateRefactorCandidateStatusMetadata(store.UpdateRefactorCandidateStatusMetadataParams{
+		ProjectRowID: project.ID,
+		CandidateID:  existing.CandidateID,
+		Status:       CandidateStatusScheduled,
+		ScheduledAt:  nowRFC3339(),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.recordStatusEvent(project, existing.ID, "scheduled", existing.Status, CandidateStatusScheduled, input.Note); err != nil {
+		return nil, nil, err
+	}
+	res := mapCandidate(row)
+	return &res, nil, nil
+}
+
+// ApplyCandidateCompletionHook applies a completion outcome to a scheduled
+// candidate. It is a service-only boundary for future PASS-007 orchestrator/audit
+// integration: callers pass an already-decided candidate status (completed,
+// completed_with_warnings, scheduled_revision_required, or deferred). This method
+// does not infer or map audit decisions, is not exposed through any HTTP route,
+// and does not touch plan/pass/run/audit records.
+func (s *Service) ApplyCandidateCompletionHook(ctx context.Context, projectID, candidateID string, input CandidateCompletionHookInput) (*CandidateResult, []ValidationIssue, error) {
+	_ = ctx
+	if issues := validateCandidateCompletionHookInput(input); len(issues) > 0 {
+		return nil, issues, nil
+	}
+
+	project, existing, issues, err := s.loadCandidateForTransition(projectID, candidateID, CandidateStatusScheduled, CandidateStatusScheduledRevisionRequired)
+	if err != nil || len(issues) > 0 {
+		return nil, issues, err
+	}
+
+	targetStatus := strings.TrimSpace(input.Status)
+
+	params := store.UpdateRefactorCandidateStatusMetadataParams{
+		ProjectRowID: project.ID,
+		CandidateID:  existing.CandidateID,
+		Status:       targetStatus,
+	}
+	switch targetStatus {
+	case CandidateStatusCompleted, CandidateStatusCompletedWithWarnings:
+		completedAt := strings.TrimSpace(input.CompletedAt)
+		if completedAt == "" {
+			completedAt = nowRFC3339()
+		}
+		params.CompletedAt = completedAt
+	case CandidateStatusDeferred:
+		params.DeferReason = input.Reason
+	}
+
+	row, err := s.store.UpdateRefactorCandidateStatusMetadata(params)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.recordStatusEvent(project, existing.ID, targetStatus, existing.Status, targetStatus, input.Reason); err != nil {
+		return nil, nil, err
+	}
+	res := mapCandidate(row)
+	return &res, nil, nil
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------

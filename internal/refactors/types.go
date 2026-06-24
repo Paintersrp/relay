@@ -22,8 +22,12 @@ const (
 	DiscoveryStatusSuperseded = "superseded"
 )
 
-// Refactor candidate statuses. PASS-003 may write only ready/deferred/rejected/
-// superseded; scheduled/completed states are read-compatible for later passes.
+// Refactor candidate statuses. PASS-003 writes ready/deferred/rejected/
+// superseded directly, and writes scheduled through the mark-scheduled
+// boundary. PASS-003 also provides a service-only completion hook that may write
+// the later completion statuses (completed/completed_with_warnings/
+// scheduled_revision_required/deferred). PASS-003 does not map audit outcomes
+// and does not create plan, pass, or run records.
 const (
 	CandidateStatusReady                     = "ready"
 	CandidateStatusScheduled                 = "scheduled"
@@ -80,6 +84,7 @@ const (
 	CodeTerminalStatus        = "terminal_status"
 	CodeInvalidTransition     = "invalid_transition"
 	CodeSecretLikeValue       = "secret_like_value"
+	CodeInvalidScheduleKind   = "invalid_schedule_kind"
 )
 
 // TargetScope is the structured discovery task scope ({kind, values}). The JSON
@@ -142,6 +147,32 @@ type CandidateLifecycleInput struct {
 	RejectReason            string `json:"reject_reason"`
 	SupersedeReason         string `json:"supersede_reason"`
 	SupersededByCandidateID string `json:"superseded_by_candidate_id"`
+}
+
+// CandidateScheduleInput is the snake_case request payload for marking a
+// candidate scheduled. It records a passive scheduling reference (which plan/
+// pass the candidate is slotted into) without creating or mutating any plan,
+// pass, or run records. PASS-004 owns creation/selection of those records before
+// calling MarkCandidateScheduled.
+type CandidateScheduleInput struct {
+	ScheduleRefID string `json:"schedule_ref_id"`
+	ScheduleKind  string `json:"schedule_kind"`
+	PlanID        string `json:"plan_id"`
+	PassID        string `json:"pass_id"`
+	RunID         string `json:"run_id"`
+	Note          string `json:"note"`
+}
+
+// CandidateCompletionHookInput is the service-only input for applying a
+// candidate's completion outcome after a scheduled managed refactor pass has been
+// audited. It is intentionally not exposed through the PASS-003 HTTP API: callers
+// (future PASS-007 orchestrator/audit integration) pass an already-decided
+// candidate status; this hook does not map audit decisions itself. The struct
+// tags are retained for future reuse.
+type CandidateCompletionHookInput struct {
+	Status      string `json:"status"`
+	Reason      string `json:"reason"`
+	CompletedAt string `json:"completed_at"`
 }
 
 // DiscoveryTaskResult is the camelCase response shape for a discovery task.

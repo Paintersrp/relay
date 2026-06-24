@@ -76,6 +76,17 @@ type RefactorCandidateLifecycleAPIRequest struct {
 	SupersededByCandidateID string `json:"superseded_by_candidate_id"`
 }
 
+// RefactorCandidateScheduleAPIRequest is the snake_case request payload for
+// marking a candidate scheduled.
+type RefactorCandidateScheduleAPIRequest struct {
+	ScheduleRefID string `json:"schedule_ref_id"`
+	ScheduleKind  string `json:"schedule_kind"`
+	PlanID        string `json:"plan_id"`
+	PassID        string `json:"pass_id"`
+	RunID         string `json:"run_id"`
+	Note          string `json:"note"`
+}
+
 // ---------------------------------------------------------------------------
 // Discovery task handlers
 // ---------------------------------------------------------------------------
@@ -326,6 +337,37 @@ func (h *APIHandler) RejectRefactorCandidate(w http.ResponseWriter, r *http.Requ
 // SupersedeRefactorCandidate moves a candidate to superseded.
 func (h *APIHandler) SupersedeRefactorCandidate(w http.ResponseWriter, r *http.Request) {
 	h.candidateLifecycle(w, r, h.refactorService.SupersedeCandidate, "Failed to supersede candidate")
+}
+
+// MarkScheduledRefactorCandidate marks a ready candidate scheduled, recording a
+// passive scheduling reference for a managed plan/pass. It does not create or
+// mutate plan, pass, or run records.
+func (h *APIHandler) MarkScheduledRefactorCandidate(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := refactorRouteParam(w, r, "projectId")
+	if !ok {
+		return
+	}
+	candidateID, ok := refactorRouteParam(w, r, "candidateId")
+	if !ok {
+		return
+	}
+	var req RefactorCandidateScheduleAPIRequest
+	if !decodeRefactorJSON(w, r, &req) {
+		return
+	}
+
+	candidate, issues, err := h.refactorService.MarkCandidateScheduled(r.Context(), projectID, candidateID, refactors.CandidateScheduleInput{
+		ScheduleRefID: req.ScheduleRefID,
+		ScheduleKind:  req.ScheduleKind,
+		PlanID:        req.PlanID,
+		PassID:        req.PassID,
+		RunID:         req.RunID,
+		Note:          req.Note,
+	})
+	if !writeRefactorOutcome(w, issues, err, "Failed to mark candidate scheduled") {
+		return
+	}
+	writeJSON(w, http.StatusOK, RefactorBacklogAPIResponse{Success: true, Candidate: candidate})
 }
 
 type candidateLifecycleFn func(ctx context.Context, projectID, candidateID string, input refactors.CandidateLifecycleInput) (*refactors.CandidateResult, []refactors.ValidationIssue, error)

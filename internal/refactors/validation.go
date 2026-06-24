@@ -203,6 +203,79 @@ func validateCandidateLifecycleInput(action string, input CandidateLifecycleInpu
 	return issues
 }
 
+// allowedScheduleKinds is the set of schedule kinds the mark-scheduled boundary
+// accepts. It mirrors the store-layer schedule_kind contract.
+var allowedScheduleKinds = map[string]bool{
+	"existing_plan_bonus_pass":     true,
+	"generated_refactor_only_plan": true,
+}
+
+// validateCandidateScheduleInput validates a mark-scheduled request. schedule_kind,
+// plan_id, and pass_id are required; run_id, note, and schedule_ref_id are
+// optional. Secret-like values are rejected where practical.
+func validateCandidateScheduleInput(input CandidateScheduleInput) []ValidationIssue {
+	var issues []ValidationIssue
+
+	if kind := strings.TrimSpace(input.ScheduleKind); kind == "" {
+		issues = append(issues, ValidationIssue{
+			Field:   "schedule_kind",
+			Code:    CodeRequired,
+			Message: "schedule_kind is required and must not be blank",
+		})
+	} else if !allowedScheduleKinds[kind] {
+		issues = append(issues, ValidationIssue{
+			Field:   "schedule_kind",
+			Code:    CodeInvalidScheduleKind,
+			Message: "schedule_kind must be one of: existing_plan_bonus_pass, generated_refactor_only_plan",
+		})
+	}
+
+	issues = append(issues, validateNonEmptyString("plan_id", input.PlanID, CodeRequired)...)
+	issues = append(issues, validateNonEmptyString("pass_id", input.PassID, CodeRequired)...)
+
+	issues = append(issues, scanSecretLikeStrings("plan_id", input.PlanID)...)
+	issues = append(issues, scanSecretLikeStrings("pass_id", input.PassID)...)
+	issues = append(issues, scanSecretLikeStrings("run_id", input.RunID)...)
+	issues = append(issues, scanSecretLikeStrings("schedule_ref_id", input.ScheduleRefID)...)
+	issues = append(issues, scanSecretLikeStrings("note", input.Note)...)
+
+	return issues
+}
+
+// allowedCompletionHookStatuses is the set of target statuses the service-only
+// completion hook accepts. rejected is intentionally excluded: rejection requires
+// an explicit user decision in a later pass.
+var allowedCompletionHookStatuses = map[string]bool{
+	CandidateStatusCompleted:                 true,
+	CandidateStatusCompletedWithWarnings:     true,
+	CandidateStatusScheduledRevisionRequired: true,
+	CandidateStatusDeferred:                  true,
+}
+
+// validateCandidateCompletionHookInput validates a completion hook request. The
+// target status is required and must be one of the allowed completion outcomes.
+func validateCandidateCompletionHookInput(input CandidateCompletionHookInput) []ValidationIssue {
+	var issues []ValidationIssue
+
+	if status := strings.TrimSpace(input.Status); status == "" {
+		issues = append(issues, ValidationIssue{
+			Field:   "status",
+			Code:    CodeRequired,
+			Message: "status is required and must not be blank",
+		})
+	} else if !allowedCompletionHookStatuses[status] {
+		issues = append(issues, ValidationIssue{
+			Field:   "status",
+			Code:    CodeInvalidStatus,
+			Message: "status must be one of: completed, completed_with_warnings, scheduled_revision_required, deferred",
+		})
+	}
+
+	issues = append(issues, scanSecretLikeStrings("reason", input.Reason)...)
+
+	return issues
+}
+
 // metadataValues flattens metadata keys and values for secret scanning.
 func metadataValues(metadata map[string]string) []string {
 	if len(metadata) == 0 {

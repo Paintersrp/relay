@@ -135,6 +135,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/defer", apiH.DeferRefactorCandidate)
 		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/reject", apiH.RejectRefactorCandidate)
 		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/supersede", apiH.SupersedeRefactorCandidate)
+		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/mark-scheduled", apiH.MarkScheduledRefactorCandidate)
 		r.Post("/audits/local", apiH.CreateLocalAudit)
 		r.Get("/audits/local/{auditId}", apiH.GetLocalAudit)
 		r.Post("/plans/validate", apiH.ValidatePlan)
