@@ -1,7 +1,6 @@
 package plans
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 
 	"relay/internal/api/shared"
 	appplans "relay/internal/app/plans"
-	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -21,23 +19,17 @@ import (
 // services. It must not call store query methods directly for plan business logic.
 type Handler struct {
 	service      *appplans.Service
-	lifecycle    *appplans.RunLifecycleService
 	orchestrator *appplans.OrchestratorWorkService
-	store        *store.Store
 }
 
 // NewHandler constructs a plan Handler.
 func NewHandler(
 	service *appplans.Service,
-	lifecycle *appplans.RunLifecycleService,
 	orchestrator *appplans.OrchestratorWorkService,
-	s *store.Store,
 ) *Handler {
 	return &Handler{
 		service:      service,
-		lifecycle:    lifecycle,
 		orchestrator: orchestrator,
-		store:        s,
 	}
 }
 
@@ -59,37 +51,10 @@ func (h *Handler) ValidatePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plan, report, err := h.service.ValidatePlanJSON(r.Context(), rawPlan)
+	report, err := h.service.ValidatePlanForSubmission(r.Context(), rawPlan, req.ProjectID)
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
-	}
-
-	if report.Valid {
-		projectID := appplans.ResolvePlanProjectID(req.ProjectID, plan)
-		if projectID == "" {
-			report.AddIssue(
-				appplans.IssuePlanProjectRequired,
-				"$.plan_meta.project_id",
-				"project_id is required",
-			)
-		} else {
-			project, err := h.store.GetProjectByProjectID(projectID)
-			if err != nil {
-				if errors.Is(err, sql.ErrNoRows) {
-					report.AddIssue(
-						appplans.IssuePlanProjectUnknown,
-						"$.plan_meta.project_id",
-						fmt.Sprintf("project_id %q is unknown", projectID),
-					)
-				} else {
-					shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", fmt.Sprintf("lookup project: %v", err))
-					return
-				}
-			}
-			_ = project
-		}
-		report.Finalize()
 	}
 
 	shared.JSON(w, http.StatusOK, PlanAPIResponse{
@@ -180,49 +145,20 @@ func (h *Handler) ListPlans(w http.ResponseWriter, r *http.Request) {
 	}
 
 	projectIDStr := strings.TrimSpace(r.URL.Query().Get("projectId"))
-	var projectRowID int64 = 0
-	if projectIDStr != "" {
-		project, err := h.store.GetProjectByProjectID(projectIDStr)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				shared.JSON(w, http.StatusOK, PlanReadAPIResponse{
-					Success: true,
-					Count:   0,
-					Plans:   []PlanAPIReadPlan{},
-				})
-				return
-			}
-			shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to lookup project")
-			return
-		}
-		projectRowID = project.ID
-	}
 
-	var planRows []store.Plan
-	var listErr error
-	if projectRowID > 0 {
-		if status == "" {
-			planRows, listErr = h.store.ListPlansByProject(projectRowID, limit)
-		} else {
-			planRows, listErr = h.store.ListPlansByProjectAndStatus(projectRowID, status, limit)
-		}
-	} else {
-		if status == "" {
-			planRows, listErr = h.store.ListPlans(limit)
-		} else {
-			planRows, listErr = h.store.ListPlansByStatus(status, limit)
-		}
-	}
-	if listErr != nil {
+	summaries, err := h.service.ListPlanReadSummaries(r.Context(), appplans.PlanListQuery{
+		Status:    status,
+		Limit:     limit,
+		ProjectID: projectIDStr,
+	})
+	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list plans")
 		return
 	}
 
-	apiPlans := make([]PlanAPIReadPlan, 0, len(planRows))
-	for _, plan := range planRows {
-		passes, _ := h.store.ListPlanPassesByPlan(plan.ID)
-		ready, _ := h.lifecycle.CompletionReady(plan.ID)
-		apiPlans = append(apiPlans, buildPlanAPIReadPlan(plan, passes, ready))
+	apiPlans := make([]PlanAPIReadPlan, 0, len(summaries))
+	for _, summary := range summaries {
+		apiPlans = append(apiPlans, buildPlanAPIReadPlan(summary.Plan, summary.Passes, summary.CompletionReady))
 	}
 
 	shared.JSON(w, http.StatusOK, PlanReadAPIResponse{
@@ -240,49 +176,35 @@ func (h *Handler) GetPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plan, err := h.store.GetPlanByPlanID(planID)
-	if err != nil {
-		shared.Error(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found", planID))
-		return
-	}
-
 	projectIDStr := strings.TrimSpace(r.URL.Query().Get("projectId"))
-	if projectIDStr != "" && plan.ProjectID != projectIDStr {
-		shared.Error(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found in project %q", planID, projectIDStr))
-		return
-	}
 
-	passes, err := h.store.ListPlanPassesByPlan(plan.ID)
+	detail, err := h.service.GetPlanDetail(r.Context(), appplans.PlanDetailQuery{
+		PlanID:    planID,
+		ProjectID: projectIDStr,
+	})
 	if err != nil {
-		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list plan passes")
-		return
-	}
-
-	associatedRuns, err := h.store.ListRunsByPlan(plan.ID)
-	if err != nil {
-		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list associated runs")
-		return
-	}
-	runsByPass := make(map[int64][]store.Run)
-	for _, run := range associatedRuns {
-		if run.PlanPassRowID.Valid {
-			runsByPass[run.PlanPassRowID.Int64] = append(runsByPass[run.PlanPassRowID.Int64], run)
+		switch {
+		case errors.Is(err, appplans.ErrPlanNotFound):
+			shared.Error(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found", planID))
+		case errors.Is(err, appplans.ErrPlanProjectMismatch):
+			shared.Error(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found in project %q", planID, projectIDStr))
+		default:
+			shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load plan detail")
 		}
+		return
 	}
 
-	ready, _ := h.lifecycle.CompletionReady(plan.ID)
-
-	apiPasses := make([]PlanAPIPass, 0, len(passes))
-	for _, pass := range passes {
-		apiPasses = append(apiPasses, mapPlanPassToAPI(pass, runsByPass[pass.ID]))
+	apiPasses := make([]PlanAPIPass, 0, len(detail.Passes))
+	for _, pass := range detail.Passes {
+		apiPasses = append(apiPasses, mapPlanPassToAPI(pass, detail.RunsByPass[pass.ID]))
 	}
 
-	readPlan := buildPlanAPIReadPlan(*plan, passes, ready)
+	readPlan := buildPlanAPIReadPlan(detail.Plan, detail.Passes, detail.CompletionReady)
 	shared.JSON(w, http.StatusOK, PlanReadAPIResponse{
 		Success:         true,
 		Plan:            &readPlan,
 		Passes:          apiPasses,
-		CompletionReady: ready,
+		CompletionReady: detail.CompletionReady,
 	})
 }
 
@@ -295,40 +217,34 @@ func (h *Handler) GetPlanPass(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plan, err := h.store.GetPlanByPlanID(planID)
-	if err != nil {
-		shared.Error(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found", planID))
-		return
-	}
-
 	projectIDStr := strings.TrimSpace(r.URL.Query().Get("projectId"))
-	if projectIDStr != "" && plan.ProjectID != projectIDStr {
-		shared.Error(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found in project %q", planID, projectIDStr))
-		return
-	}
 
-	pass, err := h.store.GetPlanPassByPassID(plan.ID, passID)
+	detail, err := h.service.GetPlanPassDetail(r.Context(), appplans.PlanPassDetailQuery{
+		PlanID:    planID,
+		PassID:    passID,
+		ProjectID: projectIDStr,
+	})
 	if err != nil {
-		shared.Error(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Pass with ID %q not found", passID))
+		switch {
+		case errors.Is(err, appplans.ErrPlanNotFound):
+			shared.Error(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found", planID))
+		case errors.Is(err, appplans.ErrPlanProjectMismatch):
+			shared.Error(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Plan with ID %q not found in project %q", planID, projectIDStr))
+		case errors.Is(err, appplans.ErrPlanPassNotFound):
+			shared.Error(w, http.StatusNotFound, "NOT_FOUND", fmt.Sprintf("Pass with ID %q not found", passID))
+		default:
+			shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list associated runs")
+		}
 		return
 	}
 
-	passes, _ := h.store.ListPlanPassesByPlan(plan.ID)
-	ready, _ := h.lifecycle.CompletionReady(plan.ID)
-
-	associatedRuns, err := h.store.ListRunsByPlanPass(pass.ID)
-	if err != nil {
-		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list associated runs")
-		return
-	}
-
-	readPlan := buildPlanAPIReadPlan(*plan, passes, ready)
-	apiPass := mapPlanPassToAPI(*pass, associatedRuns)
+	readPlan := buildPlanAPIReadPlan(detail.Plan, detail.Passes, detail.CompletionReady)
+	apiPass := mapPlanPassToAPI(detail.Pass, detail.AssociatedRuns)
 	shared.JSON(w, http.StatusOK, PlanReadAPIResponse{
 		Success:         true,
 		Plan:            &readPlan,
 		Pass:            &apiPass,
-		CompletionReady: ready,
+		CompletionReady: detail.CompletionReady,
 	})
 }
 

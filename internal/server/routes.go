@@ -144,7 +144,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	planSvc := appplans.NewService(s)
 	planLifecycleSvc := appplans.NewRunLifecycleService(s)
 	planWorkSvc := appplans.NewOrchestratorWorkService(s)
-	planH := plansapi.NewHandler(planSvc, planLifecycleSvc, planWorkSvc, s)
+	planH := plansapi.NewHandler(planSvc, planWorkSvc)
 	runSvc := appruns.NewService(s, log, eventHub)
 	runH := runsapi.NewHandler(runSvc, planLifecycleSvc)
 	artifactH := artifactsapi.NewHandler(runSvc)

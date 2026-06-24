@@ -41,9 +41,8 @@ func newNextPassWorkTestServer(t *testing.T) (*plansapi.Handler, *store.Store, h
 	}
 
 	planSvc := appplans.NewService(st)
-	planLifecycleSvc := appplans.NewRunLifecycleService(st)
 	planWorkSvc := appplans.NewOrchestratorWorkService(st)
-	planH := plansapi.NewHandler(planSvc, planLifecycleSvc, planWorkSvc, st)
+	planH := plansapi.NewHandler(planSvc, planWorkSvc)
 	router := chi.NewRouter()
 	router.Route("/api", func(r chi.Router) {
 		plansapi.MountRoutes(r, planH)

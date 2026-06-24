@@ -25,8 +25,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"relay/internal/api/shared"
 	plansapi "relay/internal/api/plans"
+	"relay/internal/api/shared"
 	appplans "relay/internal/app/plans"
 	"relay/internal/store"
 
@@ -146,9 +146,8 @@ func run() error {
 	}
 
 	planSvc := appplans.NewService(st)
-	planLifecycleSvc := appplans.NewRunLifecycleService(st)
 	planWorkSvc := appplans.NewOrchestratorWorkService(st)
-	planH := plansapi.NewHandler(planSvc, planLifecycleSvc, planWorkSvc, st)
+	planH := plansapi.NewHandler(planSvc, planWorkSvc)
 	r := chi.NewRouter()
 	r.Route("/api", func(r chi.Router) {
 		r.Use(shared.CORSMiddleware)
