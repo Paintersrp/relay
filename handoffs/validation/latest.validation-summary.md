@@ -1,21 +1,18 @@
 # Latest Relay Validation Report
 
 - status: passed
-- base_commit: 6b034476cba5eb47926a92c76e37b812c9f5a09e
-- validated_source_snapshot: a9e840727c5d8094ecbaaad725b5b9c0678f6655c32970c1935c948fc147189c
+- base_commit: f5a203b10370ef7f175daf861ec88352a78c3804
+- validated_source_snapshot: 09695d00b2cedfd23f18620b3723a23c541dabdb665c5a250ada5ef1a2f38524
 - worktree_dirty: true
-- created_at: 2026-06-23T22:35:03Z
+- created_at: 2026-06-24T01:44:15Z
 
 ## Validated source changes
 
-- M internal/api/api.go
-- ?? internal/api/next_pass_work_test.go
-- M internal/db/queries/context_packets.sql
-- ?? internal/plans/work_packets_test.go
-- ?? internal/plans/work_packets.go
-- M internal/server/routes.go
-- M internal/store/context_packets.go
-- M internal/store/generated/context_packets.sql.go
+- M internal/compiler/compiler_test.go
+- M internal/pipeline/agent_execution_test.go
+- M internal/repos/discover.go
+- M internal/smoke/e2e_smoke_test.go
+- M internal/validationrunner/runner.go
 
 ## Commands
 

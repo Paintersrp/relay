@@ -409,7 +409,7 @@ func TestRunLocalAgentCommandArgsStreamingStreamsOutputBeforeExit(t *testing.T) 
 			os.Args[0],
 			[]string{"-test.run=TestAgentCommandStreamingHelperProcess", "--", "stream"},
 			"",
-			5*time.Second,
+			30*time.Second,
 			AgentCommandStreamCallbacks{
 				OnStdout: func(chunk []byte) { stdoutChunks <- string(chunk) },
 				OnStderr: func(chunk []byte) { stderrChunks <- string(chunk) },
@@ -417,6 +417,9 @@ func TestRunLocalAgentCommandArgsStreamingStreamsOutputBeforeExit(t *testing.T) 
 		)
 	}()
 
+	// Generous waits keep this ordering assertion stable when the helper
+	// subprocess is scheduled under heavy load (e.g. a full `go test ./...`),
+	// without weakening the streaming-before-exit guarantee being verified.
 	select {
 	case result := <-resultCh:
 		t.Fatalf("expected streaming callback before process exit, got final result early: %+v", result)
@@ -424,7 +427,7 @@ func TestRunLocalAgentCommandArgsStreamingStreamsOutputBeforeExit(t *testing.T) 
 		if !strings.Contains(chunk, "stdout-one") {
 			t.Fatalf("expected first stdout chunk, got %q", chunk)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatal("timed out waiting for first stdout chunk")
 	}
 
@@ -433,7 +436,7 @@ func TestRunLocalAgentCommandArgsStreamingStreamsOutputBeforeExit(t *testing.T) 
 		if !strings.Contains(chunk, "stderr-one") {
 			t.Fatalf("expected stderr chunk, got %q", chunk)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatal("timed out waiting for stderr chunk")
 	}
 

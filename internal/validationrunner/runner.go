@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -82,7 +83,8 @@ func runCommand(ctx context.Context, cmd sealedCommand, workdir string) commandO
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	c := exec.CommandContext(cmdCtx, "cmd", "/C", cmd.Command)
+	shell := shellCommand(cmd.Command)
+	c := exec.CommandContext(cmdCtx, shell[0], shell[1:]...)
 	c.Dir = workdir
 	c.Stdout = &stdoutBuf
 	c.Stderr = &stderrBuf
@@ -115,6 +117,16 @@ func runCommand(ctx context.Context, cmd sealedCommand, workdir string) commandO
 
 func runAndCapture(ctx context.Context, cmd sealedCommand, workdir string) commandOutput {
 	return runCommand(ctx, cmd, workdir)
+}
+
+// shellCommand returns the argv used to execute a validation command through
+// the host's default shell. Windows uses cmd /C; every other platform uses
+// the POSIX shell so commands run consistently in CI and on developer machines.
+func shellCommand(command string) []string {
+	if runtime.GOOS == "windows" {
+		return []string{"cmd", "/C", command}
+	}
+	return []string{"sh", "-c", command}
 }
 
 func writeArtifactFile(path, content string) error {

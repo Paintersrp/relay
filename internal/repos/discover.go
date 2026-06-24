@@ -2,6 +2,7 @@ package repos
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -104,6 +105,12 @@ func isRepo(path string) bool {
 	return info.IsDir() || info.Mode().IsRegular()
 }
 
-func NormalizePath(path string) string {
-	return filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+func NormalizePath(p string) string {
+	// Normalize to forward-slash form regardless of host OS so Windows-style
+	// inputs (e.g. "D:\Code\relay") are handled consistently on every platform.
+	// filepath.ToSlash only rewrites the host separator, which leaves
+	// backslashes intact on non-Windows hosts, so convert them explicitly and
+	// clean with the slash-based path package.
+	p = strings.ReplaceAll(strings.TrimSpace(p), `\`, "/")
+	return path.Clean(p)
 }

@@ -114,8 +114,27 @@ func TestE2EPipelineSmoke(t *testing.T) {
 	handler := server.BuildRoutes(s, rs, logger)
 
 	// Create project for validation/submission
-	if _, err := s.CreateProject("smoke-project", "Smoke Project", "E2E Smoke Project", "active", ""); err != nil {
+	project, err := s.CreateProject("smoke-project", "Smoke Project", "E2E Smoke Project", "active", "")
+	if err != nil {
 		t.Fatalf("failed to create project: %v", err)
+	}
+
+	// Seed a completed source snapshot for the project. PASS-001 declares
+	// source/context requirements, so the intake provenance gate requires a
+	// valid source_snapshot_id (or context_packet_id) before a managed run can
+	// be created. This mirrors the snapshot a Planner produces during context
+	// gathering.
+	const smokeSourceSnapshotID = "e2e-smoke-snapshot-1"
+	if _, err := s.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+		SourceSnapshotID: smokeSourceSnapshotID,
+		ProjectRowID:     project.ID,
+		ProjectID:        "smoke-project",
+		SnapshotKind:     "clean_commit",
+		Status:           "created",
+		CompletedAt:      "2026-06-21T00:00:00Z",
+		SummaryJSON:      "{}",
+	}); err != nil {
+		t.Fatalf("failed to seed source snapshot: %v", err)
 	}
 
 	// 1. Submit Plan v2 JSON to /api/plans
@@ -143,6 +162,7 @@ func TestE2EPipelineSmoke(t *testing.T) {
 		Branch:                 "main",
 		PlanID:                 "e2e-smoke-plan-1",
 		PassID:                 "PASS-001",
+		SourceSnapshotID:       smokeSourceSnapshotID,
 	}
 	handoffReqBytes, _ := json.Marshal(handoffReq)
 	req = httptest.NewRequest("POST", "/api/intake/planner-handoff", bytes.NewReader(handoffReqBytes))
