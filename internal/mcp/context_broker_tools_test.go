@@ -63,8 +63,8 @@ func TestServerToolsList_ContextBrokerEnabled(t *testing.T) {
 			t.Fatalf("expected broker tool %q when enabled", name)
 		}
 	}
-	if len(list.Tools) != 30 {
-		t.Fatalf("expected 30 total tools when broker is enabled (6 core + 24 broker), got %d", len(list.Tools))
+	if len(list.Tools) != 48 {
+		t.Fatalf("expected 48 total tools when broker is enabled (6 core + 24 broker + 18 refactor backlog), got %d", len(list.Tools))
 	}
 }
 

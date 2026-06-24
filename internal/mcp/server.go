@@ -58,6 +58,7 @@ func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 	}
 	if s.contextBrokerEnabled() {
 		s.tools = append(s.tools, contextBrokerToolDefinitions()...)
+		s.tools = append(s.tools, refactorBacklogToolDefinitions()...)
 	}
 	return s
 }
@@ -310,6 +311,96 @@ func (s *Server) handleToolsCall(req Request) Response {
 			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 		}
 		result = s.HandleSupersedeProjectContextRecord(args)
+	case "list_refactor_discovery_tasks":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleListRefactorDiscoveryTasks(args)
+	case "get_refactor_discovery_task":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGetRefactorDiscoveryTask(args)
+	case "create_refactor_discovery_task":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleCreateRefactorDiscoveryTask(args)
+	case "update_refactor_discovery_task":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleUpdateRefactorDiscoveryTask(args)
+	case "complete_refactor_discovery_task":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleCompleteRefactorDiscoveryTask(args)
+	case "close_refactor_discovery_task":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleCloseRefactorDiscoveryTask(args)
+	case "supersede_refactor_discovery_task":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleSupersedeRefactorDiscoveryTask(args)
+	case "list_refactor_candidates":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleListRefactorCandidates(args)
+	case "get_refactor_candidate":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGetRefactorCandidate(args)
+	case "search_refactor_candidates":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleSearchRefactorCandidates(args)
+	case "create_refactor_candidate":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleCreateRefactorCandidate(args)
+	case "update_refactor_candidate":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleUpdateRefactorCandidate(args)
+	case "defer_refactor_candidate":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleDeferRefactorCandidate(args)
+	case "reject_refactor_candidate":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleRejectRefactorCandidate(args)
+	case "supersede_refactor_candidate":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleSupersedeRefactorCandidate(args)
+	case "suggest_refactor_candidate_placement":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleSuggestRefactorCandidatePlacement(args)
+	case "promote_refactor_candidate_to_plan":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandlePromoteRefactorCandidateToPlan(args)
+	case "generate_refactor_only_plan":
+		if !s.contextBrokerEnabled() {
+			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+		}
+		result = s.HandleGenerateRefactorOnlyPlan(args)
 	default:
 		return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 	}
