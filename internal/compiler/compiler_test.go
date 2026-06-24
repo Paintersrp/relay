@@ -101,7 +101,7 @@ func TestCompiler(t *testing.T) {
 		_, _ = s.CreateArtifact(run.ID, "parsed_frontmatter", metaPath, "application/json")
 
 		// Write planner_handoff.md
-		exampleBytes, err := os.ReadFile("d:/Code/relay/internal/compiler/testdata/formal_planner_handoff.md")
+		exampleBytes, err := os.ReadFile(filepath.Join("testdata", "formal_planner_handoff.md"))
 		if err != nil {
 			t.Fatalf("failed to read formal_planner_handoff fixture: %v", err)
 		}
@@ -272,7 +272,7 @@ func TestCompiler(t *testing.T) {
 		_, _ = s.CreateArtifact(run.ID, "run_config", configPath, "application/json")
 
 		// Write planner_handoff.md
-		exampleBytes, _ := os.ReadFile("d:/Code/relay/internal/compiler/testdata/formal_planner_handoff.md")
+		exampleBytes, _ := os.ReadFile(filepath.Join("testdata", "formal_planner_handoff.md"))
 		handoffPath, _ := artifacts.Write(run.ID, "planner_handoff", "planner_handoff.md", exampleBytes)
 		_, _ = s.CreateArtifact(run.ID, "planner_handoff", handoffPath, "text/markdown")
 
