@@ -497,7 +497,23 @@ func TestAPI(t *testing.T) {
 	t.Run("POST /api/intake/planner-handoff - Success (Plan and Pass)", func(t *testing.T) {
 		createPlan(t, "plan-api-plan-pass")
 
-		body := `{"planner_handoff_markdown":"---\ntitle: Pass Handoff\nrepo: test-repo\nbranch: main\n---\n# Pass Handoff\nGoal: test","repo":"test-repo","planId":"plan-api-plan-pass","passId":"PASS-002"}`
+		planForSnapshot, err := s.GetPlanByPlanID("plan-api-plan-pass")
+		if err != nil {
+			t.Fatalf("get seeded plan for snapshot: %v", err)
+		}
+		if _, err := s.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+			SourceSnapshotID: "snapshot-api-plan-pass",
+			ProjectRowID:     planForSnapshot.ProjectRowID,
+			ProjectID:        "relay",
+			SnapshotKind:     "clean_commit",
+			Status:           "created",
+			CompletedAt:      "2026-06-23T00:00:00Z",
+			SummaryJSON:      "{}",
+		}); err != nil {
+			t.Fatalf("seed source snapshot: %v", err)
+		}
+
+		body := `{"planner_handoff_markdown":"---\ntitle: Pass Handoff\nrepo: test-repo\nbranch: main\n---\n# Pass Handoff\nGoal: test","repo":"test-repo","planId":"plan-api-plan-pass","passId":"PASS-002","sourceSnapshotId":"snapshot-api-plan-pass"}`
 		req := httptest.NewRequest("POST", "/api/intake/planner-handoff", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()

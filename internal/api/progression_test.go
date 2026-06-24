@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"relay/internal/artifacts"
@@ -158,6 +159,7 @@ func passStatus(t *testing.T, st *store.Store, passID int64) string {
 func TestRunProgression_IntakeCreatesRunCreatedThenInProgress(t *testing.T) {
 	st, router := newProgressionTestServer(t)
 	plan, pass := seedProgressionPlan(t, st, "progression-intake")
+	seedProgressionSourceSnapshot(t, st, plan, "snapshot-progression-intake")
 
 	// 1. Intake a planner handoff associated with the managed pass.
 	intakeBody, _ := json.Marshal(map[string]string{
@@ -166,6 +168,7 @@ func TestRunProgression_IntakeCreatesRunCreatedThenInProgress(t *testing.T) {
 		"branch":                   "main",
 		"plan_id":                  plan.PlanID,
 		"pass_id":                  "PASS-001",
+		"source_snapshot_id":       "snapshot-progression-intake",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/intake/planner-handoff", bytes.NewReader(intakeBody))
 	req.Header.Set("Content-Type", "application/json")
@@ -342,6 +345,93 @@ func seedAssociatedRun(t *testing.T, st *store.Store, plan *store.Plan, pass *st
 		t.Fatalf("create associated run: %v", err)
 	}
 	return run
+}
+
+// seedProgressionSourceSnapshot creates a completed source snapshot tied to the
+// plan's project so it can satisfy the managed-pass provenance gate.
+func seedProgressionSourceSnapshot(t *testing.T, st *store.Store, plan *store.Plan, snapshotID string) *store.SourceSnapshot {
+	t.Helper()
+	snapshot, err := st.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+		SourceSnapshotID: snapshotID,
+		ProjectRowID:     plan.ProjectRowID,
+		ProjectID:        "relay",
+		SnapshotKind:     "clean_commit",
+		Status:           "created",
+		CompletedAt:      "2026-06-23T00:00:00Z",
+		SummaryJSON:      "{}",
+	})
+	if err != nil {
+		t.Fatalf("create source snapshot: %v", err)
+	}
+	return snapshot
+}
+
+// TestRunProgression_IntakeMissingSourceContextProvenanceBlocksManagedPass verifies
+// that a managed pass declaring source/context requirements cannot create an
+// associated run when no provenance is supplied, and the pass status is unchanged.
+func TestRunProgression_IntakeMissingSourceContextProvenanceBlocksManagedPass(t *testing.T) {
+	st, router := newProgressionTestServer(t)
+	plan, pass := seedProgressionPlan(t, st, "progression-missing-provenance")
+
+	intakeBody, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": "# Missing Provenance\n\nManaged pass run.\n",
+		"repo":                     "relay",
+		"branch":                   "main",
+		"plan_id":                  plan.PlanID,
+		"pass_id":                  "PASS-001",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/intake/planner-handoff", bytes.NewReader(intakeBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing provenance, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var errResp struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if errResp.Error != "BAD_REQUEST" {
+		t.Fatalf("expected BAD_REQUEST error code, got %q", errResp.Error)
+	}
+	if !strings.Contains(errResp.Message, "source/context provenance") {
+		t.Fatalf("expected message to mention source/context provenance, got %q", errResp.Message)
+	}
+	if got := passStatus(t, st, pass.ID); got != "planned" {
+		t.Fatalf("expected pass to remain planned after blocked intake, got %q", got)
+	}
+}
+
+// TestRunProgression_IntakeValidSourceSnapshotProvenanceCreatesRun verifies that a
+// managed pass-associated run is created when a valid source snapshot ID is supplied.
+func TestRunProgression_IntakeValidSourceSnapshotProvenanceCreatesRun(t *testing.T) {
+	st, router := newProgressionTestServer(t)
+	plan, pass := seedProgressionPlan(t, st, "progression-valid-provenance")
+	seedProgressionSourceSnapshot(t, st, plan, "snapshot-progression-valid")
+
+	intakeBody, _ := json.Marshal(map[string]string{
+		"planner_handoff_markdown": "# Valid Provenance\n\nManaged pass run.\n",
+		"repo":                     "relay",
+		"branch":                   "main",
+		"plan_id":                  plan.PlanID,
+		"pass_id":                  "PASS-001",
+		"source_snapshot_id":       "snapshot-progression-valid",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/intake/planner-handoff", bytes.NewReader(intakeBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 with valid provenance, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := passStatus(t, st, pass.ID); got != "run_created" {
+		t.Fatalf("expected pass run_created with valid provenance, got %q", got)
+	}
 }
 
 func progressionBoolPtr(value bool) *bool {

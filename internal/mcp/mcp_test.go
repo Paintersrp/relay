@@ -51,6 +51,27 @@ func setupTestDeps(t *testing.T) *MCPDeps {
 	return &MCPDeps{Store: s, Log: discardLogger()}
 }
 
+// seedMCPSourceSnapshot creates a completed source snapshot tied to the plan's project
+// so it can satisfy the managed-pass source/context provenance gate.
+func seedMCPSourceSnapshot(t *testing.T, s *store.Store, planID, snapshotID string) {
+	t.Helper()
+	plan, err := s.GetPlanByPlanID(planID)
+	if err != nil {
+		t.Fatalf("get plan for snapshot seed: %v", err)
+	}
+	if _, err := s.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+		SourceSnapshotID: snapshotID,
+		ProjectRowID:     plan.ProjectRowID,
+		ProjectID:        "relay",
+		SnapshotKind:     "clean_commit",
+		Status:           "created",
+		CompletedAt:      "2026-06-23T00:00:00Z",
+		SummaryJSON:      "{}",
+	}); err != nil {
+		t.Fatalf("seed source snapshot: %v", err)
+	}
+}
+
 // --- submit_test_audit_packet tests (Pass 13A, preserved) ---
 
 // TestHandleSubmitTestAuditPacket_DocumentedPayload verifies that the standard
@@ -599,11 +620,14 @@ func TestHandleCreateRunFromPlannerHandoff_PlanPassAssociation(t *testing.T) {
 		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
 	}
 
+	seedMCPSourceSnapshot(t, deps.Store, "plan-123", "snapshot-mcp-plan-pass")
+
 	args, _ := json.Marshal(map[string]string{
 		"planner_handoff_markdown": "---\ntitle: Pass Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Pass Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
 		"pass_id":                  "PASS-002",
+		"source_snapshot_id":       "snapshot-mcp-plan-pass",
 	})
 	result := srv.HandleCreateRunFromPlannerHandoff(args)
 	if result.IsError {
@@ -949,6 +973,8 @@ func TestHandleCreateRunFromPlannerHandoff_ArtifactFailureRollsBackPassTransitio
 		t.Fatalf("get pass: %v", err)
 	}
 
+	seedMCPSourceSnapshot(t, deps.Store, "plan-123", "snapshot-mcp-rollback")
+
 	blockingPath := filepath.Join(t.TempDir(), "artifact-file")
 	if err := os.WriteFile(blockingPath, []byte("block"), 0644); err != nil {
 		t.Fatalf("create blocking file: %v", err)
@@ -961,6 +987,7 @@ func TestHandleCreateRunFromPlannerHandoff_ArtifactFailureRollsBackPassTransitio
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
 		"pass_id":                  "PASS-001",
+		"source_snapshot_id":       "snapshot-mcp-rollback",
 	})
 	result := srv.HandleCreateRunFromPlannerHandoff(args)
 	if !result.IsError {
@@ -1301,11 +1328,14 @@ func TestHandleSubmitAuditPacket_AssociatedPassLifecycle(t *testing.T) {
 		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
 	}
 
+	seedMCPSourceSnapshot(t, deps.Store, "plan-123", "snapshot-mcp-audit-lifecycle")
+
 	createArgs, _ := json.Marshal(map[string]string{
 		"planner_handoff_markdown": "---\ntitle: MCP Associated Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# MCP Associated Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
 		"pass_id":                  "PASS-001",
+		"source_snapshot_id":       "snapshot-mcp-audit-lifecycle",
 	})
 	createResult := srv.HandleCreateRunFromPlannerHandoff(createArgs)
 	if createResult.IsError {
