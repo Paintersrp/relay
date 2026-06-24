@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"relay/internal/artifacts"
 	appplans "relay/internal/app/plans"
+	"relay/internal/artifacts"
 	"relay/internal/store"
 )
 

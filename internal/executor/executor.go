@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
+	"relay/internal/app/plans"
 	"relay/internal/artifacts"
 	"relay/internal/events"
 	"relay/internal/pipeline"
-	"relay/internal/plans"
 	"relay/internal/store"
 )
 

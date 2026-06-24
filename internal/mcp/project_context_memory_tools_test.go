@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"relay/internal/projects"
+	"relay/internal/app/projects"
 )
 
 func TestHandleProjectContextMemoryHappyPath(t *testing.T) {

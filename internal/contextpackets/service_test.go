@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"relay/internal/app/projects"
 	"relay/internal/artifacts"
-	"relay/internal/projects"
 	"relay/internal/sources"
 	"relay/internal/store"
 )

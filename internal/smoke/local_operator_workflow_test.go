@@ -15,9 +15,9 @@ import (
 
 	"relay/internal/api"
 	projectsapi "relay/internal/api/projects"
+	"relay/internal/app/plans"
 	"relay/internal/artifacts"
 	"relay/internal/mcp"
-	"relay/internal/plans"
 	"relay/internal/repos"
 	"relay/internal/server"
 	"relay/internal/store"

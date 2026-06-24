@@ -15,10 +15,15 @@ import (
 	"testing"
 	"time"
 
+	artifactsapi "relay/internal/api/artifacts"
 	auditsapi "relay/internal/api/audits"
-	"relay/internal/artifacts"
+	intakeapi "relay/internal/api/intake"
+	runsapi "relay/internal/api/runs"
 	appaudits "relay/internal/app/audits"
+	appintake "relay/internal/app/intake"
 	appplans "relay/internal/app/plans"
+	appruns "relay/internal/app/runs"
+	"relay/internal/artifacts"
 	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -166,20 +171,20 @@ func TestAPI(t *testing.T) {
 	// Use temp dir for artifact storage
 	artifacts.SetBaseDir(dir)
 
-	apiH := NewAPIHandler(s, logger)
+	planLifecycleSvc := appplans.NewRunLifecycleService(s)
+	runSvc := appruns.NewService(s, logger, nil)
+	runH := runsapi.NewHandler(runSvc, planLifecycleSvc)
+	artifactH := artifactsapi.NewHandler(runSvc)
+	intakeH := intakeapi.NewHandler(appintake.NewService(s), runSvc)
 	auditSvc := appaudits.NewService(s, nil)
 	auditH := auditsapi.NewHandler(auditSvc)
 	r := chi.NewRouter()
 	r.Route("/api", func(r chi.Router) {
 		r.Use(CORSMiddleware)
-		r.Get("/runs", apiH.ListRuns)
-		r.Get("/runs/{id}", apiH.GetRun)
-		r.Get("/runs/{id}/artifacts", apiH.ListArtifacts)
-		r.Get("/runs/{id}/events", apiH.ListEvents)
+		runsapi.MountRoutes(r, runH)
+		artifactsapi.MountRoutes(r, artifactH)
 		auditsapi.MountRoutes(r, auditH)
-		r.Post("/intake/planner-handoff", apiH.IntakePlannerHandoff)
-		r.Post("/runs/{id}/approve-intake", apiH.ApproveIntake)
-		r.Post("/runs/{id}/prepare", apiH.PrepareRun)
+		intakeapi.MountRoutes(r, intakeH)
 		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)
@@ -1447,93 +1452,4 @@ func TestAPI(t *testing.T) {
 	s.UpdateRunStatus(run.ID, "completed")
 
 	t.Logf("Audit transition tests completed at %s", time.Now().Format(time.RFC3339))
-}
-
-func TestResolveIntakeExecutorAdapter(t *testing.T) {
-	cases := []struct {
-		name         string
-		req          PlannerHandoffIntakeRequest
-		metadata     map[string]string
-		wantAdapter  string
-		wantExplicit bool
-		wantErr      bool
-	}{
-		{
-			name:         "explicit codex in req",
-			req:          PlannerHandoffIntakeRequest{ExecutorAdapter: "codex"},
-			metadata:     nil,
-			wantAdapter:  "codex",
-			wantExplicit: true,
-			wantErr:      false,
-		},
-		{
-			name:         "snake_case agy alias in metadata",
-			req:          PlannerHandoffIntakeRequest{},
-			metadata:     map[string]string{"executor_adapter": "agy"},
-			wantAdapter:  "antigravity",
-			wantExplicit: true,
-			wantErr:      false,
-		},
-		{
-			name:         "invalid metadata executor_adapter",
-			req:          PlannerHandoffIntakeRequest{},
-			metadata:     map[string]string{"executor_adapter": "invalid_adapter"},
-			wantAdapter:  "",
-			wantExplicit: true,
-			wantErr:      true,
-		},
-		{
-			name:         "target_executor codex maps as explicit adapter fallback",
-			req:          PlannerHandoffIntakeRequest{},
-			metadata:     map[string]string{"target_executor": "codex"},
-			wantAdapter:  "codex",
-			wantExplicit: true,
-			wantErr:      false,
-		},
-		{
-			name:         "target_executor agy maps as explicit antigravity adapter fallback",
-			req:          PlannerHandoffIntakeRequest{},
-			metadata:     map[string]string{"target_executor": "agy"},
-			wantAdapter:  "antigravity",
-			wantExplicit: true,
-			wantErr:      false,
-		},
-		{
-			name:         "target_executor deepseek-v4-flash defaulting without error",
-			req:          PlannerHandoffIntakeRequest{},
-			metadata:     map[string]string{"target_executor": "deepseek-v4-flash"},
-			wantAdapter:  "opencode_go",
-			wantExplicit: false,
-			wantErr:      false,
-		},
-		{
-			name:         "no fields defaulting without error",
-			req:          PlannerHandoffIntakeRequest{},
-			metadata:     nil,
-			wantAdapter:  "opencode_go",
-			wantExplicit: false,
-			wantErr:      false,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			adapter, explicit, err := resolveIntakeExecutorAdapter(tc.req, tc.metadata)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("expected no error, got %v", err)
-				}
-				if adapter != tc.wantAdapter {
-					t.Errorf("expected adapter %q, got %q", tc.wantAdapter, adapter)
-				}
-				if explicit != tc.wantExplicit {
-					t.Errorf("expected explicit=%v, got %v", tc.wantExplicit, explicit)
-				}
-			}
-		})
-	}
 }

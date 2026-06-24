@@ -22,8 +22,7 @@ import (
 
 func TestLocalAuditAPIFlowAndValidation(t *testing.T) {
 	requireAPILocalAuditGit(t)
-	apiH, st, router, repoRoot := newLocalAuditAPITestServer(t)
-	_ = apiH
+	st, router, repoRoot := newLocalAuditAPITestServer(t)
 	project, err := st.CreateProject("relay", "Relay", "", "active", "relay")
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
@@ -97,7 +96,7 @@ func TestLocalAuditAPIFlowAndValidation(t *testing.T) {
 	}
 }
 
-func newLocalAuditAPITestServer(t *testing.T) (*APIHandler, *store.Store, http.Handler, string) {
+func newLocalAuditAPITestServer(t *testing.T) (*store.Store, http.Handler, string) {
 	t.Helper()
 	dir := t.TempDir()
 	artifacts.SetBaseDir(filepath.Join(dir, "artifacts"))
@@ -108,13 +107,12 @@ func newLocalAuditAPITestServer(t *testing.T) (*APIHandler, *store.Store, http.H
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	repoRoot := setupAPILocalAuditGitRepo(t)
-	apiH := NewAPIHandler(st, logger)
 	auditH := auditsapi.NewHandler(appaudits.NewService(st, nil))
 	router := chi.NewRouter()
 	router.Route("/api", func(r chi.Router) {
 		auditsapi.MountRoutes(r, auditH)
 	})
-	return apiH, st, router, repoRoot
+	return st, router, repoRoot
 }
 
 func requireAPILocalAuditGit(t *testing.T) {

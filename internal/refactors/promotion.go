@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"relay/internal/app/plans"
 	"relay/internal/artifacts"
-	"relay/internal/plans"
 	"relay/internal/store"
 	"relay/internal/store/generated"
 

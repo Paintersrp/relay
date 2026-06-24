@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"relay/internal/projects"
+	"relay/internal/app/projects"
 )
 
 func TestListProjectFilesUsesSnapshotRowsAndCaps(t *testing.T) {

@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"relay/internal/app/plans"
 	"relay/internal/artifacts"
-	"relay/internal/plans"
 	"relay/internal/store"
 )
 

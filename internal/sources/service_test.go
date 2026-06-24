@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"relay/internal/projects"
+	"relay/internal/app/projects"
 	"relay/internal/store"
 )
 
