@@ -389,3 +389,228 @@ func mustGetProjectRowID(t *testing.T, st *store.Store, projectID string) int64 
 	}
 	return project.ID
 }
+
+
+func validScheduleInput() CandidateScheduleInput {
+	return CandidateScheduleInput{
+		ScheduleKind: "existing_plan_bonus_pass",
+		PlanID:       "plan-123",
+		PassID:       "PASS-009",
+		Note:         "Slotted as a bonus pass",
+	}
+}
+
+func TestMarkCandidateScheduledPersistsScheduleRefAndEvent(t *testing.T) {
+	svc, st := newTestService(t)
+	ctx := context.Background()
+	project := mustProject(t, st, "project-sched")
+
+	if _, issues, err := svc.CreateCandidate(ctx, "project-sched", validCandidateInput("cand-sched", "Schedule me")); err != nil || len(issues) > 0 {
+		t.Fatalf("create cand-sched failed: err=%v issues=%+v", err, issues)
+	}
+
+	input := validScheduleInput()
+	input.RunID = "run-7"
+	scheduled, issues, err := svc.MarkCandidateScheduled(ctx, "project-sched", "cand-sched", input)
+	if err != nil || len(issues) > 0 {
+		t.Fatalf("MarkCandidateScheduled failed: err=%v issues=%+v", err, issues)
+	}
+	if scheduled == nil || scheduled.Status != CandidateStatusScheduled {
+		t.Fatalf("expected scheduled status, got %+v", scheduled)
+	}
+
+	row, err := st.GetRefactorCandidateByCandidateID(project.ID, "cand-sched")
+	if err != nil {
+		t.Fatalf("get cand-sched failed: %v", err)
+	}
+
+	active, err := st.GetActiveRefactorCandidateScheduleRef(project.ID, row.ID)
+	if err != nil {
+		t.Fatalf("GetActiveRefactorCandidateScheduleRef failed: %v", err)
+	}
+	if active == nil {
+		t.Fatalf("expected an active schedule ref after mark-scheduled")
+	}
+	if active.ScheduleKind != "existing_plan_bonus_pass" || active.PlanID != "plan-123" || active.PassID != "PASS-009" || active.RunID != "run-7" {
+		t.Fatalf("unexpected schedule ref contents: %+v", active)
+	}
+
+	events, err := st.ListRefactorCandidateStatusEvents(project.ID, row.ID, 0)
+	if err != nil {
+		t.Fatalf("ListRefactorCandidateStatusEvents failed: %v", err)
+	}
+	var sawScheduled bool
+	for _, e := range events {
+		if e.EventType == "scheduled" && e.FromStatus == CandidateStatusReady && e.ToStatus == CandidateStatusScheduled {
+			sawScheduled = true
+		}
+	}
+	if !sawScheduled {
+		t.Fatalf("expected a scheduled status event from ready to scheduled, got %+v", events)
+	}
+}
+
+func TestMarkCandidateScheduledRejectsDuplicate(t *testing.T) {
+	svc, st := newTestService(t)
+	ctx := context.Background()
+	project := mustProject(t, st, "project-dupsched")
+
+	if _, issues, err := svc.CreateCandidate(ctx, "project-dupsched", validCandidateInput("cand-dup", "Dup")); err != nil || len(issues) > 0 {
+		t.Fatalf("create cand-dup failed: err=%v issues=%+v", err, issues)
+	}
+
+	if _, issues, err := svc.MarkCandidateScheduled(ctx, "project-dupsched", "cand-dup", validScheduleInput()); err != nil || len(issues) > 0 {
+		t.Fatalf("first mark-scheduled failed: err=%v issues=%+v", err, issues)
+	}
+
+	// A second mark-scheduled must be rejected: the candidate is no longer ready
+	// and an active schedule ref already exists.
+	candidate, issues, err := svc.MarkCandidateScheduled(ctx, "project-dupsched", "cand-dup", validScheduleInput())
+	if err != nil {
+		t.Fatalf("second mark-scheduled returned unexpected error: %v", err)
+	}
+	if candidate != nil {
+		t.Fatalf("expected no candidate on duplicate scheduling, got %+v", candidate)
+	}
+	if len(issues) == 0 {
+		t.Fatalf("expected validation issue for duplicate scheduling")
+	}
+
+	// Only a single active schedule ref should exist.
+	row, err := st.GetRefactorCandidateByCandidateID(project.ID, "cand-dup")
+	if err != nil {
+		t.Fatalf("get cand-dup failed: %v", err)
+	}
+	refs, err := st.ListRefactorCandidateScheduleRefs(project.ID, row.ID)
+	if err != nil {
+		t.Fatalf("ListRefactorCandidateScheduleRefs failed: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("expected exactly 1 schedule ref, got %d", len(refs))
+	}
+}
+
+func TestMarkCandidateScheduledRejectsNonReady(t *testing.T) {
+	svc, st := newTestService(t)
+	ctx := context.Background()
+	mustProject(t, st, "project-nonready")
+
+	if _, issues, err := svc.CreateCandidate(ctx, "project-nonready", validCandidateInput("cand-nr", "Non ready")); err != nil || len(issues) > 0 {
+		t.Fatalf("create cand-nr failed: err=%v issues=%+v", err, issues)
+	}
+	if _, issues, err := svc.DeferCandidate(ctx, "project-nonready", "cand-nr", CandidateLifecycleInput{DeferReason: "later"}); err != nil || len(issues) > 0 {
+		t.Fatalf("defer cand-nr failed: err=%v issues=%+v", err, issues)
+	}
+
+	candidate, issues, err := svc.MarkCandidateScheduled(ctx, "project-nonready", "cand-nr", validScheduleInput())
+	if err != nil {
+		t.Fatalf("MarkCandidateScheduled returned unexpected error: %v", err)
+	}
+	if candidate != nil {
+		t.Fatalf("expected no candidate when scheduling a non-ready candidate, got %+v", candidate)
+	}
+	if !hasIssueCode(issues, CodeInvalidTransition) {
+		t.Fatalf("expected invalid_transition for non-ready candidate, got %+v", issues)
+	}
+}
+
+func TestMarkCandidateScheduledValidatesInput(t *testing.T) {
+	svc, st := newTestService(t)
+	ctx := context.Background()
+	mustProject(t, st, "project-schedval")
+
+	if _, issues, err := svc.CreateCandidate(ctx, "project-schedval", validCandidateInput("cand-sv", "Schedule val")); err != nil || len(issues) > 0 {
+		t.Fatalf("create cand-sv failed: err=%v issues=%+v", err, issues)
+	}
+
+	// Missing plan_id/pass_id and invalid schedule_kind.
+	_, issues, err := svc.MarkCandidateScheduled(ctx, "project-schedval", "cand-sv", CandidateScheduleInput{ScheduleKind: "bogus_kind"})
+	if err != nil {
+		t.Fatalf("MarkCandidateScheduled returned unexpected error: %v", err)
+	}
+	if !hasIssueCode(issues, CodeInvalidScheduleKind) {
+		t.Fatalf("expected invalid_schedule_kind, got %+v", issues)
+	}
+	if !hasIssueCode(issues, CodeRequired) {
+		t.Fatalf("expected required plan_id/pass_id, got %+v", issues)
+	}
+}
+
+func markScheduledForTest(t *testing.T, svc *Service, projectID, candidateID string) {
+	t.Helper()
+	if _, issues, err := svc.MarkCandidateScheduled(context.Background(), projectID, candidateID, validScheduleInput()); err != nil || len(issues) > 0 {
+		t.Fatalf("mark-scheduled %s failed: err=%v issues=%+v", candidateID, err, issues)
+	}
+}
+
+func TestApplyCandidateCompletionHookAcceptsAllOutcomes(t *testing.T) {
+	ctx := context.Background()
+	outcomes := []string{
+		CandidateStatusCompleted,
+		CandidateStatusCompletedWithWarnings,
+		CandidateStatusScheduledRevisionRequired,
+		CandidateStatusDeferred,
+	}
+	for _, outcome := range outcomes {
+		outcome := outcome
+		t.Run(outcome, func(t *testing.T) {
+			svc, st := newTestService(t)
+			mustProject(t, st, "project-hook")
+			candidateID := "cand-" + outcome
+			if _, issues, err := svc.CreateCandidate(ctx, "project-hook", validCandidateInput(candidateID, "Hook "+outcome)); err != nil || len(issues) > 0 {
+				t.Fatalf("create %s failed: err=%v issues=%+v", candidateID, err, issues)
+			}
+			markScheduledForTest(t, svc, "project-hook", candidateID)
+
+			result, issues, err := svc.ApplyCandidateCompletionHook(ctx, "project-hook", candidateID, CandidateCompletionHookInput{Status: outcome, Reason: "audit outcome"})
+			if err != nil || len(issues) > 0 {
+				t.Fatalf("ApplyCandidateCompletionHook(%s) failed: err=%v issues=%+v", outcome, err, issues)
+			}
+			if result == nil || result.Status != outcome {
+				t.Fatalf("expected status %q, got %+v", outcome, result)
+			}
+		})
+	}
+}
+
+func TestApplyCandidateCompletionHookRejectsUnscheduledSource(t *testing.T) {
+	svc, st := newTestService(t)
+	ctx := context.Background()
+	mustProject(t, st, "project-hooksrc")
+
+	if _, issues, err := svc.CreateCandidate(ctx, "project-hooksrc", validCandidateInput("cand-ready", "Ready")); err != nil || len(issues) > 0 {
+		t.Fatalf("create cand-ready failed: err=%v issues=%+v", err, issues)
+	}
+
+	// Candidate is still ready, not scheduled.
+	candidate, issues, err := svc.ApplyCandidateCompletionHook(ctx, "project-hooksrc", "cand-ready", CandidateCompletionHookInput{Status: CandidateStatusCompleted})
+	if err != nil {
+		t.Fatalf("ApplyCandidateCompletionHook returned unexpected error: %v", err)
+	}
+	if candidate != nil {
+		t.Fatalf("expected no candidate for unscheduled source, got %+v", candidate)
+	}
+	if !hasIssueCode(issues, CodeInvalidTransition) {
+		t.Fatalf("expected invalid_transition for unscheduled source, got %+v", issues)
+	}
+}
+
+func TestApplyCandidateCompletionHookRejectsInvalidTargetStatus(t *testing.T) {
+	svc, st := newTestService(t)
+	ctx := context.Background()
+	mustProject(t, st, "project-hooktarget")
+
+	if _, issues, err := svc.CreateCandidate(ctx, "project-hooktarget", validCandidateInput("cand-ht", "Hook target")); err != nil || len(issues) > 0 {
+		t.Fatalf("create cand-ht failed: err=%v issues=%+v", err, issues)
+	}
+	markScheduledForTest(t, svc, "project-hooktarget", "cand-ht")
+
+	// "rejected" is intentionally not an allowed completion-hook outcome.
+	_, issues, err := svc.ApplyCandidateCompletionHook(ctx, "project-hooktarget", "cand-ht", CandidateCompletionHookInput{Status: CandidateStatusRejected})
+	if err != nil {
+		t.Fatalf("ApplyCandidateCompletionHook returned unexpected error: %v", err)
+	}
+	if !hasIssueCode(issues, CodeInvalidStatus) {
+		t.Fatalf("expected invalid_status for disallowed target status, got %+v", issues)
+	}
+}

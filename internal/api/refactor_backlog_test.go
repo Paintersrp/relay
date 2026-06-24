@@ -42,6 +42,7 @@ func newRefactorAPITestServer(t *testing.T) (*store.Store, http.Handler) {
 		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/defer", apiH.DeferRefactorCandidate)
 		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/reject", apiH.RejectRefactorCandidate)
 		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/supersede", apiH.SupersedeRefactorCandidate)
+		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/mark-scheduled", apiH.MarkScheduledRefactorCandidate)
 	})
 
 	return st, router
@@ -211,5 +212,80 @@ func TestRefactorCandidateAPIInvalidLimit(t *testing.T) {
 	rec := doRequest(t, router, http.MethodGet, "/api/projects/relay/refactor/candidates?limit=0", nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for invalid limit, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+
+func TestRefactorCandidateMarkScheduledAPISuccess(t *testing.T) {
+	st, router := newRefactorAPITestServer(t)
+	seedRefactorProject(t, st, "relay")
+
+	if rec := doRequest(t, router, http.MethodPost, "/api/projects/relay/refactor/candidates", validCandidateBody()); rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 creating candidate, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	body := []byte(`{
+		"schedule_kind": "existing_plan_bonus_pass",
+		"plan_id": "plan-123",
+		"pass_id": "PASS-009",
+		"note": "Slotted as a bonus pass"
+	}`)
+	rec := doRequest(t, router, http.MethodPost, "/api/projects/relay/refactor/candidates/cand-1/mark-scheduled", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp RefactorBacklogAPIResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Success || resp.Candidate == nil {
+		t.Fatalf("expected success candidate response, got %+v", resp)
+	}
+	if resp.Candidate.Status != "scheduled" {
+		t.Fatalf("expected scheduled status, got %q", resp.Candidate.Status)
+	}
+}
+
+func TestRefactorCandidateMarkScheduledAPIValidationErrorShape(t *testing.T) {
+	st, router := newRefactorAPITestServer(t)
+	seedRefactorProject(t, st, "relay")
+
+	if rec := doRequest(t, router, http.MethodPost, "/api/projects/relay/refactor/candidates", validCandidateBody()); rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 creating candidate, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Missing plan_id/pass_id and invalid schedule_kind.
+	rec := doRequest(t, router, http.MethodPost, "/api/projects/relay/refactor/candidates/cand-1/mark-scheduled", []byte(`{"schedule_kind":"bogus"}`))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var errResp RelayApiErrorShape
+	if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if errResp.Error != "VALIDATION_ERROR" {
+		t.Fatalf("expected VALIDATION_ERROR, got %+v", errResp)
+	}
+	if errResp.Details == nil || errResp.Details["validation"] == nil {
+		t.Fatalf("expected details.validation to be present, got %+v", errResp.Details)
+	}
+}
+
+func TestRefactorCandidateMarkScheduledAPIIsProjectScoped(t *testing.T) {
+	st, router := newRefactorAPITestServer(t)
+	seedRefactorProject(t, st, "project-a")
+	seedRefactorProject(t, st, "project-b")
+
+	if rec := doRequest(t, router, http.MethodPost, "/api/projects/project-a/refactor/candidates", validCandidateBody()); rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 creating candidate in project-a, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	body := []byte(`{"schedule_kind":"existing_plan_bonus_pass","plan_id":"plan-1","pass_id":"PASS-1"}`)
+	// The candidate belongs to project-a, so scheduling under project-b must 404.
+	rec := doRequest(t, router, http.MethodPost, "/api/projects/project-b/refactor/candidates/cand-1/mark-scheduled", body)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 scheduling cross-project candidate, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
