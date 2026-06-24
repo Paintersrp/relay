@@ -36,6 +36,13 @@
 
 For the end-to-end operator loop that combines these retrieval tools with the Relay web UI, reviewed Planner handoffs, audit handbacks, and human gates, see [`docs/project-orchestrator-workflow.md`](project-orchestrator-workflow.md).
 
+## Refactor Backlog Tools (Deferred — not current actions)
+
+*   Refactor backlog MCP tools (for refactor discovery tasks, refactor candidates, candidate promotion, or generated refactor-only plan generation) are **not** current default GPT-facing actions and are **not** part of the current local/dev/server tool inventory in PASS-001.
+*   PASS-005 owns any future refactor backlog MCP tool exposure. Until an active MCP or tool contract explicitly registers such tools, they must not be described as available.
+*   Generated refactor-only plans are ordinary reviewed Plan of Passes JSON artifacts. They are submitted through the existing `submit_planner_pass_plan` action only after user review and explicit confirmation. There is no separate refactor submission action, and refactor metadata does not authorize automatic submission.
+*   When refactor backlog tools are later implemented, they must preserve the same safety boundaries as the rest of the MCP surface: no shell execution, no arbitrary filesystem reads, no git mutation, no automatic plan submission, no run creation, and no model calls.
+
 ---
 
 ## How It Works
