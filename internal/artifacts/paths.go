@@ -77,6 +77,8 @@ var allowedKinds = map[string]bool{
 	"local_audit_manifest_json":          true,
 	"local_audit_packet":                 true,
 	"local_audit_input_summary":          true,
+	"planner_pass_plan_json":             true,
+	"planner_pass_plan_markdown":         true,
 }
 
 var (
@@ -254,6 +256,69 @@ func auditKindSuffix(kind string) (string, bool) {
 		return ".local-audit-packet.md", true
 	case "local_audit_input_summary":
 		return ".local-audit-input-summary.md", true
+	default:
+		return "", false
+	}
+}
+
+// PlanDir is the durable artifact directory for generated Plan of Passes
+// artifacts (e.g. reviewable refactor-only plans). Generated plans are local
+// review artifacts only; writing one never submits a plan or creates a run.
+func PlanDir() string {
+	return filepath.Join(BaseDir, "handoffs", "plans")
+}
+
+// PlanPath builds a safe, validated path for a generated Plan of Passes artifact
+// under PlanDir. The date must be YYYY-MM-DD, the slug must match the shared
+// artifact slug pattern, and the kind must be a recognized plan artifact kind.
+// The resulting filename cannot escape the plan artifact directory.
+func PlanPath(dateYYYYMMDD string, taskSlug string, kind string) (string, error) {
+	if !allowedKinds[kind] {
+		return "", fmt.Errorf("unknown artifact kind: %s", kind)
+	}
+	if !contextDatePattern.MatchString(dateYYYYMMDD) {
+		return "", fmt.Errorf("invalid plan artifact date: %s", dateYYYYMMDD)
+	}
+	if !contextSlugPattern.MatchString(taskSlug) {
+		return "", fmt.Errorf("invalid plan artifact slug: %s", taskSlug)
+	}
+	suffix, ok := planKindSuffix(kind)
+	if !ok {
+		return "", fmt.Errorf("artifact kind is not a plan artifact: %s", kind)
+	}
+	filename := dateYYYYMMDD + "_" + taskSlug + suffix
+	if strings.Contains(filename, "..") || filepath.IsAbs(filename) || strings.ContainsAny(filename, `/\`) {
+		return "", fmt.Errorf("invalid plan artifact filename: %s", filename)
+	}
+	dir := PlanDir()
+	p := filepath.Join(dir, filename)
+	cleanDir := filepath.Clean(dir)
+	cleanPath := filepath.Clean(p)
+	if cleanPath != filepath.Join(cleanDir, filepath.Base(cleanPath)) || !strings.HasPrefix(cleanPath, cleanDir+string(filepath.Separator)) {
+		return "", fmt.Errorf("plan artifact path escapes directory: %s", p)
+	}
+	return p, nil
+}
+
+// WritePlan writes a generated Plan of Passes artifact under PlanDir using a
+// validated, safe path. It does not submit the plan or create any run.
+func WritePlan(dateYYYYMMDD string, taskSlug string, kind string, data []byte) (string, error) {
+	p, err := PlanPath(dateYYYYMMDD, taskSlug, kind)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(PlanDir(), 0755); err != nil {
+		return "", err
+	}
+	return p, os.WriteFile(p, data, 0644)
+}
+
+func planKindSuffix(kind string) (string, bool) {
+	switch kind {
+	case "planner_pass_plan_json":
+		return ".planner-pass-plan.json", true
+	case "planner_pass_plan_markdown":
+		return ".planner-pass-plan.md", true
 	default:
 		return "", false
 	}
