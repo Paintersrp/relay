@@ -12,9 +12,8 @@ import (
 	"strings"
 	"time"
 
-	appaudits "relay/internal/app/audits"
 	"relay/internal/api/shared"
-	"relay/internal/auditor"
+	appaudits "relay/internal/app/audits"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -225,7 +224,7 @@ func (h *Handler) ApproveAudit(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.service.SubmitAuditDecision(r.Context(), appaudits.AuditDecisionInput{
 		RunID:    id,
-		Decision: auditor.Decision(req.Decision),
+		Decision: appaudits.Decision(req.Decision),
 		Notes:    req.Notes,
 	})
 	if err != nil {
@@ -336,11 +335,11 @@ func writeAuditDecisionError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", err.Error())
-	case errors.Is(err, auditor.ErrUnsupportedDecision):
+	case errors.Is(err, appaudits.ErrUnsupportedDecision):
 		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	case strings.Contains(err.Error(), "audit_packet_markdown is required"):
 		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
-	case errors.Is(err, auditor.ErrCompletedRun), errors.Is(err, auditor.ErrAuditDecisionNotReady):
+	case errors.Is(err, appaudits.ErrCompletedRun), errors.Is(err, appaudits.ErrAuditDecisionNotReady):
 		shared.Error(w, http.StatusConflict, "CONFLICT", err.Error())
 	default:
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
@@ -376,15 +375,15 @@ func validateLocalAuditAPIRequest(req localAuditAPIRequest) string {
 		}
 	}
 	switch mode {
-	case string(auditor.LocalAuditModeRecentCommit):
+	case string(appaudits.LocalAuditModeRecentCommit):
 		if len(nonEmptyStrings(req.RepoIDs)) != 1 {
 			return "recent_commit requires exactly one repo_id"
 		}
-	case string(auditor.LocalAuditModeSelectedPassChanges):
+	case string(appaudits.LocalAuditModeSelectedPassChanges):
 		if strings.TrimSpace(req.PlanID) == "" || strings.TrimSpace(req.PassID) == "" {
 			return "selected_pass_changes requires plan_id and pass_id"
 		}
-	case string(auditor.LocalAuditModeFeatureSlice):
+	case string(appaudits.LocalAuditModeFeatureSlice):
 		if len(nonEmptyStrings(req.Paths)) == 0 && len(nonEmptyStrings(req.SearchTerms)) == 0 {
 			return "feature_slice requires paths or search_terms"
 		}
@@ -394,10 +393,10 @@ func validateLocalAuditAPIRequest(req localAuditAPIRequest) string {
 
 func isAllowedLocalAuditMode(mode string) bool {
 	switch mode {
-	case string(auditor.LocalAuditModeRecentCommit),
-		string(auditor.LocalAuditModeSelectedPassChanges),
-		string(auditor.LocalAuditModeFeatureSlice),
-		string(auditor.LocalAuditModeFullRepository):
+	case string(appaudits.LocalAuditModeRecentCommit),
+		string(appaudits.LocalAuditModeSelectedPassChanges),
+		string(appaudits.LocalAuditModeFeatureSlice),
+		string(appaudits.LocalAuditModeFullRepository):
 		return true
 	default:
 		return false

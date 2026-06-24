@@ -1,6 +1,6 @@
 package audits
 
-import "relay/internal/auditor"
+import appaudits "relay/internal/app/audits"
 
 type RelayAuditStatus struct {
 	RunID                        string         `json:"runId"`
@@ -54,9 +54,9 @@ type localAuditAPIRequest struct {
 }
 
 type submitAuditPacketRequest struct {
-	AuditPacketMarkdown string          `json:"audit_packet_markdown"`
-	Decision            auditor.Decision `json:"decision"`
-	Notes               string          `json:"notes"`
+	AuditPacketMarkdown string             `json:"audit_packet_markdown"`
+	Decision            appaudits.Decision `json:"decision"`
+	Notes               string             `json:"notes"`
 }
 
 type approveAuditRequest struct {

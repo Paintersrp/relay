@@ -11,6 +11,34 @@ type LocalAuditInput = auditor.LocalAuditInput
 type LocalAuditResult = auditor.LocalAuditResult
 type LocalAuditRecordResult = auditor.LocalAuditRecordResult
 
+// Decision exposes audit decision values at the app boundary while the legacy
+// auditor package remains the internal implementation adapter.
+type Decision = auditor.Decision
+
+const (
+	DecisionManualReviewRequired = auditor.DecisionManualReviewRequired
+	DecisionAccepted             = auditor.DecisionAccepted
+	DecisionAcceptedWithWarnings = auditor.DecisionAcceptedWithWarnings
+	DecisionRevisionRequired     = auditor.DecisionRevisionRequired
+	DecisionBlocked              = auditor.DecisionBlocked
+)
+
+// LocalAuditMode exposes local audit mode values at the app boundary.
+type LocalAuditMode = auditor.LocalAuditMode
+
+const (
+	LocalAuditModeRecentCommit        = auditor.LocalAuditModeRecentCommit
+	LocalAuditModeSelectedPassChanges = auditor.LocalAuditModeSelectedPassChanges
+	LocalAuditModeFeatureSlice        = auditor.LocalAuditModeFeatureSlice
+	LocalAuditModeFullRepository      = auditor.LocalAuditModeFullRepository
+)
+
+var (
+	ErrUnsupportedDecision   = auditor.ErrUnsupportedDecision
+	ErrCompletedRun          = auditor.ErrCompletedRun
+	ErrAuditDecisionNotReady = auditor.ErrAuditDecisionNotReady
+)
+
 type AuditArtifact struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
@@ -47,13 +75,13 @@ type AuditStatus struct {
 type SubmitAuditPacketInput struct {
 	RunID               int64
 	AuditPacketMarkdown string
-	Decision            auditor.Decision
+	Decision            Decision
 	Notes               string
 }
 
 type AuditDecisionInput struct {
 	RunID    int64
-	Decision auditor.Decision
+	Decision Decision
 	Notes    string
 }
 
