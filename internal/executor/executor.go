@@ -18,6 +18,7 @@ import (
 	"relay/internal/artifacts"
 	"relay/internal/events"
 	"relay/internal/pipeline"
+	"relay/internal/plans"
 	"relay/internal/store"
 )
 
@@ -183,11 +184,17 @@ func deleteExecutorArtifacts(store *store.Store, runID int64) {
 	}
 }
 
-func updateRunStatus(store *store.Store, runID int64, status string) {
-	if store == nil {
+func updateRunStatus(st *store.Store, runID int64, status string) {
+	if st == nil {
 		return
 	}
-	store.UpdateRunStatus(runID, status)
+	updatedRun, err := st.UpdateRunStatus(runID, status)
+	if err != nil {
+		return
+	}
+	if err := plans.NewRunLifecycleService(st).SyncAssociatedPassForRunStatus(updatedRun); err != nil {
+		_, _ = st.CreateEvent(runID, "warn", "Associated pass status sync failed: "+err.Error())
+	}
 }
 
 func defaultExecutorPreflight(inv ExecutorInvocation) ExecutorPreflightResult {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"relay/internal/artifacts"
+	"relay/internal/plans"
 	"relay/internal/store"
 	"relay/internal/validation"
 )
@@ -145,8 +146,12 @@ func (r *Renderer) RenderExecutorBrief(ctx context.Context, runID int64) (*Rende
 	}
 
 	// 10. Advance lifecycle/state to brief_ready_for_review only after success (CR7)
-	if _, err := r.store.UpdateRunStatus(runID, "brief_ready_for_review"); err != nil {
+	updatedRun, err := r.store.UpdateRunStatus(runID, "brief_ready_for_review")
+	if err != nil {
 		return nil, fmt.Errorf("failed to update run status to brief_ready_for_review: %w", err)
+	}
+	if err := plans.NewRunLifecycleService(r.store).SyncAssociatedPassForRunStatus(updatedRun); err != nil {
+		return nil, fmt.Errorf("sync associated pass status: %w", err)
 	}
 
 	// Create event and check
@@ -229,8 +234,12 @@ func (r *Renderer) ApproveExecutorBrief(ctx context.Context, runID int64) (*Rend
 	}
 
 	// 5. Advance lifecycle to approved_for_executor (CR9)
-	if _, err := r.store.UpdateRunStatus(runID, "approved_for_executor"); err != nil {
+	updatedRun, err := r.store.UpdateRunStatus(runID, "approved_for_executor")
+	if err != nil {
 		return nil, fmt.Errorf("failed to update run status to approved_for_executor: %w", err)
+	}
+	if err := plans.NewRunLifecycleService(r.store).SyncAssociatedPassForRunStatus(updatedRun); err != nil {
+		return nil, fmt.Errorf("sync associated pass status: %w", err)
 	}
 
 	_, _ = r.store.CreateEvent(runID, "status_change", "Executor brief approved")

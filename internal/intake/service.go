@@ -346,12 +346,15 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 	}
 	artifactKinds = append(artifactKinds, "planner_handoff_provenance_json")
 
-	if association.Pass != nil && association.Pass.Status == "planned" {
-		if _, err := txQueries.UpdatePlanPassStatus(context.Background(), generated.UpdatePlanPassStatusParams{
-			ID:     association.Pass.ID,
-			Status: "in_progress",
-		}); err != nil {
-			return nil, fmt.Errorf("mark associated plan pass in progress: %w", err)
+	if association.Pass != nil {
+		switch association.Pass.Status {
+		case "planned", "ready_for_planner", "handoff_ready", "revision_required":
+			if _, err := txQueries.UpdatePlanPassStatus(context.Background(), generated.UpdatePlanPassStatusParams{
+				ID:     association.Pass.ID,
+				Status: "run_created",
+			}); err != nil {
+				return nil, fmt.Errorf("mark associated plan pass run_created: %w", err)
+			}
 		}
 	}
 

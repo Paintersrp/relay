@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"relay/internal/artifacts"
+	"relay/internal/plans"
 	"relay/internal/store"
 )
 
@@ -24,11 +25,22 @@ type sealedCommandStore interface {
 }
 
 type Service struct {
-	store sealedCommandStore
+	store     sealedCommandStore
+	lifecycle *plans.RunLifecycleService
 }
 
 func NewService(s *store.Store) *Service {
-	return &Service{store: s}
+	return &Service{store: s, lifecycle: plans.NewRunLifecycleService(s)}
+}
+
+// syncAssociatedPass synchronizes the associated managed pass for the given run.
+// It is a no-op when no lifecycle service is configured (e.g. unit tests that
+// construct Service directly with a mock store) or for standalone/plan-only runs.
+func (svc *Service) syncAssociatedPass(run *store.Run) error {
+	if svc.lifecycle == nil || run == nil {
+		return nil
+	}
+	return svc.lifecycle.SyncAssociatedPassForRunStatus(run)
 }
 
 type canonicalPacketRaw struct {
@@ -94,9 +106,14 @@ func (svc *Service) RunValidation(ctx context.Context, runID int64) (*Validation
 	svc.store.DeleteArtifactsByRunKind(runID, ArtifactKindStderr)
 	svc.store.DeleteArtifactsByRunKind(runID, ArtifactKindJSON)
 
-	svc.store.UpdateRunStatus(runID, "local_validation_running")
+	runningRun, err := svc.store.UpdateRunStatus(runID, "local_validation_running")
+	if err != nil {
+		return nil, fmt.Errorf("update run status to local_validation_running: %w", err)
+	}
+	if err := svc.syncAssociatedPass(runningRun); err != nil {
+		return nil, fmt.Errorf("sync associated pass status: %w", err)
+	}
 	svc.store.CreateEvent(runID, "status_change", "Local validation started")
-
 	startedAt := nowUTC()
 	allCommadsStdout := strings.Builder{}
 	allCommadsStderr := strings.Builder{}
@@ -209,10 +226,22 @@ func (svc *Service) RunValidation(ctx context.Context, runID int64) (*Validation
 
 	if overallFailed {
 		_, _ = svc.store.CreateEvent(runID, "warn", "Validation failed: one or more required commands failed")
-		_, _ = svc.store.UpdateRunStatus(runID, "validation_failed")
+		failedRun, err := svc.store.UpdateRunStatus(runID, "validation_failed")
+		if err != nil {
+			return nil, fmt.Errorf("update run status to validation_failed: %w", err)
+		}
+		if err := svc.syncAssociatedPass(failedRun); err != nil {
+			return nil, fmt.Errorf("sync associated pass status: %w", err)
+		}
 	} else {
 		_, _ = svc.store.CreateEvent(runID, "info", "Validation passed")
-		_, _ = svc.store.UpdateRunStatus(runID, "validation_passed")
+		passedRun, err := svc.store.UpdateRunStatus(runID, "validation_passed")
+		if err != nil {
+			return nil, fmt.Errorf("update run status to validation_passed: %w", err)
+		}
+		if err := svc.syncAssociatedPass(passedRun); err != nil {
+			return nil, fmt.Errorf("sync associated pass status: %w", err)
+		}
 	}
 
 	return vr, nil
