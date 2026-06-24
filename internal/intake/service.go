@@ -158,6 +158,9 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 	if err != nil {
 		return nil, err
 	}
+	if err := ValidateManagedRunSourceContextRequirement(association, provenanceIDs.ContextPacketID, provenanceIDs.SourceSnapshotID); err != nil {
+		return nil, err
+	}
 
 	status := "intake_received"
 	if len(warnings) > 0 {
@@ -510,6 +513,47 @@ func (svc *Service) ResolveRunSourceContextProvenance(association RunPlanAssocia
 		}
 	}
 	return result, nil
+}
+
+// ValidateManagedRunSourceContextRequirement enforces the PASS-007 provenance gate:
+// when a run is associated to a managed pass that declares source/context requirements,
+// the run must supply at least one valid provenance identifier (context_packet_id or
+// source_snapshot_id) before it may be created or moved into normal progression.
+//
+// It returns nil for standalone runs, plan-only runs, and managed passes that do not
+// declare source/context requirements. The caller is responsible for performing explicit
+// ID lookup validation (via ResolveRunSourceContextProvenance) beforehand; this gate only
+// blocks the case where required provenance is entirely absent.
+func ValidateManagedRunSourceContextRequirement(association RunPlanAssociation, contextPacketID, sourceSnapshotID string) error {
+	if association.Pass == nil {
+		return nil
+	}
+	if !managedPassRequiresSourceContext(association.Pass) {
+		return nil
+	}
+	if strings.TrimSpace(contextPacketID) != "" || strings.TrimSpace(sourceSnapshotID) != "" {
+		return nil
+	}
+	return &InputError{
+		Code:    ErrCodeValidation,
+		Message: fmt.Sprintf("pass_id %q requires source/context provenance; provide context_packet_id or source_snapshot_id", association.PassID),
+	}
+}
+
+// managedPassRequiresSourceContext reports whether a managed pass declares source/context
+// requirements. A requirement is considered declared when either the persisted context plan
+// or source snapshot requirements JSON is non-empty, non-"null", and non-"{}".
+func managedPassRequiresSourceContext(pass *store.PlanPass) bool {
+	if pass == nil {
+		return false
+	}
+	for _, raw := range []string{pass.ContextPlanJson, pass.SourceSnapshotRequirementsJson} {
+		normalized := strings.TrimSpace(raw)
+		if normalized != "" && normalized != "null" && normalized != "{}" {
+			return true
+		}
+	}
+	return false
 }
 
 func validateProvenanceID(field string, value string) error {

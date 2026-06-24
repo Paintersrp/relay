@@ -2146,6 +2146,21 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 		}
 		sourceContextIDs.ContextPacketID = validatedSourceContext.ContextPacketID
 		sourceContextIDs.SourceSnapshotID = validatedSourceContext.SourceSnapshotID
+		if err := intake.ValidateManagedRunSourceContextRequirement(association, validatedSourceContext.ContextPacketID, validatedSourceContext.SourceSnapshotID); err != nil {
+			var inputErr *intake.InputError
+			if errors.As(err, &inputErr) {
+				statusCode := http.StatusBadRequest
+				errorCode := "BAD_REQUEST"
+				if inputErr.Code == intake.ErrCodeNotFound {
+					statusCode = http.StatusNotFound
+					errorCode = "NOT_FOUND"
+				}
+				writeError(w, statusCode, errorCode, inputErr.Message)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to validate source context requirement: "+err.Error())
+			return
+		}
 		r, err := h.store.CreateRunWithAssociation(
 			repo.ID,
 			title,
