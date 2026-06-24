@@ -636,8 +636,8 @@ func TestHandleCreateRunFromPlannerHandoff_PlanPassAssociation(t *testing.T) {
 	if !run.PlanPassRowID.Valid || run.PlanPassRowID.Int64 != pass.ID {
 		t.Fatalf("expected plan_pass_row_id=%d, got %+v", pass.ID, run.PlanPassRowID)
 	}
-	if pass.Status != "in_progress" {
-		t.Fatalf("expected pass status to become in_progress, got %q", pass.Status)
+	if pass.Status != "run_created" {
+		t.Fatalf("expected pass status to become run_created, got %q", pass.Status)
 	}
 }
 
@@ -1325,8 +1325,8 @@ func TestHandleSubmitAuditPacket_AssociatedPassLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get pass: %v", err)
 	}
-	if pass.Status != "in_progress" {
-		t.Fatalf("expected pass to be in_progress after run creation, got %q", pass.Status)
+	if pass.Status != "run_created" {
+		t.Fatalf("expected pass to be run_created after run creation, got %q", pass.Status)
 	}
 	if _, err := deps.Store.UpdateRunStatus(createOut.RunID, "audit_ready"); err != nil {
 		t.Fatalf("set audit_ready: %v", err)

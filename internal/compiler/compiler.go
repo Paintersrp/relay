@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"relay/internal/artifacts"
+	"relay/internal/plans"
 	"relay/internal/store"
 	"relay/internal/validation"
 )
@@ -102,7 +103,13 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 		_ = c.writeReport(runID, &valReport)
 
 		// Update status to packet_validation_failed
-		_, _ = c.store.UpdateRunStatus(runID, "packet_validation_failed")
+		updatedRun, statusErr := c.store.UpdateRunStatus(runID, "packet_validation_failed")
+		if statusErr != nil {
+			return nil, fmt.Errorf("update run status to packet_validation_failed: %w", statusErr)
+		}
+		if syncErr := plans.NewRunLifecycleService(c.store).SyncAssociatedPassForRunStatus(updatedRun); syncErr != nil {
+			return nil, fmt.Errorf("sync associated pass status: %w", syncErr)
+		}
 		_, _ = c.store.CreateCheck(runID, "validation", "fail", "Handoff parsing failed", "{}")
 		var failMsg string
 		if isRetry {
@@ -157,7 +164,13 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 
 	if report.Valid {
 		// Update lifecycle state in DB to packet_validated (CR8, S11)
-		_, _ = c.store.UpdateRunStatus(runID, "packet_validated")
+		updatedRun, statusErr := c.store.UpdateRunStatus(runID, "packet_validated")
+		if statusErr != nil {
+			return nil, fmt.Errorf("update run status to packet_validated: %w", statusErr)
+		}
+		if syncErr := plans.NewRunLifecycleService(c.store).SyncAssociatedPassForRunStatus(updatedRun); syncErr != nil {
+			return nil, fmt.Errorf("sync associated pass status: %w", syncErr)
+		}
 		_ = c.store.DeleteChecksByRunKind(runID, "validation")
 		_, _ = c.store.CreateCheck(runID, "validation", "pass", "Packet validation passed", "{}")
 		var successMsg string
@@ -169,7 +182,13 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 		_, _ = c.store.CreateEvent(runID, "info", successMsg)
 	} else {
 		// S11: packet_validation_failed
-		_, _ = c.store.UpdateRunStatus(runID, "packet_validation_failed")
+		updatedRun, statusErr := c.store.UpdateRunStatus(runID, "packet_validation_failed")
+		if statusErr != nil {
+			return nil, fmt.Errorf("update run status to packet_validation_failed: %w", statusErr)
+		}
+		if syncErr := plans.NewRunLifecycleService(c.store).SyncAssociatedPassForRunStatus(updatedRun); syncErr != nil {
+			return nil, fmt.Errorf("sync associated pass status: %w", syncErr)
+		}
 		_ = c.store.DeleteChecksByRunKind(runID, "validation")
 		for _, e := range report.Errors {
 			_, _ = c.store.CreateCheck(runID, "validation", "fail", e.Message, "{}")

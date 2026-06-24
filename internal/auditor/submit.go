@@ -135,7 +135,7 @@ func (s *SubmissionService) SubmitDecision(input DecisionSubmission) (*DecisionR
 	if err != nil {
 		return nil, fmt.Errorf("update run status: %w", err)
 	}
-	if err := plans.NewRunLifecycleService(s.store).ApplyAuditDecision(updatedRun, mappedStatus); err != nil {
+	if err := plans.NewRunLifecycleService(s.store).ApplyAuditDecision(updatedRun, string(input.Decision)); err != nil {
 		return nil, fmt.Errorf("apply associated pass audit decision: %w", err)
 	}
 

@@ -34,12 +34,12 @@ import (
 )
 
 type APIHandler struct {
-	store                  *store.Store
-	log                    *slog.Logger
-	eventHub               *events.Hub
-	planService            *plans.Service
-	projectService         *projects.Service
-	lifecycleService       *plans.RunLifecycleService
+	store                   *store.Store
+	log                     *slog.Logger
+	eventHub                *events.Hub
+	planService             *plans.Service
+	projectService          *projects.Service
+	lifecycleService        *plans.RunLifecycleService
 	orchestratorWorkService *plans.OrchestratorWorkService
 }
 
@@ -2161,7 +2161,7 @@ func (h *APIHandler) IntakePlannerHandoff(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create run: "+err.Error())
 			return
 		}
-		if err := h.lifecycleService.MarkAssociatedPassInProgress(r); err != nil {
+		if err := h.lifecycleService.MarkAssociatedPassRunCreated(r); err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update associated pass status: "+err.Error())
 			return
 		}
@@ -2483,6 +2483,11 @@ func (h *APIHandler) ApproveIntake(w http.ResponseWriter, r *http.Request) {
 	updatedRun, err = h.store.UpdateRunStatus(run.ID, nextStatus)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run status: "+err.Error())
+		return
+	}
+
+	if err := h.lifecycleService.SyncAssociatedPassForRunStatus(updatedRun); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update associated pass status: "+err.Error())
 		return
 	}
 
@@ -2842,9 +2847,14 @@ func (h *APIHandler) AcceptFailedValidation(w http.ResponseWriter, r *http.Reque
 	_, _ = h.store.CreateEvent(id, "info", fmt.Sprintf("Validation failure accepted. Reason: %s", req.Reason))
 
 	// Update status
-	_, err = h.store.UpdateRunStatus(id, "validation_failed_accepted")
+	updatedRun, err := h.store.UpdateRunStatus(id, "validation_failed_accepted")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update run status")
+		return
+	}
+
+	if err := h.lifecycleService.SyncAssociatedPassForRunStatus(updatedRun); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update associated pass status: "+err.Error())
 		return
 	}
 
@@ -3463,6 +3473,11 @@ func (h *APIHandler) CloseRun(w http.ResponseWriter, r *http.Request) {
 	updatedRun, err := h.store.UpdateRunStatus(id, "completed")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to close run")
+		return
+	}
+
+	if err := h.lifecycleService.SyncAssociatedPassForRunStatus(updatedRun); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update associated pass status: "+err.Error())
 		return
 	}
 

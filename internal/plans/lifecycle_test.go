@@ -15,8 +15,8 @@ import (
 func TestRunLifecycleService(t *testing.T) {
 	svc, st := setupLifecycleTestService(t)
 
-	t.Run("associated run creation marks planned pass in progress", func(t *testing.T) {
-		run, pass := createLifecycleRunWithPass(t, st, "plan-lifecycle-start", "PASS-001", "planned")
+	t.Run("intake approval marks pass in progress", func(t *testing.T) {
+		run, pass := createLifecycleRunWithPass(t, st, "plan-lifecycle-start", "PASS-001", "run_created")
 
 		if err := svc.MarkAssociatedPassInProgress(run); err != nil {
 			t.Fatalf("mark in progress: %v", err)
@@ -28,6 +28,50 @@ func TestRunLifecycleService(t *testing.T) {
 		}
 		if updatedPass.Status != "in_progress" {
 			t.Fatalf("expected in_progress, got %q", updatedPass.Status)
+		}
+	})
+
+	t.Run("associated run creation marks planned pass run_created", func(t *testing.T) {
+		run, pass := createLifecycleRunWithPass(t, st, "plan-lifecycle-run-created", "PASS-001", "planned")
+
+		if err := svc.MarkAssociatedPassRunCreated(run); err != nil {
+			t.Fatalf("mark run_created: %v", err)
+		}
+
+		updatedPass, err := st.GetPlanPass(pass.ID)
+		if err != nil {
+			t.Fatalf("get pass: %v", err)
+		}
+		if updatedPass.Status != "run_created" {
+			t.Fatalf("expected run_created, got %q", updatedPass.Status)
+		}
+	})
+
+	t.Run("run creation does not downgrade terminal or active pass states", func(t *testing.T) {
+		for _, tc := range []struct {
+			start string
+			want  string
+		}{
+			{"completed", "completed"},
+			{"skipped", "skipped"},
+			{"in_progress", "in_progress"},
+			{"audit_ready", "audit_ready"},
+			{"blocked", "blocked"},
+			{"run_created", "run_created"},
+		} {
+			t.Run(tc.start, func(t *testing.T) {
+				run, pass := createLifecycleRunWithPass(t, st, "plan-lifecycle-runcreate-"+tc.start, "PASS-001", tc.start)
+				if err := svc.MarkAssociatedPassRunCreated(run); err != nil {
+					t.Fatalf("mark run_created: %v", err)
+				}
+				updatedPass, err := st.GetPlanPass(pass.ID)
+				if err != nil {
+					t.Fatalf("get pass: %v", err)
+				}
+				if updatedPass.Status != tc.want {
+					t.Fatalf("expected %q, got %q", tc.want, updatedPass.Status)
+				}
+			})
 		}
 	})
 
@@ -416,4 +460,116 @@ func createLifecycleRunWithPass(t *testing.T, st *store.Store, planID, passID, p
 
 func lifecycleBoolPtr(value bool) *bool {
 	return &value
+}
+
+func TestSyncAssociatedPassForRunStatus(t *testing.T) {
+	svc, st := setupLifecycleTestService(t)
+
+	cases := []struct {
+		runStatus  string
+		startPass  string
+		wantPass   string
+		planSuffix string
+	}{
+		{"intake_received", "run_created", "run_created", "intake-received"},
+		{"intake_needs_review", "run_created", "run_created", "intake-needs-review"},
+		{"approved_for_prepare", "run_created", "in_progress", "approved-prepare"},
+		{"packet_validated", "in_progress", "in_progress", "packet-validated"},
+		{"packet_validation_failed", "in_progress", "blocked", "packet-failed"},
+		{"repair_validated", "blocked", "in_progress", "repair-validated"},
+		{"brief_ready_for_review", "in_progress", "in_progress", "brief-ready"},
+		{"approved_for_executor", "in_progress", "in_progress", "approved-executor"},
+		{"executor_dispatched", "in_progress", "in_progress", "exec-dispatched"},
+		{"executor_done", "in_progress", "in_progress", "exec-done"},
+		{"executor_blocked", "in_progress", "blocked", "exec-blocked"},
+		{"local_validation_running", "in_progress", "in_progress", "validation-running"},
+		{"validation_passed", "in_progress", "in_progress", "validation-passed"},
+		{"validation_failed", "in_progress", "blocked", "validation-failed"},
+		{"validation_failed_accepted", "blocked", "in_progress", "validation-accepted"},
+		{"audit_ready", "in_progress", "audit_ready", "audit-ready"},
+		{"audit_ready_for_review", "in_progress", "audit_ready", "audit-ready-review"},
+		{"accepted", "audit_ready", "completed", "accepted"},
+		{"accepted_with_warnings", "audit_ready", "completed", "accepted-warn"},
+		{"revision_required", "audit_ready", "revision_required", "revision"},
+		{"blocked", "in_progress", "blocked", "blocked"},
+		{"completed", "audit_ready", "completed", "completed"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.runStatus, func(t *testing.T) {
+			run, pass := createLifecycleRunWithPass(t, st, "plan-sync-"+tc.planSuffix, "PASS-001", tc.startPass)
+			run.Status = tc.runStatus
+
+			if err := svc.SyncAssociatedPassForRunStatus(run); err != nil {
+				t.Fatalf("sync run status %q: %v", tc.runStatus, err)
+			}
+
+			updatedPass, err := st.GetPlanPass(pass.ID)
+			if err != nil {
+				t.Fatalf("get pass: %v", err)
+			}
+			if updatedPass.Status != tc.wantPass {
+				t.Fatalf("run status %q: expected pass %q, got %q", tc.runStatus, tc.wantPass, updatedPass.Status)
+			}
+		})
+	}
+
+	t.Run("terminal passes are never downgraded", func(t *testing.T) {
+		for _, terminal := range []string{"completed", "skipped"} {
+			run, pass := createLifecycleRunWithPass(t, st, "plan-sync-terminal-"+terminal, "PASS-001", terminal)
+			run.Status = "validation_failed"
+			if err := svc.SyncAssociatedPassForRunStatus(run); err != nil {
+				t.Fatalf("sync: %v", err)
+			}
+			updatedPass, err := st.GetPlanPass(pass.ID)
+			if err != nil {
+				t.Fatalf("get pass: %v", err)
+			}
+			if updatedPass.Status != terminal {
+				t.Fatalf("expected terminal %q preserved, got %q", terminal, updatedPass.Status)
+			}
+		}
+	})
+
+	t.Run("standalone and plan-only runs are no-ops", func(t *testing.T) {
+		plan := submitLifecyclePlan(t, st, "plan-sync-noop")
+		pass, err := st.GetPlanPassByPassID(plan.ID, "PASS-001")
+		if err != nil {
+			t.Fatalf("get pass: %v", err)
+		}
+
+		standaloneRun, err := st.CreateRunWithExecutorAdapter(1, "Standalone", "validation_failed", "gpt-4o", "gpt-4o", store.DefaultExecutorAdapter, "main")
+		if err != nil {
+			t.Fatalf("create standalone run: %v", err)
+		}
+		planOnlyRun, err := st.CreateRunWithAssociation(
+			1,
+			"Plan Only",
+			"validation_failed",
+			"gpt-4o",
+			"gpt-4o",
+			store.DefaultExecutorAdapter,
+			"main",
+			sql.NullInt64{Int64: plan.ID, Valid: true},
+			sql.NullInt64{},
+		)
+		if err != nil {
+			t.Fatalf("create plan-only run: %v", err)
+		}
+
+		if err := svc.SyncAssociatedPassForRunStatus(standaloneRun); err != nil {
+			t.Fatalf("standalone sync: %v", err)
+		}
+		if err := svc.SyncAssociatedPassForRunStatus(planOnlyRun); err != nil {
+			t.Fatalf("plan-only sync: %v", err)
+		}
+
+		updatedPass, err := st.GetPlanPass(pass.ID)
+		if err != nil {
+			t.Fatalf("get pass: %v", err)
+		}
+		if updatedPass.Status != "planned" {
+			t.Fatalf("expected planned, got %q", updatedPass.Status)
+		}
+	})
 }

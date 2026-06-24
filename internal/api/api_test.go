@@ -537,8 +537,8 @@ func TestAPI(t *testing.T) {
 		if !createdRun.PlanPassRowID.Valid || createdRun.PlanPassRowID.Int64 != passRow.ID {
 			t.Fatalf("expected plan_pass_row_id=%d, got %+v", passRow.ID, createdRun.PlanPassRowID)
 		}
-		if passRow.Status != "in_progress" {
-			t.Fatalf("expected pass status to become in_progress, got %q", passRow.Status)
+		if passRow.Status != "run_created" {
+			t.Fatalf("expected pass status to become run_created, got %q", passRow.Status)
 		}
 	})
 

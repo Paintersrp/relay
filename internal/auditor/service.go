@@ -8,6 +8,7 @@ import (
 
 	"relay/internal/artifacts"
 	"relay/internal/executor"
+	"relay/internal/plans"
 	"relay/internal/store"
 	"relay/internal/validationrunner"
 )
@@ -163,6 +164,9 @@ func (svc *Service) Generate(runID int64) (*GeneratedAudit, error) {
 	updatedRun, err := svc.store.UpdateRunStatus(runID, "audit_ready")
 	if err != nil {
 		return nil, fmt.Errorf("update run status to audit_ready: %w", err)
+	}
+	if err := plans.NewRunLifecycleService(svc.store).SyncAssociatedPassForRunStatus(updatedRun); err != nil {
+		return nil, fmt.Errorf("sync associated pass status: %w", err)
 	}
 
 	_, _ = svc.store.CreateEvent(runID, "status_change", "Audit packet generated; run is ready for auditor review")
