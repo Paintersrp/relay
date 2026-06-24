@@ -9,6 +9,13 @@ import (
 	"strings"
 
 	"relay/internal/api"
+	artifactsapi "relay/internal/api/artifacts"
+	auditsapi "relay/internal/api/audits"
+	intakeapi "relay/internal/api/intake"
+	plansapi "relay/internal/api/plans"
+	projectsapi "relay/internal/api/projects"
+	runsapi "relay/internal/api/runs"
+	"relay/internal/api/shared"
 	"relay/internal/devreload"
 	"relay/internal/events"
 	"relay/internal/handlers"
@@ -104,63 +111,13 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	// JSON API adapter routes
 	apiH := api.NewAPIHandler(s, log, eventHub)
 	r.Route("/api", func(r chi.Router) {
-		r.Use(api.CORSMiddleware)
-		r.Get("/runs", apiH.ListRuns)
-		r.Post("/dev/setup-smoke-validation-failure", apiH.SetupSmokeValidationFailure)
-		r.Get("/runs/{id}", apiH.GetRun)
-		r.Get("/runs/{id}/artifacts", apiH.ListArtifacts)
-		r.Get("/runs/{id}/artifacts/{kind}", apiH.GetArtifactContent)
-		r.Get("/runs/{id}/events", apiH.ListEvents)
-		r.Post("/intake/planner-handoff", apiH.IntakePlannerHandoff)
-		r.Get("/projects", apiH.ListProjects)
-		r.Post("/projects", apiH.CreateProject)
-		r.Get("/projects/{projectId}", apiH.GetProject)
-		r.Post("/projects/{projectId}/repositories", apiH.UpsertProjectRepository)
-		r.Post("/projects/{projectId}/repositories/{repoId}/update", apiH.UpdateProjectRepository)
-		r.Post("/projects/{projectId}/repositories/{repoId}/set-enabled", apiH.SetProjectRepositoryEnabled)
-		r.Get("/projects/{projectId}/audits", apiH.ListProjectLocalAudits)
-		r.Get("/projects/{projectId}/plans/{planId}/next-pass-work", apiH.GetNextPassWork)
-		r.Get("/projects/{projectId}/plans/{planId}/next-audit-work", apiH.GetNextAuditWork)
-		r.Get("/projects/{projectId}/refactor/discovery-tasks", apiH.ListRefactorDiscoveryTasks)
-		r.Post("/projects/{projectId}/refactor/discovery-tasks", apiH.CreateRefactorDiscoveryTask)
-		r.Get("/projects/{projectId}/refactor/discovery-tasks/{taskId}", apiH.GetRefactorDiscoveryTask)
-		r.Post("/projects/{projectId}/refactor/discovery-tasks/{taskId}/update", apiH.UpdateRefactorDiscoveryTask)
-		r.Post("/projects/{projectId}/refactor/discovery-tasks/{taskId}/complete", apiH.CompleteRefactorDiscoveryTask)
-		r.Post("/projects/{projectId}/refactor/discovery-tasks/{taskId}/close", apiH.CloseRefactorDiscoveryTask)
-		r.Post("/projects/{projectId}/refactor/discovery-tasks/{taskId}/supersede", apiH.SupersedeRefactorDiscoveryTask)
-		r.Get("/projects/{projectId}/refactor/candidates", apiH.ListRefactorCandidates)
-		r.Post("/projects/{projectId}/refactor/candidates", apiH.CreateRefactorCandidate)
-		r.Get("/projects/{projectId}/refactor/candidates/{candidateId}", apiH.GetRefactorCandidate)
-		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/update", apiH.UpdateRefactorCandidate)
-		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/defer", apiH.DeferRefactorCandidate)
-		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/reject", apiH.RejectRefactorCandidate)
-		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/supersede", apiH.SupersedeRefactorCandidate)
-		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/mark-scheduled", apiH.MarkScheduledRefactorCandidate)
-		r.Get("/projects/{projectId}/refactor/candidates/{candidateId}/placement-suggestion", apiH.GetRefactorCandidatePlacementSuggestion)
-		r.Post("/projects/{projectId}/refactor/candidates/{candidateId}/promote", apiH.PromoteRefactorCandidate)
-		r.Post("/projects/{projectId}/refactor/plans/generate", apiH.GenerateRefactorOnlyPlan)
-		r.Post("/audits/local", apiH.CreateLocalAudit)
-		r.Get("/audits/local/{auditId}", apiH.GetLocalAudit)
-		r.Post("/plans/validate", apiH.ValidatePlan)
-		r.Post("/plans", apiH.SubmitPlan)
-		r.Get("/plans", apiH.ListPlans)
-		r.Get("/plans/{planId}", apiH.GetPlan)
-		r.Get("/plans/{planId}/passes/{passId}", apiH.GetPlanPass)
-		r.Post("/runs/{id}/approve-intake", apiH.ApproveIntake)
-		r.Post("/runs/{id}/prepare", apiH.PrepareRun)
-		r.Post("/runs/{id}/render-brief", apiH.RenderBrief)
-		r.Post("/runs/{id}/approve-brief", apiH.ApproveBrief)
-		r.Post("/runs/{id}/execute", apiH.ExecuteRun)
-		r.Post("/runs/{id}/validate", apiH.ValidateRun)
-		r.Post("/runs/{id}/validate/accept-failure", apiH.AcceptFailedValidation)
-		r.Post("/runs/{id}/repair/validation", apiH.RepairValidation)
-		r.Get("/runs/{id}/audit/status", apiH.GetAuditStatus)
-		r.Post("/runs/{id}/audit", apiH.GenerateAudit)
-		r.Post("/runs/{id}/audit/submit", apiH.SubmitAuditPacket)
-		r.Post("/runs/{id}/audit/approve", apiH.ApproveAudit)
-		r.Post("/runs/{id}/audit/request-revision", apiH.RequestAuditRevision)
-		r.Post("/runs/{id}/audit/prepare-commit-message", apiH.PrepareCommitMessage)
-		r.Post("/runs/{id}/audit/close", apiH.CloseRun)
+		r.Use(shared.CORSMiddleware)
+		runsapi.MountRoutes(r, apiH)
+		artifactsapi.MountRoutes(r, apiH)
+		intakeapi.MountRoutes(r, apiH)
+		projectsapi.MountRoutes(r, apiH)
+		plansapi.MountRoutes(r, apiH)
+		auditsapi.MountRoutes(r, apiH)
 		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)

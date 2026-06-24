@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"relay/internal/api/shared"
 	"relay/internal/artifacts"
 	"relay/internal/auditor"
 	"relay/internal/compiler"
@@ -62,25 +63,9 @@ func NewAPIHandler(s *store.Store, log *slog.Logger, hub ...*events.Hub) *APIHan
 	}
 }
 
-// CORS middleware for local frontend development origins
-func CORSMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if isAllowedCORSOrigin(origin) {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, MCP-Protocol-Version, Authorization")
-		}
-
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
+// CORS middleware for local frontend development origins lives in
+// internal/api/shared. The legacy api.CORSMiddleware entrypoint is preserved
+// in cors.go as a compatibility wrapper.
 
 // Shared Models matching TypeScript contract
 
@@ -359,23 +344,7 @@ type PlanReadAPIResponse struct {
 // Helpers for mappings
 
 func parseAndFormatTime(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return time.Now().UTC().Format(time.RFC3339)
-	}
-	layouts := []string{
-		time.RFC3339Nano,
-		time.RFC3339,
-		"2006-01-02 15:04:05.999999999",
-		"2006-01-02 15:04:05",
-		"2006-01-02 15:04",
-	}
-	for _, l := range layouts {
-		if t, err := time.ParseInLocation(l, value, time.UTC); err == nil {
-			return t.UTC().Format(time.RFC3339)
-		}
-	}
-	return value
+	return shared.ParseAndFormatTime(value)
 }
 
 func mapEventKind(level, message string) string {
@@ -1027,16 +996,11 @@ func (h *APIHandler) mapRunToRelayRun(run generated.Run, repoName string) RelayR
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+	shared.JSON(w, status, data)
 }
 
 func writeError(w http.ResponseWriter, status int, errStr, msg string) {
-	writeJSON(w, status, RelayApiErrorShape{
-		Error:   errStr,
-		Message: msg,
-	})
+	shared.Error(w, status, errStr, msg)
 }
 
 func rawPlanFromRequest(req PlanAPIRequest) ([]byte, bool, error) {
