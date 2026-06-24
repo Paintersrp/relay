@@ -216,6 +216,115 @@ type ProjectRepository struct {
 	UpdatedAt        string `json:"updated_at"`
 }
 
+type RefactorCandidate struct {
+	ID                      int64  `json:"id"`
+	CandidateID             string `json:"candidate_id"`
+	ProjectRowID            int64  `json:"project_row_id"`
+	ProjectID               string `json:"project_id"`
+	Title                   string `json:"title"`
+	ProblemSummary          string `json:"problem_summary"`
+	CurrentBehavior         string `json:"current_behavior"`
+	DesiredBehavior         string `json:"desired_behavior"`
+	Rationale               string `json:"rationale"`
+	ProposedPassName        string `json:"proposed_pass_name"`
+	ProposedPassGoal        string `json:"proposed_pass_goal"`
+	ProposedPassScopeJson   string `json:"proposed_pass_scope_json"`
+	ProposedNonGoalsJson    string `json:"proposed_non_goals_json"`
+	TargetFilesJson         string `json:"target_files_json"`
+	ValidationCommandsJson  string `json:"validation_commands_json"`
+	AuditFocusJson          string `json:"audit_focus_json"`
+	ConstraintsJson         string `json:"constraints_json"`
+	RiskLevel               string `json:"risk_level"`
+	Status                  string `json:"status"`
+	DependencyNotes         string `json:"dependency_notes"`
+	DeferReason             string `json:"defer_reason"`
+	DeferredUntil           string `json:"deferred_until"`
+	RejectedReason          string `json:"rejected_reason"`
+	SupersededByCandidateID string `json:"superseded_by_candidate_id"`
+	SupersededReason        string `json:"superseded_reason"`
+	ScheduledAt             string `json:"scheduled_at"`
+	CompletedAt             string `json:"completed_at"`
+	MetadataJson            string `json:"metadata_json"`
+	CreatedAt               string `json:"created_at"`
+	UpdatedAt               string `json:"updated_at"`
+}
+
+type RefactorCandidateDependency struct {
+	ID                      int64  `json:"id"`
+	DependencyID            string `json:"dependency_id"`
+	ProjectRowID            int64  `json:"project_row_id"`
+	ProjectID               string `json:"project_id"`
+	CandidateRowID          int64  `json:"candidate_row_id"`
+	DependsOnCandidateRowID int64  `json:"depends_on_candidate_row_id"`
+	DependencyType          string `json:"dependency_type"`
+	Note                    string `json:"note"`
+	CreatedAt               string `json:"created_at"`
+}
+
+type RefactorCandidateDiscoveryLink struct {
+	ID                 int64  `json:"id"`
+	LinkID             string `json:"link_id"`
+	ProjectRowID       int64  `json:"project_row_id"`
+	ProjectID          string `json:"project_id"`
+	CandidateRowID     int64  `json:"candidate_row_id"`
+	DiscoveryTaskRowID int64  `json:"discovery_task_row_id"`
+	Note               string `json:"note"`
+	CreatedAt          string `json:"created_at"`
+}
+
+type RefactorCandidateScheduleRef struct {
+	ID             int64         `json:"id"`
+	ScheduleRefID  string        `json:"schedule_ref_id"`
+	ProjectRowID   int64         `json:"project_row_id"`
+	ProjectID      string        `json:"project_id"`
+	CandidateRowID int64         `json:"candidate_row_id"`
+	ScheduleKind   string        `json:"schedule_kind"`
+	Status         string        `json:"status"`
+	PlanRowID      sql.NullInt64 `json:"plan_row_id"`
+	PlanPassRowID  sql.NullInt64 `json:"plan_pass_row_id"`
+	RunRowID       sql.NullInt64 `json:"run_row_id"`
+	PlanID         string        `json:"plan_id"`
+	PassID         string        `json:"pass_id"`
+	RunID          string        `json:"run_id"`
+	Note           string        `json:"note"`
+	CreatedAt      string        `json:"created_at"`
+	UpdatedAt      string        `json:"updated_at"`
+}
+
+type RefactorCandidateStatusEvent struct {
+	ID             int64  `json:"id"`
+	EventID        string `json:"event_id"`
+	ProjectRowID   int64  `json:"project_row_id"`
+	ProjectID      string `json:"project_id"`
+	CandidateRowID int64  `json:"candidate_row_id"`
+	EventType      string `json:"event_type"`
+	FromStatus     string `json:"from_status"`
+	ToStatus       string `json:"to_status"`
+	Reason         string `json:"reason"`
+	DetailJson     string `json:"detail_json"`
+	CreatedAt      string `json:"created_at"`
+}
+
+type RefactorDiscoveryTask struct {
+	ID           int64  `json:"id"`
+	TaskID       string `json:"task_id"`
+	ProjectRowID int64  `json:"project_row_id"`
+	ProjectID    string `json:"project_id"`
+	Title        string `json:"title"`
+	Prompt       string `json:"prompt"`
+	Scope        string `json:"scope"`
+	Priority     string `json:"priority"`
+	Status       string `json:"status"`
+	TagsJson     string `json:"tags_json"`
+	CreatedFrom  string `json:"created_from"`
+	MetadataJson string `json:"metadata_json"`
+	ClosedReason string `json:"closed_reason"`
+	CompletedAt  string `json:"completed_at"`
+	ClosedAt     string `json:"closed_at"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
 type Repo struct {
 	ID                        int64  `json:"id"`
 	Name                      string `json:"name"`
