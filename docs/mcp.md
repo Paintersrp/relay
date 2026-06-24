@@ -6,7 +6,7 @@
 > 
 > The Planner does **not** have status-query, run-listing, audit-submission, or downstream-dispatch MCP actions by default. Tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
 >
-> Relay implements a profile-based tool registration system. Under the default `RELAY_MCP_PROFILE=local-operator` configuration, Relay registers 22 additional retrieval-only context-broker tools (e.g. `get_project`, `get_plan`, `get_pass`, snapshotting, and context packets) to support local-first workflows. These context broker tools stay separate from submission actions, and do not create runs, submit plans, dispatch executors, mutate git, run shell commands, or expose arbitrary filesystem access.
+> Relay implements a profile-based tool registration system. Under the default `RELAY_MCP_PROFILE=local-operator` configuration, Relay registers 24 additional retrieval-only context-broker tools (e.g. `get_project`, `get_plan`, `get_pass`, `get_next_pass_work`, `get_next_audit_work`, snapshotting, and context packets) to support local-first workflows. These context broker tools stay separate from submission actions, and do not create runs, submit plans, dispatch executors, mutate git, run shell commands, or expose arbitrary filesystem access.
 >
 > The Relay web UI shows read-only managed pass context, planner handoff provenance, context packet IDs, source snapshot IDs, associated runs, and links to safe persisted source-context artifacts. This UI visibility does **not** invoke MCP broker tools directly, does **not** create context packets/source snapshots, and does **not** render raw source file contents.
 
@@ -23,13 +23,16 @@
     *   `submit_planner_pass_plan` creates plan/pass records only and does not create runs, dispatch executors, mutate git, or read chat context.
     *   The additional status/list/audit tools are **not** currently exposed to the Planner Project unless the specific project configuration is modified to expose them.
 
-## Project-Orchestrator Work Tools (Contract-Defined, Not Registered Yet)
+## Project-Orchestrator Work Tools (Context-Broker Profile)
 
 *   `get_next_pass_work` and `get_next_audit_work` are defined by the `Paintersrp/relay-contracts` repository at `contracts/planner_mcp_orchestrator_work_contract.md`.
 *   They serve as retrieval-only work-packet surfaces for project-scoped sequential orchestration.
-*   They require `project_id` and `plan_id`. `get_next_audit_work` also accepts optional `pass_id` and `run_id`.
-*   These tools are **not currently registered** in the `Paintersrp/relay` MCP server, and will be implemented in a subsequent vertical slice.
-*   They do not submit plans, create runs, generate handoffs, generate audit judgments, apply audit decisions, dispatch executors, run shell commands, mutate git, or read/write arbitrary filesystem paths.
+*   These tools are registered when the MCP context-broker-enabled profile is active (`RELAY_MCP_PROFILE=local-operator`) and hidden under `RELAY_MCP_PROFILE=restricted`.
+*   `get_next_pass_work` requires `project_id` and `plan_id` and returns the next eligible pass work packet or structured blockers.
+*   `get_next_audit_work` requires `project_id` and `plan_id` and accepts optional `pass_id` and `run_id` for scoped audit work selection.
+*   Outputs are bounded work-packet JSON with either `ok:true` or `ok:false` and structured `blockers`.
+*   These tools do not submit plans, create runs, generate handoffs, generate audit judgments, apply audit decisions, dispatch executors, run shell commands, mutate git, or read/write arbitrary filesystem paths.
+*   They remain separate from submission tools (`submit_planner_pass_plan`, `create_run_from_planner_handoff`, `submit_audit_packet`) and are retrieval-only.
 
 ---
 

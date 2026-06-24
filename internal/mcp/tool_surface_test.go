@@ -20,6 +20,8 @@ func TestDefaultLocalOperatorToolSurfaceIncludesAllSafeTools(t *testing.T) {
 		"get_plan",
 		"get_pass",
 		"get_pass_context",
+		"get_next_pass_work",
+		"get_next_audit_work",
 		"create_source_snapshot",
 		"list_project_files",
 		"search_project_files",

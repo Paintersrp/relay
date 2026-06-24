@@ -821,6 +821,8 @@ func contextBrokerToolDefinitions() []ToolDefinition {
 		ToolGetPlan,
 		ToolGetPass,
 		ToolGetPassContext,
+		ToolGetNextPassWork,
+		ToolGetNextAuditWork,
 		ToolCreateSourceSnapshot,
 		ToolListProjectFiles,
 		ToolSearchProjectFiles,
