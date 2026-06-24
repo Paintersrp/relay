@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Copy } from "lucide-react";
+import { ArrowLeft, Copy, GitBranchPlus } from "lucide-react";
 
 import { summarizePlanPassContext } from "@/components/relay/PlanPassContextPanel";
 import { RelayPlanPassTimeline } from "@/components/relay/RelayPlanPassTimeline";
@@ -260,6 +260,23 @@ export function RelayPlanDetail({
                     params={{ planId: plan.planId, passId: currentPass.passId }}
                   >
                     Open current pass
+                  </Link>
+                </Button>
+              ) : null}
+              {plan.projectId ? (
+                <Button
+                  asChild
+                  variant="outline"
+                  size="xs"
+                  className="rounded-sm px-3 text-xs"
+                >
+                  <Link
+                    to="/projects/$projectId/refactor-backlog"
+                    params={{ projectId: plan.projectId }}
+                    search={{ planId: plan.planId }}
+                  >
+                    <GitBranchPlus className="size-3" />
+                    Suggest Refactors
                   </Link>
                 </Button>
               ) : null}

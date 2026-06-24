@@ -152,6 +152,21 @@ export function RelayProjectDetail({ project }: RelayProjectDetailProps) {
         </p>
       </div>
 
+      {/* Refactor backlog entry point */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4">
+        <div className="min-w-0 space-y-1">
+          <h3 className="text-sm font-semibold text-foreground">Refactor Backlog</h3>
+          <p className="text-xs text-muted-foreground">
+            Track discovery prompts and pass-ready refactor candidates for this project.
+          </p>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link to="/projects/$projectId/refactor-backlog" params={{ projectId: project.projectId }}>
+            Open Refactor Backlog
+          </Link>
+        </Button>
+      </div>
+
       {/* Project-scoped managed plans */}
       <RelayProjectPlansPanel projectId={project.projectId} />
 
