@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"database/sql"
@@ -12,7 +12,8 @@ import (
 	"strconv"
 	"testing"
 
-	"relay/internal/plans"
+	plansapi "relay/internal/api/plans"
+	appplans "relay/internal/app/plans"
 	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -20,7 +21,7 @@ import (
 
 // newNextAuditWorkTestServer creates a minimal test router with the
 // GetNextAuditWork route registered.
-func newNextAuditWorkTestServer(t *testing.T) (*APIHandler, *store.Store, http.Handler) {
+func newNextAuditWorkTestServer(t *testing.T) (*plansapi.Handler, *store.Store, http.Handler) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -41,15 +42,16 @@ func newNextAuditWorkTestServer(t *testing.T) (*APIHandler, *store.Store, http.H
 		t.Fatalf("st.CreateProject: %v", err)
 	}
 
-	apiH := NewAPIHandler(st, logger)
+	planSvc := appplans.NewService(st)
+	planLifecycleSvc := appplans.NewRunLifecycleService(st)
+	planWorkSvc := appplans.NewOrchestratorWorkService(st)
+	planH := plansapi.NewHandler(planSvc, planLifecycleSvc, planWorkSvc, st)
 	router := chi.NewRouter()
 	router.Route("/api", func(r chi.Router) {
-		r.Post("/plans/validate", apiH.ValidatePlan)
-		r.Post("/plans", apiH.SubmitPlan)
-		r.Get("/projects/{projectId}/plans/{planId}/next-audit-work", apiH.GetNextAuditWork)
+		plansapi.MountRoutes(r, planH)
 	})
 
-	return apiH, st, router
+	return planH, st, router
 }
 
 func TestGetNextAuditWork_ConflictingAliasesReturns400(t *testing.T) {
@@ -66,14 +68,14 @@ func TestGetNextAuditWork_ConflictingAliasesReturns400(t *testing.T) {
 		t.Fatalf("expected 400 Bad Request, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp plans.NextAuditWorkResponse
+	var resp appplans.NextAuditWorkResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if resp.OK {
 		t.Fatalf("expected ok=false")
 	}
-	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != plans.BlockerUnsafeRequest {
+	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != appplans.BlockerUnsafeRequest {
 		t.Fatalf("expected unsafe_request blocker, got: %+v", resp.Blockers)
 	}
 }
@@ -91,14 +93,14 @@ func TestGetNextAuditWork_UnknownProjectReturns200WithBlocker(t *testing.T) {
 		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp plans.NextAuditWorkResponse
+	var resp appplans.NextAuditWorkResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if resp.OK {
 		t.Fatalf("expected ok=false")
 	}
-	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != plans.BlockerUnknownProject {
+	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != appplans.BlockerUnknownProject {
 		t.Fatalf("expected unknown_project blocker, got: %+v", resp.Blockers)
 	}
 }
@@ -159,7 +161,7 @@ func TestGetNextAuditWork_SuccessReturns200WithOKTrue(t *testing.T) {
 		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp plans.NextAuditWorkResponse
+	var resp appplans.NextAuditWorkResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}

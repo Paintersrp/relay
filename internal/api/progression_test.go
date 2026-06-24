@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"relay/internal/artifacts"
-	"relay/internal/plans"
+	appplans "relay/internal/app/plans"
 	"relay/internal/store"
 	"relay/internal/validationrunner"
 
@@ -64,8 +64,8 @@ func newProgressionTestServer(t *testing.T) (*store.Store, http.Handler) {
 func seedProgressionPlan(t *testing.T, st *store.Store, planID string) (*store.Plan, *store.PlanPass) {
 	t.Helper()
 
-	plan := plans.PlannerPassPlan{
-		PlanMeta: plans.PlanMeta{
+	plan := appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
 			PlanID:        planID,
 			SchemaVersion: "2.0.0",
 			CreatedAt:     "2026-06-23T00:00:00Z",
@@ -75,19 +75,19 @@ func seedProgressionPlan(t *testing.T, st *store.Store, planID string) (*store.P
 			BranchContext: "main",
 			Status:        "active",
 			ProjectID:     "relay",
-			MCPCapabilityProfile: &plans.MCPCapabilityProfile{
+			MCPCapabilityProfile: &appplans.MCPCapabilityProfile{
 				ProfileID:            "test",
 				Mode:                 "submission_only",
 				ContextBrokerEnabled: progressionBoolPtr(false),
 			},
 		},
-		SourceIntent: plans.SourceIntent{Summary: "Progression API test."},
-		GlobalContextRules: &plans.GlobalContextRules{
+		SourceIntent: appplans.SourceIntent{Summary: "Progression API test."},
+		GlobalContextRules: &appplans.GlobalContextRules{
 			DefaultSourceOfTruth:    "Relay managed plan.",
 			PlannerContextBoundary:  "Test only.",
 			ForbiddenContextDomains: []string{"GitHub issues"},
 		},
-		Passes: []plans.PlanPassInput{
+		Passes: []appplans.PlanPassInput{
 			{
 				PassID:                 "PASS-001",
 				Sequence:               1,
@@ -98,18 +98,18 @@ func seedProgressionPlan(t *testing.T, st *store.Store, planID string) (*store.P
 				Dependencies:           []string{},
 				Status:                 "planned",
 				PassType:               "backend_vertical_slice",
-				ContextPlan: plans.ContextPlan{
+				ContextPlan: appplans.ContextPlan{
 					RequiredRepositories: []string{"relay"},
-					SeedSearchTerms: []plans.ContextSearchTerm{
+					SeedSearchTerms: []appplans.ContextSearchTerm{
 						{RepoID: "relay", Query: "plans validate", Purpose: "optional", Required: progressionBoolPtr(false)},
 					},
-					SeedFilesToRead: []plans.ContextFileRead{
+					SeedFilesToRead: []appplans.ContextFileRead{
 						{RepoID: "relay", Path: "internal/plans/validator.go", Purpose: "optional", Required: progressionBoolPtr(false)},
 					},
 					ContextCoverageExpectations: []string{"coverage ok"},
 					BlockedIfMissing:            []string{"not blocked"},
 				},
-				SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+				SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
 					RequireGitStatus:   progressionBoolPtr(false),
 					RequireCommitSHA:   progressionBoolPtr(false),
 					AllowDirtyWorktree: progressionBoolPtr(true),
@@ -124,7 +124,7 @@ func seedProgressionPlan(t *testing.T, st *store.Store, planID string) (*store.P
 		t.Fatalf("marshal plan: %v", err)
 	}
 
-	result, err := plans.NewService(st).SubmitPlan(context.Background(), plans.SubmitPlanRequest{
+	result, err := appplans.NewService(st).SubmitPlan(context.Background(), appplans.SubmitPlanRequest{
 		RawJSON:            raw,
 		SourceArtifactPath: "handoffs/planner/progression-test.json",
 		ProjectID:          "relay",

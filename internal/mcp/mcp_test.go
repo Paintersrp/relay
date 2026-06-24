@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"relay/internal/artifacts"
-	"relay/internal/plans"
+	appplans "relay/internal/app/plans"
 	"relay/internal/store"
 )
 
@@ -417,7 +417,7 @@ func TestHandleSubmitPlannerPassPlan_InvalidDependency(t *testing.T) {
 	if out.Validation == nil {
 		t.Fatal("expected validation report in error output")
 	}
-	assertValidationIssueCode(t, *out.Validation, plans.IssuePlanDependencyUnknown)
+	assertValidationIssueCode(t, *out.Validation, appplans.IssuePlanDependencyUnknown)
 	if got := countTableRows(t, deps.Store.DB(), "plans"); got != 0 {
 		t.Fatalf("expected 0 plan rows, got %d", got)
 	}
@@ -454,7 +454,7 @@ func TestHandleSubmitPlannerPassPlan_DuplicatePlanID(t *testing.T) {
 	if out.Validation == nil {
 		t.Fatal("expected validation report in duplicate error output")
 	}
-	assertValidationIssueCode(t, *out.Validation, plans.IssuePlanDuplicatePlanID)
+	assertValidationIssueCode(t, *out.Validation, appplans.IssuePlanDuplicatePlanID)
 	if got := countTableRows(t, deps.Store.DB(), "plans"); got != 1 {
 		t.Fatalf("expected 1 plan row after duplicate submit, got %d", got)
 	}
@@ -1473,9 +1473,9 @@ func mustMarshal(t *testing.T, v interface{}) []byte {
 	return b
 }
 
-func validPlannerPassPlan() plans.PlannerPassPlan {
-	return plans.PlannerPassPlan{
-		PlanMeta: plans.PlanMeta{
+func validPlannerPassPlan() appplans.PlannerPassPlan {
+	return appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
 			PlanID:        "plan-123",
 			SchemaVersion: "2.0.0",
 			CreatedAt:     "2026-06-21T16:10:00Z",
@@ -1485,23 +1485,23 @@ func validPlannerPassPlan() plans.PlannerPassPlan {
 			BranchContext: "main",
 			Status:        "active",
 			ProjectID:     "relay",
-			MCPCapabilityProfile: &plans.MCPCapabilityProfile{
+			MCPCapabilityProfile: &appplans.MCPCapabilityProfile{
 				ProfileID:            "relay-mcp-tests",
 				Mode:                 "submission_only",
 				ContextBrokerEnabled: mcpBoolPtr(false),
 			},
 		},
-		SourceIntent: plans.SourceIntent{
+		SourceIntent: appplans.SourceIntent{
 			Summary: "Add a backend service for validated plan submission.",
 		},
-		GlobalContextRules: &plans.GlobalContextRules{
+		GlobalContextRules: &appplans.GlobalContextRules{
 			DefaultSourceOfTruth:   "Relay managed plan records.",
 			PlannerContextBoundary: "MCP tests validate plan submission without broker tool exposure.",
 			ForbiddenContextDomains: []string{
 				"GitHub issues",
 			},
 		},
-		Passes: []plans.PlanPassInput{
+		Passes: []appplans.PlanPassInput{
 			{
 				PassID:                 "PASS-001",
 				Sequence:               1,
@@ -1512,18 +1512,18 @@ func validPlannerPassPlan() plans.PlannerPassPlan {
 				Dependencies:           []string{},
 				Status:                 "planned",
 				PassType:               "schema_contract",
-				ContextPlan: plans.ContextPlan{
+				ContextPlan: appplans.ContextPlan{
 					RequiredRepositories: []string{"relay"},
-					SeedSearchTerms: []plans.ContextSearchTerm{
+					SeedSearchTerms: []appplans.ContextSearchTerm{
 						{RepoID: "relay", Query: "submit_planner_pass_plan", Purpose: "Locate the MCP submission flow.", Required: mcpBoolPtr(true)},
 					},
-					SeedFilesToRead: []plans.ContextFileRead{
+					SeedFilesToRead: []appplans.ContextFileRead{
 						{RepoID: "relay", Path: "internal/mcp/plan_tools.go", Purpose: "Keep submission semantics bounded.", Required: mcpBoolPtr(true)},
 					},
 					ContextCoverageExpectations: []string{"Planner plan submission creates plan/pass records only."},
 					BlockedIfMissing:            []string{"Plan submission tool wiring cannot be read."},
 				},
-				SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+				SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
 					RequireGitStatus:   mcpBoolPtr(true),
 					RequireCommitSHA:   mcpBoolPtr(false),
 					AllowDirtyWorktree: mcpBoolPtr(true),
@@ -1540,18 +1540,18 @@ func validPlannerPassPlan() plans.PlannerPassPlan {
 				Dependencies:           []string{"PASS-001"},
 				Status:                 "planned",
 				PassType:               "backend_vertical_slice",
-				ContextPlan: plans.ContextPlan{
+				ContextPlan: appplans.ContextPlan{
 					RequiredRepositories: []string{"relay"},
-					SeedSearchTerms: []plans.ContextSearchTerm{
+					SeedSearchTerms: []appplans.ContextSearchTerm{
 						{RepoID: "relay", Query: "CreatePlanPass", Purpose: "Locate persistence fields.", Required: mcpBoolPtr(true)},
 					},
-					SeedFilesToRead: []plans.ContextFileRead{
+					SeedFilesToRead: []appplans.ContextFileRead{
 						{RepoID: "relay", Path: "internal/plans/service.go", Purpose: "Persist full Plan v2 JSON metadata.", Required: mcpBoolPtr(true)},
 					},
 					ContextCoverageExpectations: []string{"Stored pass rows preserve later workflow context."},
 					BlockedIfMissing:            []string{"Persistence wiring cannot be read."},
 				},
-				SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+				SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
 					RequireGitStatus:   mcpBoolPtr(true),
 					RequireCommitSHA:   mcpBoolPtr(false),
 					AllowDirtyWorktree: mcpBoolPtr(true),
@@ -1562,7 +1562,7 @@ func validPlannerPassPlan() plans.PlannerPassPlan {
 	}
 }
 
-func mustMarshalPlannerPassPlan(t *testing.T, plan plans.PlannerPassPlan) []byte {
+func mustMarshalPlannerPassPlan(t *testing.T, plan appplans.PlannerPassPlan) []byte {
 	t.Helper()
 	raw, err := json.Marshal(plan)
 	if err != nil {
@@ -1571,7 +1571,7 @@ func mustMarshalPlannerPassPlan(t *testing.T, plan plans.PlannerPassPlan) []byte
 	return raw
 }
 
-func assertValidationIssueCode(t *testing.T, report plans.PlanValidationReport, code string) {
+func assertValidationIssueCode(t *testing.T, report appplans.PlanValidationReport, code string) {
 	t.Helper()
 	for _, issue := range report.Issues {
 		if issue.Code == code {

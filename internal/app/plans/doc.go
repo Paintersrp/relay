@@ -1,6 +1,7 @@
-// Package plans owns future plan service, use-case, and business workflow code
-// for the plans feature.
+// Package plans owns plan service, use-case, and business workflow code
+// for the plans feature. It is the single implementation owner of plan
+// validation, submission, lifecycle synchronization, query, and orchestrator
+// work-packet behavior.
 //
-// It is intentionally skeletal in PASS-001. It must not import internal/api or
-// internal/api/<feature>.
+// It must not import internal/api or internal/api/<feature>.
 package plans

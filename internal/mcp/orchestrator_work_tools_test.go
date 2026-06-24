@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"relay/internal/plans"
+	appplans "relay/internal/app/plans"
 	"relay/internal/store"
 )
 
@@ -82,10 +82,10 @@ func TestOrchestratorWorkToolsListing(t *testing.T) {
 			hasNextPassWork := false
 			hasNextAudit := false
 			for _, tool := range result.Tools {
-				if tool.Name == plans.NextPassWorkTool {
+				if tool.Name == appplans.NextPassWorkTool {
 					hasNextPassWork = true
 				}
-				if tool.Name == plans.NextAuditWorkTool {
+				if tool.Name == appplans.NextAuditWorkTool {
 					hasNextAudit = true
 				}
 			}
@@ -115,11 +115,11 @@ func TestOrchestratorWorkToolsRestrictedProfileReturnsMethodNotFound(t *testing.
 	}{
 		{
 			name:     "get_next_pass_work returns method not found under restricted profile",
-			toolName: plans.NextPassWorkTool,
+			toolName: appplans.NextPassWorkTool,
 		},
 		{
 			name:     "get_next_audit_work returns method not found under restricted profile",
-			toolName: plans.NextAuditWorkTool,
+			toolName: appplans.NextAuditWorkTool,
 		},
 	}
 
@@ -163,12 +163,12 @@ func TestOrchestratorWorkToolsStrictArgumentDecoding(t *testing.T) {
 	}{
 		{
 			name:     "get_next_pass_work rejects unknown fields",
-			toolName: plans.NextPassWorkTool,
+			toolName: appplans.NextPassWorkTool,
 			args:     `{"project_id":"test","plan_id":"test","unknown_field":"value"}`,
 		},
 		{
 			name:     "get_next_audit_work rejects unknown fields",
-			toolName: plans.NextAuditWorkTool,
+			toolName: appplans.NextAuditWorkTool,
 			args:     `{"project_id":"test","plan_id":"test","unknown_field":"value"}`,
 		},
 	}
@@ -233,7 +233,7 @@ func TestGetNextPassWorkUnknownProject(t *testing.T) {
 		ID:     json.RawMessage(`1`),
 		Method: "tools/call",
 		Params: mustMarshalJSON(t, ToolCallParams{
-			Name:      plans.NextPassWorkTool,
+			Name:      appplans.NextPassWorkTool,
 			Arguments: json.RawMessage(`{"project_id":"missing","plan_id":"missing"}`),
 		}),
 	}
@@ -262,7 +262,7 @@ func TestGetNextPassWorkUnknownProject(t *testing.T) {
 		t.Fatal("expected content block")
 	}
 
-	var payload plans.NextPassWorkResponse
+	var payload appplans.NextPassWorkResponse
 	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
@@ -271,16 +271,16 @@ func TestGetNextPassWorkUnknownProject(t *testing.T) {
 		t.Error("expected ok=false for unknown project, got true")
 	}
 
-	if payload.Tool != plans.NextPassWorkTool {
-		t.Errorf("tool = %q, want %q", payload.Tool, plans.NextPassWorkTool)
+	if payload.Tool != appplans.NextPassWorkTool {
+		t.Errorf("tool = %q, want %q", payload.Tool, appplans.NextPassWorkTool)
 	}
 
 	if len(payload.Blockers) == 0 {
 		t.Fatal("expected at least one blocker")
 	}
 
-	if payload.Blockers[0].Code != plans.BlockerUnknownProject {
-		t.Errorf("blocker code = %q, want %q", payload.Blockers[0].Code, plans.BlockerUnknownProject)
+	if payload.Blockers[0].Code != appplans.BlockerUnknownProject {
+		t.Errorf("blocker code = %q, want %q", payload.Blockers[0].Code, appplans.BlockerUnknownProject)
 	}
 }
 
@@ -297,7 +297,7 @@ func TestGetNextAuditWorkUnknownProject(t *testing.T) {
 		ID:     json.RawMessage(`1`),
 		Method: "tools/call",
 		Params: mustMarshalJSON(t, ToolCallParams{
-			Name:      plans.NextAuditWorkTool,
+			Name:      appplans.NextAuditWorkTool,
 			Arguments: json.RawMessage(`{"project_id":"missing","plan_id":"missing"}`),
 		}),
 	}
@@ -326,7 +326,7 @@ func TestGetNextAuditWorkUnknownProject(t *testing.T) {
 		t.Fatal("expected content block")
 	}
 
-	var payload plans.NextAuditWorkResponse
+	var payload appplans.NextAuditWorkResponse
 	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
@@ -335,16 +335,16 @@ func TestGetNextAuditWorkUnknownProject(t *testing.T) {
 		t.Error("expected ok=false for unknown project, got true")
 	}
 
-	if payload.Tool != plans.NextAuditWorkTool {
-		t.Errorf("tool = %q, want %q", payload.Tool, plans.NextAuditWorkTool)
+	if payload.Tool != appplans.NextAuditWorkTool {
+		t.Errorf("tool = %q, want %q", payload.Tool, appplans.NextAuditWorkTool)
 	}
 
 	if len(payload.Blockers) == 0 {
 		t.Fatal("expected at least one blocker")
 	}
 
-	if payload.Blockers[0].Code != plans.BlockerUnknownProject {
-		t.Errorf("blocker code = %q, want %q", payload.Blockers[0].Code, plans.BlockerUnknownProject)
+	if payload.Blockers[0].Code != appplans.BlockerUnknownProject {
+		t.Errorf("blocker code = %q, want %q", payload.Blockers[0].Code, appplans.BlockerUnknownProject)
 	}
 }
 
@@ -395,27 +395,27 @@ func seedMCPOrchestratorPlan(t *testing.T, st *store.Store, planID string) *stor
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	noReqContext := func() plans.ContextPlan {
-		return plans.ContextPlan{
+	noReqContext := func() appplans.ContextPlan {
+		return appplans.ContextPlan{
 			RequiredRepositories: []string{"relay"},
-			SeedSearchTerms: []plans.ContextSearchTerm{
+			SeedSearchTerms: []appplans.ContextSearchTerm{
 				{RepoID: "relay", Query: "orchestrator work", Purpose: "Optional context.", Required: mcpBoolPtr(false)},
 			},
-			SeedFilesToRead: []plans.ContextFileRead{
+			SeedFilesToRead: []appplans.ContextFileRead{
 				{RepoID: "relay", Path: "internal/plans/work_packets.go", Purpose: "Optional file.", Required: mcpBoolPtr(false)},
 			},
 			ContextCoverageExpectations: []string{"Coverage is best-effort."},
 			BlockedIfMissing:            []string{"Not blocked if missing."},
 		}
 	}
-	noReqSnapshot := plans.SourceSnapshotRequirements{
+	noReqSnapshot := appplans.SourceSnapshotRequirements{
 		RequireGitStatus:   mcpBoolPtr(false),
 		RequireCommitSHA:   mcpBoolPtr(false),
 		AllowDirtyWorktree: mcpBoolPtr(true),
 	}
 
-	plan := plans.PlannerPassPlan{
-		PlanMeta: plans.PlanMeta{
+	plan := appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
 			PlanID:        planID,
 			SchemaVersion: "2.0.0",
 			CreatedAt:     "2026-06-23T00:00:00Z",
@@ -425,19 +425,19 @@ func seedMCPOrchestratorPlan(t *testing.T, st *store.Store, planID string) *stor
 			BranchContext: "main",
 			Status:        "active",
 			ProjectID:     "relay",
-			MCPCapabilityProfile: &plans.MCPCapabilityProfile{
+			MCPCapabilityProfile: &appplans.MCPCapabilityProfile{
 				ProfileID:            "test-profile",
 				Mode:                 "submission_only",
 				ContextBrokerEnabled: mcpBoolPtr(false),
 			},
 		},
-		SourceIntent: plans.SourceIntent{Summary: "MCP orchestrator work tool test plan."},
-		GlobalContextRules: &plans.GlobalContextRules{
+		SourceIntent: appplans.SourceIntent{Summary: "MCP orchestrator work tool test plan."},
+		GlobalContextRules: &appplans.GlobalContextRules{
 			DefaultSourceOfTruth:    "Relay managed plan.",
 			PlannerContextBoundary:  "Test only.",
 			ForbiddenContextDomains: []string{"GitHub issues"},
 		},
-		Passes: []plans.PlanPassInput{
+		Passes: []appplans.PlanPassInput{
 			{
 				PassID:                     "PASS-001",
 				Sequence:                   1,
@@ -473,7 +473,7 @@ func seedMCPOrchestratorPlan(t *testing.T, st *store.Store, planID string) *stor
 	if err != nil {
 		t.Fatalf("marshal plan: %v", err)
 	}
-	result, err := plans.NewService(st).SubmitPlan(context.Background(), plans.SubmitPlanRequest{RawJSON: raw, ProjectID: "relay"})
+	result, err := appplans.NewService(st).SubmitPlan(context.Background(), appplans.SubmitPlanRequest{RawJSON: raw, ProjectID: "relay"})
 	if err != nil {
 		t.Fatalf("SubmitPlan: %v", err)
 	}
@@ -565,13 +565,13 @@ func TestOrchestratorWorkTools_HandlersReturnStructuredBlockersWithoutStore(t *t
 	}{
 		{
 			name: "get_next_pass_work",
-			tool: plans.NextPassWorkTool,
+			tool: appplans.NextPassWorkTool,
 			call: srv.HandleGetNextPassWork,
 			args: `{"project_id":"relay","plan_id":"plan-x"}`,
 		},
 		{
 			name: "get_next_audit_work",
-			tool: plans.NextAuditWorkTool,
+			tool: appplans.NextAuditWorkTool,
 			call: srv.HandleGetNextAuditWork,
 			args: `{"project_id":"relay","plan_id":"plan-x"}`,
 		},
@@ -597,8 +597,8 @@ func TestOrchestratorWorkTools_HandlersReturnStructuredBlockersWithoutStore(t *t
 				t.Fatal("expected at least one blocker")
 			}
 			first, _ := blockers[0].(map[string]any)
-			if code, _ := first["code"].(string); code != plans.BlockerUnsafeRequest {
-				t.Errorf("blocker code = %q, want %q", code, plans.BlockerUnsafeRequest)
+			if code, _ := first["code"].(string); code != appplans.BlockerUnsafeRequest {
+				t.Errorf("blocker code = %q, want %q", code, appplans.BlockerUnsafeRequest)
 			}
 		})
 	}
@@ -618,15 +618,15 @@ func TestOrchestratorWorkTools_GetNextPassWorkSuccessThroughTool(t *testing.T) {
 		t.Fatalf("expected IsError=false, got error result: %+v", result.Content)
 	}
 
-	var resp plans.NextPassWorkResponse
+	var resp appplans.NextPassWorkResponse
 	if err := json.Unmarshal([]byte(result.Content[0].Text), &resp); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 	if !resp.OK {
 		t.Fatalf("expected ok=true, got blockers: %+v", resp.Blockers)
 	}
-	if resp.Tool != plans.NextPassWorkTool {
-		t.Errorf("tool = %q, want %q", resp.Tool, plans.NextPassWorkTool)
+	if resp.Tool != appplans.NextPassWorkTool {
+		t.Errorf("tool = %q, want %q", resp.Tool, appplans.NextPassWorkTool)
 	}
 	if resp.SelectedPass == nil || resp.SelectedPass.PassID != "PASS-001" {
 		t.Fatalf("expected PASS-001 selected, got %+v", resp.SelectedPass)
@@ -681,7 +681,7 @@ func TestOrchestratorWorkTools_GetNextAuditWorkSuccessThroughTool(t *testing.T) 
 	if _, err := st.CreateArtifact(run.ID, "audit_evidence_manifest_json", "manifest.json", "application/json"); err != nil {
 		t.Fatalf("CreateArtifact audit_evidence_manifest_json: %v", err)
 	}
-	if _, err := st.UpdatePlanPassStatus(pass1.ID, plans.StatusPassAuditReady); err != nil {
+	if _, err := st.UpdatePlanPassStatus(pass1.ID, appplans.StatusPassAuditReady); err != nil {
 		t.Fatalf("UpdatePlanPassStatus: %v", err)
 	}
 
@@ -692,15 +692,15 @@ func TestOrchestratorWorkTools_GetNextAuditWorkSuccessThroughTool(t *testing.T) 
 		t.Fatalf("expected IsError=false, got error result: %+v", result.Content)
 	}
 
-	var resp plans.NextAuditWorkResponse
+	var resp appplans.NextAuditWorkResponse
 	if err := json.Unmarshal([]byte(result.Content[0].Text), &resp); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 	if !resp.OK {
 		t.Fatalf("expected ok=true, got blockers: %+v", resp.Blockers)
 	}
-	if resp.Tool != plans.NextAuditWorkTool {
-		t.Errorf("tool = %q, want %q", resp.Tool, plans.NextAuditWorkTool)
+	if resp.Tool != appplans.NextAuditWorkTool {
+		t.Errorf("tool = %q, want %q", resp.Tool, appplans.NextAuditWorkTool)
 	}
 	if resp.SelectedRun == nil || resp.SelectedRun.RunID == "" {
 		t.Fatalf("expected a selected run, got %+v", resp.SelectedRun)

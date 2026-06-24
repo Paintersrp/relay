@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"bytes"
@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"relay/internal/plans"
+	plansapi "relay/internal/api/plans"
+	"relay/internal/api/shared"
+	appplans "relay/internal/app/plans"
 	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -33,7 +35,7 @@ func TestValidatePlanReturnsReportWithoutPersisting(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp PlanAPIResponse
+	var resp plansapi.PlanAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -69,14 +71,14 @@ func TestValidatePlanReturnsIssuesForInvalidDependency(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp PlanAPIResponse
+	var resp plansapi.PlanAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if resp.Success {
 		t.Fatalf("expected success=false for invalid dependency")
 	}
-	assertPlanIssueCode(t, resp.Validation, plans.IssuePlanDependencyUnknown)
+	assertPlanIssueCode(t, resp.Validation, appplans.IssuePlanDependencyUnknown)
 	if got := countRows(t, st.DB(), "plans"); got != 0 {
 		t.Fatalf("expected 0 plan rows, got %d", got)
 	}
@@ -101,7 +103,7 @@ func TestSubmitPlanStoresValidPlan(t *testing.T) {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp PlanAPIResponse
+	var resp plansapi.PlanAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -154,14 +156,14 @@ func TestSubmitPlanDuplicatePlanIDReturnsConflict(t *testing.T) {
 		t.Fatalf("expected 409, got %d: %s", secondRec.Code, secondRec.Body.String())
 	}
 
-	var resp PlanAPIResponse
+	var resp plansapi.PlanAPIResponse
 	if err := json.NewDecoder(secondRec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if resp.Success {
 		t.Fatalf("expected success=false on duplicate plan_id")
 	}
-	assertPlanIssueCode(t, resp.Validation, plans.IssuePlanDuplicatePlanID)
+	assertPlanIssueCode(t, resp.Validation, appplans.IssuePlanDuplicatePlanID)
 	if got := countRows(t, st.DB(), "plans"); got != 1 {
 		t.Fatalf("expected 1 plan row after duplicate submit, got %d", got)
 	}
@@ -185,14 +187,14 @@ func TestSubmitPlanInvalidPassStatusReturnsUnprocessableEntity(t *testing.T) {
 		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp PlanAPIResponse
+	var resp plansapi.PlanAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if resp.Success {
 		t.Fatalf("expected success=false for invalid pass status")
 	}
-	assertPlanIssueCode(t, resp.Validation, plans.IssuePlanPassStatusInvalid)
+	assertPlanIssueCode(t, resp.Validation, appplans.IssuePlanPassStatusInvalid)
 	if got := countRows(t, st.DB(), "plans"); got != 0 {
 		t.Fatalf("expected 0 plan rows, got %d", got)
 	}
@@ -227,7 +229,7 @@ func TestPlanEndpointsRequirePlan(t *testing.T) {
 				t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 			}
 
-			var resp RelayApiErrorShape
+			var resp shared.ErrorShape
 			if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 				t.Fatalf("decode error response: %v", err)
 			}
@@ -238,7 +240,7 @@ func TestPlanEndpointsRequirePlan(t *testing.T) {
 	}
 }
 
-func newPlanAPITestServer(t *testing.T) (*APIHandler, *store.Store, http.Handler) {
+func newPlanAPITestServer(t *testing.T) (*plansapi.Handler, *store.Store, http.Handler) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -259,24 +261,23 @@ func newPlanAPITestServer(t *testing.T) (*APIHandler, *store.Store, http.Handler
 		t.Fatalf("st.CreateProject: %v", err)
 	}
 
-	apiH := NewAPIHandler(st, logger)
+	planSvc := appplans.NewService(st)
+	planLifecycleSvc := appplans.NewRunLifecycleService(st)
+	planWorkSvc := appplans.NewOrchestratorWorkService(st)
+	planH := plansapi.NewHandler(planSvc, planLifecycleSvc, planWorkSvc, st)
 	router := chi.NewRouter()
 	router.Route("/api", func(r chi.Router) {
-		r.Post("/plans/validate", apiH.ValidatePlan)
-		r.Post("/plans", apiH.SubmitPlan)
-		r.Get("/plans", apiH.ListPlans)
-		r.Get("/plans/{planId}", apiH.GetPlan)
-		r.Get("/plans/{planId}/passes/{passId}", apiH.GetPlanPass)
+		plansapi.MountRoutes(r, planH)
 	})
 
-	return apiH, st, router
+	return planH, st, router
 }
 
-func validPlanAPIPayload(t *testing.T) plans.PlannerPassPlan {
+func validPlanAPIPayload(t *testing.T) appplans.PlannerPassPlan {
 	t.Helper()
 
-	return plans.PlannerPassPlan{
-		PlanMeta: plans.PlanMeta{
+	return appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
 			PlanID:        "plan-123",
 			SchemaVersion: "2.0.0",
 			CreatedAt:     "2026-06-21T00:00:00Z",
@@ -286,23 +287,23 @@ func validPlanAPIPayload(t *testing.T) plans.PlannerPassPlan {
 			BranchContext: "main",
 			Status:        "active",
 			ProjectID:     "relay",
-			MCPCapabilityProfile: &plans.MCPCapabilityProfile{
+			MCPCapabilityProfile: &appplans.MCPCapabilityProfile{
 				ProfileID:            "relay-plan-api-tests",
 				Mode:                 "submission_only",
 				ContextBrokerEnabled: planAPIBoolPtr(false),
 			},
 		},
-		SourceIntent: plans.SourceIntent{
+		SourceIntent: appplans.SourceIntent{
 			Summary: "Implement managed plan support across phases.",
 		},
-		GlobalContextRules: &plans.GlobalContextRules{
+		GlobalContextRules: &appplans.GlobalContextRules{
 			DefaultSourceOfTruth:   "Relay managed plan records.",
 			PlannerContextBoundary: "Plan API tests validate backend behavior only.",
 			ForbiddenContextDomains: []string{
 				"GitHub issues",
 			},
 		},
-		Passes: []plans.PlanPassInput{
+		Passes: []appplans.PlanPassInput{
 			{
 				PassID:                 "PASS-001",
 				Sequence:               1,
@@ -313,18 +314,18 @@ func validPlanAPIPayload(t *testing.T) plans.PlannerPassPlan {
 				Dependencies:           []string{},
 				Status:                 "planned",
 				PassType:               "backend_vertical_slice",
-				ContextPlan: plans.ContextPlan{
+				ContextPlan: appplans.ContextPlan{
 					RequiredRepositories: []string{"relay"},
-					SeedSearchTerms: []plans.ContextSearchTerm{
+					SeedSearchTerms: []appplans.ContextSearchTerm{
 						{RepoID: "relay", Query: "plans validate", Purpose: "Locate validation flow.", Required: planAPIBoolPtr(true)},
 					},
-					SeedFilesToRead: []plans.ContextFileRead{
+					SeedFilesToRead: []appplans.ContextFileRead{
 						{RepoID: "relay", Path: "internal/plans/validator.go", Purpose: "Validate plans.", Required: planAPIBoolPtr(true)},
 					},
 					ContextCoverageExpectations: []string{"Validation remains fail-closed for Plan v2."},
 					BlockedIfMissing:            []string{"Validation code cannot be located."},
 				},
-				SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+				SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
 					RequireGitStatus:   planAPIBoolPtr(true),
 					RequireCommitSHA:   planAPIBoolPtr(false),
 					AllowDirtyWorktree: planAPIBoolPtr(true),
@@ -341,18 +342,18 @@ func validPlanAPIPayload(t *testing.T) plans.PlannerPassPlan {
 				Dependencies:           []string{"PASS-001"},
 				Status:                 "planned",
 				PassType:               "schema_contract",
-				ContextPlan: plans.ContextPlan{
+				ContextPlan: appplans.ContextPlan{
 					RequiredRepositories: []string{"relay"},
-					SeedSearchTerms: []plans.ContextSearchTerm{
+					SeedSearchTerms: []appplans.ContextSearchTerm{
 						{RepoID: "relay", Query: "CreatePlanPass", Purpose: "Locate persistence flow.", Required: planAPIBoolPtr(true)},
 					},
-					SeedFilesToRead: []plans.ContextFileRead{
+					SeedFilesToRead: []appplans.ContextFileRead{
 						{RepoID: "relay", Path: "internal/plans/service.go", Purpose: "Persist plan fields.", Required: planAPIBoolPtr(true)},
 					},
 					ContextCoverageExpectations: []string{"Pass metadata is stored transactionally."},
 					BlockedIfMissing:            []string{"Service persistence code cannot be located."},
 				},
-				SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+				SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
 					RequireGitStatus:   planAPIBoolPtr(true),
 					RequireCommitSHA:   planAPIBoolPtr(false),
 					AllowDirtyWorktree: planAPIBoolPtr(true),
@@ -363,7 +364,7 @@ func validPlanAPIPayload(t *testing.T) plans.PlannerPassPlan {
 	}
 }
 
-func marshalPlanAPIRequest(t *testing.T, plan plans.PlannerPassPlan, sourceArtifactPath string) []byte {
+func marshalPlanAPIRequest(t *testing.T, plan appplans.PlannerPassPlan, sourceArtifactPath string) []byte {
 	t.Helper()
 
 	req := map[string]any{
@@ -380,7 +381,7 @@ func marshalPlanAPIRequest(t *testing.T, plan plans.PlannerPassPlan, sourceArtif
 	return body
 }
 
-func assertPlanIssueCode(t *testing.T, report plans.PlanValidationReport, code string) {
+func assertPlanIssueCode(t *testing.T, report appplans.PlanValidationReport, code string) {
 	t.Helper()
 
 	if report.Valid {
@@ -423,7 +424,7 @@ func submitValidPlan(t *testing.T, router http.Handler, sourceArtifactPath strin
 		t.Fatalf("expected submit to return 201, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp PlanAPIResponse
+	var resp plansapi.PlanAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode submit response: %v", err)
 	}
@@ -446,7 +447,7 @@ func TestListPlansEmpty(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp PlanReadAPIResponse
+	var resp plansapi.PlanReadAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -473,7 +474,7 @@ func TestListPlansAfterSubmit(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp PlanReadAPIResponse
+	var resp plansapi.PlanReadAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -537,7 +538,7 @@ func TestListPlansStatusFilterAndLimitValidation(t *testing.T) {
 				t.Fatalf("expected %d, got %d: %s", tc.wantStatus, rec.Code, rec.Body.String())
 			}
 			if tc.wantStatus != http.StatusOK {
-				var errResp RelayApiErrorShape
+				var errResp shared.ErrorShape
 				if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
 					t.Fatalf("decode error response: %v", err)
 				}
@@ -546,7 +547,7 @@ func TestListPlansStatusFilterAndLimitValidation(t *testing.T) {
 				}
 				return
 			}
-			var resp PlanReadAPIResponse
+			var resp plansapi.PlanReadAPIResponse
 			if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 				t.Fatalf("decode response: %v", err)
 			}
@@ -572,7 +573,7 @@ func TestGetPlanDetailAndPassOrdering(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp PlanReadAPIResponse
+	var resp plansapi.PlanReadAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -641,7 +642,7 @@ func TestGetPlanPassDetail(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp PlanReadAPIResponse
+	var resp plansapi.PlanReadAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -716,7 +717,7 @@ func TestCompletionReadyComputedWithoutMutatingPlanStatus(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp PlanReadAPIResponse
+	var resp plansapi.PlanReadAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -771,7 +772,7 @@ func TestGetPlanPassDetailMalformedPersistedJSONReturnsWarning(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp PlanReadAPIResponse
+	var resp plansapi.PlanReadAPIResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}

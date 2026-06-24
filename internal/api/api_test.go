@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"relay/internal/artifacts"
-	"relay/internal/plans"
+	appplans "relay/internal/app/plans"
 	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -44,8 +44,8 @@ func TestAPI(t *testing.T) {
 	createPlan := func(t *testing.T, planID string) {
 		t.Helper()
 		boolPtr := func(value bool) *bool { return &value }
-		plan := plans.PlannerPassPlan{
-			PlanMeta: plans.PlanMeta{
+		plan := appplans.PlannerPassPlan{
+			PlanMeta: appplans.PlanMeta{
 				PlanID:        planID,
 				SchemaVersion: "2.0.0",
 				CreatedAt:     "2026-06-21T00:00:00Z",
@@ -54,23 +54,23 @@ func TestAPI(t *testing.T) {
 				RepoTarget:    repo.Name,
 				BranchContext: "main",
 				Status:        "active",
-				MCPCapabilityProfile: &plans.MCPCapabilityProfile{
+				MCPCapabilityProfile: &appplans.MCPCapabilityProfile{
 					ProfileID:            "relay-api-run-association-tests",
 					Mode:                 "submission_only",
 					ContextBrokerEnabled: boolPtr(false),
 				},
 			},
-			SourceIntent: plans.SourceIntent{
+			SourceIntent: appplans.SourceIntent{
 				Summary: "Seed a managed plan for run association tests.",
 			},
-			GlobalContextRules: &plans.GlobalContextRules{
+			GlobalContextRules: &appplans.GlobalContextRules{
 				DefaultSourceOfTruth:   "Relay managed plan rows.",
 				PlannerContextBoundary: "Run association tests do not expose broker tools.",
 				ForbiddenContextDomains: []string{
 					"GitHub issues",
 				},
 			},
-			Passes: []plans.PlanPassInput{
+			Passes: []appplans.PlanPassInput{
 				{
 					PassID:                 "PASS-001",
 					Sequence:               1,
@@ -81,18 +81,18 @@ func TestAPI(t *testing.T) {
 					Dependencies:           []string{},
 					Status:                 "planned",
 					PassType:               "backend_vertical_slice",
-					ContextPlan: plans.ContextPlan{
+					ContextPlan: appplans.ContextPlan{
 						RequiredRepositories: []string{"relay"},
-						SeedSearchTerms: []plans.ContextSearchTerm{
+						SeedSearchTerms: []appplans.ContextSearchTerm{
 							{RepoID: "relay", Query: "CreateRunWithAssociation", Purpose: "Locate association flow.", Required: boolPtr(true)},
 						},
-						SeedFilesToRead: []plans.ContextFileRead{
+						SeedFilesToRead: []appplans.ContextFileRead{
 							{RepoID: "relay", Path: "internal/api/api.go", Purpose: "Exercise run association behavior.", Required: boolPtr(true)},
 						},
 						ContextCoverageExpectations: []string{"Plan-only and pass-associated runs stay distinct."},
 						BlockedIfMissing:            []string{"Association code cannot be found."},
 					},
-					SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+					SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
 						RequireGitStatus:   boolPtr(true),
 						RequireCommitSHA:   boolPtr(false),
 						AllowDirtyWorktree: boolPtr(true),
@@ -109,18 +109,18 @@ func TestAPI(t *testing.T) {
 					Dependencies:           []string{"PASS-001"},
 					Status:                 "planned",
 					PassType:               "mcp_vertical_slice",
-					ContextPlan: plans.ContextPlan{
+					ContextPlan: appplans.ContextPlan{
 						RequiredRepositories: []string{"relay"},
-						SeedSearchTerms: []plans.ContextSearchTerm{
+						SeedSearchTerms: []appplans.ContextSearchTerm{
 							{RepoID: "relay", Query: "submit_planner_pass_plan", Purpose: "Keep plan submission aligned with MCP.", Required: boolPtr(true)},
 						},
-						SeedFilesToRead: []plans.ContextFileRead{
+						SeedFilesToRead: []appplans.ContextFileRead{
 							{RepoID: "relay", Path: "internal/mcp/server.go", Purpose: "Confirm no new broker tools are involved.", Required: boolPtr(true)},
 						},
 						ContextCoverageExpectations: []string{"Run association works without changing the MCP tool surface."},
 						BlockedIfMissing:            []string{"MCP association code cannot be found."},
 					},
-					SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+					SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
 						RequireGitStatus:   boolPtr(true),
 						RequireCommitSHA:   boolPtr(false),
 						AllowDirtyWorktree: boolPtr(true),
@@ -133,7 +133,7 @@ func TestAPI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshal plan: %v", err)
 		}
-		result, err := plans.NewService(s).SubmitPlan(context.Background(), plans.SubmitPlanRequest{
+		result, err := appplans.NewService(s).SubmitPlan(context.Background(), appplans.SubmitPlanRequest{
 			RawJSON:            raw,
 			SourceArtifactPath: "handoffs/planner/association-test.json",
 			ProjectID:          "relay",

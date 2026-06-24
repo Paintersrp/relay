@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"relay/internal/plans"
+	appplans "relay/internal/app/plans"
 )
 
 // ----------------------------------------------------------------------------
@@ -63,13 +63,13 @@ var getNextAuditWorkSchema = json.RawMessage(`{
 // ----------------------------------------------------------------------------
 
 var ToolGetNextPassWork = ToolDefinition{
-	Name:        plans.NextPassWorkTool,
+	Name:        appplans.NextPassWorkTool,
 	Description: "Return the next eligible project-scoped plan pass work packet for Planner handoff creation. Retrieval-only: does not create runs, submit plans, generate handoffs, create context packets, mutate git, run shell commands, or expose arbitrary filesystem access.",
 	InputSchema: getNextPassWorkSchema,
 }
 
 var ToolGetNextAuditWork = ToolDefinition{
-	Name:        plans.NextAuditWorkTool,
+	Name:        appplans.NextAuditWorkTool,
 	Description: "Return the next audit-ready project-scoped work packet for an Auditor agent. Retrieval-only: does not generate audit judgments, apply audit decisions, create runs, mutate git, run shell commands, or expose arbitrary filesystem access.",
 	InputSchema: getNextAuditWorkSchema,
 }
@@ -141,22 +141,22 @@ func orchestratorWorkToolErr(toolName string, code string, message string) ToolC
 func (s *Server) HandleGetNextPassWork(rawArgs json.RawMessage) ToolCallResult {
 	var args getNextPassWorkArgs
 	if err := brokerDecodeStrict(rawArgs, &args); err != nil {
-		return orchestratorWorkToolErr(plans.NextPassWorkTool, plans.BlockerUnsafeRequest, "invalid params: "+err.Error())
+		return orchestratorWorkToolErr(appplans.NextPassWorkTool, appplans.BlockerUnsafeRequest, "invalid params: "+err.Error())
 	}
 
 	if s.deps == nil || s.deps.Store == nil {
-		return orchestratorWorkToolErr(plans.NextPassWorkTool, plans.BlockerUnsafeRequest, "MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
+		return orchestratorWorkToolErr(appplans.NextPassWorkTool, appplans.BlockerUnsafeRequest, "MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
 	}
 
-	svc := plans.NewOrchestratorWorkService(s.deps.Store)
-	req := plans.NextPassWorkRequest{
+	svc := appplans.NewOrchestratorWorkService(s.deps.Store)
+	req := appplans.NextPassWorkRequest{
 		ProjectID: args.ProjectID,
 		PlanID:    args.PlanID,
 	}
 
 	resp, err := svc.GetNextPassWork(context.Background(), req)
 	if err != nil {
-		return orchestratorWorkToolErr(plans.NextPassWorkTool, plans.BlockerUnsafeRequest, fmt.Sprintf("service error: %v", err))
+		return orchestratorWorkToolErr(appplans.NextPassWorkTool, appplans.BlockerUnsafeRequest, fmt.Sprintf("service error: %v", err))
 	}
 
 	return orchestratorWorkToolPayload(resp, false)
@@ -167,15 +167,15 @@ func (s *Server) HandleGetNextPassWork(rawArgs json.RawMessage) ToolCallResult {
 func (s *Server) HandleGetNextAuditWork(rawArgs json.RawMessage) ToolCallResult {
 	var args getNextAuditWorkArgs
 	if err := brokerDecodeStrict(rawArgs, &args); err != nil {
-		return orchestratorWorkToolErr(plans.NextAuditWorkTool, plans.BlockerUnsafeRequest, "invalid params: "+err.Error())
+		return orchestratorWorkToolErr(appplans.NextAuditWorkTool, appplans.BlockerUnsafeRequest, "invalid params: "+err.Error())
 	}
 
 	if s.deps == nil || s.deps.Store == nil {
-		return orchestratorWorkToolErr(plans.NextAuditWorkTool, plans.BlockerUnsafeRequest, "MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
+		return orchestratorWorkToolErr(appplans.NextAuditWorkTool, appplans.BlockerUnsafeRequest, "MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
 	}
 
-	svc := plans.NewOrchestratorWorkService(s.deps.Store)
-	req := plans.NextAuditWorkRequest{
+	svc := appplans.NewOrchestratorWorkService(s.deps.Store)
+	req := appplans.NextAuditWorkRequest{
 		ProjectID: args.ProjectID,
 		PlanID:    args.PlanID,
 		PassID:    args.PassID,
@@ -184,7 +184,7 @@ func (s *Server) HandleGetNextAuditWork(rawArgs json.RawMessage) ToolCallResult 
 
 	resp, err := svc.GetNextAuditWork(context.Background(), req)
 	if err != nil {
-		return orchestratorWorkToolErr(plans.NextAuditWorkTool, plans.BlockerUnsafeRequest, fmt.Sprintf("service error: %v", err))
+		return orchestratorWorkToolErr(appplans.NextAuditWorkTool, appplans.BlockerUnsafeRequest, fmt.Sprintf("service error: %v", err))
 	}
 
 	return orchestratorWorkToolPayload(resp, false)

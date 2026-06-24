@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"relay/internal/plans"
+	appplans "relay/internal/app/plans"
 )
 
 var submitPlannerPassPlanSchema = json.RawMessage(`{
@@ -36,15 +36,15 @@ type submitPlannerPassPlanArgs struct {
 }
 
 type submitPlannerPassPlanOutput struct {
-	OK                 bool                       `json:"ok"`
-	Tool               string                     `json:"tool"`
-	PlanID             string                     `json:"plan_id"`
-	PlanRowID          int64                      `json:"plan_row_id"`
-	Status             string                     `json:"status"`
-	PassCount          int                        `json:"pass_count"`
-	Passes             []submitPlannerPassOutput  `json:"passes"`
-	Validation         plans.PlanValidationReport `json:"validation"`
-	SourceArtifactPath string                     `json:"source_artifact_path,omitempty"`
+	OK                 bool                          `json:"ok"`
+	Tool               string                        `json:"tool"`
+	PlanID             string                        `json:"plan_id"`
+	PlanRowID          int64                         `json:"plan_row_id"`
+	Status             string                        `json:"status"`
+	PassCount          int                           `json:"pass_count"`
+	Passes             []submitPlannerPassOutput     `json:"passes"`
+	Validation         appplans.PlanValidationReport `json:"validation"`
+	SourceArtifactPath string                        `json:"source_artifact_path,omitempty"`
 }
 
 type submitPlannerPassOutput struct {
@@ -56,11 +56,11 @@ type submitPlannerPassOutput struct {
 }
 
 type submitPlannerPassPlanErrorOutput struct {
-	OK         bool                        `json:"ok"`
-	Tool       string                      `json:"tool"`
-	Error      string                      `json:"error"`
-	Message    string                      `json:"message"`
-	Validation *plans.PlanValidationReport `json:"validation,omitempty"`
+	OK         bool                           `json:"ok"`
+	Tool       string                         `json:"tool"`
+	Error      string                         `json:"error"`
+	Message    string                         `json:"message"`
+	Validation *appplans.PlanValidationReport `json:"validation,omitempty"`
 }
 
 // ToolSubmitPlannerPassPlan is the ToolDefinition for submit_planner_pass_plan.
@@ -88,13 +88,13 @@ func (s *Server) HandleSubmitPlannerPassPlan(args json.RawMessage) ToolCallResul
 		return submitPlannerPassPlanToolErr("DEPENDENCY_ERROR", "MCP server is not connected to a Relay store; start with RELAY_DB_PATH set", nil)
 	}
 
-	svc := plans.NewService(s.deps.Store)
-	result, err := svc.SubmitPlan(context.Background(), plans.SubmitPlanRequest{
+	svc := appplans.NewService(s.deps.Store)
+	result, err := svc.SubmitPlan(context.Background(), appplans.SubmitPlanRequest{
 		RawJSON:            []byte(trimmedPlanJSON),
 		SourceArtifactPath: strings.TrimSpace(in.SourceArtifactPath),
 	})
 	if err != nil {
-		var report *plans.PlanValidationReport
+		var report *appplans.PlanValidationReport
 		if result != nil {
 			report = &result.Report
 		}
@@ -135,7 +135,7 @@ func (s *Server) HandleSubmitPlannerPassPlan(args json.RawMessage) ToolCallResul
 	return toolOK(text)
 }
 
-func submitPlannerPassPlanToolErr(code, message string, validation *plans.PlanValidationReport) ToolCallResult {
+func submitPlannerPassPlanToolErr(code, message string, validation *appplans.PlanValidationReport) ToolCallResult {
 	text, err := marshalTool(submitPlannerPassPlanErrorOutput{
 		OK:         false,
 		Tool:       "submit_planner_pass_plan",

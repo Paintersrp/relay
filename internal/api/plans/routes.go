@@ -1,14 +1,16 @@
+// Package plans is the plan feature HTTP transport adapter.
+//
+// It owns plan and project-scoped plan work API DTOs, request/response mappers,
+// HTTP handlers, and the plan route mounter. It delegates all business behavior
+// to relay/internal/app/plans and must not import root relay/internal/api or
+// perform plan persistence queries directly.
 package plans
 
-import (
-	rootapi "relay/internal/api"
-
-	"github.com/go-chi/chi/v5"
-)
+import "github.com/go-chi/chi/v5"
 
 // MountRoutes registers plan and project-scoped plan work routes on r against
-// the existing *rootapi.APIHandler methods. PASS-001 route composition only.
-func MountRoutes(r chi.Router, h *rootapi.APIHandler) {
+// the feature-local Handler.
+func MountRoutes(r chi.Router, h *Handler) {
 	r.Post("/plans/validate", h.ValidatePlan)
 	r.Post("/plans", h.SubmitPlan)
 	r.Get("/plans", h.ListPlans)

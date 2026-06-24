@@ -16,6 +16,7 @@ import (
 	projectsapi "relay/internal/api/projects"
 	runsapi "relay/internal/api/runs"
 	"relay/internal/api/shared"
+	appplans "relay/internal/app/plans"
 	appprojects "relay/internal/app/projects"
 	"relay/internal/devreload"
 	"relay/internal/events"
@@ -138,6 +139,10 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	// JSON API adapter routes
 	apiH := api.NewAPIHandler(s, log, eventHub)
 	projectH := projectsapi.NewHandler(appprojects.NewService(s))
+	planSvc := appplans.NewService(s)
+	planLifecycleSvc := appplans.NewRunLifecycleService(s)
+	planWorkSvc := appplans.NewOrchestratorWorkService(s)
+	planH := plansapi.NewHandler(planSvc, planLifecycleSvc, planWorkSvc, s)
 	r.Route("/api", func(r chi.Router) {
 		r.Use(shared.CORSMiddleware)
 		runsapi.MountRoutes(r, apiH)
@@ -145,7 +150,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 		intakeapi.MountRoutes(r, apiH)
 		projectsapi.MountRoutes(r, projectH)
 		mountProjectRefactorRoutes(r, apiH)
-		plansapi.MountRoutes(r, apiH)
+		plansapi.MountRoutes(r, planH)
 		auditsapi.MountRoutes(r, apiH)
 		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")

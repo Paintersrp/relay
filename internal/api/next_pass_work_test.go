@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"bytes"
@@ -10,7 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"relay/internal/plans"
+	plansapi "relay/internal/api/plans"
+	appplans "relay/internal/app/plans"
 	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -18,7 +19,7 @@ import (
 
 // newNextPassWorkTestServer creates a minimal test router with the
 // GetNextPassWork route registered under the project-scoped path.
-func newNextPassWorkTestServer(t *testing.T) (*APIHandler, *store.Store, http.Handler) {
+func newNextPassWorkTestServer(t *testing.T) (*plansapi.Handler, *store.Store, http.Handler) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -39,27 +40,24 @@ func newNextPassWorkTestServer(t *testing.T) (*APIHandler, *store.Store, http.Ha
 		t.Fatalf("st.CreateProject: %v", err)
 	}
 
-	apiH := NewAPIHandler(st, logger)
+	planSvc := appplans.NewService(st)
+	planLifecycleSvc := appplans.NewRunLifecycleService(st)
+	planWorkSvc := appplans.NewOrchestratorWorkService(st)
+	planH := plansapi.NewHandler(planSvc, planLifecycleSvc, planWorkSvc, st)
 	router := chi.NewRouter()
 	router.Route("/api", func(r chi.Router) {
-		// Re-create the relevant subset of routes for testing.
-		r.Post("/plans/validate", apiH.ValidatePlan)
-		r.Post("/plans", apiH.SubmitPlan)
-		r.Get("/plans", apiH.ListPlans)
-		r.Get("/plans/{planId}", apiH.GetPlan)
-		r.Get("/plans/{planId}/passes/{passId}", apiH.GetPlanPass)
-		r.Get("/projects/{projectId}/plans/{planId}/next-pass-work", apiH.GetNextPassWork)
+		plansapi.MountRoutes(r, planH)
 	})
 
-	return apiH, st, router
+	return planH, st, router
 }
 
 // seedNextPassWorkPlan submits a valid two-pass plan via the API.
 func seedNextPassWorkPlan(t *testing.T, router http.Handler, planID string) {
 	t.Helper()
 
-	plan := plans.PlannerPassPlan{
-		PlanMeta: plans.PlanMeta{
+	plan := appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
 			PlanID:        planID,
 			SchemaVersion: "2.0.0",
 			CreatedAt:     "2026-06-23T00:00:00Z",
@@ -69,19 +67,19 @@ func seedNextPassWorkPlan(t *testing.T, router http.Handler, planID string) {
 			BranchContext: "main",
 			Status:        "active",
 			ProjectID:     "relay",
-			MCPCapabilityProfile: &plans.MCPCapabilityProfile{
+			MCPCapabilityProfile: &appplans.MCPCapabilityProfile{
 				ProfileID:            "test",
 				Mode:                 "submission_only",
 				ContextBrokerEnabled: planAPIBoolPtr(false),
 			},
 		},
-		SourceIntent: plans.SourceIntent{Summary: "API test for next-pass work."},
-		GlobalContextRules: &plans.GlobalContextRules{
+		SourceIntent: appplans.SourceIntent{Summary: "API test for next-pass work."},
+		GlobalContextRules: &appplans.GlobalContextRules{
 			DefaultSourceOfTruth:    "Relay managed plan.",
 			PlannerContextBoundary:  "Test only.",
 			ForbiddenContextDomains: []string{"GitHub issues"},
 		},
-		Passes: []plans.PlanPassInput{
+		Passes: []appplans.PlanPassInput{
 			{
 				PassID:                 "PASS-001",
 				Sequence:               1,
@@ -92,18 +90,18 @@ func seedNextPassWorkPlan(t *testing.T, router http.Handler, planID string) {
 				Dependencies:           []string{},
 				Status:                 "planned",
 				PassType:               "backend_vertical_slice",
-				ContextPlan: plans.ContextPlan{
+				ContextPlan: appplans.ContextPlan{
 					RequiredRepositories: []string{"relay"},
-					SeedSearchTerms: []plans.ContextSearchTerm{
+					SeedSearchTerms: []appplans.ContextSearchTerm{
 						{RepoID: "relay", Query: "plans validate", Purpose: "optional", Required: planAPIBoolPtr(false)},
 					},
-					SeedFilesToRead: []plans.ContextFileRead{
+					SeedFilesToRead: []appplans.ContextFileRead{
 						{RepoID: "relay", Path: "internal/plans/validator.go", Purpose: "optional", Required: planAPIBoolPtr(false)},
 					},
 					ContextCoverageExpectations: []string{"coverage ok"},
 					BlockedIfMissing:            []string{"not blocked"},
 				},
-				SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+				SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
 					RequireGitStatus:   planAPIBoolPtr(false),
 					RequireCommitSHA:   planAPIBoolPtr(false),
 					AllowDirtyWorktree: planAPIBoolPtr(true),
@@ -120,18 +118,18 @@ func seedNextPassWorkPlan(t *testing.T, router http.Handler, planID string) {
 				Dependencies:           []string{"PASS-001"},
 				Status:                 "planned",
 				PassType:               "backend_vertical_slice",
-				ContextPlan: plans.ContextPlan{
+				ContextPlan: appplans.ContextPlan{
 					RequiredRepositories: []string{"relay"},
-					SeedSearchTerms: []plans.ContextSearchTerm{
+					SeedSearchTerms: []appplans.ContextSearchTerm{
 						{RepoID: "relay", Query: "plans validate", Purpose: "optional", Required: planAPIBoolPtr(false)},
 					},
-					SeedFilesToRead: []plans.ContextFileRead{
+					SeedFilesToRead: []appplans.ContextFileRead{
 						{RepoID: "relay", Path: "internal/plans/validator.go", Purpose: "optional", Required: planAPIBoolPtr(false)},
 					},
 					ContextCoverageExpectations: []string{"coverage ok"},
 					BlockedIfMissing:            []string{"not blocked"},
 				},
-				SourceSnapshotRequirements: plans.SourceSnapshotRequirements{
+				SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
 					RequireGitStatus:   planAPIBoolPtr(false),
 					RequireCommitSHA:   planAPIBoolPtr(false),
 					AllowDirtyWorktree: planAPIBoolPtr(true),
@@ -166,12 +164,12 @@ func TestGetNextPassWork_RouteExists_ReturnsToolField(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp plans.NextPassWorkResponse
+	var resp appplans.NextPassWorkResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.Tool != plans.NextPassWorkTool {
-		t.Fatalf("expected tool %q, got %q", plans.NextPassWorkTool, resp.Tool)
+	if resp.Tool != appplans.NextPassWorkTool {
+		t.Fatalf("expected tool %q, got %q", appplans.NextPassWorkTool, resp.Tool)
 	}
 	if !resp.OK {
 		t.Fatalf("expected ok=true, got blockers: %+v", resp.Blockers)
@@ -206,14 +204,14 @@ func TestGetNextPassWork_EmptyProjectIDReturns400(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp plans.NextPassWorkResponse
+	var resp appplans.NextPassWorkResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if resp.OK {
 		t.Fatal("expected ok=false for unknown project")
 	}
-	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != plans.BlockerUnknownProject {
+	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != appplans.BlockerUnknownProject {
 		t.Fatalf("expected unknown_project blocker, got %+v", resp.Blockers)
 	}
 }
@@ -231,14 +229,14 @@ func TestGetNextPassWork_UnknownProjectReturns200WithBlocker(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp plans.NextPassWorkResponse
+	var resp appplans.NextPassWorkResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if resp.OK {
 		t.Fatal("expected ok=false")
 	}
-	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != plans.BlockerUnknownProject {
+	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != appplans.BlockerUnknownProject {
 		t.Fatalf("expected unknown_project blocker, got %+v", resp.Blockers)
 	}
 }
@@ -257,7 +255,7 @@ func TestGetNextPassWork_SuccessReturns200WithOKTrue(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp plans.NextPassWorkResponse
+	var resp appplans.NextPassWorkResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}

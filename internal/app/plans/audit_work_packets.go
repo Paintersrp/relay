@@ -88,9 +88,7 @@ type AuditDecisionRoute struct {
 }
 
 // GetNextAuditWork returns the next eligible audit work packet or structured blockers.
-// It is a read-only method on OrchestratorWorkService.
 func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req NextAuditWorkRequest) (NextAuditWorkResponse, error) {
-	// S1: Validate inputs -- trim and reject empty or path-like values.
 	projectID := strings.TrimSpace(req.ProjectID)
 	planID := strings.TrimSpace(req.PlanID)
 
@@ -102,7 +100,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 		}), nil
 	}
 
-	// S2: Load project.
 	project, err := svc.store.GetProjectByProjectID(projectID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -115,7 +112,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 		return NextAuditWorkResponse{}, fmt.Errorf("lookup project %q: %w", projectID, err)
 	}
 
-	// S3: Load plan.
 	plan, err := svc.store.GetPlanByPlanID(planID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -128,7 +124,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 		return NextAuditWorkResponse{}, fmt.Errorf("lookup plan %q: %w", planID, err)
 	}
 
-	// S4: Verify plan belongs to project.
 	if plan.ProjectRowID != project.ID {
 		return auditBlockerResponse(WorkBlocker{
 			Code:        BlockerProjectPlanMismatch,
@@ -137,13 +132,11 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 		}), nil
 	}
 
-	// S5: Load ordered passes.
 	passes, err := svc.store.ListPlanPassesByPlan(plan.ID)
 	if err != nil {
 		return NextAuditWorkResponse{}, fmt.Errorf("list plan passes for plan %q: %w", planID, err)
 	}
 
-	// Index passes by PassID.
 	passByID := make(map[string]*store.PlanPass)
 	for i := range passes {
 		passByID[passes[i].PassID] = &passes[i]
@@ -152,9 +145,7 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 	var selectedPass *store.PlanPass
 	var selectedRun *store.Run
 
-	// S6: Check overrides or select automatically.
 	if req.RunID != "" {
-		// Explicit RunID override.
 		runID, err := strconv.ParseInt(strings.TrimSpace(req.RunID), 10, 64)
 		if err != nil || runID <= 0 {
 			return auditBlockerResponse(WorkBlocker{
@@ -176,7 +167,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 			return NextAuditWorkResponse{}, fmt.Errorf("lookup run %d: %w", runID, err)
 		}
 
-		// Verify run is associated with this plan.
 		if !run.PlanRowID.Valid || run.PlanRowID.Int64 != plan.ID {
 			return auditBlockerResponse(WorkBlocker{
 				Code:        BlockerRunNotInProjectPlan,
@@ -185,7 +175,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 			}), nil
 		}
 
-		// Verify run is associated with a pass under this plan.
 		if !run.PlanPassRowID.Valid {
 			return auditBlockerResponse(WorkBlocker{
 				Code:        BlockerRunNotInProjectPlan,
@@ -199,7 +188,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 			return NextAuditWorkResponse{}, fmt.Errorf("lookup run pass %d: %w", run.PlanPassRowID.Int64, err)
 		}
 
-		// Verify pass belongs to plan.
 		if pass.PlanRowID != plan.ID {
 			return auditBlockerResponse(WorkBlocker{
 				Code:        BlockerRunNotInProjectPlan,
@@ -208,7 +196,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 			}), nil
 		}
 
-		// If PassID override is also set, verify run pass matches it.
 		if req.PassID != "" {
 			if pass.PassID != req.PassID {
 				return auditBlockerResponse(WorkBlocker{
@@ -223,7 +210,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 		selectedRun = run
 
 	} else if req.PassID != "" {
-		// Explicit PassID override.
 		passID := strings.TrimSpace(req.PassID)
 		if passID == "" || isUnsafePath(passID) {
 			return auditBlockerResponse(WorkBlocker{
@@ -242,7 +228,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 			}), nil
 		}
 
-		// Select the latest audit-ready run for this pass that has not already been finalized.
 		runs, err := svc.store.ListRunsByPlanPass(pass.ID)
 		if err != nil {
 			return NextAuditWorkResponse{}, fmt.Errorf("list runs for pass %q: %w", passID, err)
@@ -278,11 +263,9 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 		selectedRun = candidate
 
 	} else {
-		// Automatic selection.
 		for i := range passes {
 			pass := &passes[i]
 
-			// C7: revision_required must block plan advancement and must not select a later pass.
 			if pass.Status == StatusPassRevisionRequired {
 				return auditBlockerResponse(WorkBlocker{
 					Code:        BlockerRevisionRequiredSamePass,
@@ -291,13 +274,11 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 				}), nil
 			}
 
-			// Load runs for this pass.
 			runs, err := svc.store.ListRunsByPlanPass(pass.ID)
 			if err != nil {
 				return NextAuditWorkResponse{}, fmt.Errorf("list runs for pass %q: %w", pass.PassID, err)
 			}
 
-			// Find latest audit-ready run that is not finalized.
 			var candidate *store.Run
 			for j := range runs {
 				r := &runs[j]
@@ -330,7 +311,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 		}
 	}
 
-	// S7: Load artifacts for the selected run.
 	artifacts, err := svc.store.ListArtifactsByRun(selectedRun.ID)
 	if err != nil {
 		return NextAuditWorkResponse{}, fmt.Errorf("list artifacts for run %d: %w", selectedRun.ID, err)
@@ -350,7 +330,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 		}
 	}
 
-	// S8: Check if run is finalized.
 	finalizedStatus := selectedRun.Status == "accepted" ||
 		selectedRun.Status == "accepted_with_warnings" ||
 		selectedRun.Status == "completed" ||
@@ -366,7 +345,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 		}), nil
 	}
 
-	// S9: Check if selected run is in audit-ready status.
 	if selectedRun.Status != "audit_ready" && selectedRun.Status != "audit_ready_for_review" {
 		return auditBlockerResponse(WorkBlocker{
 			Code:        BlockerRunNotAuditReady,
@@ -375,7 +353,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 		}), nil
 	}
 
-	// S10: Require evidence references.
 	if !hasPacket || !hasEvidenceManifest {
 		return auditBlockerResponse(WorkBlocker{
 			Code:        BlockerAuditEvidenceMissing,
@@ -384,7 +361,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 		}), nil
 	}
 
-	// S11: Build successful response.
 	var priorPasses []WorkPassSummary
 	for i := range passes {
 		p := &passes[i]
@@ -438,9 +414,6 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 
 	runIDStr := fmt.Sprintf("%d", selectedRun.ID)
 
-	// Scheduled refactor passes are audited as normal managed passes. Validate the
-	// schedule reference (read-only) and attach bounded refactor metadata. Stale/
-	// missing/mismatched references block audit retrieval without any auto-repair.
 	refMeta, refBlocker, err := validateRefactorSchedule(svc.store, project, plan, selectedPass)
 	if err != nil {
 		return NextAuditWorkResponse{}, err

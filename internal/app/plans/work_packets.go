@@ -106,10 +106,7 @@ type WorkPassSummary struct {
 }
 
 // WorkRefactorCandidateMetadata is the bounded refactor-candidate reference
-// exposed for a scheduled refactor pass. It carries only the schema-approved
-// scheduling reference plus resolved status flags; it never includes raw
-// candidate bodies, raw pass JSON, prompts, file contents, logs, or audit
-// judgments.
+// exposed for a scheduled refactor pass.
 type WorkRefactorCandidateMetadata struct {
 	CandidateID            string   `json:"candidate_id"`
 	Source                 string   `json:"source"`
@@ -147,7 +144,6 @@ type WorkContextSummary struct {
 }
 
 // SuggestedRunSubmission contains only tool name and plan/pass IDs.
-// It must not include handoff Markdown, source contents, or audit fields.
 type SuggestedRunSubmission struct {
 	Tool      string                `json:"tool"`
 	Arguments SuggestedRunArguments `json:"arguments"`
@@ -181,10 +177,7 @@ type NextPassWorkRequest struct {
 }
 
 // GetNextPassWork returns the next eligible Planner work packet or structured blockers.
-// It is read-only: it never creates runs, submits handoffs, creates source snapshots,
-// creates context packets, mutates git, or invokes MCP tools.
 func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req NextPassWorkRequest) (NextPassWorkResponse, error) {
-	// S1: Validate inputs -- trim and reject empty or path-like values.
 	projectID := strings.TrimSpace(req.ProjectID)
 	planID := strings.TrimSpace(req.PlanID)
 
@@ -196,7 +189,6 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 		}), nil
 	}
 
-	// S2: Load project.
 	project, err := svc.store.GetProjectByProjectID(projectID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -209,7 +201,6 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 		return NextPassWorkResponse{}, fmt.Errorf("lookup project %q: %w", projectID, err)
 	}
 
-	// S3: Load plan.
 	plan, err := svc.store.GetPlanByPlanID(planID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -222,7 +213,6 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 		return NextPassWorkResponse{}, fmt.Errorf("lookup plan %q: %w", planID, err)
 	}
 
-	// S4: Verify plan belongs to this project.
 	if plan.ProjectRowID != project.ID {
 		return blockerResponse(WorkBlocker{
 			Code:        BlockerProjectPlanMismatch,
@@ -231,7 +221,6 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 		}), nil
 	}
 
-	// S5: Verify plan is active.
 	if plan.Status != "active" {
 		return blockerResponse(WorkBlocker{
 			Code:        BlockerPlanNotActive,
@@ -240,30 +229,25 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 		}), nil
 	}
 
-	// S6: Load ordered passes (sequence ASC -- ListPlanPassesByPlan returns them ordered).
 	passes, err := svc.store.ListPlanPassesByPlan(plan.ID)
 	if err != nil {
 		return NextPassWorkResponse{}, fmt.Errorf("list plan passes for plan %q: %w", planID, err)
 	}
 
-	// Build a pass-by-ID index for dependency resolution.
 	passByID := make(map[string]*store.PlanPass, len(passes))
 	for i := range passes {
 		p := &passes[i]
 		passByID[p.PassID] = p
 	}
 
-	// S7: Walk passes in sequence order, find the first unresolved pass.
 	for i := range passes {
 		pass := &passes[i]
 
 		switch pass.Status {
 		case StatusPassCompleted, StatusPassSkipped:
-			// Terminal -- dependency-satisfying; skip.
 			continue
 
 		case StatusPassAuditReady:
-			// An earlier pass is awaiting audit; block advancement.
 			return blockerResponse(WorkBlocker{
 				Code:        BlockerPriorPassAwaitsAudit,
 				Message:     fmt.Sprintf("pass %q (seq %d) has status %q and must be audited before selecting a later pass", pass.PassID, pass.Sequence, pass.Status),
@@ -271,7 +255,6 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 			}), nil
 
 		case StatusPassRevisionRequired:
-			// Revision required; do not advance.
 			return blockerResponse(WorkBlocker{
 				Code:        BlockerRevisionRequiredSamePass,
 				Message:     fmt.Sprintf("pass %q (seq %d) requires revision before proceeding", pass.PassID, pass.Sequence),
@@ -279,7 +262,6 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 			}), nil
 
 		case StatusPassHandoffReady:
-			// A handoff exists but is awaiting submission -- not Planner-selectable.
 			return blockerResponse(WorkBlocker{
 				Code:        BlockerNoEligiblePass,
 				Message:     fmt.Sprintf("pass %q (seq %d) has status %q and is awaiting handoff submission", pass.PassID, pass.Sequence, pass.Status),
@@ -287,7 +269,6 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 			}), nil
 
 		case StatusPassRunCreated, StatusPassInProgress:
-			// An active run exists for this pass.
 			return blockerResponse(WorkBlocker{
 				Code:        BlockerActiveRunExists,
 				Message:     fmt.Sprintf("pass %q (seq %d) has an active associated run (status %q)", pass.PassID, pass.Sequence, pass.Status),
@@ -295,8 +276,6 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 			}), nil
 
 		case StatusPassBlocked:
-			// A blocked pass prevents safe continuation. Only skipped or completed
-			// passes may be bypassed by next-pass selection.
 			return blockerResponse(WorkBlocker{
 				Code:        BlockerNoEligiblePass,
 				Message:     fmt.Sprintf("pass %q (seq %d) is blocked and prevents selecting a later pass", pass.PassID, pass.Sequence),
@@ -304,11 +283,9 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 			}), nil
 
 		case StatusPassPlanned, StatusPassReadyForPlanner:
-			// Candidate -- check dependencies, runs, and context.
 			return svc.evaluateCandidate(ctx, project, plan, pass, passByID)
 
 		default:
-			// Unknown status -- treat as no_eligible_pass to be safe.
 			return blockerResponse(WorkBlocker{
 				Code:        BlockerNoEligiblePass,
 				Message:     fmt.Sprintf("pass %q (seq %d) has unrecognised status %q", pass.PassID, pass.Sequence, pass.Status),
@@ -317,7 +294,6 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 		}
 	}
 
-	// No eligible pass found.
 	return blockerResponse(WorkBlocker{
 		Code:        BlockerNoEligiblePass,
 		Message:     fmt.Sprintf("no eligible pass found for plan %q; all passes may be completed, skipped, or blocked", planID),
@@ -334,10 +310,8 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	pass *store.PlanPass,
 	passByID map[string]*store.PlanPass,
 ) (NextPassWorkResponse, error) {
-	// Parse dependency list from JSON.
 	var depIDs []string
 	if err := json.Unmarshal([]byte(pass.DependenciesJson), &depIDs); err != nil {
-		// Treat unparseable dependencies as incomplete (fail-closed).
 		return blockerResponse(WorkBlocker{
 			Code:        BlockerDependenciesIncomplete,
 			Message:     fmt.Sprintf("pass %q dependencies JSON is malformed: %v", pass.PassID, err),
@@ -345,45 +319,28 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		}), nil
 	}
 
-	// Check each declared dependency.
 	var depStatuses []WorkDependencyStatus
 	for _, depID := range depIDs {
 		dep, ok := passByID[depID]
 		if !ok {
-			// Dependency not found in plan -- treat as incomplete.
-			depStatuses = append(depStatuses, WorkDependencyStatus{
-				PassID:    depID,
-				Status:    "unknown",
-				Satisfied: false,
-			})
-			return appendDepStatusesToBlocker(
-				blockerResponse(WorkBlocker{
-					Code:        BlockerDependenciesIncomplete,
-					Message:     fmt.Sprintf("pass %q declares dependency on %q which does not exist in this plan", pass.PassID, depID),
-					Recoverable: false,
-				}),
-				depStatuses,
-			), nil
+			depStatuses = append(depStatuses, WorkDependencyStatus{PassID: depID, Status: "unknown", Satisfied: false})
+			return appendDepStatusesToBlocker(blockerResponse(WorkBlocker{
+				Code:        BlockerDependenciesIncomplete,
+				Message:     fmt.Sprintf("pass %q declares dependency on %q which does not exist in this plan", pass.PassID, depID),
+				Recoverable: false,
+			}), depStatuses), nil
 		}
 		satisfied := dep.Status == StatusPassCompleted || dep.Status == StatusPassSkipped
-		depStatuses = append(depStatuses, WorkDependencyStatus{
-			PassID:    depID,
-			Status:    dep.Status,
-			Satisfied: satisfied,
-		})
+		depStatuses = append(depStatuses, WorkDependencyStatus{PassID: depID, Status: dep.Status, Satisfied: satisfied})
 		if !satisfied {
-			return appendDepStatusesToBlocker(
-				blockerResponse(WorkBlocker{
-					Code:        BlockerDependenciesIncomplete,
-					Message:     fmt.Sprintf("pass %q must be %q or %q before pass %q can be selected (current status: %q)", depID, StatusPassCompleted, StatusPassSkipped, pass.PassID, dep.Status),
-					Recoverable: true,
-				}),
-				depStatuses,
-			), nil
+			return appendDepStatusesToBlocker(blockerResponse(WorkBlocker{
+				Code:        BlockerDependenciesIncomplete,
+				Message:     fmt.Sprintf("pass %q must be %q or %q before pass %q can be selected (current status: %q)", depID, StatusPassCompleted, StatusPassSkipped, pass.PassID, dep.Status),
+				Recoverable: true,
+			}), depStatuses), nil
 		}
 	}
 
-	// Check for active associated runs on the candidate pass.
 	runs, err := svc.store.ListRunsByPlanPass(pass.ID)
 	if err != nil {
 		return NextPassWorkResponse{}, fmt.Errorf("list runs for pass %q: %w", pass.PassID, err)
@@ -405,19 +362,16 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		return resp, nil
 	}
 
-	// Parse source snapshot requirements.
 	var ssReqs SourceSnapshotRequirements
 	if pass.SourceSnapshotRequirementsJson != "" && pass.SourceSnapshotRequirementsJson != "{}" {
 		_ = json.Unmarshal([]byte(pass.SourceSnapshotRequirementsJson), &ssReqs)
 	}
 
-	// Parse context plan.
 	var ctxPlan ContextPlan
 	if pass.ContextPlanJson != "" && pass.ContextPlanJson != "{}" {
 		_ = json.Unmarshal([]byte(pass.ContextPlanJson), &ctxPlan)
 	}
 
-	// Check source snapshot requirement.
 	requireSnapshot := (ssReqs.RequireGitStatus != nil && *ssReqs.RequireGitStatus) ||
 		(ssReqs.RequireCommitSHA != nil && *ssReqs.RequireCommitSHA)
 
@@ -439,7 +393,6 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		snapshotStatus = snapshot.Status
 	}
 
-	// Check context packet requirement.
 	requirePacket := hasRequiredContextInputs(ctxPlan)
 
 	var packetID string
@@ -462,10 +415,8 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		coverageReportPath = packet.CoverageReportPath
 	}
 
-	// All checks passed -- build success response.
 	contextReady := (!requireSnapshot || snapshotID != "") && (!requirePacket || packetID != "")
 
-	// Parse handoff readiness criteria.
 	var criteria []string
 	if pass.HandoffReadinessCriteriaJson != "" && pass.HandoffReadinessCriteriaJson != "[]" {
 		_ = json.Unmarshal([]byte(pass.HandoffReadinessCriteriaJson), &criteria)
@@ -475,7 +426,6 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		depStatuses = []WorkDependencyStatus{}
 	}
 
-	// Build terminal run summaries for display.
 	var terminalRunSummaries []WorkRunSummary
 	for _, r := range runs {
 		if terminalRunStatuses[r.Status] {
@@ -486,9 +436,6 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		terminalRunSummaries = []WorkRunSummary{}
 	}
 
-	// Scheduled refactor passes are normal managed passes. Validate the schedule
-	// reference (read-only) and attach bounded refactor metadata. Stale/missing/
-	// mismatched references block selection without any auto-repair.
 	refMeta, refBlocker, err := validateRefactorSchedule(svc.store, project, plan, pass)
 	if err != nil {
 		return NextPassWorkResponse{}, err
@@ -546,7 +493,6 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 // Helpers
 // ----------------------------------------------------------------------------
 
-// blockerResponse builds a failed NextPassWorkResponse with a single blocker.
 func blockerResponse(b WorkBlocker) NextPassWorkResponse {
 	return NextPassWorkResponse{
 		OK:       false,
@@ -555,13 +501,11 @@ func blockerResponse(b WorkBlocker) NextPassWorkResponse {
 	}
 }
 
-// appendDepStatusesToBlocker attaches dependency status to a blocker response.
 func appendDepStatusesToBlocker(resp NextPassWorkResponse, deps []WorkDependencyStatus) NextPassWorkResponse {
 	resp.DependencyStatus = deps
 	return resp
 }
 
-// buildWorkRunSummary maps a store.Run to a bounded WorkRunSummary.
 func buildWorkRunSummary(r store.Run) WorkRunSummary {
 	return WorkRunSummary{
 		RunID:          fmt.Sprintf("%d", r.ID),
@@ -572,7 +516,6 @@ func buildWorkRunSummary(r store.Run) WorkRunSummary {
 	}
 }
 
-// resolveRunLifecycleState maps a run status to a lifecycle phase label.
 func resolveRunLifecycleState(status string) string {
 	switch status {
 	case "accepted", "accepted_with_warnings", "completed", "closed":
@@ -593,13 +536,10 @@ func resolveRunLifecycleState(status string) string {
 	}
 }
 
-// resolveRunActiveStep maps a run status to an active step label.
 func resolveRunActiveStep(status string) string {
 	return resolveRunLifecycleState(status)
 }
 
-// hasRequiredContextInputs returns true when the context plan declares at least
-// one required seed file or required search term.
 func hasRequiredContextInputs(cp ContextPlan) bool {
 	for _, f := range cp.SeedFilesToRead {
 		if f.Required != nil && *f.Required {
@@ -614,8 +554,6 @@ func hasRequiredContextInputs(cp ContextPlan) bool {
 	return false
 }
 
-// isUnsafePath returns true when the value contains path traversal sequences
-// or path separators that would be unsafe in an identifier context.
 func isUnsafePath(s string) bool {
 	return strings.Contains(s, "/") ||
 		strings.Contains(s, "\\") ||
@@ -623,11 +561,6 @@ func isUnsafePath(s string) bool {
 		strings.Contains(s, "\x00")
 }
 
-// refactorMetadataFromPass extracts the schema-approved refactor candidate
-// metadata from a pass's raw_pass_json. It returns (nil, nil) when the pass is
-// not a refactor pass. It fails closed (returns an error) when a pass that is a
-// refactor pass carries missing or malformed refactor metadata, so callers never
-// silently treat malformed refactor metadata as absent.
 func refactorMetadataFromPass(pass *store.PlanPass) (*RefactorCandidateMetadata, error) {
 	if pass == nil {
 		return nil, nil
@@ -665,7 +598,6 @@ func refactorMetadataFromPass(pass *store.PlanPass) (*RefactorCandidateMetadata,
 	return meta, nil
 }
 
-// staleRefactorBlocker builds the contract-compatible stale-scheduling blocker.
 func staleRefactorBlocker(reason string) *WorkBlocker {
 	return &WorkBlocker{
 		Code:        BlockerUnsafeRequest,
@@ -674,21 +606,9 @@ func staleRefactorBlocker(reason string) *WorkBlocker {
 	}
 }
 
-// validateRefactorSchedule resolves and validates the scheduling reference for a
-// scheduled refactor pass. It is read-only and never creates, cancels, completes,
-// or repairs schedule refs.
-//
-// Return semantics:
-//   - (nil, nil, nil): the pass is not a scheduled refactor pass.
-//   - (nil, blocker, nil): the pass is a refactor pass but its scheduling
-//     reference is missing, mismatched, or stale.
-//   - (meta, nil, nil): the pass is a valid scheduled refactor pass; meta carries
-//     bounded refactor metadata for the response.
-//   - (nil, nil, err): an unexpected store failure occurred.
 func validateRefactorSchedule(st *store.Store, project *store.Project, plan *store.Plan, pass *store.PlanPass) (*WorkRefactorCandidateMetadata, *WorkBlocker, error) {
 	meta, err := refactorMetadataFromPass(pass)
 	if err != nil {
-		// Malformed refactor metadata on a refactor pass is unsafe, not absent.
 		return nil, staleRefactorBlocker(err.Error()), nil
 	}
 	if meta == nil {
@@ -705,7 +625,6 @@ func validateRefactorSchedule(st *store.Store, project *store.Project, plan *sto
 
 	switch candidate.Status {
 	case refactorCandidateStatusScheduled, refactorCandidateStatusScheduledRevisionRequired:
-		// Active scheduled candidate -- eligible for orchestrator selection/audit.
 	default:
 		return nil, staleRefactorBlocker(fmt.Sprintf("candidate %q status is %q; expected scheduled or scheduled_revision_required", meta.CandidateID, candidate.Status)), nil
 	}

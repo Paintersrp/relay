@@ -25,7 +25,9 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"relay/internal/api"
+	"relay/internal/api/shared"
+	plansapi "relay/internal/api/plans"
+	appplans "relay/internal/app/plans"
 	"relay/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -143,15 +145,14 @@ func run() error {
 		return fmt.Errorf("create smoke project: %w", err)
 	}
 
-	apiH := api.NewAPIHandler(st, logger)
+	planSvc := appplans.NewService(st)
+	planLifecycleSvc := appplans.NewRunLifecycleService(st)
+	planWorkSvc := appplans.NewOrchestratorWorkService(st)
+	planH := plansapi.NewHandler(planSvc, planLifecycleSvc, planWorkSvc, st)
 	r := chi.NewRouter()
 	r.Route("/api", func(r chi.Router) {
-		r.Use(api.CORSMiddleware)
-		r.Post("/plans/validate", apiH.ValidatePlan)
-		r.Post("/plans", apiH.SubmitPlan)
-		r.Get("/plans", apiH.ListPlans)
-		r.Get("/plans/{planId}", apiH.GetPlan)
-		r.Get("/plans/{planId}/passes/{passId}", apiH.GetPlanPass)
+		r.Use(shared.CORSMiddleware)
+		plansapi.MountRoutes(r, planH)
 	})
 
 	h := &harness{st: st, router: r}
@@ -163,7 +164,7 @@ func run() error {
 	rec := h.post("/api/plans/validate", body)
 	h.check("validate status 200", rec.Code == http.StatusOK)
 
-	var validateResp api.PlanAPIResponse
+	var validateResp plansapi.PlanAPIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &validateResp); err != nil {
 		return fmt.Errorf("decode validate response: %w", err)
 	}
@@ -182,7 +183,7 @@ func run() error {
 	rec = h.post("/api/plans", body)
 	h.check("submit status 201", rec.Code == http.StatusCreated)
 
-	var submitResp api.PlanAPIResponse
+	var submitResp plansapi.PlanAPIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &submitResp); err != nil {
 		return fmt.Errorf("decode submit response: %w", err)
 	}
@@ -230,7 +231,7 @@ func run() error {
 	rec = h.get("/api/plans")
 	h.check("list status 200", rec.Code == http.StatusOK)
 
-	var listResp api.PlanReadAPIResponse
+	var listResp plansapi.PlanReadAPIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &listResp); err != nil {
 		return fmt.Errorf("decode list response: %w", err)
 	}
@@ -250,7 +251,7 @@ func run() error {
 	rec = h.get("/api/plans/plan-api-smoke-plan")
 	h.check("detail status 200", rec.Code == http.StatusOK)
 
-	var detailResp api.PlanReadAPIResponse
+	var detailResp plansapi.PlanReadAPIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &detailResp); err != nil {
 		return fmt.Errorf("decode detail response: %w", err)
 	}
@@ -281,7 +282,7 @@ func run() error {
 	rec = h.get("/api/plans/plan-api-smoke-plan/passes/PASS-002")
 	h.check("pass detail status 200", rec.Code == http.StatusOK)
 
-	var passResp api.PlanReadAPIResponse
+	var passResp plansapi.PlanReadAPIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &passResp); err != nil {
 		return fmt.Errorf("decode pass detail response: %w", err)
 	}
@@ -327,7 +328,7 @@ func run() error {
 	rec = h.get("/api/plans/plan-api-smoke-plan")
 	h.check("completion status 200", rec.Code == http.StatusOK)
 
-	var completionResp api.PlanReadAPIResponse
+	var completionResp plansapi.PlanReadAPIResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &completionResp); err != nil {
 		return fmt.Errorf("decode completion response: %w", err)
 	}

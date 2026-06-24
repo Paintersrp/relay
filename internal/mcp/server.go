@@ -27,7 +27,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"relay/internal/plans"
+	appplans "relay/internal/app/plans"
 )
 
 // Server is the MCP stdio server. It reads newline-delimited JSON-RPC 2.0
@@ -211,12 +211,12 @@ func (s *Server) handleToolsCall(req Request) Response {
 			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 		}
 		result = s.HandleGetPassContext(args)
-	case plans.NextPassWorkTool:
+	case appplans.NextPassWorkTool:
 		if !s.contextBrokerEnabled() {
 			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 		}
 		result = s.HandleGetNextPassWork(args)
-	case plans.NextAuditWorkTool:
+	case appplans.NextAuditWorkTool:
 		if !s.contextBrokerEnabled() {
 			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 		}
