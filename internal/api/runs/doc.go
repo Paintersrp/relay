@@ -1,6 +1,7 @@
-// Package runs is a transport adapter route-mounting skeleton for PASS-001.
+// Package runs is the run feature HTTP transport adapter.
 //
-// It registers run and run-lifecycle JSON API routes against the existing
-// *api.APIHandler methods. It must not contain business logic, DTOs, mappers,
-// presenters, or persistence access in PASS-001.
+// It owns run and run-lifecycle JSON API routes, run/artifact/event response
+// DTOs, run presentation mapping, and the run route mounter. It delegates all
+// business behavior to relay/internal/app/runs and relay/internal/app/plans and
+// must not import root relay/internal/api or the store package directly.
 package runs

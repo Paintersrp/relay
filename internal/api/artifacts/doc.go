@@ -1,6 +1,7 @@
-// Package artifacts is a transport adapter route-mounting skeleton for PASS-001.
+// Package artifacts is the run artifact feature HTTP transport adapter.
 //
-// It registers run artifact JSON API routes against the existing
-// *api.APIHandler methods. It must not contain business logic, DTOs, mappers,
-// presenters, or persistence access in PASS-001.
+// It owns run artifact list/content JSON API routes and presentation, reusing
+// the run feature DTOs and presenter. It delegates all data and file access to
+// relay/internal/app/runs and must not import root relay/internal/api, the
+// store package, or read files directly.
 package artifacts

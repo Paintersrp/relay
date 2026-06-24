@@ -1,13 +1,9 @@
 package intake
 
-import (
-	rootapi "relay/internal/api"
+import "github.com/go-chi/chi/v5"
 
-	"github.com/go-chi/chi/v5"
-)
-
-// MountRoutes registers planner-handoff intake routes on r against the existing
-// *rootapi.APIHandler methods. PASS-001 route composition only.
-func MountRoutes(r chi.Router, h *rootapi.APIHandler) {
+// MountRoutes registers the planner-handoff intake route on r against the
+// feature intake Handler.
+func MountRoutes(r chi.Router, h *Handler) {
 	r.Post("/intake/planner-handoff", h.IntakePlannerHandoff)
 }

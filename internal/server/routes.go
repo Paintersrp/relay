@@ -16,8 +16,10 @@ import (
 	projectsapi "relay/internal/api/projects"
 	runsapi "relay/internal/api/runs"
 	"relay/internal/api/shared"
+	appintake "relay/internal/app/intake"
 	appplans "relay/internal/app/plans"
 	appprojects "relay/internal/app/projects"
+	appruns "relay/internal/app/runs"
 	"relay/internal/devreload"
 	"relay/internal/events"
 	"relay/internal/handlers"
@@ -143,15 +145,20 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	planLifecycleSvc := appplans.NewRunLifecycleService(s)
 	planWorkSvc := appplans.NewOrchestratorWorkService(s)
 	planH := plansapi.NewHandler(planSvc, planLifecycleSvc, planWorkSvc, s)
+	runSvc := appruns.NewService(s, log, eventHub)
+	runH := runsapi.NewHandler(runSvc, planLifecycleSvc)
+	artifactH := artifactsapi.NewHandler(runSvc)
+	intakeH := intakeapi.NewHandler(appintake.NewService(s), runSvc)
 	r.Route("/api", func(r chi.Router) {
 		r.Use(shared.CORSMiddleware)
-		runsapi.MountRoutes(r, apiH)
-		artifactsapi.MountRoutes(r, apiH)
-		intakeapi.MountRoutes(r, apiH)
+		runsapi.MountRoutes(r, runH)
+		artifactsapi.MountRoutes(r, artifactH)
+		intakeapi.MountRoutes(r, intakeH)
 		projectsapi.MountRoutes(r, projectH)
 		mountProjectRefactorRoutes(r, apiH)
 		plansapi.MountRoutes(r, planH)
 		auditsapi.MountRoutes(r, apiH)
+		r.Post("/dev/setup-smoke-validation-failure", apiH.SetupSmokeValidationFailure)
 		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)

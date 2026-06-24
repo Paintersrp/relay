@@ -1,6 +1,8 @@
-// Package runs owns future run service, use-case, and business workflow code
-// for the runs feature.
+// Package runs owns run service, use-case, and run lifecycle workflow code for
+// the runs feature. It loads run detail data, derives presentation-neutral run
+// views, and performs run lifecycle operations (intake approval, prepare,
+// render, execute, validate, repair) by delegating to the existing workflow
+// packages.
 //
-// It is intentionally skeletal in PASS-001. It must not import internal/api or
-// internal/api/<feature>.
+// It must not import internal/api or internal/api/<feature>.
 package runs
