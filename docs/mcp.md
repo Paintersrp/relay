@@ -38,6 +38,7 @@ For the end-to-end operator loop that combines these retrieval tools with the Re
 
 ## Refactor Backlog Tools (Deferred — not current actions)
 
+*   The source-controlled refactor backlog semantics (refactor discovery tasks, pass-ready refactor candidates, scheduled refactor pass representation, generated refactor-only plan review, sidecar deferral, and audit-derived candidate completion) are defined in `Paintersrp/relay-contracts` at `contracts/refactor_backlog_contract.md`. That contract defines the surface only; it does not register or expose any MCP tool.
 *   Refactor backlog MCP tools (for refactor discovery tasks, refactor candidates, candidate promotion, or generated refactor-only plan generation) are **not** current default GPT-facing actions and are **not** part of the current local/dev/server tool inventory in PASS-001.
 *   PASS-005 owns any future refactor backlog MCP tool exposure. Until an active MCP or tool contract explicitly registers such tools, they must not be described as available.
 *   Generated refactor-only plans are ordinary reviewed Plan of Passes JSON artifacts. They are submitted through the existing `submit_planner_pass_plan` action only after user review and explicit confirmation. There is no separate refactor submission action, and refactor metadata does not authorize automatic submission.
