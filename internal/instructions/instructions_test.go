@@ -68,8 +68,8 @@ func TestRootAGENTSMDMatchesCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read root AGENTS.md: %v", err)
 	}
-	rootContent := strings.TrimSpace(string(canonical))
-	assetContent := strings.TrimSpace(AssetsAGENTSMD)
+	rootContent := strings.ReplaceAll(strings.TrimSpace(string(canonical)), "\r\n", "\n")
+	assetContent := strings.ReplaceAll(strings.TrimSpace(AssetsAGENTSMD), "\r\n", "\n")
 	if rootContent != assetContent {
 		t.Error("root AGENTS.md does not match canonical assets/AGENTS.md")
 	}
@@ -81,8 +81,8 @@ func TestRootClineRulesMatchesCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read root .clinerules: %v", err)
 	}
-	rootContent := strings.TrimSpace(string(canonical))
-	assetContent := strings.TrimSpace(AssetsClineRules)
+	rootContent := strings.ReplaceAll(strings.TrimSpace(string(canonical)), "\r\n", "\n")
+	assetContent := strings.ReplaceAll(strings.TrimSpace(AssetsClineRules), "\r\n", "\n")
 	if rootContent != assetContent {
 		t.Error("root .clinerules does not match canonical assets/.clinerules")
 	}
