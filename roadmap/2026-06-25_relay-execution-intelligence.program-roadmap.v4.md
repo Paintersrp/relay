@@ -1,16 +1,16 @@
-# Relay Execution Intelligence — Program Roadmap / Plan of Plans v3
+# Relay Execution Intelligence — Program Roadmap / Plan of Plans v4
 
 Artifact status: planning anchor / program roadmap / plan-of-plans  
-Revision: v3 research-evidence policy refinement  
+Revision: v4 confirmatory-review traceability refinement  
 Created: 2026-06-25  
 Refined: 2026-06-25  
 
 Companion artifacts:
 
-- `2026-06-25_relay-execution-intelligence.research-integration-brief.v3.md`
-- `2026-06-25_relay-execution-intelligence.capability-map.v3.md`
-- `2026-06-25_relay-execution-intelligence.precommit-gap-review.md`
-- `2026-06-25_relay-execution-intelligence.research-evidence-policy-review.md`
+- `2026-06-25_relay-execution-intelligence.research-integration-brief.v4.md`
+- `2026-06-25_relay-execution-intelligence.capability-map.v4.md`
+- `2026-06-25_relay-execution-intelligence.research-evidence-policy-review.v4.md`
+- `2026-06-25_relay-execution-intelligence.v4-change-log.md`
 
 Primary repositories:
 
@@ -20,6 +20,7 @@ Primary repositories:
 Contract manifest used: `agents/knowledge/planner_github_knowledge_manifest.json` from `Paintersrp/relay-contracts` at `main`  
 Manifest blob SHA observed in refinement session: `0b31c40b223c4f649576f849cb9520a2e7669d91`  
 Manifest-reported commit: `2aff6dd84cef7480e44109a43c90b5b2e6463b11`
+Version status: v4 incorporates the external v3 planning-packet audit and supersedes v3 as the controlling anchor set.
 
 
 ---
@@ -51,15 +52,15 @@ It does not authorize code changes, plan submission, run creation, executor disp
 
 This roadmap has two companion planning anchors:
 
-1. **Research Integration Brief v3** — accepted interpretation of the five Deep Research reports and synthesis work.
-2. **Capability Map v3** — traceability matrix from research findings to Relay capabilities, gaps, implementation tracks, and evidence expectations.
+1. **Research Integration Brief v4** — accepted interpretation of the five Deep Research reports and synthesis work.
+2. **Capability Map v4** — traceability matrix from research findings to Relay capabilities, gaps, implementation tracks, and evidence expectations.
 
 The three-anchor set is the minimum durable context for future child plan creation:
 
 ```text
-Program Roadmap v3
-+ Research Integration Brief v3
-+ Capability Map v3
+Program Roadmap v4
++ Research Integration Brief v4
++ Capability Map v4
 ```
 
 Future child plans should not be created from the Deep Research reports alone, and the reports should not be included in the default child-plan packet. The reports are archival source evidence; these three artifacts preserve the accepted Relay-specific interpretation and should control future planning.
@@ -177,9 +178,9 @@ The five Deep Research reports are represented in the three anchor artifacts. Th
 
 Every child Plan of Passes created under this roadmap should receive these controlling artifacts:
 
-1. `2026-06-25_relay-execution-intelligence.program-roadmap.v3.md`
-2. `2026-06-25_relay-execution-intelligence.research-integration-brief.v3.md`
-3. `2026-06-25_relay-execution-intelligence.capability-map.v3.md`
+1. `2026-06-25_relay-execution-intelligence.program-roadmap.v4.md`
+2. `2026-06-25_relay-execution-intelligence.research-integration-brief.v4.md`
+3. `2026-06-25_relay-execution-intelligence.capability-map.v4.md`
 4. The current `Paintersrp/relay-contracts` Planner GitHub knowledge manifest fetched from source control.
 5. Current Relay source-controlled contracts, schemas, policies, templates, and examples required for that child plan's task domain.
 
@@ -191,9 +192,9 @@ Use this priority order when creating child Plans of Passes or pass handoffs:
 
 ```text
 1. Current fetched Relay source-controlled contracts, schemas, policies, templates, and examples
-2. Program Roadmap / Plan of Plans v3
-3. Research Integration Brief v3
-4. Capability Map v3
+2. Program Roadmap / Plan of Plans v4
+3. Research Integration Brief v4
+4. Capability Map v4
 5. Targeted excerpts or grep/rg findings from Deep Research reports, only when explicitly needed
 6. Prior synthesis reports, only when explicitly needed
 7. Prior packet assessment plan or historical handoffs, only as historical context
@@ -225,25 +226,25 @@ research_evidence_consulted:
 If none are consulted, the child plan should state:
 
 ```text
-research_evidence_consulted: none; represented by Roadmap v3, Research Integration Brief v3, and Capability Map v3
+research_evidence_consulted: none; represented by Roadmap v4, Research Integration Brief v4, and Capability Map v4
 ```
 
 ### 9.4 Child-plan-specific planning packet matrix
 
 | Child plan | Required anchor artifacts | Research evidence status | Historical/supporting artifacts | Required Relay source fetch domains |
 |---|---|---|---|---|
-| PLAN-A | Roadmap v3, Brief v3, Capability Map v3 | Represented in anchors; consult original reports only for targeted provenance checks or amendment work. | Prior synthesis reports only if checking anchor fidelity. | `plan_authoring_mode`, managed-plan contracts, artifact naming, lifecycle, security, approval gates |
-| PLAN-B | Roadmap v3, Brief v3, Capability Map v3 | Represented in anchors; optional targeted reference for prompt architecture, deterministic packetization, or telemetry wording. | Prior synthesis reports only if needed. | artifact model, planner-to-compiler contract, artifact naming, lifecycle, approval, security, schema versioning, relevant schemas |
-| PLAN-C | Roadmap v3, Brief v3, Capability Map v3 | Represented in anchors; optional targeted reference for assessment/routing/evaluation details. | Prior packet assessment v2 plan, prior synthesis. | planner handoff contract, plan/run submission contracts, orchestrator/context contracts, lifecycle, approval, security, relevant schemas |
-| PLAN-D | Roadmap v3, Brief v3, Capability Map v3 | Represented in anchors; optional targeted reference for handoff/context hygiene. | Prior synthesis only if needed. | planner handoff template/schema, planner-to-compiler contract, repo guidance policy if present, context broker contract |
-| PLAN-E | Roadmap v3, Brief v3, Capability Map v3 | Represented in anchors; optional targeted reference for packetization/source-map/atom details. | Prior synthesis only if needed. | canonical packet schema/contract, validation report schema, middleware failure codes, planner-to-compiler contract, lifecycle |
-| PLAN-F | Roadmap v3, Brief v3, Capability Map v3 | Represented in anchors; optional targeted reference for deterministic rendering/profile details. | Prior synthesis only if needed. | executor brief contract, canonical packet schema, validation report schema, renderer/brief-related policies |
-| PLAN-G | Roadmap v3, Brief v3, Capability Map v3 | Represented in anchors; optional targeted reference for provider profile fields, token accounting, and cost policy. | Prior synthesis only if needed. | runtime config conventions, executor/adapter surfaces, telemetry/security policies, UI/API contracts if relevant |
-| PLAN-H | Roadmap v3, Brief v3, Capability Map v3 | Represented in anchors; optional targeted reference for retention/redaction/provenance details. | Prior synthesis only if needed. | security redaction policy, lifecycle policy, artifact model, telemetry/export/runtime storage surfaces |
-| PLAN-I | Roadmap v3, Brief v3, Capability Map v3 | Represented in anchors; optional targeted reference for fixture/trace metric details. | Prior synthesis only if needed. | validation report schema, middleware failure codes, telemetry/provenance contracts, packet/brief schemas |
-| PLAN-J | Roadmap v3, Brief v3, Capability Map v3 | Represented in anchors; optional targeted reference for operator decision/evaluation/routing display details. | Current UI screenshots/design notes if relevant. | current UI routes/components, API surfaces, approval-gate/lifecycle contracts, telemetry/routing contracts |
-| PLAN-K | Roadmap v3, Brief v3, Capability Map v3 | Represented in anchors; optional targeted reference only for documentation provenance or release examples. | Prior examples/handoffs. | all changed contracts/schemas/examples, artifact naming, release validation, docs surfaces |
-| PLAN-L | Roadmap v3, Brief v3, Capability Map v3 | Represented in anchors; use accumulated run/eval/telemetry results first; consult original research only for targeted calibration questions. | Accumulated run/eval/telemetry results from prior plans. | evaluation, telemetry, routing, renderer, context, and operator UX source surfaces |
+| PLAN-A | Roadmap v4, Brief v4, Capability Map v4 | Represented in anchors; consult original reports only for targeted provenance checks or amendment work. | Prior synthesis reports only if checking anchor fidelity. | `plan_authoring_mode`, managed-plan contracts, artifact naming, lifecycle, security, approval gates |
+| PLAN-B | Roadmap v4, Brief v4, Capability Map v4 | Represented in anchors; optional targeted reference for prompt architecture, deterministic packetization, or telemetry wording. | Prior synthesis reports only if needed. | artifact model, planner-to-compiler contract, artifact naming, lifecycle, approval, security, schema versioning, relevant schemas |
+| PLAN-C | Roadmap v4, Brief v4, Capability Map v4 | Represented in anchors; optional targeted reference for assessment/routing/evaluation details. | Prior packet assessment v2 plan, prior synthesis. | planner handoff contract, plan/run submission contracts, orchestrator/context contracts, lifecycle, approval, security, relevant schemas |
+| PLAN-D | Roadmap v4, Brief v4, Capability Map v4 | Represented in anchors; optional targeted reference for handoff/context hygiene. | Prior synthesis only if needed. | planner handoff template/schema, planner-to-compiler contract, repo guidance policy if present, context broker contract |
+| PLAN-E | Roadmap v4, Brief v4, Capability Map v4 | Represented in anchors; optional targeted reference for packetization/source-map/atom details. | Prior synthesis only if needed. | canonical packet schema/contract, validation report schema, middleware failure codes, planner-to-compiler contract, lifecycle |
+| PLAN-F | Roadmap v4, Brief v4, Capability Map v4 | Represented in anchors; optional targeted reference for deterministic rendering/profile details. | Prior synthesis only if needed. | executor brief contract, canonical packet schema, validation report schema, renderer/brief-related policies |
+| PLAN-G | Roadmap v4, Brief v4, Capability Map v4 | Represented in anchors; optional targeted reference for provider profile fields, token accounting, and cost policy. | Prior synthesis only if needed. | runtime config conventions, executor/adapter surfaces, telemetry/security policies, UI/API contracts if relevant |
+| PLAN-H | Roadmap v4, Brief v4, Capability Map v4 | Represented in anchors; optional targeted reference for retention/redaction/provenance details. | Prior synthesis only if needed. | security redaction policy, lifecycle policy, artifact model, telemetry/export/runtime storage surfaces |
+| PLAN-I | Roadmap v4, Brief v4, Capability Map v4 | Represented in anchors; optional targeted reference for fixture/trace metric details. | Prior synthesis only if needed. | validation report schema, middleware failure codes, telemetry/provenance contracts, packet/brief schemas |
+| PLAN-J | Roadmap v4, Brief v4, Capability Map v4 | Represented in anchors; optional targeted reference for operator decision/evaluation/routing display details. | Current UI screenshots/design notes if relevant. | current UI routes/components, API surfaces, approval-gate/lifecycle contracts, telemetry/routing contracts |
+| PLAN-K | Roadmap v4, Brief v4, Capability Map v4 | Represented in anchors; optional targeted reference only for documentation provenance or release examples. | Prior examples/handoffs. | all changed contracts/schemas/examples, artifact naming, release validation, docs surfaces |
+| PLAN-L | Roadmap v4, Brief v4, Capability Map v4 | Represented in anchors; use accumulated run/eval/telemetry results first; consult original research only for targeted calibration questions. | Accumulated run/eval/telemetry results from prior plans. | evaluation, telemetry, routing, renderer, context, and operator UX source surfaces |
 
 ### 9.5 Required child-plan coverage section
 
@@ -267,9 +268,9 @@ A child plan that cannot identify covered capability IDs should be revised befor
 Use this prompt shape when asking a future agent to create a child Plan of Passes:
 
 ```text
-Create a schema-valid Relay Plan of Passes for [PLAN-X] from the attached Program Roadmap v3.
+Create a schema-valid Relay Plan of Passes for [PLAN-X] from the attached Program Roadmap v4.
 
-Treat the Program Roadmap v3, Research Integration Brief v3, and Capability Map v3 as the controlling planning artifacts. Do not reinterpret the program from the original Deep Research reports.
+Treat the Program Roadmap v4, Research Integration Brief v4, and Capability Map v4 as the controlling planning artifacts. Do not reinterpret the program from the original Deep Research reports.
 
 Do not attach or use the five Deep Research reports as default planning context. They are archival evidence represented by the three anchor artifacts. Consult them only for targeted provenance, ambiguity resolution, grep/rg verification, or a user-requested program amendment. If consulted, record the report, query/section, reason, and decision affected.
 
@@ -287,31 +288,33 @@ The program should be implemented through these child Plans of Passes.
 
 | Child Plan | Name | Purpose | Primary tracks | Key capability coverage |
 |---|---|---|---|---|
-| PLAN-A | Research Preservation and Program Governance | Preserve research interpretation, vocabulary, coverage rules, and child-plan governance. | `program_governance` | CAP-A01–CAP-A05 |
+| PLAN-A | Research Preservation and Program Governance | Preserve research interpretation, vocabulary, coverage rules, child-plan governance, and research evidence policy. | `program_governance` | CAP-A01–CAP-A06 |
 | PLAN-B | Contract, Artifact, Lifecycle, and Approval Foundation | Update contracts, schemas, artifact taxonomy, lifecycle states, naming policy, and approval gates for the new program. | `contracts_schema`, `telemetry_security` | CAP-B01–CAP-B05, supporting CAP-H/I/J/K |
 | PLAN-C | Packet Assessment System | Implement packet assessment as a separate advisory artifact with persistence, APIs/MCP, operator decisions, child-handoff recommendations, and outcome tracking. | `packet_assessment`, `operator_ux`, `evaluation_calibration` | CAP-C01–CAP-C06 |
 | PLAN-D | Handoff Profile, Repo Guidance, and Context Classification | Harden handoff parseable zones, claim statuses, repo guidance artifacts, context classification, and prompt-context hygiene. | `handoff_packet`, `contracts_schema`, `evaluation_calibration` | CAP-D01–CAP-D05, CAP-F03, CAP-I03 |
 | PLAN-E | Canonical Packet vNext and Compiler Validation | Add task atoms, implementation steps, context tiers, source maps, render policy, telemetry seeds, and compiler hardening. | `handoff_packet`, `contracts_schema` | CAP-E01–CAP-E07 |
-| PLAN-F | Deterministic Renderer and Brief Validation | Implement render profiles, brief validation report, token budgets, stable hashes, context allowlists, and hard-block/warning gates. | `renderer_brief`, `evaluation_calibration` | CAP-F01–CAP-F06, CAP-I01 |
+| PLAN-F | Deterministic Renderer and Brief Validation | Implement render profiles, brief validation report, token budgets, stable hashes, context allowlists, deterministic hard-block gates, and calibrated-warning separation. | `renderer_brief`, `evaluation_calibration` | CAP-F01–CAP-F07, CAP-I01 |
 | PLAN-G | Model/Provider Profiles, Executor Tiers, Token and Cost Accounting | Add provider/model capability profile registry, executor tiers, token accounting, cost accounting, and advisory routing objects. | `routing_cost` | CAP-G01–CAP-G07 |
 | PLAN-H | Telemetry, Provenance, Redaction, and Safe Export | Implement metadata-first telemetry, provenance, retention classes, redaction/blocking, and safe export/debug bundles. | `telemetry_security` | CAP-H01–CAP-H07 |
-| PLAN-I | Evaluation Harness, Metrics, and Calibration | Implement fixtures, trace evals, prompt/context/execution/audit/routing/split metrics, ECPT, and calibration. | `evaluation_calibration` | CAP-I01–CAP-I09 |
+| PLAN-I | Evaluation Harness, Metrics, and Calibration | Implement fixtures, trace evals, prompt/context/execution/audit/routing/split metrics, reasoning/exploration-alignment metrics, ECPT, and calibration. | `evaluation_calibration` | CAP-I01–CAP-I10 |
 | PLAN-J | Operator UX and Workflow Integration | Build operator surfaces for assessment review, prompt/brief quality, routing/cost, content-capture controls, overrides, dispatch, and audit support. | `operator_ux` | CAP-J01–CAP-J06 |
 | PLAN-K | Migration, Compatibility, Documentation, and Release Hardening | Preserve existing pipeline behavior during rollout, document artifacts and workflows, validate examples, and harden release. | `migration_docs`, all tracks | CAP-K01–CAP-K05 |
-| PLAN-L | Execution Intelligence Optimization Loop | Turn accumulated telemetry/evals into profile tuning, routing calibration, context optimization, warning promotion, and controlled prompt/render experiments. | `evaluation_calibration`, `routing_cost`, `renderer_brief`, `operator_ux` | CAP-L01–CAP-L08 plus cross-cutting CAP-C/G/I/J |
+| PLAN-L | Execution Intelligence Optimization Loop | Turn accumulated telemetry/evals into profile tuning, routing calibration, context optimization, warning promotion, and controlled prompt/render experiments. | `execution_intelligence_optimization`, `evaluation_calibration`, `routing_cost`, `renderer_brief`, `operator_ux` | CAP-L01–CAP-L08, with explicit cross-references to CAP-C06, CAP-G06, CAP-I06–CAP-I10, and CAP-J03–CAP-J06 where relevant |
 
+
+> Canonical decomposition: PLAN-A through PLAN-L is the controlling child-plan structure for this program roadmap. The child-plan families named in the Research Integration Brief and the minimum-plan groupings in the Capability Map are explanatory groupings only, not competing decompositions.
 
 PLAN-L is intentionally later. It does not mean automatic dispatch. It means evidence-backed continuous improvement of recommendations and render/context policies.
 
 ---
 
-## 10. Child plan details
+## 10a. Child plan details
 
 ### PLAN-A — Research Preservation and Program Governance
 
 **Purpose:** Make the research interpretation durable before implementation planning starts.
 
-**Scope:** Preserve the Research Integration Brief and Capability Map as accepted planning anchors; define capability coverage requirements; define roadmap amendment rules; define how child plans cite capability IDs; define how research recommendations can be marked planned, deferred-preserved, open, or explicitly rejected.
+**Scope:** Preserve the Research Integration Brief and Capability Map as accepted planning anchors; define capability coverage requirements; define roadmap amendment rules; define how child plans cite capability IDs; define how research recommendations can be marked planned, deferred-preserved, open, or explicitly rejected; preserve the research evidence policy that raw Deep Research reports are archival targeted evidence rather than default child-plan context.
 
 **Non-goals:** No runtime code changes. No packet/compiler/renderer work. No Relay plan submission unless separately reviewed and confirmed.
 
@@ -371,7 +374,7 @@ PLAN-L is intentionally later. It does not mean automatic dispatch. It means evi
 
 **Purpose:** Add advisory routing infrastructure without hardcoding providers or models into prompts.
 
-**Scope:** Define executor tiers; add provider/model capability profile registry; add token estimator modes; add cost profile schema; model provider quirks, privacy defaults, cache behavior, structured-output support, tool support, and benchmark metadata; emit advisory route recommendation objects.
+**Scope:** Define executor tiers; add provider/model capability profile registry; add token estimator modes; add cost profile schema; model provider quirks, privacy defaults, cache behavior, structured-output support, tool support, benchmark metadata, long-context price bands, region/data-residency uplifts, and tool/grounding-call fees; emit advisory route recommendation objects.
 
 **Non-goals:** No automatic model selection. No automatic dispatch. No provider payload retention by default.
 
@@ -391,7 +394,7 @@ PLAN-L is intentionally later. It does not mean automatic dispatch. It means evi
 
 **Purpose:** Build the evaluation subsystem that measures artifact correctness, process quality, and outcome quality across the Relay pipeline.
 
-**Scope:** Add fixture regression harness; trace-based real-run evaluation; root-cause taxonomy; prompt/context/execution/audit/routing/split metrics; ECPT as a warning/analysis metric; calibration data model.
+**Scope:** Add fixture regression harness; trace-based real-run evaluation; root-cause taxonomy; prompt/context/execution/audit/routing/split metrics; reasoning/exploration-alignment metrics including file-localization recall, decomposition quality, and over-prediction rate; ECPT as a warning/analysis metric; calibration data model.
 
 **Non-goals:** No public benchmark as source of truth. No LLM judge hard-blocks in first implementation. No automatic routing threshold enforcement.
 
@@ -522,6 +525,8 @@ These are not blockers for roadmap creation, but they must be preserved until de
 | Whether program anchors live in `relay-contracts`, `relay`, or both | PLAN-A / PLAN-B | Should be decided before generating long-lived child plans. |
 | Whether child plans should be submitted individually or as coordinated bundles | PLAN-A | First three child plans may be coordinated but should remain distinct. |
 | Exact semantics for child-handoff registration from packet assessment | PLAN-C | Must not create runs or dispatch executors automatically. |
+| Rationale dose, constraint placement, and structured-vs-terse rendering | PLAN-L | Resolve empirically through render-profile experiments rather than upfront assumption. |
+| Executor reasoning/exploration-alignment metrics | PLAN-I / PLAN-L | Track file-localization recall, decomposition quality, and over-prediction rate; preserve as CAP-I10. |
 
 ---
 

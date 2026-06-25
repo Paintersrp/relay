@@ -1,12 +1,13 @@
-# Relay Execution Intelligence — Research Integration Brief v3
+# Relay Execution Intelligence — Research Integration Brief v4
 
 Artifact status: planning anchor / research preservation artifact
-Revision: v3 research-evidence policy refinement  
+Revision: v4 confirmatory-review traceability refinement  
 Created: 2026-06-25  
 Primary repositories: `Paintersrp/relay`, `Paintersrp/relay-contracts`  
 Contract manifest used: `agents/knowledge/planner_github_knowledge_manifest.json` from `Paintersrp/relay-contracts` at `main`  
 Manifest blob SHA observed in session: `0b31c40b223c4f649576f849cb9520a2e7669d91`  
 Manifest-reported commit: `2aff6dd84cef7480e44109a43c90b5b2e6463b11`
+Version status: v4 incorporates the external v3 planning-packet audit and supersedes v3 as the controlling research integration brief.
 
 ## 1. Purpose
 
@@ -28,7 +29,7 @@ The research program is based on five Deep Research reports:
 4. `Evaluation-harness-research.md` — Relay Evaluation Harness for Prompt Efficiency and Coding-Agent Execution.
 5. `Telemetry-research.md` — Relay Telemetry Retention, Redaction, and Auditability Policy for Coding-Agent Pipelines.
 
-These reports are the original research source corpus. They are represented by this brief, the Program Roadmap v3, and the Capability Map v3. They are not default attachments for child-plan creation; they are archival evidence for targeted verification, provenance checks, grep/rg, ambiguity resolution, or explicit program amendment work.
+These reports are the original research source corpus. They are represented by this brief, the Program Roadmap v4, and the Capability Map v4. They are not default attachments for child-plan creation; they are archival evidence for targeted verification, provenance checks, grep/rg, ambiguity resolution, or explicit program amendment work.
 
 ### 2.2 Synthesis inputs
 
@@ -166,22 +167,24 @@ These decisions should not be re-litigated unless later source-controlled work e
 34. Fixture-based regression tests protect deterministic transformations.
 35. Trace-based real-run evals attribute failures to the earliest observable boundary: handoff, packetization, rendering, prompt quality, context, executor/model, validation, or audit.
 36. Public coding benchmarks are useful context but not the source of truth for Relay’s structured pipeline.
-37. Numeric prompt-quality thresholds should be calibrated from telemetry, not invented upfront.
+37. Deterministic structural hard-blocks are allowed early when they detect objective failures such as schema invalidity, missing required atom coverage, forbidden context leakage, missing validation, unresolved blocking unknowns, or redaction failure.
+38. Numeric prompt-quality thresholds, ECPT thresholds, and warning-to-hard-block promotion should be calibrated from Relay telemetry and reviewed program policy, not invented upfront.
+39. Executor reasoning/exploration alignment should be measured where trace evidence permits, including file-localization recall, decomposition quality, and over-prediction rate.
 
 ### 6.8 Telemetry and retention
 
-38. Telemetry is metadata-first by default.
-39. Always retain lineage metadata, artifact paths/hashes, schema/template/profile versions, operator decisions, token/cost summaries, validation outcomes, audit outcomes, and changed-file summaries.
-40. Retain full prompts, provider payloads, source excerpts, command output excerpts, and diffs only when redacted, configured, bounded, and justified.
-41. Never retain secrets, hidden chain-of-thought, unredacted logs, unbounded source dumps, or unrelated chat history.
-42. If safe redaction is impossible, block content persistence and preserve only safe metadata/security events.
+40. Telemetry is metadata-first by default.
+41. Always retain lineage metadata, artifact paths/hashes, schema/template/profile versions, operator decisions, token/cost summaries, validation outcomes, audit outcomes, and changed-file summaries.
+42. Retain full prompts, provider payloads, source excerpts, command output excerpts, and diffs only when redacted, configured, bounded, and justified.
+43. Never retain secrets, hidden chain-of-thought, unredacted logs, unbounded source dumps, or unrelated chat history.
+44. If safe redaction is impossible, block content persistence and preserve only safe metadata/security events.
 
 ### 6.9 Operator workflow
 
-43. Human approval gates remain required or at least available.
-44. The operator sees assessment, prompt quality, context budget, route recommendation, provider/model candidates, cost estimate, and override controls before dispatch.
-45. Recommendations do not dispatch executors.
-46. Manual override is allowed and should be recorded.
+45. Human approval gates remain required or at least available.
+46. The operator sees assessment, prompt quality, context budget, route recommendation, provider/model candidates, cost estimate, and override controls before dispatch.
+47. Recommendations do not dispatch executors.
+48. Manual override is allowed and should be recorded.
 
 ## 7. Vocabulary
 
@@ -240,6 +243,8 @@ The program should proceed through a Program Roadmap / Plan of Plans, then child
 
 A child Plan of Passes means a bounded implementation plan under the larger program roadmap. It is not a single handoff. It is a normal Relay-managed plan focused on one coherent section of the program.
 
+The Program Roadmap v4 defines the canonical child-plan decomposition as PLAN-A through PLAN-L. The families below are explanatory groupings only and should not be treated as a competing count or sequence.
+
 Suggested child plan families:
 
 1. Research preservation and contract baseline.
@@ -252,7 +257,7 @@ Suggested child plan families:
 8. Operator UX for assessment/routing/prompt quality.
 9. Migration, documentation, and release hardening.
 
-The immediate next artifact after this brief and the capability map should be the Program Roadmap. After that, implementation can begin with the first three child plans only, as requested.
+The Program Roadmap v4 is the controlling parent roadmap. Implementation planning should proceed through child Plans of Passes selected from PLAN-A through PLAN-L, beginning with the first three child plans only when requested.
 
 ## 11. Open decisions to carry forward
 
@@ -266,6 +271,10 @@ These are not blockers for preserving the research, but they must be explicitly 
 - Exact UI placement of assessment/routing/prompt-quality panels.
 - Whether ECPT or related warning scores can become hard gates after calibration.
 - Whether any future automation beyond recommendation is ever allowed, and under what policy.
+- How much rationale belongs in executor-facing briefs versus reviewer/audit surfaces; resolve through PLAN-L experiments rather than upfront assumption.
+- Whether constraints should be front-loaded, repeated, or tail-loaded in render profiles; resolve through controlled render-profile evaluation.
+- Whether XML-style structure, terse prose, or hybrid formats perform best by task family and executor tier.
+- How to measure executor reasoning/exploration alignment from trace evidence without retaining hidden chain-of-thought.
 
 ## 12. Success criteria for the planning pivot
 
@@ -290,9 +299,9 @@ Future agents creating child Plans of Passes must treat sources in this order:
 
 ```text
 1. Current fetched Relay source-controlled contracts, schemas, policies, templates, and examples
-2. Program Roadmap / Plan of Plans v3
-3. Research Integration Brief v3
-4. Capability Map v3
+2. Program Roadmap / Plan of Plans v4
+3. Research Integration Brief v4
+4. Capability Map v4
 5. Targeted excerpts or grep/rg findings from Deep Research reports, only when explicitly needed
 6. Prior synthesis reports, only when explicitly needed
 7. Prior packet assessment plan or historical handoffs, only as historical context
@@ -305,9 +314,9 @@ The Deep Research reports remain archival evidence. They should not be used to r
 
 Every child plan should receive:
 
-- Program Roadmap v3;
-- this Research Integration Brief v3;
-- Capability Map v3;
+- Program Roadmap v4;
+- this Research Integration Brief v4;
+- Capability Map v4;
 - the current source-controlled Relay contracts/schemas/policies required by the Planner GitHub knowledge manifest for the child plan domain.
 
 The five Deep Research reports should not be included as default child-plan attachments. Their content is represented in the three anchors.
@@ -326,7 +335,7 @@ When a report is consulted, the child plan must record the file, query or sectio
 
 ### 13.4 Missing-items review outcome
 
-The v2 review did not identify a missing major research theme, but it identified preservation weaknesses in the original anchor set. The v3 revision resolves the remaining issue: raw Deep Research reports are no longer default child-plan attachments.
+The v2 review did not identify a missing major research theme, but it identified preservation weaknesses in the original anchor set. The v3 revision resolved the raw Deep Research attachment policy. The external v3 audit identified traceability and consistency defects rather than endgame gaps; v4 resolves those defects by assigning CAP-A06, defining the optimization track, adding CAP-I10, clarifying deterministic-versus-calibrated prompt gates, and preserving prompt-shape open questions for empirical calibration.
 
 ### 13.5 Rule for future amendments
 
