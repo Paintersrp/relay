@@ -238,3 +238,86 @@ func SafeNullString(s string) sql.NullString {
 	}
 	return sql.NullString{String: s, Valid: true}
 }
+
+// blockAttempt returns a PlanAttemptResult with the given blocker code and message
+func blockAttempt(code PlanAttemptBlockerCode, msg string) (*PlanAttemptResult, error) {
+	return &PlanAttemptResult{
+		OK:          false,
+		BlockerCode: code,
+		Message:     msg,
+	}, nil
+}
+
+// validateDriftReviewMode validates the drift review mode, defaulting to "disabled"
+func validateDriftReviewMode(mode string) string {
+	switch mode {
+	case DriftReviewModeManual, DriftReviewModeAutomatic, DriftReviewModeExternal:
+		return mode
+	default:
+		return DriftReviewModeDisabled
+	}
+}
+
+// validateModelTier validates the model tier, defaulting to "standard"
+func validateModelTier(tier string) string {
+	switch tier {
+	case ModelTierEconomy, ModelTierHighAssurance, ModelTierAutoEscalate:
+		return tier
+	default:
+		return ModelTierStandard
+	}
+}
+
+// canonicalRawPlanJSON canonicalizes raw Plan JSON and computes its hash
+func canonicalRawPlanJSON(raw json.RawMessage) ([]byte, string, error) {
+	var doc any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, "", fmt.Errorf("unmarshal raw plan JSON: %w", err)
+	}
+	canonical, err := json.Marshal(doc)
+	if err != nil {
+		return nil, "", fmt.Errorf("marshal canonical plan JSON: %w", err)
+	}
+	hash := sha256Bytes(canonical)
+	return canonical, hash, nil
+}
+
+// validatePlanJSONArtifact validates a JSON plan artifact reference
+func validatePlanJSONArtifact(ref PlanArtifactRef, expectedHash string) error {
+	if err := validateAttemptArtifactRef(ref, ".json"); err != nil {
+		return err
+	}
+	if ref.ArtifactKind != "planner-pass-plan-json" {
+		return fmt.Errorf("invalid artifact kind: expected planner-pass-plan-json, got %s", ref.ArtifactKind)
+	}
+	if ref.SHA256 != expectedHash {
+		return fmt.Errorf("artifact SHA256 mismatch: expected %s, got %s", expectedHash, ref.SHA256)
+	}
+	return nil
+}
+
+// validateOptionalMarkdownArtifact validates an optional Markdown artifact reference
+func validateOptionalMarkdownArtifact(ref *PlanArtifactRef) error {
+	if ref == nil {
+		return nil
+	}
+	if err := validateAttemptArtifactRef(ref, ".md"); err != nil {
+		return err
+	}
+	if ref.ArtifactKind != "planner-pass-plan-markdown" {
+		return fmt.Errorf("invalid artifact kind: expected planner-pass-plan-markdown, got %s", ref.ArtifactKind)
+	}
+	return nil
+}
+
+// constraintsJSON serializes constraints to JSON
+func constraintsJSON(constraints []string) (string, error) {
+	if constraints == nil {
+		return "[]", nil
+	}
+	b, err := json.Marshal(constraints)
+	if err != nil {
+		return "", fmt.Errorf("marshal constraints: %w", err)
+	}
+	return string(b), nil
+}

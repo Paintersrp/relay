@@ -148,29 +148,75 @@ type RetrievalSemantics struct {
 	StateMutated       bool `json:"state_mutated"`
 }
 
+// IntentPacketEvidence represents evidence about an intent packet in a review packet
+type IntentPacketEvidence struct {
+	IntentPacketID     string `json:"intent_packet_id"`
+	Kind               string `json:"kind"`
+	Summary            string `json:"summary"`
+	LiteralUserRequest string `json:"literal_user_request"`
+	Constraints        string `json:"constraints"` // JSON array
+	ContentHash        string `json:"content_hash"`
+	RedactionStatus    string `json:"redaction_status"`
+	SourceArtifactPath string `json:"source_artifact_path"`
+	CreatedAt          string `json:"created_at"`
+}
+
+// PlanAttemptEvidence represents evidence about a plan attempt in a review packet
+type PlanAttemptEvidence struct {
+	PlanAttemptID              string `json:"plan_attempt_id"`
+	Status                     string `json:"status"`
+	ReviewState                string `json:"review_state"`
+	DriftReviewMode            string `json:"drift_review_mode"`
+	ModelTier                  string `json:"model_tier"`
+	CurrentIntentPacketID      string `json:"current_intent_packet_id"`
+	RootIntentPacketID         string `json:"root_intent_packet_id"`
+	SupersedesPlanAttemptID    string `json:"supersedes_plan_attempt_id"`
+	ReplacementPlanAttemptID   string `json:"replacement_plan_attempt_id"`
+	AcceptedDriftReviewID      string `json:"accepted_drift_review_id"`
+	SubmittedPlanID            string `json:"submitted_plan_id"`
+	CreatedAt                  string `json:"created_at"`
+	UpdatedAt                  string `json:"updated_at"`
+}
+
+// PlanArtifactsEvidence represents artifact references in a review packet
+type PlanArtifactsEvidence struct {
+	JSONArtifactPath       string `json:"json_artifact_path"`
+	JSONArtifactSHA256     string `json:"json_artifact_sha256"`
+	MarkdownArtifactPath   string `json:"markdown_artifact_path,omitempty"`
+	MarkdownArtifactSHA256 string `json:"markdown_artifact_sha256,omitempty"`
+	RawPlanJSONHash        string `json:"raw_plan_json_hash"`
+}
+
 // PlanIntentReviewPacket represents a bounded review packet for intent review
 type PlanIntentReviewPacket struct {
-	PacketID              string              `json:"packet_id"`
-	ProjectID             string              `json:"project_id"`
-	IntentThreadID        string              `json:"intent_thread_id"`
-	RootIntentPacketID    string              `json:"root_intent_packet_id"`
-	CurrentIntentPacketID string              `json:"current_intent_packet_id"`
-	PlanAttemptID         string              `json:"plan_attempt_id"`
-	RawPlanJSON           json.RawMessage     `json:"raw_plan_json,omitempty"`
-	Mode                  string              `json:"mode"` // "full" or "summary_only"
-	RetrievalSemantics    RetrievalSemantics  `json:"retrieval_semantics"`
-	PriorAttempts        []PriorAttemptInfo  `json:"prior_attempts"`
-	PriorReviews         []PriorReviewInfo   `json:"prior_reviews"`
-	PacketHash           string              `json:"packet_hash"`
+	PacketID              string                  `json:"packet_id"`
+	ProjectID             string                  `json:"project_id"`
+	PlanAttemptID         string                  `json:"plan_attempt_id"`
+	IntentThreadID        string                  `json:"intent_thread_id"`
+	RootIntentPacket      IntentPacketEvidence    `json:"root_intent_packet"`
+	ReviewedIntentPacket  IntentPacketEvidence    `json:"reviewed_intent_packet"`
+	PlanAttempt           PlanAttemptEvidence     `json:"plan_attempt"`
+	RawPlanJSON           json.RawMessage         `json:"raw_plan_json,omitempty"`
+	PlanArtifacts         PlanArtifactsEvidence   `json:"plan_artifacts"`
+	PriorAttemptSummaries []PriorAttemptInfo      `json:"prior_attempt_summaries"`
+	PriorReviewSummaries  []PriorReviewInfo       `json:"prior_drift_review_summaries"`
+	RedactionStatus       string                  `json:"redaction_status"`
+	RetrievalSemantics    RetrievalSemantics       `json:"retrieval_semantics"`
+	PacketHash            string                  `json:"packet_hash"`
+	GeneratedAt           string                  `json:"generated_at"`
 }
 
 // PriorAttemptInfo provides info about prior attempts in the thread
 type PriorAttemptInfo struct {
-	PlanAttemptID    string `json:"plan_attempt_id"`
-	Status           string `json:"status"`
-	CreatedAt        string `json:"created_at"`
-	SupersedesID     string `json:"supersedes_plan_attempt_id,omitempty"`
-	ReplacementID    string `json:"replacement_plan_attempt_id,omitempty"`
+	PlanAttemptID          string `json:"plan_attempt_id"`
+	Status                 string `json:"status"`
+	ReviewState            string `json:"review_state"`
+	CurrentIntentPacketID  string `json:"current_intent_packet_id"`
+	SupersedesID           string `json:"supersedes_plan_attempt_id,omitempty"`
+	ReplacementID          string `json:"replacement_plan_attempt_id,omitempty"`
+	SubmittedPlanID        string `json:"submitted_plan_id,omitempty"`
+	CreatedAt              string `json:"created_at"`
+	UpdatedAt              string `json:"updated_at"`
 }
 
 // PriorReviewInfo provides info about prior drift reviews
@@ -179,6 +225,8 @@ type PriorReviewInfo struct {
 	ReviewSource        string `json:"review_source"`
 	OverallAlignment    string `json:"overall_alignment"`
 	RecommendedAction   string `json:"recommended_action"`
+	ApprovalGateStatus  string `json:"approval_gate_status"`
+	ReviewPacketHash    string `json:"review_packet_hash"`
 	CreatedAt           string `json:"created_at"`
 }
 
