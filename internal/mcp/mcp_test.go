@@ -233,14 +233,7 @@ func TestServerToolsList_Pass16(t *testing.T) {
 		t.Fatalf("unmarshal tools list: %v", err)
 	}
 
-	expectedTools := []string{
-		"submit_test_audit_packet",
-		"create_run_from_planner_handoff",
-		"submit_planner_pass_plan",
-		"list_open_runs",
-		"get_run_status",
-		"submit_audit_packet",
-	}
+	expectedTools := baseToolNamesForTest()
 
 	if len(list.Tools) != len(expectedTools) {
 		t.Errorf("expected exactly %d tools, got %d", len(expectedTools), len(list.Tools))

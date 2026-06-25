@@ -6,6 +6,10 @@ import (
 	"relay/internal/store"
 )
 
+type IntentPacket = store.IntentPacket
+type PlanAttempt = store.PlanAttempt
+type IntentDriftReview = store.IntentDriftReview
+
 // Plan attempt status constants
 const (
 	PlanAttemptStatusDraft      = "draft"

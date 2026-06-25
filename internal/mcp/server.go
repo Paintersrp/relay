@@ -56,6 +56,7 @@ func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 		ToolGetRunStatus,
 		ToolSubmitAuditPacket,
 	}
+	s.tools = append(s.tools, planAttemptToolDefinitions()...)
 	if s.contextBrokerEnabled() {
 		s.tools = append(s.tools, contextBrokerToolDefinitions()...)
 		s.tools = append(s.tools, refactorBacklogToolDefinitions()...)
@@ -191,6 +192,20 @@ func (s *Server) handleToolsCall(req Request) Response {
 		result = s.HandleGetRunStatus(args)
 	case "submit_audit_packet":
 		result = s.HandleSubmitAuditPacket(args)
+	case toolCreatePlanAttemptWithIntent:
+		result = s.HandleCreatePlanAttemptWithIntent(args)
+	case toolGetPlanIntentReviewPacket:
+		result = s.HandleGetPlanIntentReviewPacket(args)
+	case toolSubmitIntentDriftReview:
+		result = s.HandleSubmitIntentDriftReview(args)
+	case toolRevisePlanAttempt:
+		result = s.HandleRevisePlanAttempt(args)
+	case toolVoidPlanAttempt:
+		result = s.HandleVoidPlanAttempt(args)
+	case toolApprovePlanAttempt:
+		result = s.HandleApprovePlanAttempt(args)
+	case toolSubmitPlanAttempt:
+		result = s.HandleSubmitPlanAttempt(args)
 	case "get_project":
 		if !s.contextBrokerEnabled() {
 			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))

@@ -9,13 +9,7 @@ import (
 func TestDefaultLocalOperatorToolSurfaceIncludesAllSafeTools(t *testing.T) {
 	srv := NewServer(nil, &MCPDeps{})
 	gotNames := toolNames(srv.tools)
-	expected := []string{
-		"submit_test_audit_packet",
-		"create_run_from_planner_handoff",
-		"submit_planner_pass_plan",
-		"list_open_runs",
-		"get_run_status",
-		"submit_audit_packet",
+	expected := append(baseToolNamesForTest(),
 		"get_project",
 		"get_plan",
 		"get_pass",
@@ -58,7 +52,7 @@ func TestDefaultLocalOperatorToolSurfaceIncludesAllSafeTools(t *testing.T) {
 		"suggest_refactor_candidate_placement",
 		"promote_refactor_candidate_to_plan",
 		"generate_refactor_only_plan",
-	}
+	)
 
 	if !reflect.DeepEqual(gotNames, expected) {
 		t.Errorf("expected tools:\n%v\ngot:\n%v", expected, gotNames)
@@ -68,14 +62,7 @@ func TestDefaultLocalOperatorToolSurfaceIncludesAllSafeTools(t *testing.T) {
 func TestRestrictedToolSurfaceHidesBrokerTools(t *testing.T) {
 	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileRestricted})
 	gotNames := toolNames(srv.tools)
-	expected := []string{
-		"submit_test_audit_packet",
-		"create_run_from_planner_handoff",
-		"submit_planner_pass_plan",
-		"list_open_runs",
-		"get_run_status",
-		"submit_audit_packet",
-	}
+	expected := baseToolNamesForTest()
 
 	if !reflect.DeepEqual(gotNames, expected) {
 		t.Errorf("expected tools:\n%v\ngot:\n%v", expected, gotNames)

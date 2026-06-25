@@ -193,18 +193,14 @@ func TestHTTPHandler_Protocol(t *testing.T) {
 			t.Fatalf("unmarshal tools: %v", err)
 		}
 
-		approvedTools := map[string]bool{
-			"submit_test_audit_packet":        true,
-			"create_run_from_planner_handoff": true,
-			"submit_planner_pass_plan":        true,
-			"list_open_runs":                  true,
-			"get_run_status":                  true,
-			"submit_audit_packet":             true,
+		approvedTools := map[string]bool{}
+		for _, name := range baseToolNamesForTest() {
+			approvedTools[name] = true
 		}
 		unsafeKeywords := []string{"exec", "shell", "read_file", "write_file", "git_commit", "git_push", "checkout", "reset", "branch"}
 
-		if len(list.Tools) != 6 {
-			t.Errorf("expected exactly 6 tools, got %d", len(list.Tools))
+		if len(list.Tools) != len(baseToolNamesForTest()) {
+			t.Errorf("expected exactly %d tools, got %d", len(baseToolNamesForTest()), len(list.Tools))
 		}
 
 		for _, tool := range list.Tools {
@@ -455,13 +451,7 @@ func TestHTTPHandlerToolsListUsesServerToolSurface(t *testing.T) {
 		}
 
 		gotNames := toolNamesFromList(toolsResult.Tools)
-		expected := []string{
-			"submit_test_audit_packet",
-			"create_run_from_planner_handoff",
-			"submit_planner_pass_plan",
-			"list_open_runs",
-			"get_run_status",
-			"submit_audit_packet",
+		expected := append(baseToolNamesForTest(),
 			"get_project",
 			"get_plan",
 			"get_pass",
@@ -504,7 +494,7 @@ func TestHTTPHandlerToolsListUsesServerToolSurface(t *testing.T) {
 			"suggest_refactor_candidate_placement",
 			"promote_refactor_candidate_to_plan",
 			"generate_refactor_only_plan",
-		}
+		)
 		if !reflect.DeepEqual(gotNames, expected) {
 			t.Errorf("expected tools:\n%v\ngot:\n%v", expected, gotNames)
 		}
@@ -540,14 +530,7 @@ func TestHTTPHandlerToolsListUsesServerToolSurface(t *testing.T) {
 		}
 
 		gotNames := toolNamesFromList(toolsResult.Tools)
-		expected := []string{
-			"submit_test_audit_packet",
-			"create_run_from_planner_handoff",
-			"submit_planner_pass_plan",
-			"list_open_runs",
-			"get_run_status",
-			"submit_audit_packet",
-		}
+		expected := baseToolNamesForTest()
 		if !reflect.DeepEqual(gotNames, expected) {
 			t.Errorf("expected tools:\n%v\ngot:\n%v", expected, gotNames)
 		}

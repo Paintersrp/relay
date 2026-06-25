@@ -89,13 +89,7 @@ func TestServerToolsList_ExactMatch(t *testing.T) {
 		t.Fatalf("unmarshal tools list: %v", err)
 	}
 
-	expectedTools := []string{
-		"submit_test_audit_packet",
-		"create_run_from_planner_handoff",
-		"submit_planner_pass_plan",
-		"list_open_runs",
-		"get_run_status",
-		"submit_audit_packet",
+	expectedTools := append(baseToolNamesForTest(),
 		"get_project",
 		"get_plan",
 		"get_pass",
@@ -138,7 +132,7 @@ func TestServerToolsList_ExactMatch(t *testing.T) {
 		"suggest_refactor_candidate_placement",
 		"promote_refactor_candidate_to_plan",
 		"generate_refactor_only_plan",
-	}
+	)
 
 	if len(list.Tools) != len(expectedTools) {
 		t.Fatalf("expected exactly %d tools, got %d", len(expectedTools), len(list.Tools))
@@ -172,13 +166,7 @@ func TestServerToolsList_BrokerEnabled_ExactMatch(t *testing.T) {
 		t.Fatalf("unmarshal tools list: %v", err)
 	}
 
-	expectedTools := []string{
-		"submit_test_audit_packet",
-		"create_run_from_planner_handoff",
-		"submit_planner_pass_plan",
-		"list_open_runs",
-		"get_run_status",
-		"submit_audit_packet",
+	expectedTools := append(baseToolNamesForTest(),
 		"get_project",
 		"get_plan",
 		"get_pass",
@@ -221,7 +209,7 @@ func TestServerToolsList_BrokerEnabled_ExactMatch(t *testing.T) {
 		"suggest_refactor_candidate_placement",
 		"promote_refactor_candidate_to_plan",
 		"generate_refactor_only_plan",
-	}
+	)
 
 	if len(list.Tools) != len(expectedTools) {
 		t.Fatalf("expected exactly %d tools, got %d", len(expectedTools), len(list.Tools))
