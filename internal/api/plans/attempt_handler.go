@@ -106,13 +106,16 @@ func (h *Handler) ApprovePlanAttempt(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) SubmitPlanAttempt(w http.ResponseWriter, r *http.Request) {
 	var req SubmitPlanAttemptAPIRequest
-	if err := decodeOptionalJSON(r, &req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON payload")
 		return
 	}
 	result, err := h.service.SubmitPlanAttempt(r.Context(), appplans.SubmitPlanAttemptRequest{
-		ProjectID:     strings.TrimSpace(chi.URLParam(r, "projectId")),
-		PlanAttemptID: strings.TrimSpace(chi.URLParam(r, "planAttemptId")),
+		ProjectID:                      strings.TrimSpace(chi.URLParam(r, "projectId")),
+		PlanAttemptID:                  strings.TrimSpace(chi.URLParam(r, "planAttemptId")),
+		SubmissionConfirmed:            req.SubmissionConfirmed,
+		ReviewedPlanJSONArtifactSHA256: req.ReviewedPlanJSONArtifactSHA256,
+		AcceptedDriftReviewID:          req.AcceptedDriftReviewID,
 	})
 	writePlanAttemptResultOrError(w, result, err, http.StatusCreated)
 }

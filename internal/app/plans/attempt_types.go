@@ -315,8 +315,11 @@ type ApprovePlanAttemptRequest struct {
 
 // SubmitPlanAttemptRequest is the request to submit a plan attempt as a managed plan
 type SubmitPlanAttemptRequest struct {
-	ProjectID     string `json:"project_id"`
-	PlanAttemptID string `json:"plan_attempt_id"`
+	ProjectID                      string `json:"project_id"`
+	PlanAttemptID                  string `json:"plan_attempt_id"`
+	SubmissionConfirmed            bool   `json:"submission_confirmed"`
+	ReviewedPlanJSONArtifactSHA256 string `json:"reviewed_plan_json_artifact_sha256"`
+	AcceptedDriftReviewID          string `json:"accepted_drift_review_id,omitempty"`
 }
 
 // PlanAttemptResult is the result of a plan attempt operation

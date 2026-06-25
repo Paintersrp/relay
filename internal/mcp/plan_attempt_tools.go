@@ -2,7 +2,11 @@ package mcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	appplans "relay/internal/app/plans"
 )
@@ -29,7 +33,15 @@ var (
     "intent_thread_id": {"type": "string"},
     "plan_artifact_ref": {"$ref": "#/$defs/artifact_ref"},
     "optional_markdown_ref": {"$ref": "#/$defs/artifact_ref"},
-    "raw_plan_json": {"type": "object"},
+    "raw_plan_json": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content"],
+      "properties": {
+        "content": {"type": "object"},
+        "content_hash": {"type": "string"}
+      }
+    },
     "drift_review_mode": {"type": "string", "enum": ["disabled", "manual", "automatic", "external"]},
     "model_tier": {"type": "string", "enum": ["economy", "standard", "high_assurance", "auto_escalate"]},
     "intent_packet": {"$ref": "#/$defs/intent_packet"}
@@ -122,7 +134,15 @@ var (
     "new_intent_packet_id": {"type": "string"},
     "plan_artifact_ref": {"type": "object"},
     "optional_markdown_ref": {"type": "object"},
-    "raw_plan_json": {"type": "object"},
+    "raw_plan_json": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content"],
+      "properties": {
+        "content": {"type": "object"},
+        "content_hash": {"type": "string"}
+      }
+    },
     "new_intent_packet": {"type": "object"}
   }
 }`)
@@ -137,6 +157,18 @@ var (
     "accepted_drift_review_id": {"type": "string"},
     "drift_acknowledged": {"type": "boolean"},
     "no_drift_review_acknowledged": {"type": "boolean"}
+  }
+}`)
+	planAttemptSubmitSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "plan_attempt_id", "submission_confirmed", "reviewed_plan_json_artifact_sha256"],
+  "properties": {
+    "project_id": {"type": "string", "minLength": 1},
+    "plan_attempt_id": {"type": "string", "minLength": 1},
+    "submission_confirmed": {"type": "boolean", "const": true},
+    "reviewed_plan_json_artifact_sha256": {"type": "string", "minLength": 1},
+    "accepted_drift_review_id": {"type": "string"}
   }
 }`)
 )
@@ -175,7 +207,7 @@ var (
 	ToolSubmitPlanAttempt = ToolDefinition{
 		Name:        toolSubmitPlanAttempt,
 		Description: "Submit an approved plan attempt into managed plan/pass records using the stored reviewed Plan JSON. Does not create runs or dispatch executors.",
-		InputSchema: planAttemptByIDSchema,
+		InputSchema: planAttemptSubmitSchema,
 	}
 )
 
@@ -189,6 +221,83 @@ func planAttemptToolDefinitions() []ToolDefinition {
 		ToolApprovePlanAttempt,
 		ToolSubmitPlanAttempt,
 	}
+}
+
+// planAttemptRawPlanJSONArg is the MCP contract wrapper for raw Plan JSON.
+// Callers supply content (the plan JSON object) and an optional content_hash
+// (sha256:<hex>) that is validated against the canonicalized content.
+type planAttemptRawPlanJSONArg struct {
+	Content     json.RawMessage `json:"content"`
+	ContentHash string          `json:"content_hash,omitempty"`
+}
+
+// createPlanAttemptWithIntentToolRequest is the MCP-specific request shape for
+// create_plan_attempt_with_intent. It uses the snake_case wrapper for raw_plan_json
+// instead of exposing the internal app-layer json.RawMessage directly.
+type createPlanAttemptWithIntentToolRequest struct {
+	ProjectID           string                     `json:"project_id"`
+	PlanAttemptID       string                     `json:"plan_attempt_id,omitempty"`
+	IntentPacketID      string                     `json:"intent_packet_id,omitempty"`
+	IntentThreadID      string                     `json:"intent_thread_id,omitempty"`
+	PlanArtifactRef     appplans.PlanArtifactRef   `json:"plan_artifact_ref"`
+	OptionalMarkdownRef *appplans.PlanArtifactRef  `json:"optional_markdown_ref,omitempty"`
+	RawPlanJSON         planAttemptRawPlanJSONArg  `json:"raw_plan_json"`
+	DriftReviewMode     string                     `json:"drift_review_mode,omitempty"`
+	ModelTier           string                     `json:"model_tier,omitempty"`
+	IntentPacket        appplans.IntentPacketInput `json:"intent_packet"`
+}
+
+// revisePlanAttemptToolRequest is the MCP-specific request shape for
+// revise_plan_attempt. It uses the same snake_case wrapper for raw_plan_json.
+type revisePlanAttemptToolRequest struct {
+	ProjectID           string                     `json:"project_id"`
+	PlanAttemptID       string                     `json:"plan_attempt_id"`
+	NewPlanAttemptID    string                     `json:"new_plan_attempt_id,omitempty"`
+	NewIntentPacketID   string                     `json:"new_intent_packet_id,omitempty"`
+	PlanArtifactRef     appplans.PlanArtifactRef   `json:"plan_artifact_ref"`
+	OptionalMarkdownRef *appplans.PlanArtifactRef  `json:"optional_markdown_ref,omitempty"`
+	RawPlanJSON         planAttemptRawPlanJSONArg  `json:"raw_plan_json"`
+	NewIntentPacket     appplans.IntentPacketInput `json:"new_intent_packet"`
+}
+
+// normalizeMCPRawPlanJSON validates and canonicalizes the MCP raw_plan_json
+// wrapper. It returns a blocked PlanAttemptResult (not an error) for expected
+// caller mistakes (missing content, invalid JSON, hash mismatch), and returns
+// a non-nil error only for internal marshal failures.
+func normalizeMCPRawPlanJSON(raw planAttemptRawPlanJSONArg) (json.RawMessage, *appplans.PlanAttemptResult, error) {
+	if len(raw.Content) == 0 {
+		return nil, &appplans.PlanAttemptResult{
+			OK:          false,
+			BlockerCode: appplans.BlockerMissingPlanArtifact,
+			Message:     "raw_plan_json.content is required",
+		}, nil
+	}
+	var doc any
+	if err := json.Unmarshal(raw.Content, &doc); err != nil {
+		return nil, &appplans.PlanAttemptResult{
+			OK:          false,
+			BlockerCode: appplans.BlockerMissingPlanArtifact,
+			Message:     "raw_plan_json.content must be valid JSON",
+		}, nil
+	}
+	canonical, err := json.Marshal(doc)
+	if err != nil {
+		return nil, nil, fmt.Errorf("canonicalize raw plan JSON: %w", err)
+	}
+	if strings.TrimSpace(raw.ContentHash) != "" && raw.ContentHash != mcpSHA256Bytes(canonical) {
+		return nil, &appplans.PlanAttemptResult{
+			OK:          false,
+			BlockerCode: appplans.BlockerArtifactHashMismatch,
+			Message:     "raw_plan_json.content_hash does not match canonical raw plan JSON",
+		}, nil
+	}
+	return json.RawMessage(canonical), nil, nil
+}
+
+// mcpSHA256Bytes returns a "sha256:<hex>" string for the given bytes.
+func mcpSHA256Bytes(b []byte) string {
+	sum := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 type planAttemptToolOutput struct {
@@ -206,9 +315,28 @@ type planAttemptToolOutput struct {
 }
 
 func (s *Server) HandleCreatePlanAttemptWithIntent(args json.RawMessage) ToolCallResult {
-	var req appplans.CreatePlanAttemptWithIntentRequest
-	if err := json.Unmarshal(args, &req); err != nil {
+	var mcpReq createPlanAttemptWithIntentToolRequest
+	if err := json.Unmarshal(args, &mcpReq); err != nil {
 		return planAttemptToolErr(toolCreatePlanAttemptWithIntent, "validation_error", err.Error())
+	}
+	canonical, blocked, err := normalizeMCPRawPlanJSON(mcpReq.RawPlanJSON)
+	if err != nil {
+		return planAttemptToolErr(toolCreatePlanAttemptWithIntent, "internal_error", err.Error())
+	}
+	if blocked != nil {
+		return s.planAttemptBlocked(toolCreatePlanAttemptWithIntent, blocked)
+	}
+	req := appplans.CreatePlanAttemptWithIntentRequest{
+		ProjectID:           mcpReq.ProjectID,
+		PlanAttemptID:       mcpReq.PlanAttemptID,
+		IntentPacketID:      mcpReq.IntentPacketID,
+		IntentThreadID:      mcpReq.IntentThreadID,
+		PlanArtifactRef:     mcpReq.PlanArtifactRef,
+		OptionalMarkdownRef: mcpReq.OptionalMarkdownRef,
+		RawPlanJSON:         canonical,
+		DriftReviewMode:     mcpReq.DriftReviewMode,
+		ModelTier:           mcpReq.ModelTier,
+		IntentPacket:        mcpReq.IntentPacket,
 	}
 	return s.handlePlanAttemptResult(toolCreatePlanAttemptWithIntent, func(svc *appplans.Service) (*appplans.PlanAttemptResult, error) {
 		return svc.CreatePlanAttemptWithIntent(context.Background(), req)
@@ -236,9 +364,26 @@ func (s *Server) HandleSubmitIntentDriftReview(args json.RawMessage) ToolCallRes
 }
 
 func (s *Server) HandleRevisePlanAttempt(args json.RawMessage) ToolCallResult {
-	var req appplans.RevisePlanAttemptRequest
-	if err := json.Unmarshal(args, &req); err != nil {
+	var mcpReq revisePlanAttemptToolRequest
+	if err := json.Unmarshal(args, &mcpReq); err != nil {
 		return planAttemptToolErr(toolRevisePlanAttempt, "validation_error", err.Error())
+	}
+	canonical, blocked, err := normalizeMCPRawPlanJSON(mcpReq.RawPlanJSON)
+	if err != nil {
+		return planAttemptToolErr(toolRevisePlanAttempt, "internal_error", err.Error())
+	}
+	if blocked != nil {
+		return s.planAttemptBlocked(toolRevisePlanAttempt, blocked)
+	}
+	req := appplans.RevisePlanAttemptRequest{
+		ProjectID:           mcpReq.ProjectID,
+		PlanAttemptID:       mcpReq.PlanAttemptID,
+		NewPlanAttemptID:    mcpReq.NewPlanAttemptID,
+		NewIntentPacketID:   mcpReq.NewIntentPacketID,
+		PlanArtifactRef:     mcpReq.PlanArtifactRef,
+		OptionalMarkdownRef: mcpReq.OptionalMarkdownRef,
+		RawPlanJSON:         canonical,
+		NewIntentPacket:     mcpReq.NewIntentPacket,
 	}
 	return s.handlePlanAttemptResult(toolRevisePlanAttempt, func(svc *appplans.Service) (*appplans.PlanAttemptResult, error) {
 		return svc.RevisePlanAttempt(context.Background(), req)
@@ -295,6 +440,23 @@ func (s *Server) handlePlanAttemptResult(tool string, fn func(*appplans.Service)
 		return toolErr(text)
 	}
 	return toolOK(text)
+}
+
+// planAttemptBlocked returns a structured tool error from a pre-computed
+// blocked PlanAttemptResult (e.g. from normalizeMCPRawPlanJSON).
+func (s *Server) planAttemptBlocked(tool string, blocked *appplans.PlanAttemptResult) ToolCallResult {
+	out := planAttemptToolOutput{
+		OK:          false,
+		Tool:        tool,
+		Status:      "blocked",
+		BlockerCode: string(blocked.BlockerCode),
+		Message:     blocked.Message,
+	}
+	text, err := marshalTool(out)
+	if err != nil {
+		return planAttemptToolErr(tool, "internal_error", err.Error())
+	}
+	return toolErr(text)
 }
 
 func planAttemptOutput(tool string, result *appplans.PlanAttemptResult) planAttemptToolOutput {

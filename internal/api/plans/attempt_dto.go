@@ -90,7 +90,11 @@ type ApprovePlanAttemptAPIRequest struct {
 	NoDriftReviewAcknowledged bool   `json:"noDriftReviewAcknowledged"`
 }
 
-type SubmitPlanAttemptAPIRequest struct{}
+type SubmitPlanAttemptAPIRequest struct {
+	SubmissionConfirmed            bool   `json:"submissionConfirmed"`
+	ReviewedPlanJSONArtifactSHA256 string `json:"reviewedPlanJsonArtifactSha256"`
+	AcceptedDriftReviewID          string `json:"acceptedDriftReviewId,omitempty"`
+}
 
 type PlanAttemptAPIResponse struct {
 	Success      bool                             `json:"success"`

@@ -438,6 +438,23 @@ func (svc *Service) SubmitPlanAttempt(ctx context.Context, req SubmitPlanAttempt
 	if err != nil {
 		return blockAttempt(BlockerArtifactHashMismatch, err.Error())
 	}
+
+	// Contract-required submit gates (C4 / PASS-003A)
+	if !req.SubmissionConfirmed {
+		return blockAttempt(BlockerApprovalRequired, "explicit submission confirmation is required")
+	}
+	if strings.TrimSpace(req.ReviewedPlanJSONArtifactSHA256) == "" {
+		return blockAttempt(BlockerMissingPlanArtifact, "reviewed_plan_json_artifact_sha256 is required")
+	}
+	if req.ReviewedPlanJSONArtifactSHA256 != attempt.PlanJsonArtifactSha256 {
+		return blockAttempt(BlockerArtifactHashMismatch, "reviewed_plan_json_artifact_sha256 does not match approved attempt artifact hash")
+	}
+	if strings.TrimSpace(req.AcceptedDriftReviewID) != "" {
+		if !attempt.AcceptedDriftReviewID.Valid || req.AcceptedDriftReviewID != attempt.AcceptedDriftReviewID.String {
+			return blockAttempt(BlockerStaleAttempt, "accepted_drift_review_id does not match approved attempt")
+		}
+	}
+
 	lineage := planSubmissionLineage{
 		SubmittedPlanAttemptID:  sql.NullString{String: attempt.PlanAttemptID, Valid: true},
 		IntentThreadID:          sql.NullString{String: attempt.IntentThreadID, Valid: true},

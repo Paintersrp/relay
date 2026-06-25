@@ -100,7 +100,13 @@ func TestPlanAttemptHTTPCreateReviewApproveSubmitFlow(t *testing.T) {
 		t.Fatalf("approve should not create managed plans, got %d", got)
 	}
 
-	submitResp := doAttemptRequest(t, router, http.MethodPost, "/api/projects/relay/plan-attempts/attempt-http-1/submit", []byte(`{}`), http.StatusCreated)
+	// T3: submit with correct gate fields succeeds
+	submitBody := mustJSON(t, SubmitPlanAttemptAPIRequest{
+		SubmissionConfirmed:            true,
+		ReviewedPlanJSONArtifactSHA256: planHash,
+		AcceptedDriftReviewID:          "review-http-1",
+	})
+	submitResp := doAttemptRequest(t, router, http.MethodPost, "/api/projects/relay/plan-attempts/attempt-http-1/submit", submitBody, http.StatusCreated)
 	if !submitResp.Success || submitResp.Plan == nil || submitResp.Plan.PlanID != "plan-attempt-http" {
 		t.Fatalf("expected submit success with managed plan, got %+v", submitResp)
 	}
@@ -135,6 +141,91 @@ func TestPlanAttemptHTTPBlockersPreserveCodes(t *testing.T) {
 	resp = doAttemptRequest(t, router, http.MethodPost, "/api/projects/relay/plan-attempts", createBody, http.StatusConflict)
 	if resp.BlockerCode != string(appplans.BlockerArtifactHashMismatch) {
 		t.Fatalf("expected artifact_hash_mismatch blocker, got %+v", resp)
+	}
+}
+
+// T4: HTTP submit with missing/false submissionConfirmed returns approval_required and creates no plan.
+func TestPlanAttemptHTTPSubmitBlocksMissingConfirmation(t *testing.T) {
+	_, st, router := newAttemptAPITestServer(t)
+
+	rawPlan, planHash := attemptTestRawPlan(t, "plan-submit-no-confirm")
+	createBody := mustJSON(t, CreatePlanAttemptWithIntentAPIRequest{
+		PlanAttemptID: "attempt-no-confirm",
+		PlanArtifactRef: PlanArtifactRefAPI{
+			Path:         "handoffs/plans/no-confirm.json",
+			SHA256:       planHash,
+			ArtifactKind: "planner-pass-plan-json",
+		},
+		RawPlanJSON:     RawPlanJSONAPI{Content: rawPlan, ContentHash: planHash},
+		DriftReviewMode: appplans.DriftReviewModeDisabled,
+		IntentPacket: IntentPacketInputAPI{
+			Summary:            "No confirm test.",
+			LiteralUserRequest: "Test missing confirmation gate.",
+			Constraints:        []string{},
+			Source: IntentSourceAPI{
+				CapturedFrom:       appplans.CapturedFromPlannerChat,
+				CapturedBy:         "api-test",
+				SourceArtifactPath: "source.md",
+			},
+		},
+	})
+	doAttemptRequest(t, router, http.MethodPost, "/api/projects/relay/plan-attempts", createBody, http.StatusCreated)
+	doAttemptRequest(t, router, http.MethodPost, "/api/projects/relay/plan-attempts/attempt-no-confirm/approve",
+		mustJSON(t, ApprovePlanAttemptAPIRequest{Approved: true}), http.StatusOK)
+
+	// SubmissionConfirmed omitted (false)
+	submitBody := mustJSON(t, SubmitPlanAttemptAPIRequest{
+		SubmissionConfirmed:            false,
+		ReviewedPlanJSONArtifactSHA256: planHash,
+	})
+	resp := doAttemptRequest(t, router, http.MethodPost, "/api/projects/relay/plan-attempts/attempt-no-confirm/submit", submitBody, http.StatusUnprocessableEntity)
+	if resp.BlockerCode != string(appplans.BlockerApprovalRequired) {
+		t.Fatalf("expected approval_required blocker, got %+v", resp)
+	}
+	if got := countAttemptRows(t, st.DB(), "plans"); got != 0 {
+		t.Fatalf("expected 0 plans after blocked submit, got %d", got)
+	}
+}
+
+// T5: HTTP submit with wrong reviewedPlanJsonArtifactSha256 returns artifact_hash_mismatch and creates no plan.
+func TestPlanAttemptHTTPSubmitBlocksWrongHash(t *testing.T) {
+	_, st, router := newAttemptAPITestServer(t)
+
+	rawPlan, planHash := attemptTestRawPlan(t, "plan-submit-wrong-hash")
+	createBody := mustJSON(t, CreatePlanAttemptWithIntentAPIRequest{
+		PlanAttemptID: "attempt-wrong-hash",
+		PlanArtifactRef: PlanArtifactRefAPI{
+			Path:         "handoffs/plans/wrong-hash.json",
+			SHA256:       planHash,
+			ArtifactKind: "planner-pass-plan-json",
+		},
+		RawPlanJSON:     RawPlanJSONAPI{Content: rawPlan, ContentHash: planHash},
+		DriftReviewMode: appplans.DriftReviewModeDisabled,
+		IntentPacket: IntentPacketInputAPI{
+			Summary:            "Wrong hash test.",
+			LiteralUserRequest: "Test wrong artifact hash gate.",
+			Constraints:        []string{},
+			Source: IntentSourceAPI{
+				CapturedFrom:       appplans.CapturedFromPlannerChat,
+				CapturedBy:         "api-test",
+				SourceArtifactPath: "source.md",
+			},
+		},
+	})
+	doAttemptRequest(t, router, http.MethodPost, "/api/projects/relay/plan-attempts", createBody, http.StatusCreated)
+	doAttemptRequest(t, router, http.MethodPost, "/api/projects/relay/plan-attempts/attempt-wrong-hash/approve",
+		mustJSON(t, ApprovePlanAttemptAPIRequest{Approved: true}), http.StatusOK)
+
+	submitBody := mustJSON(t, SubmitPlanAttemptAPIRequest{
+		SubmissionConfirmed:            true,
+		ReviewedPlanJSONArtifactSHA256: sha256StringForAttemptTest("wrong-hash-value"), // wrong
+	})
+	resp := doAttemptRequest(t, router, http.MethodPost, "/api/projects/relay/plan-attempts/attempt-wrong-hash/submit", submitBody, http.StatusConflict)
+	if resp.BlockerCode != string(appplans.BlockerArtifactHashMismatch) {
+		t.Fatalf("expected artifact_hash_mismatch blocker, got %+v", resp)
+	}
+	if got := countAttemptRows(t, st.DB(), "plans"); got != 0 {
+		t.Fatalf("expected 0 plans after blocked submit, got %d", got)
 	}
 }
 

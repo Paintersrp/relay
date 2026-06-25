@@ -356,9 +356,13 @@ func TestSubmitPlanAttemptCreatesManagedPlanWithLineage(t *testing.T) {
 		t.Fatalf("expected approval ok=true, got %#v", approved)
 	}
 
+	artifactHash := created.PlanAttempt.PlanJsonArtifactSha256
 	submitted, err := svc.SubmitPlanAttempt(context.Background(), SubmitPlanAttemptRequest{
-		ProjectID:     "relay",
-		PlanAttemptID: created.PlanAttempt.PlanAttemptID,
+		ProjectID:                      "relay",
+		PlanAttemptID:                  created.PlanAttempt.PlanAttemptID,
+		SubmissionConfirmed:            true,
+		ReviewedPlanJSONArtifactSHA256: artifactHash,
+		AcceptedDriftReviewID:          review.DriftReview.IntentDriftReviewID,
 	})
 	if err != nil {
 		t.Fatalf("SubmitPlanAttempt error: %v", err)
@@ -382,6 +386,83 @@ func TestSubmitPlanAttemptCreatesManagedPlanWithLineage(t *testing.T) {
 	}
 	if got := countRows(t, st.DB(), "plan_passes"); got != 2 {
 		t.Fatalf("expected 2 plan passes, got %d", got)
+	}
+}
+
+// T1: approved attempt + SubmissionConfirmed=false must block and leave plans/plan_passes unchanged.
+func TestSubmitPlanAttemptBlocksMissingConfirmation(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newTestService(t)
+	created := createTestPlanAttempt(t, svc, DriftReviewModeDisabled, "")
+	approved, err := svc.ApprovePlanAttempt(context.Background(), ApprovePlanAttemptRequest{
+		ProjectID:     "relay",
+		PlanAttemptID: created.PlanAttempt.PlanAttemptID,
+		Approved:      true,
+	})
+	if err != nil {
+		t.Fatalf("ApprovePlanAttempt error: %v", err)
+	}
+	if !approved.OK {
+		t.Fatalf("expected approval ok=true, got %#v", approved)
+	}
+
+	// SubmissionConfirmed omitted (false)
+	result, err := svc.SubmitPlanAttempt(context.Background(), SubmitPlanAttemptRequest{
+		ProjectID:                      "relay",
+		PlanAttemptID:                  created.PlanAttempt.PlanAttemptID,
+		SubmissionConfirmed:            false,
+		ReviewedPlanJSONArtifactSHA256: created.PlanAttempt.PlanJsonArtifactSha256,
+	})
+	if err != nil {
+		t.Fatalf("SubmitPlanAttempt error: %v", err)
+	}
+	if result.OK || result.BlockerCode != BlockerApprovalRequired {
+		t.Fatalf("expected approval_required blocker, got %#v", result)
+	}
+	if got := countRows(t, st.DB(), "plans"); got != 0 {
+		t.Fatalf("expected 0 plans after blocked submit, got %d", got)
+	}
+	if got := countRows(t, st.DB(), "plan_passes"); got != 0 {
+		t.Fatalf("expected 0 plan_passes after blocked submit, got %d", got)
+	}
+}
+
+// T2: approved attempt + wrong ReviewedPlanJSONArtifactSHA256 must block and leave plans/plan_passes unchanged.
+func TestSubmitPlanAttemptBlocksWrongArtifactHash(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newTestService(t)
+	created := createTestPlanAttempt(t, svc, DriftReviewModeDisabled, "")
+	approved, err := svc.ApprovePlanAttempt(context.Background(), ApprovePlanAttemptRequest{
+		ProjectID:     "relay",
+		PlanAttemptID: created.PlanAttempt.PlanAttemptID,
+		Approved:      true,
+	})
+	if err != nil {
+		t.Fatalf("ApprovePlanAttempt error: %v", err)
+	}
+	if !approved.OK {
+		t.Fatalf("expected approval ok=true, got %#v", approved)
+	}
+
+	result, err := svc.SubmitPlanAttempt(context.Background(), SubmitPlanAttemptRequest{
+		ProjectID:                      "relay",
+		PlanAttemptID:                  created.PlanAttempt.PlanAttemptID,
+		SubmissionConfirmed:            true,
+		ReviewedPlanJSONArtifactSHA256: testSHA256, // wrong hash
+	})
+	if err != nil {
+		t.Fatalf("SubmitPlanAttempt error: %v", err)
+	}
+	if result.OK || result.BlockerCode != BlockerArtifactHashMismatch {
+		t.Fatalf("expected artifact_hash_mismatch blocker, got %#v", result)
+	}
+	if got := countRows(t, st.DB(), "plans"); got != 0 {
+		t.Fatalf("expected 0 plans after blocked submit, got %d", got)
+	}
+	if got := countRows(t, st.DB(), "plan_passes"); got != 0 {
+		t.Fatalf("expected 0 plan_passes after blocked submit, got %d", got)
 	}
 }
 
