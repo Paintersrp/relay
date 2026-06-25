@@ -279,7 +279,7 @@ func TestGetNextPassWorkUnknownProject(t *testing.T) {
 		t.Fatal("expected at least one blocker")
 	}
 
-	if payload.Blockers[0].Code != appplans.BlockerUnknownProject {
+	if payload.Blockers[0].Code != string(appplans.BlockerUnknownProject) {
 		t.Errorf("blocker code = %q, want %q", payload.Blockers[0].Code, appplans.BlockerUnknownProject)
 	}
 }
@@ -343,7 +343,7 @@ func TestGetNextAuditWorkUnknownProject(t *testing.T) {
 		t.Fatal("expected at least one blocker")
 	}
 
-	if payload.Blockers[0].Code != appplans.BlockerUnknownProject {
+	if payload.Blockers[0].Code != string(appplans.BlockerUnknownProject) {
 		t.Errorf("blocker code = %q, want %q", payload.Blockers[0].Code, appplans.BlockerUnknownProject)
 	}
 }

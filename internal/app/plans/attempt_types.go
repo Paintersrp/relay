@@ -99,6 +99,7 @@ const (
 type PlanAttemptBlockerCode string
 
 const (
+	BlockerUnknownProject          PlanAttemptBlockerCode = "unknown_project"
 	BlockerUnknownAttempt          PlanAttemptBlockerCode = "unknown_attempt"
 	BlockerAttemptNotReviewable    PlanAttemptBlockerCode = "attempt_not_reviewable"
 	BlockerStaleAttempt            PlanAttemptBlockerCode = "stale_attempt"

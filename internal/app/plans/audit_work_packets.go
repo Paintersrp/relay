@@ -104,7 +104,7 @@ func (svc *OrchestratorWorkService) GetNextAuditWork(ctx context.Context, req Ne
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return auditBlockerResponse(WorkBlocker{
-				Code:        BlockerUnknownProject,
+				Code:        string(BlockerUnknownProject),
 				Message:     fmt.Sprintf("project %q is unknown", projectID),
 				Recoverable: false,
 			}), nil

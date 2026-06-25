@@ -210,7 +210,7 @@ func TestGetNextPassWork_EmptyProjectIDReturns400(t *testing.T) {
 	if resp.OK {
 		t.Fatal("expected ok=false for unknown project")
 	}
-	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != appplans.BlockerUnknownProject {
+	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != string(appplans.BlockerUnknownProject) {
 		t.Fatalf("expected unknown_project blocker, got %+v", resp.Blockers)
 	}
 }
@@ -235,7 +235,7 @@ func TestGetNextPassWork_UnknownProjectReturns200WithBlocker(t *testing.T) {
 	if resp.OK {
 		t.Fatal("expected ok=false")
 	}
-	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != appplans.BlockerUnknownProject {
+	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != string(appplans.BlockerUnknownProject) {
 		t.Fatalf("expected unknown_project blocker, got %+v", resp.Blockers)
 	}
 }

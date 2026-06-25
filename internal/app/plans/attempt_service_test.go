@@ -78,6 +78,43 @@ func TestGetPlanIntentReviewPacketIsReadOnlyAndComplete(t *testing.T) {
 	assertAttemptRowsEqual(t, before, after)
 }
 
+func TestReviewPacketHashStableAcrossRetrievals(t *testing.T) {
+	t.Parallel()
+
+	svc, _ := newTestService(t)
+	created := createTestPlanAttempt(t, svc, "manual", "")
+
+	first, err := svc.GetPlanIntentReviewPacket(context.Background(), GetPlanIntentReviewPacketRequest{
+		ProjectID:     "relay",
+		PlanAttemptID: created.PlanAttempt.PlanAttemptID,
+	})
+	if err != nil {
+		t.Fatalf("GetPlanIntentReviewPacket first error: %v", err)
+	}
+	second, err := svc.GetPlanIntentReviewPacket(context.Background(), GetPlanIntentReviewPacketRequest{
+		ProjectID:     "relay",
+		PlanAttemptID: created.PlanAttempt.PlanAttemptID,
+	})
+	if err != nil {
+		t.Fatalf("GetPlanIntentReviewPacket second error: %v", err)
+	}
+	if !first.OK || first.ReviewPacket == nil {
+		t.Fatalf("expected first ok review packet, got %#v", first)
+	}
+	if !second.OK || second.ReviewPacket == nil {
+		t.Fatalf("expected second ok review packet, got %#v", second)
+	}
+	if first.ReviewPacket.GeneratedAt == "" || second.ReviewPacket.GeneratedAt == "" {
+		t.Fatalf("expected generated_at values, got first=%#v second=%#v", first.ReviewPacket, second.ReviewPacket)
+	}
+	if first.ReviewPacket.PacketHash == "" || second.ReviewPacket.PacketHash == "" {
+		t.Fatalf("expected packet hashes, got first=%#v second=%#v", first.ReviewPacket, second.ReviewPacket)
+	}
+	if first.ReviewPacket.PacketHash != second.ReviewPacket.PacketHash {
+		t.Fatalf("expected stable packet hash, got first=%q second=%q", first.ReviewPacket.PacketHash, second.ReviewPacket.PacketHash)
+	}
+}
+
 func TestSubmitIntentDriftReviewPersistsEvidenceOnly(t *testing.T) {
 	t.Parallel()
 
@@ -99,6 +136,57 @@ func TestSubmitIntentDriftReviewPersistsEvidenceOnly(t *testing.T) {
 	}
 	if got := countRows(t, st.DB(), "intent_drift_reviews"); got != 1 {
 		t.Fatalf("expected 1 drift review, got %d", got)
+	}
+	if got := countRows(t, st.DB(), "plans"); got != 0 {
+		t.Fatalf("expected 0 managed plans, got %d", got)
+	}
+}
+
+func TestSubmitIntentDriftReviewBlocksMismatchedReviewPacketHashWithoutMutation(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newTestService(t)
+	created := createTestPlanAttempt(t, svc, "external", "")
+	before := loadAttempt(t, svc.store, created.PlanAttempt.PlanAttemptID)
+
+	result, err := svc.SubmitIntentDriftReview(context.Background(), SubmitIntentDriftReviewRequest{
+		ProjectID:     "relay",
+		PlanAttemptID: created.PlanAttempt.PlanAttemptID,
+		DriftReview: DriftReviewInput{
+			IntentDriftReviewID:    "review-mismatch-" + generateSlug(),
+			PlanAttemptID:          created.PlanAttempt.PlanAttemptID,
+			IntentThreadID:         created.PlanAttempt.IntentThreadID,
+			RootIntentPacketID:     created.PlanAttempt.RootIntentPacketID,
+			ReviewedIntentPacketID: created.PlanAttempt.CurrentIntentPacketID,
+			ReviewPacketHash:       testSHA256,
+			ReviewSource:           ReviewSourceExternal,
+			SubmittedBy:            "tester",
+			SourceArtifactPath:     "reviews/review.json",
+			OverallAlignment:       OverallAlignmentAligned,
+			Confidence:             0.95,
+			FindingsJSON:           json.RawMessage(`[]`),
+			RecommendedAction:      RecommendedActionApprove,
+			ApprovalGateStatus:     ApprovalGateStatusReady,
+			ModelMetadataJSON:      json.RawMessage(`{"model":"test"}`),
+			InputHash:              testSHA256,
+			OutputHash:             testSHA256,
+		},
+	})
+	if err != nil {
+		t.Fatalf("SubmitIntentDriftReview error: %v", err)
+	}
+	if result.OK || result.BlockerCode != BlockerStaleAttempt {
+		t.Fatalf("expected stale attempt blocker, got %#v", result)
+	}
+	if got := countRows(t, st.DB(), "intent_drift_reviews"); got != 0 {
+		t.Fatalf("expected 0 drift reviews, got %d", got)
+	}
+	after := loadAttempt(t, svc.store, created.PlanAttempt.PlanAttemptID)
+	if after.Status != before.Status {
+		t.Fatalf("expected status unchanged %q, got %q", before.Status, after.Status)
+	}
+	if after.ReviewState != before.ReviewState {
+		t.Fatalf("expected review_state unchanged %q, got %q", before.ReviewState, after.ReviewState)
 	}
 	if got := countRows(t, st.DB(), "plans"); got != 0 {
 		t.Fatalf("expected 0 managed plans, got %d", got)
@@ -365,6 +453,16 @@ func submitTestReview(t *testing.T, svc *Service, attempt store.PlanAttempt, sou
 	if gate == "" {
 		gate = ApprovalGateStatusReady
 	}
+	packetResult, err := svc.GetPlanIntentReviewPacket(context.Background(), GetPlanIntentReviewPacketRequest{
+		ProjectID:     "relay",
+		PlanAttemptID: attempt.PlanAttemptID,
+	})
+	if err != nil {
+		t.Fatalf("GetPlanIntentReviewPacket error: %v", err)
+	}
+	if !packetResult.OK || packetResult.ReviewPacket == nil || packetResult.ReviewPacket.PacketHash == "" {
+		t.Fatalf("expected review packet hash, got %#v", packetResult)
+	}
 	result, err := svc.SubmitIntentDriftReview(context.Background(), SubmitIntentDriftReviewRequest{
 		ProjectID:     "relay",
 		PlanAttemptID: attempt.PlanAttemptID,
@@ -374,7 +472,7 @@ func submitTestReview(t *testing.T, svc *Service, attempt store.PlanAttempt, sou
 			IntentThreadID:         attempt.IntentThreadID,
 			RootIntentPacketID:     attempt.RootIntentPacketID,
 			ReviewedIntentPacketID: attempt.CurrentIntentPacketID,
-			ReviewPacketHash:       testSHA256,
+			ReviewPacketHash:       packetResult.ReviewPacket.PacketHash,
 			ReviewSource:           source,
 			SubmittedBy:            "tester",
 			SourceArtifactPath:     "reviews/review.json",

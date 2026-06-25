@@ -16,7 +16,6 @@ const NextPassWorkTool = "get_next_pass_work"
 
 // Blocker code constants -- all codes defined in the orchestrator work contract.
 const (
-	BlockerUnknownProject               = "unknown_project"
 	BlockerUnknownPlan                  = "unknown_plan"
 	BlockerProjectPlanMismatch          = "project_plan_mismatch"
 	BlockerPlanNotActive                = "plan_not_active"
@@ -193,7 +192,7 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return blockerResponse(WorkBlocker{
-				Code:        BlockerUnknownProject,
+				Code:        string(BlockerUnknownProject),
 				Message:     fmt.Sprintf("project %q is unknown", projectID),
 				Recoverable: false,
 			}), nil

@@ -204,7 +204,7 @@ func TestGetNextPassWork_UnknownProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	assertBlockerCode(t, resp, BlockerUnknownProject)
+	assertBlockerCode(t, resp, string(BlockerUnknownProject))
 }
 
 func TestGetNextPassWork_UnknownPlan(t *testing.T) {

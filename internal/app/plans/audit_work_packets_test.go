@@ -34,7 +34,7 @@ func TestGetNextAuditWork_UnknownProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	assertAuditBlockerCode(t, resp, BlockerUnknownProject)
+	assertAuditBlockerCode(t, resp, string(BlockerUnknownProject))
 }
 
 func TestGetNextAuditWork_UnknownPlan(t *testing.T) {

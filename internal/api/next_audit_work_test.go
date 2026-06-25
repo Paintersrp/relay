@@ -99,7 +99,7 @@ func TestGetNextAuditWork_UnknownProjectReturns200WithBlocker(t *testing.T) {
 	if resp.OK {
 		t.Fatalf("expected ok=false")
 	}
-	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != appplans.BlockerUnknownProject {
+	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != string(appplans.BlockerUnknownProject) {
 		t.Fatalf("expected unknown_project blocker, got: %+v", resp.Blockers)
 	}
 }

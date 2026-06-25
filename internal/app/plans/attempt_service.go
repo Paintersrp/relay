@@ -122,8 +122,17 @@ func (svc *Service) GetPlanIntentReviewPacket(ctx context.Context, req GetPlanIn
 	if attempt.Status != PlanAttemptStatusDraft {
 		return blockAttempt(BlockerAttemptNotReviewable, "plan attempt is not a draft")
 	}
+	packet, blocked, err := svc.buildPlanIntentReviewPacket(ctx, *project, attempt)
+	if blocked != nil || err != nil {
+		return blocked, err
+	}
+	return &PlanAttemptResult{OK: true, PlanAttempt: &attempt, ReviewPacket: packet}, nil
+}
+
+func (svc *Service) buildPlanIntentReviewPacket(ctx context.Context, project store.Project, attempt store.PlanAttempt) (*PlanIntentReviewPacket, *PlanAttemptResult, error) {
 	if _, _, err := verifyStoredAttemptPlan(attempt); err != nil {
-		return blockAttempt(BlockerArtifactHashMismatch, err.Error())
+		blocked, blockErr := blockAttempt(BlockerArtifactHashMismatch, err.Error())
+		return nil, blocked, blockErr
 	}
 	q := generated.New(svc.store.DB())
 	root, err := q.GetIntentPacketByIDAndProject(ctx, generated.GetIntentPacketByIDAndProjectParams{
@@ -132,9 +141,10 @@ func (svc *Service) GetPlanIntentReviewPacket(ctx context.Context, req GetPlanIn
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return blockAttempt(BlockerMissingIntentPacket, "root intent packet is missing")
+			blocked, blockErr := blockAttempt(BlockerMissingIntentPacket, "root intent packet is missing")
+			return nil, blocked, blockErr
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	reviewed, err := q.GetIntentPacketByIDAndProject(ctx, generated.GetIntentPacketByIDAndProjectParams{
 		IntentPacketID: attempt.CurrentIntentPacketID,
@@ -142,23 +152,24 @@ func (svc *Service) GetPlanIntentReviewPacket(ctx context.Context, req GetPlanIn
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return blockAttempt(BlockerMissingIntentPacket, "reviewed intent packet is missing")
+			blocked, blockErr := blockAttempt(BlockerMissingIntentPacket, "reviewed intent packet is missing")
+			return nil, blocked, blockErr
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	attempts, err := q.ListPlanAttemptsByThread(ctx, generated.ListPlanAttemptsByThreadParams{
 		ProjectRowID:   project.ID,
 		IntentThreadID: attempt.IntentThreadID,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	reviews, err := q.ListIntentDriftReviewsByThread(ctx, generated.ListIntentDriftReviewsByThreadParams{
 		ProjectRowID:   project.ID,
 		IntentThreadID: attempt.IntentThreadID,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	packet := PlanIntentReviewPacket{
@@ -178,7 +189,7 @@ func (svc *Service) GetPlanIntentReviewPacket(ctx context.Context, req GetPlanIn
 		GeneratedAt:           time.Now().UTC().Format(time.RFC3339),
 	}
 	packet.PacketHash = hashReviewPacket(packet)
-	return &PlanAttemptResult{OK: true, PlanAttempt: &attempt, ReviewPacket: &packet}, nil
+	return &packet, nil, nil
 }
 
 func (svc *Service) SubmitIntentDriftReview(ctx context.Context, req SubmitIntentDriftReviewRequest) (*PlanAttemptResult, error) {
@@ -198,6 +209,13 @@ func (svc *Service) SubmitIntentDriftReview(ctx context.Context, req SubmitInten
 	}
 	if err := validateDriftReviewInput(input); err != nil {
 		return blockAttempt(BlockerDriftReviewBlocked, err.Error())
+	}
+	packet, blocked, err := svc.buildPlanIntentReviewPacket(ctx, *project, attempt)
+	if blocked != nil || err != nil {
+		return blocked, err
+	}
+	if input.ReviewPacketHash != packet.PacketHash {
+		return blockAttempt(BlockerStaleAttempt, "drift review packet hash does not match current plan intent review packet")
 	}
 	reviewID := strings.TrimSpace(input.IntentDriftReviewID)
 	if reviewID == "" {
@@ -634,6 +652,8 @@ func priorReviewSummaries(reviews []store.IntentDriftReview) []PriorReviewInfo {
 
 func hashReviewPacket(packet PlanIntentReviewPacket) string {
 	packet.PacketHash = ""
+	packet.GeneratedAt = ""
+	packet.PacketID = ""
 	b, err := json.Marshal(packet)
 	if err != nil {
 		return ""
