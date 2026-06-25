@@ -17,6 +17,14 @@ type Service struct {
 	schemaPath string
 }
 
+type planSubmissionLineage struct {
+	SubmittedPlanAttemptID  sql.NullString
+	IntentThreadID          sql.NullString
+	RootIntentPacketID      sql.NullString
+	SubmittedIntentPacketID sql.NullString
+	AcceptedDriftReviewID   sql.NullString
+}
+
 func NewService(s *store.Store) *Service {
 	return NewServiceWithSchemaPath(s, defaultSchemaPath)
 }
@@ -29,7 +37,11 @@ func NewServiceWithSchemaPath(s *store.Store, schemaPath string) *Service {
 }
 
 func (svc *Service) SubmitPlan(ctx context.Context, req SubmitPlanRequest) (*SubmitPlanResult, error) {
-	plan, report, err := svc.ValidatePlanJSON(ctx, req.RawJSON)
+	return svc.submitPlan(ctx, req.RawJSON, req.SourceArtifactPath, req.ProjectID, planSubmissionLineage{}, nil)
+}
+
+func (svc *Service) submitPlan(ctx context.Context, raw []byte, sourceArtifactPath string, requestProjectID string, lineage planSubmissionLineage, afterCreate func(*generated.Queries, store.Plan) (*store.PlanAttempt, error)) (*SubmitPlanResult, error) {
+	plan, report, err := svc.ValidatePlanJSON(ctx, raw)
 	result := &SubmitPlanResult{Report: report}
 	if err != nil {
 		return result, err
@@ -38,7 +50,7 @@ func (svc *Service) SubmitPlan(ctx context.Context, req SubmitPlanRequest) (*Sub
 		return result, nil
 	}
 
-	projectID := ResolvePlanProjectID(req.ProjectID, plan)
+	projectID := ResolvePlanProjectID(requestProjectID, plan)
 	if projectID == "" {
 		result.Report.addIssue(
 			IssuePlanProjectRequired,
@@ -118,15 +130,20 @@ func (svc *Service) SubmitPlan(ctx context.Context, req SubmitPlanRequest) (*Sub
 		BranchContext:            plan.PlanMeta.BranchContext,
 		Status:                   plan.PlanMeta.Status,
 		SourceIntentSummary:      plan.SourceIntent.Summary,
-		SourceArtifactPath:       req.SourceArtifactPath,
+		SourceArtifactPath:       sourceArtifactPath,
 		PlanMetaJson:             planMetaJSON,
 		ProjectContextJson:       projectContextJSON,
 		McpCapabilityProfileJson: mcpCapabilityProfileJSON,
 		GlobalContextRulesJson:   globalContextRulesJSON,
 		SubmissionNote:           plan.PlanMeta.SubmissionNote,
-		RawPlanJson:              string(req.RawJSON),
+		RawPlanJson:              string(raw),
 		ProjectRowID:             project.ID,
 		ProjectID:                project.ProjectID,
+		SubmittedPlanAttemptID:   lineage.SubmittedPlanAttemptID,
+		IntentThreadID:           lineage.IntentThreadID,
+		RootIntentPacketID:       lineage.RootIntentPacketID,
+		SubmittedIntentPacketID:  lineage.SubmittedIntentPacketID,
+		AcceptedDriftReviewID:    lineage.AcceptedDriftReviewID,
 	})
 	if err != nil {
 		result.Report.addIssue(IssuePlanStorageFailed, "$.plan_meta.plan_id", "failed to store plan")
@@ -204,6 +221,13 @@ func (svc *Service) SubmitPlan(ctx context.Context, req SubmitPlanRequest) (*Sub
 			return result, fmt.Errorf("create plan pass %q: %w", pass.PassID, err)
 		}
 		createdPasses = append(createdPasses, createdPass)
+	}
+
+	if afterCreate != nil {
+		if _, err := afterCreate(txQueries, createdPlan); err != nil {
+			result.Report.addIssue(IssuePlanStorageFailed, "$", "failed to finalize plan submission")
+			return result, err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

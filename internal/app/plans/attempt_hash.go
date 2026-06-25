@@ -79,8 +79,7 @@ func validateAttemptArtifactRef(ref PlanArtifactRef, expectedExt string) error {
 	}
 
 	// Check for shell metacharacters
-	shellMetachar := regexp.MustCompile(`[;&|$\`+"`"+`(){}<>"`)
-	if shellMetachar.MatchString(ref.Path) {
+	if strings.ContainsAny(ref.Path, ";&|$`()+{}<>\"") {
 		return fmt.Errorf("shell metacharacters not allowed in path")
 	}
 
@@ -301,7 +300,7 @@ func validateOptionalMarkdownArtifact(ref *PlanArtifactRef) error {
 	if ref == nil {
 		return nil
 	}
-	if err := validateAttemptArtifactRef(ref, ".md"); err != nil {
+	if err := validateAttemptArtifactRef(*ref, ".md"); err != nil {
 		return err
 	}
 	if ref.ArtifactKind != "planner-pass-plan-markdown" {
