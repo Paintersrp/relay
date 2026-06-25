@@ -29,6 +29,9 @@ type DashboardRun = generated.ListRecentRunsWithRepoRow
 type Plan = generated.Plan
 type PlanPass = generated.PlanPass
 type ProjectContextRecord = generated.ProjectContextRecord
+type IntentPacket = generated.IntentPacket
+type PlanAttempt = generated.PlanAttempt
+type IntentDriftReview = generated.IntentDriftReview
 
 type Store struct {
 	db      *sql.DB

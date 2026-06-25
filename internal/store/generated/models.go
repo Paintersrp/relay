@@ -99,6 +99,52 @@ type Event struct {
 	CreatedAt    string `json:"created_at"`
 }
 
+type IntentDriftReview struct {
+	ID                     int64          `json:"id"`
+	IntentDriftReviewID    string         `json:"intent_drift_review_id"`
+	ProjectRowID           int64          `json:"project_row_id"`
+	ProjectID              string         `json:"project_id"`
+	PlanAttemptRowID       int64          `json:"plan_attempt_row_id"`
+	PlanAttemptID          string         `json:"plan_attempt_id"`
+	IntentThreadID         string         `json:"intent_thread_id"`
+	RootIntentPacketID     string         `json:"root_intent_packet_id"`
+	ReviewedIntentPacketID string         `json:"reviewed_intent_packet_id"`
+	ReviewPacketHash       string         `json:"review_packet_hash"`
+	ReviewSource           string         `json:"review_source"`
+	SubmittedBy            string         `json:"submitted_by"`
+	SourceArtifactPath     string         `json:"source_artifact_path"`
+	OverallAlignment       string         `json:"overall_alignment"`
+	Confidence             float64        `json:"confidence"`
+	FindingsJson           string         `json:"findings_json"`
+	RecommendedAction      string         `json:"recommended_action"`
+	ApprovalGateStatus     string         `json:"approval_gate_status"`
+	ModelMetadataJson      sql.NullString `json:"model_metadata_json"`
+	InputHash              string         `json:"input_hash"`
+	OutputHash             string         `json:"output_hash"`
+	CreatedAt              string         `json:"created_at"`
+}
+
+type IntentPacket struct {
+	ID                      int64          `json:"id"`
+	IntentPacketID          string         `json:"intent_packet_id"`
+	ProjectRowID            int64          `json:"project_row_id"`
+	ProjectID               string         `json:"project_id"`
+	IntentThreadID          string         `json:"intent_thread_id"`
+	RootIntentPacketID      string         `json:"root_intent_packet_id"`
+	ParentIntentPacketID    sql.NullString `json:"parent_intent_packet_id"`
+	RevisionOfPlanAttemptID sql.NullString `json:"revision_of_plan_attempt_id"`
+	Kind                    string         `json:"kind"`
+	CapturedFrom            string         `json:"captured_from"`
+	CapturedBy              string         `json:"captured_by"`
+	SourceArtifactPath      string         `json:"source_artifact_path"`
+	Summary                 string         `json:"summary"`
+	LiteralUserRequest      string         `json:"literal_user_request"`
+	ConstraintsJson         string         `json:"constraints_json"`
+	RedactionStatus         string         `json:"redaction_status"`
+	ContentHash             string         `json:"content_hash"`
+	CreatedAt               string         `json:"created_at"`
+}
+
 type LocalAudit struct {
 	ID               int64  `json:"id"`
 	AuditID          string `json:"audit_id"`
@@ -121,26 +167,59 @@ type LocalAudit struct {
 }
 
 type Plan struct {
-	ID                       int64  `json:"id"`
-	PlanID                   string `json:"plan_id"`
-	SchemaVersion            string `json:"schema_version"`
-	Title                    string `json:"title"`
-	Goal                     string `json:"goal"`
-	RepoTarget               string `json:"repo_target"`
-	BranchContext            string `json:"branch_context"`
-	Status                   string `json:"status"`
-	SourceIntentSummary      string `json:"source_intent_summary"`
-	SourceArtifactPath       string `json:"source_artifact_path"`
-	CreatedAt                string `json:"created_at"`
-	UpdatedAt                string `json:"updated_at"`
-	PlanMetaJson             string `json:"plan_meta_json"`
-	ProjectContextJson       string `json:"project_context_json"`
-	McpCapabilityProfileJson string `json:"mcp_capability_profile_json"`
-	GlobalContextRulesJson   string `json:"global_context_rules_json"`
-	SubmissionNote           string `json:"submission_note"`
-	RawPlanJson              string `json:"raw_plan_json"`
-	ProjectRowID             int64  `json:"project_row_id"`
-	ProjectID                string `json:"project_id"`
+	ID                       int64          `json:"id"`
+	PlanID                   string         `json:"plan_id"`
+	SchemaVersion            string         `json:"schema_version"`
+	Title                    string         `json:"title"`
+	Goal                     string         `json:"goal"`
+	RepoTarget               string         `json:"repo_target"`
+	BranchContext            string         `json:"branch_context"`
+	Status                   string         `json:"status"`
+	SourceIntentSummary      string         `json:"source_intent_summary"`
+	SourceArtifactPath       string         `json:"source_artifact_path"`
+	CreatedAt                string         `json:"created_at"`
+	UpdatedAt                string         `json:"updated_at"`
+	PlanMetaJson             string         `json:"plan_meta_json"`
+	ProjectContextJson       string         `json:"project_context_json"`
+	McpCapabilityProfileJson string         `json:"mcp_capability_profile_json"`
+	GlobalContextRulesJson   string         `json:"global_context_rules_json"`
+	SubmissionNote           string         `json:"submission_note"`
+	RawPlanJson              string         `json:"raw_plan_json"`
+	ProjectRowID             int64          `json:"project_row_id"`
+	ProjectID                string         `json:"project_id"`
+	SubmittedPlanAttemptID   sql.NullString `json:"submitted_plan_attempt_id"`
+	IntentThreadID           sql.NullString `json:"intent_thread_id"`
+	RootIntentPacketID       sql.NullString `json:"root_intent_packet_id"`
+	SubmittedIntentPacketID  sql.NullString `json:"submitted_intent_packet_id"`
+	AcceptedDriftReviewID    sql.NullString `json:"accepted_drift_review_id"`
+}
+
+type PlanAttempt struct {
+	ID                         int64          `json:"id"`
+	PlanAttemptID              string         `json:"plan_attempt_id"`
+	ProjectRowID               int64          `json:"project_row_id"`
+	ProjectID                  string         `json:"project_id"`
+	IntentThreadID             string         `json:"intent_thread_id"`
+	RootIntentPacketID         string         `json:"root_intent_packet_id"`
+	CurrentIntentPacketID      string         `json:"current_intent_packet_id"`
+	SupersedesPlanAttemptID    sql.NullString `json:"supersedes_plan_attempt_id"`
+	ReplacementPlanAttemptID   sql.NullString `json:"replacement_plan_attempt_id"`
+	Status                     string         `json:"status"`
+	ReviewState                string         `json:"review_state"`
+	DriftReviewMode            string         `json:"drift_review_mode"`
+	ModelTier                  string         `json:"model_tier"`
+	PlanJsonArtifactPath       string         `json:"plan_json_artifact_path"`
+	PlanJsonArtifactSha256     string         `json:"plan_json_artifact_sha256"`
+	RawPlanJson                string         `json:"raw_plan_json"`
+	RawPlanJsonHash            string         `json:"raw_plan_json_hash"`
+	PlanMarkdownArtifactPath   sql.NullString `json:"plan_markdown_artifact_path"`
+	PlanMarkdownArtifactSha256 sql.NullString `json:"plan_markdown_artifact_sha256"`
+	AcceptedDriftReviewID      sql.NullString `json:"accepted_drift_review_id"`
+	SubmittedPlanRowID         sql.NullInt64  `json:"submitted_plan_row_id"`
+	SubmittedPlanID            sql.NullString `json:"submitted_plan_id"`
+	SubmittedAt                sql.NullString `json:"submitted_at"`
+	CreatedAt                  string         `json:"created_at"`
+	UpdatedAt                  string         `json:"updated_at"`
 }
 
 type PlanPass struct {

@@ -16,9 +16,14 @@ INSERT INTO plans (
   submission_note,
   raw_plan_json,
   project_row_id,
-  project_id
+  project_id,
+  submitted_plan_attempt_id,
+  intent_thread_id,
+  root_intent_packet_id,
+  submitted_intent_packet_id,
+  accepted_drift_review_id
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetPlan :one
