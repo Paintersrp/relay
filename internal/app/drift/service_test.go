@@ -2,13 +2,20 @@ package drift
 
 import (
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	appplans "relay/internal/app/plans"
 	"relay/internal/store"
+	"relay/internal/store/generated"
 )
 
 //go:embed testdata/valid_review.json
@@ -103,23 +110,23 @@ func (f *fakeReviewer) ReviewIntentDrift(ctx context.Context, req ReviewModelReq
 
 func defaultValidPacket() *appplans.PlanIntentReviewPacket {
 	return &appplans.PlanIntentReviewPacket{
-		PacketID:      "pkt-1",
-		ProjectID:     "proj-1",
-		PlanAttemptID: "attempt-1",
+		PacketID:       "pkt-1",
+		ProjectID:      "proj-1",
+		PlanAttemptID:  "attempt-1",
 		IntentThreadID: "thread-1",
 		RootIntentPacket: appplans.IntentPacketEvidence{
-			IntentPacketID: "intent-1",
-			Kind:           "original",
-			Summary:        "summary",
+			IntentPacketID:     "intent-1",
+			Kind:               "original",
+			Summary:            "summary",
 			LiteralUserRequest: "user request",
-			Constraints:    "[]",
+			Constraints:        "[]",
 		},
 		ReviewedIntentPacket: appplans.IntentPacketEvidence{
-			IntentPacketID: "intent-1",
-			Kind:           "original",
-			Summary:        "summary",
+			IntentPacketID:     "intent-1",
+			Kind:               "original",
+			Summary:            "summary",
 			LiteralUserRequest: "user request",
-			Constraints:    "[]",
+			Constraints:        "[]",
 		},
 		PlanAttempt: appplans.PlanAttemptEvidence{
 			PlanAttemptID: "attempt-1",
@@ -262,6 +269,56 @@ func TestRunInternalReviewPersistsInternalReviewThroughPlanService(t *testing.T)
 	}
 	if sub.SubmittedBy != SubmittedByInternalReviewer {
 		t.Errorf("expected submitted_by '%s', got %q", SubmittedByInternalReviewer, sub.SubmittedBy)
+	}
+}
+
+func TestRunInternalReviewPersistsInternalReviewThroughAppPlansStore(t *testing.T) {
+	planSvc, st := newRealPlanService(t)
+	created := createRealPlanAttempt(t, planSvc, appplans.DriftReviewModeManual)
+	fakeModel := &fakeReviewer{
+		res: &ReviewModelResponse{
+			RawJSON:  []byte(defaultValidModelOutput),
+			Provider: "fake",
+			Model:    "fake-standard",
+		},
+	}
+	svc := NewService(planSvc, fakeModel)
+
+	res, err := svc.RunInternalReview(context.Background(), InternalReviewRequest{
+		ProjectID:      "relay",
+		PlanAttemptID:  created.PlanAttempt.PlanAttemptID,
+		AllowModelCall: true,
+	})
+	if err != nil {
+		t.Fatalf("RunInternalReview error: %v", err)
+	}
+	if !res.OK {
+		t.Fatalf("expected OK=true, got %#v", res)
+	}
+	if res.DriftReview == nil {
+		t.Fatalf("expected persisted drift review")
+	}
+
+	queries := generated.New(st.DB())
+	attempt, err := queries.GetPlanAttemptByID(context.Background(), created.PlanAttempt.PlanAttemptID)
+	if err != nil {
+		t.Fatalf("GetPlanAttemptByID: %v", err)
+	}
+	if attempt.ReviewState != appplans.PlanAttemptReviewInternalGenerated {
+		t.Fatalf("expected review_state internal_review_generated, got %q", attempt.ReviewState)
+	}
+	reviews, err := queries.ListIntentDriftReviewsByAttempt(context.Background(), attempt.ID)
+	if err != nil {
+		t.Fatalf("ListIntentDriftReviewsByAttempt: %v", err)
+	}
+	if len(reviews) != 1 {
+		t.Fatalf("expected 1 drift review, got %d", len(reviews))
+	}
+	if reviews[0].ReviewSource != appplans.ReviewSourceInternal {
+		t.Fatalf("expected internal review_source, got %q", reviews[0].ReviewSource)
+	}
+	if reviews[0].ApprovalGateStatus != appplans.ApprovalGateStatusReady {
+		t.Fatalf("expected ready approval gate, got %q", reviews[0].ApprovalGateStatus)
 	}
 }
 
@@ -569,6 +626,101 @@ func TestRunInternalReviewNormalizesGateConsistency(t *testing.T) {
 	}
 }
 
+func TestRunInternalReviewUsesCanonicalGateInsteadOfModelGate(t *testing.T) {
+	fakePlans := &fakePlanService{
+		packetRes: &appplans.PlanAttemptResult{
+			OK:           true,
+			ReviewPacket: defaultValidPacket(),
+		},
+	}
+	modelOutput := `{
+	  "overall_alignment": "aligned",
+	  "confidence": 0.95,
+	  "findings": [],
+	  "recommended_action": "approve",
+	  "approval_gate_status": "blocked"
+	}`
+	fakeModel := &fakeReviewer{
+		res: &ReviewModelResponse{
+			RawJSON:  []byte(modelOutput),
+			Provider: "fake",
+			Model:    "fake-standard",
+		},
+	}
+	fakePlans.submitRes = &appplans.PlanAttemptResult{
+		OK:          true,
+		DriftReview: &store.IntentDriftReview{},
+	}
+
+	svc := NewService(fakePlans, fakeModel)
+	res, err := svc.RunInternalReview(context.Background(), InternalReviewRequest{
+		ProjectID:      "proj-1",
+		PlanAttemptID:  "attempt-1",
+		AllowModelCall: true,
+	})
+	if err != nil {
+		t.Fatalf("RunInternalReview error: %v", err)
+	}
+	if !res.OK {
+		t.Fatalf("expected OK to be true: %v", res.Message)
+	}
+
+	sub := fakePlans.lastSubmit.DriftReview
+	if sub.ApprovalGateStatus != "ready" {
+		t.Errorf("expected canonical gate status 'ready', got %q", sub.ApprovalGateStatus)
+	}
+}
+
+func TestRunInternalReviewDoesNotEscalateStandardTier(t *testing.T) {
+	fakePlans := &fakePlanService{
+		packetRes: &appplans.PlanAttemptResult{
+			OK:           true,
+			ReviewPacket: defaultValidPacket(),
+		},
+	}
+	lowConfidence := `{
+	  "overall_alignment": "aligned",
+	  "confidence": 0.50,
+	  "findings": [],
+	  "recommended_action": "approve",
+	  "approval_gate_status": "ready"
+	}`
+	fakeModel := &fakeReviewer{
+		res: &ReviewModelResponse{
+			RawJSON:  []byte(lowConfidence),
+			Provider: "fake",
+			Model:    "fake-standard",
+		},
+	}
+	fakePlans.submitRes = &appplans.PlanAttemptResult{
+		OK:          true,
+		DriftReview: &store.IntentDriftReview{},
+	}
+
+	svc := NewService(fakePlans, fakeModel)
+	res, err := svc.RunInternalReview(context.Background(), InternalReviewRequest{
+		ProjectID:      "proj-1",
+		PlanAttemptID:  "attempt-1",
+		AllowModelCall: true,
+		RequestedTier:  appplans.ModelTierStandard,
+	})
+	if err != nil {
+		t.Fatalf("RunInternalReview error: %v", err)
+	}
+	if !res.OK {
+		t.Fatalf("expected OK to be true: %v", res.Message)
+	}
+	if res.Escalated {
+		t.Errorf("expected standard tier request not to auto-escalate")
+	}
+	if len(fakeModel.calls) != 1 {
+		t.Errorf("expected 1 call, got %d", len(fakeModel.calls))
+	}
+	if res.FinalTier != appplans.ModelTierStandard {
+		t.Errorf("expected final tier standard, got %q", res.FinalTier)
+	}
+}
+
 func TestRunInternalReviewBlocksNonDraftAttempt(t *testing.T) {
 	pkt := defaultValidPacket()
 	pkt.PlanAttempt.Status = appplans.PlanAttemptStatusApproved
@@ -625,4 +777,149 @@ func TestRunInternalReviewDetectsSecret(t *testing.T) {
 	if res.FailureCode != FailureSecretDetectedInPacket {
 		t.Errorf("expected FailureSecretDetectedInPacket, got %v", res.FailureCode)
 	}
+}
+
+func newRealPlanService(t *testing.T) (*appplans.Service, *store.Store) {
+	t.Helper()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "relay.sqlite"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.Close()
+	})
+	if _, err := st.CreateProject("relay", "Relay", "Drift test project", "active", ""); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	return appplans.NewService(st), st
+}
+
+func createRealPlanAttempt(t *testing.T, svc *appplans.Service, mode string) *appplans.PlanAttemptResult {
+	t.Helper()
+
+	raw := validPlanRaw(t, "plan-drift-"+mode)
+	hash := canonicalJSONSHA256(t, raw)
+	result, err := svc.CreatePlanAttemptWithIntent(context.Background(), appplans.CreatePlanAttemptWithIntentRequest{
+		ProjectID:      "relay",
+		PlanAttemptID:  "attempt-drift-" + mode,
+		IntentPacketID: "intent-drift-" + mode,
+		IntentThreadID: "thread-drift-" + mode,
+		PlanArtifactRef: appplans.PlanArtifactRef{
+			Path:         "handoffs/planner/" + mode + ".planner-pass-plan.json",
+			SHA256:       hash,
+			ArtifactKind: "planner-pass-plan-json",
+		},
+		RawPlanJSON:     raw,
+		DriftReviewMode: mode,
+		ModelTier:       appplans.ModelTierStandard,
+		IntentPacket: appplans.IntentPacketInput{
+			Summary:            "Original request",
+			LiteralUserRequest: "Create a reviewed draft plan attempt.",
+			Constraints:        []string{"No route changes."},
+			Source: appplans.IntentSource{
+				CapturedFrom:       appplans.CapturedFromPlannerChat,
+				CapturedBy:         "tester",
+				SourceArtifactPath: "handoffs/source.md",
+			},
+			RedactionStatus: appplans.RedactionStatusVerifiedNoSecrets,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreatePlanAttemptWithIntent error: %v", err)
+	}
+	if !result.OK {
+		t.Fatalf("CreatePlanAttemptWithIntent blocked: %#v", result)
+	}
+	return result
+}
+
+func validPlanRaw(t *testing.T, planID string) json.RawMessage {
+	t.Helper()
+
+	required := true
+	maxFiles := int64(12)
+	plan := appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
+			PlanID:        planID,
+			SchemaVersion: "2.0.0",
+			CreatedAt:     "2026-06-21T16:10:00Z",
+			Title:         "Relay drift review test plan",
+			Goal:          "Store validated internal drift review evidence",
+			RepoTarget:    "Paintersrp/relay",
+			BranchContext: "main",
+			Status:        "active",
+			ProjectContext: &appplans.ProjectContext{
+				PrimaryProject:       "relay",
+				PrimaryRepository:    "relay",
+				GitHubRole:           "repo_host_and_origin_only",
+				LocalFirstAssumption: "Relay remains the local source of runtime context.",
+			},
+		},
+		SourceIntent: appplans.SourceIntent{
+			Summary: "Add a backend service for validated drift review persistence.",
+		},
+		Passes: []appplans.PlanPassInput{
+			{
+				PassID:                 "PASS-001",
+				Sequence:               1,
+				Name:                   "Validate drift review",
+				Goal:                   "Validate internal review orchestration.",
+				IntendedExecutionScope: []string{"internal/app/drift/service.go"},
+				NonGoals:               []string{"No route changes"},
+				Dependencies:           []string{},
+				Status:                 appplans.StatusPassPlanned,
+				PassType:               "backend_vertical_slice",
+				ContextPlan: appplans.ContextPlan{
+					RequiredRepositories: []string{"relay"},
+					SeedSearchTerms: []appplans.ContextSearchTerm{
+						{
+							RepoID:   "relay",
+							Query:    "RunInternalReview",
+							Purpose:  "Find drift review orchestration.",
+							Required: &required,
+						},
+					},
+					SeedFilesToRead: []appplans.ContextFileRead{
+						{
+							RepoID:   "relay",
+							Path:     "internal/app/drift/service.go",
+							Purpose:  "Update orchestration.",
+							Required: &required,
+						},
+					},
+					ContextCoverageExpectations: []string{"Drift review evidence is persisted."},
+					BlockedIfMissing:            []string{"Review packet cannot be retrieved."},
+				},
+				SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
+					RequireGitStatus: &required,
+				},
+				HandoffReadinessCriteria: []string{"Internal review can be generated."},
+				RiskLevel:                "low",
+				ContextBudget: &appplans.ContextBudget{
+					MaxFiles: &maxFiles,
+				},
+			},
+		},
+	}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("json.Marshal plan: %v", err)
+	}
+	return raw
+}
+
+func canonicalJSONSHA256(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+
+	var doc any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("json.Unmarshal plan: %v", err)
+	}
+	canonical, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("json.Marshal canonical plan: %v", err)
+	}
+	sum := sha256.Sum256(canonical)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }

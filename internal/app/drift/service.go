@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	appplans "relay/internal/app/plans"
@@ -22,16 +24,31 @@ type PlanAttemptService interface {
 type Service struct {
 	plans    PlanAttemptService
 	reviewer DriftReviewer
+	log      *slog.Logger
 	now      func() time.Time
 }
 
 // NewService creates a new drift review service.
-func NewService(plans PlanAttemptService, reviewer DriftReviewer) *Service {
+func NewService(plans PlanAttemptService, reviewer DriftReviewer, loggers ...*slog.Logger) *Service {
+	var log *slog.Logger
+	if len(loggers) > 0 {
+		log = loggers[0]
+	}
 	return &Service{
 		plans:    plans,
 		reviewer: reviewer,
+		log:      log,
 		now:      time.Now,
 	}
+}
+
+// NewReviewerFromEnv returns the configured production reviewer.
+//
+// No networked provider is configured in this pass, so the safe default is nil.
+// RunInternalReview maps a nil reviewer to FailureModelProviderUnavailable
+// before any packet retrieval, model call, or persistence can occur.
+func NewReviewerFromEnv(log *slog.Logger) DriftReviewer {
+	return nil
 }
 
 // RunInternalReview runs the internal drift review workflow.
@@ -109,25 +126,11 @@ func (svc *Service) RunInternalReview(ctx context.Context, req InternalReviewReq
 		}, nil
 	}
 
-	// 7. Guard: secret scan
-	if hasSecretInPacket(*packet) {
-		return &InternalReviewResult{
-			OK:          false,
-			FailureCode: FailureSecretDetectedInPacket,
-			Message:     "secret-like content detected in review packet",
-		}, nil
-	}
+	// 7. Tier selection
+	currentTier := resolveStartTier(req)
+	allowEscalation := strings.TrimSpace(req.RequestedTier) == appplans.ModelTierAutoEscalate && !req.ForceHighAssurance
 
-	// 8. Tier selection
-	currentTier := req.RequestedTier
-	if currentTier == appplans.ModelTierAutoEscalate || currentTier == "" {
-		currentTier = appplans.ModelTierStandard
-	}
-	if req.ForceHighAssurance {
-		currentTier = appplans.ModelTierHighAssurance
-	}
-
-	// 9. Build prompt/input
+	// 8. Build prompt/input
 	promptText, inputPayload, err := BuildPromptInput(*packet)
 	if err != nil {
 		return &InternalReviewResult{
@@ -136,9 +139,16 @@ func (svc *Service) RunInternalReview(ctx context.Context, req InternalReviewReq
 			Message:     fmt.Sprintf("failed to build model prompt input: %v", err),
 		}, nil
 	}
+	if validation.HasSecret(string(inputPayload)) {
+		return &InternalReviewResult{
+			OK:          false,
+			FailureCode: FailureSecretDetectedInPacket,
+			Message:     "secret-like content detected in review packet input payload",
+		}, nil
+	}
 	inputHash := sha256Bytes(inputPayload)
 
-	// 10. Call provider and validate
+	// 9. Call provider and validate
 	var providerRes ReviewModelResponse
 	var modelOut ModelOutput
 	var isSchemaErr bool
@@ -156,6 +166,9 @@ func (svc *Service) RunInternalReview(ctx context.Context, req InternalReviewReq
 		if err != nil {
 			return err
 		}
+		if providerRes.FinalTier == "" {
+			providerRes.FinalTier = tier
+		}
 
 		// Normalize & Parse
 		if err := json.Unmarshal(providerRes.RawJSON, &modelOut); err != nil {
@@ -164,8 +177,7 @@ func (svc *Service) RunInternalReview(ctx context.Context, req InternalReviewReq
 		}
 
 		// Normalize gate status consistency
-		mappedGate := normalizedGateStatus(modelOut.RecommendedAction)
-		modelOut.ApprovalGateStatus = stricterGateStatus(modelOut.ApprovalGateStatus, mappedGate)
+		modelOut.ApprovalGateStatus = normalizedGateStatus(modelOut.RecommendedAction)
 
 		// Validate against schema
 		meta := ModelMetadata{
@@ -228,10 +240,10 @@ func (svc *Service) RunInternalReview(ctx context.Context, req InternalReviewReq
 	escalated := false
 	escReason := ""
 
-	// Check if auto-escalation check triggers a single retry at high_assurance
-	if currentTier != appplans.ModelTierHighAssurance && (callErr != nil || escalationRequired(modelOut, callErr, req.ForceHighAssurance)) {
+	// Check if auto-escalation triggers a single retry at high_assurance.
+	if allowEscalation && currentTier != appplans.ModelTierHighAssurance && (callErr != nil || escalationRequired(modelOut, nil, false)) {
 		escalated = true
-		escReason = escalationReason(modelOut, callErr, req.ForceHighAssurance)
+		escReason = escalationReason(modelOut, callErr, false)
 		if escReason == "" {
 			if callErr != nil {
 				escReason = fmt.Sprintf("initial call failed: %v", callErr)
@@ -311,12 +323,12 @@ func (svc *Service) RunInternalReview(ctx context.Context, req InternalReviewReq
 	})
 	if err != nil {
 		return &InternalReviewResult{
-			OK:          false,
-			FailureCode: FailureReviewGenerationFailed,
-			Message:     fmt.Sprintf("failed to submit drift review: %v", err),
-			Escalated:   escalated,
+			OK:               false,
+			FailureCode:      FailureReviewGenerationFailed,
+			Message:          fmt.Sprintf("failed to submit drift review: %v", err),
+			Escalated:        escalated,
 			EscalationReason: escReason,
-			FinalTier:   currentTier,
+			FinalTier:        currentTier,
 		}, nil
 	}
 	if submitRes == nil || !submitRes.OK {
@@ -325,12 +337,12 @@ func (svc *Service) RunInternalReview(ctx context.Context, req InternalReviewReq
 			msg = submitRes.Message
 		}
 		return &InternalReviewResult{
-			OK:          false,
-			FailureCode: FailureReviewGenerationFailed,
-			Message:     msg,
-			Escalated:   escalated,
+			OK:               false,
+			FailureCode:      FailureReviewGenerationFailed,
+			Message:          msg,
+			Escalated:        escalated,
 			EscalationReason: escReason,
-			FinalTier:   currentTier,
+			FinalTier:        currentTier,
 		}, nil
 	}
 
@@ -381,42 +393,16 @@ func generateReviewID(t time.Time) string {
 	return fmt.Sprintf("intent-drift-review-%s-%d", t.Format("2006-01-02"), t.UnixNano())
 }
 
-func hasSecretInPacket(packet appplans.PlanIntentReviewPacket) bool {
-	fields := []string{
-		packet.RootIntentPacket.LiteralUserRequest,
-		packet.RootIntentPacket.Summary,
-		packet.RootIntentPacket.Constraints,
-		packet.ReviewedIntentPacket.LiteralUserRequest,
-		packet.ReviewedIntentPacket.Summary,
-		packet.ReviewedIntentPacket.Constraints,
-		string(packet.RawPlanJSON),
+func resolveStartTier(req InternalReviewRequest) string {
+	if req.ForceHighAssurance {
+		return appplans.ModelTierHighAssurance
 	}
-	for _, f := range fields {
-		if f != "" && validation.HasSecret(f) {
-			return true
-		}
+	switch strings.TrimSpace(req.RequestedTier) {
+	case appplans.ModelTierEconomy, appplans.ModelTierStandard, appplans.ModelTierHighAssurance:
+		return strings.TrimSpace(req.RequestedTier)
+	case appplans.ModelTierAutoEscalate:
+		return appplans.ModelTierStandard
+	default:
+		return appplans.ModelTierStandard
 	}
-	return false
-}
-
-func stricterGateStatus(statusA, statusB string) string {
-	levels := map[string]int{
-		"not_required":             0,
-		"ready":                    1,
-		"acknowledgement_required": 2,
-		"revision_required":        3,
-		"blocked":                  4,
-	}
-	valA, okA := levels[statusA]
-	if !okA {
-		valA = 4
-	}
-	valB, okB := levels[statusB]
-	if !okB {
-		valB = 4
-	}
-	if valA >= valB {
-		return statusA
-	}
-	return statusB
 }

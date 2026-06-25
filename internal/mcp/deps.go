@@ -3,6 +3,8 @@ package mcp
 import (
 	"log/slog"
 
+	driftapp "relay/internal/app/drift"
+	appplans "relay/internal/app/plans"
 	"relay/internal/store"
 )
 
@@ -14,15 +16,22 @@ type MCPDeps struct {
 	Log         *slog.Logger
 	ToolProfile ToolProfile
 
+	// Drift is the optional internal drift reviewer service. It is constructed
+	// with a nil provider by default, returning model_provider_unavailable until
+	// a later pass configures a networked reviewer.
+	Drift *driftapp.Service
+
 	// Deprecated: use ToolProfile. Kept only so older callers still compile.
 	ContextBrokerEnabled bool
 }
 
 // NewDepsFromEnv constructs MCPDeps by loading the profile from environment variables.
 func NewDepsFromEnv(st *store.Store, log *slog.Logger) *MCPDeps {
-	return &MCPDeps{
+	deps := &MCPDeps{
 		Store:       st,
 		Log:         log,
 		ToolProfile: ToolProfileFromEnv(log),
 	}
+	deps.Drift = driftapp.NewService(appplans.NewService(st), driftapp.NewReviewerFromEnv(log), log)
+	return deps
 }
