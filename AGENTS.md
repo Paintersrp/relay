@@ -85,6 +85,8 @@ For deeper repo orientation, see `docs/agent-reference.md`.
 
 That file is a human-maintained reference only. It does not override the current task, source code, Planner handoffs, canonical packets, Relay DB state, run artifacts, audit evidence, or relay-contracts.
 
+For backend/API/MCP/storage/drift/settings planning, consult `docs/backend-code-surface-map.md` before broad rediscovery. That map is only a compiled navigation reference: checked-out source code, tests, selected handoffs/canonical packets, Relay DB state, run artifacts, audit evidence, and relay-contracts remain higher authority. Refresh stale map sections rather than reprocessing the whole backend by default.
+
 ## RTK Shell Command Rule
 
 Use RTK for noisy shell commands when available.

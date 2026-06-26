@@ -20,6 +20,8 @@ The backend is a local Go daemon using `net/http`, `chi`, `database/sql`, SQLite
 
 The primary UI is the React/TanStack Start workbench under `apps/web`; root `web/` and templ assets remain for legacy/utility surfaces.
 
+For a precise source-backed backend routing index across API, MCP, storage, drift, plan-attempt, settings, and refactor surfaces, see `docs/backend-code-surface-map.md`. This file stays compact orientation; the backend map carries detailed rows and should have only stale sections refreshed when source-backed surfaces move or change. Neither document overrides source code, tests, selected handoffs, canonical packets, Relay artifacts, or relay-contracts.
+
 ## Key Components
 
 - `cmd/relay` starts the local app.
