@@ -33,7 +33,6 @@ type contractReview struct {
 	ReviewedIntentPacketID string              `json:"reviewed_intent_packet_id"`
 	ReviewPacketHash       string              `json:"review_packet_hash"`
 	Provenance             contractProvenance  `json:"provenance"`
-	SourceArtifactPath     string              `json:"source_artifact_path,omitempty"`
 	OverallAlignment       string              `json:"overall_alignment"`
 	Confidence             float64             `json:"confidence"`
 	Findings               []normalizedFinding `json:"findings"`
@@ -47,8 +46,9 @@ type contractReview struct {
 }
 
 type contractProvenance struct {
-	ReviewSource string `json:"review_source"`
-	SubmittedBy  string `json:"submitted_by"`
+	ReviewSource       string `json:"review_source"`
+	SubmittedBy        string `json:"submitted_by"`
+	SourceArtifactPath string `json:"source_artifact_path,omitempty"`
 }
 
 // ValidateModelOutput parses and validates the model-native structured output.
@@ -114,6 +114,13 @@ func NormalizeModelOutput(
 	createdAt := now.UTC().Format(time.RFC3339)
 	reviewID := generateReviewID(now.UTC(), packet.PlanAttemptID)
 	gate := normalizedGateStatus(out.RecommendedAction)
+	provenance := contractProvenance{
+		ReviewSource: appplans.ReviewSourceInternal,
+		SubmittedBy:  submittedBy,
+	}
+	if path := strings.TrimSpace(packet.ReviewedIntentPacket.SourceArtifactPath); path != "" {
+		provenance.SourceArtifactPath = path
+	}
 
 	input := appplans.DriftReviewInput{
 		IntentDriftReviewID:    reviewID,
@@ -142,21 +149,17 @@ func NormalizeModelOutput(
 		RootIntentPacketID:     packet.RootIntentPacket.IntentPacketID,
 		ReviewedIntentPacketID: packet.ReviewedIntentPacket.IntentPacketID,
 		ReviewPacketHash:       packet.PacketHash,
-		Provenance: contractProvenance{
-			ReviewSource: appplans.ReviewSourceInternal,
-			SubmittedBy:  submittedBy,
-		},
-		SourceArtifactPath: packet.ReviewedIntentPacket.SourceArtifactPath,
-		OverallAlignment:   out.OverallAlignment,
-		Confidence:         out.Confidence,
-		Findings:           findings,
-		RecommendedAction:  out.RecommendedAction,
-		ApprovalGateStatus: gate,
-		ModelMetadata:      meta,
-		InputHash:          inputHash,
-		OutputHash:         outputHash,
-		CreatedAt:          createdAt,
-		Notes:              out.Notes,
+		Provenance:             provenance,
+		OverallAlignment:       out.OverallAlignment,
+		Confidence:             out.Confidence,
+		Findings:               findings,
+		RecommendedAction:      out.RecommendedAction,
+		ApprovalGateStatus:     gate,
+		ModelMetadata:          meta,
+		InputHash:              inputHash,
+		OutputHash:             outputHash,
+		CreatedAt:              createdAt,
+		Notes:                  out.Notes,
 	}
 	contractBytes, err := json.Marshal(contract)
 	if err != nil {

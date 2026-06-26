@@ -41,8 +41,13 @@ func ValidateIntentDriftReviewJSON(raw []byte) error {
 }
 
 func sanitizeSchemaRegexes(schemaContent string) string {
-	schemaContent = strings.ReplaceAll(schemaContent, `(?!/)`, "")
-	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(^|/)\.\.($|/))`, "")
-	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*\\)`, "")
+	// gojsonschema uses Go regexp syntax and cannot compile the authoritative
+	// repo-path lookaheads. Keep the checked-in schema as the contract mirror,
+	// then swap only that regex for a draft-07-compatible approximation.
+	schemaContent = strings.ReplaceAll(
+		schemaContent,
+		`^(?!/)(?!.*(^|/)\\.\\.($|/))(?!.*\\\\)[A-Za-z0-9._/@+=:-]+(?:/[A-Za-z0-9._/@+=:-]+)*\\.(md|json|txt)$`,
+		`^[A-Za-z0-9._@+=:-]+(?:/[A-Za-z0-9._@+=:-]+)*\\.(md|json|txt)$`,
+	)
 	return schemaContent
 }

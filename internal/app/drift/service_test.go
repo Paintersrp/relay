@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	appplans "relay/internal/app/plans"
 	"relay/internal/store"
@@ -62,6 +63,107 @@ func TestValidateIntentDriftReviewJSON(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateIntentDriftReviewJSONAcceptsNestedProvenanceSourceArtifactPath(t *testing.T) {
+	doc := validReviewMap(t)
+	provenance := doc["provenance"].(map[string]any)
+	provenance["source_artifact_path"] = "handoffs/source.md"
+	delete(doc, "source_artifact_path")
+
+	if err := ValidateIntentDriftReviewJSON(mustJSON(t, doc)); err != nil {
+		t.Fatalf("ValidateIntentDriftReviewJSON() error = %v", err)
+	}
+}
+
+func TestValidateIntentDriftReviewJSONRejectsTopLevelSourceArtifactPath(t *testing.T) {
+	doc := validReviewMap(t)
+	doc["source_artifact_path"] = "handoffs/source.md"
+
+	if err := ValidateIntentDriftReviewJSON(mustJSON(t, doc)); err == nil {
+		t.Fatalf("ValidateIntentDriftReviewJSON() error = nil, want top-level source_artifact_path rejection")
+	}
+}
+
+func TestValidateIntentDriftReviewJSONRejectsLegacyTopLevelReviewSource(t *testing.T) {
+	doc := validReviewMap(t)
+	delete(doc, "provenance")
+	doc["review_source"] = "internal"
+	doc["submitted_by"] = SubmittedByInternalReviewer
+
+	if err := ValidateIntentDriftReviewJSON(mustJSON(t, doc)); err == nil {
+		t.Fatalf("ValidateIntentDriftReviewJSON() error = nil, want legacy top-level provenance rejection")
+	}
+}
+
+func TestNormalizeModelOutputNestsSourceArtifactPathInProvenance(t *testing.T) {
+	packet := *defaultValidPacket()
+	packet.ReviewedIntentPacket.SourceArtifactPath = "handoffs/source.md"
+	out, err := ValidateModelOutput([]byte(defaultValidModelOutput))
+	if err != nil {
+		t.Fatalf("ValidateModelOutput: %v", err)
+	}
+
+	input, contractBytes, err := NormalizeModelOutput(
+		packet,
+		ReviewModelResponse{
+			Provider:    "fake",
+			Model:       "fake-standard",
+			FinalTier:   appplans.ModelTierStandard,
+			Temperature: 0,
+		},
+		out,
+		SubmittedByInternalReviewer,
+		"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		time.Date(2026, 6, 25, 23, 15, 53, 0, time.UTC),
+	)
+	if err != nil {
+		t.Fatalf("NormalizeModelOutput: %v", err)
+	}
+	if input.SourceArtifactPath != "handoffs/source.md" {
+		t.Fatalf("expected persistence DTO source path to remain populated, got %q", input.SourceArtifactPath)
+	}
+
+	var top map[string]any
+	if err := json.Unmarshal(contractBytes, &top); err != nil {
+		t.Fatalf("json.Unmarshal contract: %v", err)
+	}
+	if _, ok := top["source_artifact_path"]; ok {
+		t.Fatalf("top-level source_artifact_path must not be emitted")
+	}
+	provenance, ok := top["provenance"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected provenance object, got %#v", top["provenance"])
+	}
+	if provenance["source_artifact_path"] != "handoffs/source.md" {
+		t.Fatalf("expected nested source_artifact_path, got %#v", provenance["source_artifact_path"])
+	}
+}
+
+func validReviewMap(t *testing.T) map[string]any {
+	t.Helper()
+
+	var doc map[string]any
+	if err := json.Unmarshal(validReviewTestData, &doc); err != nil {
+		t.Fatalf("json.Unmarshal valid review fixture: %v", err)
+	}
+	provenance, ok := doc["provenance"].(map[string]any)
+	if !ok {
+		t.Fatalf("valid review fixture provenance is not an object")
+	}
+	doc["provenance"] = provenance
+	return doc
+}
+
+func mustJSON(t *testing.T, doc map[string]any) []byte {
+	t.Helper()
+
+	data, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("json.Marshal review: %v", err)
+	}
+	return data
 }
 
 type fakePlanService struct {

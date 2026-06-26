@@ -62,12 +62,15 @@
         "submitted_by": {
           "type": "string",
           "minLength": 1
+        },
+        "source_artifact_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 260,
+          "pattern": "^(?!/)(?!.*(^|/)\\.\\.($|/))(?!.*\\\\)[A-Za-z0-9._/@+=:-]+(?:/[A-Za-z0-9._/@+=:-]+)*\\.(md|json|txt)$"
         }
       },
       "additionalProperties": false
-    },
-    "source_artifact_path": {
-      "type": "string"
     },
     "overall_alignment": {
       "type": "string",
@@ -118,31 +121,37 @@
     },
     "approval_gate_status": {
       "type": "string",
-      "enum": ["ready", "acknowledgement_required", "revision_required", "blocked"]
+      "enum": ["not_required", "ready", "acknowledgement_required", "revision_required", "blocked"]
     },
     "model_metadata": {
-      "type": "object",
-      "required": ["provider", "model", "model_tier", "temperature"],
-      "properties": {
-        "provider": {
-          "type": "string",
-          "minLength": 1
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model_tier"],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model_tier": {
+              "type": "string",
+              "enum": ["economy", "standard", "high_assurance", "auto_escalate"]
+            },
+            "temperature": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
         },
-        "model": {
-          "type": "string",
-          "minLength": 1
-        },
-        "model_tier": {
-          "type": "string",
-          "enum": ["economy", "standard", "high_assurance"]
-        },
-        "temperature": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 2
+        {
+          "type": "null"
         }
-      },
-      "additionalProperties": false
+      ]
     },
     "input_hash": {
       "type": "string",
