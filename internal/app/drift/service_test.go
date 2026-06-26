@@ -15,7 +15,6 @@ import (
 
 	appplans "relay/internal/app/plans"
 	"relay/internal/store"
-	"relay/internal/store/generated"
 )
 
 //go:embed testdata/valid_review.json
@@ -149,8 +148,10 @@ const defaultValidModelOutput = `{
   "approval_gate_status": "ready"
 }`
 
-func TestRunInternalReviewBlocksWithoutExplicitModelCallAllowance(t *testing.T) {
-	svc := NewService(&fakePlanService{}, &fakeReviewer{})
+func TestRunInternalReviewBlocksWhenModelCallNotAllowed(t *testing.T) {
+	model := &fakeReviewer{}
+	plans := &fakePlanService{}
+	svc := NewService(plans, model)
 	res, err := svc.RunInternalReview(context.Background(), InternalReviewRequest{
 		ProjectID:      "proj-1",
 		PlanAttemptID:  "attempt-1",
@@ -165,10 +166,17 @@ func TestRunInternalReviewBlocksWithoutExplicitModelCallAllowance(t *testing.T) 
 	if res.FailureCode != FailureModelCallNotAllowed {
 		t.Errorf("expected FailureModelCallNotAllowed, got %v", res.FailureCode)
 	}
+	if len(model.calls) != 0 {
+		t.Fatalf("expected provider call count 0, got %d", len(model.calls))
+	}
+	if plans.lastSubmit != nil {
+		t.Fatalf("expected no persisted review")
+	}
 }
 
-func TestRunInternalReviewBlocksWithoutProvider(t *testing.T) {
-	svc := NewService(&fakePlanService{}, nil)
+func TestRunInternalReviewBlocksWhenProviderMissing(t *testing.T) {
+	plans := &fakePlanService{}
+	svc := NewService(plans, nil)
 	res, err := svc.RunInternalReview(context.Background(), InternalReviewRequest{
 		ProjectID:      "proj-1",
 		PlanAttemptID:  "attempt-1",
@@ -183,9 +191,12 @@ func TestRunInternalReviewBlocksWithoutProvider(t *testing.T) {
 	if res.FailureCode != FailureModelProviderUnavailable {
 		t.Errorf("expected FailureModelProviderUnavailable, got %v", res.FailureCode)
 	}
+	if plans.lastSubmit != nil {
+		t.Fatalf("expected no persisted review")
+	}
 }
 
-func TestRunInternalReviewUsesReviewPacketOnlyAsModelInput(t *testing.T) {
+func TestRunInternalReviewUsesPacketOnlyInput(t *testing.T) {
 	fakePlans := &fakePlanService{
 		packetRes: &appplans.PlanAttemptResult{
 			OK:           true,
@@ -226,9 +237,18 @@ func TestRunInternalReviewUsesReviewPacketOnlyAsModelInput(t *testing.T) {
 	if strings.Contains(string(call.InputPayload), "user_env") || strings.Contains(string(call.InputPayload), "chat_history") {
 		t.Errorf("unsafe inputs leaked in payload: %s", string(call.InputPayload))
 	}
+	if !strings.Contains(string(call.InputPayload), `"plan_attempt_id":"attempt-1"`) {
+		t.Fatalf("expected packet fields in payload: %s", string(call.InputPayload))
+	}
+	if strings.Contains(string(call.InputPayload), "arbitrary chat string outside packet") {
+		t.Fatalf("non-packet string leaked into payload")
+	}
+	if fakePlans.lastSubmit.DriftReview.InputHash != sha256Bytes(call.InputPayload) {
+		t.Fatalf("expected persisted input hash to match provider input payload")
+	}
 }
 
-func TestRunInternalReviewPersistsInternalReviewThroughPlanService(t *testing.T) {
+func TestRunInternalReviewPersistsInternalReview(t *testing.T) {
 	fakePlans := &fakePlanService{
 		packetRes: &appplans.PlanAttemptResult{
 			OK:           true,
@@ -270,10 +290,25 @@ func TestRunInternalReviewPersistsInternalReviewThroughPlanService(t *testing.T)
 	if sub.SubmittedBy != SubmittedByInternalReviewer {
 		t.Errorf("expected submitted_by '%s', got %q", SubmittedByInternalReviewer, sub.SubmittedBy)
 	}
+	if sub.PlanAttemptID != "attempt-1" || sub.IntentThreadID != "thread-1" {
+		t.Fatalf("unexpected lineage: %#v", sub)
+	}
+	if sub.RootIntentPacketID != "intent-1" || sub.ReviewedIntentPacketID != "intent-1" {
+		t.Fatalf("unexpected intent lineage: %#v", sub)
+	}
+	if sub.ReviewPacketHash != defaultValidPacket().PacketHash {
+		t.Fatalf("unexpected review packet hash %q", sub.ReviewPacketHash)
+	}
+	if sub.ApprovalGateStatus != appplans.ApprovalGateStatusReady {
+		t.Fatalf("expected ready gate, got %q", sub.ApprovalGateStatus)
+	}
+	if !strings.HasPrefix(sub.InputHash, "sha256:") || !strings.HasPrefix(sub.OutputHash, "sha256:") {
+		t.Fatalf("expected input/output hashes, got %q / %q", sub.InputHash, sub.OutputHash)
+	}
 }
 
 func TestRunInternalReviewPersistsInternalReviewThroughAppPlansStore(t *testing.T) {
-	planSvc, st := newRealPlanService(t)
+	planSvc, countManagedPlans := newRealPlanService(t)
 	created := createRealPlanAttempt(t, planSvc, appplans.DriftReviewModeManual)
 	fakeModel := &fakeReviewer{
 		res: &ReviewModelResponse{
@@ -298,31 +333,31 @@ func TestRunInternalReviewPersistsInternalReviewThroughAppPlansStore(t *testing.
 	if res.DriftReview == nil {
 		t.Fatalf("expected persisted drift review")
 	}
-
-	queries := generated.New(st.DB())
-	attempt, err := queries.GetPlanAttemptByID(context.Background(), created.PlanAttempt.PlanAttemptID)
+	if res.DriftReview.ReviewSource != appplans.ReviewSourceInternal {
+		t.Fatalf("expected internal review_source, got %q", res.DriftReview.ReviewSource)
+	}
+	if res.DriftReview.ApprovalGateStatus != appplans.ApprovalGateStatusReady {
+		t.Fatalf("expected ready approval gate, got %q", res.DriftReview.ApprovalGateStatus)
+	}
+	packetRes, err := planSvc.GetPlanIntentReviewPacket(context.Background(), appplans.GetPlanIntentReviewPacketRequest{
+		ProjectID:     "relay",
+		PlanAttemptID: created.PlanAttempt.PlanAttemptID,
+	})
 	if err != nil {
-		t.Fatalf("GetPlanAttemptByID: %v", err)
+		t.Fatalf("GetPlanIntentReviewPacket: %v", err)
 	}
-	if attempt.ReviewState != appplans.PlanAttemptReviewInternalGenerated {
-		t.Fatalf("expected review_state internal_review_generated, got %q", attempt.ReviewState)
+	if !packetRes.OK {
+		t.Fatalf("GetPlanIntentReviewPacket blocked: %#v", packetRes)
 	}
-	reviews, err := queries.ListIntentDriftReviewsByAttempt(context.Background(), attempt.ID)
-	if err != nil {
-		t.Fatalf("ListIntentDriftReviewsByAttempt: %v", err)
+	if packetRes.ReviewPacket.PlanAttempt.ReviewState != appplans.PlanAttemptReviewInternalGenerated {
+		t.Fatalf("expected review_state internal_review_generated, got %q", packetRes.ReviewPacket.PlanAttempt.ReviewState)
 	}
-	if len(reviews) != 1 {
-		t.Fatalf("expected 1 drift review, got %d", len(reviews))
-	}
-	if reviews[0].ReviewSource != appplans.ReviewSourceInternal {
-		t.Fatalf("expected internal review_source, got %q", reviews[0].ReviewSource)
-	}
-	if reviews[0].ApprovalGateStatus != appplans.ApprovalGateStatusReady {
-		t.Fatalf("expected ready approval gate, got %q", reviews[0].ApprovalGateStatus)
+	if got := countManagedPlans(); got != 0 {
+		t.Fatalf("expected no managed plan rows, got %d", got)
 	}
 }
 
-func TestRunInternalReviewValidatesSchemaBeforePersistence(t *testing.T) {
+func TestRunInternalReviewInvalidOutputDoesNotPersist(t *testing.T) {
 	fakePlans := &fakePlanService{
 		packetRes: &appplans.PlanAttemptResult{
 			OK:           true,
@@ -364,7 +399,7 @@ func TestRunInternalReviewValidatesSchemaBeforePersistence(t *testing.T) {
 	}
 }
 
-func TestRunInternalReviewBlocksSensitivePacketContent(t *testing.T) {
+func TestRunInternalReviewBlocksSensitivePacketBeforeModelCall(t *testing.T) {
 	pkt := defaultValidPacket()
 	pkt.RedactionStatus = appplans.RedactionStatusBlockedSensitive
 
@@ -396,7 +431,7 @@ func TestRunInternalReviewBlocksSensitivePacketContent(t *testing.T) {
 	}
 }
 
-func TestRunInternalReviewAutoEscalatesOnLowConfidence(t *testing.T) {
+func TestRunInternalReviewEscalatesLowConfidence(t *testing.T) {
 	fakePlans := &fakePlanService{
 		packetRes: &appplans.PlanAttemptResult{
 			OK:           true,
@@ -571,7 +606,7 @@ func TestRunInternalReviewRecordsInputAndOutputHashes(t *testing.T) {
 	}
 }
 
-func TestRunInternalReviewNormalizesGateConsistency(t *testing.T) {
+func TestValidateModelOutputNormalizesGateStatus(t *testing.T) {
 	fakePlans := &fakePlanService{
 		packetRes: &appplans.PlanAttemptResult{
 			OK:           true,
@@ -586,9 +621,11 @@ func TestRunInternalReviewNormalizesGateConsistency(t *testing.T) {
 	  "confidence": 0.95,
 	  "findings": [
 	    {
-	      "finding_type": "drift",
+	      "finding_id": "finding-1",
 	      "severity": "medium",
-	      "description": "minor code structure changes"
+	      "summary": "minor code structure changes",
+	      "evidence": ["plan section changed"],
+	      "suggested_resolution": "revise the affected section"
 	    }
 	  ],
 	  "recommended_action": "revise",
@@ -779,7 +816,7 @@ func TestRunInternalReviewDetectsSecret(t *testing.T) {
 	}
 }
 
-func newRealPlanService(t *testing.T) (*appplans.Service, *store.Store) {
+func newRealPlanService(t *testing.T) (*appplans.Service, func() int) {
 	t.Helper()
 
 	st, err := store.Open(filepath.Join(t.TempDir(), "relay.sqlite"), slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -792,7 +829,13 @@ func newRealPlanService(t *testing.T) (*appplans.Service, *store.Store) {
 	if _, err := st.CreateProject("relay", "Relay", "Drift test project", "active", ""); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	return appplans.NewService(st), st
+	return appplans.NewService(st), func() int {
+		plans, err := st.ListPlans(100)
+		if err != nil {
+			t.Fatalf("ListPlans: %v", err)
+		}
+		return len(plans)
+	}
 }
 
 func createRealPlanAttempt(t *testing.T, svc *appplans.Service, mode string) *appplans.PlanAttemptResult {
@@ -894,7 +937,7 @@ func validPlanRaw(t *testing.T, planID string) json.RawMessage {
 				SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
 					RequireGitStatus: &required,
 				},
-				HandoffReadinessCriteria: []string{"Internal review can be generated."},
+				HandoffReadinessCriteria: []string{"Internal review can be produced."},
 				RiskLevel:                "low",
 				ContextBudget: &appplans.ContextBudget{
 					MaxFiles: &maxFiles,

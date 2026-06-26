@@ -1,12 +1,15 @@
 {
-  "intent_drift_review_id": "intent-drift-review-2026-06-25-12345",
+  "intent_drift_review_id": "intent-drift-review-2026-06-25-plan-attempt-1",
+  "project_id": "relay",
   "plan_attempt_id": "plan-attempt-1",
   "intent_thread_id": "thread-1",
   "root_intent_packet_id": "packet-1",
   "reviewed_intent_packet_id": "packet-2",
   "review_packet_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "review_source": "internal",
-  "submitted_by": "relay-internal-drift-reviewer",
+  "provenance": {
+    "review_source": "internal",
+    "submitted_by": "relay-internal-drift-reviewer"
+  },
   "overall_alignment": "aligned",
   "confidence": 0.95,
   "findings": [],
@@ -19,5 +22,6 @@
     "temperature": 0.0
   },
   "input_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "output_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  "output_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "created_at": "2026-06-25T23:15:53Z"
 }

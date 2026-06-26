@@ -2,110 +2,111 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "intent_drift_review",
   "title": "Intent Drift Review",
-  "description": "Schema for a structured intent drift review result, shared by internal (LLM-generated) and external (human-submitted) reviews.",
   "type": "object",
   "required": [
     "intent_drift_review_id",
+    "project_id",
     "plan_attempt_id",
     "intent_thread_id",
     "root_intent_packet_id",
     "reviewed_intent_packet_id",
     "review_packet_hash",
-    "review_source",
-    "submitted_by",
+    "provenance",
     "overall_alignment",
     "confidence",
     "findings",
     "recommended_action",
     "approval_gate_status",
+    "model_metadata",
     "input_hash",
-    "output_hash"
+    "output_hash",
+    "created_at"
   ],
   "properties": {
     "intent_drift_review_id": {
       "type": "string",
-      "minLength": 1,
-      "description": "Unique identifier for the drift review record."
+      "pattern": "^intent-drift-review-[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]*$"
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
     },
     "plan_attempt_id": {
       "type": "string",
-      "minLength": 1,
-      "description": "The plan attempt this review is associated with."
+      "minLength": 1
     },
     "intent_thread_id": {
       "type": "string",
-      "minLength": 1,
-      "description": "The intent thread this review is part of."
+      "minLength": 1
     },
     "root_intent_packet_id": {
       "type": "string",
-      "minLength": 1,
-      "description": "The root intent packet ID for lineage verification."
+      "minLength": 1
     },
     "reviewed_intent_packet_id": {
       "type": "string",
-      "minLength": 1,
-      "description": "The specific intent packet that was reviewed."
+      "minLength": 1
     },
     "review_packet_hash": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "description": "SHA256 hash of the review packet at the time of review."
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
-    "review_source": {
-      "type": "string",
-      "enum": ["external", "internal"],
-      "description": "Whether the review was submitted externally (human) or generated internally (LLM)."
-    },
-    "submitted_by": {
-      "type": "string",
-      "minLength": 1,
-      "description": "The identity that submitted or generated this review. Internal reviews use relay-internal-drift-reviewer."
+    "provenance": {
+      "type": "object",
+      "required": ["review_source", "submitted_by"],
+      "properties": {
+        "review_source": {
+          "type": "string",
+          "enum": ["external", "internal"]
+        },
+        "submitted_by": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
     },
     "source_artifact_path": {
-      "type": "string",
-      "description": "Optional path to the source artifact for this review."
+      "type": "string"
     },
     "overall_alignment": {
       "type": "string",
-      "enum": ["aligned", "minor_drift", "major_drift", "unclear"],
-      "description": "The reviewer's overall assessment of intent-to-plan alignment."
+      "enum": ["aligned", "minor_drift", "major_drift", "unclear"]
     },
     "confidence": {
       "type": "number",
       "minimum": 0,
-      "maximum": 1,
-      "description": "Reviewer confidence in the assessment, in [0, 1]."
+      "maximum": 1
     },
     "findings": {
       "type": "array",
-      "description": "Structured findings from the review. May be empty only when overall_alignment=aligned and recommended_action=approve.",
       "items": {
         "type": "object",
-        "required": ["finding_type", "severity", "description"],
+        "required": ["finding_id", "severity", "summary", "evidence", "suggested_resolution"],
         "properties": {
-          "finding_type": {
+          "finding_id": {
             "type": "string",
-            "minLength": 1,
-            "description": "Category or type of finding."
+            "minLength": 1
           },
           "severity": {
             "type": "string",
-            "enum": ["info", "low", "medium", "high", "critical"],
-            "description": "Severity of the finding."
+            "enum": ["info", "low", "medium", "high"]
           },
-          "description": {
+          "summary": {
             "type": "string",
-            "minLength": 1,
-            "description": "Human-readable description of the finding."
+            "minLength": 1
           },
-          "location": {
-            "type": "string",
-            "description": "Optional location reference within the plan."
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           },
-          "recommendation": {
+          "suggested_resolution": {
             "type": "string",
-            "description": "Optional remediation recommendation."
+            "minLength": 1
           }
         },
         "additionalProperties": false
@@ -113,70 +114,51 @@
     },
     "recommended_action": {
       "type": "string",
-      "enum": ["approve", "approve_with_acknowledgement", "revise", "void", "manual_review"],
-      "description": "The action recommended by the reviewer."
+      "enum": ["approve", "approve_with_acknowledgement", "revise", "void", "manual_review"]
     },
     "approval_gate_status": {
       "type": "string",
-      "enum": ["not_required", "ready", "acknowledgement_required", "revision_required", "blocked"],
-      "description": "The approval gate status derived from the recommended action."
+      "enum": ["ready", "acknowledgement_required", "revision_required", "blocked"]
     },
     "model_metadata": {
       "type": "object",
-      "description": "Model metadata. Required for internal reviews; may be null for external reviews.",
       "required": ["provider", "model", "model_tier", "temperature"],
       "properties": {
         "provider": {
           "type": "string",
-          "minLength": 1,
-          "description": "Model provider identifier (e.g. openai, anthropic, fake)."
+          "minLength": 1
         },
         "model": {
           "type": "string",
-          "minLength": 1,
-          "description": "Model identifier (e.g. gpt-4o, fake-standard)."
+          "minLength": 1
         },
         "model_tier": {
           "type": "string",
-          "enum": ["economy", "standard", "high_assurance"],
-          "description": "The model tier used for this review call."
+          "enum": ["economy", "standard", "high_assurance"]
         },
         "temperature": {
           "type": "number",
           "minimum": 0,
-          "maximum": 2,
-          "description": "The temperature used for this review call."
+          "maximum": 2
         }
       },
       "additionalProperties": false
     },
     "input_hash": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "description": "SHA256 hash of the input payload sent to the model."
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "output_hash": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "description": "SHA256 hash of the raw output received from the model."
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "created_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
     },
     "notes": {
-      "type": "string",
-      "description": "Optional free-text notes or reasoning from the reviewer."
+      "type": "string"
     }
   },
-  "additionalProperties": false,
-  "if": {
-    "properties": {
-      "review_source": { "const": "internal" }
-    }
-  },
-  "then": {
-    "required": ["model_metadata"],
-    "properties": {
-      "model_metadata": {
-        "not": { "type": "null" }
-      }
-    }
-  }
+  "additionalProperties": false
 }

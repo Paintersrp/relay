@@ -4,14 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
 	appplans "relay/internal/app/plans"
-	"relay/internal/validation"
 )
 
 // PlanAttemptService interface matches the plans.Service seams we consume.
@@ -53,300 +52,144 @@ func NewReviewerFromEnv(log *slog.Logger) DriftReviewer {
 
 // RunInternalReview runs the internal drift review workflow.
 func (svc *Service) RunInternalReview(ctx context.Context, req InternalReviewRequest) (*InternalReviewResult, error) {
-	// 1. Guard: AllowModelCall=false
 	if !req.AllowModelCall {
-		return &InternalReviewResult{
-			OK:          false,
-			FailureCode: FailureModelCallNotAllowed,
-			Message:     "model call is not explicitly allowed in the request",
-		}, nil
+		return fail(FailureModelCallNotAllowed, "model call is not explicitly allowed in the request"), nil
+	}
+	if svc == nil || svc.reviewer == nil {
+		return fail(FailureModelProviderUnavailable, "no model reviewer provider is configured"), nil
+	}
+	if svc.plans == nil {
+		return fail(FailurePacketRetrievalFailed, "plan attempt service is unavailable"), nil
 	}
 
-	// 2. Guard: reviewer is nil
-	if svc.reviewer == nil {
-		return &InternalReviewResult{
-			OK:          false,
-			FailureCode: FailureModelProviderUnavailable,
-			Message:     "no model reviewer provider is configured",
-		}, nil
-	}
-
-	// 3. Retrieve review packet
 	res, err := svc.plans.GetPlanIntentReviewPacket(ctx, appplans.GetPlanIntentReviewPacketRequest{
 		ProjectID:     req.ProjectID,
 		PlanAttemptID: req.PlanAttemptID,
 	})
 	if err != nil {
-		return &InternalReviewResult{
-			OK:          false,
-			FailureCode: FailurePacketRetrievalFailed,
-			Message:     fmt.Sprintf("failed to retrieve review packet: %v", err),
-		}, nil
+		return fail(FailurePacketRetrievalFailed, fmt.Sprintf("failed to retrieve review packet: %v", err)), nil
 	}
 	if res == nil || !res.OK || res.ReviewPacket == nil {
 		msg := "packet retrieval failed"
 		if res != nil && res.Message != "" {
 			msg = res.Message
 		}
-		return &InternalReviewResult{
-			OK:          false,
-			FailureCode: FailurePacketRetrievalFailed,
-			Message:     msg,
-		}, nil
+		return fail(FailurePacketRetrievalFailed, msg), nil
 	}
-
 	packet := res.ReviewPacket
 
-	// 4. Validate retrieval semantics
 	if !packet.RetrievalSemantics.RetrievalOnly || packet.RetrievalSemantics.ModelCallPerformed || packet.RetrievalSemantics.StateMutated {
-		return &InternalReviewResult{
-			OK:          false,
-			FailureCode: FailureUnsafeRetrievalSemantics,
-			Message:     "review packet retrieval semantics are unsafe or incorrect",
-		}, nil
+		return fail(FailureUnsafeRetrievalSemantics, "review packet retrieval semantics are unsafe or incorrect"), nil
 	}
-
-	// 5. Guard: attempt status (Status != "draft")
 	if packet.PlanAttempt.Status != appplans.PlanAttemptStatusDraft {
-		return &InternalReviewResult{
-			OK:          false,
-			FailureCode: FailureAttemptNotDraft,
-			Message:     fmt.Sprintf("plan attempt is not in draft status (current: %s)", packet.PlanAttempt.Status),
-		}, nil
+		return fail(FailureAttemptNotDraft, fmt.Sprintf("plan attempt is not in draft status (current: %s)", packet.PlanAttempt.Status)), nil
+	}
+	if packetBlockedSensitive(*packet) {
+		return fail(FailurePacketBlockedSensitive, "packet contains blocked sensitive content and cannot be sent to the model"), nil
 	}
 
-	// 6. Guard: redaction
-	if packet.RedactionStatus == appplans.RedactionStatusBlockedSensitive ||
-		packet.RootIntentPacket.RedactionStatus == appplans.RedactionStatusBlockedSensitive ||
-		packet.ReviewedIntentPacket.RedactionStatus == appplans.RedactionStatusBlockedSensitive {
-		return &InternalReviewResult{
-			OK:          false,
-			FailureCode: FailurePacketBlockedSensitive,
-			Message:     "packet contains blocked sensitive content and cannot be sent to the model",
-		}, nil
-	}
-
-	// 7. Tier selection
-	currentTier := resolveStartTier(req)
-	allowEscalation := strings.TrimSpace(req.RequestedTier) == appplans.ModelTierAutoEscalate && !req.ForceHighAssurance
-
-	// 8. Build prompt/input
 	promptText, inputPayload, err := BuildPromptInput(*packet)
 	if err != nil {
-		return &InternalReviewResult{
-			OK:          false,
-			FailureCode: FailureReviewGenerationFailed,
-			Message:     fmt.Sprintf("failed to build model prompt input: %v", err),
-		}, nil
+		return fail(FailureReviewGenerationFailed, fmt.Sprintf("failed to build model prompt input: %v", err)), nil
 	}
-	if validation.HasSecret(string(inputPayload)) {
-		return &InternalReviewResult{
-			OK:          false,
-			FailureCode: FailureSecretDetectedInPacket,
-			Message:     "secret-like content detected in review packet input payload",
-		}, nil
+	if containsSecretLikeContent([]byte(promptText)) || containsSecretLikeContent(inputPayload) {
+		return fail(FailureSecretDetectedInPacket, "secret-like content detected in review packet input"), nil
 	}
+
+	currentTier := resolveStartTier(req)
+	allowEscalation := strings.TrimSpace(req.RequestedTier) == appplans.ModelTierAutoEscalate && !req.ForceHighAssurance
 	inputHash := sha256Bytes(inputPayload)
+	submittedBy := strings.TrimSpace(req.SubmittedBy)
+	if submittedBy == "" {
+		submittedBy = SubmittedByInternalReviewer
+	}
 
-	// 9. Call provider and validate
-	var providerRes ReviewModelResponse
-	var modelOut ModelOutput
-	var isSchemaErr bool
-
-	makeCall := func(tier string) error {
-		isSchemaErr = false
-		var err error
-		providerRes, err = svc.reviewer.ReviewIntentDrift(ctx, ReviewModelRequest{
+	var (
+		providerRes ReviewModelResponse
+		modelOut    ModelOutput
+		outputHash  string
+		callErr     error
+		finalErr    error
+		schemaErr   bool
+	)
+	callAndNormalize := func(tier string) error {
+		providerRes, callErr = svc.reviewer.ReviewIntentDrift(ctx, ReviewModelRequest{
 			Tier:         tier,
 			PromptText:   promptText,
 			InputPayload: inputPayload,
 			SchemaHint:   intentDriftReviewSchemaBytes,
 			Temperature:  0.0,
 		})
-		if err != nil {
-			return err
+		if callErr != nil {
+			schemaErr = false
+			return callErr
 		}
 		if providerRes.FinalTier == "" {
 			providerRes.FinalTier = tier
 		}
+		outputHash = sha256Bytes(providerRes.RawJSON)
 
-		// Normalize & Parse
-		if err := json.Unmarshal(providerRes.RawJSON, &modelOut); err != nil {
-			isSchemaErr = true
-			return fmt.Errorf("unmarshal model raw JSON: %w", err)
+		modelOut, finalErr = ValidateModelOutput(providerRes.RawJSON)
+		if finalErr != nil {
+			schemaErr = true
+			return finalErr
 		}
-
-		// Normalize gate status consistency
-		modelOut.ApprovalGateStatus = normalizedGateStatus(modelOut.RecommendedAction)
-
-		// Validate against schema
-		meta := ModelMetadata{
-			Provider:    providerRes.Provider,
-			Model:       providerRes.Model,
-			ModelTier:   tier,
-			Temperature: providerRes.Temperature,
+		_, _, finalErr = NormalizeModelOutput(*packet, providerRes, modelOut, submittedBy, inputHash, outputHash, svc.clock().UTC())
+		if finalErr != nil {
+			schemaErr = false
+			return finalErr
 		}
-		metaBytes, err := json.Marshal(meta)
-		if err != nil {
-			return fmt.Errorf("marshal model metadata: %w", err)
-		}
-
-		findingsBytes := modelOut.Findings
-		if len(findingsBytes) == 0 {
-			findingsBytes = json.RawMessage("[]")
-		}
-
-		submittedBy := req.SubmittedBy
-		if submittedBy == "" {
-			submittedBy = SubmittedByInternalReviewer
-		}
-
-		validationObj := schemaValidationStruct{
-			IntentDriftReviewID:    generateReviewID(svc.now()),
-			PlanAttemptID:          packet.PlanAttemptID,
-			IntentThreadID:         packet.IntentThreadID,
-			RootIntentPacketID:     packet.RootIntentPacket.IntentPacketID,
-			ReviewedIntentPacketID: packet.ReviewedIntentPacket.IntentPacketID,
-			ReviewPacketHash:       packet.PacketHash,
-			ReviewSource:           appplans.ReviewSourceInternal,
-			SubmittedBy:            submittedBy,
-			SourceArtifactPath:     packet.ReviewedIntentPacket.SourceArtifactPath,
-			OverallAlignment:       modelOut.OverallAlignment,
-			Confidence:             modelOut.Confidence,
-			Findings:               findingsBytes,
-			RecommendedAction:      modelOut.RecommendedAction,
-			ApprovalGateStatus:     modelOut.ApprovalGateStatus,
-			ModelMetadata:          metaBytes,
-			InputHash:              inputHash,
-			OutputHash:             sha256Bytes(providerRes.RawJSON),
-			Notes:                  modelOut.Notes,
-		}
-
-		valBytes, err := json.Marshal(validationObj)
-		if err != nil {
-			return fmt.Errorf("marshal validation object: %w", err)
-		}
-
-		if err := ValidateIntentDriftReviewJSON(valBytes); err != nil {
-			isSchemaErr = true
-			return fmt.Errorf("validate schema: %w", err)
-		}
-
+		schemaErr = false
 		return nil
 	}
 
-	callErr := makeCall(currentTier)
-
+	finalErr = callAndNormalize(currentTier)
 	escalated := false
 	escReason := ""
-
-	// Check if auto-escalation triggers a single retry at high_assurance.
-	if allowEscalation && currentTier != appplans.ModelTierHighAssurance && (callErr != nil || escalationRequired(modelOut, nil, false)) {
+	if allowEscalation && currentTier != appplans.ModelTierHighAssurance && (finalErr != nil || escalationRequired(modelOut, finalErr, false)) {
 		escalated = true
-		escReason = escalationReason(modelOut, callErr, false)
+		escReason = escalationReason(modelOut, finalErr, false)
 		if escReason == "" {
-			if callErr != nil {
-				escReason = fmt.Sprintf("initial call failed: %v", callErr)
-			} else {
-				escReason = "escalation policy triggered"
-			}
+			escReason = "escalation policy triggered"
 		}
-
 		currentTier = appplans.ModelTierHighAssurance
-		callErr = makeCall(currentTier)
+		finalErr = callAndNormalize(currentTier)
 	}
-
-	if callErr != nil {
+	if finalErr != nil {
 		code := FailureReviewGenerationFailed
-		if isSchemaErr {
+		if schemaErr {
 			code = FailureSchemaValidationFailed
 		}
 		return &InternalReviewResult{
 			OK:               false,
 			FailureCode:      code,
-			Message:          fmt.Sprintf("review generation failed: %v", callErr),
+			Message:          fmt.Sprintf("review generation failed: %v", finalErr),
 			Escalated:        escalated,
 			EscalationReason: escReason,
 			FinalTier:        currentTier,
 		}, nil
 	}
 
-	// 14. Build DriftReviewInput
-	findingsJSON := modelOut.Findings
-	if len(findingsJSON) == 0 {
-		findingsJSON = json.RawMessage("[]")
-	}
-
-	meta := ModelMetadata{
-		Provider:    providerRes.Provider,
-		Model:       providerRes.Model,
-		ModelTier:   currentTier,
-		Temperature: providerRes.Temperature,
-	}
-	metaBytes, err := json.Marshal(meta)
+	driftInput, _, err := NormalizeModelOutput(*packet, providerRes, modelOut, submittedBy, inputHash, outputHash, svc.clock().UTC())
 	if err != nil {
-		return nil, fmt.Errorf("marshal final model metadata: %w", err)
+		return fail(FailureReviewGenerationFailed, fmt.Sprintf("failed to normalize drift review: %v", err)), nil
 	}
-
-	submittedBy := req.SubmittedBy
-	if submittedBy == "" {
-		submittedBy = SubmittedByInternalReviewer
-	}
-
-	reviewID := generateReviewID(svc.now())
-
-	driftInput := appplans.DriftReviewInput{
-		IntentDriftReviewID:    reviewID,
-		PlanAttemptID:          packet.PlanAttemptID,
-		IntentThreadID:         packet.IntentThreadID,
-		RootIntentPacketID:     packet.RootIntentPacket.IntentPacketID,
-		ReviewedIntentPacketID: packet.ReviewedIntentPacket.IntentPacketID,
-		ReviewPacketHash:       packet.PacketHash,
-		ReviewSource:           appplans.ReviewSourceInternal,
-		SubmittedBy:            submittedBy,
-		SourceArtifactPath:     packet.ReviewedIntentPacket.SourceArtifactPath,
-		OverallAlignment:       modelOut.OverallAlignment,
-		Confidence:             modelOut.Confidence,
-		FindingsJSON:           findingsJSON,
-		RecommendedAction:      modelOut.RecommendedAction,
-		ApprovalGateStatus:     modelOut.ApprovalGateStatus,
-		ModelMetadataJSON:      metaBytes,
-		InputHash:              inputHash,
-		OutputHash:             sha256Bytes(providerRes.RawJSON),
-	}
-
-	// 15. Persist via SubmitIntentDriftReview
 	submitRes, err := svc.plans.SubmitIntentDriftReview(ctx, appplans.SubmitIntentDriftReviewRequest{
 		ProjectID:     req.ProjectID,
 		PlanAttemptID: req.PlanAttemptID,
 		DriftReview:   driftInput,
 	})
 	if err != nil {
-		return &InternalReviewResult{
-			OK:               false,
-			FailureCode:      FailureReviewGenerationFailed,
-			Message:          fmt.Sprintf("failed to submit drift review: %v", err),
-			Escalated:        escalated,
-			EscalationReason: escReason,
-			FinalTier:        currentTier,
-		}, nil
+		return failWithContext(FailureReviewGenerationFailed, fmt.Sprintf("failed to submit drift review: %v", err), escalated, escReason, currentTier), nil
 	}
 	if submitRes == nil || !submitRes.OK {
 		msg := "drift review submission rejected by plan service"
 		if submitRes != nil && submitRes.Message != "" {
 			msg = submitRes.Message
 		}
-		return &InternalReviewResult{
-			OK:               false,
-			FailureCode:      FailureReviewGenerationFailed,
-			Message:          msg,
-			Escalated:        escalated,
-			EscalationReason: escReason,
-			FinalTier:        currentTier,
-		}, nil
+		return failWithContext(FailureReviewGenerationFailed, msg, escalated, escReason, currentTier), nil
 	}
 
-	// 16. Return
 	return &InternalReviewResult{
 		OK:               true,
 		Escalated:        escalated,
@@ -356,41 +199,45 @@ func (svc *Service) RunInternalReview(ctx context.Context, req InternalReviewReq
 	}, nil
 }
 
-type schemaValidationStruct struct {
-	IntentDriftReviewID    string          `json:"intent_drift_review_id"`
-	PlanAttemptID          string          `json:"plan_attempt_id"`
-	IntentThreadID         string          `json:"intent_thread_id"`
-	RootIntentPacketID     string          `json:"root_intent_packet_id"`
-	ReviewedIntentPacketID string          `json:"reviewed_intent_packet_id"`
-	ReviewPacketHash       string          `json:"review_packet_hash"`
-	ReviewSource           string          `json:"review_source"`
-	SubmittedBy            string          `json:"submitted_by"`
-	SourceArtifactPath     string          `json:"source_artifact_path,omitempty"`
-	OverallAlignment       string          `json:"overall_alignment"`
-	Confidence             float64         `json:"confidence"`
-	Findings               json.RawMessage `json:"findings"`
-	RecommendedAction      string          `json:"recommended_action"`
-	ApprovalGateStatus     string          `json:"approval_gate_status"`
-	ModelMetadata          json.RawMessage `json:"model_metadata,omitempty"`
-	InputHash              string          `json:"input_hash"`
-	OutputHash             string          `json:"output_hash"`
-	Notes                  string          `json:"notes,omitempty"`
+func (svc *Service) clock() time.Time {
+	if svc != nil && svc.now != nil {
+		return svc.now()
+	}
+	return time.Now()
 }
 
-type ModelMetadata struct {
-	Provider    string  `json:"provider"`
-	Model       string  `json:"model"`
-	ModelTier   string  `json:"model_tier"`
-	Temperature float64 `json:"temperature"`
+func fail(code ReviewFailureCode, msg string) *InternalReviewResult {
+	return &InternalReviewResult{OK: false, FailureCode: code, Message: msg}
+}
+
+func failWithContext(code ReviewFailureCode, msg string, escalated bool, reason string, tier string) *InternalReviewResult {
+	return &InternalReviewResult{OK: false, FailureCode: code, Message: msg, Escalated: escalated, EscalationReason: reason, FinalTier: tier}
+}
+
+func packetBlockedSensitive(packet appplans.PlanIntentReviewPacket) bool {
+	return packet.RedactionStatus == appplans.RedactionStatusBlockedSensitive ||
+		packet.RootIntentPacket.RedactionStatus == appplans.RedactionStatusBlockedSensitive ||
+		packet.ReviewedIntentPacket.RedactionStatus == appplans.RedactionStatusBlockedSensitive
+}
+
+var secretLikePatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?header|private[_-]?key|session[_-]?cookie|password)\s*[:=]`),
+	regexp.MustCompile(`-----BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----`),
+	regexp.MustCompile(`(?i)bearer\s+[a-z0-9._\-]{20,}`),
+}
+
+func containsSecretLikeContent(b []byte) bool {
+	for _, pattern := range secretLikePatterns {
+		if pattern.Match(b) {
+			return true
+		}
+	}
+	return false
 }
 
 func sha256Bytes(b []byte) string {
 	h := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(h[:])
-}
-
-func generateReviewID(t time.Time) string {
-	return fmt.Sprintf("intent-drift-review-%s-%d", t.Format("2006-01-02"), t.UnixNano())
 }
 
 func resolveStartTier(req InternalReviewRequest) string {
