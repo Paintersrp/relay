@@ -172,4 +172,85 @@ func TestCreatePlanAttemptUsesProjectReviewSettings(t *testing.T) {
 	if created.PlanAttempt.DriftReviewMode != DriftReviewModeExternal || created.PlanAttempt.ModelTier != ModelTierHighAssurance {
 		t.Fatalf("expected settings-backed mode/tier, got %#v", created.PlanAttempt)
 	}
+	if created.ReviewPolicy == nil || created.ReviewPolicy.DriftReviewMode != DriftReviewModeExternal || created.ReviewPolicy.ModelTier != ModelTierHighAssurance {
+		t.Fatalf("expected result review policy to mirror settings, got %#v", created.ReviewPolicy)
+	}
+	if created.ReviewAction == nil || created.ReviewAction.Action != "external_review_required" {
+		t.Fatalf("expected external initial review action, got %#v", created.ReviewAction)
+	}
+}
+
+func TestPreparePlanAttemptDriftReviewPolicy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		mode          string
+		allow         bool
+		requestedTier string
+		wantPrepared  bool
+		wantAllow     bool
+		wantTier      string
+		wantBlocker   PlanAttemptBlockerCode
+		wantFailure   string
+	}{
+		{name: "disabled blocks", mode: DriftReviewModeDisabled, wantBlocker: BlockerDriftReviewBlocked},
+		{name: "external blocks", mode: DriftReviewModeExternal, wantBlocker: BlockerDriftReviewRequired},
+		{name: "manual without consent blocks", mode: DriftReviewModeManual, wantBlocker: BlockerDriftReviewBlocked, wantFailure: "model_call_not_allowed"},
+		{name: "manual with consent prepares", mode: DriftReviewModeManual, allow: true, wantPrepared: true, wantAllow: true, wantTier: ModelTierStandard},
+		{name: "automatic prepares", mode: DriftReviewModeAutomatic, wantPrepared: true, wantAllow: true, wantTier: ModelTierStandard},
+		{name: "invalid requested tier blocks", mode: DriftReviewModeManual, allow: true, requestedTier: "surprise", wantBlocker: BlockerDriftReviewBlocked},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc, _ := newTestService(t)
+			created := createTestPlanAttempt(t, svc, tc.mode, "")
+
+			prepared, blocked, err := svc.PreparePlanAttemptDriftReview(context.Background(), RunPlanAttemptDriftReviewRequest{
+				ProjectID:      "relay",
+				PlanAttemptID:  created.PlanAttempt.PlanAttemptID,
+				AllowModelCall: tc.allow,
+				RequestedTier:  tc.requestedTier,
+			})
+			if err != nil {
+				t.Fatalf("PreparePlanAttemptDriftReview error: %v", err)
+			}
+			if tc.wantPrepared {
+				if blocked != nil {
+					t.Fatalf("expected prepared request, got blocker %#v", blocked)
+				}
+				if prepared == nil {
+					t.Fatal("expected prepared request")
+				}
+				if prepared.AllowModelCall != tc.wantAllow {
+					t.Fatalf("expected AllowModelCall=%v, got %v", tc.wantAllow, prepared.AllowModelCall)
+				}
+				if prepared.RequestedTier != tc.wantTier {
+					t.Fatalf("expected tier %q, got %q", tc.wantTier, prepared.RequestedTier)
+				}
+				if prepared.ReviewGate == nil {
+					t.Fatal("expected review gate on prepared request")
+				}
+				return
+			}
+			if prepared != nil {
+				t.Fatalf("expected no prepared request, got %#v", prepared)
+			}
+			if blocked == nil || blocked.BlockerCode != tc.wantBlocker {
+				t.Fatalf("expected blocker %q, got %#v", tc.wantBlocker, blocked)
+			}
+			if blocked.ReviewGate == nil {
+				t.Fatal("expected review gate on blocked result")
+			}
+			if tc.wantFailure != "" {
+				if blocked.ReviewAction == nil || blocked.ReviewAction.FailureCode != tc.wantFailure {
+					t.Fatalf("expected failure %q, got %#v", tc.wantFailure, blocked.ReviewAction)
+				}
+			}
+		})
+	}
 }

@@ -19,7 +19,7 @@ func TestSubmitPlanStoresValidPlan(t *testing.T) {
 	plan := validPlannerPassPlan()
 	raw := mustMarshalPlan(t, plan)
 
-	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true,
 		RawJSON:            raw,
 		SourceArtifactPath: "handoffs/planner/plan.json",
 	})
@@ -67,12 +67,31 @@ func TestSubmitPlanStoresValidPlan(t *testing.T) {
 	}
 }
 
+func TestSubmitPlanRequiresUnmanagedAcknowledgement(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newTestService(t)
+	raw := mustMarshalPlan(t, validPlannerPassPlan())
+
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: raw})
+	if err != nil {
+		t.Fatalf("SubmitPlan returned error: %v", err)
+	}
+	assertIssueCode(t, result.Report, IssuePlanUnmanagedAcknowledgementRequired)
+	if got := countRows(t, st.DB(), "plans"); got != 0 {
+		t.Fatalf("expected 0 plan rows, got %d", got)
+	}
+	if got := countRows(t, st.DB(), "plan_passes"); got != 0 {
+		t.Fatalf("expected 0 plan_passes rows, got %d", got)
+	}
+}
+
 func TestSubmitPlanRejectsMalformedJSON(t *testing.T) {
 	t.Parallel()
 
 	svc, st := newTestService(t)
 
-	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true,
 		RawJSON: []byte(`{"plan_meta":`),
 	})
 	if err != nil {
@@ -93,11 +112,11 @@ func TestSubmitPlanRejectsDuplicatePlanID(t *testing.T) {
 	svc, st := newTestService(t)
 	raw := mustMarshalPlan(t, validPlannerPassPlan())
 
-	if _, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: raw}); err != nil {
+	if _, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw}); err != nil {
 		t.Fatalf("first SubmitPlan returned error: %v", err)
 	}
 
-	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: raw})
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw})
 	if err != nil {
 		t.Fatalf("second SubmitPlan returned error: %v", err)
 	}
@@ -114,7 +133,7 @@ func TestSubmitPlanRejectsDuplicatePassID(t *testing.T) {
 	plan := validPlannerPassPlan()
 	plan.Passes[1].PassID = plan.Passes[0].PassID
 
-	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: mustMarshalPlan(t, plan)})
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: mustMarshalPlan(t, plan)})
 	if err != nil {
 		t.Fatalf("SubmitPlan returned error: %v", err)
 	}
@@ -131,7 +150,7 @@ func TestSubmitPlanRejectsDuplicateSequence(t *testing.T) {
 	plan := validPlannerPassPlan()
 	plan.Passes[1].Sequence = plan.Passes[0].Sequence
 
-	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: mustMarshalPlan(t, plan)})
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: mustMarshalPlan(t, plan)})
 	if err != nil {
 		t.Fatalf("SubmitPlan returned error: %v", err)
 	}
@@ -181,7 +200,7 @@ func TestSubmitPlanRejectsInvalidDependencies(t *testing.T) {
 			plan := validPlannerPassPlan()
 			tc.mutate(&plan)
 
-			result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: mustMarshalPlan(t, plan)})
+			result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: mustMarshalPlan(t, plan)})
 			if err != nil {
 				t.Fatalf("SubmitPlan returned error: %v", err)
 			}
@@ -226,7 +245,7 @@ func TestSubmitPlanRejectsSubmittedStatuses(t *testing.T) {
 			plan := validPlannerPassPlan()
 			tc.mutate(&plan)
 
-			result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: mustMarshalPlan(t, plan)})
+			result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: mustMarshalPlan(t, plan)})
 			if err != nil {
 				t.Fatalf("SubmitPlan returned error: %v", err)
 			}
@@ -245,7 +264,7 @@ func TestSubmitPlanRejectsSecretLikeContent(t *testing.T) {
 	plan := validPlannerPassPlan()
 	plan.SourceIntent.Summary = "client_secret=ABCDEFGHIJKLMNOP"
 
-	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: mustMarshalPlan(t, plan)})
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: mustMarshalPlan(t, plan)})
 	if err != nil {
 		t.Fatalf("SubmitPlan returned error: %v", err)
 	}
@@ -277,7 +296,7 @@ func TestSubmitPlanRejectsMissingPlanV2PassFields(t *testing.T) {
 			doc := mustPlanDocument(t, validPlannerPassPlan())
 			removeFirstPassField(t, doc, tc.field)
 
-			result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: mustMarshalPlanDocument(t, doc)})
+			result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: mustMarshalPlanDocument(t, doc)})
 			if err != nil {
 				t.Fatalf("SubmitPlan returned error: %v", err)
 			}
@@ -324,7 +343,7 @@ func TestSubmitPlanRejectsLegacyMinimalPlan(t *testing.T) {
 		]
 	}`)
 
-	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: raw})
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw})
 	if err != nil {
 		t.Fatalf("SubmitPlan returned error: %v", err)
 	}
@@ -348,7 +367,7 @@ func TestSubmitPlanRejectsStringMCPCapabilityProfile(t *testing.T) {
 	}
 	planMeta["mcp_capability_profile"] = "relay-context-broker-v2"
 
-	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: mustMarshalPlanDocument(t, doc)})
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: mustMarshalPlanDocument(t, doc)})
 	if err != nil {
 		t.Fatalf("SubmitPlan returned error: %v", err)
 	}
@@ -369,7 +388,7 @@ func TestSubmitPlanRollsBackOnPassInsertFailure(t *testing.T) {
 		t.Fatalf("create trigger: %v", err)
 	}
 
-	_, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: mustMarshalPlan(t, validPlannerPassPlan())})
+	_, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: mustMarshalPlan(t, validPlannerPassPlan())})
 	if err == nil {
 		t.Fatal("expected SubmitPlan to fail when pass insert trigger fires")
 	}
@@ -676,7 +695,7 @@ func TestSubmitPlanRequiresProject(t *testing.T) {
 	plan.PlanMeta.ProjectContext.PrimaryProject = "non-existent"
 	raw := mustMarshalPlan(t, plan)
 
-	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true,
 		RawJSON: raw,
 	})
 	if err != nil {
@@ -691,7 +710,7 @@ func TestSubmitPlanRequiresProject(t *testing.T) {
 	if _, err := st.CreateProject("another-project", "Another", "", "active", ""); err != nil {
 		t.Fatalf("CreateProject failed: %v", err)
 	}
-	result, err = svc.SubmitPlan(context.Background(), SubmitPlanRequest{
+	result, err = svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true,
 		RawJSON:   raw,
 		ProjectID: "another-project",
 	})
@@ -710,7 +729,7 @@ func TestSubmitPlanRequiresProject(t *testing.T) {
 	planNoProj.PlanMeta.ProjectContext = nil
 	rawNoProj := mustMarshalPlan(t, planNoProj)
 
-	result, err = svc.SubmitPlan(context.Background(), SubmitPlanRequest{
+	result, err = svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true,
 		RawJSON: rawNoProj,
 	})
 	if err != nil {

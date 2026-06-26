@@ -753,8 +753,9 @@ func setupBrokerFixture(t *testing.T) brokerFixture {
 		t.Fatalf("CreateSourceSnapshot error: %v", err)
 	}
 
-	planArgs, _ := json.Marshal(map[string]string{
+	planArgs, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+		"unmanaged_acknowledged": true,
 	})
 	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
 	if planResult.IsError {

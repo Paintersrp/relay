@@ -250,9 +250,10 @@ func submitSmokePlan(t *testing.T, handler http.Handler) {
 		},
 	}
 	postJSON(t, handler, "/api/plans", http.StatusCreated, map[string]any{
-		"plan":               plan,
-		"sourceArtifactPath": "handoffs/plans/pass-006-smoke.json",
-		"projectId":          "smoke-relay",
+		"plan":                  plan,
+		"sourceArtifactPath":    "handoffs/plans/pass-006-smoke.json",
+		"projectId":             "smoke-relay",
+		"unmanagedAcknowledged": true,
 	}, nil)
 }
 

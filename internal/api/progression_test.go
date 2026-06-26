@@ -130,7 +130,7 @@ func seedProgressionPlan(t *testing.T, st *store.Store, planID string) (*store.P
 		t.Fatalf("marshal plan: %v", err)
 	}
 
-	result, err := appplans.NewService(st).SubmitPlan(context.Background(), appplans.SubmitPlanRequest{
+	result, err := appplans.NewService(st).SubmitPlan(context.Background(), appplans.SubmitPlanRequest{UnmanagedAcknowledged: true,
 		RawJSON:            raw,
 		SourceArtifactPath: "handoffs/planner/progression-test.json",
 		ProjectID:          "relay",

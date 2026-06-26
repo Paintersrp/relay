@@ -115,7 +115,13 @@ func (svc *Service) CreatePlanAttemptWithIntent(ctx context.Context, req CreateP
 		return nil, fmt.Errorf("commit create plan attempt: %w", err)
 	}
 	committed = true
-	return &PlanAttemptResult{OK: true, IntentPacket: &intent, PlanAttempt: &attempt}, nil
+	return &PlanAttemptResult{
+		OK:           true,
+		IntentPacket: &intent,
+		PlanAttempt:  &attempt,
+		ReviewPolicy: policy,
+		ReviewAction: initialReviewAction(policy.DriftReviewMode),
+	}, nil
 }
 
 func (svc *Service) GetPlanIntentReviewPacket(ctx context.Context, req GetPlanIntentReviewPacketRequest) (*PlanAttemptResult, error) {
@@ -747,6 +753,21 @@ func knownApprovalGateStatus(value string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func initialReviewAction(mode string) *PlanAttemptReviewAction {
+	switch mode {
+	case DriftReviewModeDisabled:
+		return &PlanAttemptReviewAction{Action: "drift_review_disabled", OK: true, Message: "drift review is disabled"}
+	case DriftReviewModeManual:
+		return &PlanAttemptReviewAction{Action: "manual_review_available", OK: true, Message: "manual drift review is available"}
+	case DriftReviewModeExternal:
+		return &PlanAttemptReviewAction{Action: "external_review_required", OK: true, Message: "external drift review submission is required"}
+	case DriftReviewModeAutomatic:
+		return &PlanAttemptReviewAction{Action: "run_drift_review", OK: false, Message: "automatic drift review has not run yet"}
+	default:
+		return nil
 	}
 }
 

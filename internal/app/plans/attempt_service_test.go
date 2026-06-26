@@ -470,7 +470,7 @@ func TestDirectSubmitPlanStillWorksWithoutAttemptLineage(t *testing.T) {
 	t.Parallel()
 
 	svc, st := newTestService(t)
-	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true,
 		RawJSON:            mustMarshalPlan(t, validPlannerPassPlan()),
 		SourceArtifactPath: "handoffs/planner/direct.planner-pass-plan.json",
 	})

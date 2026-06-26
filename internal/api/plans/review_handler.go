@@ -86,9 +86,12 @@ func (h *Handler) RunPlanAttemptDriftReview(w http.ResponseWriter, r *http.Reque
 	}
 	projectID := strings.TrimSpace(chi.URLParam(r, "projectId"))
 	planAttemptID := strings.TrimSpace(chi.URLParam(r, "planAttemptId"))
-	gate, blocked, err := h.service.GetPlanAttemptReviewGate(r.Context(), appplans.PlanAttemptReviewGateRequest{
-		ProjectID:     projectID,
-		PlanAttemptID: planAttemptID,
+	prepared, blocked, err := h.service.PreparePlanAttemptDriftReview(r.Context(), appplans.RunPlanAttemptDriftReviewRequest{
+		ProjectID:          projectID,
+		PlanAttemptID:      planAttemptID,
+		AllowModelCall:     req.AllowModelCall,
+		RequestedTier:      req.RequestedTier,
+		ForceHighAssurance: req.ForceHighAssurance,
 	})
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
@@ -98,58 +101,21 @@ func (h *Handler) RunPlanAttemptDriftReview(w http.ResponseWriter, r *http.Reque
 		writePlanAttemptResult(w, blocked, http.StatusOK)
 		return
 	}
-	if gate.DriftReviewMode == appplans.DriftReviewModeDisabled {
-		writePlanAttemptResult(w, &appplans.PlanAttemptResult{
-			OK:          false,
-			BlockerCode: appplans.BlockerDriftReviewBlocked,
-			Message:     "disabled drift review mode does not run internal reviews",
-			ReviewGate:  gate,
-		}, http.StatusOK)
-		return
-	}
-	if gate.DriftReviewMode == appplans.DriftReviewModeExternal {
-		writePlanAttemptResult(w, &appplans.PlanAttemptResult{
-			OK:          false,
-			BlockerCode: appplans.BlockerDriftReviewRequired,
-			Message:     "external drift review mode requires review packet retrieval and external review submission",
-			ReviewGate:  gate,
-		}, http.StatusOK)
-		return
-	}
-	if gate.DriftReviewMode == appplans.DriftReviewModeManual && !req.AllowModelCall {
-		writePlanAttemptResult(w, &appplans.PlanAttemptResult{
-			OK:          false,
-			BlockerCode: appplans.BlockerDriftReviewBlocked,
-			Message:     "model call is not explicitly allowed in the request",
-			ReviewGate:  gate,
-			ReviewAction: &appplans.PlanAttemptReviewAction{
-				Action:      "run_drift_review",
-				OK:          false,
-				FailureCode: string(appdrift.FailureModelCallNotAllowed),
-				Message:     "model call is not explicitly allowed in the request",
-			},
-		}, http.StatusOK)
-		return
-	}
 	if h.driftService == nil {
 		writePlanAttemptResult(w, &appplans.PlanAttemptResult{
 			OK:          false,
 			BlockerCode: appplans.BlockerDriftReviewBlocked,
 			Message:     "drift review service is unavailable",
-			ReviewGate:  gate,
+			ReviewGate:  prepared.ReviewGate,
 		}, http.StatusOK)
 		return
 	}
-	requestedTier := strings.TrimSpace(req.RequestedTier)
-	if requestedTier == "" {
-		requestedTier = gate.ModelTier
-	}
 	reviewResult, err := h.driftService.RunInternalReview(r.Context(), appdrift.InternalReviewRequest{
-		ProjectID:          projectID,
-		PlanAttemptID:      planAttemptID,
-		RequestedTier:      requestedTier,
-		AllowModelCall:     req.AllowModelCall || gate.DriftReviewMode == appplans.DriftReviewModeAutomatic,
-		ForceHighAssurance: req.ForceHighAssurance,
+		ProjectID:          prepared.ProjectID,
+		PlanAttemptID:      prepared.PlanAttemptID,
+		RequestedTier:      prepared.RequestedTier,
+		AllowModelCall:     prepared.AllowModelCall,
+		ForceHighAssurance: prepared.ForceHighAssurance,
 	})
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())

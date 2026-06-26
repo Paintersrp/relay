@@ -473,7 +473,7 @@ func seedMCPOrchestratorPlan(t *testing.T, st *store.Store, planID string) *stor
 	if err != nil {
 		t.Fatalf("marshal plan: %v", err)
 	}
-	result, err := appplans.NewService(st).SubmitPlan(context.Background(), appplans.SubmitPlanRequest{RawJSON: raw, ProjectID: "relay"})
+	result, err := appplans.NewService(st).SubmitPlan(context.Background(), appplans.SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw, ProjectID: "relay"})
 	if err != nil {
 		t.Fatalf("SubmitPlan: %v", err)
 	}

@@ -178,7 +178,7 @@ func run() error {
 	// -------------------------------------------------------
 	// 2. Submit the plan and verify 201 + stored rows.
 	// -------------------------------------------------------
-	body = []byte(`{"plan":` + smokePlanJSON + `,"sourceArtifactPath":"handoffs/plans/plan-api-smoke.planner-pass-plan.json"}`)
+	body = []byte(`{"plan":` + smokePlanJSON + `,"sourceArtifactPath":"handoffs/plans/plan-api-smoke.planner-pass-plan.json","unmanagedAcknowledged":true}`)
 	rec = h.post("/api/plans", body)
 	h.check("submit status 201", rec.Code == http.StatusCreated)
 

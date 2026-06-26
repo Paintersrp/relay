@@ -130,7 +130,7 @@ func submitReadQueryPlan(t *testing.T, svc *Service, planID, projectID string) {
 		t.Fatalf("marshal plan: %v", err)
 	}
 
-	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true,
 		RawJSON:   raw,
 		ProjectID: projectID,
 	})

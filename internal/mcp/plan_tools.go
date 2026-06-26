@@ -11,7 +11,7 @@ import (
 var submitPlannerPassPlanSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,
-  "required": ["planner_pass_plan_json"],
+  "required": ["planner_pass_plan_json", "unmanaged_acknowledged"],
   "properties": {
     "planner_pass_plan_json": {
       "type": "string",
@@ -25,14 +25,19 @@ var submitPlannerPassPlanSchema = json.RawMessage(`{
     "source": {
       "type": "string",
       "description": "Optional caller/source label for audit context."
+    },
+    "unmanaged_acknowledged": {
+      "type": "boolean",
+      "description": "Must be true to acknowledge direct unmanaged plan submission outside the file-based plan-attempt approval flow."
     }
   }
 }`)
 
 type submitPlannerPassPlanArgs struct {
-	PlannerPassPlanJSON string `json:"planner_pass_plan_json"`
-	SourceArtifactPath  string `json:"source_artifact_path,omitempty"`
-	Source              string `json:"source,omitempty"`
+	PlannerPassPlanJSON   string `json:"planner_pass_plan_json"`
+	SourceArtifactPath    string `json:"source_artifact_path,omitempty"`
+	Source                string `json:"source,omitempty"`
+	UnmanagedAcknowledged bool   `json:"unmanaged_acknowledged"`
 }
 
 type submitPlannerPassPlanOutput struct {
@@ -90,8 +95,9 @@ func (s *Server) HandleSubmitPlannerPassPlan(args json.RawMessage) ToolCallResul
 
 	svc := appplans.NewService(s.deps.Store)
 	result, err := svc.SubmitPlan(context.Background(), appplans.SubmitPlanRequest{
-		RawJSON:            []byte(trimmedPlanJSON),
-		SourceArtifactPath: strings.TrimSpace(in.SourceArtifactPath),
+		RawJSON:               []byte(trimmedPlanJSON),
+		SourceArtifactPath:    strings.TrimSpace(in.SourceArtifactPath),
+		UnmanagedAcknowledged: in.UnmanagedAcknowledged,
 	})
 	if err != nil {
 		var report *appplans.PlanValidationReport

@@ -5,24 +5,25 @@ import "relay/internal/store"
 const defaultSchemaPath = "relay-contracts/schema/planner_pass_plan.schema.json"
 
 const (
-	IssuePlanJSONSyntax                 = "PLAN_JSON_SYNTAX"
-	IssuePlanSchemaInvalid              = "PLAN_SCHEMA_INVALID"
-	IssuePlanSecretDetected             = "PLAN_SECRET_DETECTED"
-	IssuePlanStatusInvalidForSubmission = "PLAN_STATUS_INVALID_FOR_SUBMISSION"
-	IssuePlanPassStatusInvalid          = "PLAN_PASS_STATUS_INVALID_FOR_SUBMISSION"
-	IssuePlanDuplicatePlanID            = "PLAN_DUPLICATE_PLAN_ID"
-	IssuePlanDuplicatePassID            = "PLAN_DUPLICATE_PASS_ID"
-	IssuePlanDuplicateSequence          = "PLAN_DUPLICATE_SEQUENCE"
-	IssuePlanDependencyUnknown          = "PLAN_DEPENDENCY_UNKNOWN"
-	IssuePlanDependencySelf             = "PLAN_DEPENDENCY_SELF"
-	IssuePlanDependencyDuplicate        = "PLAN_DEPENDENCY_DUPLICATE"
-	IssuePlanEmptyRequiredValue         = "PLAN_EMPTY_REQUIRED_VALUE"
-	IssuePlanEmptyRequiredArray         = "PLAN_EMPTY_REQUIRED_ARRAY"
-	IssuePlanStorageFailed              = "PLAN_STORAGE_FAILED"
-	IssuePlanProjectRequired            = "PLAN_PROJECT_REQUIRED"
-	IssuePlanProjectUnknown             = "PLAN_PROJECT_UNKNOWN"
-	IssuePlanPassStatusInvalidRuntime   = "PLAN_PASS_STATUS_INVALID_RUNTIME"
-	IssuePlanRefactorMetadataInvalid    = "PLAN_REFACTOR_METADATA_INVALID"
+	IssuePlanJSONSyntax                       = "PLAN_JSON_SYNTAX"
+	IssuePlanSchemaInvalid                    = "PLAN_SCHEMA_INVALID"
+	IssuePlanSecretDetected                   = "PLAN_SECRET_DETECTED"
+	IssuePlanStatusInvalidForSubmission       = "PLAN_STATUS_INVALID_FOR_SUBMISSION"
+	IssuePlanPassStatusInvalid                = "PLAN_PASS_STATUS_INVALID_FOR_SUBMISSION"
+	IssuePlanDuplicatePlanID                  = "PLAN_DUPLICATE_PLAN_ID"
+	IssuePlanDuplicatePassID                  = "PLAN_DUPLICATE_PASS_ID"
+	IssuePlanDuplicateSequence                = "PLAN_DUPLICATE_SEQUENCE"
+	IssuePlanDependencyUnknown                = "PLAN_DEPENDENCY_UNKNOWN"
+	IssuePlanDependencySelf                   = "PLAN_DEPENDENCY_SELF"
+	IssuePlanDependencyDuplicate              = "PLAN_DEPENDENCY_DUPLICATE"
+	IssuePlanEmptyRequiredValue               = "PLAN_EMPTY_REQUIRED_VALUE"
+	IssuePlanEmptyRequiredArray               = "PLAN_EMPTY_REQUIRED_ARRAY"
+	IssuePlanStorageFailed                    = "PLAN_STORAGE_FAILED"
+	IssuePlanProjectRequired                  = "PLAN_PROJECT_REQUIRED"
+	IssuePlanProjectUnknown                   = "PLAN_PROJECT_UNKNOWN"
+	IssuePlanPassStatusInvalidRuntime         = "PLAN_PASS_STATUS_INVALID_RUNTIME"
+	IssuePlanRefactorMetadataInvalid          = "PLAN_REFACTOR_METADATA_INVALID"
+	IssuePlanUnmanagedAcknowledgementRequired = "PLAN_UNMANAGED_ACKNOWLEDGEMENT_REQUIRED"
 )
 
 const (
@@ -167,9 +168,10 @@ type ContextBudget struct {
 }
 
 type SubmitPlanRequest struct {
-	RawJSON            []byte
-	SourceArtifactPath string
-	ProjectID          string
+	RawJSON               []byte
+	SourceArtifactPath    string
+	ProjectID             string
+	UnmanagedAcknowledged bool
 }
 
 type SubmitPlanResult struct {

@@ -37,6 +37,16 @@ func NewServiceWithSchemaPath(s *store.Store, schemaPath string) *Service {
 }
 
 func (svc *Service) SubmitPlan(ctx context.Context, req SubmitPlanRequest) (*SubmitPlanResult, error) {
+	if !req.UnmanagedAcknowledged {
+		report := newValidationReport()
+		report.addIssue(
+			IssuePlanUnmanagedAcknowledgementRequired,
+			"$.unmanaged_acknowledged",
+			"direct unmanaged plan submission requires explicit acknowledgement",
+		)
+		report.finalize()
+		return &SubmitPlanResult{Report: report}, nil
+	}
 	return svc.submitPlan(ctx, req.RawJSON, req.SourceArtifactPath, req.ProjectID, planSubmissionLineage{}, nil)
 }
 

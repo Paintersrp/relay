@@ -140,7 +140,7 @@ func TestAPI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshal plan: %v", err)
 		}
-		result, err := appplans.NewService(s).SubmitPlan(context.Background(), appplans.SubmitPlanRequest{
+		result, err := appplans.NewService(s).SubmitPlan(context.Background(), appplans.SubmitPlanRequest{UnmanagedAcknowledged: true,
 			RawJSON:            raw,
 			SourceArtifactPath: "handoffs/planner/association-test.json",
 			ProjectID:          "relay",

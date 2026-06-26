@@ -139,7 +139,7 @@ func TestE2EPipelineSmoke(t *testing.T) {
 
 	// 1. Submit Plan v2 JSON to /api/plans
 	t.Log("1. Submit Plan v2 JSON")
-	planPayload := fmt.Sprintf(`{"plan":%s,"sourceArtifactPath":"handoffs/plans/e2e-smoke-plan.json","projectId":"smoke-project"}`, smokePlanJSON)
+	planPayload := fmt.Sprintf(`{"plan":%s,"sourceArtifactPath":"handoffs/plans/e2e-smoke-plan.json","projectId":"smoke-project","unmanagedAcknowledged":true}`, smokePlanJSON)
 	req := httptest.NewRequest("POST", "/api/plans", strings.NewReader(planPayload))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

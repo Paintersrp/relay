@@ -8,9 +8,10 @@ import (
 
 // PlanAPIRequest is the request body for plan submission and validation.
 type PlanAPIRequest struct {
-	Plan               json.RawMessage `json:"plan"`
-	SourceArtifactPath string          `json:"sourceArtifactPath,omitempty"`
-	ProjectID          string          `json:"projectId,omitempty"`
+	Plan                  json.RawMessage `json:"plan"`
+	SourceArtifactPath    string          `json:"sourceArtifactPath,omitempty"`
+	ProjectID             string          `json:"projectId,omitempty"`
+	UnmanagedAcknowledged bool            `json:"unmanagedAcknowledged,omitempty"`
 }
 
 // PlanAPIResponse is the response for plan submission and validation.

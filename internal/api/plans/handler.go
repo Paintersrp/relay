@@ -86,9 +86,10 @@ func (h *Handler) SubmitPlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.service.SubmitPlan(r.Context(), appplans.SubmitPlanRequest{
-		RawJSON:            rawPlan,
-		SourceArtifactPath: req.SourceArtifactPath,
-		ProjectID:          req.ProjectID,
+		RawJSON:               rawPlan,
+		SourceArtifactPath:    req.SourceArtifactPath,
+		ProjectID:             req.ProjectID,
+		UnmanagedAcknowledged: req.UnmanagedAcknowledged,
 	})
 	if err != nil {
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())

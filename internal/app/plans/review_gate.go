@@ -31,6 +31,24 @@ type PlanAttemptReviewGateRequest struct {
 	PlanAttemptID string
 }
 
+type RunPlanAttemptDriftReviewRequest struct {
+	ProjectID          string
+	PlanAttemptID      string
+	AllowModelCall     bool
+	RequestedTier      string
+	ForceHighAssurance bool
+	AutomaticFlow      bool
+}
+
+type PreparedPlanAttemptDriftReview struct {
+	ProjectID          string
+	PlanAttemptID      string
+	RequestedTier      string
+	AllowModelCall     bool
+	ForceHighAssurance bool
+	ReviewGate         *PlanAttemptReviewGate
+}
+
 type PlanAttemptReviewGate struct {
 	WorkflowState              string
 	DriftReviewMode            string
@@ -66,6 +84,75 @@ func (svc *Service) GetPlanAttemptReviewGate(ctx context.Context, req PlanAttemp
 		return nil, nil, err
 	}
 	return gate, nil, nil
+}
+
+func (svc *Service) PreparePlanAttemptDriftReview(ctx context.Context, req RunPlanAttemptDriftReviewRequest) (*PreparedPlanAttemptDriftReview, *PlanAttemptResult, error) {
+	gate, blocked, err := svc.GetPlanAttemptReviewGate(ctx, PlanAttemptReviewGateRequest{
+		ProjectID:     req.ProjectID,
+		PlanAttemptID: req.PlanAttemptID,
+	})
+	if blocked != nil || err != nil {
+		return nil, blocked, err
+	}
+	requestedTier := strings.TrimSpace(req.RequestedTier)
+	if requestedTier == "" {
+		requestedTier = gate.ModelTier
+	} else if _, ok := normalizeModelTier(requestedTier); !ok {
+		return nil, &PlanAttemptResult{
+			OK:          false,
+			BlockerCode: BlockerDriftReviewBlocked,
+			Message:     "invalid model_tier",
+			ReviewGate:  gate,
+		}, nil
+	}
+	switch gate.DriftReviewMode {
+	case DriftReviewModeDisabled:
+		return nil, &PlanAttemptResult{
+			OK:          false,
+			BlockerCode: BlockerDriftReviewBlocked,
+			Message:     "disabled drift review mode does not run internal reviews",
+			ReviewGate:  gate,
+		}, nil
+	case DriftReviewModeExternal:
+		return nil, &PlanAttemptResult{
+			OK:          false,
+			BlockerCode: BlockerDriftReviewRequired,
+			Message:     "external drift review mode requires review packet retrieval and external review submission",
+			ReviewGate:  gate,
+		}, nil
+	case DriftReviewModeManual:
+		if !req.AllowModelCall {
+			return nil, &PlanAttemptResult{
+				OK:          false,
+				BlockerCode: BlockerDriftReviewBlocked,
+				Message:     "model call is not explicitly allowed in the request",
+				ReviewGate:  gate,
+				ReviewAction: &PlanAttemptReviewAction{
+					Action:      "run_drift_review",
+					OK:          false,
+					FailureCode: "model_call_not_allowed",
+					Message:     "model call is not explicitly allowed in the request",
+				},
+			}, nil
+		}
+	case DriftReviewModeAutomatic:
+		req.AllowModelCall = true
+	default:
+		return nil, &PlanAttemptResult{
+			OK:          false,
+			BlockerCode: BlockerDriftReviewBlocked,
+			Message:     "unknown drift review mode",
+			ReviewGate:  gate,
+		}, nil
+	}
+	return &PreparedPlanAttemptDriftReview{
+		ProjectID:          req.ProjectID,
+		PlanAttemptID:      req.PlanAttemptID,
+		RequestedTier:      requestedTier,
+		AllowModelCall:     req.AllowModelCall,
+		ForceHighAssurance: req.ForceHighAssurance,
+		ReviewGate:         gate,
+	}, nil, nil
 }
 
 func (svc *Service) buildReviewGate(ctx context.Context, project store.Project, attempt store.PlanAttempt) (*PlanAttemptReviewGate, error) {

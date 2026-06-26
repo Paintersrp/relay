@@ -105,7 +105,7 @@ func seedManagedPlanWithSourceContextPass(t *testing.T, st *store.Store, planID 
 		t.Fatalf("marshal plan: %v", err)
 	}
 
-	result, err := plans.NewService(st).SubmitPlan(context.Background(), plans.SubmitPlanRequest{
+	result, err := plans.NewService(st).SubmitPlan(context.Background(), plans.SubmitPlanRequest{UnmanagedAcknowledged: true,
 		RawJSON:            raw,
 		SourceArtifactPath: "handoffs/planner/intake-service-test.json",
 		ProjectID:          "relay",

@@ -141,7 +141,7 @@ func seedPlan(t *testing.T, st *store.Store, projectID, planID string) *store.Pl
 	}
 
 	raw := mustMarshalPlan(t, plan)
-	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: raw})
+	result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw})
 	if err != nil {
 		t.Fatalf("SubmitPlan: %v", err)
 	}
@@ -449,7 +449,7 @@ func TestGetNextPassWork_RequiredSourceContextMissing(t *testing.T) {
 		}},
 	}
 	raw := mustMarshalPlan(t, plan)
-	result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: raw})
+	result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw})
 	if err != nil || !result.Report.Valid {
 		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
 	}
@@ -496,7 +496,7 @@ func TestGetNextPassWork_RequiredContextPacketMissing(t *testing.T) {
 		}},
 	}
 	raw := mustMarshalPlan(t, plan)
-	result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{RawJSON: raw})
+	result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw})
 	if err != nil || !result.Report.Valid {
 		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
 	}

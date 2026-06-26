@@ -133,6 +133,42 @@ func TestSubmitPlanStoresValidPlan(t *testing.T) {
 	}
 }
 
+func TestSubmitPlanRequiresUnmanagedAcknowledgement(t *testing.T) {
+	t.Parallel()
+
+	_, st, router := newPlanAPITestServer(t)
+	body, err := json.Marshal(map[string]any{
+		"plan": validPlanAPIPayload(t),
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/plans", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp plansapi.PlanAPIResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Success {
+		t.Fatalf("expected success=false without unmanaged acknowledgement")
+	}
+	assertPlanIssueCode(t, resp.Validation, appplans.IssuePlanUnmanagedAcknowledgementRequired)
+	if got := countRows(t, st.DB(), "plans"); got != 0 {
+		t.Fatalf("expected 0 plan rows, got %d", got)
+	}
+	if got := countRows(t, st.DB(), "plan_passes"); got != 0 {
+		t.Fatalf("expected 0 plan_passes rows, got %d", got)
+	}
+}
+
 func TestSubmitPlanDuplicatePlanIDReturnsConflict(t *testing.T) {
 	t.Parallel()
 
@@ -367,7 +403,8 @@ func marshalPlanAPIRequest(t *testing.T, plan appplans.PlannerPassPlan, sourceAr
 	t.Helper()
 
 	req := map[string]any{
-		"plan": plan,
+		"plan":                  plan,
+		"unmanagedAcknowledged": true,
 	}
 	if sourceArtifactPath != "" {
 		req["sourceArtifactPath"] = sourceArtifactPath

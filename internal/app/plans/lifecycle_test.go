@@ -403,7 +403,7 @@ func submitLifecyclePlan(t *testing.T, st *store.Store, planID string) *store.Pl
 		t.Fatalf("marshal plan: %v", err)
 	}
 
-	result, err := NewService(st).SubmitPlan(context.Background(), SubmitPlanRequest{
+	result, err := NewService(st).SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true,
 		RawJSON:            raw,
 		SourceArtifactPath: "handoffs/planner/lifecycle-test.json",
 		ProjectID:          "test-project",

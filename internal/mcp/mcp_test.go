@@ -314,8 +314,9 @@ func TestServerSafety(t *testing.T) {
 
 func TestHandleSubmitPlannerPassPlan_NoDeps(t *testing.T) {
 	srv := NewServer(discardLogger())
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+		"unmanaged_acknowledged": true,
 	})
 
 	result := srv.HandleSubmitPlannerPassPlan(args)
@@ -348,9 +349,10 @@ func TestHandleSubmitPlannerPassPlan_Success(t *testing.T) {
 	srv := NewServer(discardLogger(), deps)
 
 	rawPlan := mustMarshalPlannerPassPlan(t, validPlannerPassPlan())
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(rawPlan),
 		"source_artifact_path":   "handoffs/planner/plan.json",
+		"unmanaged_acknowledged": true,
 	})
 
 	result := srv.HandleSubmitPlannerPassPlan(args)
@@ -385,14 +387,49 @@ func TestHandleSubmitPlannerPassPlan_Success(t *testing.T) {
 	}
 }
 
+func TestHandleSubmitPlannerPassPlan_RequiresUnmanagedAcknowledgement(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	rawPlan := mustMarshalPlannerPassPlan(t, validPlannerPassPlan())
+	args, _ := json.Marshal(map[string]any{
+		"planner_pass_plan_json": string(rawPlan),
+		"source":                 "does-not-count-as-acknowledgement",
+	})
+
+	result := srv.HandleSubmitPlannerPassPlan(args)
+	if !result.IsError {
+		t.Fatal("expected PLAN_VALIDATION_FAILED without unmanaged_acknowledged")
+	}
+
+	var out submitPlannerPassPlanErrorOutput
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &out); err != nil {
+		t.Fatalf("unmarshal error output: %v", err)
+	}
+	if out.Error != "PLAN_VALIDATION_FAILED" {
+		t.Fatalf("expected PLAN_VALIDATION_FAILED, got %q", out.Error)
+	}
+	if out.Validation == nil {
+		t.Fatal("expected validation report in error output")
+	}
+	assertValidationIssueCode(t, *out.Validation, appplans.IssuePlanUnmanagedAcknowledgementRequired)
+	if got := countTableRows(t, deps.Store.DB(), "plans"); got != 0 {
+		t.Fatalf("expected 0 plan rows, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "plan_passes"); got != 0 {
+		t.Fatalf("expected 0 plan_passes rows, got %d", got)
+	}
+}
+
 func TestHandleSubmitPlannerPassPlan_InvalidDependency(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
 	plan := validPlannerPassPlan()
 	plan.Passes[1].Dependencies = []string{"PASS-999"}
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, plan)),
+		"unmanaged_acknowledged": true,
 	})
 
 	result := srv.HandleSubmitPlannerPassPlan(args)
@@ -423,8 +460,9 @@ func TestHandleSubmitPlannerPassPlan_DuplicatePlanID(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+		"unmanaged_acknowledged": true,
 	})
 
 	first := srv.HandleSubmitPlannerPassPlan(args)
@@ -480,7 +518,7 @@ func TestHandleCreateRunFromPlannerHandoff_NoDeps(t *testing.T) {
 func TestHandleCreateRunFromPlannerHandoff_MissingMarkdown(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
-	args, _ := json.Marshal(map[string]string{"planner_handoff_markdown": ""})
+	args, _ := json.Marshal(map[string]any{"planner_handoff_markdown": ""})
 	result := srv.HandleCreateRunFromPlannerHandoff(args)
 	if !result.IsError {
 		t.Fatal("expected tool error for empty planner_handoff_markdown")
@@ -494,7 +532,7 @@ func TestHandleCreateRunFromPlannerHandoff_NoRepoTarget(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 	// Markdown with no frontmatter repo
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": "# My Handoff\n\nContent here.",
 	})
 	result := srv.HandleCreateRunFromPlannerHandoff(args)
@@ -511,7 +549,7 @@ func TestHandleCreateRunFromPlannerHandoff_Success(t *testing.T) {
 	srv := NewServer(discardLogger(), deps)
 
 	markdown := fmt.Sprintf("---\ntitle: Test Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Test Run\n\nHandoff content for testing.")
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
 		"repo_target":              "test-repo",
 		"source":                   "mcp_test",
@@ -556,15 +594,16 @@ func TestHandleCreateRunFromPlannerHandoff_PlanOnlyAssociation(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	planArgs, _ := json.Marshal(map[string]string{
+	planArgs, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+		"unmanaged_acknowledged": true,
 	})
 	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
 	if planResult.IsError {
 		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
 	}
 
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": "---\ntitle: Planned Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Planned Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
@@ -605,8 +644,9 @@ func TestHandleCreateRunFromPlannerHandoff_PlanPassAssociation(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	planArgs, _ := json.Marshal(map[string]string{
+	planArgs, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+		"unmanaged_acknowledged": true,
 	})
 	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
 	if planResult.IsError {
@@ -615,7 +655,7 @@ func TestHandleCreateRunFromPlannerHandoff_PlanPassAssociation(t *testing.T) {
 
 	seedMCPSourceSnapshot(t, deps.Store, "plan-123", "snapshot-mcp-plan-pass")
 
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": "---\ntitle: Pass Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Pass Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
@@ -662,7 +702,7 @@ func TestHandleCreateRunFromPlannerHandoff_PassWithoutPlanRejected(t *testing.T)
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": "---\ntitle: Invalid Run\nrepo_target: test-repo\n---\n\n# Invalid Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"pass_id":                  "PASS-001",
@@ -683,7 +723,7 @@ func TestHandleCreateRunFromPlannerHandoff_UnknownPlanRejected(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": "---\ntitle: Missing Plan Run\nrepo_target: test-repo\n---\n\n# Missing Plan Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-missing",
@@ -704,15 +744,16 @@ func TestHandleCreateRunFromPlannerHandoff_UnknownPassRejected(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	planArgs, _ := json.Marshal(map[string]string{
+	planArgs, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+		"unmanaged_acknowledged": true,
 	})
 	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
 	if planResult.IsError {
 		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
 	}
 
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": "---\ntitle: Missing Pass Run\nrepo_target: test-repo\n---\n\n# Missing Pass Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
@@ -736,8 +777,9 @@ func TestHandleCreateRunFromPlannerHandoff_PassNotOpenRejected(t *testing.T) {
 			deps := setupTestDeps(t)
 			srv := NewServer(discardLogger(), deps)
 
-			planArgs, _ := json.Marshal(map[string]string{
+			planArgs, _ := json.Marshal(map[string]any{
 				"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+				"unmanaged_acknowledged": true,
 			})
 			planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
 			if planResult.IsError {
@@ -756,7 +798,7 @@ func TestHandleCreateRunFromPlannerHandoff_PassNotOpenRejected(t *testing.T) {
 				t.Fatalf("seed pass status %q: %v", status, err)
 			}
 
-			args, _ := json.Marshal(map[string]string{
+			args, _ := json.Marshal(map[string]any{
 				"planner_handoff_markdown": "---\ntitle: Closed Pass Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Closed Pass Run\n\nContent.",
 				"repo_target":              "test-repo",
 				"plan_id":                  "plan-123",
@@ -791,8 +833,9 @@ func TestHandleCreateRunFromPlannerHandoff_ManagedPassMismatchRejected(t *testin
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	planArgs, _ := json.Marshal(map[string]string{
+	planArgs, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+		"unmanaged_acknowledged": true,
 	})
 	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
 	if planResult.IsError {
@@ -808,7 +851,7 @@ func TestHandleCreateRunFromPlannerHandoff_ManagedPassMismatchRejected(t *testin
 		"managed_plan_pass_name: First pass\n" +
 		"```\n\n" +
 		"# Body\n"
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
 		"plan_id":                  "plan-123",
 		"pass_id":                  "PASS-002",
@@ -829,15 +872,16 @@ func TestHandleCreateRunFromPlannerHandoff_PlanRepoConflictRejected(t *testing.T
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	planArgs, _ := json.Marshal(map[string]string{
+	planArgs, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+		"unmanaged_acknowledged": true,
 	})
 	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
 	if planResult.IsError {
 		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
 	}
 
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": "---\ntitle: Repo Conflict Run\nrepo_target: other-repo\nbranch_context: main\n---\n\n# Repo Conflict Run\n\nContent.",
 		"repo_target":              "other-repo",
 		"plan_id":                  "plan-123",
@@ -858,8 +902,9 @@ func TestHandleCreateRunFromPlannerHandoff_ProvenanceRecorded(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	planArgs, _ := json.Marshal(map[string]string{
+	planArgs, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+		"unmanaged_acknowledged": true,
 	})
 	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
 	if planResult.IsError {
@@ -882,7 +927,7 @@ func TestHandleCreateRunFromPlannerHandoff_ProvenanceRecorded(t *testing.T) {
 		"Only durable execution context belongs here.\n" +
 		"</context_snapshot>\n"
 
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
 		"plan_id":                  "plan-123",
 		"pass_id":                  "PASS-002",
@@ -949,8 +994,9 @@ func TestHandleCreateRunFromPlannerHandoff_ArtifactFailureRollsBackPassTransitio
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	planArgs, _ := json.Marshal(map[string]string{
+	planArgs, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+		"unmanaged_acknowledged": true,
 	})
 	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
 	if planResult.IsError {
@@ -975,7 +1021,7 @@ func TestHandleCreateRunFromPlannerHandoff_ArtifactFailureRollsBackPassTransitio
 	artifacts.SetBaseDir(blockingPath)
 	t.Cleanup(func() { artifacts.SetBaseDir("data/artifacts") })
 
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": "---\ntitle: Rollback Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Rollback Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
@@ -1008,8 +1054,9 @@ func TestHandleGetRunStatus_IncludesProvenance(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	planArgs, _ := json.Marshal(map[string]string{
+	planArgs, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+		"unmanaged_acknowledged": true,
 	})
 	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
 	if planResult.IsError {
@@ -1027,7 +1074,7 @@ func TestHandleGetRunStatus_IncludesProvenance(t *testing.T) {
 		"source_snapshot_id: srcsnap-status\n" +
 		"```\n"
 
-	createArgs, _ := json.Marshal(map[string]string{
+	createArgs, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
 		"plan_id":                  "plan-123",
 		"pass_id":                  "PASS-001",
@@ -1152,7 +1199,7 @@ func TestHandleGetRunStatus_NotFound(t *testing.T) {
 
 func TestHandleSubmitAuditPacket_NoDeps(t *testing.T) {
 	srv := NewServer(discardLogger())
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"run_id":                "1",
 		"audit_packet_markdown": "# Test",
 		"decision":              "accepted",
@@ -1166,7 +1213,7 @@ func TestHandleSubmitAuditPacket_NoDeps(t *testing.T) {
 func TestHandleSubmitAuditPacket_MissingRunID(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"run_id":                "",
 		"audit_packet_markdown": "# Test",
 		"decision":              "accepted",
@@ -1183,7 +1230,7 @@ func TestHandleSubmitAuditPacket_MissingRunID(t *testing.T) {
 func TestHandleSubmitAuditPacket_MissingMarkdown(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"run_id":                "1",
 		"audit_packet_markdown": "",
 		"decision":              "accepted",
@@ -1200,7 +1247,7 @@ func TestHandleSubmitAuditPacket_MissingMarkdown(t *testing.T) {
 func TestHandleSubmitAuditPacket_InvalidDecision(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"run_id":                "1",
 		"audit_packet_markdown": "# Test",
 		"decision":              "auto_approve",
@@ -1217,7 +1264,7 @@ func TestHandleSubmitAuditPacket_InvalidDecision(t *testing.T) {
 func TestHandleSubmitAuditPacket_NotFound(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
-	args, _ := json.Marshal(map[string]string{
+	args, _ := json.Marshal(map[string]any{
 		"run_id":                "99999",
 		"audit_packet_markdown": "# Test",
 		"decision":              "accepted",
@@ -1263,7 +1310,7 @@ func TestHandleSubmitAuditPacket_FullFlow(t *testing.T) {
 
 	// First create a run via create_run tool.
 	markdown := "---\ntitle: Audit Test Run\nrepo_target: audit-test-repo\n---\n\n# Audit Test Run\n\nContent."
-	createArgs, _ := json.Marshal(map[string]string{
+	createArgs, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
 		"repo_target":              "audit-test-repo",
 		"source":                   "test",
@@ -1284,7 +1331,7 @@ func TestHandleSubmitAuditPacket_FullFlow(t *testing.T) {
 	}
 
 	// Now submit an audit packet.
-	auditArgs, _ := json.Marshal(map[string]string{
+	auditArgs, _ := json.Marshal(map[string]any{
 		"run_id":                runIDStr,
 		"audit_packet_markdown": "# Audit\n\nAll looks good.",
 		"decision":              "accepted",
@@ -1313,8 +1360,9 @@ func TestHandleSubmitAuditPacket_AssociatedPassLifecycle(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	planArgs, _ := json.Marshal(map[string]string{
+	planArgs, _ := json.Marshal(map[string]any{
 		"planner_pass_plan_json": string(mustMarshalPlannerPassPlan(t, validPlannerPassPlan())),
+		"unmanaged_acknowledged": true,
 	})
 	planResult := srv.HandleSubmitPlannerPassPlan(planArgs)
 	if planResult.IsError {
@@ -1323,7 +1371,7 @@ func TestHandleSubmitAuditPacket_AssociatedPassLifecycle(t *testing.T) {
 
 	seedMCPSourceSnapshot(t, deps.Store, "plan-123", "snapshot-mcp-audit-lifecycle")
 
-	createArgs, _ := json.Marshal(map[string]string{
+	createArgs, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": "---\ntitle: MCP Associated Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# MCP Associated Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
@@ -1355,7 +1403,7 @@ func TestHandleSubmitAuditPacket_AssociatedPassLifecycle(t *testing.T) {
 		t.Fatalf("set audit_ready: %v", err)
 	}
 
-	auditArgs, _ := json.Marshal(map[string]string{
+	auditArgs, _ := json.Marshal(map[string]any{
 		"run_id":                fmt.Sprintf("%d", createOut.RunID),
 		"audit_packet_markdown": "# Audit\n\nAccept with warnings.",
 		"decision":              "accepted_with_warnings",
@@ -1381,7 +1429,7 @@ func TestHandleSubmitAuditPacket_TerminalRunRejected(t *testing.T) {
 
 	// Create a run.
 	markdown := "---\ntitle: Terminal Test\nrepo_target: term-repo\n---\n\n# Terminal Test\n\nContent."
-	createArgs, _ := json.Marshal(map[string]string{
+	createArgs, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
 		"repo_target":              "term-repo",
 	})
@@ -1399,7 +1447,7 @@ func TestHandleSubmitAuditPacket_TerminalRunRejected(t *testing.T) {
 	}
 
 	// Attempt to submit audit — should be rejected.
-	auditArgs, _ := json.Marshal(map[string]string{
+	auditArgs, _ := json.Marshal(map[string]any{
 		"run_id":                fmt.Sprintf("%d", createOut.RunID),
 		"audit_packet_markdown": "# Late Audit",
 		"decision":              "accepted",
