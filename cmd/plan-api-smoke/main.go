@@ -147,7 +147,7 @@ func run() error {
 
 	planSvc := appplans.NewService(st)
 	planWorkSvc := appplans.NewOrchestratorWorkService(st)
-	planH := plansapi.NewHandler(planSvc, planWorkSvc)
+	planH := plansapi.NewHandler(planSvc, planWorkSvc, nil)
 	r := chi.NewRouter()
 	r.Route("/api", func(r chi.Router) {
 		r.Use(shared.CORSMiddleware)

@@ -241,7 +241,7 @@ func newAttemptAPITestServer(t *testing.T) (*Handler, *store.Store, http.Handler
 	if _, err := st.CreateProject("relay", "Relay", "Default Test Project", "active", ""); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	h := NewHandler(appplans.NewService(st), appplans.NewOrchestratorWorkService(st))
+	h := NewHandler(appplans.NewService(st), appplans.NewOrchestratorWorkService(st), nil)
 	router := chi.NewRouter()
 	router.Route("/api", func(r chi.Router) {
 		MountRoutes(r, h)

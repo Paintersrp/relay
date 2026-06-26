@@ -333,4 +333,17 @@ type PlanAttemptResult struct {
 	Plan         *store.Plan              `json:"plan,omitempty"`
 	Passes       []store.PlanPass         `json:"passes,omitempty"`
 	ReviewPacket *PlanIntentReviewPacket  `json:"review_packet,omitempty"`
+	ReviewPolicy *EffectivePlanReviewPolicy
+	ReviewAction *PlanAttemptReviewAction
+	ReviewGate   *PlanAttemptReviewGate
+}
+
+type PlanAttemptReviewAction struct {
+	Action           string
+	OK               bool
+	FailureCode      string
+	Message          string
+	Escalated        bool
+	EscalationReason string
+	FinalTier        string
 }

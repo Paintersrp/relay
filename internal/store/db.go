@@ -29,6 +29,7 @@ type DashboardRun = generated.ListRecentRunsWithRepoRow
 type Plan = generated.Plan
 type PlanPass = generated.PlanPass
 type ProjectContextRecord = generated.ProjectContextRecord
+type PlanReviewSetting = generated.PlanReviewSetting
 type IntentPacket = generated.IntentPacket
 type PlanAttempt = generated.PlanAttempt
 type IntentDriftReview = generated.IntentDriftReview

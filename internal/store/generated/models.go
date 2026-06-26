@@ -244,6 +244,17 @@ type PlanPass struct {
 	RawPassJson                    string `json:"raw_pass_json"`
 }
 
+type PlanReviewSetting struct {
+	ID                     int64  `json:"id"`
+	ProjectRowID           int64  `json:"project_row_id"`
+	ProjectID              string `json:"project_id"`
+	DriftReviewMode        string `json:"drift_review_mode"`
+	ModelTier              string `json:"model_tier"`
+	ManualModelCallWarning string `json:"manual_model_call_warning"`
+	CreatedAt              string `json:"created_at"`
+	UpdatedAt              string `json:"updated_at"`
+}
+
 type Project struct {
 	ID                  int64  `json:"id"`
 	ProjectID           string `json:"project_id"`

@@ -63,7 +63,7 @@ func TestRoutingCompatibility(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create repo: %v", err)
 		}
-		
+
 		// draft status -> intake step
 		runDraft, err := st.CreateRun(repo.ID, "Run Draft", "draft", "gpt-4", "gpt-4", "main")
 		if err != nil {
@@ -117,7 +117,7 @@ func TestRoutingCompatibility(t *testing.T) {
 	t.Run("GET /runs/{id}/artifacts/{kind} and download", func(t *testing.T) {
 		repo, _ := st.CreateRepo("compat-test-repo-artifacts", filepath.Join(dir, "compat-repo-2"))
 		run, _ := st.CreateRun(repo.ID, "Run Artifacts", "draft", "gpt-4", "gpt-4", "main")
-		
+
 		reqView := httptest.NewRequest("GET", fmt.Sprintf("/runs/%d/artifacts/planner_handoff", run.ID), nil)
 		wView := httptest.NewRecorder()
 		handler.ServeHTTP(wView, reqView)

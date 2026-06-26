@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"relay/internal/api/shared"
+	appdrift "relay/internal/app/drift"
 	appplans "relay/internal/app/plans"
 
 	"github.com/go-chi/chi/v5"
@@ -20,16 +21,19 @@ import (
 type Handler struct {
 	service      *appplans.Service
 	orchestrator *appplans.OrchestratorWorkService
+	driftService *appdrift.Service
 }
 
 // NewHandler constructs a plan Handler.
 func NewHandler(
 	service *appplans.Service,
 	orchestrator *appplans.OrchestratorWorkService,
+	driftService *appdrift.Service,
 ) *Handler {
 	return &Handler{
 		service:      service,
 		orchestrator: orchestrator,
+		driftService: driftService,
 	}
 }
 

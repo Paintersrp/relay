@@ -17,9 +17,13 @@ func MountRoutes(r chi.Router, h *Handler) {
 	r.Get("/plans/{planId}", h.GetPlan)
 	r.Get("/plans/{planId}/passes/{passId}", h.GetPlanPass)
 
+	r.Get("/projects/{projectId}/plan-review-settings", h.GetPlanReviewSettings)
+	r.Put("/projects/{projectId}/plan-review-settings", h.UpdatePlanReviewSettings)
 	r.Post("/projects/{projectId}/plan-attempts", h.CreatePlanAttemptWithIntent)
 	r.Get("/projects/{projectId}/plan-attempts/{planAttemptId}/intent-review-packet", h.GetPlanIntentReviewPacket)
 	r.Post("/projects/{projectId}/plan-attempts/{planAttemptId}/intent-drift-reviews", h.SubmitIntentDriftReview)
+	r.Post("/projects/{projectId}/plan-attempts/{planAttemptId}/run-drift-review", h.RunPlanAttemptDriftReview)
+	r.Get("/projects/{projectId}/plan-attempts/{planAttemptId}/review-gate", h.GetPlanAttemptReviewGate)
 	r.Post("/projects/{projectId}/plan-attempts/{planAttemptId}/revisions", h.RevisePlanAttempt)
 	r.Post("/projects/{projectId}/plan-attempts/{planAttemptId}/void", h.VoidPlanAttempt)
 	r.Post("/projects/{projectId}/plan-attempts/{planAttemptId}/approve", h.ApprovePlanAttempt)

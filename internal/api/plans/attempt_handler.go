@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"relay/internal/api/shared"
+	appdrift "relay/internal/app/drift"
 	appplans "relay/internal/app/plans"
 
 	"github.com/go-chi/chi/v5"
@@ -26,8 +27,47 @@ func (h *Handler) CreatePlanAttemptWithIntent(w http.ResponseWriter, r *http.Req
 		writePlanAttemptResult(w, blocked, http.StatusCreated)
 		return
 	}
+	policy, policyBlocked, err := h.service.ResolvePlanReviewPolicy(r.Context(), appReq.ProjectID, appReq.DriftReviewMode, appReq.ModelTier)
+	if err != nil {
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+	if policyBlocked != nil {
+		writePlanAttemptResult(w, policyBlocked, http.StatusCreated)
+		return
+	}
+	appReq.DriftReviewMode = policy.DriftReviewMode
+	appReq.ModelTier = policy.ModelTier
 
 	result, err := h.service.CreatePlanAttemptWithIntent(r.Context(), appReq)
+	if err == nil && result != nil && result.OK {
+		result.ReviewPolicy = policy
+		result.ReviewAction = initialReviewAction(policy.DriftReviewMode)
+		if policy.DriftReviewMode == appplans.DriftReviewModeAutomatic {
+			if h.driftService == nil {
+				result.ReviewAction = &appplans.PlanAttemptReviewAction{Action: "run_drift_review", OK: false, FailureCode: "drift_service_unavailable", Message: "drift review service is unavailable"}
+			} else {
+				reviewResult, reviewErr := h.driftService.RunInternalReview(r.Context(), appdrift.InternalReviewRequest{
+					ProjectID:      appReq.ProjectID,
+					PlanAttemptID:  result.PlanAttempt.PlanAttemptID,
+					RequestedTier:  policy.ModelTier,
+					AllowModelCall: true,
+				})
+				if reviewErr != nil {
+					err = reviewErr
+				} else {
+					mapped := mapInternalReviewResultToAttemptResult(reviewResult)
+					result.DriftReview = mapped.DriftReview
+					result.ReviewAction = mapped.ReviewAction
+				}
+			}
+		}
+		if result.PlanAttempt != nil {
+			if gate, _, gateErr := h.service.GetPlanAttemptReviewGate(r.Context(), appplans.PlanAttemptReviewGateRequest{ProjectID: appReq.ProjectID, PlanAttemptID: result.PlanAttempt.PlanAttemptID}); gateErr == nil {
+				result.ReviewGate = gate
+			}
+		}
+	}
 	writePlanAttemptResultOrError(w, result, err, http.StatusCreated)
 }
 
@@ -145,4 +185,19 @@ func writePlanAttemptResult(w http.ResponseWriter, result *appplans.PlanAttemptR
 		status = attemptBlockerHTTPStatus(result.BlockerCode)
 	}
 	shared.JSON(w, status, mapPlanAttemptResultToAPI(result))
+}
+
+func initialReviewAction(mode string) *appplans.PlanAttemptReviewAction {
+	switch mode {
+	case appplans.DriftReviewModeDisabled:
+		return &appplans.PlanAttemptReviewAction{Action: "drift_review_disabled", OK: true, Message: "drift review is disabled"}
+	case appplans.DriftReviewModeManual:
+		return &appplans.PlanAttemptReviewAction{Action: "manual_review_available", OK: true, Message: "manual drift review is available"}
+	case appplans.DriftReviewModeExternal:
+		return &appplans.PlanAttemptReviewAction{Action: "external_review_required", OK: true, Message: "external drift review submission is required"}
+	case appplans.DriftReviewModeAutomatic:
+		return &appplans.PlanAttemptReviewAction{Action: "run_drift_review", OK: false, Message: "automatic drift review has not run yet"}
+	default:
+		return nil
+	}
 }

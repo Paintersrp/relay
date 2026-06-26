@@ -17,6 +17,7 @@ import (
 	runsapi "relay/internal/api/runs"
 	"relay/internal/api/shared"
 	appaudits "relay/internal/app/audits"
+	appdrift "relay/internal/app/drift"
 	appintake "relay/internal/app/intake"
 	appplans "relay/internal/app/plans"
 	appprojects "relay/internal/app/projects"
@@ -145,7 +146,8 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	planSvc := appplans.NewService(s)
 	planLifecycleSvc := appplans.NewRunLifecycleService(s)
 	planWorkSvc := appplans.NewOrchestratorWorkService(s)
-	planH := plansapi.NewHandler(planSvc, planWorkSvc)
+	driftSvc := appdrift.NewService(planSvc, appdrift.NewReviewerFromEnv(log), log)
+	planH := plansapi.NewHandler(planSvc, planWorkSvc, driftSvc)
 	runSvc := appruns.NewService(s, log, eventHub)
 	runH := runsapi.NewHandler(runSvc, planLifecycleSvc)
 	artifactH := artifactsapi.NewHandler(runSvc)

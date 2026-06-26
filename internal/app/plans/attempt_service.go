@@ -21,6 +21,10 @@ func (svc *Service) CreatePlanAttemptWithIntent(ctx context.Context, req CreateP
 	if project == nil {
 		return blockAttempt(BlockerUnknownProject, "project is unknown")
 	}
+	policy, blocked, err := svc.ResolvePlanReviewPolicy(ctx, project.ProjectID, req.DriftReviewMode, req.ModelTier)
+	if blocked != nil || err != nil {
+		return blocked, err
+	}
 	canonical, rawHash, err := validateAttemptPlanInput(req.RawPlanJSON, req.PlanArtifactRef, req.OptionalMarkdownRef)
 	if err != nil {
 		return blockAttempt(BlockerMissingPlanArtifact, err.Error())
@@ -95,8 +99,8 @@ func (svc *Service) CreatePlanAttemptWithIntent(ctx context.Context, req CreateP
 		ReplacementPlanAttemptID:   sql.NullString{},
 		Status:                     PlanAttemptStatusDraft,
 		ReviewState:                PlanAttemptReviewPacketReady,
-		DriftReviewMode:            validateDriftReviewMode(req.DriftReviewMode),
-		ModelTier:                  validateModelTier(req.ModelTier),
+		DriftReviewMode:            policy.DriftReviewMode,
+		ModelTier:                  policy.ModelTier,
 		PlanJsonArtifactPath:       req.PlanArtifactRef.Path,
 		PlanJsonArtifactSha256:     req.PlanArtifactRef.SHA256,
 		RawPlanJson:                string(canonical),
@@ -394,7 +398,7 @@ func (svc *Service) ApprovePlanAttempt(ctx context.Context, req ApprovePlanAttem
 	if !req.Approved {
 		return blockAttempt(BlockerApprovalRequired, "explicit approval is required")
 	}
-	_, attempt, blocked, err := svc.loadProjectAttempt(ctx, req.ProjectID, req.PlanAttemptID)
+	project, attempt, blocked, err := svc.loadProjectAttempt(ctx, req.ProjectID, req.PlanAttemptID)
 	if blocked != nil || err != nil {
 		return blocked, err
 	}
@@ -409,7 +413,7 @@ func (svc *Service) ApprovePlanAttempt(ctx context.Context, req ApprovePlanAttem
 	if blocked != nil || err != nil {
 		return blocked, err
 	}
-	if blocked, err := approvalGateBlocker(attempt.DriftReviewMode, review, hasReview, req); blocked != nil || err != nil {
+	if blocked, err := svc.approvalGateBlocker(ctx, *project, attempt, review, hasReview, req); blocked != nil || err != nil {
 		return blocked, err
 	}
 	acceptedID := sql.NullString{}
@@ -778,54 +782,4 @@ func (svc *Service) resolveApprovalReview(ctx context.Context, q *generated.Quer
 		return store.IntentDriftReview{}, false, blocked, err
 	}
 	return reviews[0], true, nil, nil
-}
-
-func approvalGateBlocker(mode string, review store.IntentDriftReview, hasReview bool, req ApprovePlanAttemptRequest) (*PlanAttemptResult, error) {
-	switch mode {
-	case DriftReviewModeDisabled:
-		if hasReview || req.AcceptedDriftReviewID != "" {
-			return blockAttempt(BlockerApprovalRequired, "disabled drift review mode must not accept a review")
-		}
-		return nil, nil
-	case DriftReviewModeManual:
-		if !hasReview {
-			if !req.NoDriftReviewAcknowledged {
-				return blockAttempt(BlockerDriftAcknowledgementReq, "manual approval without drift review requires no-review acknowledgement")
-			}
-			return nil, nil
-		}
-	case DriftReviewModeAutomatic:
-		if !hasReview || review.ReviewSource != ReviewSourceInternal {
-			return blockAttempt(BlockerDriftReviewRequired, "automatic drift review mode requires an internal review")
-		}
-	case DriftReviewModeExternal:
-		if !hasReview || review.ReviewSource != ReviewSourceExternal {
-			return blockAttempt(BlockerDriftReviewRequired, "external drift review mode requires an external review")
-		}
-	default:
-		return blockAttempt(BlockerApprovalRequired, "unknown drift review mode")
-	}
-	if !hasReview {
-		return nil, nil
-	}
-	switch review.ApprovalGateStatus {
-	case ApprovalGateStatusReady:
-		return nil, nil
-	case ApprovalGateStatusNotRequired:
-		if mode == DriftReviewModeDisabled {
-			return nil, nil
-		}
-		return blockAttempt(BlockerDriftReviewRequired, "drift review gate is not required only for disabled mode")
-	case ApprovalGateStatusAckRequired:
-		if !req.DriftAcknowledged {
-			return blockAttempt(BlockerDriftAcknowledgementReq, "drift acknowledgement is required")
-		}
-		return nil, nil
-	case ApprovalGateStatusRevisionRequired:
-		return blockAttempt(BlockerDriftRevisionRequired, "drift review requires revision")
-	case ApprovalGateStatusBlocked:
-		return blockAttempt(BlockerDriftReviewBlocked, "drift review blocks approval")
-	default:
-		return blockAttempt(BlockerDriftReviewBlocked, "unknown approval gate status")
-	}
 }

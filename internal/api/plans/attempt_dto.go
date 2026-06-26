@@ -106,6 +106,10 @@ type PlanAttemptAPIResponse struct {
 	Plan         *PlanAPIPlan                     `json:"plan,omitempty"`
 	Passes       []PlanAPIPass                    `json:"passes,omitempty"`
 	ReviewPacket *appplans.PlanIntentReviewPacket `json:"reviewPacket,omitempty"`
+	ReviewPolicy *PlanReviewPolicyAPI             `json:"reviewPolicy,omitempty"`
+	ReviewAction *PlanAttemptReviewActionAPI      `json:"reviewAction,omitempty"`
+	ReviewGate   *PlanAttemptReviewGateAPI        `json:"reviewGate,omitempty"`
+	CostWarning  string                           `json:"costWarning,omitempty"`
 }
 
 type IntentPacketAPI struct {
@@ -317,6 +321,21 @@ func mapPlanAttemptResultToAPI(result *appplans.PlanAttemptResult) PlanAttemptAP
 		}
 	}
 	resp.ReviewPacket = result.ReviewPacket
+	if result.ReviewPolicy != nil {
+		v := mapReviewPolicyToAPI(*result.ReviewPolicy)
+		resp.ReviewPolicy = &v
+		if result.ReviewPolicy.DriftReviewMode == appplans.DriftReviewModeManual {
+			resp.CostWarning = result.ReviewPolicy.ManualModelCallWarning
+		}
+	}
+	if result.ReviewAction != nil {
+		v := mapReviewActionToAPI(*result.ReviewAction)
+		resp.ReviewAction = &v
+	}
+	if result.ReviewGate != nil {
+		v := mapReviewGateToAPI(*result.ReviewGate)
+		resp.ReviewGate = &v
+	}
 	return resp
 }
 
