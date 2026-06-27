@@ -76,7 +76,14 @@ func buildFoundationDoc() *agentrefs.ReferenceDocument {
 		SourceInputs: inputs,
 		FactLabels:   labels,
 		Facts:        facts,
-		References:   []agentrefs.ReferenceEntry{},
+		References: []agentrefs.ReferenceEntry{
+			{
+				ID:          "backend-surface",
+				Kind:        "generated_reference",
+				Path:        agentrefs.BackendSurfaceJSONPath,
+				Description: "Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference.",
+			},
+		},
 	}
 
 	return doc
@@ -87,34 +94,50 @@ func runGenerate() error {
 		return fmt.Errorf("create output dir: %w", err)
 	}
 
-	doc := buildFoundationDoc()
+	indexDoc := buildFoundationDoc()
+	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
+		JSONPath:     agentrefs.IndexJSONPath,
+		MarkdownPath: agentrefs.IndexMarkdownPath,
+		Document:     indexDoc,
+	}); err != nil {
+		return fmt.Errorf("write index: %w", err)
+	}
 
-	jsonData, err := agentrefs.RenderJSON(doc)
+	backendDoc, err := agentrefs.BuildBackendSurfaceDoc(".")
 	if err != nil {
-		return fmt.Errorf("render JSON: %w", err)
+		return fmt.Errorf("build backend surface doc: %w", err)
 	}
-
-	if err := os.WriteFile(agentrefs.IndexJSONPath, jsonData, 0644); err != nil {
-		return fmt.Errorf("write JSON: %w", err)
+	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
+		JSONPath:     agentrefs.BackendSurfaceJSONPath,
+		MarkdownPath: agentrefs.BackendSurfaceMarkdownPath,
+		Document:     backendDoc,
+	}); err != nil {
+		return fmt.Errorf("write backend surface: %w", err)
 	}
-	fmt.Printf("wrote %s\n", agentrefs.IndexJSONPath)
-
-	mdData, err := agentrefs.RenderMarkdown(doc)
-	if err != nil {
-		return fmt.Errorf("render Markdown: %w", err)
-	}
-
-	if err := os.WriteFile(agentrefs.IndexMarkdownPath, mdData, 0644); err != nil {
-		return fmt.Errorf("write Markdown: %w", err)
-	}
-	fmt.Printf("wrote %s\n", agentrefs.IndexMarkdownPath)
 
 	return nil
 }
 
 func runCheck() error {
-	doc := buildFoundationDoc()
-	diffs, err := agentrefs.CheckOutputs(doc)
+	indexDoc := buildFoundationDoc()
+
+	backendDoc, err := agentrefs.BuildBackendSurfaceDoc(".")
+	if err != nil {
+		return fmt.Errorf("build backend surface doc: %w", err)
+	}
+
+	diffs, err := agentrefs.CheckOutputSpecs([]agentrefs.OutputSpec{
+		{
+			JSONPath:     agentrefs.IndexJSONPath,
+			MarkdownPath: agentrefs.IndexMarkdownPath,
+			Document:     indexDoc,
+		},
+		{
+			JSONPath:     agentrefs.BackendSurfaceJSONPath,
+			MarkdownPath: agentrefs.BackendSurfaceMarkdownPath,
+			Document:     backendDoc,
+		},
+	})
 	if err != nil {
 		return fmt.Errorf("check outputs: %w", err)
 	}

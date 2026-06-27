@@ -68,5 +68,12 @@
       ]
     }
   ],
-  "references": []
+  "references": [
+    {
+      "id": "backend-surface",
+      "kind": "generated_reference",
+      "path": "docs/generated/agent-references/backend-surface.json",
+      "description": "Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference."
+    }
+  ]
 }

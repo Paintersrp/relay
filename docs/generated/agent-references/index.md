@@ -50,3 +50,9 @@ Evidence:
 - schema: `schema/project_agent_reference.schema.json`
 - source: `cmd/agentrefs/main.go`
 
+## References
+
+| ID | Kind | Path | Description |
+| --- | --- | --- | --- |
+| `backend-surface` | generated_reference | `docs/generated/agent-references/backend-surface.json` | Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference. |
+

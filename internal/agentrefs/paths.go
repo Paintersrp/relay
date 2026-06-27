@@ -7,10 +7,12 @@ import (
 )
 
 const (
-	OutputDir       = "docs/generated/agent-references"
-	IndexJSONPath   = OutputDir + "/index.json"
-	IndexMarkdownPath = OutputDir + "/index.md"
-	SchemaPath      = "schema/project_agent_reference.schema.json"
+	OutputDir                = "docs/generated/agent-references"
+	IndexJSONPath            = OutputDir + "/index.json"
+	IndexMarkdownPath        = OutputDir + "/index.md"
+	BackendSurfaceJSONPath   = OutputDir + "/backend-surface.json"
+	BackendSurfaceMarkdownPath = OutputDir + "/backend-surface.md"
+	SchemaPath               = "schema/project_agent_reference.schema.json"
 )
 
 func ValidateRepoRelativePath(path string) error {

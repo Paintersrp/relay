@@ -221,17 +221,68 @@ func TestCheckModeDetectsStale(t *testing.T) {
 	}
 
 	if len(diffs) < 1 {
-		t.Fatal("expected at least one diff (missing files), got none")
+		t.Fatal("expected at least one diff, got none")
+	}
+}
+
+func TestCheckOutputSpecs_ReturnsDiffsForMissingFile(t *testing.T) {
+	spec := OutputSpec{
+		JSONPath:     "/tmp/nonexistent-check-test.json",
+		MarkdownPath: "/tmp/nonexistent-check-test.md",
+		Document: &ReferenceDocument{
+			SchemaVersion: "1.0.0",
+			ReferenceID:   "spec-test",
+			Repo:          RepoIdentity{ProjectID: "p", RepoID: "r", Branch: "main"},
+			GeneratedBy:   GeneratorIdentity{Name: "test", Version: "0.1.0"},
+			Rendering: RenderingContract{
+				JSONPrimary: true, MarkdownFromJSON: true,
+				DeterministicSort: true, NoTimestamps: true, RelativePathsOnly: true,
+			},
+			FactLabels: []FactLabel{FactLabelProven},
+			Facts:      []Fact{{ID: "f1", Label: FactLabelProven, Statement: "test"}},
+		},
 	}
 
-	foundMissing := false
-	for _, d := range diffs {
-		if d.Status == "missing" {
-			foundMissing = true
-		}
+	diffs, err := CheckOutputSpecs([]OutputSpec{spec})
+	if err != nil {
+		t.Fatalf("CheckOutputSpecs: %v", err)
 	}
-	if !foundMissing {
-		t.Error("expected missing-file diffs when files don't exist")
+	if len(diffs) < 2 {
+		t.Fatal("expected at least 2 diffs (both JSON and Markdown missing), got", len(diffs))
+	}
+}
+
+func TestWriteOutputSpec_WritesFiles(t *testing.T) {
+	dir := t.TempDir()
+	jsonPath := dir + "/test.json"
+	mdPath := dir + "/test.md"
+
+	spec := OutputSpec{
+		JSONPath:     jsonPath,
+		MarkdownPath: mdPath,
+		Document: &ReferenceDocument{
+			SchemaVersion: "1.0.0",
+			ReferenceID:   "write-test",
+			Repo:          RepoIdentity{ProjectID: "p", RepoID: "r", Branch: "main"},
+			GeneratedBy:   GeneratorIdentity{Name: "test", Version: "0.1.0"},
+			Rendering: RenderingContract{
+				JSONPrimary: true, MarkdownFromJSON: true,
+				DeterministicSort: true, NoTimestamps: true, RelativePathsOnly: true,
+			},
+			FactLabels: []FactLabel{FactLabelProven},
+			Facts:      []Fact{{ID: "f1", Label: FactLabelProven, Statement: "test"}},
+		},
+	}
+
+	if err := WriteOutputSpec(spec); err != nil {
+		t.Fatalf("WriteOutputSpec: %v", err)
+	}
+
+	if _, err := os.Stat(jsonPath); os.IsNotExist(err) {
+		t.Error("JSON file was not written")
+	}
+	if _, err := os.Stat(mdPath); os.IsNotExist(err) {
+		t.Error("Markdown file was not written")
 	}
 }
 
