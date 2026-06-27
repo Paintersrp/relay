@@ -231,19 +231,10 @@ func TestPlanSeedLifecycleTransitions(t *testing.T) {
 		t.Fatalf("CreatePlanSeed error: %v, issues: %+v", err, createIssues)
 	}
 
-	// Defer without reason (should fail)
-	_, issues, err := svc.DeferPlanSeed(t.Context(), "relay", "seed-1", PlanSeedLifecycleInput{
-		DeferReason: "",
-	})
-	if err != nil {
-		t.Fatalf("DeferPlanSeed error: %v", err)
-	}
-	if len(issues) == 0 || issues[0].Field != "defer_reason" || issues[0].Code != PlanSeedIssueRequired {
-		t.Fatalf("expected defer_reason required issue, got %+v", issues)
-	}
+	// Defer without reason is now allowed.
 
 	// Defer with secret-like reason (should fail)
-	_, issues, err = svc.DeferPlanSeed(t.Context(), "relay", "seed-1", PlanSeedLifecycleInput{
+	_, issues, err := svc.DeferPlanSeed(t.Context(), "relay", "seed-1", PlanSeedLifecycleInput{
 		DeferReason: "Defer until sk-key is rotated",
 	})
 	if err != nil {
@@ -311,6 +302,106 @@ func TestPlanSeedLifecycleTransitions(t *testing.T) {
 	}
 	if len(updateIssues2) == 0 || updateIssues2[0].Code != PlanSeedIssueTerminalStatus {
 		t.Fatalf("expected terminal_status issue, got %+v", updateIssues2)
+	}
+
+	// 1. Defer seed-empty-defer with empty reason (should succeed)
+	_, _, err = svc.CreatePlanSeed(t.Context(), "relay", PlanSeedInput{
+		SeedID:       "seed-empty-defer",
+		Title:        "Empty Defer Seed",
+		QuickContext: "Testing empty defer reason",
+	})
+	if err != nil {
+		t.Fatalf("failed to create seed-empty-defer: %v", err)
+	}
+
+	deferredEmpty, emptyDeferIssues, err := svc.DeferPlanSeed(t.Context(), "relay", "seed-empty-defer", PlanSeedLifecycleInput{
+		DeferReason: "   ",
+	})
+	if err != nil || len(emptyDeferIssues) > 0 {
+		t.Fatalf("DeferPlanSeed empty error: %v, issues: %+v", err, emptyDeferIssues)
+	}
+	if deferredEmpty.Status != PlanSeedStatusDeferred || deferredEmpty.DeferReason != "" {
+		t.Fatalf("expected deferred status and empty DeferReason, got: %+v", deferredEmpty)
+	}
+
+	// 2. Reject seed-empty-reject with empty reason from captured status (should succeed)
+	_, _, err = svc.CreatePlanSeed(t.Context(), "relay", PlanSeedInput{
+		SeedID:       "seed-empty-reject",
+		Title:        "Empty Reject Seed",
+		QuickContext: "Testing empty reject reason",
+	})
+	if err != nil {
+		t.Fatalf("failed to create seed-empty-reject: %v", err)
+	}
+
+	rejectedEmpty, emptyRejectIssues, err := svc.RejectPlanSeed(t.Context(), "relay", "seed-empty-reject", PlanSeedLifecycleInput{
+		RejectReason: " ",
+	})
+	if err != nil || len(emptyRejectIssues) > 0 {
+		t.Fatalf("RejectPlanSeed empty error: %v, issues: %+v", err, emptyRejectIssues)
+	}
+	if rejectedEmpty.Status != PlanSeedStatusRejected || rejectedEmpty.RejectReason != "" {
+		t.Fatalf("expected rejected status and empty RejectReason, got: %+v", rejectedEmpty)
+	}
+
+	// 3. Defer seed-secret-defer with secret-like reason (should fail)
+	_, _, err = svc.CreatePlanSeed(t.Context(), "relay", PlanSeedInput{
+		SeedID:       "seed-secret-defer",
+		Title:        "Secret Defer Seed",
+		QuickContext: "Testing secret defer reason",
+	})
+	if err != nil {
+		t.Fatalf("failed to create seed-secret-defer: %v", err)
+	}
+
+	_, secretDeferIssues, err := svc.DeferPlanSeed(t.Context(), "relay", "seed-secret-defer", PlanSeedLifecycleInput{
+		DeferReason: "Defer due to secret bearer sk-key",
+	})
+	if err != nil {
+		t.Fatalf("DeferPlanSeed secret error: %v", err)
+	}
+	if len(secretDeferIssues) == 0 || secretDeferIssues[0].Field != "defer_reason" || secretDeferIssues[0].Code != PlanSeedIssueSecretLikeValue {
+		t.Fatalf("expected secret_like_value issue, got %+v", secretDeferIssues)
+	}
+
+	// 4. Reject seed-secret-reject with secret-like reason (should fail)
+	_, _, err = svc.CreatePlanSeed(t.Context(), "relay", PlanSeedInput{
+		SeedID:       "seed-secret-reject",
+		Title:        "Secret Reject Seed",
+		QuickContext: "Testing secret reject reason",
+	})
+	if err != nil {
+		t.Fatalf("failed to create seed-secret-reject: %v", err)
+	}
+
+	_, secretRejectIssues, err := svc.RejectPlanSeed(t.Context(), "relay", "seed-secret-reject", PlanSeedLifecycleInput{
+		RejectReason: "Reject due to ghp_token in logs",
+	})
+	if err != nil {
+		t.Fatalf("RejectPlanSeed secret error: %v", err)
+	}
+	if len(secretRejectIssues) == 0 || secretRejectIssues[0].Field != "reject_reason" || secretRejectIssues[0].Code != PlanSeedIssueSecretLikeValue {
+		t.Fatalf("expected secret_like_value issue, got %+v", secretRejectIssues)
+	}
+
+	// 5. Defer with trimming verification
+	_, _, err = svc.CreatePlanSeed(t.Context(), "relay", PlanSeedInput{
+		SeedID:       "seed-trim-defer",
+		Title:        "Trim Defer Seed",
+		QuickContext: "Testing trimmed defer reason",
+	})
+	if err != nil {
+		t.Fatalf("failed to create seed-trim-defer: %v", err)
+	}
+
+	deferredTrim, trimDeferIssues, err := svc.DeferPlanSeed(t.Context(), "relay", "seed-trim-defer", PlanSeedLifecycleInput{
+		DeferReason: "  Trimmed Reason  ",
+	})
+	if err != nil || len(trimDeferIssues) > 0 {
+		t.Fatalf("DeferPlanSeed trim error: %v, issues: %+v", err, trimDeferIssues)
+	}
+	if deferredTrim.DeferReason != "Trimmed Reason" {
+		t.Fatalf("expected 'Trimmed Reason', got %q", deferredTrim.DeferReason)
 	}
 }
 

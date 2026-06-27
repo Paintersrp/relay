@@ -59,13 +59,6 @@ func planSeedTransitionIssue(status, action string) PlanSeedValidationIssue {
 	return planSeedValidationIssue("status", PlanSeedIssueInvalidTransition, fmt.Sprintf("cannot %s seed in %s status", action, status))
 }
 
-func requirePlanSeedReason(field, value string) []PlanSeedValidationIssue {
-	if strings.TrimSpace(value) == "" {
-		return []PlanSeedValidationIssue{planSeedValidationIssue(field, PlanSeedIssueRequired, fmt.Sprintf("%s is required", field))}
-	}
-	return nil
-}
-
 func (s *Service) resolvePlanSeedProject(projectID string) (*store.Project, error) {
 	return s.store.GetProjectByProjectID(projectID)
 }
@@ -222,8 +215,11 @@ func (s *Service) DeferPlanSeed(ctx context.Context, projectID, seedID string, i
 		return nil, []PlanSeedValidationIssue{planSeedTransitionIssue(seed.Status, "defer")}, nil
 	}
 
-	issues := requirePlanSeedReason("defer_reason", input.DeferReason)
-	issues = append(issues, scanPlanSeedSecretLikeStrings("defer_reason", input.DeferReason)...)
+	deferReason := strings.TrimSpace(input.DeferReason)
+	var issues []PlanSeedValidationIssue
+	if deferReason != "" {
+		issues = append(issues, scanPlanSeedSecretLikeStrings("defer_reason", deferReason)...)
+	}
 	if len(issues) > 0 {
 		return nil, issues, nil
 	}
@@ -232,7 +228,7 @@ func (s *Service) DeferPlanSeed(ctx context.Context, projectID, seedID string, i
 		ProjectRowID: project.ID,
 		SeedID:       seed.SeedID,
 		Status:       PlanSeedStatusDeferred,
-		DeferReason:  strings.TrimSpace(input.DeferReason),
+		DeferReason:  deferReason,
 		RejectReason: seed.RejectReason,
 		PlannedAt:    seed.PlannedAt,
 	})
@@ -282,8 +278,11 @@ func (s *Service) RejectPlanSeed(ctx context.Context, projectID, seedID string, 
 		return nil, []PlanSeedValidationIssue{planSeedTransitionIssue(seed.Status, "reject")}, nil
 	}
 
-	issues := requirePlanSeedReason("reject_reason", input.RejectReason)
-	issues = append(issues, scanPlanSeedSecretLikeStrings("reject_reason", input.RejectReason)...)
+	rejectReason := strings.TrimSpace(input.RejectReason)
+	var issues []PlanSeedValidationIssue
+	if rejectReason != "" {
+		issues = append(issues, scanPlanSeedSecretLikeStrings("reject_reason", rejectReason)...)
+	}
 	if len(issues) > 0 {
 		return nil, issues, nil
 	}
@@ -293,7 +292,7 @@ func (s *Service) RejectPlanSeed(ctx context.Context, projectID, seedID string, 
 		SeedID:       seed.SeedID,
 		Status:       PlanSeedStatusRejected,
 		DeferReason:  seed.DeferReason,
-		RejectReason: strings.TrimSpace(input.RejectReason),
+		RejectReason: rejectReason,
 		PlannedAt:    seed.PlannedAt,
 	})
 	if err != nil {
