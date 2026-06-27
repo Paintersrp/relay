@@ -36,6 +36,8 @@ type ProjectAPIResponse struct {
 	Project      *ProjectAPIProject                   `json:"project,omitempty"`
 	Repository   *ProjectAPIRepository                `json:"repository,omitempty"`
 	Repositories []ProjectAPIRepository               `json:"repositories,omitempty"`
+	PlanSeed     *ProjectAPIPlanSeed                  `json:"seed,omitempty"`
+	PlanSeeds    []ProjectAPIPlanSeed                 `json:"seeds,omitempty"`
 	Validation   []appprojects.ProjectValidationIssue `json:"validation,omitempty"`
 }
 

@@ -25,6 +25,12 @@ func baseToolNamesForTest() []string {
 		toolVoidPlanAttempt,
 		toolApprovePlanAttempt,
 		toolSubmitPlanAttempt,
+		toolCreatePlanSeed,
+		toolListPlanSeeds,
+		toolGetPlanSeed,
+		toolUpdatePlanSeed,
+		toolDeferPlanSeed,
+		toolRejectPlanSeed,
 	}
 }
 

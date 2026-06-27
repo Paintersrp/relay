@@ -12,4 +12,11 @@ func MountRoutes(r chi.Router, h *Handler) {
 	r.Post("/projects/{projectId}/repositories", h.UpsertProjectRepository)
 	r.Post("/projects/{projectId}/repositories/{repoId}/update", h.UpdateProjectRepository)
 	r.Post("/projects/{projectId}/repositories/{repoId}/set-enabled", h.SetProjectRepositoryEnabled)
+
+	r.Get("/projects/{projectId}/plan-seeds", h.ListPlanSeeds)
+	r.Post("/projects/{projectId}/plan-seeds", h.CreatePlanSeed)
+	r.Get("/projects/{projectId}/plan-seeds/{seedId}", h.GetPlanSeed)
+	r.Post("/projects/{projectId}/plan-seeds/{seedId}/update", h.UpdatePlanSeed)
+	r.Post("/projects/{projectId}/plan-seeds/{seedId}/defer", h.DeferPlanSeed)
+	r.Post("/projects/{projectId}/plan-seeds/{seedId}/reject", h.RejectPlanSeed)
 }
