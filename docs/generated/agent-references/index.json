@@ -76,6 +76,12 @@
       "description": "Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference."
     },
     {
+      "id": "frontend-backend-contract",
+      "kind": "generated_reference",
+      "path": "docs/generated/agent-references/frontend-backend-contract.json",
+      "description": "Generated frontend/backend contract reference: frontend API clients, query keys, TypeScript contracts, backend HTTP route matches, and backend Go DTO alignment."
+    },
+    {
       "id": "http-api-surface",
       "kind": "generated_reference",
       "path": "docs/generated/agent-references/http-api-surface.json",

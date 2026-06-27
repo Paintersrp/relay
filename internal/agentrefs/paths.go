@@ -20,7 +20,9 @@ const (
 	MCPSurfaceMarkdownPath  = OutputDir + "/mcp-surface.md"
 	HTTPAPISurfaceJSONPath     = OutputDir + "/http-api-surface.json"
 	HTTPAPISurfaceMarkdownPath = OutputDir + "/http-api-surface.md"
-	SchemaPath                 = "schema/project_agent_reference.schema.json"
+	FrontendBackendContractJSONPath     = OutputDir + "/frontend-backend-contract.json"
+	FrontendBackendContractMarkdownPath = OutputDir + "/frontend-backend-contract.md"
+	SchemaPath                          = "schema/project_agent_reference.schema.json"
 )
 
 func ValidateRepoRelativePath(path string) error {

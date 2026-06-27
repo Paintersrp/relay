@@ -55,6 +55,7 @@ Evidence:
 | ID | Kind | Path | Description |
 | --- | --- | --- | --- |
 | `backend-surface` | generated_reference | `docs/generated/agent-references/backend-surface.json` | Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference. |
+| `frontend-backend-contract` | generated_reference | `docs/generated/agent-references/frontend-backend-contract.json` | Generated frontend/backend contract reference: frontend API clients, query keys, TypeScript contracts, backend HTTP route matches, and backend Go DTO alignment. |
 | `http-api-surface` | generated_reference | `docs/generated/agent-references/http-api-surface.json` | Generated HTTP/API route surface reference: method, path, handler, source file, and route group from route source files. |
 | `mcp-registry` | generated_reference | `docs/generated/agent-references/mcp-surface.json` | Generated MCP action registry reference: tool definitions, dispatch handlers, profile gating, mutating vs retrieval-only behavior, and forbidden side effects. |
 | `storage-surface` | generated_reference | `docs/generated/agent-references/storage-surface.json` | Generated storage, migration, SQL query, sqlc-boundary, and store-wrapper surface reference. |

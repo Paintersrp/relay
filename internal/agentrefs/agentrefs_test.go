@@ -1166,3 +1166,138 @@ func TestBuildMCPSurfaceDoc_NoEvidenceIsAbsolute(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildFrontendBackendContractDoc_EmitsRequiredFacts(t *testing.T) {
+	doc, err := BuildFrontendBackendContractDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildFrontendBackendContractDoc: %v", err)
+	}
+
+	hasAPICall := false
+	hasQueryKey := false
+	hasRouteMatch := false
+	hasDTOAlignOrDrift := false
+
+	for _, f := range doc.Facts {
+		if strings.HasPrefix(f.ID, "frontend-api-call-") {
+			hasAPICall = true
+		}
+		if strings.HasPrefix(f.ID, "frontend-query-key-") {
+			hasQueryKey = true
+		}
+		if strings.HasPrefix(f.ID, "frontend-backend-match-") {
+			hasRouteMatch = true
+		}
+		if strings.HasPrefix(f.ID, "frontend-type-dto-") || strings.HasPrefix(f.ID, "frontend-type-drift-") {
+			hasDTOAlignOrDrift = true
+		}
+	}
+
+	if !hasAPICall {
+		t.Error("no fact ID starting with frontend-api-call- found")
+	}
+	if !hasQueryKey {
+		t.Error("no fact ID starting with frontend-query-key- found")
+	}
+	if !hasRouteMatch {
+		t.Error("no fact ID starting with frontend-backend-match- found")
+	}
+	if !hasDTOAlignOrDrift {
+		t.Error("no fact ID starting with frontend-type-dto- or frontend-type-drift- found")
+	}
+}
+
+func TestBuildFrontendBackendContractDoc_SourceInputsAreRepoRelative(t *testing.T) {
+	doc, err := BuildFrontendBackendContractDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildFrontendBackendContractDoc: %v", err)
+	}
+
+	for _, si := range doc.SourceInputs {
+		if si.Path == "" {
+			t.Error("found empty source input path")
+			continue
+		}
+		if err := ValidateRepoRelativePath(si.Path); err != nil {
+			t.Errorf("source input path %q is not a valid repo-relative path: %v", si.Path, err)
+		}
+	}
+
+	requiredPaths := []string{
+		"apps/web/src/features/relay-runs/api.ts",
+		"apps/web/src/features/relay-runs/types.ts",
+		"apps/web/src/features/relay-runs/queries.ts",
+		"apps/web/src/features/relay-plans/api.ts",
+		"apps/web/src/features/relay-plans/types.ts",
+		"apps/web/src/features/relay-plans/queries.ts",
+		"internal/api/runs/dto.go",
+		"internal/api/plans/dto.go",
+	}
+
+	sourceInputPaths := make(map[string]bool)
+	for _, si := range doc.SourceInputs {
+		sourceInputPaths[si.Path] = true
+	}
+
+	for _, p := range requiredPaths {
+		if !sourceInputPaths[p] {
+			t.Errorf("required source input %q not found in source_inputs", p)
+		}
+	}
+}
+
+func TestBuildFrontendBackendContractDoc_NoWallClockTimestamps(t *testing.T) {
+	doc, err := BuildFrontendBackendContractDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildFrontendBackendContractDoc: %v", err)
+	}
+
+	jsonData, err := RenderJSON(doc)
+	if err != nil {
+		t.Fatalf("RenderJSON: %v", err)
+	}
+
+	jsonStr := string(jsonData)
+	if strings.Contains(jsonStr, "generated_at") {
+		t.Error("JSON should not contain 'generated_at'")
+	}
+	if strings.Contains(jsonStr, "\"created_at\"") {
+		t.Error("JSON should not contain 'created_at' as a metadata field")
+	}
+	if strings.Contains(jsonStr, "\"updated_at\"") {
+		t.Error("JSON should not contain 'updated_at' as a metadata field")
+	}
+
+	mdData, err := RenderMarkdown(doc)
+	if err != nil {
+		t.Fatalf("RenderMarkdown: %v", err)
+	}
+	mdStr := string(mdData)
+	if strings.Contains(mdStr, "generated_at") {
+		t.Error("Markdown should not contain 'generated_at'")
+	}
+}
+
+func TestFrontendBackendContractOutputSpec_CheckModeCoverage(t *testing.T) {
+	doc, err := BuildFrontendBackendContractDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildFrontendBackendContractDoc: %v", err)
+	}
+
+	tempJSONPath := filepath.Join(t.TempDir(), "frontend-backend-contract.json")
+	tempMarkdownPath := filepath.Join(t.TempDir(), "frontend-backend-contract.md")
+
+	spec := OutputSpec{
+		JSONPath:     tempJSONPath,
+		MarkdownPath: tempMarkdownPath,
+		Document:     doc,
+	}
+
+	diffs, err := CheckOutputSpecs([]OutputSpec{spec})
+	if err != nil {
+		t.Fatalf("CheckOutputSpecs: %v", err)
+	}
+	if len(diffs) < 2 {
+		t.Fatal("expected at least 2 diffs (both JSON and Markdown missing), got", len(diffs))
+	}
+}
