@@ -111,6 +111,17 @@ type planSeedArgs struct {
 	RejectReason string   `json:"reject_reason,omitempty"`
 }
 
+type planSeedUpdateArgs struct {
+	ProjectID    string    `json:"project_id"`
+	SeedID       string    `json:"seed_id"`
+	Title        *string   `json:"title,omitempty"`
+	QuickContext *string   `json:"quick_context,omitempty"`
+	Priority     *string   `json:"priority,omitempty"`
+	Tags         *[]string `json:"tags,omitempty"`
+	Constraints  *[]string `json:"constraints,omitempty"`
+	NonGoals     *[]string `json:"non_goals,omitempty"`
+}
+
 type planSeedToolOutput struct {
 	OK        bool               `json:"ok"`
 	Tool      string             `json:"tool"`
@@ -421,7 +432,7 @@ func (s *Server) HandleGetPlanSeed(args json.RawMessage) ToolCallResult {
 }
 
 func (s *Server) HandleUpdatePlanSeed(args json.RawMessage) ToolCallResult {
-	var in planSeedArgs
+	var in planSeedUpdateArgs
 	if err := brokerDecodeStrict(args, &in); err != nil {
 		return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", "invalid params: "+err.Error(), nil)
 	}
@@ -433,37 +444,43 @@ func (s *Server) HandleUpdatePlanSeed(args json.RawMessage) ToolCallResult {
 	}
 
 	// Validate bounds check
-	if len(in.Title) > 200 {
+	if in.Title != nil && len(*in.Title) > 200 {
 		return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", "title must be at most 200 characters", nil)
 	}
-	if len(in.QuickContext) > 6000 {
+	if in.QuickContext != nil && len(*in.QuickContext) > 6000 {
 		return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", "quick_context must be at most 6000 characters", nil)
 	}
-	if len(in.Priority) > 80 {
+	if in.Priority != nil && len(*in.Priority) > 80 {
 		return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", "priority must be at most 80 characters", nil)
 	}
-	if len(in.Tags) > 50 {
-		return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", "tags must have at most 50 items", nil)
-	}
-	for i, t := range in.Tags {
-		if len(t) > 500 {
-			return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", fmt.Sprintf("tags[%d] must be at most 500 characters", i), nil)
+	if in.Tags != nil {
+		if len(*in.Tags) > 50 {
+			return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", "tags must have at most 50 items", nil)
+		}
+		for i, t := range *in.Tags {
+			if len(t) > 500 {
+				return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", fmt.Sprintf("tags[%d] must be at most 500 characters", i), nil)
+			}
 		}
 	}
-	if len(in.Constraints) > 50 {
-		return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", "constraints must have at most 50 items", nil)
-	}
-	for i, c := range in.Constraints {
-		if len(c) > 500 {
-			return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", fmt.Sprintf("constraints[%d] must be at most 500 characters", i), nil)
+	if in.Constraints != nil {
+		if len(*in.Constraints) > 50 {
+			return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", "constraints must have at most 50 items", nil)
+		}
+		for i, c := range *in.Constraints {
+			if len(c) > 500 {
+				return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", fmt.Sprintf("constraints[%d] must be at most 500 characters", i), nil)
+			}
 		}
 	}
-	if len(in.NonGoals) > 50 {
-		return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", "non_goals must have at most 50 items", nil)
-	}
-	for i, ng := range in.NonGoals {
-		if len(ng) > 500 {
-			return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", fmt.Sprintf("non_goals[%d] must be at most 500 characters", i), nil)
+	if in.NonGoals != nil {
+		if len(*in.NonGoals) > 50 {
+			return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", "non_goals must have at most 50 items", nil)
+		}
+		for i, ng := range *in.NonGoals {
+			if len(ng) > 500 {
+				return planSeedToolErr(toolUpdatePlanSeed, "VALIDATION_ERROR", fmt.Sprintf("non_goals[%d] must be at most 500 characters", i), nil)
+			}
 		}
 	}
 
@@ -481,17 +498,37 @@ func (s *Server) HandleUpdatePlanSeed(args json.RawMessage) ToolCallResult {
 		return planSeedToolErr(toolUpdatePlanSeed, "PLAN_SEED_ERROR", err.Error(), nil)
 	}
 
-	res, validation, err := svc.UpdatePlanSeed(context.Background(), projectID, seedID, appprojects.PlanSeedInput{
-		Title:        in.Title,
-		QuickContext: in.QuickContext,
-		Priority:     in.Priority,
-		Constraints:  in.Constraints,
-		NonGoals:     in.NonGoals,
-		Tags:         in.Tags,
+	input := appprojects.PlanSeedInput{
+		Title:        existing.Title,
+		QuickContext: existing.QuickContext,
+		Priority:     existing.Priority,
+		Constraints:  existing.Constraints,
+		NonGoals:     existing.NonGoals,
+		Tags:         existing.Tags,
 		SourceType:   existing.SourceType,
 		SourceLabel:  existing.SourceLabel,
 		SourceRefID:  existing.SourceRefID,
-	})
+	}
+	if in.Title != nil {
+		input.Title = *in.Title
+	}
+	if in.QuickContext != nil {
+		input.QuickContext = *in.QuickContext
+	}
+	if in.Priority != nil {
+		input.Priority = *in.Priority
+	}
+	if in.Constraints != nil {
+		input.Constraints = *in.Constraints
+	}
+	if in.NonGoals != nil {
+		input.NonGoals = *in.NonGoals
+	}
+	if in.Tags != nil {
+		input.Tags = *in.Tags
+	}
+
+	res, validation, err := svc.UpdatePlanSeed(context.Background(), projectID, seedID, input)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return planSeedToolErr(toolUpdatePlanSeed, "NOT_FOUND", "Project or Plan Seed not found", nil)

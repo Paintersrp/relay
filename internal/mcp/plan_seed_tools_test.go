@@ -221,6 +221,69 @@ func TestPlanSeedMCPRejectsUnknownProjectAndSecretLikeInput(t *testing.T) {
 	}
 }
 
+func TestPlanSeedMCPPartialUpdatePreservesOmittedFieldsAndClearsExplicitLists(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	createArgs, _ := json.Marshal(map[string]any{
+		"project_id":    "relay",
+		"title":         "Original title",
+		"quick_context": "Original context",
+		"priority":      "normal",
+		"constraints":   []string{"keep-constraint"},
+		"non_goals":     []string{"keep-nongoal"},
+		"tags":          []string{"clear-me"},
+	})
+	res := srv.HandleCreatePlanSeed(createArgs)
+	if res.IsError {
+		t.Fatalf("create failed: %s", res.Content[0].Text)
+	}
+	var out planSeedToolOutput
+	_ = json.Unmarshal([]byte(res.Content[0].Text), &out)
+	seedID := out.Seed.SeedID
+
+	updateOut := updatePlanSeedMCP(t, srv, map[string]any{
+		"project_id": "relay",
+		"seed_id":    seedID,
+		"priority":   "high",
+	})
+	if updateOut.Seed.Title != "Original title" || updateOut.Seed.QuickContext != "Original context" || updateOut.Seed.Priority != "high" {
+		t.Fatalf("expected priority-only update to preserve scalars, got %+v", updateOut.Seed)
+	}
+	assertStringSlice(t, updateOut.Seed.Constraints, []string{"keep-constraint"})
+	assertStringSlice(t, updateOut.Seed.NonGoals, []string{"keep-nongoal"})
+	assertStringSlice(t, updateOut.Seed.Tags, []string{"clear-me"})
+
+	updateOut = updatePlanSeedMCP(t, srv, map[string]any{
+		"project_id": "relay",
+		"seed_id":    seedID,
+		"title":      "Title only",
+	})
+	if updateOut.Seed.Title != "Title only" || updateOut.Seed.QuickContext != "Original context" {
+		t.Fatalf("expected title-only update to preserve context, got %+v", updateOut.Seed)
+	}
+
+	updateOut = updatePlanSeedMCP(t, srv, map[string]any{
+		"project_id":    "relay",
+		"seed_id":       seedID,
+		"quick_context": "Context only",
+	})
+	if updateOut.Seed.Title != "Title only" || updateOut.Seed.QuickContext != "Context only" {
+		t.Fatalf("expected context-only update to preserve title, got %+v", updateOut.Seed)
+	}
+
+	updateOut = updatePlanSeedMCP(t, srv, map[string]any{
+		"project_id": "relay",
+		"seed_id":    seedID,
+		"tags":       []string{},
+	})
+	if len(updateOut.Seed.Tags) != 0 {
+		t.Fatalf("expected tags to be cleared, got %+v", updateOut.Seed.Tags)
+	}
+	assertStringSlice(t, updateOut.Seed.Constraints, []string{"keep-constraint"})
+	assertStringSlice(t, updateOut.Seed.NonGoals, []string{"keep-nongoal"})
+}
+
 func TestPlanSeedMCPUpdateDoesNotAcceptStatusOrLinkageFields(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
@@ -239,25 +302,36 @@ func TestPlanSeedMCPUpdateDoesNotAcceptStatusOrLinkageFields(t *testing.T) {
 	_ = json.Unmarshal([]byte(res.Content[0].Text), &out)
 	seedID := out.Seed.SeedID
 
-	// Try updating seed with status or linkage fields (which are not in the update schema/arguments struct).
-	// Because we use brokerDecodeStrict (which disallows unknown fields), this must fail with a json decoding/validation error.
-	badUpdateArgs, _ := json.Marshal(map[string]any{
-		"project_id":      "relay",
-		"seed_id":         seedID,
-		"title":           "New Title",
-		"status":          "rejected",
-		"plan_attempt_id": "attempt-123",
-	})
+	for name, params := range map[string]map[string]any{
+		"status": {
+			"project_id": "relay",
+			"seed_id":    seedID,
+			"status":     "rejected",
+		},
+		"plan_attempt_id": {
+			"project_id":      "relay",
+			"seed_id":         seedID,
+			"plan_attempt_id": "attempt-123",
+		},
+		"managed_plan_id": {
+			"project_id":      "relay",
+			"seed_id":         seedID,
+			"managed_plan_id": "plan-123",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			badUpdateArgs, _ := json.Marshal(params)
+			updateRes := srv.HandleUpdatePlanSeed(badUpdateArgs)
+			if !updateRes.IsError {
+				t.Fatal("expected update to fail due to forbidden field")
+			}
 
-	updateRes := srv.HandleUpdatePlanSeed(badUpdateArgs)
-	if !updateRes.IsError {
-		t.Fatal("expected update to fail due to forbidden fields")
-	}
-
-	var errOut planSeedToolErrorOutput
-	_ = json.Unmarshal([]byte(updateRes.Content[0].Text), &errOut)
-	if errOut.Error != "VALIDATION_ERROR" || !contains(errOut.Message, "json: unknown field") {
-		t.Errorf("expected validation error mentioning unknown field, got: %+v", errOut)
+			var errOut planSeedToolErrorOutput
+			_ = json.Unmarshal([]byte(updateRes.Content[0].Text), &errOut)
+			if errOut.Error != "VALIDATION_ERROR" || !contains(errOut.Message, "json: unknown field") {
+				t.Errorf("expected validation error mentioning unknown field, got: %+v", errOut)
+			}
+		})
 	}
 }
 
@@ -346,4 +420,34 @@ func TestPlanSeedMCPNoPlanOrRunSideEffects(t *testing.T) {
 
 	afterReject := getCounts()
 	assertCountsEqual(initialCounts, afterReject, "after reject_plan_seed")
+}
+
+func updatePlanSeedMCP(t *testing.T, srv *Server, params map[string]any) planSeedToolOutput {
+	t.Helper()
+
+	args, _ := json.Marshal(params)
+	res := srv.HandleUpdatePlanSeed(args)
+	if res.IsError {
+		t.Fatalf("update_plan_seed failed: %s", res.Content[0].Text)
+	}
+	var out planSeedToolOutput
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &out); err != nil {
+		t.Fatalf("unmarshal update output: %v", err)
+	}
+	if out.Seed == nil {
+		t.Fatalf("expected seed output, got %+v", out)
+	}
+	return out
+}
+
+func assertStringSlice(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
+	}
 }

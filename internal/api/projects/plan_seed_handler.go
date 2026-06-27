@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -104,6 +105,75 @@ func validateAPIInput(req PlanSeedAPIRequest) []appprojects.PlanSeedValidationIs
 		}
 	}
 	return issues
+}
+
+func validateAPIUpdateInput(req PlanSeedUpdateAPIRequest) []appprojects.PlanSeedValidationIssue {
+	var issues []appprojects.PlanSeedValidationIssue
+	if req.Title != nil && len(*req.Title) > 200 {
+		issues = append(issues, appprojects.PlanSeedValidationIssue{
+			Field:   "title",
+			Code:    "too_long",
+			Message: "title must be at most 200 characters",
+		})
+	}
+	if req.QuickContext != nil && len(*req.QuickContext) > 6000 {
+		issues = append(issues, appprojects.PlanSeedValidationIssue{
+			Field:   "quick_context",
+			Code:    "too_long",
+			Message: "quick_context must be at most 6000 characters",
+		})
+	}
+	if req.Priority != nil && len(*req.Priority) > 80 {
+		issues = append(issues, appprojects.PlanSeedValidationIssue{
+			Field:   "priority",
+			Code:    "too_long",
+			Message: "priority must be at most 80 characters",
+		})
+	}
+	if req.Tags != nil {
+		issues = appendPlanSeedListIssues(issues, "tags", "tag item", *req.Tags)
+	}
+	if req.Constraints != nil {
+		issues = appendPlanSeedListIssues(issues, "constraints", "constraint item", *req.Constraints)
+	}
+	if req.NonGoals != nil {
+		issues = appendPlanSeedListIssues(issues, "non_goals", "non_goal item", *req.NonGoals)
+	}
+	return issues
+}
+
+func appendPlanSeedListIssues(issues []appprojects.PlanSeedValidationIssue, field, itemLabel string, values []string) []appprojects.PlanSeedValidationIssue {
+	if len(values) > 50 {
+		issues = append(issues, appprojects.PlanSeedValidationIssue{
+			Field:   field,
+			Code:    "too_many_items",
+			Message: field + " must have at most 50 items",
+		})
+	}
+	for i, val := range values {
+		if len(val) > 500 {
+			issues = append(issues, appprojects.PlanSeedValidationIssue{
+				Field:   fmt.Sprintf("%s[%d]", field, i),
+				Code:    "too_long",
+				Message: itemLabel + " must be at most 500 characters",
+			})
+		}
+	}
+	return issues
+}
+
+func decodeStrictPlanSeedJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		shared.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid JSON payload: "+err.Error())
+		return false
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		shared.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid JSON payload")
+		return false
+	}
+	return true
 }
 
 func (h *Handler) CreatePlanSeed(w http.ResponseWriter, r *http.Request) {
@@ -226,13 +296,12 @@ func (h *Handler) UpdatePlanSeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req PlanSeedAPIRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON payload")
+	var req PlanSeedUpdateAPIRequest
+	if !decodeStrictPlanSeedJSON(w, r, &req) {
 		return
 	}
 
-	if boundsIssues := validateAPIInput(req); len(boundsIssues) > 0 {
+	if boundsIssues := validateAPIUpdateInput(req); len(boundsIssues) > 0 {
 		writePlanSeedValidationError(w, boundsIssues)
 		return
 	}
@@ -248,17 +317,37 @@ func (h *Handler) UpdatePlanSeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, issues, err := h.service.UpdatePlanSeed(r.Context(), projectID, seedID, appprojects.PlanSeedInput{
-		Title:        req.Title,
-		QuickContext: req.QuickContext,
-		Priority:     req.Priority,
-		Constraints:  req.Constraints,
-		NonGoals:     req.NonGoals,
-		Tags:         req.Tags,
+	input := appprojects.PlanSeedInput{
+		Title:        existing.Title,
+		QuickContext: existing.QuickContext,
+		Priority:     existing.Priority,
+		Constraints:  existing.Constraints,
+		NonGoals:     existing.NonGoals,
+		Tags:         existing.Tags,
 		SourceType:   existing.SourceType,
 		SourceLabel:  existing.SourceLabel,
 		SourceRefID:  existing.SourceRefID,
-	})
+	}
+	if req.Title != nil {
+		input.Title = *req.Title
+	}
+	if req.QuickContext != nil {
+		input.QuickContext = *req.QuickContext
+	}
+	if req.Priority != nil {
+		input.Priority = *req.Priority
+	}
+	if req.Constraints != nil {
+		input.Constraints = *req.Constraints
+	}
+	if req.NonGoals != nil {
+		input.NonGoals = *req.NonGoals
+	}
+	if req.Tags != nil {
+		input.Tags = *req.Tags
+	}
+
+	result, issues, err := h.service.UpdatePlanSeed(r.Context(), projectID, seedID, input)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Project or Plan Seed not found")

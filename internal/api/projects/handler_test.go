@@ -416,6 +416,71 @@ func TestPlanSeedAPIRejectsInvalidInputAndSecretLikeQuickContext(t *testing.T) {
 	}
 }
 
+func TestPlanSeedAPIPartialUpdatePreservesOmittedFieldsAndClearsExplicitLists(t *testing.T) {
+	t.Parallel()
+
+	router := newProjectAPITestServer(t)
+
+	createProjBody := []byte(`{"project_id":"relay","name":"Relay","status":"active"}`)
+	projReq := httptest.NewRequest(http.MethodPost, "/api/projects", bytes.NewReader(createProjBody))
+	projReq.Header.Set("Content-Type", "application/json")
+	projRec := httptest.NewRecorder()
+	router.ServeHTTP(projRec, projReq)
+	if projRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", projRec.Code, projRec.Body.String())
+	}
+
+	createSeedBody := []byte(`{
+		"title": "Original title",
+		"quick_context": "Original context",
+		"priority": "normal",
+		"constraints": ["keep-constraint"],
+		"non_goals": ["keep-nongoal"],
+		"tags": ["clear-me"]
+	}`)
+	seedReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds", bytes.NewReader(createSeedBody))
+	seedReq.Header.Set("Content-Type", "application/json")
+	seedRec := httptest.NewRecorder()
+	router.ServeHTTP(seedRec, seedReq)
+	if seedRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", seedRec.Code, seedRec.Body.String())
+	}
+	var seedResp ProjectAPIResponse
+	if err := json.NewDecoder(seedRec.Body).Decode(&seedResp); err != nil {
+		t.Fatalf("decode seed response: %v", err)
+	}
+	seedID := seedResp.PlanSeed.SeedID
+
+	updatePlanSeedAPI(t, router, seedID, `{"priority":"high"}`, func(seed *ProjectAPIPlanSeed) {
+		if seed.Title != "Original title" || seed.QuickContext != "Original context" || seed.Priority != "high" {
+			t.Fatalf("expected priority-only update to preserve scalars, got %+v", seed)
+		}
+		assertStringSlice(t, seed.Constraints, []string{"keep-constraint"})
+		assertStringSlice(t, seed.NonGoals, []string{"keep-nongoal"})
+		assertStringSlice(t, seed.Tags, []string{"clear-me"})
+	})
+
+	updatePlanSeedAPI(t, router, seedID, `{"title":"Title only"}`, func(seed *ProjectAPIPlanSeed) {
+		if seed.Title != "Title only" || seed.QuickContext != "Original context" {
+			t.Fatalf("expected title-only update to preserve context, got %+v", seed)
+		}
+	})
+
+	updatePlanSeedAPI(t, router, seedID, `{"quick_context":"Context only"}`, func(seed *ProjectAPIPlanSeed) {
+		if seed.Title != "Title only" || seed.QuickContext != "Context only" {
+			t.Fatalf("expected context-only update to preserve title, got %+v", seed)
+		}
+	})
+
+	updatePlanSeedAPI(t, router, seedID, `{"tags":[]}`, func(seed *ProjectAPIPlanSeed) {
+		if len(seed.Tags) != 0 {
+			t.Fatalf("expected tags to be cleared, got %+v", seed.Tags)
+		}
+		assertStringSlice(t, seed.Constraints, []string{"keep-constraint"})
+		assertStringSlice(t, seed.NonGoals, []string{"keep-nongoal"})
+	})
+}
+
 func TestPlanSeedAPIUpdateDoesNotAllowStatusMutation(t *testing.T) {
 	t.Parallel()
 
@@ -447,15 +512,54 @@ func TestPlanSeedAPIUpdateDoesNotAllowStatusMutation(t *testing.T) {
 	_ = json.NewDecoder(seedRec.Body).Decode(&seedResp)
 	seedID := seedResp.PlanSeed.SeedID
 
-	// Try updating seed, supplying status:rejected, planAttemptId:sk_123, managedPlanId:mp_123
-	updateBody := []byte(`{
-		"title": "Updated title",
-		"quick_context": "Updated context",
-		"status": "rejected",
-		"planAttemptId": "sk_123",
-		"managedPlanId": "mp_123"
-	}`)
-	updateReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/update", bytes.NewReader(updateBody))
+	for name, body := range map[string]string{
+		"status":        `{"status":"rejected"}`,
+		"seed_id":       `{"seed_id":"seed-other"}`,
+		"planAttemptId": `{"planAttemptId":"attempt-123"}`,
+		"managedPlanId": `{"managedPlanId":"plan-123"}`,
+		"plan_attempt":  `{"plan_attempt_id":"attempt-123"}`,
+		"managed_plan":  `{"managed_plan_id":"plan-123"}`,
+		"project_id":    `{"project_id":"relay"}`,
+		"source_label":  `{"source_label":"forbidden"}`,
+		"defer_reason":  `{"defer_reason":"forbidden"}`,
+		"reject_reason": `{"reject_reason":"forbidden"}`,
+		"planned_at":    `{"planned_at":"2026-06-26T00:00:00Z"}`,
+		"source_type":   `{"source_type":"manual"}`,
+		"source_ref_id": `{"source_ref_id":"ref-123"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			updateReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/update", bytes.NewReader([]byte(body)))
+			updateReq.Header.Set("Content-Type", "application/json")
+			updateRec := httptest.NewRecorder()
+			router.ServeHTTP(updateRec, updateReq)
+			if updateRec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", updateRec.Code, updateRec.Body.String())
+			}
+		})
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plan-seeds/"+seedID, nil)
+	getRec := httptest.NewRecorder()
+	router.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", getRec.Code, getRec.Body.String())
+	}
+	var getResp ProjectAPIResponse
+	if err := json.NewDecoder(getRec.Body).Decode(&getResp); err != nil {
+		t.Fatalf("decode get response: %v", err)
+	}
+	if getResp.PlanSeed.Status != "captured" {
+		t.Errorf("expected status to remain 'captured', got %q", getResp.PlanSeed.Status)
+	}
+	if getResp.PlanSeed.PlanAttemptID != "" || getResp.PlanSeed.ManagedPlanID != "" {
+		t.Errorf("expected linkage to remain blank, got attempt=%q, plan=%q", getResp.PlanSeed.PlanAttemptID, getResp.PlanSeed.ManagedPlanID)
+	}
+}
+
+func updatePlanSeedAPI(t *testing.T, router http.Handler, seedID string, body string, assert func(seed *ProjectAPIPlanSeed)) {
+	t.Helper()
+
+	updateReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/update", bytes.NewReader([]byte(body)))
 	updateReq.Header.Set("Content-Type", "application/json")
 	updateRec := httptest.NewRecorder()
 	router.ServeHTTP(updateRec, updateReq)
@@ -466,10 +570,20 @@ func TestPlanSeedAPIUpdateDoesNotAllowStatusMutation(t *testing.T) {
 	if err := json.NewDecoder(updateRec.Body).Decode(&updateResp); err != nil {
 		t.Fatalf("decode update response: %v", err)
 	}
-	if updateResp.PlanSeed.Status != "captured" {
-		t.Errorf("expected status to remain 'captured', got %q", updateResp.PlanSeed.Status)
+	if updateResp.PlanSeed == nil {
+		t.Fatalf("expected plan seed response, got %+v", updateResp)
 	}
-	if updateResp.PlanSeed.PlanAttemptID != "" || updateResp.PlanSeed.ManagedPlanID != "" {
-		t.Errorf("expected linkage to remain blank, got attempt=%q, plan=%q", updateResp.PlanSeed.PlanAttemptID, updateResp.PlanSeed.ManagedPlanID)
+	assert(updateResp.PlanSeed)
+}
+
+func assertStringSlice(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected %v, got %v", want, got)
+		}
 	}
 }

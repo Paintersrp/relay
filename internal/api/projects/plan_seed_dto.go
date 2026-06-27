@@ -12,6 +12,15 @@ type PlanSeedAPIRequest struct {
 	SourceLabel  string   `json:"source_label"`
 }
 
+type PlanSeedUpdateAPIRequest struct {
+	Title        *string   `json:"title"`
+	QuickContext *string   `json:"quick_context"`
+	Priority     *string   `json:"priority"`
+	Constraints  *[]string `json:"constraints"`
+	NonGoals     *[]string `json:"non_goals"`
+	Tags         *[]string `json:"tags"`
+}
+
 type PlanSeedLifecycleAPIRequest struct {
 	DeferReason  string `json:"defer_reason"`
 	RejectReason string `json:"reject_reason"`
