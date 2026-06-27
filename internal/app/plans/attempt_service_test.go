@@ -390,6 +390,98 @@ func TestSubmitPlanAttemptCreatesManagedPlanWithLineage(t *testing.T) {
 	}
 }
 
+func TestSubmitPlanAttemptLinksSeedManagedPlan(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newTestService(t)
+	created := createTestPlanAttempt(t, svc, DriftReviewModeDisabled, "")
+	createPlanSeed(t, st, "seed-linked", created.PlanAttempt.ProjectRowID, created.PlanAttempt.ProjectID, created.PlanAttempt.PlanAttemptID, "")
+	createPlanSeed(t, st, "seed-unrelated", created.PlanAttempt.ProjectRowID, created.PlanAttempt.ProjectID, "attempt-unrelated", "")
+
+	approved, err := svc.ApprovePlanAttempt(context.Background(), ApprovePlanAttemptRequest{
+		ProjectID:     "relay",
+		PlanAttemptID: created.PlanAttempt.PlanAttemptID,
+		Approved:      true,
+	})
+	if err != nil {
+		t.Fatalf("ApprovePlanAttempt error: %v", err)
+	}
+	if !approved.OK {
+		t.Fatalf("expected approval ok=true, got %#v", approved)
+	}
+
+	submitted, err := svc.SubmitPlanAttempt(context.Background(), SubmitPlanAttemptRequest{
+		ProjectID:                      "relay",
+		PlanAttemptID:                  created.PlanAttempt.PlanAttemptID,
+		SubmissionConfirmed:            true,
+		ReviewedPlanJSONArtifactSHA256: created.PlanAttempt.PlanJsonArtifactSha256,
+	})
+	if err != nil {
+		t.Fatalf("SubmitPlanAttempt error: %v", err)
+	}
+	if !submitted.OK {
+		t.Fatalf("expected submit ok=true, got %#v", submitted)
+	}
+
+	linked := loadPlanSeed(t, st, created.PlanAttempt.ProjectRowID, "seed-linked")
+	if linked.Status != "planned" {
+		t.Fatalf("expected linked seed to remain planned, got %q", linked.Status)
+	}
+	if linked.PlanAttemptID != submitted.PlanAttempt.PlanAttemptID {
+		t.Fatalf("expected planAttemptId %q, got %q", submitted.PlanAttempt.PlanAttemptID, linked.PlanAttemptID)
+	}
+	if linked.ManagedPlanID != submitted.Plan.PlanID {
+		t.Fatalf("expected managedPlanId %q, got %q", submitted.Plan.PlanID, linked.ManagedPlanID)
+	}
+
+	unrelated := loadPlanSeed(t, st, created.PlanAttempt.ProjectRowID, "seed-unrelated")
+	if unrelated.ManagedPlanID != "" {
+		t.Fatalf("expected unrelated seed managedPlanId to remain empty, got %q", unrelated.ManagedPlanID)
+	}
+}
+
+func TestSubmitPlanAttemptBlocksConflictingSeedManagedPlan(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newTestService(t)
+	created := createTestPlanAttempt(t, svc, DriftReviewModeDisabled, "")
+	createPlanSeed(t, st, "seed-conflict", created.PlanAttempt.ProjectRowID, created.PlanAttempt.ProjectID, created.PlanAttempt.PlanAttemptID, "existing-managed-plan")
+
+	approved, err := svc.ApprovePlanAttempt(context.Background(), ApprovePlanAttemptRequest{
+		ProjectID:     "relay",
+		PlanAttemptID: created.PlanAttempt.PlanAttemptID,
+		Approved:      true,
+	})
+	if err != nil {
+		t.Fatalf("ApprovePlanAttempt error: %v", err)
+	}
+	if !approved.OK {
+		t.Fatalf("expected approval ok=true, got %#v", approved)
+	}
+
+	_, err = svc.SubmitPlanAttempt(context.Background(), SubmitPlanAttemptRequest{
+		ProjectID:                      "relay",
+		PlanAttemptID:                  created.PlanAttempt.PlanAttemptID,
+		SubmissionConfirmed:            true,
+		ReviewedPlanJSONArtifactSHA256: created.PlanAttempt.PlanJsonArtifactSha256,
+	})
+	if err == nil {
+		t.Fatal("expected SubmitPlanAttempt to fail on conflicting seed managed plan linkage")
+	}
+
+	seed := loadPlanSeed(t, st, created.PlanAttempt.ProjectRowID, "seed-conflict")
+	if seed.ManagedPlanID != "existing-managed-plan" {
+		t.Fatalf("expected conflicting managedPlanId to remain unchanged, got %q", seed.ManagedPlanID)
+	}
+	attempt := loadAttempt(t, st, created.PlanAttempt.PlanAttemptID)
+	if attempt.Status != PlanAttemptStatusApproved || attempt.SubmittedPlanID.Valid {
+		t.Fatalf("expected attempt submission to roll back, got %#v", attempt)
+	}
+	if got := countRows(t, st.DB(), "plans"); got != 0 {
+		t.Fatalf("expected 0 plans after conflicting seed linkage rollback, got %d", got)
+	}
+}
+
 // T1: approved attempt + SubmissionConfirmed=false must block and leave plans/plan_passes unchanged.
 func TestSubmitPlanAttemptBlocksMissingConfirmation(t *testing.T) {
 	t.Parallel()
@@ -615,6 +707,48 @@ func loadPlanByPlanID(t *testing.T, st *store.Store, planID string) store.Plan {
 		t.Fatalf("GetPlanByPlanID: %v", err)
 	}
 	return plan
+}
+
+func createPlanSeed(t *testing.T, st *store.Store, seedID string, projectRowID int64, projectID string, planAttemptID string, managedPlanID string) store.PlanSeed {
+	t.Helper()
+
+	seed, err := generated.New(st.DB()).CreatePlanSeed(context.Background(), generated.CreatePlanSeedParams{
+		SeedID:          seedID,
+		ProjectRowID:    projectRowID,
+		ProjectID:       projectID,
+		Title:           "Plan Seed " + seedID,
+		QuickContext:    "Plan seed test context",
+		ConstraintsJson: "[]",
+		NonGoalsJson:    "[]",
+		TagsJson:        "[]",
+		Priority:        "normal",
+		Status:          "planned",
+		SourceType:      "manual",
+		SourceLabel:     "",
+		SourceRefID:     "",
+		PlanAttemptID:   planAttemptID,
+		ManagedPlanID:   managedPlanID,
+		PlannedAt:       "2026-06-27T00:00:00Z",
+		DeferReason:     "",
+		RejectReason:    "",
+	})
+	if err != nil {
+		t.Fatalf("CreatePlanSeed: %v", err)
+	}
+	return seed
+}
+
+func loadPlanSeed(t *testing.T, st *store.Store, projectRowID int64, seedID string) store.PlanSeed {
+	t.Helper()
+
+	seed, err := generated.New(st.DB()).GetPlanSeedBySeedID(context.Background(), generated.GetPlanSeedBySeedIDParams{
+		ProjectRowID: projectRowID,
+		SeedID:       seedID,
+	})
+	if err != nil {
+		t.Fatalf("GetPlanSeedBySeedID: %v", err)
+	}
+	return seed
 }
 
 func assertAttemptRowsEqual(t *testing.T, before store.PlanAttempt, after store.PlanAttempt) {

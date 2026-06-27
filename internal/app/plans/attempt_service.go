@@ -497,7 +497,7 @@ func (svc *Service) SubmitPlanAttempt(ctx context.Context, req SubmitPlanAttempt
 		AcceptedDriftReviewID:   attempt.AcceptedDriftReviewID,
 	}
 	var submitted store.PlanAttempt
-	result, err := svc.submitPlan(ctx, canonical, attempt.PlanJsonArtifactPath, req.ProjectID, lineage, func(q *generated.Queries, plan store.Plan) (*store.PlanAttempt, error) {
+	result, err := svc.submitPlan(ctx, canonical, attempt.PlanJsonArtifactPath, req.ProjectID, lineage, func(q *generated.Queries, tx *sql.Tx, plan store.Plan) (*store.PlanAttempt, error) {
 		updated, err := q.MarkPlanAttemptSubmitted(ctx, generated.MarkPlanAttemptSubmittedParams{
 			SubmittedPlanRowID: sql.NullInt64{Int64: plan.ID, Valid: true},
 			SubmittedPlanID:    sql.NullString{String: plan.PlanID, Valid: true},
@@ -505,6 +505,9 @@ func (svc *Service) SubmitPlanAttempt(ctx context.Context, req SubmitPlanAttempt
 		})
 		if err != nil {
 			return nil, fmt.Errorf("mark plan attempt submitted: %w", err)
+		}
+		if err := linkPlanSeedManagedPlanOnSubmit(ctx, tx, attempt.ProjectRowID, attempt.PlanAttemptID, plan.PlanID); err != nil {
+			return nil, err
 		}
 		submitted = updated
 		return &updated, nil
@@ -516,6 +519,70 @@ func (svc *Service) SubmitPlanAttempt(ctx context.Context, req SubmitPlanAttempt
 		return &PlanAttemptResult{OK: false, BlockerCode: BlockerApprovalRequired, Message: "stored plan JSON is not valid for submission"}, nil
 	}
 	return &PlanAttemptResult{OK: true, PlanAttempt: &submitted, Plan: &result.Plan, Passes: result.Passes}, nil
+}
+
+func linkPlanSeedManagedPlanOnSubmit(ctx context.Context, tx *sql.Tx, projectRowID int64, planAttemptID string, managedPlanID string) error {
+	planAttemptID = strings.TrimSpace(planAttemptID)
+	managedPlanID = strings.TrimSpace(managedPlanID)
+	if projectRowID == 0 || planAttemptID == "" || managedPlanID == "" {
+		return nil
+	}
+
+	type linkedSeed struct {
+		ID            int64
+		SeedID        string
+		Status        string
+		ManagedPlanID string
+	}
+	rows, err := tx.QueryContext(ctx, `
+SELECT id, seed_id, status, managed_plan_id
+FROM plan_seeds
+WHERE project_row_id = ? AND plan_attempt_id = ?
+ORDER BY id ASC
+LIMIT 2
+`, projectRowID, planAttemptID)
+	if err != nil {
+		return fmt.Errorf("lookup plan seed for submitted attempt: %w", err)
+	}
+	defer rows.Close()
+
+	var seeds []linkedSeed
+	for rows.Next() {
+		var seed linkedSeed
+		if err := rows.Scan(&seed.ID, &seed.SeedID, &seed.Status, &seed.ManagedPlanID); err != nil {
+			return fmt.Errorf("scan plan seed for submitted attempt: %w", err)
+		}
+		seeds = append(seeds, seed)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate plan seeds for submitted attempt: %w", err)
+	}
+	if len(seeds) == 0 {
+		return nil
+	}
+	if len(seeds) > 1 {
+		return fmt.Errorf("link plan seed managed plan: multiple seeds linked to plan attempt %q", planAttemptID)
+	}
+	seed := seeds[0]
+
+	if seed.Status != "planned" {
+		return fmt.Errorf("link plan seed managed plan: seed %q is %q, expected planned", seed.SeedID, seed.Status)
+	}
+	if seed.ManagedPlanID == managedPlanID {
+		return nil
+	}
+	if seed.ManagedPlanID != "" {
+		return fmt.Errorf("link plan seed managed plan: seed %q already linked to managed plan %q", seed.SeedID, seed.ManagedPlanID)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE plan_seeds
+SET managed_plan_id = ?, updated_at = datetime('now')
+WHERE id = ?
+`, managedPlanID, seed.ID); err != nil {
+		return fmt.Errorf("link plan seed managed plan: %w", err)
+	}
+	return nil
 }
 
 func (svc *Service) lookupAttemptProject(projectID string) (*store.Project, error) {

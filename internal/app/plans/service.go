@@ -50,7 +50,7 @@ func (svc *Service) SubmitPlan(ctx context.Context, req SubmitPlanRequest) (*Sub
 	return svc.submitPlan(ctx, req.RawJSON, req.SourceArtifactPath, req.ProjectID, planSubmissionLineage{}, nil)
 }
 
-func (svc *Service) submitPlan(ctx context.Context, raw []byte, sourceArtifactPath string, requestProjectID string, lineage planSubmissionLineage, afterCreate func(*generated.Queries, store.Plan) (*store.PlanAttempt, error)) (*SubmitPlanResult, error) {
+func (svc *Service) submitPlan(ctx context.Context, raw []byte, sourceArtifactPath string, requestProjectID string, lineage planSubmissionLineage, afterCreate func(*generated.Queries, *sql.Tx, store.Plan) (*store.PlanAttempt, error)) (*SubmitPlanResult, error) {
 	plan, report, err := svc.ValidatePlanJSON(ctx, raw)
 	result := &SubmitPlanResult{Report: report}
 	if err != nil {
@@ -234,7 +234,7 @@ func (svc *Service) submitPlan(ctx context.Context, raw []byte, sourceArtifactPa
 	}
 
 	if afterCreate != nil {
-		if _, err := afterCreate(txQueries, createdPlan); err != nil {
+		if _, err := afterCreate(txQueries, tx, createdPlan); err != nil {
 			result.Report.addIssue(IssuePlanStorageFailed, "$", "failed to finalize plan submission")
 			return result, err
 		}
