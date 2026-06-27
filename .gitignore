@@ -3,6 +3,7 @@
 /tmp/
 *.test
 *.out
+*.exe
 
 # Local app data
 /data/
