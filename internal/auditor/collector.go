@@ -645,7 +645,7 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 	var progressPath string
 	for _, a := range collected {
 		if a.kind == "validation_run_json" {
-			if err := json.Unmarshal(a.data, &valRun); err == nil && len(valRun.Commands) > 0 {
+			if err := json.Unmarshal(a.data, &valRun); err == nil && isValidationRunJSON(valRun) {
 				hasValRun = true
 				progressPath = a.path
 				break
@@ -870,18 +870,20 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 			}
 		} else if hasProgress && len(progress.Commands) > 0 {
 			for i, pc := range progress.Commands {
-				id := fmt.Sprintf("V%d", i+1)
-				status := CheckUnknown
+				id := strings.TrimSpace(pc.Label)
+				if id == "" {
+					id = fmt.Sprintf("V%d", i+1)
+				}
+				command := strings.TrimSpace(pc.Command)
+				if command == "" {
+					command = "(unknown - progress command missing)"
+				}
+				status := validationProgressCheckStatus(pc.Status)
 				exitResult := fmt.Sprintf("exit %d", pc.ExitCode)
 				summary := fmt.Sprintf("Command exit code: %d, progress status: %s", pc.ExitCode, pc.Status)
-				if pc.Status == "pass" {
-					status = CheckPass
-				} else if pc.Status == "fail" {
-					status = CheckFail
-				}
 				ev.ValidationResults = append(ev.ValidationResults, ValidationCommandResult{
 					ID:              id,
-					Command:         "(progress)",
+					Command:         command,
 					Required:        false,
 					Status:          status,
 					ExitResult:      exitResult,
@@ -929,6 +931,34 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 				RawArtifactKind: best.kind,
 			})
 		}
+	}
+}
+
+func isValidationRunJSON(v validationRunJSON) bool {
+	if len(v.Commands) == 0 {
+		return false
+	}
+	if v.RunID != 0 {
+		return true
+	}
+	for _, cmd := range v.Commands {
+		if strings.TrimSpace(cmd.ID) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func validationProgressCheckStatus(status string) CheckResult {
+	switch strings.TrimSpace(strings.ToLower(status)) {
+	case "pass":
+		return CheckPass
+	case "fail", "error", "timed_out":
+		return CheckFail
+	case "", "skipped", "pending", "running":
+		return CheckUnknown
+	default:
+		return CheckUnknown
 	}
 }
 
@@ -985,12 +1015,12 @@ func (c *Collector) collectChangedFiles(runID int64, ev *Evidence) {
 				}
 			}
 			ev.ChangedFiles = ChangedFilesEvidence{
-				Present:               true,
-				Files:                 entries,
-				ImplementationFiles:   implFiles,
+				Present:                true,
+				Files:                  entries,
+				ImplementationFiles:    implFiles,
 				GeneratedArtifactFiles: genArtifacts,
-				RawArtifactPath:       p,
-				SourceKind:            k,
+				RawArtifactPath:        p,
+				SourceKind:             k,
 			}
 			return
 		}
@@ -1040,6 +1070,16 @@ func (c *Collector) collectAcceptanceEvidence(runID int64, ev *Evidence) {
 		Content:         boundedPreview([]byte(redacted), MaxPreviewBytes),
 		RawArtifactPath: p,
 	}
+}
+
+func implementationScopeChangedFiles(ev *Evidence) []ChangedFileEntry {
+	if len(ev.ChangedFiles.ImplementationFiles) > 0 {
+		return ev.ChangedFiles.ImplementationFiles
+	}
+	if len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
+		return ev.ChangedFiles.Files
+	}
+	return nil
 }
 
 // evaluateChecklistResults produces a PerCheckResult for each checklist item.
@@ -1140,17 +1180,21 @@ func (c *Collector) evaluateChecklistResults(ev *Evidence) {
 					targetSet[t] = true
 				}
 				var outOfScope []string
-				for _, f := range ev.ChangedFiles.Files {
+				checkFiles := implementationScopeChangedFiles(ev)
+				for _, f := range checkFiles {
 					if !targetSet[f.Path] {
 						outOfScope = append(outOfScope, f.Path)
 					}
 				}
 				if len(outOfScope) == 0 {
 					result = CheckPass
-					rationale = fmt.Sprintf("All %d changed files are within expected targets — evidence from changed_files artifact", len(ev.ChangedFiles.Files))
+					rationale = fmt.Sprintf("All %d implementation changed files are within expected targets — evidence from changed_files artifact", len(checkFiles))
+					if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
+						rationale += fmt.Sprintf("; %d generated pipeline artifact(s) excluded from implementation file-scope enforcement", len(ev.ChangedFiles.GeneratedArtifactFiles))
+					}
 				} else {
 					result = CheckFail
-					rationale = fmt.Sprintf("Out-of-scope files detected: %s — evidence from changed_files artifact", strings.Join(outOfScope, ", "))
+					rationale = fmt.Sprintf("Out-of-scope implementation files detected: %s — evidence from changed_files artifact", strings.Join(outOfScope, ", "))
 				}
 			} else if hasDiff {
 				evidenceSource = fmt.Sprintf("git_diff_patch: %s", ev.GitDiff.RawArtifactPath)
@@ -1242,10 +1286,7 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 				targetSet[t] = true
 			}
 			var outOfScope []string
-			checkFiles := ev.ChangedFiles.ImplementationFiles
-			if len(checkFiles) == 0 && len(ev.ChangedFiles.Files) > 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
-				checkFiles = ev.ChangedFiles.Files
-			}
+			checkFiles := implementationScopeChangedFiles(ev)
 			for _, f := range checkFiles {
 				if !targetSet[f.Path] {
 					outOfScope = append(outOfScope, f.Path)
@@ -1287,10 +1328,7 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 				targetSet[t] = true
 			}
 			var outOfScope []string
-			checkFiles := ev.ChangedFiles.ImplementationFiles
-			if len(checkFiles) == 0 && len(ev.ChangedFiles.Files) > 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
-				checkFiles = ev.ChangedFiles.Files
-			}
+			checkFiles := implementationScopeChangedFiles(ev)
 			for _, f := range checkFiles {
 				if !targetSet[f.Path] {
 					outOfScope = append(outOfScope, f.Path)
@@ -1329,10 +1367,7 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 				targetSet[t] = true
 			}
 			var unexpectedCode []string
-			checkFiles := ev.ChangedFiles.ImplementationFiles
-			if len(checkFiles) == 0 && len(ev.ChangedFiles.Files) > 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
-				checkFiles = ev.ChangedFiles.Files
-			}
+			checkFiles := implementationScopeChangedFiles(ev)
 			for _, f := range checkFiles {
 				if !targetSet[f.Path] {
 					ext := filepath.Ext(f.Path)
@@ -1370,10 +1405,7 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 		if ev.ChangedFiles.Present {
 			src = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
 			var deletedTests []string
-			checkFiles := ev.ChangedFiles.ImplementationFiles
-			if len(checkFiles) == 0 && len(ev.ChangedFiles.Files) > 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
-				checkFiles = ev.ChangedFiles.Files
-			}
+			checkFiles := implementationScopeChangedFiles(ev)
 			for _, f := range checkFiles {
 				if (strings.Contains(f.Path, "test") || strings.Contains(f.Path, "_test.go")) && f.Status == "D" {
 					deletedTests = append(deletedTests, f.Path)
@@ -1410,10 +1442,7 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 			}
 			var sensitiveChanges []string
 			sensitiveKeywords := []string{"mcp", "auth", "security", "credentials", "token", "password", "secret", "private_key"}
-			checkFiles := ev.ChangedFiles.ImplementationFiles
-			if len(checkFiles) == 0 && len(ev.ChangedFiles.Files) > 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
-				checkFiles = ev.ChangedFiles.Files
-			}
+			checkFiles := implementationScopeChangedFiles(ev)
 			for _, f := range checkFiles {
 				if !targetSet[f.Path] {
 					lowerPath := strings.ToLower(f.Path)
@@ -1467,10 +1496,7 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 			}
 			if isDocOnly && len(fileTargets) > 0 {
 				var touchedCode []string
-				checkFiles := ev.ChangedFiles.ImplementationFiles
-				if len(checkFiles) == 0 && len(ev.ChangedFiles.Files) > 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
-					checkFiles = ev.ChangedFiles.Files
-				}
+				checkFiles := implementationScopeChangedFiles(ev)
 				for _, f := range checkFiles {
 					ext := filepath.Ext(f.Path)
 					if ext == ".go" || ext == ".templ" || ext == ".ts" || ext == ".tsx" || ext == ".js" || ext == ".jsx" {

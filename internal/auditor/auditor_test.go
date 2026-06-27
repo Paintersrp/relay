@@ -1339,14 +1339,101 @@ func TestPASS006Like_UnexpectedRuntimeFileStillFails(t *testing.T) {
 	}
 }
 
+func TestChecklistFileScope_GeneratedArtifactsExcluded(t *testing.T) {
+	setupTestArtifactDir(t)
+
+	ev := &Evidence{
+		RunID: 302, RunTitle: "checklist generated artifacts", RunStatus: "executor_done",
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files: []ChangedFileEntry{
+				{Status: "M", Path: "pkg/foo.go"},
+				{Status: "M", Path: "handoffs/validation/latest.validation-report.json"},
+			},
+			ImplementationFiles: []ChangedFileEntry{
+				{Status: "M", Path: "pkg/foo.go"},
+			},
+			GeneratedArtifactFiles: []GeneratedArtifactEntry{
+				{Path: "handoffs/validation/latest.validation-report.json", Status: "M", InferredArtifactKind: "validation_report", Recognized: true},
+			},
+			RawArtifactPath: "/fake/changed-files.txt",
+			SourceKind:      "git_diff_name_status",
+		},
+		Packet: PacketMetadata{
+			FileTargets: []string{"pkg/foo.go"},
+			AuditChecklist: []ChecklistItem{
+				{ID: "CL-FS", Check: "File scope includes only expected files", SeverityIfFailed: SeverityError},
+			},
+		},
+	}
+
+	c := &Collector{}
+	c.evaluateChecklistResults(ev)
+
+	if len(ev.ChecklistResults) != 1 {
+		t.Fatalf("expected 1 checklist result, got %d", len(ev.ChecklistResults))
+	}
+	result := ev.ChecklistResults[0]
+	if result.Result == CheckFail {
+		t.Fatalf("generated validation artifact must not fail checklist file scope: %s", result.Rationale)
+	}
+	if strings.Contains(result.Rationale, "handoffs/validation/latest.validation-report.json") {
+		t.Fatalf("generated artifact should not appear as out-of-scope rationale: %s", result.Rationale)
+	}
+	if !strings.Contains(result.Rationale, "generated pipeline artifact") {
+		t.Fatalf("expected generated artifact exclusion rationale, got %q", result.Rationale)
+	}
+}
+
+func TestChecklistFileScope_UnexpectedImplementationFileFails(t *testing.T) {
+	setupTestArtifactDir(t)
+
+	ev := &Evidence{
+		RunID: 303, RunTitle: "checklist unexpected implementation", RunStatus: "executor_done",
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files: []ChangedFileEntry{
+				{Status: "M", Path: "pkg/foo.go"},
+				{Status: "M", Path: "internal/newapp/newapp.go"},
+			},
+			ImplementationFiles: []ChangedFileEntry{
+				{Status: "M", Path: "pkg/foo.go"},
+				{Status: "M", Path: "internal/newapp/newapp.go"},
+			},
+			RawArtifactPath: "/fake/changed-files.txt",
+			SourceKind:      "git_diff_name_status",
+		},
+		Packet: PacketMetadata{
+			FileTargets: []string{"pkg/foo.go"},
+			AuditChecklist: []ChecklistItem{
+				{ID: "CL-FS", Check: "Changed files stayed within file scope", SeverityIfFailed: SeverityError},
+			},
+		},
+	}
+
+	c := &Collector{}
+	c.evaluateChecklistResults(ev)
+
+	if len(ev.ChecklistResults) != 1 {
+		t.Fatalf("expected 1 checklist result, got %d", len(ev.ChecklistResults))
+	}
+	result := ev.ChecklistResults[0]
+	if result.Result != CheckFail {
+		t.Fatalf("expected checklist file scope failure, got %q: %s", result.Result, result.Rationale)
+	}
+	if !strings.Contains(result.Rationale, "internal/newapp/newapp.go") {
+		t.Fatalf("expected unexpected implementation path in rationale, got %q", result.Rationale)
+	}
+}
+
 // TestValidationRunJson_ConcreteRows verifies that validation_run_json with concrete commands
 // and no packet command specs produces concrete validation rows, not only V?.
 func TestValidationRunJson_ConcreteRows(t *testing.T) {
 	setupTestArtifactDir(t)
-	const runID = int64(302)
+	const runID = int64(304)
 
 	// Write validation_run.json with concrete commands
-	jsonData := []byte(`{"runId":302,"status":"pass","commands":[
+	jsonData := []byte(`{"runId":304,"status":"pass","commands":[
 		{"id":"V1","command":"go test ./...","required":true,"status":"pass","exitCode":0,"stdoutKind":"validation_stdout","stderrKind":"validation_stderr"},
 		{"id":"V2","command":"go vet ./...","required":false,"status":"pass","exitCode":0,"stdoutKind":"validation_stdout","stderrKind":"validation_stderr"}
 	]}`)
@@ -1380,21 +1467,70 @@ func TestValidationRunJson_ConcreteRows(t *testing.T) {
 	}
 }
 
+func TestValidationProgressJson_ConcreteRows(t *testing.T) {
+	setupTestArtifactDir(t)
+	const runID = int64(305)
+
+	jsonData := []byte(`{"status":"finished","repo_path":"/repo","total_commands":2,"commands":[
+		{"index":1,"label":"V1","command":"go test ./internal/auditor","status":"pass","exit_code":0},
+		{"index":2,"label":"V2","command":"go test ./...","status":"timed_out","exit_code":124}
+	]}`)
+	valPath := writeArtifactFile(t, runID, "validation_run.json", jsonData)
+
+	ev := &Evidence{RunID: runID, RunTitle: "Test", RunStatus: "executor_done"}
+	c := &Collector{
+		store: &fakeStore{
+			artifactPaths: map[string][]string{
+				"validation_run_json": {valPath},
+			},
+		},
+	}
+	c.collectValidationResults(runID, ev)
+
+	if len(ev.ValidationResults) != 2 {
+		t.Fatalf("expected 2 progress validation rows, got %d", len(ev.ValidationResults))
+	}
+	first := ev.ValidationResults[0]
+	if first.ID != "V1" {
+		t.Errorf("expected first row ID V1, got %q", first.ID)
+	}
+	if first.Command != "go test ./internal/auditor" {
+		t.Errorf("expected concrete progress command, got %q", first.Command)
+	}
+	if first.Command == "(progress)" {
+		t.Error("progress row must not emit placeholder command")
+	}
+	if first.Status != CheckPass {
+		t.Errorf("expected pass status, got %q", first.Status)
+	}
+	if first.RawArtifactKind != "validation_run_json" {
+		t.Errorf("expected RawArtifactKind validation_run_json, got %q", first.RawArtifactKind)
+	}
+
+	second := ev.ValidationResults[1]
+	if second.Status != CheckFail {
+		t.Errorf("expected timed_out status to map to fail, got %q", second.Status)
+	}
+	if second.Command != "go test ./..." {
+		t.Errorf("expected second concrete progress command, got %q", second.Command)
+	}
+}
+
 // TestAuditPacket_ValidationRunJsonArtifactKind verifies the audit packet labels validation_run_json correctly.
 func TestAuditPacket_ValidationRunJsonArtifactKind(t *testing.T) {
 	ev := &Evidence{
-		RunID: 303, RunTitle: "Test", RunStatus: "validation_passed",
+		RunID: 306, RunTitle: "Test", RunStatus: "validation_passed",
 		Packet: PacketMetadata{
-			PacketID: "packet-303",
+			PacketID: "packet-306",
 			Goal:     "Test",
 			Scope:    "Test",
 		},
 		ChangedFiles: ChangedFilesEvidence{
-			Present: true,
-			Files:   []ChangedFileEntry{{Status: "M", Path: "pkg/foo.go"}},
+			Present:             true,
+			Files:               []ChangedFileEntry{{Status: "M", Path: "pkg/foo.go"}},
 			ImplementationFiles: []ChangedFileEntry{{Status: "M", Path: "pkg/foo.go"}},
-			RawArtifactPath: "/fake/path",
-			SourceKind: "git_diff_name_status",
+			RawArtifactPath:     "/fake/path",
+			SourceKind:          "git_diff_name_status",
 		},
 		ValidationResults: []ValidationCommandResult{
 			{
@@ -1432,28 +1568,28 @@ func TestGenerateInputSummary_AuditAgentHandoff(t *testing.T) {
 	ev := &Evidence{
 		RunID: 304, RunTitle: "Test Handoff", RunStatus: "executor_done",
 		Packet: PacketMetadata{
-			PacketID:            "packet-304",
-			Goal:                "Test goal",
-			Scope:               "Test scope",
-			NonGoals:            "Do not do X",
-			FileTargets:         []string{"pkg/foo.go"},
-			AuditChecklist:      []ChecklistItem{{ID: "A1", Check: "Test check", SeverityIfFailed: SeverityWarning}},
-			NonGoalChecks:       []string{"Verify no X"},
-			FileScopeChecks:     []string{"Confirm target edits"},
-			ValidationCommands:  []ValidationCommandSpec{{ID: "V1", Command: "go test", Required: true}},
+			PacketID:           "packet-304",
+			Goal:               "Test goal",
+			Scope:              "Test scope",
+			NonGoals:           "Do not do X",
+			FileTargets:        []string{"pkg/foo.go"},
+			AuditChecklist:     []ChecklistItem{{ID: "A1", Check: "Test check", SeverityIfFailed: SeverityWarning}},
+			NonGoalChecks:      []string{"Verify no X"},
+			FileScopeChecks:    []string{"Confirm target edits"},
+			ValidationCommands: []ValidationCommandSpec{{ID: "V1", Command: "go test", Required: true}},
 		},
 		ExecutorResult: ExecutorResultEvidence{
-			Present: true,
-			Summary: "STATUS: DONE",
-			Content: "done",
+			Present:         true,
+			Summary:         "STATUS: DONE",
+			Content:         "done",
 			RawArtifactPath: "/artifacts/executor.txt",
 		},
 		ValidationResults: []ValidationCommandResult{
 			{ID: "V1", Command: "go test", Required: true, Status: CheckPass, ExitResult: "exit 0", EvidenceSummary: "passed", RawArtifactPath: "/val.json", RawArtifactKind: "validation_run_json"},
 		},
 		ChangedFiles: ChangedFilesEvidence{
-			Present: true,
-			Files:   []ChangedFileEntry{{Status: "M", Path: "pkg/foo.go"}},
+			Present:             true,
+			Files:               []ChangedFileEntry{{Status: "M", Path: "pkg/foo.go"}},
 			ImplementationFiles: []ChangedFileEntry{{Status: "M", Path: "pkg/foo.go"}},
 			GeneratedArtifactFiles: []GeneratedArtifactEntry{
 				{Path: "handoffs/validation/latest.validation-report.json", Status: "M", InferredArtifactKind: "validation_report", Recognized: true},
@@ -1462,8 +1598,8 @@ func TestGenerateInputSummary_AuditAgentHandoff(t *testing.T) {
 			SourceKind:      "git_diff_name_status",
 		},
 		GitDiff: DiffEvidence{
-			Present: true,
-			Preview: "diff --git a/pkg/foo.go b/pkg/foo.go\n+change",
+			Present:         true,
+			Preview:         "diff --git a/pkg/foo.go b/pkg/foo.go\n+change",
 			RawArtifactPath: "/diff.patch",
 		},
 		FileScopeResults: []PerCheckResult{
