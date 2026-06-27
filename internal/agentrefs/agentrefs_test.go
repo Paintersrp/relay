@@ -3,6 +3,7 @@ package agentrefs
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -306,6 +307,45 @@ func TestComputeSHA256(t *testing.T) {
 	}
 }
 
+func findRepoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("could not find repo root (no go.mod found)")
+		}
+		dir = parent
+	}
+}
+
+func TestWorkflowOutputSpec_CheckModeCoverage(t *testing.T) {
+	doc, err := BuildWorkflowSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildWorkflowSurfaceDoc: %v", err)
+	}
+
+	spec := OutputSpec{
+		JSONPath:     filepath.Join(os.TempDir(), "opencode-test-workflow-check.json"),
+		MarkdownPath: filepath.Join(os.TempDir(), "opencode-test-workflow-check.md"),
+		Document:     doc,
+	}
+
+	diffs, err := CheckOutputSpecs([]OutputSpec{spec})
+	if err != nil {
+		t.Fatalf("CheckOutputSpecs: %v", err)
+	}
+	if len(diffs) < 2 {
+		t.Fatal("expected at least 2 diffs (both JSON and Markdown missing), got", len(diffs))
+	}
+}
+
 func TestValidateRepoRelativePath_RejectsNewline(t *testing.T) {
 	cases := []string{
 		"path/with\nnewline",
@@ -316,5 +356,85 @@ func TestValidateRepoRelativePath_RejectsNewline(t *testing.T) {
 		if err := ValidateRepoRelativePath(c); err == nil {
 			t.Errorf("ValidateRepoRelativePath(%q) = nil, want error", c)
 		}
+	}
+}
+
+func TestBuildWorkflowSurfaceDoc_EmitsRequiredFacts(t *testing.T) {
+	doc, err := BuildWorkflowSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildWorkflowSurfaceDoc: %v", err)
+	}
+
+	requiredIDs := []string{
+		"workflow-plan-attempt-status-model",
+		"workflow-intent-packet-lineage",
+		"workflow-review-packet-retrieval-only",
+		"workflow-drift-review-submit-boundary",
+		"workflow-approval-submit-gates",
+		"workflow-refactor-backlog-candidate-model",
+		"workflow-refactor-mcp-safety-boundaries",
+		"workflow-next-pass-work-blockers",
+		"workflow-work-packet-read-only",
+		"workflow-route-touchpoints",
+	}
+
+	factMap := make(map[string]bool)
+	for _, f := range doc.Facts {
+		factMap[f.ID] = true
+	}
+
+	for _, id := range requiredIDs {
+		if !factMap[id] {
+			t.Errorf("required fact ID %q not found in workflow surface doc", id)
+		}
+	}
+}
+
+func TestBuildWorkflowSurfaceDoc_SourceInputsAreRepoRelative(t *testing.T) {
+	doc, err := BuildWorkflowSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildWorkflowSurfaceDoc: %v", err)
+	}
+
+	for _, si := range doc.SourceInputs {
+		if si.Path == "" {
+			t.Error("found empty source input path")
+			continue
+		}
+		if err := ValidateRepoRelativePath(si.Path); err != nil {
+			t.Errorf("source input path %q is not a valid repo-relative path: %v", si.Path, err)
+		}
+	}
+}
+
+func TestBuildWorkflowSurfaceDoc_NoWallClockTimestamps(t *testing.T) {
+	doc, err := BuildWorkflowSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildWorkflowSurfaceDoc: %v", err)
+	}
+
+	jsonData, err := RenderJSON(doc)
+	if err != nil {
+		t.Fatalf("RenderJSON: %v", err)
+	}
+
+	jsonStr := string(jsonData)
+	if strings.Contains(jsonStr, "generated_at") {
+		t.Error("JSON should not contain 'generated_at'")
+	}
+	if strings.Contains(jsonStr, "\"created_at\"") {
+		t.Error("JSON should not contain 'created_at' as a metadata field")
+	}
+	if strings.Contains(jsonStr, "\"updated_at\"") {
+		t.Error("JSON should not contain 'updated_at' as a metadata field")
+	}
+
+	mdData, err := RenderMarkdown(doc)
+	if err != nil {
+		t.Fatalf("RenderMarkdown: %v", err)
+	}
+	mdStr := string(mdData)
+	if strings.Contains(mdStr, "generated_at") {
+		t.Error("Markdown should not contain 'generated_at'")
 	}
 }

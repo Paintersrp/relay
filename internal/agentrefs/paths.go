@@ -12,7 +12,9 @@ const (
 	IndexMarkdownPath        = OutputDir + "/index.md"
 	BackendSurfaceJSONPath   = OutputDir + "/backend-surface.json"
 	BackendSurfaceMarkdownPath = OutputDir + "/backend-surface.md"
-	SchemaPath               = "schema/project_agent_reference.schema.json"
+	WorkflowSurfaceJSONPath    = OutputDir + "/workflow-surfaces.json"
+	WorkflowSurfaceMarkdownPath = OutputDir + "/workflow-surfaces.md"
+	SchemaPath                 = "schema/project_agent_reference.schema.json"
 )
 
 func ValidateRepoRelativePath(path string) error {

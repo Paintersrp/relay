@@ -1,0 +1,212 @@
+{
+  "schema_version": "1.0.0",
+  "reference_id": "workflow-surfaces",
+  "repo": {
+    "project_id": "relay",
+    "repo_id": "Paintersrp/relay",
+    "branch": "main"
+  },
+  "generated_by": {
+    "name": "relay-agentrefs",
+    "version": "0.1.0"
+  },
+  "rendering": {
+    "json_primary": true,
+    "markdown_from_json": true,
+    "deterministic_sort": true,
+    "no_timestamps": true,
+    "relative_paths_only": true
+  },
+  "source_inputs": [
+    {
+      "path": "internal/api/plans/attempt_handler.go",
+      "sha256": "0c3306e9eae40bca3c21dd30271ede345fcabe5c8da86beb82ce081bd4ec6925",
+      "role": "plan attempt HTTP handler"
+    },
+    {
+      "path": "internal/app/plans/attempt_service.go",
+      "sha256": "20aaf203df2b7d1f38c95ba0b1335034a8d0078ed6318e671fc1360c41c93633",
+      "role": "plan attempt service"
+    },
+    {
+      "path": "internal/app/plans/attempt_types.go",
+      "sha256": "5c9ba968328c4c99ea4ff87c0638dd8cac5c096290ce31fc67c152aa513590f5",
+      "role": "plan attempt type model"
+    },
+    {
+      "path": "internal/app/plans/work_packets.go",
+      "sha256": "c4e90d03742cb3d586dc6a84fada3595a96878bfd849a07e7bd7a9c16add7f8a",
+      "role": "next-pass work packet model"
+    },
+    {
+      "path": "internal/mcp/plan_attempt_tools.go",
+      "sha256": "f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a",
+      "role": "plan attempt MCP tools"
+    },
+    {
+      "path": "internal/mcp/refactor_backlog_tools.go",
+      "sha256": "f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3",
+      "role": "refactor backlog MCP tools"
+    },
+    {
+      "path": "internal/refactors/types.go",
+      "sha256": "09bd11e1868897593f61ca678a4ba221b4d0a58a37f68307669a319f80320eb7",
+      "role": "refactor backlog type model"
+    }
+  ],
+  "fact_labels": [
+    "proven",
+    "derived",
+    "convention",
+    "unresolved",
+    "conflict"
+  ],
+  "facts": [
+    {
+      "id": "workflow-approval-submit-gates",
+      "label": "derived",
+      "statement": "Approval gate status constants (not_required, ready, acknowledgement_required, revision_required, blocked) gate both the ApprovePlanAttemptRequest and SubmitPlanAttemptRequest boundaries. SubmitPlanAttemptRequest requires submission_confirmed and reviewed_plan_json_artifact_sha256. These gates are enforced across attempt_types.go, attempt_service.go, and attempt_handler.go.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/attempt_types.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/app/plans/attempt_service.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/api/plans/attempt_handler.go"
+        }
+      ]
+    },
+    {
+      "id": "workflow-drift-review-submit-boundary",
+      "label": "proven",
+      "statement": "DriftReviewInput is the bounded input for submitting an intent drift review. It carries overall_alignment, recommended_action, approval_gate_status, and findings JSON. SubmitIntentDriftReviewRequest wraps it with project_id and plan_attempt_id. DriftReviewMode constants (disabled, manual, automatic, external) control drift behavior.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/attempt_types.go"
+        }
+      ]
+    },
+    {
+      "id": "workflow-intent-packet-lineage",
+      "label": "proven",
+      "statement": "Intent packet lineage is tracked through root_intent_packet_id and reviewed_intent_packet_id in PlanIntentReviewPacket. IntentPacketEvidence captures the full chain: kind (original/revision), content_hash, redaction_status, and source_artifact_path. PriorAttemptInfo and PriorReviewInfo in the review packet connect intent thread history.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/attempt_types.go"
+        }
+      ]
+    },
+    {
+      "id": "workflow-next-pass-work-blockers",
+      "label": "proven",
+      "statement": "NextPassWorkResponse reports business-state blockers through WorkBlocker entries. Blocker codes in internal/app/plans/work_packets.go include unknown_plan, plan_not_active, dependencies_incomplete, prior_pass_awaits_audit, active_run_exists, revision_required_same_pass, and no_eligible_pass. Blockers have a Recoverable flag.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "workflow-plan-attempt-status-model",
+      "label": "proven",
+      "statement": "PlanAttemptStatus constants (draft, approved, submitted, voided, superseded) and PlanAttemptReviewState constants model the complete plan attempt lifecycle in internal/app/plans/attempt_types.go. ModelTier constants (economy, standard, high_assurance, auto_escalate) define compute tier selection.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/attempt_types.go"
+        }
+      ]
+    },
+    {
+      "id": "workflow-refactor-backlog-candidate-model",
+      "label": "proven",
+      "statement": "Refactor candidate statuses (ready, scheduled, completed, deferred, rejected, superseded) model the full candidate lifecycle in internal/refactors/types.go. DiscoveryTaskInput and CandidateInput define the bounded creation surface. RiskLevel constants (low, medium, high) classify candidate severity. CandidateScheduleInput records a passive scheduling reference.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/refactors/types.go"
+        }
+      ]
+    },
+    {
+      "id": "workflow-refactor-mcp-safety-boundaries",
+      "label": "derived",
+      "statement": "Refactor backlog MCP tools in internal/mcp/refactor_backlog_tools.go expose discovery task and candidate CRUD operations. The safety boundary is enforced through lifecycle validation in internal/refactors/types.go: terminal statuses block transitions, secret-like values are rejected, cross-project references are blocked, and not_pass_ready validation prevents premature candidate elevation.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/refactors/types.go"
+        }
+      ]
+    },
+    {
+      "id": "workflow-review-packet-retrieval-only",
+      "label": "proven",
+      "statement": "PlanIntentReviewPacket.RetrievalSemantics controls whether the review packet performs a model call and mutates state. RetrievalOnly=true means no model call and no state mutation; this is the safe read-only path for external reviewers.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/attempt_types.go"
+        }
+      ]
+    },
+    {
+      "id": "workflow-route-touchpoints",
+      "label": "convention",
+      "statement": "Plan attempt HTTP handlers in internal/api/plans/attempt_handler.go serve as the primary REST touchpoint for plan attempt creation, review packet retrieval, drift review submission, approval, submission, revision, and voiding. The handler names (HandleCreate, HandleGetReviewPacket, HandleSubmitDriftReview, HandleApprove, HandleSubmit, HandleRevise, HandleVoid) follow the Handler naming convention and are routed through MountRoutes in internal/api/plans/routes.go.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/plans/attempt_handler.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/api/plans/routes.go"
+        }
+      ]
+    },
+    {
+      "id": "workflow-work-packet-read-only",
+      "label": "derived",
+      "statement": "NextPassWorkResponse and its nested types (WorkPlanSummary, WorkPassSummary, WorkContextSummary) are read-only projections. The get_next_pass_work tool (NextPassWorkTool constant) does not mutate state. WorkBlocker entries guide the caller toward recoverable actions without automatic remediation.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    }
+  ],
+  "references": [
+    {
+      "id": "intent-drift-review-contract",
+      "kind": "contract",
+      "path": "contracts/intent_drift_review_contract.md",
+      "description": "Planner intent drift review contract from relay-contracts."
+    },
+    {
+      "id": "planner-mcp-plan-attempt-contract",
+      "kind": "contract",
+      "path": "contracts/planner_mcp_plan_attempt_contract.md",
+      "description": "Planner MCP plan attempt contract from relay-contracts."
+    },
+    {
+      "id": "refactor-backlog-contract",
+      "kind": "contract",
+      "path": "contracts/refactor_backlog_contract.md",
+      "description": "Refactor backlog contract from relay-contracts."
+    }
+  ]
+}

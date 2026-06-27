@@ -83,6 +83,12 @@ func buildFoundationDoc() *agentrefs.ReferenceDocument {
 				Path:        agentrefs.BackendSurfaceJSONPath,
 				Description: "Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference.",
 			},
+			{
+				ID:          "workflow-surfaces",
+				Kind:        "generated_reference",
+				Path:        agentrefs.WorkflowSurfaceJSONPath,
+				Description: "Generated Plan v2 workflow, intent packet, drift review, refactor backlog, and work-packet lifecycle surface reference.",
+			},
 		},
 	}
 
@@ -115,6 +121,18 @@ func runGenerate() error {
 		return fmt.Errorf("write backend surface: %w", err)
 	}
 
+	workflowDoc, err := agentrefs.BuildWorkflowSurfaceDoc(".")
+	if err != nil {
+		return fmt.Errorf("build workflow surface doc: %w", err)
+	}
+	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
+		JSONPath:     agentrefs.WorkflowSurfaceJSONPath,
+		MarkdownPath: agentrefs.WorkflowSurfaceMarkdownPath,
+		Document:     workflowDoc,
+	}); err != nil {
+		return fmt.Errorf("write workflow surface: %w", err)
+	}
+
 	return nil
 }
 
@@ -124,6 +142,11 @@ func runCheck() error {
 	backendDoc, err := agentrefs.BuildBackendSurfaceDoc(".")
 	if err != nil {
 		return fmt.Errorf("build backend surface doc: %w", err)
+	}
+
+	workflowDoc, err := agentrefs.BuildWorkflowSurfaceDoc(".")
+	if err != nil {
+		return fmt.Errorf("build workflow surface doc: %w", err)
 	}
 
 	diffs, err := agentrefs.CheckOutputSpecs([]agentrefs.OutputSpec{
@@ -136,6 +159,11 @@ func runCheck() error {
 			JSONPath:     agentrefs.BackendSurfaceJSONPath,
 			MarkdownPath: agentrefs.BackendSurfaceMarkdownPath,
 			Document:     backendDoc,
+		},
+		{
+			JSONPath:     agentrefs.WorkflowSurfaceJSONPath,
+			MarkdownPath: agentrefs.WorkflowSurfaceMarkdownPath,
+			Document:     workflowDoc,
 		},
 	})
 	if err != nil {

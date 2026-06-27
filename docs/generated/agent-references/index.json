@@ -74,6 +74,12 @@
       "kind": "generated_reference",
       "path": "docs/generated/agent-references/backend-surface.json",
       "description": "Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference."
+    },
+    {
+      "id": "workflow-surfaces",
+      "kind": "generated_reference",
+      "path": "docs/generated/agent-references/workflow-surfaces.json",
+      "description": "Generated Plan v2 workflow, intent packet, drift review, refactor backlog, and work-packet lifecycle surface reference."
     }
   ]
 }

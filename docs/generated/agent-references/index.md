@@ -55,4 +55,5 @@ Evidence:
 | ID | Kind | Path | Description |
 | --- | --- | --- | --- |
 | `backend-surface` | generated_reference | `docs/generated/agent-references/backend-surface.json` | Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference. |
+| `workflow-surfaces` | generated_reference | `docs/generated/agent-references/workflow-surfaces.json` | Generated Plan v2 workflow, intent packet, drift review, refactor backlog, and work-packet lifecycle surface reference. |
 
