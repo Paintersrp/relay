@@ -52,6 +52,26 @@
       "path": "internal/refactors/types.go",
       "sha256": "09bd11e1868897593f61ca678a4ba221b4d0a58a37f68307669a319f80320eb7",
       "role": "refactor backlog type model"
+    },
+    {
+      "path": "relay-contracts/contracts/intent_drift_review_contract.md",
+      "sha256": "819efc18fd9ae17678f7d51f5675f6d78227339e6a7b375f14be2a4b3b51921e",
+      "role": "intent drift review contract"
+    },
+    {
+      "path": "relay-contracts/contracts/planner_mcp_plan_attempt_contract.md",
+      "sha256": "3cf8df06e87a55560bd4fb900eef70061695c7d40bc81ec9d1c95ef694622997",
+      "role": "planner MCP plan attempt contract"
+    },
+    {
+      "path": "relay-contracts/contracts/refactor_backlog_contract.md",
+      "sha256": "7b4f61fef9650274546d498cce3c5b6943e4b85b84d70682bf7d861fe1604966",
+      "role": "refactor backlog contract"
+    },
+    {
+      "path": "relay-contracts/policies/pipeline_lifecycle_policy.md",
+      "sha256": "cab4372d929a2793c8e8b1248bc39434a1933f3191fadcfcea5a7ec284db2cd5",
+      "role": "pipeline lifecycle policy"
     }
   ],
   "fact_labels": [
@@ -93,6 +113,90 @@
       ]
     },
     {
+      "id": "workflow-gap-contract-runtime-comparison",
+      "label": "unresolved",
+      "statement": "Contract/runtime semantic comparison is hash-grounded but not fully parsed by this generator; semantic mismatch review remains unresolved. Source inputs include hashed relay-contracts contract and policy files alongside runtime Go sources, but the generator does not parse contract semantic claims against runtime behavior. A future deterministic comparison pass (PASS-006+) may resolve this gap.",
+      "evidence": [
+        {
+          "kind": "contract",
+          "value": "relay-contracts/contracts/intent_drift_review_contract.md"
+        },
+        {
+          "kind": "contract",
+          "value": "relay-contracts/contracts/planner_mcp_plan_attempt_contract.md"
+        },
+        {
+          "kind": "contract",
+          "value": "relay-contracts/contracts/refactor_backlog_contract.md"
+        },
+        {
+          "kind": "policy",
+          "value": "relay-contracts/policies/pipeline_lifecycle_policy.md"
+        }
+      ]
+    },
+    {
+      "id": "workflow-gap-lifecycle-observed-writes",
+      "label": "unresolved",
+      "statement": "The generator does not yet enumerate all direct lifecycle/status writes; observed-write coverage remains unresolved. Plan attempt status transitions, refactor candidate lifecycle operations, and work-packet state changes are implemented across service and handler files but are not enumerated by this generator. PASS-007 owns lifecycle-write audit coverage.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/attempt_service.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/api/plans/attempt_handler.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "workflow-gap-transport-coverage",
+      "label": "unresolved",
+      "statement": "The generator identifies plan attempt handler touchpoints but does not provide complete HTTP route/API coverage; PASS-006 owns route/API completeness. MCP tool registration and server wiring for plan attempt and refactor backlog tools are noted but not exhaustively enumerated by this generator.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/plans/attempt_handler.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/api/plans/routes.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/mcp/plan_attempt_tools.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "workflow-gap-untested-state-values",
+      "label": "unresolved",
+      "statement": "The generator does not yet inspect tests for every state value; untested state-value coverage remains unresolved. PlanAttemptStatus, PlanAttemptReviewState, ApprovalGateStatus, DriftReviewMode, ModelTier, RefactorCandidateStatus, and WorkBlocker codes are declared in runtime source files but not cross-referenced against test coverage by this generator. PASS-006 owns test-coverage completeness.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/attempt_types.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/refactors/types.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "workflow-intent-packet-lineage",
       "label": "proven",
       "statement": "Intent packet lineage is tracked through root_intent_packet_id and reviewed_intent_packet_id in PlanIntentReviewPacket. IntentPacketEvidence captures the full chain: kind (original/revision), content_hash, redaction_status, and source_artifact_path. PriorAttemptInfo and PriorReviewInfo in the review packet connect intent thread history.",
@@ -128,11 +232,15 @@
     {
       "id": "workflow-refactor-backlog-candidate-model",
       "label": "proven",
-      "statement": "Refactor candidate statuses (ready, scheduled, completed, deferred, rejected, superseded) model the full candidate lifecycle in internal/refactors/types.go. DiscoveryTaskInput and CandidateInput define the bounded creation surface. RiskLevel constants (low, medium, high) classify candidate severity. CandidateScheduleInput records a passive scheduling reference.",
+      "statement": "Refactor candidate statuses (ready, scheduled, scheduled_revision_required, completed, completed_with_warnings, deferred, rejected, superseded) model the full candidate lifecycle as defined by internal/refactors/types.go (runtime) and relay-contracts/contracts/refactor_backlog_contract.md (contract). DiscoveryTaskInput and CandidateInput define the bounded creation surface. RiskLevel constants (low, medium, high) classify candidate severity. CandidateScheduleInput records a passive scheduling reference. Completion statuses (completed, completed_with_warnings, scheduled_revision_required) are derived from scheduled pass audit outcomes per the contract.",
       "evidence": [
         {
           "kind": "source",
           "value": "internal/refactors/types.go"
+        },
+        {
+          "kind": "contract",
+          "value": "relay-contracts/contracts/refactor_backlog_contract.md"
         }
       ]
     },
@@ -195,6 +303,12 @@
       "kind": "contract",
       "path": "contracts/intent_drift_review_contract.md",
       "description": "Planner intent drift review contract from relay-contracts."
+    },
+    {
+      "id": "pipeline-lifecycle-policy",
+      "kind": "policy",
+      "path": "policies/pipeline_lifecycle_policy.md",
+      "description": "Pipeline lifecycle policy from relay-contracts."
     },
     {
       "id": "planner-mcp-plan-attempt-contract",

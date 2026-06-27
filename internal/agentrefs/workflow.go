@@ -13,6 +13,10 @@ type requiredSourceInput struct {
 }
 
 var workflowInputs = []requiredSourceInput{
+	{"relay-contracts/contracts/intent_drift_review_contract.md", "intent drift review contract"},
+	{"relay-contracts/contracts/planner_mcp_plan_attempt_contract.md", "planner MCP plan attempt contract"},
+	{"relay-contracts/contracts/refactor_backlog_contract.md", "refactor backlog contract"},
+	{"relay-contracts/policies/pipeline_lifecycle_policy.md", "pipeline lifecycle policy"},
 	{"internal/app/plans/attempt_types.go", "plan attempt type model"},
 	{"internal/app/plans/attempt_service.go", "plan attempt service"},
 	{"internal/api/plans/attempt_handler.go", "plan attempt HTTP handler"},
@@ -100,12 +104,16 @@ func BuildWorkflowSurfaceDoc(repoRoot string) (*ReferenceDocument, error) {
 		{
 			ID:    "workflow-refactor-backlog-candidate-model",
 			Label: FactLabelProven,
-			Statement: "Refactor candidate statuses (ready, scheduled, completed, deferred, rejected, superseded) " +
-				"model the full candidate lifecycle in internal/refactors/types.go. DiscoveryTaskInput and " +
-				"CandidateInput define the bounded creation surface. RiskLevel constants (low, medium, high) " +
-				"classify candidate severity. CandidateScheduleInput records a passive scheduling reference.",
+			Statement: "Refactor candidate statuses (ready, scheduled, scheduled_revision_required, completed, " +
+				"completed_with_warnings, deferred, rejected, superseded) model the full candidate lifecycle " +
+				"as defined by internal/refactors/types.go (runtime) and relay-contracts/contracts/refactor_backlog_contract.md (contract). " +
+				"DiscoveryTaskInput and CandidateInput define the bounded creation surface. RiskLevel constants " +
+				"(low, medium, high) classify candidate severity. CandidateScheduleInput records a passive scheduling reference. " +
+				"Completion statuses (completed, completed_with_warnings, scheduled_revision_required) are derived from " +
+				"scheduled pass audit outcomes per the contract.",
 			Evidence: []Evidence{
 				{Kind: "source", Value: "internal/refactors/types.go"},
+				{Kind: "contract", Value: "relay-contracts/contracts/refactor_backlog_contract.md"},
 			},
 		},
 		{
@@ -157,6 +165,63 @@ func BuildWorkflowSurfaceDoc(repoRoot string) (*ReferenceDocument, error) {
 				{Kind: "source", Value: "internal/api/plans/routes.go"},
 			},
 		},
+		{
+			ID:    "workflow-gap-contract-runtime-comparison",
+			Label: FactLabelUnresolved,
+			Statement: "Contract/runtime semantic comparison is hash-grounded but not fully parsed by this " +
+				"generator; semantic mismatch review remains unresolved. Source inputs include hashed " +
+				"relay-contracts contract and policy files alongside runtime Go sources, but the generator " +
+				"does not parse contract semantic claims against runtime behavior. A future deterministic " +
+				"comparison pass (PASS-006+) may resolve this gap.",
+			Evidence: []Evidence{
+				{Kind: "contract", Value: "relay-contracts/contracts/intent_drift_review_contract.md"},
+				{Kind: "contract", Value: "relay-contracts/contracts/planner_mcp_plan_attempt_contract.md"},
+				{Kind: "contract", Value: "relay-contracts/contracts/refactor_backlog_contract.md"},
+				{Kind: "policy", Value: "relay-contracts/policies/pipeline_lifecycle_policy.md"},
+			},
+		},
+		{
+			ID:    "workflow-gap-untested-state-values",
+			Label: FactLabelUnresolved,
+			Statement: "The generator does not yet inspect tests for every state value; untested state-value " +
+				"coverage remains unresolved. PlanAttemptStatus, PlanAttemptReviewState, " +
+				"ApprovalGateStatus, DriftReviewMode, ModelTier, RefactorCandidateStatus, and " +
+				"WorkBlocker codes are declared in runtime source files but not cross-referenced against " +
+				"test coverage by this generator. PASS-006 owns test-coverage completeness.",
+			Evidence: []Evidence{
+				{Kind: "source", Value: "internal/app/plans/attempt_types.go"},
+				{Kind: "source", Value: "internal/refactors/types.go"},
+				{Kind: "source", Value: "internal/app/plans/work_packets.go"},
+			},
+		},
+		{
+			ID:    "workflow-gap-lifecycle-observed-writes",
+			Label: FactLabelUnresolved,
+			Statement: "The generator does not yet enumerate all direct lifecycle/status writes; " +
+				"observed-write coverage remains unresolved. Plan attempt status transitions, refactor " +
+				"candidate lifecycle operations, and work-packet state changes are implemented across " +
+				"service and handler files but are not enumerated by this generator. " +
+				"PASS-007 owns lifecycle-write audit coverage.",
+			Evidence: []Evidence{
+				{Kind: "source", Value: "internal/app/plans/attempt_service.go"},
+				{Kind: "source", Value: "internal/api/plans/attempt_handler.go"},
+				{Kind: "source", Value: "internal/mcp/refactor_backlog_tools.go"},
+			},
+		},
+		{
+			ID:    "workflow-gap-transport-coverage",
+			Label: FactLabelUnresolved,
+			Statement: "The generator identifies plan attempt handler touchpoints but does not provide " +
+				"complete HTTP route/API coverage; PASS-006 owns route/API completeness. MCP tool " +
+				"registration and server wiring for plan attempt and refactor backlog tools are noted " +
+				"but not exhaustively enumerated by this generator.",
+			Evidence: []Evidence{
+				{Kind: "source", Value: "internal/api/plans/attempt_handler.go"},
+				{Kind: "source", Value: "internal/api/plans/routes.go"},
+				{Kind: "source", Value: "internal/mcp/plan_attempt_tools.go"},
+				{Kind: "source", Value: "internal/mcp/refactor_backlog_tools.go"},
+			},
+		},
 	}
 
 	sort.Slice(facts, func(i, j int) bool {
@@ -199,6 +264,12 @@ func BuildWorkflowSurfaceDoc(repoRoot string) (*ReferenceDocument, error) {
 				Kind:        "contract",
 				Path:        "contracts/intent_drift_review_contract.md",
 				Description: "Planner intent drift review contract from relay-contracts.",
+			},
+			{
+				ID:          "pipeline-lifecycle-policy",
+				Kind:        "policy",
+				Path:        "policies/pipeline_lifecycle_policy.md",
+				Description: "Pipeline lifecycle policy from relay-contracts.",
 			},
 			{
 				ID:          "planner-mcp-plan-attempt-contract",

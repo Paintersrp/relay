@@ -1,34 +1,27 @@
 # Latest Relay Validation Report
 
 - status: passed
-- base_commit: 908a972d1cd2b4c49ce6309ef7f429398a3627e4
-- validated_source_snapshot: 1265a3a7ded0464cd99457a044b627d6a3199161197b46b9891488d56170ad30
+- revision: PASS-003 workflow/drift/refactor/lifecycle generated reference repair
+- base_commit: d4d77271226d65b296bdd0558a0c088c261dc40f
 - worktree_dirty: true
-- created_at: 2026-06-27T15:48:16Z
+- created_at: 2026-06-27T16:55:00Z
 
 ## Validated source changes
 
-- ?? cmd/plan-seed-smoke/main.go
-- M docs/mcp.md
-- M docs/project-planning-backlog-plan-seeds.md
-- M docs/smoke.md
-- M internal/api/projects/handler_test.go
-- M internal/app/projects/plan_seed_service.go
-- M internal/mcp/plan_seed_tools_test.go
-- M Makefile
-- M package.json
-- M README.md
-- M scripts/release-smoke.sh
+- M docs/generated/agent-references/workflow-surfaces.json
+- M docs/generated/agent-references/workflow-surfaces.md
+- M internal/agentrefs/agentrefs_test.go
+- M internal/agentrefs/workflow.go
+- M handoffs/validation/latest.validation-summary.md
 
 ## Commands
 
 | Step | Name | Exit | Status |
 |---:|---|---:|---|
-| 1 | `go-fmt-executor` | 0 | passed |
-| 2 | `go-test-executor` | 0 | passed |
-| 3 | `go-test-all` | 0 | passed |
-| 4 | `web-typecheck` | 0 | passed |
-| 5 | `web-build` | 0 | passed |
+| 1 | `go test ./internal/agentrefs/... ./cmd/agentrefs/...` | 0 | passed |
+| 2 | `make agentrefs-check` | 0 | passed |
+| 3 | `go test ./...` | 0 | passed |
+| 4 | `test ! -e agentrefs.exe` | 0 | passed |
 
 ## Failure output tails
 

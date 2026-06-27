@@ -32,6 +32,10 @@ Schema version: `1.0.0`
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | plan attempt MCP tools |
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | refactor backlog MCP tools |
 | `internal/refactors/types.go` | `09bd11e1868897593f61ca678a4ba221b4d0a58a37f68307669a319f80320eb7` | refactor backlog type model |
+| `relay-contracts/contracts/intent_drift_review_contract.md` | `819efc18fd9ae17678f7d51f5675f6d78227339e6a7b375f14be2a4b3b51921e` | intent drift review contract |
+| `relay-contracts/contracts/planner_mcp_plan_attempt_contract.md` | `3cf8df06e87a55560bd4fb900eef70061695c7d40bc81ec9d1c95ef694622997` | planner MCP plan attempt contract |
+| `relay-contracts/contracts/refactor_backlog_contract.md` | `7b4f61fef9650274546d498cce3c5b6943e4b85b84d70682bf7d861fe1604966` | refactor backlog contract |
+| `relay-contracts/policies/pipeline_lifecycle_policy.md` | `cab4372d929a2793c8e8b1248bc39434a1933f3191fadcfcea5a7ec284db2cd5` | pipeline lifecycle policy |
 
 ## Fact Labels
 
@@ -61,6 +65,48 @@ Evidence:
 
 - source: `internal/app/plans/attempt_types.go`
 
+### workflow-gap-contract-runtime-comparison (unresolved)
+
+Contract/runtime semantic comparison is hash-grounded but not fully parsed by this generator; semantic mismatch review remains unresolved. Source inputs include hashed relay-contracts contract and policy files alongside runtime Go sources, but the generator does not parse contract semantic claims against runtime behavior. A future deterministic comparison pass (PASS-006+) may resolve this gap.
+
+Evidence:
+
+- contract: `relay-contracts/contracts/intent_drift_review_contract.md`
+- contract: `relay-contracts/contracts/planner_mcp_plan_attempt_contract.md`
+- contract: `relay-contracts/contracts/refactor_backlog_contract.md`
+- policy: `relay-contracts/policies/pipeline_lifecycle_policy.md`
+
+### workflow-gap-lifecycle-observed-writes (unresolved)
+
+The generator does not yet enumerate all direct lifecycle/status writes; observed-write coverage remains unresolved. Plan attempt status transitions, refactor candidate lifecycle operations, and work-packet state changes are implemented across service and handler files but are not enumerated by this generator. PASS-007 owns lifecycle-write audit coverage.
+
+Evidence:
+
+- source: `internal/app/plans/attempt_service.go`
+- source: `internal/api/plans/attempt_handler.go`
+- source: `internal/mcp/refactor_backlog_tools.go`
+
+### workflow-gap-transport-coverage (unresolved)
+
+The generator identifies plan attempt handler touchpoints but does not provide complete HTTP route/API coverage; PASS-006 owns route/API completeness. MCP tool registration and server wiring for plan attempt and refactor backlog tools are noted but not exhaustively enumerated by this generator.
+
+Evidence:
+
+- source: `internal/api/plans/attempt_handler.go`
+- source: `internal/api/plans/routes.go`
+- source: `internal/mcp/plan_attempt_tools.go`
+- source: `internal/mcp/refactor_backlog_tools.go`
+
+### workflow-gap-untested-state-values (unresolved)
+
+The generator does not yet inspect tests for every state value; untested state-value coverage remains unresolved. PlanAttemptStatus, PlanAttemptReviewState, ApprovalGateStatus, DriftReviewMode, ModelTier, RefactorCandidateStatus, and WorkBlocker codes are declared in runtime source files but not cross-referenced against test coverage by this generator. PASS-006 owns test-coverage completeness.
+
+Evidence:
+
+- source: `internal/app/plans/attempt_types.go`
+- source: `internal/refactors/types.go`
+- source: `internal/app/plans/work_packets.go`
+
 ### workflow-intent-packet-lineage (proven)
 
 Intent packet lineage is tracked through root_intent_packet_id and reviewed_intent_packet_id in PlanIntentReviewPacket. IntentPacketEvidence captures the full chain: kind (original/revision), content_hash, redaction_status, and source_artifact_path. PriorAttemptInfo and PriorReviewInfo in the review packet connect intent thread history.
@@ -87,11 +133,12 @@ Evidence:
 
 ### workflow-refactor-backlog-candidate-model (proven)
 
-Refactor candidate statuses (ready, scheduled, completed, deferred, rejected, superseded) model the full candidate lifecycle in internal/refactors/types.go. DiscoveryTaskInput and CandidateInput define the bounded creation surface. RiskLevel constants (low, medium, high) classify candidate severity. CandidateScheduleInput records a passive scheduling reference.
+Refactor candidate statuses (ready, scheduled, scheduled_revision_required, completed, completed_with_warnings, deferred, rejected, superseded) model the full candidate lifecycle as defined by internal/refactors/types.go (runtime) and relay-contracts/contracts/refactor_backlog_contract.md (contract). DiscoveryTaskInput and CandidateInput define the bounded creation surface. RiskLevel constants (low, medium, high) classify candidate severity. CandidateScheduleInput records a passive scheduling reference. Completion statuses (completed, completed_with_warnings, scheduled_revision_required) are derived from scheduled pass audit outcomes per the contract.
 
 Evidence:
 
 - source: `internal/refactors/types.go`
+- contract: `relay-contracts/contracts/refactor_backlog_contract.md`
 
 ### workflow-refactor-mcp-safety-boundaries (derived)
 
@@ -132,6 +179,7 @@ Evidence:
 | ID | Kind | Path | Description |
 | --- | --- | --- | --- |
 | `intent-drift-review-contract` | contract | `contracts/intent_drift_review_contract.md` | Planner intent drift review contract from relay-contracts. |
+| `pipeline-lifecycle-policy` | policy | `policies/pipeline_lifecycle_policy.md` | Pipeline lifecycle policy from relay-contracts. |
 | `planner-mcp-plan-attempt-contract` | contract | `contracts/planner_mcp_plan_attempt_contract.md` | Planner MCP plan attempt contract from relay-contracts. |
 | `refactor-backlog-contract` | contract | `contracts/refactor_backlog_contract.md` | Refactor backlog contract from relay-contracts. |
 

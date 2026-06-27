@@ -438,3 +438,189 @@ func TestBuildWorkflowSurfaceDoc_NoWallClockTimestamps(t *testing.T) {
 		t.Error("Markdown should not contain 'generated_at'")
 	}
 }
+
+func TestBuildWorkflowSurfaceDoc_ContractSourceInputs(t *testing.T) {
+	doc, err := BuildWorkflowSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildWorkflowSurfaceDoc: %v", err)
+	}
+
+	requiredContractPaths := []string{
+		"relay-contracts/contracts/intent_drift_review_contract.md",
+		"relay-contracts/contracts/planner_mcp_plan_attempt_contract.md",
+		"relay-contracts/contracts/refactor_backlog_contract.md",
+		"relay-contracts/policies/pipeline_lifecycle_policy.md",
+	}
+
+	sourceInputPaths := make(map[string]SourceInput)
+	for _, si := range doc.SourceInputs {
+		sourceInputPaths[si.Path] = si
+	}
+
+	for _, p := range requiredContractPaths {
+		si, ok := sourceInputPaths[p]
+		if !ok {
+			t.Errorf("required relay-contracts source input %q not found in source_inputs", p)
+			continue
+		}
+		if si.Path != p {
+			t.Errorf("source input path mismatch: got %q, want %q", si.Path, p)
+		}
+		if len(si.SHA256) != 64 {
+			t.Errorf("source input %q SHA256 length: got %d, want 64", p, len(si.SHA256))
+		}
+	}
+}
+
+func TestBuildWorkflowSurfaceDoc_RefactorCandidateStatuses(t *testing.T) {
+	doc, err := BuildWorkflowSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildWorkflowSurfaceDoc: %v", err)
+	}
+
+	var fact *Fact
+	for i := range doc.Facts {
+		if doc.Facts[i].ID == "workflow-refactor-backlog-candidate-model" {
+			fact = &doc.Facts[i]
+			break
+		}
+	}
+	if fact == nil {
+		t.Fatal("workflow-refactor-backlog-candidate-model fact not found")
+	}
+
+	requiredStatuses := []string{
+		"ready",
+		"scheduled",
+		"scheduled_revision_required",
+		"completed",
+		"completed_with_warnings",
+		"deferred",
+		"rejected",
+		"superseded",
+	}
+
+	for _, s := range requiredStatuses {
+		if !strings.Contains(fact.Statement, s) {
+			t.Errorf("refactor candidate fact statement missing status %q", s)
+		}
+	}
+
+	expectedEvidences := map[string]bool{
+		"internal/refactors/types.go":                            false,
+		"relay-contracts/contracts/refactor_backlog_contract.md": false,
+	}
+	for _, e := range fact.Evidence {
+		expectedEvidences[e.Value] = true
+	}
+	for path, found := range expectedEvidences {
+		if !found {
+			t.Errorf("refactor candidate fact missing evidence for %q", path)
+		}
+	}
+}
+
+func TestBuildWorkflowSurfaceDoc_GapFacts(t *testing.T) {
+	doc, err := BuildWorkflowSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildWorkflowSurfaceDoc: %v", err)
+	}
+
+	requiredGapFactIDs := []string{
+		"workflow-gap-contract-runtime-comparison",
+		"workflow-gap-untested-state-values",
+		"workflow-gap-lifecycle-observed-writes",
+		"workflow-gap-transport-coverage",
+	}
+
+	factMap := make(map[string]Fact)
+	for _, f := range doc.Facts {
+		factMap[f.ID] = f
+	}
+
+	for _, id := range requiredGapFactIDs {
+		fact, ok := factMap[id]
+		if !ok {
+			t.Errorf("required gap fact ID %q not found", id)
+			continue
+		}
+		if fact.Label == FactLabelProven {
+			t.Errorf("gap fact %q is labeled proven but should not be unless implementation includes full deterministic coverage", id)
+		}
+	}
+}
+
+func TestBuildWorkflowSurfaceDoc_EvidenceRelativity(t *testing.T) {
+	doc, err := BuildWorkflowSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildWorkflowSurfaceDoc: %v", err)
+	}
+
+	for _, fact := range doc.Facts {
+		for _, e := range fact.Evidence {
+			if e.Value == "" {
+				t.Errorf("fact %q has empty evidence value", fact.ID)
+				continue
+			}
+			if err := ValidateRepoRelativePath(e.Value); err != nil {
+				t.Errorf("fact %q evidence %q is not a valid repo-relative path: %v", fact.ID, e.Value, err)
+			}
+		}
+	}
+}
+
+func TestBuildWorkflowSurfaceDoc_MissingContractReturnsError(t *testing.T) {
+	dir := t.TempDir()
+
+	contractsDir := filepath.Join(dir, "relay-contracts", "contracts")
+	if err := os.MkdirAll(contractsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	policiesDir := filepath.Join(dir, "relay-contracts", "policies")
+	if err := os.MkdirAll(policiesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []string{
+		filepath.Join(contractsDir, "intent_drift_review_contract.md"),
+		filepath.Join(contractsDir, "planner_mcp_plan_attempt_contract.md"),
+		filepath.Join(contractsDir, "refactor_backlog_contract.md"),
+	} {
+		if err := os.WriteFile(p, []byte("placeholder"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, err := BuildWorkflowSurfaceDoc(dir)
+	if err == nil {
+		t.Fatal("expected error for missing pipeline lifecycle policy, got nil")
+	}
+	missingPath := "relay-contracts/policies/pipeline_lifecycle_policy.md"
+	if !strings.Contains(err.Error(), missingPath) {
+		t.Errorf("error should name missing path %q, got: %v", missingPath, err)
+	}
+}
+
+func TestBuildWorkflowSurfaceDoc_NoEvidenceIsAbsolute(t *testing.T) {
+	doc, err := BuildWorkflowSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildWorkflowSurfaceDoc: %v", err)
+	}
+
+	for _, fact := range doc.Facts {
+		for _, e := range fact.Evidence {
+			if strings.HasPrefix(e.Value, "/") {
+				t.Errorf("fact %q evidence %q should not be absolute", fact.ID, e.Value)
+			}
+			if strings.Contains(e.Value, "..") {
+				t.Errorf("fact %q evidence %q should not contain '..'", fact.ID, e.Value)
+			}
+			if strings.Contains(e.Value, "\\") {
+				t.Errorf("fact %q evidence %q should not contain backslashes", fact.ID, e.Value)
+			}
+			if strings.Contains(e.Value, "\n") {
+				t.Errorf("fact %q evidence %q should not contain newlines", fact.ID, e.Value)
+			}
+		}
+	}
+}
