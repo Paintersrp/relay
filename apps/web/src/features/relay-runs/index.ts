@@ -7,6 +7,10 @@ export {
   runEventsQueryOptions,
   auditStatusQueryOptions,
   runArtifactContentQueryOptionsForArtifact,
+  executeActiveRunDetailQueryOptions,
+  executeActiveRunArtifactsQueryOptions,
+  executeActiveRunEventsQueryOptions,
+  isExecuteLiveStatus,
   formatRunDate,
   formatRunDateRelative
 } from './queries'

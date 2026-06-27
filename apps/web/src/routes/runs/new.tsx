@@ -27,6 +27,9 @@ interface DetectedHandoffMetadata {
   taskSlug?: string;
   targetExecutor?: string;
   schemaVersion?: string;
+  recommendedModel?: string;
+  executorModelProfile?: string;
+  model?: string;
   detectedCount: number;
 }
 
@@ -47,6 +50,9 @@ function detectHandoffMetadata(markdown: string): DetectedHandoffMetadata {
     taskSlug: findMetadataValue(markdown, ["task_slug", "task"]),
     targetExecutor: findMetadataValue(markdown, ["target_executor", "executor"]),
     schemaVersion: findMetadataValue(markdown, ["schema_version"]),
+    recommendedModel: findMetadataValue(markdown, ["recommended_model"]),
+    executorModelProfile: findMetadataValue(markdown, ["executor_model_profile"]),
+    model: findMetadataValue(markdown, ["model"]),
   };
 
   const detectedCount = Object.values(metadata).filter(Boolean).length;
@@ -452,7 +458,7 @@ function NewRunPage() {
                     Detected Handoff Metadata
                   </h2>
                   <span className="shrink-0 rounded-full border border-[var(--relay-row-border)] px-2 py-1 font-mono text-[11px] text-muted-foreground">
-                    {detectedMetadata.detectedCount}/6 detected
+                    {detectedMetadata.detectedCount}/9 detected
                   </span>
                 </div>
               </div>
@@ -503,6 +509,15 @@ function NewRunPage() {
                         label="schema_version"
                         value={detectedMetadata.schemaVersion}
                       />
+                      <MetadataRow
+                        label="recommended_model"
+                        value={detectedMetadata.recommendedModel}
+                      />
+                      <MetadataRow
+                        label="executor_model_profile"
+                        value={detectedMetadata.executorModelProfile}
+                      />
+                      <MetadataRow label="model" value={detectedMetadata.model} />
                     </div>
                     <div className="border-t border-[var(--relay-row-border)] px-5 py-3 text-xs text-muted-foreground">
                       Review detected fields before creating the run.

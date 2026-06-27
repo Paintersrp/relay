@@ -94,10 +94,7 @@ func (s *Service) IntakePlannerHandoff(ctx context.Context, input IntakeInput) (
 		title = deriveRunTitleFromMarkdown(markdown)
 	}
 
-	recommendedModel := metadata["recommended_model"]
-	if recommendedModel == "" {
-		recommendedModel = "deepseek-v4-flash"
-	}
+	recommendedModel := resolveIntakeRecommendedModel(metadata)
 	selectedModel := recommendedModel
 
 	executorAdapter, explicitAdapter, err := resolveIntakeExecutorAdapter(input, metadata)
@@ -201,6 +198,18 @@ func (s *Service) IntakePlannerHandoff(ctx context.Context, input IntakeInput) (
 	_, _ = s.store.CreateEvent(run.ID, "info", "Handoff intake receipt: planner handoff registered")
 
 	return &IntakeResult{RunID: run.ID, PlanID: planID, PassID: passID}, nil
+}
+
+func resolveIntakeRecommendedModel(metadata map[string]string) string {
+	for _, key := range []string{"recommended_model", "executor_model_profile", "model"} {
+		if v := strings.TrimSpace(metadata[key]); v != "" {
+			return v
+		}
+	}
+	if strings.TrimSpace(metadata["target_executor"]) == "deepseek" {
+		return "deepseek-v4-pro"
+	}
+	return "deepseek-v4-flash"
 }
 
 func mapInputError(err error, internalPrefix string) error {

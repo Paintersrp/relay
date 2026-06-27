@@ -2,16 +2,16 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import {
-  runDetailQueryOptions,
-  runArtifactsQueryOptions,
-  runEventsQueryOptions,
+  executeActiveRunDetailQueryOptions,
+  executeActiveRunArtifactsQueryOptions,
+  executeActiveRunEventsQueryOptions,
   executeRun,
   cancelRun,
   recoverRun,
   validateRun,
   evaluateExecuteValidationAction,
 } from "@/features/relay-runs";
-import type { RelayArtifact, RelayExecutorPhase, RelayRun } from "@/features/relay-runs";
+import type { RelayArtifact, RelayExecutorPhase, RelayRun, RelayRunEvent } from "@/features/relay-runs";
 import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
 import {
   RelayStateBanner,
@@ -67,12 +67,12 @@ function ExecutePage() {
     data: run,
     isLoading: isLoadingRun,
     error: errorRun,
-  } = useQuery(runDetailQueryOptions(runId));
+  } = useQuery(executeActiveRunDetailQueryOptions(runId));
   const { data: artifacts, isLoading: isLoadingArtifacts } = useQuery(
-    runArtifactsQueryOptions(runId),
+    executeActiveRunArtifactsQueryOptions(runId, run?.status),
   );
   const { data: events, isLoading: isLoadingEvents } = useQuery(
-    runEventsQueryOptions(runId),
+    executeActiveRunEventsQueryOptions(runId, run?.status),
   );
 
   if (isLoadingRun || isLoadingArtifacts || isLoadingEvents) {
@@ -117,7 +117,7 @@ function ExecutePage() {
         logPreview,
       }}
       currentStep="execute"
-      mainContent={<ExecuteMainContent run={run} artifacts={resolvedArtifacts} />}
+      mainContent={<ExecuteMainContent run={run} artifacts={resolvedArtifacts} events={resolvedEvents} />}
       initialInspectorTab="details"
       inspectorTabs={[
         { key: "details", label: "Details" },
@@ -230,9 +230,11 @@ function isValidationArtifact(a: any): boolean {
 function ExecuteMainContent({
   run,
   artifacts,
+  events,
 }: {
   run: RelayRun;
   artifacts: any[];
+  events: RelayRunEvent[];
 }) {
   const queryClient = useQueryClient();
   const [mutationError, setMutationError] = useState<string | null>(null);
@@ -412,6 +414,8 @@ function ExecuteMainContent({
   );
   const executeStateCardCopy = getExecuteStateCardCopy(executeDisplayState);
 
+  const progressLines = deriveLiveExecutorProgress(events, artifacts);
+
   const handleStart = () => {
     setMutationError(null);
     startMutation.mutate();
@@ -585,6 +589,45 @@ function ExecuteMainContent({
             </p>
           )}
       </RunStageStateCard>
+
+      <RunStageContentSection
+        eyebrow="Live Stream"
+        title="Live Executor Progress"
+        description="Incoming executor packets, events, and artifact previews while execution is active."
+      >
+        {progressLines.length > 0 ? (
+          <ScrollArea className="h-48 w-full rounded-md border border-[var(--relay-row-border)] bg-[var(--relay-code-bg)]">
+            <div className="min-w-0 p-3 font-mono text-xs">
+              <div className="overflow-x-auto">
+                <div className="min-w-max space-y-0.5">
+                  {progressLines.map((line, i) => (
+                    <div
+                      key={i}
+                      className="text-emerald-300/80 leading-relaxed whitespace-pre"
+                    >
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </ScrollArea>
+        ) : isExecuteLiveStatus(runStatus) ? (
+          <div className="flex items-center gap-2 text-xs bg-[var(--surface-inset)]/30 border border-dashed rounded p-3 text-muted-foreground">
+            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+            <span className="italic">Waiting for executor output packets...</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-xs bg-[var(--surface-inset)]/30 border border-dashed rounded p-3 text-muted-foreground">
+            <Terminal className="w-3.5 h-3.5 shrink-0" />
+            <span className="italic">
+              {executorPhase === "idle"
+                ? "Start the executor to see live progress."
+                : "Execution is not active — no live progress to show."}
+            </span>
+          </div>
+        )}
+      </RunStageContentSection>
 
       <RunStageSummaryCard
         eyebrow="Execute Pipeline"
@@ -905,6 +948,145 @@ function ExecuteMainContent({
       </RunStageContentSection>
     </RunStageMainStack>
   );
+}
+
+export function isExecuteLiveStatus(status?: string): boolean {
+  return (
+    status === "executor_dispatched" ||
+    status === "executor_running" ||
+    status === "local_validation_running"
+  );
+}
+
+export function formatExecutorPacket(raw: string): string[] {
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    const line = trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed;
+    return [line];
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return [String(trimmed).slice(0, 200)];
+  }
+
+  const lines: string[] = [];
+
+  const packetType = parsed.type || "packet";
+  const part = parsed.part || parsed;
+  const tool = part.tool || part.type || packetType;
+  const state = part.state || parsed.state || {};
+  const status = state.status || "";
+  const input = state.input || {};
+  const output = state.output;
+
+  let target = "";
+  if (input.filePath) {
+    target = String(input.filePath).replace(/\\/g, "/");
+    const repoMarker = "/relay/";
+    const idx = target.lastIndexOf(repoMarker);
+    if (idx >= 0) {
+      target = target.slice(idx + repoMarker.length);
+    }
+  } else if (input.command) {
+    target = String(input.command);
+  }
+
+  const displayType = tool === part.type || part.type === "tool" ? "tool" : packetType;
+  let summary = `${displayType} ${tool}`;
+  if (status) {
+    summary += ` ${status}`;
+  }
+  if (target) {
+    summary += ` — ${target}`;
+  }
+  lines.push(summary);
+
+  if (output !== undefined && output !== null) {
+    let outStr = "";
+    if (typeof output === "string") {
+      outStr = output;
+    } else {
+      try {
+        outStr = JSON.stringify(output);
+      } catch {
+        outStr = String(output);
+      }
+    }
+    if (outStr) {
+      const preview = outStr.length > 80 ? `${outStr.slice(0, 80)}…` : outStr;
+      lines.push(`  → ${preview}`);
+    }
+  }
+
+  return lines;
+}
+
+export function deriveLiveExecutorProgress(
+  events: RelayRunEvent[],
+  artifacts: RelayArtifact[],
+): string[] {
+  const rows: { at: number; line: string }[] = [];
+
+  for (const e of events || []) {
+    const time = e.createdAt ? new Date(e.createdAt).getTime() : 0;
+    const timeStr = e.createdAt
+      ? new Date(e.createdAt).toLocaleTimeString("en-US", {
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      : "--:--:--";
+    const kind = e.kind || "log";
+    rows.push({
+      at: time,
+      line: `[${timeStr}] [${kind}] ${e.message || ""}`,
+    });
+  }
+
+  const interestingArtifactKinds = new Set([
+    "executor_result",
+    "executor_stdout",
+    "command_log",
+    "codex_last_message",
+  ]);
+
+  for (const a of artifacts || []) {
+    if (!a.preview) continue;
+    if (!interestingArtifactKinds.has(a.kind || "")) continue;
+
+    const time = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const timeStr = a.createdAt
+      ? new Date(a.createdAt).toLocaleTimeString("en-US", {
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      : "--:--:--";
+
+    const kind = a.kind || "artifact";
+    const source = a.filename || a.label || kind;
+    const packetLines = formatExecutorPacket(a.preview);
+    if (packetLines.length > 0) {
+      for (const pl of packetLines) {
+        rows.push({ at: time, line: `[${timeStr}] [${source}] ${pl}` });
+      }
+    } else {
+      rows.push({
+        at: time,
+        line: `[${timeStr}] [${source}] ${a.preview.slice(0, 200)}`,
+      });
+    }
+  }
+
+  rows.sort((a, b) => a.at - b.at);
+  return rows.slice(-100).map((r) => r.line);
 }
 
 function ExecuteDetailsPanel({

@@ -84,6 +84,12 @@ func buildFoundationDoc() *agentrefs.ReferenceDocument {
 				Description: "Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference.",
 			},
 			{
+				ID:          "storage-surface",
+				Kind:        "generated_reference",
+				Path:        agentrefs.StorageSurfaceJSONPath,
+				Description: "Generated storage, migration, SQL query, sqlc-boundary, and store-wrapper surface reference.",
+			},
+			{
 				ID:          "workflow-surfaces",
 				Kind:        "generated_reference",
 				Path:        agentrefs.WorkflowSurfaceJSONPath,
@@ -133,6 +139,18 @@ func runGenerate() error {
 		return fmt.Errorf("write workflow surface: %w", err)
 	}
 
+	storageDoc, err := agentrefs.BuildStorageSurfaceDoc(".")
+	if err != nil {
+		return fmt.Errorf("build storage surface doc: %w", err)
+	}
+	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
+		JSONPath:     agentrefs.StorageSurfaceJSONPath,
+		MarkdownPath: agentrefs.StorageSurfaceMarkdownPath,
+		Document:     storageDoc,
+	}); err != nil {
+		return fmt.Errorf("write storage surface: %w", err)
+	}
+
 	return nil
 }
 
@@ -149,6 +167,11 @@ func runCheck() error {
 		return fmt.Errorf("build workflow surface doc: %w", err)
 	}
 
+	storageDoc, err := agentrefs.BuildStorageSurfaceDoc(".")
+	if err != nil {
+		return fmt.Errorf("build storage surface doc: %w", err)
+	}
+
 	diffs, err := agentrefs.CheckOutputSpecs([]agentrefs.OutputSpec{
 		{
 			JSONPath:     agentrefs.IndexJSONPath,
@@ -159,6 +182,11 @@ func runCheck() error {
 			JSONPath:     agentrefs.BackendSurfaceJSONPath,
 			MarkdownPath: agentrefs.BackendSurfaceMarkdownPath,
 			Document:     backendDoc,
+		},
+		{
+			JSONPath:     agentrefs.StorageSurfaceJSONPath,
+			MarkdownPath: agentrefs.StorageSurfaceMarkdownPath,
+			Document:     storageDoc,
 		},
 		{
 			JSONPath:     agentrefs.WorkflowSurfaceJSONPath,

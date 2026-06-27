@@ -59,6 +59,57 @@ export function runEventsQueryOptions(id: string) {
   });
 }
 
+// Execute-active polling helpers. These keep the execute page fresh while the
+// executor is running without affecting default stale times on other routes.
+export function isExecuteLiveStatus(status?: string): boolean {
+  return (
+    status === "executor_dispatched" ||
+    status === "executor_running" ||
+    status === "local_validation_running"
+  );
+}
+
+export function executeActiveRunDetailQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: relayRunKeys.detail(id),
+    queryFn: () => getRun(id),
+    staleTime: 0,
+    refetchInterval: (data) =>
+      isExecuteLiveStatus((data as { status?: string } | undefined)?.status)
+        ? 1000
+        : false,
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function executeActiveRunArtifactsQueryOptions(
+  id: string,
+  status?: string,
+) {
+  const live = isExecuteLiveStatus(status);
+  return queryOptions({
+    queryKey: relayRunKeys.artifacts(id),
+    queryFn: () => getRunArtifacts(id),
+    staleTime: 0,
+    refetchInterval: live ? 1500 : false,
+    refetchIntervalInBackground: live,
+  });
+}
+
+export function executeActiveRunEventsQueryOptions(
+  id: string,
+  status?: string,
+) {
+  const live = isExecuteLiveStatus(status);
+  return queryOptions({
+    queryKey: relayRunKeys.events(id),
+    queryFn: () => getRunEvents(id),
+    staleTime: 0,
+    refetchInterval: live ? 1000 : false,
+    refetchIntervalInBackground: live,
+  });
+}
+
 export function auditStatusQueryOptions(id: string) {
   return queryOptions({
     queryKey: relayRunKeys.auditStatus(id),

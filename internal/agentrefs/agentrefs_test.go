@@ -624,3 +624,238 @@ func TestBuildWorkflowSurfaceDoc_NoEvidenceIsAbsolute(t *testing.T) {
 		}
 	}
 }
+
+func buildTempStorageRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+
+	sqlcYAML := `version: "2"
+sql:
+  - engine: "sqlite"
+    queries: "internal/db/queries"
+    schema: "internal/db/migrations"
+    gen:
+      go:
+        package: "generated"
+        out: "internal/store/generated"
+        emit_json_tags: true
+        emit_empty_slices: true
+`
+	if err := os.MkdirAll(filepath.Join(dir, "internal", "store"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sqlc.yaml"), []byte(sqlcYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	queries := map[string]string{
+		"internal/db/queries/plans.sql": `-- name: CreatePlan :one
+INSERT INTO plans (plan_id) VALUES (?) RETURNING *;
+`,
+		"internal/db/queries/plan_attempts.sql": `-- name: CreatePlanAttempt :one
+INSERT INTO plan_attempts (plan_attempt_id) VALUES (?) RETURNING *;
+`,
+		"internal/db/queries/refactor_backlog.sql": `-- name: CreateRefactorCandidate :one
+INSERT INTO refactor_candidates (candidate_id) VALUES (?) RETURNING *;
+`,
+	}
+	for p, content := range queries {
+		abs := filepath.Join(dir, p)
+		if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	migration := `-- +goose Up
+CREATE TABLE plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT
+);
+`
+	migrationPath := filepath.Join(dir, "internal", "db", "migrations", "0001_init.sql")
+	if err := os.MkdirAll(filepath.Dir(migrationPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(migrationPath, []byte(migration), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	storeDB := `package store
+
+type Repo = generated.Repo
+
+type Store struct{}
+
+func (s *Store) CreateRepo(name, path string) (*Repo, error) { return nil, nil }
+`
+	if err := os.WriteFile(filepath.Join(dir, "internal", "store", "db.go"), []byte(storeDB), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	return dir
+}
+
+func TestBuildStorageSurfaceDoc_EmitsRequiredFacts(t *testing.T) {
+	doc, err := BuildStorageSurfaceDoc(buildTempStorageRepo(t))
+	if err != nil {
+		t.Fatalf("BuildStorageSurfaceDoc: %v", err)
+	}
+
+	if doc.ReferenceID != "storage-surface" {
+		t.Errorf("ReferenceID = %q, want storage-surface", doc.ReferenceID)
+	}
+
+	var hasSQLCConfig bool
+	for _, f := range doc.Facts {
+		if strings.Contains(f.Statement, "sqlc configuration") {
+			hasSQLCConfig = true
+			break
+		}
+	}
+	if !hasSQLCConfig {
+		t.Error("no fact describes sqlc configuration")
+	}
+
+	requiredNames := []string{"CreatePlan", "CreatePlanAttempt", "CreateRefactorCandidate"}
+	found := make(map[string]bool)
+	for _, f := range doc.Facts {
+		for _, name := range requiredNames {
+			if strings.Contains(f.Statement, name) {
+				found[name] = true
+			}
+		}
+	}
+	for _, name := range requiredNames {
+		if !found[name] {
+			t.Errorf("required query name %q not found in any storage surface fact statement", name)
+		}
+	}
+}
+
+func TestBuildStorageSurfaceDoc_Deterministic(t *testing.T) {
+	dir := buildTempStorageRepo(t)
+
+	doc1, err := BuildStorageSurfaceDoc(dir)
+	if err != nil {
+		t.Fatalf("BuildStorageSurfaceDoc (1): %v", err)
+	}
+	doc2, err := BuildStorageSurfaceDoc(dir)
+	if err != nil {
+		t.Fatalf("BuildStorageSurfaceDoc (2): %v", err)
+	}
+
+	j1, err := RenderJSON(doc1)
+	if err != nil {
+		t.Fatalf("RenderJSON (1): %v", err)
+	}
+	j2, err := RenderJSON(doc2)
+	if err != nil {
+		t.Fatalf("RenderJSON (2): %v", err)
+	}
+	if string(j1) != string(j2) {
+		t.Error("BuildStorageSurfaceDoc is not deterministic: two runs produced different JSON")
+	}
+}
+
+func TestBuildStorageSurfaceDoc_RendersJSONAndMarkdown(t *testing.T) {
+	doc, err := BuildStorageSurfaceDoc(buildTempStorageRepo(t))
+	if err != nil {
+		t.Fatalf("BuildStorageSurfaceDoc: %v", err)
+	}
+
+	jsonData, err := RenderJSON(doc)
+	if err != nil {
+		t.Fatalf("RenderJSON: %v", err)
+	}
+	var parsed ReferenceDocument
+	if err := json.Unmarshal(jsonData, &parsed); err != nil {
+		t.Fatalf("Unmarshal JSON: %v", err)
+	}
+
+	md, err := RenderMarkdown(doc)
+	if err != nil {
+		t.Fatalf("RenderMarkdown: %v", err)
+	}
+	if !strings.Contains(string(md), "storage-surface") {
+		t.Error("Markdown should contain reference ID")
+	}
+}
+
+func TestBuildStorageSurfaceDoc_SourceInputsAreRepoRelative(t *testing.T) {
+	doc, err := BuildStorageSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildStorageSurfaceDoc: %v", err)
+	}
+
+	for _, si := range doc.SourceInputs {
+		if si.Path == "" {
+			t.Error("found empty source input path")
+			continue
+		}
+		if err := ValidateRepoRelativePath(si.Path); err != nil {
+			t.Errorf("source input path %q is not a valid repo-relative path: %v", si.Path, err)
+		}
+	}
+}
+
+func TestBuildStorageSurfaceDoc_NoEvidenceIsAbsolute(t *testing.T) {
+	doc, err := BuildStorageSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildStorageSurfaceDoc: %v", err)
+	}
+
+	for _, fact := range doc.Facts {
+		for _, e := range fact.Evidence {
+			if strings.HasPrefix(e.Value, "/") {
+				t.Errorf("fact %q evidence %q should not be absolute", fact.ID, e.Value)
+			}
+			if strings.Contains(e.Value, "..") {
+				t.Errorf("fact %q evidence %q should not contain '..'", fact.ID, e.Value)
+			}
+			if strings.Contains(e.Value, "\\") {
+				t.Errorf("fact %q evidence %q should not contain backslashes", fact.ID, e.Value)
+			}
+			if strings.Contains(e.Value, "\n") {
+				t.Errorf("fact %q evidence %q should not contain newlines", fact.ID, e.Value)
+			}
+		}
+	}
+}
+
+func TestBuildStorageSurfaceDoc_GeneratedBoundaryIsNotRequired(t *testing.T) {
+	dir := buildTempStorageRepo(t)
+
+	doc, err := BuildStorageSurfaceDoc(dir)
+	if err != nil {
+		t.Fatalf("BuildStorageSurfaceDoc: %v", err)
+	}
+
+	for _, f := range doc.Facts {
+		if f.Label == FactLabelProven && strings.Contains(f.Statement, "Generated sqlc boundary") {
+			t.Errorf("proven fact should not claim generated boundary: %s", f.Statement)
+		}
+	}
+}
+
+func TestStorageOutputSpec_CheckModeCoverage(t *testing.T) {
+	doc, err := BuildStorageSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildStorageSurfaceDoc: %v", err)
+	}
+
+	spec := OutputSpec{
+		JSONPath:     filepath.Join(os.TempDir(), "opencode-test-storage-check.json"),
+		MarkdownPath: filepath.Join(os.TempDir(), "opencode-test-storage-check.md"),
+		Document:     doc,
+	}
+
+	diffs, err := CheckOutputSpecs([]OutputSpec{spec})
+	if err != nil {
+		t.Fatalf("CheckOutputSpecs: %v", err)
+	}
+	if len(diffs) < 2 {
+		t.Fatal("expected at least 2 diffs (both JSON and Markdown missing), got", len(diffs))
+	}
+}

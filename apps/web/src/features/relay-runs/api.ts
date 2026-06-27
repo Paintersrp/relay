@@ -413,7 +413,14 @@ export function normalizeRun(run: any): RelayRun {
     createdAt: run.createdAt || new Date().toISOString(),
     updatedAt: run.updatedAt || new Date().toISOString(),
     summary: run.summary || "",
-    model: run.model || "gpt-4o",
+    model:
+      firstNonEmptyString(
+        run.model,
+        run.selectedModel,
+        run.selected_model,
+        run.recommendedModel,
+        run.recommended_model,
+      ) || "-",
     riskLevel: run.riskLevel || "low",
     validation: run.validation || defaultValidation,
     artifacts: run.artifacts || [],

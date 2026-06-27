@@ -76,6 +76,12 @@
       "description": "Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference."
     },
     {
+      "id": "storage-surface",
+      "kind": "generated_reference",
+      "path": "docs/generated/agent-references/storage-surface.json",
+      "description": "Generated storage, migration, SQL query, sqlc-boundary, and store-wrapper surface reference."
+    },
+    {
       "id": "workflow-surfaces",
       "kind": "generated_reference",
       "path": "docs/generated/agent-references/workflow-surfaces.json",

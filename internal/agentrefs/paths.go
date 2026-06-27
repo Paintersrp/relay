@@ -14,6 +14,8 @@ const (
 	BackendSurfaceMarkdownPath = OutputDir + "/backend-surface.md"
 	WorkflowSurfaceJSONPath    = OutputDir + "/workflow-surfaces.json"
 	WorkflowSurfaceMarkdownPath = OutputDir + "/workflow-surfaces.md"
+	StorageSurfaceJSONPath     = OutputDir + "/storage-surface.json"
+	StorageSurfaceMarkdownPath = OutputDir + "/storage-surface.md"
 	SchemaPath                 = "schema/project_agent_reference.schema.json"
 )
 
