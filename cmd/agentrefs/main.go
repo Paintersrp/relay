@@ -101,6 +101,12 @@ func buildFoundationDoc() *agentrefs.ReferenceDocument {
 				Path:        agentrefs.MCPSurfaceJSONPath,
 				Description: "Generated MCP action registry reference: tool definitions, dispatch handlers, profile gating, mutating vs retrieval-only behavior, and forbidden side effects.",
 			},
+			{
+				ID:          "http-api-surface",
+				Kind:        "generated_reference",
+				Path:        agentrefs.HTTPAPISurfaceJSONPath,
+				Description: "Generated HTTP/API route surface reference: method, path, handler, source file, and route group from route source files.",
+			},
 		},
 	}
 
@@ -169,6 +175,18 @@ func runGenerate() error {
 		return fmt.Errorf("write MCP surface: %w", err)
 	}
 
+	httpAPIDoc, err := agentrefs.BuildHTTPAPISurfaceDoc(".")
+	if err != nil {
+		return fmt.Errorf("build HTTP API surface doc: %w", err)
+	}
+	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
+		JSONPath:     agentrefs.HTTPAPISurfaceJSONPath,
+		MarkdownPath: agentrefs.HTTPAPISurfaceMarkdownPath,
+		Document:     httpAPIDoc,
+	}); err != nil {
+		return fmt.Errorf("write HTTP API surface: %w", err)
+	}
+
 	return nil
 }
 
@@ -193,6 +211,11 @@ func runCheck() error {
 	mcpDoc, err := agentrefs.BuildMCPSurfaceDoc(".")
 	if err != nil {
 		return fmt.Errorf("build MCP surface doc: %w", err)
+	}
+
+	httpAPIDoc, err := agentrefs.BuildHTTPAPISurfaceDoc(".")
+	if err != nil {
+		return fmt.Errorf("build HTTP API surface doc: %w", err)
 	}
 
 	diffs, err := agentrefs.CheckOutputSpecs([]agentrefs.OutputSpec{
@@ -220,6 +243,11 @@ func runCheck() error {
 			JSONPath:     agentrefs.MCPSurfaceJSONPath,
 			MarkdownPath: agentrefs.MCPSurfaceMarkdownPath,
 			Document:     mcpDoc,
+		},
+		{
+			JSONPath:     agentrefs.HTTPAPISurfaceJSONPath,
+			MarkdownPath: agentrefs.HTTPAPISurfaceMarkdownPath,
+			Document:     httpAPIDoc,
 		},
 	})
 	if err != nil {

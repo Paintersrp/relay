@@ -76,6 +76,12 @@
       "description": "Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference."
     },
     {
+      "id": "http-api-surface",
+      "kind": "generated_reference",
+      "path": "docs/generated/agent-references/http-api-surface.json",
+      "description": "Generated HTTP/API route surface reference: method, path, handler, source file, and route group from route source files."
+    },
+    {
       "id": "mcp-registry",
       "kind": "generated_reference",
       "path": "docs/generated/agent-references/mcp-surface.json",

@@ -308,6 +308,11 @@ type streamingState struct {
 	lastStderrChunkAt string
 	lastAnyChunkAt    string
 	writeErrors       map[string]string
+	progressParser    *progressParser
+	lastEventMsg      string
+	lastEventKind     string
+	lastTextAt        time.Time
+	lastTextMsg       string
 }
 
 func (s *streamingState) recordWriteError(key string, err error) {
@@ -337,6 +342,42 @@ func (s *streamingState) writeErrorSummary() string {
 	return strings.Join(errs, "; ")
 }
 
+func (s *streamingState) emitProgressEvent(st *store.Store, runID int64, ev ExecutorProgressEvent) {
+	if st == nil || ev.Message == "" {
+		return
+	}
+	s.mu.Lock()
+	shouldEmit := s.checkAndRecordEvent(ev)
+	s.mu.Unlock()
+
+	if shouldEmit {
+		createEvent(st, runID, ev.Level, ev.Message)
+	}
+}
+
+func (s *streamingState) checkAndRecordEvent(ev ExecutorProgressEvent) bool {
+	rateKind := ev.Kind == "assistant_text" || ev.Kind == "text" || ev.Kind == "executor_text"
+
+	if ev.Message == s.lastEventMsg && ev.Kind == s.lastEventKind {
+		return false
+	}
+
+	if rateKind {
+		now := time.Now()
+		if !s.lastTextAt.IsZero() && now.Sub(s.lastTextAt) < time.Second {
+			if ev.Message == s.lastTextMsg {
+				return false
+			}
+		}
+		s.lastTextAt = now
+		s.lastTextMsg = ev.Message
+	}
+
+	s.lastEventMsg = ev.Message
+	s.lastEventKind = ev.Kind
+	return true
+}
+
 func runBackgroundDispatch(
 	ctx context.Context,
 	p *DispatchParams,
@@ -359,6 +400,7 @@ func runBackgroundDispatch(
 	deleteExecutorArtifacts(s, runID)
 
 	stream := &streamingState{}
+	stream.progressParser = newProgressParser()
 	if err := artifacts.EnsureDir(runID); err != nil {
 		l.Error("executor: ensure artifact dir", "error", err)
 	}
@@ -411,6 +453,11 @@ func runBackgroundDispatch(
 				} else if appendPath != "" {
 					recordExecutorArtifact(s, runID, ArtifactKindExecutorStdout, appendPath, "text/plain")
 				}
+
+				parseEvents := stream.progressParser.feed(chunk)
+				for _, ev := range parseEvents {
+					stream.emitProgressEvent(s, runID, ev)
+				}
 			},
 			OnStderr: func(chunk []byte) {
 				if len(chunk) == 0 {
@@ -431,9 +478,19 @@ func runBackgroundDispatch(
 				} else if appendPath != "" {
 					recordExecutorArtifact(s, runID, ArtifactKindExecutorStderr, appendPath, "text/plain")
 				}
+
+				parseEvents := stream.progressParser.feed(chunk)
+				for _, ev := range parseEvents {
+					stream.emitProgressEvent(s, runID, ev)
+				}
 			},
 		},
 	)
+
+	flushEvents := stream.progressParser.flush()
+	for _, ev := range flushEvents {
+		stream.emitProgressEvent(s, runID, ev)
+	}
 
 	stream.mu.Lock()
 	finalStdout := stream.streamedStdout.String()

@@ -593,7 +593,7 @@ function ExecuteMainContent({
       <RunStageContentSection
         eyebrow="Live Stream"
         title="Live Executor Progress"
-        description="Incoming executor packets, events, and artifact previews while execution is active."
+        description="Human-readable progress messages from executor events. Raw executor log artifacts on disk are available in the Artifacts tab."
       >
         {progressLines.length > 0 ? (
           <ScrollArea className="h-48 w-full rounded-md border border-[var(--relay-row-border)] bg-[var(--relay-code-bg)]">
@@ -1028,7 +1028,7 @@ export function formatExecutorPacket(raw: string): string[] {
 
 export function deriveLiveExecutorProgress(
   events: RelayRunEvent[],
-  artifacts: RelayArtifact[],
+  _artifacts: RelayArtifact[],
 ): string[] {
   const rows: { at: number; line: string }[] = [];
 
@@ -1047,42 +1047,6 @@ export function deriveLiveExecutorProgress(
       at: time,
       line: `[${timeStr}] [${kind}] ${e.message || ""}`,
     });
-  }
-
-  const interestingArtifactKinds = new Set([
-    "executor_result",
-    "executor_stdout",
-    "command_log",
-    "codex_last_message",
-  ]);
-
-  for (const a of artifacts || []) {
-    if (!a.preview) continue;
-    if (!interestingArtifactKinds.has(a.kind || "")) continue;
-
-    const time = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const timeStr = a.createdAt
-      ? new Date(a.createdAt).toLocaleTimeString("en-US", {
-          hour12: false,
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        })
-      : "--:--:--";
-
-    const kind = a.kind || "artifact";
-    const source = a.filename || a.label || kind;
-    const packetLines = formatExecutorPacket(a.preview);
-    if (packetLines.length > 0) {
-      for (const pl of packetLines) {
-        rows.push({ at: time, line: `[${timeStr}] [${source}] ${pl}` });
-      }
-    } else {
-      rows.push({
-        at: time,
-        line: `[${timeStr}] [${source}] ${a.preview.slice(0, 200)}`,
-      });
-    }
   }
 
   rows.sort((a, b) => a.at - b.at);

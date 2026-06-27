@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { RelayRunEvent } from "@/features/relay-runs";
 import {
   formatExecutorPacket,
   deriveLiveExecutorProgress,
@@ -62,7 +63,7 @@ describe("formatExecutorPacket", () => {
 });
 
 describe("deriveLiveExecutorProgress", () => {
-  it("includes event messages and formatted artifact previews", () => {
+  it("includes event messages and does not include raw artifact previews", () => {
     const events = [
       {
         id: "1",
@@ -71,25 +72,92 @@ describe("deriveLiveExecutorProgress", () => {
         message: "Executor started",
         createdAt: "2026-06-27T10:00:00.000Z",
       },
+      {
+        id: "2",
+        runId: "42",
+        kind: "log" as const,
+        message: "Read file executor.go",
+        createdAt: "2026-06-27T10:00:01.000Z",
+      },
     ];
     const artifacts = [
       {
-        id: "2",
-        label: "Executor Result",
-        path: "/api/runs/42/artifacts/executor_result",
-        kind: "executor_result",
+        id: "a1",
+        label: "Executor Stdout",
+        path: "/api/runs/42/artifacts/executor_stdout",
+        kind: "executor_stdout",
         status: "ready",
-        filename: "executor_result.json",
+        filename: "executor_stdout.txt",
+        preview: sampleToolUsePacket,
+        createdAt: "2026-06-27T10:00:01.000Z",
+      },
+      {
+        id: "a2",
+        label: "Command Log",
+        path: "/api/runs/42/artifacts/command_log",
+        kind: "command_log",
+        status: "ready",
+        filename: "command_log.txt",
+        preview: "Command: opencode run...",
+        createdAt: "2026-06-27T10:00:02.000Z",
+      },
+    ];
+
+    const lines = deriveLiveExecutorProgress(events, artifacts);
+    expect(lines.length).toBe(2);
+    expect(lines[0]).toContain("Executor started");
+    expect(lines[1]).toContain("Read file executor.go");
+  });
+
+  it("does not render raw JSON artifact previews in live progress", () => {
+    const events: RelayRunEvent[] = [];
+    const artifacts = [
+      {
+        id: "a1",
+        label: "Executor Stdout",
+        path: "/api/runs/42/artifacts/executor_stdout",
+        kind: "executor_stdout",
+        status: "ready",
+        filename: "executor_stdout.txt",
         preview: sampleToolUsePacket,
         createdAt: "2026-06-27T10:00:01.000Z",
       },
     ];
 
     const lines = deriveLiveExecutorProgress(events, artifacts);
-    expect(lines.length).toBe(3);
-    expect(lines[0]).toContain("Executor started");
-    expect(lines[1]).toContain("tool read completed");
-    expect(lines[2]).toContain("→");
+    expect(lines.length).toBe(0);
+  });
+
+  it("does not contain raw JSON or protocol fields in any line", () => {
+    const events = [
+      {
+        id: "1",
+        runId: "42",
+        kind: "log" as const,
+        message: "Executor dispatched: opencode ...",
+        createdAt: "2026-06-27T10:00:00.000Z",
+      },
+    ];
+    const artifacts = [
+      {
+        id: "a1",
+        label: "Executor Stdout",
+        path: "/api/runs/42/artifacts/executor_stdout",
+        kind: "executor_stdout",
+        status: "ready",
+        filename: "executor_stdout.txt",
+        preview: sampleToolUsePacket,
+        createdAt: "2026-06-27T10:00:01.000Z",
+      },
+    ];
+
+    const lines = deriveLiveExecutorProgress(events, artifacts);
+    for (const line of lines) {
+      expect(line).not.toContain("sessionID");
+      expect(line).not.toContain('"timestamp"');
+      expect(line).not.toContain('"type": "tool_use"');
+      expect(line).not.toContain('"part"');
+    }
   });
 
   it("limits output to the most recent 100 lines", () => {

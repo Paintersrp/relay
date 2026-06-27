@@ -18,6 +18,8 @@ const (
 	StorageSurfaceMarkdownPath = OutputDir + "/storage-surface.md"
 	MCPSurfaceJSONPath      = OutputDir + "/mcp-surface.json"
 	MCPSurfaceMarkdownPath  = OutputDir + "/mcp-surface.md"
+	HTTPAPISurfaceJSONPath     = OutputDir + "/http-api-surface.json"
+	HTTPAPISurfaceMarkdownPath = OutputDir + "/http-api-surface.md"
 	SchemaPath                 = "schema/project_agent_reference.schema.json"
 )
 
