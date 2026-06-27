@@ -30,6 +30,25 @@ func TestValidation(t *testing.T) {
 	if err := json.Unmarshal(validPacketBytes, &validPacket); err != nil {
 		t.Fatalf("failed to parse valid packet example: %v", err)
 	}
+	cloneValidPacket := func() map[string]interface{} {
+		packetBytes, err := json.Marshal(validPacket)
+		if err != nil {
+			t.Fatalf("failed to clone valid packet: %v", err)
+		}
+		var cloned map[string]interface{}
+		if err := json.Unmarshal(packetBytes, &cloned); err != nil {
+			t.Fatalf("failed to parse cloned packet: %v", err)
+		}
+		return cloned
+	}
+	hasErrorCode := func(report *ValidationReport, code string) bool {
+		for _, e := range report.Errors {
+			if e.Code == code {
+				return true
+			}
+		}
+		return false
+	}
 
 	t.Run("Valid Packet", func(t *testing.T) {
 		packetJSON, _ := json.Marshal(validPacket)
@@ -181,34 +200,95 @@ func TestValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("Vague Phrasing Detected", func(t *testing.T) {
-		invalidPacket := make(map[string]interface{})
-		for k, v := range validPacket {
-			invalidPacket[k] = v
+	t.Run("Vague Intent Grounding", func(t *testing.T) {
+		tests := []struct {
+			name      string
+			mutate    func(map[string]interface{})
+			wantValid bool
+		}{
+			{
+				name: "grounded goal containing improve passes",
+				mutate: func(packet map[string]interface{}) {
+					exec := packet["execution_payload"].(map[string]interface{})
+					exec["goal"] = "Improve CANONICAL_PACKET_VAGUE_INTENT validation by allowing grounded execution_payload.goal text."
+					exec["scope"] = "Replace literal phrase blocking in internal/validation/validation.go while preserving validation report status behavior."
+					exec["file_targets"] = []interface{}{map[string]interface{}{"path": "internal/validation/validation.go", "role": "primary", "action": "must_edit", "reason": "validator logic"}}
+					exec["code_requirements"] = []interface{}{map[string]interface{}{"id": "CR1", "requirement": "Return CANONICAL_PACKET_VAGUE_INTENT only when grounding signals are missing.", "applies_to": []interface{}{"internal/validation/validation.go"}}}
+					exec["validation_contract"] = map[string]interface{}{"mode": "commands", "failure_policy": "block", "commands": []interface{}{map[string]interface{}{"id": "V1", "command": "go test ./internal/validation", "required": true, "purpose": "Verify grounded vague-intent validation.", "success_signal": "Command exits 0.", "failure_handling": "block_if_fails"}}}
+				},
+				wantValid: true,
+			},
+			{
+				name: "ungrounded goal containing improve fails",
+				mutate: func(packet map[string]interface{}) {
+					exec := packet["execution_payload"].(map[string]interface{})
+					exec["goal"] = "Improve the UI."
+					exec["validation_contract"] = map[string]interface{}{"mode": "commands"}
+				},
+				wantValid: false,
+			},
+			{
+				name: "grounded implementation step containing improve passes",
+				mutate: func(packet map[string]interface{}) {
+					exec := packet["execution_payload"].(map[string]interface{})
+					exec["implementation_steps"] = []interface{}{map[string]interface{}{
+						"id":                  "S1",
+						"title":               "Update validator",
+						"action":              "modify",
+						"target_paths":        []interface{}{"internal/validation/validation.go"},
+						"instructions":        "Improve CANONICAL_PACKET_VAGUE_INTENT handling by replacing recursive payload scanning with field-aware checks.",
+						"acceptance_criteria": []interface{}{"Validation report does not contain CANONICAL_PACKET_VAGUE_INTENT for grounded improve wording."},
+					}}
+				},
+				wantValid: true,
+			},
+			{
+				name: "decision delegating implementation step fails",
+				mutate: func(packet map[string]interface{}) {
+					exec := packet["execution_payload"].(map[string]interface{})
+					exec["implementation_steps"] = []interface{}{map[string]interface{}{
+						"id":                  "S1",
+						"title":               "Pick behavior",
+						"action":              "modify",
+						"target_paths":        []interface{}{"internal/validation/validation.go"},
+						"instructions":        "Decide best approach.",
+						"acceptance_criteria": []interface{}{"done"},
+					}}
+				},
+				wantValid: false,
+			},
+			{
+				name: "non goals with decision language pass",
+				mutate: func(packet map[string]interface{}) {
+					exec := packet["execution_payload"].(map[string]interface{})
+					exec["non_goals"] = []interface{}{"Do not decide best approach for unrelated compiler behavior."}
+					exec["goal"] = "Validate CANONICAL_PACKET_VAGUE_INTENT handling for concrete execution fields."
+				},
+				wantValid: true,
+			},
 		}
-		exec := make(map[string]interface{})
-		for k, v := range validPacket["execution_payload"].(map[string]interface{}) {
-			exec[k] = v
-		}
-		exec["goal"] = "Please improve the UI and decide best approach to wire as needed."
-		invalidPacket["execution_payload"] = exec
 
-		packetJSON, _ := json.Marshal(invalidPacket)
-		report, err := ValidatePacketJSON(packetJSON, schemaPath)
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-		if report.Valid {
-			t.Error("expected invalid report due to vague phrasing")
-		}
-		found := false
-		for _, e := range report.Errors {
-			if e.Type == "input" && strings.Contains(e.Message, "vague or decision-delegating phrase") {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("expected vague phrase input error, got %v", report.Errors)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				packet := cloneValidPacket()
+				tt.mutate(packet)
+				packetJSON, _ := json.Marshal(packet)
+				report, err := ValidatePacketJSON(packetJSON, schemaPath)
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				if tt.wantValid && !report.Valid {
+					t.Fatalf("expected valid report, got errors: %v", report.Errors)
+				}
+				if !tt.wantValid {
+					if report.Valid {
+						t.Fatalf("expected invalid report")
+					}
+					if !hasErrorCode(report, "CANONICAL_PACKET_VAGUE_INTENT") {
+						t.Fatalf("expected CANONICAL_PACKET_VAGUE_INTENT, got %v", report.Errors)
+					}
+				}
+			})
 		}
 	})
 
@@ -282,43 +362,60 @@ func TestValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("Inspect Step Decision Words Fail", func(t *testing.T) {
-		invalidPacket := make(map[string]interface{})
-		for k, v := range validPacket {
-			invalidPacket[k] = v
-		}
-		exec := make(map[string]interface{})
-		for k, v := range validPacket["execution_payload"].(map[string]interface{}) {
-			exec[k] = v
-		}
-		exec["implementation_steps"] = []interface{}{
-			map[string]interface{}{
-				"id":                  "S1",
-				"title":               "Decide what to do.",
-				"action":              "inspect",
-				"target_paths":        []interface{}{"internal/validation/validation.go"},
-				"instructions":        "Determine whether we should change logic.",
-				"acceptance_criteria": []interface{}{"done"},
+	t.Run("Inspect Step Grounding", func(t *testing.T) {
+		tests := []struct {
+			name      string
+			step      map[string]interface{}
+			wantValid bool
+		}{
+			{
+				name: "concrete inspect verification passes",
+				step: map[string]interface{}{
+					"id":                  "S1",
+					"title":               "Verify validator path",
+					"action":              "inspect",
+					"target_paths":        []interface{}{"internal/validation/validation.go"},
+					"instructions":        "Verify CANONICAL_PACKET_VAGUE_INTENT handling returns errors only for ungrounded execution fields.",
+					"acceptance_criteria": []interface{}{"Inspection output contains target function names and validation status."},
+				},
+				wantValid: true,
+			},
+			{
+				name: "decision delegating inspect fails",
+				step: map[string]interface{}{
+					"id":                  "S1",
+					"title":               "Inspect and decide",
+					"action":              "inspect",
+					"target_paths":        []interface{}{"internal/validation/validation.go"},
+					"instructions":        "Inspect and decide best approach.",
+					"acceptance_criteria": []interface{}{"done"},
+				},
+				wantValid: false,
 			},
 		}
-		invalidPacket["execution_payload"] = exec
 
-		packetJSON, _ := json.Marshal(invalidPacket)
-		report, err := ValidatePacketJSON(packetJSON, schemaPath)
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-		if report.Valid {
-			t.Error("expected invalid report due to decision words in inspect step")
-		}
-		found := false
-		for _, e := range report.Errors {
-			if e.Type == "input" && strings.Contains(e.Message, "contain decision words") {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("expected decision words error, got %v", report.Errors)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				packet := cloneValidPacket()
+				exec := packet["execution_payload"].(map[string]interface{})
+				exec["implementation_steps"] = []interface{}{tt.step}
+				packetJSON, _ := json.Marshal(packet)
+				report, err := ValidatePacketJSON(packetJSON, schemaPath)
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				if tt.wantValid && !report.Valid {
+					t.Fatalf("expected valid report, got errors: %v", report.Errors)
+				}
+				if !tt.wantValid {
+					if report.Valid {
+						t.Fatalf("expected invalid report")
+					}
+					if !hasErrorCode(report, "CANONICAL_PACKET_VAGUE_INTENT") {
+						t.Fatalf("expected CANONICAL_PACKET_VAGUE_INTENT, got %v", report.Errors)
+					}
+				}
+			})
 		}
 	})
 

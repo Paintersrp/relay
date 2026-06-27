@@ -40,6 +40,12 @@ type ValidationReport struct {
 	Errors         []ValidationError `json:"errors"`
 }
 
+type executionTextItem struct {
+	fieldPath       string
+	text            string
+	structuredScope bool
+}
+
 // ValidatePacketJSON validates a raw canonical packet JSON string.
 // schemaPath is the repo-relative path to the canonical_packet.schema.json file.
 func ValidatePacketJSON(packetJSON []byte, schemaPath string) (*ValidationReport, error) {
@@ -320,41 +326,24 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 		issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_EMPTY_FIELD", Message: "required execution_payload field \"validation_contract\" is empty", RepairEligible: false})
 	}
 
-	// 1. Scan for vague phrases in execution_payload
-	bannedPhrases := []string{
-		"decide best approach",
-		"determine whether",
-		"improve",
-		"make it work",
-		"wire as needed",
-		"inspect and decide",
-		"choose appropriate behavior",
-		"if appropriate",
-		"maybe",
-		"optional enhancement",
-	}
-
-	var scanText func(val interface{})
-	scanText = func(val interface{}) {
-		switch v := val.(type) {
-		case string:
-			lower := strings.ToLower(v)
-			for _, phrase := range bannedPhrases {
-				if strings.Contains(lower, phrase) {
-					issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_VAGUE_INTENT", Message: fmt.Sprintf("vague or decision-delegating phrase %q detected in execution_payload", phrase), RepairEligible: false})
-				}
+	// 1. Scan execution-critical fields for vague or decision-delegating intent.
+	for _, item := range collectExecutionTextItems(exec) {
+		if phrase, ok := containsDecisionDelegatingPhrase(item.text); ok {
+			if groundingSignalCount(item.text, exec, item.fieldPath) < 2 {
+				issues = append(issues, addVagueIntentIssue(phrase, item.fieldPath, "concrete target behavior or acceptance criteria is missing"))
 			}
-		case map[string]interface{}:
-			for _, val := range v {
-				scanText(val)
+			continue
+		}
+		if phrase, ok := containsVagueQualityPhrase(item.text); ok {
+			signalCount := groundingSignalCount(item.text, exec, item.fieldPath)
+			if item.structuredScope && hasStructuredPayloadGrounding(exec) {
+				signalCount = 2
 			}
-		case []interface{}:
-			for _, item := range v {
-				scanText(item)
+			if signalCount < 2 {
+				issues = append(issues, addVagueIntentIssue(phrase, item.fieldPath, "fewer than two concrete grounding signals are present"))
 			}
 		}
 	}
-	scanText(exec)
 
 	// 2. User-facing workflow validation: check for frontend file targets
 	var targetExecutor string
@@ -429,14 +418,13 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 					if !ok || len(tPaths) == 0 {
 						issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_INVALID_STEP", Message: "inspect step action requires non-empty target_paths", RepairEligible: false})
 					}
+					fieldPath := stepFieldPath(stepObj, "implementation_steps")
 					title, _ := stepObj["title"].(string)
 					insts, _ := stepObj["instructions"].(string)
-					textToCheck := strings.ToLower(title + " " + insts)
-					if strings.Contains(textToCheck, "decide") ||
-						strings.Contains(textToCheck, "determine") ||
-						strings.Contains(textToCheck, "choose") ||
-						strings.Contains(textToCheck, "whether") {
-						issues = append(issues, ValidationError{Type: "input", Code: "CANONICAL_PACKET_VAGUE_INTENT", Message: "inspect step instructions/title contain decision words delegating reasoning", RepairEligible: false})
+					criteriaText := strings.Join(stringSliceFromInterface(stepObj["acceptance_criteria"]), " ")
+					textToCheck := strings.Join([]string{title, insts, criteriaText}, " ")
+					if phrase, found := containsDecisionDelegatingPhrase(textToCheck); found && (!ok || len(tPaths) == 0 || groundingSignalCount(textToCheck, exec, fieldPath) < 2) {
+						issues = append(issues, addVagueIntentIssue(phrase, fieldPath, "inspect step is missing concrete target behavior or acceptance criteria"))
 					}
 				}
 			}
@@ -444,6 +432,271 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 	}
 
 	return issues
+}
+
+func collectExecutionTextItems(exec map[string]interface{}) []executionTextItem {
+	items := []executionTextItem{
+		{fieldPath: "execution_payload.goal", text: stringFromInterface(exec["goal"]), structuredScope: true},
+		{fieldPath: "execution_payload.scope", text: stringFromInterface(exec["scope"]), structuredScope: true},
+	}
+
+	if steps, ok := exec["implementation_steps"].([]interface{}); ok {
+		for i, step := range steps {
+			stepObj, ok := step.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			parts := []string{
+				stringFromInterface(stepObj["title"]),
+				stringFromInterface(stepObj["action"]),
+				stringFromInterface(stepObj["instructions"]),
+				strings.Join(stringSliceFromInterface(stepObj["acceptance_criteria"]), " "),
+				strings.Join(stringSliceFromInterface(stepObj["target_paths"]), " "),
+			}
+			items = append(items, executionTextItem{
+				fieldPath: stepFieldPath(stepObj, fmt.Sprintf("execution_payload.implementation_steps[%d]", i)),
+				text:      strings.Join(parts, " "),
+			})
+		}
+	}
+
+	if reqs, ok := exec["code_requirements"].([]interface{}); ok {
+		for i, req := range reqs {
+			if reqObj, ok := req.(map[string]interface{}); ok {
+				fieldPath := fmt.Sprintf("execution_payload.code_requirements[%d].requirement", i)
+				if id, ok := reqObj["id"].(string); ok && strings.TrimSpace(id) != "" {
+					fieldPath = fmt.Sprintf("execution_payload.code_requirements[%s].requirement", id)
+				}
+				items = append(items, executionTextItem{fieldPath: fieldPath, text: stringFromInterface(reqObj["requirement"])})
+			} else if text, ok := req.(string); ok {
+				items = append(items, executionTextItem{fieldPath: fmt.Sprintf("execution_payload.code_requirements[%d]", i), text: text})
+			}
+		}
+	}
+
+	if expected, ok := exec["expected_behavior"].([]interface{}); ok {
+		for i, behavior := range expected {
+			items = append(items, executionTextItem{fieldPath: fmt.Sprintf("execution_payload.expected_behavior[%d]", i), text: stringFromInterface(behavior)})
+		}
+	}
+
+	if contract, ok := exec["completion_contract"].(map[string]interface{}); ok {
+		if doneWhen, ok := contract["done_when"].([]interface{}); ok {
+			for i, done := range doneWhen {
+				items = append(items, executionTextItem{fieldPath: fmt.Sprintf("execution_payload.completion_contract.done_when[%d]", i), text: stringFromInterface(done)})
+			}
+		}
+	}
+
+	return items
+}
+
+func containsVagueQualityPhrase(text string) (string, bool) {
+	return containsPhrase(text, []string{
+		"improve",
+		"enhance",
+		"make better",
+		"clean up",
+		"polish",
+		"refine",
+		"optimize",
+		"streamline",
+		"make it work",
+	})
+}
+
+func containsDecisionDelegatingPhrase(text string) (string, bool) {
+	return containsPhrase(text, []string{
+		"decide best approach",
+		"wire as needed",
+		"inspect and decide",
+		"choose appropriate behavior",
+		"if appropriate",
+		"maybe",
+		"optional enhancement",
+	})
+}
+
+func containsPhrase(text string, phrases []string) (string, bool) {
+	lower := strings.ToLower(text)
+	for _, phrase := range phrases {
+		if strings.Contains(lower, phrase) {
+			return phrase, true
+		}
+	}
+	return "", false
+}
+
+func groundingSignalCount(text string, exec map[string]interface{}, fieldPath string) int {
+	lower := strings.ToLower(text)
+	count := 0
+
+	if hasTargetOrSymbolSignal(text) {
+		count++
+	}
+	if hasBoundedActionSignal(lower) {
+		count++
+	}
+	if hasAcceptanceSignal(lower) {
+		count++
+	}
+	if hasValidationSignal(lower) {
+		count++
+	}
+
+	return count
+}
+
+func hasStructuredPayloadGrounding(exec map[string]interface{}) bool {
+	return nonEmptyArray(exec["file_targets"]) &&
+		hasGroundedImplementationStep(exec) &&
+		hasGroundedCodeRequirement(exec) &&
+		hasValidationCommands(exec)
+}
+
+func addVagueIntentIssue(phrase string, fieldPath string, reason string) ValidationError {
+	return ValidationError{
+		Type:           "input",
+		Code:           "CANONICAL_PACKET_VAGUE_INTENT",
+		Message:        fmt.Sprintf("vague or decision-delegating phrase %q in %s: %s", phrase, fieldPath, reason),
+		RepairEligible: false,
+	}
+}
+
+func hasTargetOrSymbolSignal(text string) bool {
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`\b[\w./-]+\.(go|ts|tsx|js|jsx|css|html|templ|json|md|sql|yaml|yml)\b`),
+		regexp.MustCompile(`\b[A-Z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)?\b`),
+		regexp.MustCompile(`\bCANONICAL_PACKET_[A-Z0-9_]+\b`),
+		regexp.MustCompile(`\bFS-[A-Z0-9_-]+\b`),
+		regexp.MustCompile(`\bV[0-9]+\b`),
+	}
+	for _, pattern := range patterns {
+		if pattern.MatchString(text) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasBoundedActionSignal(lower string) bool {
+	return containsAnyWord(lower, []string{
+		"replace", "remove", "parse", "classify", "allow", "reject", "return", "emit", "map", "preserve", "skip", "exclude", "include", "link", "mark", "block", "pass", "fail", "normalize", "validate", "verify",
+	})
+}
+
+func hasAcceptanceSignal(lower string) bool {
+	for _, cue := range []string{
+		"returns", "emits", "contains", "does not contain", "passes when", "fails when", "exit code", "status", "accepted_with_warnings", "canonical_packet_vague_intent", "fs-targets",
+	} {
+		if strings.Contains(lower, cue) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasValidationSignal(lower string) bool {
+	if strings.Contains(lower, "go test") || strings.Contains(lower, "npm run") || strings.Contains(lower, "make ") {
+		return true
+	}
+	return regexp.MustCompile(`\btest[A-Za-z0-9_]*\b`).MatchString(lower)
+}
+
+func containsAnyWord(lower string, words []string) bool {
+	for _, word := range words {
+		if regexp.MustCompile(`\b` + regexp.QuoteMeta(word) + `\b`).MatchString(lower) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasValidationCommands(exec map[string]interface{}) bool {
+	contract, ok := exec["validation_contract"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	return nonEmptyArray(contract["commands"])
+}
+
+func hasGroundedImplementationStep(exec map[string]interface{}) bool {
+	steps, ok := exec["implementation_steps"].([]interface{})
+	if !ok {
+		return false
+	}
+	for _, step := range steps {
+		stepObj, ok := step.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		text := strings.Join([]string{
+			stringFromInterface(stepObj["title"]),
+			stringFromInterface(stepObj["action"]),
+			stringFromInterface(stepObj["instructions"]),
+			strings.Join(stringSliceFromInterface(stepObj["acceptance_criteria"]), " "),
+			strings.Join(stringSliceFromInterface(stepObj["target_paths"]), " "),
+		}, " ")
+		if groundingSignalCount(text, exec, "execution_payload.implementation_steps") >= 2 {
+			return true
+		}
+	}
+	return false
+}
+
+func hasGroundedCodeRequirement(exec map[string]interface{}) bool {
+	reqs, ok := exec["code_requirements"].([]interface{})
+	if !ok {
+		return false
+	}
+	for _, req := range reqs {
+		reqObj, ok := req.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		text := strings.Join([]string{
+			stringFromInterface(reqObj["requirement"]),
+			strings.Join(stringSliceFromInterface(reqObj["applies_to"]), " "),
+		}, " ")
+		if groundingSignalCount(text, exec, "execution_payload.code_requirements") >= 2 {
+			return true
+		}
+	}
+	return false
+}
+
+func nonEmptyArray(value interface{}) bool {
+	arr, ok := value.([]interface{})
+	return ok && len(arr) > 0
+}
+
+func stringFromInterface(value interface{}) string {
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func stringSliceFromInterface(value interface{}) []string {
+	var out []string
+	switch v := value.(type) {
+	case []interface{}:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+	case []string:
+		out = append(out, v...)
+	}
+	return out
+}
+
+func stepFieldPath(stepObj map[string]interface{}, fallback string) string {
+	if id, ok := stepObj["id"].(string); ok && strings.TrimSpace(id) != "" {
+		return fmt.Sprintf("execution_payload.implementation_steps[%s]", id)
+	}
+	return fallback
 }
 
 func checkBlockingUnresolvedQuestions(packet map[string]interface{}) []ValidationError {
