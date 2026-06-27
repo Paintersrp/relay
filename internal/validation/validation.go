@@ -46,6 +46,12 @@ type executionTextItem struct {
 	structuredScope bool
 }
 
+type phraseMatch struct {
+	phrase string
+	start  int
+	end    int
+}
+
 // ValidatePacketJSON validates a raw canonical packet JSON string.
 // schemaPath is the repo-relative path to the canonical_packet.schema.json file.
 func ValidatePacketJSON(packetJSON []byte, schemaPath string) (*ValidationReport, error) {
@@ -328,8 +334,10 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 
 	// 1. Scan execution-critical fields for vague or decision-delegating intent.
 	for _, item := range collectExecutionTextItems(exec) {
-		if phrase, ok := containsDecisionDelegatingPhrase(item.text); ok {
-			issues = append(issues, addVagueIntentIssue(phrase, item.fieldPath, "decision-delegating execution language is not allowed"))
+		if match, ok := findDecisionDelegatingPhrase(item.text); ok {
+			if !isProhibitedExampleContext(item.text, match.start, match.end) {
+				issues = append(issues, addVagueIntentIssue(match.phrase, item.fieldPath, "decision-delegating execution language is not allowed"))
+			}
 			continue
 		}
 		if phrase, ok := containsVagueQualityPhrase(item.text); ok {
@@ -352,57 +360,8 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 	}
 
 	if targetExecutor == "deepseek-v4-flash" {
-		payloadBytes, _ := json.Marshal(exec)
-		payloadStr := strings.ToLower(string(payloadBytes))
-
-		userFacingRegex := regexp.MustCompile(`(?i)\b(ui|frontend|view|page|user-facing|workflow|render|display)\b`)
-		hasUserFacingTerm := userFacingRegex.Match(payloadBytes)
-
-		if hasUserFacingTerm {
-			hasBackendOnlyDecision := false
-			if plannerCtx, ok := packet["planner_context"].(map[string]interface{}); ok {
-				plannerCtxBytes, _ := json.Marshal(plannerCtx)
-				if strings.Contains(strings.ToLower(string(plannerCtxBytes)), "backend-only") {
-					hasBackendOnlyDecision = true
-				}
-			}
-			if strings.Contains(payloadStr, "backend-only") {
-				hasBackendOnlyDecision = true
-			}
-
-			if !hasBackendOnlyDecision {
-				hasFrontendFile := false
-				if targets, ok := exec["file_targets"].([]interface{}); ok {
-					for _, t := range targets {
-						var path string
-						if pathStr, ok := t.(string); ok {
-							path = pathStr
-						} else if targetObj, ok := t.(map[string]interface{}); ok {
-							if pathStr, ok := targetObj["path"].(string); ok {
-								path = pathStr
-							}
-						}
-						lowerPath := strings.ToLower(path)
-						if strings.HasSuffix(lowerPath, ".templ") ||
-							strings.HasSuffix(lowerPath, ".ts") ||
-							strings.HasSuffix(lowerPath, ".tsx") ||
-							strings.HasSuffix(lowerPath, ".js") ||
-							strings.HasSuffix(lowerPath, ".jsx") ||
-							strings.HasSuffix(lowerPath, ".html") ||
-							strings.HasSuffix(lowerPath, ".gohtml") ||
-							strings.HasSuffix(lowerPath, ".css") ||
-							strings.Contains(lowerPath, "web/") ||
-							strings.Contains(lowerPath, "templates/") {
-							hasFrontendFile = true
-							break
-						}
-					}
-				}
-
-				if !hasFrontendFile {
-					issues = append(issues, ValidationError{Type: "input", Code: CodeFileTargetMismatch, Message: "user-facing workflow requested but no frontend file targets specified (and backend-only sufficiency was not explicitly decided)", RepairEligible: false})
-				}
-			}
+		if requiresFrontendTarget(exec, packet) {
+			issues = append(issues, ValidationError{Type: "input", Code: CodeFileTargetMismatch, Message: "user-facing workflow requested but no frontend file targets specified (and backend-only sufficiency was not explicitly decided)", RepairEligible: false})
 		}
 	}
 
@@ -421,8 +380,8 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 					insts, _ := stepObj["instructions"].(string)
 					criteriaText := strings.Join(stringSliceFromInterface(stepObj["acceptance_criteria"]), " ")
 					textToCheck := strings.Join([]string{title, insts, criteriaText}, " ")
-					if phrase, found := containsDecisionDelegatingPhrase(textToCheck); found {
-						issues = append(issues, addVagueIntentIssue(phrase, fieldPath, "inspect step contains decision-delegating execution language"))
+					if match, found := findDecisionDelegatingPhrase(textToCheck); found && !isProhibitedExampleContext(textToCheck, match.start, match.end) {
+						issues = append(issues, addVagueIntentIssue(match.phrase, fieldPath, "inspect step contains decision-delegating execution language"))
 					}
 				}
 			}
@@ -504,7 +463,12 @@ func containsVagueQualityPhrase(text string) (string, bool) {
 }
 
 func containsDecisionDelegatingPhrase(text string) (string, bool) {
-	return containsPhrase(text, []string{
+	match, ok := findDecisionDelegatingPhrase(text)
+	return match.phrase, ok
+}
+
+func findDecisionDelegatingPhrase(text string) (phraseMatch, bool) {
+	return findPhrase(text, []string{
 		"decide best approach",
 		"wire as needed",
 		"inspect and decide",
@@ -517,13 +481,178 @@ func containsDecisionDelegatingPhrase(text string) (string, bool) {
 }
 
 func containsPhrase(text string, phrases []string) (string, bool) {
+	match, ok := findPhrase(text, phrases)
+	return match.phrase, ok
+}
+
+func findPhrase(text string, phrases []string) (phraseMatch, bool) {
 	lower := strings.ToLower(text)
 	for _, phrase := range phrases {
-		if strings.Contains(lower, phrase) {
-			return phrase, true
+		if idx := strings.Index(lower, phrase); idx >= 0 {
+			return phraseMatch{phrase: phrase, start: idx, end: idx + len(phrase)}, true
 		}
 	}
-	return "", false
+	return phraseMatch{}, false
+}
+
+func isProhibitedExampleContext(text string, matchStart int, matchEnd int) bool {
+	if matchStart < 0 || matchEnd > len(text) || matchStart >= matchEnd {
+		return false
+	}
+	lineStart := strings.LastIndex(text[:matchStart], "\n") + 1
+	lineEndOffset := strings.Index(text[matchEnd:], "\n")
+	lineEnd := len(text)
+	if lineEndOffset >= 0 {
+		lineEnd = matchEnd + lineEndOffset
+	}
+
+	currentLine := strings.ToLower(text[lineStart:lineEnd])
+	localContext := currentLine
+	if heading := nearestLocalHeadingOrLabel(text[:lineStart]); heading != "" {
+		localContext = heading + " " + localContext
+	}
+
+	hasInvalidCue := containsAny(localContext, []string{
+		"prohibited", "disallowed", "invalid", "banned", "forbidden", "not allowed", "do not use", "must not use", "reject", "blocked",
+	})
+	hasExampleCue := containsAny(localContext, []string{
+		"example", "examples", "sample", "samples", "fixture", "fixtures", "anti-pattern", "anti-patterns",
+	})
+	hasLiteralCue := strings.Contains(currentLine, "`") || strings.Contains(currentLine, `"`) || strings.Contains(currentLine, "'")
+
+	return hasInvalidCue && (hasExampleCue || hasLiteralCue)
+}
+
+func nearestLocalHeadingOrLabel(prefix string) string {
+	lines := strings.Split(prefix, "\n")
+	checked := 0
+	for i := len(lines) - 1; i >= 0 && checked < 6; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		checked++
+		lower := strings.ToLower(line)
+		if strings.HasPrefix(line, "#") || strings.HasSuffix(line, ":") || strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") ||
+			containsAny(lower, []string{"example", "sample", "fixture", "prohibited", "disallowed", "invalid", "banned", "forbidden"}) {
+			return lower
+		}
+	}
+	return ""
+}
+
+func requiresFrontendTarget(exec map[string]interface{}, packet map[string]interface{}) bool {
+	if hasBackendOnlyDecision(exec, packet) {
+		return false
+	}
+	if docsOrPolicyOnlyTargets(exec) && !coreIntentRequiresVisibleUI(exec) {
+		return false
+	}
+	return coreIntentRequiresVisibleUI(exec) && !hasFrontendFileTarget(exec)
+}
+
+func hasBackendOnlyDecision(exec map[string]interface{}, packet map[string]interface{}) bool {
+	payloadBytes, _ := json.Marshal(exec)
+	if strings.Contains(strings.ToLower(string(payloadBytes)), "backend-only") {
+		return true
+	}
+	if plannerCtx, ok := packet["planner_context"].(map[string]interface{}); ok {
+		plannerCtxBytes, _ := json.Marshal(plannerCtx)
+		return strings.Contains(strings.ToLower(string(plannerCtxBytes)), "backend-only")
+	}
+	return false
+}
+
+func coreIntentRequiresVisibleUI(exec map[string]interface{}) bool {
+	parts := []string{
+		stringFromInterface(exec["goal"]),
+		stringFromInterface(exec["scope"]),
+	}
+	if expected, ok := exec["expected_behavior"].([]interface{}); ok {
+		for _, behavior := range expected {
+			parts = append(parts, stringFromInterface(behavior))
+		}
+	}
+	text := strings.ToLower(strings.Join(parts, "\n"))
+	visibleUIRegex := regexp.MustCompile(`\b(ui|frontend|view|page|user-facing|render|display)\b`)
+	return visibleUIRegex.MatchString(text) || regexp.MustCompile(`\bvisible\s+(app\s+)?(behavior|workflow|surface)\b`).MatchString(text)
+}
+
+func docsOrPolicyOnlyTargets(exec map[string]interface{}) bool {
+	paths := fileTargetPaths(exec)
+	if len(paths) == 0 {
+		return false
+	}
+	for _, path := range paths {
+		if !isDocsOrPolicyArtifactPath(path) {
+			return false
+		}
+	}
+	return true
+}
+
+func isDocsOrPolicyArtifactPath(path string) bool {
+	lowerPath := strings.TrimPrefix(strings.ToLower(filepath.ToSlash(path)), "./")
+	if strings.HasPrefix(lowerPath, "docs/") ||
+		strings.HasPrefix(lowerPath, "relay-contracts/policies/") ||
+		strings.HasPrefix(lowerPath, "relay-contracts/contracts/") ||
+		strings.HasPrefix(lowerPath, "relay-contracts/schema/") ||
+		strings.HasPrefix(lowerPath, "relay-contracts/templates/") ||
+		strings.HasPrefix(lowerPath, "relay-contracts/examples/") ||
+		strings.HasPrefix(lowerPath, "relay-contracts/agents/") {
+		return true
+	}
+	return strings.HasSuffix(lowerPath, ".md")
+}
+
+func hasFrontendFileTarget(exec map[string]interface{}) bool {
+	for _, path := range fileTargetPaths(exec) {
+		lowerPath := strings.ToLower(filepath.ToSlash(path))
+		if strings.HasSuffix(lowerPath, ".templ") ||
+			strings.HasSuffix(lowerPath, ".ts") ||
+			strings.HasSuffix(lowerPath, ".tsx") ||
+			strings.HasSuffix(lowerPath, ".js") ||
+			strings.HasSuffix(lowerPath, ".jsx") ||
+			strings.HasSuffix(lowerPath, ".html") ||
+			strings.HasSuffix(lowerPath, ".gohtml") ||
+			strings.HasSuffix(lowerPath, ".css") ||
+			strings.Contains(lowerPath, "web/") ||
+			strings.Contains(lowerPath, "templates/") {
+			return true
+		}
+	}
+	return false
+}
+
+func fileTargetPaths(exec map[string]interface{}) []string {
+	var paths []string
+	targets, ok := exec["file_targets"].([]interface{})
+	if !ok {
+		return paths
+	}
+	for _, target := range targets {
+		if path, ok := target.(string); ok {
+			paths = append(paths, path)
+			continue
+		}
+		targetObj, ok := target.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if path, ok := targetObj["path"].(string); ok {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+func containsAny(text string, needles []string) bool {
+	for _, needle := range needles {
+		if strings.Contains(text, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func groundingSignalCount(text string, exec map[string]interface{}, fieldPath string) int {

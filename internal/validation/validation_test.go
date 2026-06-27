@@ -400,6 +400,110 @@ func TestValidation(t *testing.T) {
 		}
 	})
 
+	t.Run("Policy Docs Prohibited Examples Do Not Require Frontend Target", func(t *testing.T) {
+		packet := cloneValidPacket()
+		exec := packet["execution_payload"].(map[string]interface{})
+		prohibitedSample := joinPhrase("wire", "as", "needed")
+		exec["goal"] = "Update artifact naming policy examples for invalid executor delegation wording."
+		exec["scope"] = "Patch relay-contracts/policies/artifact_naming_policy.md only; no runtime behavior changes are in scope."
+		exec["file_targets"] = []interface{}{
+			map[string]interface{}{
+				"path":   "relay-contracts/policies/artifact_naming_policy.md",
+				"role":   "primary",
+				"action": "must_edit",
+				"reason": "policy text",
+			},
+		}
+		exec["implementation_steps"] = []interface{}{map[string]interface{}{
+			"id":                  "S1",
+			"title":               "Document prohibited examples",
+			"action":              "modify",
+			"target_paths":        []interface{}{"relay-contracts/policies/artifact_naming_policy.md"},
+			"instructions":        "Add policy text under a prohibited examples heading.",
+			"acceptance_criteria": []interface{}{"Policy text lists invalid sample language without changing runtime behavior."},
+		}}
+		exec["code_requirements"] = []interface{}{map[string]interface{}{
+			"id": "CR1",
+			"requirement": strings.Join([]string{
+				"## Prohibited examples:",
+				"- The invalid sample `" + prohibitedSample + "` documents language that policy authors must not use.",
+			}, "\n"),
+			"applies_to": []interface{}{"relay-contracts/policies/artifact_naming_policy.md"},
+		}}
+		exec["expected_behavior"] = []interface{}{
+			"Policy docs describe prohibited executor-delegating examples as invalid samples.",
+			"No product runtime changes are required.",
+		}
+
+		packetJSON, _ := json.Marshal(packet)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if hasErrorCode(report, "CANONICAL_PACKET_VAGUE_INTENT") {
+			t.Fatalf("expected no vague intent issue, got %v", report.Errors)
+		}
+		if hasErrorCode(report, CodeFileTargetMismatch) {
+			t.Fatalf("expected no frontend target mismatch, got %v", report.Errors)
+		}
+		if !report.Valid {
+			t.Fatalf("expected valid report, got errors: %v", report.Errors)
+		}
+	})
+
+	t.Run("Direct Delegation Same Phrase Still Fails", func(t *testing.T) {
+		packet := cloneValidPacket()
+		exec := packet["execution_payload"].(map[string]interface{})
+		exec["implementation_steps"] = []interface{}{map[string]interface{}{
+			"id":                  "S1",
+			"title":               "Delegate implementation",
+			"action":              "modify",
+			"target_paths":        []interface{}{"internal/validation/validation.go"},
+			"instructions":        "Update internal/validation/validation.go and " + joinPhrase("wire", "as", "needed") + ".",
+			"acceptance_criteria": []interface{}{"go test ./internal/validation passes."},
+		}}
+
+		packetJSON, _ := json.Marshal(packet)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if report.Valid {
+			t.Fatalf("expected invalid report")
+		}
+		if !hasErrorCode(report, "CANONICAL_PACKET_VAGUE_INTENT") {
+			t.Fatalf("expected CANONICAL_PACKET_VAGUE_INTENT, got %v", report.Errors)
+		}
+	})
+
+	t.Run("Visible UI Workflow Without Frontend Target Fails", func(t *testing.T) {
+		packet := cloneValidPacket()
+		exec := packet["execution_payload"].(map[string]interface{})
+		exec["goal"] = "Add a visible app UI page for reviewing canonical packet validation results."
+		exec["scope"] = "Implement the user-facing review page workflow."
+		exec["file_targets"] = []interface{}{
+			map[string]interface{}{
+				"path":   "internal/validation/validation.go",
+				"role":   "primary",
+				"action": "must_edit",
+				"reason": "server target should be insufficient for a UI page task",
+			},
+		}
+		exec["expected_behavior"] = []interface{}{"The app displays validation results in a visible UI page."}
+
+		packetJSON, _ := json.Marshal(packet)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if report.Valid {
+			t.Fatalf("expected invalid report")
+		}
+		if !hasErrorCode(report, CodeFileTargetMismatch) {
+			t.Fatalf("expected %s, got %v", CodeFileTargetMismatch, report.Errors)
+		}
+	})
+
 	t.Run("Inspect Step Grounding", func(t *testing.T) {
 		tests := []struct {
 			name      string
