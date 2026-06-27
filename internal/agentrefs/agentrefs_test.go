@@ -2,6 +2,7 @@ package agentrefs
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -905,5 +906,263 @@ func TestStorageOutputSpec_CheckModeCoverage(t *testing.T) {
 	}
 	if len(diffs) < 2 {
 		t.Fatal("expected at least 2 diffs (both JSON and Markdown missing), got", len(diffs))
+	}
+}
+
+// --- PASS-005 MCP registry tests ---
+
+func TestBuildMCPSurfaceDoc_PlanSeedSourceInput(t *testing.T) {
+	doc, err := BuildMCPSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildMCPSurfaceDoc: %v", err)
+	}
+
+	found := false
+	for _, si := range doc.SourceInputs {
+		if si.Path == "internal/mcp/plan_seed_tools.go" && si.Role == "mcp_tool_source" {
+			found = true
+			if len(si.SHA256) != 64 {
+				t.Errorf("plan_seed_tools.go SHA256 length: got %d, want 64", len(si.SHA256))
+			}
+		}
+	}
+	if !found {
+		t.Error("internal/mcp/plan_seed_tools.go not found in MCP source_inputs")
+	}
+}
+
+func TestBuildMCPSurfaceDoc_PlanSeedToolsPresent(t *testing.T) {
+	doc, err := BuildMCPSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildMCPSurfaceDoc: %v", err)
+	}
+
+	requiredSeedTools := []string{
+		"create_plan_seed",
+		"list_plan_seeds",
+		"get_plan_seed",
+		"get_plan_seed_planning_context",
+		"create_plan_attempt_from_seed",
+		"update_plan_seed",
+		"defer_plan_seed",
+		"reject_plan_seed",
+	}
+
+	found := make(map[string]bool)
+	for _, f := range doc.Facts {
+		for _, t := range requiredSeedTools {
+			if strings.Contains(f.Statement, fmt.Sprintf("%q", t)) {
+				found[t] = true
+			}
+		}
+	}
+
+	for _, toolName := range requiredSeedTools {
+		if !found[toolName] {
+			t.Errorf("required plan seed tool %q not found in MCP facts", toolName)
+		}
+	}
+}
+
+func TestBuildMCPSurfaceDoc_MPCContractSourceInputs(t *testing.T) {
+	doc, err := BuildMCPSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildMCPSurfaceDoc: %v", err)
+	}
+
+	requiredContractPaths := []string{
+		"relay-contracts/contracts/planner_mcp_context_broker_contract.md",
+		"relay-contracts/contracts/planner_mcp_plan_submission_contract.md",
+		"relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md",
+		"relay-contracts/contracts/planner_mcp_plan_attempt_contract.md",
+	}
+
+	sourceInputPaths := make(map[string]SourceInput)
+	for _, si := range doc.SourceInputs {
+		sourceInputPaths[si.Path] = si
+	}
+
+	for _, p := range requiredContractPaths {
+		si, ok := sourceInputPaths[p]
+		if !ok {
+			t.Errorf("required MCP contract source input %q not found", p)
+			continue
+		}
+		if si.Role != "mcp_contract_source" {
+			t.Errorf("contract %q role: got %q, want mcp_contract_source", p, si.Role)
+		}
+		if len(si.SHA256) != 64 {
+			t.Errorf("contract %q SHA256 length: got %d, want 64", p, len(si.SHA256))
+		}
+	}
+}
+
+func TestBuildMCPSurfaceDoc_GapFacts(t *testing.T) {
+	doc, err := BuildMCPSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildMCPSurfaceDoc: %v", err)
+	}
+
+	requiredGapIDs := []string{
+		"mcp-gap-schema-handler-mismatch",
+		"mcp-gap-handlers-without-schema",
+		"mcp-gap-schema-without-handler",
+		"mcp-gap-hardcoded-side-effect",
+		"mcp-gap-hardcoded-profile-gate",
+		"mcp-gap-missing-smoke-test-linkage",
+	}
+
+	factMap := make(map[string]Fact)
+	for _, f := range doc.Facts {
+		factMap[f.ID] = f
+	}
+
+	for _, id := range requiredGapIDs {
+		fact, ok := factMap[id]
+		if !ok {
+			t.Errorf("required MCP gap fact ID %q not found", id)
+			continue
+		}
+		if fact.Label != FactLabelUnresolved {
+			t.Errorf("gap fact %q has label %q, want unresolved", id, fact.Label)
+		}
+		if fact.Statement == "" {
+			t.Errorf("gap fact %q has empty statement", id)
+		}
+		if len(fact.Evidence) == 0 {
+			t.Errorf("gap fact %q has no evidence", id)
+		}
+		for _, e := range fact.Evidence {
+			if e.Value == "" {
+				t.Errorf("gap fact %q has empty evidence value", id)
+				continue
+			}
+			if err := ValidateRepoRelativePath(e.Value); err != nil {
+				t.Errorf("gap fact %q evidence %q is not repo-relative: %v", id, e.Value, err)
+			}
+		}
+	}
+}
+
+func TestBuildMCPSurfaceDoc_Deterministic(t *testing.T) {
+	doc1, err := BuildMCPSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildMCPSurfaceDoc (1): %v", err)
+	}
+	doc2, err := BuildMCPSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildMCPSurfaceDoc (2): %v", err)
+	}
+
+	j1, err := RenderJSON(doc1)
+	if err != nil {
+		t.Fatalf("RenderJSON (1): %v", err)
+	}
+	j2, err := RenderJSON(doc2)
+	if err != nil {
+		t.Fatalf("RenderJSON (2): %v", err)
+	}
+	if string(j1) != string(j2) {
+		t.Error("BuildMCPSurfaceDoc is not deterministic: two runs produced different JSON")
+	}
+}
+
+func TestMCPSurfaceCheckModeCoverage(t *testing.T) {
+	doc, err := BuildMCPSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildMCPSurfaceDoc: %v", err)
+	}
+
+	spec := OutputSpec{
+		JSONPath:     filepath.Join(os.TempDir(), "opencode-test-mcp-check.json"),
+		MarkdownPath: filepath.Join(os.TempDir(), "opencode-test-mcp-check.md"),
+		Document:     doc,
+	}
+
+	diffs, err := CheckOutputSpecs([]OutputSpec{spec})
+	if err != nil {
+		t.Fatalf("CheckOutputSpecs: %v", err)
+	}
+	if len(diffs) < 2 {
+		t.Fatal("expected at least 2 diffs (both JSON and Markdown missing), got", len(diffs))
+	}
+}
+
+func TestBuildMCPSurfaceDoc_MissingContractReturnsError(t *testing.T) {
+	dir := t.TempDir()
+
+	contractsDir := filepath.Join(dir, "relay-contracts", "contracts")
+	if err := os.MkdirAll(contractsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []string{
+		"planner_mcp_context_broker_contract.md",
+		"planner_mcp_plan_submission_contract.md",
+		"planner_mcp_orchestrator_work_contract.md",
+	} {
+		if err := os.WriteFile(filepath.Join(contractsDir, p), []byte("placeholder"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mcpDir := filepath.Join(dir, "internal", "mcp")
+	if err := os.MkdirAll(mcpDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"server.go", "context_broker_tools.go", "plan_attempt_tools.go", "plan_seed_tools.go", "refactor_backlog_tools.go"} {
+		if err := os.WriteFile(filepath.Join(mcpDir, f), []byte("package mcp\nvar ToolSomething = struct{}{}"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, err := BuildMCPSurfaceDoc(dir)
+	if err == nil {
+		t.Fatal("expected error for missing contract file, got nil")
+	}
+	missingPath := "relay-contracts/contracts/planner_mcp_plan_attempt_contract.md"
+	if !strings.Contains(err.Error(), missingPath) {
+		t.Errorf("error should name missing path %q, got: %v", missingPath, err)
+	}
+}
+
+func TestBuildMCPSurfaceDoc_SourceInputsAreRepoRelative(t *testing.T) {
+	doc, err := BuildMCPSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildMCPSurfaceDoc: %v", err)
+	}
+
+	for _, si := range doc.SourceInputs {
+		if si.Path == "" {
+			t.Error("found empty source input path")
+			continue
+		}
+		if err := ValidateRepoRelativePath(si.Path); err != nil {
+			t.Errorf("source input path %q is not a valid repo-relative path: %v", si.Path, err)
+		}
+	}
+}
+
+func TestBuildMCPSurfaceDoc_NoEvidenceIsAbsolute(t *testing.T) {
+	doc, err := BuildMCPSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildMCPSurfaceDoc: %v", err)
+	}
+
+	for _, fact := range doc.Facts {
+		for _, e := range fact.Evidence {
+			if strings.HasPrefix(e.Value, "/") {
+				t.Errorf("fact %q evidence %q should not be absolute", fact.ID, e.Value)
+			}
+			if strings.Contains(e.Value, "..") {
+				t.Errorf("fact %q evidence %q should not contain '..'", fact.ID, e.Value)
+			}
+			if strings.Contains(e.Value, "\\") {
+				t.Errorf("fact %q evidence %q should not contain backslashes", fact.ID, e.Value)
+			}
+			if strings.Contains(e.Value, "\n") {
+				t.Errorf("fact %q evidence %q should not contain newlines", fact.ID, e.Value)
+			}
+		}
 	}
 }

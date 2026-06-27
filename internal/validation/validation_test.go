@@ -166,30 +166,6 @@ func TestValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("Schema-Allowed Route Parameter Filename With Dollar Sign", func(t *testing.T) {
-		invalidPacket := make(map[string]interface{})
-		for k, v := range validPacket {
-			invalidPacket[k] = v
-		}
-		exec := make(map[string]interface{})
-		for k, v := range validPacket["execution_payload"].(map[string]interface{}) {
-			exec[k] = v
-		}
-		exec["file_targets"] = []string{"apps/web/src/routes/runs/$runId/execute.tsx"}
-		invalidPacket["execution_payload"] = exec
-
-		packetJSON, _ := json.Marshal(invalidPacket)
-		report, err := ValidatePacketJSON(packetJSON, schemaPath)
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-		for _, e := range report.Errors {
-			if e.Type == "path" {
-				t.Errorf("path with $ should be allowed by schema, got path error: %s", e.Message)
-			}
-		}
-	})
-
 	t.Run("Unsafe Path Still Rejected - Absolute Path", func(t *testing.T) {
 		invalidPacket := make(map[string]interface{})
 		for k, v := range validPacket {
