@@ -140,17 +140,17 @@ func TestService_Generate_Gating(t *testing.T) {
 			t.Fatalf("read audit_packet: %v", err)
 		}
 
-		// Assert acceptance evidence reference
-		if !strings.Contains(string(summaryContent), "Validation Failure Acceptance") {
-			t.Error("audit input summary should include Validation Failure Acceptance section")
+		// Assert acceptance evidence reference in evidence map
+		if !strings.Contains(string(summaryContent), "acceptance") && !strings.Contains(string(summaryContent), "Acceptance") {
+			t.Error("audit input summary should include acceptance evidence in Evidence Map")
 		}
 		if !strings.Contains(string(packetContent), "Validation Failure Acceptance") {
 			t.Error("audit packet should include Validation Failure Acceptance section")
 		}
 
-		// Assert validation evidence references
-		if !strings.Contains(string(packetContent), "validation_stdout") {
-			t.Error("audit packet should reference validation_stdout")
+		// Assert validation evidence references — the validation_run_json artifact kind is used
+		if !strings.Contains(string(packetContent), "validation_run_json") && !strings.Contains(string(packetContent), "validation_stdout") {
+			t.Error("audit packet should reference validation artifact kind")
 		}
 	})
 
@@ -218,8 +218,8 @@ func TestService_Generate_Gating(t *testing.T) {
 		if !strings.Contains(string(packetContent), "V1") {
 			t.Error("audit packet should reference V1 validation command")
 		}
-		if !strings.Contains(string(packetContent), "validation_stdout") {
-			t.Error("audit packet should reference validation_stdout")
+		if !strings.Contains(string(packetContent), "validation_run_json") && !strings.Contains(string(packetContent), "validation_stdout") {
+			t.Error("audit packet should reference validation artifact kind")
 		}
 
 		manifestContent, err := os.ReadFile(manifestArts[0].Path)

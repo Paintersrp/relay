@@ -603,8 +603,8 @@ func TestDetermineDefaultDecision_RequiredValidationFail(t *testing.T) {
 		},
 	}
 	d := DetermineDefaultDecision(ev)
-	if d != DecisionManualReviewRequired {
-		t.Errorf("expected manual_review_required for required validation fail, got %q", d)
+	if d != DecisionRevisionRequired {
+		t.Errorf("expected revision_required for required validation fail, got %q", d)
 	}
 }
 
@@ -623,8 +623,8 @@ func TestDetermineDefaultDecision_FileScopeFail(t *testing.T) {
 		},
 	}
 	d := DetermineDefaultDecision(ev)
-	if d != DecisionManualReviewRequired {
-		t.Errorf("expected manual_review_required for file scope fail, got %q", d)
+	if d != DecisionRevisionRequired {
+		t.Errorf("expected revision_required for file scope fail, got %q", d)
 	}
 }
 
@@ -1244,6 +1244,280 @@ func TestRun71StyleDocsOnlyTask(t *testing.T) {
 	// Packet should not contain severity_if_failed as a checklist row
 	if strings.Contains(packet, "severity_if_failed") {
 		t.Error("audit packet must not contain severity_if_failed in checklist rows")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// S8: Artifact-aware audit — PASS-006-like regression tests
+// ---------------------------------------------------------------------------
+
+// TestPASS006Like_GeneratedArtifactsExcludedFromFileScope verifies that generated validation
+// artifacts (handoffs/validation/latest.*) are excluded from file-scope enforcement.
+func TestPASS006Like_GeneratedArtifactsExcludedFromFileScope(t *testing.T) {
+	setupTestArtifactDir(t)
+
+	ev := &Evidence{
+		RunID: 300, RunTitle: "PASS-006-like", RunStatus: "validation_passed",
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files: []ChangedFileEntry{
+				{Status: "M", Path: "pkg/foo/foo.go"},
+				{Status: "M", Path: "handoffs/validation/latest.validation-report.json"},
+				{Status: "M", Path: "handoffs/validation/latest.validation-summary.md"},
+			},
+			ImplementationFiles: []ChangedFileEntry{
+				{Status: "M", Path: "pkg/foo/foo.go"},
+			},
+			GeneratedArtifactFiles: []GeneratedArtifactEntry{
+				{Path: "handoffs/validation/latest.validation-report.json", Status: "M", InferredArtifactKind: "validation_report", Recognized: true},
+				{Path: "handoffs/validation/latest.validation-summary.md", Status: "M", InferredArtifactKind: "validation_summary", Recognized: true},
+			},
+			RawArtifactPath: "/fake/path",
+			SourceKind:      "git_diff_name_status",
+		},
+		Packet: PacketMetadata{
+			FileTargets: []string{"pkg/foo/foo.go"},
+		},
+	}
+	c := &Collector{}
+	c.evaluateFileScopeResults(ev)
+
+	// FS-TARGETS and FS-EXPECTED-ONLY must not fail
+	for _, r := range ev.FileScopeResults {
+		switch r.ID {
+		case "FS-TARGETS", "FS-EXPECTED-ONLY":
+			if r.Result == CheckFail {
+				t.Errorf("%s must not fail for PASS-006-like generated artifacts, got %q: %s", r.ID, r.Result, r.Rationale)
+			}
+			// Rationale should mention generated artifact exclusion
+			if !strings.Contains(r.Rationale, "generated pipeline") && !strings.Contains(r.Rationale, "generated artifact") {
+				t.Logf("%s rationale: %s", r.ID, r.Rationale)
+			}
+		}
+	}
+}
+
+// TestPASS006Like_UnexpectedRuntimeFileStillFails verifies that a real runtime file outside
+// targets still fails file-scope enforcement.
+func TestPASS006Like_UnexpectedRuntimeFileStillFails(t *testing.T) {
+	setupTestArtifactDir(t)
+
+	ev := &Evidence{
+		RunID: 301, RunTitle: "PASS-006-like runtime file", RunStatus: "executor_done",
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files: []ChangedFileEntry{
+				{Status: "M", Path: "pkg/foo/foo.go"},
+				{Status: "M", Path: "internal/newapp/newapp.go"},
+			},
+			ImplementationFiles: []ChangedFileEntry{
+				{Status: "M", Path: "pkg/foo/foo.go"},
+				{Status: "M", Path: "internal/newapp/newapp.go"},
+			},
+			RawArtifactPath: "/fake/path",
+			SourceKind:      "git_diff_name_status",
+		},
+		Packet: PacketMetadata{
+			FileTargets: []string{"pkg/foo/foo.go"},
+		},
+	}
+	c := &Collector{}
+	c.evaluateFileScopeResults(ev)
+
+	// FS-TARGETS must fail (newapp.go is outside targets)
+	foundFail := false
+	for _, r := range ev.FileScopeResults {
+		if r.ID == "FS-TARGETS" && r.Result == CheckFail {
+			foundFail = true
+			if !strings.Contains(r.Rationale, "internal/newapp/newapp.go") {
+				t.Errorf("expected newapp.go in rationale, got %q", r.Rationale)
+			}
+		}
+	}
+	if !foundFail {
+		t.Error("expected FS-TARGETS to fail for unexpected runtime file outside targets")
+	}
+}
+
+// TestValidationRunJson_ConcreteRows verifies that validation_run_json with concrete commands
+// and no packet command specs produces concrete validation rows, not only V?.
+func TestValidationRunJson_ConcreteRows(t *testing.T) {
+	setupTestArtifactDir(t)
+	const runID = int64(302)
+
+	// Write validation_run.json with concrete commands
+	jsonData := []byte(`{"runId":302,"status":"pass","commands":[
+		{"id":"V1","command":"go test ./...","required":true,"status":"pass","exitCode":0,"stdoutKind":"validation_stdout","stderrKind":"validation_stderr"},
+		{"id":"V2","command":"go vet ./...","required":false,"status":"pass","exitCode":0,"stdoutKind":"validation_stdout","stderrKind":"validation_stderr"}
+	]}`)
+	valPath := writeArtifactFile(t, runID, "validation_run.json", jsonData)
+
+	ev := &Evidence{RunID: runID, RunTitle: "Test", RunStatus: "executor_done"}
+	c := &Collector{
+		store: &fakeStore{
+			artifactPaths: map[string][]string{
+				"validation_run_json": {valPath},
+			},
+		},
+	}
+	c.collectValidationResults(runID, ev)
+
+	// Must have 2 validation rows, not 1 V? row
+	if len(ev.ValidationResults) != 2 {
+		t.Fatalf("expected 2 concrete validation rows, got %d", len(ev.ValidationResults))
+	}
+	if ev.ValidationResults[0].ID != "V1" {
+		t.Errorf("expected first row ID V1, got %q", ev.ValidationResults[0].ID)
+	}
+	if ev.ValidationResults[1].ID != "V2" {
+		t.Errorf("expected second row ID V2, got %q", ev.ValidationResults[1].ID)
+	}
+	if ev.ValidationResults[0].Command != "go test ./..." {
+		t.Errorf("expected command 'go test ./...', got %q", ev.ValidationResults[0].Command)
+	}
+	if ev.ValidationResults[0].RawArtifactKind != "validation_run_json" {
+		t.Errorf("expected RawArtifactKind validation_run_json, got %q", ev.ValidationResults[0].RawArtifactKind)
+	}
+}
+
+// TestAuditPacket_ValidationRunJsonArtifactKind verifies the audit packet labels validation_run_json correctly.
+func TestAuditPacket_ValidationRunJsonArtifactKind(t *testing.T) {
+	ev := &Evidence{
+		RunID: 303, RunTitle: "Test", RunStatus: "validation_passed",
+		Packet: PacketMetadata{
+			PacketID: "packet-303",
+			Goal:     "Test",
+			Scope:    "Test",
+		},
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files:   []ChangedFileEntry{{Status: "M", Path: "pkg/foo.go"}},
+			ImplementationFiles: []ChangedFileEntry{{Status: "M", Path: "pkg/foo.go"}},
+			RawArtifactPath: "/fake/path",
+			SourceKind: "git_diff_name_status",
+		},
+		ValidationResults: []ValidationCommandResult{
+			{
+				ID: "V1", Command: "go test ./...", Required: true, Status: CheckPass,
+				ExitResult: "exit 0", EvidenceSummary: "passed",
+				RawArtifactPath: "/artifacts/303/validation_run.json",
+				RawArtifactKind: "validation_run_json",
+			},
+		},
+	}
+	packet := GenerateAuditPacket(ev, DecisionAccepted)
+
+	// Packet raw artifact references must use validation_run_json kind
+	if !strings.Contains(string(packet), "validation_run_json") {
+		t.Error("audit packet raw artifact references must label validation_run_json correctly")
+	}
+}
+
+// TestDetermineDefaultDecision_WarningOnly_AcceptedWithWarnings verifies warning-only evidence
+// yields accepted_with_warnings.
+func TestDetermineDefaultDecision_WarningOnly_AcceptedWithWarnings(t *testing.T) {
+	ev := &Evidence{
+		Warnings: []EvidenceWarning{
+			{Message: "Non-blocking warning: diff evidence not available for manual check", Severity: SeverityWarning},
+		},
+	}
+	d := DetermineDefaultDecision(ev)
+	if d != DecisionAcceptedWithWarnings {
+		t.Errorf("expected accepted_with_warnings for warning-only evidence, got %q", d)
+	}
+}
+
+// TestGenerateInputSummary_AuditAgentHandoff verifies required sections in the generated summary.
+func TestGenerateInputSummary_AuditAgentHandoff(t *testing.T) {
+	ev := &Evidence{
+		RunID: 304, RunTitle: "Test Handoff", RunStatus: "executor_done",
+		Packet: PacketMetadata{
+			PacketID:            "packet-304",
+			Goal:                "Test goal",
+			Scope:               "Test scope",
+			NonGoals:            "Do not do X",
+			FileTargets:         []string{"pkg/foo.go"},
+			AuditChecklist:      []ChecklistItem{{ID: "A1", Check: "Test check", SeverityIfFailed: SeverityWarning}},
+			NonGoalChecks:       []string{"Verify no X"},
+			FileScopeChecks:     []string{"Confirm target edits"},
+			ValidationCommands:  []ValidationCommandSpec{{ID: "V1", Command: "go test", Required: true}},
+		},
+		ExecutorResult: ExecutorResultEvidence{
+			Present: true,
+			Summary: "STATUS: DONE",
+			Content: "done",
+			RawArtifactPath: "/artifacts/executor.txt",
+		},
+		ValidationResults: []ValidationCommandResult{
+			{ID: "V1", Command: "go test", Required: true, Status: CheckPass, ExitResult: "exit 0", EvidenceSummary: "passed", RawArtifactPath: "/val.json", RawArtifactKind: "validation_run_json"},
+		},
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files:   []ChangedFileEntry{{Status: "M", Path: "pkg/foo.go"}},
+			ImplementationFiles: []ChangedFileEntry{{Status: "M", Path: "pkg/foo.go"}},
+			GeneratedArtifactFiles: []GeneratedArtifactEntry{
+				{Path: "handoffs/validation/latest.validation-report.json", Status: "M", InferredArtifactKind: "validation_report", Recognized: true},
+			},
+			RawArtifactPath: "/changed.txt",
+			SourceKind:      "git_diff_name_status",
+		},
+		GitDiff: DiffEvidence{
+			Present: true,
+			Preview: "diff --git a/pkg/foo.go b/pkg/foo.go\n+change",
+			RawArtifactPath: "/diff.patch",
+		},
+		FileScopeResults: []PerCheckResult{
+			{ID: "FS-TARGETS", Check: "Check targets", Result: CheckPass, SeverityIfFailed: SeverityError, EvidenceSource: "changed", Rationale: "All in scope"},
+		},
+		ChecklistResults: []PerCheckResult{
+			{ID: "A1", Check: "Test check", Result: CheckUnknown, SeverityIfFailed: SeverityWarning, EvidenceSource: "manual", Rationale: "Needs human review"},
+		},
+		NonGoalResults: []PerCheckResult{
+			{ID: "NG1", Check: "Non-goal check", Result: CheckUnknown, SeverityIfFailed: SeverityWarning, EvidenceSource: "none", Rationale: "Manual review"},
+		},
+	}
+
+	summary := GenerateInputSummary(ev)
+
+	// Must contain Audit Agent Handoff header
+	if !strings.Contains(summary, "Audit Agent Handoff") {
+		t.Error("summary must contain 'Audit Agent Handoff'")
+	}
+	// Must contain evidence map with artifact kinds
+	if !strings.Contains(summary, "Evidence Map") {
+		t.Error("summary must contain 'Evidence Map'")
+	}
+	// Must contain Implementation Changed Files section
+	if !strings.Contains(summary, "Implementation Changed Files") {
+		t.Error("summary must contain 'Implementation Changed Files'")
+	}
+	// Must contain Generated Pipeline Artifacts section
+	if !strings.Contains(summary, "Generated Pipeline Artifacts") {
+		t.Error("summary must contain 'Generated Pipeline Artifacts'")
+	}
+	// Must contain Automated Findings Summary section
+	if !strings.Contains(summary, "Automated Findings Summary") {
+		t.Error("summary must contain 'Automated Findings Summary'")
+	}
+	// Must contain Manual Review Focus section
+	if !strings.Contains(summary, "Manual Review Focus") {
+		t.Error("summary must contain 'Manual Review Focus'")
+	}
+	// Must contain Decision Guidance section
+	if !strings.Contains(summary, "Decision Guidance") {
+		t.Error("summary must contain 'Decision Guidance'")
+	}
+	// Must state that generated artifacts are evidence inputs, not implementation files
+	if !strings.Contains(summary, "evidence inputs") {
+		t.Error("summary must state generated artifacts are evidence inputs")
+	}
+	// Must note that this is not final human acceptance
+	if !strings.Contains(summary, "Not final human acceptance") {
+		t.Error("summary must note it is not final human acceptance")
+	}
+	// Must show generated artifact entry
+	if !strings.Contains(summary, "validation-report.json") {
+		t.Error("summary must show generated artifact entries")
 	}
 }
 

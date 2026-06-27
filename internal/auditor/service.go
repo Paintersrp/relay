@@ -220,12 +220,14 @@ func BuildEvidenceManifest(ev *Evidence, decision Decision, generatedAt time.Tim
 				PreviewTruncated: previewWasTruncated(ev.ExecutorResult.Content),
 			},
 			ValidationResults: validationResults,
-			ChangedFiles: AuditManifestChangedFiles{
-				Present:      ev.ChangedFiles.Present,
-				SourceKind:   ev.ChangedFiles.SourceKind,
-				Count:        len(ev.ChangedFiles.Files),
-				ArtifactPath: ev.ChangedFiles.RawArtifactPath,
-			},
+		ChangedFiles: AuditManifestChangedFiles{
+			Present:                 ev.ChangedFiles.Present,
+			SourceKind:              ev.ChangedFiles.SourceKind,
+			Count:                   len(ev.ChangedFiles.Files),
+			ImplementationFileCount: len(ev.ChangedFiles.ImplementationFiles),
+			GeneratedArtifactCount:  len(ev.ChangedFiles.GeneratedArtifactFiles),
+			ArtifactPath:            ev.ChangedFiles.RawArtifactPath,
+		},
 			GitDiff: AuditManifestDiff{
 				Present:          ev.GitDiff.Present,
 				ArtifactPath:     ev.GitDiff.RawArtifactPath,

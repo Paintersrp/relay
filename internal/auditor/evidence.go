@@ -1,6 +1,9 @@
 package auditor
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type LocalAuditMode string
 type LocalAuditStatus string
@@ -124,12 +127,101 @@ type ValidationCommandResult struct {
 	ExitResult      string      `json:"exitResult"`
 	EvidenceSummary string      `json:"evidenceSummary"`
 	RawArtifactPath string      `json:"rawArtifactPath"`
+	RawArtifactKind string      `json:"rawArtifactKind,omitempty"`
+}
+
+// FileClassification describes whether a changed path is an implementation file,
+// a generated pipeline artifact, or an unexpected/unsafe artifact-like path.
+type FileClassification string
+
+const (
+	FileImplementation     FileClassification = "implementation"
+	FileGeneratedArtifact  FileClassification = "generated_artifact"
+	FileUnsafeArtifact     FileClassification = "unsafe_artifact"
+)
+
+// GeneratedArtifactDirs are repo-relative directories known to hold generated pipeline artifacts.
+var generatedArtifactDirs = []string{
+	"handoffs/planner/",
+	"handoffs/packets/",
+	"handoffs/validation/",
+	"handoffs/briefs/",
+	"handoffs/results/",
+	"handoffs/audits/",
+	"handoffs/repair/",
+}
+
+// GeneratedArtifactSuffixes are known file suffixes for generated pipeline artifacts.
+var generatedArtifactSuffixes = []string{
+	".planner-handoff.md",
+	".canonical-packet.json",
+	".canonical-packet.repaired.json",
+	".validation-report.json",
+	".validation-summary.md",
+	".repair-validation-report.json",
+	".executor-brief.md",
+	".executor-result.txt",
+	".executor-result.json",
+	".audit-packet.md",
+	".audit-packet.json",
+	".repair-prompt.md",
+	".diff-summary.md",
+	".command-log.txt",
+}
+
+// ClassifyChangedFile classifies a changed file path as implementation, generated artifact, or unsafe.
+// kind is the inferred artifact kind for generated artifacts, empty for implementation files.
+func ClassifyChangedFile(path string) (FileClassification, string) {
+	normalized := strings.ReplaceAll(path, "\\", "/")
+	lower := strings.ToLower(normalized)
+	for _, dir := range generatedArtifactDirs {
+		if strings.HasPrefix(lower, dir) {
+			for _, suffix := range generatedArtifactSuffixes {
+				if strings.HasSuffix(lower, suffix) {
+					return FileGeneratedArtifact, inferArtifactKind(suffix)
+				}
+			}
+			return FileUnsafeArtifact, "unknown"
+		}
+	}
+	return FileImplementation, ""
+}
+
+func inferArtifactKind(suffix string) string {
+	m := map[string]string{
+		".planner-handoff.md":           "planner_handoff",
+		".canonical-packet.json":        "canonical_packet",
+		".canonical-packet.repaired.json": "canonical_packet_repaired",
+		".validation-report.json":       "validation_report",
+		".validation-summary.md":        "validation_summary",
+		".repair-validation-report.json": "repair_validation_report",
+		".executor-brief.md":            "executor_brief",
+		".executor-result.txt":          "executor_result",
+		".executor-result.json":         "executor_result_json",
+		".audit-packet.md":              "audit_packet",
+		".audit-packet.json":            "audit_packet_json",
+		".repair-prompt.md":             "repair_prompt",
+		".diff-summary.md":              "diff_summary",
+		".command-log.txt":              "command_log",
+	}
+	if k, ok := m[suffix]; ok {
+		return k
+	}
+	return "generated_artifact"
 }
 
 // ChangedFileEntry represents one changed file with its status.
 type ChangedFileEntry struct {
 	Path   string `json:"path"`
 	Status string `json:"status"` // e.g. "M", "A", "D", or raw line if unparsed
+}
+
+// GeneratedArtifactEntry represents a changed generated pipeline artifact with classification metadata.
+type GeneratedArtifactEntry struct {
+	Path               string `json:"path"`
+	Status             string `json:"status"`
+	InferredArtifactKind string `json:"inferredArtifactKind"`
+	Recognized         bool   `json:"recognized"`
 }
 
 // ExecutorResultEvidence holds executor result artifact data.
@@ -150,10 +242,12 @@ type DiffEvidence struct {
 
 // ChangedFilesEvidence holds the list of changed files.
 type ChangedFilesEvidence struct {
-	Present         bool               `json:"present"`
-	Files           []ChangedFileEntry `json:"files"`
-	RawArtifactPath string             `json:"rawArtifactPath"`
-	SourceKind      string             `json:"sourceKind"`
+	Present              bool                      `json:"present"`
+	Files                []ChangedFileEntry        `json:"files"`
+	ImplementationFiles  []ChangedFileEntry        `json:"implementationFiles,omitempty"`
+	GeneratedArtifactFiles []GeneratedArtifactEntry `json:"generatedArtifactFiles,omitempty"`
+	RawArtifactPath      string                    `json:"rawArtifactPath"`
+	SourceKind           string                    `json:"sourceKind"`
 }
 
 // AcceptanceEvidence holds validation failure acceptance evidence.
@@ -234,10 +328,12 @@ type AuditManifestValidationResult struct {
 }
 
 type AuditManifestChangedFiles struct {
-	Present      bool   `json:"present"`
-	SourceKind   string `json:"source_kind"`
-	Count        int    `json:"count"`
-	ArtifactPath string `json:"artifact_path"`
+	Present                 bool   `json:"present"`
+	SourceKind              string `json:"source_kind"`
+	Count                   int    `json:"count"`
+	ImplementationFileCount int    `json:"implementation_file_count"`
+	GeneratedArtifactCount  int    `json:"generated_artifact_count"`
+	ArtifactPath            string `json:"artifact_path"`
 }
 
 type AuditManifestDiff struct {

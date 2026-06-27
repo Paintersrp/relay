@@ -92,10 +92,14 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 		b.WriteString("| Git Diff Patch | `git_diff_patch` | ⚠ not present |\n")
 	}
 	for _, vr := range ev.ValidationResults {
+		kind := vr.RawArtifactKind
+		if kind == "" {
+			kind = "validation_stdout"
+		}
 		if vr.RawArtifactPath != "" {
-			b.WriteString(fmt.Sprintf("| Validation (%s) | `validation_stdout` | `%s` |\n", vr.ID, vr.RawArtifactPath))
+			b.WriteString(fmt.Sprintf("| Validation (%s) | `%s` | `%s` |\n", vr.ID, kind, vr.RawArtifactPath))
 		} else {
-			b.WriteString(fmt.Sprintf("| Validation (%s) | `validation_stdout` | ⚠ not present |\n", vr.ID))
+			b.WriteString(fmt.Sprintf("| Validation (%s) | `%s` | ⚠ not present |\n", vr.ID, kind))
 		}
 	}
 	if ev.AcceptanceEvidence.Present {
@@ -167,21 +171,41 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 
 	// --- Changed Files ---
 	b.WriteString("## Changed Files / Diff Review\n\n")
-	b.WriteString("### Changed Files\n\n")
-	if ev.ChangedFiles.Present {
+	b.WriteString("### Implementation Changed Files\n\n")
+	if ev.ChangedFiles.Present && len(ev.ChangedFiles.ImplementationFiles) > 0 {
 		b.WriteString(fmt.Sprintf("**Source kind:** `%s`\n", ev.ChangedFiles.SourceKind))
 		b.WriteString(fmt.Sprintf("**Full artifact:** `%s`\n\n", ev.ChangedFiles.RawArtifactPath))
 		b.WriteString("```\n")
-		for _, f := range ev.ChangedFiles.Files {
+		for _, f := range ev.ChangedFiles.ImplementationFiles {
 			b.WriteString(fmt.Sprintf("%s\t%s\n", f.Status, f.Path))
 		}
 		b.WriteString("```\n")
+	} else if ev.ChangedFiles.Present {
+		b.WriteString("_No implementation/source files changed in this run — only generated pipeline artifacts were modified._\n")
+		b.WriteString(fmt.Sprintf("**Full changed-files artifact:** `%s`\n\n", ev.ChangedFiles.RawArtifactPath))
 	} else {
 		b.WriteString("⚠ **EVIDENCE GAP: Changed files artifact not found.**\n")
 		b.WriteString("**Audit consequence:** File scope cannot be confirmed. File-scope checks are marked `unknown`. ")
 		b.WriteString("Decision escalated to at least manual_review_required.\n")
 	}
 	b.WriteString("\n")
+
+	b.WriteString("### Generated Pipeline Artifacts\n\n")
+	if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
+		b.WriteString("These are generated pipeline artifacts produced during the run, not implementation/source files. They are excluded from file-target enforcement and surfaced here as evidence inputs.\n\n")
+		b.WriteString("| Status | Path | Inferred Artifact Kind | Recognized |\n")
+		b.WriteString("|---|---|---|---|\n")
+		for _, ga := range ev.ChangedFiles.GeneratedArtifactFiles {
+			rec := "yes"
+			if !ga.Recognized {
+				rec = "⚠ no"
+			}
+			b.WriteString(fmt.Sprintf("| %s | `%s` | `%s` | %s |\n", ga.Status, ga.Path, ga.InferredArtifactKind, rec))
+		}
+		b.WriteString("\n")
+	} else {
+		b.WriteString("_No generated pipeline artifacts were changed in this run._\n\n")
+	}
 
 	b.WriteString("### Diff Preview\n\n")
 	if ev.GitDiff.Present {
@@ -290,7 +314,15 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 	case DecisionAccepted:
 		b.WriteString("All required evidence is present and no blocking warnings were found.\n")
 	case DecisionAcceptedWithWarnings:
-		b.WriteString("Evidence is substantially present but non-blocking warnings require auditor awareness.\n")
+		b.WriteString("Evidence is substantially present but non-blocking warnings or informational notes require auditor awareness. This preliminary recommendation does not constitute final human acceptance.\n")
+		if len(ev.Warnings) > 0 {
+			b.WriteString("\n**Non-blocking warnings:**\n")
+			for _, w := range ev.Warnings {
+				if w.Severity == SeverityWarning || w.Severity == SeverityInfo {
+					b.WriteString(fmt.Sprintf("- [%s] %s\n", string(w.Severity), w.Message))
+				}
+			}
+		}
 	case DecisionManualReviewRequired:
 		b.WriteString("One or more evidence sections are missing or show unknown results. ")
 		b.WriteString("The auditor must manually verify the following before accepting:\n\n")
@@ -347,12 +379,16 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 }
 
 // DetermineDefaultDecision derives a preliminary decision from the collected evidence.
-// Evidence gaps escalate to at least manual_review_required.
-// Blocker-severity gaps escalate to blocked.
+// • Blocker → blocked
+// • Concrete failures (validation/checklist/file-scope fails + error) → revision_required
+// • Error-severity evidence gaps (missing artifacts, etc.) → manual_review_required
+// • Warning-only evidence → accepted_with_warnings
+// • No warnings/failures → accepted
 // Never marks unknown evidence as pass.
 func DetermineDefaultDecision(ev *Evidence) Decision {
 	hasBlocker := false
-	hasError := false
+	hasConcreteFailure := false
+	hasErrorEvidenceGap := false
 	hasWarning := false
 
 	for _, w := range ev.Warnings {
@@ -360,47 +396,47 @@ func DetermineDefaultDecision(ev *Evidence) Decision {
 		case SeverityBlocker:
 			hasBlocker = true
 		case SeverityError:
-			hasError = true
+			hasErrorEvidenceGap = true
 		case SeverityWarning:
 			hasWarning = true
 		}
 	}
 
-	// Check for file scope failures
+	// Check for concrete failures from file scope, checklist, and validation
 	for _, cr := range ev.FileScopeResults {
 		if cr.Result == CheckFail && (cr.SeverityIfFailed == SeverityBlocker || cr.SeverityIfFailed == SeverityError) {
-			hasError = true
+			hasConcreteFailure = true
 		}
 	}
 
-	// Check for checklist failures
 	for _, cr := range ev.ChecklistResults {
 		if cr.Result == CheckFail {
 			switch cr.SeverityIfFailed {
 			case SeverityBlocker:
 				hasBlocker = true
 			case SeverityError:
-				hasError = true
+				hasConcreteFailure = true
 			}
 		}
 	}
 
-	// Check validation result failures for required commands
 	for _, vr := range ev.ValidationResults {
 		if vr.Required && vr.Status == CheckFail {
-			hasError = true
+			hasConcreteFailure = true
 		}
 	}
 
 	switch {
 	case hasBlocker:
 		return DecisionBlocked
-	case hasError:
+	case hasConcreteFailure:
+		return DecisionRevisionRequired
+	case hasErrorEvidenceGap:
 		return DecisionManualReviewRequired
 	case hasWarning:
-		return DecisionManualReviewRequired
+		return DecisionAcceptedWithWarnings
 	case len(ev.Warnings) > 0:
-		return DecisionManualReviewRequired
+		return DecisionAcceptedWithWarnings
 	}
 
 	return DecisionAccepted

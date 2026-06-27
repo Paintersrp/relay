@@ -822,6 +822,14 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 				}
 			}
 
+			artifactKind := "validation_stdout"
+			for _, a := range collected {
+				if a.path == bestPath || (bestPath == "" && a.path == progressPath) {
+					artifactKind = a.kind
+					break
+				}
+			}
+
 			ev.ValidationResults = append(ev.ValidationResults, ValidationCommandResult{
 				ID:              spec.ID,
 				Command:         spec.Command,
@@ -830,38 +838,69 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 				ExitResult:      exitResult,
 				EvidenceSummary: summary,
 				RawArtifactPath: bestPath,
+				RawArtifactKind: artifactKind,
 			})
 		}
 	} else {
-		// No packet commands — produce one generic validation result from the best available artifact
-		var best valArtifact
-		for _, a := range collected {
-			if len(a.data) > len(best.data) {
-				best = a
-			}
-		}
-		status := CheckUnknown
-		exitResult := "unknown"
-		summary := fmt.Sprintf("sourced from %s artifact (%d bytes)", best.kind, len(best.data))
-		if best.kind == "validation_run_json" && hasValRun {
-			status = CheckPass
-			for _, vc := range valRun.Commands {
-				if vc.Status == "fail" {
-					status = CheckFail
-					break
+		// No packet commands — produce one result per command from validation_run_json when available
+		if hasValRun && len(valRun.Commands) > 0 {
+			for i, vc := range valRun.Commands {
+				id := vc.ID
+				if id == "" {
+					id = fmt.Sprintf("V%d", i+1)
 				}
-			}
-			exitResult = fmt.Sprintf("validation status: %s", valRun.Status)
-		} else if best.kind == "validation_run_json" && hasProgress {
-			status = CheckPass
-			for _, pc := range progress.Commands {
-				if pc.Status == "fail" {
+				status := CheckUnknown
+				exitResult := fmt.Sprintf("exit %d", vc.ExitCode)
+				summary := fmt.Sprintf("Command exit code: %d, status: %s", vc.ExitCode, vc.Status)
+				if vc.Status == "pass" {
+					status = CheckPass
+				} else if vc.Status == "fail" {
 					status = CheckFail
-					break
 				}
+				ev.ValidationResults = append(ev.ValidationResults, ValidationCommandResult{
+					ID:              id,
+					Command:         vc.Command,
+					Required:        vc.Required,
+					Status:          status,
+					ExitResult:      exitResult,
+					EvidenceSummary: summary,
+					RawArtifactPath: progressPath,
+					RawArtifactKind: "validation_run_json",
+				})
 			}
-			exitResult = fmt.Sprintf("progress status: %s", progress.Status)
+		} else if hasProgress && len(progress.Commands) > 0 {
+			for i, pc := range progress.Commands {
+				id := fmt.Sprintf("V%d", i+1)
+				status := CheckUnknown
+				exitResult := fmt.Sprintf("exit %d", pc.ExitCode)
+				summary := fmt.Sprintf("Command exit code: %d, progress status: %s", pc.ExitCode, pc.Status)
+				if pc.Status == "pass" {
+					status = CheckPass
+				} else if pc.Status == "fail" {
+					status = CheckFail
+				}
+				ev.ValidationResults = append(ev.ValidationResults, ValidationCommandResult{
+					ID:              id,
+					Command:         "(progress)",
+					Required:        false,
+					Status:          status,
+					ExitResult:      exitResult,
+					EvidenceSummary: summary,
+					RawArtifactPath: progressPath,
+					RawArtifactKind: "validation_run_json",
+				})
+			}
 		} else {
+			// Produce one generic validation result from best available artifact
+			var best valArtifact
+			for _, a := range collected {
+				if len(a.data) > len(best.data) {
+					best = a
+				}
+			}
+			status := CheckUnknown
+			exitResult := "unknown"
+			summary := fmt.Sprintf("sourced from %s artifact (%d bytes)", best.kind, len(best.data))
 			redacted := redactSecrets(string(best.data))
 			lower := strings.ToLower(redacted)
 			okLineMatch := false
@@ -879,17 +918,17 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 				status = CheckFail
 				exitResult = "non-zero exit (inferred)"
 			}
+			ev.ValidationResults = append(ev.ValidationResults, ValidationCommandResult{
+				ID:              "V?",
+				Command:         "(unknown — not in packet)",
+				Required:        false,
+				Status:          status,
+				ExitResult:      exitResult,
+				EvidenceSummary: summary,
+				RawArtifactPath: best.path,
+				RawArtifactKind: best.kind,
+			})
 		}
-
-		ev.ValidationResults = append(ev.ValidationResults, ValidationCommandResult{
-			ID:              "V?",
-			Command:         "(unknown — not in packet)",
-			Required:        false,
-			Status:          status,
-			ExitResult:      exitResult,
-			EvidenceSummary: summary,
-			RawArtifactPath: best.path,
-		})
 	}
 }
 
@@ -922,11 +961,36 @@ func (c *Collector) collectChangedFiles(runID int64, ev *Evidence) {
 			if len(entries) > 100 {
 				entries = entries[:100]
 			}
+			var implFiles []ChangedFileEntry
+			var genArtifacts []GeneratedArtifactEntry
+			for _, e := range entries {
+				cls, kind := ClassifyChangedFile(e.Path)
+				switch cls {
+				case FileImplementation:
+					implFiles = append(implFiles, e)
+				case FileGeneratedArtifact:
+					genArtifacts = append(genArtifacts, GeneratedArtifactEntry{
+						Path:                 e.Path,
+						Status:               e.Status,
+						InferredArtifactKind: kind,
+						Recognized:           true,
+					})
+				case FileUnsafeArtifact:
+					genArtifacts = append(genArtifacts, GeneratedArtifactEntry{
+						Path:                 e.Path,
+						Status:               e.Status,
+						InferredArtifactKind: kind,
+						Recognized:           false,
+					})
+				}
+			}
 			ev.ChangedFiles = ChangedFilesEvidence{
-				Present:         true,
-				Files:           entries,
-				RawArtifactPath: p,
-				SourceKind:      k,
+				Present:               true,
+				Files:                 entries,
+				ImplementationFiles:   implFiles,
+				GeneratedArtifactFiles: genArtifacts,
+				RawArtifactPath:       p,
+				SourceKind:            k,
 			}
 			return
 		}
@@ -1166,7 +1230,7 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 		return
 	}
 
-	// FS-TARGETS check (original name/check string for test compatibility)
+	// FS-TARGETS check — uses only implementation/source files; generated pipeline artifacts are excluded
 	{
 		res := CheckUnknown
 		rat := "No changed-files artifact — cannot confirm scope against expected targets"
@@ -1178,17 +1242,24 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 				targetSet[t] = true
 			}
 			var outOfScope []string
-			for _, f := range ev.ChangedFiles.Files {
+			checkFiles := ev.ChangedFiles.ImplementationFiles
+			if len(checkFiles) == 0 && len(ev.ChangedFiles.Files) > 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
+				checkFiles = ev.ChangedFiles.Files
+			}
+			for _, f := range checkFiles {
 				if !targetSet[f.Path] {
 					outOfScope = append(outOfScope, f.Path)
 				}
 			}
 			if len(outOfScope) == 0 {
 				res = CheckPass
-				rat = fmt.Sprintf("All %d changed files are within expected targets", len(ev.ChangedFiles.Files))
+				rat = fmt.Sprintf("All %d implementation changed files are within expected targets", len(checkFiles))
+				if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
+					rat += fmt.Sprintf("; %d generated pipeline artifact(s) excluded from implementation file-scope enforcement", len(ev.ChangedFiles.GeneratedArtifactFiles))
+				}
 			} else {
 				res = CheckFail
-				rat = fmt.Sprintf("Out-of-scope files detected: %s", strings.Join(outOfScope, ", "))
+				rat = fmt.Sprintf("Out-of-scope implementation files detected: %s", strings.Join(outOfScope, ", "))
 			}
 		} else if len(fileTargets) > 0 && len(checks) == 0 {
 			res = CheckUnknown
@@ -1204,7 +1275,7 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 		})
 	}
 
-	// 1. Only expected files check
+	// 1. Only expected files check — uses only implementation/source files
 	{
 		res := CheckUnknown
 		rat := "No changed-files artifact — cannot verify if only expected files changed"
@@ -1216,17 +1287,24 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 				targetSet[t] = true
 			}
 			var outOfScope []string
-			for _, f := range ev.ChangedFiles.Files {
+			checkFiles := ev.ChangedFiles.ImplementationFiles
+			if len(checkFiles) == 0 && len(ev.ChangedFiles.Files) > 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
+				checkFiles = ev.ChangedFiles.Files
+			}
+			for _, f := range checkFiles {
 				if !targetSet[f.Path] {
 					outOfScope = append(outOfScope, f.Path)
 				}
 			}
 			if len(outOfScope) == 0 {
 				res = CheckPass
-				rat = fmt.Sprintf("All %d changed files are within expected targets", len(ev.ChangedFiles.Files))
+				rat = fmt.Sprintf("All %d implementation changed files are within expected targets", len(checkFiles))
+				if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
+					rat += fmt.Sprintf("; %d generated pipeline artifact(s) excluded from implementation file-scope enforcement", len(ev.ChangedFiles.GeneratedArtifactFiles))
+				}
 			} else {
 				res = CheckFail
-				rat = fmt.Sprintf("Out-of-scope files detected: %s", strings.Join(outOfScope, ", "))
+				rat = fmt.Sprintf("Out-of-scope implementation files detected: %s", strings.Join(outOfScope, ", "))
 			}
 		}
 		ev.FileScopeResults = append(ev.FileScopeResults, PerCheckResult{
@@ -1239,7 +1317,7 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 		})
 	}
 
-	// 2. Runtime files check
+	// 2. Runtime files check — uses only implementation/source files
 	{
 		res := CheckUnknown
 		rat := "No changed-files artifact — cannot verify if runtime files changed"
@@ -1251,7 +1329,11 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 				targetSet[t] = true
 			}
 			var unexpectedCode []string
-			for _, f := range ev.ChangedFiles.Files {
+			checkFiles := ev.ChangedFiles.ImplementationFiles
+			if len(checkFiles) == 0 && len(ev.ChangedFiles.Files) > 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
+				checkFiles = ev.ChangedFiles.Files
+			}
+			for _, f := range checkFiles {
 				if !targetSet[f.Path] {
 					ext := filepath.Ext(f.Path)
 					if ext == ".go" || ext == ".templ" || ext == ".ts" || ext == ".tsx" || ext == ".js" || ext == ".jsx" {
@@ -1262,6 +1344,9 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 			if len(unexpectedCode) == 0 {
 				res = CheckPass
 				rat = "No unexpected runtime code files changed outside targets"
+				if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
+					rat += "; generated pipeline artifacts excluded from runtime file enforcement"
+				}
 			} else {
 				res = CheckFail
 				rat = fmt.Sprintf("Unexpected runtime code files changed outside targets: %s", strings.Join(unexpectedCode, ", "))
@@ -1277,7 +1362,7 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 		})
 	}
 
-	// 3. Tests removed/weakened check
+	// 3. Tests removed/weakened check — uses only implementation/source files
 	{
 		res := CheckUnknown
 		rat := "No changed-files artifact — cannot verify if tests were deleted"
@@ -1285,7 +1370,11 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 		if ev.ChangedFiles.Present {
 			src = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
 			var deletedTests []string
-			for _, f := range ev.ChangedFiles.Files {
+			checkFiles := ev.ChangedFiles.ImplementationFiles
+			if len(checkFiles) == 0 && len(ev.ChangedFiles.Files) > 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
+				checkFiles = ev.ChangedFiles.Files
+			}
+			for _, f := range checkFiles {
 				if (strings.Contains(f.Path, "test") || strings.Contains(f.Path, "_test.go")) && f.Status == "D" {
 					deletedTests = append(deletedTests, f.Path)
 				}
@@ -1308,7 +1397,7 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 		})
 	}
 
-	// 4. Security-sensitive / MCP / auth files check
+	// 4. Security-sensitive / MCP / auth files check — uses only implementation/source files
 	{
 		res := CheckUnknown
 		rat := "No changed-files artifact — cannot verify MCP/auth/security file changes"
@@ -1321,7 +1410,11 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 			}
 			var sensitiveChanges []string
 			sensitiveKeywords := []string{"mcp", "auth", "security", "credentials", "token", "password", "secret", "private_key"}
-			for _, f := range ev.ChangedFiles.Files {
+			checkFiles := ev.ChangedFiles.ImplementationFiles
+			if len(checkFiles) == 0 && len(ev.ChangedFiles.Files) > 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
+				checkFiles = ev.ChangedFiles.Files
+			}
+			for _, f := range checkFiles {
 				if !targetSet[f.Path] {
 					lowerPath := strings.ToLower(f.Path)
 					matched := false
@@ -1339,6 +1432,9 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 			if len(sensitiveChanges) == 0 {
 				res = CheckPass
 				rat = "No security-sensitive, auth, or MCP files changed outside expected targets"
+				if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
+					rat += "; generated pipeline artifacts excluded from security enforcement"
+				}
 			} else {
 				res = CheckFail
 				rat = fmt.Sprintf("Security-sensitive/auth/MCP files changed outside targets: %s", strings.Join(sensitiveChanges, ", "))
@@ -1371,7 +1467,11 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 			}
 			if isDocOnly && len(fileTargets) > 0 {
 				var touchedCode []string
-				for _, f := range ev.ChangedFiles.Files {
+				checkFiles := ev.ChangedFiles.ImplementationFiles
+				if len(checkFiles) == 0 && len(ev.ChangedFiles.Files) > 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
+					checkFiles = ev.ChangedFiles.Files
+				}
+				for _, f := range checkFiles {
 					ext := filepath.Ext(f.Path)
 					if ext == ".go" || ext == ".templ" || ext == ".ts" || ext == ".tsx" || ext == ".js" || ext == ".jsx" {
 						touchedCode = append(touchedCode, f.Path)
@@ -1413,7 +1513,12 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 		src := "none"
 		if ev.ChangedFiles.Present {
 			src = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
-			rat = fmt.Sprintf("Changed files present (%d files) — auditor must verify manually", len(ev.ChangedFiles.Files))
+			implCount := len(ev.ChangedFiles.ImplementationFiles)
+			if implCount == 0 && len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
+				rat = fmt.Sprintf("Implementation changed files present (%d); %d generated artifact(s) — auditor must verify manually", implCount, len(ev.ChangedFiles.GeneratedArtifactFiles))
+			} else {
+				rat = fmt.Sprintf("Changed files present (%d) — auditor must verify manually", len(ev.ChangedFiles.Files))
+			}
 		}
 		ev.FileScopeResults = append(ev.FileScopeResults, PerCheckResult{
 			ID:               fmt.Sprintf("FS%d", i+1),
