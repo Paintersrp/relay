@@ -304,6 +304,118 @@ func TestCompiler(t *testing.T) {
 		}
 	})
 
+	t.Run("Current template YAML-only compiler_input", func(t *testing.T) {
+		run, err := s.CreateRun(repo.ID, "Current Template Compiler Input", "approved_for_prepare", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+
+		configMap := map[string]interface{}{
+			"repo_target":    repo.Path,
+			"branch_context": "main",
+		}
+		configJSON, _ := json.Marshal(configMap)
+		configPath, _ := artifacts.Write(run.ID, "run_config", "run_config.json", configJSON)
+		_, _ = s.CreateArtifact(run.ID, "run_config", configPath, "application/json")
+
+		exampleBytes, err := os.ReadFile(filepath.Join("testdata", "current_template_compiler_input_handoff.md"))
+		if err != nil {
+			t.Fatalf("failed to read current-template fixture: %v", err)
+		}
+		handoffPath, _ := artifacts.Write(run.ID, "planner_handoff", "planner_handoff.md", exampleBytes)
+		_, _ = s.CreateArtifact(run.ID, "planner_handoff", handoffPath, "text/markdown")
+
+		res, err := c.CompileApprovedRun(context.Background(), run.ID)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if len(res.Issues) > 0 {
+			t.Fatalf("expected no parse issues, got: %v", res.Issues)
+		}
+		if !res.Success {
+			t.Fatalf("expected validation success, got errors: %+v", res.ValidationReport.Errors)
+		}
+
+		packetBytes, err := artifacts.Read(run.ID, "canonical_packet", "canonical_packet.json")
+		if err != nil {
+			t.Fatalf("failed to read packet: %v", err)
+		}
+		var packet map[string]interface{}
+		if err := json.Unmarshal(packetBytes, &packet); err != nil {
+			t.Fatalf("failed to parse packet: %v", err)
+		}
+
+		exec, ok := packet["execution_payload"].(map[string]interface{})
+		if !ok {
+			t.Fatal("missing execution_payload")
+		}
+		if got := exec["goal"]; got != "Compile structured compiler input YAML into a canonical packet." {
+			t.Fatalf("goal was not populated from YAML, got %q", got)
+		}
+
+		targets, ok := exec["file_targets"].([]interface{})
+		if !ok || len(targets) != 1 {
+			t.Fatalf("expected one YAML file target, got %+v", exec["file_targets"])
+		}
+		target := targets[0].(map[string]interface{})
+		if target["path"] != "internal/compiler/compiler.go" || target["reason"] != "Owns compiler input parsing." {
+			t.Fatalf("file target was not mapped from YAML: %+v", target)
+		}
+		if _, ok := target["grounding"]; ok {
+			t.Fatalf("template-only grounding field leaked into canonical packet: %+v", target)
+		}
+
+		steps, ok := exec["implementation_steps"].([]interface{})
+		if !ok || len(steps) != 1 {
+			t.Fatalf("expected one YAML implementation step, got %+v", exec["implementation_steps"])
+		}
+		step := steps[0].(map[string]interface{})
+		if step["id"] != "S1" || step["title"] == "" || step["instructions"] == "" {
+			t.Fatalf("implementation step was not normalized from YAML: %+v", step)
+		}
+		targetPaths, ok := step["target_paths"].([]interface{})
+		if !ok || len(targetPaths) != 1 || targetPaths[0] != "internal/compiler/compiler.go" {
+			t.Fatalf("implementation step target paths mismatch: %+v", step["target_paths"])
+		}
+
+		reqs, ok := exec["code_requirements"].([]interface{})
+		if !ok || len(reqs) != 1 {
+			t.Fatalf("expected one YAML code requirement, got %+v", exec["code_requirements"])
+		}
+		req := reqs[0].(map[string]interface{})
+		if req["id"] != "CR1" || req["requirement"] == "" {
+			t.Fatalf("code requirement was not normalized from YAML: %+v", req)
+		}
+
+		contract, ok := exec["validation_contract"].(map[string]interface{})
+		if !ok {
+			t.Fatal("validation_contract missing")
+		}
+		cmds, ok := contract["commands"].([]interface{})
+		if !ok || len(cmds) != 1 {
+			t.Fatalf("expected one YAML validation command, got %+v", contract["commands"])
+		}
+		cmd := cmds[0].(map[string]interface{})
+		if cmd["id"] != "V1" || cmd["command"] != "go test ./internal/compiler" || cmd["failure_handling"] != "block_if_fails" {
+			t.Fatalf("validation command was not mapped from YAML: %+v", cmd)
+		}
+
+		completion, ok := exec["completion_contract"].(map[string]interface{})
+		if !ok {
+			t.Fatal("completion_contract missing")
+		}
+		doneWhen, ok := completion["done_when"].([]interface{})
+		if !ok || len(doneWhen) != 1 || doneWhen[0] != "The YAML-only fixture compiles successfully." {
+			t.Fatalf("completion done_when was not mapped from YAML: %+v", completion)
+		}
+		for _, field := range []string{"blocked_when", "allowed_discretion", "forbidden_discretion"} {
+			values, ok := completion[field].([]interface{})
+			if !ok || len(values) == 0 {
+				t.Fatalf("completion_contract field %s missing defaults/content: %+v", field, completion)
+			}
+		}
+	})
+
 	t.Run("Nested field extraction inside compiler_input", func(t *testing.T) {
 		run, err := s.CreateRun(repo.ID, "Run with Nested Fields", "approved_for_prepare", "gpt-4o", "gpt-4o", "main")
 		if err != nil {
