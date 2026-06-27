@@ -23,6 +23,12 @@ Source snapshot metadata:
 
 When the working tree changes, refresh only affected rows or sections instead of reprocessing the whole backend by default.
 
+## Generated Reference Transition
+
+Generated project-level agent references live under `docs/generated/agent-references/`. PASS-001 creates only the foundation/index output (schema, generator package, CLI, and the initial `index.json`/`index.md`). Later selected passes add domain-specific generated references (backend packages, MCP actions, HTTP routes, storage, frontend contracts, etc.).
+
+Until generated domain coverage exists and a later documentation pass demotes or retires this manual map, this document remains a compiled navigation reference only. This document still does not override checked-out source, tests, selected handoffs/canonical packets, Relay artifacts, audit evidence, or relay-contracts.
+
 ## How Future Agents Should Use This Map
 
 Load this map before broad backend discovery for Planner handoffs touching backend, API, MCP, storage, drift, settings, intent, or plan-attempt surfaces. Use it as a routing index, then verify current source before making implementation claims. If a row is stale, update that row or section with current source evidence.

@@ -1,4 +1,4 @@
-.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean validate mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke plan-api-smoke plan-seed-smoke
+.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean validate mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke plan-api-smoke plan-seed-smoke agentrefs-generate agentrefs-check
 
 install:
 	npm install
@@ -69,3 +69,9 @@ mcp-http-smoke:
 
 mcp-clean:
 	rm -f bin/relay-mcpserver.exe bin/relay-mcpserver
+
+agentrefs-generate:
+	go run ./cmd/agentrefs generate
+
+agentrefs-check:
+	go run ./cmd/agentrefs check

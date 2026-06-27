@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schema/project_agent_reference.schema.json",
+  "title": "Project Agent Reference",
+  "description": "Generated project-level agent reference JSON contract for relay",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "reference_id",
+    "repo",
+    "generated_by",
+    "rendering",
+    "source_inputs",
+    "fact_labels",
+    "facts",
+    "references"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of the schema contract"
+    },
+    "reference_id": {
+      "type": "string",
+      "description": "Unique identifier for this reference document"
+    },
+    "repo": {
+      "type": "object",
+      "required": ["project_id", "repo_id", "branch"],
+      "additionalProperties": false,
+      "properties": {
+        "project_id": { "type": "string" },
+        "repo_id": { "type": "string" },
+        "branch": { "type": "string" }
+      }
+    },
+    "generated_by": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    },
+    "rendering": {
+      "type": "object",
+      "required": ["json_primary", "markdown_from_json", "deterministic_sort", "no_timestamps", "relative_paths_only"],
+      "additionalProperties": false,
+      "properties": {
+        "json_primary": { "type": "boolean" },
+        "markdown_from_json": { "type": "boolean" },
+        "deterministic_sort": { "type": "boolean" },
+        "no_timestamps": { "type": "boolean" },
+        "relative_paths_only": { "type": "boolean" }
+      }
+    },
+    "source_inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "role"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "$ref": "#/$defs/repoRelativePath" },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "role": { "type": "string" }
+        }
+      }
+    },
+    "fact_labels": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/fact_label" },
+      "uniqueItems": true
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "statement"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "$ref": "#/$defs/fact_label" },
+          "statement": { "type": "string" },
+          "evidence": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/evidence" }
+          }
+        }
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "path", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string" },
+          "path": { "$ref": "#/$defs/repoRelativePath" },
+          "description": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "fact_label": {
+      "type": "string",
+      "enum": ["proven", "derived", "convention", "unresolved", "conflict"]
+    },
+    "repoRelativePath": {
+      "type": "string",
+      "pattern": "^(?!.*\\\\)(?!.*\\.\\.)(?!.*\\n)(?!.*\\r)[^/][^\\n]*$",
+      "description": "Repo-relative path: no leading slash, no '..', no backslashes, no newlines"
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["kind", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string" },
+        "value": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0.0",
+  "reference_id": "project-agent-references-index",
+  "repo": {
+    "project_id": "relay",
+    "repo_id": "Paintersrp/relay",
+    "branch": "main"
+  },
+  "generated_by": {
+    "name": "relay-agentrefs",
+    "version": "0.1.0"
+  },
+  "rendering": {
+    "json_primary": true,
+    "markdown_from_json": true,
+    "deterministic_sort": true,
+    "no_timestamps": true,
+    "relative_paths_only": true
+  },
+  "source_inputs": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "56eec5004c6cfe91dc459506a239017398ce68bc6eb3fad88fc1e8a94b05c5ff",
+      "role": "agent instructions"
+    },
+    {
+      "path": "Makefile",
+      "sha256": "1ef4f7151eef34ef65ad81bf4b9eff7202a73d7bc435cfe9fbc550e0984500d6",
+      "role": "build configuration"
+    },
+    {
+      "path": "docs/agent-reference.md",
+      "sha256": "6addc6c02275fb947b37d25726d6f367cb1c7d8b4b1b9ac13b7d7b94e70ae614",
+      "role": "agent reference"
+    },
+    {
+      "path": "docs/backend-code-surface-map.md",
+      "sha256": "5e3570632b271a41d36d98a2f0feab993500361605b93955475e65ab3af21a3a",
+      "role": "backend surface map"
+    },
+    {
+      "path": "schema/project_agent_reference.schema.json",
+      "sha256": "d48d8471f6d8d99a2ae978b2efd94dab52ca2b307b34f00b4fa71cc95d5fedfd",
+      "role": "schema contract"
+    }
+  ],
+  "fact_labels": [
+    "proven",
+    "derived",
+    "convention",
+    "unresolved",
+    "conflict"
+  ],
+  "facts": [
+    {
+      "id": "foundation-scope",
+      "label": "proven",
+      "statement": "PASS-001 creates only foundation/index output. No domain scanners are implemented in this pass.",
+      "evidence": [
+        {
+          "kind": "schema",
+          "value": "schema/project_agent_reference.schema.json"
+        },
+        {
+          "kind": "source",
+          "value": "cmd/agentrefs/main.go"
+        }
+      ]
+    }
+  ],
+  "references": []
+}
