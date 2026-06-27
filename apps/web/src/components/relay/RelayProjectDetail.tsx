@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatPlanDate } from "@/components/relay/relayPlanVisualState";
 import { RelayProjectPlansPanel } from "./RelayProjectPlansPanel";
+import { RelayProjectPlanSeedsPanel } from "./RelayProjectPlanSeedsPanel";
 import { RelayProjectRepositoryForm } from "./RelayProjectRepositoryForm";
 import {
   setProjectRepositoryEnabled,
@@ -166,6 +167,9 @@ export function RelayProjectDetail({ project }: RelayProjectDetailProps) {
           </Link>
         </Button>
       </div>
+
+      {/* Project-scoped plan seeds */}
+      <RelayProjectPlanSeedsPanel projectId={project.projectId} />
 
       {/* Project-scoped managed plans */}
       <RelayProjectPlansPanel projectId={project.projectId} />

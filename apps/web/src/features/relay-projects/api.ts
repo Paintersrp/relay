@@ -1,12 +1,20 @@
 import { API_BASE_URL, RelayApiError } from "@/features/relay-runs";
 import type { RelayApiErrorShape } from "@/features/relay-runs/types";
 import type {
+  PlanSeedAPIRequest,
+  PlanSeedDetailResponse,
+  PlanSeedLifecycleAPIRequest,
+  PlanSeedListFilters,
+  PlanSeedListResponse,
+  PlanSeedMutationResponse,
+  PlanSeedUpdateAPIRequest,
   ProjectAPIRequest,
   ProjectDetailResponse,
   ProjectListFilters,
   ProjectListResponse,
   ProjectRepositoryAPIRequest,
   ProjectRepositoryMutationResponse,
+  RelayPlanSeed,
   RelayProject,
   RelayProjectRepository,
 } from "./types";
@@ -41,6 +49,30 @@ function normalizeProject(project: any): RelayProject {
     repositories: Array.isArray(project?.repositories)
       ? project.repositories.map(normalizeProjectRepository)
       : [],
+  };
+}
+
+function normalizePlanSeed(seed: any): RelayPlanSeed {
+  return {
+    seedId: seed?.seedId ?? "",
+    projectId: seed?.projectId ?? "",
+    title: seed?.title ?? "",
+    quickContext: seed?.quickContext ?? "",
+    constraints: Array.isArray(seed?.constraints) ? seed.constraints : [],
+    nonGoals: Array.isArray(seed?.nonGoals) ? seed.nonGoals : [],
+    tags: Array.isArray(seed?.tags) ? seed.tags : [],
+    priority: seed?.priority ?? "normal",
+    status: seed?.status ?? "captured",
+    sourceType: seed?.sourceType ?? "manual",
+    sourceLabel: seed?.sourceLabel ?? "",
+    sourceRefId: seed?.sourceRefId ?? "",
+    planAttemptId: seed?.planAttemptId ?? "",
+    managedPlanId: seed?.managedPlanId ?? "",
+    plannedAt: seed?.plannedAt ?? "",
+    deferReason: seed?.deferReason ?? "",
+    rejectReason: seed?.rejectReason ?? "",
+    createdAt: seed?.createdAt ?? "",
+    updatedAt: seed?.updatedAt ?? "",
   };
 }
 
@@ -226,5 +258,107 @@ export async function setProjectRepositoryEnabled(
   return {
     success: !!response?.success,
     repository: normalizeProjectRepository(response?.repository),
+  };
+}
+
+export async function getPlanSeeds(
+  projectId: string,
+  filters: PlanSeedListFilters = {},
+): Promise<PlanSeedListResponse> {
+  const params = new URLSearchParams();
+  if (filters.status) {
+    params.set("status", filters.status);
+  }
+  if (typeof filters.limit === "number") {
+    params.set("limit", String(filters.limit));
+  }
+  const query = params.toString();
+  const response = await getProjectJson<any>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds${query ? `?${query}` : ""}`,
+  );
+
+  return {
+    success: !!response?.success,
+    count: response?.count ?? 0,
+    seeds: Array.isArray(response?.seeds)
+      ? response.seeds.map(normalizePlanSeed)
+      : [],
+  };
+}
+
+export async function getPlanSeed(
+  projectId: string,
+  seedId: string,
+): Promise<PlanSeedDetailResponse> {
+  const response = await getProjectJson<any>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds/${encodeURIComponent(seedId)}`,
+  );
+
+  return {
+    success: !!response?.success,
+    seed: normalizePlanSeed(response?.seed),
+  };
+}
+
+export async function createPlanSeed(
+  projectId: string,
+  request: PlanSeedAPIRequest,
+): Promise<PlanSeedMutationResponse> {
+  const response = await postProjectJson<PlanSeedAPIRequest, any>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds`,
+    request,
+  );
+
+  return {
+    success: !!response?.success,
+    seed: normalizePlanSeed(response?.seed),
+  };
+}
+
+export async function updatePlanSeed(
+  projectId: string,
+  seedId: string,
+  request: PlanSeedUpdateAPIRequest,
+): Promise<PlanSeedMutationResponse> {
+  const response = await postProjectJson<PlanSeedUpdateAPIRequest, any>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds/${encodeURIComponent(seedId)}/update`,
+    request,
+  );
+
+  return {
+    success: !!response?.success,
+    seed: normalizePlanSeed(response?.seed),
+  };
+}
+
+export async function deferPlanSeed(
+  projectId: string,
+  seedId: string,
+  request: PlanSeedLifecycleAPIRequest,
+): Promise<PlanSeedMutationResponse> {
+  const response = await postProjectJson<PlanSeedLifecycleAPIRequest, any>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds/${encodeURIComponent(seedId)}/defer`,
+    request,
+  );
+
+  return {
+    success: !!response?.success,
+    seed: normalizePlanSeed(response?.seed),
+  };
+}
+
+export async function rejectPlanSeed(
+  projectId: string,
+  seedId: string,
+  request: PlanSeedLifecycleAPIRequest,
+): Promise<PlanSeedMutationResponse> {
+  const response = await postProjectJson<PlanSeedLifecycleAPIRequest, any>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds/${encodeURIComponent(seedId)}/reject`,
+    request,
+  );
+
+  return {
+    success: !!response?.success,
+    seed: normalizePlanSeed(response?.seed),
   };
 }

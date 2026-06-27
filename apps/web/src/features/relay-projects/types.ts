@@ -89,3 +89,73 @@ export interface ProjectRepositoryMutationResponse {
   success: boolean;
   repository: RelayProjectRepository;
 }
+
+export type PlanSeedStatus = "captured" | "planned" | "deferred" | "rejected";
+export type PlanSeedSourceType = "manual" | "chat" | "mcp";
+
+export interface RelayPlanSeed {
+  seedId: string;
+  projectId: string;
+  title: string;
+  quickContext: string;
+  constraints: string[];
+  nonGoals: string[];
+  tags: string[];
+  priority: string;
+  status: PlanSeedStatus | string;
+  sourceType: PlanSeedSourceType | string;
+  sourceLabel: string;
+  sourceRefId: string;
+  planAttemptId: string;
+  managedPlanId: string;
+  plannedAt: string;
+  deferReason: string;
+  rejectReason: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlanSeedAPIRequest {
+  title: string;
+  quick_context: string;
+  priority?: string;
+  constraints?: string[];
+  non_goals?: string[];
+  tags?: string[];
+  source_label?: string;
+}
+
+export interface PlanSeedUpdateAPIRequest {
+  title?: string;
+  quick_context?: string;
+  priority?: string;
+  constraints?: string[];
+  non_goals?: string[];
+  tags?: string[];
+}
+
+export interface PlanSeedLifecycleAPIRequest {
+  defer_reason?: string;
+  reject_reason?: string;
+}
+
+export interface PlanSeedListFilters {
+  status?: PlanSeedStatus;
+  limit?: number;
+}
+
+export interface PlanSeedListResponse {
+  success: boolean;
+  count: number;
+  seeds: RelayPlanSeed[];
+}
+
+export interface PlanSeedDetailResponse {
+  success: boolean;
+  seed: RelayPlanSeed;
+}
+
+export interface PlanSeedMutationResponse {
+  success: boolean;
+  seed: RelayPlanSeed;
+}
