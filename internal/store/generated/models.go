@@ -255,6 +255,30 @@ type PlanReviewSetting struct {
 	UpdatedAt              string `json:"updated_at"`
 }
 
+type PlanSeed struct {
+	ID              int64  `json:"id"`
+	SeedID          string `json:"seed_id"`
+	ProjectRowID    int64  `json:"project_row_id"`
+	ProjectID       string `json:"project_id"`
+	Title           string `json:"title"`
+	QuickContext    string `json:"quick_context"`
+	ConstraintsJson string `json:"constraints_json"`
+	NonGoalsJson    string `json:"non_goals_json"`
+	TagsJson        string `json:"tags_json"`
+	Priority        string `json:"priority"`
+	Status          string `json:"status"`
+	SourceType      string `json:"source_type"`
+	SourceLabel     string `json:"source_label"`
+	SourceRefID     string `json:"source_ref_id"`
+	PlanAttemptID   string `json:"plan_attempt_id"`
+	ManagedPlanID   string `json:"managed_plan_id"`
+	PlannedAt       string `json:"planned_at"`
+	DeferReason     string `json:"defer_reason"`
+	RejectReason    string `json:"reject_reason"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
+}
+
 type Project struct {
 	ID                  int64  `json:"id"`
 	ProjectID           string `json:"project_id"`

@@ -33,6 +33,7 @@ type PlanReviewSetting = generated.PlanReviewSetting
 type IntentPacket = generated.IntentPacket
 type PlanAttempt = generated.PlanAttempt
 type IntentDriftReview = generated.IntentDriftReview
+type PlanSeed = generated.PlanSeed
 
 type Store struct {
 	db      *sql.DB
