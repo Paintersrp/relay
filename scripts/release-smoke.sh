@@ -8,10 +8,14 @@ node - <<'NODE'
 const { spawnSync } = require('child_process');
 
 const commands = [
+  // PASS-006: explicit Plan Seed release-hardening slice runs first so a
+  // plan seed regression fails fast before the broader suite.
+  'go test ./internal/app/projects ./internal/api/projects ./internal/mcp -run PlanSeed -count=1',
+  'go run ./cmd/plan-seed-smoke',
   // PASS-008: explicit refactor backlog hardening slice (backend service,
-  // orchestrator/audit mapping, and MCP local-operator tools) runs first so a
+  // orchestrator/audit mapping, and MCP local-operator tools) runs next so a
   // refactor backlog regression fails fast before the broader suite.
-  'go test ./internal/refactors ./internal/plans ./internal/mcp',
+  'go test ./internal/refactors ./internal/app/plans ./internal/mcp',
   'go test ./...',
   'npm run test:local-scripts',
   'npm --prefix apps/web run typecheck',

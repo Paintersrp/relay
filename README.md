@@ -18,6 +18,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | Source Snapshot Backend | Internal-only source provenance service for registered repositories: durable source snapshots, git status, latest commit, changed files, bounded diff evidence, optional file metadata/hash capture, snapshot-backed file inventory, bounded file reads, and rg-backed source search |
 | Context Packet Backend | Internal-only context packet and context coverage report generation from source snapshots, file inventory, bounded reads, and search results; writes pre-run `handoffs/context` artifacts and SQLite metadata |
 | MCP Context Broker | Bounded retrieval-only MCP surface for project, plan/pass, source snapshot, snapshot-backed inventory/search/read, and context packet metadata, enabled by default under the local-operator profile |
+| Plan Seeds & Project Planning Backlog | Project-scoped backlog capturing of planning ideas: capture, lifecycle actions (defer/reject), read-only planning context, and draft attempt registration without managed plan submission or run creation (see [Plan Seeds](docs/project-planning-backlog-plan-seeds.md)) |
 | Run Storage | Run metadata and artifact storage |
 | Intake Review | Parse and validate handoff structure before execution |
 | Agent Prompt | Preparation and handoff transformation for agents |
@@ -38,7 +39,6 @@ Relay is a local-first handoff/run orchestration workbench.
 | Repair | Automatic validation failure repair |
 | Audit | Automatic AI audit/closeout |
 | Additional Project-Facing MCP Actions | Project-facing MCP exposure beyond `create_run_from_planner_handoff` and `submit_planner_pass_plan` is configuration-dependent; local/dev/server MCP inventory includes additional tools |
-| Plan Seeds & Project Planning Backlog | Future project-scoped backlog capturing of planning ideas (see [Plan Seeds Design Contract](docs/project-planning-backlog-plan-seeds.md)) |
 
 
 ### Run Actions

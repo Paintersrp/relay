@@ -2,6 +2,7 @@ package projects
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"relay/internal/api/shared"
 	appprojects "relay/internal/app/projects"
 	"relay/internal/store"
+	"relay/internal/store/generated"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -20,7 +22,7 @@ import (
 func TestProjectAPIFlow(t *testing.T) {
 	t.Parallel()
 
-	router := newProjectAPITestServer(t)
+	router, _ := newProjectAPITestServer(t)
 
 	createBody := []byte(`{"project_id":"relay","name":"Relay","description":"Registry test","status":"active"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/projects", bytes.NewReader(createBody))
@@ -97,7 +99,7 @@ func TestProjectAPIFlow(t *testing.T) {
 func TestProjectAPIRejectsInvalidRepositoryConfig(t *testing.T) {
 	t.Parallel()
 
-	router := newProjectAPITestServer(t)
+	router, _ := newProjectAPITestServer(t)
 
 	createBody := []byte(`{"project_id":"relay","name":"Relay","status":"active"}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/projects", bytes.NewReader(createBody))
@@ -127,7 +129,7 @@ func TestProjectAPIRejectsInvalidRepositoryConfig(t *testing.T) {
 	}
 }
 
-func newProjectAPITestServer(t *testing.T) http.Handler {
+func newProjectAPITestServer(t *testing.T) (http.Handler, *store.Store) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -148,13 +150,48 @@ func newProjectAPITestServer(t *testing.T) http.Handler {
 		MountRoutes(r, h)
 	})
 
-	return router
+	return router, st
+}
+
+func planSeedCountTables() []string {
+	return []string{"intent_packets", "plan_attempts", "plans", "plan_passes", "runs"}
+}
+
+func planSeedTableCounts(t *testing.T, db *sql.DB) map[string]int {
+	t.Helper()
+	counts := make(map[string]int)
+	for _, tbl := range planSeedCountTables() {
+		var count int
+		if err := db.QueryRow("SELECT COUNT(*) FROM " + tbl).Scan(&count); err != nil {
+			t.Fatalf("count %s: %v", tbl, err)
+		}
+		counts[tbl] = count
+	}
+	return counts
+}
+
+func assertPlanSeedCountsEqual(t *testing.T, before, after map[string]int, msg string) {
+	t.Helper()
+	for _, tbl := range planSeedCountTables() {
+		if before[tbl] != after[tbl] {
+			t.Errorf("%s: expected %s count to remain %d, got %d", msg, tbl, before[tbl], after[tbl])
+		}
+	}
+}
+
+func assertPlanSeedCounts(t *testing.T, got map[string]int, want map[string]int, msg string) {
+	t.Helper()
+	for _, tbl := range planSeedCountTables() {
+		if got[tbl] != want[tbl] {
+			t.Errorf("%s: expected %s count %d, got %d", msg, tbl, want[tbl], got[tbl])
+		}
+	}
 }
 
 func TestPlanSeedAPIFlow(t *testing.T) {
 	t.Parallel()
 
-	router := newProjectAPITestServer(t)
+	router, _ := newProjectAPITestServer(t)
 
 	// 1. Create project
 	createProjBody := []byte(`{"project_id":"relay","name":"Relay","status":"active"}`)
@@ -301,7 +338,7 @@ func TestPlanSeedAPIFlow(t *testing.T) {
 func TestPlanSeedAPIRejectsUnknownProjectAndWrongProject(t *testing.T) {
 	t.Parallel()
 
-	router := newProjectAPITestServer(t)
+	router, _ := newProjectAPITestServer(t)
 
 	// Create project relay
 	createProjBody := []byte(`{"project_id":"relay","name":"Relay","status":"active"}`)
@@ -368,7 +405,7 @@ func TestPlanSeedAPIRejectsUnknownProjectAndWrongProject(t *testing.T) {
 func TestPlanSeedAPIRejectsInvalidInputAndSecretLikeQuickContext(t *testing.T) {
 	t.Parallel()
 
-	router := newProjectAPITestServer(t)
+	router, _ := newProjectAPITestServer(t)
 
 	// Create project relay
 	createProjBody := []byte(`{"project_id":"relay","name":"Relay","status":"active"}`)
@@ -419,7 +456,7 @@ func TestPlanSeedAPIRejectsInvalidInputAndSecretLikeQuickContext(t *testing.T) {
 func TestPlanSeedAPIPlanningContextAndCreateAttemptFromSeed(t *testing.T) {
 	t.Parallel()
 
-	router := newProjectAPITestServer(t)
+	router, st := newProjectAPITestServer(t)
 
 	createProjBody := []byte(`{"project_id":"relay","name":"Relay","status":"active"}`)
 	projReq := httptest.NewRequest(http.MethodPost, "/api/projects", bytes.NewReader(createProjBody))
@@ -430,10 +467,13 @@ func TestPlanSeedAPIPlanningContextAndCreateAttemptFromSeed(t *testing.T) {
 		t.Fatalf("expected 201, got %d: %s", projRec.Code, projRec.Body.String())
 	}
 
+	initialCounts := planSeedTableCounts(t, st.DB())
+
 	createSeedBody := []byte(`{
 		"title": "Bridge Seed",
 		"quick_context": "Create a reviewed draft attempt.",
-		"constraints": ["stay scoped"]
+		"constraints": ["stay scoped"],
+		"non_goals": ["no managed plan"]
 	}`)
 	seedReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds", bytes.NewReader(createSeedBody))
 	seedReq.Header.Set("Content-Type", "application/json")
@@ -448,77 +488,221 @@ func TestPlanSeedAPIPlanningContextAndCreateAttemptFromSeed(t *testing.T) {
 	}
 	seedID := seedResp.PlanSeed.SeedID
 
-	contextReq := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plan-seeds/"+seedID+"/planning-context", nil)
-	contextRec := httptest.NewRecorder()
-	router.ServeHTTP(contextRec, contextReq)
-	if contextRec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", contextRec.Code, contextRec.Body.String())
-	}
-	var contextResp PlanSeedPlanningContextAPIResponse
-	if err := json.NewDecoder(contextRec.Body).Decode(&contextResp); err != nil {
-		t.Fatalf("decode context response: %v", err)
-	}
-	if !contextResp.Success || !contextResp.PlanningContext.RetrievalSemantics.RetrievalOnly || contextResp.PlanningContext.RetrievalSemantics.StateMutated {
-		t.Fatalf("unexpected planning context response: %+v", contextResp)
+	// Seed creation has no side effects on intent/plan/run tables.
+	assertPlanSeedCountsEqual(t, initialCounts, planSeedTableCounts(t, st.DB()), "after seed creation")
+
+	// 1. GET planning-context leaves counts unchanged.
+	t.Run("planning context is read-only", func(t *testing.T) {
+		beforeContext := planSeedTableCounts(t, st.DB())
+		contextReq := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plan-seeds/"+seedID+"/planning-context", nil)
+		contextRec := httptest.NewRecorder()
+		router.ServeHTTP(contextRec, contextReq)
+		if contextRec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", contextRec.Code, contextRec.Body.String())
+		}
+		var contextResp PlanSeedPlanningContextAPIResponse
+		if err := json.NewDecoder(contextRec.Body).Decode(&contextResp); err != nil {
+			t.Fatalf("decode context response: %v", err)
+		}
+		if !contextResp.Success || !contextResp.PlanningContext.RetrievalSemantics.RetrievalOnly || contextResp.PlanningContext.RetrievalSemantics.StateMutated {
+			t.Fatalf("unexpected planning context response: %+v", contextResp)
+		}
+		assertPlanSeedCountsEqual(t, beforeContext, planSeedTableCounts(t, st.DB()), "after planning context")
+	})
+
+	// 2. Unknown project/seed returns 404.
+	t.Run("unknown project and seed", func(t *testing.T) {
+		for _, path := range []string{
+			"/api/projects/missing/plan-seeds/" + seedID + "/planning-context",
+			"/api/projects/relay/plan-seeds/seed-missing/planning-context",
+			"/api/projects/missing/plan-seeds/" + seedID + "/plan-attempts",
+			"/api/projects/relay/plan-seeds/seed-missing/plan-attempts",
+		} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			if bytes.Contains([]byte(path), []byte("plan-attempts")) {
+				req = httptest.NewRequest(http.MethodPost, path, bytes.NewReader([]byte(`{"planner_pass_plan_json":{},"source_artifact_path":"x"}`)))
+				req.Header.Set("Content-Type", "application/json")
+			}
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("expected 404 for %s, got %d: %s", path, rec.Code, rec.Body.String())
+			}
+		}
+	})
+
+	// 3. Invalid attempt payloads are rejected with no side effects.
+	t.Run("invalid attempt payloads rejected", func(t *testing.T) {
+		beforeInvalid := planSeedTableCounts(t, st.DB())
+		cases := []struct {
+			name string
+			body string
+		}{
+			{"unknown field", `{"planner_pass_plan_json":{},"source_artifact_path":"handoffs/packets/plan.json","extra":true}`},
+			{"missing source_artifact_path", `{"planner_pass_plan_json":{}}`},
+			{"missing planner_pass_plan_json", `{"source_artifact_path":"handoffs/packets/plan.json"}`},
+			{"invalid planner_pass_plan_json", `{"planner_pass_plan_json":"not-object","source_artifact_path":"handoffs/packets/plan.json"}`},
+			{"non-object planner_pass_plan_json", `{"planner_pass_plan_json":[],"source_artifact_path":"handoffs/packets/plan.json"}`},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				req := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/plan-attempts", bytes.NewReader([]byte(tc.body)))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+				if rec.Code != http.StatusBadRequest {
+					t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+				}
+			})
+		}
+		assertPlanSeedCountsEqual(t, beforeInvalid, planSeedTableCounts(t, st.DB()), "after invalid attempt payloads")
+	})
+
+	// 4. Successful attempt creates exactly one intent packet and one plan attempt, zero plans/passes/runs.
+	t.Run("create draft attempt from seed", func(t *testing.T) {
+		beforeAttempt := planSeedTableCounts(t, st.DB())
+		createAttemptBody := []byte(`{
+			"planner_pass_plan_json": {
+				"plan_meta": {"plan_id": "plan-http"},
+				"source_intent": {},
+				"passes": []
+			},
+			"source_artifact_path": "handoffs/packets/plan-http.json"
+		}`)
+		attemptReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/plan-attempts", bytes.NewReader(createAttemptBody))
+		attemptReq.Header.Set("Content-Type", "application/json")
+		attemptRec := httptest.NewRecorder()
+		router.ServeHTTP(attemptRec, attemptReq)
+		if attemptRec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", attemptRec.Code, attemptRec.Body.String())
+		}
+		var attemptResp PlanSeedAttemptAPIResponse
+		if err := json.NewDecoder(attemptRec.Body).Decode(&attemptResp); err != nil {
+			t.Fatalf("decode attempt response: %v", err)
+		}
+		if !attemptResp.Success || attemptResp.Seed == nil || attemptResp.PlanAttempt == nil || attemptResp.IntentPacket == nil {
+			t.Fatalf("expected successful attempt response, got %+v", attemptResp)
+		}
+		if attemptResp.Seed.Status != "planned" || attemptResp.Seed.PlanAttemptID != attemptResp.PlanAttempt.PlanAttemptID {
+			t.Fatalf("expected seed linked to draft attempt, got %+v", attemptResp)
+		}
+		if attemptResp.PlanAttempt.Status != "draft" {
+			t.Fatalf("expected draft attempt, got %+v", attemptResp.PlanAttempt)
+		}
+
+		assertPlanSeedCounts(t, planSeedTableCounts(t, st.DB()), map[string]int{
+			"intent_packets": beforeAttempt["intent_packets"] + 1,
+			"plan_attempts":  beforeAttempt["plan_attempts"] + 1,
+			"plans":          beforeAttempt["plans"],
+			"plan_passes":    beforeAttempt["plan_passes"],
+			"runs":           beforeAttempt["runs"],
+		}, "after successful attempt")
+
+		// Verify intent packet preserves constraints and non-goals.
+		ip, err := generated.New(st.DB()).GetIntentPacketByID(t.Context(), attemptResp.IntentPacket.IntentPacketID)
+		if err != nil {
+			t.Fatalf("get intent packet: %v", err)
+		}
+		var constraints []string
+		if err := json.Unmarshal([]byte(ip.ConstraintsJson), &constraints); err != nil {
+			t.Fatalf("decode intent constraints: %v", err)
+		}
+		assertStringSlice(t, constraints, []string{"stay scoped", "Non-goal: no managed plan"})
+
+		// 5. Duplicate attempt is blocked and creates no additional rows.
+		beforeDuplicate := planSeedTableCounts(t, st.DB())
+		duplicateReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/plan-attempts", bytes.NewReader(createAttemptBody))
+		duplicateReq.Header.Set("Content-Type", "application/json")
+		duplicateRec := httptest.NewRecorder()
+		router.ServeHTTP(duplicateRec, duplicateReq)
+		if duplicateRec.Code != http.StatusConflict {
+			t.Fatalf("expected 409 duplicate blocker, got %d: %s", duplicateRec.Code, duplicateRec.Body.String())
+		}
+		var duplicateResp PlanSeedAttemptAPIResponse
+		if err := json.NewDecoder(duplicateRec.Body).Decode(&duplicateResp); err != nil {
+			t.Fatalf("decode duplicate response: %v", err)
+		}
+		if duplicateResp.Success || duplicateResp.BlockerCode != appprojects.PlanSeedBlockerSeedAlreadyPlanned {
+			t.Fatalf("expected duplicate blocker, got %+v", duplicateResp)
+		}
+		assertPlanSeedCountsEqual(t, beforeDuplicate, planSeedTableCounts(t, st.DB()), "after duplicate attempt")
+	})
+}
+
+func TestPlanSeedAPIDeferredAndRejectedBlockAttemptCreation(t *testing.T) {
+	t.Parallel()
+
+	router, st := newProjectAPITestServer(t)
+
+	createProjBody := []byte(`{"project_id":"relay","name":"Relay","status":"active"}`)
+	projReq := httptest.NewRequest(http.MethodPost, "/api/projects", bytes.NewReader(createProjBody))
+	projReq.Header.Set("Content-Type", "application/json")
+	projRec := httptest.NewRecorder()
+	router.ServeHTTP(projRec, projReq)
+	if projRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", projRec.Code, projRec.Body.String())
 	}
 
-	unknownFieldReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/plan-attempts", bytes.NewReader([]byte(`{"planner_pass_plan_json":{},"source_artifact_path":"handoffs/packets/plan.json","extra":true}`)))
-	unknownFieldReq.Header.Set("Content-Type", "application/json")
-	unknownFieldRec := httptest.NewRecorder()
-	router.ServeHTTP(unknownFieldRec, unknownFieldReq)
-	if unknownFieldRec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for unknown field, got %d: %s", unknownFieldRec.Code, unknownFieldRec.Body.String())
+	createSeed := func(title, lifecyclePath, reason string) string {
+		body := []byte(`{"title": "` + title + `", "quick_context": "ctx"}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp ProjectAPIResponse
+		_ = json.NewDecoder(rec.Body).Decode(&resp)
+		seedID := resp.PlanSeed.SeedID
+		if lifecyclePath != "" {
+			lifeBody := []byte(`{"` + lifecyclePath + `_reason": "` + reason + `"}`)
+			lifeReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/"+lifecyclePath, bytes.NewReader(lifeBody))
+			lifeReq.Header.Set("Content-Type", "application/json")
+			lifeRec := httptest.NewRecorder()
+			router.ServeHTTP(lifeRec, lifeReq)
+			if lifeRec.Code != http.StatusOK {
+				t.Fatalf("expected 200 %s, got %d: %s", lifecyclePath, lifeRec.Code, lifeRec.Body.String())
+			}
+		}
+		return seedID
 	}
 
-	createAttemptBody := []byte(`{
-		"planner_pass_plan_json": {
-			"plan_meta": {"plan_id": "plan-http"},
-			"source_intent": {},
-			"passes": []
-		},
-		"source_artifact_path": "handoffs/packets/plan-http.json"
-	}`)
-	attemptReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/plan-attempts", bytes.NewReader(createAttemptBody))
-	attemptReq.Header.Set("Content-Type", "application/json")
-	attemptRec := httptest.NewRecorder()
-	router.ServeHTTP(attemptRec, attemptReq)
-	if attemptRec.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", attemptRec.Code, attemptRec.Body.String())
-	}
-	var attemptResp PlanSeedAttemptAPIResponse
-	if err := json.NewDecoder(attemptRec.Body).Decode(&attemptResp); err != nil {
-		t.Fatalf("decode attempt response: %v", err)
-	}
-	if !attemptResp.Success || attemptResp.Seed == nil || attemptResp.PlanAttempt == nil || attemptResp.IntentPacket == nil {
-		t.Fatalf("expected successful attempt response, got %+v", attemptResp)
-	}
-	if attemptResp.Seed.Status != "planned" || attemptResp.Seed.PlanAttemptID != attemptResp.PlanAttempt.PlanAttemptID {
-		t.Fatalf("expected seed linked to draft attempt, got %+v", attemptResp)
-	}
-	if attemptResp.PlanAttempt.Status != "draft" {
-		t.Fatalf("expected draft attempt, got %+v", attemptResp.PlanAttempt)
-	}
-
-	duplicateReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/plan-attempts", bytes.NewReader(createAttemptBody))
-	duplicateReq.Header.Set("Content-Type", "application/json")
-	duplicateRec := httptest.NewRecorder()
-	router.ServeHTTP(duplicateRec, duplicateReq)
-	if duplicateRec.Code != http.StatusConflict {
-		t.Fatalf("expected 409 duplicate blocker, got %d: %s", duplicateRec.Code, duplicateRec.Body.String())
-	}
-	var duplicateResp PlanSeedAttemptAPIResponse
-	if err := json.NewDecoder(duplicateRec.Body).Decode(&duplicateResp); err != nil {
-		t.Fatalf("decode duplicate response: %v", err)
-	}
-	if duplicateResp.Success || duplicateResp.BlockerCode != appprojects.PlanSeedBlockerSeedAlreadyPlanned {
-		t.Fatalf("expected duplicate blocker, got %+v", duplicateResp)
+	attemptBody := []byte(`{"planner_pass_plan_json":{"plan_meta":{"plan_id":"x"}},"source_artifact_path":"a.json"}`)
+	for _, tc := range []struct {
+		name        string
+		lifecycle   string
+		blockerCode string
+	}{
+		{"deferred blocks attempt", "defer", appprojects.PlanSeedBlockerSeedNotExpandable},
+		{"rejected blocks attempt", "reject", appprojects.PlanSeedBlockerSeedNotExpandable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			seedID := createSeed(tc.name, tc.lifecycle, "blocked")
+			before := planSeedTableCounts(t, st.DB())
+			req := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/plan-attempts", bytes.NewReader(attemptBody))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())
+			}
+			var resp PlanSeedAttemptAPIResponse
+			if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if resp.Success || resp.BlockerCode != tc.blockerCode {
+				t.Fatalf("expected %s blocker, got %+v", tc.blockerCode, resp)
+			}
+			assertPlanSeedCountsEqual(t, before, planSeedTableCounts(t, st.DB()), "after blocked attempt")
+		})
 	}
 }
 
 func TestPlanSeedAPIPartialUpdatePreservesOmittedFieldsAndClearsExplicitLists(t *testing.T) {
 	t.Parallel()
 
-	router := newProjectAPITestServer(t)
+	router, _ := newProjectAPITestServer(t)
 
 	createProjBody := []byte(`{"project_id":"relay","name":"Relay","status":"active"}`)
 	projReq := httptest.NewRequest(http.MethodPost, "/api/projects", bytes.NewReader(createProjBody))
@@ -583,7 +767,7 @@ func TestPlanSeedAPIPartialUpdatePreservesOmittedFieldsAndClearsExplicitLists(t 
 func TestPlanSeedAPIUpdateDoesNotAllowStatusMutation(t *testing.T) {
 	t.Parallel()
 
-	router := newProjectAPITestServer(t)
+	router, _ := newProjectAPITestServer(t)
 
 	// Create project relay
 	createProjBody := []byte(`{"project_id":"relay","name":"Relay","status":"active"}`)

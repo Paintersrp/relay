@@ -6,7 +6,7 @@
 > 
 > The Planner does **not** have status-query, run-listing, audit-submission, or downstream-dispatch MCP actions by default. Tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
 >
-> Relay implements a profile-based tool registration system. Under the default `RELAY_MCP_PROFILE=local-operator` configuration, Relay registers 24 additional retrieval-only context-broker tools (e.g. `get_project`, `get_plan`, `get_pass`, `get_next_pass_work`, `get_next_audit_work`, snapshotting, and context packets) plus 18 project-scoped refactor backlog tools (retrieval, explicit backlog mutation, and gated plan-mutation/artifact-generation) to support local-first workflows. These tools stay separate from submission actions, and do not create runs, submit plans, dispatch executors, mutate git, run shell commands, or expose arbitrary filesystem access.
+> Relay implements a profile-based tool registration system. Under the default `RELAY_MCP_PROFILE=local-operator` configuration, Relay registers additional retrieval-only context-broker tools (e.g. `get_project`, `get_plan`, `get_pass`, `get_next_pass_work`, `get_next_audit_work`, snapshotting, and context packets), project-scoped refactor backlog tools, and Plan Seed tools to support local-first workflows. These tools stay separate from submission actions, and do not create runs, submit plans, dispatch executors, mutate git, run shell commands, or expose arbitrary filesystem access. The exact tool inventory depends on the active profile and project configuration.
 >
 > The Relay web UI shows read-only managed pass context, planner handoff provenance, context packet IDs, source snapshot IDs, associated runs, and links to safe persisted source-context artifacts. This UI visibility does **not** invoke MCP broker tools directly, does **not** create context packets/source snapshots, and does **not** render raw source file contents.
 
@@ -50,6 +50,23 @@ For the end-to-end operator loop that combines these retrieval tools with the Re
 *   `submit_planner_pass_plan` remains the only plan-submission action and still requires explicit user review and confirmation. `create_run_from_planner_handoff` remains the only reviewed handoff-to-run action and still requires explicit user confirmation. There is no separate refactor submission action, and refactor metadata does not authorize automatic submission.
 
 For the full refactor backlog concept overview, candidate lifecycle, promotion and generated refactor-only plan workflows, and audit-derived candidate completion behavior, see [`docs/refactor-backlog.md`](refactor-backlog.md). The refactor backlog hardening (backend service, orchestrator/audit mapping, and these MCP tools) is covered by the deterministic, local-only release smoke suite, runnable through `npm run release:smoke` (wrapping `scripts/release-smoke.sh`).
+
+## Plan Seed Tools (Local/Dev Inventory)
+
+The Plan Seed tools are registered under the `local-operator` profile and are part of the local/dev/server tool inventory. They are not default Planner Project-facing submission actions.
+
+* `create_plan_seed` — Create a project-scoped Plan Seed in `captured` status.
+* `list_plan_seeds` — List Plan Seeds for a project with optional `status` and `limit` filters.
+* `get_plan_seed` — Read a single Plan Seed by ID.
+* `get_plan_seed_planning_context` — Retrieve read-only planning context for a seed. This is retrieval-only: it does not create attempts, plans, runs, artifacts, or model calls.
+* `create_plan_attempt_from_seed` — Register exactly one draft Plan Attempt and Intent Packet from a captured seed plus externally reviewed Plan of Passes JSON. It marks the seed `planned` and links `plan_attempt_id`. It does not submit managed plans or create runs.
+* `update_plan_seed` — Update mutable capture fields of an editable `captured` or `deferred` seed.
+* `defer_plan_seed` — Mark a `captured` seed as `deferred`.
+* `reject_plan_seed` — Mark a `captured` or `deferred` seed as `rejected`.
+
+There is no `link_plan_seed_result` MCP action. Managed plan linkage is internal.
+
+For full Plan Seed semantics, capture boundaries, and lifecycle rules, see [`docs/project-planning-backlog-plan-seeds.md`](project-planning-backlog-plan-seeds.md).
 
 ---
 
@@ -163,7 +180,7 @@ The MCP server uses WAL mode and shares the database safely with the Go HTTP dae
 
 ## Registered Tools (Developer Tool Inventory)
 
-The registered tool set is determined by the `RELAY_MCP_PROFILE` environment variable. By default, under the `local-operator` profile, the server registers both the core submission tools and the 22 context broker tools. Under the `restricted` profile, only the 6 core submission/status tools are registered.
+The registered tool set is determined by the `RELAY_MCP_PROFILE` environment variable. By default, under the `local-operator` profile, the server registers the core submission tools, context broker tools, refactor backlog tools, and Plan Seed tools. Under the `restricted` profile, only the core submission/status tools are registered. The exact counts depend on the active profile and project configuration.
 
 ### 1. `submit_test_audit_packet`
 

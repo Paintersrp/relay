@@ -1,8 +1,12 @@
 package mcp
 
 import (
+	"database/sql"
 	"encoding/json"
+	"strings"
 	"testing"
+
+	appprojects "relay/internal/app/projects"
 )
 
 func TestServerToolsListIncludesPlanSeedTools(t *testing.T) {
@@ -52,6 +56,19 @@ func TestServerToolsListIncludesPlanSeedTools(t *testing.T) {
 	for _, name := range forbiddenTools {
 		if registeredNames[name] {
 			t.Errorf("forbidden tool %q was advertised in tools/list", name)
+		}
+	}
+
+	// Ensure no additional plan-seed-prefixed tools are advertised.
+	allowedPrefixes := map[string]bool{}
+	for _, name := range expectedPlanSeedTools {
+		allowedPrefixes[name] = true
+	}
+	for _, tool := range list.Tools {
+		if strings.HasPrefix(tool.Name, "plan_seed") || strings.HasPrefix(tool.Name, "create_plan_seed") || strings.HasPrefix(tool.Name, "list_plan_seed") || strings.HasPrefix(tool.Name, "get_plan_seed") || strings.HasPrefix(tool.Name, "update_plan_seed") || strings.HasPrefix(tool.Name, "defer_plan_seed") || strings.HasPrefix(tool.Name, "reject_plan_seed") {
+			if !allowedPrefixes[tool.Name] {
+				t.Errorf("unexpected plan-seed-related tool %q advertised in tools/list", tool.Name)
+			}
 		}
 	}
 }
@@ -522,4 +539,189 @@ func assertStringSlice(t *testing.T, got, want []string) {
 			t.Fatalf("expected %v, got %v", want, got)
 		}
 	}
+}
+
+func planSeedTableCounts(t *testing.T, db *sql.DB) map[string]int {
+	t.Helper()
+	return map[string]int{
+		"intent_packets": countTableRows(t, db, "intent_packets"),
+		"plan_attempts":  countTableRows(t, db, "plan_attempts"),
+		"plans":          countTableRows(t, db, "plans"),
+		"plan_passes":    countTableRows(t, db, "plan_passes"),
+		"runs":           countTableRows(t, db, "runs"),
+	}
+}
+
+func assertPlanSeedCountsEqual(t *testing.T, before, after map[string]int, msg string) {
+	t.Helper()
+	for _, tbl := range []string{"intent_packets", "plan_attempts", "plans", "plan_passes", "runs"} {
+		if before[tbl] != after[tbl] {
+			t.Errorf("%s: table %s row count changed from %d to %d", msg, tbl, before[tbl], after[tbl])
+		}
+	}
+}
+
+func TestPlanSeedMCPDuplicateAttemptBlocked(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	createArgs, _ := json.Marshal(map[string]any{
+		"project_id":    "relay",
+		"title":         "Dup Seed",
+		"quick_context": "Test duplicate blocker.",
+	})
+	res := srv.HandleCreatePlanSeed(createArgs)
+	if res.IsError {
+		t.Fatalf("create failed: %s", res.Content[0].Text)
+	}
+	var created planSeedToolOutput
+	_ = json.Unmarshal([]byte(res.Content[0].Text), &created)
+	seedID := created.Seed.SeedID
+
+	attemptArgs, _ := json.Marshal(map[string]any{
+		"project_id":             "relay",
+		"seed_id":                seedID,
+		"planner_pass_plan_json": map[string]any{"plan_meta": map[string]any{"plan_id": "dup"}},
+		"source_artifact_path":   "handoffs/packets/dup.json",
+	})
+	attemptRes := srv.HandleCreatePlanAttemptFromSeed(attemptArgs)
+	if attemptRes.IsError {
+		t.Fatalf("first attempt failed: %s", attemptRes.Content[0].Text)
+	}
+	var attemptOut planSeedToolOutput
+	_ = json.Unmarshal([]byte(attemptRes.Content[0].Text), &attemptOut)
+	if !attemptOut.OK || attemptOut.Seed == nil || attemptOut.Seed.Status != "planned" {
+		t.Fatalf("expected planned seed, got %+v", attemptOut)
+	}
+
+	beforeDuplicate := planSeedTableCounts(t, deps.Store.DB())
+
+	duplicateRes := srv.HandleCreatePlanAttemptFromSeed(attemptArgs)
+	if duplicateRes.IsError {
+		t.Fatalf("duplicate attempt returned error instead of blocker: %s", duplicateRes.Content[0].Text)
+	}
+	var duplicateOut planSeedToolOutput
+	_ = json.Unmarshal([]byte(duplicateRes.Content[0].Text), &duplicateOut)
+	if duplicateOut.OK || duplicateOut.BlockerCode != appprojects.PlanSeedBlockerSeedAlreadyPlanned {
+		t.Fatalf("expected SEED_ALREADY_PLANNED blocker, got %+v", duplicateOut)
+	}
+
+	assertPlanSeedCountsEqual(t, beforeDuplicate, planSeedTableCounts(t, deps.Store.DB()), "after duplicate attempt")
+}
+
+func TestPlanSeedMCPDeferredAndRejectedBlockAttempt(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	createSeed := func(title, action, reason string) string {
+		args, _ := json.Marshal(map[string]any{
+			"project_id":    "relay",
+			"title":         title,
+			"quick_context": "blocked",
+		})
+		res := srv.HandleCreatePlanSeed(args)
+		if res.IsError {
+			t.Fatalf("create failed: %s", res.Content[0].Text)
+		}
+		var out planSeedToolOutput
+		_ = json.Unmarshal([]byte(res.Content[0].Text), &out)
+		seedID := out.Seed.SeedID
+
+		reasonKey := action + "_reason"
+		lifeArgs, _ := json.Marshal(map[string]any{
+			"project_id": "relay",
+			"seed_id":    seedID,
+			reasonKey:    reason,
+		})
+		var lifeRes ToolCallResult
+		if action == "defer" {
+			lifeRes = srv.HandleDeferPlanSeed(lifeArgs)
+		} else {
+			lifeRes = srv.HandleRejectPlanSeed(lifeArgs)
+		}
+		if lifeRes.IsError {
+			t.Fatalf("%s failed: %s", action, lifeRes.Content[0].Text)
+		}
+		return seedID
+	}
+
+	attemptArgs := func(seedID string) json.RawMessage {
+		b, _ := json.Marshal(map[string]any{
+			"project_id":             "relay",
+			"seed_id":                seedID,
+			"planner_pass_plan_json": map[string]any{"plan_meta": map[string]any{"plan_id": "x"}},
+			"source_artifact_path":   "handoffs/packets/x.json",
+		})
+		return b
+	}
+
+	for _, tc := range []struct {
+		name    string
+		action  string
+		blocker string
+	}{
+		{"deferred", "defer", appprojects.PlanSeedBlockerSeedNotExpandable},
+		{"rejected", "reject", appprojects.PlanSeedBlockerSeedNotExpandable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			seedID := createSeed(tc.name, tc.action, "not now")
+			before := planSeedTableCounts(t, deps.Store.DB())
+
+			res := srv.HandleCreatePlanAttemptFromSeed(attemptArgs(seedID))
+			if res.IsError {
+				t.Fatalf("blocked attempt returned error instead of blocker: %s", res.Content[0].Text)
+			}
+			var out planSeedToolOutput
+			_ = json.Unmarshal([]byte(res.Content[0].Text), &out)
+			if out.OK || out.BlockerCode != tc.blocker {
+				t.Fatalf("expected %s blocker, got %+v", tc.blocker, out)
+			}
+
+			assertPlanSeedCountsEqual(t, before, planSeedTableCounts(t, deps.Store.DB()), "after blocked attempt")
+		})
+	}
+}
+
+func TestPlanSeedMCPAttemptMissingRequiredFields(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	args, _ := json.Marshal(map[string]any{
+		"project_id":    "relay",
+		"title":         "Missing Fields",
+		"quick_context": "Test missing fields.",
+	})
+	res := srv.HandleCreatePlanSeed(args)
+	if res.IsError {
+		t.Fatalf("create failed: %s", res.Content[0].Text)
+	}
+	var out planSeedToolOutput
+	_ = json.Unmarshal([]byte(res.Content[0].Text), &out)
+	seedID := out.Seed.SeedID
+
+	before := planSeedTableCounts(t, deps.Store.DB())
+
+	cases := []struct {
+		name string
+		body map[string]any
+	}{
+		{"missing planner_pass_plan_json", map[string]any{"project_id": "relay", "seed_id": seedID, "source_artifact_path": "x.json"}},
+		{"missing source_artifact_path", map[string]any{"project_id": "relay", "seed_id": seedID, "planner_pass_plan_json": map[string]any{}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := json.Marshal(tc.body)
+			res := srv.HandleCreatePlanAttemptFromSeed(body)
+			if res.IsError {
+				t.Fatalf("expected structured blocker result, got error: %s", res.Content[0].Text)
+			}
+			var out planSeedToolOutput
+			_ = json.Unmarshal([]byte(res.Content[0].Text), &out)
+			if out.OK || out.BlockerCode != appprojects.PlanSeedBlockerMissingPlanArtifact {
+				t.Fatalf("expected MISSING_PLAN_ARTIFACT blocker, got %+v", out)
+			}
+		})
+	}
+
+	assertPlanSeedCountsEqual(t, before, planSeedTableCounts(t, deps.Store.DB()), "after missing field attempts")
 }

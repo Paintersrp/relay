@@ -22,6 +22,8 @@ For final release-hardening verification, run the comprehensive release smoke sc
 bash scripts/release-smoke.sh
 ```
 
+The release script runs focused Plan Seed checks early (`go test ./internal/app/projects ./internal/api/projects ./internal/mcp -run PlanSeed -count=1` and `go run ./cmd/plan-seed-smoke`) before the broader suite.
+
 ### Individual Components
 
 You can run individual test suites for specific parts of the project:
@@ -41,6 +43,14 @@ You can run individual test suites for specific parts of the project:
 *   **Local Stdio Connector Self-Test**:
     ```bash
     npm run test:local-scripts
+    ```
+*   **Plan Seed Smoke Harness**:
+    ```bash
+    go run ./cmd/plan-seed-smoke
+    # or
+    make plan-seed-smoke
+    # or
+    npm run plan-seed-smoke
     ```
 *   **React Frontend Typecheck**:
     ```bash

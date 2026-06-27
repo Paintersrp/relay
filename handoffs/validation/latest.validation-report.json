@@ -2,53 +2,89 @@
   "schema_version": "3.0.0",
   "report_kind": "relay_make_validate_latest",
   "status": "passed",
-  "created_at": "2026-06-24T01:44:15Z",
-  "base_commit_short": "f5a203b10370",
-  "base_commit_sha": "f5a203b10370ef7f175daf861ec88352a78c3804",
+  "created_at": "2026-06-27T15:48:16Z",
+  "base_commit_short": "908a972d1cd2",
+  "base_commit_sha": "908a972d1cd2b4c49ce6309ef7f429398a3627e4",
   "validated_source_snapshot": {
-    "captured_at": "2026-06-24T01:44:30.815Z",
+    "captured_at": "2026-06-27T15:49:22.350Z",
     "model": "base_commit_plus_worktree_diff_excluding_validation_report_artifacts",
     "worktree_dirty": true,
-    "diff_sha256": "09695d00b2cedfd23f18620b3723a23c541dabdb665c5a250ada5ef1a2f38524",
+    "diff_sha256": "1265a3a7ded0464cd99457a044b627d6a3199161197b46b9891488d56170ad30",
     "diff_name_status": [
       {
-        "status": "M",
-        "path": "internal/compiler/compiler_test.go"
+        "status": "??",
+        "path": "cmd/plan-seed-smoke/main.go"
       },
       {
         "status": "M",
-        "path": "internal/pipeline/agent_execution_test.go"
+        "path": "docs/mcp.md"
       },
       {
         "status": "M",
-        "path": "internal/repos/discover.go"
+        "path": "docs/project-planning-backlog-plan-seeds.md"
       },
       {
         "status": "M",
-        "path": "internal/smoke/e2e_smoke_test.go"
+        "path": "docs/smoke.md"
       },
       {
         "status": "M",
-        "path": "internal/validationrunner/runner.go"
+        "path": "internal/api/projects/handler_test.go"
+      },
+      {
+        "status": "M",
+        "path": "internal/app/projects/plan_seed_service.go"
+      },
+      {
+        "status": "M",
+        "path": "internal/mcp/plan_seed_tools_test.go"
+      },
+      {
+        "status": "M",
+        "path": "Makefile"
+      },
+      {
+        "status": "M",
+        "path": "package.json"
+      },
+      {
+        "status": "M",
+        "path": "README.md"
+      },
+      {
+        "status": "M",
+        "path": "scripts/release-smoke.sh"
       }
     ],
-    "diff_stat": "internal/compiler/compiler_test.go        |  4 ++--\n internal/pipeline/agent_execution_test.go |  9 ++++++---\n internal/repos/discover.go                | 11 +++++++++--\n internal/smoke/e2e_smoke_test.go          | 22 +++++++++++++++++++++-\n internal/validationrunner/runner.go       | 14 +++++++++++++-\n 5 files changed, 51 insertions(+), 9 deletions(-)",
+    "diff_stat": "Makefile                                    |   5 +-\n README.md                                   |   2 +-\n docs/mcp.md                                 |  21 +-\n docs/project-planning-backlog-plan-seeds.md |  66 +++---\n docs/smoke.md                               |  10 +\n internal/api/projects/handler_test.go       | 324 ++++++++++++++++++++++------\n internal/app/projects/plan_seed_service.go  |  16 +-\n internal/mcp/plan_seed_tools_test.go        | 202 +++++++++++++++++\n package.json                                |   1 +\n scripts/release-smoke.sh                    |   8 +-\n 10 files changed, 549 insertions(+), 106 deletions(-)",
     "status_porcelain": [
-      " M internal/compiler/compiler_test.go",
-      " M internal/pipeline/agent_execution_test.go",
-      " M internal/repos/discover.go",
-      " M internal/smoke/e2e_smoke_test.go",
-      " M internal/validationrunner/runner.go"
+      " M docs/mcp.md",
+      " M docs/project-planning-backlog-plan-seeds.md",
+      " M docs/smoke.md",
+      " M internal/api/projects/handler_test.go",
+      " M internal/app/projects/plan_seed_service.go",
+      " M internal/mcp/plan_seed_tools_test.go",
+      " M Makefile",
+      " M package.json",
+      " M README.md",
+      " M scripts/release-smoke.sh",
+      "?? cmd/plan-seed-smoke/"
     ]
   },
   "post_report_status_porcelain": [
+    " M docs/mcp.md",
+    " M docs/project-planning-backlog-plan-seeds.md",
+    " M docs/smoke.md",
     " M handoffs/validation/latest.validation-report.json",
     " M handoffs/validation/latest.validation-summary.md",
-    " M internal/compiler/compiler_test.go",
-    " M internal/pipeline/agent_execution_test.go",
-    " M internal/repos/discover.go",
-    " M internal/smoke/e2e_smoke_test.go",
-    " M internal/validationrunner/runner.go"
+    " M internal/api/projects/handler_test.go",
+    " M internal/app/projects/plan_seed_service.go",
+    " M internal/mcp/plan_seed_tools_test.go",
+    " M Makefile",
+    " M package.json",
+    " M README.md",
+    " M scripts/release-smoke.sh",
+    "?? cmd/plan-seed-smoke/"
   ],
   "report_files": [
     "handoffs/validation/latest.validation-report.json",
@@ -59,8 +95,8 @@
       "step": 1,
       "name": "go-fmt-executor",
       "command": "go fmt ./internal/executor",
-      "started_at": "2026-06-24T01:44:15.464Z",
-      "completed_at": "2026-06-24T01:44:15.517Z",
+      "started_at": "2026-06-27T15:48:16.814Z",
+      "completed_at": "2026-06-27T15:48:17.370Z",
       "exit_code": 0,
       "status": "passed",
       "output_tail": "$ go fmt ./internal/executor\nexit_code: 0\n"
@@ -69,8 +105,8 @@
       "step": 2,
       "name": "go-test-executor",
       "command": "go test ./internal/executor/...",
-      "started_at": "2026-06-24T01:44:15.518Z",
-      "completed_at": "2026-06-24T01:44:15.718Z",
+      "started_at": "2026-06-27T15:48:17.371Z",
+      "completed_at": "2026-06-27T15:48:18.531Z",
       "exit_code": 0,
       "status": "passed",
       "output_tail": "$ go test ./internal/executor/...\nok  \trelay/internal/executor\t(cached)\nexit_code: 0\n"
@@ -79,18 +115,18 @@
       "step": 3,
       "name": "go-test-all",
       "command": "go test ./...",
-      "started_at": "2026-06-24T01:44:15.718Z",
-      "completed_at": "2026-06-24T01:44:17.379Z",
+      "started_at": "2026-06-27T15:48:18.532Z",
+      "completed_at": "2026-06-27T15:49:06.140Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "$ go test ./...\n?   \trelay/cmd/mcp-smoke\t[no test files]\n?   \trelay/cmd/mcpserver\t[no test files]\n?   \trelay/cmd/plan-api-smoke\t[no test files]\n?   \trelay/cmd/relay\t[no test files]\nok  \trelay/internal/api\t(cached)\nok  \trelay/internal/artifacts\t(cached)\nok  \trelay/internal/auditor\t(cached)\nok  \trelay/internal/compiler\t(cached)\nok  \trelay/internal/config\t(cached)\nok  \trelay/internal/contextpackets\t(cached)\nok  \trelay/internal/db\t(cached)\n?   \trelay/internal/devreload\t[no test files]\nok  \trelay/internal/events\t(cached)\nok  \trelay/internal/executor\t(cached)\nok  \trelay/internal/handlers\t(cached)\nok  \trelay/internal/instructions\t(cached)\nok  \trelay/internal/intake\t(cached)\nok  \trelay/internal/mcp\t(cached)\nok  \trelay/internal/pipeline\t(cached)\nok  \trelay/internal/plans\t(cached)\nok  \trelay/internal/projectmemory\t(cached)\nok  \trelay/internal/projects\t(cached)\nok  \trelay/internal/renderer\t(cached)\nok  \trelay/internal/repairer\t0.059s\nok  \trelay/internal/repos\t(cached)\nok  \trelay/internal/server\t(cached)\nok  \trelay/internal/smoke\t(cached)\nok  \trelay/internal/sources\t(cached)\nok  \trelay/internal/store\t(cached)\n?   \trelay/internal/store/generated\t[no test files]\nok  \trelay/internal/validation\t(cached)\nok  \trelay/internal/validationrunner\t(cached)\nok  \trelay/internal/views\t(cached)\nexit_code: 0\n"
+      "output_tail": "ok  \trelay/internal/api/projects\t(cached)\n?   \trelay/internal/api/runs\t[no test files]\n?   \trelay/internal/api/shared\t[no test files]\n?   \trelay/internal/app\t[no test files]\n?   \trelay/internal/app/audits\t[no test files]\nok  \trelay/internal/app/drift\t(cached)\nok  \trelay/internal/app/intake\t(cached)\nok  \trelay/internal/app/plans\t(cached)\nok  \trelay/internal/app/projects\t(cached)\n?   \trelay/internal/app/runs\t[no test files]\nok  \trelay/internal/architecture\t(cached)\nok  \trelay/internal/artifacts\t(cached)\nok  \trelay/internal/auditor\t(cached)\nok  \trelay/internal/compiler\t(cached)\nok  \trelay/internal/config\t(cached)\nok  \trelay/internal/contextpackets\t(cached)\nok  \trelay/internal/db\t(cached)\n?   \trelay/internal/devreload\t[no test files]\nok  \trelay/internal/events\t(cached)\nok  \trelay/internal/executor\t(cached)\nok  \trelay/internal/handlers\t(cached)\nok  \trelay/internal/instructions\t(cached)\nok  \trelay/internal/intake\t(cached)\nok  \trelay/internal/mcp\t30.179s\nok  \trelay/internal/pipeline\t(cached)\nok  \trelay/internal/projectmemory\t(cached)\nok  \trelay/internal/refactors\t(cached)\nok  \trelay/internal/renderer\t(cached)\nok  \trelay/internal/repairer\t2.332s\nok  \trelay/internal/repos\t(cached)\nok  \trelay/internal/server\t(cached)\nok  \trelay/internal/smoke\t3.713s\nok  \trelay/internal/sources\t(cached)\nok  \trelay/internal/store\t(cached)\n?   \trelay/internal/store/generated\t[no test files]\nok  \trelay/internal/validation\t(cached)\nok  \trelay/internal/validationrunner\t(cached)\nok  \trelay/internal/views\t(cached)\nexit_code: 0\n"
     },
     {
       "step": 4,
       "name": "web-typecheck",
       "command": "cd apps/web && npm run typecheck",
-      "started_at": "2026-06-24T01:44:17.379Z",
-      "completed_at": "2026-06-24T01:44:25.587Z",
+      "started_at": "2026-06-27T15:49:06.140Z",
+      "completed_at": "2026-06-27T15:49:15.530Z",
       "exit_code": 0,
       "status": "passed",
       "output_tail": "$ cd apps/web && npm run typecheck\n\n> relay-web@0.1.0 typecheck\n> tsc --noEmit\n\nexit_code: 0\n"
@@ -99,11 +135,11 @@
       "step": 5,
       "name": "web-build",
       "command": "cd apps/web && npm run build",
-      "started_at": "2026-06-24T01:44:25.587Z",
-      "completed_at": "2026-06-24T01:44:30.813Z",
+      "started_at": "2026-06-27T15:49:15.530Z",
+      "completed_at": "2026-06-27T15:49:22.349Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"/projects/sandbox/relay/apps/web/src/routes/runs/$runId/runExecuteVisualState.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"/projects/sandbox/relay/apps/web/src/routes/runs/$runId/-runExecuteVisualState.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"/projects/sandbox/relay/apps/web/src/routes/runs/$runId/runAuditVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"/projects/sandbox/relay/apps/web/src/routes/runs/$runId/-runAuditVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"/projects/sandbox/relay/apps/web/src/routes/runs/$runId/runCompileRenderVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"/projects/sandbox/relay/apps/web/src/routes/runs/$runId/-runCompileRenderVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"/projects/sandbox/relay/apps/web/src/routes/runs/$runId/runExecuteVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"/projects/sandbox/relay/apps/web/src/routes/runs/$runId/-runExecuteVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nexit_code: 0\n"
+      "output_tail": "  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runAuditVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runAuditVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runCompileRenderVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runCompileRenderVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runExecuteVisualState.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runExecuteVisualState.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runExecuteVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runExecuteVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nexit_code: 0\n"
     }
   ]
 }

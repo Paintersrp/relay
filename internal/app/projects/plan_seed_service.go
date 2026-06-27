@@ -218,7 +218,7 @@ func (s *Service) CreatePlanAttemptFromSeed(ctx context.Context, projectID, seed
 		IntentPacket: appplans.IntentPacketInput{
 			Summary:            seed.Title,
 			LiteralUserRequest: seed.QuickContext,
-			Constraints:        parseJSONStringSlice(seed.ConstraintsJson),
+			Constraints:        buildIntentConstraintsFromSeed(seed),
 			Source: appplans.IntentSource{
 				CapturedFrom:       appplans.CapturedFromImportedReq,
 				CapturedBy:         "plan_seed_bridge",
@@ -283,6 +283,20 @@ func (s *Service) CreatePlanAttemptFromSeed(ctx context.Context, projectID, seed
 		ReviewAction: attemptResult.ReviewAction,
 		ReviewGate:   attemptResult.ReviewGate,
 	}, nil
+}
+
+func buildIntentConstraintsFromSeed(seed *store.PlanSeed) []string {
+	constraints := parseJSONStringSlice(seed.ConstraintsJson)
+	nonGoals := parseJSONStringSlice(seed.NonGoalsJson)
+	if len(nonGoals) == 0 {
+		return constraints
+	}
+	combined := make([]string, 0, len(constraints)+len(nonGoals))
+	combined = append(combined, constraints...)
+	for _, ng := range nonGoals {
+		combined = append(combined, "Non-goal: "+ng)
+	}
+	return combined
 }
 
 func canonicalPlanSeedPlanJSON(raw json.RawMessage) (json.RawMessage, string, string, error) {
