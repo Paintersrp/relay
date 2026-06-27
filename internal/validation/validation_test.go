@@ -476,6 +476,36 @@ func TestValidation(t *testing.T) {
 		}
 	})
 
+	t.Run("Prohibited Example Does Not Mask Later Direct Delegation", func(t *testing.T) {
+		packet := cloneValidPacket()
+		exec := packet["execution_payload"].(map[string]interface{})
+		prohibitedSample := joinPhrase("wire", "as", "needed")
+
+		exec["code_requirements"] = []interface{}{map[string]interface{}{
+			"id": "CR1",
+			"requirement": strings.Join([]string{
+				"## Prohibited examples:",
+				"- The invalid sample `" + prohibitedSample + "` documents language that policy authors must not use.",
+				"",
+				"Implementation directive:",
+				"Update internal/validation/validation.go and " + prohibitedSample + ".",
+			}, "\n"),
+			"applies_to": []interface{}{"internal/validation/validation.go"},
+		}}
+
+		packetJSON, _ := json.Marshal(packet)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if report.Valid {
+			t.Fatalf("expected invalid report")
+		}
+		if !hasErrorCode(report, "CANONICAL_PACKET_VAGUE_INTENT") {
+			t.Fatalf("expected CANONICAL_PACKET_VAGUE_INTENT, got %v", report.Errors)
+		}
+	})
+
 	t.Run("Visible UI Workflow Without Frontend Target Fails", func(t *testing.T) {
 		packet := cloneValidPacket()
 		exec := packet["execution_payload"].(map[string]interface{})

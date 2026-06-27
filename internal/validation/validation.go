@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/xeipuuv/gojsonschema"
@@ -334,10 +335,15 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 
 	// 1. Scan execution-critical fields for vague or decision-delegating intent.
 	for _, item := range collectExecutionTextItems(exec) {
-		if match, ok := findDecisionDelegatingPhrase(item.text); ok {
+		blocked := false
+		for _, match := range findDecisionDelegatingPhraseMatches(item.text) {
 			if !isProhibitedExampleContext(item.text, match.start, match.end) {
 				issues = append(issues, addVagueIntentIssue(match.phrase, item.fieldPath, "decision-delegating execution language is not allowed"))
+				blocked = true
+				break
 			}
+		}
+		if blocked {
 			continue
 		}
 		if phrase, ok := containsVagueQualityPhrase(item.text); ok {
@@ -380,8 +386,11 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 					insts, _ := stepObj["instructions"].(string)
 					criteriaText := strings.Join(stringSliceFromInterface(stepObj["acceptance_criteria"]), " ")
 					textToCheck := strings.Join([]string{title, insts, criteriaText}, " ")
-					if match, found := findDecisionDelegatingPhrase(textToCheck); found && !isProhibitedExampleContext(textToCheck, match.start, match.end) {
-						issues = append(issues, addVagueIntentIssue(match.phrase, fieldPath, "inspect step contains decision-delegating execution language"))
+					for _, match := range findDecisionDelegatingPhraseMatches(textToCheck) {
+						if !isProhibitedExampleContext(textToCheck, match.start, match.end) {
+							issues = append(issues, addVagueIntentIssue(match.phrase, fieldPath, "inspect step contains decision-delegating execution language"))
+							break
+						}
 					}
 				}
 			}
@@ -468,7 +477,15 @@ func containsDecisionDelegatingPhrase(text string) (string, bool) {
 }
 
 func findDecisionDelegatingPhrase(text string) (phraseMatch, bool) {
-	return findPhrase(text, []string{
+	matches := findDecisionDelegatingPhraseMatches(text)
+	if len(matches) == 0 {
+		return phraseMatch{}, false
+	}
+	return matches[0], true
+}
+
+func findDecisionDelegatingPhraseMatches(text string) []phraseMatch {
+	return findPhraseMatches(text, []string{
 		"decide best approach",
 		"wire as needed",
 		"inspect and decide",
@@ -486,13 +503,36 @@ func containsPhrase(text string, phrases []string) (string, bool) {
 }
 
 func findPhrase(text string, phrases []string) (phraseMatch, bool) {
+	matches := findPhraseMatches(text, phrases)
+	if len(matches) == 0 {
+		return phraseMatch{}, false
+	}
+	return matches[0], true
+}
+
+func findPhraseMatches(text string, phrases []string) []phraseMatch {
 	lower := strings.ToLower(text)
+	var matches []phraseMatch
 	for _, phrase := range phrases {
-		if idx := strings.Index(lower, phrase); idx >= 0 {
-			return phraseMatch{phrase: phrase, start: idx, end: idx + len(phrase)}, true
+		searchStart := 0
+		for {
+			idx := strings.Index(lower[searchStart:], phrase)
+			if idx < 0 {
+				break
+			}
+			start := searchStart + idx
+			end := start + len(phrase)
+			matches = append(matches, phraseMatch{phrase: phrase, start: start, end: end})
+			searchStart = end
 		}
 	}
-	return phraseMatch{}, false
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].start == matches[j].start {
+			return len(matches[i].phrase) > len(matches[j].phrase)
+		}
+		return matches[i].start < matches[j].start
+	})
+	return matches
 }
 
 func isProhibitedExampleContext(text string, matchStart int, matchEnd int) bool {
