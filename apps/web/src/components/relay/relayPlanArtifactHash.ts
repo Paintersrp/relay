@@ -61,6 +61,37 @@ export function canonicalPlanJsonForHash(plan: PlannerPassPlan): string {
   return stableStringify(plan);
 }
 
+function datePartFromPlan(plan: PlannerPassPlan, fallbackDate: Date): string {
+  const createdAt = plan.plan_meta.created_at;
+  const parsed = createdAt ? new Date(createdAt) : undefined;
+  const date = parsed && !Number.isNaN(parsed.getTime()) ? parsed : fallbackDate;
+  return date.toISOString().slice(0, 10);
+}
+
+function slugifyArtifactName(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "plan"
+  );
+}
+
+/**
+ * Derive the repo-relative artifact path Relay records for the current Plan JSON.
+ * This is generated from plan metadata so operators do not need to type duplicate
+ * artifact bookkeeping after validating the editor JSON.
+ */
+export function derivePlanJsonArtifactPath(
+  plan: PlannerPassPlan,
+  fallbackDate = new Date(),
+): string {
+  const nameSource = plan.plan_meta.plan_id || plan.plan_meta.title || "plan";
+  const datePart = datePartFromPlan(plan, fallbackDate);
+  const slug = slugifyArtifactName(nameSource);
+  return `handoffs/plans/${datePart}_${slug}.planner-pass-plan.json`;
+}
+
 /**
  * Compute the sha256 hash of the canonical stable-stringified Plan JSON.
  * Returns `sha256:<hex>`.

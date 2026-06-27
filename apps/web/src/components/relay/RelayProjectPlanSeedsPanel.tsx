@@ -368,10 +368,6 @@ export function RelayProjectPlanSeedsPanel({ projectId }: { projectId: string })
     setLifecycleClientError(null);
 
     const reason = lifecycleReason.trim();
-    if (!reason) {
-      setLifecycleClientError("A reason is required.");
-      return;
-    }
     if (!lifecycleSeed) return;
 
     lifecycleMutation.mutate({
@@ -711,7 +707,7 @@ export function RelayProjectPlanSeedsPanel({ projectId }: { projectId: string })
             />
 
             <div className="space-y-1.5">
-              <Label htmlFor="plan-seed-lifecycle-reason">Reason</Label>
+              <Label htmlFor="plan-seed-lifecycle-reason">Reason (optional)</Label>
               <Textarea
                 id="plan-seed-lifecycle-reason"
                 className="min-h-24"

@@ -13,14 +13,12 @@ describe("relayPlanAttemptReviewState", () => {
       settingsLoadState: "loaded",
       settingsProjectId: "project-1",
       hasSettings: true,
-      planPath: "handoffs/plan.json",
-      planSha: "sha256:abc",
       userRequest: "Start PASS-007",
       state: "validated",
       revisionMode: false,
     };
 
-    it("allows creation when all fields are valid and settings are loaded", () => {
+    it("allows creation when settings and literal request are present", () => {
       expect(canCreateAttempt(defaultParams)).toBe(true);
     });
 
@@ -40,11 +38,6 @@ describe("relayPlanAttemptReviewState", () => {
           settingsProjectId: "project-2",
         })
       ).toBe(false);
-    });
-
-    it("disables creation if plan path or plan sha is empty", () => {
-      expect(canCreateAttempt({ ...defaultParams, planPath: "" })).toBe(false);
-      expect(canCreateAttempt({ ...defaultParams, planSha: "" })).toBe(false);
     });
 
     it("disables creation if literal user request is empty", () => {

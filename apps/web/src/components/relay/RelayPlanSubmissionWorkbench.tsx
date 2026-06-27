@@ -26,7 +26,10 @@ import {
   getPolicyFields,
   getProjectIdForMutation,
 } from "@/components/relay/relayPlanAttemptReviewState";
-import { computePlanJsonSha256 } from "@/components/relay/relayPlanArtifactHash";
+import {
+  computePlanJsonSha256,
+  derivePlanJsonArtifactPath,
+} from "@/components/relay/relayPlanArtifactHash";
 import {
   canApprove,
   canRevise,
@@ -261,8 +264,7 @@ interface ArtifactIntentCaptureProps {
   literalUserRequest: string; intentConstraintsText: string;
   isCreating: boolean; canCreate: boolean; parsedPlan?: PlannerPassPlan;
   settingsLoadState: SettingsLoadState; settings?: PlanReviewSettingsAPI;
-  onProjectIdChange: (v: string) => void; onJsonPathChange: (v: string) => void;
-  onJsonSha256Change: (v: string) => void; onMarkdownPathChange: (v: string) => void;
+  onProjectIdChange: (v: string) => void; onMarkdownPathChange: (v: string) => void;
   onMarkdownSha256Change: (v: string) => void; onLiteralRequestChange: (v: string) => void;
   onConstraintsChange: (v: string) => void; onComputeHash: () => void; onCreateAttempt: () => void;
 }
@@ -280,7 +282,7 @@ function ArtifactIntentCapturePanel(props: ArtifactIntentCaptureProps) {
       </div>
       {props.parsedPlan && <PreviewSummary preview={getPlanSubmissionPreview(props.parsedPlan)} />}
       <div className="space-y-3 border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] px-4 py-3">
-        <SectionHeader title="Artifact References" subtitle="Required before creating a draft attempt. Paths are repo-relative." />
+        <SectionHeader title="Plan JSON Artifact Evidence" subtitle="Derived from the validated editor JSON. No manual artifact path is required." />
         <label className="block">
           <span className={labelClass}>Project ID <span className="text-destructive">*</span></span>
           <input type="text" value={props.projectId} onChange={(e) => props.onProjectIdChange(e.target.value)} placeholder="e.g. proj_abc123" className={inputClass} />
@@ -296,27 +298,29 @@ function ArtifactIntentCapturePanel(props: ArtifactIntentCaptureProps) {
             </p>
           )}
         </label>
-        <label className="block">
-          <span className={labelClass}>Plan JSON Artifact Path <span className="text-destructive">*</span></span>
-          <input type="text" value={props.planJsonArtifactPath} onChange={(e) => props.onJsonPathChange(e.target.value)} placeholder="e.g. handoffs/planner/2026-06-26_plan.json" className={inputClass} />
-        </label>
-        <label className="block">
-          <div className="flex items-center justify-between gap-2">
-            <span className={labelClass}>Plan JSON SHA-256 <span className="text-destructive">*</span></span>
+        <div className="space-y-3 border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className={labelClass}>Generated JSON Reference</span>
             <button type="button" onClick={props.onComputeHash} className="flex items-center gap-1 text-[10px] text-[var(--relay-accent)] hover:underline">
-              <Hash className="size-3" />Compute from editor JSON
+              <Hash className="size-3" />Recompute from editor JSON
             </button>
           </div>
-          <input type="text" value={props.planJsonArtifactSha256} onChange={(e) => props.onJsonSha256Change(e.target.value)} placeholder="sha256:..." className={cn(inputClass, "text-[11px]")} />
-          <p className="mt-1 text-[10px] text-muted-foreground">Computed from current editor JSON; backend will verify.</p>
-        </label>
+          <MetaRow label="Path" value={props.planJsonArtifactPath} mono />
+          <MetaRow label="SHA-256" value={props.planJsonArtifactSha256} mono />
+          {!props.planJsonArtifactSha256 && (
+            <div className="flex items-start gap-2 border border-warning/30 bg-warning/10 px-3 py-2 text-[11px] text-warning">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              Hash will be computed from the current editor JSON before creating the attempt.
+            </div>
+          )}
+        </div>
         <label className="block">
-          <span className={labelClass}>Plan Markdown Artifact Path <span className="text-muted-foreground/60">(optional)</span></span>
+          <span className={labelClass}>Optional Markdown Companion Path</span>
           <input type="text" value={props.planMarkdownArtifactPath} onChange={(e) => props.onMarkdownPathChange(e.target.value)} placeholder="e.g. handoffs/planner/2026-06-26_plan.md" className={inputClass} />
         </label>
         {props.planMarkdownArtifactPath.trim() && (
           <label className="block">
-            <span className={labelClass}>Plan Markdown SHA-256</span>
+            <span className={labelClass}>Optional Markdown Companion SHA-256</span>
             <input type="text" value={props.planMarkdownArtifactSha256} onChange={(e) => props.onMarkdownSha256Change(e.target.value)} placeholder="sha256:..." className={cn(inputClass, "text-[11px]")} />
           </label>
         )}
@@ -663,8 +667,7 @@ interface RightPaneProps {
   planMarkdownArtifactPath: string; planMarkdownArtifactSha256: string;
   literalUserRequest: string; intentConstraintsText: string; canCreate: boolean;
   settingsLoadState: SettingsLoadState;
-  onProjectIdChange: (v: string) => void; onJsonPathChange: (v: string) => void;
-  onJsonSha256Change: (v: string) => void; onMarkdownPathChange: (v: string) => void;
+  onProjectIdChange: (v: string) => void; onMarkdownPathChange: (v: string) => void;
   onMarkdownSha256Change: (v: string) => void; onLiteralRequestChange: (v: string) => void;
   onConstraintsChange: (v: string) => void; onComputeHash: () => void; onCreateAttempt: () => void;
   modelCallConfirmed: boolean; forceHighAssurance: boolean; jsonArtifactReviewed: boolean;
@@ -706,8 +709,7 @@ function RightPane(props: RightPaneProps) {
         planMarkdownArtifactSha256={props.planMarkdownArtifactSha256} literalUserRequest={props.literalUserRequest}
         intentConstraintsText={props.intentConstraintsText} isCreating={false} canCreate={props.canCreate}
         parsedPlan={parsedPlan} settingsLoadState={props.settingsLoadState} settings={props.settings}
-        onProjectIdChange={props.onProjectIdChange} onJsonPathChange={props.onJsonPathChange}
-        onJsonSha256Change={props.onJsonSha256Change} onMarkdownPathChange={props.onMarkdownPathChange}
+        onProjectIdChange={props.onProjectIdChange} onMarkdownPathChange={props.onMarkdownPathChange}
         onMarkdownSha256Change={props.onMarkdownSha256Change} onLiteralRequestChange={props.onLiteralRequestChange}
         onConstraintsChange={props.onConstraintsChange} onComputeHash={props.onComputeHash} onCreateAttempt={props.onCreateAttempt}
       />
@@ -771,8 +773,7 @@ function RightPane(props: RightPaneProps) {
                 planMarkdownArtifactSha256={props.planMarkdownArtifactSha256} literalUserRequest={props.literalUserRequest}
                 intentConstraintsText={props.intentConstraintsText} isCreating={false} canCreate={props.canCreate}
                 parsedPlan={parsedPlan} settingsLoadState={props.settingsLoadState} settings={props.settings}
-                onProjectIdChange={props.onProjectIdChange} onJsonPathChange={props.onJsonPathChange}
-                onJsonSha256Change={props.onJsonSha256Change} onMarkdownPathChange={props.onMarkdownPathChange}
+                onProjectIdChange={props.onProjectIdChange} onMarkdownPathChange={props.onMarkdownPathChange}
                 onMarkdownSha256Change={props.onMarkdownSha256Change} onLiteralRequestChange={props.onLiteralRequestChange}
                 onConstraintsChange={props.onConstraintsChange} onComputeHash={props.onComputeHash} onCreateAttempt={props.onCreateAttempt}
               />
@@ -875,8 +876,6 @@ export function RelayPlanSubmissionWorkbench() {
     settingsLoadState,
     settingsProjectId: settingsProjectId ?? "",
     hasSettings: !!settings,
-    planPath: planJsonArtifactPath,
-    planSha: planJsonArtifactSha256,
     userRequest: literalUserRequest,
     state,
     revisionMode,
@@ -886,6 +885,14 @@ export function RelayPlanSubmissionWorkbench() {
     const pid = plan.plan_meta.project_id ?? plan.plan_meta.projectId ?? "";
     if (pid) setProjectId(pid);
     if (plan.source_intent.summary) setLiteralUserRequest((prev) => prev.trim() ? prev : plan.source_intent.summary);
+  }, []);
+
+  const deriveCurrentPlanArtifact = React.useCallback(async (plan: PlannerPassPlan) => {
+    const path = derivePlanJsonArtifactPath(plan);
+    setPlanJsonArtifactPath(path);
+    const sha256 = await computePlanJsonSha256(plan);
+    setPlanJsonArtifactSha256(sha256);
+    return { path, sha256 };
   }, []);
 
   const resetResultState = React.useCallback(() => {
@@ -902,7 +909,11 @@ export function RelayPlanSubmissionWorkbench() {
 
   const clearEditor = () => {
     setRawJson(""); setState("draft"); setPlanAttempt(undefined); setIntentPacket(undefined);
-    setGate(undefined); setSettings(undefined); setRevisionMode(false); resetResultState();
+    setGate(undefined); setSettings(undefined); setRevisionMode(false);
+    setPlanJsonArtifactPath(""); setPlanJsonArtifactSha256("");
+    setPlanMarkdownArtifactPath(""); setPlanMarkdownArtifactSha256("");
+    setLiteralUserRequest(""); setIntentConstraintsText("");
+    resetResultState();
   };
 
   const handleValidate = async () => {
@@ -919,6 +930,12 @@ export function RelayPlanSubmissionWorkbench() {
       if (response.validation.valid) {
         setState("validated"); setValidatedRawJson(rawJson); setParsedPlan(parsed.plan);
         setIssues(response.validation.issues); prefillFromPlan(parsed.plan);
+        try {
+          await deriveCurrentPlanArtifact(parsed.plan);
+        } catch {
+          setPlanJsonArtifactPath(derivePlanJsonArtifactPath(parsed.plan));
+          setPlanJsonArtifactSha256("");
+        }
         // Settings are loaded reactively by the projectId effect; no inline fetch needed.
       } else {
         setState("validation_failed"); setValidatedRawJson(undefined); setParsedPlan(undefined); setIssues(response.validation.issues);
@@ -941,8 +958,7 @@ export function RelayPlanSubmissionWorkbench() {
       return;
     }
     try {
-      const hash = await computePlanJsonSha256(parsed.plan);
-      setPlanJsonArtifactSha256(hash);
+      await deriveCurrentPlanArtifact(parsed.plan);
       setParsedPlan(parsed.plan);
     } catch {
       setActionError({ message: "Unable to compute Plan JSON hash in this browser.", issues: [] });
@@ -973,6 +989,13 @@ export function RelayPlanSubmissionWorkbench() {
     // Keep cached display state in sync with what we're about to submit.
     setParsedPlan(currentPlan);
     setValidatedRawJson(rawJson);
+    let artifactEvidence: { path: string; sha256: string };
+    try {
+      artifactEvidence = await deriveCurrentPlanArtifact(currentPlan);
+    } catch {
+      setActionError({ message: "Unable to compute Plan JSON artifact evidence in this browser.", issues: [] });
+      return;
+    }
 
     const constraints = splitConstraints(intentConstraintsText);
     // REQ-003: In revision mode use attempt's project ID so the input field cannot redirect to a different project.
@@ -995,16 +1018,16 @@ export function RelayPlanSubmissionWorkbench() {
     });
 
     const revisionRequest = {
-      planArtifactRef: { path: planJsonArtifactPath.trim(), sha256: planJsonArtifactSha256.trim(), artifactKind: "planner-pass-plan-json" as const },
+      planArtifactRef: { path: artifactEvidence.path, sha256: artifactEvidence.sha256, artifactKind: "planner-pass-plan-json" as const },
       optionalMarkdownRef: planMarkdownArtifactPath.trim() && planMarkdownArtifactSha256.trim()
         ? { path: planMarkdownArtifactPath.trim(), sha256: planMarkdownArtifactSha256.trim(), artifactKind: "planner-pass-plan-markdown" as const }
         : undefined,
-      rawPlanJson: { content: currentPlan, contentHash: planJsonArtifactSha256.trim() },
+      rawPlanJson: { content: currentPlan, contentHash: artifactEvidence.sha256 },
       intentPacket: {
         summary: currentPlan.source_intent.summary,
         literalUserRequest: literalUserRequest.trim(),
         constraints,
-        source: { capturedFrom: "planner_chat" as const, capturedBy: "relay-plan-review-ui", sourceArtifactPath: planJsonArtifactPath.trim() },
+        source: { capturedFrom: "planner_chat" as const, capturedBy: "relay-plan-review-ui", sourceArtifactPath: artifactEvidence.path },
         redactionStatus: "verified_no_secrets" as const,
       },
     };
@@ -1202,8 +1225,7 @@ export function RelayPlanSubmissionWorkbench() {
               planMarkdownArtifactSha256={planMarkdownArtifactSha256} literalUserRequest={literalUserRequest}
               intentConstraintsText={intentConstraintsText} canCreate={canCreate}
               settingsLoadState={settingsLoadState}
-              onProjectIdChange={setProjectId} onJsonPathChange={setPlanJsonArtifactPath}
-              onJsonSha256Change={setPlanJsonArtifactSha256} onMarkdownPathChange={setPlanMarkdownArtifactPath}
+              onProjectIdChange={setProjectId} onMarkdownPathChange={setPlanMarkdownArtifactPath}
               onMarkdownSha256Change={setPlanMarkdownArtifactSha256} onLiteralRequestChange={setLiteralUserRequest}
               onConstraintsChange={setIntentConstraintsText} onComputeHash={handleComputeHash}
               onCreateAttempt={handleCreateAttempt} modelCallConfirmed={modelCallConfirmed}

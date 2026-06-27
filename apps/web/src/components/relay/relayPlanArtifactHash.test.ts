@@ -4,6 +4,7 @@ import {
   sha256String,
   canonicalPlanJsonForHash,
   computePlanJsonSha256,
+  derivePlanJsonArtifactPath,
 } from "./relayPlanArtifactHash";
 import type { PlannerPassPlan } from "@/features/relay-plans";
 
@@ -117,6 +118,50 @@ describe("canonicalPlanJsonForHash", () => {
 
   it("contains the plan_id", () => {
     expect(canonicalPlanJsonForHash(plan)).toContain("plan-001");
+  });
+});
+
+describe("derivePlanJsonArtifactPath", () => {
+  it("uses plan_meta.created_at and plan_id for deterministic artifact paths", () => {
+    const plan: PlannerPassPlan = {
+      plan_meta: {
+        plan_id: "plan-Example_ID",
+        schema_version: "1.0.0",
+        created_at: "2026-06-27T12:34:56Z",
+        title: "Ignored Title",
+        goal: "Goal",
+        repo_target: "owner/repo",
+        branch_context: "main",
+        status: "active",
+      },
+      source_intent: { summary: "Summary" },
+      passes: [],
+    };
+
+    expect(derivePlanJsonArtifactPath(plan)).toBe(
+      "handoffs/plans/2026-06-27_plan-example-id.planner-pass-plan.json",
+    );
+  });
+
+  it("falls back to title and supplied date when metadata is missing", () => {
+    const plan: PlannerPassPlan = {
+      plan_meta: {
+        plan_id: "",
+        schema_version: "1.0.0",
+        created_at: "",
+        title: "My Plan!",
+        goal: "Goal",
+        repo_target: "owner/repo",
+        branch_context: "main",
+        status: "active",
+      },
+      source_intent: { summary: "Summary" },
+      passes: [],
+    };
+
+    expect(
+      derivePlanJsonArtifactPath(plan, new Date("2026-06-28T01:02:03Z")),
+    ).toBe("handoffs/plans/2026-06-28_my-plan.planner-pass-plan.json");
   });
 });
 

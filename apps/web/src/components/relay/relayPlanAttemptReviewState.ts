@@ -37,8 +37,6 @@ export function canCreateAttempt({
   settingsLoadState,
   settingsProjectId,
   hasSettings,
-  planPath,
-  planSha,
   userRequest,
   state,
   revisionMode,
@@ -47,8 +45,6 @@ export function canCreateAttempt({
   settingsLoadState: string;
   settingsProjectId: string;
   hasSettings: boolean;
-  planPath: string;
-  planSha: string;
   userRequest: string;
   state: string;
   revisionMode: boolean;
@@ -62,8 +58,6 @@ export function canCreateAttempt({
   return (
     trimmedPid.length > 0 &&
     hasCurrentProjectSettings &&
-    planPath.trim().length > 0 &&
-    planSha.trim().length > 0 &&
     userRequest.trim().length > 0 &&
     (state === "validated" || revisionMode)
   );
