@@ -17,6 +17,7 @@ type IntakeInput struct {
 	Source                 string
 	ExecutorAdapter        string
 	ExecutorAdapter2       string
+	ExecutorModelProfile   string
 	PlanID                 string
 	PlanIDSnake            string
 	PassID                 string

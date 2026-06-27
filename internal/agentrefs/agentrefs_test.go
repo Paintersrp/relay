@@ -15,6 +15,9 @@ func TestValidateRepoRelativePath_AcceptsNormal(t *testing.T) {
 		"a/b/c/d.go",
 		"docs/generated/agent-references/index.json",
 		"internal/agentrefs/types.go",
+		"apps/web/src/routes/runs/$runId/execute.tsx",
+		"apps/web/src/routes/$teamId/settings.tsx",
+		"internal/db/queries/$dynamic.sql",
 	}
 	for _, c := range cases {
 		if err := ValidateRepoRelativePath(c); err != nil {

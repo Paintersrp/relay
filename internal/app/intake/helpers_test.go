@@ -67,6 +67,30 @@ func TestResolveIntakeExecutorAdapter(t *testing.T) {
 			wantExplicit: false,
 			wantErr:      false,
 		},
+		{
+			name:         "codex_cli alias normalizes to codex",
+			input:        IntakeInput{ExecutorAdapter: "codex_cli"},
+			metadata:     nil,
+			wantAdapter:  "codex",
+			wantExplicit: true,
+			wantErr:      false,
+		},
+		{
+			name:         "antigravity_cli alias normalizes to antigravity",
+			input:        IntakeInput{ExecutorAdapter: "antigravity_cli"},
+			metadata:     nil,
+			wantAdapter:  "antigravity",
+			wantExplicit: true,
+			wantErr:      false,
+		},
+		{
+			name:         "target_executor antigravity maps via fallback",
+			input:        IntakeInput{},
+			metadata:     map[string]string{"target_executor": "antigravity"},
+			wantAdapter:  "antigravity",
+			wantExplicit: true,
+			wantErr:      false,
+		},
 	}
 
 	for _, tc := range cases {
@@ -94,69 +118,105 @@ func TestResolveIntakeExecutorAdapter(t *testing.T) {
 func TestResolveIntakeRecommendedModel(t *testing.T) {
 	cases := []struct {
 		name      string
+		input     IntakeInput
 		metadata  map[string]string
 		wantModel string
 	}{
 		{
 			name:      "no metadata defaults to deepseek-v4-pro",
+			input:     IntakeInput{},
 			metadata:  nil,
 			wantModel: "deepseek-v4-pro",
 		},
 		{
 			name:      "empty metadata defaults to deepseek-v4-pro",
+			input:     IntakeInput{},
 			metadata:  map[string]string{},
 			wantModel: "deepseek-v4-pro",
 		},
 		{
 			name:      "explicit recommended_model wins",
+			input:     IntakeInput{},
 			metadata:  map[string]string{"recommended_model": "gpt-5", "model": "claude"},
 			wantModel: "gpt-5",
 		},
 		{
 			name:      "executor_model_profile wins when recommended_model missing",
+			input:     IntakeInput{},
 			metadata:  map[string]string{"executor_model_profile": "deepseek-v4-pro", "model": "gemini"},
 			wantModel: "deepseek-v4-pro",
 		},
 		{
 			name:      "model key wins when others missing",
+			input:     IntakeInput{},
 			metadata:  map[string]string{"model": "deepseek-v4-flash"},
 			wantModel: "deepseek-v4-flash",
 		},
 		{
 			name:      "target_executor deepseek maps to deepseek-v4-pro",
+			input:     IntakeInput{},
 			metadata:  map[string]string{"target_executor": "deepseek"},
 			wantModel: "deepseek-v4-pro",
 		},
 		{
 			name:      "target_executor deepseek-v4-pro maps to deepseek-v4-pro",
+			input:     IntakeInput{},
 			metadata:  map[string]string{"target_executor": "deepseek-v4-pro"},
 			wantModel: "deepseek-v4-pro",
 		},
 		{
 			name:      "target_executor deepseek-v4-flash maps to deepseek-v4-flash",
+			input:     IntakeInput{},
 			metadata:  map[string]string{"target_executor": "deepseek-v4-flash"},
 			wantModel: "deepseek-v4-flash",
 		},
 		{
 			name:      "target_executor opencode defaults to deepseek-v4-pro",
+			input:     IntakeInput{},
 			metadata:  map[string]string{"target_executor": "opencode"},
 			wantModel: "deepseek-v4-pro",
 		},
 		{
 			name:      "target_executor opencode_go defaults to deepseek-v4-pro",
+			input:     IntakeInput{},
 			metadata:  map[string]string{"target_executor": "opencode_go"},
 			wantModel: "deepseek-v4-pro",
 		},
 		{
 			name:      "target_executor unknown still defaults to deepseek-v4-pro",
+			input:     IntakeInput{},
 			metadata:  map[string]string{"target_executor": "cline"},
+			wantModel: "deepseek-v4-pro",
+		},
+		{
+			name:      "explicit input ExecutorModelProfile overrides metadata",
+			input:     IntakeInput{ExecutorModelProfile: "claude-4"},
+			metadata:  map[string]string{"recommended_model": "gpt-5"},
+			wantModel: "claude-4",
+		},
+		{
+			name:      "explicit input ExecutorModelProfile overrides target_executor fallback",
+			input:     IntakeInput{ExecutorModelProfile: "deepseek-v4-pro"},
+			metadata:  map[string]string{"target_executor": "deepseek-v4-flash"},
+			wantModel: "deepseek-v4-pro",
+		},
+		{
+			name:      "codex metadata preserves explicit model",
+			input:     IntakeInput{},
+			metadata:  map[string]string{"target_executor": "codex", "recommended_model": "gpt-5"},
+			wantModel: "gpt-5",
+		},
+		{
+			name:      "antigravity metadata preserves explicit model",
+			input:     IntakeInput{},
+			metadata:  map[string]string{"target_executor": "antigravity", "executor_model_profile": "deepseek-v4-pro"},
 			wantModel: "deepseek-v4-pro",
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			model := resolveIntakeRecommendedModel(tc.metadata)
+			model := resolveIntakeRecommendedModel(tc.input, tc.metadata)
 			if model != tc.wantModel {
 				t.Errorf("expected model %q, got %q", tc.wantModel, model)
 			}

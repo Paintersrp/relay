@@ -94,7 +94,7 @@ func (s *Service) IntakePlannerHandoff(ctx context.Context, input IntakeInput) (
 		title = deriveRunTitleFromMarkdown(markdown)
 	}
 
-	recommendedModel := resolveIntakeRecommendedModel(metadata)
+	recommendedModel := resolveIntakeRecommendedModel(input, metadata)
 	selectedModel := recommendedModel
 
 	executorAdapter, explicitAdapter, err := resolveIntakeExecutorAdapter(input, metadata)
@@ -200,7 +200,10 @@ func (s *Service) IntakePlannerHandoff(ctx context.Context, input IntakeInput) (
 	return &IntakeResult{RunID: run.ID, PlanID: planID, PassID: passID}, nil
 }
 
-func resolveIntakeRecommendedModel(metadata map[string]string) string {
+func resolveIntakeRecommendedModel(input IntakeInput, metadata map[string]string) string {
+	if v := strings.TrimSpace(input.ExecutorModelProfile); v != "" {
+		return v
+	}
 	for _, key := range []string{"recommended_model", "executor_model_profile", "model"} {
 		if v := strings.TrimSpace(metadata[key]); v != "" {
 			return v

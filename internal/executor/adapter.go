@@ -22,9 +22,9 @@ func NormalizeKnownAdapterID(id string) (string, error) {
 	switch id {
 	case "opencode", "opencode_go", "":
 		return string(AdapterOpenCodeGo), nil
-	case "codex":
+	case "codex", "codex_cli":
 		return string(AdapterCodex), nil
-	case "agy", "antigravity":
+	case "agy", "antigravity", "antigravity_cli":
 		return string(AdapterAntigravity), nil
 	default:
 		return "", fmt.Errorf("invalid executor adapter %q", id)
