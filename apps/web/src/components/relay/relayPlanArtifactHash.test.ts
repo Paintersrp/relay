@@ -148,4 +148,31 @@ describe("computePlanJsonSha256", () => {
     const b = await computePlanJsonSha256(plan);
     expect(a).toBe(b);
   });
+
+  it("produces a different hash when the plan title changes (current-editor regression)", async () => {
+    // This regression test proves that hashing the current editor plan (not stale
+    // parsedPlan) produces content-sensitive hashes. If the hash helper were stale
+    // it would produce the same hash for both plans.
+    const planA: PlannerPassPlan = {
+      plan_meta: {
+        plan_id: "plan-hash-test",
+        schema_version: "1.0.0",
+        created_at: "2026-01-01T00:00:00Z",
+        title: "Original",
+        goal: "Goal",
+        repo_target: "owner/repo",
+        branch_context: "main",
+        status: "active",
+      },
+      source_intent: { summary: "Summary" },
+      passes: [],
+    };
+    const planB: PlannerPassPlan = {
+      ...planA,
+      plan_meta: { ...planA.plan_meta, title: "Edited" },
+    };
+    const hashA = await computePlanJsonSha256(planA);
+    const hashB = await computePlanJsonSha256(planB);
+    expect(hashA).not.toBe(hashB);
+  });
 });

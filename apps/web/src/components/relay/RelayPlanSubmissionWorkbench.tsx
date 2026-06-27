@@ -77,6 +77,8 @@ type AttemptReviewState =
   | "submitted"
   | "action_failed";
 
+type SettingsLoadState = "idle" | "loading" | "loaded" | "failed";
+
 interface ActionError {
   message: string;
   issues: PlanValidationIssue[];
@@ -253,6 +255,7 @@ interface ArtifactIntentCaptureProps {
   planMarkdownArtifactPath: string; planMarkdownArtifactSha256: string;
   literalUserRequest: string; intentConstraintsText: string;
   isCreating: boolean; canCreate: boolean; parsedPlan?: PlannerPassPlan;
+  settingsLoadState: SettingsLoadState; settings?: PlanReviewSettingsAPI;
   onProjectIdChange: (v: string) => void; onJsonPathChange: (v: string) => void;
   onJsonSha256Change: (v: string) => void; onMarkdownPathChange: (v: string) => void;
   onMarkdownSha256Change: (v: string) => void; onLiteralRequestChange: (v: string) => void;
@@ -276,6 +279,17 @@ function ArtifactIntentCapturePanel(props: ArtifactIntentCaptureProps) {
         <label className="block">
           <span className={labelClass}>Project ID <span className="text-destructive">*</span></span>
           <input type="text" value={props.projectId} onChange={(e) => props.onProjectIdChange(e.target.value)} placeholder="e.g. proj_abc123" className={inputClass} />
+          {props.projectId.trim() && (
+            <p className={cn("mt-1 text-[10px]",
+              props.settingsLoadState === "loading" && "text-muted-foreground",
+              props.settingsLoadState === "loaded" && "text-success",
+              props.settingsLoadState === "failed" && "text-destructive",
+            )}>
+              {props.settingsLoadState === "loading" && "Loading project review settings..."}
+              {props.settingsLoadState === "loaded" && props.settings && `Settings loaded — drift: ${props.settings.driftReviewMode}, tier: ${props.settings.modelTier}`}
+              {props.settingsLoadState === "failed" && "Cannot create attempt: review settings could not be loaded for this project."}
+            </p>
+          )}
         </label>
         <label className="block">
           <span className={labelClass}>Plan JSON Artifact Path <span className="text-destructive">*</span></span>
@@ -643,6 +657,7 @@ interface RightPaneProps {
   projectId: string; planJsonArtifactPath: string; planJsonArtifactSha256: string;
   planMarkdownArtifactPath: string; planMarkdownArtifactSha256: string;
   literalUserRequest: string; intentConstraintsText: string; canCreate: boolean;
+  settingsLoadState: SettingsLoadState;
   onProjectIdChange: (v: string) => void; onJsonPathChange: (v: string) => void;
   onJsonSha256Change: (v: string) => void; onMarkdownPathChange: (v: string) => void;
   onMarkdownSha256Change: (v: string) => void; onLiteralRequestChange: (v: string) => void;
@@ -685,7 +700,8 @@ function RightPane(props: RightPaneProps) {
         planJsonArtifactSha256={props.planJsonArtifactSha256} planMarkdownArtifactPath={props.planMarkdownArtifactPath}
         planMarkdownArtifactSha256={props.planMarkdownArtifactSha256} literalUserRequest={props.literalUserRequest}
         intentConstraintsText={props.intentConstraintsText} isCreating={false} canCreate={props.canCreate}
-        parsedPlan={parsedPlan} onProjectIdChange={props.onProjectIdChange} onJsonPathChange={props.onJsonPathChange}
+        parsedPlan={parsedPlan} settingsLoadState={props.settingsLoadState} settings={props.settings}
+        onProjectIdChange={props.onProjectIdChange} onJsonPathChange={props.onJsonPathChange}
         onJsonSha256Change={props.onJsonSha256Change} onMarkdownPathChange={props.onMarkdownPathChange}
         onMarkdownSha256Change={props.onMarkdownSha256Change} onLiteralRequestChange={props.onLiteralRequestChange}
         onConstraintsChange={props.onConstraintsChange} onComputeHash={props.onComputeHash} onCreateAttempt={props.onCreateAttempt}
@@ -749,7 +765,8 @@ function RightPane(props: RightPaneProps) {
                 planJsonArtifactSha256={props.planJsonArtifactSha256} planMarkdownArtifactPath={props.planMarkdownArtifactPath}
                 planMarkdownArtifactSha256={props.planMarkdownArtifactSha256} literalUserRequest={props.literalUserRequest}
                 intentConstraintsText={props.intentConstraintsText} isCreating={false} canCreate={props.canCreate}
-                parsedPlan={parsedPlan} onProjectIdChange={props.onProjectIdChange} onJsonPathChange={props.onJsonPathChange}
+                parsedPlan={parsedPlan} settingsLoadState={props.settingsLoadState} settings={props.settings}
+                onProjectIdChange={props.onProjectIdChange} onJsonPathChange={props.onJsonPathChange}
                 onJsonSha256Change={props.onJsonSha256Change} onMarkdownPathChange={props.onMarkdownPathChange}
                 onMarkdownSha256Change={props.onMarkdownSha256Change} onLiteralRequestChange={props.onLiteralRequestChange}
                 onConstraintsChange={props.onConstraintsChange} onComputeHash={props.onComputeHash} onCreateAttempt={props.onCreateAttempt}
@@ -800,6 +817,8 @@ export function RelayPlanSubmissionWorkbench() {
   const [intentPacket, setIntentPacket] = React.useState<IntentPacketAPI | undefined>();
   const [gate, setGate] = React.useState<PlanAttemptReviewGateAPI | undefined>();
   const [settings, setSettings] = React.useState<PlanReviewSettingsAPI | undefined>();
+  const [settingsProjectId, setSettingsProjectId] = React.useState<string | undefined>();
+  const [settingsLoadState, setSettingsLoadState] = React.useState<SettingsLoadState>("idle");
   const [modelCallConfirmed, setModelCallConfirmed] = React.useState(false);
   const [forceHighAssurance, setForceHighAssurance] = React.useState(false);
   const [jsonArtifactReviewed, setJsonArtifactReviewed] = React.useState(false);
@@ -809,11 +828,54 @@ export function RelayPlanSubmissionWorkbench() {
   const [revisionMode, setRevisionMode] = React.useState(false);
   const [isRefreshingGate, setIsRefreshingGate] = React.useState(false);
 
+  // Load review settings whenever projectId changes. Settings are required before
+  // create/revision to prevent silent project policy override.
+  React.useEffect(() => {
+    const pid = projectId.trim();
+    if (!pid) {
+      setSettings(undefined);
+      setSettingsProjectId(undefined);
+      setSettingsLoadState("idle");
+      return;
+    }
+    let cancelled = false;
+    setSettingsLoadState("loading");
+    setSettings(undefined);
+    setSettingsProjectId(undefined);
+    void getPlanReviewSettings(pid)
+      .then((response) => {
+        if (cancelled) return;
+        if (response.success && response.settings) {
+          setSettings(response.settings);
+          setSettingsProjectId(pid);
+          setSettingsLoadState("loaded");
+        } else {
+          setSettingsLoadState("failed");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSettingsLoadState("failed");
+      });
+    return () => { cancelled = true; };
+  }, [projectId]);
+
   const trimmedJson = rawJson.trim();
   const lineCount = getEditorLineCount(rawJson);
   const isBusy = ["validating","creating_attempt","review_running","approving_attempt","voiding_attempt","revising_attempt","submitting_approved_attempt"].includes(state);
   const canValidate = trimmedJson.length > 0 && !isBusy;
-  const canCreate = projectId.trim().length > 0 && planJsonArtifactPath.trim().length > 0 && planJsonArtifactSha256.trim().length > 0 && literalUserRequest.trim().length > 0 && (state === "validated" || revisionMode);
+
+  const trimmedProjectId = projectId.trim();
+  const hasCurrentProjectSettings =
+    settingsLoadState === "loaded" &&
+    settingsProjectId === trimmedProjectId &&
+    !!settings;
+  const canCreate =
+    trimmedProjectId.length > 0 &&
+    hasCurrentProjectSettings &&
+    planJsonArtifactPath.trim().length > 0 &&
+    planJsonArtifactSha256.trim().length > 0 &&
+    literalUserRequest.trim().length > 0 &&
+    (state === "validated" || revisionMode);
 
   const prefillFromPlan = React.useCallback((plan: PlannerPassPlan) => {
     const pid = plan.plan_meta.project_id ?? plan.plan_meta.projectId ?? "";
@@ -852,10 +914,7 @@ export function RelayPlanSubmissionWorkbench() {
       if (response.validation.valid) {
         setState("validated"); setValidatedRawJson(rawJson); setParsedPlan(parsed.plan);
         setIssues(response.validation.issues); prefillFromPlan(parsed.plan);
-        const pid = parsed.plan.plan_meta.project_id ?? parsed.plan.plan_meta.projectId ?? "";
-        if (pid) {
-          try { const sr = await getPlanReviewSettings(pid); if (sr.success && sr.settings) setSettings(sr.settings); } catch { /* advisory */ }
-        }
+        // Settings are loaded reactively by the projectId effect; no inline fetch needed.
       } else {
         setState("validation_failed"); setValidatedRawJson(undefined); setParsedPlan(undefined); setIssues(response.validation.issues);
       }
@@ -867,9 +926,22 @@ export function RelayPlanSubmissionWorkbench() {
     }
   };
 
+  // REQ-001: Parse current rawJson — do not use stale parsedPlan.
   const handleComputeHash = async () => {
-    if (!parsedPlan) return;
-    try { const hash = await computePlanJsonSha256(parsedPlan); setPlanJsonArtifactSha256(hash); } catch { /* unavailable */ }
+    const parsed = parsePlanJson(rawJson);
+    if (!parsed.ok) {
+      setState("parse_failed");
+      setIssues([parsed.issue]);
+      setActionError(undefined);
+      return;
+    }
+    try {
+      const hash = await computePlanJsonSha256(parsed.plan);
+      setPlanJsonArtifactSha256(hash);
+      setParsedPlan(parsed.plan);
+    } catch {
+      setActionError({ message: "Unable to compute Plan JSON hash in this browser.", issues: [] });
+    }
   };
 
   const refreshGate = async (pid: string, attemptId: string): Promise<PlanAttemptReviewGateAPI | undefined> => {
@@ -880,30 +952,68 @@ export function RelayPlanSubmissionWorkbench() {
     return undefined;
   };
 
+  // REQ-002/003/004/005: Parse current rawJson immediately; no stale parsedPlan; no fallback mode/tier.
   const handleCreateAttempt = async () => {
-    if (!canCreate || !parsedPlan) return;
+    if (!canCreate) return;
+
+    // Always parse the current editor JSON — never reuse potentially stale parsedPlan.
+    const parsed = parsePlanJson(rawJson);
+    if (!parsed.ok) {
+      setState("parse_failed");
+      setIssues([parsed.issue]);
+      setActionError(undefined);
+      return;
+    }
+    const currentPlan = parsed.plan;
+    // Keep cached display state in sync with what we're about to submit.
+    setParsedPlan(currentPlan);
+    setValidatedRawJson(rawJson);
+
     const constraints = splitConstraints(intentConstraintsText);
-    const pid = projectId.trim();
-    const request = {
+    // REQ-003: In revision mode use attempt's project ID so the input field cannot redirect to a different project.
+    const pid = revisionMode && planAttempt ? planAttempt.projectId : trimmedProjectId;
+    if (!pid) {
+      setActionError({ message: "Project ID is required.", issues: [] });
+      return;
+    }
+
+    // REQ-004: Only include policy fields when settings are loaded for the exact current project.
+    const policyFields = hasCurrentProjectSettings && settings
+      ? { driftReviewMode: settings.driftReviewMode, modelTier: settings.modelTier }
+      : {};
+
+    const revisionRequest = {
       planArtifactRef: { path: planJsonArtifactPath.trim(), sha256: planJsonArtifactSha256.trim(), artifactKind: "planner-pass-plan-json" as const },
       optionalMarkdownRef: planMarkdownArtifactPath.trim() && planMarkdownArtifactSha256.trim()
         ? { path: planMarkdownArtifactPath.trim(), sha256: planMarkdownArtifactSha256.trim(), artifactKind: "planner-pass-plan-markdown" as const }
         : undefined,
-      rawPlanJson: { content: parsedPlan, contentHash: planJsonArtifactSha256.trim() },
-      driftReviewMode: settings?.driftReviewMode ?? "manual",
-      modelTier: settings?.modelTier ?? "standard",
+      rawPlanJson: { content: currentPlan, contentHash: planJsonArtifactSha256.trim() },
       intentPacket: {
-        summary: parsedPlan.source_intent.summary,
+        summary: currentPlan.source_intent.summary,
         literalUserRequest: literalUserRequest.trim(),
         constraints,
         source: { capturedFrom: "planner_chat" as const, capturedBy: "relay-plan-review-ui", sourceArtifactPath: planJsonArtifactPath.trim() },
         redactionStatus: "verified_no_secrets" as const,
       },
     };
+
     if (revisionMode && planAttempt) {
+      // REQ-003/005: Validate current editor plan before mutating.
+      let validationResult;
+      try {
+        validationResult = await validatePlan({ plan: currentPlan });
+      } catch (error) {
+        setActionError(getActionError(error));
+        return;
+      }
+      if (!validationResult.validation.valid) {
+        setState("validation_failed");
+        setIssues(validationResult.validation.issues);
+        return;
+      }
       setState("revising_attempt"); setActionError(undefined);
       try {
-        const response = await revisePlanAttempt(pid, planAttempt.planAttemptId, request);
+        const response = await revisePlanAttempt(pid, planAttempt.planAttemptId, revisionRequest);
         if (response.planAttempt) {
           setPlanAttempt(response.planAttempt); if (response.intentPacket) setIntentPacket(response.intentPacket);
           if (response.reviewGate) setGate(response.reviewGate); setRevisionMode(false); setState("attempt_ready");
@@ -914,9 +1024,11 @@ export function RelayPlanSubmissionWorkbench() {
       } catch (error) { setActionError(getActionError(error)); setState("action_failed"); }
       return;
     }
+
+    const createRequest = { ...revisionRequest, ...policyFields };
     setState("creating_attempt"); setActionError(undefined);
     try {
-      const response = await createPlanAttemptWithIntent(pid, request);
+      const response = await createPlanAttemptWithIntent(pid, createRequest);
       if (response.planAttempt) {
         setPlanAttempt(response.planAttempt); if (response.intentPacket) setIntentPacket(response.intentPacket);
         if (response.reviewGate) setGate(response.reviewGate); setState("attempt_ready");
@@ -961,7 +1073,9 @@ export function RelayPlanSubmissionWorkbench() {
     const pid = planAttempt.projectId;
     setState("voiding_attempt"); setActionError(undefined);
     try {
-      await voidPlanAttempt(pid, planAttempt.planAttemptId);
+      // step-004: Apply backend-returned attempt to clear stale metadata.
+      const response = await voidPlanAttempt(pid, planAttempt.planAttemptId);
+      if (response.planAttempt) setPlanAttempt(response.planAttempt);
       setState("attempt_ready"); await refreshGate(pid, planAttempt.planAttemptId);
     } catch (error) { setActionError(getActionError(error)); setState("action_failed"); }
   };
@@ -1075,6 +1189,7 @@ export function RelayPlanSubmissionWorkbench() {
               planJsonArtifactSha256={planJsonArtifactSha256} planMarkdownArtifactPath={planMarkdownArtifactPath}
               planMarkdownArtifactSha256={planMarkdownArtifactSha256} literalUserRequest={literalUserRequest}
               intentConstraintsText={intentConstraintsText} canCreate={canCreate}
+              settingsLoadState={settingsLoadState}
               onProjectIdChange={setProjectId} onJsonPathChange={setPlanJsonArtifactPath}
               onJsonSha256Change={setPlanJsonArtifactSha256} onMarkdownPathChange={setPlanMarkdownArtifactPath}
               onMarkdownSha256Change={setPlanMarkdownArtifactSha256} onLiteralRequestChange={setLiteralUserRequest}
