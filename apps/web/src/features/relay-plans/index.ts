@@ -6,6 +6,15 @@ export {
   validatePlan,
   getNextPassWork,
   getNextAuditWork,
+  // PASS-006 plan-attempt API
+  getPlanReviewSettings,
+  createPlanAttemptWithIntent,
+  getPlanAttemptReviewGate,
+  runPlanAttemptDriftReview,
+  approvePlanAttempt,
+  submitPlanAttempt,
+  revisePlanAttempt,
+  voidPlanAttempt,
 } from "./api";
 
 export {
@@ -58,4 +67,27 @@ export type {
   AuditDecisionPayloadGuidance,
   NextAuditWorkFilters,
   NextAuditWorkResponse,
+  // PASS-006 plan-attempt types
+  DriftReviewMode,
+  ModelTier,
+  PlanAttemptStatus,
+  PlanAttemptReviewWorkflowState,
+  PlanArtifactRefAPI,
+  RawPlanJSONAPI,
+  IntentPacketInputAPI,
+  CreatePlanAttemptWithIntentRequest,
+  PlanReviewSettingsAPI,
+  PlanReviewSettingsAPIResponse,
+  PlanAttemptAPI,
+  IntentPacketAPI,
+  IntentDriftReviewAPI,
+  PlanAttemptBlockerAPI,
+  ExternalReviewInstructionsAPI,
+  PlanAttemptReviewGateAPI,
+  PlanAttemptReviewGateAPIResponse,
+  RunPlanAttemptDriftReviewRequest,
+  ApprovePlanAttemptRequest,
+  SubmitPlanAttemptRequest,
+  RevisePlanAttemptRequest,
+  PlanAttemptAPIResponse,
 } from "./types";

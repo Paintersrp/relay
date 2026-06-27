@@ -2,6 +2,8 @@ import { API_BASE_URL, RelayApiError } from "@/features/relay-runs";
 import type { RelayApiErrorShape } from "@/features/relay-runs/types";
 
 import type {
+  ApprovePlanAttemptRequest,
+  CreatePlanAttemptWithIntentRequest,
   NextAuditWorkFilters,
   NextAuditWorkResponse,
   NextPassWorkResponse,
@@ -11,15 +13,22 @@ import type {
   PlanAPIContextSearchTerm,
   PlanAPIPass,
   PlanAPISourceSnapshotRequirements,
+  PlanAttemptAPIResponse,
+  PlanAttemptReviewGateAPIResponse,
   PlanDetailResponse,
   PlanListFilters,
   PlanListResponse,
   PlanPassDetailResponse,
+  PlanReviewSettingsAPIResponse,
+  RevisePlanAttemptRequest,
+  RunPlanAttemptDriftReviewRequest,
+  SubmitPlanAttemptRequest,
   SubmitPlanRequest,
   SubmitPlanResponse,
   ValidatePlanRequest,
   ValidatePlanResponse,
 } from "./types";
+
 
 function firstNonEmptyString(...values: unknown[]): string | undefined {
   for (const value of values) {
@@ -558,4 +567,87 @@ export async function getNextAuditWork(
     `/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(planId)}/next-audit-work${query ? `?${query}` : ""}`,
   );
   return normalizeNextAuditWorkResponse(response);
+}
+
+// ─── Plan Attempt / Review Gate API (PASS-006) ────────────────────────────────
+
+export async function getPlanReviewSettings(
+  projectId: string,
+): Promise<PlanReviewSettingsAPIResponse> {
+  return getPlanJson<PlanReviewSettingsAPIResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-review-settings`,
+  );
+}
+
+export async function createPlanAttemptWithIntent(
+  projectId: string,
+  request: CreatePlanAttemptWithIntentRequest,
+): Promise<PlanAttemptAPIResponse> {
+  return postPlanJson<CreatePlanAttemptWithIntentRequest, PlanAttemptAPIResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-attempts`,
+    request,
+  );
+}
+
+export async function getPlanAttemptReviewGate(
+  projectId: string,
+  planAttemptId: string,
+): Promise<PlanAttemptReviewGateAPIResponse> {
+  return getPlanJson<PlanAttemptReviewGateAPIResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-attempts/${encodeURIComponent(planAttemptId)}/review-gate`,
+  );
+}
+
+export async function runPlanAttemptDriftReview(
+  projectId: string,
+  planAttemptId: string,
+  request: RunPlanAttemptDriftReviewRequest,
+): Promise<PlanAttemptAPIResponse> {
+  return postPlanJson<RunPlanAttemptDriftReviewRequest, PlanAttemptAPIResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-attempts/${encodeURIComponent(planAttemptId)}/run-drift-review`,
+    request,
+  );
+}
+
+export async function approvePlanAttempt(
+  projectId: string,
+  planAttemptId: string,
+  request: ApprovePlanAttemptRequest,
+): Promise<PlanAttemptAPIResponse> {
+  return postPlanJson<ApprovePlanAttemptRequest, PlanAttemptAPIResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-attempts/${encodeURIComponent(planAttemptId)}/approve`,
+    request,
+  );
+}
+
+export async function submitPlanAttempt(
+  projectId: string,
+  planAttemptId: string,
+  request: SubmitPlanAttemptRequest,
+): Promise<PlanAttemptAPIResponse> {
+  return postPlanJson<SubmitPlanAttemptRequest, PlanAttemptAPIResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-attempts/${encodeURIComponent(planAttemptId)}/submit`,
+    request,
+  );
+}
+
+export async function revisePlanAttempt(
+  projectId: string,
+  planAttemptId: string,
+  request: RevisePlanAttemptRequest,
+): Promise<PlanAttemptAPIResponse> {
+  return postPlanJson<RevisePlanAttemptRequest, PlanAttemptAPIResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-attempts/${encodeURIComponent(planAttemptId)}/revisions`,
+    request,
+  );
+}
+
+export async function voidPlanAttempt(
+  projectId: string,
+  planAttemptId: string,
+): Promise<PlanAttemptAPIResponse> {
+  return postPlanJson<Record<string, never>, PlanAttemptAPIResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-attempts/${encodeURIComponent(planAttemptId)}/void`,
+    {},
+  );
 }

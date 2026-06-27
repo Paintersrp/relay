@@ -21,6 +21,9 @@ export interface PlannerPassPlanMeta {
   repo_target: string;
   branch_context: string;
   status: PlanAPIStatus;
+  /** Optional project ID embedded in the plan meta for pre-filling the workbench. */
+  project_id?: string;
+  projectId?: string;
 }
 
 export interface PlannerPassPlanSourceIntent {
@@ -329,3 +332,246 @@ export interface NextAuditWorkResponse {
   blockers: WorkBlocker[];
 }
 
+// ─── Plan Attempt / Review Gate Types (PASS-006) ─────────────────────────────
+
+export type DriftReviewMode = "disabled" | "manual" | "automatic" | "external";
+
+export type ModelTier =
+  | "economy"
+  | "standard"
+  | "high_assurance"
+  | "auto_escalate";
+
+export type PlanAttemptStatus =
+  | "draft"
+  | "approved"
+  | "submitted"
+  | "voided"
+  | "superseded";
+
+export type PlanAttemptReviewWorkflowState =
+  | "review_not_required"
+  | "manual_review_available"
+  | "automatic_review_pending_or_failed"
+  | "external_review_required"
+  | "approval_ready"
+  | "drift_acknowledgement_required"
+  | "revision_required"
+  | "drift_review_blocked"
+  | "ready_for_submission"
+  | "submitted"
+  | "voided"
+  | "superseded";
+
+export interface PlanArtifactRefAPI {
+  path: string;
+  sha256: string;
+  artifactKind:
+    | "planner-pass-plan-json"
+    | "planner-pass-plan-markdown"
+    | string;
+}
+
+export interface RawPlanJSONAPI {
+  content: unknown;
+  contentHash?: string;
+}
+
+export interface IntentPacketInputAPI {
+  summary: string;
+  literalUserRequest: string;
+  constraints: string[];
+  source: {
+    capturedFrom: "planner_chat" | "revision_notes" | "imported_request" | string;
+    capturedBy: string;
+    sourceArtifactPath: string;
+  };
+  redactionStatus:
+    | "not_required"
+    | "redacted"
+    | "verified_no_secrets"
+    | "blocked_sensitive_content"
+    | string;
+  contentHash?: string;
+}
+
+export interface CreatePlanAttemptWithIntentRequest {
+  planAttemptId?: string;
+  intentPacketId?: string;
+  intentThreadId?: string;
+  planArtifactRef: PlanArtifactRefAPI;
+  optionalMarkdownRef?: PlanArtifactRefAPI;
+  rawPlanJson: RawPlanJSONAPI;
+  driftReviewMode?: DriftReviewMode | string;
+  modelTier?: ModelTier | string;
+  intentPacket: IntentPacketInputAPI;
+}
+
+export interface PlanReviewSettingsAPI {
+  projectId: string;
+  driftReviewMode: DriftReviewMode | string;
+  modelTier: ModelTier | string;
+  manualModelCallWarning: string;
+  automaticReviewEnabled: boolean;
+  externalReviewSupported: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PlanReviewSettingsAPIResponse {
+  success: boolean;
+  blockerCode?: string;
+  message?: string;
+  settings?: PlanReviewSettingsAPI;
+}
+
+export interface PlanAttemptAPI {
+  id: string;
+  planAttemptId: string;
+  projectId: string;
+  intentThreadId: string;
+  rootIntentPacketId: string;
+  currentIntentPacketId: string;
+  supersedesPlanAttemptId?: string;
+  replacementPlanAttemptId?: string;
+  status: PlanAttemptStatus | string;
+  reviewState: string;
+  workflowState: string;
+  driftReviewMode: DriftReviewMode | string;
+  modelTier: ModelTier | string;
+  planJsonArtifactPath: string;
+  planJsonArtifactSha256: string;
+  rawPlanJsonHash: string;
+  planMarkdownArtifactPath?: string;
+  planMarkdownArtifactSha256?: string;
+  acceptedDriftReviewId?: string;
+  submittedPlanId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IntentPacketAPI {
+  id: string;
+  intentPacketId: string;
+  projectId: string;
+  intentThreadId: string;
+  rootIntentPacketId: string;
+  parentIntentPacketId?: string;
+  revisionOfPlanAttemptId?: string;
+  kind: string;
+  capturedFrom: string;
+  capturedBy: string;
+  sourceArtifactPath: string;
+  summary: string;
+  literalUserRequest: string;
+  constraintsJson: string;
+  redactionStatus: string;
+  contentHash: string;
+  createdAt: string;
+}
+
+export interface IntentDriftReviewAPI {
+  id: string;
+  intentDriftReviewId: string;
+  projectId: string;
+  planAttemptId: string;
+  intentThreadId: string;
+  rootIntentPacketId: string;
+  reviewedIntentPacketId: string;
+  reviewPacketHash: string;
+  reviewSource: "external" | "internal" | string;
+  submittedBy: string;
+  sourceArtifactPath?: string;
+  overallAlignment:
+    | "aligned"
+    | "minor_drift"
+    | "major_drift"
+    | "unclear"
+    | string;
+  confidence: number;
+  findingsJson: string;
+  recommendedAction: string;
+  approvalGateStatus: string;
+  inputHash: string;
+  outputHash: string;
+  createdAt: string;
+}
+
+export interface PlanAttemptBlockerAPI {
+  code: string;
+  message: string;
+  recoverable: boolean;
+}
+
+export interface ExternalReviewInstructionsAPI {
+  reviewPacketRoute: string;
+  submitReviewRoute: string;
+}
+
+export interface PlanAttemptReviewGateAPI {
+  workflowState: PlanAttemptReviewWorkflowState | string;
+  driftReviewMode: DriftReviewMode | string;
+  modelTier: ModelTier | string;
+  reviewRequired: boolean;
+  modelCallAllowed: boolean;
+  modelCallWarning?: string;
+  acceptedDriftReviewId?: string;
+  latestReview?: IntentDriftReviewAPI;
+  allowedActions: string[];
+  blockers?: PlanAttemptBlockerAPI[];
+  externalReviewInstructions?: ExternalReviewInstructionsAPI;
+}
+
+export interface PlanAttemptReviewGateAPIResponse {
+  success: boolean;
+  blockerCode?: string;
+  message?: string;
+  reviewGate?: PlanAttemptReviewGateAPI;
+}
+
+export interface RunPlanAttemptDriftReviewRequest {
+  allowModelCall: boolean;
+  requestedTier?: string;
+  forceHighAssurance?: boolean;
+}
+
+export interface ApprovePlanAttemptRequest {
+  approved: true;
+  acceptedDriftReviewId?: string;
+  driftAcknowledged: boolean;
+  noDriftReviewAcknowledged: boolean;
+}
+
+export interface SubmitPlanAttemptRequest {
+  submissionConfirmed: true;
+  reviewedPlanJsonArtifactSha256: string;
+  acceptedDriftReviewId?: string;
+}
+
+export interface RevisePlanAttemptRequest {
+  planArtifactRef: PlanArtifactRefAPI;
+  optionalMarkdownRef?: PlanArtifactRefAPI;
+  rawPlanJson: RawPlanJSONAPI;
+  intentPacket: IntentPacketInputAPI;
+}
+
+export interface PlanAttemptAPIResponse {
+  success: boolean;
+  blockerCode?: string;
+  message?: string;
+  intentPacket?: IntentPacketAPI;
+  planAttempt?: PlanAttemptAPI;
+  driftReview?: IntentDriftReviewAPI;
+  plan?: PlanAPIPlan;
+  passes?: PlanAPIPass[];
+  reviewGate?: PlanAttemptReviewGateAPI;
+  reviewAction?: {
+    action: string;
+    ok: boolean;
+    failureCode?: string;
+    message?: string;
+    escalated?: boolean;
+    escalationReason?: string;
+    finalTier?: string;
+  };
+}
