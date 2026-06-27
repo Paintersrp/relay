@@ -38,6 +38,8 @@ Relay is a local-first handoff/run orchestration workbench.
 | Repair | Automatic validation failure repair |
 | Audit | Automatic AI audit/closeout |
 | Additional Project-Facing MCP Actions | Project-facing MCP exposure beyond `create_run_from_planner_handoff` and `submit_planner_pass_plan` is configuration-dependent; local/dev/server MCP inventory includes additional tools |
+| Plan Seeds & Project Planning Backlog | Future project-scoped backlog capturing of planning ideas (see [Plan Seeds Design Contract](docs/project-planning-backlog-plan-seeds.md)) |
+
 
 ### Run Actions
 
