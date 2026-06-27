@@ -288,6 +288,83 @@ func (h *Handler) GetPlanSeed(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) GetPlanSeedPlanningContext(w http.ResponseWriter, r *http.Request) {
+	projectID := strings.TrimSpace(chi.URLParam(r, "projectId"))
+	seedID := strings.TrimSpace(chi.URLParam(r, "seedId"))
+	if projectID == "" || seedID == "" {
+		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", "projectId and seedId are required")
+		return
+	}
+
+	ctx, err := h.service.GetPlanSeedPlanningContext(r.Context(), projectID, seedID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Project or Plan Seed not found")
+			return
+		}
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load plan seed planning context")
+		return
+	}
+
+	shared.JSON(w, http.StatusOK, PlanSeedPlanningContextAPIResponse{
+		Success:         true,
+		PlanningContext: mapPlanSeedPlanningContextToAPI(*ctx),
+	})
+}
+
+func (h *Handler) CreatePlanAttemptFromSeed(w http.ResponseWriter, r *http.Request) {
+	projectID := strings.TrimSpace(chi.URLParam(r, "projectId"))
+	seedID := strings.TrimSpace(chi.URLParam(r, "seedId"))
+	if projectID == "" || seedID == "" {
+		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", "projectId and seedId are required")
+		return
+	}
+
+	var req CreatePlanAttemptFromSeedAPIRequest
+	if !decodeStrictPlanSeedJSON(w, r, &req) {
+		return
+	}
+
+	result, err := h.service.CreatePlanAttemptFromSeed(r.Context(), projectID, seedID, appprojects.CreatePlanAttemptFromSeedInput{
+		PlannerPassPlanJSON: req.PlannerPassPlanJSON,
+		SourceArtifactPath:  req.SourceArtifactPath,
+		DriftReviewMode:     req.DriftReviewMode,
+		ModelTier:           req.ModelTier,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Project or Plan Seed not found")
+			return
+		}
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create plan attempt from seed")
+		return
+	}
+
+	status := http.StatusCreated
+	if result == nil || !result.OK {
+		status = planSeedAttemptBlockerHTTPStatus(result)
+	}
+	shared.JSON(w, status, mapPlanSeedAttemptResultToAPI(result))
+}
+
+func planSeedAttemptBlockerHTTPStatus(result *appprojects.CreatePlanAttemptFromSeedResult) int {
+	if result == nil {
+		return http.StatusServiceUnavailable
+	}
+	switch result.BlockerCode {
+	case appprojects.PlanSeedBlockerSeedAlreadyPlanned:
+		return http.StatusConflict
+	case appprojects.PlanSeedBlockerSeedNotExpandable:
+		return http.StatusUnprocessableEntity
+	case appprojects.PlanSeedBlockerMissingPlanArtifact, appprojects.PlanSeedBlockerUnsafeSeedContext:
+		return http.StatusBadRequest
+	case appprojects.PlanSeedBlockerDraftAttemptsUnavailable:
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusUnprocessableEntity
+	}
+}
+
 func (h *Handler) UpdatePlanSeed(w http.ResponseWriter, r *http.Request) {
 	projectID := strings.TrimSpace(chi.URLParam(r, "projectId"))
 	seedID := strings.TrimSpace(chi.URLParam(r, "seedId"))

@@ -25,6 +25,44 @@ func (svc *Service) CreatePlanAttemptWithIntent(ctx context.Context, req CreateP
 	if blocked != nil || err != nil {
 		return blocked, err
 	}
+	tx, err := svc.store.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin create plan attempt transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	result, err := svc.CreatePlanAttemptWithIntentInTxWithPolicy(ctx, tx, *project, req, policy)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit create plan attempt: %w", err)
+	}
+	committed = true
+	return result, nil
+}
+
+// CreatePlanAttemptWithIntentInTx creates the intent packet and draft plan
+// attempt using the caller's transaction. Callers are responsible for committing
+// or rolling back the transaction.
+func (svc *Service) CreatePlanAttemptWithIntentInTx(ctx context.Context, tx *sql.Tx, project store.Project, req CreatePlanAttemptWithIntentRequest) (*PlanAttemptResult, error) {
+	policy, blocked, err := svc.ResolvePlanReviewPolicy(ctx, project.ProjectID, req.DriftReviewMode, req.ModelTier)
+	if blocked != nil || err != nil {
+		return blocked, err
+	}
+	return svc.CreatePlanAttemptWithIntentInTxWithPolicy(ctx, tx, project, req, policy)
+}
+
+// CreatePlanAttemptWithIntentInTxWithPolicy is the transaction helper variant
+// for callers that resolved review policy before opening the outer transaction.
+func (svc *Service) CreatePlanAttemptWithIntentInTxWithPolicy(ctx context.Context, tx *sql.Tx, project store.Project, req CreatePlanAttemptWithIntentRequest, policy *EffectivePlanReviewPolicy) (*PlanAttemptResult, error) {
+	if policy == nil {
+		return blockAttempt(BlockerDriftReviewBlocked, "plan review policy is unavailable")
+	}
 	canonical, rawHash, err := validateAttemptPlanInput(req.RawPlanJSON, req.PlanArtifactRef, req.OptionalMarkdownRef)
 	if err != nil {
 		return blockAttempt(BlockerMissingPlanArtifact, err.Error())
@@ -56,16 +94,6 @@ func (svc *Service) CreatePlanAttemptWithIntent(ctx context.Context, req CreateP
 	}
 	redactionStatus := normalizeRedactionStatus(req.IntentPacket.RedactionStatus)
 
-	tx, err := svc.store.DB().BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("begin create plan attempt transaction: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
 	q := generated.New(tx)
 	intent, err := q.CreateIntentPacket(ctx, generated.CreateIntentPacketParams{
 		IntentPacketID:          intentPacketID,
@@ -111,10 +139,6 @@ func (svc *Service) CreatePlanAttemptWithIntent(ctx context.Context, req CreateP
 	if err != nil {
 		return nil, fmt.Errorf("create plan attempt: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit create plan attempt: %w", err)
-	}
-	committed = true
 	return &PlanAttemptResult{
 		OK:           true,
 		IntentPacket: &intent,

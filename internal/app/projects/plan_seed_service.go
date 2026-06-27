@@ -2,13 +2,17 @@ package projects
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
+	appplans "relay/internal/app/plans"
 	"relay/internal/store"
+	"relay/internal/store/generated"
 
 	"github.com/google/uuid"
 )
@@ -130,6 +134,185 @@ func (s *Service) GetPlanSeed(ctx context.Context, projectID, seedID string) (*P
 	}
 	res := mapPlanSeed(seed)
 	return &res, nil
+}
+
+func (s *Service) GetPlanSeedPlanningContext(ctx context.Context, projectID string, seedID string) (*PlanSeedPlanningContext, error) {
+	_ = ctx
+	project, seed, err := s.loadPlanSeed(projectID, seedID)
+	if err != nil {
+		return nil, err
+	}
+	mapped := mapPlanSeed(seed)
+	return &PlanSeedPlanningContext{
+		Project: PlanSeedPlanningProject{
+			ProjectID:           project.ProjectID,
+			Name:                project.Name,
+			Description:         project.Description,
+			Status:              project.Status,
+			DefaultRepositoryID: project.DefaultRepositoryID,
+		},
+		Seed: mapped,
+		ExistingLinks: PlanSeedExistingLinks{
+			PlanAttemptID: mapped.PlanAttemptID,
+			ManagedPlanID: mapped.ManagedPlanID,
+		},
+		PlannerInstructions: []string{
+			"Use this context to draft a reviewed Plan of Passes JSON.",
+			"Do not submit a managed plan from this action.",
+			"Do not create runs or dispatch executors from this action.",
+			"Use the seed quickContext as the literal source request when registering a draft attempt.",
+		},
+		RetrievalSemantics: PlanSeedRetrievalSemantics{
+			RetrievalOnly:        true,
+			StateMutated:         false,
+			IntentPacketCreated:  false,
+			PlanAttemptCreated:   false,
+			ManagedPlanSubmitted: false,
+			RunCreated:           false,
+			ModelCallPerformed:   false,
+		},
+	}, nil
+}
+
+func (s *Service) CreatePlanAttemptFromSeed(ctx context.Context, projectID, seedID string, input CreatePlanAttemptFromSeedInput) (*CreatePlanAttemptFromSeedResult, error) {
+	project, seed, err := s.loadPlanSeed(projectID, seedID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(seed.PlanAttemptID) != "" || seed.Status == PlanSeedStatusPlanned {
+		return &CreatePlanAttemptFromSeedResult{OK: false, BlockerCode: PlanSeedBlockerSeedAlreadyPlanned, Message: "plan seed already has a linked plan attempt"}, nil
+	}
+	if seed.Status != PlanSeedStatusCaptured {
+		return &CreatePlanAttemptFromSeedResult{OK: false, BlockerCode: PlanSeedBlockerSeedNotExpandable, Message: fmt.Sprintf("cannot create a draft plan attempt from seed in %s status", seed.Status)}, nil
+	}
+
+	sourceArtifactPath := strings.TrimSpace(input.SourceArtifactPath)
+	if sourceArtifactPath == "" {
+		return &CreatePlanAttemptFromSeedResult{OK: false, BlockerCode: PlanSeedBlockerMissingPlanArtifact, Message: "source_artifact_path is required"}, nil
+	}
+	if issues := scanPlanSeedSecretLikeStrings("source_artifact_path", sourceArtifactPath); len(issues) > 0 {
+		return &CreatePlanAttemptFromSeedResult{OK: false, BlockerCode: PlanSeedBlockerUnsafeSeedContext, Message: issues[0].Message}, nil
+	}
+	if issues := scanPlanSeedSecretLikeStrings("seed", seed.Title, seed.QuickContext, seed.ConstraintsJson, seed.NonGoalsJson); len(issues) > 0 {
+		return &CreatePlanAttemptFromSeedResult{OK: false, BlockerCode: PlanSeedBlockerUnsafeSeedContext, Message: issues[0].Message}, nil
+	}
+
+	canonicalPlan, planHash, blockedMessage, err := canonicalPlanSeedPlanJSON(input.PlannerPassPlanJSON)
+	if err != nil {
+		return nil, err
+	}
+	if blockedMessage != "" {
+		return &CreatePlanAttemptFromSeedResult{OK: false, BlockerCode: PlanSeedBlockerMissingPlanArtifact, Message: blockedMessage}, nil
+	}
+
+	attemptReq := appplans.CreatePlanAttemptWithIntentRequest{
+		ProjectID: project.ProjectID,
+		PlanArtifactRef: appplans.PlanArtifactRef{
+			Path:         sourceArtifactPath,
+			SHA256:       planHash,
+			ArtifactKind: "planner-pass-plan-json",
+		},
+		RawPlanJSON:     canonicalPlan,
+		DriftReviewMode: input.DriftReviewMode,
+		ModelTier:       input.ModelTier,
+		IntentPacket: appplans.IntentPacketInput{
+			Summary:            seed.Title,
+			LiteralUserRequest: seed.QuickContext,
+			Constraints:        parseJSONStringSlice(seed.ConstraintsJson),
+			Source: appplans.IntentSource{
+				CapturedFrom:       appplans.CapturedFromImportedReq,
+				CapturedBy:         "plan_seed_bridge",
+				SourceArtifactPath: sourceArtifactPath,
+			},
+			RedactionStatus: appplans.RedactionStatusVerifiedNoSecrets,
+		},
+	}
+	attemptSvc := appplans.NewService(s.store)
+	policy, attemptBlocked, err := attemptSvc.ResolvePlanReviewPolicy(ctx, project.ProjectID, input.DriftReviewMode, input.ModelTier)
+	if err != nil {
+		return nil, err
+	}
+	if attemptBlocked != nil {
+		return &CreatePlanAttemptFromSeedResult{OK: false, BlockerCode: mapPlanAttemptBlockerForSeed(attemptBlocked.BlockerCode), Message: attemptBlocked.Message}, nil
+	}
+
+	tx, err := s.store.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin create plan attempt from seed transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	attemptResult, err := attemptSvc.CreatePlanAttemptWithIntentInTxWithPolicy(ctx, tx, *project, attemptReq, policy)
+	if err != nil {
+		return nil, err
+	}
+	if attemptResult == nil {
+		return &CreatePlanAttemptFromSeedResult{OK: false, BlockerCode: PlanSeedBlockerDraftAttemptsUnavailable, Message: "draft plan attempt infrastructure returned no result"}, nil
+	}
+	if !attemptResult.OK {
+		return &CreatePlanAttemptFromSeedResult{OK: false, BlockerCode: mapPlanAttemptBlockerForSeed(attemptResult.BlockerCode), Message: attemptResult.Message}, nil
+	}
+	if attemptResult.PlanAttempt == nil || attemptResult.IntentPacket == nil {
+		return &CreatePlanAttemptFromSeedResult{OK: false, BlockerCode: PlanSeedBlockerDraftAttemptsUnavailable, Message: "draft plan attempt infrastructure did not create required rows"}, nil
+	}
+
+	updatedSeed, err := generated.New(tx).MarkPlanSeedPlanned(ctx, generated.MarkPlanSeedPlannedParams{
+		ProjectRowID:  project.ID,
+		SeedID:        seed.SeedID,
+		PlanAttemptID: attemptResult.PlanAttempt.PlanAttemptID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("link plan seed to created attempt: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit create plan attempt from seed: %w", err)
+	}
+	committed = true
+	mappedSeed := mapPlanSeed(&updatedSeed)
+	return &CreatePlanAttemptFromSeedResult{
+		OK:           true,
+		Seed:         &mappedSeed,
+		PlanAttempt:  attemptResult.PlanAttempt,
+		IntentPacket: attemptResult.IntentPacket,
+		ReviewPolicy: attemptResult.ReviewPolicy,
+		ReviewAction: attemptResult.ReviewAction,
+		ReviewGate:   attemptResult.ReviewGate,
+	}, nil
+}
+
+func canonicalPlanSeedPlanJSON(raw json.RawMessage) (json.RawMessage, string, string, error) {
+	if len(raw) == 0 {
+		return nil, "", "planner_pass_plan_json is required", nil
+	}
+	var doc any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, "", "planner_pass_plan_json must be valid JSON", nil
+	}
+	if _, ok := doc.(map[string]any); !ok {
+		return nil, "", "planner_pass_plan_json must be a JSON object", nil
+	}
+	canonical, err := json.Marshal(doc)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("canonicalize planner_pass_plan_json: %w", err)
+	}
+	sum := sha256.Sum256(canonical)
+	return json.RawMessage(canonical), "sha256:" + hex.EncodeToString(sum[:]), "", nil
+}
+
+func mapPlanAttemptBlockerForSeed(code appplans.PlanAttemptBlockerCode) string {
+	switch code {
+	case appplans.BlockerMissingPlanArtifact, appplans.BlockerArtifactHashMismatch:
+		return PlanSeedBlockerMissingPlanArtifact
+	case appplans.BlockerUnsafeRetrieval:
+		return PlanSeedBlockerUnsafeSeedContext
+	default:
+		return PlanSeedBlockerDraftAttemptsUnavailable
+	}
 }
 
 func (s *Service) ListPlanSeeds(ctx context.Context, projectID, status string, limit int64) ([]PlanSeedResult, []PlanSeedValidationIssue, error) {

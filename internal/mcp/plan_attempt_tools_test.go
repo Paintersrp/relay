@@ -28,6 +28,8 @@ func baseToolNamesForTest() []string {
 		toolCreatePlanSeed,
 		toolListPlanSeeds,
 		toolGetPlanSeed,
+		toolGetPlanSeedPlanningContext,
+		toolCreatePlanAttemptFromSeed,
 		toolUpdatePlanSeed,
 		toolDeferPlanSeed,
 		toolRejectPlanSeed,

@@ -7,7 +7,9 @@ import {
   Check,
   Clock3,
   Edit2,
+  Eye,
   ExternalLink,
+  FilePlus2,
   Loader2,
   Plus,
   XCircle,
@@ -31,8 +33,10 @@ import { formatPlanDate } from "@/components/relay/relayPlanVisualState";
 import { cn } from "@/lib/utils";
 import { RelayApiError } from "@/features/relay-runs";
 import {
+  createPlanAttemptFromSeed,
   createPlanSeed,
   deferPlanSeed,
+  getPlanSeedPlanningContext,
   planSeedsListQueryOptions,
   rejectPlanSeed,
   relayProjectKeys,
@@ -40,9 +44,11 @@ import {
 } from "@/features/relay-projects";
 import type {
   PlanSeedAPIRequest,
+  PlanSeedPlanningContext,
   PlanSeedStatus,
   PlanSeedUpdateAPIRequest,
   RelayPlanSeed,
+  CreatePlanAttemptFromSeedResponse,
 } from "@/features/relay-projects/types";
 
 type FilterValue = "all" | PlanSeedStatus;
@@ -117,6 +123,10 @@ function canDeferSeed(seed: RelayPlanSeed): boolean {
 
 function canRejectSeed(seed: RelayPlanSeed): boolean {
   return seed.status === "captured" || seed.status === "deferred";
+}
+
+function canCreateAttemptFromSeed(seed: RelayPlanSeed): boolean {
+  return seed.status === "captured" && !seed.planAttemptId;
 }
 
 function createEmptyForm(): SeedFormState {
@@ -228,6 +238,13 @@ export function RelayProjectPlanSeedsPanel({ projectId }: { projectId: string })
   const [lifecycleMode, setLifecycleMode] = React.useState<LifecycleMode>("defer");
   const [lifecycleReason, setLifecycleReason] = React.useState("");
   const [lifecycleClientError, setLifecycleClientError] = React.useState<string | null>(null);
+  const [contextSeed, setContextSeed] = React.useState<RelayPlanSeed | null>(null);
+  const [planningContext, setPlanningContext] = React.useState<PlanSeedPlanningContext | null>(null);
+  const [attemptSeed, setAttemptSeed] = React.useState<RelayPlanSeed | null>(null);
+  const [attemptPlanJSON, setAttemptPlanJSON] = React.useState("");
+  const [attemptSourcePath, setAttemptSourcePath] = React.useState("");
+  const [attemptClientError, setAttemptClientError] = React.useState<string | null>(null);
+  const [attemptResult, setAttemptResult] = React.useState<CreatePlanAttemptFromSeedResponse | null>(null);
 
   const seedsQuery = useQuery(planSeedsListQueryOptions(projectId, { limit: 100 }));
 
@@ -269,6 +286,31 @@ export function RelayProjectPlanSeedsPanel({ projectId }: { projectId: string })
     onSuccess: () => {
       invalidatePlanSeeds();
       setLifecycleSeed(null);
+    },
+  });
+
+  const planningContextMutation = useMutation({
+    mutationFn: (seedId: string) => getPlanSeedPlanningContext(projectId, seedId),
+    onSuccess: (response) => {
+      setPlanningContext(response.planningContext);
+    },
+  });
+
+  const attemptMutation = useMutation({
+    mutationFn: (variables: {
+      seedId: string;
+      plannerPassPlanJSON: Record<string, unknown>;
+      sourceArtifactPath: string;
+    }) =>
+      createPlanAttemptFromSeed(projectId, variables.seedId, {
+        planner_pass_plan_json: variables.plannerPassPlanJSON,
+        source_artifact_path: variables.sourceArtifactPath,
+      }),
+    onSuccess: (response) => {
+      setAttemptResult(response);
+      if (response.success) {
+        invalidatePlanSeeds();
+      }
     },
   });
 
@@ -323,6 +365,22 @@ export function RelayProjectPlanSeedsPanel({ projectId }: { projectId: string })
     setLifecycleReason("");
   };
 
+  const openPlanningContext = (seed: RelayPlanSeed) => {
+    planningContextMutation.reset();
+    setContextSeed(seed);
+    setPlanningContext(null);
+    planningContextMutation.mutate(seed.seedId);
+  };
+
+  const openAttemptDialog = (seed: RelayPlanSeed) => {
+    attemptMutation.reset();
+    setAttemptClientError(null);
+    setAttemptResult(null);
+    setAttemptSeed(seed);
+    setAttemptPlanJSON("");
+    setAttemptSourcePath("");
+  };
+
   const handleFormSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     createMutation.reset();
@@ -373,6 +431,38 @@ export function RelayProjectPlanSeedsPanel({ projectId }: { projectId: string })
     lifecycleMutation.mutate({
       seedId: lifecycleSeed.seedId,
       reason,
+    });
+  };
+
+  const handleAttemptSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    attemptMutation.reset();
+    setAttemptClientError(null);
+    setAttemptResult(null);
+    if (!attemptSeed) return;
+
+    const sourceArtifactPath = attemptSourcePath.trim();
+    if (!sourceArtifactPath) {
+      setAttemptClientError("source_artifact_path is required.");
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(attemptPlanJSON);
+    } catch (err: any) {
+      setAttemptClientError(`Plan JSON is invalid: ${err.message}`);
+      return;
+    }
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+      setAttemptClientError("Plan JSON must be an object.");
+      return;
+    }
+
+    attemptMutation.mutate({
+      seedId: attemptSeed.seedId,
+      plannerPassPlanJSON: parsed as Record<string, unknown>,
+      sourceArtifactPath,
     });
   };
 
@@ -505,6 +595,27 @@ export function RelayProjectPlanSeedsPanel({ projectId }: { projectId: string })
                       >
                         <XCircle className="size-3" />
                         Reject
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="gap-1"
+                      onClick={() => openPlanningContext(seed)}
+                    >
+                      <Eye className="size-3" />
+                      Context
+                    </Button>
+                    {canCreateAttemptFromSeed(seed) && (
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="gap-1"
+                        onClick={() => openAttemptDialog(seed)}
+                        disabled={attemptMutation.isPending}
+                      >
+                        <FilePlus2 className="size-3" />
+                        Draft Attempt
                       </Button>
                     )}
                   </div>
@@ -740,6 +851,138 @@ export function RelayProjectPlanSeedsPanel({ projectId }: { projectId: string })
                   <XCircle className="size-3.5" />
                 )}
                 {lifecycleMode === "defer" ? "Defer" : "Reject"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!contextSeed} onOpenChange={(open) => !open && setContextSeed(null)}>
+        <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Planning Context</DialogTitle>
+            <DialogDescription>{contextSeed?.title}</DialogDescription>
+          </DialogHeader>
+
+          {planningContextMutation.isPending && (
+            <div className="flex items-center gap-2 rounded border border-dashed border-[var(--relay-row-border)] p-6 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Loading planning context...
+            </div>
+          )}
+          <ValidationErrors
+            error={planningContextMutation.error}
+            fallback="Failed to load planning context."
+          />
+          {planningContext && (
+            <div className="space-y-4">
+              <div className="rounded border border-[var(--relay-row-border)] p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={planSeedStatusVariant(planningContext.seed.status)}>
+                    {formatSeedStatus(planningContext.seed.status)}
+                  </Badge>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {planningContext.seed.seedId}
+                  </span>
+                </div>
+                <p className="mt-3 whitespace-pre-wrap text-sm text-foreground/85">
+                  {planningContext.seed.quickContext}
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FieldList label="Constraints" values={planningContext.seed.constraints} />
+                <FieldList label="Non-goals" values={planningContext.seed.nonGoals} />
+              </div>
+              <pre className="max-h-72 overflow-auto rounded border border-[var(--relay-row-border)] bg-muted/40 p-3 text-xs">
+                {JSON.stringify(
+                  {
+                    project: planningContext.project,
+                    existingLinks: planningContext.existingLinks,
+                    retrievalSemantics: planningContext.retrievalSemantics,
+                    plannerInstructions: planningContext.plannerInstructions,
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!attemptSeed} onOpenChange={(open) => !open && setAttemptSeed(null)}>
+        <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-3xl">
+          <form onSubmit={handleAttemptSubmit} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>Register Draft Attempt</DialogTitle>
+              <DialogDescription>{attemptSeed?.title}</DialogDescription>
+            </DialogHeader>
+
+            {attemptClientError && (
+              <div className="rounded border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                {attemptClientError}
+              </div>
+            )}
+            <ValidationErrors
+              error={attemptMutation.error}
+              fallback="Failed to create draft attempt."
+            />
+            {attemptResult && !attemptResult.success && (
+              <div className="rounded border border-warning/30 bg-warning/10 p-3 text-sm text-warning-foreground">
+                <div className="font-mono text-xs">{attemptResult.blockerCode || "BLOCKED"}</div>
+                <div>{attemptResult.message || "Draft attempt creation was blocked."}</div>
+              </div>
+            )}
+            {attemptResult?.success && (
+              <div className="rounded border border-success/30 bg-success/10 p-3 text-sm text-success-foreground">
+                <div>Draft attempt created.</div>
+                <div className="font-mono text-xs break-all">
+                  {attemptResult.planAttempt?.planAttemptId}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label htmlFor="plan-seed-attempt-source">source_artifact_path</Label>
+              <Input
+                id="plan-seed-attempt-source"
+                value={attemptSourcePath}
+                onChange={(event) => setAttemptSourcePath(event.target.value)}
+                disabled={attemptMutation.isPending || !!attemptResult?.success}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="plan-seed-attempt-json">planner_pass_plan_json</Label>
+              <Textarea
+                id="plan-seed-attempt-json"
+                className="min-h-72 font-mono text-xs"
+                value={attemptPlanJSON}
+                onChange={(event) => setAttemptPlanJSON(event.target.value)}
+                disabled={attemptMutation.isPending || !!attemptResult?.success}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setAttemptSeed(null)}
+                disabled={attemptMutation.isPending}
+              >
+                Close
+              </Button>
+              <Button
+                type="submit"
+                disabled={attemptMutation.isPending || !!attemptResult?.success}
+                className="gap-1"
+              >
+                {attemptMutation.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <FilePlus2 className="size-3.5" />
+                )}
+                Register
               </Button>
             </DialogFooter>
           </form>

@@ -416,6 +416,105 @@ func TestPlanSeedAPIRejectsInvalidInputAndSecretLikeQuickContext(t *testing.T) {
 	}
 }
 
+func TestPlanSeedAPIPlanningContextAndCreateAttemptFromSeed(t *testing.T) {
+	t.Parallel()
+
+	router := newProjectAPITestServer(t)
+
+	createProjBody := []byte(`{"project_id":"relay","name":"Relay","status":"active"}`)
+	projReq := httptest.NewRequest(http.MethodPost, "/api/projects", bytes.NewReader(createProjBody))
+	projReq.Header.Set("Content-Type", "application/json")
+	projRec := httptest.NewRecorder()
+	router.ServeHTTP(projRec, projReq)
+	if projRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", projRec.Code, projRec.Body.String())
+	}
+
+	createSeedBody := []byte(`{
+		"title": "Bridge Seed",
+		"quick_context": "Create a reviewed draft attempt.",
+		"constraints": ["stay scoped"]
+	}`)
+	seedReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds", bytes.NewReader(createSeedBody))
+	seedReq.Header.Set("Content-Type", "application/json")
+	seedRec := httptest.NewRecorder()
+	router.ServeHTTP(seedRec, seedReq)
+	if seedRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", seedRec.Code, seedRec.Body.String())
+	}
+	var seedResp ProjectAPIResponse
+	if err := json.NewDecoder(seedRec.Body).Decode(&seedResp); err != nil {
+		t.Fatalf("decode seed response: %v", err)
+	}
+	seedID := seedResp.PlanSeed.SeedID
+
+	contextReq := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plan-seeds/"+seedID+"/planning-context", nil)
+	contextRec := httptest.NewRecorder()
+	router.ServeHTTP(contextRec, contextReq)
+	if contextRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", contextRec.Code, contextRec.Body.String())
+	}
+	var contextResp PlanSeedPlanningContextAPIResponse
+	if err := json.NewDecoder(contextRec.Body).Decode(&contextResp); err != nil {
+		t.Fatalf("decode context response: %v", err)
+	}
+	if !contextResp.Success || !contextResp.PlanningContext.RetrievalSemantics.RetrievalOnly || contextResp.PlanningContext.RetrievalSemantics.StateMutated {
+		t.Fatalf("unexpected planning context response: %+v", contextResp)
+	}
+
+	unknownFieldReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/plan-attempts", bytes.NewReader([]byte(`{"planner_pass_plan_json":{},"source_artifact_path":"handoffs/packets/plan.json","extra":true}`)))
+	unknownFieldReq.Header.Set("Content-Type", "application/json")
+	unknownFieldRec := httptest.NewRecorder()
+	router.ServeHTTP(unknownFieldRec, unknownFieldReq)
+	if unknownFieldRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unknown field, got %d: %s", unknownFieldRec.Code, unknownFieldRec.Body.String())
+	}
+
+	createAttemptBody := []byte(`{
+		"planner_pass_plan_json": {
+			"plan_meta": {"plan_id": "plan-http"},
+			"source_intent": {},
+			"passes": []
+		},
+		"source_artifact_path": "handoffs/packets/plan-http.json"
+	}`)
+	attemptReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/plan-attempts", bytes.NewReader(createAttemptBody))
+	attemptReq.Header.Set("Content-Type", "application/json")
+	attemptRec := httptest.NewRecorder()
+	router.ServeHTTP(attemptRec, attemptReq)
+	if attemptRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", attemptRec.Code, attemptRec.Body.String())
+	}
+	var attemptResp PlanSeedAttemptAPIResponse
+	if err := json.NewDecoder(attemptRec.Body).Decode(&attemptResp); err != nil {
+		t.Fatalf("decode attempt response: %v", err)
+	}
+	if !attemptResp.Success || attemptResp.Seed == nil || attemptResp.PlanAttempt == nil || attemptResp.IntentPacket == nil {
+		t.Fatalf("expected successful attempt response, got %+v", attemptResp)
+	}
+	if attemptResp.Seed.Status != "planned" || attemptResp.Seed.PlanAttemptID != attemptResp.PlanAttempt.PlanAttemptID {
+		t.Fatalf("expected seed linked to draft attempt, got %+v", attemptResp)
+	}
+	if attemptResp.PlanAttempt.Status != "draft" {
+		t.Fatalf("expected draft attempt, got %+v", attemptResp.PlanAttempt)
+	}
+
+	duplicateReq := httptest.NewRequest(http.MethodPost, "/api/projects/relay/plan-seeds/"+seedID+"/plan-attempts", bytes.NewReader(createAttemptBody))
+	duplicateReq.Header.Set("Content-Type", "application/json")
+	duplicateRec := httptest.NewRecorder()
+	router.ServeHTTP(duplicateRec, duplicateReq)
+	if duplicateRec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 duplicate blocker, got %d: %s", duplicateRec.Code, duplicateRec.Body.String())
+	}
+	var duplicateResp PlanSeedAttemptAPIResponse
+	if err := json.NewDecoder(duplicateRec.Body).Decode(&duplicateResp); err != nil {
+		t.Fatalf("decode duplicate response: %v", err)
+	}
+	if duplicateResp.Success || duplicateResp.BlockerCode != appprojects.PlanSeedBlockerSeedAlreadyPlanned {
+		t.Fatalf("expected duplicate blocker, got %+v", duplicateResp)
+	}
+}
+
 func TestPlanSeedAPIPartialUpdatePreservesOmittedFieldsAndClearsExplicitLists(t *testing.T) {
 	t.Parallel()
 

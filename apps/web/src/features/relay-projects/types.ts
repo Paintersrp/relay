@@ -159,3 +159,56 @@ export interface PlanSeedMutationResponse {
   success: boolean;
   seed: RelayPlanSeed;
 }
+
+export interface PlanSeedPlanningContext {
+  project: {
+    projectId: string;
+    name: string;
+    description: string;
+    status: string;
+    defaultRepositoryId: string;
+  };
+  seed: RelayPlanSeed;
+  existingLinks: {
+    planAttemptId: string;
+    managedPlanId: string;
+  };
+  plannerInstructions: string[];
+  retrievalSemantics: {
+    retrievalOnly: boolean;
+    stateMutated: boolean;
+    intentPacketCreated: boolean;
+    planAttemptCreated: boolean;
+    managedPlanSubmitted: boolean;
+    runCreated: boolean;
+    modelCallPerformed: boolean;
+  };
+}
+
+export interface PlanSeedPlanningContextResponse {
+  success: boolean;
+  planningContext: PlanSeedPlanningContext;
+}
+
+export interface CreatePlanAttemptFromSeedRequest {
+  planner_pass_plan_json: Record<string, unknown>;
+  source_artifact_path: string;
+}
+
+export interface SeedPlanAttempt {
+  planAttemptId: string;
+  status: string;
+  reviewState: string;
+  planJsonArtifactPath: string;
+  planJsonArtifactSha256: string;
+}
+
+export interface CreatePlanAttemptFromSeedResponse {
+  success: boolean;
+  blockerCode?: string;
+  message?: string;
+  seed?: RelayPlanSeed;
+  planAttempt?: SeedPlanAttempt;
+  intentPacket?: unknown;
+  reviewGate?: unknown;
+}

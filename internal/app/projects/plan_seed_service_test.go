@@ -2,6 +2,7 @@ package projects
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -606,5 +607,169 @@ func TestPlanSeedNoDownstreamSideEffects(t *testing.T) {
 		if count != 0 {
 			t.Fatalf("expected count for %s to remain 0 after RejectPlanSeed, got %d", table, count)
 		}
+	}
+}
+
+func TestPlanSeedPlanningContextIsReadOnly(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newProjectTestService(t)
+	db := st.DB()
+	_, _, err := svc.CreateProject(t.Context(), ProjectInput{ProjectID: "relay", Name: "Relay"})
+	if err != nil {
+		t.Fatalf("CreateProject error: %v", err)
+	}
+	_, issues, err := svc.CreatePlanSeed(t.Context(), "relay", PlanSeedInput{
+		SeedID:       "seed-context",
+		Title:        "Context Seed",
+		QuickContext: "Draft this later.",
+	})
+	if err != nil || len(issues) > 0 {
+		t.Fatalf("CreatePlanSeed error: %v, issues: %+v", err, issues)
+	}
+
+	tables := []string{"intent_packets", "plan_attempts", "plans", "plan_passes", "runs"}
+	before := map[string]int{}
+	for _, table := range tables {
+		before[table] = getTableRowCount(t, db, table)
+	}
+
+	ctx, err := svc.GetPlanSeedPlanningContext(t.Context(), "relay", "seed-context")
+	if err != nil {
+		t.Fatalf("GetPlanSeedPlanningContext error: %v", err)
+	}
+	if !ctx.RetrievalSemantics.RetrievalOnly || ctx.RetrievalSemantics.StateMutated {
+		t.Fatalf("unexpected retrieval semantics: %+v", ctx.RetrievalSemantics)
+	}
+	if ctx.Seed.SeedID != "seed-context" || ctx.ExistingLinks.PlanAttemptID != "" {
+		t.Fatalf("unexpected planning context: %+v", ctx)
+	}
+
+	for _, table := range tables {
+		if got := getTableRowCount(t, db, table); got != before[table] {
+			t.Fatalf("expected %s count %d after context retrieval, got %d", table, before[table], got)
+		}
+	}
+}
+
+func TestCreatePlanAttemptFromSeedCreatesDraftAndLinksSeed(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newProjectTestService(t)
+	db := st.DB()
+	_, _, err := svc.CreateProject(t.Context(), ProjectInput{ProjectID: "relay", Name: "Relay"})
+	if err != nil {
+		t.Fatalf("CreateProject error: %v", err)
+	}
+	_, issues, err := svc.CreatePlanSeed(t.Context(), "relay", PlanSeedInput{
+		SeedID:       "seed-attempt",
+		Title:        "Attempt Seed",
+		QuickContext: "Turn this seed into a reviewed draft.",
+		Constraints:  []string{"stay scoped"},
+	})
+	if err != nil || len(issues) > 0 {
+		t.Fatalf("CreatePlanSeed error: %v, issues: %+v", err, issues)
+	}
+
+	result, err := svc.CreatePlanAttemptFromSeed(t.Context(), "relay", "seed-attempt", CreatePlanAttemptFromSeedInput{
+		PlannerPassPlanJSON: json.RawMessage(`{"plan_meta":{"plan_id":"plan-1"},"source_intent":{},"passes":[]}`),
+		SourceArtifactPath:  "handoffs/packets/plan-1.json",
+	})
+	if err != nil {
+		t.Fatalf("CreatePlanAttemptFromSeed error: %v", err)
+	}
+	if result == nil || !result.OK {
+		t.Fatalf("expected OK result, got %+v", result)
+	}
+	if result.PlanAttempt == nil || result.PlanAttempt.Status != "draft" {
+		t.Fatalf("expected draft plan attempt, got %+v", result.PlanAttempt)
+	}
+	if result.IntentPacket == nil || result.IntentPacket.LiteralUserRequest != "Turn this seed into a reviewed draft." {
+		t.Fatalf("unexpected intent packet: %+v", result.IntentPacket)
+	}
+	if result.Seed == nil || result.Seed.Status != PlanSeedStatusPlanned || result.Seed.PlanAttemptID != result.PlanAttempt.PlanAttemptID {
+		t.Fatalf("seed not linked to created attempt: %+v", result.Seed)
+	}
+	if got := getTableRowCount(t, db, "intent_packets"); got != 1 {
+		t.Fatalf("expected 1 intent packet, got %d", got)
+	}
+	if got := getTableRowCount(t, db, "plan_attempts"); got != 1 {
+		t.Fatalf("expected 1 plan attempt, got %d", got)
+	}
+	if got := getTableRowCount(t, db, "plans"); got != 0 {
+		t.Fatalf("expected 0 managed plans, got %d", got)
+	}
+	if got := getTableRowCount(t, db, "runs"); got != 0 {
+		t.Fatalf("expected 0 runs, got %d", got)
+	}
+
+	duplicate, err := svc.CreatePlanAttemptFromSeed(t.Context(), "relay", "seed-attempt", CreatePlanAttemptFromSeedInput{
+		PlannerPassPlanJSON: json.RawMessage(`{"plan_meta":{"plan_id":"plan-2"},"source_intent":{},"passes":[]}`),
+		SourceArtifactPath:  "handoffs/packets/plan-2.json",
+	})
+	if err != nil {
+		t.Fatalf("duplicate CreatePlanAttemptFromSeed error: %v", err)
+	}
+	if duplicate == nil || duplicate.OK || duplicate.BlockerCode != PlanSeedBlockerSeedAlreadyPlanned {
+		t.Fatalf("expected duplicate blocker, got %+v", duplicate)
+	}
+	if got := getTableRowCount(t, db, "plan_attempts"); got != 1 {
+		t.Fatalf("expected duplicate to create no attempts, got %d", got)
+	}
+}
+
+func TestCreatePlanAttemptFromSeedBlocksInvalidSeedStatesAndPlanInput(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newProjectTestService(t)
+	db := st.DB()
+	_, _, err := svc.CreateProject(t.Context(), ProjectInput{ProjectID: "relay", Name: "Relay"})
+	if err != nil {
+		t.Fatalf("CreateProject error: %v", err)
+	}
+	_, issues, err := svc.CreatePlanSeed(t.Context(), "relay", PlanSeedInput{
+		SeedID:       "seed-deferred",
+		Title:        "Deferred Seed",
+		QuickContext: "Not ready.",
+	})
+	if err != nil || len(issues) > 0 {
+		t.Fatalf("CreatePlanSeed error: %v, issues: %+v", err, issues)
+	}
+	_, issues, err = svc.DeferPlanSeed(t.Context(), "relay", "seed-deferred", PlanSeedLifecycleInput{})
+	if err != nil || len(issues) > 0 {
+		t.Fatalf("DeferPlanSeed error: %v, issues: %+v", err, issues)
+	}
+
+	blocked, err := svc.CreatePlanAttemptFromSeed(t.Context(), "relay", "seed-deferred", CreatePlanAttemptFromSeedInput{
+		PlannerPassPlanJSON: json.RawMessage(`{"passes":[]}`),
+		SourceArtifactPath:  "handoffs/packets/deferred.json",
+	})
+	if err != nil {
+		t.Fatalf("CreatePlanAttemptFromSeed deferred error: %v", err)
+	}
+	if blocked == nil || blocked.OK || blocked.BlockerCode != PlanSeedBlockerSeedNotExpandable {
+		t.Fatalf("expected non-expandable blocker, got %+v", blocked)
+	}
+
+	_, issues, err = svc.CreatePlanSeed(t.Context(), "relay", PlanSeedInput{
+		SeedID:       "seed-invalid-json",
+		Title:        "Invalid JSON Seed",
+		QuickContext: "Needs a valid object.",
+	})
+	if err != nil || len(issues) > 0 {
+		t.Fatalf("CreatePlanSeed error: %v, issues: %+v", err, issues)
+	}
+	blocked, err = svc.CreatePlanAttemptFromSeed(t.Context(), "relay", "seed-invalid-json", CreatePlanAttemptFromSeedInput{
+		PlannerPassPlanJSON: json.RawMessage(`[{"passes":[]}]`),
+		SourceArtifactPath:  "handoffs/packets/invalid.json",
+	})
+	if err != nil {
+		t.Fatalf("CreatePlanAttemptFromSeed invalid JSON error: %v", err)
+	}
+	if blocked == nil || blocked.OK || blocked.BlockerCode != PlanSeedBlockerMissingPlanArtifact {
+		t.Fatalf("expected plan artifact blocker, got %+v", blocked)
+	}
+	if got := getTableRowCount(t, db, "plan_attempts"); got != 0 {
+		t.Fatalf("expected no attempts after blocked calls, got %d", got)
 	}
 }

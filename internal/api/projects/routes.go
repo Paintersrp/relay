@@ -16,6 +16,8 @@ func MountRoutes(r chi.Router, h *Handler) {
 	r.Get("/projects/{projectId}/plan-seeds", h.ListPlanSeeds)
 	r.Post("/projects/{projectId}/plan-seeds", h.CreatePlanSeed)
 	r.Get("/projects/{projectId}/plan-seeds/{seedId}", h.GetPlanSeed)
+	r.Get("/projects/{projectId}/plan-seeds/{seedId}/planning-context", h.GetPlanSeedPlanningContext)
+	r.Post("/projects/{projectId}/plan-seeds/{seedId}/plan-attempts", h.CreatePlanAttemptFromSeed)
 	r.Post("/projects/{projectId}/plan-seeds/{seedId}/update", h.UpdatePlanSeed)
 	r.Post("/projects/{projectId}/plan-seeds/{seedId}/defer", h.DeferPlanSeed)
 	r.Post("/projects/{projectId}/plan-seeds/{seedId}/reject", h.RejectPlanSeed)

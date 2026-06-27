@@ -12,12 +12,14 @@ import (
 )
 
 const (
-	toolCreatePlanSeed = "create_plan_seed"
-	toolListPlanSeeds  = "list_plan_seeds"
-	toolGetPlanSeed    = "get_plan_seed"
-	toolUpdatePlanSeed = "update_plan_seed"
-	toolDeferPlanSeed  = "defer_plan_seed"
-	toolRejectPlanSeed = "reject_plan_seed"
+	toolCreatePlanSeed             = "create_plan_seed"
+	toolListPlanSeeds              = "list_plan_seeds"
+	toolGetPlanSeed                = "get_plan_seed"
+	toolGetPlanSeedPlanningContext = "get_plan_seed_planning_context"
+	toolCreatePlanAttemptFromSeed  = "create_plan_attempt_from_seed"
+	toolUpdatePlanSeed             = "update_plan_seed"
+	toolDeferPlanSeed              = "defer_plan_seed"
+	toolRejectPlanSeed             = "reject_plan_seed"
 )
 
 var createPlanSeedSchema = json.RawMessage(`{
@@ -54,6 +56,30 @@ var getPlanSeedSchema = json.RawMessage(`{
   "properties": {
     "project_id": { "type": "string", "minLength": 1, "description": "Relay project identifier." },
     "seed_id": { "type": "string", "minLength": 1, "description": "The plan seed identifier." }
+  }
+}`)
+
+var getPlanSeedPlanningContextSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "seed_id"],
+  "properties": {
+    "project_id": { "type": "string", "minLength": 1, "description": "Relay project identifier." },
+    "seed_id": { "type": "string", "minLength": 1, "description": "The plan seed identifier." }
+  }
+}`)
+
+var createPlanAttemptFromSeedSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "seed_id", "planner_pass_plan_json", "source_artifact_path"],
+  "properties": {
+    "project_id": { "type": "string", "minLength": 1, "description": "Relay project identifier." },
+    "seed_id": { "type": "string", "minLength": 1, "description": "The captured plan seed identifier." },
+    "planner_pass_plan_json": { "type": "object", "description": "Externally reviewed/generated Plan of Passes JSON object." },
+    "source_artifact_path": { "type": "string", "minLength": 1, "description": "Durable artifact path for the reviewed Plan JSON." },
+    "drift_review_mode": { "type": "string", "description": "Optional drift review mode override." },
+    "model_tier": { "type": "string", "description": "Optional model tier override." }
   }
 }`)
 
@@ -96,19 +122,23 @@ var rejectPlanSeedSchema = json.RawMessage(`{
 }`)
 
 type planSeedArgs struct {
-	ProjectID    string   `json:"project_id"`
-	SeedID       string   `json:"seed_id,omitempty"`
-	Title        string   `json:"title,omitempty"`
-	QuickContext string   `json:"quick_context,omitempty"`
-	Priority     string   `json:"priority,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
-	Constraints  []string `json:"constraints,omitempty"`
-	NonGoals     []string `json:"non_goals,omitempty"`
-	SourceLabel  string   `json:"source_label,omitempty"`
-	Status       string   `json:"status,omitempty"`
-	Limit        int64    `json:"limit,omitempty"`
-	DeferReason  string   `json:"defer_reason,omitempty"`
-	RejectReason string   `json:"reject_reason,omitempty"`
+	ProjectID           string          `json:"project_id"`
+	SeedID              string          `json:"seed_id,omitempty"`
+	Title               string          `json:"title,omitempty"`
+	QuickContext        string          `json:"quick_context,omitempty"`
+	Priority            string          `json:"priority,omitempty"`
+	Tags                []string        `json:"tags,omitempty"`
+	Constraints         []string        `json:"constraints,omitempty"`
+	NonGoals            []string        `json:"non_goals,omitempty"`
+	SourceLabel         string          `json:"source_label,omitempty"`
+	Status              string          `json:"status,omitempty"`
+	Limit               int64           `json:"limit,omitempty"`
+	DeferReason         string          `json:"defer_reason,omitempty"`
+	RejectReason        string          `json:"reject_reason,omitempty"`
+	PlannerPassPlanJSON json.RawMessage `json:"planner_pass_plan_json,omitempty"`
+	SourceArtifactPath  string          `json:"source_artifact_path,omitempty"`
+	DriftReviewMode     string          `json:"drift_review_mode,omitempty"`
+	ModelTier           string          `json:"model_tier,omitempty"`
 }
 
 type planSeedUpdateArgs struct {
@@ -123,12 +153,17 @@ type planSeedUpdateArgs struct {
 }
 
 type planSeedToolOutput struct {
-	OK        bool               `json:"ok"`
-	Tool      string             `json:"tool"`
-	ProjectID string             `json:"project_id"`
-	Seed      *planSeedToolSeed  `json:"seed,omitempty"`
-	Seeds     []planSeedToolSeed `json:"seeds,omitempty"`
-	Count     int                `json:"count,omitempty"`
+	OK              bool               `json:"ok"`
+	Tool            string             `json:"tool"`
+	ProjectID       string             `json:"project_id"`
+	Seed            *planSeedToolSeed  `json:"seed,omitempty"`
+	Seeds           []planSeedToolSeed `json:"seeds,omitempty"`
+	Count           int                `json:"count,omitempty"`
+	PlanningContext any                `json:"planning_context,omitempty"`
+	PlanAttempt     any                `json:"plan_attempt,omitempty"`
+	IntentPacket    any                `json:"intent_packet,omitempty"`
+	BlockerCode     string             `json:"blocker_code,omitempty"`
+	Message         string             `json:"message,omitempty"`
 }
 
 type planSeedToolSeed struct {
@@ -177,6 +212,16 @@ func planSeedToolDefinitions() []ToolDefinition {
 			Name:        toolGetPlanSeed,
 			Description: "Get the details and planned status of a specific Plan Seed by ID.",
 			InputSchema: getPlanSeedSchema,
+		},
+		{
+			Name:        toolGetPlanSeedPlanningContext,
+			Description: "Retrieve read-only planning context for a project-scoped Plan Seed. Does not create attempts, plans, runs, artifacts, or model calls.",
+			InputSchema: getPlanSeedPlanningContextSchema,
+		},
+		{
+			Name:        toolCreatePlanAttemptFromSeed,
+			Description: "Create exactly one draft Plan Attempt and Intent Packet from a captured Plan Seed plus externally reviewed Plan JSON. Does not submit managed plans or create runs.",
+			InputSchema: createPlanAttemptFromSeedSchema,
 		},
 		{
 			Name:        toolUpdatePlanSeed,
@@ -429,6 +474,127 @@ func (s *Server) HandleGetPlanSeed(args json.RawMessage) ToolCallResult {
 		return planSeedToolErr(toolGetPlanSeed, "PLAN_SEED_ERROR", "marshal failed: "+err.Error(), nil)
 	}
 	return toolOK(text)
+}
+
+func (s *Server) HandleGetPlanSeedPlanningContext(args json.RawMessage) ToolCallResult {
+	var in planSeedArgs
+	if err := brokerDecodeStrict(args, &in); err != nil {
+		return planSeedToolErr(toolGetPlanSeedPlanningContext, "VALIDATION_ERROR", "invalid params: "+err.Error(), nil)
+	}
+
+	projectID := strings.TrimSpace(in.ProjectID)
+	seedID := strings.TrimSpace(in.SeedID)
+	if projectID == "" || seedID == "" {
+		return planSeedToolErr(toolGetPlanSeedPlanningContext, "VALIDATION_ERROR", "project_id and seed_id are required", nil)
+	}
+
+	svc, depErr := s.planSeedServiceOrErr(toolGetPlanSeedPlanningContext)
+	if depErr != nil {
+		return planSeedToolErr(toolGetPlanSeedPlanningContext, depErr.Error, depErr.Message, nil)
+	}
+
+	ctx, err := svc.GetPlanSeedPlanningContext(context.Background(), projectID, seedID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return planSeedToolErr(toolGetPlanSeedPlanningContext, "NOT_FOUND", "Project or Plan Seed not found", nil)
+		}
+		return planSeedToolErr(toolGetPlanSeedPlanningContext, "PLAN_SEED_ERROR", err.Error(), nil)
+	}
+
+	out := planSeedToolOutput{
+		OK:              true,
+		Tool:            toolGetPlanSeedPlanningContext,
+		ProjectID:       projectID,
+		PlanningContext: mapPlanSeedPlanningContextTool(*ctx),
+	}
+	text, err := marshalTool(out)
+	if err != nil {
+		return planSeedToolErr(toolGetPlanSeedPlanningContext, "PLAN_SEED_ERROR", "marshal failed: "+err.Error(), nil)
+	}
+	return toolOK(text)
+}
+
+func (s *Server) HandleCreatePlanAttemptFromSeed(args json.RawMessage) ToolCallResult {
+	var in planSeedArgs
+	if err := brokerDecodeStrict(args, &in); err != nil {
+		return planSeedToolErr(toolCreatePlanAttemptFromSeed, "VALIDATION_ERROR", "invalid params: "+err.Error(), nil)
+	}
+
+	projectID := strings.TrimSpace(in.ProjectID)
+	seedID := strings.TrimSpace(in.SeedID)
+	if projectID == "" || seedID == "" {
+		return planSeedToolErr(toolCreatePlanAttemptFromSeed, "VALIDATION_ERROR", "project_id and seed_id are required", nil)
+	}
+
+	svc, depErr := s.planSeedServiceOrErr(toolCreatePlanAttemptFromSeed)
+	if depErr != nil {
+		return planSeedToolErr(toolCreatePlanAttemptFromSeed, depErr.Error, depErr.Message, nil)
+	}
+
+	res, err := svc.CreatePlanAttemptFromSeed(context.Background(), projectID, seedID, appprojects.CreatePlanAttemptFromSeedInput{
+		PlannerPassPlanJSON: in.PlannerPassPlanJSON,
+		SourceArtifactPath:  in.SourceArtifactPath,
+		DriftReviewMode:     in.DriftReviewMode,
+		ModelTier:           in.ModelTier,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return planSeedToolErr(toolCreatePlanAttemptFromSeed, "NOT_FOUND", "Project or Plan Seed not found", nil)
+		}
+		return planSeedToolErr(toolCreatePlanAttemptFromSeed, "PLAN_SEED_ERROR", err.Error(), nil)
+	}
+
+	out := planSeedToolOutput{
+		OK:          res != nil && res.OK,
+		Tool:        toolCreatePlanAttemptFromSeed,
+		ProjectID:   projectID,
+		BlockerCode: "",
+	}
+	if res != nil {
+		out.BlockerCode = res.BlockerCode
+		out.Message = res.Message
+		if res.Seed != nil {
+			out.Seed = planSeedToolSeedPtr(mapPlanSeedToolSeed(*res.Seed))
+		}
+		if res.PlanAttempt != nil {
+			out.PlanAttempt = res.PlanAttempt
+		}
+		if res.IntentPacket != nil {
+			out.IntentPacket = res.IntentPacket
+		}
+	}
+	text, err := marshalTool(out)
+	if err != nil {
+		return planSeedToolErr(toolCreatePlanAttemptFromSeed, "PLAN_SEED_ERROR", "marshal failed: "+err.Error(), nil)
+	}
+	return toolOK(text)
+}
+
+func mapPlanSeedPlanningContextTool(ctx appprojects.PlanSeedPlanningContext) map[string]any {
+	return map[string]any{
+		"project": map[string]any{
+			"project_id":            ctx.Project.ProjectID,
+			"name":                  ctx.Project.Name,
+			"description":           ctx.Project.Description,
+			"status":                ctx.Project.Status,
+			"default_repository_id": ctx.Project.DefaultRepositoryID,
+		},
+		"seed": mapPlanSeedToolSeed(ctx.Seed),
+		"existing_links": map[string]string{
+			"plan_attempt_id": ctx.ExistingLinks.PlanAttemptID,
+			"managed_plan_id": ctx.ExistingLinks.ManagedPlanID,
+		},
+		"planner_instructions": ctx.PlannerInstructions,
+		"retrieval_semantics": map[string]bool{
+			"retrieval_only":         ctx.RetrievalSemantics.RetrievalOnly,
+			"state_mutated":          ctx.RetrievalSemantics.StateMutated,
+			"intent_packet_created":  ctx.RetrievalSemantics.IntentPacketCreated,
+			"plan_attempt_created":   ctx.RetrievalSemantics.PlanAttemptCreated,
+			"managed_plan_submitted": ctx.RetrievalSemantics.ManagedPlanSubmitted,
+			"run_created":            ctx.RetrievalSemantics.RunCreated,
+			"model_call_performed":   ctx.RetrievalSemantics.ModelCallPerformed,
+		},
+	}
 }
 
 func (s *Server) HandleUpdatePlanSeed(args json.RawMessage) ToolCallResult {

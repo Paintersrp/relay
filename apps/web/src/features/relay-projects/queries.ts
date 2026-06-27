@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { getPlanSeed, getPlanSeeds, getProject, getProjects } from "./api";
+import { getPlanSeed, getPlanSeedPlanningContext, getPlanSeeds, getProject, getProjects } from "./api";
 import type { PlanSeedListFilters, ProjectListFilters } from "./types";
 
 export const relayProjectKeys = {
@@ -16,6 +16,8 @@ export const relayProjectKeys = {
     [...relayProjectKeys.planSeeds(projectId), "list", filters] as const,
   planSeedDetail: (projectId: string, seedId: string) =>
     [...relayProjectKeys.planSeeds(projectId), "detail", seedId] as const,
+  planSeedPlanningContext: (projectId: string, seedId: string) =>
+    [...relayProjectKeys.planSeedDetail(projectId, seedId), "planning-context"] as const,
 };
 
 export function projectsListQueryOptions(filters: ProjectListFilters = {}) {
@@ -50,5 +52,13 @@ export function planSeedDetailQueryOptions(projectId: string, seedId: string) {
     queryKey: relayProjectKeys.planSeedDetail(projectId, seedId),
     queryFn: () => getPlanSeed(projectId, seedId),
     staleTime: 60 * 1000,
+  });
+}
+
+export function planSeedPlanningContextQueryOptions(projectId: string, seedId: string) {
+  return queryOptions({
+    queryKey: relayProjectKeys.planSeedPlanningContext(projectId, seedId),
+    queryFn: () => getPlanSeedPlanningContext(projectId, seedId),
+    staleTime: 30 * 1000,
   });
 }

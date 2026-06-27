@@ -27,6 +27,8 @@ func TestServerToolsListIncludesPlanSeedTools(t *testing.T) {
 		"create_plan_seed",
 		"list_plan_seeds",
 		"get_plan_seed",
+		"get_plan_seed_planning_context",
+		"create_plan_attempt_from_seed",
 		"update_plan_seed",
 		"defer_plan_seed",
 		"reject_plan_seed",
@@ -45,8 +47,6 @@ func TestServerToolsListIncludesPlanSeedTools(t *testing.T) {
 
 	// Verify future-pass/forbidden tools are absent
 	forbiddenTools := []string{
-		"get_plan_seed_planning_context",
-		"create_plan_attempt_from_seed",
 		"link_plan_seed_result",
 	}
 	for _, name := range forbiddenTools {
@@ -420,6 +420,78 @@ func TestPlanSeedMCPNoPlanOrRunSideEffects(t *testing.T) {
 
 	afterReject := getCounts()
 	assertCountsEqual(initialCounts, afterReject, "after reject_plan_seed")
+}
+
+func TestPlanSeedMCPPlanningContextAndCreateAttemptBridge(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	createArgs, _ := json.Marshal(map[string]any{
+		"project_id":    "relay",
+		"title":         "Bridge Seed",
+		"quick_context": "Create a reviewed draft attempt.",
+		"constraints":   []string{"stay scoped"},
+	})
+	res := srv.HandleCreatePlanSeed(createArgs)
+	if res.IsError {
+		t.Fatalf("create_plan_seed failed: %s", res.Content[0].Text)
+	}
+	var created planSeedToolOutput
+	_ = json.Unmarshal([]byte(res.Content[0].Text), &created)
+	seedID := created.Seed.SeedID
+
+	tables := []string{"intent_packets", "plan_attempts", "plans", "plan_passes", "runs"}
+	beforeContext := map[string]int{}
+	for _, table := range tables {
+		beforeContext[table] = countTableRows(t, deps.Store.DB(), table)
+	}
+
+	contextArgs, _ := json.Marshal(map[string]any{
+		"project_id": "relay",
+		"seed_id":    seedID,
+	})
+	contextRes := srv.HandleGetPlanSeedPlanningContext(contextArgs)
+	if contextRes.IsError {
+		t.Fatalf("get_plan_seed_planning_context failed: %s", contextRes.Content[0].Text)
+	}
+	var contextOut planSeedToolOutput
+	_ = json.Unmarshal([]byte(contextRes.Content[0].Text), &contextOut)
+	if !contextOut.OK || contextOut.PlanningContext == nil {
+		t.Fatalf("expected planning context output, got %+v", contextOut)
+	}
+	for _, table := range tables {
+		if got := countTableRows(t, deps.Store.DB(), table); got != beforeContext[table] {
+			t.Fatalf("expected %s count to remain %d, got %d", table, beforeContext[table], got)
+		}
+	}
+
+	attemptArgs, _ := json.Marshal(map[string]any{
+		"project_id":             "relay",
+		"seed_id":                seedID,
+		"planner_pass_plan_json": map[string]any{"plan_meta": map[string]any{"plan_id": "plan-mcp"}, "source_intent": map[string]any{}, "passes": []any{}},
+		"source_artifact_path":   "handoffs/packets/plan-mcp.json",
+	})
+	attemptRes := srv.HandleCreatePlanAttemptFromSeed(attemptArgs)
+	if attemptRes.IsError {
+		t.Fatalf("create_plan_attempt_from_seed failed: %s", attemptRes.Content[0].Text)
+	}
+	var attemptOut planSeedToolOutput
+	_ = json.Unmarshal([]byte(attemptRes.Content[0].Text), &attemptOut)
+	if !attemptOut.OK || attemptOut.Seed == nil || attemptOut.Seed.Status != "planned" || attemptOut.Seed.PlanAttemptID == "" {
+		t.Fatalf("expected planned seed with attempt linkage, got %+v", attemptOut)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "intent_packets"); got != 1 {
+		t.Fatalf("expected 1 intent packet, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "plan_attempts"); got != 1 {
+		t.Fatalf("expected 1 plan attempt, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "plans"); got != 0 {
+		t.Fatalf("expected 0 plans, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+		t.Fatalf("expected 0 runs, got %d", got)
+	}
 }
 
 func updatePlanSeedMCP(t *testing.T, srv *Server, params map[string]any) planSeedToolOutput {

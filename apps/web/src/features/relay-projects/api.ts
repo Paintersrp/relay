@@ -1,12 +1,15 @@
 import { API_BASE_URL, RelayApiError } from "@/features/relay-runs";
 import type { RelayApiErrorShape } from "@/features/relay-runs/types";
 import type {
+  CreatePlanAttemptFromSeedRequest,
+  CreatePlanAttemptFromSeedResponse,
   PlanSeedAPIRequest,
   PlanSeedDetailResponse,
   PlanSeedLifecycleAPIRequest,
   PlanSeedListFilters,
   PlanSeedListResponse,
   PlanSeedMutationResponse,
+  PlanSeedPlanningContextResponse,
   PlanSeedUpdateAPIRequest,
   ProjectAPIRequest,
   ProjectDetailResponse,
@@ -17,6 +20,7 @@ import type {
   RelayPlanSeed,
   RelayProject,
   RelayProjectRepository,
+  SeedPlanAttempt,
 } from "./types";
 
 function normalizeProjectRepository(repo: any): RelayProjectRepository {
@@ -73,6 +77,16 @@ function normalizePlanSeed(seed: any): RelayPlanSeed {
     rejectReason: seed?.rejectReason ?? "",
     createdAt: seed?.createdAt ?? "",
     updatedAt: seed?.updatedAt ?? "",
+  };
+}
+
+function normalizeSeedPlanAttempt(attempt: any): SeedPlanAttempt {
+  return {
+    planAttemptId: attempt?.planAttemptId ?? "",
+    status: attempt?.status ?? "",
+    reviewState: attempt?.reviewState ?? "",
+    planJsonArtifactPath: attempt?.planJsonArtifactPath ?? "",
+    planJsonArtifactSha256: attempt?.planJsonArtifactSHA256 ?? attempt?.planJsonArtifactSha256 ?? "",
   };
 }
 
@@ -147,6 +161,41 @@ async function postProjectJson<TReq, TRes>(path: string, body: TReq): Promise<TR
       );
     }
 
+    const text = await res.text();
+    try {
+      return JSON.parse(text) as TRes;
+    } catch (err: any) {
+      throw new RelayApiError(
+        `Malformed JSON response from POST ${path}: ${err.message}`,
+        res.status,
+        path,
+        "POST",
+      );
+    }
+  } catch (err: any) {
+    if (err instanceof RelayApiError) throw err;
+
+    throw new RelayApiError(
+      `Daemon unavailable or connection refused on POST ${path}: ${err.message}`,
+      503,
+      path,
+      "POST",
+    );
+  }
+}
+
+async function postProjectJsonAllowBlocker<TReq, TRes>(path: string, body: TReq): Promise<TRes> {
+  const url = `${API_BASE_URL}${path}`;
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    });
     const text = await res.text();
     try {
       return JSON.parse(text) as TRes;
@@ -300,6 +349,45 @@ export async function getPlanSeed(
   };
 }
 
+export async function getPlanSeedPlanningContext(
+  projectId: string,
+  seedId: string,
+): Promise<PlanSeedPlanningContextResponse> {
+  const response = await getProjectJson<any>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds/${encodeURIComponent(seedId)}/planning-context`,
+  );
+
+  return {
+    success: !!response?.success,
+    planningContext: {
+      project: {
+        projectId: response?.planningContext?.project?.projectId ?? "",
+        name: response?.planningContext?.project?.name ?? "",
+        description: response?.planningContext?.project?.description ?? "",
+        status: response?.planningContext?.project?.status ?? "",
+        defaultRepositoryId: response?.planningContext?.project?.defaultRepositoryId ?? "",
+      },
+      seed: normalizePlanSeed(response?.planningContext?.seed),
+      existingLinks: {
+        planAttemptId: response?.planningContext?.existingLinks?.planAttemptId ?? "",
+        managedPlanId: response?.planningContext?.existingLinks?.managedPlanId ?? "",
+      },
+      plannerInstructions: Array.isArray(response?.planningContext?.plannerInstructions)
+        ? response.planningContext.plannerInstructions
+        : [],
+      retrievalSemantics: {
+        retrievalOnly: !!response?.planningContext?.retrievalSemantics?.retrievalOnly,
+        stateMutated: !!response?.planningContext?.retrievalSemantics?.stateMutated,
+        intentPacketCreated: !!response?.planningContext?.retrievalSemantics?.intentPacketCreated,
+        planAttemptCreated: !!response?.planningContext?.retrievalSemantics?.planAttemptCreated,
+        managedPlanSubmitted: !!response?.planningContext?.retrievalSemantics?.managedPlanSubmitted,
+        runCreated: !!response?.planningContext?.retrievalSemantics?.runCreated,
+        modelCallPerformed: !!response?.planningContext?.retrievalSemantics?.modelCallPerformed,
+      },
+    },
+  };
+}
+
 export async function createPlanSeed(
   projectId: string,
   request: PlanSeedAPIRequest,
@@ -312,6 +400,27 @@ export async function createPlanSeed(
   return {
     success: !!response?.success,
     seed: normalizePlanSeed(response?.seed),
+  };
+}
+
+export async function createPlanAttemptFromSeed(
+  projectId: string,
+  seedId: string,
+  request: CreatePlanAttemptFromSeedRequest,
+): Promise<CreatePlanAttemptFromSeedResponse> {
+  const response = await postProjectJsonAllowBlocker<CreatePlanAttemptFromSeedRequest, any>(
+    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds/${encodeURIComponent(seedId)}/plan-attempts`,
+    request,
+  );
+
+  return {
+    success: !!response?.success,
+    blockerCode: response?.blockerCode ?? "",
+    message: response?.message ?? "",
+    seed: response?.seed ? normalizePlanSeed(response.seed) : undefined,
+    planAttempt: response?.planAttempt ? normalizeSeedPlanAttempt(response.planAttempt) : undefined,
+    intentPacket: response?.intentPacket,
+    reviewGate: response?.reviewGate,
   };
 }
 

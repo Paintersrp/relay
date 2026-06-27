@@ -213,6 +213,10 @@ func (s *Server) handleToolsCall(req Request) Response {
 		result = s.HandleListPlanSeeds(args)
 	case toolGetPlanSeed:
 		result = s.HandleGetPlanSeed(args)
+	case toolGetPlanSeedPlanningContext:
+		result = s.HandleGetPlanSeedPlanningContext(args)
+	case toolCreatePlanAttemptFromSeed:
+		result = s.HandleCreatePlanAttemptFromSeed(args)
 	case toolUpdatePlanSeed:
 		result = s.HandleUpdatePlanSeed(args)
 	case toolDeferPlanSeed:
