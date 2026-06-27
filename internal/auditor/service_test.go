@@ -244,3 +244,252 @@ func TestService_Generate_Gating(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// isNestedCheckoutMarker helper tests
+// ---------------------------------------------------------------------------
+
+func TestIsNestedCheckoutMarker(t *testing.T) {
+	cases := []struct {
+		path        string
+		targets     []string
+		expected    bool
+		description string
+	}{
+		{
+			path:        "relay-contracts",
+			targets:     []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			expected:    true,
+			description: "nested checkout marker detected",
+		},
+		{
+			path:        "internal/server/routes.go",
+			targets:     []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			expected:    false,
+			description: "normal file with extension not a marker",
+		},
+		{
+			path:        "",
+			targets:     []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			expected:    false,
+			description: "empty path not a marker",
+		},
+		{
+			path:        "relay-contracts",
+			targets:     []string{"docs/mcp.md"},
+			expected:    false,
+			description: "path with no matching target prefix not a marker",
+		},
+		{
+			path:        "relay-contracts/file.go",
+			targets:     []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			expected:    false,
+			description: "file inside nested dir not a marker (has extension)",
+		},
+		{
+			path:        "relay-contracts",
+			targets:     nil,
+			expected:    false,
+			description: "no file targets means no marker",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.description, func(t *testing.T) {
+			got := isNestedCheckoutMarker(tc.path, tc.targets)
+			if got != tc.expected {
+				t.Errorf("isNestedCheckoutMarker(%q, %v) = %v, want %v", tc.path, tc.targets, got, tc.expected)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Nested checkout marker regression tests
+// ---------------------------------------------------------------------------
+
+// TestNestedCheckout_CollapsedMarker_NoFalseFail verifies that a collapsed nested
+// checkout marker (e.g. "M	relay-contracts") with no expanded nested evidence does
+// not produce a file-scope failure.
+func TestNestedCheckout_CollapsedMarker_NoFalseFail(t *testing.T) {
+	ev := &Evidence{
+		RunID: 500, RunTitle: "nested collapsed", RunStatus: "executor_done",
+		Packet: PacketMetadata{
+			FileTargets: []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+		},
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files: []ChangedFileEntry{
+				{Status: "M", Path: "relay-contracts"},
+			},
+			ImplementationFiles:    nil,                       // filtered as nested marker
+			NestedCheckoutMarkers:  []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutFiles:    nil,
+			NestedEvidenceGap:      true,
+			RawArtifactPath:        "/fake/path",
+			SourceKind:             "git_diff_name_status",
+		},
+	}
+	c := &Collector{}
+	c.evaluateFileScopeResults(ev)
+
+	for _, r := range ev.FileScopeResults {
+		if r.Result == CheckFail && strings.Contains(r.Rationale, "relay-contracts") {
+			t.Errorf("file scope must not name relay-contracts as out-of-scope when it is only a nested marker: %s", r.Rationale)
+		}
+		if r.Result == CheckFail {
+			t.Errorf("collapsed nested marker must not produce file-scope failure, got %q: %s", r.ID, r.Rationale)
+		}
+		if r.Result == CheckUnknown && !strings.Contains(r.Rationale, "nested") {
+			t.Errorf("collapsed nested marker should produce unknown with nested-evidence rationale, got: %s", r.Rationale)
+		}
+	}
+}
+
+// TestNestedCheckout_ExpandedEvidencePassing verifies that expanded nested changed
+// files that match targets produce a file-scope pass.
+func TestNestedCheckout_ExpandedEvidencePassing(t *testing.T) {
+	ev := &Evidence{
+		RunID: 501, RunTitle: "nested expanded pass", RunStatus: "executor_done",
+		Packet: PacketMetadata{
+			FileTargets: []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+		},
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files: []ChangedFileEntry{
+				{Status: "M", Path: "relay-contracts"},
+			},
+			ImplementationFiles:   nil,
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutFiles: []ChangedFileEntry{
+				{Status: "M", Path: "relay-contracts/contracts/intent_drift_review_contract.md"},
+			},
+			NestedEvidenceGap:      false,
+			RawArtifactPath:        "/fake/path",
+			SourceKind:             "git_diff_name_status",
+		},
+	}
+	c := &Collector{}
+	c.evaluateFileScopeResults(ev)
+
+	foundPass := false
+	for _, r := range ev.FileScopeResults {
+		if r.ID == "FS-TARGETS" && r.Result == CheckPass {
+			foundPass = true
+		}
+	}
+	if !foundPass {
+		t.Errorf("expected FS-TARGETS pass for expanded nested file matching target, got: %+v", ev.FileScopeResults)
+	}
+}
+
+// TestNestedCheckout_ExpandedEvidenceFailing verifies that expanded nested changed
+// files that do NOT match targets produce a file-scope failure naming the nested file.
+func TestNestedCheckout_ExpandedEvidenceFailing(t *testing.T) {
+	ev := &Evidence{
+		RunID: 502, RunTitle: "nested expanded fail", RunStatus: "executor_done",
+		Packet: PacketMetadata{
+			FileTargets: []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+		},
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files: []ChangedFileEntry{
+				{Status: "M", Path: "relay-contracts"},
+			},
+			ImplementationFiles:   nil,
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutFiles: []ChangedFileEntry{
+				{Status: "M", Path: "relay-contracts/schema/planner_pass_plan.schema.json"},
+			},
+			NestedEvidenceGap:      false,
+			RawArtifactPath:        "/fake/path",
+			SourceKind:             "git_diff_name_status",
+		},
+	}
+	c := &Collector{}
+	c.evaluateFileScopeResults(ev)
+
+	foundFailNamingNested := false
+	for _, r := range ev.FileScopeResults {
+		if r.Result == CheckFail && strings.Contains(r.Rationale, "relay-contracts/schema/planner_pass_plan.schema.json") {
+			foundFailNamingNested = true
+		}
+	}
+	if !foundFailNamingNested {
+		t.Errorf("expected file-scope failure naming nested out-of-scope file, got: %+v", ev.FileScopeResults)
+	}
+}
+
+// TestNestedCheckout_UnrelatedParentDrift verifies that a real out-of-scope parent
+// file change still produces a file-scope failure even when file targets are nested.
+func TestNestedCheckout_UnrelatedParentDrift(t *testing.T) {
+	ev := &Evidence{
+		RunID: 503, RunTitle: "parent drift", RunStatus: "executor_done",
+		Packet: PacketMetadata{
+			FileTargets: []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+		},
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files: []ChangedFileEntry{
+				{Status: "M", Path: "relay-contracts"},
+				{Status: "M", Path: "internal/server/routes.go"},
+			},
+			ImplementationFiles: []ChangedFileEntry{
+				{Status: "M", Path: "internal/server/routes.go"},
+			},
+			NestedCheckoutMarkers:  []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutFiles:    nil,
+			NestedEvidenceGap:      true,
+			RawArtifactPath:        "/fake/path",
+			SourceKind:             "git_diff_name_status",
+		},
+	}
+	c := &Collector{}
+	c.evaluateFileScopeResults(ev)
+
+	foundFailNamingRoutes := false
+	for _, r := range ev.FileScopeResults {
+		if r.Result == CheckFail && strings.Contains(r.Rationale, "internal/server/routes.go") {
+			foundFailNamingRoutes = true
+		}
+	}
+	if !foundFailNamingRoutes {
+		t.Errorf("expected file-scope failure naming internal/server/routes.go, got: %+v", ev.FileScopeResults)
+	}
+}
+
+// TestNestedCheckout_ValidationSeparation verifies that validation evidence behavior
+// remains separate from nested scope behavior.
+func TestNestedCheckout_ValidationSeparation(t *testing.T) {
+	ev := &Evidence{
+		RunID: 504, RunTitle: "validation separation", RunStatus: "executor_done",
+		Packet: PacketMetadata{
+			FileTargets: []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+		},
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files: []ChangedFileEntry{
+				{Status: "M", Path: "relay-contracts"},
+			},
+			NestedCheckoutMarkers:  []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedEvidenceGap:      true,
+			RawArtifactPath:        "/fake/path",
+			SourceKind:             "git_diff_name_status",
+		},
+	}
+	c := &Collector{}
+	c.evaluateFileScopeResults(ev)
+	c.evaluateChecklistResults(ev)
+
+	// Nested gap should produce unknown, not fail
+	for _, r := range ev.FileScopeResults {
+		if r.Result == CheckFail {
+			t.Errorf("collapsed nested marker should not produce file-scope failure, got %q: %s", r.ID, r.Rationale)
+		}
+	}
+
+	// Validation evidence should be separate; no validation available -> unknown
+	if len(ev.ValidationResults) > 0 {
+		t.Errorf("expected no validation results, got %d", len(ev.ValidationResults))
+	}
+}

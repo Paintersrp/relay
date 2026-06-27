@@ -242,12 +242,15 @@ type DiffEvidence struct {
 
 // ChangedFilesEvidence holds the list of changed files.
 type ChangedFilesEvidence struct {
-	Present              bool                      `json:"present"`
-	Files                []ChangedFileEntry        `json:"files"`
-	ImplementationFiles  []ChangedFileEntry        `json:"implementationFiles,omitempty"`
-	GeneratedArtifactFiles []GeneratedArtifactEntry `json:"generatedArtifactFiles,omitempty"`
-	RawArtifactPath      string                    `json:"rawArtifactPath"`
-	SourceKind           string                    `json:"sourceKind"`
+	Present                 bool                      `json:"present"`
+	Files                   []ChangedFileEntry        `json:"files"`
+	ImplementationFiles     []ChangedFileEntry        `json:"implementationFiles,omitempty"`
+	GeneratedArtifactFiles  []GeneratedArtifactEntry  `json:"generatedArtifactFiles,omitempty"`
+	NestedCheckoutMarkers   []ChangedFileEntry        `json:"nestedCheckoutMarkers,omitempty"`
+	NestedCheckoutFiles     []ChangedFileEntry        `json:"nestedCheckoutFiles,omitempty"`
+	NestedEvidenceGap       bool                      `json:"nestedEvidenceGap,omitempty"`
+	RawArtifactPath         string                    `json:"rawArtifactPath"`
+	SourceKind              string                    `json:"sourceKind"`
 }
 
 // AcceptanceEvidence holds validation failure acceptance evidence.

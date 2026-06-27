@@ -993,11 +993,16 @@ func (c *Collector) collectChangedFiles(runID int64, ev *Evidence) {
 			}
 			var implFiles []ChangedFileEntry
 			var genArtifacts []GeneratedArtifactEntry
+			var nestedMarkers []ChangedFileEntry
 			for _, e := range entries {
 				cls, kind := ClassifyChangedFile(e.Path)
 				switch cls {
 				case FileImplementation:
-					implFiles = append(implFiles, e)
+					if isNestedCheckoutMarker(e.Path, ev.Packet.FileTargets) {
+						nestedMarkers = append(nestedMarkers, e)
+					} else {
+						implFiles = append(implFiles, e)
+					}
 				case FileGeneratedArtifact:
 					genArtifacts = append(genArtifacts, GeneratedArtifactEntry{
 						Path:                 e.Path,
@@ -1014,11 +1019,36 @@ func (c *Collector) collectChangedFiles(runID int64, ev *Evidence) {
 					})
 				}
 			}
+
+			// Look for expanded nested changed-file evidence (optional artifact).
+			var nestedFiles []ChangedFileEntry
+			nestedPaths := c.listArtifactPaths(runID, "nested_changed_files")
+			for _, np := range nestedPaths {
+				data, err := os.ReadFile(np)
+				if err != nil || len(data) == 0 {
+					continue
+				}
+				for _, line := range strings.Split(string(data), "\n") {
+					line = strings.TrimSpace(line)
+					if line == "" {
+						continue
+					}
+					parts := strings.Fields(line)
+					if len(parts) >= 2 && len(parts[0]) <= 2 {
+						nestedFiles = append(nestedFiles, ChangedFileEntry{Status: parts[0], Path: strings.Join(parts[1:], " ")})
+					}
+				}
+			}
+			nestedEvidenceGap := len(nestedMarkers) > 0 && len(nestedFiles) == 0
+
 			ev.ChangedFiles = ChangedFilesEvidence{
 				Present:                true,
 				Files:                  entries,
 				ImplementationFiles:    implFiles,
 				GeneratedArtifactFiles: genArtifacts,
+				NestedCheckoutMarkers:  nestedMarkers,
+				NestedCheckoutFiles:    nestedFiles,
+				NestedEvidenceGap:      nestedEvidenceGap,
 				RawArtifactPath:        p,
 				SourceKind:             k,
 			}
@@ -1072,14 +1102,46 @@ func (c *Collector) collectAcceptanceEvidence(runID int64, ev *Evidence) {
 	}
 }
 
+// isNestedCheckoutMarker checks whether a changed path is a nested repo checkout marker
+// (a directory entry from git status that reflects a dirty nested checkout, not a real file change).
+// Returns true when path has no file extension and at least one file target starts with path + "/".
+func isNestedCheckoutMarker(path string, fileTargets []string) bool {
+	if path == "" {
+		return false
+	}
+	normalized := strings.ReplaceAll(path, "\\", "/")
+	if filepath.Ext(normalized) != "" {
+		return false
+	}
+	prefix := normalized + "/"
+	for _, t := range fileTargets {
+		if strings.HasPrefix(strings.ReplaceAll(t, "\\", "/"), prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func implementationScopeChangedFiles(ev *Evidence) []ChangedFileEntry {
+	var base []ChangedFileEntry
 	if len(ev.ChangedFiles.ImplementationFiles) > 0 {
-		return ev.ChangedFiles.ImplementationFiles
+		base = ev.ChangedFiles.ImplementationFiles
+	} else if len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
+		for _, f := range ev.ChangedFiles.Files {
+			if !isNestedCheckoutMarker(f.Path, ev.Packet.FileTargets) {
+				base = append(base, f)
+			}
+		}
+	} else {
+		return nil
 	}
-	if len(ev.ChangedFiles.GeneratedArtifactFiles) == 0 {
-		return ev.ChangedFiles.Files
+	if len(ev.ChangedFiles.NestedCheckoutFiles) > 0 {
+		base = append(base, ev.ChangedFiles.NestedCheckoutFiles...)
 	}
-	return nil
+	if len(base) == 0 && !ev.ChangedFiles.NestedEvidenceGap {
+		return nil
+	}
+	return base
 }
 
 // evaluateChecklistResults produces a PerCheckResult for each checklist item.
@@ -1145,7 +1207,8 @@ func (c *Collector) evaluateChecklistResults(ev *Evidence) {
 			if hasChangedFiles {
 				evidenceSource = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
 				isDocOnly := true
-				for _, f := range ev.ChangedFiles.Files {
+				checkFiles := implementationScopeChangedFiles(ev)
+				for _, f := range checkFiles {
 					ext := strings.ToLower(filepath.Ext(f.Path))
 					if ext != ".md" && ext != ".txt" && ext != ".json" {
 						isDocOnly = false
@@ -1153,11 +1216,16 @@ func (c *Collector) evaluateChecklistResults(ev *Evidence) {
 					}
 				}
 				if isDocOnly {
-					result = CheckPass
-					rationale = "All changed files are documentation-only (.md, .txt, .json)"
+					if ev.ChangedFiles.NestedEvidenceGap {
+						result = CheckUnknown
+						rationale = "Parent changed-files evidence shows nested checkout marker(s), but nested file-level diff evidence is unavailable; documentation-only scope cannot be confirmed automatically"
+					} else {
+						result = CheckPass
+						rationale = "All implementation changed files are documentation-only (.md, .txt, .json)"
+					}
 				} else {
 					result = CheckFail
-					rationale = "Changed files include non-documentation files"
+					rationale = "Implementation changed files include non-documentation files"
 				}
 			} else {
 				result = CheckUnknown
@@ -1187,10 +1255,15 @@ func (c *Collector) evaluateChecklistResults(ev *Evidence) {
 					}
 				}
 				if len(outOfScope) == 0 {
-					result = CheckPass
-					rationale = fmt.Sprintf("All %d implementation changed files are within expected targets — evidence from changed_files artifact", len(checkFiles))
-					if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
-						rationale += fmt.Sprintf("; %d generated pipeline artifact(s) excluded from implementation file-scope enforcement", len(ev.ChangedFiles.GeneratedArtifactFiles))
+					if ev.ChangedFiles.NestedEvidenceGap {
+						result = CheckUnknown
+						rationale = "Parent changed-files evidence shows nested checkout marker(s), but nested file-level diff evidence is unavailable; file scope cannot be confirmed automatically"
+					} else {
+						result = CheckPass
+						rationale = fmt.Sprintf("All %d implementation changed files are within expected targets — evidence from changed_files artifact", len(checkFiles))
+						if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
+							rationale += fmt.Sprintf("; %d generated pipeline artifact(s) excluded from implementation file-scope enforcement", len(ev.ChangedFiles.GeneratedArtifactFiles))
+						}
 					}
 				} else {
 					result = CheckFail
@@ -1293,10 +1366,15 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 				}
 			}
 			if len(outOfScope) == 0 {
-				res = CheckPass
-				rat = fmt.Sprintf("All %d implementation changed files are within expected targets", len(checkFiles))
-				if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
-					rat += fmt.Sprintf("; %d generated pipeline artifact(s) excluded from implementation file-scope enforcement", len(ev.ChangedFiles.GeneratedArtifactFiles))
+				if ev.ChangedFiles.NestedEvidenceGap {
+					res = CheckUnknown
+					rat = "Parent changed-files evidence shows nested checkout marker(s), but nested file-level diff evidence is unavailable; file scope cannot be confirmed automatically"
+				} else {
+					res = CheckPass
+					rat = fmt.Sprintf("All %d implementation changed files are within expected targets", len(checkFiles))
+					if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
+						rat += fmt.Sprintf("; %d generated pipeline artifact(s) excluded from implementation file-scope enforcement", len(ev.ChangedFiles.GeneratedArtifactFiles))
+					}
 				}
 			} else {
 				res = CheckFail
@@ -1335,10 +1413,15 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 				}
 			}
 			if len(outOfScope) == 0 {
-				res = CheckPass
-				rat = fmt.Sprintf("All %d implementation changed files are within expected targets", len(checkFiles))
-				if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
-					rat += fmt.Sprintf("; %d generated pipeline artifact(s) excluded from implementation file-scope enforcement", len(ev.ChangedFiles.GeneratedArtifactFiles))
+				if ev.ChangedFiles.NestedEvidenceGap {
+					res = CheckUnknown
+					rat = "Parent changed-files evidence shows nested checkout marker(s), but nested file-level diff evidence is unavailable; file scope cannot be confirmed automatically"
+				} else {
+					res = CheckPass
+					rat = fmt.Sprintf("All %d implementation changed files are within expected targets", len(checkFiles))
+					if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
+						rat += fmt.Sprintf("; %d generated pipeline artifact(s) excluded from implementation file-scope enforcement", len(ev.ChangedFiles.GeneratedArtifactFiles))
+					}
 				}
 			} else {
 				res = CheckFail
@@ -1377,10 +1460,15 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 				}
 			}
 			if len(unexpectedCode) == 0 {
-				res = CheckPass
-				rat = "No unexpected runtime code files changed outside targets"
-				if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
-					rat += "; generated pipeline artifacts excluded from runtime file enforcement"
+				if ev.ChangedFiles.NestedEvidenceGap {
+					res = CheckUnknown
+					rat = "Parent changed-files evidence shows nested checkout marker(s), but nested file-level diff evidence is unavailable; runtime file scope cannot be confirmed automatically"
+				} else {
+					res = CheckPass
+					rat = "No unexpected runtime code files changed outside targets"
+					if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
+						rat += "; generated pipeline artifacts excluded from runtime file enforcement"
+					}
 				}
 			} else {
 				res = CheckFail
@@ -1459,10 +1547,15 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 				}
 			}
 			if len(sensitiveChanges) == 0 {
-				res = CheckPass
-				rat = "No security-sensitive, auth, or MCP files changed outside expected targets"
-				if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
-					rat += "; generated pipeline artifacts excluded from security enforcement"
+				if ev.ChangedFiles.NestedEvidenceGap {
+					res = CheckUnknown
+					rat = "Parent changed-files evidence shows nested checkout marker(s), but nested file-level diff evidence is unavailable; security/auth/MCP file scope cannot be confirmed automatically"
+				} else {
+					res = CheckPass
+					rat = "No security-sensitive, auth, or MCP files changed outside expected targets"
+					if len(ev.ChangedFiles.GeneratedArtifactFiles) > 0 {
+						rat += "; generated pipeline artifacts excluded from security enforcement"
+					}
 				}
 			} else {
 				res = CheckFail
@@ -1504,8 +1597,13 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 					}
 				}
 				if len(touchedCode) == 0 {
-					res = CheckPass
-					rat = "Documentation-only task changed only documentation files"
+					if ev.ChangedFiles.NestedEvidenceGap {
+						res = CheckUnknown
+						rat = "Parent changed-files evidence shows nested checkout marker(s), but nested file-level diff evidence is unavailable; documentation-only scope cannot be confirmed automatically"
+					} else {
+						res = CheckPass
+						rat = "Documentation-only task changed only documentation files"
+					}
 				} else {
 					res = CheckFail
 					rat = fmt.Sprintf("Documentation-only task touched runtime code files: %s", strings.Join(touchedCode, ", "))
