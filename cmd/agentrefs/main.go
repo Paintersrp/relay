@@ -95,6 +95,12 @@ func buildFoundationDoc() *agentrefs.ReferenceDocument {
 				Path:        agentrefs.WorkflowSurfaceJSONPath,
 				Description: "Generated Plan v2 workflow, intent packet, drift review, refactor backlog, and work-packet lifecycle surface reference.",
 			},
+			{
+				ID:          "mcp-registry",
+				Kind:        "generated_reference",
+				Path:        agentrefs.MCPSurfaceJSONPath,
+				Description: "Generated MCP action registry reference: tool definitions, dispatch handlers, profile gating, mutating vs retrieval-only behavior, and forbidden side effects.",
+			},
 		},
 	}
 
@@ -151,6 +157,18 @@ func runGenerate() error {
 		return fmt.Errorf("write storage surface: %w", err)
 	}
 
+	mcpDoc, err := agentrefs.BuildMCPSurfaceDoc(".")
+	if err != nil {
+		return fmt.Errorf("build MCP surface doc: %w", err)
+	}
+	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
+		JSONPath:     agentrefs.MCPSurfaceJSONPath,
+		MarkdownPath: agentrefs.MCPSurfaceMarkdownPath,
+		Document:     mcpDoc,
+	}); err != nil {
+		return fmt.Errorf("write MCP surface: %w", err)
+	}
+
 	return nil
 }
 
@@ -170,6 +188,11 @@ func runCheck() error {
 	storageDoc, err := agentrefs.BuildStorageSurfaceDoc(".")
 	if err != nil {
 		return fmt.Errorf("build storage surface doc: %w", err)
+	}
+
+	mcpDoc, err := agentrefs.BuildMCPSurfaceDoc(".")
+	if err != nil {
+		return fmt.Errorf("build MCP surface doc: %w", err)
 	}
 
 	diffs, err := agentrefs.CheckOutputSpecs([]agentrefs.OutputSpec{
@@ -192,6 +215,11 @@ func runCheck() error {
 			JSONPath:     agentrefs.WorkflowSurfaceJSONPath,
 			MarkdownPath: agentrefs.WorkflowSurfaceMarkdownPath,
 			Document:     workflowDoc,
+		},
+		{
+			JSONPath:     agentrefs.MCPSurfaceJSONPath,
+			MarkdownPath: agentrefs.MCPSurfaceMarkdownPath,
+			Document:     mcpDoc,
 		},
 	})
 	if err != nil {

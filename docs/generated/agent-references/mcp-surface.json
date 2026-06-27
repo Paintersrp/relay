@@ -1,0 +1,597 @@
+{
+  "schema_version": "1.0.0",
+  "reference_id": "project-mcp-registry",
+  "repo": {
+    "project_id": "relay",
+    "repo_id": "Paintersrp/relay",
+    "branch": "main"
+  },
+  "generated_by": {
+    "name": "relay-agentrefs",
+    "version": "0.1.0"
+  },
+  "rendering": {
+    "json_primary": true,
+    "markdown_from_json": true,
+    "deterministic_sort": true,
+    "no_timestamps": true,
+    "relative_paths_only": true
+  },
+  "source_inputs": [
+    {
+      "path": "internal/mcp/context_broker_tools.go",
+      "sha256": "396cf3f9cfb6fd3b3389b8d18d37f1e6a24e9532d615113d4004716aebbf2573",
+      "role": "mcp_tool_source"
+    },
+    {
+      "path": "internal/mcp/plan_attempt_tools.go",
+      "sha256": "f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a",
+      "role": "mcp_tool_source"
+    },
+    {
+      "path": "internal/mcp/refactor_backlog_tools.go",
+      "sha256": "f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3",
+      "role": "mcp_tool_source"
+    },
+    {
+      "path": "internal/mcp/server.go",
+      "sha256": "a630efa1cccfced0b1288683343684149f411b9dece7f70fa01c345e74ee6ec6",
+      "role": "mcp_tool_source"
+    }
+  ],
+  "fact_labels": [
+    "proven",
+    "derived",
+    "convention"
+  ],
+  "facts": [
+    {
+      "id": "mcp-registry-dispatch-switch",
+      "label": "proven",
+      "statement": "Tools are dispatched via switch on params.Name in server.handleToolsCall with profile-gate checks for gated tools returning CodeMethodNotFound when the profile is not enabled.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/server.go"
+        }
+      ]
+    },
+    {
+      "id": "mcp-registry-profile-gating",
+      "label": "proven",
+      "statement": "Context broker and refactor backlog tools are profile-gated behind context_broker_profile_required. Plan-attempt, plan-seed, run-status, and audit-submission tools are always registered.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/server.go"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-0",
+      "label": "proven",
+      "statement": "MCP tool \"approve_plan_attempt\" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/plan_attempt_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolApprovePlanAttempt (in internal/mcp/plan_attempt_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-1",
+      "label": "proven",
+      "statement": "MCP tool \"close_refactor_discovery_task\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolCloseRefactorDiscoveryTask (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-10",
+      "label": "proven",
+      "statement": "MCP tool \"get_context_packet\" registered from internal/mcp/context_broker_tools.go with profile gate context_broker_profile_required; context broker surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolGetContextPacket (in internal/mcp/context_broker_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-11",
+      "label": "proven",
+      "statement": "MCP tool \"get_pass\" registered from internal/mcp/context_broker_tools.go with profile gate context_broker_profile_required; context broker surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolGetPass (in internal/mcp/context_broker_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-12",
+      "label": "proven",
+      "statement": "MCP tool \"get_pass_context\" registered from internal/mcp/context_broker_tools.go with profile gate context_broker_profile_required; context broker surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolGetPassContext (in internal/mcp/context_broker_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-13",
+      "label": "proven",
+      "statement": "MCP tool \"get_plan\" registered from internal/mcp/context_broker_tools.go with profile gate context_broker_profile_required; context broker surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolGetPlan (in internal/mcp/context_broker_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-14",
+      "label": "proven",
+      "statement": "MCP tool \"get_plan_intent_review_packet\" registered from internal/mcp/plan_attempt_tools.go with profile gate always; plan attempt surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/plan_attempt_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolGetPlanIntentReviewPacket (in internal/mcp/plan_attempt_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-15",
+      "label": "proven",
+      "statement": "MCP tool \"get_project\" registered from internal/mcp/context_broker_tools.go with profile gate context_broker_profile_required; context broker surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolGetProject (in internal/mcp/context_broker_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-16",
+      "label": "proven",
+      "statement": "MCP tool \"get_refactor_candidate\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolGetRefactorCandidate (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-17",
+      "label": "proven",
+      "statement": "MCP tool \"get_refactor_discovery_task\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolGetRefactorDiscoveryTask (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-18",
+      "label": "proven",
+      "statement": "MCP tool \"list_project_files\" registered from internal/mcp/context_broker_tools.go with profile gate context_broker_profile_required; context broker surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolListProjectFiles (in internal/mcp/context_broker_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-19",
+      "label": "proven",
+      "statement": "MCP tool \"list_refactor_candidates\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolListRefactorCandidates (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-2",
+      "label": "proven",
+      "statement": "MCP tool \"complete_refactor_discovery_task\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolCompleteRefactorDiscoveryTask (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-20",
+      "label": "proven",
+      "statement": "MCP tool \"list_refactor_discovery_tasks\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolListRefactorDiscoveryTasks (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-21",
+      "label": "proven",
+      "statement": "MCP tool \"promote_refactor_candidate_to_plan\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolPromoteRefactorCandidateToPlan (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-22",
+      "label": "proven",
+      "statement": "MCP tool \"read_project_file\" registered from internal/mcp/context_broker_tools.go with profile gate context_broker_profile_required; context broker surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolReadProjectFile (in internal/mcp/context_broker_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-23",
+      "label": "proven",
+      "statement": "MCP tool \"reject_refactor_candidate\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolRejectRefactorCandidate (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-24",
+      "label": "proven",
+      "statement": "MCP tool \"revise_plan_attempt\" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/plan_attempt_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolRevisePlanAttempt (in internal/mcp/plan_attempt_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-25",
+      "label": "proven",
+      "statement": "MCP tool \"search_project_files\" registered from internal/mcp/context_broker_tools.go with profile gate context_broker_profile_required; context broker surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolSearchProjectFiles (in internal/mcp/context_broker_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-26",
+      "label": "proven",
+      "statement": "MCP tool \"search_refactor_candidates\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolSearchRefactorCandidates (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-27",
+      "label": "proven",
+      "statement": "MCP tool \"submit_intent_drift_review\" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/plan_attempt_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolSubmitIntentDriftReview (in internal/mcp/plan_attempt_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-28",
+      "label": "proven",
+      "statement": "MCP tool \"submit_plan_attempt\" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/plan_attempt_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolSubmitPlanAttempt (in internal/mcp/plan_attempt_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-29",
+      "label": "proven",
+      "statement": "MCP tool \"suggest_refactor_candidate_placement\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolSuggestRefactorCandidatePlacement (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-3",
+      "label": "proven",
+      "statement": "MCP tool \"create_context_packet\" registered from internal/mcp/context_broker_tools.go with profile gate context_broker_profile_required; mutating tool; context broker surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolCreateContextPacket (in internal/mcp/context_broker_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-30",
+      "label": "proven",
+      "statement": "MCP tool \"supersede_refactor_candidate\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolSupersedeRefactorCandidate (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-31",
+      "label": "proven",
+      "statement": "MCP tool \"supersede_refactor_discovery_task\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolSupersedeRefactorDiscoveryTask (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-32",
+      "label": "proven",
+      "statement": "MCP tool \"update_refactor_candidate\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolUpdateRefactorCandidate (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-33",
+      "label": "proven",
+      "statement": "MCP tool \"update_refactor_discovery_task\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolUpdateRefactorDiscoveryTask (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-34",
+      "label": "proven",
+      "statement": "MCP tool \"void_plan_attempt\" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/plan_attempt_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolVoidPlanAttempt (in internal/mcp/plan_attempt_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-4",
+      "label": "proven",
+      "statement": "MCP tool \"create_plan_attempt_with_intent\" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/plan_attempt_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolCreatePlanAttemptWithIntent (in internal/mcp/plan_attempt_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-5",
+      "label": "proven",
+      "statement": "MCP tool \"create_refactor_candidate\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolCreateRefactorCandidate (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-6",
+      "label": "proven",
+      "statement": "MCP tool \"create_refactor_discovery_task\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolCreateRefactorDiscoveryTask (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-7",
+      "label": "proven",
+      "statement": "MCP tool \"create_source_snapshot\" registered from internal/mcp/context_broker_tools.go with profile gate context_broker_profile_required; mutating tool; context broker surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolCreateSourceSnapshot (in internal/mcp/context_broker_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-8",
+      "label": "proven",
+      "statement": "MCP tool \"defer_refactor_candidate\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolDeferRefactorCandidate (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-9",
+      "label": "proven",
+      "statement": "MCP tool \"generate_refactor_only_plan\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/refactor_backlog_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolGenerateRefactorOnlyPlan (in internal/mcp/refactor_backlog_tools.go)"
+        }
+      ]
+    }
+  ],
+  "references": []
+}

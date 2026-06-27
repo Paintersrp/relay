@@ -240,7 +240,7 @@ func checkPaths(packet map[string]interface{}) []ValidationError {
 	return issues
 }
 
-var unsafeMetaChars = []string{"*", "?", "[", "]", ";", "&", "|", "$", ">", "<", "(", ")", "`", "!"}
+var unsafeMetaChars = []string{"*", "?", "[", "]", ";", "&", "|", ">", "<", "(", ")", "`", "!"}
 
 func validatePathSafety(p string) error {
 	pClean := filepath.Clean(p)

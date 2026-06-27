@@ -109,6 +109,71 @@ func publishRunEvent(hub *events.Hub, runID int64, kind, source, status string) 
 	})
 }
 
+func summarizeChunk(chunk []byte) string {
+	trimmed := strings.TrimSpace(string(chunk))
+	if trimmed == "" {
+		return ""
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(chunk, &parsed); err != nil {
+		const maxLen = 200
+		plain := strings.TrimSpace(string(chunk))
+		if len(plain) > maxLen {
+			plain = plain[:maxLen] + "..."
+		}
+		return strings.ReplaceAll(plain, "\n", "\\n")
+	}
+	part, _ := parsed["part"].(map[string]interface{})
+	if part == nil {
+		part, _ = parsed["message"].(map[string]interface{})
+	}
+	if part != nil {
+		if tool, ok := part["tool"].(string); ok {
+			state := ""
+			if s, ok := part["state"].(map[string]interface{}); ok {
+				if st, ok := s["status"].(string); ok {
+					state = " " + st
+				}
+			}
+			target := ""
+			if input, ok := part["input"].(map[string]interface{}); ok {
+				if fp, ok := input["filePath"].(string); ok {
+					target = " " + filepath.ToSlash(fp)
+				} else if cmd, ok := input["command"].(string); ok {
+					target = " " + cmd
+				} else if title, ok := input["title"].(string); ok {
+					target = " " + title
+				}
+			}
+			summary := "tool:" + tool + state + target
+			if len(summary) > 300 {
+				summary = summary[:300] + "..."
+			}
+			return summary
+		}
+		if msg, ok := part["content"].(string); ok {
+			const maxLen = 250
+			if len(msg) > maxLen {
+				msg = msg[:maxLen] + "..."
+			}
+			return msg
+		}
+	}
+	if content, ok := parsed["content"].(string); ok {
+		const maxLen = 250
+		if len(content) > maxLen {
+			content = content[:maxLen] + "..."
+		}
+		return content
+	}
+	const maxLen = 200
+	out := trimmed[:min(len(trimmed), maxLen)]
+	if len(trimmed) > maxLen {
+		out += "..."
+	}
+	return out
+}
+
 func createEvent(store *store.Store, runID int64, level, message string) {
 	if store == nil {
 		return
@@ -411,6 +476,10 @@ func runBackgroundDispatch(
 				} else if appendPath != "" {
 					recordExecutorArtifact(s, runID, ArtifactKindExecutorStdout, appendPath, "text/plain")
 				}
+
+				if summary := summarizeChunk(chunk); summary != "" {
+					createEvent(s, runID, "info", "stdout: "+summary)
+				}
 			},
 			OnStderr: func(chunk []byte) {
 				if len(chunk) == 0 {
@@ -430,6 +499,10 @@ func runBackgroundDispatch(
 					stream.recordWriteError("append_stderr", err)
 				} else if appendPath != "" {
 					recordExecutorArtifact(s, runID, ArtifactKindExecutorStderr, appendPath, "text/plain")
+				}
+
+				if summary := summarizeChunk(chunk); summary != "" {
+					createEvent(s, runID, "info", "stderr: "+summary)
 				}
 			},
 		},

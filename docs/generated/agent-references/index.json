@@ -76,6 +76,12 @@
       "description": "Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference."
     },
     {
+      "id": "mcp-registry",
+      "kind": "generated_reference",
+      "path": "docs/generated/agent-references/mcp-surface.json",
+      "description": "Generated MCP action registry reference: tool definitions, dispatch handlers, profile gating, mutating vs retrieval-only behavior, and forbidden side effects."
+    },
+    {
       "id": "storage-surface",
       "kind": "generated_reference",
       "path": "docs/generated/agent-references/storage-surface.json",
