@@ -163,7 +163,7 @@ Relay supports an optional managed plan orchestration layer where runs can be as
 
 Relay incorporates an LLM-assisted workflow to review plan intent drift before final submission. This workflow ensures that the proposed plan matches original requirements and prevents unauthorized changes.
 
-For detailed configuration, model tiers, separate-chat audit, and cost/privacy controls, see [Intent Drift Review Guide](file:///d:/Code/relay/docs/intent-drift-review.md).
+For detailed configuration, model tiers, separate-chat audit, and cost/privacy controls, see [Intent Drift Review Guide](intent-drift-review.md).
 
 ---
 

@@ -21,6 +21,11 @@ import {
   parsePlanJson,
   type PlanSubmissionPreview,
 } from "@/components/relay/relayPlanSubmissionState";
+import {
+  canCreateAttempt,
+  getPolicyFields,
+  getProjectIdForMutation,
+} from "@/components/relay/relayPlanAttemptReviewState";
 import { computePlanJsonSha256 } from "@/components/relay/relayPlanArtifactHash";
 import {
   canApprove,
@@ -865,17 +870,17 @@ export function RelayPlanSubmissionWorkbench() {
   const canValidate = trimmedJson.length > 0 && !isBusy;
 
   const trimmedProjectId = projectId.trim();
-  const hasCurrentProjectSettings =
-    settingsLoadState === "loaded" &&
-    settingsProjectId === trimmedProjectId &&
-    !!settings;
-  const canCreate =
-    trimmedProjectId.length > 0 &&
-    hasCurrentProjectSettings &&
-    planJsonArtifactPath.trim().length > 0 &&
-    planJsonArtifactSha256.trim().length > 0 &&
-    literalUserRequest.trim().length > 0 &&
-    (state === "validated" || revisionMode);
+  const canCreate = canCreateAttempt({
+    projectId,
+    settingsLoadState,
+    settingsProjectId: settingsProjectId ?? "",
+    hasSettings: !!settings,
+    planPath: planJsonArtifactPath,
+    planSha: planJsonArtifactSha256,
+    userRequest: literalUserRequest,
+    state,
+    revisionMode,
+  });
 
   const prefillFromPlan = React.useCallback((plan: PlannerPassPlan) => {
     const pid = plan.plan_meta.project_id ?? plan.plan_meta.projectId ?? "";
@@ -971,16 +976,23 @@ export function RelayPlanSubmissionWorkbench() {
 
     const constraints = splitConstraints(intentConstraintsText);
     // REQ-003: In revision mode use attempt's project ID so the input field cannot redirect to a different project.
-    const pid = revisionMode && planAttempt ? planAttempt.projectId : trimmedProjectId;
+    const pid = getProjectIdForMutation({
+      revisionMode,
+      planAttempt,
+      inputProjectId: trimmedProjectId,
+    });
     if (!pid) {
       setActionError({ message: "Project ID is required.", issues: [] });
       return;
     }
 
     // REQ-004: Only include policy fields when settings are loaded for the exact current project.
-    const policyFields = hasCurrentProjectSettings && settings
-      ? { driftReviewMode: settings.driftReviewMode, modelTier: settings.modelTier }
-      : {};
+    const policyFields = getPolicyFields({
+      projectId,
+      settingsLoadState,
+      settingsProjectId: settingsProjectId ?? "",
+      settings,
+    });
 
     const revisionRequest = {
       planArtifactRef: { path: planJsonArtifactPath.trim(), sha256: planJsonArtifactSha256.trim(), artifactKind: "planner-pass-plan-json" as const },
