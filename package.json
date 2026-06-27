@@ -19,7 +19,7 @@
     "build:web": "cd apps/web && npm run build",
     "validate": "make validate",
     "test:local-scripts": "node --test scripts/local/chatgpt-mcp.test.mjs",
-    "smoke": "go test ./internal/smoke && go test ./internal/mcp && go test ./internal/server && npm run test:local-scripts && npm --prefix apps/web run typecheck && npm --prefix apps/web test",
+    "smoke": "npm run agentrefs:check && go test ./internal/smoke && go test ./internal/mcp && go test ./internal/server && npm run test:local-scripts && npm --prefix apps/web run typecheck && npm --prefix apps/web test",
     "plan-seed-smoke": "go run ./cmd/plan-seed-smoke",
     "agentrefs:generate": "go run ./cmd/agentrefs generate",
     "agentrefs:check": "go run ./cmd/agentrefs check",

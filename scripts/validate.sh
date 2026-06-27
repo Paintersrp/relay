@@ -27,11 +27,12 @@ const [jsonPath, mdPath] = process.argv.slice(2)
 const repoRoot = process.cwd()
 
 const commandsToRun = [
-  { step: 1, name: 'go-fmt-executor', command: 'go fmt ./internal/executor', argv: ['go', ['fmt', './internal/executor']] },
-  { step: 2, name: 'go-test-executor', command: 'go test ./internal/executor/...', argv: ['go', ['test', './internal/executor/...']] },
-  { step: 3, name: 'go-test-all', command: 'go test ./...', argv: ['go', ['test', './...']] },
-  { step: 4, name: 'web-typecheck', command: 'cd apps/web && npm run typecheck', shell: true },
-  { step: 5, name: 'web-build', command: 'cd apps/web && npm run build', shell: true },
+  { step: 1, name: 'agentrefs-check', command: 'go run ./cmd/agentrefs check', shell: true },
+  { step: 2, name: 'go-fmt-executor', command: 'go fmt ./internal/executor', argv: ['go', ['fmt', './internal/executor']] },
+  { step: 3, name: 'go-test-executor', command: 'go test ./internal/executor/...', argv: ['go', ['test', './internal/executor/...']] },
+  { step: 4, name: 'go-test-all', command: 'go test ./...', argv: ['go', ['test', './...']] },
+  { step: 5, name: 'web-typecheck', command: 'cd apps/web && npm run typecheck', shell: true },
+  { step: 6, name: 'web-build', command: 'cd apps/web && npm run build', shell: true },
 ]
 
 function redactCommandOutput(value) {

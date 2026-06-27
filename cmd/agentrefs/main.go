@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"relay/internal/agentrefs"
 )
 
-func buildFoundationDoc() *agentrefs.ReferenceDocument {
+func buildFoundationDoc(repoRoot string) (*agentrefs.ReferenceDocument, error) {
 	sourcePaths := []struct {
 		path string
 		role string
@@ -22,10 +23,9 @@ func buildFoundationDoc() *agentrefs.ReferenceDocument {
 
 	var inputs []agentrefs.SourceInput
 	for _, sp := range sourcePaths {
-		hash, err := agentrefs.ComputeSHA256(sp.path)
+		hash, err := agentrefs.ComputeSHA256(filepath.Join(repoRoot, sp.path))
 		if err != nil {
-			log.Printf("WARNING: could not hash %s: %v", sp.path, err)
-			hash = "unavailable"
+			return nil, fmt.Errorf("hash %s: %w", sp.path, err)
 		}
 		inputs = append(inputs, agentrefs.SourceInput{
 			Path:   sp.path,
@@ -101,22 +101,69 @@ func buildFoundationDoc() *agentrefs.ReferenceDocument {
 				Path:        agentrefs.MCPSurfaceJSONPath,
 				Description: "Generated MCP action registry reference: tool definitions, dispatch handlers, profile gating, mutating vs retrieval-only behavior, and forbidden side effects.",
 			},
-		{
-			ID:          "http-api-surface",
-			Kind:        "generated_reference",
-			Path:        agentrefs.HTTPAPISurfaceJSONPath,
-			Description: "Generated HTTP/API route surface reference: method, path, handler, source file, and route group from route source files.",
-		},
-		{
-			ID:          "frontend-backend-contract",
-			Kind:        "generated_reference",
-			Path:        agentrefs.FrontendBackendContractJSONPath,
-			Description: "Generated frontend/backend contract reference: frontend API clients, query keys, TypeScript contracts, backend HTTP route matches, and backend Go DTO alignment.",
-		},
+			{
+				ID:          "http-api-surface",
+				Kind:        "generated_reference",
+				Path:        agentrefs.HTTPAPISurfaceJSONPath,
+				Description: "Generated HTTP/API route surface reference: method, path, handler, source file, and route group from route source files.",
+			},
+			{
+				ID:          "frontend-backend-contract",
+				Kind:        "generated_reference",
+				Path:        agentrefs.FrontendBackendContractJSONPath,
+				Description: "Generated frontend/backend contract reference: frontend API clients, query keys, TypeScript contracts, backend HTTP route matches, and backend Go DTO alignment.",
+			},
 		},
 	}
 
-	return doc
+	return doc, nil
+}
+
+func buildAllOutputSpecs(repoRoot string) ([]agentrefs.OutputSpec, error) {
+	indexDoc, err := buildFoundationDoc(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("build foundation doc: %w", err)
+	}
+
+	backendDoc, err := agentrefs.BuildBackendSurfaceDoc(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("build backend surface doc: %w", err)
+	}
+
+	storageDoc, err := agentrefs.BuildStorageSurfaceDoc(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("build storage surface doc: %w", err)
+	}
+
+	workflowDoc, err := agentrefs.BuildWorkflowSurfaceDoc(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("build workflow surface doc: %w", err)
+	}
+
+	mcpDoc, err := agentrefs.BuildMCPSurfaceDoc(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("build MCP surface doc: %w", err)
+	}
+
+	httpAPIDoc, err := agentrefs.BuildHTTPAPISurfaceDoc(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("build HTTP API surface doc: %w", err)
+	}
+
+	fbContractDoc, err := agentrefs.BuildFrontendBackendContractDoc(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("build frontend/backend contract doc: %w", err)
+	}
+
+	return []agentrefs.OutputSpec{
+		{JSONPath: agentrefs.IndexJSONPath, MarkdownPath: agentrefs.IndexMarkdownPath, Document: indexDoc},
+		{JSONPath: agentrefs.BackendSurfaceJSONPath, MarkdownPath: agentrefs.BackendSurfaceMarkdownPath, Document: backendDoc},
+		{JSONPath: agentrefs.StorageSurfaceJSONPath, MarkdownPath: agentrefs.StorageSurfaceMarkdownPath, Document: storageDoc},
+		{JSONPath: agentrefs.WorkflowSurfaceJSONPath, MarkdownPath: agentrefs.WorkflowSurfaceMarkdownPath, Document: workflowDoc},
+		{JSONPath: agentrefs.MCPSurfaceJSONPath, MarkdownPath: agentrefs.MCPSurfaceMarkdownPath, Document: mcpDoc},
+		{JSONPath: agentrefs.HTTPAPISurfaceJSONPath, MarkdownPath: agentrefs.HTTPAPISurfaceMarkdownPath, Document: httpAPIDoc},
+		{JSONPath: agentrefs.FrontendBackendContractJSONPath, MarkdownPath: agentrefs.FrontendBackendContractMarkdownPath, Document: fbContractDoc},
+	}, nil
 }
 
 func runGenerate() error {
@@ -124,160 +171,27 @@ func runGenerate() error {
 		return fmt.Errorf("create output dir: %w", err)
 	}
 
-	indexDoc := buildFoundationDoc()
-	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
-		JSONPath:     agentrefs.IndexJSONPath,
-		MarkdownPath: agentrefs.IndexMarkdownPath,
-		Document:     indexDoc,
-	}); err != nil {
-		return fmt.Errorf("write index: %w", err)
+	specs, err := buildAllOutputSpecs(".")
+	if err != nil {
+		return err
 	}
 
-	backendDoc, err := agentrefs.BuildBackendSurfaceDoc(".")
-	if err != nil {
-		return fmt.Errorf("build backend surface doc: %w", err)
-	}
-	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
-		JSONPath:     agentrefs.BackendSurfaceJSONPath,
-		MarkdownPath: agentrefs.BackendSurfaceMarkdownPath,
-		Document:     backendDoc,
-	}); err != nil {
-		return fmt.Errorf("write backend surface: %w", err)
-	}
-
-	workflowDoc, err := agentrefs.BuildWorkflowSurfaceDoc(".")
-	if err != nil {
-		return fmt.Errorf("build workflow surface doc: %w", err)
-	}
-	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
-		JSONPath:     agentrefs.WorkflowSurfaceJSONPath,
-		MarkdownPath: agentrefs.WorkflowSurfaceMarkdownPath,
-		Document:     workflowDoc,
-	}); err != nil {
-		return fmt.Errorf("write workflow surface: %w", err)
-	}
-
-	storageDoc, err := agentrefs.BuildStorageSurfaceDoc(".")
-	if err != nil {
-		return fmt.Errorf("build storage surface doc: %w", err)
-	}
-	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
-		JSONPath:     agentrefs.StorageSurfaceJSONPath,
-		MarkdownPath: agentrefs.StorageSurfaceMarkdownPath,
-		Document:     storageDoc,
-	}); err != nil {
-		return fmt.Errorf("write storage surface: %w", err)
-	}
-
-	mcpDoc, err := agentrefs.BuildMCPSurfaceDoc(".")
-	if err != nil {
-		return fmt.Errorf("build MCP surface doc: %w", err)
-	}
-	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
-		JSONPath:     agentrefs.MCPSurfaceJSONPath,
-		MarkdownPath: agentrefs.MCPSurfaceMarkdownPath,
-		Document:     mcpDoc,
-	}); err != nil {
-		return fmt.Errorf("write MCP surface: %w", err)
-	}
-
-	httpAPIDoc, err := agentrefs.BuildHTTPAPISurfaceDoc(".")
-	if err != nil {
-		return fmt.Errorf("build HTTP API surface doc: %w", err)
-	}
-	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
-		JSONPath:     agentrefs.HTTPAPISurfaceJSONPath,
-		MarkdownPath: agentrefs.HTTPAPISurfaceMarkdownPath,
-		Document:     httpAPIDoc,
-	}); err != nil {
-		return fmt.Errorf("write HTTP API surface: %w", err)
-	}
-
-	fbContractDoc, err := agentrefs.BuildFrontendBackendContractDoc(".")
-	if err != nil {
-		return fmt.Errorf("build frontend/backend contract doc: %w", err)
-	}
-	if err := agentrefs.WriteOutputSpec(agentrefs.OutputSpec{
-		JSONPath:     agentrefs.FrontendBackendContractJSONPath,
-		MarkdownPath: agentrefs.FrontendBackendContractMarkdownPath,
-		Document:     fbContractDoc,
-	}); err != nil {
-		return fmt.Errorf("write frontend/backend contract: %w", err)
+	for _, spec := range specs {
+		if err := agentrefs.WriteOutputSpec(spec); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 func runCheck() error {
-	indexDoc := buildFoundationDoc()
-
-	backendDoc, err := agentrefs.BuildBackendSurfaceDoc(".")
+	specs, err := buildAllOutputSpecs(".")
 	if err != nil {
-		return fmt.Errorf("build backend surface doc: %w", err)
+		return err
 	}
 
-	workflowDoc, err := agentrefs.BuildWorkflowSurfaceDoc(".")
-	if err != nil {
-		return fmt.Errorf("build workflow surface doc: %w", err)
-	}
-
-	storageDoc, err := agentrefs.BuildStorageSurfaceDoc(".")
-	if err != nil {
-		return fmt.Errorf("build storage surface doc: %w", err)
-	}
-
-	mcpDoc, err := agentrefs.BuildMCPSurfaceDoc(".")
-	if err != nil {
-		return fmt.Errorf("build MCP surface doc: %w", err)
-	}
-
-	httpAPIDoc, err := agentrefs.BuildHTTPAPISurfaceDoc(".")
-	if err != nil {
-		return fmt.Errorf("build HTTP API surface doc: %w", err)
-	}
-
-	fbContractDoc, err := agentrefs.BuildFrontendBackendContractDoc(".")
-	if err != nil {
-		return fmt.Errorf("build frontend/backend contract doc: %w", err)
-	}
-
-	diffs, err := agentrefs.CheckOutputSpecs([]agentrefs.OutputSpec{
-		{
-			JSONPath:     agentrefs.IndexJSONPath,
-			MarkdownPath: agentrefs.IndexMarkdownPath,
-			Document:     indexDoc,
-		},
-		{
-			JSONPath:     agentrefs.BackendSurfaceJSONPath,
-			MarkdownPath: agentrefs.BackendSurfaceMarkdownPath,
-			Document:     backendDoc,
-		},
-		{
-			JSONPath:     agentrefs.StorageSurfaceJSONPath,
-			MarkdownPath: agentrefs.StorageSurfaceMarkdownPath,
-			Document:     storageDoc,
-		},
-		{
-			JSONPath:     agentrefs.WorkflowSurfaceJSONPath,
-			MarkdownPath: agentrefs.WorkflowSurfaceMarkdownPath,
-			Document:     workflowDoc,
-		},
-		{
-			JSONPath:     agentrefs.MCPSurfaceJSONPath,
-			MarkdownPath: agentrefs.MCPSurfaceMarkdownPath,
-			Document:     mcpDoc,
-		},
-		{
-			JSONPath:     agentrefs.HTTPAPISurfaceJSONPath,
-			MarkdownPath: agentrefs.HTTPAPISurfaceMarkdownPath,
-			Document:     httpAPIDoc,
-		},
-		{
-			JSONPath:     agentrefs.FrontendBackendContractJSONPath,
-			MarkdownPath: agentrefs.FrontendBackendContractMarkdownPath,
-			Document:     fbContractDoc,
-		},
-	})
+	diffs, err := agentrefs.CheckOutputSpecs(specs)
 	if err != nil {
 		return fmt.Errorf("check outputs: %w", err)
 	}

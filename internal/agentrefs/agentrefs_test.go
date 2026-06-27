@@ -1301,3 +1301,141 @@ func TestFrontendBackendContractOutputSpec_CheckModeCoverage(t *testing.T) {
 		t.Fatal("expected at least 2 diffs (both JSON and Markdown missing), got", len(diffs))
 	}
 }
+
+func TestAllDomainDocs_SourceInputsAndEvidenceAreRepoRelative(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+
+	builders := []struct {
+		name string
+		fn   func(string) (*ReferenceDocument, error)
+	}{
+		{"backend-surface", BuildBackendSurfaceDoc},
+		{"storage-surface", BuildStorageSurfaceDoc},
+		{"workflow-surfaces", BuildWorkflowSurfaceDoc},
+		{"mcp-surface", BuildMCPSurfaceDoc},
+		{"http-api-surface", BuildHTTPAPISurfaceDoc},
+		{"frontend-backend-contract", BuildFrontendBackendContractDoc},
+	}
+
+	for _, b := range builders {
+		t.Run(b.name, func(t *testing.T) {
+			doc, err := b.fn(repoRoot)
+			if err != nil {
+				t.Fatalf("%s: %v", b.name, err)
+			}
+
+			for _, si := range doc.SourceInputs {
+				if si.Path == "" {
+					t.Error("found empty source input path")
+					continue
+				}
+				if err := ValidateRepoRelativePath(si.Path); err != nil {
+					t.Errorf("source input path %q invalid: %v", si.Path, err)
+				}
+				if len(si.SHA256) != 64 {
+					t.Errorf("source input %q SHA256 length: got %d, want 64", si.Path, len(si.SHA256))
+				}
+			}
+
+			for _, fact := range doc.Facts {
+				for _, e := range fact.Evidence {
+					if e.Value == "" {
+						t.Errorf("fact %s: empty evidence value", fact.ID)
+						continue
+					}
+					if err := ValidateRepoRelativePath(e.Value); err != nil {
+						t.Errorf("fact %s evidence %q (%s) invalid: %v", fact.ID, e.Value, e.Kind, err)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestAllDomainDocs_NoWallClockMetadata(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+	wallClockKeys := []string{"generated_at", "created_at", "updated_at", "timestamp"}
+
+	builders := []struct {
+		name string
+		fn   func(string) (*ReferenceDocument, error)
+	}{
+		{"backend-surface", BuildBackendSurfaceDoc},
+		{"storage-surface", BuildStorageSurfaceDoc},
+		{"workflow-surfaces", BuildWorkflowSurfaceDoc},
+		{"mcp-surface", BuildMCPSurfaceDoc},
+		{"http-api-surface", BuildHTTPAPISurfaceDoc},
+		{"frontend-backend-contract", BuildFrontendBackendContractDoc},
+	}
+
+		for _, b := range builders {
+		t.Run(b.name, func(t *testing.T) {
+			doc, err := b.fn(repoRoot)
+			if err != nil {
+				t.Fatalf("%s: %v", b.name, err)
+			}
+
+			jsonData, err := RenderJSON(doc)
+			if err != nil {
+				t.Fatalf("RenderJSON: %v", err)
+			}
+			jsonStr := string(jsonData)
+
+			for _, key := range wallClockKeys {
+				if strings.Contains(jsonStr, fmt.Sprintf("%q:", key)) {
+					t.Errorf("rendered JSON contains key %q", key)
+				}
+			}
+
+			mdData, err := RenderMarkdown(doc)
+			if err != nil {
+				t.Fatalf("RenderMarkdown: %v", err)
+			}
+			mdStr := string(mdData)
+			if strings.Contains(mdStr, "generated_at") {
+				t.Errorf("rendered Markdown contains %q", "generated_at")
+			}
+		})
+	}
+}
+
+func TestAllDomainDocs_Deterministic(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+
+	builders := []struct {
+		name string
+		fn   func(string) (*ReferenceDocument, error)
+	}{
+		{"backend-surface", BuildBackendSurfaceDoc},
+		{"storage-surface", BuildStorageSurfaceDoc},
+		{"workflow-surfaces", BuildWorkflowSurfaceDoc},
+		{"mcp-surface", BuildMCPSurfaceDoc},
+		{"http-api-surface", BuildHTTPAPISurfaceDoc},
+		{"frontend-backend-contract", BuildFrontendBackendContractDoc},
+	}
+
+	for _, b := range builders {
+		t.Run(b.name, func(t *testing.T) {
+			doc1, err := b.fn(repoRoot)
+			if err != nil {
+				t.Fatalf("%s first call: %v", b.name, err)
+			}
+			doc2, err := b.fn(repoRoot)
+			if err != nil {
+				t.Fatalf("%s second call: %v", b.name, err)
+			}
+
+			j1, err := RenderJSON(doc1)
+			if err != nil {
+				t.Fatalf("RenderJSON first call: %v", err)
+			}
+			j2, err := RenderJSON(doc2)
+			if err != nil {
+				t.Fatalf("RenderJSON second call: %v", err)
+			}
+			if string(j1) != string(j2) {
+				t.Errorf("%s is not deterministic: two runs produced different JSON", b.name)
+			}
+		})
+	}
+}
