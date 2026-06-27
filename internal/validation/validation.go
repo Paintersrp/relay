@@ -329,9 +329,7 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 	// 1. Scan execution-critical fields for vague or decision-delegating intent.
 	for _, item := range collectExecutionTextItems(exec) {
 		if phrase, ok := containsDecisionDelegatingPhrase(item.text); ok {
-			if groundingSignalCount(item.text, exec, item.fieldPath) < 2 {
-				issues = append(issues, addVagueIntentIssue(phrase, item.fieldPath, "concrete target behavior or acceptance criteria is missing"))
-			}
+			issues = append(issues, addVagueIntentIssue(phrase, item.fieldPath, "decision-delegating execution language is not allowed"))
 			continue
 		}
 		if phrase, ok := containsVagueQualityPhrase(item.text); ok {
@@ -423,8 +421,8 @@ func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError
 					insts, _ := stepObj["instructions"].(string)
 					criteriaText := strings.Join(stringSliceFromInterface(stepObj["acceptance_criteria"]), " ")
 					textToCheck := strings.Join([]string{title, insts, criteriaText}, " ")
-					if phrase, found := containsDecisionDelegatingPhrase(textToCheck); found && (!ok || len(tPaths) == 0 || groundingSignalCount(textToCheck, exec, fieldPath) < 2) {
-						issues = append(issues, addVagueIntentIssue(phrase, fieldPath, "inspect step is missing concrete target behavior or acceptance criteria"))
+					if phrase, found := containsDecisionDelegatingPhrase(textToCheck); found {
+						issues = append(issues, addVagueIntentIssue(phrase, fieldPath, "inspect step contains decision-delegating execution language"))
 					}
 				}
 			}
@@ -514,6 +512,7 @@ func containsDecisionDelegatingPhrase(text string) (string, bool) {
 		"if appropriate",
 		"maybe",
 		"optional enhancement",
+		strings.Join([]string{"determine", "whether"}, " "),
 	})
 }
 

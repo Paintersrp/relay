@@ -266,6 +266,44 @@ func TestValidation(t *testing.T) {
 				},
 				wantValid: true,
 			},
+			{
+				name: "grounded implementation step containing wire as needed fails",
+				mutate: func(packet map[string]interface{}) {
+					exec := packet["execution_payload"].(map[string]interface{})
+					exec["implementation_steps"] = []interface{}{map[string]interface{}{
+						"id":                  "S1",
+						"title":               "Wire component",
+						"action":              "modify",
+						"target_paths":        []interface{}{"internal/validation/validation.go"},
+						"instructions":        joinPhrase("wire", "as", "needed"),
+						"acceptance_criteria": []interface{}{"go test ./internal/validation"},
+					}}
+				},
+				wantValid: false,
+			},
+			{
+				name: "grounded goal containing determine whether fails",
+				mutate: func(packet map[string]interface{}) {
+					exec := packet["execution_payload"].(map[string]interface{})
+					exec["goal"] = joinPhrase("determine", "whether") + " the validator works."
+					exec["scope"] = "Update internal/validation/validation.go and run go test ./internal/validation"
+					exec["file_targets"] = []interface{}{map[string]interface{}{"path": "internal/validation/validation.go", "role": "primary", "action": "must_edit", "reason": "validator logic"}}
+					exec["validation_contract"] = map[string]interface{}{"mode": "commands", "failure_policy": "block", "commands": []interface{}{map[string]interface{}{"id": "V1", "command": "go test ./internal/validation", "required": true, "purpose": "Verify validation.", "success_signal": "Command exits 0.", "failure_handling": "block_if_fails"}}}
+				},
+				wantValid: false,
+			},
+			{
+				name: "grounded code requirement containing decide best approach fails",
+				mutate: func(packet map[string]interface{}) {
+					exec := packet["execution_payload"].(map[string]interface{})
+					exec["code_requirements"] = []interface{}{map[string]interface{}{
+						"id":          "CR1",
+						"requirement": "The developer should " + joinPhrase("decide", "best", "approach") + " for code changes.",
+						"applies_to":  []interface{}{"internal/validation/validation.go"},
+					}}
+				},
+				wantValid: false,
+			},
 		}
 
 		for _, tt := range tests {
@@ -389,6 +427,18 @@ func TestValidation(t *testing.T) {
 					"target_paths":        []interface{}{"internal/validation/validation.go"},
 					"instructions":        "Inspect and decide best approach.",
 					"acceptance_criteria": []interface{}{"done"},
+				},
+				wantValid: false,
+			},
+			{
+				name: "grounded inspect step with inspect and decide fails",
+				step: map[string]interface{}{
+					"id":                  "S1",
+					"title":               joinPhrase("inspect", "and", "decide"),
+					"action":              "inspect",
+					"target_paths":        []interface{}{"internal/validation/validation.go"},
+					"instructions":        "Check validator implementation details.",
+					"acceptance_criteria": []interface{}{"All checks pass successfully."},
 				},
 				wantValid: false,
 			},
@@ -702,4 +752,8 @@ func TestSchemaAuditCriteria(t *testing.T) {
 			t.Error("expected canonical packet with producer packet-maker to fail")
 		}
 	})
+}
+
+func joinPhrase(parts ...string) string {
+	return strings.Join(parts, " ")
 }
