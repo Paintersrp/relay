@@ -138,7 +138,7 @@ If `RELAY_MCP_PROFILE` is unset, Relay falls back to checking the legacy `RELAY_
 
 | Profile | Registered Tools |
 |---|---|
-| **Restricted** (Base Tools) | `submit_test_audit_packet`, `create_run_from_planner_handoff`, `submit_planner_pass_plan`, `list_open_runs`, `get_run_status`, `submit_audit_packet` |
+| **Restricted** (Base Tools) | `submit_test_audit_packet`, `create_run_from_planner_handoff`, `submit_planner_pass_plan`, `list_open_runs`, `get_run_status`, `submit_audit_packet`, `create_plan_attempt_with_intent`, `get_plan_intent_review_packet`, `submit_intent_drift_review`, `revise_plan_attempt`, `void_plan_attempt`, `approve_plan_attempt`, `submit_plan_attempt` |
 | **Local Operator** (Adds Context Broker) | All base tools + `get_project`, `get_plan`, `get_pass`, `get_pass_context`, `create_source_snapshot`, `list_project_files`, `search_project_files`, `read_project_file`, `get_repository_git_status`, `get_repository_recent_commit`, `list_repository_changed_files`, `get_repository_diff`, `create_context_packet`, `get_context_packet`, `create_local_audit`, `get_local_audit`, `list_project_local_audits`, `search_project_context_memory`, `list_project_context_records`, `get_project_context_record`, `create_project_context_record`, `supersede_project_context_record` |
 
 *Note: Exposure of MCP tools as GPT-facing actions is configuration-dependent. By default, only the two submission tools are exposed.*
@@ -156,6 +156,14 @@ Relay supports an optional managed plan orchestration layer where runs can be as
     *   Creating an associated run moves the pass from `planned` to `in_progress`.
     *   Accepting the run's audit moves the pass to `completed`.
     *   Requesting revision on the run's audit moves the pass to `revision_required`. This is a distinct blocker state: the orchestrator keeps the same pass and run selected for repair or follow-up and does **not** advance to a later pass until the pass is repaired and re-audited. (Older notes that described revision as merely returning the pass to `in_progress` predate the project-scoped orchestrator runtime.)
+
+---
+
+## Intent Drift Review Workflow
+
+Relay incorporates an LLM-assisted workflow to review plan intent drift before final submission. This workflow ensures that the proposed plan matches original requirements and prevents unauthorized changes.
+
+For detailed configuration, model tiers, separate-chat audit, and cost/privacy controls, see [Intent Drift Review Guide](file:///d:/Code/relay/docs/intent-drift-review.md).
 
 ---
 

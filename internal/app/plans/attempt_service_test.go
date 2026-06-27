@@ -286,6 +286,7 @@ func TestApprovePlanAttemptGateMapping(t *testing.T) {
 		wantBlocker  PlanAttemptBlockerCode
 	}{
 		{name: "disabled no review", mode: DriftReviewModeDisabled, wantOK: true},
+		{name: "disabled with review blocks", mode: DriftReviewModeDisabled, reviewSource: ReviewSourceExternal, gate: ApprovalGateStatusReady, wantBlocker: BlockerApprovalRequired},
 		{name: "manual no ack", mode: DriftReviewModeManual, wantBlocker: BlockerDriftAcknowledgementReq},
 		{name: "manual no review ack", mode: DriftReviewModeManual, noReviewAck: true, wantOK: true},
 		{name: "automatic missing review", mode: DriftReviewModeAutomatic, wantBlocker: BlockerDriftReviewRequired},

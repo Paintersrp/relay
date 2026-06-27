@@ -1,0 +1,37 @@
+{
+  "intent_drift_review_id": "intent-drift-review-2026-06-25-unclear",
+  "project_id": "relay",
+  "plan_attempt_id": "attempt-drift-unclear",
+  "intent_thread_id": "thread-drift-unclear",
+  "root_intent_packet_id": "intent-drift-unclear",
+  "reviewed_intent_packet_id": "intent-drift-unclear",
+  "review_packet_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "provenance": {
+    "review_source": "internal",
+    "submitted_by": "relay-internal-drift-reviewer"
+  },
+  "overall_alignment": "unclear",
+  "confidence": 0.45,
+  "findings": [
+    {
+      "finding_id": "finding-low-1",
+      "severity": "low",
+      "summary": "Ambiguous instruction translation",
+      "evidence": [
+        "Literal user request contains ambiguous language"
+      ],
+      "suggested_resolution": "Manually verify alignment"
+    }
+  ],
+  "recommended_action": "manual_review",
+  "approval_gate_status": "blocked",
+  "model_metadata": {
+    "provider": "fake",
+    "model": "fake-standard",
+    "model_tier": "standard",
+    "temperature": 0.0
+  },
+  "input_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "output_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "created_at": "2026-06-25T23:15:53Z"
+}

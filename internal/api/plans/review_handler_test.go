@@ -48,6 +48,26 @@ func TestPlanReviewSettingsRoutes(t *testing.T) {
 	if putResp.BlockerCode != string(appplans.BlockerDriftReviewBlocked) {
 		t.Fatalf("expected drift_review_blocked, got %+v", putResp)
 	}
+
+	// Test valid settings update
+	validBody := mustJSON(t, UpdatePlanReviewSettingsAPIRequest{
+		DriftReviewMode: appplans.DriftReviewModeExternal,
+		ModelTier:       appplans.ModelTierHighAssurance,
+	})
+	req = httptest.NewRequest(http.MethodPut, "/api/projects/relay/plan-review-settings", bytes.NewReader(validBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var validPutResp PlanReviewSettingsAPIResponse
+	if err := json.NewDecoder(rec.Body).Decode(&validPutResp); err != nil {
+		t.Fatalf("decode valid settings response: %v", err)
+	}
+	if !validPutResp.Success || validPutResp.Settings.DriftReviewMode != appplans.DriftReviewModeExternal || validPutResp.Settings.ModelTier != appplans.ModelTierHighAssurance {
+		t.Fatalf("expected settings update success, got %+v", validPutResp)
+	}
 }
 
 func TestPlanAttemptReviewGateRouteManualNoReview(t *testing.T) {

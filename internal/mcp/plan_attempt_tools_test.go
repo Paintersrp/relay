@@ -384,16 +384,16 @@ func mcpAttemptRawPlan(t *testing.T, planID string) (json.RawMessage, string) {
 				"local_first_assumption":  "Relay is the local source of context.",
 			},
 			"mcp_capability_profile": map[string]any{
-				"profile_id":              "mcp-test-profile",
-				"mode":                    "submission_only",
-				"context_broker_enabled":  false,
+				"profile_id":             "mcp-test-profile",
+				"mode":                   "submission_only",
+				"context_broker_enabled": false,
 			},
 		},
 		"source_intent": map[string]any{"summary": "Exercise MCP attempt flow."},
 		"global_context_rules": map[string]any{
-			"default_source_of_truth":    "Relay managed plan records.",
-			"planner_context_boundary":   "Transport tests validate backend behavior only.",
-			"forbidden_context_domains":  []string{"GitHub issues"},
+			"default_source_of_truth":   "Relay managed plan records.",
+			"planner_context_boundary":  "Transport tests validate backend behavior only.",
+			"forbidden_context_domains": []string{"GitHub issues"},
 		},
 		"passes": []any{
 			map[string]any{
@@ -478,4 +478,154 @@ func mcpAttemptCountRows(t *testing.T, st *store.Store, table string) int {
 		t.Fatalf("count %s: %v", table, err)
 	}
 	return count
+}
+
+func TestPlanAttemptMCPWorkflowActions(t *testing.T) {
+	st := setupTestStore(t)
+	srv := NewServer(discardLogger(), &MCPDeps{Store: st, ToolProfile: ToolProfileRestricted})
+
+	rawPlan, planHash := mcpAttemptRawPlan(t, "plan-workflow")
+
+	// 1. Create original attempt
+	createArgs := map[string]any{
+		"project_id":      "relay",
+		"plan_attempt_id": "attempt-orig",
+		"plan_artifact_ref": map[string]any{
+			"path":          "handoffs/plans/workflow.json",
+			"sha256":        planHash,
+			"artifact_kind": "planner-pass-plan-json",
+		},
+		"raw_plan_json": map[string]any{
+			"content":      json.RawMessage(rawPlan),
+			"content_hash": planHash,
+		},
+		"drift_review_mode": appplans.DriftReviewModeDisabled,
+		"intent_packet": map[string]any{
+			"summary":              "Original request",
+			"literal_user_request": "Original request text",
+			"constraints":          []string{},
+			"source": map[string]any{
+				"captured_from":        "planner_chat",
+				"captured_by":          "tester",
+				"source_artifact_path": "source.md",
+			},
+		},
+	}
+	createRes := srv.HandleCreatePlanAttemptWithIntent(mcpAttemptJSON(t, createArgs))
+	if createRes.IsError {
+		t.Fatalf("create failed: %s", createRes.Content[0].Text)
+	}
+
+	// 2. Get review packet
+	getArgs := map[string]any{
+		"project_id":      "relay",
+		"plan_attempt_id": "attempt-orig",
+	}
+	getRes := srv.HandleGetPlanIntentReviewPacket(mcpAttemptJSON(t, getArgs))
+	if getRes.IsError {
+		t.Fatalf("get packet failed: %s", getRes.Content[0].Text)
+	}
+	var getOut planAttemptToolOutput
+	if err := json.Unmarshal([]byte(getRes.Content[0].Text), &getOut); err != nil {
+		t.Fatalf("unmarshal get packet: %v", err)
+	}
+	if !getOut.OK || getOut.ReviewPacket == nil {
+		t.Fatalf("expected ok review packet, got %+v", getOut)
+	}
+	if !getOut.ReviewPacket.RetrievalSemantics.RetrievalOnly || getOut.ReviewPacket.RetrievalSemantics.StateMutated {
+		t.Fatalf("unexpected retrieval semantics: %+v", getOut.ReviewPacket.RetrievalSemantics)
+	}
+
+	// 3. Submit drift review (evidence only)
+	reviewArgs := map[string]any{
+		"project_id":      "relay",
+		"plan_attempt_id": "attempt-orig",
+		"drift_review": map[string]any{
+			"intent_drift_review_id":    "intent-drift-review-2026-06-25-external-mcp",
+			"plan_attempt_id":           "attempt-orig",
+			"intent_thread_id":          getOut.ReviewPacket.IntentThreadID,
+			"root_intent_packet_id":     getOut.ReviewPacket.RootIntentPacket.IntentPacketID,
+			"reviewed_intent_packet_id": getOut.ReviewPacket.ReviewedIntentPacket.IntentPacketID,
+			"review_packet_hash":        getOut.ReviewPacket.PacketHash,
+			"review_source":             "external",
+			"submitted_by":              "tester",
+			"source_artifact_path":      "reviews/external.json",
+			"overall_alignment":         "aligned",
+			"confidence":                0.95,
+			"findings_json":             json.RawMessage(`[]`),
+			"recommended_action":        "approve",
+			"approval_gate_status":      "ready",
+			"model_metadata_json":       json.RawMessage(`{"model":"fake"}`),
+			"input_hash":                planHash,
+			"output_hash":               planHash,
+		},
+	}
+	reviewRes := srv.HandleSubmitIntentDriftReview(mcpAttemptJSON(t, reviewArgs))
+	if reviewRes.IsError {
+		t.Fatalf("submit review failed: %s", reviewRes.Content[0].Text)
+	}
+	if got := mcpAttemptCountRows(t, st, "plans"); got != 0 {
+		t.Fatalf("expected 0 plans after review submission, got %d", got)
+	}
+
+	// 4. Revise plan attempt
+	reviseArgs := map[string]any{
+		"project_id":           "relay",
+		"plan_attempt_id":      "attempt-orig",
+		"new_plan_attempt_id":  "attempt-revised",
+		"new_intent_packet_id": "intent-revised",
+		"plan_artifact_ref": map[string]any{
+			"path":          "handoffs/plans/workflow-revised.json",
+			"sha256":        planHash,
+			"artifact_kind": "planner-pass-plan-json",
+		},
+		"raw_plan_json": map[string]any{
+			"content":      json.RawMessage(rawPlan),
+			"content_hash": planHash,
+		},
+		"new_intent_packet": map[string]any{
+			"summary":              "Revision request",
+			"literal_user_request": "Revision request text",
+			"constraints":          []string{},
+			"source": map[string]any{
+				"captured_from": "revision_notes",
+				"captured_by":   "tester",
+			},
+		},
+	}
+	reviseRes := srv.HandleRevisePlanAttempt(mcpAttemptJSON(t, reviseArgs))
+	if reviseRes.IsError {
+		t.Fatalf("revise failed: %s", reviseRes.Content[0].Text)
+	}
+
+	// Verify old attempt status is superseded
+	var oldAttempt store.PlanAttempt
+	if err := st.DB().QueryRow("SELECT status, replacement_plan_attempt_id FROM plan_attempts WHERE plan_attempt_id = 'attempt-orig'").Scan(&oldAttempt.Status, &oldAttempt.ReplacementPlanAttemptID); err != nil {
+		t.Fatalf("load old attempt: %v", err)
+	}
+	if oldAttempt.Status != "superseded" || oldAttempt.ReplacementPlanAttemptID.String != "attempt-revised" {
+		t.Fatalf("old attempt not superseded correctly: %+v", oldAttempt)
+	}
+
+	// 5. Void plan attempt
+	voidArgs := map[string]any{
+		"project_id":      "relay",
+		"plan_attempt_id": "attempt-revised",
+	}
+	voidRes := srv.HandleVoidPlanAttempt(mcpAttemptJSON(t, voidArgs))
+	if voidRes.IsError {
+		t.Fatalf("void failed: %s", voidRes.Content[0].Text)
+	}
+
+	// Verify revised attempt is voided
+	var revisedAttempt store.PlanAttempt
+	if err := st.DB().QueryRow("SELECT status, replacement_plan_attempt_id FROM plan_attempts WHERE plan_attempt_id = 'attempt-revised'").Scan(&revisedAttempt.Status, &revisedAttempt.ReplacementPlanAttemptID); err != nil {
+		t.Fatalf("load revised attempt: %v", err)
+	}
+	if revisedAttempt.Status != "voided" || revisedAttempt.ReplacementPlanAttemptID.Valid {
+		t.Fatalf("revised attempt not voided correctly: %+v", revisedAttempt)
+	}
+	if got := mcpAttemptCountRows(t, st, "plans"); got != 0 {
+		t.Fatalf("expected 0 plans after voiding, got %d", got)
+	}
 }

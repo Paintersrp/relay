@@ -1,0 +1,26 @@
+{
+  "id": 2,
+  "intent_packet_id": "intent-revision-1",
+  "project_row_id": 1,
+  "project_id": "relay",
+  "intent_thread_id": "thread-intent-1",
+  "root_intent_packet_id": "intent-original-1",
+  "parent_intent_packet_id": {
+    "String": "intent-original-1",
+    "Valid": true
+  },
+  "revision_of_plan_attempt_id": {
+    "String": "plan-attempt-1",
+    "Valid": true
+  },
+  "kind": "revision",
+  "captured_from": "revision_notes",
+  "captured_by": "tester",
+  "source_artifact_path": "handoffs/source.md",
+  "summary": "Revision request",
+  "literal_user_request": "Please add more detailed comments",
+  "constraints_json": "[]",
+  "redaction_status": "verified_no_secrets",
+  "content_hash": "sha256:9993456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "created_at": "2026-06-25T23:45:00Z"
+}

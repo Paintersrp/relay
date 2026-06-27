@@ -27,6 +27,30 @@ var invalidReviewMissingMetadataTestData []byte
 //go:embed testdata/invalid_review_bad_confidence.json
 var invalidReviewBadConfidenceTestData []byte
 
+//go:embed testdata/review_aligned_ready.json
+var reviewAlignedReadyTestData []byte
+
+//go:embed testdata/review_minor_drift_acknowledgement.json
+var reviewMinorDriftAckTestData []byte
+
+//go:embed testdata/review_major_drift_revision.json
+var reviewMajorDriftRevisionTestData []byte
+
+//go:embed testdata/review_unclear_manual_review.json
+var reviewUnclearManualReviewTestData []byte
+
+//go:embed testdata/review_external_ready.json
+var reviewExternalReadyTestData []byte
+
+//go:embed testdata/intent_original.json
+var intentOriginalTestData []byte
+
+//go:embed testdata/intent_revision.json
+var intentRevisionTestData []byte
+
+//go:embed testdata/submitted_plan_lineage.json
+var submittedPlanLineageTestData []byte
+
 func TestValidateIntentDriftReviewJSON(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1067,4 +1091,313 @@ func canonicalJSONSHA256(t *testing.T, raw json.RawMessage) string {
 	}
 	sum := sha256.Sum256(canonical)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func TestPASS007FixturesAreValid(t *testing.T) {
+	// Validate review fixtures
+	for _, fixture := range [][]byte{
+		reviewAlignedReadyTestData,
+		reviewMinorDriftAckTestData,
+		reviewMajorDriftRevisionTestData,
+		reviewUnclearManualReviewTestData,
+		reviewExternalReadyTestData,
+	} {
+		if err := ValidateIntentDriftReviewJSON(fixture); err != nil {
+			t.Fatalf("Fixture validation failed: %v", err)
+		}
+	}
+
+	// Validate intent original & revision fixtures
+	var orig store.IntentPacket
+	if err := json.Unmarshal(intentOriginalTestData, &orig); err != nil {
+		t.Fatalf("Failed to parse intent_original fixture: %v", err)
+	}
+	if orig.Kind != "original" || orig.IntentPacketID != "intent-original-1" {
+		t.Fatalf("Invalid original intent fixture fields: %+v", orig)
+	}
+
+	var rev store.IntentPacket
+	if err := json.Unmarshal(intentRevisionTestData, &rev); err != nil {
+		t.Fatalf("Failed to parse intent_revision fixture: %v", err)
+	}
+	if rev.Kind != "revision" || rev.ParentIntentPacketID.String != "intent-original-1" {
+		t.Fatalf("Invalid revision intent fixture fields: %+v", rev)
+	}
+
+	// Validate submitted plan lineage fixture
+	var plan store.Plan
+	if err := json.Unmarshal(submittedPlanLineageTestData, &plan); err != nil {
+		t.Fatalf("Failed to parse submitted_plan_lineage fixture: %v", err)
+	}
+	if plan.PlanID != "plan-drift-external" || plan.SubmittedPlanAttemptID.String != "attempt-drift-external" {
+		t.Fatalf("Invalid plan lineage fixture fields: %+v", plan)
+	}
+}
+
+func TestRunInternalReviewGateMappings(t *testing.T) {
+	cases := []struct {
+		name           string
+		modelOutput    string
+		wantGateStatus string
+	}{
+		{
+			name: "aligned ready",
+			modelOutput: `{
+				"overall_alignment": "aligned",
+				"confidence": 0.95,
+				"findings": [],
+				"recommended_action": "approve",
+				"approval_gate_status": "ready"
+			}`,
+			wantGateStatus: "ready",
+		},
+		{
+			name: "minor drift ack",
+			modelOutput: `{
+				"overall_alignment": "minor_drift",
+				"confidence": 0.92,
+				"findings": [
+					{
+						"finding_id": "finding-medium-1",
+						"severity": "medium",
+						"summary": "Minor changes to plan sequence",
+						"evidence": ["Sequence changed"],
+						"suggested_resolution": "Acknowledge the change"
+					}
+				],
+				"recommended_action": "approve_with_acknowledgement",
+				"approval_gate_status": "acknowledgement_required"
+			}`,
+			wantGateStatus: "acknowledgement_required",
+		},
+		{
+			name: "major drift revision",
+			modelOutput: `{
+				"overall_alignment": "major_drift",
+				"confidence": 0.95,
+				"findings": [
+					{
+						"finding_id": "finding-high-1",
+						"severity": "high",
+						"summary": "Out of scope changes",
+						"evidence": ["Scope breach"],
+						"suggested_resolution": "Revise the plan"
+					}
+				],
+				"recommended_action": "revise",
+				"approval_gate_status": "revision_required"
+			}`,
+			wantGateStatus: "revision_required",
+		},
+		{
+			name: "unclear manual review",
+			modelOutput: `{
+				"overall_alignment": "unclear",
+				"confidence": 0.85,
+				"findings": [
+					{
+						"finding_id": "finding-unclear-1",
+						"severity": "low",
+						"summary": "Ambiguous intent",
+						"evidence": ["Ambiguous"],
+						"suggested_resolution": "Manual check"
+					}
+				],
+				"recommended_action": "manual_review",
+				"approval_gate_status": "blocked"
+			}`,
+			wantGateStatus: "blocked",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fakePlans := &fakePlanService{
+				packetRes: &appplans.PlanAttemptResult{
+					OK:           true,
+					ReviewPacket: defaultValidPacket(),
+				},
+			}
+			fakeModel := &fakeReviewer{
+				res: &ReviewModelResponse{
+					RawJSON:  []byte(tc.modelOutput),
+					Provider: "fake",
+					Model:    "fake-standard",
+				},
+			}
+			fakePlans.submitRes = &appplans.PlanAttemptResult{
+				OK:          true,
+				DriftReview: &store.IntentDriftReview{},
+			}
+
+			svc := NewService(fakePlans, fakeModel)
+			res, err := svc.RunInternalReview(context.Background(), InternalReviewRequest{
+				ProjectID:      "proj-1",
+				PlanAttemptID:  "attempt-1",
+				AllowModelCall: true,
+				RequestedTier:  appplans.ModelTierStandard,
+			})
+			if err != nil {
+				t.Fatalf("RunInternalReview error: %v", err)
+			}
+			if !res.OK {
+				t.Fatalf("expected OK to be true, got failed result: %v", res.Message)
+			}
+
+			sub := fakePlans.lastSubmit.DriftReview
+			if sub.ApprovalGateStatus != tc.wantGateStatus {
+				t.Fatalf("expected gate status %q, got %q", tc.wantGateStatus, sub.ApprovalGateStatus)
+			}
+		})
+	}
+}
+
+func TestRunInternalReviewAutoEscalationMatrix(t *testing.T) {
+	cases := []struct {
+		name           string
+		firstOutput    string
+		wantEscalation bool
+		wantFinalTier  string
+	}{
+		{
+			name: "low confidence triggers escalation",
+			firstOutput: `{
+				"overall_alignment": "aligned",
+				"confidence": 0.50,
+				"findings": [],
+				"recommended_action": "approve",
+				"approval_gate_status": "ready"
+			}`,
+			wantEscalation: true,
+			wantFinalTier:  "high_assurance",
+		},
+		{
+			name: "unclear overall alignment triggers escalation",
+			firstOutput: `{
+				"overall_alignment": "unclear",
+				"confidence": 0.95,
+				"findings": [
+					{
+						"finding_id": "finding-unclear-1",
+						"severity": "low",
+						"summary": "Ambiguous intent",
+						"evidence": ["Ambiguous"],
+						"suggested_resolution": "Manual check"
+					}
+				],
+				"recommended_action": "approve",
+				"approval_gate_status": "ready"
+			}`,
+			wantEscalation: true,
+			wantFinalTier:  "high_assurance",
+		},
+		{
+			name: "major_drift overall alignment triggers escalation",
+			firstOutput: `{
+				"overall_alignment": "major_drift",
+				"confidence": 0.95,
+				"findings": [
+					{
+						"finding_id": "finding-high-1",
+						"severity": "high",
+						"summary": "Out of scope changes",
+						"evidence": ["Scope breach"],
+						"suggested_resolution": "Revise the plan"
+					}
+				],
+				"recommended_action": "revise",
+				"approval_gate_status": "revision_required"
+			}`,
+			wantEscalation: true,
+			wantFinalTier:  "high_assurance",
+		},
+		{
+			name: "manual_review recommendation triggers escalation",
+			firstOutput: `{
+				"overall_alignment": "aligned",
+				"confidence": 0.95,
+				"findings": [
+					{
+						"finding_id": "finding-low-1",
+						"severity": "low",
+						"summary": "Manual checking recommended",
+						"evidence": ["Manual checking"],
+						"suggested_resolution": "Acknowledge"
+					}
+				],
+				"recommended_action": "manual_review",
+				"approval_gate_status": "blocked"
+			}`,
+			wantEscalation: true,
+			wantFinalTier:  "high_assurance",
+		},
+		{
+			name: "invalid schema triggers escalation",
+			firstOutput: `{
+				"overall_alignment": "aligned",
+				"confidence": 0.95,
+				"findings": []
+			}`,
+			wantEscalation: true,
+			wantFinalTier:  "high_assurance",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fakePlans := &fakePlanService{
+				packetRes: &appplans.PlanAttemptResult{
+					OK:           true,
+					ReviewPacket: defaultValidPacket(),
+				},
+			}
+
+			validOutput := `{
+				"overall_alignment": "aligned",
+				"confidence": 0.95,
+				"findings": [],
+				"recommended_action": "approve",
+				"approval_gate_status": "ready"
+			}`
+
+			fakeModel := &fakeReviewer{
+				resMap: map[string]ReviewModelResponse{
+					"standard": {
+						RawJSON:  []byte(tc.firstOutput),
+						Provider: "fake",
+						Model:    "fake-standard",
+					},
+					"high_assurance": {
+						RawJSON:  []byte(validOutput),
+						Provider: "fake",
+						Model:    "fake-high",
+					},
+				},
+			}
+			fakePlans.submitRes = &appplans.PlanAttemptResult{
+				OK:          true,
+				DriftReview: &store.IntentDriftReview{},
+			}
+
+			svc := NewService(fakePlans, fakeModel)
+			res, err := svc.RunInternalReview(context.Background(), InternalReviewRequest{
+				ProjectID:      "proj-1",
+				PlanAttemptID:  "attempt-1",
+				AllowModelCall: true,
+				RequestedTier:  "auto_escalate",
+			})
+			if err != nil {
+				t.Fatalf("RunInternalReview error: %v", err)
+			}
+			if !res.OK {
+				t.Fatalf("expected OK to be true: %v", res.Message)
+			}
+			if res.Escalated != tc.wantEscalation {
+				t.Fatalf("expected Escalated=%v, got %v", tc.wantEscalation, res.Escalated)
+			}
+			if res.FinalTier != tc.wantFinalTier {
+				t.Fatalf("expected final tier %q, got %q", tc.wantFinalTier, res.FinalTier)
+			}
+		})
+	}
 }

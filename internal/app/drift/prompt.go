@@ -40,18 +40,18 @@ The approval_gate_status MUST be consistent with recommended_action:
 // All fields are derived solely from the PlanIntentReviewPacket.
 // No live chat history, filesystem reads, GitHub state, or secrets are included.
 type inputPayload struct {
-	PacketID     string `json:"packet_id"`
-	PacketHash   string `json:"packet_hash"`
-	GeneratedAt  string `json:"generated_at"`
-	ProjectID    string `json:"project_id"`
+	PacketID      string `json:"packet_id"`
+	PacketHash    string `json:"packet_hash"`
+	GeneratedAt   string `json:"generated_at"`
+	ProjectID     string `json:"project_id"`
 	PlanAttemptID string `json:"plan_attempt_id"`
 
 	RootIntentPacket     intentEvidencePayload `json:"root_intent_packet"`
 	ReviewedIntentPacket intentEvidencePayload `json:"reviewed_intent_packet"`
 
-	PlanAttempt     planAttemptPayload    `json:"plan_attempt"`
-	PlanArtifacts   planArtifactsPayload  `json:"plan_artifacts"`
-	RawPlanJSON     json.RawMessage       `json:"raw_plan_json,omitempty"`
+	PlanAttempt   planAttemptPayload   `json:"plan_attempt"`
+	PlanArtifacts planArtifactsPayload `json:"plan_artifacts"`
+	RawPlanJSON   json.RawMessage      `json:"raw_plan_json,omitempty"`
 
 	PriorAttemptSummaries []priorAttemptPayload `json:"prior_attempt_summaries"`
 	PriorReviewSummaries  []priorReviewPayload  `json:"prior_drift_review_summaries"`
