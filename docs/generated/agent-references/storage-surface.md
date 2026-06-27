@@ -97,6 +97,50 @@ Schema version: `1.0.0`
 
 ## Facts
 
+### storage-gap-query-wrapper-link-unresolved (unresolved)
+
+The current generator does not yet prove complete query-to-store-wrapper linkage. Individual query declarations are catalogued and wrapper methods are identified, but deterministic evidence that each sqlc query maps to at least one store wrapper method is not yet provided.
+
+Evidence:
+
+- source: `sqlc.yaml`
+- source: `internal/db/queries`
+- source: `internal/db/migrations`
+- source: `internal/store/db.go`
+
+### storage-gap-stale-query-reference-coverage-unresolved (unresolved)
+
+The current generator does not yet prove that all sqlc query declarations are still referenced in generated code and store wrappers. Stale or orphaned SQL queries may exist in the queries directory without corresponding generated or wrapper usage.
+
+Evidence:
+
+- source: `sqlc.yaml`
+- source: `internal/db/queries`
+- source: `internal/db/migrations`
+- source: `internal/store/db.go`
+
+### storage-gap-table-ownership-unresolved (unresolved)
+
+The current generator does not yet prove semantic table/domain ownership beyond path/table-name conventions. Table-to-domain mapping is inferred from file-path conventions and migration CREATE TABLE statements; it has not been independently verified against sqlc query usage or runtime query profiles.
+
+Evidence:
+
+- source: `sqlc.yaml`
+- source: `internal/db/queries`
+- source: `internal/db/migrations`
+- source: `internal/store/db.go`
+
+### storage-gap-wrapper-caller-link-unresolved (unresolved)
+
+The current generator does not yet prove complete store-wrapper-to-caller usage linkage outside internal/store/db.go. Wrapper methods are identified from AST inspection of db.go but their callers in the broader codebase have not been mapped.
+
+Evidence:
+
+- source: `sqlc.yaml`
+- source: `internal/db/queries`
+- source: `internal/db/migrations`
+- source: `internal/store/db.go`
+
 ### storage-generated-boundary (convention)
 
 Generated sqlc boundary contains 21 file(s) under internal/store/generated; these are build outputs and must not be hand-edited.

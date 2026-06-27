@@ -370,12 +370,12 @@
     },
     {
       "path": "internal/app/intake/helpers_test.go",
-      "sha256": "012f63712ea8dc35261a569e5dbd5ecc369c13b27cc0deb46bc61770a14ab4f2",
+      "sha256": "35f2cac3879278f3e414d15f5ab5b0418253ca0e06580b56a7a2804f0f43600a",
       "role": "test"
     },
     {
       "path": "internal/app/intake/service.go",
-      "sha256": "6fa9643b8f0a1ca5ce07279f3919aaeae29f72c272bdabc7e60ffa4d7e167731",
+      "sha256": "785f75affeecd598bce71b1973cddcc9613ccd73aae0193cee2a7d87c2192ce9",
       "role": "source"
     },
     {
@@ -15434,6 +15434,17 @@
       "id": "backend-test-internal-app-intake-testresolveintakeexecutoradapter",
       "label": "proven",
       "statement": "Test function TestResolveIntakeExecutorAdapter in internal/app/intake/helpers_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/intake/helpers_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-intake-testresolveintakerecommendedmodel",
+      "label": "proven",
+      "statement": "Test function TestResolveIntakeRecommendedModel in internal/app/intake/helpers_test.go",
       "evidence": [
         {
           "kind": "test",

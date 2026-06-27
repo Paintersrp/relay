@@ -497,6 +497,42 @@ func BuildStorageSurfaceDoc(repoRoot string) (*ReferenceDocument, error) {
 		})
 	}
 
+	unresolvedGaps := []struct {
+		id        string
+		statement string
+	}{
+		{
+			id:        "storage-gap-table-ownership-unresolved",
+			statement: "The current generator does not yet prove semantic table/domain ownership beyond path/table-name conventions. Table-to-domain mapping is inferred from file-path conventions and migration CREATE TABLE statements; it has not been independently verified against sqlc query usage or runtime query profiles.",
+		},
+		{
+			id:        "storage-gap-stale-query-reference-coverage-unresolved",
+			statement: "The current generator does not yet prove that all sqlc query declarations are still referenced in generated code and store wrappers. Stale or orphaned SQL queries may exist in the queries directory without corresponding generated or wrapper usage.",
+		},
+		{
+			id:        "storage-gap-query-wrapper-link-unresolved",
+			statement: "The current generator does not yet prove complete query-to-store-wrapper linkage. Individual query declarations are catalogued and wrapper methods are identified, but deterministic evidence that each sqlc query maps to at least one store wrapper method is not yet provided.",
+		},
+		{
+			id:        "storage-gap-wrapper-caller-link-unresolved",
+			statement: "The current generator does not yet prove complete store-wrapper-to-caller usage linkage outside internal/store/db.go. Wrapper methods are identified from AST inspection of db.go but their callers in the broader codebase have not been mapped.",
+		},
+	}
+
+	for _, g := range unresolvedGaps {
+		facts = append(facts, Fact{
+			ID:        g.id,
+			Label:     FactLabelUnresolved,
+			Statement: g.statement,
+			Evidence: []Evidence{
+				safeEvidence("sqlc.yaml"),
+				safeEvidence("internal/db/queries"),
+				safeEvidence("internal/db/migrations"),
+				safeEvidence("internal/store/db.go"),
+			},
+		})
+	}
+
 	expectedQueries := []string{"internal/db/queries", "internal/db/migrations", "internal/store/db.go", "sqlc.yaml"}
 	for _, p := range expectedQueries {
 		abs := filepath.Join(repoRoot, p)

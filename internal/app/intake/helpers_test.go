@@ -90,3 +90,76 @@ func TestResolveIntakeExecutorAdapter(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveIntakeRecommendedModel(t *testing.T) {
+	cases := []struct {
+		name      string
+		metadata  map[string]string
+		wantModel string
+	}{
+		{
+			name:      "no metadata defaults to deepseek-v4-pro",
+			metadata:  nil,
+			wantModel: "deepseek-v4-pro",
+		},
+		{
+			name:      "empty metadata defaults to deepseek-v4-pro",
+			metadata:  map[string]string{},
+			wantModel: "deepseek-v4-pro",
+		},
+		{
+			name:      "explicit recommended_model wins",
+			metadata:  map[string]string{"recommended_model": "gpt-5", "model": "claude"},
+			wantModel: "gpt-5",
+		},
+		{
+			name:      "executor_model_profile wins when recommended_model missing",
+			metadata:  map[string]string{"executor_model_profile": "deepseek-v4-pro", "model": "gemini"},
+			wantModel: "deepseek-v4-pro",
+		},
+		{
+			name:      "model key wins when others missing",
+			metadata:  map[string]string{"model": "deepseek-v4-flash"},
+			wantModel: "deepseek-v4-flash",
+		},
+		{
+			name:      "target_executor deepseek maps to deepseek-v4-pro",
+			metadata:  map[string]string{"target_executor": "deepseek"},
+			wantModel: "deepseek-v4-pro",
+		},
+		{
+			name:      "target_executor deepseek-v4-pro maps to deepseek-v4-pro",
+			metadata:  map[string]string{"target_executor": "deepseek-v4-pro"},
+			wantModel: "deepseek-v4-pro",
+		},
+		{
+			name:      "target_executor deepseek-v4-flash maps to deepseek-v4-flash",
+			metadata:  map[string]string{"target_executor": "deepseek-v4-flash"},
+			wantModel: "deepseek-v4-flash",
+		},
+		{
+			name:      "target_executor opencode defaults to deepseek-v4-pro",
+			metadata:  map[string]string{"target_executor": "opencode"},
+			wantModel: "deepseek-v4-pro",
+		},
+		{
+			name:      "target_executor opencode_go defaults to deepseek-v4-pro",
+			metadata:  map[string]string{"target_executor": "opencode_go"},
+			wantModel: "deepseek-v4-pro",
+		},
+		{
+			name:      "target_executor unknown still defaults to deepseek-v4-pro",
+			metadata:  map[string]string{"target_executor": "cline"},
+			wantModel: "deepseek-v4-pro",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			model := resolveIntakeRecommendedModel(tc.metadata)
+			if model != tc.wantModel {
+				t.Errorf("expected model %q, got %q", tc.wantModel, model)
+			}
+		})
+	}
+}

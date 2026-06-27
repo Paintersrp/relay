@@ -206,10 +206,15 @@ func resolveIntakeRecommendedModel(metadata map[string]string) string {
 			return v
 		}
 	}
-	if strings.TrimSpace(metadata["target_executor"]) == "deepseek" {
+	targetExec := strings.TrimSpace(metadata["target_executor"])
+	switch targetExec {
+	case "deepseek", "deepseek-v4-pro":
+		return "deepseek-v4-pro"
+	case "deepseek-v4-flash":
+		return "deepseek-v4-flash"
+	default:
 		return "deepseek-v4-pro"
 	}
-	return "deepseek-v4-flash"
 }
 
 func mapInputError(err error, internalPrefix string) error {

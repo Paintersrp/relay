@@ -824,6 +824,51 @@ func TestBuildStorageSurfaceDoc_NoEvidenceIsAbsolute(t *testing.T) {
 	}
 }
 
+func TestBuildStorageSurfaceDoc_GapFacts(t *testing.T) {
+	doc, err := BuildStorageSurfaceDoc(findRepoRoot(t))
+	if err != nil {
+		t.Fatalf("BuildStorageSurfaceDoc: %v", err)
+	}
+
+	requiredGapIDs := []string{
+		"storage-gap-table-ownership-unresolved",
+		"storage-gap-stale-query-reference-coverage-unresolved",
+		"storage-gap-query-wrapper-link-unresolved",
+		"storage-gap-wrapper-caller-link-unresolved",
+	}
+
+	factMap := make(map[string]Fact)
+	for _, f := range doc.Facts {
+		factMap[f.ID] = f
+	}
+
+	for _, id := range requiredGapIDs {
+		fact, ok := factMap[id]
+		if !ok {
+			t.Errorf("required storage gap fact ID %q not found", id)
+			continue
+		}
+		if fact.Label != FactLabelUnresolved {
+			t.Errorf("storage gap fact %q has label %q, want unresolved", id, fact.Label)
+		}
+		if fact.Statement == "" {
+			t.Errorf("storage gap fact %q has empty statement", id)
+		}
+		if len(fact.Evidence) == 0 {
+			t.Errorf("storage gap fact %q has no evidence", id)
+		}
+		for _, e := range fact.Evidence {
+			if e.Value == "" {
+				t.Errorf("storage gap fact %q has empty evidence value", id)
+				continue
+			}
+			if err := ValidateRepoRelativePath(e.Value); err != nil {
+				t.Errorf("storage gap fact %q evidence %q is not repo-relative: %v", id, e.Value, err)
+			}
+		}
+	}
+}
+
 func TestBuildStorageSurfaceDoc_GeneratedBoundaryIsNotRequired(t *testing.T) {
 	dir := buildTempStorageRepo(t)
 
