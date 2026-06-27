@@ -493,3 +493,202 @@ func TestNestedCheckout_ValidationSeparation(t *testing.T) {
 		t.Errorf("expected no validation results, got %d", len(ev.ValidationResults))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// normalizeNestedChangedPath helper tests
+// ---------------------------------------------------------------------------
+
+func TestNormalizeNestedChangedPath(t *testing.T) {
+	cases := []struct {
+		nestedRoot string
+		rawPath    string
+		want       string
+	}{
+		{
+			nestedRoot: "relay-contracts",
+			rawPath:    "contracts/intent_drift_review_contract.md",
+			want:       "relay-contracts/contracts/intent_drift_review_contract.md",
+		},
+		{
+			nestedRoot: "relay-contracts",
+			rawPath:    "relay-contracts/contracts/intent_drift_review_contract.md",
+			want:       "relay-contracts/contracts/intent_drift_review_contract.md",
+		},
+		{
+			nestedRoot: "relay-contracts",
+			rawPath:    `contracts\intent_drift_review_contract.md`,
+			want:       "relay-contracts/contracts/intent_drift_review_contract.md",
+		},
+		{
+			nestedRoot: "",
+			rawPath:    "contracts/file.md",
+			want:       "contracts/file.md",
+		},
+	}
+	for _, tc := range cases {
+		name := tc.nestedRoot + " + " + tc.rawPath
+		t.Run(name, func(t *testing.T) {
+			got := normalizeNestedChangedPath(tc.nestedRoot, tc.rawPath)
+			if got != tc.want {
+				t.Errorf("normalizeNestedChangedPath(%q, %q) = %q, want %q", tc.nestedRoot, tc.rawPath, got, tc.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Collector-path tests for nested_changed_files normalization
+// ---------------------------------------------------------------------------
+
+// writeDirectArtifact writes a file directly and creates a store artifact record,
+// bypassing artifacts.Write which validates against known kinds.
+func writeDirectArtifact(t *testing.T, s *store.Store, runID int64, kind, filename string, content []byte, mimeType string) string {
+	t.Helper()
+	path := filepath.Join(artifacts.Dir(runID), filename)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("mkdir for direct artifact %s/%s: %v", kind, filename, err)
+	}
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatalf("write direct artifact %s/%s: %v", kind, filename, err)
+	}
+	_, err := s.CreateArtifact(runID, kind, path, mimeType)
+	if err != nil {
+		t.Fatalf("create artifact record %s: %v", kind, err)
+	}
+	return path
+}
+
+// TestCollector_NestedChangedFilesPass verifies that nested-relative changed-file
+// entries are normalized to parent-relative paths and pass file-scope checks
+// when they match the packet file targets.
+func TestCollector_NestedChangedFilesPass(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	s, err := store.Open(dbPath, logger)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+
+	artifacts.SetBaseDir(dir)
+
+	repo, err := s.CreateRepo("test-repo", filepath.Join(dir, "repo"))
+	if err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+
+	run, err := s.CreateRun(repo.ID, "nested-pass-test", "executor_done", "gpt-4o", "gpt-4o", "main")
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	// Write canonical_packet with file_targets
+	pktData := `{"execution_payload": {"goal": "test", "scope": "test", "non_goals": [], "file_targets": ["relay-contracts/contracts/intent_drift_review_contract.md"]}, "audit_seed": {"audit_checklist": []}}`
+	writeArtifact(t, s, run.ID, "canonical_packet", "canonical_packet.json", []byte(pktData), "application/json")
+
+	// Write git_diff_name_status with a nested checkout marker
+	writeArtifact(t, s, run.ID, "git_diff_name_status", "git_diff_name_status.txt", []byte("M\trelay-contracts\n"), "text/plain")
+
+	// Write nested_changed_files via direct helper (kind not in artifacts.allowedKinds)
+	writeDirectArtifact(t, s, run.ID, "nested_changed_files", "nested_changed_files.txt", []byte("M\tcontracts/intent_drift_review_contract.md\n"), "text/plain")
+
+	c := NewCollector(s)
+	ev, err := c.Collect(run.ID)
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	// NestedCheckoutFiles should contain the normalized parent-relative path
+	if len(ev.ChangedFiles.NestedCheckoutFiles) != 1 {
+		t.Fatalf("expected 1 NestedCheckoutFile, got %d", len(ev.ChangedFiles.NestedCheckoutFiles))
+	}
+	if ev.ChangedFiles.NestedCheckoutFiles[0].Path != "relay-contracts/contracts/intent_drift_review_contract.md" {
+		t.Errorf("NestedCheckoutFiles[0].Path = %q, want %q", ev.ChangedFiles.NestedCheckoutFiles[0].Path, "relay-contracts/contracts/intent_drift_review_contract.md")
+	}
+	if ev.ChangedFiles.NestedEvidenceGap {
+		t.Error("NestedEvidenceGap should be false when nested_changed_files are present")
+	}
+
+	// FS-TARGETS should pass
+	foundPass := false
+	for _, r := range ev.FileScopeResults {
+		if r.ID == "FS-TARGETS" && r.Result == CheckPass {
+			foundPass = true
+		}
+		if r.Result == CheckFail && strings.Contains(r.Rationale, "contracts/intent_drift_review_contract.md") {
+			t.Errorf("FS-TARGETS should not fail naming the nested-relative path without the relay-contracts prefix: %s", r.Rationale)
+		}
+	}
+	if !foundPass {
+		t.Errorf("expected FS-TARGETS pass, results: %+v", ev.FileScopeResults)
+	}
+}
+
+// TestCollector_NestedChangedFilesFail verifies that a nested-relative out-of-scope
+// file is normalized and reported with the parent-relative path in the failure.
+func TestCollector_NestedChangedFilesFail(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	s, err := store.Open(dbPath, logger)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer s.Close()
+
+	artifacts.SetBaseDir(dir)
+
+	repo, err := s.CreateRepo("test-repo", filepath.Join(dir, "repo"))
+	if err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+
+	run, err := s.CreateRun(repo.ID, "nested-fail-test", "executor_done", "gpt-4o", "gpt-4o", "main")
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	// Write canonical_packet with file_targets
+	pktData := `{"execution_payload": {"goal": "test", "scope": "test", "non_goals": [], "file_targets": ["relay-contracts/contracts/intent_drift_review_contract.md"]}, "audit_seed": {"audit_checklist": []}}`
+	writeArtifact(t, s, run.ID, "canonical_packet", "canonical_packet.json", []byte(pktData), "application/json")
+
+	// Write git_diff_name_status with a nested checkout marker
+	writeArtifact(t, s, run.ID, "git_diff_name_status", "git_diff_name_status.txt", []byte("M\trelay-contracts\n"), "text/plain")
+
+	// Write nested_changed_files via direct helper (kind not in artifacts.allowedKinds)
+	writeDirectArtifact(t, s, run.ID, "nested_changed_files", "nested_changed_files.txt", []byte("M\tschema/planner_pass_plan.schema.json\n"), "text/plain")
+
+	c := NewCollector(s)
+	ev, err := c.Collect(run.ID)
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	// Verify nested file was normalized
+	if len(ev.ChangedFiles.NestedCheckoutFiles) != 1 {
+		t.Fatalf("expected 1 NestedCheckoutFile, got %d", len(ev.ChangedFiles.NestedCheckoutFiles))
+	}
+	if ev.ChangedFiles.NestedCheckoutFiles[0].Path != "relay-contracts/schema/planner_pass_plan.schema.json" {
+		t.Errorf("NestedCheckoutFiles[0].Path = %q, want %q", ev.ChangedFiles.NestedCheckoutFiles[0].Path, "relay-contracts/schema/planner_pass_plan.schema.json")
+	}
+
+	// FS-TARGETS should fail naming the parent-relative path
+	foundFailWithPrefix := false
+	foundFailWithoutPrefix := false
+	for _, r := range ev.FileScopeResults {
+		if r.Result == CheckFail && strings.Contains(r.Rationale, "relay-contracts/schema/planner_pass_plan.schema.json") {
+			foundFailWithPrefix = true
+		}
+		if r.Result == CheckFail && strings.Contains(r.Rationale, "schema/planner_pass_plan.schema.json") &&
+			!strings.Contains(r.Rationale, "relay-contracts/schema/planner_pass_plan.schema.json") {
+			foundFailWithoutPrefix = true
+		}
+	}
+	if !foundFailWithPrefix {
+		t.Errorf("expected file-scope failure naming relay-contracts/schema/planner_pass_plan.schema.json, got: %+v", ev.FileScopeResults)
+	}
+	if foundFailWithoutPrefix {
+		t.Errorf("file-scope failure must not name schema/planner_pass_plan.schema.json without the relay-contracts prefix: %+v", ev.FileScopeResults)
+	}
+}

@@ -1022,6 +1022,19 @@ func (c *Collector) collectChangedFiles(runID int64, ev *Evidence) {
 
 			// Look for expanded nested changed-file evidence (optional artifact).
 			var nestedFiles []ChangedFileEntry
+
+			// Determine nested root from checkout markers for path normalization.
+			var nestedRoot string
+			if len(nestedMarkers) == 1 {
+				nestedRoot = nestedMarkers[0].Path
+			} else if len(nestedMarkers) > 1 {
+				nestedRoot = nestedMarkers[0].Path
+				ev.Warnings = append(ev.Warnings, EvidenceWarning{
+					Message:  fmt.Sprintf("Multiple nested checkout roots found (%d) — using %q for nested_changed_files normalization; results may be unreliable", len(nestedMarkers), nestedRoot),
+					Severity: SeverityWarning,
+				})
+			}
+
 			nestedPaths := c.listArtifactPaths(runID, "nested_changed_files")
 			for _, np := range nestedPaths {
 				data, err := os.ReadFile(np)
@@ -1035,7 +1048,8 @@ func (c *Collector) collectChangedFiles(runID int64, ev *Evidence) {
 					}
 					parts := strings.Fields(line)
 					if len(parts) >= 2 && len(parts[0]) <= 2 {
-						nestedFiles = append(nestedFiles, ChangedFileEntry{Status: parts[0], Path: strings.Join(parts[1:], " ")})
+						parsedPath := strings.Join(parts[1:], " ")
+						nestedFiles = append(nestedFiles, ChangedFileEntry{Status: parts[0], Path: normalizeNestedChangedPath(nestedRoot, parsedPath)})
 					}
 				}
 			}
@@ -1120,6 +1134,25 @@ func isNestedCheckoutMarker(path string, fileTargets []string) bool {
 		}
 	}
 	return false
+}
+
+// normalizeNestedChangedPath normalizes a nested changed-file path to be parent-relative.
+// If rawPath is already parent-relative (starts with nestedRoot), it is returned as-is.
+// If rawPath is nested-relative (e.g. "contracts/file.md"), nestedRoot is prepended.
+// Backslashes are converted to forward slashes and whitespace is trimmed.
+func normalizeNestedChangedPath(nestedRoot string, rawPath string) string {
+	cleaned := strings.ReplaceAll(rawPath, "\\", "/")
+	cleaned = strings.TrimSpace(cleaned)
+	if cleaned == "" {
+		return ""
+	}
+	if nestedRoot == "" {
+		return cleaned
+	}
+	if cleaned == nestedRoot || strings.HasPrefix(cleaned, nestedRoot+"/") {
+		return cleaned
+	}
+	return nestedRoot + "/" + cleaned
 }
 
 func implementationScopeChangedFiles(ev *Evidence) []ChangedFileEntry {
