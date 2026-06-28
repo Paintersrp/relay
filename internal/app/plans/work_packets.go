@@ -498,10 +498,12 @@ type CtxSeedFile struct {
 
 // CtxSeedSearch mirrors contextpackets.ContextSeedSearch.
 type CtxSeedSearch struct {
-	RepoIDs  []string
-	Pattern  string
-	Required bool
-	MaxResults int
+	RepoIDs      []string
+	Pattern      string
+	Reason       string
+	Required     bool
+	MaxResults   int
+	ContextLines int
 }
 
 // CtxPacketResult mirrors contextpackets.ContextPacketResult.
@@ -792,11 +794,15 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	var snapshotID string
 	var snapshotStatus string
 	var snapshotFound bool
+	var snapshotAcquired bool
 
-	if requireSnapshot || hasRequiredContextInputs(ctxPlan) {
+	contextPacketRequired := contextPlanRequiresPacket(ctxPlan)
+	sourceSnapshotNeeded := requireSnapshot || contextPacketRequired
+
+	if sourceSnapshotNeeded {
 		if svc.sourcesSvc != nil && svc.contextPacketsSvc != nil && svc.store != nil {
 			var acqBlocker *WorkBlocker
-			snapshotID, snapshotStatus, snapshotFound, acqBlocker = svc.acquireSourceSnapshot(
+			snapshotID, snapshotStatus, snapshotFound, snapshotAcquired, acqBlocker = svc.acquireSourceSnapshot(
 				ctx, project, plan, pass, requireSnapshot, &ssReqs, ctxPlan, repoAliases)
 			if acqBlocker != nil {
 				jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, "", "", requireSnapshot, false, snapshotFound, false, false, "")
@@ -819,7 +825,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 					PlannerJumpstart: jumpstart,
 					Blockers:         []WorkBlocker{*acqBlocker},
 					AcquisitionSummary: &AcquisitionSummary{
-						SourceSnapshotAcquired: false,
+						SourceSnapshotAcquired: snapshotAcquired,
 						SourceSnapshotID:       snapshotID,
 					},
 				}
@@ -839,19 +845,20 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		}
 	}
 
-	requirePacket := hasRequiredContextInputs(ctxPlan)
+	requirePacket := contextPacketRequired
 
 	var packetID string
 	var packetStatus string
 	var coverageReportPath string
 	var packetFound bool
 	var packetUsable bool
+	var packetCreated bool
 	var packetUnusableReason string
 
 	if requirePacket {
 		if svc.sourcesSvc != nil && svc.contextPacketsSvc != nil && svc.store != nil {
 			var acqBlocker *WorkBlocker
-			packetID, packetStatus, coverageReportPath, packetFound, packetUsable, acqBlocker = svc.acquireContextPacket(
+			packetID, packetStatus, coverageReportPath, packetFound, packetUsable, packetCreated, acqBlocker = svc.acquireContextPacket(
 				ctx, project, plan, pass, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID)
 			if acqBlocker != nil {
 				jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, "")
@@ -874,9 +881,9 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 					PlannerJumpstart: jumpstart,
 					Blockers:         []WorkBlocker{*acqBlocker},
 					AcquisitionSummary: &AcquisitionSummary{
-						SourceSnapshotAcquired: requireSnapshot && snapshotFound,
+						SourceSnapshotAcquired: snapshotAcquired,
 						SourceSnapshotID:       snapshotID,
-						ContextPacketCreated:   packetFound,
+						ContextPacketCreated:   packetCreated,
 						ContextPacketID:        packetID,
 						ContextPacketStatus:    packetStatus,
 					},
@@ -899,7 +906,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		}
 	}
 
-	contextReady := (!requireSnapshot || snapshotFound) && (!requirePacket || packetUsable)
+	contextReady := (!sourceSnapshotNeeded || snapshotFound) && (!requirePacket || packetUsable)
 
 	// Build the shared Planner jumpstart payload.
 	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, packetUnusableReason)
@@ -908,7 +915,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	var readinessState string
 	var blocker *WorkBlocker
 	switch {
-	case requireSnapshot && !snapshotFound:
+	case sourceSnapshotNeeded && !snapshotFound:
 		readinessState = "needs_source_snapshot"
 		blocker = &WorkBlocker{
 			Code:        BlockerRequiredSourceContextMissing,
@@ -967,16 +974,16 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	if blocker != nil {
 		resp.Blockers = []WorkBlocker{*blocker}
 	} else {
-		handoffWork := buildHandoffAuthoringPacket(project, plan, selectedPass, ctxPlan, &ctxBudget, ssReqs, criteria, snapshotID, snapshotStatus, packetID, packetStatus, coverageReportPath, contextReady, requireSnapshot, requirePacket)
+		handoffWork := buildHandoffAuthoringPacket(project, plan, selectedPass, ctxPlan, &ctxBudget, ssReqs, criteria, snapshotID, snapshotStatus, packetID, packetStatus, coverageReportPath, contextReady, sourceSnapshotNeeded, requirePacket)
 		resp.HandoffWork = handoffWork
 		resp.HandoffAuthoringPacket = handoffWork
 	}
 
 	if svc.sourcesSvc != nil && svc.contextPacketsSvc != nil {
 		resp.AcquisitionSummary = &AcquisitionSummary{
-			SourceSnapshotAcquired: requireSnapshot && snapshotFound,
+			SourceSnapshotAcquired: snapshotAcquired,
 			SourceSnapshotID:       snapshotID,
-			ContextPacketCreated:   requirePacket && packetFound,
+			ContextPacketCreated:   packetCreated,
 			ContextPacketID:        packetID,
 			ContextPacketStatus:    packetStatus,
 		}
@@ -995,14 +1002,14 @@ func buildHandoffAuthoringPacket(
 	criteria []string,
 	snapshotID, snapshotStatus, packetID, packetStatus, coverageReportPath string,
 	contextReady bool,
-	requireSnapshot, requirePacket bool,
+	sourceSnapshotNeeded, requirePacket bool,
 ) *HandoffAuthoringPacket {
 	checks := []HandoffAuthoringReadinessCheck{
 		{Name: "dependencies_satisfied", Ready: true, Detail: "Selected pass dependencies are satisfied."},
 		{Name: "active_runs_absent", Ready: true, Detail: "No active run is associated with the selected pass."},
 		{Name: "plan_active", Ready: true, Detail: "Managed plan status is active."},
 	}
-	if requireSnapshot {
+	if sourceSnapshotNeeded {
 		checks = append(checks, HandoffAuthoringReadinessCheck{Name: "source_snapshot_available", Ready: snapshotID != "", Detail: snapshotID})
 	}
 	if requirePacket {
@@ -1191,12 +1198,13 @@ func buildContextPacketSeedSearches(ctxPlan ContextPlan, ctxBudget *ContextBudge
 		if query == "" || reason == "" {
 			continue
 		}
+		contextLines := contextBudgetInt(ctxBudget, "max_context_lines", 2, 10)
 		item := map[string]interface{}{
 			"pattern":       query,
 			"reason":        reason,
 			"required":      boolValue(seed.Required),
 			"max_results":   maxResults,
-			"context_lines": 2,
+			"context_lines": contextLines,
 		}
 		if repoID := normalizeContextRepoID(seed.RepoID, repoAliases); repoID != "" {
 			item["repo_ids"] = []string{repoID}
@@ -1281,6 +1289,8 @@ func contextBudgetInt(ctxBudget *ContextBudget, field string, defaultValue, maxV
 		value = ctxBudget.MaxBytes
 	case "max_search_results":
 		value = ctxBudget.MaxSearchResults
+	case "max_context_lines":
+		value = ctxBudget.MaxContextLines
 	}
 	if value == nil || *value <= 0 {
 		return defaultValue
@@ -1478,9 +1488,19 @@ func resolveRunActiveStep(status string) string {
 	return resolveRunLifecycleState(status)
 }
 
-func hasRequiredContextInputs(cp ContextPlan) bool {
+func contextPlanRequiresPacket(cp ContextPlan) bool {
 	for _, f := range cp.SeedFilesToRead {
-		if f.Required != nil && *f.Required {
+		if boolValue(f.Required) {
+			return true
+		}
+	}
+	for _, s := range cp.SeedSearchTerms {
+		if boolValue(s.Required) {
+			return true
+		}
+	}
+	for _, item := range cp.BlockedIfMissing {
+		if strings.TrimSpace(item) != "" {
 			return true
 		}
 	}
@@ -1519,11 +1539,11 @@ func (svc *OrchestratorWorkService) acquireSourceSnapshot(
 	ssReqs *SourceSnapshotRequirements,
 	ctxPlan ContextPlan,
 	repoAliases map[string]string,
-) (snapshotID string, snapshotStatus string, found bool, blocker *WorkBlocker) {
+) (snapshotID string, snapshotStatus string, found bool, acquired bool, blocker *WorkBlocker) {
 	// Look up latest existing snapshot.
 	latest, err := svc.store.GetLatestSourceSnapshotForProject(project.ID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return "", "", false, &WorkBlocker{
+		return "", "", false, false, &WorkBlocker{
 			Code:        BlockerSourceSnapshotAcquisitionFailed,
 			Message:     fmt.Sprintf("failed to look up source snapshot for project %q: %v", project.ProjectID, err),
 			Recoverable: true,
@@ -1535,7 +1555,7 @@ func (svc *OrchestratorWorkService) acquireSourceSnapshot(
 		snapshotUsable, _ = sourceSnapshotUsableForHandoff(latest, ctxPlan, repoAliases)
 	}
 	if snapshotUsable {
-		return latest.SourceSnapshotID, latest.Status, true, nil
+		return latest.SourceSnapshotID, latest.Status, true, false, nil
 	}
 
 	// If no snapshot is required and we have a usable one, great.
@@ -1544,7 +1564,7 @@ func (svc *OrchestratorWorkService) acquireSourceSnapshot(
 	// Filter to only repos that are actually registered for this project.
 	projectRepos, repoErr := svc.store.ListProjectRepositories(project.ID)
 	if repoErr != nil {
-		return "", "", false, &WorkBlocker{
+		return "", "", false, false, &WorkBlocker{
 			Code:        BlockerSourceSnapshotAcquisitionFailed,
 			Message:     fmt.Sprintf("failed to list project repositories: %v", repoErr),
 			Recoverable: true,
@@ -1563,7 +1583,7 @@ func (svc *OrchestratorWorkService) acquireSourceSnapshot(
 	repoIDs = effectiveRepoIDs
 
 	if len(repoIDs) == 0 && requireSnapshot {
-		return "", "", false, &WorkBlocker{
+		return "", "", false, false, &WorkBlocker{
 			Code:        BlockerSourceSnapshotRequiredSeedMissing,
 			Message:     fmt.Sprintf("pass %q requires a source snapshot but no required repositories could be resolved for project %q", pass.PassID, project.ProjectID),
 			Recoverable: true,
@@ -1572,15 +1592,15 @@ func (svc *OrchestratorWorkService) acquireSourceSnapshot(
 	if len(repoIDs) == 0 {
 		// No repos to snapshot; if a snapshot isn't strictly required, continue without one.
 		if latest != nil {
-			return latest.SourceSnapshotID, latest.Status, true, nil
+			return latest.SourceSnapshotID, latest.Status, true, false, nil
 		}
-		return "", "", false, nil
+		return "", "", false, false, nil
 	}
 
 	// Create a new source snapshot.
 	snapshotIDResult, snapshotStatusResult, includedCount, err := svc.sourcesSvc.CreateSourceSnapshot(ctx, project.ProjectID, repoIDs, true)
 	if err != nil {
-		return "", "", false, &WorkBlocker{
+		return "", "", false, false, &WorkBlocker{
 			Code:        BlockerSourceSnapshotAcquisitionFailed,
 			Message:     fmt.Sprintf("failed to create source snapshot for project %q: %v", project.ProjectID, err),
 			Recoverable: true,
@@ -1588,14 +1608,14 @@ func (svc *OrchestratorWorkService) acquireSourceSnapshot(
 	}
 
 	if includedCount == 0 {
-		return snapshotIDResult, snapshotStatusResult, true, &WorkBlocker{
+		return snapshotIDResult, snapshotStatusResult, true, true, &WorkBlocker{
 			Code:        BlockerSourceSnapshotMetadataMissing,
 			Message:     fmt.Sprintf("created source snapshot %q has no included file metadata", snapshotIDResult),
 			Recoverable: true,
 		}
 	}
 
-	return snapshotIDResult, snapshotStatusResult, true, nil
+	return snapshotIDResult, snapshotStatusResult, true, true, nil
 }
 
 func sourceSnapshotUsableForHandoff(snapshot *store.SourceSnapshot, ctxPlan ContextPlan, repoAliases map[string]string) (bool, string) {
@@ -1624,11 +1644,11 @@ func (svc *OrchestratorWorkService) acquireContextPacket(
 	ctxBudget *ContextBudget,
 	repoAliases map[string]string,
 	snapshotID string,
-) (packetID string, packetStatus string, coverageReportPath string, found bool, usable bool, blocker *WorkBlocker) {
+) (packetID string, packetStatus string, coverageReportPath string, found bool, usable bool, created bool, blocker *WorkBlocker) {
 	// Look up latest existing packet.
 	latest, err := svc.store.GetLatestContextPacketForPass(project.ProjectID, plan.PlanID, pass.PassID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return "", "", "", false, false, &WorkBlocker{
+		return "", "", "", false, false, false, &WorkBlocker{
 			Code:        BlockerContextPacketAcquisitionFailed,
 			Message:     fmt.Sprintf("failed to look up context packet for pass %q: %v", pass.PassID, err),
 			Recoverable: true,
@@ -1638,14 +1658,14 @@ func (svc *OrchestratorWorkService) acquireContextPacket(
 	if latest != nil {
 		packetUsable, _ := contextPacketUsableForHandoff(*latest, snapshotID)
 		if packetUsable {
-			return latest.ContextPacketID, latest.Status, latest.CoverageReportPath, true, true, nil
+			return latest.ContextPacketID, latest.Status, latest.CoverageReportPath, true, true, false, nil
 		}
 		// Stale or blocked packet -- create a replacement.
 	}
 
 	// Need to create a context packet. Must have a source snapshot ID.
 	if strings.TrimSpace(snapshotID) == "" {
-		return "", "", "", false, false, &WorkBlocker{
+		return "", "", "", false, false, false, &WorkBlocker{
 			Code:        BlockerRequiredContextPacketMissing,
 			Message:     fmt.Sprintf("pass %q has required context inputs but no context packet exists and no source snapshot is available", pass.PassID),
 			Recoverable: true,
@@ -1690,17 +1710,20 @@ func (svc *OrchestratorWorkService) acquireContextPacket(
 		if len(repoIDs) > 0 {
 			searchRepoIDs = repoIDs
 		}
+		contextLines := contextBudgetInt(ctxBudget, "max_context_lines", 2, 10)
 		input.SeedSearches = append(input.SeedSearches, CtxSeedSearch{
-			RepoIDs:    searchRepoIDs,
-			Pattern:    query,
-			Required:   boolValue(seed.Required),
-			MaxResults: contextBudgetInt(ctxBudget, "max_search_results", defaultSeedSearchMaxResults, maxSeedSearchResults),
+			RepoIDs:      searchRepoIDs,
+			Pattern:      query,
+			Reason:       reason,
+			Required:     boolValue(seed.Required),
+			MaxResults:   contextBudgetInt(ctxBudget, "max_search_results", defaultSeedSearchMaxResults, maxSeedSearchResults),
+			ContextLines: contextLines,
 		})
 	}
 
 	result, err := svc.contextPacketsSvc.CreateContextPacket(ctx, input)
 	if err != nil {
-		return "", "", "", false, false, &WorkBlocker{
+		return "", "", "", false, false, false, &WorkBlocker{
 			Code:        BlockerContextPacketAcquisitionFailed,
 			Message:     fmt.Sprintf("failed to create context packet for pass %q: %v", pass.PassID, err),
 			Recoverable: true,
@@ -1709,21 +1732,21 @@ func (svc *OrchestratorWorkService) acquireContextPacket(
 
 	// Check result usability.
 	if result.Status == "blocked" {
-		return result.ContextPacketID, result.Status, result.CoverageReportPath, true, false, &WorkBlocker{
+		return result.ContextPacketID, result.Status, result.CoverageReportPath, true, false, true, &WorkBlocker{
 			Code:        BlockerContextCoverageIncomplete,
 			Message:     fmt.Sprintf("context packet %q was blocked: %d blocked seeds, %d missing seeds", result.ContextPacketID, result.BlockedSeedCount, result.MissingSeedCount),
 			Recoverable: true,
 		}
 	}
 	if result.Truncated {
-		return result.ContextPacketID, result.Status, result.CoverageReportPath, true, false, &WorkBlocker{
+		return result.ContextPacketID, result.Status, result.CoverageReportPath, true, false, true, &WorkBlocker{
 			Code:        BlockerContextPacketTruncated,
 			Message:     fmt.Sprintf("context packet %q is truncated (source count=%d)", result.ContextPacketID, result.SourceCount),
 			Recoverable: true,
 		}
 	}
 
-	return result.ContextPacketID, result.Status, result.CoverageReportPath, true, true, nil
+	return result.ContextPacketID, result.Status, result.CoverageReportPath, true, true, true, nil
 }
 
 func isUnsafePath(s string) bool {

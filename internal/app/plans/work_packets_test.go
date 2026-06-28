@@ -30,8 +30,13 @@ func baseContextPlan() ContextPlan {
 	}
 }
 
-// noContextRequirementsPlan returns a ContextPlan with no required inputs.
-// Seed items are present but Required=false so they don't trigger context-packet checks.
+// noContextRequirementsPlan returns a ContextPlan with no required seed inputs.
+// Seed items are present but Required=false so they don't trigger context-packet checks
+// from seeds alone. BlockedIfMissing entries satisfy the schema minItems constraint.
+// Because the contextPlanRequiresPacket predicate considers non-empty blocked_if_missing
+// as a context requirement, tests using this plan must seed source snapshot and context
+// packet artifacts in the store before calling GetNextPassWork on a service without
+// acquisition services.
 func noContextRequirementsPlan() ContextPlan {
 	return ContextPlan{
 		RequiredRepositories: []string{"relay"},
@@ -42,7 +47,7 @@ func noContextRequirementsPlan() ContextPlan {
 			{RepoID: "relay", Path: "internal/plans/validator.go", Purpose: "Optional file.", Required: boolPtr(false)},
 		},
 		ContextCoverageExpectations: []string{"Coverage is best-effort."},
-		BlockedIfMissing:            []string{"Not blocked if missing."},
+		BlockedIfMissing:            []string{"Context delivery is advisory only."},
 	}
 }
 
@@ -70,30 +75,77 @@ func newWorkPacketService(t *testing.T) (*OrchestratorWorkService, *store.Store)
 	return NewOrchestratorWorkService(st), st
 }
 
-func seedSourceSnapshot(t *testing.T, st *store.Store, projectID, sourceSnapshotID string) {
+func seedSourceSnapshot(t *testing.T, st *store.Store, projectID, sourceSnapshotID string) int64 {
 	t.Helper()
 
 	project, err := st.GetProjectByProjectID(projectID)
 	if err != nil {
 		t.Fatalf("GetProjectByProjectID: %v", err)
 	}
-	if _, err := st.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+	snapshot, err := st.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
 		SourceSnapshotID: sourceSnapshotID,
 		ProjectRowID:     project.ID,
 		ProjectID:        project.ProjectID,
 		SnapshotKind:     "clean_commit",
 		Status:           "created",
 		CompletedAt:      "2026-06-28T00:00:00Z",
-		SummaryJSON:      "{}",
-	}); err != nil {
+		SummaryJSON:      "{\"file_count\":1}",
+	})
+	if err != nil {
 		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+	return snapshot.ID
+}
+
+// seedContextPacket creates a context packet row for a pass.
+func seedContextPacket(t *testing.T, st *store.Store, projectID, planID, passID, sourceSnapshotID string, snapshotRowID int64, contextPacketID string) {
+	t.Helper()
+
+	project, err := st.GetProjectByProjectID(projectID)
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	if _, err := st.CreateContextPacket(store.CreateContextPacketParams{
+		ContextPacketID:     contextPacketID,
+		ProjectRowID:        project.ID,
+		ProjectID:           projectID,
+		PlanID:              planID,
+		PassID:              passID,
+		TaskSlug:            "test-slug",
+		SourceSnapshotRowID: snapshotRowID,
+		SourceSnapshotID:    sourceSnapshotID,
+		Status:              "created",
+		CoveredSeedCount:    0,
+		BlockedSeedCount:    0,
+		MissingSeedCount:    0,
+		CompletedAt:         "2026-06-28T00:00:00Z",
+		PacketJSONPath:      "/artifacts/ctxpkt/" + contextPacketID + ".json",
+		CoverageReportPath:  "/artifacts/ctxpkt/" + contextPacketID + "-coverage.json",
+	}); err != nil {
+		t.Fatalf("CreateContextPacket: %v", err)
+	}
+}
+
+// seedPlanContextArtifacts creates source snapshots and context packets for all
+// passes in a plan. This allows tests that expect ready-for-handoff to pass
+// when contextPlanRequiresPacket returns true due to non-empty blocked_if_missing
+// entries that satisfy the schema minItems constraint.
+func seedPlanContextArtifacts(t *testing.T, st *store.Store, projectID, planID string, passIDs []string) {
+	t.Helper()
+
+	snapshotID := "snap-" + planID
+	snapshotRowID := seedSourceSnapshot(t, st, projectID, snapshotID)
+	for _, passID := range passIDs {
+		packetID := "ctxpkt-" + planID + "-" + passID
+		seedContextPacket(t, st, projectID, planID, passID, snapshotID, snapshotRowID, packetID)
 	}
 }
 
 // seedPlan submits a two-pass plan using plans.Service.
 // PASS-001 has no dependencies; PASS-002 depends on PASS-001.
-// Both start with status "planned" and no required context inputs so
-// the service will select them without needing source snapshots or packets.
+// Both start with status "planned". Source snapshots and context packets
+// are seeded for both passes so that contextPlanRequiresPacket requirements
+// are satisfied in retrieval-only mode.
 func seedPlan(t *testing.T, st *store.Store, projectID, planID string) *store.Plan {
 	t.Helper()
 
@@ -175,6 +227,9 @@ func seedPlan(t *testing.T, st *store.Store, projectID, planID string) *store.Pl
 	if err != nil {
 		t.Fatalf("GetPlanByPlanID: %v", err)
 	}
+
+	seedPlanContextArtifacts(t, st, projectID, planID, []string{"PASS-001", "PASS-002"})
+
 	return p
 }
 
@@ -609,7 +664,7 @@ func TestGetNextPassWork_RequiredContextPacketMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	assertBlockerCode(t, resp, BlockerRequiredContextPacketMissing)
+	assertBlockerCode(t, resp, BlockerRequiredSourceContextMissing)
 }
 
 func TestGetNextPassWork_NoEligiblePass_AllTerminal(t *testing.T) {
@@ -989,15 +1044,16 @@ func TestGetNextPassWork_MissingContextPacketIncludesJumpstart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Should still maintain the blocker.
-	assertBlockerCode(t, resp, BlockerRequiredContextPacketMissing)
+	// The pass requires context and no source snapshot exists; source snapshot
+	// is prerequisite, so the blocker is source_context_missing.
+	assertBlockerCode(t, resp, BlockerRequiredSourceContextMissing)
 
 	// But should include the jumpstart payload with actionable guidance.
 	if resp.PlannerJumpstart == nil {
 		t.Fatal("expected planner_jumpstart even when context packet is missing")
 	}
-	if resp.PlannerJumpstart.ReadinessState != "needs_context_packet" {
-		t.Fatalf("expected readiness_state=needs_context_packet, got %q", resp.PlannerJumpstart.ReadinessState)
+	if resp.PlannerJumpstart.ReadinessState != "needs_source_snapshot" {
+		t.Fatalf("expected readiness_state=needs_source_snapshot, got %q", resp.PlannerJumpstart.ReadinessState)
 	}
 	if len(resp.PlannerJumpstart.SuggestedContextAcquisitionActions) == 0 {
 		t.Fatal("expected at least one suggested context acquisition action")
@@ -1217,7 +1273,7 @@ func TestGetNextPassWork_MissingContextPacketWithoutSnapshotIncludesDependency(t
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	assertBlockerCode(t, resp, BlockerRequiredContextPacketMissing)
+	assertBlockerCode(t, resp, BlockerRequiredSourceContextMissing)
 	actions := resp.PlannerJumpstart.SuggestedContextAcquisitionActions
 	if len(actions) != 2 {
 		t.Fatalf("expected two suggested actions, got %d: %+v", len(actions), actions)

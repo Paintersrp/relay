@@ -419,7 +419,7 @@ func seedMCPOrchestratorPlan(t *testing.T, st *store.Store, planID string) *stor
 				{RepoID: "relay", Path: "internal/plans/work_packets.go", Purpose: "Optional file.", Required: mcpBoolPtr(false)},
 			},
 			ContextCoverageExpectations: []string{"Coverage is best-effort."},
-			BlockedIfMissing:            []string{"Not blocked if missing."},
+			BlockedIfMissing:            []string{"Context delivery is advisory only."},
 		}
 	}
 	noReqSnapshot := appplans.SourceSnapshotRequirements{
@@ -499,7 +499,62 @@ func seedMCPOrchestratorPlan(t *testing.T, st *store.Store, planID string) *stor
 	if err != nil {
 		t.Fatalf("GetPlanByPlanID: %v", err)
 	}
+
+	// Seed source snapshot and context packet artifacts for both passes so
+	// get_next_pass_work can satisfy context requirements (non-empty
+	// blocked_if_missing triggers contextPlanRequiresPacket).
+	seedMCPPassArtifacts(t, st, planID, "relay", []string{"PASS-001", "PASS-002"})
+
 	return created
+}
+
+// seedMCPPassArtifacts creates a source snapshot and context packets for the
+// given passes so that get_next_pass_work can reuse them when context
+// requirements are triggered by non-empty blocked_if_missing entries.
+func seedMCPPassArtifacts(t *testing.T, st *store.Store, planID, projectID string, passIDs []string) {
+	t.Helper()
+
+	project, err := st.GetProjectByProjectID(projectID)
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+
+	snapshotID := "snap-mcp-" + planID
+	snapshot, err := st.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+		SourceSnapshotID: snapshotID,
+		ProjectRowID:     project.ID,
+		ProjectID:        projectID,
+		SnapshotKind:     "clean_commit",
+		Status:           "created",
+		CompletedAt:      "2026-06-28T00:00:00Z",
+		SummaryJSON:      "{\"file_count\":1}",
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+
+	for _, passID := range passIDs {
+		packetID := "ctxpkt-mcp-" + planID + "-" + passID
+		if _, err := st.CreateContextPacket(store.CreateContextPacketParams{
+			ContextPacketID:     packetID,
+			ProjectRowID:        project.ID,
+			ProjectID:           projectID,
+			PlanID:              planID,
+			PassID:              passID,
+			TaskSlug:            "test-slug",
+			SourceSnapshotRowID: snapshot.ID,
+			SourceSnapshotID:    snapshotID,
+			Status:              "created",
+			CoveredSeedCount:    0,
+			BlockedSeedCount:    0,
+			MissingSeedCount:    0,
+			CompletedAt:         "2026-06-28T00:00:00Z",
+			PacketJSONPath:      "/artifacts/ctxpkt/" + packetID + ".json",
+			CoverageReportPath:  "/artifacts/ctxpkt/" + packetID + "-coverage.json",
+		}); err != nil {
+			t.Fatalf("CreateContextPacket: %v", err)
+		}
+	}
 }
 
 func TestOrchestratorWorkTools_SchemasAreStrictAndScoped(t *testing.T) {

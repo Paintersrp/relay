@@ -53,8 +53,9 @@ func newNextPassWorkTestServer(t *testing.T) (*plansapi.Handler, *store.Store, h
 	return planH, st, router
 }
 
-// seedNextPassWorkPlan submits a valid two-pass plan via the API.
-func seedNextPassWorkPlan(t *testing.T, router http.Handler, planID string) {
+// seedNextPassWorkPlan submits a valid two-pass plan via the API and seeds
+// source snapshot and context packet artifacts for retrieval-only tests.
+func seedNextPassWorkPlan(t *testing.T, st *store.Store, router http.Handler, planID string) {
 	t.Helper()
 
 	plan := appplans.PlannerPassPlan{
@@ -100,7 +101,7 @@ func seedNextPassWorkPlan(t *testing.T, router http.Handler, planID string) {
 						{RepoID: "relay", Path: "internal/plans/validator.go", Purpose: "optional", Required: planAPIBoolPtr(false)},
 					},
 					ContextCoverageExpectations: []string{"coverage ok"},
-					BlockedIfMissing:            []string{"not blocked"},
+					BlockedIfMissing:            []string{"Context delivery is advisory only."},
 				},
 				SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
 					RequireGitStatus:   planAPIBoolPtr(false),
@@ -128,7 +129,7 @@ func seedNextPassWorkPlan(t *testing.T, router http.Handler, planID string) {
 						{RepoID: "relay", Path: "internal/plans/validator.go", Purpose: "optional", Required: planAPIBoolPtr(false)},
 					},
 					ContextCoverageExpectations: []string{"coverage ok"},
-					BlockedIfMissing:            []string{"not blocked"},
+					BlockedIfMissing:            []string{"Context delivery is advisory only."},
 				},
 				SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
 					RequireGitStatus:   planAPIBoolPtr(false),
@@ -148,6 +149,58 @@ func seedNextPassWorkPlan(t *testing.T, router http.Handler, planID string) {
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("seedNextPassWorkPlan: expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Seed source snapshot and context packet for both passes so
+	// get_next_pass_work retrieval-only tests can satisfy context requirements.
+	seedNextPassWorkArtifacts(t, st, planID)
+}
+
+// seedNextPassWorkArtifacts creates a source snapshot and context packets
+// for all passes of a plan so retrieval-only get_next_pass_work tests pass.
+func seedNextPassWorkArtifacts(t *testing.T, st *store.Store, planID string) {
+	t.Helper()
+
+	project, err := st.GetProjectByProjectID("relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+
+	snapshotID := "snap-api-" + planID
+	snapshot, err := st.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+		SourceSnapshotID: snapshotID,
+		ProjectRowID:     project.ID,
+		ProjectID:        "relay",
+		SnapshotKind:     "clean_commit",
+		Status:           "created",
+		CompletedAt:      "2026-06-28T00:00:00Z",
+		SummaryJSON:      "{\"file_count\":1}",
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+
+	for _, passID := range []string{"PASS-001", "PASS-002"} {
+		packetID := "ctxpkt-api-" + planID + "-" + passID
+		if _, err := st.CreateContextPacket(store.CreateContextPacketParams{
+			ContextPacketID:     packetID,
+			ProjectRowID:        project.ID,
+			ProjectID:           "relay",
+			PlanID:              planID,
+			PassID:              passID,
+			TaskSlug:            "test-slug",
+			SourceSnapshotRowID: snapshot.ID,
+			SourceSnapshotID:    snapshotID,
+			Status:              "created",
+			CoveredSeedCount:    0,
+			BlockedSeedCount:    0,
+			MissingSeedCount:    0,
+			CompletedAt:         "2026-06-28T00:00:00Z",
+			PacketJSONPath:      "/artifacts/ctxpkt/" + packetID + ".json",
+			CoverageReportPath:  "/artifacts/ctxpkt/" + packetID + "-coverage.json",
+		}); err != nil {
+			t.Fatalf("CreateContextPacket: %v", err)
+		}
 	}
 }
 
@@ -176,8 +229,8 @@ func setNextPassWorkPlanPassStatus(t *testing.T, st *store.Store, planID, passID
 func TestGetNextPassWork_RouteExists_ReturnsToolField(t *testing.T) {
 	t.Parallel()
 
-	_, _, router := newNextPassWorkTestServer(t)
-	seedNextPassWorkPlan(t, router, "api-plan-001")
+	_, st, router := newNextPassWorkTestServer(t)
+	seedNextPassWorkPlan(t, st, router, "api-plan-001")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plans/api-plan-001/next-pass-work", nil)
 	rec := httptest.NewRecorder()
@@ -267,8 +320,8 @@ func TestGetNextPassWork_UnknownProjectReturns200WithBlocker(t *testing.T) {
 func TestGetNextPassWork_SuccessReturns200WithOKTrue(t *testing.T) {
 	t.Parallel()
 
-	_, _, router := newNextPassWorkTestServer(t)
-	seedNextPassWorkPlan(t, router, "api-plan-success")
+	_, st, router := newNextPassWorkTestServer(t)
+	seedNextPassWorkPlan(t, st, router, "api-plan-success")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plans/api-plan-success/next-pass-work", nil)
 	rec := httptest.NewRecorder()
@@ -321,7 +374,7 @@ func TestGetPassNextWorkPreview_RequestedPassReturnsSelectedPassPayload(t *testi
 	t.Parallel()
 
 	_, st, router := newNextPassWorkTestServer(t)
-	seedNextPassWorkPlan(t, router, "api-plan-preview-selected")
+	seedNextPassWorkPlan(t, st, router, "api-plan-preview-selected")
 	setNextPassWorkPlanPassStatus(t, st, "api-plan-preview-selected", "PASS-001", appplans.StatusPassCompleted)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plans/api-plan-preview-selected/passes/PASS-002/next-pass-work-preview", nil)
@@ -356,8 +409,8 @@ func TestGetPassNextWorkPreview_RequestedPassReturnsSelectedPassPayload(t *testi
 func TestGetPassNextWorkPreview_RequestedPassBlockedByPriorPassReturnsPayload(t *testing.T) {
 	t.Parallel()
 
-	_, _, router := newNextPassWorkTestServer(t)
-	seedNextPassWorkPlan(t, router, "api-plan-preview-blocked")
+	_, st, router := newNextPassWorkTestServer(t)
+	seedNextPassWorkPlan(t, st, router, "api-plan-preview-blocked")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plans/api-plan-preview-blocked/passes/PASS-002/next-pass-work-preview", nil)
 	rec := httptest.NewRecorder()

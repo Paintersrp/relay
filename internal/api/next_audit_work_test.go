@@ -108,7 +108,7 @@ func TestGetNextAuditWork_SuccessReturns200WithOKTrue(t *testing.T) {
 	t.Parallel()
 
 	_, st, router := newNextAuditWorkTestServer(t)
-	seedNextPassWorkPlan(t, router, "api-plan-001")
+	seedNextPassWorkPlan(t, st, router, "api-plan-001")
 
 	plan, err := st.GetPlanByPlanID("api-plan-001")
 	if err != nil {
