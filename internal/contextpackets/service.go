@@ -21,6 +21,12 @@ const (
 	hardMaxSources       = 200
 	defaultMaxTotalBytes = 256 * 1024
 	hardMaxTotalBytes    = 1024 * 1024
+
+	LimitHitMaxSources        = "max_sources"
+	LimitHitMaxTotalBytes     = "max_total_bytes"
+	LimitHitCoverageTruncated = "coverage_truncated"
+	LimitHitNone              = "none"
+	LimitHitUnknown           = "unknown"
 )
 
 var slugTokenPattern = regexp.MustCompile(`[^a-z0-9]+`)
@@ -100,7 +106,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 	var coverage []ContextCoverageEntry
 	var blockers []sources.SourceBlocker
 
-	if input.IncludeInventory {
+	processInventory := func() error {
 		entry := ContextCoverageEntry{SeedID: "inventory", SeedType: "inventory", Status: CoverageStatusCovered}
 		inventory, err := s.sources.ListProjectFiles(ctx, sources.FileInventoryInput{
 			ProjectID:        projectID,
@@ -108,7 +114,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			MaxResults:       maxSources,
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if inventory.SourceSnapshotID != "" {
 			builder.sourceSnapshotID = inventory.SourceSnapshotID
@@ -142,9 +148,10 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			entry.MissingCause = "inventory returned no files"
 		}
 		coverage = append(coverage, entry)
+		return nil
 	}
 
-	for i, seed := range normalizedSeedFiles {
+	processSeedFile := func(i int, seed ContextSeedFile) error {
 		seedID := fmt.Sprintf("file:%d", i+1)
 		entry := ContextCoverageEntry{
 			SeedID:   seedID,
@@ -164,7 +171,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			MaxBytes:         seed.MaxBytes,
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if read.SourceSnapshotID != "" {
 			builder.sourceSnapshotID = read.SourceSnapshotID
@@ -178,7 +185,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 				entry.Status = CoverageStatusPartial
 			}
 			coverage = append(coverage, entry)
-			continue
+			return nil
 		}
 		if read.Content == "" {
 			entry.MissingCause = "file read returned no content"
@@ -188,7 +195,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 				entry.Status = CoverageStatusPartial
 			}
 			coverage = append(coverage, entry)
-			continue
+			return nil
 		}
 		source := ContextSource{
 			SourceID:         sourceID(SourceTypeFileRead, read.RepoID, read.Path, read.LineStart, read.LineEnd, read.SnippetHash),
@@ -211,7 +218,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			entry.Status = CoverageStatusPartial
 			entry.Truncated = true
 			coverage = append(coverage, entry)
-			continue
+			return nil
 		}
 		entry.Status = CoverageStatusCovered
 		entry.SourceIDs = []string{source.SourceID}
@@ -220,9 +227,10 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			entry.Status = CoverageStatusPartial
 		}
 		coverage = append(coverage, entry)
+		return nil
 	}
 
-	for i, seed := range normalizedSeedSearches {
+	processSeedSearch := func(i int, seed ContextSeedSearch) error {
 		seedID := fmt.Sprintf("search:%d", i+1)
 		entry := ContextCoverageEntry{
 			SeedID:   seedID,
@@ -242,7 +250,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			MaxResults:       seed.MaxResults,
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if search.SourceSnapshotID != "" {
 			builder.sourceSnapshotID = search.SourceSnapshotID
@@ -293,6 +301,41 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			entry.MissingCause = "optional search returned no matches"
 		}
 		coverage = append(coverage, entry)
+		return nil
+	}
+
+	for i, seed := range normalizedSeedFiles {
+		if seed.Required {
+			if err := processSeedFile(i, seed); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for i, seed := range normalizedSeedSearches {
+		if seed.Required {
+			if err := processSeedSearch(i, seed); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for i, seed := range normalizedSeedFiles {
+		if !seed.Required {
+			if err := processSeedFile(i, seed); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for i, seed := range normalizedSeedSearches {
+		if !seed.Required {
+			if err := processSeedSearch(i, seed); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if input.IncludeInventory {
+		if err := processInventory(); err != nil {
+			return nil, err
+		}
 	}
 
 	builder.sources, blockers, coverage = runFinalRedactionScan(builder.sources, blockers, coverage)
@@ -435,6 +478,9 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 		MissingSeedCount:   summary.MissingSeedCount,
 		Truncated:          summary.Truncated,
 		Blockers:           blockers,
+		Summary:            summary,
+		Coverage:           coverage,
+		LimitHit:           detectLimitHit(summary, coverage),
 	}, nil
 }
 
@@ -502,6 +548,24 @@ func hasAnyTruncatedCoverage(entries []ContextCoverageEntry) bool {
 		}
 	}
 	return false
+}
+
+func detectLimitHit(summary ContextPacketSummary, coverage []ContextCoverageEntry) string {
+	if !summary.Truncated {
+		return LimitHitNone
+	}
+	if summary.MaxSources > 0 && summary.SourceCount >= summary.MaxSources {
+		return LimitHitMaxSources
+	}
+	if summary.MaxTotalBytes > 0 && summary.TotalSourceBytes >= summary.MaxTotalBytes {
+		return LimitHitMaxTotalBytes
+	}
+	for _, entry := range coverage {
+		if entry.Truncated {
+			return LimitHitCoverageTruncated
+		}
+	}
+	return LimitHitUnknown
 }
 
 func boundedPositive(value, defaultValue, hardCap int) int {

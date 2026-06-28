@@ -1303,23 +1303,19 @@ func TestOrchestratorWorkTools_GetNextPassWork_ContextPacketUsability(t *testing
 	if payload.HandoffWork != nil || payload.HandoffPacket != nil {
 		t.Fatal("expected handoff_work and handoff_authoring_packet to be nil in structured content when unusable")
 	}
-	if payload.ReadinessState != "needs_context_packet" {
-		t.Errorf("expected readiness_state=needs_context_packet, got %q", payload.ReadinessState)
+	if payload.ReadinessState != "context_acquisition_failed" {
+		t.Errorf("expected readiness_state=context_acquisition_failed, got %q", payload.ReadinessState)
 	}
-	var foundCreateAction bool
 	for _, act := range payload.NextActions {
 		if act.Tool == "create_context_packet" {
-			foundCreateAction = true
-			if act.Arguments["source_snapshot_id"] != "snap-mcp-1" {
-				t.Errorf("expected suggested action source_snapshot_id=\"snap-mcp-1\", got %q", act.Arguments["source_snapshot_id"])
-			}
+			t.Fatalf("did not expect create_context_packet action after backend retry failure: %+v", payload.NextActions)
 		}
 		if act.Tool == "draft_planner_handoff" {
 			t.Fatal("did not expect draft_planner_handoff next action when context is unusable")
 		}
 	}
-	if !foundCreateAction {
-		t.Fatal("expected create_context_packet action")
+	if payload.AcquisitionFailureReport == nil {
+		t.Fatal("expected acquisition_failure_report after backend retry failure")
 	}
 
 	// 2. Usable packet check
@@ -1365,5 +1361,64 @@ func TestOrchestratorWorkTools_GetNextPassWork_ContextPacketUsability(t *testing
 	}
 	if !foundDraftAction {
 		t.Fatal("expected draft_planner_handoff action when usable")
+	}
+}
+
+func TestOrchestratorWorkTools_GetNextPassWorkAcquisitionFailureSummary(t *testing.T) {
+	t.Parallel()
+
+	resp := appplans.NextPassWorkResponse{
+		OK:      false,
+		Tool:    appplans.NextPassWorkTool,
+		Project: &appplans.WorkProjectSummary{ProjectID: "relay", Name: "Relay"},
+		Plan:    &appplans.WorkPlanSummary{PlanID: "plan-pass002", Status: "active"},
+		SelectedPass: &appplans.WorkPassSummary{
+			PassID: "PASS-002", Sequence: 2, Name: "Second", Status: appplans.StatusPassPlanned,
+		},
+		Context: &appplans.WorkContextSummary{
+			SourceSnapshotID:    "snap-pass002",
+			ContextPacketID:     "ctxpkt-focused-fail",
+			ContextPacketStatus: "blocked",
+			ContextReady:        false,
+		},
+		PlannerJumpstart: &appplans.PlannerJumpstart{ReadinessState: "context_acquisition_failed"},
+		Blockers:         []appplans.WorkBlocker{{Code: appplans.BlockerContextCoverageIncomplete, Recoverable: true}},
+		AcquisitionFailureReport: &appplans.AcquisitionFailureReport{
+			Stage:               "context_packet_acquisition",
+			FailureCode:         appplans.BlockerContextCoverageIncomplete,
+			ReadinessState:      "context_acquisition_failed",
+			SourceSnapshotID:    "snap-pass002",
+			ContextPacketID:     "ctxpkt-focused-fail",
+			ContextPacketStatus: "blocked",
+			TerminalReason:      "context packet blocked",
+			AttemptedStrategies: []appplans.AcquisitionAttemptReport{{
+				Strategy: appplans.AcquisitionAttemptStrategy{Name: "focused_required_context", IncludeInventory: false, MaxSources: 80, MaxTotalBytes: 600000, MaxSearchResults: 10, ContextLines: 2},
+			}},
+			PacketSummary: &appplans.ContextPacketDiagnosticSummary{SourceCount: 6, MaxSources: 80, MaxTotalBytes: 600000, LimitHit: "none"},
+			CoverageSummary: &appplans.ContextCoverageDiagnosticSummary{
+				EntryCount: 1,
+				Entries: []appplans.ContextCoverageDiagnostic{{
+					SeedID: "file:1", SeedType: "file", Required: true, Path: "internal/app/plans/work_packets.go", Status: "blocked",
+				}},
+			},
+			RecommendedOperatorAction: "Inspect bounded diagnostics.",
+		},
+	}
+
+	result := orchestratorWorkNextPassPayload(resp)
+	payload := decodeNextPassSummary(t, result)
+	if payload.AcquisitionFailureReport == nil {
+		t.Fatal("expected acquisition_failure_report in structured content")
+	}
+	if payload.ReadinessState != "context_acquisition_failed" {
+		t.Fatalf("expected context_acquisition_failed, got %q", payload.ReadinessState)
+	}
+	for _, action := range payload.NextActions {
+		if action.Tool == "create_context_packet" {
+			t.Fatalf("did not expect create_context_packet action after terminal acquisition failure: %+v", payload.NextActions)
+		}
+	}
+	if len(result.Content) == 0 || !strings.Contains(result.Content[0].Text, "terminal_failure_code=context_coverage_incomplete") || !strings.Contains(result.Content[0].Text, "structuredContent.acquisition_failure_report") {
+		t.Fatalf("unexpected summary text: %+v", result.Content)
 	}
 }

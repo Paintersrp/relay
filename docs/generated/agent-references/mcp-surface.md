@@ -31,7 +31,7 @@ Schema version: `1.0.0`
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | mcp_tool_source |
 | `internal/mcp/server.go` | `fa8f88fa34e97d933d9d7cfa8b84dd52d61fc01c4e369e8e16d0c5466d4484f2` | mcp_tool_source |
 | `relay-contracts/contracts/planner_mcp_context_broker_contract.md` | `d37f6c2b4f2fd3bd6da9ccc89541da93e144072f0d6a4432014c5f583351d5ef` | mcp_contract_source |
-| `relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md` | `404f65db30eec8af1ee4201b0e07f84cea3ed1b11b0ee5aa899ad4ccc1ffc758` | mcp_contract_source |
+| `relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md` | `73a3afeaccb27e089a0fe186c780d969eb1ca9404deaa857af0839a18b6d908f` | mcp_contract_source |
 | `relay-contracts/contracts/planner_mcp_plan_attempt_contract.md` | `3cf8df06e87a55560bd4fb900eef70061695c7d40bc81ec9d1c95ef694622997` | mcp_contract_source |
 | `relay-contracts/contracts/planner_mcp_plan_submission_contract.md` | `f234a568fcc5c503b86b298d18cddf632beeed22ae437d560cafe33d475320bc` | mcp_contract_source |
 

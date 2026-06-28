@@ -31,13 +31,13 @@ const (
 	BlockerRequestedPassNotFound        = "requested_pass_not_found"
 	BlockerRequestedPassNotEligible     = "requested_pass_not_eligible"
 
-	BlockerSourceSnapshotAcquisitionFailed  = "source_snapshot_acquisition_failed"
-	BlockerSourceSnapshotMetadataMissing    = "source_snapshot_metadata_missing"
+	BlockerSourceSnapshotAcquisitionFailed   = "source_snapshot_acquisition_failed"
+	BlockerSourceSnapshotMetadataMissing     = "source_snapshot_metadata_missing"
 	BlockerSourceSnapshotRequiredSeedMissing = "source_snapshot_required_seed_missing"
-	BlockerContextPacketAcquisitionFailed   = "context_packet_acquisition_failed"
-	BlockerContextCoverageIncomplete        = "context_coverage_incomplete"
-	BlockerContextPacketTruncated           = "context_packet_truncated"
-	BlockerContextPacketUnusable            = "context_packet_unusable"
+	BlockerContextPacketAcquisitionFailed    = "context_packet_acquisition_failed"
+	BlockerContextCoverageIncomplete         = "context_coverage_incomplete"
+	BlockerContextPacketTruncated            = "context_packet_truncated"
+	BlockerContextPacketUnusable             = "context_packet_unusable"
 )
 
 // Refactor scheduling constants. These mirror the schema-approved refactor
@@ -79,42 +79,44 @@ type WorkBlocker struct {
 
 // NextPassWorkResponse is the top-level contract response.
 type NextPassWorkResponse struct {
-	OK                       bool                    `json:"ok"`
-	Tool                     string                  `json:"tool"`
-	Project                  *WorkProjectSummary     `json:"project,omitempty"`
-	Plan                     *WorkPlanSummary        `json:"plan,omitempty"`
-	SelectedPass             *WorkPassSummary        `json:"selected_pass,omitempty"`
-	DependencyStatus         []WorkDependencyStatus  `json:"dependency_status,omitempty"`
-	AssociatedRuns           []WorkRunSummary        `json:"associated_runs,omitempty"`
-	Context                  *WorkContextSummary     `json:"context,omitempty"`
-	HandoffReadinessCriteria []string                `json:"handoff_readiness_criteria,omitempty"`
-	HandoffWork              *HandoffAuthoringPacket `json:"handoff_work,omitempty"`
-	HandoffAuthoringPacket   *HandoffAuthoringPacket `json:"handoff_authoring_packet,omitempty"`
-	SuggestedRunSubmission   *SuggestedRunSubmission `json:"suggested_run_submission,omitempty"`
-	PlannerJumpstart         *PlannerJumpstart       `json:"planner_jumpstart,omitempty"`
-	Blockers                 []WorkBlocker           `json:"blockers"`
-	AcquisitionSummary       *AcquisitionSummary     `json:"acquisition_summary,omitempty"`
+	OK                       bool                      `json:"ok"`
+	Tool                     string                    `json:"tool"`
+	Project                  *WorkProjectSummary       `json:"project,omitempty"`
+	Plan                     *WorkPlanSummary          `json:"plan,omitempty"`
+	SelectedPass             *WorkPassSummary          `json:"selected_pass,omitempty"`
+	DependencyStatus         []WorkDependencyStatus    `json:"dependency_status,omitempty"`
+	AssociatedRuns           []WorkRunSummary          `json:"associated_runs,omitempty"`
+	Context                  *WorkContextSummary       `json:"context,omitempty"`
+	HandoffReadinessCriteria []string                  `json:"handoff_readiness_criteria,omitempty"`
+	HandoffWork              *HandoffAuthoringPacket   `json:"handoff_work,omitempty"`
+	HandoffAuthoringPacket   *HandoffAuthoringPacket   `json:"handoff_authoring_packet,omitempty"`
+	SuggestedRunSubmission   *SuggestedRunSubmission   `json:"suggested_run_submission,omitempty"`
+	PlannerJumpstart         *PlannerJumpstart         `json:"planner_jumpstart,omitempty"`
+	Blockers                 []WorkBlocker             `json:"blockers"`
+	AcquisitionSummary       *AcquisitionSummary       `json:"acquisition_summary,omitempty"`
+	AcquisitionFailureReport *AcquisitionFailureReport `json:"acquisition_failure_report,omitempty"`
 }
 
 // NextPassWorkMCPSummary is the compact model-visible summary returned by MCP.
 // It deliberately omits verbose pass goals, context prose, and seed details
 // while keeping enough IDs and next-action references for follow-up tool calls.
 type NextPassWorkMCPSummary struct {
-	OK               bool                         `json:"ok"`
-	Tool             string                       `json:"tool"`
-	ProjectID        string                       `json:"project_id,omitempty"`
-	PlanID           string                       `json:"plan_id,omitempty"`
-	SelectedPass     *NextPassWorkSummaryPass     `json:"selected_pass,omitempty"`
-	ReadinessState   string                       `json:"readiness_state,omitempty"`
-	SourceSnapshotID string                       `json:"source_snapshot_id,omitempty"`
-	ContextPacketID  string                       `json:"context_packet_id,omitempty"`
-	ContextReady     bool                         `json:"context_ready"`
-	HandoffWork      *HandoffAuthoringPacket      `json:"handoff_work,omitempty"`
-	HandoffPacket    *HandoffAuthoringPacket      `json:"handoff_authoring_packet,omitempty"`
-	Blockers            []NextPassWorkSummaryBlocker `json:"blockers"`
-	NextActions         []NextPassWorkSummaryAction  `json:"next_actions,omitempty"`
-	LocalPreviewHint    string                       `json:"local_preview_hint"`
-	AcquisitionSummary  *AcquisitionSummary           `json:"acquisition_summary,omitempty"`
+	OK                       bool                         `json:"ok"`
+	Tool                     string                       `json:"tool"`
+	ProjectID                string                       `json:"project_id,omitempty"`
+	PlanID                   string                       `json:"plan_id,omitempty"`
+	SelectedPass             *NextPassWorkSummaryPass     `json:"selected_pass,omitempty"`
+	ReadinessState           string                       `json:"readiness_state,omitempty"`
+	SourceSnapshotID         string                       `json:"source_snapshot_id,omitempty"`
+	ContextPacketID          string                       `json:"context_packet_id,omitempty"`
+	ContextReady             bool                         `json:"context_ready"`
+	HandoffWork              *HandoffAuthoringPacket      `json:"handoff_work,omitempty"`
+	HandoffPacket            *HandoffAuthoringPacket      `json:"handoff_authoring_packet,omitempty"`
+	Blockers                 []NextPassWorkSummaryBlocker `json:"blockers"`
+	NextActions              []NextPassWorkSummaryAction  `json:"next_actions,omitempty"`
+	LocalPreviewHint         string                       `json:"local_preview_hint"`
+	AcquisitionSummary       *AcquisitionSummary          `json:"acquisition_summary,omitempty"`
+	AcquisitionFailureReport *AcquisitionFailureReport    `json:"acquisition_failure_report,omitempty"`
 }
 
 // NextPassWorkSummaryPass contains the selected pass fields safe for MCP text.
@@ -150,6 +152,80 @@ type AcquisitionSummary struct {
 	ContextPacketStatus    string `json:"context_packet_status,omitempty"`
 }
 
+// AcquisitionFailureReport contains bounded terminal context-acquisition
+// diagnostics. It never includes source contents.
+type AcquisitionFailureReport struct {
+	Stage                     string                            `json:"stage"`
+	FailureCode               string                            `json:"failure_code"`
+	ReadinessState            string                            `json:"readiness_state"`
+	SourceSnapshotID          string                            `json:"source_snapshot_id,omitempty"`
+	ContextPacketID           string                            `json:"context_packet_id,omitempty"`
+	ContextPacketStatus       string                            `json:"context_packet_status,omitempty"`
+	TerminalReason            string                            `json:"terminal_reason"`
+	AttemptedStrategies       []AcquisitionAttemptReport        `json:"attempted_strategies"`
+	PacketSummary             *ContextPacketDiagnosticSummary   `json:"packet_summary,omitempty"`
+	CoverageSummary           *ContextCoverageDiagnosticSummary `json:"coverage_summary,omitempty"`
+	RecommendedOperatorAction string                            `json:"recommended_operator_action"`
+}
+
+type AcquisitionAttemptReport struct {
+	Strategy            AcquisitionAttemptStrategy      `json:"strategy"`
+	ContextPacketID     string                          `json:"context_packet_id,omitempty"`
+	ContextPacketStatus string                          `json:"context_packet_status,omitempty"`
+	FailureCode         string                          `json:"failure_code,omitempty"`
+	TerminalReason      string                          `json:"terminal_reason,omitempty"`
+	PacketSummary       *ContextPacketDiagnosticSummary `json:"packet_summary,omitempty"`
+	LimitHit            string                          `json:"limit_hit,omitempty"`
+}
+
+type AcquisitionAttemptStrategy struct {
+	Name             string `json:"name"`
+	IncludeInventory bool   `json:"include_inventory"`
+	MaxSources       int    `json:"max_sources"`
+	MaxTotalBytes    int    `json:"max_total_bytes"`
+	MaxSearchResults int    `json:"max_search_results"`
+	ContextLines     int    `json:"context_lines"`
+}
+
+type ContextPacketDiagnosticSummary struct {
+	MaxSources        int    `json:"max_sources"`
+	MaxTotalBytes     int    `json:"max_total_bytes"`
+	TotalSourceBytes  int    `json:"total_source_bytes"`
+	SourceCount       int    `json:"source_count"`
+	CoveredSeedCount  int    `json:"covered_seed_count"`
+	BlockedSeedCount  int    `json:"blocked_seed_count"`
+	MissingSeedCount  int    `json:"missing_seed_count"`
+	Truncated         bool   `json:"truncated"`
+	InventoryIncluded bool   `json:"inventory_included"`
+	LimitHit          string `json:"limit_hit"`
+}
+
+type ContextCoverageDiagnosticSummary struct {
+	EntryCount      int                         `json:"entry_count"`
+	CoveredCount    int                         `json:"covered_count"`
+	PartialCount    int                         `json:"partial_count"`
+	BlockedCount    int                         `json:"blocked_count"`
+	MissingCount    int                         `json:"missing_count"`
+	TruncatedCount  int                         `json:"truncated_count"`
+	RequiredCount   int                         `json:"required_count"`
+	RequiredCovered int                         `json:"required_covered_count"`
+	Entries         []ContextCoverageDiagnostic `json:"entries,omitempty"`
+}
+
+type ContextCoverageDiagnostic struct {
+	SeedID       string             `json:"seed_id"`
+	SeedType     string             `json:"seed_type"`
+	Required     bool               `json:"required"`
+	Path         string             `json:"path,omitempty"`
+	Pattern      string             `json:"pattern,omitempty"`
+	Reason       string             `json:"reason,omitempty"`
+	Status       string             `json:"status"`
+	Truncated    bool               `json:"truncated"`
+	MissingCause string             `json:"missing_cause,omitempty"`
+	Blockers     []CtxSourceBlocker `json:"blockers,omitempty"`
+	SourceIDs    []string           `json:"source_ids,omitempty"`
+}
+
 // CompactNextPassWorkSummary returns the MCP-safe projection of the full local
 // NextPassWorkResponse.
 func CompactNextPassWorkSummary(resp NextPassWorkResponse) NextPassWorkMCPSummary {
@@ -183,6 +259,9 @@ func CompactNextPassWorkSummary(resp NextPassWorkResponse) NextPassWorkMCPSummar
 	}
 	if resp.AcquisitionSummary != nil {
 		summary.AcquisitionSummary = resp.AcquisitionSummary
+	}
+	if resp.AcquisitionFailureReport != nil {
+		summary.AcquisitionFailureReport = resp.AcquisitionFailureReport
 	}
 	if resp.HandoffWork != nil {
 		summary.HandoffWork = resp.HandoffWork
@@ -516,6 +595,42 @@ type CtxPacketResult struct {
 	Truncated          bool
 	SourceSnapshotID   string
 	SourceCount        int
+	Summary            CtxPacketSummary
+	Coverage           []CtxCoverageEntry
+	LimitHit           string
+}
+
+type CtxPacketSummary struct {
+	SourceCount       int
+	CoveredSeedCount  int
+	BlockedSeedCount  int
+	MissingSeedCount  int
+	Truncated         bool
+	MaxSources        int
+	MaxTotalBytes     int
+	TotalSourceBytes  int
+	InventoryIncluded bool
+}
+
+type CtxCoverageEntry struct {
+	SeedID       string
+	SeedType     string
+	Required     bool
+	Status       string
+	Path         string
+	Pattern      string
+	Reason       string
+	SourceIDs    []string
+	Truncated    bool
+	Blockers     []CtxSourceBlocker
+	MissingCause string
+}
+
+type CtxSourceBlocker struct {
+	RepoID  string `json:"repo_id,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 // NewOrchestratorWorkService constructs an OrchestratorWorkService.
@@ -822,6 +937,12 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 					SelectedPass:     selectedPass,
 					DependencyStatus: depStatuses,
 					AssociatedRuns:   terminalRunSummaries,
+					Context: &WorkContextSummary{
+						ContextPlan:          ctxPlan,
+						SourceSnapshotID:     snapshotID,
+						SourceSnapshotStatus: snapshotStatus,
+						ContextReady:         false,
+					},
 					PlannerJumpstart: jumpstart,
 					Blockers:         []WorkBlocker{*acqBlocker},
 					AcquisitionSummary: &AcquisitionSummary{
@@ -854,15 +975,27 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	var packetUsable bool
 	var packetCreated bool
 	var packetUnusableReason string
+	var acquisitionFailureReport *AcquisitionFailureReport
 
 	if requirePacket {
 		if svc.sourcesSvc != nil && svc.contextPacketsSvc != nil && svc.store != nil {
 			var acqBlocker *WorkBlocker
-			packetID, packetStatus, coverageReportPath, packetFound, packetUsable, packetCreated, acqBlocker = svc.acquireContextPacket(
+			var report *AcquisitionFailureReport
+			packetID, packetStatus, coverageReportPath, packetFound, packetUsable, packetCreated, acqBlocker, report = svc.acquireContextPacket(
 				ctx, project, plan, pass, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID)
 			if acqBlocker != nil {
+				acquisitionFailureReport = report
 				jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, "")
-				jumpstart.ReadinessState = "needs_context_packet"
+				if acquisitionFailureReport != nil {
+					jumpstart.ReadinessState = acquisitionFailureReport.ReadinessState
+					jumpstart.SuggestedContextAcquisitionActions = nil
+					jumpstart.HandoffPreflightChecklist = append([]string{
+						"Context acquisition failed after backend retry attempts.",
+						"Use acquisition_failure_report for bounded diagnostics.",
+					}, jumpstart.HandoffPreflightChecklist...)
+				} else {
+					jumpstart.ReadinessState = "needs_context_packet"
+				}
 				resp := NextPassWorkResponse{
 					OK:   false,
 					Tool: NextPassWorkTool,
@@ -887,6 +1020,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 						ContextPacketID:        packetID,
 						ContextPacketStatus:    packetStatus,
 					},
+					AcquisitionFailureReport: acquisitionFailureReport,
 				}
 				return resp, nil
 			}
@@ -1644,7 +1778,7 @@ func (svc *OrchestratorWorkService) acquireContextPacket(
 	ctxBudget *ContextBudget,
 	repoAliases map[string]string,
 	snapshotID string,
-) (packetID string, packetStatus string, coverageReportPath string, found bool, usable bool, created bool, blocker *WorkBlocker) {
+) (packetID string, packetStatus string, coverageReportPath string, found bool, usable bool, created bool, blocker *WorkBlocker, report *AcquisitionFailureReport) {
 	// Look up latest existing packet.
 	latest, err := svc.store.GetLatestContextPacketForPass(project.ProjectID, plan.PlanID, pass.PassID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -1652,13 +1786,13 @@ func (svc *OrchestratorWorkService) acquireContextPacket(
 			Code:        BlockerContextPacketAcquisitionFailed,
 			Message:     fmt.Sprintf("failed to look up context packet for pass %q: %v", pass.PassID, err),
 			Recoverable: true,
-		}
+		}, nil
 	}
 
 	if latest != nil {
 		packetUsable, _ := contextPacketUsableForHandoff(*latest, snapshotID)
 		if packetUsable {
-			return latest.ContextPacketID, latest.Status, latest.CoverageReportPath, true, true, false, nil
+			return latest.ContextPacketID, latest.Status, latest.CoverageReportPath, true, true, false, nil, nil
 		}
 		// Stale or blocked packet -- create a replacement.
 	}
@@ -1669,21 +1803,121 @@ func (svc *OrchestratorWorkService) acquireContextPacket(
 			Code:        BlockerRequiredContextPacketMissing,
 			Message:     fmt.Sprintf("pass %q has required context inputs but no context packet exists and no source snapshot is available", pass.PassID),
 			Recoverable: true,
+		}, nil
+	}
+
+	attempts := buildContextAcquisitionAttempts(project.ProjectID, plan.PlanID, pass.PassID, ctxPlan, ctxBudget, repoAliases, snapshotID)
+	var reports []AcquisitionAttemptReport
+	var lastResult *CtxPacketResult
+	var lastBlocker *WorkBlocker
+	for _, attempt := range attempts {
+		result, err := svc.contextPacketsSvc.CreateContextPacket(ctx, attempt.input)
+		if err != nil {
+			lastBlocker = &WorkBlocker{
+				Code:        BlockerContextPacketAcquisitionFailed,
+				Message:     fmt.Sprintf("failed to create context packet for pass %q using %s: %v", pass.PassID, attempt.strategy.Name, err),
+				Recoverable: true,
+			}
+			reports = append(reports, AcquisitionAttemptReport{
+				Strategy:       attempt.strategy,
+				FailureCode:    lastBlocker.Code,
+				TerminalReason: lastBlocker.Message,
+			})
+			continue
+		}
+		lastResult = result
+		created = true
+		packetID, packetStatus, coverageReportPath = result.ContextPacketID, result.Status, result.CoverageReportPath
+		found = true
+		packetUsable, unusableReason := contextPacketResultUsableForHandoff(result, snapshotID)
+		attemptReport := AcquisitionAttemptReport{
+			Strategy:            attempt.strategy,
+			ContextPacketID:     result.ContextPacketID,
+			ContextPacketStatus: result.Status,
+			PacketSummary:       packetDiagnosticSummary(result),
+			LimitHit:            result.LimitHit,
+		}
+		if packetUsable {
+			reports = append(reports, attemptReport)
+			return result.ContextPacketID, result.Status, result.CoverageReportPath, true, true, true, nil, nil
+		}
+		lastBlocker = blockerForContextPacketResult(result, unusableReason)
+		attemptReport.FailureCode = lastBlocker.Code
+		attemptReport.TerminalReason = lastBlocker.Message
+		reports = append(reports, attemptReport)
+	}
+	if lastBlocker == nil {
+		lastBlocker = &WorkBlocker{
+			Code:        BlockerContextPacketAcquisitionFailed,
+			Message:     fmt.Sprintf("context packet acquisition for pass %q did not produce a usable packet", pass.PassID),
+			Recoverable: true,
 		}
 	}
+	report = buildAcquisitionFailureReport(snapshotID, lastBlocker, reports, lastResult)
+	return packetID, packetStatus, coverageReportPath, found, false, created, lastBlocker, report
+}
 
-	// Build context packet input from pass context plan.
-	input := CtxPacketInput{
-		ProjectID:        project.ProjectID,
-		PlanID:           plan.PlanID,
-		PassID:           pass.PassID,
-		TaskSlug:         safeTaskSlug("next-pass-work", plan.PlanID, pass.PassID),
+type contextAcquisitionAttempt struct {
+	strategy AcquisitionAttemptStrategy
+	input    CtxPacketInput
+}
+
+func buildContextAcquisitionAttempts(projectID, planID, passID string, ctxPlan ContextPlan, ctxBudget *ContextBudget, repoAliases map[string]string, snapshotID string) []contextAcquisitionAttempt {
+	plannedMaxSources := contextBudgetInt(ctxBudget, "max_files", defaultContextPacketMaxSources, maxContextPacketSources)
+	plannedMaxBytes := contextBudgetInt(ctxBudget, "max_bytes", defaultContextPacketMaxTotalBytes, maxContextPacketTotalBytes)
+	plannedMaxResults := contextBudgetInt(ctxBudget, "max_search_results", defaultSeedSearchMaxResults, maxSeedSearchResults)
+	plannedContextLines := contextBudgetInt(ctxBudget, "max_context_lines", 2, 10)
+	base := CtxPacketInput{
+		ProjectID:        projectID,
+		PlanID:           planID,
+		PassID:           passID,
+		TaskSlug:         safeTaskSlug("next-pass-work", planID, passID),
 		SourceSnapshotID: snapshotID,
-		IncludeInventory: defaultContextPacketIncludeInventory,
-		MaxSources:       contextBudgetInt(ctxBudget, "max_files", defaultContextPacketMaxSources, maxContextPacketSources),
-		MaxTotalBytes:    contextBudgetInt(ctxBudget, "max_bytes", defaultContextPacketMaxTotalBytes, maxContextPacketTotalBytes),
 	}
+	planned := base
+	planned.IncludeInventory = defaultContextPacketIncludeInventory
+	planned.MaxSources = plannedMaxSources
+	planned.MaxTotalBytes = plannedMaxBytes
+	planned.SeedFiles = buildCtxSeedFiles(ctxPlan, repoAliases, false)
+	planned.SeedSearches = buildCtxSeedSearches(ctxPlan, repoAliases, plannedMaxResults, plannedContextLines, false, false)
 
+	focused := base
+	focused.TaskSlug = safeTaskSlug("next-pass-work-focused", planID, passID)
+	focused.IncludeInventory = false
+	focused.MaxSources = minInt(80, maxContextPacketSources)
+	focused.MaxTotalBytes = minInt(600000, maxContextPacketTotalBytes)
+	focused.SeedFiles = buildCtxSeedFiles(ctxPlan, repoAliases, false)
+	focused.SeedSearches = buildCtxSeedSearches(ctxPlan, repoAliases, 10, 2, true, true)
+
+	return []contextAcquisitionAttempt{
+		{
+			strategy: AcquisitionAttemptStrategy{
+				Name:             "planned_context_budget",
+				IncludeInventory: planned.IncludeInventory,
+				MaxSources:       planned.MaxSources,
+				MaxTotalBytes:    planned.MaxTotalBytes,
+				MaxSearchResults: plannedMaxResults,
+				ContextLines:     plannedContextLines,
+			},
+			input: planned,
+		},
+		{
+			strategy: AcquisitionAttemptStrategy{
+				Name:             "focused_required_context",
+				IncludeInventory: focused.IncludeInventory,
+				MaxSources:       focused.MaxSources,
+				MaxTotalBytes:    focused.MaxTotalBytes,
+				MaxSearchResults: 10,
+				ContextLines:     2,
+			},
+			input: focused,
+		},
+	}
+}
+
+func buildCtxSeedFiles(ctxPlan ContextPlan, repoAliases map[string]string, requiredOnly bool) []CtxSeedFile {
+	required := make([]CtxSeedFile, 0, len(ctxPlan.SeedFilesToRead))
+	optional := make([]CtxSeedFile, 0, len(ctxPlan.SeedFilesToRead))
 	for _, seed := range ctxPlan.SeedFilesToRead {
 		repoID := normalizeContextRepoID(seed.RepoID, repoAliases)
 		path := strings.TrimSpace(seed.Path)
@@ -1691,14 +1925,24 @@ func (svc *OrchestratorWorkService) acquireContextPacket(
 		if repoID == "" || path == "" || reason == "" || isLocalAbsolutePath(path) {
 			continue
 		}
-		input.SeedFiles = append(input.SeedFiles, CtxSeedFile{
+		item := CtxSeedFile{
 			RepoID:   repoID,
 			Path:     path,
 			Reason:   reason,
 			Required: boolValue(seed.Required),
-		})
+		}
+		if item.Required {
+			required = append(required, item)
+		} else if !requiredOnly {
+			optional = append(optional, item)
+		}
 	}
+	return append(required, optional...)
+}
 
+func buildCtxSeedSearches(ctxPlan ContextPlan, repoAliases map[string]string, maxResults, contextLines int, requiredOnly bool, omitOptional bool) []CtxSeedSearch {
+	required := make([]CtxSeedSearch, 0, len(ctxPlan.SeedSearchTerms))
+	optional := make([]CtxSeedSearch, 0, len(ctxPlan.SeedSearchTerms))
 	for _, seed := range ctxPlan.SeedSearchTerms {
 		query := strings.TrimSpace(seed.Query)
 		reason := strings.TrimSpace(seed.Purpose)
@@ -1706,47 +1950,183 @@ func (svc *OrchestratorWorkService) acquireContextPacket(
 			continue
 		}
 		repoIDs := normalizeContextRepoIDs([]string{seed.RepoID}, repoAliases)
-		var searchRepoIDs []string
-		if len(repoIDs) > 0 {
-			searchRepoIDs = repoIDs
-		}
-		contextLines := contextBudgetInt(ctxBudget, "max_context_lines", 2, 10)
-		input.SeedSearches = append(input.SeedSearches, CtxSeedSearch{
-			RepoIDs:      searchRepoIDs,
+		item := CtxSeedSearch{
+			RepoIDs:      repoIDs,
 			Pattern:      query,
 			Reason:       reason,
 			Required:     boolValue(seed.Required),
-			MaxResults:   contextBudgetInt(ctxBudget, "max_search_results", defaultSeedSearchMaxResults, maxSeedSearchResults),
+			MaxResults:   maxResults,
 			ContextLines: contextLines,
-		})
-	}
-
-	result, err := svc.contextPacketsSvc.CreateContextPacket(ctx, input)
-	if err != nil {
-		return "", "", "", false, false, false, &WorkBlocker{
-			Code:        BlockerContextPacketAcquisitionFailed,
-			Message:     fmt.Sprintf("failed to create context packet for pass %q: %v", pass.PassID, err),
-			Recoverable: true,
+		}
+		if item.Required {
+			required = append(required, item)
+		} else if !requiredOnly && !omitOptional {
+			optional = append(optional, item)
 		}
 	}
+	return append(required, optional...)
+}
 
-	// Check result usability.
-	if result.Status == "blocked" {
-		return result.ContextPacketID, result.Status, result.CoverageReportPath, true, false, true, &WorkBlocker{
+func contextPacketResultUsableForHandoff(result *CtxPacketResult, selectedSourceSnapshotID string) (bool, string) {
+	if result == nil {
+		return false, "context packet result is empty"
+	}
+	status := strings.TrimSpace(result.Status)
+	if status != "created" {
+		return false, fmt.Sprintf("packet status is %q, expected \"created\"", status)
+	}
+	if result.BlockedSeedCount > 0 {
+		return false, fmt.Sprintf("packet has %d blocked seeds", result.BlockedSeedCount)
+	}
+	if result.MissingSeedCount > 0 {
+		return false, fmt.Sprintf("packet has %d missing seeds", result.MissingSeedCount)
+	}
+	if result.Truncated {
+		return false, "packet is truncated"
+	}
+	if strings.TrimSpace(result.CoverageReportPath) == "" {
+		return false, "packet is missing coverage report path"
+	}
+	if selectedSourceSnapshotID != "" && result.SourceSnapshotID != "" && result.SourceSnapshotID != selectedSourceSnapshotID {
+		return false, fmt.Sprintf("packet source snapshot ID %q does not match selected source snapshot ID %q", result.SourceSnapshotID, selectedSourceSnapshotID)
+	}
+	return true, ""
+}
+
+func blockerForContextPacketResult(result *CtxPacketResult, reason string) *WorkBlocker {
+	if result != nil && result.Status == "blocked" {
+		return &WorkBlocker{
 			Code:        BlockerContextCoverageIncomplete,
 			Message:     fmt.Sprintf("context packet %q was blocked: %d blocked seeds, %d missing seeds", result.ContextPacketID, result.BlockedSeedCount, result.MissingSeedCount),
 			Recoverable: true,
 		}
 	}
-	if result.Truncated {
-		return result.ContextPacketID, result.Status, result.CoverageReportPath, true, false, true, &WorkBlocker{
+	if result != nil && result.Truncated {
+		return &WorkBlocker{
 			Code:        BlockerContextPacketTruncated,
 			Message:     fmt.Sprintf("context packet %q is truncated (source count=%d)", result.ContextPacketID, result.SourceCount),
 			Recoverable: true,
 		}
 	}
+	if reason == "" {
+		reason = "context packet is unusable"
+	}
+	return &WorkBlocker{
+		Code:        BlockerContextPacketUnusable,
+		Message:     reason,
+		Recoverable: true,
+	}
+}
 
-	return result.ContextPacketID, result.Status, result.CoverageReportPath, true, true, true, nil
+func buildAcquisitionFailureReport(snapshotID string, blocker *WorkBlocker, attempts []AcquisitionAttemptReport, result *CtxPacketResult) *AcquisitionFailureReport {
+	packetID, packetStatus := "", ""
+	if result != nil {
+		packetID = result.ContextPacketID
+		packetStatus = result.Status
+	}
+	return &AcquisitionFailureReport{
+		Stage:                     "context_packet_acquisition",
+		FailureCode:               blocker.Code,
+		ReadinessState:            "context_acquisition_failed",
+		SourceSnapshotID:          snapshotID,
+		ContextPacketID:           packetID,
+		ContextPacketStatus:       packetStatus,
+		TerminalReason:            blocker.Message,
+		AttemptedStrategies:       attempts,
+		PacketSummary:             packetDiagnosticSummary(result),
+		CoverageSummary:           coverageDiagnosticSummary(result),
+		RecommendedOperatorAction: "Inspect acquisition_failure_report coverage and packet_summary, adjust required seeds or budgets, then call get_next_pass_work again after inputs are corrected.",
+	}
+}
+
+func packetDiagnosticSummary(result *CtxPacketResult) *ContextPacketDiagnosticSummary {
+	if result == nil {
+		return nil
+	}
+	limitHit := result.LimitHit
+	if limitHit == "" {
+		limitHit = "unknown"
+	}
+	summary := result.Summary
+	if summary.SourceCount == 0 && result.SourceCount > 0 {
+		summary.SourceCount = result.SourceCount
+	}
+	if summary.BlockedSeedCount == 0 && result.BlockedSeedCount > 0 {
+		summary.BlockedSeedCount = result.BlockedSeedCount
+	}
+	if summary.MissingSeedCount == 0 && result.MissingSeedCount > 0 {
+		summary.MissingSeedCount = result.MissingSeedCount
+	}
+	if !summary.Truncated && result.Truncated {
+		summary.Truncated = result.Truncated
+	}
+	return &ContextPacketDiagnosticSummary{
+		MaxSources:        summary.MaxSources,
+		MaxTotalBytes:     summary.MaxTotalBytes,
+		TotalSourceBytes:  summary.TotalSourceBytes,
+		SourceCount:       summary.SourceCount,
+		CoveredSeedCount:  summary.CoveredSeedCount,
+		BlockedSeedCount:  summary.BlockedSeedCount,
+		MissingSeedCount:  summary.MissingSeedCount,
+		Truncated:         summary.Truncated,
+		InventoryIncluded: summary.InventoryIncluded,
+		LimitHit:          limitHit,
+	}
+}
+
+func coverageDiagnosticSummary(result *CtxPacketResult) *ContextCoverageDiagnosticSummary {
+	if result == nil {
+		return nil
+	}
+	out := &ContextCoverageDiagnosticSummary{
+		EntryCount: len(result.Coverage),
+		Entries:    make([]ContextCoverageDiagnostic, 0, minInt(len(result.Coverage), 40)),
+	}
+	for i, entry := range result.Coverage {
+		switch entry.Status {
+		case "covered":
+			out.CoveredCount++
+		case "blocked":
+			out.BlockedCount++
+		case "missing":
+			out.MissingCount++
+		default:
+			out.PartialCount++
+		}
+		if entry.Truncated {
+			out.TruncatedCount++
+		}
+		if entry.Required {
+			out.RequiredCount++
+			if entry.Status == "covered" {
+				out.RequiredCovered++
+			}
+		}
+		if i >= 40 {
+			continue
+		}
+		out.Entries = append(out.Entries, ContextCoverageDiagnostic{
+			SeedID:       entry.SeedID,
+			SeedType:     entry.SeedType,
+			Required:     entry.Required,
+			Path:         entry.Path,
+			Pattern:      entry.Pattern,
+			Reason:       entry.Reason,
+			Status:       entry.Status,
+			Truncated:    entry.Truncated,
+			MissingCause: entry.MissingCause,
+			Blockers:     append([]CtxSourceBlocker(nil), entry.Blockers...),
+			SourceIDs:    append([]string(nil), entry.SourceIDs...),
+		})
+	}
+	return out
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func isUnsafePath(s string) bool {

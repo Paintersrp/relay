@@ -83,7 +83,52 @@ func (a *contextPacketAdapter) CreateContextPacket(ctx context.Context, input ap
 		Truncated:          result.Truncated,
 		SourceSnapshotID:   result.SourceSnapshotID,
 		SourceCount:        result.SourceCount,
+		Summary: appplans.CtxPacketSummary{
+			SourceCount:       result.Summary.SourceCount,
+			CoveredSeedCount:  result.Summary.CoveredSeedCount,
+			BlockedSeedCount:  result.Summary.BlockedSeedCount,
+			MissingSeedCount:  result.Summary.MissingSeedCount,
+			Truncated:         result.Summary.Truncated,
+			MaxSources:        result.Summary.MaxSources,
+			MaxTotalBytes:     result.Summary.MaxTotalBytes,
+			TotalSourceBytes:  result.Summary.TotalSourceBytes,
+			InventoryIncluded: result.Summary.InventoryIncluded,
+		},
+		Coverage: mapContextCoverageEntries(result.Coverage),
+		LimitHit: result.LimitHit,
 	}, nil
+}
+
+func mapContextCoverageEntries(entries []contextpackets.ContextCoverageEntry) []appplans.CtxCoverageEntry {
+	out := make([]appplans.CtxCoverageEntry, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, appplans.CtxCoverageEntry{
+			SeedID:       entry.SeedID,
+			SeedType:     entry.SeedType,
+			Required:     entry.Required,
+			Status:       entry.Status,
+			Path:         entry.Path,
+			Pattern:      entry.Pattern,
+			Reason:       entry.Reason,
+			SourceIDs:    append([]string(nil), entry.SourceIDs...),
+			Truncated:    entry.Truncated,
+			Blockers:     mapSourceBlockers(entry.Blockers),
+			MissingCause: entry.MissingCause,
+		})
+	}
+	return out
+}
+
+func mapSourceBlockers(blockers []sources.SourceBlocker) []appplans.CtxSourceBlocker {
+	out := make([]appplans.CtxSourceBlocker, 0, len(blockers))
+	for _, blocker := range blockers {
+		out = append(out, appplans.CtxSourceBlocker{
+			RepoID:  blocker.RepoID,
+			Code:    blocker.Code,
+			Message: blocker.Message,
+		})
+	}
+	return out
 }
 
 // ----------------------------------------------------------------------------
@@ -192,6 +237,11 @@ var getNextPassWorkOutputSchema = json.RawMessage(`{
         "context_packet_id": {"type": "string"},
         "context_packet_status": {"type": "string"}
       }
+    },
+    "acquisition_failure_report": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Bounded terminal context acquisition diagnostics. Present only when readiness_state is context_acquisition_failed."
     }
   }
 }`)
@@ -323,6 +373,22 @@ func nextPassWorkSummaryText(summary appplans.NextPassWorkMCPSummary) string {
 	}
 	if summary.HandoffWork != nil && summary.ReadinessState == "ready_for_handoff_authoring" {
 		next = "draft_planner_handoff: Use structuredContent.handoff_work to draft the Planner handoff; do not submit a run until the handoff is reviewed."
+	}
+	if summary.AcquisitionFailureReport != nil {
+		code := summary.AcquisitionFailureReport.FailureCode
+		limitHit := ""
+		if summary.AcquisitionFailureReport.PacketSummary != nil && summary.AcquisitionFailureReport.PacketSummary.LimitHit != "" {
+			limitHit = fmt.Sprintf(" limit_hit=%s", summary.AcquisitionFailureReport.PacketSummary.LimitHit)
+		}
+		return fmt.Sprintf(
+			"get_next_pass_work: selected_pass=%s readiness=%s terminal_failure_code=%s context_packet_id=%q%s. Use structuredContent.acquisition_failure_report for bounded diagnostics. %s",
+			selected,
+			summary.ReadinessState,
+			code,
+			summary.ContextPacketID,
+			limitHit,
+			summary.LocalPreviewHint,
+		)
 	}
 	return fmt.Sprintf(
 		"get_next_pass_work: selected_pass=%s readiness=%s context_ready=%t source_snapshot_id=%q context_packet_id=%q blockers=%s. %s. %s",

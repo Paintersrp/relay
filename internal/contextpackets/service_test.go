@@ -106,6 +106,67 @@ func TestCreateContextPacketInventoryOnly(t *testing.T) {
 	}
 }
 
+func TestCreateContextPacketRequiredSeedFilePrecedesInventory(t *testing.T) {
+	fixture := setupContextPacketFixture(t, fixtureOptions{})
+
+	result, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
+		ProjectID:        "relay",
+		TaskSlug:         "required-before-inventory",
+		SourceSnapshotID: fixture.snapshotID,
+		IncludeInventory: true,
+		MaxSources:       1,
+		SeedFiles: []ContextSeedFile{{
+			RepoID:   "relay",
+			Path:     "src/app.txt",
+			Required: true,
+			Reason:   "required source",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket error: %v", err)
+	}
+	if result.Summary.MaxSources != 1 || !result.Summary.InventoryIncluded || result.LimitHit != LimitHitMaxSources {
+		t.Fatalf("expected bounded summary and max_sources limit hit, got summary=%+v limit=%q", result.Summary, result.LimitHit)
+	}
+	if len(result.Coverage) < 2 || result.Coverage[0].SeedType != "file" || result.Coverage[1].SeedType != "inventory" {
+		t.Fatalf("expected required file coverage before inventory, got %+v", result.Coverage)
+	}
+	packet := readPacketArtifact(t, result.PacketJSONPath)
+	if len(packet.Sources) != 1 || packet.Sources[0].SourceType != SourceTypeFileRead {
+		t.Fatalf("expected required file to consume the single source slot, got %+v", packet.Sources)
+	}
+}
+
+func TestCreateContextPacketRequiredSearchPrecedesInventory(t *testing.T) {
+	requireRG(t)
+	fixture := setupContextPacketFixture(t, fixtureOptions{})
+
+	result, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
+		ProjectID:        "relay",
+		TaskSlug:         "required-search-before-inventory",
+		SourceSnapshotID: fixture.snapshotID,
+		IncludeInventory: true,
+		MaxSources:       1,
+		SeedSearches: []ContextSeedSearch{{
+			RepoIDs:    []string{"relay"},
+			Pattern:    "needle",
+			Required:   true,
+			Reason:     "required search",
+			MaxResults: 5,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket error: %v", err)
+	}
+	if len(result.Coverage) < 2 || result.Coverage[0].SeedType != "search" || result.Coverage[1].SeedType != "inventory" {
+		t.Fatalf("expected required search coverage before inventory, got %+v", result.Coverage)
+	}
+	packet := readPacketArtifact(t, result.PacketJSONPath)
+	if len(packet.Sources) != 1 || packet.Sources[0].SourceType != SourceTypeSearchMatch {
+		t.Fatalf("expected required search to consume the single source slot, got %+v", packet.Sources)
+	}
+}
+
 func TestCreateContextPacketRequiredMissingFileBlocked(t *testing.T) {
 	fixture := setupContextPacketFixture(t, fixtureOptions{})
 

@@ -115,7 +115,7 @@
     },
     {
       "path": "internal/api/next_pass_work_test.go",
-      "sha256": "55bc5082af9d5bc2ec143cedca44a69e9bc083f871668bf0bae9bee81b48f4c1",
+      "sha256": "cf1f2666eff4bbe3ce092cb40c613197f9584998ea405032f8f13a5321254d60",
       "role": "test"
     },
     {
@@ -370,12 +370,12 @@
     },
     {
       "path": "internal/app/intake/helpers_test.go",
-      "sha256": "ce574cfb8d42172b80a1931787a065624ebad9f20392076980e9f9dc1404e0b9",
+      "sha256": "f7947f80f3520f854c22b03288ee4ed6a80ad6de2a35995a79b22551e2a152f6",
       "role": "test"
     },
     {
       "path": "internal/app/intake/service.go",
-      "sha256": "8c77a73c2432f72f64b5a52e004a877c99a023ef8977bf09c11da65b4fc0878a",
+      "sha256": "c95d5e9d1923f49fb9dbcf74a274e4eef329f214d72b04278be67cc451f08635",
       "role": "source"
     },
     {
@@ -500,12 +500,12 @@
     },
     {
       "path": "internal/app/plans/work_packets.go",
-      "sha256": "17abe60f58ced12d782b5d9fe362794263a69280d0439ee7f08f0a00ccc7daf7",
+      "sha256": "00fbd059dfda25b75477af02c702f0df228337706f0c5de214087342519bfa59",
       "role": "source"
     },
     {
       "path": "internal/app/plans/work_packets_test.go",
-      "sha256": "e17c9ef530eec235cc0f1bf8382963c217ec81dd8674a84c56c584bb0187c7d0",
+      "sha256": "40bdd7cc08b26eaf17d935b611b5dd0a85abd3e2d9648e72d262221f2d8a648c",
       "role": "test"
     },
     {
@@ -620,12 +620,12 @@
     },
     {
       "path": "internal/mcp/orchestrator_work_tools.go",
-      "sha256": "b6d34e084b5dc5f45cb6c2eee2d77a4ca90fd6f12f7a1af09ed7a1cbfafc6224",
+      "sha256": "a3f8deb350295ad2e44d1d08536483a266b8fe46385904049b5b8083a836b0c9",
       "role": "source"
     },
     {
       "path": "internal/mcp/orchestrator_work_tools_test.go",
-      "sha256": "bbb5fc3105689850965b8cfa26b35d548b3a652368ae242968be3fbe5c9e5973",
+      "sha256": "38da67622ec18448e01c33fa224c18a9672e275fc3f3be88ff9601fbc79b7d2f",
       "role": "test"
     },
     {
@@ -8453,6 +8453,39 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-type-acquisitionattemptreport",
+      "label": "proven",
+      "statement": "Exported type AcquisitionAttemptReport in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-acquisitionattemptstrategy",
+      "label": "proven",
+      "statement": "Exported type AcquisitionAttemptStrategy in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-acquisitionfailurereport",
+      "label": "proven",
+      "statement": "Exported type AcquisitionFailureReport in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-type-acquisitionsummary",
       "label": "proven",
       "statement": "Exported type AcquisitionSummary in internal/app/plans/work_packets.go",
@@ -8541,6 +8574,28 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-type-contextcoveragediagnostic",
+      "label": "proven",
+      "statement": "Exported type ContextCoverageDiagnostic in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-contextcoveragediagnosticsummary",
+      "label": "proven",
+      "statement": "Exported type ContextCoverageDiagnosticSummary in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-type-contextfileread",
       "label": "proven",
       "statement": "Exported type ContextFileRead in internal/app/plans/types.go",
@@ -8548,6 +8603,17 @@
         {
           "kind": "source",
           "value": "internal/app/plans/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-contextpacketdiagnosticsummary",
+      "label": "proven",
+      "statement": "Exported type ContextPacketDiagnosticSummary in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -8585,6 +8651,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-type-ctxcoverageentry",
+      "label": "proven",
+      "statement": "Exported type CtxCoverageEntry in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-type-ctxpacketinput",
       "label": "proven",
       "statement": "Exported type CtxPacketInput in internal/app/plans/work_packets.go",
@@ -8607,6 +8684,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-type-ctxpacketsummary",
+      "label": "proven",
+      "statement": "Exported type CtxPacketSummary in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-type-ctxseedfile",
       "label": "proven",
       "statement": "Exported type CtxSeedFile in internal/app/plans/work_packets.go",
@@ -8621,6 +8709,17 @@
       "id": "backend-symbol-internal-app-plans-type-ctxseedsearch",
       "label": "proven",
       "statement": "Exported type CtxSeedSearch in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-ctxsourceblocker",
+      "label": "proven",
+      "statement": "Exported type CtxSourceBlocker in internal/app/plans/work_packets.go",
       "evidence": [
         {
           "kind": "source",
@@ -15130,6 +15229,28 @@
       ]
     },
     {
+      "id": "backend-test-internal-api-testgetnextpasswork-api-preservesacquisitionfailurereport",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_API_PreservesAcquisitionFailureReport in internal/api/next_pass_work_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/api/next_pass_work_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-api-testgetnextpasswork-api-preservesfallbackhandoffwork",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_API_PreservesFallbackHandoffWork in internal/api/next_pass_work_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/api/next_pass_work_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-api-testgetnextpasswork-emptyprojectidreturns400",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_EmptyProjectIDReturns400 in internal/api/next_pass_work_test.go",
@@ -16219,6 +16340,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-contextacquisitionfailurereport",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_ContextAcquisitionFailureReport in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-plans-testgetnextpasswork-contextpacketactionnormalizesrepoaliases",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_ContextPacketActionNormalizesRepoAliases in internal/app/plans/work_packets_test.go",
@@ -16325,6 +16457,17 @@
         {
           "kind": "test",
           "value": "internal/app/plans/refactor_work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-pass002fallbackcreatesusablehandoffwork",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_PASS002FallbackCreatesUsableHandoffWork in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
         }
       ]
     },
@@ -18279,6 +18422,17 @@
       "id": "backend-test-internal-mcp-testorchestratorworktools-getnextpasswork-contextpacketusability",
       "label": "proven",
       "statement": "Test function TestOrchestratorWorkTools_GetNextPassWork_ContextPacketUsability in internal/mcp/orchestrator_work_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/orchestrator_work_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testorchestratorworktools-getnextpassworkacquisitionfailuresummary",
+      "label": "proven",
+      "statement": "Test function TestOrchestratorWorkTools_GetNextPassWorkAcquisitionFailureSummary in internal/mcp/orchestrator_work_tools_test.go",
       "evidence": [
         {
           "kind": "test",

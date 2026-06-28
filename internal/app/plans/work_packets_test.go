@@ -13,6 +13,34 @@ import (
 	"relay/internal/store"
 )
 
+type fakeSourceSnapshotAcquirer struct {
+	snapshotID string
+	status     string
+	included   int
+}
+
+func (f fakeSourceSnapshotAcquirer) CreateSourceSnapshot(ctx context.Context, projectID string, repoIDs []string, includeFileMetadata bool) (string, string, int, error) {
+	return f.snapshotID, f.status, f.included, nil
+}
+
+type fakeContextPacketAcquirer struct {
+	results []CtxPacketResult
+	inputs  []CtxPacketInput
+}
+
+func (f *fakeContextPacketAcquirer) CreateContextPacket(ctx context.Context, input CtxPacketInput) (*CtxPacketResult, error) {
+	f.inputs = append(f.inputs, input)
+	if len(f.results) == 0 {
+		return &CtxPacketResult{ContextPacketID: "ctxpkt-empty", Status: "blocked"}, nil
+	}
+	result := f.results[0]
+	f.results = f.results[1:]
+	if result.SourceSnapshotID == "" {
+		result.SourceSnapshotID = input.SourceSnapshotID
+	}
+	return &result, nil
+}
+
 // baseContextPlan returns a schema-valid ContextPlan for test purposes.
 // It has one required seed search term and one required file, satisfying
 // all minItems constraints from the plan schema.
@@ -48,6 +76,25 @@ func noContextRequirementsPlan() ContextPlan {
 		},
 		ContextCoverageExpectations: []string{"Coverage is best-effort."},
 		BlockedIfMissing:            []string{"Context delivery is advisory only."},
+	}
+}
+
+func pass002ShapedContextPlan() ContextPlan {
+	return ContextPlan{
+		RequiredRepositories: []string{"relay"},
+		SeedFilesToRead: []ContextFileRead{
+			{RepoID: "relay", Path: "internal/app/plans/work_packets.go", Purpose: "work packet service", Required: boolPtr(true)},
+			{RepoID: "relay", Path: "internal/contextpackets/service.go", Purpose: "context packet service", Required: boolPtr(true)},
+			{RepoID: "relay", Path: "internal/mcp/orchestrator_work_tools.go", Purpose: "mcp surface", Required: boolPtr(true)},
+			{RepoID: "relay", Path: "internal/api/plans/handler.go", Purpose: "api surface", Required: boolPtr(true)},
+			{RepoID: "relay", Path: "relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md", Purpose: "contract", Required: boolPtr(true)},
+		},
+		SeedSearchTerms: []ContextSearchTerm{
+			{RepoID: "relay", Query: "get_next_pass_work context packet", Purpose: "work packet acquisition", Required: boolPtr(true)},
+			{RepoID: "relay", Query: "context_acquisition_failed acquisition_failure_report", Purpose: "failure diagnostics", Required: boolPtr(true)},
+		},
+		ContextCoverageExpectations: []string{"Required evidence is available before handoff authoring."},
+		BlockedIfMissing:            []string{"Required context cannot be acquired."},
 	}
 }
 
@@ -231,6 +278,72 @@ func seedPlan(t *testing.T, st *store.Store, projectID, planID string) *store.Pl
 	seedPlanContextArtifacts(t, st, projectID, planID, []string{"PASS-001", "PASS-002"})
 
 	return p
+}
+
+func seedPass002AcquisitionPlan(t *testing.T, st *store.Store, planID string) {
+	t.Helper()
+	project, err := st.GetProjectByProjectID("relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	if _, err := st.UpsertProjectRepository(store.UpsertProjectRepositoryParams{
+		ProjectRowID:     project.ID,
+		RepoID:           "relay",
+		Role:             "primary",
+		LocalPath:        "D:/Code/relay",
+		DefaultBranch:    "main",
+		AllowedRootsJSON: `["."]`,
+		MaxFileSizeBytes: 1048576,
+		Enabled:          1,
+	}); err != nil {
+		t.Fatalf("UpsertProjectRepository: %v", err)
+	}
+
+	planSvc := NewService(st)
+	plan := PlannerPassPlan{
+		PlanMeta: PlanMeta{
+			PlanID:        planID,
+			SchemaVersion: "2.0.0",
+			CreatedAt:     "2026-06-28T00:00:00Z",
+			Title:         "PASS-002 acquisition test",
+			Goal:          "Exercise context acquisition.",
+			RepoTarget:    "Paintersrp/relay",
+			BranchContext: "main",
+			Status:        "active",
+			ProjectID:     "relay",
+			MCPCapabilityProfile: &MCPCapabilityProfile{
+				ProfileID:            "test-profile",
+				Mode:                 "submission_only",
+				ContextBrokerEnabled: boolPtr(false),
+			},
+		},
+		SourceIntent:       SourceIntent{Summary: "Test PASS-002-shaped acquisition."},
+		GlobalContextRules: &GlobalContextRules{DefaultSourceOfTruth: "test", PlannerContextBoundary: "test", ForbiddenContextDomains: []string{"external"}},
+		Passes: []PlanPassInput{
+			{
+				PassID: "PASS-001", Sequence: 1, Name: "First", Goal: "First complete pass.",
+				IntendedExecutionScope: []string{"setup"}, NonGoals: []string{"none"},
+				Dependencies: []string{}, Status: "planned", PassType: "backend_vertical_slice",
+				ContextPlan:                noContextRequirementsPlan(),
+				SourceSnapshotRequirements: SourceSnapshotRequirements{RequireGitStatus: boolPtr(false), RequireCommitSHA: boolPtr(false), AllowDirtyWorktree: boolPtr(true)},
+				HandoffReadinessCriteria:   []string{"complete"},
+			},
+			{
+				PassID: "PASS-002", Sequence: 2, Name: "Second", Goal: "PASS-002 shaped context acquisition.",
+				IntendedExecutionScope: []string{"backend"}, NonGoals: []string{"validation tiers"},
+				Dependencies: []string{"PASS-001"}, Status: "planned", PassType: "backend_vertical_slice",
+				ContextPlan:                pass002ShapedContextPlan(),
+				SourceSnapshotRequirements: SourceSnapshotRequirements{RequireGitStatus: boolPtr(false), RequireCommitSHA: boolPtr(false), AllowDirtyWorktree: boolPtr(true)},
+				HandoffReadinessCriteria:   []string{"context acquired"},
+				ContextBudget:              &ContextBudget{MaxFiles: int64Ptr(12), MaxBytes: int64Ptr(180000), MaxSearchResults: int64Ptr(25), MaxContextLines: int64Ptr(50)},
+			},
+		},
+	}
+	result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: mustMarshalPlan(t, plan)})
+	if err != nil || !result.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
+	}
+	setPassStatus(t, st, planID, "PASS-001", StatusPassCompleted)
 }
 
 // setPassStatus updates a pass status directly via the store.
@@ -1565,22 +1678,22 @@ func TestGetNextPassWork_ContextPacketUsabilityGates(t *testing.T) {
 				snapshotRowID = snap.ID
 			}
 
-		_, err = st.CreateContextPacket(store.CreateContextPacketParams{
-			ContextPacketID:     "packet-1",
-			ProjectRowID:        project.ID,
-			ProjectID:           project.ProjectID,
-			PlanID:              "plan-test",
-			PassID:              "PASS-001",
-			TaskSlug:            "slug",
-			SourceSnapshotRowID: snapshotRowID,
-			SourceSnapshotID:    tc.snapshotID,
-			Status:              tc.status,
-			BlockedSeedCount:    tc.blockedSeedCount,
-			MissingSeedCount:    tc.missingSeedCount,
-			CompletedAt:         "2026-06-28T12:00:00Z",
-			PacketJSONPath:      "/artifacts/ctxpkt/packet-1.json",
-			CoverageReportPath:  "/artifacts/ctxpkt/packet-1-coverage.json",
-		})
+			_, err = st.CreateContextPacket(store.CreateContextPacketParams{
+				ContextPacketID:     "packet-1",
+				ProjectRowID:        project.ID,
+				ProjectID:           project.ProjectID,
+				PlanID:              "plan-test",
+				PassID:              "PASS-001",
+				TaskSlug:            "slug",
+				SourceSnapshotRowID: snapshotRowID,
+				SourceSnapshotID:    tc.snapshotID,
+				Status:              tc.status,
+				BlockedSeedCount:    tc.blockedSeedCount,
+				MissingSeedCount:    tc.missingSeedCount,
+				CompletedAt:         "2026-06-28T12:00:00Z",
+				PacketJSONPath:      "/artifacts/ctxpkt/packet-1.json",
+				CoverageReportPath:  "/artifacts/ctxpkt/packet-1-coverage.json",
+			})
 			if err != nil {
 				t.Fatalf("CreateContextPacket: %v", err)
 			}
@@ -1642,5 +1755,131 @@ func TestGetNextPassWork_ContextPacketUsabilityGates(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGetNextPassWork_PASS002FallbackCreatesUsableHandoffWork(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedPass002AcquisitionPlan(t, st, "plan-pass002-fallback")
+	svc.SetSourceService(fakeSourceSnapshotAcquirer{snapshotID: "snap-pass002", status: "created", included: 10})
+	fakeCtx := &fakeContextPacketAcquirer{results: []CtxPacketResult{
+		{
+			ContextPacketID:    "ctxpkt-planned",
+			Status:             "created",
+			CoverageReportPath: "/artifacts/ctxpkt/planned-coverage.json",
+			SourceSnapshotID:   "snap-pass002",
+			SourceCount:        12,
+			Truncated:          true,
+			Summary: CtxPacketSummary{
+				SourceCount:       12,
+				CoveredSeedCount:  7,
+				Truncated:         true,
+				MaxSources:        12,
+				MaxTotalBytes:     180000,
+				TotalSourceBytes:  180000,
+				InventoryIncluded: true,
+			},
+			LimitHit: "max_sources",
+		},
+		{
+			ContextPacketID:    "ctxpkt-focused",
+			Status:             "created",
+			CoverageReportPath: "/artifacts/ctxpkt/focused-coverage.json",
+			SourceSnapshotID:   "snap-pass002",
+			SourceCount:        7,
+			Summary: CtxPacketSummary{
+				SourceCount:      7,
+				CoveredSeedCount: 7,
+				MaxSources:       80,
+				MaxTotalBytes:    600000,
+			},
+			LimitHit: "none",
+		},
+	}}
+	svc.SetContextPacketService(fakeCtx)
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{ProjectID: "relay", PlanID: "plan-pass002-fallback"})
+	if err != nil {
+		t.Fatalf("GetNextPassWork: %v", err)
+	}
+	if !resp.OK || resp.HandoffWork == nil || resp.PlannerJumpstart.ReadinessState != "ready_for_handoff_authoring" {
+		t.Fatalf("expected fallback handoff work, got ok=%t readiness=%q handoff=%v blockers=%+v", resp.OK, resp.PlannerJumpstart.ReadinessState, resp.HandoffWork, resp.Blockers)
+	}
+	if resp.Context == nil || !resp.Context.ContextReady || resp.Context.ContextPacketID != "ctxpkt-focused" {
+		t.Fatalf("expected focused context packet ready, got %+v", resp.Context)
+	}
+	if len(fakeCtx.inputs) != 2 {
+		t.Fatalf("expected two context acquisition attempts, got %d", len(fakeCtx.inputs))
+	}
+	if fakeCtx.inputs[0].IncludeInventory != true || fakeCtx.inputs[0].MaxSources != 12 || fakeCtx.inputs[0].MaxTotalBytes != 180000 || fakeCtx.inputs[0].SeedSearches[0].MaxResults != 25 || fakeCtx.inputs[0].SeedSearches[0].ContextLines != 10 {
+		t.Fatalf("unexpected planned attempt input: %+v", fakeCtx.inputs[0])
+	}
+	if fakeCtx.inputs[1].IncludeInventory || fakeCtx.inputs[1].MaxSources != 80 || fakeCtx.inputs[1].MaxTotalBytes != 600000 || fakeCtx.inputs[1].SeedSearches[0].MaxResults != 10 || fakeCtx.inputs[1].SeedSearches[0].ContextLines != 2 {
+		t.Fatalf("unexpected focused attempt input: %+v", fakeCtx.inputs[1])
+	}
+}
+
+func TestGetNextPassWork_ContextAcquisitionFailureReport(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedPass002AcquisitionPlan(t, st, "plan-pass002-failure")
+	svc.SetSourceService(fakeSourceSnapshotAcquirer{snapshotID: "snap-pass002-fail", status: "created", included: 10})
+	fakeCtx := &fakeContextPacketAcquirer{results: []CtxPacketResult{
+		{
+			ContextPacketID:    "ctxpkt-planned-fail",
+			Status:             "created",
+			CoverageReportPath: "/artifacts/ctxpkt/planned-fail-coverage.json",
+			SourceSnapshotID:   "snap-pass002-fail",
+			SourceCount:        12,
+			Truncated:          true,
+			Summary:            CtxPacketSummary{SourceCount: 12, Truncated: true, MaxSources: 12, MaxTotalBytes: 180000, InventoryIncluded: true},
+			Coverage: []CtxCoverageEntry{
+				{SeedID: "file:1", SeedType: "file", Required: true, Status: "covered", Path: "internal/app/plans/work_packets.go"},
+				{SeedID: "inventory", SeedType: "inventory", Status: "partial", Truncated: true},
+			},
+			LimitHit: "max_sources",
+		},
+		{
+			ContextPacketID:    "ctxpkt-focused-fail",
+			Status:             "blocked",
+			CoverageReportPath: "/artifacts/ctxpkt/focused-fail-coverage.json",
+			SourceSnapshotID:   "snap-pass002-fail",
+			BlockedSeedCount:   1,
+			SourceCount:        6,
+			Summary:            CtxPacketSummary{SourceCount: 6, CoveredSeedCount: 6, BlockedSeedCount: 1, MaxSources: 80, MaxTotalBytes: 600000},
+			Coverage: []CtxCoverageEntry{
+				{SeedID: "file:1", SeedType: "file", Required: true, Status: "covered", Path: "internal/app/plans/work_packets.go"},
+				{SeedID: "file:5", SeedType: "file", Required: true, Status: "blocked", Path: "relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md", MissingCause: "blocked"},
+			},
+			LimitHit: "none",
+		},
+	}}
+	svc.SetContextPacketService(fakeCtx)
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{ProjectID: "relay", PlanID: "plan-pass002-failure"})
+	if err != nil {
+		t.Fatalf("GetNextPassWork: %v", err)
+	}
+	if resp.OK || resp.HandoffWork != nil {
+		t.Fatalf("expected terminal failure without handoff work, got ok=%t handoff=%v", resp.OK, resp.HandoffWork)
+	}
+	if resp.PlannerJumpstart == nil || resp.PlannerJumpstart.ReadinessState != "context_acquisition_failed" {
+		t.Fatalf("expected context_acquisition_failed, got %+v", resp.PlannerJumpstart)
+	}
+	if resp.AcquisitionFailureReport == nil {
+		t.Fatal("expected acquisition_failure_report")
+	}
+	report := resp.AcquisitionFailureReport
+	if report.FailureCode != BlockerContextCoverageIncomplete || report.ContextPacketID != "ctxpkt-focused-fail" || report.PacketSummary == nil || report.CoverageSummary == nil {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+	if len(report.AttemptedStrategies) != 2 || report.AttemptedStrategies[1].Strategy.Name != "focused_required_context" {
+		t.Fatalf("expected two strategy reports, got %+v", report.AttemptedStrategies)
+	}
+	for _, action := range resp.PlannerJumpstart.SuggestedContextAcquisitionActions {
+		if action.Tool == "create_context_packet" {
+			t.Fatalf("did not expect manual create_context_packet action after backend retry failure: %+v", resp.PlannerJumpstart.SuggestedContextAcquisitionActions)
+		}
 	}
 }

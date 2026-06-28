@@ -19,6 +19,32 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+type apiFakeSourceSnapshotAcquirer struct {
+	snapshotID string
+	status     string
+	included   int
+}
+
+func (f apiFakeSourceSnapshotAcquirer) CreateSourceSnapshot(ctx context.Context, projectID string, repoIDs []string, includeFileMetadata bool) (string, string, int, error) {
+	return f.snapshotID, f.status, f.included, nil
+}
+
+type apiFakeContextPacketAcquirer struct {
+	results []appplans.CtxPacketResult
+}
+
+func (f *apiFakeContextPacketAcquirer) CreateContextPacket(ctx context.Context, input appplans.CtxPacketInput) (*appplans.CtxPacketResult, error) {
+	if len(f.results) == 0 {
+		return &appplans.CtxPacketResult{ContextPacketID: "ctxpkt-empty", Status: "blocked", SourceSnapshotID: input.SourceSnapshotID}, nil
+	}
+	result := f.results[0]
+	f.results = f.results[1:]
+	if result.SourceSnapshotID == "" {
+		result.SourceSnapshotID = input.SourceSnapshotID
+	}
+	return &result, nil
+}
+
 // newNextPassWorkTestServer creates a minimal test router with the
 // GetNextPassWork route registered under the project-scoped path.
 func newNextPassWorkTestServer(t *testing.T) (*plansapi.Handler, *store.Store, http.Handler) {
@@ -562,4 +588,177 @@ func TestGetNextPassWork_API_ContextPacketUsability(t *testing.T) {
 	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != appplans.BlockerRequiredContextPacketMissing {
 		t.Fatalf("expected required_context_packet_missing blocker, got %+v", resp.Blockers)
 	}
+}
+
+func TestGetNextPassWork_API_PreservesAcquisitionFailureReport(t *testing.T) {
+	t.Parallel()
+	_, st, _ := newNextPassWorkTestServer(t)
+	project, err := st.GetProjectByProjectID("relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	if _, err := st.UpsertProjectRepository(store.UpsertProjectRepositoryParams{
+		ProjectRowID:     project.ID,
+		RepoID:           "relay",
+		Role:             "primary",
+		LocalPath:        "D:/Code/relay",
+		DefaultBranch:    "main",
+		AllowedRootsJSON: `["."]`,
+		MaxFileSizeBytes: 1048576,
+		Enabled:          1,
+	}); err != nil {
+		t.Fatalf("UpsertProjectRepository: %v", err)
+	}
+	planSvc := appplans.NewService(st)
+	plan := apiAcquisitionPlan("api-plan-acq-failure")
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	result, err := planSvc.SubmitPlan(context.Background(), appplans.SubmitPlanRequest{RawJSON: raw, UnmanagedAcknowledged: true})
+	if err != nil || !result.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
+	}
+	workSvc := appplans.NewOrchestratorWorkService(st)
+	workSvc.SetSourceService(apiFakeSourceSnapshotAcquirer{snapshotID: "snap-api-acq", status: "created", included: 10})
+	workSvc.SetContextPacketService(&apiFakeContextPacketAcquirer{results: []appplans.CtxPacketResult{
+		{
+			ContextPacketID:    "ctxpkt-api-planned",
+			Status:             "created",
+			CoverageReportPath: "/artifacts/planned.json",
+			SourceSnapshotID:   "snap-api-acq",
+			SourceCount:        12,
+			Truncated:          true,
+			Summary:            appplans.CtxPacketSummary{SourceCount: 12, Truncated: true, MaxSources: 12, MaxTotalBytes: 180000, InventoryIncluded: true},
+			LimitHit:           "max_sources",
+		},
+		{
+			ContextPacketID:    "ctxpkt-api-focused",
+			Status:             "blocked",
+			CoverageReportPath: "/artifacts/focused.json",
+			SourceSnapshotID:   "snap-api-acq",
+			BlockedSeedCount:   1,
+			Summary:            appplans.CtxPacketSummary{SourceCount: 5, BlockedSeedCount: 1, MaxSources: 80, MaxTotalBytes: 600000},
+			Coverage: []appplans.CtxCoverageEntry{
+				{SeedID: "file:1", SeedType: "file", Required: true, Status: "blocked", Path: "internal/app/plans/work_packets.go"},
+			},
+			LimitHit: "none",
+		},
+	}})
+	planH := plansapi.NewHandler(planSvc, workSvc, nil)
+	router := chi.NewRouter()
+	router.Route("/api", func(r chi.Router) { plansapi.MountRoutes(r, planH) })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plans/api-plan-acq-failure/next-pass-work", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp appplans.NextPassWorkResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.OK || resp.HandoffWork != nil || resp.AcquisitionFailureReport == nil {
+		t.Fatalf("expected failure report without handoff work, got ok=%t handoff=%v report=%+v", resp.OK, resp.HandoffWork, resp.AcquisitionFailureReport)
+	}
+	if resp.PlannerJumpstart == nil || resp.PlannerJumpstart.ReadinessState != "context_acquisition_failed" {
+		t.Fatalf("expected context_acquisition_failed, got %+v", resp.PlannerJumpstart)
+	}
+	if resp.AcquisitionFailureReport.PacketSummary == nil || resp.AcquisitionFailureReport.CoverageSummary == nil || len(resp.AcquisitionFailureReport.AttemptedStrategies) != 2 {
+		t.Fatalf("incomplete acquisition_failure_report: %+v", resp.AcquisitionFailureReport)
+	}
+}
+
+func TestGetNextPassWork_API_PreservesFallbackHandoffWork(t *testing.T) {
+	t.Parallel()
+	_, st, _ := newNextPassWorkTestServer(t)
+	project, err := st.GetProjectByProjectID("relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	if _, err := st.UpsertProjectRepository(store.UpsertProjectRepositoryParams{
+		ProjectRowID:     project.ID,
+		RepoID:           "relay",
+		Role:             "primary",
+		LocalPath:        "D:/Code/relay",
+		DefaultBranch:    "main",
+		AllowedRootsJSON: `["."]`,
+		MaxFileSizeBytes: 1048576,
+		Enabled:          1,
+	}); err != nil {
+		t.Fatalf("UpsertProjectRepository: %v", err)
+	}
+	planSvc := appplans.NewService(st)
+	plan := apiAcquisitionPlan("api-plan-acq-success")
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	result, err := planSvc.SubmitPlan(context.Background(), appplans.SubmitPlanRequest{RawJSON: raw, UnmanagedAcknowledged: true})
+	if err != nil || !result.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
+	}
+	workSvc := appplans.NewOrchestratorWorkService(st)
+	workSvc.SetSourceService(apiFakeSourceSnapshotAcquirer{snapshotID: "snap-api-success", status: "created", included: 10})
+	workSvc.SetContextPacketService(&apiFakeContextPacketAcquirer{results: []appplans.CtxPacketResult{
+		{ContextPacketID: "ctxpkt-api-truncated", Status: "created", CoverageReportPath: "/artifacts/truncated.json", SourceSnapshotID: "snap-api-success", SourceCount: 12, Truncated: true, Summary: appplans.CtxPacketSummary{SourceCount: 12, Truncated: true, MaxSources: 12, MaxTotalBytes: 180000, InventoryIncluded: true}, LimitHit: "max_sources"},
+		{ContextPacketID: "ctxpkt-api-success", Status: "created", CoverageReportPath: "/artifacts/success.json", SourceSnapshotID: "snap-api-success", SourceCount: 7, Summary: appplans.CtxPacketSummary{SourceCount: 7, CoveredSeedCount: 7, MaxSources: 80, MaxTotalBytes: 600000}, LimitHit: "none"},
+	}})
+	planH := plansapi.NewHandler(planSvc, workSvc, nil)
+	router := chi.NewRouter()
+	router.Route("/api", func(r chi.Router) { plansapi.MountRoutes(r, planH) })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plans/api-plan-acq-success/next-pass-work", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp appplans.NextPassWorkResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.OK || resp.HandoffWork == nil || resp.Context == nil || !resp.Context.ContextReady {
+		t.Fatalf("expected fallback handoff work, got ok=%t handoff=%v context=%+v blockers=%+v", resp.OK, resp.HandoffWork, resp.Context, resp.Blockers)
+	}
+}
+
+func apiAcquisitionPlan(planID string) appplans.PlannerPassPlan {
+	return appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
+			PlanID: planID, SchemaVersion: "2.0.0", CreatedAt: "2026-06-28T00:00:00Z",
+			Title: "API acquisition plan", Goal: "Exercise API acquisition.", RepoTarget: "Paintersrp/relay", BranchContext: "main", Status: "active", ProjectID: "relay",
+			MCPCapabilityProfile: &appplans.MCPCapabilityProfile{ProfileID: "test", Mode: "submission_only", ContextBrokerEnabled: planAPIBoolPtr(false)},
+		},
+		SourceIntent:       appplans.SourceIntent{Summary: "API acquisition tests."},
+		GlobalContextRules: &appplans.GlobalContextRules{DefaultSourceOfTruth: "test", PlannerContextBoundary: "test", ForbiddenContextDomains: []string{"external"}},
+		Passes: []appplans.PlanPassInput{{
+			PassID: "PASS-001", Sequence: 1, Name: "Context", Goal: "Acquire context.",
+			IntendedExecutionScope: []string{"backend"}, NonGoals: []string{"none"}, Dependencies: []string{}, Status: "planned", PassType: "backend_vertical_slice",
+			ContextPlan: appplans.ContextPlan{
+				RequiredRepositories: []string{"relay"},
+				SeedFilesToRead: []appplans.ContextFileRead{
+					{RepoID: "relay", Path: "internal/app/plans/work_packets.go", Purpose: "service", Required: planAPIBoolPtr(true)},
+					{RepoID: "relay", Path: "internal/contextpackets/service.go", Purpose: "packet", Required: planAPIBoolPtr(true)},
+					{RepoID: "relay", Path: "internal/mcp/orchestrator_work_tools.go", Purpose: "mcp", Required: planAPIBoolPtr(true)},
+					{RepoID: "relay", Path: "internal/api/plans/handler.go", Purpose: "api", Required: planAPIBoolPtr(true)},
+					{RepoID: "relay", Path: "relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md", Purpose: "contract", Required: planAPIBoolPtr(true)},
+				},
+				SeedSearchTerms: []appplans.ContextSearchTerm{
+					{RepoID: "relay", Query: "get_next_pass_work", Purpose: "acquisition", Required: planAPIBoolPtr(true)},
+					{RepoID: "relay", Query: "acquisition_failure_report", Purpose: "diagnostics", Required: planAPIBoolPtr(true)},
+				},
+				ContextCoverageExpectations: []string{"context ready"},
+				BlockedIfMissing:            []string{"context missing"},
+			},
+			ContextBudget:              &appplans.ContextBudget{MaxFiles: planAPIInt64Ptr(12), MaxBytes: planAPIInt64Ptr(180000), MaxSearchResults: planAPIInt64Ptr(25), MaxContextLines: planAPIInt64Ptr(50)},
+			SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{RequireGitStatus: planAPIBoolPtr(false), RequireCommitSHA: planAPIBoolPtr(false), AllowDirtyWorktree: planAPIBoolPtr(true)},
+			HandoffReadinessCriteria:   []string{"context acquired"},
+		}},
+	}
+}
+
+func planAPIInt64Ptr(value int64) *int64 {
+	return &value
 }

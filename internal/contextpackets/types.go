@@ -72,6 +72,9 @@ type ContextPacketResult struct {
 	MissingSeedCount   int
 	Truncated          bool
 	Blockers           []sources.SourceBlocker
+	Summary            ContextPacketSummary
+	Coverage           []ContextCoverageEntry
+	LimitHit           string
 }
 
 type ContextPacket struct {

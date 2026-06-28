@@ -818,19 +818,16 @@ Validates that create_run_from_planner_handoff can associate a new run to a plan
 		out := mcpBlockedResult.StructuredContent
 		if out != nil {
 			h.check("get_next_pass_work usability blocked ok=false", out["ok"] == false)
-			h.check("get_next_pass_work usability blocked readiness state", out["readiness_state"] == "needs_context_packet")
+			h.check("get_next_pass_work usability blocked readiness state", out["readiness_state"] == "context_acquisition_failed")
 			h.check("get_next_pass_work usability blocked handoff_work is nil", out["handoff_work"] == nil)
+			h.check("get_next_pass_work usability blocked has failure report", out["acquisition_failure_report"] != nil)
 
-			// Assert next actions has create_context_packet with correct snapshot ID
-			var foundCreate bool
+			// Backend retry exhaustion should not route callers to manual packet creation.
 			if nextActions, ok := out["next_actions"].([]interface{}); ok {
 				for _, act := range nextActions {
 					if m, ok := act.(map[string]interface{}); ok {
 						if m["tool"] == "create_context_packet" {
-							foundCreate = true
-							if args, ok := m["arguments"].(map[string]interface{}); ok {
-								h.check("get_next_pass_work usability action snapshot ID", args["source_snapshot_id"] == "snap-smoke-1")
-							}
+							h.failf("did not expect create_context_packet tool action after backend retry failure")
 						}
 						if m["tool"] == "draft_planner_handoff" {
 							h.failf("did not expect draft_planner_handoff tool action when blocked")
@@ -838,7 +835,6 @@ Validates that create_run_from_planner_handoff can associate a new run to a plan
 					}
 				}
 			}
-			h.check("get_next_pass_work usability actions has create_context_packet", foundCreate)
 		} else {
 			h.check("get_next_pass_work usability blocked structuredContent present", false)
 		}
