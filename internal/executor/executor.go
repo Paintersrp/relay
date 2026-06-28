@@ -34,6 +34,7 @@ const (
 	ArtifactKindCommandLog       = "command_log"
 	ArtifactKindExecutorResult   = "executor_result"
 	ArtifactKindCodexLastMessage = "codex_last_message"
+	ArtifactKindExecutorUsage    = "executor_usage_json"
 )
 
 var knownSecrets = []string{
@@ -185,6 +186,7 @@ func deleteExecutorArtifacts(store *store.Store, runID int64) {
 		ArtifactKindCommandLog,
 		ArtifactKindExecutorResult,
 		ArtifactKindCodexLastMessage,
+		ArtifactKindExecutorUsage,
 	} {
 		store.DeleteArtifactsByRunKind(runID, kind)
 		artifacts.Delete(runID, kind, pipeline.ArtifactFilename(kind))
@@ -579,6 +581,24 @@ func runBackgroundDispatch(
 	}
 
 	collectAndPersistGitEvidence(s, runID, repo.Path)
+
+	// Extract and persist Kiro usage telemetry (Kiro-only)
+	if invocation.Adapter == AdapterKiroCLI {
+		if usageTel, ok := extractKiroUsageTelemetry(finalStdout, finalStderr, invocation.Model); ok {
+			usageBytes, err := json.MarshalIndent(usageTel, "", "  ")
+			if err == nil {
+				usagePath, wErr := writeExecutorArtifact(runID, ArtifactKindExecutorUsage, usageBytes)
+				if wErr == nil && usagePath != "" {
+					recordExecutorArtifact(s, runID, ArtifactKindExecutorUsage, usagePath, "application/json")
+					l.Info("executor: captured usage telemetry", "run_id", runID, "credits", usageTel.CreditsText)
+				} else if wErr != nil {
+					l.Warn("executor: failed to write usage telemetry artifact", "error", wErr)
+				}
+			} else {
+				l.Warn("executor: failed to marshal usage telemetry", "error", err)
+			}
+		}
+	}
 
 	if runResult.Stdout != "" || invocation.ResultFile != "" {
 		normalizationInput := runResult.Stdout

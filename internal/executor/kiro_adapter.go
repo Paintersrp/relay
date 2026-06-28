@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"relay/internal/pipeline"
@@ -201,4 +202,98 @@ func stringOr(val, defaultVal string) string {
 		return defaultVal
 	}
 	return v
+}
+
+// ExecutorUsageTelemetry captures executor usage telemetry (Kiro-only for now).
+type ExecutorUsageTelemetry struct {
+	Provider     string   `json:"provider"`
+	Adapter      string   `json:"adapter"`
+	CreditsText  string   `json:"creditsText"`
+	Credits      *float64 `json:"credits,omitempty"`
+	SourceStream string   `json:"sourceStream,omitempty"`
+	Model        string   `json:"model,omitempty"`
+	RawLine      string   `json:"rawLine,omitempty"`
+}
+
+// extractKiroUsageTelemetry parses Kiro credit usage from normalized stdout/stderr.
+// It prefers stdout first, then stderr, and returns no telemetry if no safe usage line is found.
+func extractKiroUsageTelemetry(stdout, stderr, model string) (ExecutorUsageTelemetry, bool) {
+	// Try stdout first
+	if tel, ok := extractKiroCreditsFromStream(stdout, "stdout", model); ok {
+		return tel, true
+	}
+	// Fallback to stderr
+	if tel, ok := extractKiroCreditsFromStream(stderr, "stderr", model); ok {
+		return tel, true
+	}
+	return ExecutorUsageTelemetry{}, false
+}
+
+// extractKiroCreditsFromStream searches for credit usage in a single stream.
+func extractKiroCreditsFromStream(text, sourceStream, model string) (ExecutorUsageTelemetry, bool) {
+	if text == "" {
+		return ExecutorUsageTelemetry{}, false
+	}
+
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		// Normalize: strip ANSI and prompt prefixes
+		line = stripANSIText(line)
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		// Remove prompt prefix
+		trimmed = strings.TrimLeft(trimmed, " \t")
+		if strings.HasPrefix(trimmed, ">") {
+			trimmed = strings.TrimLeft(strings.TrimPrefix(trimmed, ">"), " \t")
+		}
+
+		// Look for credit-related lines (case-insensitive)
+		lower := strings.ToLower(trimmed)
+		if !strings.Contains(lower, "credit") {
+			continue
+		}
+
+		// Try to extract a numeric value
+		creditsText, credits := extractCreditValue(trimmed)
+		if creditsText == "" {
+			continue
+		}
+
+		return ExecutorUsageTelemetry{
+			Provider:     "kiro",
+			Adapter:      "kiro_cli",
+			CreditsText:  creditsText,
+			Credits:      credits,
+			SourceStream: sourceStream,
+			Model:        model,
+			RawLine:      trimmed,
+		}, true
+	}
+
+	return ExecutorUsageTelemetry{}, false
+}
+
+// extractCreditValue extracts the credit display text and numeric value from a line.
+// Examples: "Credit cost: 0.05" -> ("0.05", 0.05)
+func extractCreditValue(line string) (string, *float64) {
+	// Find numbers in the line (decimal or integer)
+	// Match patterns like "0.05", "1.23", "42"
+	numPattern := regexp.MustCompile(`(\d+(?:\.\d+)?)`)
+	matches := numPattern.FindAllString(line, -1)
+
+	if len(matches) == 0 {
+		return "", nil
+	}
+
+	// Use the last number in the line (typically the credit value)
+	lastMatch := matches[len(matches)-1]
+	val, err := strconv.ParseFloat(lastMatch, 64)
+	if err != nil {
+		return lastMatch, nil
+	}
+
+	return lastMatch, &val
 }

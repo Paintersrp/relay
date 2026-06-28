@@ -14,6 +14,7 @@ import type {
   RelayRunSourceContext,
   RelayValidationResult,
   RelayValidationCommand,
+  RelayExecutorUsage,
 } from "./types";
 
 // Custom API Error Class
@@ -772,4 +773,45 @@ export async function closeRun(
   return postJson<undefined, AuditActionResponse>(
     `/api/runs/${id}/audit/close`
   );
+}
+
+/**
+ * Parse executor usage telemetry from an artifact.
+ * Returns undefined if the artifact is not usage telemetry or is malformed.
+ */
+export function parseExecutorUsage(artifact: RelayArtifact | undefined): RelayExecutorUsage | undefined {
+  if (!artifact) return undefined;
+
+  // Check if this is a usage artifact
+  const id = [
+    artifact.storageKind,
+    artifact.kind,
+    artifact.filename,
+    artifact.label,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (!id.includes("executor_usage") && !id.includes("usage")) {
+    return undefined;
+  }
+
+  // Try to parse preview JSON
+  if (!artifact.preview) return undefined;
+
+  try {
+    const parsed = JSON.parse(artifact.preview);
+    return {
+      provider: parsed.provider || "kiro",
+      adapter: parsed.adapter || "kiro_cli",
+      creditsText: parsed.creditsText,
+      credits: typeof parsed.credits === "number" ? parsed.credits : undefined,
+      sourceStream: parsed.sourceStream,
+      model: parsed.model,
+      rawLine: parsed.rawLine,
+    };
+  } catch {
+    return undefined;
+  }
 }

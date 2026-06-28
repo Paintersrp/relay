@@ -11,11 +11,14 @@ import {
   validateRun,
   evaluateExecuteValidationAction,
 } from "@/features/relay-runs";
-import type { RelayArtifact, RelayExecutorPhase, RelayRun, RelayRunEvent } from "@/features/relay-runs";
+import type {
+  RelayArtifact,
+  RelayExecutorPhase,
+  RelayRun,
+  RelayRunEvent,
+} from "@/features/relay-runs";
 import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
-import {
-  RelayStateBanner,
-} from "@/components/relay/RelayStateSurface";
+import { RelayStateBanner } from "@/components/relay/RelayStateSurface";
 import {
   RunWorkbenchLoadFailedState,
   RunWorkbenchLoadingState,
@@ -56,6 +59,7 @@ import {
   getExecutePipelineStatuses,
   getExecuteStateCardCopy,
 } from "./runExecuteVisualState";
+import { parseExecutorUsage } from "#/features/relay-runs/api";
 
 export const Route = createFileRoute("/runs/$runId/execute")({
   component: ExecutePage,
@@ -117,7 +121,13 @@ function ExecutePage() {
         logPreview,
       }}
       currentStep="execute"
-      mainContent={<ExecuteMainContent run={run} artifacts={resolvedArtifacts} events={resolvedEvents} />}
+      mainContent={
+        <ExecuteMainContent
+          run={run}
+          artifacts={resolvedArtifacts}
+          events={resolvedEvents}
+        />
+      }
       initialInspectorTab="details"
       inspectorTabs={[
         { key: "details", label: "Details" },
@@ -126,7 +136,9 @@ function ExecutePage() {
         { key: "logs", label: "Logs" },
       ]}
       inspectorPanels={{
-        details: <ExecuteDetailsPanel run={run} artifacts={resolvedArtifacts} />,
+        details: (
+          <ExecuteDetailsPanel run={run} artifacts={resolvedArtifacts} />
+        ),
         logs: <LogPreviewPanel logPreview={logPreview} />,
         artifacts: (
           <RunEvidenceBrowser
@@ -159,12 +171,7 @@ function deriveExecutorPhase(
 }
 
 function artifactIdentity(a: any): string {
-  return [
-    a.storageKind,
-    a.kind,
-    a.filename,
-    a.label,
-  ]
+  return [a.storageKind, a.kind, a.filename, a.label]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -176,7 +183,9 @@ function artifactHas(a: any, ...tokens: string[]): boolean {
 }
 
 function artifactPreviewHas(a: any, token: string): boolean {
-  return String(a.preview || "").toLowerCase().includes(token.toLowerCase());
+  return String(a.preview || "")
+    .toLowerCase()
+    .includes(token.toLowerCase());
 }
 
 function isResultArtifact(a: any): boolean {
@@ -258,12 +267,11 @@ function ExecuteMainContent({
       canStart: isApproved,
       canCancel: isExecuting,
       canRecover: false,
-      startUnavailableReason:
-        !isApproved
-          ? isBlocked
-            ? `Start is unavailable while blocked (status: ${runStatus})`
-            : `Current status: ${runStatus}`
-          : undefined,
+      startUnavailableReason: !isApproved
+        ? isBlocked
+          ? `Start is unavailable while blocked (status: ${runStatus})`
+          : `Current status: ${runStatus}`
+        : undefined,
       cancelUnavailableReason:
         "Cancellation is not yet implemented in the backend.",
       recoverUnavailableReason:
@@ -285,8 +293,7 @@ function ExecuteMainContent({
   );
   const preflightCommandLogArt = resultArtifacts.find(
     (a: any) =>
-      isCommandLogArtifact(a) &&
-      artifactPreviewHas(a, "Preflight: BLOCKED"),
+      isCommandLogArtifact(a) && artifactPreviewHas(a, "Preflight: BLOCKED"),
   );
   const preflightBlocked =
     (executorPhase === "blocked" || executorPhase === "failed") &&
@@ -621,7 +628,9 @@ function ExecuteMainContent({
         ) : isExecuteLiveStatus(runStatus) ? (
           <div className="flex items-center gap-2 text-xs bg-[var(--surface-inset)]/30 border border-dashed rounded p-3 text-muted-foreground">
             <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-            <span className="italic">Waiting for executor output packets...</span>
+            <span className="italic">
+              Waiting for executor output packets...
+            </span>
           </div>
         ) : (
           <div className="flex items-center gap-2 text-xs bg-[var(--surface-inset)]/30 border border-dashed rounded p-3 text-muted-foreground">
@@ -693,7 +702,8 @@ function ExecuteMainContent({
                   ))}
                   {run.logPreview.truncated && (
                     <div className="text-muted-foreground/50 italic">
-                      … output truncated. Full log available via raw artifact content endpoint.
+                      … output truncated. Full log available via raw artifact
+                      content endpoint.
                     </div>
                   )}
                 </div>
@@ -771,7 +781,13 @@ function ExecuteMainContent({
                           ? "Captured"
                           : a.status
                   }
-                  status={a.sizeHint ? <span className="text-muted-foreground/60 text-xs">{a.sizeHint}</span> : null}
+                  status={
+                    a.sizeHint ? (
+                      <span className="text-muted-foreground/60 text-xs">
+                        {a.sizeHint}
+                      </span>
+                    ) : null
+                  }
                 />
               ))}
             </RunStageEvidenceList>
@@ -890,7 +906,9 @@ function ExecuteMainContent({
         {primaryResultArt ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <Badge variant={executorPhase === "done" ? "default" : "secondary"}>
+              <Badge
+                variant={executorPhase === "done" ? "default" : "secondary"}
+              >
                 {preflightBlocked
                   ? "Preflight Blocked"
                   : executorPhase === "done"
@@ -915,7 +933,9 @@ function ExecuteMainContent({
               </pre>
             ) : (
               <div className="text-xs bg-[var(--surface-inset)]/30 border border-dashed rounded p-3 text-muted-foreground">
-                <span className="italic">Result content preview not available.</span>
+                <span className="italic">
+                  Result content preview not available.
+                </span>
               </div>
             )}
 
@@ -1002,7 +1022,8 @@ export function formatExecutorPacket(raw: string): string[] {
     target = String(input.command);
   }
 
-  const displayType = tool === part.type || part.type === "tool" ? "tool" : packetType;
+  const displayType =
+    tool === part.type || part.type === "tool" ? "tool" : packetType;
   let summary = `${displayType} ${tool}`;
   if (status) {
     summary += ` ${status}`;
@@ -1105,6 +1126,15 @@ function ExecuteDetailsPanel({
         artifact.label?.includes("Validation Report"),
     ) || validationArtifacts[0];
 
+  // Find and parse usage telemetry artifact (Kiro-only)
+  const usageArtifact = artifacts.find(
+    (a) =>
+      a.storageKind === "executor_usage_json" ||
+      a.filename?.includes("executor_usage") ||
+      a.label?.includes("Usage"),
+  );
+  const usageTelemetry = parseExecutorUsage(usageArtifact);
+
   return (
     <div className="flex flex-col gap-3">
       <RunStageInspectorSection title="Run State">
@@ -1124,6 +1154,13 @@ function ExecuteDetailsPanel({
           mono
         />
         <RunStageKeyValueRow label="Model" value={run.model || "-"} mono />
+        {usageTelemetry && usageTelemetry.creditsText && (
+          <RunStageKeyValueRow
+            label="Kiro credits"
+            value={usageTelemetry.creditsText}
+            mono
+          />
+        )}
       </RunStageInspectorSection>
 
       <RunStageInspectorSection title="Dispatch">
@@ -1141,7 +1178,9 @@ function ExecuteDetailsPanel({
         />
         <RunStageKeyValueRow
           label="Command log"
-          value={formatArtifactLocation(preflightCommandLogArt || commandLogArt)}
+          value={formatArtifactLocation(
+            preflightCommandLogArt || commandLogArt,
+          )}
           mono
         />
       </RunStageInspectorSection>
@@ -1229,4 +1268,3 @@ function formatArtifactCount(count: number): string {
 function formatArtifactLocation(artifact?: RelayArtifact): string {
   return artifact?.path || artifact?.filename || "-";
 }
-

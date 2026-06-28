@@ -301,6 +301,17 @@ export interface RelaySourceVisibilitySummary {
   warnings?: string[];
 }
 
+// Executor usage telemetry (Kiro-only for now)
+export interface RelayExecutorUsage {
+  provider: "kiro" | string;
+  adapter: "kiro_cli" | string;
+  creditsText?: string;
+  credits?: number;
+  sourceStream?: "stdout" | "stderr" | string;
+  model?: string;
+  rawLine?: string;
+}
+
 // Canonical RelayRun struct
 export interface RelayRun {
   id: RelayRunId;
