@@ -38,6 +38,14 @@ const (
 	BlockerContextCoverageIncomplete         = "context_coverage_incomplete"
 	BlockerContextPacketTruncated            = "context_packet_truncated"
 	BlockerContextPacketUnusable             = "context_packet_unusable"
+
+	// Range-planning blocker codes -- emitted before context packet creation
+	// when a required seed file cannot be safely range-planned. They are kept
+	// distinct from context_packet_unusable so the Planner is not instructed to
+	// retry create_context_packet with the same broken inputs.
+	BlockerRequiredSeedRangeUnresolved         = "required_seed_range_unresolved"
+	BlockerRequiredSeedFileOversized           = "required_seed_file_oversized"
+	BlockerRequiredSeedFileMissingFromSnapshot = "required_seed_file_missing_from_snapshot"
 )
 
 // Refactor scheduling constants. These mirror the schema-approved refactor
@@ -167,7 +175,22 @@ type AcquisitionFailureReport struct {
 	AttemptedStrategies       []AcquisitionAttemptReport        `json:"attempted_strategies"`
 	PacketSummary             *ContextPacketDiagnosticSummary   `json:"packet_summary,omitempty"`
 	CoverageSummary           *ContextCoverageDiagnosticSummary `json:"coverage_summary,omitempty"`
+	SeedRangeFailure          *SeedRangeFailureDetail           `json:"seed_range_failure,omitempty"`
 	RecommendedOperatorAction string                            `json:"recommended_operator_action"`
+}
+
+// SeedRangeFailureDetail contains bounded, safe diagnostics for a required
+// seed file that could not be safely range-planned. It never includes file
+// contents.
+type SeedRangeFailureDetail struct {
+	RepoID           string `json:"repo_id,omitempty"`
+	Path             string `json:"path,omitempty"`
+	SizeBytes        int    `json:"size_bytes,omitempty"`
+	SizeKnown        bool   `json:"size_known"`
+	MaxBytes         int    `json:"max_bytes,omitempty"`
+	Threshold        int    `json:"threshold,omitempty"`
+	SourceSnapshotID string `json:"source_snapshot_id,omitempty"`
+	TerminalReason   string `json:"terminal_reason,omitempty"`
 }
 
 type AcquisitionAttemptReport struct {
@@ -939,7 +962,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 			snapshotID, snapshotStatus, snapshotFound, snapshotAcquired, acqBlocker = svc.acquireSourceSnapshot(
 				ctx, project, plan, pass, requireSnapshot, &ssReqs, ctxPlan, repoAliases)
 			if acqBlocker != nil {
-				jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, "", "", requireSnapshot, false, snapshotFound, false, false, "")
+				jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, "", "", requireSnapshot, false, snapshotFound, false, false, "", svc.buildSnapshotMetadataIndex(snapshotID, repoAliases))
 				jumpstart.ReadinessState = "needs_source_snapshot"
 				resp := NextPassWorkResponse{
 					OK:   false,
@@ -987,6 +1010,11 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 
 	requirePacket := contextPacketRequired
 
+	// Build the source snapshot metadata index once (when a snapshot is
+	// resolved) so required seed file ranges are planned from real metadata and
+	// shared by both the suggested action args and internal backend acquisition.
+	metaIdx := svc.buildSnapshotMetadataIndex(snapshotID, repoAliases)
+
 	var packetID string
 	var packetStatus string
 	var coverageReportPath string
@@ -1001,10 +1029,10 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 			var acqBlocker *WorkBlocker
 			var report *AcquisitionFailureReport
 			packetID, packetStatus, coverageReportPath, packetFound, packetUsable, packetCreated, acqBlocker, report = svc.acquireContextPacket(
-				ctx, project, plan, pass, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID)
+				ctx, project, plan, pass, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, metaIdx)
 			if acqBlocker != nil {
 				acquisitionFailureReport = report
-				jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, "")
+				jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, "", metaIdx)
 				if acquisitionFailureReport != nil {
 					jumpstart.ReadinessState = acquisitionFailureReport.ReadinessState
 					jumpstart.SuggestedContextAcquisitionActions = nil
@@ -1062,7 +1090,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	contextReady := (!sourceSnapshotNeeded || snapshotFound) && (!requirePacket || packetUsable)
 
 	// Build the shared Planner jumpstart payload.
-	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, packetUnusableReason)
+	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, packetUnusableReason, metaIdx)
 
 	// Determine readiness state and optional blocker.
 	var readinessState string
@@ -1219,6 +1247,7 @@ func buildPlannerJumpstart(
 	requireSnapshot, requirePacket, snapshotFound, packetFound bool,
 	packetUsable bool,
 	packetUnusableReason string,
+	metaIdx snapshotMetadataIndex,
 ) *PlannerJumpstart {
 	var basis *PlannerJumpstartBasisReport
 	if requireSnapshot || requirePacket {
@@ -1255,7 +1284,7 @@ func buildPlannerJumpstart(
 	if requirePacket && (!packetFound || !packetUsable) {
 		contextPacketAction := ContextAcquisitionAction{
 			Tool:      "create_context_packet",
-			Arguments: buildContextPacketActionArguments(project.ProjectID, planID, selectedPass.PassID, snapshotID, ctxPlan, ctxBudget, repoAliases),
+			Arguments: buildContextPacketActionArguments(project.ProjectID, planID, selectedPass.PassID, snapshotID, ctxPlan, ctxBudget, repoAliases, metaIdx),
 		}
 		if snapshotID == "" {
 			if !(requireSnapshot && !snapshotFound) {
@@ -1303,13 +1332,13 @@ func buildPlannerJumpstart(
 	}
 }
 
-func buildContextPacketActionArguments(projectID, planID, passID, sourceSnapshotID string, ctxPlan ContextPlan, ctxBudget *ContextBudget, repoAliases map[string]string) map[string]interface{} {
+func buildContextPacketActionArguments(projectID, planID, passID, sourceSnapshotID string, ctxPlan ContextPlan, ctxBudget *ContextBudget, repoAliases map[string]string, idx snapshotMetadataIndex) map[string]interface{} {
 	args := map[string]interface{}{
 		"project_id":        projectID,
 		"plan_id":           planID,
 		"pass_id":           passID,
 		"task_slug":         safeTaskSlug("next-pass-work", planID, passID),
-		"seed_files":        buildContextPacketSeedFiles(ctxPlan, ctxBudget, repoAliases),
+		"seed_files":        buildContextPacketSeedFiles(ctxPlan, ctxBudget, repoAliases, idx),
 		"seed_searches":     buildContextPacketSeedSearches(ctxPlan, ctxBudget, repoAliases),
 		"include_inventory": false,
 		"max_sources":       contextBudgetInt(ctxBudget, "max_files", defaultContextPacketMaxSources, maxContextPacketSources),
@@ -1321,21 +1350,216 @@ func buildContextPacketActionArguments(projectID, planID, passID, sourceSnapshot
 	return args
 }
 
-// planSeedFileRange determines the line range for a required seed file.
-// For required files, we use line_start=1 and an optimistic cap to avoid
-// relying on the context packet default 1-200 line range.
-// Returns 0,0 for optional files (they don't require explicit ranges).
-func planSeedFileRange(required bool) (lineStart, lineEnd int) {
-	if required {
-		lineStart = 1
-		lineEnd = optimisticSeedFileLineEnd
-	}
-	return lineStart, lineEnd
+// snapshotFileMeta is the bounded source snapshot file metadata used for
+// range planning. There is no line_count available today, so the planner never
+// invents exact EOF line counts.
+type snapshotFileMeta struct {
+	sizeBytes       int64
+	included        bool
+	tracked         bool
+	exclusionReason string
+	redactionStatus string
 }
 
-func buildContextPacketSeedFiles(ctxPlan ContextPlan, ctxBudget *ContextBudget, repoAliases map[string]string) []map[string]interface{} {
+// snapshotMetadataIndex indexes source snapshot file metadata by normalized
+// repo ID and repo-relative path. available reports whether any file metadata
+// was captured for the snapshot, which distinguishes "metadata unavailable"
+// from "metadata present but file missing/excluded".
+type snapshotMetadataIndex struct {
+	available bool
+	files     map[string]snapshotFileMeta
+}
+
+func snapshotMetaKey(repoID, path string) string {
+	return strings.TrimSpace(repoID) + "\x00" + strings.TrimSpace(path)
+}
+
+// buildSnapshotMetadataIndex reads source snapshot metadata (snapshot,
+// repositories, and file rows) and builds a lookup index. It fails soft:
+// missing snapshots or lookup errors produce an empty (available=false) index
+// so callers fall back to bounded fallback ranges rather than blocking.
+func (svc *OrchestratorWorkService) buildSnapshotMetadataIndex(snapshotID string, repoAliases map[string]string) snapshotMetadataIndex {
+	idx := snapshotMetadataIndex{files: map[string]snapshotFileMeta{}}
+	if svc == nil || svc.store == nil || strings.TrimSpace(snapshotID) == "" {
+		return idx
+	}
+	snapshot, err := svc.store.GetSourceSnapshotByID(snapshotID)
+	if err != nil || snapshot == nil {
+		return idx
+	}
+	repos, err := svc.store.ListSourceSnapshotRepositories(snapshot.ID)
+	if err != nil {
+		return idx
+	}
+	for _, repo := range repos {
+		files, err := svc.store.ListSourceSnapshotFiles(repo.ID)
+		if err != nil {
+			continue
+		}
+		normRepo := normalizeContextRepoID(repo.RepoID, repoAliases)
+		for _, f := range files {
+			idx.files[snapshotMetaKey(normRepo, f.Path)] = snapshotFileMeta{
+				sizeBytes:       f.SizeBytes,
+				included:        f.Included != 0,
+				tracked:         f.Tracked != 0,
+				exclusionReason: f.ExclusionReason,
+				redactionStatus: f.RedactionStatus,
+			}
+			idx.available = true
+		}
+	}
+	return idx
+}
+
+// seedFileRangePlan is the structured outcome of planning a single seed file's
+// bounded read range. It is intentionally not boolean-only: it distinguishes
+// optional files, metadata-backed required files, the metadata-unavailable
+// fallback, and precise range-planning blockers.
+type seedFileRangePlan struct {
+	RepoID     string
+	Path       string
+	LineStart  int
+	LineEnd    int
+	MaxBytes   int
+	Planned    bool
+	Fallback   bool
+	SizeBytes  int
+	SizeKnown  bool
+	Threshold  int
+	Blocker    *WorkBlocker
+	Diagnostic string
+}
+
+// seedFileMaxBytes resolves the context-budget seed max bytes shared by both
+// the suggested create_context_packet action args and internal backend
+// acquisition so the two surfaces cannot diverge.
+func seedFileMaxBytes(ctxBudget *ContextBudget) int {
+	return contextBudgetInt(ctxBudget, "max_bytes", defaultSeedFileMaxBytes, maxSeedFileBytes)
+}
+
+// planSeedFileRange determines the bounded line range and max bytes for a seed
+// file using source snapshot metadata when available.
+//
+//   - optional seed file: no explicit range is required by this pass.
+//   - required seed file with usable metadata (present, included, small enough):
+//     line_start=1, line_end=optimisticSeedFileLineEnd, MaxBytes=budget seed max bytes.
+//   - required seed file with metadata unavailable: bounded fallback
+//     line_start=1, line_end=optimisticSeedFileLineEnd with a safe diagnostic.
+//   - required seed file missing/excluded in an available metadata index: blocker.
+//   - required seed file larger than largeFileSizeThreshold or larger than
+//     max bytes: blocker.
+func planSeedFileRange(repoID, path string, required bool, maxBytes int, idx snapshotMetadataIndex) seedFileRangePlan {
+	plan := seedFileRangePlan{
+		RepoID:    repoID,
+		Path:      path,
+		MaxBytes:  maxBytes,
+		Threshold: largeFileSizeThreshold,
+	}
+	if !required {
+		// Optional seed file: no explicit range required by this pass.
+		return plan
+	}
+	plan.Planned = true
+	if !idx.available {
+		// Snapshot file metadata was not captured. Use a bounded fallback range
+		// rather than relying on the context packet default 1-200 line reads.
+		plan.LineStart = 1
+		plan.LineEnd = optimisticSeedFileLineEnd
+		plan.Fallback = true
+		plan.Diagnostic = fmt.Sprintf("source snapshot file metadata unavailable; using bounded fallback range 1-%d", optimisticSeedFileLineEnd)
+		return plan
+	}
+	meta, ok := idx.files[snapshotMetaKey(repoID, path)]
+	if !ok {
+		plan.Blocker = &WorkBlocker{
+			Code:        BlockerRequiredSeedFileMissingFromSnapshot,
+			Message:     fmt.Sprintf("required seed file %s:%s is not present in source snapshot metadata", repoID, path),
+			Recoverable: true,
+		}
+		return plan
+	}
+	plan.SizeBytes = int(meta.sizeBytes)
+	plan.SizeKnown = true
+	if !meta.included {
+		reason := strings.TrimSpace(meta.exclusionReason)
+		if reason == "" {
+			reason = "excluded from snapshot"
+		}
+		plan.Blocker = &WorkBlocker{
+			Code:        BlockerRequiredSeedFileMissingFromSnapshot,
+			Message:     fmt.Sprintf("required seed file %s:%s is excluded from source snapshot metadata (%s)", repoID, path, reason),
+			Recoverable: true,
+		}
+		return plan
+	}
+	if meta.sizeBytes > int64(largeFileSizeThreshold) || (maxBytes > 0 && meta.sizeBytes > int64(maxBytes)) {
+		plan.Blocker = &WorkBlocker{
+			Code:        BlockerRequiredSeedFileOversized,
+			Message:     fmt.Sprintf("required seed file %s:%s is %d bytes, exceeding the safe range-planning threshold (%d) or max_bytes (%d)", repoID, path, meta.sizeBytes, largeFileSizeThreshold, maxBytes),
+			Recoverable: true,
+		}
+		return plan
+	}
+	// Metadata present, included, and small enough: explicit optimistic range.
+	// EOF-before-line_end is covered through bounded file-read behavior.
+	plan.LineStart = 1
+	plan.LineEnd = optimisticSeedFileLineEnd
+	return plan
+}
+
+// firstRequiredSeedRangeFailure returns the first required seed file that
+// cannot be safely range-planned, or nil if all required seeds are plannable.
+func firstRequiredSeedRangeFailure(ctxPlan ContextPlan, ctxBudget *ContextBudget, repoAliases map[string]string, idx snapshotMetadataIndex) *seedFileRangePlan {
+	maxBytes := seedFileMaxBytes(ctxBudget)
+	for _, seed := range ctxPlan.SeedFilesToRead {
+		repoID := normalizeContextRepoID(seed.RepoID, repoAliases)
+		path := strings.TrimSpace(seed.Path)
+		reason := strings.TrimSpace(seed.Purpose)
+		if repoID == "" || path == "" || reason == "" || isLocalAbsolutePath(path) {
+			continue
+		}
+		if !boolValue(seed.Required) {
+			continue
+		}
+		plan := planSeedFileRange(repoID, path, true, maxBytes, idx)
+		if plan.Blocker != nil {
+			return &plan
+		}
+	}
+	return nil
+}
+
+// buildSeedRangeFailureReport builds a bounded acquisition failure report for a
+// required seed file that could not be safely range-planned. It includes only
+// safe fields and never file contents.
+func buildSeedRangeFailureReport(snapshotID string, plan *seedFileRangePlan) *AcquisitionFailureReport {
+	detail := &SeedRangeFailureDetail{
+		RepoID:           plan.RepoID,
+		Path:             plan.Path,
+		MaxBytes:         plan.MaxBytes,
+		Threshold:        plan.Threshold,
+		SourceSnapshotID: snapshotID,
+		TerminalReason:   plan.Blocker.Message,
+	}
+	if plan.SizeKnown {
+		detail.SizeBytes = plan.SizeBytes
+		detail.SizeKnown = true
+	}
+	return &AcquisitionFailureReport{
+		Stage:                     "context_packet_range_planning",
+		FailureCode:               plan.Blocker.Code,
+		ReadinessState:            "context_acquisition_failed",
+		SourceSnapshotID:          snapshotID,
+		TerminalReason:            plan.Blocker.Message,
+		AttemptedStrategies:       []AcquisitionAttemptReport{},
+		SeedRangeFailure:          detail,
+		RecommendedOperatorAction: "Inspect acquisition_failure_report.seed_range_failure; adjust the required seed file path, scope, or budget, then call get_next_pass_work again after inputs are corrected.",
+	}
+}
+
+func buildContextPacketSeedFiles(ctxPlan ContextPlan, ctxBudget *ContextBudget, repoAliases map[string]string, idx snapshotMetadataIndex) []map[string]interface{} {
 	seedFiles := make([]map[string]interface{}, 0, len(ctxPlan.SeedFilesToRead))
-	maxBytes := contextBudgetInt(ctxBudget, "max_bytes", defaultSeedFileMaxBytes, maxSeedFileBytes)
+	maxBytes := seedFileMaxBytes(ctxBudget)
 	for _, seed := range ctxPlan.SeedFilesToRead {
 		repoID := normalizeContextRepoID(seed.RepoID, repoAliases)
 		path := strings.TrimSpace(seed.Path)
@@ -1344,18 +1568,19 @@ func buildContextPacketSeedFiles(ctxPlan ContextPlan, ctxBudget *ContextBudget, 
 			continue
 		}
 		required := boolValue(seed.Required)
+		plan := planSeedFileRange(repoID, path, required, maxBytes, idx)
 		item := map[string]interface{}{
 			"repo_id":   repoID,
 			"path":      path,
 			"reason":    reason,
 			"required":  required,
-			"max_bytes": maxBytes,
+			"max_bytes": plan.MaxBytes,
 		}
-		// Add explicit line ranges for required seed files to avoid default 1-200 behavior.
-		if required {
-			lineStart, lineEnd := planSeedFileRange(true)
-			item["line_start"] = lineStart
-			item["line_end"] = lineEnd
+		// Add explicit line ranges for range-planned required seed files to
+		// avoid default 1-200 behavior. The same plan drives internal acquisition.
+		if plan.Planned && plan.Blocker == nil {
+			item["line_start"] = plan.LineStart
+			item["line_end"] = plan.LineEnd
 		}
 		seedFiles = append(seedFiles, item)
 	}
@@ -1817,6 +2042,7 @@ func (svc *OrchestratorWorkService) acquireContextPacket(
 	ctxBudget *ContextBudget,
 	repoAliases map[string]string,
 	snapshotID string,
+	metaIdx snapshotMetadataIndex,
 ) (packetID string, packetStatus string, coverageReportPath string, found bool, usable bool, created bool, blocker *WorkBlocker, report *AcquisitionFailureReport) {
 	// Look up latest existing packet.
 	latest, err := svc.store.GetLatestContextPacketForPass(project.ProjectID, plan.PlanID, pass.PassID)
@@ -1845,7 +2071,14 @@ func (svc *OrchestratorWorkService) acquireContextPacket(
 		}, nil
 	}
 
-	attempts := buildContextAcquisitionAttempts(project.ProjectID, plan.PlanID, pass.PassID, ctxPlan, ctxBudget, repoAliases, snapshotID)
+	// Fail closed before calling the acquirer if a required seed file cannot be
+	// safely range-planned. This avoids creating an unusable packet and avoids
+	// instructing the Planner to retry create_context_packet with broken inputs.
+	if failure := firstRequiredSeedRangeFailure(ctxPlan, ctxBudget, repoAliases, metaIdx); failure != nil {
+		return "", "", "", false, false, false, failure.Blocker, buildSeedRangeFailureReport(snapshotID, failure)
+	}
+
+	attempts := buildContextAcquisitionAttempts(project.ProjectID, plan.PlanID, pass.PassID, ctxPlan, ctxBudget, repoAliases, snapshotID, metaIdx)
 	var reports []AcquisitionAttemptReport
 	var lastResult *CtxPacketResult
 	var lastBlocker *WorkBlocker
@@ -1901,11 +2134,12 @@ type contextAcquisitionAttempt struct {
 	input    CtxPacketInput
 }
 
-func buildContextAcquisitionAttempts(projectID, planID, passID string, ctxPlan ContextPlan, ctxBudget *ContextBudget, repoAliases map[string]string, snapshotID string) []contextAcquisitionAttempt {
+func buildContextAcquisitionAttempts(projectID, planID, passID string, ctxPlan ContextPlan, ctxBudget *ContextBudget, repoAliases map[string]string, snapshotID string, metaIdx snapshotMetadataIndex) []contextAcquisitionAttempt {
 	plannedMaxSources := contextBudgetInt(ctxBudget, "max_files", defaultContextPacketMaxSources, maxContextPacketSources)
 	plannedMaxBytes := contextBudgetInt(ctxBudget, "max_bytes", defaultContextPacketMaxTotalBytes, maxContextPacketTotalBytes)
 	plannedMaxResults := contextBudgetInt(ctxBudget, "max_search_results", defaultSeedSearchMaxResults, maxSeedSearchResults)
 	plannedContextLines := 0
+	seedMaxBytes := seedFileMaxBytes(ctxBudget)
 	base := CtxPacketInput{
 		ProjectID:        projectID,
 		PlanID:           planID,
@@ -1917,7 +2151,7 @@ func buildContextAcquisitionAttempts(projectID, planID, passID string, ctxPlan C
 	planned.IncludeInventory = false
 	planned.MaxSources = plannedMaxSources
 	planned.MaxTotalBytes = plannedMaxBytes
-	planned.SeedFiles = buildCtxSeedFiles(ctxPlan, repoAliases, false)
+	planned.SeedFiles = buildCtxSeedFiles(ctxPlan, repoAliases, seedMaxBytes, metaIdx, false)
 	planned.SeedSearches = buildCtxSeedSearches(ctxPlan, repoAliases, plannedMaxResults, plannedContextLines, false, false)
 
 	focused := base
@@ -1925,7 +2159,7 @@ func buildContextAcquisitionAttempts(projectID, planID, passID string, ctxPlan C
 	focused.IncludeInventory = false
 	focused.MaxSources = plannedMaxSources
 	focused.MaxTotalBytes = plannedMaxBytes
-	focused.SeedFiles = buildCtxSeedFiles(ctxPlan, repoAliases, false)
+	focused.SeedFiles = buildCtxSeedFiles(ctxPlan, repoAliases, seedMaxBytes, metaIdx, false)
 	focused.SeedSearches = buildCtxSeedSearches(ctxPlan, repoAliases, 10, 0, true, true)
 
 	return []contextAcquisitionAttempt{
@@ -1954,7 +2188,7 @@ func buildContextAcquisitionAttempts(projectID, planID, passID string, ctxPlan C
 	}
 }
 
-func buildCtxSeedFiles(ctxPlan ContextPlan, repoAliases map[string]string, requiredOnly bool) []CtxSeedFile {
+func buildCtxSeedFiles(ctxPlan ContextPlan, repoAliases map[string]string, maxBytes int, metaIdx snapshotMetadataIndex, requiredOnly bool) []CtxSeedFile {
 	required := make([]CtxSeedFile, 0, len(ctxPlan.SeedFilesToRead))
 	optional := make([]CtxSeedFile, 0, len(ctxPlan.SeedFilesToRead))
 	for _, seed := range ctxPlan.SeedFilesToRead {
@@ -1965,18 +2199,19 @@ func buildCtxSeedFiles(ctxPlan ContextPlan, repoAliases map[string]string, requi
 			continue
 		}
 		requiredFlag := boolValue(seed.Required)
+		plan := planSeedFileRange(repoID, path, requiredFlag, maxBytes, metaIdx)
 		item := CtxSeedFile{
 			RepoID:   repoID,
 			Path:     path,
 			Reason:   reason,
 			Required: requiredFlag,
-			MaxBytes: defaultSeedFileMaxBytes,
+			MaxBytes: plan.MaxBytes,
 		}
-		// Add explicit line ranges for required seed files to avoid default 1-200 behavior.
-		if requiredFlag {
-			lineStart, lineEnd := planSeedFileRange(true)
-			item.LineStart = lineStart
-			item.LineEnd = lineEnd
+		// Add explicit line ranges for range-planned seed files to avoid default
+		// 1-200 behavior. The same plan drives the suggested action args.
+		if plan.Planned && plan.Blocker == nil {
+			item.LineStart = plan.LineStart
+			item.LineEnd = plan.LineEnd
 		}
 		if item.Required {
 			required = append(required, item)

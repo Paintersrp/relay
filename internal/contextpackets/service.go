@@ -293,9 +293,17 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			entry.Status = CoverageStatusPartial
 		case len(entry.Blockers) > 0:
 			entry.Status = CoverageStatusPartial
+		case seed.Required && !entry.Truncated:
+			// A required search that completes with zero matches, no blockers,
+			// and no truncation is completed evidence that the search was
+			// performed. Treat it as covered so it does not make an otherwise
+			// usable context packet partial or fail handoff readiness.
+			entry.Status = CoverageStatusCovered
+			entry.MissingCause = "search completed with no matches"
 		case seed.Required:
+			// Truncated required search with no captured matches remains partial.
 			entry.Status = CoverageStatusPartial
-			entry.MissingCause = "search returned no matches (advisory only)"
+			entry.MissingCause = "search truncated before matches were captured"
 		default:
 			entry.Status = CoverageStatusPartial
 			entry.MissingCause = "optional search returned no matches"

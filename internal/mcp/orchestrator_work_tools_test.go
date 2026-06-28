@@ -12,6 +12,7 @@ import (
 
 	appplans "relay/internal/app/plans"
 	"relay/internal/app/projects"
+	"relay/internal/contextpackets"
 	"relay/internal/sources"
 	"relay/internal/store"
 )
@@ -1420,5 +1421,213 @@ func TestOrchestratorWorkTools_GetNextPassWorkAcquisitionFailureSummary(t *testi
 	}
 	if len(result.Content) == 0 || !strings.Contains(result.Content[0].Text, "terminal_failure_code=context_coverage_incomplete") || !strings.Contains(result.Content[0].Text, "structuredContent.acquisition_failure_report") {
 		t.Fatalf("unexpected summary text: %+v", result.Content)
+	}
+}
+
+// firstFileReadSource loads the first file_read source row for a context packet.
+func firstFileReadSource(t *testing.T, st *store.Store, contextPacketID string) store.ContextPacketSource {
+	t.Helper()
+	packet, err := st.GetContextPacketByID(contextPacketID)
+	if err != nil {
+		t.Fatalf("GetContextPacketByID: %v", err)
+	}
+	srcs, err := st.ListContextPacketSources(packet.ID)
+	if err != nil {
+		t.Fatalf("ListContextPacketSources: %v", err)
+	}
+	for _, s := range srcs {
+		if s.SourceType == contextpackets.SourceTypeFileRead {
+			return s
+		}
+	}
+	t.Fatalf("no file_read source found for packet %q: %+v", contextPacketID, srcs)
+	return store.ContextPacketSource{}
+}
+
+// TestContextPacketAdapterPreservesSeedFileRangeAndMaxBytes verifies that the
+// MCP adapter maps LineStart, LineEnd, and MaxBytes from appplans.CtxSeedFile
+// into contextpackets.ContextSeedFile so the planned range and byte budget are
+// honored by the context packet service.
+func TestContextPacketAdapterPreservesSeedFileRangeAndMaxBytes(t *testing.T) {
+	t.Parallel()
+	requireBrokerGit(t)
+
+	deps := setupTestDeps(t)
+	st := deps.Store
+	projectService := projects.NewService(st)
+	sourceService := sources.NewService(st)
+
+	repoRoot := brokerSetupGitRepo(t)
+	brokerMkdirAll(t, filepath.Join(repoRoot, "src"))
+	brokerWriteFile(t, filepath.Join(repoRoot, "src", "lines.txt"), "aaaa\nbbbb\ncccc\ndddd\n")
+	brokerRunGit(t, repoRoot, "add", ".")
+	brokerRunGit(t, repoRoot, "commit", "-m", "adapter range fixture")
+
+	project, err := projectService.GetProjectByProjectID(context.Background(), "relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	if _, _, err := projectService.UpsertProjectRepository(context.Background(), project.ProjectID, projects.ProjectRepositoryInput{
+		RepoID:           "Paintersrp/relay",
+		Role:             projects.RepositoryRolePrimary,
+		LocalPath:        repoRoot,
+		DefaultBranch:    "main",
+		AllowedRoots:     []string{"src"},
+		MaxFileSizeBytes: projects.MinMaxFileSizeBytes,
+		Enabled:          true,
+	}); err != nil {
+		t.Fatalf("UpsertProjectRepository: %v", err)
+	}
+	snap, err := sourceService.CreateSourceSnapshot(context.Background(), sources.SourceSnapshotInput{
+		ProjectID:           project.ProjectID,
+		RepoIDs:             []string{"relay"},
+		IncludeFileMetadata: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+
+	adapter := &contextPacketAdapter{svc: contextpackets.NewService(st)}
+
+	// Range preservation: LineStart/LineEnd are honored.
+	rangeRes, err := adapter.CreateContextPacket(context.Background(), appplans.CtxPacketInput{
+		ProjectID:        "relay",
+		TaskSlug:         "adapter-range",
+		SourceSnapshotID: snap.SourceSnapshotID,
+		SeedFiles: []appplans.CtxSeedFile{{
+			RepoID: "relay", Path: "src/lines.txt", LineStart: 2, LineEnd: 3, MaxBytes: 100000, Required: true, Reason: "range",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("adapter CreateContextPacket (range): %v", err)
+	}
+	rangeSrc := firstFileReadSource(t, st, rangeRes.ContextPacketID)
+	if rangeSrc.LineStart != 2 || rangeSrc.LineEnd != 3 {
+		t.Fatalf("expected adapter to preserve line range 2-3, got line_start=%d line_end=%d", rangeSrc.LineStart, rangeSrc.LineEnd)
+	}
+
+	// Max byte preservation: a tiny MaxBytes forces truncation.
+	maxRes, err := adapter.CreateContextPacket(context.Background(), appplans.CtxPacketInput{
+		ProjectID:        "relay",
+		TaskSlug:         "adapter-maxbytes",
+		SourceSnapshotID: snap.SourceSnapshotID,
+		SeedFiles: []appplans.CtxSeedFile{{
+			RepoID: "relay", Path: "src/lines.txt", LineStart: 1, LineEnd: 4, MaxBytes: 5, Required: true, Reason: "maxbytes",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("adapter CreateContextPacket (maxbytes): %v", err)
+	}
+	maxSrc := firstFileReadSource(t, st, maxRes.ContextPacketID)
+	if maxSrc.Truncated == 0 {
+		t.Fatalf("expected adapter to preserve MaxBytes (truncation), got truncated=%d", maxSrc.Truncated)
+	}
+}
+
+// TestOrchestratorWorkTools_GetNextPassWorkNoMatchRequiredSearchNotBlocked
+// exercises the live MCP path: a required file that is covered plus a required
+// search that completes with zero matches must not block handoff readiness.
+func TestOrchestratorWorkTools_GetNextPassWorkNoMatchRequiredSearchNotBlocked(t *testing.T) {
+	t.Parallel()
+	requireBrokerGit(t)
+	requireBrokerRG(t)
+
+	deps := setupTestDeps(t)
+	deps.ToolProfile = ToolProfileLocalOperator
+	deps.ContextBrokerEnabled = true
+	st := deps.Store
+	srv := NewServer(nil, deps)
+
+	projectService := projects.NewService(st)
+	sourceService := sources.NewService(st)
+	repoRoot := brokerSetupGitRepo(t)
+	brokerMkdirAll(t, filepath.Join(repoRoot, "src"))
+	brokerWriteFile(t, filepath.Join(repoRoot, "src", "app.txt"), "alpha\nbeta\ngamma\n")
+	brokerRunGit(t, repoRoot, "add", ".")
+	brokerRunGit(t, repoRoot, "commit", "-m", "no-match search fixture")
+
+	project, err := projectService.GetProjectByProjectID(context.Background(), "relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	if _, _, err := projectService.UpsertProjectRepository(context.Background(), project.ProjectID, projects.ProjectRepositoryInput{
+		RepoID:           "Paintersrp/relay",
+		Role:             projects.RepositoryRolePrimary,
+		LocalPath:        repoRoot,
+		DefaultBranch:    "main",
+		AllowedRoots:     []string{"src"},
+		MaxFileSizeBytes: projects.MinMaxFileSizeBytes,
+		Enabled:          true,
+	}); err != nil {
+		t.Fatalf("UpsertProjectRepository: %v", err)
+	}
+	if _, err := sourceService.CreateSourceSnapshot(context.Background(), sources.SourceSnapshotInput{
+		ProjectID:           project.ProjectID,
+		RepoIDs:             []string{"relay"},
+		IncludeFileMetadata: true,
+	}); err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+
+	planSvc := appplans.NewService(st)
+	plan := appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
+			PlanID: "plan-mcp-no-match-search", SchemaVersion: "2.0.0", CreatedAt: "2026-06-28T00:00:00Z",
+			Title: "No-match search", Goal: "Verify no-match required search is not blocking.",
+			RepoTarget: "Paintersrp/relay", BranchContext: "main", Status: "active", ProjectID: "relay",
+			MCPCapabilityProfile: &appplans.MCPCapabilityProfile{ProfileID: "test-profile", Mode: "submission_only", ContextBrokerEnabled: mcpBoolPtr(true)},
+		},
+		SourceIntent:       appplans.SourceIntent{Summary: "No-match search test."},
+		GlobalContextRules: &appplans.GlobalContextRules{DefaultSourceOfTruth: "Relay managed plan.", PlannerContextBoundary: "Test only.", ForbiddenContextDomains: []string{"GitHub issues"}},
+		Passes: []appplans.PlanPassInput{{
+			PassID: "PASS-002", Sequence: 2, Name: "Context pass", Goal: "Collect context.",
+			IntendedExecutionScope: []string{"src/app.txt"},
+			NonGoals:               []string{"No run creation."},
+			Dependencies:           []string{},
+			Status:                 appplans.StatusPassPlanned,
+			PassType:               "backend_vertical_slice",
+			ContextPlan: appplans.ContextPlan{
+				RequiredRepositories: []string{"relay"},
+				SeedSearchTerms: []appplans.ContextSearchTerm{
+					{RepoID: "relay", Query: "definitely-absent-marker-zzz", Purpose: "Advisory presence check.", Required: mcpBoolPtr(true)},
+				},
+				SeedFilesToRead: []appplans.ContextFileRead{
+					{RepoID: "relay", Path: "src/app.txt", Purpose: "Read fixture source.", Required: mcpBoolPtr(true)},
+				},
+				ContextCoverageExpectations: []string{"Fixture source is covered."},
+				BlockedIfMissing:            []string{"Fixture source cannot be located."},
+			},
+			SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
+				RequireGitStatus:   mcpBoolPtr(false),
+				RequireCommitSHA:   mcpBoolPtr(false),
+				AllowDirtyWorktree: mcpBoolPtr(true),
+			},
+			HandoffReadinessCriteria: []string{"Context packet exists."},
+		}},
+	}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	submitResult, err := planSvc.SubmitPlan(context.Background(), appplans.SubmitPlanRequest{RawJSON: raw, UnmanagedAcknowledged: true})
+	if err != nil || !submitResult.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, submitResult.Report.Issues)
+	}
+
+	toolResult := srv.HandleGetNextPassWork(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-no-match-search"}`))
+	if toolResult.IsError {
+		t.Fatalf("get_next_pass_work failed: %+v", toolResult.Content)
+	}
+	payload := decodeNextPassSummary(t, toolResult)
+	if !payload.OK || payload.ReadinessState != "ready_for_handoff_authoring" {
+		t.Fatalf("expected ready_for_handoff_authoring (no-match required search must not block), got ok=%v readiness=%q blockers=%+v", payload.OK, payload.ReadinessState, payload.Blockers)
+	}
+	if payload.HandoffWork == nil {
+		t.Fatal("expected handoff_work in structuredContent")
+	}
+	for _, b := range payload.Blockers {
+		if b.Code == appplans.BlockerContextPacketUnusable || b.Code == appplans.BlockerContextPacketAcquisitionFailed {
+			t.Fatalf("did not expect generic context packet failure blocker, got %+v", payload.Blockers)
+		}
 	}
 }

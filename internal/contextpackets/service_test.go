@@ -238,7 +238,7 @@ func TestCreateContextPacketRequiredMissingFileBlocked(t *testing.T) {
 	}
 }
 
-func TestCreateContextPacketRequiredSearchNoMatchesBlockedAndOptionalPartial(t *testing.T) {
+func TestCreateContextPacketRequiredSearchNoMatchesCoveredAndOptionalPartial(t *testing.T) {
 	requireRG(t)
 	fixture := setupContextPacketFixture(t, fixtureOptions{})
 
@@ -255,8 +255,19 @@ func TestCreateContextPacketRequiredSearchNoMatchesBlockedAndOptionalPartial(t *
 	if err != nil {
 		t.Fatalf("CreateContextPacket required error: %v", err)
 	}
-	if required.Status != ContextPacketStatusPartial {
-		t.Fatalf("expected partial required search with no matches, got %+v", required)
+	// A required search that completes with zero matches, no blockers, and no
+	// truncation is completed evidence, not missing required evidence.
+	if required.Status != ContextPacketStatusCreated {
+		t.Fatalf("expected created packet for completed no-match required search, got %+v", required)
+	}
+	if required.MissingSeedCount != 0 || required.BlockedSeedCount != 0 || required.Truncated {
+		t.Fatalf("expected no missing/blocked/truncated seeds, got %+v", required)
+	}
+	if len(required.Coverage) != 1 || required.Coverage[0].Status != CoverageStatusCovered {
+		t.Fatalf("expected covered required search coverage, got %+v", required.Coverage)
+	}
+	if required.Coverage[0].MissingCause != "search completed with no matches" {
+		t.Fatalf("expected completed no-match missing_cause, got %q", required.Coverage[0].MissingCause)
 	}
 
 	optional, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
@@ -274,6 +285,101 @@ func TestCreateContextPacketRequiredSearchNoMatchesBlockedAndOptionalPartial(t *
 	}
 	if optional.Status != ContextPacketStatusPartial || optional.MissingSeedCount != 0 {
 		t.Fatalf("expected partial optional search, got %+v", optional)
+	}
+}
+
+func TestCreateContextPacketRequiredFileCoveredAndNoMatchSearchUsable(t *testing.T) {
+	requireRG(t)
+	fixture := setupContextPacketFixture(t, fixtureOptions{})
+
+	result, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
+		ProjectID:        "relay",
+		TaskSlug:         "required-file-and-no-match-search",
+		SourceSnapshotID: fixture.snapshotID,
+		SeedFiles: []ContextSeedFile{{
+			RepoID:    "relay",
+			Path:      "src/app.txt",
+			LineStart: 1,
+			LineEnd:   1000,
+			Required:  true,
+			Reason:    "primary source",
+		}},
+		SeedSearches: []ContextSeedSearch{{
+			RepoIDs:  []string{"relay"},
+			Pattern:  "does-not-exist",
+			Required: true,
+			Reason:   "advisory presence check",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket error: %v", err)
+	}
+	if result.Status != ContextPacketStatusCreated {
+		t.Fatalf("expected created packet, got %+v", result)
+	}
+	if result.MissingSeedCount != 0 || result.BlockedSeedCount != 0 || result.Truncated {
+		t.Fatalf("expected missing=0 blocked=0 truncated=false, got %+v", result)
+	}
+	var fileEntry, searchEntry *ContextCoverageEntry
+	for i := range result.Coverage {
+		switch result.Coverage[i].SeedType {
+		case "file":
+			fileEntry = &result.Coverage[i]
+		case "search":
+			searchEntry = &result.Coverage[i]
+		}
+	}
+	if fileEntry == nil || fileEntry.Status != CoverageStatusCovered {
+		t.Fatalf("expected covered required file, got %+v", fileEntry)
+	}
+	if searchEntry == nil || searchEntry.Status != CoverageStatusCovered {
+		t.Fatalf("expected covered required no-match search, got %+v", searchEntry)
+	}
+}
+
+func TestCreateContextPacketRequiredSearchWithBlockersStaysBlocked(t *testing.T) {
+	requireRG(t)
+	fixture := setupContextPacketFixture(t, fixtureOptions{withPrivateKey: true})
+
+	result, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
+		ProjectID:        "relay",
+		TaskSlug:         "required-search-blocked",
+		SourceSnapshotID: fixture.snapshotID,
+		SeedFiles: []ContextSeedFile{{
+			RepoID:   "relay",
+			Path:     "src/app.txt",
+			Required: true,
+			Reason:   "primary source",
+		}},
+		SeedSearches: []ContextSeedSearch{{
+			RepoIDs:  []string{"relay"},
+			Pattern:  "PRIVATE KEY",
+			Required: true,
+			Reason:   "secret material search",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket error: %v", err)
+	}
+	// A required search whose only matches are redaction-blocked must not be
+	// treated as completed no-match evidence; readiness must still fail closed.
+	if result.Status == ContextPacketStatusCreated {
+		t.Fatalf("expected non-created packet when required search is blocked, got %+v", result)
+	}
+	var searchEntry *ContextCoverageEntry
+	for i := range result.Coverage {
+		if result.Coverage[i].SeedType == "search" {
+			searchEntry = &result.Coverage[i]
+		}
+	}
+	if searchEntry == nil {
+		t.Fatalf("expected a search coverage entry, got %+v", result.Coverage)
+	}
+	if searchEntry.Status == CoverageStatusCovered {
+		t.Fatalf("expected blocked/partial required search, got covered: %+v", searchEntry)
+	}
+	if len(searchEntry.Blockers) == 0 {
+		t.Fatalf("expected blockers on the required search entry, got %+v", searchEntry)
 	}
 }
 

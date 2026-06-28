@@ -762,3 +762,86 @@ func apiAcquisitionPlan(planID string) appplans.PlannerPassPlan {
 func planAPIInt64Ptr(value int64) *int64 {
 	return &value
 }
+
+// TestGetNextPassWork_API_NoMatchRequiredSearchNotUnusable asserts that when all
+// required files are covered and required searches complete with no matches
+// (covered as completed evidence), the API response is handoff-ready and not a
+// generic context_packet_unusable / context_acquisition_failed failure.
+func TestGetNextPassWork_API_NoMatchRequiredSearchNotUnusable(t *testing.T) {
+	t.Parallel()
+	_, st, _ := newNextPassWorkTestServer(t)
+	project, err := st.GetProjectByProjectID("relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	if _, err := st.UpsertProjectRepository(store.UpsertProjectRepositoryParams{
+		ProjectRowID:     project.ID,
+		RepoID:           "relay",
+		Role:             "primary",
+		LocalPath:        "D:/Code/relay",
+		DefaultBranch:    "main",
+		AllowedRootsJSON: `["."]`,
+		MaxFileSizeBytes: 1048576,
+		Enabled:          1,
+	}); err != nil {
+		t.Fatalf("UpsertProjectRepository: %v", err)
+	}
+	planSvc := appplans.NewService(st)
+	plan := apiAcquisitionPlan("api-plan-no-match-search")
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	result, err := planSvc.SubmitPlan(context.Background(), appplans.SubmitPlanRequest{RawJSON: raw, UnmanagedAcknowledged: true})
+	if err != nil || !result.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
+	}
+	workSvc := appplans.NewOrchestratorWorkService(st)
+	workSvc.SetSourceService(apiFakeSourceSnapshotAcquirer{snapshotID: "snap-api-no-match", status: "created", included: 10})
+	// A created packet whose required searches completed with zero matches
+	// (covered as completed evidence) and whose required files are covered.
+	workSvc.SetContextPacketService(&apiFakeContextPacketAcquirer{results: []appplans.CtxPacketResult{
+		{
+			ContextPacketID:    "ctxpkt-api-no-match",
+			Status:             "created",
+			CoverageReportPath: "/artifacts/no-match.json",
+			SourceSnapshotID:   "snap-api-no-match",
+			SourceCount:        5,
+			Summary:            appplans.CtxPacketSummary{SourceCount: 5, CoveredSeedCount: 7, MaxSources: 12, MaxTotalBytes: 180000},
+			Coverage: []appplans.CtxCoverageEntry{
+				{SeedID: "file:1", SeedType: "file", Required: true, Status: "covered", Path: "internal/app/plans/work_packets.go"},
+				{SeedID: "search:1", SeedType: "search", Required: true, Status: "covered", Pattern: "get_next_pass_work", MissingCause: "search completed with no matches"},
+				{SeedID: "search:2", SeedType: "search", Required: true, Status: "covered", Pattern: "acquisition_failure_report", MissingCause: "search completed with no matches"},
+			},
+			LimitHit: "none",
+		},
+	}})
+	planH := plansapi.NewHandler(planSvc, workSvc, nil)
+	router := chi.NewRouter()
+	router.Route("/api", func(r chi.Router) { plansapi.MountRoutes(r, planH) })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plans/api-plan-no-match-search/next-pass-work", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp appplans.NextPassWorkResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.OK || resp.HandoffWork == nil {
+		t.Fatalf("expected handoff-ready response, got ok=%t handoff=%v blockers=%+v", resp.OK, resp.HandoffWork, resp.Blockers)
+	}
+	if resp.PlannerJumpstart == nil || resp.PlannerJumpstart.ReadinessState != "ready_for_handoff_authoring" {
+		t.Fatalf("expected ready_for_handoff_authoring, got %+v", resp.PlannerJumpstart)
+	}
+	for _, b := range resp.Blockers {
+		if b.Code == appplans.BlockerContextPacketUnusable || b.Code == appplans.BlockerContextPacketAcquisitionFailed {
+			t.Fatalf("did not expect generic context packet failure blocker, got %+v", resp.Blockers)
+		}
+	}
+	if resp.AcquisitionFailureReport != nil {
+		t.Fatalf("did not expect acquisition_failure_report, got %+v", resp.AcquisitionFailureReport)
+	}
+}

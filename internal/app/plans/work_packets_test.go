@@ -1886,3 +1886,336 @@ func TestGetNextPassWork_ContextAcquisitionFailureReport(t *testing.T) {
 		}
 	}
 }
+
+// -------------------------------------------------------------------
+// Range-planning tests (Rev 12)
+// -------------------------------------------------------------------
+
+// singleRequiredFileContextPlan builds a schema-valid context plan with one
+// required seed file and one required seed search.
+func singleRequiredFileContextPlan(path string) ContextPlan {
+	return ContextPlan{
+		RequiredRepositories: []string{"relay"},
+		SeedFilesToRead: []ContextFileRead{
+			{RepoID: "relay", Path: path, Purpose: "required file", Required: boolPtr(true)},
+		},
+		SeedSearchTerms: []ContextSearchTerm{
+			{RepoID: "relay", Query: "range planning", Purpose: "required search", Required: boolPtr(true)},
+		},
+		ContextCoverageExpectations: []string{"Required evidence is available before handoff authoring."},
+		BlockedIfMissing:            []string{"Required context cannot be acquired."},
+	}
+}
+
+// seedAcquisitionPlanWithContext registers the relay repo and submits a
+// two-pass plan whose PASS-002 carries the provided context plan and budget.
+// PASS-001 is forced to completed so PASS-002 is the eligible candidate.
+func seedAcquisitionPlanWithContext(t *testing.T, st *store.Store, planID string, ctxPlan ContextPlan, budget *ContextBudget) {
+	t.Helper()
+	project, err := st.GetProjectByProjectID("relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	if _, err := st.UpsertProjectRepository(store.UpsertProjectRepositoryParams{
+		ProjectRowID:     project.ID,
+		RepoID:           "relay",
+		Role:             "primary",
+		LocalPath:        "D:/Code/relay",
+		DefaultBranch:    "main",
+		AllowedRootsJSON: `["."]`,
+		MaxFileSizeBytes: 1048576,
+		Enabled:          1,
+	}); err != nil {
+		t.Fatalf("UpsertProjectRepository: %v", err)
+	}
+
+	planSvc := NewService(st)
+	plan := PlannerPassPlan{
+		PlanMeta: PlanMeta{
+			PlanID:        planID,
+			SchemaVersion: "2.0.0",
+			CreatedAt:     "2026-06-28T00:00:00Z",
+			Title:         "Range planning test",
+			Goal:          "Exercise required seed range planning.",
+			RepoTarget:    "Paintersrp/relay",
+			BranchContext: "main",
+			Status:        "active",
+			ProjectID:     "relay",
+			MCPCapabilityProfile: &MCPCapabilityProfile{
+				ProfileID:            "test-profile",
+				Mode:                 "submission_only",
+				ContextBrokerEnabled: boolPtr(false),
+			},
+		},
+		SourceIntent:       SourceIntent{Summary: "Range planning acquisition test."},
+		GlobalContextRules: &GlobalContextRules{DefaultSourceOfTruth: "test", PlannerContextBoundary: "test", ForbiddenContextDomains: []string{"external"}},
+		Passes: []PlanPassInput{
+			{
+				PassID: "PASS-001", Sequence: 1, Name: "First", Goal: "First complete pass.",
+				IntendedExecutionScope: []string{"setup"}, NonGoals: []string{"none"},
+				Dependencies: []string{}, Status: "planned", PassType: "backend_vertical_slice",
+				ContextPlan:                noContextRequirementsPlan(),
+				SourceSnapshotRequirements: SourceSnapshotRequirements{RequireGitStatus: boolPtr(false), RequireCommitSHA: boolPtr(false), AllowDirtyWorktree: boolPtr(true)},
+				HandoffReadinessCriteria:   []string{"complete"},
+			},
+			{
+				PassID: "PASS-002", Sequence: 2, Name: "Second", Goal: "Range planning context acquisition.",
+				IntendedExecutionScope: []string{"backend"}, NonGoals: []string{"validation tiers"},
+				Dependencies: []string{"PASS-001"}, Status: "planned", PassType: "backend_vertical_slice",
+				ContextPlan:                ctxPlan,
+				SourceSnapshotRequirements: SourceSnapshotRequirements{RequireGitStatus: boolPtr(false), RequireCommitSHA: boolPtr(false), AllowDirtyWorktree: boolPtr(true)},
+				HandoffReadinessCriteria:   []string{"context acquired"},
+				ContextBudget:              budget,
+			},
+		},
+	}
+	result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: mustMarshalPlan(t, plan)})
+	if err != nil || !result.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
+	}
+	setPassStatus(t, st, planID, "PASS-001", StatusPassCompleted)
+}
+
+// seedSnapshotFileMetadata creates a usable source snapshot with a relay
+// repository row and the provided file metadata rows.
+func seedSnapshotFileMetadata(t *testing.T, st *store.Store, snapshotID string, files []store.CreateSourceSnapshotFileParams) {
+	t.Helper()
+	project, err := st.GetProjectByProjectID("relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	snapshot, err := st.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+		SourceSnapshotID: snapshotID,
+		ProjectRowID:     project.ID,
+		ProjectID:        "relay",
+		SnapshotKind:     "clean_commit",
+		Status:           "created",
+		CompletedAt:      "2026-06-28T00:00:00Z",
+		SummaryJSON:      "{\"file_count\":1}",
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+	repos, err := st.ListProjectRepositories(project.ID)
+	if err != nil {
+		t.Fatalf("ListProjectRepositories: %v", err)
+	}
+	var repoRowID int64
+	for _, r := range repos {
+		if r.RepoID == "relay" {
+			repoRowID = r.ID
+		}
+	}
+	if repoRowID == 0 {
+		t.Fatalf("relay project repository not registered")
+	}
+	snapRepo, err := st.CreateSourceSnapshotRepository(store.CreateSourceSnapshotRepositoryParams{
+		SourceSnapshotRowID:    snapshot.ID,
+		ProjectRepositoryRowID: repoRowID,
+		RepoID:                 "relay",
+		Role:                   "primary",
+		LocalPath:              "D:/Code/relay",
+		DefaultBranch:          "main",
+		CurrentBranch:          "main",
+		GitStatusAvailable:     1,
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshotRepository: %v", err)
+	}
+	for _, f := range files {
+		f.SourceSnapshotRepositoryRowID = snapRepo.ID
+		if _, err := st.CreateSourceSnapshotFile(f); err != nil {
+			t.Fatalf("CreateSourceSnapshotFile: %v", err)
+		}
+	}
+}
+
+// fakeContextPacketAcquirer that always returns a created, usable packet.
+func usableContextPacketAcquirer(snapshotID string) *fakeContextPacketAcquirer {
+	return &fakeContextPacketAcquirer{results: []CtxPacketResult{{
+		ContextPacketID:    "ctxpkt-range-ok",
+		Status:             "created",
+		CoverageReportPath: "/artifacts/ctxpkt/range-ok-coverage.json",
+		SourceSnapshotID:   snapshotID,
+		SourceCount:        2,
+		Summary:            CtxPacketSummary{SourceCount: 2, CoveredSeedCount: 2, MaxSources: 12, MaxTotalBytes: 180000},
+		LimitHit:           "none",
+	}}}
+}
+
+func TestGetNextPassWork_SuggestedSeedFilesIncludeRangeAndBudget(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedAcquisitionPlanWithContext(t, st, "plan-range-suggested",
+		singleRequiredFileContextPlan("internal/app/plans/work_packets.go"),
+		&ContextBudget{MaxFiles: int64Ptr(12), MaxBytes: int64Ptr(180000), MaxSearchResults: int64Ptr(25)})
+	// Snapshot present but without file metadata: metadata-unavailable fallback.
+	seedSourceSnapshot(t, st, "relay", "snap-range-suggested")
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{ProjectID: "relay", PlanID: "plan-range-suggested"})
+	if err != nil {
+		t.Fatalf("GetNextPassWork: %v", err)
+	}
+	assertBlockerCode(t, resp, BlockerRequiredContextPacketMissing)
+	var action *ContextAcquisitionAction
+	for i := range resp.PlannerJumpstart.SuggestedContextAcquisitionActions {
+		if resp.PlannerJumpstart.SuggestedContextAcquisitionActions[i].Tool == "create_context_packet" {
+			action = &resp.PlannerJumpstart.SuggestedContextAcquisitionActions[i]
+		}
+	}
+	if action == nil {
+		t.Fatalf("expected create_context_packet action, got %+v", resp.PlannerJumpstart.SuggestedContextAcquisitionActions)
+	}
+	seedFiles, ok := action.Arguments["seed_files"].([]map[string]interface{})
+	if !ok || len(seedFiles) != 1 {
+		t.Fatalf("expected one seed file, got %#v", action.Arguments["seed_files"])
+	}
+	if seedFiles[0]["line_start"] != 1 || seedFiles[0]["line_end"] != optimisticSeedFileLineEnd {
+		t.Fatalf("expected line_start=1 line_end=%d, got %#v", optimisticSeedFileLineEnd, seedFiles[0])
+	}
+	if seedFiles[0]["max_bytes"] != 180000 {
+		t.Fatalf("expected max_bytes=180000, got %#v", seedFiles[0]["max_bytes"])
+	}
+}
+
+func TestGetNextPassWork_InternalSeedFilesUseRangeAndPassBudgetMaxBytes(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedPass002AcquisitionPlan(t, st, "plan-range-internal")
+	svc.SetSourceService(fakeSourceSnapshotAcquirer{snapshotID: "snap-range-internal", status: "created", included: 10})
+	fakeCtx := usableContextPacketAcquirer("snap-range-internal")
+	svc.SetContextPacketService(fakeCtx)
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{ProjectID: "relay", PlanID: "plan-range-internal"})
+	if err != nil {
+		t.Fatalf("GetNextPassWork: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected ok=true, got blockers: %+v", resp.Blockers)
+	}
+	if len(fakeCtx.inputs) == 0 {
+		t.Fatal("expected at least one context acquisition attempt")
+	}
+	var required *CtxSeedFile
+	for i := range fakeCtx.inputs[0].SeedFiles {
+		if fakeCtx.inputs[0].SeedFiles[i].Required {
+			required = &fakeCtx.inputs[0].SeedFiles[i]
+			break
+		}
+	}
+	if required == nil {
+		t.Fatalf("expected a required seed file, got %+v", fakeCtx.inputs[0].SeedFiles)
+	}
+	if required.LineStart != 1 || required.LineEnd != optimisticSeedFileLineEnd {
+		t.Fatalf("expected line_start=1 line_end=%d, got %+v", optimisticSeedFileLineEnd, required)
+	}
+	// Pass budget max_bytes=180000 must be used, not defaultSeedFileMaxBytes.
+	if required.MaxBytes != 180000 {
+		t.Fatalf("expected internal seed MaxBytes=180000, got %d", required.MaxBytes)
+	}
+	if required.MaxBytes == defaultSeedFileMaxBytes {
+		t.Fatalf("internal seed MaxBytes must not fall back to defaultSeedFileMaxBytes (%d)", defaultSeedFileMaxBytes)
+	}
+}
+
+func TestGetNextPassWork_MetadataPresentSmallFileOptimisticRange(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedAcquisitionPlanWithContext(t, st, "plan-range-small",
+		singleRequiredFileContextPlan("internal/app/plans/work_packets.go"),
+		&ContextBudget{MaxFiles: int64Ptr(12), MaxBytes: int64Ptr(180000), MaxSearchResults: int64Ptr(25)})
+	seedSnapshotFileMetadata(t, st, "snap-range-small", []store.CreateSourceSnapshotFileParams{
+		{Path: "internal/app/plans/work_packets.go", SizeBytes: 4096, ContentHash: "h1", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
+	})
+	svc.SetSourceService(fakeSourceSnapshotAcquirer{snapshotID: "unused", status: "created", included: 1})
+	fakeCtx := usableContextPacketAcquirer("snap-range-small")
+	svc.SetContextPacketService(fakeCtx)
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{ProjectID: "relay", PlanID: "plan-range-small"})
+	if err != nil {
+		t.Fatalf("GetNextPassWork: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected ok=true, got blockers: %+v", resp.Blockers)
+	}
+	if len(fakeCtx.inputs) == 0 {
+		t.Fatal("expected a context acquisition attempt")
+	}
+	var required *CtxSeedFile
+	for i := range fakeCtx.inputs[0].SeedFiles {
+		if fakeCtx.inputs[0].SeedFiles[i].Required {
+			required = &fakeCtx.inputs[0].SeedFiles[i]
+			break
+		}
+	}
+	if required == nil || required.LineStart != 1 || required.LineEnd != 1000 {
+		t.Fatalf("expected metadata-backed optimistic range 1-1000, got %+v", required)
+	}
+}
+
+func TestGetNextPassWork_MetadataPresentOversizedFileFailsClosed(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedAcquisitionPlanWithContext(t, st, "plan-range-oversized",
+		singleRequiredFileContextPlan("internal/app/plans/huge.go"),
+		&ContextBudget{MaxFiles: int64Ptr(12), MaxBytes: int64Ptr(180000), MaxSearchResults: int64Ptr(25)})
+	seedSnapshotFileMetadata(t, st, "snap-range-oversized", []store.CreateSourceSnapshotFileParams{
+		{Path: "internal/app/plans/huge.go", SizeBytes: 250000, ContentHash: "h2", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
+	})
+	svc.SetSourceService(fakeSourceSnapshotAcquirer{snapshotID: "unused", status: "created", included: 1})
+	fakeCtx := usableContextPacketAcquirer("snap-range-oversized")
+	svc.SetContextPacketService(fakeCtx)
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{ProjectID: "relay", PlanID: "plan-range-oversized"})
+	if err != nil {
+		t.Fatalf("GetNextPassWork: %v", err)
+	}
+	if resp.OK || resp.HandoffWork != nil {
+		t.Fatalf("expected fail-closed without handoff work, got ok=%t handoff=%v", resp.OK, resp.HandoffWork)
+	}
+	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != BlockerRequiredSeedFileOversized {
+		t.Fatalf("expected required_seed_file_oversized blocker, got %+v", resp.Blockers)
+	}
+	if len(fakeCtx.inputs) != 0 {
+		t.Fatalf("expected no acquirer call before range-planning failure, got %d", len(fakeCtx.inputs))
+	}
+	report := resp.AcquisitionFailureReport
+	if report == nil || report.SeedRangeFailure == nil {
+		t.Fatalf("expected seed_range_failure report, got %+v", report)
+	}
+	if report.SeedRangeFailure.Path != "internal/app/plans/huge.go" || !report.SeedRangeFailure.SizeKnown || report.SeedRangeFailure.SizeBytes != 250000 {
+		t.Fatalf("unexpected seed_range_failure detail: %+v", report.SeedRangeFailure)
+	}
+}
+
+func TestGetNextPassWork_MetadataPresentMissingFileFailsClosed(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedAcquisitionPlanWithContext(t, st, "plan-range-missing",
+		singleRequiredFileContextPlan("internal/app/plans/absent.go"),
+		&ContextBudget{MaxFiles: int64Ptr(12), MaxBytes: int64Ptr(180000), MaxSearchResults: int64Ptr(25)})
+	// Metadata index present but does not contain the required file (and one is excluded).
+	seedSnapshotFileMetadata(t, st, "snap-range-missing", []store.CreateSourceSnapshotFileParams{
+		{Path: "internal/app/plans/other.go", SizeBytes: 1024, ContentHash: "h3", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
+	})
+	svc.SetSourceService(fakeSourceSnapshotAcquirer{snapshotID: "unused", status: "created", included: 1})
+	fakeCtx := usableContextPacketAcquirer("snap-range-missing")
+	svc.SetContextPacketService(fakeCtx)
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{ProjectID: "relay", PlanID: "plan-range-missing"})
+	if err != nil {
+		t.Fatalf("GetNextPassWork: %v", err)
+	}
+	if resp.OK || resp.HandoffWork != nil {
+		t.Fatalf("expected fail-closed without handoff work, got ok=%t handoff=%v", resp.OK, resp.HandoffWork)
+	}
+	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != BlockerRequiredSeedFileMissingFromSnapshot {
+		t.Fatalf("expected required_seed_file_missing_from_snapshot blocker, got %+v", resp.Blockers)
+	}
+	if len(fakeCtx.inputs) != 0 {
+		t.Fatalf("expected no acquirer call before range-planning failure, got %d", len(fakeCtx.inputs))
+	}
+	if resp.AcquisitionFailureReport == nil || resp.AcquisitionFailureReport.SeedRangeFailure == nil {
+		t.Fatalf("expected seed_range_failure report, got %+v", resp.AcquisitionFailureReport)
+	}
+}
