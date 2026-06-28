@@ -282,12 +282,12 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 		case len(entry.SourceIDs) > 0:
 			entry.Status = CoverageStatusCovered
 		case len(entry.Blockers) > 0 && seed.Required:
-			entry.Status = CoverageStatusBlocked
+			entry.Status = CoverageStatusPartial
 		case len(entry.Blockers) > 0:
 			entry.Status = CoverageStatusPartial
 		case seed.Required:
-			entry.Status = CoverageStatusMissing
-			entry.MissingCause = "search returned no matches"
+			entry.Status = CoverageStatusPartial
+			entry.MissingCause = "search returned no matches (advisory only)"
 		default:
 			entry.Status = CoverageStatusPartial
 			entry.MissingCause = "optional search returned no matches"

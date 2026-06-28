@@ -35,7 +35,7 @@
     },
     {
       "path": "internal/api/plans/routes.go",
-      "sha256": "7659441361454b1d932751285357f339ca1ae6f1e035038575a10ef0671c0710",
+      "sha256": "0b4388c25653944639c8916c1545daf567708105deb2032d406a28e6980f4139",
       "role": "route source"
     },
     {
@@ -528,6 +528,17 @@
       "id": "http-api-route-projects-projectid-plans-planid-next-pass-work-get",
       "label": "proven",
       "statement": "Route GET /api/projects/{projectId}/plans/{planId}/next-pass-work handled by h.GetNextPassWork",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/plans/routes.go"
+        }
+      ]
+    },
+    {
+      "id": "http-api-route-projects-projectid-plans-planid-passes-passid-next-pass-work-preview-get",
+      "label": "proven",
+      "statement": "Route GET /api/projects/{projectId}/plans/{planId}/passes/{passId}/next-pass-work-preview handled by h.GetPassNextWorkPreview",
       "evidence": [
         {
           "kind": "source",

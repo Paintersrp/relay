@@ -25,9 +25,9 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `apps/web/src/features/relay-plans/api.ts` | `bdf2d3ccbbe8a8319ab828c54c62427b28476687a5c4613f507e8df00878ddd0` | frontend source |
+| `apps/web/src/features/relay-plans/api.ts` | `ff59fd6ecf5cbec4597bd658b12cf2ade878d1699e327515b998b872726bca7c` | frontend source |
 | `apps/web/src/features/relay-plans/queries.ts` | `8c3cded2204532e657178e8e33052082d4519394ca170d17eba084975b09786e` | frontend source |
-| `apps/web/src/features/relay-plans/types.ts` | `b84abd5d5abdc321c8e82958152ef345397312e9ebd18189f5eb32eedacd0faf` | frontend source |
+| `apps/web/src/features/relay-plans/types.ts` | `4389b7f9031592cf427020f1ad1529931f32b993f8cdec4f2390e22a91cecc30` | frontend source |
 | `apps/web/src/features/relay-runs/api.ts` | `6015b4d1c3490bdaaa07c6a8b7fc9be36ad8048daf0c7ef1354bb3cb66abc532` | frontend source |
 | `apps/web/src/features/relay-runs/queries.ts` | `b972ee125f7c13c8c3a12a18fbec656efbe95ba7d7b0ea79e7552328d1c0e50b` | frontend source |
 | `apps/web/src/features/relay-runs/types.ts` | `cb7bc7a7952aabe406d8ec8f6031b2c5d556d29f42da0d8c3baab6cc543f23cd` | frontend source |
@@ -73,6 +73,14 @@ Evidence:
 ### frontend-api-call-relay-plans-getnextpasswork (proven)
 
 Frontend API call getNextPassWork: GET /api/projects/{param}/plans/{param}/next-pass-work in relay-plans (apps/web/src/features/relay-plans/api.ts)
+
+Evidence:
+
+- source: `apps/web/src/features/relay-plans/api.ts`
+
+### frontend-api-call-relay-plans-getpassnextworkpreview (proven)
+
+Frontend API call getPassNextWorkPreview: GET /api/projects/{param}/plans/{param}/passes/{param}/next-pass-work-preview in relay-plans (apps/web/src/features/relay-plans/api.ts)
 
 Evidence:
 
@@ -393,6 +401,14 @@ Evidence:
 ### frontend-backend-match-getnextpasswork (proven)
 
 Route match: frontend getNextPassWork (GET /api/projects/{param}/plans/{param}/next-pass-work) -> backend GET /projects/{projectId}/plans/{planId}/next-pass-work handled by h.GetNextPassWork in internal/api/plans/routes.go
+
+Evidence:
+
+- source: `internal/api/plans/routes.go`
+
+### frontend-backend-match-getpassnextworkpreview (proven)
+
+Route match: frontend getPassNextWorkPreview (GET /api/projects/{param}/plans/{param}/passes/{param}/next-pass-work-preview) -> backend GET /projects/{projectId}/plans/{planId}/passes/{passId}/next-pass-work-preview handled by h.GetPassNextWorkPreview in internal/api/plans/routes.go
 
 Evidence:
 

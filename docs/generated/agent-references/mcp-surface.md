@@ -25,15 +25,15 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `internal/mcp/context_broker_tools.go` | `396cf3f9cfb6fd3b3389b8d18d37f1e6a24e9532d615113d4004716aebbf2573` | mcp_tool_source |
+| `internal/mcp/context_broker_tools.go` | `5029ca2a7ce3e51d31dc1714d89978966d1763af5fc6dbb280107a51e24272a8` | mcp_tool_source |
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | mcp_tool_source |
 | `internal/mcp/plan_seed_tools.go` | `19a7bede46ae71836a0a942123f2d24015e7faaf93896850b57e7bd6cbbb0ad4` | mcp_tool_source |
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | mcp_tool_source |
-| `internal/mcp/server.go` | `a630efa1cccfced0b1288683343684149f411b9dece7f70fa01c345e74ee6ec6` | mcp_tool_source |
+| `internal/mcp/server.go` | `fa8f88fa34e97d933d9d7cfa8b84dd52d61fc01c4e369e8e16d0c5466d4484f2` | mcp_tool_source |
 | `relay-contracts/contracts/planner_mcp_context_broker_contract.md` | `d37f6c2b4f2fd3bd6da9ccc89541da93e144072f0d6a4432014c5f583351d5ef` | mcp_contract_source |
-| `relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md` | `ffbdda8b94a1dc14b6ded04fed70a7b9ed3e3a4614a33741ae1bc56dc77e1e75` | mcp_contract_source |
+| `relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md` | `404f65db30eec8af1ee4201b0e07f84cea3ed1b11b0ee5aa899ad4ccc1ffc758` | mcp_contract_source |
 | `relay-contracts/contracts/planner_mcp_plan_attempt_contract.md` | `3cf8df06e87a55560bd4fb900eef70061695c7d40bc81ec9d1c95ef694622997` | mcp_contract_source |
-| `relay-contracts/contracts/planner_mcp_plan_submission_contract.md` | `14dcde7506a7a40cea782ca95b8fc68573d9908076083f9a5fd3f36ecc8f009c` | mcp_contract_source |
+| `relay-contracts/contracts/planner_mcp_plan_submission_contract.md` | `f234a568fcc5c503b86b298d18cddf632beeed22ae437d560cafe33d475320bc` | mcp_contract_source |
 
 ## Fact Labels
 

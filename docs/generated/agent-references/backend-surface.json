@@ -115,7 +115,7 @@
     },
     {
       "path": "internal/api/next_pass_work_test.go",
-      "sha256": "3d7314a07622476ceec7cf7f4c8a7c815c5daab8845213c3146c4aa4e529dc5c",
+      "sha256": "f224d0f8915bc4129c95d4882c0978e763618d127a6fa23a33ebfa522ac371b7",
       "role": "test"
     },
     {
@@ -145,7 +145,7 @@
     },
     {
       "path": "internal/api/plans/handler.go",
-      "sha256": "59868753e564b9f0166de31bd5b6d1e1b7de00ea794bd2608e242d3ffa103bac",
+      "sha256": "9c6ecc793d1e46c46cb685062bcc3ce7a2d72fae393eb02fa592dfaddab6b7c8",
       "role": "source"
     },
     {
@@ -170,7 +170,7 @@
     },
     {
       "path": "internal/api/plans/routes.go",
-      "sha256": "7659441361454b1d932751285357f339ca1ae6f1e035038575a10ef0671c0710",
+      "sha256": "0b4388c25653944639c8916c1545daf567708105deb2032d406a28e6980f4139",
       "role": "source"
     },
     {
@@ -485,7 +485,7 @@
     },
     {
       "path": "internal/app/plans/service_test.go",
-      "sha256": "33692caa875965687f5a863730481dc2d0d13fd0677bd76d0674dd7068417cff",
+      "sha256": "4d61e8bde7b0eddda3d1136a98505ea374b210b5ec8be83328c65c69a752725c",
       "role": "test"
     },
     {
@@ -495,17 +495,17 @@
     },
     {
       "path": "internal/app/plans/validator.go",
-      "sha256": "1e28ac3ea8480313b7bd5338d830edfaf7e8f66e19c64af44ed5b6708f34933e",
+      "sha256": "9eb5323bcbe1b6f76a25d5f1c53607b06232c99b73674e5947ba1a6de81891dd",
       "role": "source"
     },
     {
       "path": "internal/app/plans/work_packets.go",
-      "sha256": "c4e90d03742cb3d586dc6a84fada3595a96878bfd849a07e7bd7a9c16add7f8a",
+      "sha256": "6ab3157ea4fabc9169eb54a7c564ad021235eed98f69661b10a228bcbd711eea",
       "role": "source"
     },
     {
       "path": "internal/app/plans/work_packets_test.go",
-      "sha256": "b8ceccfafcebdb7d86b7dce7539633bde1d1978039afa0c10c7897ae4fa59701",
+      "sha256": "cdf2daa89ef0e6fea3e64562a5e49888d7aeabc4b283afe973b44623549afeeb",
       "role": "test"
     },
     {
@@ -585,12 +585,12 @@
     },
     {
       "path": "internal/mcp/context_broker_tools.go",
-      "sha256": "396cf3f9cfb6fd3b3389b8d18d37f1e6a24e9532d615113d4004716aebbf2573",
+      "sha256": "5029ca2a7ce3e51d31dc1714d89978966d1763af5fc6dbb280107a51e24272a8",
       "role": "source"
     },
     {
       "path": "internal/mcp/context_broker_tools_test.go",
-      "sha256": "d50e5950a978deaa22a7c102bfafc9c7c5f899dffdf707587e01e98e34ee00f8",
+      "sha256": "bf29a670e1e71a4917f16acf53c2a3374f059827bc40b795e7c1a7a4aedc2d09",
       "role": "test"
     },
     {
@@ -605,7 +605,7 @@
     },
     {
       "path": "internal/mcp/http_handler_test.go",
-      "sha256": "d5db26b20d5247c8f1c0577612f32ddccbf662d2bb7059249550292781cc708c",
+      "sha256": "28e607c54c8328d995ea63731ea1e166edaabec75524bdd649d46f06338970a3",
       "role": "test"
     },
     {
@@ -620,12 +620,12 @@
     },
     {
       "path": "internal/mcp/orchestrator_work_tools.go",
-      "sha256": "ecbdb265531a6855d30dd6b6c263d9c4410f8cf428005754c0b5b97f726694b3",
+      "sha256": "4f5fb9c1f37e367ef1e9bff6433ca1d2969d35c5ca102c1ba045e52086c2ff66",
       "role": "source"
     },
     {
       "path": "internal/mcp/orchestrator_work_tools_test.go",
-      "sha256": "cb09db3191982ecb2896bc2539170415cf693c6c809ce2907b7c792df93ee04f",
+      "sha256": "f65cb0bd0b21837cf44503cb5a25e12d2c0d2dd3be40c789b2cb242e5774d795",
       "role": "test"
     },
     {
@@ -650,17 +650,22 @@
     },
     {
       "path": "internal/mcp/plan_tools.go",
-      "sha256": "184b3c9f92b649d97f933711e088d26259d8e5b0b9c466a6c7831b249a1e1621",
+      "sha256": "cd624b354bc28812cc9ae68e9a7917506dc64004044b7e7d4d16afc40aef064c",
       "role": "source"
     },
     {
+      "path": "internal/mcp/plan_tools_test.go",
+      "sha256": "d05b248f64aba7998e86367215638b56a3942fb77423e19539c0d33a77d9593b",
+      "role": "test"
+    },
+    {
       "path": "internal/mcp/profile.go",
-      "sha256": "68bb9172b16e87f7fb5d3c0367cdb61b5d6db32789c78b58e8c98e61b9151a63",
+      "sha256": "a0119a507dceb905e16f69dbfe463c93b057942a2a8a779ea6a6cb49fa5b129b",
       "role": "source"
     },
     {
       "path": "internal/mcp/profile_test.go",
-      "sha256": "62e81a27c1c4f8c373c3a6479dd1e2856c48001fa4f9b1400f109ff3929f63ee",
+      "sha256": "95e95c279c7dcf977a971d122e6a41fb7e362e7ba5cf63f6796389dfd3ba0ef5",
       "role": "test"
     },
     {
@@ -675,7 +680,7 @@
     },
     {
       "path": "internal/mcp/protocol.go",
-      "sha256": "a5efaa2fe74fea4ca79ada3c230ad7a7066302190a462a11a7356cb4a67f6292",
+      "sha256": "602351acabcaf9f1141f52921ae2db4828a9ea91fd3ce417a0099718ab0d33ea",
       "role": "source"
     },
     {
@@ -690,12 +695,17 @@
     },
     {
       "path": "internal/mcp/server.go",
-      "sha256": "a630efa1cccfced0b1288683343684149f411b9dece7f70fa01c345e74ee6ec6",
+      "sha256": "fa8f88fa34e97d933d9d7cfa8b84dd52d61fc01c4e369e8e16d0c5466d4484f2",
       "role": "source"
     },
     {
       "path": "internal/mcp/server_notification_test.go",
-      "sha256": "a31799f0abd54a87cc4567393d3c1e4f08b41b0d7094e6e5225be840c063a0b2",
+      "sha256": "7738e90594c9f4ee221505d9a026a83be0b372e39ee44fb9e6dabe8deb80dbab",
+      "role": "test"
+    },
+    {
+      "path": "internal/mcp/server_tools_list_test.go",
+      "sha256": "4bb1163a046646181f8cedfaed435b64b464bd41b5d0b874ef71db8c1e7f5104",
       "role": "test"
     },
     {
@@ -1051,7 +1061,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/intake/dto.go"
+          "value": "internal/api/intake/handler.go"
         }
       ]
     },
@@ -1062,7 +1072,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/intake/handler.go"
+          "value": "internal/api/intake/dto.go"
         }
       ]
     },
@@ -1106,7 +1116,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/mapper.go"
+          "value": "internal/api/plans/review_handler.go"
         }
       ]
     },
@@ -1117,7 +1127,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/handler.go"
+          "value": "internal/api/plans/attempt_handler.go"
         }
       ]
     },
@@ -1128,7 +1138,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/review_handler.go"
+          "value": "internal/api/plans/mapper.go"
         }
       ]
     },
@@ -1139,7 +1149,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/attempt_handler.go"
+          "value": "internal/api/plans/handler.go"
         }
       ]
     },
@@ -1161,7 +1171,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/review_handler.go"
+          "value": "internal/api/plans/attempt_handler.go"
         }
       ]
     },
@@ -1172,7 +1182,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/attempt_handler.go"
+          "value": "internal/api/plans/review_handler.go"
         }
       ]
     },
@@ -1183,7 +1193,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/handler.go"
+          "value": "internal/api/plans/attempt_handler.go"
         }
       ]
     },
@@ -1194,7 +1204,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/attempt_handler.go"
+          "value": "internal/api/plans/handler.go"
         }
       ]
     },
@@ -1205,7 +1215,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/dto.go"
+          "value": "internal/api/plans/review_handler.go"
         }
       ]
     },
@@ -1216,7 +1226,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/mapper.go"
+          "value": "internal/api/plans/dto.go"
         }
       ]
     },
@@ -1227,7 +1237,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/review_dto.go"
+          "value": "internal/api/plans/attempt_dto.go"
         }
       ]
     },
@@ -1238,7 +1248,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/review_handler.go"
+          "value": "internal/api/plans/review_dto.go"
         }
       ]
     },
@@ -1249,7 +1259,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/attempt_dto.go"
+          "value": "internal/api/plans/mapper.go"
         }
       ]
     },
@@ -1260,7 +1270,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/plan_seed_handler.go"
+          "value": "internal/api/projects/handler.go"
         }
       ]
     },
@@ -1271,7 +1281,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/handler.go"
+          "value": "internal/api/projects/mapper.go"
         }
       ]
     },
@@ -1282,7 +1292,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/mapper.go"
+          "value": "internal/api/projects/plan_seed_handler.go"
         }
       ]
     },
@@ -1304,7 +1314,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/handler.go"
+          "value": "internal/api/projects/plan_seed_dto.go"
         }
       ]
     },
@@ -1326,7 +1336,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/plan_seed_dto.go"
+          "value": "internal/api/projects/handler.go"
         }
       ]
     },
@@ -1337,7 +1347,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/dto.go"
+          "value": "internal/api/projects/plan_seed_handler.go"
         }
       ]
     },
@@ -1348,7 +1358,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/plan_seed_handler.go"
+          "value": "internal/api/projects/dto.go"
         }
       ]
     },
@@ -1425,7 +1435,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/refactor_backlog.go"
+          "value": "internal/api/refactors.go"
         }
       ]
     },
@@ -1436,7 +1446,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/refactors.go"
+          "value": "internal/api/refactor_backlog.go"
         }
       ]
     },
@@ -1480,7 +1490,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/runs/handler.go"
+          "value": "internal/api/runs/presenter.go"
         }
       ]
     },
@@ -1491,7 +1501,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/runs/presenter.go"
+          "value": "internal/api/runs/handler.go"
         }
       ]
     },
@@ -1513,7 +1523,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/runs/presenter.go"
+          "value": "internal/api/runs/handler.go"
         }
       ]
     },
@@ -1524,7 +1534,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/runs/handler.go"
+          "value": "internal/api/runs/presenter.go"
         }
       ]
     },
@@ -1590,7 +1600,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/audits/types.go"
+          "value": "internal/app/audits/service.go"
         }
       ]
     },
@@ -1601,7 +1611,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/audits/service.go"
+          "value": "internal/app/audits/types.go"
         }
       ]
     },
@@ -1634,7 +1644,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/drift/prompt.go"
+          "value": "internal/app/drift/service.go"
         }
       ]
     },
@@ -1645,7 +1655,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/drift/service.go"
+          "value": "internal/app/drift/prompt.go"
         }
       ]
     },
@@ -1711,7 +1721,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/intake/helpers.go"
+          "value": "internal/app/intake/service.go"
         }
       ]
     },
@@ -1722,7 +1732,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/intake/service.go"
+          "value": "internal/app/intake/helpers.go"
         }
       ]
     },
@@ -1744,7 +1754,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/types.go"
+          "value": "internal/app/plans/read_queries.go"
         }
       ]
     },
@@ -1755,7 +1765,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/audit_work_packets.go"
+          "value": "internal/app/plans/review_settings.go"
         }
       ]
     },
@@ -1766,7 +1776,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/work_packets.go"
+          "value": "internal/app/plans/review_gate.go"
         }
       ]
     },
@@ -1777,7 +1787,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/service.go"
+          "value": "internal/app/plans/types.go"
         }
       ]
     },
@@ -1799,7 +1809,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/review_settings.go"
+          "value": "internal/app/plans/audit_work_packets.go"
         }
       ]
     },
@@ -1810,7 +1820,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/attempt_service.go"
+          "value": "internal/app/plans/lifecycle.go"
         }
       ]
     },
@@ -1821,7 +1831,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/review_gate.go"
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -1832,7 +1842,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/read_queries.go"
+          "value": "internal/app/plans/attempt_service.go"
         }
       ]
     },
@@ -1843,7 +1853,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/lifecycle.go"
+          "value": "internal/app/plans/service.go"
         }
       ]
     },
@@ -1854,7 +1864,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/service.go"
+          "value": "internal/app/plans/review_settings.go"
         }
       ]
     },
@@ -1876,7 +1886,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/review_settings.go"
+          "value": "internal/app/plans/service.go"
         }
       ]
     },
@@ -1942,7 +1952,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/projects/service.go"
+          "value": "internal/app/projects/plan_seed_service.go"
         }
       ]
     },
@@ -1953,7 +1963,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/projects/plan_seed_service.go"
+          "value": "internal/app/projects/service.go"
         }
       ]
     },
@@ -2074,7 +2084,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/runs/service.go"
+          "value": "internal/app/runs/types.go"
         }
       ]
     },
@@ -2085,7 +2095,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/runs/types.go"
+          "value": "internal/app/runs/service.go"
         }
       ]
     },
@@ -2206,7 +2216,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/tool_test_audit_packet.go"
+          "value": "internal/mcp/context_broker_tools.go"
         }
       ]
     },
@@ -2217,7 +2227,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/context_broker_tools.go"
+          "value": "internal/mcp/tool_test_audit_packet.go"
         }
       ]
     },
@@ -2245,6 +2255,17 @@
     },
     {
       "id": "backend-import-edge-internal-mcp-relay-internal-contextpackets",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/contextpackets",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/orchestrator_work_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-contextpackets-2",
       "label": "derived",
       "statement": "Import edge: internal/mcp imports relay/internal/contextpackets",
       "evidence": [
@@ -2294,12 +2315,23 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/context_broker_tools.go"
+          "value": "internal/mcp/orchestrator_work_tools.go"
         }
       ]
     },
     {
       "id": "backend-import-edge-internal-mcp-relay-internal-sources-2",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/sources",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-sources-3",
       "label": "derived",
       "statement": "Import edge: internal/mcp imports relay/internal/sources",
       "evidence": [
@@ -2327,7 +2359,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/context_broker_git_tools.go"
+          "value": "internal/mcp/deps.go"
         }
       ]
     },
@@ -2338,7 +2370,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/deps.go"
+          "value": "internal/mcp/context_broker_git_tools.go"
         }
       ]
     },
@@ -2360,7 +2392,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/refactor_backlog.go"
+          "value": "internal/store/run_submission_provenance.go"
         }
       ]
     },
@@ -2371,7 +2403,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/run_submission_provenance.go"
+          "value": "internal/store/refactor_backlog.go"
         }
       ]
     },
@@ -3108,6 +3140,10 @@
         },
         {
           "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        },
+        {
+          "kind": "test",
           "value": "internal/mcp/profile_test.go"
         },
         {
@@ -3121,6 +3157,10 @@
         {
           "kind": "test",
           "value": "internal/mcp/server_notification_test.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/mcp/server_tools_list_test.go"
         },
         {
           "kind": "test",
@@ -4071,6 +4111,17 @@
       "id": "backend-symbol-internal-api-plans-func-getnextpasswork",
       "label": "proven",
       "statement": "Exported func GetNextPassWork in internal/api/plans/handler.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/plans/handler.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-api-plans-func-getpassnextworkpreview",
+      "label": "proven",
+      "statement": "Exported func GetPassNextWorkPreview in internal/api/plans/handler.go",
       "evidence": [
         {
           "kind": "source",
@@ -6631,6 +6682,50 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-const-blockercontextcoverageincomplete",
+      "label": "proven",
+      "statement": "Exported const BlockerContextCoverageIncomplete in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-const-blockercontextpacketacquisitionfailed",
+      "label": "proven",
+      "statement": "Exported const BlockerContextPacketAcquisitionFailed in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-const-blockercontextpackettruncated",
+      "label": "proven",
+      "statement": "Exported const BlockerContextPacketTruncated in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-const-blockercontextpacketunusable",
+      "label": "proven",
+      "statement": "Exported const BlockerContextPacketUnusable in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-const-blockerdependenciesincomplete",
       "label": "proven",
       "statement": "Exported const BlockerDependenciesIncomplete in internal/app/plans/work_packets.go",
@@ -6763,6 +6858,28 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-const-blockerrequestedpassnoteligible",
+      "label": "proven",
+      "statement": "Exported const BlockerRequestedPassNotEligible in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-const-blockerrequestedpassnotfound",
+      "label": "proven",
+      "statement": "Exported const BlockerRequestedPassNotFound in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-const-blockerrequiredcontextpacketmissing",
       "label": "proven",
       "statement": "Exported const BlockerRequiredContextPacketMissing in internal/app/plans/work_packets.go",
@@ -6814,6 +6931,39 @@
         {
           "kind": "source",
           "value": "internal/app/plans/audit_work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-const-blockersourcesnapshotacquisitionfailed",
+      "label": "proven",
+      "statement": "Exported const BlockerSourceSnapshotAcquisitionFailed in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-const-blockersourcesnapshotmetadatamissing",
+      "label": "proven",
+      "statement": "Exported const BlockerSourceSnapshotMetadataMissing in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-const-blockersourcesnapshotrequiredseedmissing",
+      "label": "proven",
+      "statement": "Exported const BlockerSourceSnapshotRequiredSeedMissing in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -7885,6 +8035,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-func-compactnextpassworksummary",
+      "label": "proven",
+      "statement": "Exported func CompactNextPassWorkSummary in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-func-completionready",
       "label": "proven",
       "statement": "Exported func CompletionReady in internal/app/plans/lifecycle.go",
@@ -8171,6 +8332,28 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-func-setcontextpacketservice",
+      "label": "proven",
+      "statement": "Exported func SetContextPacketService in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-func-setsourceservice",
+      "label": "proven",
+      "statement": "Exported func SetSourceService in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-func-submitintentdriftreview",
       "label": "proven",
       "statement": "Exported func SubmitIntentDriftReview in internal/app/plans/attempt_service.go",
@@ -8270,6 +8453,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-type-acquisitionsummary",
+      "label": "proven",
+      "statement": "Exported type AcquisitionSummary in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-type-approveplanattemptrequest",
       "label": "proven",
       "statement": "Exported type ApprovePlanAttemptRequest in internal/app/plans/attempt_types.go",
@@ -8321,6 +8515,17 @@
         {
           "kind": "source",
           "value": "internal/app/plans/audit_work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-contextacquisitionaction",
+      "label": "proven",
+      "statement": "Exported type ContextAcquisitionAction in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -8380,6 +8585,50 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-type-ctxpacketinput",
+      "label": "proven",
+      "statement": "Exported type CtxPacketInput in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-ctxpacketresult",
+      "label": "proven",
+      "statement": "Exported type CtxPacketResult in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-ctxseedfile",
+      "label": "proven",
+      "statement": "Exported type CtxSeedFile in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-ctxseedsearch",
+      "label": "proven",
+      "statement": "Exported type CtxSeedSearch in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-type-driftreviewinput",
       "label": "proven",
       "statement": "Exported type DriftReviewInput in internal/app/plans/attempt_types.go",
@@ -8431,6 +8680,28 @@
         {
           "kind": "source",
           "value": "internal/app/plans/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-handoffauthoringpacket",
+      "label": "proven",
+      "statement": "Exported type HandoffAuthoringPacket in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-handoffauthoringreadinesscheck",
+      "label": "proven",
+      "statement": "Exported type HandoffAuthoringReadinessCheck in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -8523,6 +8794,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-type-nextpassworkmcpsummary",
+      "label": "proven",
+      "statement": "Exported type NextPassWorkMCPSummary in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-type-nextpassworkrequest",
       "label": "proven",
       "statement": "Exported type NextPassWorkRequest in internal/app/plans/work_packets.go",
@@ -8537,6 +8819,39 @@
       "id": "backend-symbol-internal-app-plans-type-nextpassworkresponse",
       "label": "proven",
       "statement": "Exported type NextPassWorkResponse in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-nextpassworksummaryaction",
+      "label": "proven",
+      "statement": "Exported type NextPassWorkSummaryAction in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-nextpassworksummaryblocker",
+      "label": "proven",
+      "statement": "Exported type NextPassWorkSummaryBlocker in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-nextpassworksummarypass",
+      "label": "proven",
+      "statement": "Exported type NextPassWorkSummaryPass in internal/app/plans/work_packets.go",
       "evidence": [
         {
           "kind": "source",
@@ -8728,6 +9043,28 @@
         {
           "kind": "source",
           "value": "internal/app/plans/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-plannerjumpstart",
+      "label": "proven",
+      "statement": "Exported type PlannerJumpstart in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-plannerjumpstartbasisreport",
+      "label": "proven",
+      "statement": "Exported type PlannerJumpstartBasisReport in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -10536,6 +10873,28 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-func-createcontextpacket",
+      "label": "proven",
+      "statement": "Exported func CreateContextPacket in internal/mcp/orchestrator_work_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/orchestrator_work_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-func-createsourcesnapshot",
+      "label": "proven",
+      "statement": "Exported func CreateSourceSnapshot in internal/mcp/orchestrator_work_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/orchestrator_work_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-func-error",
       "label": "proven",
       "statement": "Exported func Error in internal/mcp/context_broker_tools.go",
@@ -11496,6 +11855,17 @@
       "id": "backend-symbol-internal-mcp-type-toolscapability",
       "label": "proven",
       "statement": "Exported type ToolsCapability in internal/mcp/protocol.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/protocol.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-type-toolslistparams",
+      "label": "proven",
+      "statement": "Exported type ToolsListParams in internal/mcp/protocol.go",
       "evidence": [
         {
           "kind": "source",
@@ -14749,6 +15119,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-api-testgetnextpasswork-api-contextpacketusability",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_API_ContextPacketUsability in internal/api/next_pass_work_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/api/next_pass_work_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-api-testgetnextpasswork-emptyprojectidreturns400",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_EmptyProjectIDReturns400 in internal/api/next_pass_work_test.go",
@@ -14785,6 +15166,28 @@
       "id": "backend-test-internal-api-testgetnextpasswork-unknownprojectreturns200withblocker",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_UnknownProjectReturns200WithBlocker in internal/api/next_pass_work_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/api/next_pass_work_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-api-testgetpassnextworkpreview-requestedpassblockedbypriorpassreturnspayload",
+      "label": "proven",
+      "statement": "Test function TestGetPassNextWorkPreview_RequestedPassBlockedByPriorPassReturnsPayload in internal/api/next_pass_work_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/api/next_pass_work_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-api-testgetpassnextworkpreview-requestedpassreturnsselectedpasspayload",
+      "label": "proven",
+      "statement": "Test function TestGetPassNextWorkPreview_RequestedPassReturnsSelectedPassPayload in internal/api/next_pass_work_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -15585,6 +15988,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-plans-testcompactnextpassworksummaryomitsverbosehooktext",
+      "label": "proven",
+      "statement": "Test function TestCompactNextPassWorkSummaryOmitsVerboseHookText in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-plans-testcreateplanattemptusesprojectreviewsettings",
       "label": "proven",
       "statement": "Test function TestCreatePlanAttemptUsesProjectReviewSettings in internal/app/plans/review_gate_test.go",
@@ -15805,6 +16219,28 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-contextpacketactionnormalizesrepoaliases",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_ContextPacketActionNormalizesRepoAliases in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-contextpacketusabilitygates",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_ContextPacketUsabilityGates in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-plans-testgetnextpasswork-dependenciesincomplete-planneddep",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_DependenciesIncomplete_PlannedDep in internal/app/plans/work_packets_test.go",
@@ -15819,6 +16255,50 @@
       "id": "backend-test-internal-app-plans-testgetnextpasswork-handoffreadyblocksadvancement",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_HandoffReadyBlocksAdvancement in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-missingcontextpacketincludesjumpstart",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_MissingContextPacketIncludesJumpstart in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-missingcontextpacketwithoutsnapshotincludesdependency",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_MissingContextPacketWithoutSnapshotIncludesDependency in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-missingcontextpacketwithsnapshotincludesinvokableaction",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_MissingContextPacketWithSnapshotIncludesInvokableAction in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-missingsourcesnapshotincludesjumpstart",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_MissingSourceSnapshotIncludesJumpstart in internal/app/plans/work_packets_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -15893,6 +16373,28 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-readypassincludesplannerjumpstart",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_ReadyPassIncludesPlannerJumpstart in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-readypassreturnshandoffauthoringpacket",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_ReadyPassReturnsHandoffAuthoringPacket in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-plans-testgetnextpasswork-refactorpassmalformedmetadatablocks",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_RefactorPassMalformedMetadataBlocks in internal/app/plans/refactor_work_packets_test.go",
@@ -15944,6 +16446,61 @@
         {
           "kind": "test",
           "value": "internal/app/plans/refactor_work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-requestedpassalreadycompleted",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_RequestedPassAlreadyCompleted in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-requestedpassblocksonprioraudit",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_RequestedPassBlocksOnPriorAudit in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-requestedpassnotfound",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_RequestedPassNotFound in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-requestedpasssuccess",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_RequestedPassSuccess in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-requestedpasswithactiverun",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_RequestedPassWithActiveRun in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
         }
       ]
     },
@@ -16017,17 +16574,6 @@
       "id": "backend-test-internal-app-plans-testgetnextpasswork-selectssecondpasswhenfirstskipped",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_SelectsSecondPassWhenFirstSkipped in internal/app/plans/work_packets_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/app/plans/work_packets_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-app-plans-testgetnextpasswork-suggestedsubmissioncontainsonlyplanandpassid",
-      "label": "proven",
-      "statement": "Test function TestGetNextPassWork_SuggestedSubmissionContainsOnlyPlanAndPassID in internal/app/plans/work_packets_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -16498,6 +17044,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-plans-testsubmitplanrejectsunsafereporelativepaths",
+      "label": "proven",
+      "statement": "Test function TestSubmitPlanRejectsUnsafeRepoRelativePaths in internal/app/plans/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/service_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-plans-testsubmitplanrequiresproject",
       "label": "proven",
       "statement": "Test function TestSubmitPlanRequiresProject in internal/app/plans/service_test.go",
@@ -16549,6 +17106,17 @@
         {
           "kind": "test",
           "value": "internal/app/plans/lifecycle_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testvalidateplanacceptsafereporelativepaths",
+      "label": "proven",
+      "statement": "Test function TestValidatePlanAcceptSafeRepoRelativePaths in internal/app/plans/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/service_test.go"
         }
       ]
     },
@@ -16787,6 +17355,17 @@
       "id": "backend-test-internal-mcp-testcontextbrokertoolsrejectunknownfields",
       "label": "proven",
       "statement": "Test function TestContextBrokerToolsRejectUnknownFields in internal/mcp/context_broker_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/context_broker_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testcreatecontextpacketacceptsunambiguousrepoalias",
+      "label": "proven",
+      "statement": "Test function TestCreateContextPacketAcceptsUnambiguousRepoAlias in internal/mcp/context_broker_tools_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -17554,6 +18133,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testinvalidprofiledefaultstolocaloperator",
+      "label": "proven",
+      "statement": "Test function TestInvalidProfileDefaultsToLocalOperator in internal/mcp/profile_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/profile_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testlifecyclestatefromstatus",
       "label": "proven",
       "statement": "Test function TestLifecycleStateFromStatus in internal/mcp/mcp_test.go",
@@ -17576,6 +18166,105 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testnormalizeplanpayload-bothpresent",
+      "label": "proven",
+      "statement": "Test function TestNormalizePlanPayload_BothPresent in internal/mcp/plan_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testnormalizeplanpayload-legacyemptystring",
+      "label": "proven",
+      "statement": "Test function TestNormalizePlanPayload_LegacyEmptyString in internal/mcp/plan_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testnormalizeplanpayload-legacyinvalidjson",
+      "label": "proven",
+      "statement": "Test function TestNormalizePlanPayload_LegacyInvalidJSON in internal/mcp/plan_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testnormalizeplanpayload-legacynotastring",
+      "label": "proven",
+      "statement": "Test function TestNormalizePlanPayload_LegacyNotAString in internal/mcp/plan_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testnormalizeplanpayload-legacystringinput",
+      "label": "proven",
+      "statement": "Test function TestNormalizePlanPayload_LegacyStringInput in internal/mcp/plan_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testnormalizeplanpayload-neitherpresent",
+      "label": "proven",
+      "statement": "Test function TestNormalizePlanPayload_NeitherPresent in internal/mcp/plan_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testnormalizeplanpayload-nullfieldstreatedasabsent",
+      "label": "proven",
+      "statement": "Test function TestNormalizePlanPayload_NullFieldsTreatedAsAbsent in internal/mcp/plan_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testnormalizeplanpayload-objectinput",
+      "label": "proven",
+      "statement": "Test function TestNormalizePlanPayload_ObjectInput in internal/mcp/plan_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testnormalizeplanpayload-objectwrongtype",
+      "label": "proven",
+      "statement": "Test function TestNormalizePlanPayload_ObjectWrongType in internal/mcp/plan_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testorchestratorworktools-getnextauditworksuccessthroughtool",
       "label": "proven",
       "statement": "Test function TestOrchestratorWorkTools_GetNextAuditWorkSuccessThroughTool in internal/mcp/orchestrator_work_tools_test.go",
@@ -17587,9 +18276,64 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testorchestratorworktools-getnextpasswork-contextpacketusability",
+      "label": "proven",
+      "statement": "Test function TestOrchestratorWorkTools_GetNextPassWork_ContextPacketUsability in internal/mcp/orchestrator_work_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/orchestrator_work_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testorchestratorworktools-getnextpassworkactionfeedscreatecontextpacket",
+      "label": "proven",
+      "statement": "Test function TestOrchestratorWorkTools_GetNextPassWorkActionFeedsCreateContextPacket in internal/mcp/orchestrator_work_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/orchestrator_work_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testorchestratorworktools-getnextpassworkplannerjumpstartactions",
+      "label": "proven",
+      "statement": "Test function TestOrchestratorWorkTools_GetNextPassWorkPlannerJumpstartActions in internal/mcp/orchestrator_work_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/orchestrator_work_tools_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testorchestratorworktools-getnextpassworksuccessthroughtool",
       "label": "proven",
       "statement": "Test function TestOrchestratorWorkTools_GetNextPassWorkSuccessThroughTool in internal/mcp/orchestrator_work_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/orchestrator_work_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testorchestratorworktools-getnextpassworktextomitsverbosehookprose",
+      "label": "proven",
+      "statement": "Test function TestOrchestratorWorkTools_GetNextPassWorkTextOmitsVerboseHookProse in internal/mcp/orchestrator_work_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/orchestrator_work_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testorchestratorworktools-getnextpassworkwithpassid",
+      "label": "proven",
+      "statement": "Test function TestOrchestratorWorkTools_GetNextPassWorkWithPassID in internal/mcp/orchestrator_work_tools_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -18093,6 +18837,72 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testsubmitplannerpassplanschema-additionalpropertiesfalse",
+      "label": "proven",
+      "statement": "Test function TestSubmitPlannerPassPlanSchema_AdditionalPropertiesFalse in internal/mcp/plan_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testsubmitplannerpassplanschema-hasbothpayloadfields",
+      "label": "proven",
+      "statement": "Test function TestSubmitPlannerPassPlanSchema_HasBothPayloadFields in internal/mcp/plan_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testsubmitplannerpassplanschema-hasoneof",
+      "label": "proven",
+      "statement": "Test function TestSubmitPlannerPassPlanSchema_HasOneOf in internal/mcp/plan_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testtoolprofileauditaliasnormalizestolocaloperator",
+      "label": "proven",
+      "statement": "Test function TestToolProfileAuditAliasNormalizesToLocalOperator in internal/mcp/profile_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/profile_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testtoolprofileauditfromenvuseslocaloperator",
+      "label": "proven",
+      "statement": "Test function TestToolProfileAuditFromEnvUsesLocalOperator in internal/mcp/profile_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/profile_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testtoolprofilecontextbrokerenabled",
+      "label": "proven",
+      "statement": "Test function TestToolProfileContextBrokerEnabled in internal/mcp/profile_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/profile_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testtoolprofilefromenvdefaultsandprecedence",
       "label": "proven",
       "statement": "Test function TestToolProfileFromEnvDefaultsAndPrecedence in internal/mcp/profile_test.go",
@@ -18100,6 +18910,61 @@
         {
           "kind": "test",
           "value": "internal/mcp/profile_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testtoolscall-auditprofilealiasusesfulllocaloperatorregistry",
+      "label": "proven",
+      "statement": "Test function TestToolsCall_AuditProfileAliasUsesFullLocalOperatorRegistry in internal/mcp/server_tools_list_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/server_tools_list_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testtoolslist-invalidcursor",
+      "label": "proven",
+      "statement": "Test function TestToolsList_InvalidCursor in internal/mcp/server_tools_list_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/server_tools_list_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testtoolslist-localoperatorpageddiscoveryincludesplannerandauditor",
+      "label": "proven",
+      "statement": "Test function TestToolsList_LocalOperatorPagedDiscoveryIncludesPlannerAndAuditor in internal/mcp/server_tools_list_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/server_tools_list_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testtoolslist-localoperatorschemasarevalidandbounded",
+      "label": "proven",
+      "statement": "Test function TestToolsList_LocalOperatorSchemasAreValidAndBounded in internal/mcp/server_tools_list_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/server_tools_list_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testtoolslist-queryfilteringdoesnotmutateregistry",
+      "label": "proven",
+      "statement": "Test function TestToolsList_QueryFilteringDoesNotMutateRegistry in internal/mcp/server_tools_list_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/server_tools_list_test.go"
         }
       ]
     },

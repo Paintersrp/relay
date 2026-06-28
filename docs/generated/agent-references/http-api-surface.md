@@ -28,7 +28,7 @@ Schema version: `1.0.0`
 | `internal/api/artifacts/routes.go` | `758c96e858840df0ff2cda43ddd4121b52b8e0c416af2cad5a4d5d417b65e7e4` | route source |
 | `internal/api/audits/routes.go` | `5998ed331a093f9174ae2b95392775ff0dec67554944aade9201e426206037ef` | route source |
 | `internal/api/intake/routes.go` | `153de0341933b08bdfee0e70b1263af9d9a3a5c7ffda37315dd687d1dbeae706` | route source |
-| `internal/api/plans/routes.go` | `7659441361454b1d932751285357f339ca1ae6f1e035038575a10ef0671c0710` | route source |
+| `internal/api/plans/routes.go` | `0b4388c25653944639c8916c1545daf567708105deb2032d406a28e6980f4139` | route source |
 | `internal/api/projects/routes.go` | `e1425a7930b8738eb9ac729c36d6e44676ce60312312e84a994e6fbbcb3b8e90` | route source |
 | `internal/api/runs/routes.go` | `c4826589811059c986998b17dea88c866d6d674f202fc894fbb2addb6ca0243e` | route source |
 | `internal/server/routes.go` | `b8b1b6e9ff8087b505441ef60c0fe569f61332dafd33e568cbf3276f8e8f712b` | route source |
@@ -382,6 +382,14 @@ Evidence:
 ### http-api-route-projects-projectid-plans-planid-next-pass-work-get (proven)
 
 Route GET /api/projects/{projectId}/plans/{planId}/next-pass-work handled by h.GetNextPassWork
+
+Evidence:
+
+- source: `internal/api/plans/routes.go`
+
+### http-api-route-projects-projectid-plans-planid-passes-passid-next-pass-work-preview-get (proven)
+
+Route GET /api/projects/{projectId}/plans/{planId}/passes/{passId}/next-pass-work-preview handled by h.GetPassNextWorkPreview
 
 Evidence:
 

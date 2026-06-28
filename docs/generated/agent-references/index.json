@@ -20,7 +20,7 @@
   "source_inputs": [
     {
       "path": "AGENTS.md",
-      "sha256": "1646d2e76f942e0dd2b56c745240d2dc879282156e7aa4177fbc9aa5e393bf8e",
+      "sha256": "017097e2c2142c3f081e15b00ef525f256364ca174e0f365b968ae7d8056c52e",
       "role": "agent instructions"
     },
     {

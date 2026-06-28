@@ -44,18 +44,18 @@ Schema version: `1.0.0`
 | `internal/api/intake/routes.go` | `153de0341933b08bdfee0e70b1263af9d9a3a5c7ffda37315dd687d1dbeae706` | source |
 | `internal/api/local_audits_test.go` | `8c4e0364c372f1bb028313b324abbf6a90cdaaa8eabc736e63700820b5a95721` | test |
 | `internal/api/next_audit_work_test.go` | `69215ac1704f4cb2bee23c71a647c14dc5a5389281b42096e36ac9e520191c34` | test |
-| `internal/api/next_pass_work_test.go` | `3d7314a07622476ceec7cf7f4c8a7c815c5daab8845213c3146c4aa4e529dc5c` | test |
+| `internal/api/next_pass_work_test.go` | `f224d0f8915bc4129c95d4882c0978e763618d127a6fa23a33ebfa522ac371b7` | test |
 | `internal/api/plans/attempt_dto.go` | `5bbd7273cf01cf336f4d5a10f66c6a2aacfc5458aaa74cb3eb5bc5b74d00361e` | source |
 | `internal/api/plans/attempt_handler.go` | `0c3306e9eae40bca3c21dd30271ede345fcabe5c8da86beb82ce081bd4ec6925` | source |
 | `internal/api/plans/attempt_handler_test.go` | `926c231f5662ef3b0837d817c7c42baaa2846a108c527c41df14d07911ce81a0` | test |
 | `internal/api/plans/doc.go` | `0311e2a13ab66e30f3ea4a7e1532f0cdb5ff46787e2d7c303b1e03138af93f18` | source |
 | `internal/api/plans/dto.go` | `c3ba1102687ba750aa73773869c12bc9c1fd6fa376cb6b877b0771b0d8c2d1fe` | source |
-| `internal/api/plans/handler.go` | `59868753e564b9f0166de31bd5b6d1e1b7de00ea794bd2608e242d3ffa103bac` | source |
+| `internal/api/plans/handler.go` | `9c6ecc793d1e46c46cb685062bcc3ce7a2d72fae393eb02fa592dfaddab6b7c8` | source |
 | `internal/api/plans/mapper.go` | `8a2beb9f0d4c374e30210a4274ec2b2239f47b96e68da9f31051f73cfadcf0e9` | source |
 | `internal/api/plans/review_dto.go` | `12e82c822bd923c9fbfc918edd17006a71136217012db313f8feb8af0c2cf469` | source |
 | `internal/api/plans/review_handler.go` | `ef7390b43d3ea7d6a9efc9ae1eb97c1e0905bf0d7fcef2b2ae3d0b8749ba7abb` | source |
 | `internal/api/plans/review_handler_test.go` | `2fc2a9e85a86af8b29cab44f8876475e70499bb13922d6853ebc9efac67890ec` | test |
-| `internal/api/plans/routes.go` | `7659441361454b1d932751285357f339ca1ae6f1e035038575a10ef0671c0710` | source |
+| `internal/api/plans/routes.go` | `0b4388c25653944639c8916c1545daf567708105deb2032d406a28e6980f4139` | source |
 | `internal/api/plans_test.go` | `71e26856f349d84ca48cd3d00374647915a0288139312515d28f99431b717fc3` | test |
 | `internal/api/progression_test.go` | `07ff4d6fcf9735e0af97bb5bf6fabb8ef5b284c1985ddc21bdfdb3945f0dab69` | test |
 | `internal/api/projects/doc.go` | `4aad4ec96633b1a93686b463d2d17b861fdd5c60df034d819044ac1b0aa225eb` | source |
@@ -118,11 +118,11 @@ Schema version: `1.0.0`
 | `internal/app/plans/review_settings.go` | `2122aa721a75e922df92f7a768ee16d6d0994313596a609d06155811483a0355` | source |
 | `internal/app/plans/review_settings_test.go` | `99a9b70518880a9bea61bafacdcde4f36c9d80de440c9ccaa9063ee9a3e8d5f6` | test |
 | `internal/app/plans/service.go` | `83e80e54feb316544fa4566bce2569ee6827b0af8c2dbfff06c6227e39fe6361` | source |
-| `internal/app/plans/service_test.go` | `33692caa875965687f5a863730481dc2d0d13fd0677bd76d0674dd7068417cff` | test |
+| `internal/app/plans/service_test.go` | `4d61e8bde7b0eddda3d1136a98505ea374b210b5ec8be83328c65c69a752725c` | test |
 | `internal/app/plans/types.go` | `8e61e722378940b93ad98db9e68ed915840c568fedf958ec9f86152afd89da53` | source |
-| `internal/app/plans/validator.go` | `1e28ac3ea8480313b7bd5338d830edfaf7e8f66e19c64af44ed5b6708f34933e` | source |
-| `internal/app/plans/work_packets.go` | `c4e90d03742cb3d586dc6a84fada3595a96878bfd849a07e7bd7a9c16add7f8a` | source |
-| `internal/app/plans/work_packets_test.go` | `b8ceccfafcebdb7d86b7dce7539633bde1d1978039afa0c10c7897ae4fa59701` | test |
+| `internal/app/plans/validator.go` | `9eb5323bcbe1b6f76a25d5f1c53607b06232c99b73674e5947ba1a6de81891dd` | source |
+| `internal/app/plans/work_packets.go` | `6ab3157ea4fabc9169eb54a7c564ad021235eed98f69661b10a228bcbd711eea` | source |
+| `internal/app/plans/work_packets_test.go` | `cdf2daa89ef0e6fea3e64562a5e49888d7aeabc4b283afe973b44623549afeeb` | test |
 | `internal/app/projects/doc.go` | `05785c89f12cd3c6466520e3a36dea624fcfcb0c5017477a253f074ba5946287` | source |
 | `internal/app/projects/plan_seed_service.go` | `e5963863344a9aa8d4497bf52a53ebeb32e5d1fd22096da593024eed74170528` | source |
 | `internal/app/projects/plan_seed_service_test.go` | `84025b75ff1dc3564fc2990a886e0a5bae7e62af194ec475742eb8fbec7353c4` | test |
@@ -138,29 +138,31 @@ Schema version: `1.0.0`
 | `internal/app/runs/service.go` | `245f124438b677b7dd1bb57f8f8bdbffd667adf7fde9bb1e9d830b9e1141f06a` | source |
 | `internal/app/runs/types.go` | `0631b18e8df8367a971be32e8adcb1ab66ba4a96fea257730b23f3c4a6b4178d` | source |
 | `internal/mcp/context_broker_git_tools.go` | `483ab61f6534750817724fdd79841efee3a4fc6708fa3ab3758e87b28c084572` | source |
-| `internal/mcp/context_broker_tools.go` | `396cf3f9cfb6fd3b3389b8d18d37f1e6a24e9532d615113d4004716aebbf2573` | source |
-| `internal/mcp/context_broker_tools_test.go` | `d50e5950a978deaa22a7c102bfafc9c7c5f899dffdf707587e01e98e34ee00f8` | test |
+| `internal/mcp/context_broker_tools.go` | `5029ca2a7ce3e51d31dc1714d89978966d1763af5fc6dbb280107a51e24272a8` | source |
+| `internal/mcp/context_broker_tools_test.go` | `bf29a670e1e71a4917f16acf53c2a3374f059827bc40b795e7c1a7a4aedc2d09` | test |
 | `internal/mcp/deps.go` | `02c2771e9855a53b2c26170b99c84d7948640e1eb34235d6cd63ac9fd159de2c` | source |
 | `internal/mcp/http_handler.go` | `490414d00c581a709bf44c232dccd0d2ddde1b03bd6a1bd2d94b520025065d7c` | source |
-| `internal/mcp/http_handler_test.go` | `d5db26b20d5247c8f1c0577612f32ddccbf662d2bb7059249550292781cc708c` | test |
+| `internal/mcp/http_handler_test.go` | `28e607c54c8328d995ea63731ea1e166edaabec75524bdd649d46f06338970a3` | test |
 | `internal/mcp/local_audit_tools.go` | `dcdb5b2485267f170781711640de73fa3b1d99c7ed52b088d68a147cf5bbade1` | source |
 | `internal/mcp/mcp_test.go` | `b09fa87828689566f40d57069f1e7c4aca5a20e6766ea25938f0edc400699bcb` | test |
-| `internal/mcp/orchestrator_work_tools.go` | `ecbdb265531a6855d30dd6b6c263d9c4410f8cf428005754c0b5b97f726694b3` | source |
-| `internal/mcp/orchestrator_work_tools_test.go` | `cb09db3191982ecb2896bc2539170415cf693c6c809ce2907b7c792df93ee04f` | test |
+| `internal/mcp/orchestrator_work_tools.go` | `4f5fb9c1f37e367ef1e9bff6433ca1d2969d35c5ca102c1ba045e52086c2ff66` | source |
+| `internal/mcp/orchestrator_work_tools_test.go` | `f65cb0bd0b21837cf44503cb5a25e12d2c0d2dd3be40c789b2cb242e5774d795` | test |
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | source |
 | `internal/mcp/plan_attempt_tools_test.go` | `1cf74dc584a0ae40d670ff0375653a36c2f03fdb762e63232d09d0a99d4a9502` | test |
 | `internal/mcp/plan_seed_tools.go` | `19a7bede46ae71836a0a942123f2d24015e7faaf93896850b57e7bd6cbbb0ad4` | source |
 | `internal/mcp/plan_seed_tools_test.go` | `b6692a1bc4b24fbbac5c88baa22f4456db0701bc3be9392a0c23cc7d376ddc91` | test |
-| `internal/mcp/plan_tools.go` | `184b3c9f92b649d97f933711e088d26259d8e5b0b9c466a6c7831b249a1e1621` | source |
-| `internal/mcp/profile.go` | `68bb9172b16e87f7fb5d3c0367cdb61b5d6db32789c78b58e8c98e61b9151a63` | source |
-| `internal/mcp/profile_test.go` | `62e81a27c1c4f8c373c3a6479dd1e2856c48001fa4f9b1400f109ff3929f63ee` | test |
+| `internal/mcp/plan_tools.go` | `cd624b354bc28812cc9ae68e9a7917506dc64004044b7e7d4d16afc40aef064c` | source |
+| `internal/mcp/plan_tools_test.go` | `d05b248f64aba7998e86367215638b56a3942fb77423e19539c0d33a77d9593b` | test |
+| `internal/mcp/profile.go` | `a0119a507dceb905e16f69dbfe463c93b057942a2a8a779ea6a6cb49fa5b129b` | source |
+| `internal/mcp/profile_test.go` | `95e95c279c7dcf977a971d122e6a41fb7e362e7ba5cf63f6796389dfd3ba0ef5` | test |
 | `internal/mcp/project_context_memory_tools.go` | `2f342e8ed7c0154131fd5e04a3d40a9129c9f74d477f742428df2ec75f274d8d` | source |
 | `internal/mcp/project_context_memory_tools_test.go` | `57e1f70d298e7a24bfe169f938d871fb4981f3516e81cd42824ef9ebcd8a357a` | test |
-| `internal/mcp/protocol.go` | `a5efaa2fe74fea4ca79ada3c230ad7a7066302190a462a11a7356cb4a67f6292` | source |
+| `internal/mcp/protocol.go` | `602351acabcaf9f1141f52921ae2db4828a9ea91fd3ce417a0099718ab0d33ea` | source |
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | source |
 | `internal/mcp/refactor_backlog_tools_test.go` | `80dab3bab0e3240676606dccc6c218d8b10bc6a2b09975e9cca552d67dec4b05` | test |
-| `internal/mcp/server.go` | `a630efa1cccfced0b1288683343684149f411b9dece7f70fa01c345e74ee6ec6` | source |
-| `internal/mcp/server_notification_test.go` | `a31799f0abd54a87cc4567393d3c1e4f08b41b0d7094e6e5225be840c063a0b2` | test |
+| `internal/mcp/server.go` | `fa8f88fa34e97d933d9d7cfa8b84dd52d61fc01c4e369e8e16d0c5466d4484f2` | source |
+| `internal/mcp/server_notification_test.go` | `7738e90594c9f4ee221505d9a026a83be0b372e39ee44fb9e6dabe8deb80dbab` | test |
+| `internal/mcp/server_tools_list_test.go` | `4bb1163a046646181f8cedfaed435b64b464bd41b5d0b874ef71db8c1e7f5104` | test |
 | `internal/mcp/tool_create_run.go` | `9e5434d1b9920ea72a14864a51e855363c729a6423a3d8b14009de3290655cd3` | source |
 | `internal/mcp/tool_get_run_status.go` | `730691b5fd5d5aa1f99dd7b32a61163ac19354774694cb6a1bdb65cf45074f13` | source |
 | `internal/mcp/tool_list_runs.go` | `8c9be8897fb0fe5fee3862ea0629e855f130626412e34daa4b3b9e54af6c5f85` | source |
@@ -373,7 +375,7 @@ Import edge: internal/api/intake imports relay/internal/api/runs
 
 Evidence:
 
-- source: `internal/api/intake/dto.go`
+- source: `internal/api/intake/handler.go`
 
 ### backend-import-edge-internal-api-intake-relay-internal-api-runs-2 (derived)
 
@@ -381,7 +383,7 @@ Import edge: internal/api/intake imports relay/internal/api/runs
 
 Evidence:
 
-- source: `internal/api/intake/handler.go`
+- source: `internal/api/intake/dto.go`
 
 ### backend-import-edge-internal-api-intake-relay-internal-api-shared (derived)
 
@@ -413,7 +415,7 @@ Import edge: internal/api/plans imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/plans/mapper.go`
+- source: `internal/api/plans/review_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-api-shared-2 (derived)
 
@@ -421,7 +423,7 @@ Import edge: internal/api/plans imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/plans/handler.go`
+- source: `internal/api/plans/attempt_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-api-shared-3 (derived)
 
@@ -429,7 +431,7 @@ Import edge: internal/api/plans imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/plans/review_handler.go`
+- source: `internal/api/plans/mapper.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-api-shared-4 (derived)
 
@@ -437,7 +439,7 @@ Import edge: internal/api/plans imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/plans/attempt_handler.go`
+- source: `internal/api/plans/handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-drift (derived)
 
@@ -453,7 +455,7 @@ Import edge: internal/api/plans imports relay/internal/app/drift
 
 Evidence:
 
-- source: `internal/api/plans/review_handler.go`
+- source: `internal/api/plans/attempt_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-drift-3 (derived)
 
@@ -461,7 +463,7 @@ Import edge: internal/api/plans imports relay/internal/app/drift
 
 Evidence:
 
-- source: `internal/api/plans/attempt_handler.go`
+- source: `internal/api/plans/review_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans (derived)
 
@@ -469,7 +471,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/handler.go`
+- source: `internal/api/plans/attempt_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-2 (derived)
 
@@ -477,7 +479,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/attempt_handler.go`
+- source: `internal/api/plans/handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-3 (derived)
 
@@ -485,7 +487,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/dto.go`
+- source: `internal/api/plans/review_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-4 (derived)
 
@@ -493,7 +495,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/mapper.go`
+- source: `internal/api/plans/dto.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-5 (derived)
 
@@ -501,7 +503,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/review_dto.go`
+- source: `internal/api/plans/attempt_dto.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-6 (derived)
 
@@ -509,7 +511,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/review_handler.go`
+- source: `internal/api/plans/review_dto.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-7 (derived)
 
@@ -517,7 +519,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/attempt_dto.go`
+- source: `internal/api/plans/mapper.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-api-shared (derived)
 
@@ -525,7 +527,7 @@ Import edge: internal/api/projects imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/projects/plan_seed_handler.go`
+- source: `internal/api/projects/handler.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-api-shared-2 (derived)
 
@@ -533,7 +535,7 @@ Import edge: internal/api/projects imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/projects/handler.go`
+- source: `internal/api/projects/mapper.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-api-shared-3 (derived)
 
@@ -541,7 +543,7 @@ Import edge: internal/api/projects imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/projects/mapper.go`
+- source: `internal/api/projects/plan_seed_handler.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-app-plans (derived)
 
@@ -557,7 +559,7 @@ Import edge: internal/api/projects imports relay/internal/app/projects
 
 Evidence:
 
-- source: `internal/api/projects/handler.go`
+- source: `internal/api/projects/plan_seed_dto.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-app-projects-2 (derived)
 
@@ -573,7 +575,7 @@ Import edge: internal/api/projects imports relay/internal/app/projects
 
 Evidence:
 
-- source: `internal/api/projects/plan_seed_dto.go`
+- source: `internal/api/projects/handler.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-app-projects-4 (derived)
 
@@ -581,7 +583,7 @@ Import edge: internal/api/projects imports relay/internal/app/projects
 
 Evidence:
 
-- source: `internal/api/projects/dto.go`
+- source: `internal/api/projects/plan_seed_handler.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-app-projects-5 (derived)
 
@@ -589,7 +591,7 @@ Import edge: internal/api/projects imports relay/internal/app/projects
 
 Evidence:
 
-- source: `internal/api/projects/plan_seed_handler.go`
+- source: `internal/api/projects/dto.go`
 
 ### backend-import-edge-internal-api-relay-internal-api-intake (derived)
 
@@ -645,7 +647,7 @@ Import edge: internal/api imports relay/internal/refactors
 
 Evidence:
 
-- source: `internal/api/refactor_backlog.go`
+- source: `internal/api/refactors.go`
 
 ### backend-import-edge-internal-api-relay-internal-refactors-2 (derived)
 
@@ -653,7 +655,7 @@ Import edge: internal/api imports relay/internal/refactors
 
 Evidence:
 
-- source: `internal/api/refactors.go`
+- source: `internal/api/refactor_backlog.go`
 
 ### backend-import-edge-internal-api-relay-internal-refactors-3 (derived)
 
@@ -685,7 +687,7 @@ Import edge: internal/api/runs imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/runs/handler.go`
+- source: `internal/api/runs/presenter.go`
 
 ### backend-import-edge-internal-api-runs-relay-internal-api-shared-2 (derived)
 
@@ -693,7 +695,7 @@ Import edge: internal/api/runs imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/runs/presenter.go`
+- source: `internal/api/runs/handler.go`
 
 ### backend-import-edge-internal-api-runs-relay-internal-app-plans (derived)
 
@@ -709,7 +711,7 @@ Import edge: internal/api/runs imports relay/internal/app/runs
 
 Evidence:
 
-- source: `internal/api/runs/presenter.go`
+- source: `internal/api/runs/handler.go`
 
 ### backend-import-edge-internal-api-runs-relay-internal-app-runs-2 (derived)
 
@@ -717,7 +719,7 @@ Import edge: internal/api/runs imports relay/internal/app/runs
 
 Evidence:
 
-- source: `internal/api/runs/handler.go`
+- source: `internal/api/runs/presenter.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-app-plans (derived)
 
@@ -765,7 +767,7 @@ Import edge: internal/app/audits imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/audits/types.go`
+- source: `internal/app/audits/service.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-store-2 (derived)
 
@@ -773,7 +775,7 @@ Import edge: internal/app/audits imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/audits/service.go`
+- source: `internal/app/audits/types.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-validationrunner (derived)
 
@@ -797,7 +799,7 @@ Import edge: internal/app/drift imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/app/drift/prompt.go`
+- source: `internal/app/drift/service.go`
 
 ### backend-import-edge-internal-app-drift-relay-internal-app-plans-3 (derived)
 
@@ -805,7 +807,7 @@ Import edge: internal/app/drift imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/app/drift/service.go`
+- source: `internal/app/drift/prompt.go`
 
 ### backend-import-edge-internal-app-drift-relay-internal-store (derived)
 
@@ -853,7 +855,7 @@ Import edge: internal/app/intake imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/intake/helpers.go`
+- source: `internal/app/intake/service.go`
 
 ### backend-import-edge-internal-app-intake-relay-internal-store-2 (derived)
 
@@ -861,7 +863,7 @@ Import edge: internal/app/intake imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/intake/service.go`
+- source: `internal/app/intake/helpers.go`
 
 ### backend-import-edge-internal-app-intake-relay-internal-store-generated (derived)
 
@@ -877,7 +879,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/types.go`
+- source: `internal/app/plans/read_queries.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-10 (derived)
 
@@ -885,7 +887,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/audit_work_packets.go`
+- source: `internal/app/plans/review_settings.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-2 (derived)
 
@@ -893,7 +895,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/work_packets.go`
+- source: `internal/app/plans/review_gate.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-3 (derived)
 
@@ -901,7 +903,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/service.go`
+- source: `internal/app/plans/types.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-4 (derived)
 
@@ -917,7 +919,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/review_settings.go`
+- source: `internal/app/plans/audit_work_packets.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-6 (derived)
 
@@ -925,7 +927,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/attempt_service.go`
+- source: `internal/app/plans/lifecycle.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-7 (derived)
 
@@ -933,7 +935,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/review_gate.go`
+- source: `internal/app/plans/work_packets.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-8 (derived)
 
@@ -941,7 +943,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/read_queries.go`
+- source: `internal/app/plans/attempt_service.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-9 (derived)
 
@@ -949,7 +951,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/lifecycle.go`
+- source: `internal/app/plans/service.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-generated (derived)
 
@@ -957,7 +959,7 @@ Import edge: internal/app/plans imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/app/plans/service.go`
+- source: `internal/app/plans/review_settings.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-generated-2 (derived)
 
@@ -973,7 +975,7 @@ Import edge: internal/app/plans imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/app/plans/review_settings.go`
+- source: `internal/app/plans/service.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-generated-4 (derived)
 
@@ -1021,7 +1023,7 @@ Import edge: internal/app/projects imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/projects/service.go`
+- source: `internal/app/projects/plan_seed_service.go`
 
 ### backend-import-edge-internal-app-projects-relay-internal-store-2 (derived)
 
@@ -1029,7 +1031,7 @@ Import edge: internal/app/projects imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/projects/plan_seed_service.go`
+- source: `internal/app/projects/service.go`
 
 ### backend-import-edge-internal-app-projects-relay-internal-store-3 (derived)
 
@@ -1117,7 +1119,7 @@ Import edge: internal/app/runs imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/runs/service.go`
+- source: `internal/app/runs/types.go`
 
 ### backend-import-edge-internal-app-runs-relay-internal-store-3 (derived)
 
@@ -1125,7 +1127,7 @@ Import edge: internal/app/runs imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/runs/types.go`
+- source: `internal/app/runs/service.go`
 
 ### backend-import-edge-internal-app-runs-relay-internal-store-generated (derived)
 
@@ -1213,7 +1215,7 @@ Import edge: internal/mcp imports relay/internal/artifacts
 
 Evidence:
 
-- source: `internal/mcp/tool_test_audit_packet.go`
+- source: `internal/mcp/context_broker_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-artifacts-2 (derived)
 
@@ -1221,7 +1223,7 @@ Import edge: internal/mcp imports relay/internal/artifacts
 
 Evidence:
 
-- source: `internal/mcp/context_broker_tools.go`
+- source: `internal/mcp/tool_test_audit_packet.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-auditor (derived)
 
@@ -1240,6 +1242,14 @@ Evidence:
 - source: `internal/mcp/tool_submit_audit.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-contextpackets (derived)
+
+Import edge: internal/mcp imports relay/internal/contextpackets
+
+Evidence:
+
+- source: `internal/mcp/orchestrator_work_tools.go`
+
+### backend-import-edge-internal-mcp-relay-internal-contextpackets-2 (derived)
 
 Import edge: internal/mcp imports relay/internal/contextpackets
 
@@ -1277,9 +1287,17 @@ Import edge: internal/mcp imports relay/internal/sources
 
 Evidence:
 
-- source: `internal/mcp/context_broker_tools.go`
+- source: `internal/mcp/orchestrator_work_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-sources-2 (derived)
+
+Import edge: internal/mcp imports relay/internal/sources
+
+Evidence:
+
+- source: `internal/mcp/context_broker_tools.go`
+
+### backend-import-edge-internal-mcp-relay-internal-sources-3 (derived)
 
 Import edge: internal/mcp imports relay/internal/sources
 
@@ -1301,7 +1319,7 @@ Import edge: internal/mcp imports relay/internal/store
 
 Evidence:
 
-- source: `internal/mcp/context_broker_git_tools.go`
+- source: `internal/mcp/deps.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-store-3 (derived)
 
@@ -1309,7 +1327,7 @@ Import edge: internal/mcp imports relay/internal/store
 
 Evidence:
 
-- source: `internal/mcp/deps.go`
+- source: `internal/mcp/context_broker_git_tools.go`
 
 ### backend-import-edge-internal-store-relay-internal-db (derived)
 
@@ -1325,7 +1343,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/refactor_backlog.go`
+- source: `internal/store/run_submission_provenance.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-2 (derived)
 
@@ -1333,7 +1351,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/run_submission_provenance.go`
+- source: `internal/store/refactor_backlog.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-3 (derived)
 
@@ -1638,10 +1656,12 @@ Evidence:
 - test: `internal/mcp/orchestrator_work_tools_test.go`
 - test: `internal/mcp/plan_attempt_tools_test.go`
 - test: `internal/mcp/plan_seed_tools_test.go`
+- test: `internal/mcp/plan_tools_test.go`
 - test: `internal/mcp/profile_test.go`
 - test: `internal/mcp/project_context_memory_tools_test.go`
 - test: `internal/mcp/refactor_backlog_tools_test.go`
 - test: `internal/mcp/server_notification_test.go`
+- test: `internal/mcp/server_tools_list_test.go`
 - test: `internal/mcp/tool_surface_test.go`
 
 ### backend-package-internal-store (proven)
@@ -2307,6 +2327,14 @@ Evidence:
 ### backend-symbol-internal-api-plans-func-getnextpasswork (proven)
 
 Exported func GetNextPassWork in internal/api/plans/handler.go
+
+Evidence:
+
+- source: `internal/api/plans/handler.go`
+
+### backend-symbol-internal-api-plans-func-getpassnextworkpreview (proven)
+
+Exported func GetPassNextWorkPreview in internal/api/plans/handler.go
 
 Evidence:
 
@@ -4168,6 +4196,38 @@ Evidence:
 
 - source: `internal/app/plans/audit_work_packets.go`
 
+### backend-symbol-internal-app-plans-const-blockercontextcoverageincomplete (proven)
+
+Exported const BlockerContextCoverageIncomplete in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-const-blockercontextpacketacquisitionfailed (proven)
+
+Exported const BlockerContextPacketAcquisitionFailed in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-const-blockercontextpackettruncated (proven)
+
+Exported const BlockerContextPacketTruncated in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-const-blockercontextpacketunusable (proven)
+
+Exported const BlockerContextPacketUnusable in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-const-blockerdependenciesincomplete (proven)
 
 Exported const BlockerDependenciesIncomplete in internal/app/plans/work_packets.go
@@ -4264,6 +4324,22 @@ Evidence:
 
 - source: `internal/app/plans/work_packets.go`
 
+### backend-symbol-internal-app-plans-const-blockerrequestedpassnoteligible (proven)
+
+Exported const BlockerRequestedPassNotEligible in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-const-blockerrequestedpassnotfound (proven)
+
+Exported const BlockerRequestedPassNotFound in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-const-blockerrequiredcontextpacketmissing (proven)
 
 Exported const BlockerRequiredContextPacketMissing in internal/app/plans/work_packets.go
@@ -4303,6 +4379,30 @@ Exported const BlockerRunNotInProjectPlan in internal/app/plans/audit_work_packe
 Evidence:
 
 - source: `internal/app/plans/audit_work_packets.go`
+
+### backend-symbol-internal-app-plans-const-blockersourcesnapshotacquisitionfailed (proven)
+
+Exported const BlockerSourceSnapshotAcquisitionFailed in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-const-blockersourcesnapshotmetadatamissing (proven)
+
+Exported const BlockerSourceSnapshotMetadataMissing in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-const-blockersourcesnapshotrequiredseedmissing (proven)
+
+Exported const BlockerSourceSnapshotRequiredSeedMissing in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
 
 ### backend-symbol-internal-app-plans-const-blockerstaleattempt (proven)
 
@@ -5080,6 +5180,14 @@ Evidence:
 
 - source: `internal/app/plans/attempt_service.go`
 
+### backend-symbol-internal-app-plans-func-compactnextpassworksummary (proven)
+
+Exported func CompactNextPassWorkSummary in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-func-completionready (proven)
 
 Exported func CompletionReady in internal/app/plans/lifecycle.go
@@ -5288,6 +5396,22 @@ Evidence:
 
 - source: `internal/app/plans/attempt_hash.go`
 
+### backend-symbol-internal-app-plans-func-setcontextpacketservice (proven)
+
+Exported func SetContextPacketService in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-func-setsourceservice (proven)
+
+Exported func SetSourceService in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-func-submitintentdriftreview (proven)
 
 Exported func SubmitIntentDriftReview in internal/app/plans/attempt_service.go
@@ -5360,6 +5484,14 @@ Evidence:
 
 - source: `internal/app/plans/attempt_service.go`
 
+### backend-symbol-internal-app-plans-type-acquisitionsummary (proven)
+
+Exported type AcquisitionSummary in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-type-approveplanattemptrequest (proven)
 
 Exported type ApprovePlanAttemptRequest in internal/app/plans/attempt_types.go
@@ -5399,6 +5531,14 @@ Exported type AuditWorkRunSummary in internal/app/plans/audit_work_packets.go
 Evidence:
 
 - source: `internal/app/plans/audit_work_packets.go`
+
+### backend-symbol-internal-app-plans-type-contextacquisitionaction (proven)
+
+Exported type ContextAcquisitionAction in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
 
 ### backend-symbol-internal-app-plans-type-contextbudget (proven)
 
@@ -5440,6 +5580,38 @@ Evidence:
 
 - source: `internal/app/plans/attempt_types.go`
 
+### backend-symbol-internal-app-plans-type-ctxpacketinput (proven)
+
+Exported type CtxPacketInput in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-ctxpacketresult (proven)
+
+Exported type CtxPacketResult in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-ctxseedfile (proven)
+
+Exported type CtxSeedFile in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-ctxseedsearch (proven)
+
+Exported type CtxSeedSearch in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-type-driftreviewinput (proven)
 
 Exported type DriftReviewInput in internal/app/plans/attempt_types.go
@@ -5479,6 +5651,22 @@ Exported type GlobalContextRules in internal/app/plans/types.go
 Evidence:
 
 - source: `internal/app/plans/types.go`
+
+### backend-symbol-internal-app-plans-type-handoffauthoringpacket (proven)
+
+Exported type HandoffAuthoringPacket in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-handoffauthoringreadinesscheck (proven)
+
+Exported type HandoffAuthoringReadinessCheck in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
 
 ### backend-symbol-internal-app-plans-type-intentdriftreview (proven)
 
@@ -5544,6 +5732,14 @@ Evidence:
 
 - source: `internal/app/plans/audit_work_packets.go`
 
+### backend-symbol-internal-app-plans-type-nextpassworkmcpsummary (proven)
+
+Exported type NextPassWorkMCPSummary in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-type-nextpassworkrequest (proven)
 
 Exported type NextPassWorkRequest in internal/app/plans/work_packets.go
@@ -5555,6 +5751,30 @@ Evidence:
 ### backend-symbol-internal-app-plans-type-nextpassworkresponse (proven)
 
 Exported type NextPassWorkResponse in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-nextpassworksummaryaction (proven)
+
+Exported type NextPassWorkSummaryAction in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-nextpassworksummaryblocker (proven)
+
+Exported type NextPassWorkSummaryBlocker in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-nextpassworksummarypass (proven)
+
+Exported type NextPassWorkSummaryPass in internal/app/plans/work_packets.go
 
 Evidence:
 
@@ -5695,6 +5915,22 @@ Exported type PlanMeta in internal/app/plans/types.go
 Evidence:
 
 - source: `internal/app/plans/types.go`
+
+### backend-symbol-internal-app-plans-type-plannerjumpstart (proven)
+
+Exported type PlannerJumpstart in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-plannerjumpstartbasisreport (proven)
+
+Exported type PlannerJumpstartBasisReport in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
 
 ### backend-symbol-internal-app-plans-type-plannerpassplan (proven)
 
@@ -7008,6 +7244,22 @@ Evidence:
 
 - source: `internal/mcp/profile.go`
 
+### backend-symbol-internal-mcp-func-createcontextpacket (proven)
+
+Exported func CreateContextPacket in internal/mcp/orchestrator_work_tools.go
+
+Evidence:
+
+- source: `internal/mcp/orchestrator_work_tools.go`
+
+### backend-symbol-internal-mcp-func-createsourcesnapshot (proven)
+
+Exported func CreateSourceSnapshot in internal/mcp/orchestrator_work_tools.go
+
+Evidence:
+
+- source: `internal/mcp/orchestrator_work_tools.go`
+
 ### backend-symbol-internal-mcp-func-error (proven)
 
 Exported func Error in internal/mcp/context_broker_tools.go
@@ -7707,6 +7959,14 @@ Evidence:
 ### backend-symbol-internal-mcp-type-toolscapability (proven)
 
 Exported type ToolsCapability in internal/mcp/protocol.go
+
+Evidence:
+
+- source: `internal/mcp/protocol.go`
+
+### backend-symbol-internal-mcp-type-toolslistparams (proven)
+
+Exported type ToolsListParams in internal/mcp/protocol.go
 
 Evidence:
 
@@ -10072,6 +10332,14 @@ Evidence:
 
 - test: `internal/api/next_audit_work_test.go`
 
+### backend-test-internal-api-testgetnextpasswork-api-contextpacketusability (proven)
+
+Test function TestGetNextPassWork_API_ContextPacketUsability in internal/api/next_pass_work_test.go
+
+Evidence:
+
+- test: `internal/api/next_pass_work_test.go`
+
 ### backend-test-internal-api-testgetnextpasswork-emptyprojectidreturns400 (proven)
 
 Test function TestGetNextPassWork_EmptyProjectIDReturns400 in internal/api/next_pass_work_test.go
@@ -10099,6 +10367,22 @@ Evidence:
 ### backend-test-internal-api-testgetnextpasswork-unknownprojectreturns200withblocker (proven)
 
 Test function TestGetNextPassWork_UnknownProjectReturns200WithBlocker in internal/api/next_pass_work_test.go
+
+Evidence:
+
+- test: `internal/api/next_pass_work_test.go`
+
+### backend-test-internal-api-testgetpassnextworkpreview-requestedpassblockedbypriorpassreturnspayload (proven)
+
+Test function TestGetPassNextWorkPreview_RequestedPassBlockedByPriorPassReturnsPayload in internal/api/next_pass_work_test.go
+
+Evidence:
+
+- test: `internal/api/next_pass_work_test.go`
+
+### backend-test-internal-api-testgetpassnextworkpreview-requestedpassreturnsselectedpasspayload (proven)
+
+Test function TestGetPassNextWorkPreview_RequestedPassReturnsSelectedPassPayload in internal/api/next_pass_work_test.go
 
 Evidence:
 
@@ -10680,6 +10964,14 @@ Evidence:
 
 - test: `internal/app/plans/review_gate_test.go`
 
+### backend-test-internal-app-plans-testcompactnextpassworksummaryomitsverbosehooktext (proven)
+
+Test function TestCompactNextPassWorkSummaryOmitsVerboseHookText in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
 ### backend-test-internal-app-plans-testcreateplanattemptusesprojectreviewsettings (proven)
 
 Test function TestCreatePlanAttemptUsesProjectReviewSettings in internal/app/plans/review_gate_test.go
@@ -10840,6 +11132,22 @@ Evidence:
 
 - test: `internal/app/plans/work_packets_test.go`
 
+### backend-test-internal-app-plans-testgetnextpasswork-contextpacketactionnormalizesrepoaliases (proven)
+
+Test function TestGetNextPassWork_ContextPacketActionNormalizesRepoAliases in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-contextpacketusabilitygates (proven)
+
+Test function TestGetNextPassWork_ContextPacketUsabilityGates in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
 ### backend-test-internal-app-plans-testgetnextpasswork-dependenciesincomplete-planneddep (proven)
 
 Test function TestGetNextPassWork_DependenciesIncomplete_PlannedDep in internal/app/plans/work_packets_test.go
@@ -10851,6 +11159,38 @@ Evidence:
 ### backend-test-internal-app-plans-testgetnextpasswork-handoffreadyblocksadvancement (proven)
 
 Test function TestGetNextPassWork_HandoffReadyBlocksAdvancement in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-missingcontextpacketincludesjumpstart (proven)
+
+Test function TestGetNextPassWork_MissingContextPacketIncludesJumpstart in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-missingcontextpacketwithoutsnapshotincludesdependency (proven)
+
+Test function TestGetNextPassWork_MissingContextPacketWithoutSnapshotIncludesDependency in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-missingcontextpacketwithsnapshotincludesinvokableaction (proven)
+
+Test function TestGetNextPassWork_MissingContextPacketWithSnapshotIncludesInvokableAction in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-missingsourcesnapshotincludesjumpstart (proven)
+
+Test function TestGetNextPassWork_MissingSourceSnapshotIncludesJumpstart in internal/app/plans/work_packets_test.go
 
 Evidence:
 
@@ -10904,6 +11244,22 @@ Evidence:
 
 - test: `internal/app/plans/work_packets_test.go`
 
+### backend-test-internal-app-plans-testgetnextpasswork-readypassincludesplannerjumpstart (proven)
+
+Test function TestGetNextPassWork_ReadyPassIncludesPlannerJumpstart in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-readypassreturnshandoffauthoringpacket (proven)
+
+Test function TestGetNextPassWork_ReadyPassReturnsHandoffAuthoringPacket in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
 ### backend-test-internal-app-plans-testgetnextpasswork-refactorpassmalformedmetadatablocks (proven)
 
 Test function TestGetNextPassWork_RefactorPassMalformedMetadataBlocks in internal/app/plans/refactor_work_packets_test.go
@@ -10943,6 +11299,46 @@ Test function TestGetNextPassWork_RefactorRetrievalDoesNotMutate in internal/app
 Evidence:
 
 - test: `internal/app/plans/refactor_work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-requestedpassalreadycompleted (proven)
+
+Test function TestGetNextPassWork_RequestedPassAlreadyCompleted in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-requestedpassblocksonprioraudit (proven)
+
+Test function TestGetNextPassWork_RequestedPassBlocksOnPriorAudit in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-requestedpassnotfound (proven)
+
+Test function TestGetNextPassWork_RequestedPassNotFound in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-requestedpasssuccess (proven)
+
+Test function TestGetNextPassWork_RequestedPassSuccess in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-requestedpasswithactiverun (proven)
+
+Test function TestGetNextPassWork_RequestedPassWithActiveRun in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
 
 ### backend-test-internal-app-plans-testgetnextpasswork-requiredcontextpacketmissing (proven)
 
@@ -10995,14 +11391,6 @@ Evidence:
 ### backend-test-internal-app-plans-testgetnextpasswork-selectssecondpasswhenfirstskipped (proven)
 
 Test function TestGetNextPassWork_SelectsSecondPassWhenFirstSkipped in internal/app/plans/work_packets_test.go
-
-Evidence:
-
-- test: `internal/app/plans/work_packets_test.go`
-
-### backend-test-internal-app-plans-testgetnextpasswork-suggestedsubmissioncontainsonlyplanandpassid (proven)
-
-Test function TestGetNextPassWork_SuggestedSubmissionContainsOnlyPlanAndPassID in internal/app/plans/work_packets_test.go
 
 Evidence:
 
@@ -11344,6 +11732,14 @@ Evidence:
 
 - test: `internal/app/plans/service_test.go`
 
+### backend-test-internal-app-plans-testsubmitplanrejectsunsafereporelativepaths (proven)
+
+Test function TestSubmitPlanRejectsUnsafeRepoRelativePaths in internal/app/plans/service_test.go
+
+Evidence:
+
+- test: `internal/app/plans/service_test.go`
+
 ### backend-test-internal-app-plans-testsubmitplanrequiresproject (proven)
 
 Test function TestSubmitPlanRequiresProject in internal/app/plans/service_test.go
@@ -11383,6 +11779,14 @@ Test function TestSyncAssociatedPassForRunStatus in internal/app/plans/lifecycle
 Evidence:
 
 - test: `internal/app/plans/lifecycle_test.go`
+
+### backend-test-internal-app-plans-testvalidateplanacceptsafereporelativepaths (proven)
+
+Test function TestValidatePlanAcceptSafeRepoRelativePaths in internal/app/plans/service_test.go
+
+Evidence:
+
+- test: `internal/app/plans/service_test.go`
 
 ### backend-test-internal-app-plans-testvalidateplanacceptsrefactormetadata (proven)
 
@@ -11555,6 +11959,14 @@ Evidence:
 ### backend-test-internal-mcp-testcontextbrokertoolsrejectunknownfields (proven)
 
 Test function TestContextBrokerToolsRejectUnknownFields in internal/mcp/context_broker_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/context_broker_tools_test.go`
+
+### backend-test-internal-mcp-testcreatecontextpacketacceptsunambiguousrepoalias (proven)
+
+Test function TestCreateContextPacketAcceptsUnambiguousRepoAlias in internal/mcp/context_broker_tools_test.go
 
 Evidence:
 
@@ -12112,6 +12524,14 @@ Evidence:
 
 - test: `internal/mcp/http_handler_test.go`
 
+### backend-test-internal-mcp-testinvalidprofiledefaultstolocaloperator (proven)
+
+Test function TestInvalidProfileDefaultsToLocalOperator in internal/mcp/profile_test.go
+
+Evidence:
+
+- test: `internal/mcp/profile_test.go`
+
 ### backend-test-internal-mcp-testlifecyclestatefromstatus (proven)
 
 Test function TestLifecycleStateFromStatus in internal/mcp/mcp_test.go
@@ -12128,6 +12548,78 @@ Evidence:
 
 - test: `internal/mcp/profile_test.go`
 
+### backend-test-internal-mcp-testnormalizeplanpayload-bothpresent (proven)
+
+Test function TestNormalizePlanPayload_BothPresent in internal/mcp/plan_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testnormalizeplanpayload-legacyemptystring (proven)
+
+Test function TestNormalizePlanPayload_LegacyEmptyString in internal/mcp/plan_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testnormalizeplanpayload-legacyinvalidjson (proven)
+
+Test function TestNormalizePlanPayload_LegacyInvalidJSON in internal/mcp/plan_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testnormalizeplanpayload-legacynotastring (proven)
+
+Test function TestNormalizePlanPayload_LegacyNotAString in internal/mcp/plan_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testnormalizeplanpayload-legacystringinput (proven)
+
+Test function TestNormalizePlanPayload_LegacyStringInput in internal/mcp/plan_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testnormalizeplanpayload-neitherpresent (proven)
+
+Test function TestNormalizePlanPayload_NeitherPresent in internal/mcp/plan_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testnormalizeplanpayload-nullfieldstreatedasabsent (proven)
+
+Test function TestNormalizePlanPayload_NullFieldsTreatedAsAbsent in internal/mcp/plan_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testnormalizeplanpayload-objectinput (proven)
+
+Test function TestNormalizePlanPayload_ObjectInput in internal/mcp/plan_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testnormalizeplanpayload-objectwrongtype (proven)
+
+Test function TestNormalizePlanPayload_ObjectWrongType in internal/mcp/plan_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/plan_tools_test.go`
+
 ### backend-test-internal-mcp-testorchestratorworktools-getnextauditworksuccessthroughtool (proven)
 
 Test function TestOrchestratorWorkTools_GetNextAuditWorkSuccessThroughTool in internal/mcp/orchestrator_work_tools_test.go
@@ -12136,9 +12628,49 @@ Evidence:
 
 - test: `internal/mcp/orchestrator_work_tools_test.go`
 
+### backend-test-internal-mcp-testorchestratorworktools-getnextpasswork-contextpacketusability (proven)
+
+Test function TestOrchestratorWorkTools_GetNextPassWork_ContextPacketUsability in internal/mcp/orchestrator_work_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/orchestrator_work_tools_test.go`
+
+### backend-test-internal-mcp-testorchestratorworktools-getnextpassworkactionfeedscreatecontextpacket (proven)
+
+Test function TestOrchestratorWorkTools_GetNextPassWorkActionFeedsCreateContextPacket in internal/mcp/orchestrator_work_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/orchestrator_work_tools_test.go`
+
+### backend-test-internal-mcp-testorchestratorworktools-getnextpassworkplannerjumpstartactions (proven)
+
+Test function TestOrchestratorWorkTools_GetNextPassWorkPlannerJumpstartActions in internal/mcp/orchestrator_work_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/orchestrator_work_tools_test.go`
+
 ### backend-test-internal-mcp-testorchestratorworktools-getnextpassworksuccessthroughtool (proven)
 
 Test function TestOrchestratorWorkTools_GetNextPassWorkSuccessThroughTool in internal/mcp/orchestrator_work_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/orchestrator_work_tools_test.go`
+
+### backend-test-internal-mcp-testorchestratorworktools-getnextpassworktextomitsverbosehookprose (proven)
+
+Test function TestOrchestratorWorkTools_GetNextPassWorkTextOmitsVerboseHookProse in internal/mcp/orchestrator_work_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/orchestrator_work_tools_test.go`
+
+### backend-test-internal-mcp-testorchestratorworktools-getnextpassworkwithpassid (proven)
+
+Test function TestOrchestratorWorkTools_GetNextPassWorkWithPassID in internal/mcp/orchestrator_work_tools_test.go
 
 Evidence:
 
@@ -12504,6 +13036,54 @@ Evidence:
 
 - test: `internal/mcp/mcp_test.go`
 
+### backend-test-internal-mcp-testsubmitplannerpassplanschema-additionalpropertiesfalse (proven)
+
+Test function TestSubmitPlannerPassPlanSchema_AdditionalPropertiesFalse in internal/mcp/plan_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testsubmitplannerpassplanschema-hasbothpayloadfields (proven)
+
+Test function TestSubmitPlannerPassPlanSchema_HasBothPayloadFields in internal/mcp/plan_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testsubmitplannerpassplanschema-hasoneof (proven)
+
+Test function TestSubmitPlannerPassPlanSchema_HasOneOf in internal/mcp/plan_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testtoolprofileauditaliasnormalizestolocaloperator (proven)
+
+Test function TestToolProfileAuditAliasNormalizesToLocalOperator in internal/mcp/profile_test.go
+
+Evidence:
+
+- test: `internal/mcp/profile_test.go`
+
+### backend-test-internal-mcp-testtoolprofileauditfromenvuseslocaloperator (proven)
+
+Test function TestToolProfileAuditFromEnvUsesLocalOperator in internal/mcp/profile_test.go
+
+Evidence:
+
+- test: `internal/mcp/profile_test.go`
+
+### backend-test-internal-mcp-testtoolprofilecontextbrokerenabled (proven)
+
+Test function TestToolProfileContextBrokerEnabled in internal/mcp/profile_test.go
+
+Evidence:
+
+- test: `internal/mcp/profile_test.go`
+
 ### backend-test-internal-mcp-testtoolprofilefromenvdefaultsandprecedence (proven)
 
 Test function TestToolProfileFromEnvDefaultsAndPrecedence in internal/mcp/profile_test.go
@@ -12511,6 +13091,46 @@ Test function TestToolProfileFromEnvDefaultsAndPrecedence in internal/mcp/profil
 Evidence:
 
 - test: `internal/mcp/profile_test.go`
+
+### backend-test-internal-mcp-testtoolscall-auditprofilealiasusesfulllocaloperatorregistry (proven)
+
+Test function TestToolsCall_AuditProfileAliasUsesFullLocalOperatorRegistry in internal/mcp/server_tools_list_test.go
+
+Evidence:
+
+- test: `internal/mcp/server_tools_list_test.go`
+
+### backend-test-internal-mcp-testtoolslist-invalidcursor (proven)
+
+Test function TestToolsList_InvalidCursor in internal/mcp/server_tools_list_test.go
+
+Evidence:
+
+- test: `internal/mcp/server_tools_list_test.go`
+
+### backend-test-internal-mcp-testtoolslist-localoperatorpageddiscoveryincludesplannerandauditor (proven)
+
+Test function TestToolsList_LocalOperatorPagedDiscoveryIncludesPlannerAndAuditor in internal/mcp/server_tools_list_test.go
+
+Evidence:
+
+- test: `internal/mcp/server_tools_list_test.go`
+
+### backend-test-internal-mcp-testtoolslist-localoperatorschemasarevalidandbounded (proven)
+
+Test function TestToolsList_LocalOperatorSchemasAreValidAndBounded in internal/mcp/server_tools_list_test.go
+
+Evidence:
+
+- test: `internal/mcp/server_tools_list_test.go`
+
+### backend-test-internal-mcp-testtoolslist-queryfilteringdoesnotmutateregistry (proven)
+
+Test function TestToolsList_QueryFilteringDoesNotMutateRegistry in internal/mcp/server_tools_list_test.go
+
+Evidence:
+
+- test: `internal/mcp/server_tools_list_test.go`
 
 ### backend-test-internal-store-testcontextpacketstorecreategetlist (proven)
 

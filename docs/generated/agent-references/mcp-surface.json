@@ -20,7 +20,7 @@
   "source_inputs": [
     {
       "path": "internal/mcp/context_broker_tools.go",
-      "sha256": "396cf3f9cfb6fd3b3389b8d18d37f1e6a24e9532d615113d4004716aebbf2573",
+      "sha256": "5029ca2a7ce3e51d31dc1714d89978966d1763af5fc6dbb280107a51e24272a8",
       "role": "mcp_tool_source"
     },
     {
@@ -40,7 +40,7 @@
     },
     {
       "path": "internal/mcp/server.go",
-      "sha256": "a630efa1cccfced0b1288683343684149f411b9dece7f70fa01c345e74ee6ec6",
+      "sha256": "fa8f88fa34e97d933d9d7cfa8b84dd52d61fc01c4e369e8e16d0c5466d4484f2",
       "role": "mcp_tool_source"
     },
     {
@@ -50,7 +50,7 @@
     },
     {
       "path": "relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md",
-      "sha256": "ffbdda8b94a1dc14b6ded04fed70a7b9ed3e3a4614a33741ae1bc56dc77e1e75",
+      "sha256": "404f65db30eec8af1ee4201b0e07f84cea3ed1b11b0ee5aa899ad4ccc1ffc758",
       "role": "mcp_contract_source"
     },
     {
@@ -60,7 +60,7 @@
     },
     {
       "path": "relay-contracts/contracts/planner_mcp_plan_submission_contract.md",
-      "sha256": "14dcde7506a7a40cea782ca95b8fc68573d9908076083f9a5fd3f36ecc8f009c",
+      "sha256": "f234a568fcc5c503b86b298d18cddf632beeed22ae437d560cafe33d475320bc",
       "role": "mcp_contract_source"
     }
   ],

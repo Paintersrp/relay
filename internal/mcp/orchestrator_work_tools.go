@@ -6,7 +6,83 @@ import (
 	"fmt"
 
 	appplans "relay/internal/app/plans"
+	"relay/internal/contextpackets"
+	"relay/internal/sources"
 )
+
+// sourceSnapshotAdapter adapts sources.Service to the
+// appplans.sourceSnapshotAcquirer interface.
+type sourceSnapshotAdapter struct {
+	svc *sources.Service
+}
+
+func (a *sourceSnapshotAdapter) CreateSourceSnapshot(ctx context.Context, projectID string, repoIDs []string, includeFileMetadata bool) (string, string, int, error) {
+	result, err := a.svc.CreateSourceSnapshot(ctx, sources.SourceSnapshotInput{
+		ProjectID:           projectID,
+		RepoIDs:             repoIDs,
+		IncludeFileMetadata: includeFileMetadata,
+	})
+	if err != nil {
+		return "", "", 0, err
+	}
+	includedCount := 0
+	for _, repo := range result.Repositories {
+		includedCount += repo.IncludedFileCount
+	}
+	return result.SourceSnapshotID, result.Status, includedCount, nil
+}
+
+// contextPacketAdapter adapts contextpackets.Service to the
+// appplans.contextPacketAcquirer interface.
+type contextPacketAdapter struct {
+	svc *contextpackets.Service
+}
+
+func (a *contextPacketAdapter) CreateContextPacket(ctx context.Context, input appplans.CtxPacketInput) (*appplans.CtxPacketResult, error) {
+	seedFiles := make([]contextpackets.ContextSeedFile, 0, len(input.SeedFiles))
+	for _, sf := range input.SeedFiles {
+		seedFiles = append(seedFiles, contextpackets.ContextSeedFile{
+			RepoID:   sf.RepoID,
+			Path:     sf.Path,
+			Reason:   sf.Reason,
+			Required: sf.Required,
+		})
+	}
+	seedSearches := make([]contextpackets.ContextSeedSearch, 0, len(input.SeedSearches))
+	for _, ss := range input.SeedSearches {
+		seedSearches = append(seedSearches, contextpackets.ContextSeedSearch{
+			RepoIDs:    ss.RepoIDs,
+			Pattern:    ss.Pattern,
+			Required:   ss.Required,
+			MaxResults: ss.MaxResults,
+		})
+	}
+	result, err := a.svc.CreateContextPacket(ctx, contextpackets.ContextPacketInput{
+		ProjectID:        input.ProjectID,
+		PlanID:           input.PlanID,
+		PassID:           input.PassID,
+		TaskSlug:         input.TaskSlug,
+		SourceSnapshotID: input.SourceSnapshotID,
+		SeedFiles:        seedFiles,
+		SeedSearches:     seedSearches,
+		IncludeInventory: input.IncludeInventory,
+		MaxSources:       input.MaxSources,
+		MaxTotalBytes:    input.MaxTotalBytes,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &appplans.CtxPacketResult{
+		ContextPacketID:    result.ContextPacketID,
+		Status:             result.Status,
+		CoverageReportPath: result.CoverageReportPath,
+		BlockedSeedCount:   result.BlockedSeedCount,
+		MissingSeedCount:   result.MissingSeedCount,
+		Truncated:          result.Truncated,
+		SourceSnapshotID:   result.SourceSnapshotID,
+		SourceCount:        result.SourceCount,
+	}, nil
+}
 
 // ----------------------------------------------------------------------------
 // Tool schemas -- orchestrator work packet retrieval tools.
@@ -102,7 +178,19 @@ var getNextPassWorkOutputSchema = json.RawMessage(`{
         }
       }
     },
-    "local_preview_hint": {"type": "string"}
+    "local_preview_hint": {"type": "string"},
+    "acquisition_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_snapshot_acquired", "context_packet_created"],
+      "properties": {
+        "source_snapshot_acquired": {"type": "boolean"},
+        "source_snapshot_id": {"type": "string"},
+        "context_packet_created": {"type": "boolean"},
+        "context_packet_id": {"type": "string"},
+        "context_packet_status": {"type": "string"}
+      }
+    }
   }
 }`)
 
@@ -140,11 +228,11 @@ var getNextAuditWorkSchema = json.RawMessage(`{
 
 var ToolGetNextPassWork = ToolDefinition{
 	Name:         appplans.NextPassWorkTool,
-	Description:  "Return the next eligible project-scoped plan pass work packet for Planner handoff creation. Includes deterministic planner_jumpstart guidance with readiness state, source/context requirements, suggested acquisition actions, dependency/binding metadata for ordered acquisition, and handoff preflight checklist. Retrieval-only: does not create runs, submit plans, generate handoffs, create context packets, mutate git, run shell commands, or expose arbitrary filesystem access.",
+	Description:  "Return the next eligible project-scoped plan pass work packet for Planner handoff creation. Performs bounded source snapshot and context packet artifact creation when they are missing or stale. Includes deterministic planner_jumpstart guidance with readiness state, source/context requirements, and handoff preflight checklist. Does NOT create runs, submit plans, generate handoffs, dispatch executors, mutate git, run shell commands, or expose arbitrary filesystem access.",
 	InputSchema:  getNextPassWorkSchema,
 	OutputSchema: getNextPassWorkOutputSchema,
 	Annotations: map[string]any{
-		"readOnlyHint":    true,
+		"readOnlyHint":    false,
 		"destructiveHint": false,
 	},
 }
@@ -268,7 +356,10 @@ func orchestratorWorkToolErr(toolName string, code string, message string) ToolC
 // ----------------------------------------------------------------------------
 
 // HandleGetNextPassWork retrieves the next eligible Planner work packet
-// for a project-scoped managed plan.
+// for a project-scoped managed plan. When source and context packet services
+// are available, the tool performs bounded backend acquisition (creating
+// source snapshots and context packets as needed) before returning handoff
+// readiness.
 func (s *Server) HandleGetNextPassWork(rawArgs json.RawMessage) ToolCallResult {
 	var args getNextPassWorkArgs
 	if err := brokerDecodeStrict(rawArgs, &args); err != nil {
@@ -280,6 +371,8 @@ func (s *Server) HandleGetNextPassWork(rawArgs json.RawMessage) ToolCallResult {
 	}
 
 	svc := appplans.NewOrchestratorWorkService(s.deps.Store)
+	svc.SetSourceService(&sourceSnapshotAdapter{svc: sources.NewService(s.deps.Store)})
+	svc.SetContextPacketService(&contextPacketAdapter{svc: contextpackets.NewService(s.deps.Store)})
 	req := appplans.NextPassWorkRequest{
 		ProjectID: args.ProjectID,
 		PlanID:    args.PlanID,

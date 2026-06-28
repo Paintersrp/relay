@@ -20,7 +20,7 @@
   "source_inputs": [
     {
       "path": "apps/web/src/features/relay-plans/api.ts",
-      "sha256": "bdf2d3ccbbe8a8319ab828c54c62427b28476687a5c4613f507e8df00878ddd0",
+      "sha256": "ff59fd6ecf5cbec4597bd658b12cf2ade878d1699e327515b998b872726bca7c",
       "role": "frontend source"
     },
     {
@@ -30,7 +30,7 @@
     },
     {
       "path": "apps/web/src/features/relay-plans/types.ts",
-      "sha256": "b84abd5d5abdc321c8e82958152ef345397312e9ebd18189f5eb32eedacd0faf",
+      "sha256": "4389b7f9031592cf427020f1ad1529931f32b993f8cdec4f2390e22a91cecc30",
       "role": "frontend source"
     },
     {
@@ -114,6 +114,17 @@
       "id": "frontend-api-call-relay-plans-getnextpasswork",
       "label": "proven",
       "statement": "Frontend API call getNextPassWork: GET /api/projects/{param}/plans/{param}/next-pass-work in relay-plans (apps/web/src/features/relay-plans/api.ts)",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-plans/api.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-api-call-relay-plans-getpassnextworkpreview",
+      "label": "proven",
+      "statement": "Frontend API call getPassNextWorkPreview: GET /api/projects/{param}/plans/{param}/passes/{param}/next-pass-work-preview in relay-plans (apps/web/src/features/relay-plans/api.ts)",
       "evidence": [
         {
           "kind": "source",
@@ -554,6 +565,17 @@
       "id": "frontend-backend-match-getnextpasswork",
       "label": "proven",
       "statement": "Route match: frontend getNextPassWork (GET /api/projects/{param}/plans/{param}/next-pass-work) -> backend GET /projects/{projectId}/plans/{planId}/next-pass-work handled by h.GetNextPassWork in internal/api/plans/routes.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/plans/routes.go"
+        }
+      ]
+    },
+    {
+      "id": "frontend-backend-match-getpassnextworkpreview",
+      "label": "proven",
+      "statement": "Route match: frontend getPassNextWorkPreview (GET /api/projects/{param}/plans/{param}/passes/{param}/next-pass-work-preview) -> backend GET /projects/{projectId}/plans/{planId}/passes/{passId}/next-pass-work-preview handled by h.GetPassNextWorkPreview in internal/api/plans/routes.go",
       "evidence": [
         {
           "kind": "source",

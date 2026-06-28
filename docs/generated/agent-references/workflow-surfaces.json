@@ -35,7 +35,7 @@
     },
     {
       "path": "internal/app/plans/work_packets.go",
-      "sha256": "c4e90d03742cb3d586dc6a84fada3595a96878bfd849a07e7bd7a9c16add7f8a",
+      "sha256": "6ab3157ea4fabc9169eb54a7c564ad021235eed98f69661b10a228bcbd711eea",
       "role": "next-pass work packet model"
     },
     {

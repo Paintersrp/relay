@@ -28,7 +28,7 @@ Schema version: `1.0.0`
 | `internal/api/plans/attempt_handler.go` | `0c3306e9eae40bca3c21dd30271ede345fcabe5c8da86beb82ce081bd4ec6925` | plan attempt HTTP handler |
 | `internal/app/plans/attempt_service.go` | `20aaf203df2b7d1f38c95ba0b1335034a8d0078ed6318e671fc1360c41c93633` | plan attempt service |
 | `internal/app/plans/attempt_types.go` | `5c9ba968328c4c99ea4ff87c0638dd8cac5c096290ce31fc67c152aa513590f5` | plan attempt type model |
-| `internal/app/plans/work_packets.go` | `c4e90d03742cb3d586dc6a84fada3595a96878bfd849a07e7bd7a9c16add7f8a` | next-pass work packet model |
+| `internal/app/plans/work_packets.go` | `6ab3157ea4fabc9169eb54a7c564ad021235eed98f69661b10a228bcbd711eea` | next-pass work packet model |
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | plan attempt MCP tools |
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | refactor backlog MCP tools |
 | `internal/refactors/types.go` | `09bd11e1868897593f61ca678a4ba221b4d0a58a37f68307669a319f80320eb7` | refactor backlog type model |

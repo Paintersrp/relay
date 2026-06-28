@@ -1509,20 +1509,22 @@ func TestGetNextPassWork_ContextPacketUsabilityGates(t *testing.T) {
 				snapshotRowID = snap.ID
 			}
 
-			_, err = st.CreateContextPacket(store.CreateContextPacketParams{
-				ContextPacketID:     "packet-1",
-				ProjectRowID:        project.ID,
-				ProjectID:           project.ProjectID,
-				PlanID:              "plan-test",
-				PassID:              "PASS-001",
-				TaskSlug:            "slug",
-				SourceSnapshotRowID: snapshotRowID,
-				SourceSnapshotID:    tc.snapshotID,
-				Status:              tc.status,
-				BlockedSeedCount:    tc.blockedSeedCount,
-				MissingSeedCount:    tc.missingSeedCount,
-				CompletedAt:         "2026-06-28T12:00:00Z",
-			})
+		_, err = st.CreateContextPacket(store.CreateContextPacketParams{
+			ContextPacketID:     "packet-1",
+			ProjectRowID:        project.ID,
+			ProjectID:           project.ProjectID,
+			PlanID:              "plan-test",
+			PassID:              "PASS-001",
+			TaskSlug:            "slug",
+			SourceSnapshotRowID: snapshotRowID,
+			SourceSnapshotID:    tc.snapshotID,
+			Status:              tc.status,
+			BlockedSeedCount:    tc.blockedSeedCount,
+			MissingSeedCount:    tc.missingSeedCount,
+			CompletedAt:         "2026-06-28T12:00:00Z",
+			PacketJSONPath:      "/artifacts/ctxpkt/packet-1.json",
+			CoverageReportPath:  "/artifacts/ctxpkt/packet-1-coverage.json",
+		})
 			if err != nil {
 				t.Fatalf("CreateContextPacket: %v", err)
 			}

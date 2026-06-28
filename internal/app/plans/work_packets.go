@@ -30,6 +30,14 @@ const (
 	BlockerUnsafeRequest                = "unsafe_request"
 	BlockerRequestedPassNotFound        = "requested_pass_not_found"
 	BlockerRequestedPassNotEligible     = "requested_pass_not_eligible"
+
+	BlockerSourceSnapshotAcquisitionFailed  = "source_snapshot_acquisition_failed"
+	BlockerSourceSnapshotMetadataMissing    = "source_snapshot_metadata_missing"
+	BlockerSourceSnapshotRequiredSeedMissing = "source_snapshot_required_seed_missing"
+	BlockerContextPacketAcquisitionFailed   = "context_packet_acquisition_failed"
+	BlockerContextCoverageIncomplete        = "context_coverage_incomplete"
+	BlockerContextPacketTruncated           = "context_packet_truncated"
+	BlockerContextPacketUnusable            = "context_packet_unusable"
 )
 
 // Refactor scheduling constants. These mirror the schema-approved refactor
@@ -85,6 +93,7 @@ type NextPassWorkResponse struct {
 	SuggestedRunSubmission   *SuggestedRunSubmission `json:"suggested_run_submission,omitempty"`
 	PlannerJumpstart         *PlannerJumpstart       `json:"planner_jumpstart,omitempty"`
 	Blockers                 []WorkBlocker           `json:"blockers"`
+	AcquisitionSummary       *AcquisitionSummary     `json:"acquisition_summary,omitempty"`
 }
 
 // NextPassWorkMCPSummary is the compact model-visible summary returned by MCP.
@@ -102,9 +111,10 @@ type NextPassWorkMCPSummary struct {
 	ContextReady     bool                         `json:"context_ready"`
 	HandoffWork      *HandoffAuthoringPacket      `json:"handoff_work,omitempty"`
 	HandoffPacket    *HandoffAuthoringPacket      `json:"handoff_authoring_packet,omitempty"`
-	Blockers         []NextPassWorkSummaryBlocker `json:"blockers"`
-	NextActions      []NextPassWorkSummaryAction  `json:"next_actions,omitempty"`
-	LocalPreviewHint string                       `json:"local_preview_hint"`
+	Blockers            []NextPassWorkSummaryBlocker `json:"blockers"`
+	NextActions         []NextPassWorkSummaryAction  `json:"next_actions,omitempty"`
+	LocalPreviewHint    string                       `json:"local_preview_hint"`
+	AcquisitionSummary  *AcquisitionSummary           `json:"acquisition_summary,omitempty"`
 }
 
 // NextPassWorkSummaryPass contains the selected pass fields safe for MCP text.
@@ -128,6 +138,16 @@ type NextPassWorkSummaryAction struct {
 	Arguments        map[string]interface{} `json:"arguments,omitempty"`
 	DependsOn        string                 `json:"depends_on,omitempty"`
 	ArgumentBindings map[string]string      `json:"argument_bindings,omitempty"`
+}
+
+// AcquisitionSummary reports what was acquired or attempted during a
+// get_next_pass_work call.
+type AcquisitionSummary struct {
+	SourceSnapshotAcquired bool   `json:"source_snapshot_acquired"`
+	SourceSnapshotID       string `json:"source_snapshot_id,omitempty"`
+	ContextPacketCreated   bool   `json:"context_packet_created"`
+	ContextPacketID        string `json:"context_packet_id,omitempty"`
+	ContextPacketStatus    string `json:"context_packet_status,omitempty"`
 }
 
 // CompactNextPassWorkSummary returns the MCP-safe projection of the full local
@@ -160,6 +180,9 @@ func CompactNextPassWorkSummary(resp NextPassWorkResponse) NextPassWorkMCPSummar
 		summary.SourceSnapshotID = resp.Context.SourceSnapshotID
 		summary.ContextPacketID = resp.Context.ContextPacketID
 		summary.ContextReady = resp.Context.ContextReady
+	}
+	if resp.AcquisitionSummary != nil {
+		summary.AcquisitionSummary = resp.AcquisitionSummary
 	}
 	if resp.HandoffWork != nil {
 		summary.HandoffWork = resp.HandoffWork
@@ -428,14 +451,86 @@ var taskSlugUnsafeChars = regexp.MustCompile(`[^a-z0-9]+`)
 // ----------------------------------------------------------------------------
 
 // OrchestratorWorkService resolves the next eligible Planner work packet
-// for a project-scoped managed plan. All operations are read-only.
+// for a project-scoped managed plan. When source and context packet services
+// are provided, the service performs bounded backend acquisition (creating
+// source snapshots and context packets as needed) before returning handoff
+// readiness; without them it falls back to retrieval-only readiness checks.
 type OrchestratorWorkService struct {
-	store *store.Store
+	store             *store.Store
+	sourcesSvc        sourceSnapshotAcquirer
+	contextPacketsSvc contextPacketAcquirer
+}
+
+// sourceSnapshotAcquirer abstracts source snapshot creation for the
+// acquisition coordinator.
+type sourceSnapshotAcquirer interface {
+	CreateSourceSnapshot(ctx context.Context, projectID string, repoIDs []string, includeFileMetadata bool) (snapshotID, status string, includedFileCount int, err error)
+}
+
+// contextPacketAcquirer abstracts context packet creation for the
+// acquisition coordinator.
+type contextPacketAcquirer interface {
+	CreateContextPacket(ctx context.Context, input CtxPacketInput) (*CtxPacketResult, error)
+}
+
+// CtxPacketInput mirrors contextpackets.ContextPacketInput without importing
+// that package (avoids import cycle with projects/plans through test chain).
+type CtxPacketInput struct {
+	ProjectID        string
+	PlanID           string
+	PassID           string
+	TaskSlug         string
+	SourceSnapshotID string
+	SeedFiles        []CtxSeedFile
+	SeedSearches     []CtxSeedSearch
+	IncludeInventory bool
+	MaxSources       int
+	MaxTotalBytes    int
+}
+
+// CtxSeedFile mirrors contextpackets.ContextSeedFile.
+type CtxSeedFile struct {
+	RepoID   string
+	Path     string
+	Reason   string
+	Required bool
+}
+
+// CtxSeedSearch mirrors contextpackets.ContextSeedSearch.
+type CtxSeedSearch struct {
+	RepoIDs  []string
+	Pattern  string
+	Required bool
+	MaxResults int
+}
+
+// CtxPacketResult mirrors contextpackets.ContextPacketResult.
+type CtxPacketResult struct {
+	ContextPacketID    string
+	Status             string
+	CoverageReportPath string
+	BlockedSeedCount   int
+	MissingSeedCount   int
+	Truncated          bool
+	SourceSnapshotID   string
+	SourceCount        int
 }
 
 // NewOrchestratorWorkService constructs an OrchestratorWorkService.
 func NewOrchestratorWorkService(s *store.Store) *OrchestratorWorkService {
 	return &OrchestratorWorkService{store: s}
+}
+
+// SetSourceService configures the optional source service for bounded
+// source snapshot acquisition during GetNextPassWork.
+func (svc *OrchestratorWorkService) SetSourceService(s sourceSnapshotAcquirer) {
+	svc.sourcesSvc = s
+}
+
+// SetContextPacketService configures the optional context packet service
+// for bounded context packet acquisition during GetNextPassWork.
+func (svc *OrchestratorWorkService) SetContextPacketService(s contextPacketAcquirer) {
+	svc.contextPacketsSvc = s
 }
 
 // NextPassWorkRequest is the input for GetNextPassWork.
@@ -650,51 +745,6 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		_ = json.Unmarshal([]byte(pass.ContextBudgetJson), &ctxBudget)
 	}
 
-	requireSnapshot := (ssReqs.RequireGitStatus != nil && *ssReqs.RequireGitStatus) ||
-		(ssReqs.RequireCommitSHA != nil && *ssReqs.RequireCommitSHA)
-
-	var snapshotID string
-	var snapshotStatus string
-	var snapshotFound bool
-	if requireSnapshot || hasRequiredContextInputs(ctxPlan) {
-		snapshot, err := svc.store.GetLatestSourceSnapshotForProject(project.ID)
-		if err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
-				return NextPassWorkResponse{}, fmt.Errorf("get latest source snapshot for project %q: %w", project.ProjectID, err)
-			}
-		} else {
-			snapshotID = snapshot.SourceSnapshotID
-			snapshotStatus = snapshot.Status
-			snapshotFound = true
-		}
-	}
-
-	requirePacket := hasRequiredContextInputs(ctxPlan)
-
-	var packetID string
-	var packetStatus string
-	var coverageReportPath string
-	var packetFound bool
-	var packetUsable bool
-	var packetUnusableReason string
-
-	if requirePacket {
-		packet, err := svc.store.GetLatestContextPacketForPass(project.ProjectID, plan.PlanID, pass.PassID)
-		if err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
-				return NextPassWorkResponse{}, fmt.Errorf("get latest context packet for pass %q: %w", pass.PassID, err)
-			}
-		} else {
-			packetID = packet.ContextPacketID
-			packetStatus = packet.Status
-			coverageReportPath = packet.CoverageReportPath
-			packetFound = true
-			packetUsable, packetUnusableReason = contextPacketUsableForHandoff(*packet, snapshotID)
-		}
-	}
-
-	contextReady := (!requireSnapshot || snapshotFound) && (!requirePacket || packetUsable)
-
 	var criteria []string
 	if pass.HandoffReadinessCriteriaJson != "" && pass.HandoffReadinessCriteriaJson != "[]" {
 		_ = json.Unmarshal([]byte(pass.HandoffReadinessCriteriaJson), &criteria)
@@ -735,6 +785,121 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	if err != nil {
 		return NextPassWorkResponse{}, fmt.Errorf("list project repositories for %q: %w", project.ProjectID, err)
 	}
+
+	requireSnapshot := (ssReqs.RequireGitStatus != nil && *ssReqs.RequireGitStatus) ||
+		(ssReqs.RequireCommitSHA != nil && *ssReqs.RequireCommitSHA)
+
+	var snapshotID string
+	var snapshotStatus string
+	var snapshotFound bool
+
+	if requireSnapshot || hasRequiredContextInputs(ctxPlan) {
+		if svc.sourcesSvc != nil && svc.contextPacketsSvc != nil && svc.store != nil {
+			var acqBlocker *WorkBlocker
+			snapshotID, snapshotStatus, snapshotFound, acqBlocker = svc.acquireSourceSnapshot(
+				ctx, project, plan, pass, requireSnapshot, &ssReqs, ctxPlan, repoAliases)
+			if acqBlocker != nil {
+				jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, "", "", requireSnapshot, false, snapshotFound, false, false, "")
+				jumpstart.ReadinessState = "needs_source_snapshot"
+				resp := NextPassWorkResponse{
+					OK:   false,
+					Tool: NextPassWorkTool,
+					Project: &WorkProjectSummary{
+						ProjectID: project.ProjectID,
+						Name:      project.Name,
+					},
+					Plan: &WorkPlanSummary{
+						PlanID: plan.PlanID,
+						Status: plan.Status,
+						Title:  plan.Title,
+					},
+					SelectedPass:     selectedPass,
+					DependencyStatus: depStatuses,
+					AssociatedRuns:   terminalRunSummaries,
+					PlannerJumpstart: jumpstart,
+					Blockers:         []WorkBlocker{*acqBlocker},
+					AcquisitionSummary: &AcquisitionSummary{
+						SourceSnapshotAcquired: false,
+						SourceSnapshotID:       snapshotID,
+					},
+				}
+				return resp, nil
+			}
+		} else {
+			snapshot, err := svc.store.GetLatestSourceSnapshotForProject(project.ID)
+			if err != nil {
+				if !errors.Is(err, sql.ErrNoRows) {
+					return NextPassWorkResponse{}, fmt.Errorf("get latest source snapshot for project %q: %w", project.ProjectID, err)
+				}
+			} else {
+				snapshotID = snapshot.SourceSnapshotID
+				snapshotStatus = snapshot.Status
+				snapshotFound = true
+			}
+		}
+	}
+
+	requirePacket := hasRequiredContextInputs(ctxPlan)
+
+	var packetID string
+	var packetStatus string
+	var coverageReportPath string
+	var packetFound bool
+	var packetUsable bool
+	var packetUnusableReason string
+
+	if requirePacket {
+		if svc.sourcesSvc != nil && svc.contextPacketsSvc != nil && svc.store != nil {
+			var acqBlocker *WorkBlocker
+			packetID, packetStatus, coverageReportPath, packetFound, packetUsable, acqBlocker = svc.acquireContextPacket(
+				ctx, project, plan, pass, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID)
+			if acqBlocker != nil {
+				jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, "")
+				jumpstart.ReadinessState = "needs_context_packet"
+				resp := NextPassWorkResponse{
+					OK:   false,
+					Tool: NextPassWorkTool,
+					Project: &WorkProjectSummary{
+						ProjectID: project.ProjectID,
+						Name:      project.Name,
+					},
+					Plan: &WorkPlanSummary{
+						PlanID: plan.PlanID,
+						Status: plan.Status,
+						Title:  plan.Title,
+					},
+					SelectedPass:     selectedPass,
+					DependencyStatus: depStatuses,
+					AssociatedRuns:   terminalRunSummaries,
+					PlannerJumpstart: jumpstart,
+					Blockers:         []WorkBlocker{*acqBlocker},
+					AcquisitionSummary: &AcquisitionSummary{
+						SourceSnapshotAcquired: requireSnapshot && snapshotFound,
+						SourceSnapshotID:       snapshotID,
+						ContextPacketCreated:   packetFound,
+						ContextPacketID:        packetID,
+						ContextPacketStatus:    packetStatus,
+					},
+				}
+				return resp, nil
+			}
+		} else {
+			packet, err := svc.store.GetLatestContextPacketForPass(project.ProjectID, plan.PlanID, pass.PassID)
+			if err != nil {
+				if !errors.Is(err, sql.ErrNoRows) {
+					return NextPassWorkResponse{}, fmt.Errorf("get latest context packet for pass %q: %w", pass.PassID, err)
+				}
+			} else {
+				packetID = packet.ContextPacketID
+				packetStatus = packet.Status
+				coverageReportPath = packet.CoverageReportPath
+				packetFound = true
+				packetUsable, packetUnusableReason = contextPacketUsableForHandoff(*packet, snapshotID)
+			}
+		}
+	}
+
+	contextReady := (!requireSnapshot || snapshotFound) && (!requirePacket || packetUsable)
 
 	// Build the shared Planner jumpstart payload.
 	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, packetUnusableReason)
@@ -805,6 +970,16 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		handoffWork := buildHandoffAuthoringPacket(project, plan, selectedPass, ctxPlan, &ctxBudget, ssReqs, criteria, snapshotID, snapshotStatus, packetID, packetStatus, coverageReportPath, contextReady, requireSnapshot, requirePacket)
 		resp.HandoffWork = handoffWork
 		resp.HandoffAuthoringPacket = handoffWork
+	}
+
+	if svc.sourcesSvc != nil && svc.contextPacketsSvc != nil {
+		resp.AcquisitionSummary = &AcquisitionSummary{
+			SourceSnapshotAcquired: requireSnapshot && snapshotFound,
+			SourceSnapshotID:       snapshotID,
+			ContextPacketCreated:   requirePacket && packetFound,
+			ContextPacketID:        packetID,
+			ContextPacketStatus:    packetStatus,
+		}
 	}
 
 	return resp, nil
@@ -1309,11 +1484,6 @@ func hasRequiredContextInputs(cp ContextPlan) bool {
 			return true
 		}
 	}
-	for _, s := range cp.SeedSearchTerms {
-		if s.Required != nil && *s.Required {
-			return true
-		}
-	}
 	return false
 }
 
@@ -1328,10 +1498,232 @@ func contextPacketUsableForHandoff(packet store.ContextPacket, selectedSourceSna
 	if packet.MissingSeedCount > 0 {
 		return false, fmt.Sprintf("packet has %d missing seeds", packet.MissingSeedCount)
 	}
+	if packet.Truncated != 0 {
+		return false, "packet is truncated"
+	}
+	if strings.TrimSpace(packet.PacketJsonPath) == "" || strings.TrimSpace(packet.CoverageReportPath) == "" {
+		return false, "packet is missing artifact paths"
+	}
 	if selectedSourceSnapshotID != "" && packet.SourceSnapshotID != selectedSourceSnapshotID {
 		return false, fmt.Sprintf("packet source snapshot ID %q does not match selected source snapshot ID %q", packet.SourceSnapshotID, selectedSourceSnapshotID)
 	}
 	return true, ""
+}
+
+func (svc *OrchestratorWorkService) acquireSourceSnapshot(
+	ctx context.Context,
+	project *store.Project,
+	plan *store.Plan,
+	pass *store.PlanPass,
+	requireSnapshot bool,
+	ssReqs *SourceSnapshotRequirements,
+	ctxPlan ContextPlan,
+	repoAliases map[string]string,
+) (snapshotID string, snapshotStatus string, found bool, blocker *WorkBlocker) {
+	// Look up latest existing snapshot.
+	latest, err := svc.store.GetLatestSourceSnapshotForProject(project.ID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", "", false, &WorkBlocker{
+			Code:        BlockerSourceSnapshotAcquisitionFailed,
+			Message:     fmt.Sprintf("failed to look up source snapshot for project %q: %v", project.ProjectID, err),
+			Recoverable: true,
+		}
+	}
+
+	snapshotUsable := false
+	if latest != nil {
+		snapshotUsable, _ = sourceSnapshotUsableForHandoff(latest, ctxPlan, repoAliases)
+	}
+	if snapshotUsable {
+		return latest.SourceSnapshotID, latest.Status, true, nil
+	}
+
+	// If no snapshot is required and we have a usable one, great.
+	// Otherwise, we need to create one.
+	repoIDs := normalizeContextRepoIDs(ctxPlan.RequiredRepositories, repoAliases)
+	// Filter to only repos that are actually registered for this project.
+	projectRepos, repoErr := svc.store.ListProjectRepositories(project.ID)
+	if repoErr != nil {
+		return "", "", false, &WorkBlocker{
+			Code:        BlockerSourceSnapshotAcquisitionFailed,
+			Message:     fmt.Sprintf("failed to list project repositories: %v", repoErr),
+			Recoverable: true,
+		}
+	}
+	registeredSet := make(map[string]bool, len(projectRepos))
+	for _, r := range projectRepos {
+		registeredSet[r.RepoID] = true
+	}
+	var effectiveRepoIDs []string
+	for _, r := range repoIDs {
+		if registeredSet[r] {
+			effectiveRepoIDs = append(effectiveRepoIDs, r)
+		}
+	}
+	repoIDs = effectiveRepoIDs
+
+	if len(repoIDs) == 0 && requireSnapshot {
+		return "", "", false, &WorkBlocker{
+			Code:        BlockerSourceSnapshotRequiredSeedMissing,
+			Message:     fmt.Sprintf("pass %q requires a source snapshot but no required repositories could be resolved for project %q", pass.PassID, project.ProjectID),
+			Recoverable: true,
+		}
+	}
+	if len(repoIDs) == 0 {
+		// No repos to snapshot; if a snapshot isn't strictly required, continue without one.
+		if latest != nil {
+			return latest.SourceSnapshotID, latest.Status, true, nil
+		}
+		return "", "", false, nil
+	}
+
+	// Create a new source snapshot.
+	snapshotIDResult, snapshotStatusResult, includedCount, err := svc.sourcesSvc.CreateSourceSnapshot(ctx, project.ProjectID, repoIDs, true)
+	if err != nil {
+		return "", "", false, &WorkBlocker{
+			Code:        BlockerSourceSnapshotAcquisitionFailed,
+			Message:     fmt.Sprintf("failed to create source snapshot for project %q: %v", project.ProjectID, err),
+			Recoverable: true,
+		}
+	}
+
+	if includedCount == 0 {
+		return snapshotIDResult, snapshotStatusResult, true, &WorkBlocker{
+			Code:        BlockerSourceSnapshotMetadataMissing,
+			Message:     fmt.Sprintf("created source snapshot %q has no included file metadata", snapshotIDResult),
+			Recoverable: true,
+		}
+	}
+
+	return snapshotIDResult, snapshotStatusResult, true, nil
+}
+
+func sourceSnapshotUsableForHandoff(snapshot *store.SourceSnapshot, ctxPlan ContextPlan, repoAliases map[string]string) (bool, string) {
+	status := strings.TrimSpace(snapshot.Status)
+	if status != "created" && status != "partial" {
+		return false, fmt.Sprintf("snapshot status is %q, expected created or partial", status)
+	}
+	// Check metadata: a metadata-empty snapshot is never usable.
+	if strings.TrimSpace(snapshot.SummaryJson) == "" || snapshot.SummaryJson == "{}" {
+		// Accept if not {} but minimal
+	}
+	// Must have at least some file metadata rows.
+	if snapshot.SummaryJson == "{}" {
+		return false, "snapshot has no metadata (summary is empty)"
+	}
+	return true, ""
+}
+
+func (svc *OrchestratorWorkService) acquireContextPacket(
+	ctx context.Context,
+	project *store.Project,
+	plan *store.Plan,
+	pass *store.PlanPass,
+	ssReqs *SourceSnapshotRequirements,
+	ctxPlan ContextPlan,
+	ctxBudget *ContextBudget,
+	repoAliases map[string]string,
+	snapshotID string,
+) (packetID string, packetStatus string, coverageReportPath string, found bool, usable bool, blocker *WorkBlocker) {
+	// Look up latest existing packet.
+	latest, err := svc.store.GetLatestContextPacketForPass(project.ProjectID, plan.PlanID, pass.PassID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", "", "", false, false, &WorkBlocker{
+			Code:        BlockerContextPacketAcquisitionFailed,
+			Message:     fmt.Sprintf("failed to look up context packet for pass %q: %v", pass.PassID, err),
+			Recoverable: true,
+		}
+	}
+
+	if latest != nil {
+		packetUsable, _ := contextPacketUsableForHandoff(*latest, snapshotID)
+		if packetUsable {
+			return latest.ContextPacketID, latest.Status, latest.CoverageReportPath, true, true, nil
+		}
+		// Stale or blocked packet -- create a replacement.
+	}
+
+	// Need to create a context packet. Must have a source snapshot ID.
+	if strings.TrimSpace(snapshotID) == "" {
+		return "", "", "", false, false, &WorkBlocker{
+			Code:        BlockerRequiredContextPacketMissing,
+			Message:     fmt.Sprintf("pass %q has required context inputs but no context packet exists and no source snapshot is available", pass.PassID),
+			Recoverable: true,
+		}
+	}
+
+	// Build context packet input from pass context plan.
+	input := CtxPacketInput{
+		ProjectID:        project.ProjectID,
+		PlanID:           plan.PlanID,
+		PassID:           pass.PassID,
+		TaskSlug:         safeTaskSlug("next-pass-work", plan.PlanID, pass.PassID),
+		SourceSnapshotID: snapshotID,
+		IncludeInventory: defaultContextPacketIncludeInventory,
+		MaxSources:       contextBudgetInt(ctxBudget, "max_files", defaultContextPacketMaxSources, maxContextPacketSources),
+		MaxTotalBytes:    contextBudgetInt(ctxBudget, "max_bytes", defaultContextPacketMaxTotalBytes, maxContextPacketTotalBytes),
+	}
+
+	for _, seed := range ctxPlan.SeedFilesToRead {
+		repoID := normalizeContextRepoID(seed.RepoID, repoAliases)
+		path := strings.TrimSpace(seed.Path)
+		reason := strings.TrimSpace(seed.Purpose)
+		if repoID == "" || path == "" || reason == "" || isLocalAbsolutePath(path) {
+			continue
+		}
+		input.SeedFiles = append(input.SeedFiles, CtxSeedFile{
+			RepoID:   repoID,
+			Path:     path,
+			Reason:   reason,
+			Required: boolValue(seed.Required),
+		})
+	}
+
+	for _, seed := range ctxPlan.SeedSearchTerms {
+		query := strings.TrimSpace(seed.Query)
+		reason := strings.TrimSpace(seed.Purpose)
+		if query == "" || reason == "" {
+			continue
+		}
+		repoIDs := normalizeContextRepoIDs([]string{seed.RepoID}, repoAliases)
+		var searchRepoIDs []string
+		if len(repoIDs) > 0 {
+			searchRepoIDs = repoIDs
+		}
+		input.SeedSearches = append(input.SeedSearches, CtxSeedSearch{
+			RepoIDs:    searchRepoIDs,
+			Pattern:    query,
+			Required:   boolValue(seed.Required),
+			MaxResults: contextBudgetInt(ctxBudget, "max_search_results", defaultSeedSearchMaxResults, maxSeedSearchResults),
+		})
+	}
+
+	result, err := svc.contextPacketsSvc.CreateContextPacket(ctx, input)
+	if err != nil {
+		return "", "", "", false, false, &WorkBlocker{
+			Code:        BlockerContextPacketAcquisitionFailed,
+			Message:     fmt.Sprintf("failed to create context packet for pass %q: %v", pass.PassID, err),
+			Recoverable: true,
+		}
+	}
+
+	// Check result usability.
+	if result.Status == "blocked" {
+		return result.ContextPacketID, result.Status, result.CoverageReportPath, true, false, &WorkBlocker{
+			Code:        BlockerContextCoverageIncomplete,
+			Message:     fmt.Sprintf("context packet %q was blocked: %d blocked seeds, %d missing seeds", result.ContextPacketID, result.BlockedSeedCount, result.MissingSeedCount),
+			Recoverable: true,
+		}
+	}
+	if result.Truncated {
+		return result.ContextPacketID, result.Status, result.CoverageReportPath, true, false, &WorkBlocker{
+			Code:        BlockerContextPacketTruncated,
+			Message:     fmt.Sprintf("context packet %q is truncated (source count=%d)", result.ContextPacketID, result.SourceCount),
+			Recoverable: true,
+		}
+	}
+
+	return result.ContextPacketID, result.Status, result.CoverageReportPath, true, true, nil
 }
 
 func isUnsafePath(s string) bool {

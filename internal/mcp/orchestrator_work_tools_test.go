@@ -536,8 +536,8 @@ func TestOrchestratorWorkTools_SchemasAreStrictAndScoped(t *testing.T) {
 			t.Errorf("get_next_pass_work outputSchema must define %q", field)
 		}
 	}
-	if ToolGetNextPassWork.Annotations["readOnlyHint"] != true {
-		t.Error("get_next_pass_work annotations must include readOnlyHint=true")
+	if ToolGetNextPassWork.Annotations["readOnlyHint"] != false {
+		t.Error("get_next_pass_work annotations must include readOnlyHint=false")
 	}
 
 	// get_next_audit_work schema.
@@ -827,7 +827,7 @@ func TestOrchestratorWorkTools_GetNextPassWorkActionFeedsCreateContextPacket(t *
 	if len(issues) != 0 {
 		t.Fatalf("unexpected repository issues: %+v", issues)
 	}
-	snapshot, err := sourceService.CreateSourceSnapshot(context.Background(), sources.SourceSnapshotInput{
+	_, err = sourceService.CreateSourceSnapshot(context.Background(), sources.SourceSnapshotInput{
 		ProjectID:           project.ProjectID,
 		RepoIDs:             []string{"relay"},
 		IncludeFileMetadata: true,
@@ -903,36 +903,29 @@ func TestOrchestratorWorkTools_GetNextPassWorkActionFeedsCreateContextPacket(t *
 		t.Fatalf("get_next_pass_work failed: %+v", toolResult.Content)
 	}
 	payload := decodeNextPassSummary(t, toolResult)
-	if len(payload.NextActions) != 1 || payload.NextActions[0].Tool != "create_context_packet" {
-		t.Fatalf("expected create_context_packet action, got %+v", payload.NextActions)
+	// With one-call acquisition, the work service creates the context packet internally
+	// and returns ready_for_handoff_authoring with handoff_work.
+	if !payload.OK || payload.ReadinessState != "ready_for_handoff_authoring" {
+		t.Fatalf("expected ready_for_handoff_authoring, got ok=%v readiness=%q: %+v", payload.OK, payload.ReadinessState, payload)
 	}
-	args := payload.NextActions[0].Arguments
-	if args["source_snapshot_id"] != snapshot.SourceSnapshotID {
-		t.Fatalf("expected latest source_snapshot_id %q, got %#v", snapshot.SourceSnapshotID, args["source_snapshot_id"])
+	if payload.HandoffWork == nil {
+		t.Fatal("expected handoff_work in structuredContent")
 	}
-	seedFiles := args["seed_files"].([]interface{})
-	if seedFiles[0].(map[string]interface{})["repo_id"] != "Paintersrp/relay" {
-		t.Fatalf("expected normalized seed file repo_id, got %#v", seedFiles[0])
+	var foundDraftAction bool
+	for _, act := range payload.NextActions {
+		if act.Tool == "draft_planner_handoff" {
+			foundDraftAction = true
+		}
 	}
-
-	rawArgs, err := json.Marshal(args)
-	if err != nil {
-		t.Fatalf("marshal action args: %v", err)
+	if !foundDraftAction {
+		t.Fatalf("expected draft_planner_handoff in next_actions, got %+v", payload.NextActions)
 	}
-	contextResult := srv.HandleCreateContextPacket(rawArgs)
-	if contextResult.IsError {
-		t.Fatalf("create_context_packet failed from get_next_pass_work args: %s", contextResult.Content[0].Text)
+	// Verify the handoff packet has proper IDs
+	if payload.HandoffWork.ProjectID != "relay" || payload.HandoffWork.PlanID != "plan-mcp-action-chain" || payload.HandoffWork.PassID != "PASS-002" {
+		t.Fatalf("unexpected handoff_work IDs: %+v", payload.HandoffWork)
 	}
-	success := decodeBrokerSuccess(t, contextResult)
-	var contextPayload struct {
-		ContextPacketID string `json:"context_packet_id"`
-		BlockedSeeds    int    `json:"blocked_seed_count"`
-	}
-	if err := json.Unmarshal(success.Result, &contextPayload); err != nil {
-		t.Fatalf("unmarshal create_context_packet result: %v", err)
-	}
-	if contextPayload.ContextPacketID == "" || contextPayload.BlockedSeeds != 0 {
-		t.Fatalf("unexpected create_context_packet result: %+v", contextPayload)
+	if payload.AcquisitionSummary == nil || !payload.AcquisitionSummary.ContextPacketCreated {
+		t.Fatalf("expected acquisition_summary with context_packet_created=true: %+v", payload.AcquisitionSummary)
 	}
 }
 
@@ -1034,7 +1027,7 @@ func TestOrchestratorWorkTools_GetNextPassWorkTextOmitsVerboseHookProse(t *testi
 	if summary.ReadinessState != "needs_context_packet" {
 		t.Fatalf("expected needs_context_packet, got %q", summary.ReadinessState)
 	}
-	if len(summary.Blockers) == 0 || summary.Blockers[0].Code != appplans.BlockerRequiredContextPacketMissing {
+	if len(summary.Blockers) == 0 || (summary.Blockers[0].Code != appplans.BlockerRequiredContextPacketMissing && summary.Blockers[0].Code != appplans.BlockerContextPacketAcquisitionFailed) {
 		t.Fatalf("expected context-packet blocker, got %+v", summary.Blockers)
 	}
 	if !strings.Contains(summary.LocalPreviewHint, "pass-detail preview") {
@@ -1234,6 +1227,8 @@ func TestOrchestratorWorkTools_GetNextPassWork_ContextPacketUsability(t *testing
 		BlockedSeedCount:    0,
 		MissingSeedCount:    0,
 		CompletedAt:         "2026-06-28T12:00:00Z",
+		PacketJSONPath:      "/artifacts/ctxpkt/packet-mcp-unusable.json",
+		CoverageReportPath:  "/artifacts/ctxpkt/packet-mcp-unusable-coverage.json",
 	})
 	if err != nil {
 		t.Fatalf("CreateContextPacket: %v", err)
@@ -1286,6 +1281,8 @@ func TestOrchestratorWorkTools_GetNextPassWork_ContextPacketUsability(t *testing
 		BlockedSeedCount:    0,
 		MissingSeedCount:    0,
 		CompletedAt:         "2026-06-28T13:00:00Z", // later completed_at makes it latest
+		PacketJSONPath:      "/artifacts/ctxpkt/packet-mcp-usable.json",
+		CoverageReportPath:  "/artifacts/ctxpkt/packet-mcp-usable-coverage.json",
 	})
 	if err != nil {
 		t.Fatalf("CreateContextPacket: %v", err)

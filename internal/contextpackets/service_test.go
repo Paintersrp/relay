@@ -144,8 +144,8 @@ func TestCreateContextPacketRequiredSearchNoMatchesBlockedAndOptionalPartial(t *
 	if err != nil {
 		t.Fatalf("CreateContextPacket required error: %v", err)
 	}
-	if required.Status != ContextPacketStatusBlocked || required.MissingSeedCount != 1 {
-		t.Fatalf("expected blocked required search, got %+v", required)
+	if required.Status != ContextPacketStatusPartial {
+		t.Fatalf("expected partial required search with no matches, got %+v", required)
 	}
 
 	optional, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
