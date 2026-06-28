@@ -9,6 +9,19 @@ import (
 var locChangedRe = regexp.MustCompile(`(?i)^\s*(\d+)\s+LOC changed\s*$`)
 var locChangedColonRe = regexp.MustCompile(`(?i)^\s*LOC changed:\s*(\d+)\s*$`)
 
+// stripANSI removes ANSI terminal control sequences from text.
+// Handles CSI sequences (ESC [ ... letters), OSC sequences (ESC ] ... BEL),
+// and common SGR codes like ESC [ 0 m and ESC [ 38;5;10m.
+func stripANSI(text string) string {
+	// CSI sequence: ESC [ followed by optional params and a final letter
+	text = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`).ReplaceAllString(text, "")
+	// OSC sequence: ESC ] (0-9 or :) followed by content and BEL or ESC \
+	text = regexp.MustCompile(`\x1b\][0-9:;]*[^\x07\x1b]`).ReplaceAllString(text, "")
+	// Remove any remaining ESC bytes that aren't part of valid sequences
+	text = strings.ReplaceAll(text, "\x1b", "")
+	return text
+}
+
 type AgentResultStatus string
 
 const (
@@ -59,6 +72,8 @@ func ParseAgentResult(raw string) AgentResult {
 	firstNonEmpty := true
 
 	for _, line := range lines {
+		// Strip ANSI/terminal control sequences before parsing
+		line = stripANSI(line)
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue

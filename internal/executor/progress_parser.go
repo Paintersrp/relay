@@ -28,6 +28,14 @@ var (
 	jsonObjLinePattern = regexp.MustCompile(`^\s*\{`)
 )
 
+// stripANSI removes ANSI terminal control sequences from text.
+func stripANSI(text string) string {
+	text = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`).ReplaceAllString(text, "")
+	text = regexp.MustCompile(`\x1b\][0-9:;]*[^\x07\x1b]`).ReplaceAllString(text, "")
+	text = strings.ReplaceAll(text, "\x1b", "")
+	return text
+}
+
 func (p *progressParser) feed(chunk []byte) []ExecutorProgressEvent {
 	p.buf.Write(chunk)
 	return p.drainCompleteLines()
@@ -87,14 +95,19 @@ func parseOneLine(line []byte) []ExecutorProgressEvent {
 		return nil
 	}
 
-	if jsonObjLinePattern.Match(trimmed) {
+	// Strip ANSI control sequences before processing
+	text := stripANSI(string(trimmed))
+	if text == "" {
+		return nil
+	}
+
+	if jsonObjLinePattern.Match([]byte(text)) {
 		var parsed map[string]interface{}
-		if err := json.Unmarshal(trimmed, &parsed); err == nil {
+		if err := json.Unmarshal([]byte(text), &parsed); err == nil {
 			return parseOpenCodePacket(parsed)
 		}
 	}
 
-	text := string(trimmed)
 	if text == "" {
 		return nil
 	}

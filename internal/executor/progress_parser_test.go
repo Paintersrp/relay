@@ -329,3 +329,34 @@ func TestParser_ToolWithoutTarget(t *testing.T) {
 		t.Errorf("expected tool name in message, got %q", events[0].Message)
 	}
 }
+func TestParser_ANSI_DecoratedText(t *testing.T) {
+	// Simulates ANSI-decorated Kiro output in live progress
+	events := parseOneLine([]byte("\x1b[0m\x1b[38;5;10mSTATUS: DONE\nSome log message"))
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d: %+v", len(events), events)
+	}
+	// Verify no ANSI escape sequences in the message
+	if strings.Contains(events[0].Message, "\x1b") {
+		t.Errorf("event message should not contain ESC byte: %q", events[0].Message)
+	}
+	if strings.Contains(events[0].Message, "[38;5") {
+		t.Errorf("event message should not contain ANSI color code: %q", events[0].Message)
+	}
+	if strings.Contains(events[0].Message, "[0m") {
+		t.Errorf("event message should not contain ANSI reset: %q", events[0].Message)
+	}
+}
+
+func TestParser_ANSI_PromptPrefix(t *testing.T) {
+	events := parseOneLine([]byte("> \x1b[38;5;10mSTATUS: DONE"))
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d: %+v", len(events), events)
+	}
+	// Should strip both ANSI and prompt prefix
+	if strings.Contains(events[0].Message, "\x1b") {
+		t.Errorf("event message should not contain ESC byte: %q", events[0].Message)
+	}
+	if strings.HasPrefix(events[0].Message, ">") {
+		t.Errorf("event message should not start with >: %q", events[0].Message)
+	}
+}

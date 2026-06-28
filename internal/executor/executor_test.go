@@ -1714,3 +1714,49 @@ func TestNewAdapterFromID_KiroAliasReturnsKiroCLIAdapter(t *testing.T) {
 		t.Errorf("expected AdapterKiroCLI, got %s", adapter.ID())
 	}
 }
+func TestKiroCLIAdapter_NormalizeResultANSI_Decorated(t *testing.T) {
+	adapter := KiroCLIAdapter{}
+	// Simulates ANSI-decorated Kiro output as observed
+	raw := "\x1b[0m\x1b[38;5;10mSTATUS: DONE\n\x1b[0m\x1b[38;5;10mBUILD: not_run\n\x1b[0m\x1b[38;5;10mTESTS: not_run\nCount of LOC changed: 15"
+	res := adapter.NormalizeResult(raw)
+
+	if res.Status != pipeline.AgentResultDone {
+		t.Errorf("expected DONE, got %v", res.Status)
+	}
+	if !strings.Contains(res.ExecutorResultText, "STATUS: DONE") {
+		t.Errorf("expected text to contain STATUS: DONE, got %s", res.ExecutorResultText)
+	}
+	if !strings.Contains(res.ExecutorResultText, "not_run") {
+		t.Errorf("expected text to contain not_run, got %s", res.ExecutorResultText)
+	}
+	// Verify no ESC bytes in output
+	if strings.Contains(res.ExecutorResultText, "\x1b") {
+		t.Errorf("executor result should not contain ESC byte")
+	}
+}
+
+func TestKiroCLIAdapter_NormalizeResultANSI_Blocked(t *testing.T) {
+	adapter := KiroCLIAdapter{}
+	raw := "\x1b[0m\x1b[38;5;9mSTATUS: BLOCKED\n\x1b[0m\x1b[38;5;9mBLOCKER: auth failed"
+	res := adapter.NormalizeResult(raw)
+
+	if res.Status != pipeline.AgentResultBlocked {
+		t.Errorf("expected BLOCKED, got %v", res.Status)
+	}
+	if !strings.Contains(res.BlockerText, "auth failed") {
+		t.Errorf("expected blocker text to contain auth failed, got %s", res.BlockerText)
+	}
+}
+
+func TestKiroCLIAdapter_NormalizeResultANSI_PromptPrefix(t *testing.T) {
+	adapter := KiroCLIAdapter{}
+	raw := "> \x1b[38;5;10mSTATUS: DONE\n> \x1b[38;5;10mBUILD: not_run\n> \x1b[38;5;10mTESTS: not_run"
+	res := adapter.NormalizeResult(raw)
+
+	if res.Status != pipeline.AgentResultDone {
+		t.Errorf("expected DONE, got %v", res.Status)
+	}
+	if !strings.Contains(res.ExecutorResultText, "STATUS: DONE") {
+		t.Errorf("expected text to contain STATUS: DONE, got %s", res.ExecutorResultText)
+	}
+}

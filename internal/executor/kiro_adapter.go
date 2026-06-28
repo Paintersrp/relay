@@ -3,6 +3,7 @@ package executor
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"relay/internal/pipeline"
@@ -163,12 +164,27 @@ func (a *KiroCLIAdapter) NormalizeResult(raw string) NormalizedExecutorResult {
 func normalizeKiroHeadlessOutput(raw string) string {
 	lines := strings.Split(raw, "\n")
 	for i, line := range lines {
+		// First strip ANSI/terminal control sequences
+		line = stripANSIText(line)
+		// Then remove prompt prefix
 		trimmedLeft := strings.TrimLeft(line, " \t")
 		if strings.HasPrefix(trimmedLeft, ">") {
 			lines[i] = strings.TrimLeft(strings.TrimPrefix(trimmedLeft, ">"), " \t")
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// stripANSIText is a local copy of pipeline.stripANSI for use in the adapter
+// before it calls into pipeline.ParseAgentResult (which also strips ANSI).
+func stripANSIText(text string) string {
+	// CSI sequence: ESC [ followed by optional params and a final letter
+	text = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`).ReplaceAllString(text, "")
+	// OSC sequence: ESC ] (0-9 or :) followed by content and BEL or ESC \
+	text = regexp.MustCompile(`\x1b\][0-9:;]*[^\x07\x1b]`).ReplaceAllString(text, "")
+	// Remove any remaining ESC bytes that aren't part of valid sequences
+	text = strings.ReplaceAll(text, "\x1b", "")
+	return text
 }
 
 func boundedRaw(raw string) string {

@@ -212,3 +212,38 @@ func TestAgentResultJSON(t *testing.T) {
 		t.Errorf("expected trailing newline")
 	}
 }
+func TestParseAgentResultANSI_DecoratedStatus(t *testing.T) {
+	input := "\x1b[0m\x1b[38;5;10mSTATUS: DONE\nBUILD: not_run\nTESTS: not_run"
+	result := ParseAgentResult(input)
+
+	if result.Status != AgentResultDone {
+		t.Errorf("expected status DONE, got %s", result.Status)
+	}
+	if result.BuildStatus != "not_run" {
+		t.Errorf("expected build status 'not_run', got %s", result.BuildStatus)
+	}
+	if result.TestStatus != "not_run" {
+		t.Errorf("expected test status 'not_run', got %s", result.TestStatus)
+	}
+}
+
+func TestParseAgentResultANSI_BlockedWithBlocker(t *testing.T) {
+	input := "\x1b[0m\x1b[38;5;9mSTATUS: BLOCKED\nBLOCKER: auth failed"
+	result := ParseAgentResult(input)
+
+	if result.Status != AgentResultBlocked {
+		t.Errorf("expected status BLOCKED, got %s", result.Status)
+	}
+	if result.BlockerError != "auth failed" {
+		t.Errorf("expected blocker error 'auth failed', got %s", result.BlockerError)
+	}
+}
+
+func TestParseAgentResultANSI_DoesNotTreatProseDoneAsDone(t *testing.T) {
+	input := "\x1b[0mThe task is not done yet.\nBuild status: PASS"
+	result := ParseAgentResult(input)
+
+	if result.Status != AgentResultUnknown {
+		t.Fatalf("expected status UNKNOWN, got %s", result.Status)
+	}
+}
