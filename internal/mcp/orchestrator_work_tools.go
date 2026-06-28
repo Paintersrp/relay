@@ -42,10 +42,13 @@ func (a *contextPacketAdapter) CreateContextPacket(ctx context.Context, input ap
 	seedFiles := make([]contextpackets.ContextSeedFile, 0, len(input.SeedFiles))
 	for _, sf := range input.SeedFiles {
 		seedFiles = append(seedFiles, contextpackets.ContextSeedFile{
-			RepoID:   sf.RepoID,
-			Path:     sf.Path,
-			Reason:   sf.Reason,
-			Required: sf.Required,
+			RepoID:    sf.RepoID,
+			Path:      sf.Path,
+			LineStart: sf.LineStart,
+			LineEnd:   sf.LineEnd,
+			Reason:    sf.Reason,
+			Required:  sf.Required,
+			MaxBytes:  sf.MaxBytes,
 		})
 	}
 	seedSearches := make([]contextpackets.ContextSeedSearch, 0, len(input.SeedSearches))

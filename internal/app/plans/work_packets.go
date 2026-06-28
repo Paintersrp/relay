@@ -531,6 +531,11 @@ const (
 	maxContextPacketTotalBytes           = 1048576
 	maxSeedSearchResults                 = 200
 	maxSeedFileBytes                     = 262144
+	// Optimistic line cap for range-aware seed file reads when exact EOF is unknown.
+	// This avoids relying on the context packet default 1-200 line range.
+	optimisticSeedFileLineEnd = 1000
+	// Threshold for large files that require targeted ranges rather than optimistic caps.
+	largeFileSizeThreshold = 180000
 )
 
 var taskSlugUnsafeChars = regexp.MustCompile(`[^a-z0-9]+`)
@@ -579,10 +584,13 @@ type CtxPacketInput struct {
 
 // CtxSeedFile mirrors contextpackets.ContextSeedFile.
 type CtxSeedFile struct {
-	RepoID   string
-	Path     string
-	Reason   string
-	Required bool
+	RepoID    string
+	Path      string
+	LineStart int
+	LineEnd   int
+	Reason    string
+	Required  bool
+	MaxBytes  int
 }
 
 // CtxSeedSearch mirrors contextpackets.ContextSeedSearch.
@@ -1313,6 +1321,18 @@ func buildContextPacketActionArguments(projectID, planID, passID, sourceSnapshot
 	return args
 }
 
+// planSeedFileRange determines the line range for a required seed file.
+// For required files, we use line_start=1 and an optimistic cap to avoid
+// relying on the context packet default 1-200 line range.
+// Returns 0,0 for optional files (they don't require explicit ranges).
+func planSeedFileRange(required bool) (lineStart, lineEnd int) {
+	if required {
+		lineStart = 1
+		lineEnd = optimisticSeedFileLineEnd
+	}
+	return lineStart, lineEnd
+}
+
 func buildContextPacketSeedFiles(ctxPlan ContextPlan, ctxBudget *ContextBudget, repoAliases map[string]string) []map[string]interface{} {
 	seedFiles := make([]map[string]interface{}, 0, len(ctxPlan.SeedFilesToRead))
 	maxBytes := contextBudgetInt(ctxBudget, "max_bytes", defaultSeedFileMaxBytes, maxSeedFileBytes)
@@ -1323,13 +1343,21 @@ func buildContextPacketSeedFiles(ctxPlan ContextPlan, ctxBudget *ContextBudget, 
 		if repoID == "" || path == "" || reason == "" || isLocalAbsolutePath(path) {
 			continue
 		}
-		seedFiles = append(seedFiles, map[string]interface{}{
+		required := boolValue(seed.Required)
+		item := map[string]interface{}{
 			"repo_id":   repoID,
 			"path":      path,
 			"reason":    reason,
-			"required":  boolValue(seed.Required),
+			"required":  required,
 			"max_bytes": maxBytes,
-		})
+		}
+		// Add explicit line ranges for required seed files to avoid default 1-200 behavior.
+		if required {
+			lineStart, lineEnd := planSeedFileRange(true)
+			item["line_start"] = lineStart
+			item["line_end"] = lineEnd
+		}
+		seedFiles = append(seedFiles, item)
 	}
 	return seedFiles
 }
@@ -1936,11 +1964,19 @@ func buildCtxSeedFiles(ctxPlan ContextPlan, repoAliases map[string]string, requi
 		if repoID == "" || path == "" || reason == "" || isLocalAbsolutePath(path) {
 			continue
 		}
+		requiredFlag := boolValue(seed.Required)
 		item := CtxSeedFile{
 			RepoID:   repoID,
 			Path:     path,
 			Reason:   reason,
-			Required: boolValue(seed.Required),
+			Required: requiredFlag,
+			MaxBytes: defaultSeedFileMaxBytes,
+		}
+		// Add explicit line ranges for required seed files to avoid default 1-200 behavior.
+		if requiredFlag {
+			lineStart, lineEnd := planSeedFileRange(true)
+			item.LineStart = lineStart
+			item.LineEnd = lineEnd
 		}
 		if item.Required {
 			required = append(required, item)
