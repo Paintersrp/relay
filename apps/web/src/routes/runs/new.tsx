@@ -44,6 +44,7 @@ interface DetectedHandoffMetadata {
   schemaVersion?: string;
   recommendedModel?: string;
   executorModelProfile?: string;
+  executorAdapter?: string;
   model?: string;
   detectedCount: number;
 }
@@ -67,6 +68,7 @@ function detectHandoffMetadata(markdown: string): DetectedHandoffMetadata {
     schemaVersion: findMetadataValue(markdown, ["schema_version"]),
     recommendedModel: findMetadataValue(markdown, ["recommended_model"]),
     executorModelProfile: findMetadataValue(markdown, ["executor_model_profile"]),
+    executorAdapter: findMetadataValue(markdown, ["executor_adapter", "executorAdapter"]),
     model: findMetadataValue(markdown, ["model"]),
   };
 
@@ -75,6 +77,9 @@ function detectHandoffMetadata(markdown: string): DetectedHandoffMetadata {
 }
 
 function chooseDetectedAdapter(metadata: DetectedHandoffMetadata): string {
+  const execAdapter = metadata.executorAdapter?.trim().toLowerCase();
+  if (isKnownExecutorAdapter(execAdapter)) return execAdapter;
+
   const candidate = metadata.targetExecutor?.trim().toLowerCase();
   if (candidate === "kiro") return "kiro_cli";
   if (candidate === "opencode") return "opencode_go";
@@ -181,6 +186,7 @@ function NewRunPage() {
     setExecutorAdapter(nextAdapter);
     setExecutorModel(nextModel);
   }, [
+    detectedMetadata.executorAdapter,
     detectedMetadata.targetExecutor,
     detectedMetadata.executorModelProfile,
     detectedMetadata.recommendedModel,
@@ -610,6 +616,10 @@ function NewRunPage() {
                       <MetadataRow
                         label="target_executor"
                         value={detectedMetadata.targetExecutor}
+                      />
+                      <MetadataRow
+                        label="executor_adapter"
+                        value={detectedMetadata.executorAdapter}
                       />
                       <MetadataRow
                         label="schema_version"

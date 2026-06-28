@@ -94,13 +94,12 @@ func (s *Service) IntakePlannerHandoff(ctx context.Context, input IntakeInput) (
 		title = deriveRunTitleFromMarkdown(markdown)
 	}
 
-	recommendedModel := resolveIntakeRecommendedModel(input, metadata)
-	selectedModel := recommendedModel
-
 	executorAdapter, explicitAdapter, err := resolveIntakeExecutorAdapter(input, metadata)
 	if err != nil {
 		return nil, &Error{HTTPStatus: http.StatusBadRequest, Code: "BAD_REQUEST", Message: err.Error()}
 	}
+	recommendedModel := resolveIntakeRecommendedModel(input, metadata, executorAdapter)
+	selectedModel := recommendedModel
 	planID, passID := resolveIntakePlanInputs(input)
 
 	var run *generated.Run
@@ -206,7 +205,7 @@ func (s *Service) IntakePlannerHandoff(ctx context.Context, input IntakeInput) (
 	return &IntakeResult{RunID: run.ID, PlanID: planID, PassID: passID}, nil
 }
 
-func resolveIntakeRecommendedModel(input IntakeInput, metadata map[string]string) string {
+func resolveIntakeRecommendedModel(input IntakeInput, metadata map[string]string, executorAdapter string) string {
 	for _, v := range []string{input.ExecutorModelProfile, input.ExecutorModelProfile2, input.RecommendedModel, input.Model} {
 		if v := strings.TrimSpace(v); v != "" {
 			return v
@@ -216,6 +215,9 @@ func resolveIntakeRecommendedModel(input IntakeInput, metadata map[string]string
 		if v := strings.TrimSpace(metadata[key]); v != "" {
 			return v
 		}
+	}
+	if executorAdapter == "kiro_cli" {
+		return "auto"
 	}
 	targetExec := strings.TrimSpace(metadata["target_executor"])
 	switch targetExec {
