@@ -164,3 +164,22 @@ Keep implementation changes bounded to the current task or selected Planner hand
 Do not introduce future-pass work, unrelated cleanup, framework changes, route rewrites, schema changes, lifecycle behavior changes, or generated-file churn unless explicitly requested.
 
 If repo instructions are stale, update only the stale instruction text needed for the current task.
+
+## FOR CODEX
+
+## Executor brief workflow
+
+When the user provides an Execution Brief, implementation brief, compiler brief, or similarly structured executor packet:
+
+1. Treat the brief as the only task authority.
+2. Do not use prior chat history, planner rationale, canonical packets, audit notes, validation reports, repair reports, or unrelated repo issues as task instructions unless the current brief explicitly includes them.
+3. Make the smallest safe change that satisfies the brief.
+4. Do not broaden scope beyond the brief's Scope, File targets, Do not change, DONE, and BLOCKED sections.
+5. Use read-only subagents only for bounded discovery:
+   - `repo_surface_mapper` may inspect targeted implementation files and summarize current behavior/edit surfaces.
+   - `test_surface_mapper` may inspect targeted tests and validation expectations.
+6. Subagents must not edit files, make final architecture decisions, or reinterpret the brief.
+7. The main agent owns implementation, validation, failure repair, and final status.
+8. Run required validation commands from the brief when possible.
+9. Do not claim validation passed unless the command actually passed.
+10. Final response must follow the brief's requested final response format exactly.

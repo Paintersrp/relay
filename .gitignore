@@ -37,6 +37,11 @@ apps/web/.env
 coverage/
 coverage.out
 
+.aider/
+.codex/
+.kiro/
+.opencode/
+
 # Environment
 .env
 .env.local
