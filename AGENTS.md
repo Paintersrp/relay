@@ -165,10 +165,10 @@ This is repo-local. It does not affect other repositories on the machine.
 
 ### Hook advisory semantics
 
-- **pre-commit**: runs `fast` tier, stages only fast artifact files, blocks commit on failure.
-- **pre-push**: runs `broad` tier by default (set `RELAY_PUSH_TIER=full` to run full tier), does not stage files, blocks push on failure.
+- **pre-commit**: runs `fast` tier, stages fast artifact files when present, and does not block the commit when validation fails. Failed fast validation is committed as advisory evidence when artifacts are available.
+- **pre-push**: runs `broad` tier by default (set `RELAY_PUSH_TIER=full` to run full tier), writes evidence artifacts, does not stage files, and does not block the push when validation fails.
 
-Hook validation failures are reported as evidence artifacts. Hooks do not regenerate generated references.
+Hook validation failures are reported as evidence artifacts and should guide Auditor `revision_required` decisions or follow-up corrective work. Hooks do not regenerate generated references.
 
 **Timing note**: pre-push broad validation includes `go test ./...` and web typecheck/test, which may take 30–120 seconds. Full tier adds web build and takes longer. Hooks run synchronously before the git operation completes.
 

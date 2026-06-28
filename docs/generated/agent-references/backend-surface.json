@@ -30,7 +30,7 @@
     },
     {
       "path": "internal/api/api_test.go",
-      "sha256": "5503587d03c7f62d3a964f8af9ff60c8292d7865f1cc9ef154d969c6de88ca11",
+      "sha256": "728ebb47586af4aeafd212e9b0b75fb88d1be7a74ae6b90877769d7f74b390b9",
       "role": "test"
     },
     {
@@ -115,7 +115,7 @@
     },
     {
       "path": "internal/api/next_pass_work_test.go",
-      "sha256": "cf1f2666eff4bbe3ce092cb40c613197f9584998ea405032f8f13a5321254d60",
+      "sha256": "2a67ab8ff1c609db7d849de71c9d586f864838406f304ee828f57a7c194ecf05",
       "role": "test"
     },
     {
@@ -260,7 +260,7 @@
     },
     {
       "path": "internal/api/runs/presenter.go",
-      "sha256": "75a45ae618d8b21203d2ee4ae021aaae3044ed79b082b47cf973b050d51e17f9",
+      "sha256": "ca03a9b4fa9ab1e2bb0b6814f46237ee892a5ef2482b2dde3bb719ee6cc52bb2",
       "role": "source"
     },
     {
@@ -500,12 +500,12 @@
     },
     {
       "path": "internal/app/plans/work_packets.go",
-      "sha256": "00fbd059dfda25b75477af02c702f0df228337706f0c5de214087342519bfa59",
+      "sha256": "88f488f0c6da28703a09877246bb35c13899d0a4a87c0f25697b5d37238f108c",
       "role": "source"
     },
     {
       "path": "internal/app/plans/work_packets_test.go",
-      "sha256": "40bdd7cc08b26eaf17d935b611b5dd0a85abd3e2d9648e72d262221f2d8a648c",
+      "sha256": "b1acee5c20a5d57ae6c2b38f49cb7ebb6146f9bd8d810a8633a03ace97b2805d",
       "role": "test"
     },
     {
@@ -565,7 +565,7 @@
     },
     {
       "path": "internal/app/runs/lifecycle.go",
-      "sha256": "9bf73a211e3d522fdf039f3dc1dbffe7f859717e65d00a6335a32013d4dd86ce",
+      "sha256": "03647918410f7b4922959cfdec1809709fe31238a0f220ec38bd62223a798d8c",
       "role": "source"
     },
     {
@@ -620,12 +620,12 @@
     },
     {
       "path": "internal/mcp/orchestrator_work_tools.go",
-      "sha256": "a3f8deb350295ad2e44d1d08536483a266b8fe46385904049b5b8083a836b0c9",
+      "sha256": "96f0c01a8213e5f4f01087ebfb2c4440d8d6381fde7eae2b1cf537c549479080",
       "role": "source"
     },
     {
       "path": "internal/mcp/orchestrator_work_tools_test.go",
-      "sha256": "38da67622ec18448e01c33fa224c18a9672e275fc3f3be88ff9601fbc79b7d2f",
+      "sha256": "93a073c370de7c9cf621fec0cf1c3be9a1cb8c4fc6b3fe75e7df668fdcd1b77b",
       "role": "test"
     },
     {
@@ -6891,6 +6891,39 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-const-blockerrequiredseedfilemissingfromsnapshot",
+      "label": "proven",
+      "statement": "Exported const BlockerRequiredSeedFileMissingFromSnapshot in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-const-blockerrequiredseedfileoversized",
+      "label": "proven",
+      "statement": "Exported const BlockerRequiredSeedFileOversized in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-const-blockerrequiredseedrangeunresolved",
+      "label": "proven",
+      "statement": "Exported const BlockerRequiredSeedRangeUnresolved in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-const-blockerrequiredsourcecontextmissing",
       "label": "proven",
       "statement": "Exported const BlockerRequiredSourceContextMissing in internal/app/plans/work_packets.go",
@@ -9395,6 +9428,17 @@
         {
           "kind": "source",
           "value": "internal/app/plans/review_gate.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-seedrangefailuredetail",
+      "label": "proven",
+      "statement": "Exported type SeedRangeFailureDetail in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -15229,6 +15273,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-api-testgetnextpasswork-api-nomatchrequiredsearchnotunusable",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_API_NoMatchRequiredSearchNotUnusable in internal/api/next_pass_work_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/api/next_pass_work_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-api-testgetnextpasswork-api-preservesacquisitionfailurereport",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_API_PreservesAcquisitionFailureReport in internal/api/next_pass_work_test.go",
@@ -16395,6 +16450,50 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-internalseedfilesuserangeandpassbudgetmaxbytes",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_InternalSeedFilesUseRangeAndPassBudgetMaxBytes in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-metadatapresentmissingfilefailsclosed",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_MetadataPresentMissingFileFailsClosed in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-metadatapresentoversizedfilefailsclosed",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_MetadataPresentOversizedFileFailsClosed in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-metadatapresentsmallfileoptimisticrange",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_MetadataPresentSmallFileOptimisticRange in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-plans-testgetnextpasswork-missingcontextpacketincludesjumpstart",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_MissingContextPacketIncludesJumpstart in internal/app/plans/work_packets_test.go",
@@ -16717,6 +16816,17 @@
       "id": "backend-test-internal-app-plans-testgetnextpasswork-selectssecondpasswhenfirstskipped",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_SelectsSecondPassWhenFirstSkipped in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-suggestedseedfilesincluderangeandbudget",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_SuggestedSeedFilesIncludeRangeAndBudget in internal/app/plans/work_packets_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -17502,6 +17612,17 @@
         {
           "kind": "test",
           "value": "internal/mcp/context_broker_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testcontextpacketadapterpreservesseedfilerangeandmaxbytes",
+      "label": "proven",
+      "statement": "Test function TestContextPacketAdapterPreservesSeedFileRangeAndMaxBytes in internal/mcp/orchestrator_work_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/orchestrator_work_tools_test.go"
         }
       ]
     },
@@ -18444,6 +18565,17 @@
       "id": "backend-test-internal-mcp-testorchestratorworktools-getnextpassworkactionfeedscreatecontextpacket",
       "label": "proven",
       "statement": "Test function TestOrchestratorWorkTools_GetNextPassWorkActionFeedsCreateContextPacket in internal/mcp/orchestrator_work_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/orchestrator_work_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testorchestratorworktools-getnextpassworknomatchrequiredsearchnotblocked",
+      "label": "proven",
+      "statement": "Test function TestOrchestratorWorkTools_GetNextPassWorkNoMatchRequiredSearchNotBlocked in internal/mcp/orchestrator_work_tools_test.go",
       "evidence": [
         {
           "kind": "test",

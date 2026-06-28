@@ -29,12 +29,12 @@ const (
 
 	DefaultExecutorTimeout = 30 * time.Minute
 
-	ArtifactKindExecutorStdout        = "executor_stdout"
-	ArtifactKindExecutorStderr        = "executor_stderr"
-	ArtifactKindCommandLog            = "command_log"
-	ArtifactKindExecutorResult        = "executor_result"
-	ArtifactKindCodexLastMessage      = "codex_last_message"
-	ArtifactKindExecutorUsage         = "executor_usage_json"
+	ArtifactKindExecutorStdout       = "executor_stdout"
+	ArtifactKindExecutorStderr       = "executor_stderr"
+	ArtifactKindCommandLog           = "command_log"
+	ArtifactKindExecutorResult       = "executor_result"
+	ArtifactKindCodexLastMessage     = "codex_last_message"
+	ArtifactKindExecutorUsage        = "executor_usage_json"
 	ArtifactKindKiroParseFixtureJSON = "kiro_parse_fixture_json" // temporary opt-in diagnostic fixture
 )
 
@@ -523,6 +523,11 @@ func runBackgroundDispatch(
 		recordExecutorArtifact(s, runID, ArtifactKindCommandLog, combinedPath, "text/plain")
 	}
 
+	// Emit Kiro parse fixture (opt-in, Kiro-only) before any terminal return branch
+	if invocation.Adapter == AdapterKiroCLI && isKiroParseFixtureEnabled() {
+		captureKiroParseFixture(l, s, runID, execID, invocation, runResult, finalStdout, finalStderr)
+	}
+
 	if ctx.Err() != nil {
 		l.Info("executor: context canceled before finalization", "run_id", runID, "exec_id", execID)
 		createEvent(s, runID, "warn", "Executor execution canceled")
@@ -600,11 +605,6 @@ func runBackgroundDispatch(
 				l.Warn("executor: failed to marshal usage telemetry", "error", err)
 			}
 		}
-	}
-
-	// Emit Kiro parse fixture (opt-in, Kiro-only) before status normalization
-	if invocation.Adapter == AdapterKiroCLI && isKiroParseFixtureEnabled() {
-		captureKiroParseFixture(l, s, runID, execID, invocation, runResult, finalStdout, finalStderr)
 	}
 
 	if runResult.Stdout != "" || invocation.ResultFile != "" {
@@ -883,43 +883,43 @@ func isKiroParseFixtureEnabled() bool {
 
 // kiroParseFixtureJSON is the diagnostic fixture schema.
 type kiroParseFixtureJSON struct {
-	SchemaVersion                string                              `json:"schemaVersion"`
-	Temporary                    bool                                `json:"temporary"`
-	CapturedAt                   string                              `json:"capturedAt"`
-	RunID                        int64                               `json:"runId"`
-	ExecID                       int64                               `json:"execId"`
-	Adapter                      string                              `json:"adapter"`
-	Model                        string                              `json:"model"`
-	Agent                        string                              `json:"agent"`
-	CommandPreview               string                              `json:"commandPreview"`
-	ExitCode                     int                                 `json:"exitCode"`
-	TimedOut                     bool                                `json:"timedOut"`
-	ErrorText                    string                              `json:"errorText,omitempty"`
-	RunResultStdoutBytes         int                                 `json:"runResultStdoutBytes"`
-	RunResultStderrBytes         int                                 `json:"runResultStderrBytes"`
-	FinalStdoutBytes             int                                 `json:"finalStdoutBytes"`
-	FinalStderrBytes             int                                 `json:"finalStderrBytes"`
-	RunResultStdoutQ             string                              `json:"runResultStdoutQ,omitempty"`
-	RunResultStderrQ             string                              `json:"runResultStderrQ,omitempty"`
-	FinalStdoutQ                 string                              `json:"finalStdoutQ,omitempty"`
-	FinalStderrQ                 string                              `json:"finalStderrQ,omitempty"`
-	CombinedFinalStreamsQ        string                              `json:"combinedFinalStreamsQ,omitempty"`
-	SelectedNormalizationInput   string                              `json:"selectedNormalizationInput"`
-	SelectedNormalizationInputQ  string                              `json:"selectedNormalizationInputQ,omitempty"`
-	SelectedParsedStatus         string                              `json:"selectedParsedStatus"`
-	CandidateResults             []kiroParseFixtureCandidate         `json:"candidateResults"`
+	SchemaVersion               string                      `json:"schemaVersion"`
+	Temporary                   bool                        `json:"temporary"`
+	CapturedAt                  string                      `json:"capturedAt"`
+	RunID                       int64                       `json:"runId"`
+	ExecID                      int64                       `json:"execId"`
+	Adapter                     string                      `json:"adapter"`
+	Model                       string                      `json:"model"`
+	Agent                       string                      `json:"agent"`
+	CommandPreview              string                      `json:"commandPreview"`
+	ExitCode                    int                         `json:"exitCode"`
+	TimedOut                    bool                        `json:"timedOut"`
+	ErrorText                   string                      `json:"errorText,omitempty"`
+	RunResultStdoutBytes        int                         `json:"runResultStdoutBytes"`
+	RunResultStderrBytes        int                         `json:"runResultStderrBytes"`
+	FinalStdoutBytes            int                         `json:"finalStdoutBytes"`
+	FinalStderrBytes            int                         `json:"finalStderrBytes"`
+	RunResultStdoutQ            string                      `json:"runResultStdoutQ,omitempty"`
+	RunResultStderrQ            string                      `json:"runResultStderrQ,omitempty"`
+	FinalStdoutQ                string                      `json:"finalStdoutQ,omitempty"`
+	FinalStderrQ                string                      `json:"finalStderrQ,omitempty"`
+	CombinedFinalStreamsQ       string                      `json:"combinedFinalStreamsQ,omitempty"`
+	SelectedNormalizationInput  string                      `json:"selectedNormalizationInput"`
+	SelectedNormalizationInputQ string                      `json:"selectedNormalizationInputQ,omitempty"`
+	SelectedParsedStatus        string                      `json:"selectedParsedStatus"`
+	CandidateResults            []kiroParseFixtureCandidate `json:"candidateResults"`
 }
 
 type kiroParseFixtureCandidate struct {
-	Name               string `json:"name"`
-	ByteCount          int    `json:"byteCount"`
-	HasStatusToken     bool   `json:"hasStatusToken"`
-	NormalizedQ        string `json:"normalizedQ,omitempty"`
-	ParsedStatus       string `json:"parsedStatus"`
-	BuildStatus        string `json:"buildStatus"`
-	TestStatus         string `json:"testStatus"`
-	LOCChanged         string `json:"locChanged"`
-	BlockerError       string `json:"blockerError,omitempty"`
+	Name           string `json:"name"`
+	ByteCount      int    `json:"byteCount"`
+	HasStatusToken bool   `json:"hasStatusToken"`
+	NormalizedQ    string `json:"normalizedQ,omitempty"`
+	ParsedStatus   string `json:"parsedStatus"`
+	BuildStatus    string `json:"buildStatus"`
+	TestStatus     string `json:"testStatus"`
+	LOCChanged     string `json:"locChanged"`
+	BlockerError   string `json:"blockerError,omitempty"`
 }
 
 const kiroFixtureMaxLen = 8192
@@ -965,28 +965,28 @@ func captureKiroParseFixture(
 	selectedParsed := pipeline.ParseAgentResult(selectedNormalized)
 
 	fixture := kiroParseFixtureJSON{
-		SchemaVersion:              "1",
-		Temporary:                  true,
-		CapturedAt:                 now,
-		RunID:                      runID,
-		ExecID:                     execID,
-		Adapter:                    string(invocation.Adapter),
-		Model:                      invocation.Model,
-		Agent:                      invocation.Agent,
-		CommandPreview:             invocation.Preview,
-		ExitCode:                   runResult.ExitCode,
-		TimedOut:                   runResult.TimedOut,
-		ErrorText:                  runResult.Error,
-		RunResultStdoutBytes:       len(runResult.Stdout),
-		RunResultStderrBytes:       len(runResult.Stderr),
-		FinalStdoutBytes:           len(finalStdout),
-		FinalStderrBytes:           len(finalStderr),
-		RunResultStdoutQ:           boundAndQuote(redactSensitive(runResult.Stdout)),
-		RunResultStderrQ:           boundAndQuote(redactSensitive(runResult.Stderr)),
-		FinalStdoutQ:               boundAndQuote(redactSensitive(finalStdout)),
-		FinalStderrQ:               boundAndQuote(redactSensitive(finalStderr)),
-		CombinedFinalStreamsQ:      boundAndQuote(redactSensitive(finalStdout + "\n" + finalStderr)),
-		SelectedNormalizationInput: "run_result_stdout",
+		SchemaVersion:               "1",
+		Temporary:                   true,
+		CapturedAt:                  now,
+		RunID:                       runID,
+		ExecID:                      execID,
+		Adapter:                     string(invocation.Adapter),
+		Model:                       invocation.Model,
+		Agent:                       invocation.Agent,
+		CommandPreview:              invocation.Preview,
+		ExitCode:                    runResult.ExitCode,
+		TimedOut:                    runResult.TimedOut,
+		ErrorText:                   runResult.Error,
+		RunResultStdoutBytes:        len(runResult.Stdout),
+		RunResultStderrBytes:        len(runResult.Stderr),
+		FinalStdoutBytes:            len(finalStdout),
+		FinalStderrBytes:            len(finalStderr),
+		RunResultStdoutQ:            boundAndQuote(redactSensitive(runResult.Stdout)),
+		RunResultStderrQ:            boundAndQuote(redactSensitive(runResult.Stderr)),
+		FinalStdoutQ:                boundAndQuote(redactSensitive(finalStdout)),
+		FinalStderrQ:                boundAndQuote(redactSensitive(finalStderr)),
+		CombinedFinalStreamsQ:       boundAndQuote(redactSensitive(finalStdout + "\n" + finalStderr)),
+		SelectedNormalizationInput:  "run_result_stdout",
 		SelectedNormalizationInputQ: boundAndQuote(redactSensitive(selectedInput)),
 		SelectedParsedStatus:        string(selectedParsed.Status),
 	}

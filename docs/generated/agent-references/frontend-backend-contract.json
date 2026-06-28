@@ -35,7 +35,7 @@
     },
     {
       "path": "apps/web/src/features/relay-runs/api.ts",
-      "sha256": "6015b4d1c3490bdaaa07c6a8b7fc9be36ad8048daf0c7ef1354bb3cb66abc532",
+      "sha256": "e1cd6de9ca05554bcf3ad6d1735313e479e3a0e0b70abcbc2820857f7521cf0c",
       "role": "frontend source"
     },
     {
@@ -45,7 +45,7 @@
     },
     {
       "path": "apps/web/src/features/relay-runs/types.ts",
-      "sha256": "ad01561097f1cc27ede0c33c7770497b94b0388df9c8efe2eef26922e473f89e",
+      "sha256": "b6877b7dd9512b7bb3a1cd184d78bb0afd016f03f8506ec0824ae715806294f5",
       "role": "frontend source"
     },
     {

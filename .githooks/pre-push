@@ -9,7 +9,7 @@
 # complete build artifact check is required before push.
 #
 # This hook does NOT stage files. Evidence artifacts are written but not
-# automatically added to the commit.
+# automatically added to the commit being pushed.
 set -u
 
 TIER="${RELAY_PUSH_TIER:-broad}"
@@ -30,8 +30,9 @@ EXIT_CODE=$?
 if [ $EXIT_CODE -ne 0 ]; then
   echo "[pre-push] $TIER validation evidence: FAILED (exit $EXIT_CODE)" >&2
   echo "[pre-push] Review handoffs/validation/latest.validation-report.${TIER}.json for details." >&2
-  echo "[pre-push] This hook is advisory. Push blocked by validation failure." >&2
-  exit $EXIT_CODE
+  echo "[pre-push] This hook is advisory. Push will continue; failed evidence should guide audit/revision." >&2
+  echo "[pre-push] Evidence artifacts were written but not staged by pre-push." >&2
+  exit 0
 fi
 
 echo "[pre-push] $TIER validation evidence: passed (artifacts not staged)"

@@ -27,7 +27,7 @@ Schema version: `1.0.0`
 | --- | --- | --- |
 | `docs/backend-code-surface-map.md` | `f3eb4c9e1fdfc1d4ea3f38dc7f4cac8dc5611b78dc9ce6bcb73542f44afc1382` | manual map |
 | `internal/api/api.go` | `344edea0bf5ff8e9af5788b8a88e6b0ad05b301c484703bed81932610fd52086` | source |
-| `internal/api/api_test.go` | `5503587d03c7f62d3a964f8af9ff60c8292d7865f1cc9ef154d969c6de88ca11` | test |
+| `internal/api/api_test.go` | `728ebb47586af4aeafd212e9b0b75fb88d1be7a74ae6b90877769d7f74b390b9` | test |
 | `internal/api/artifacts/doc.go` | `65f3caf6725ec4f881de4cc245e27fb7bbc54ab509343b131ff71dda2ddbf52a` | source |
 | `internal/api/artifacts/handler.go` | `77ee5f16b29fa2ea05d7a5be7afb4265e691ea85d8e3c362412889023fc97f78` | source |
 | `internal/api/artifacts/handler_test.go` | `6397aec03d7b98d79bf1f8a0ee0c2a068cf68cd44a4226cbcea61c324622a57a` | test |
@@ -44,7 +44,7 @@ Schema version: `1.0.0`
 | `internal/api/intake/routes.go` | `153de0341933b08bdfee0e70b1263af9d9a3a5c7ffda37315dd687d1dbeae706` | source |
 | `internal/api/local_audits_test.go` | `8c4e0364c372f1bb028313b324abbf6a90cdaaa8eabc736e63700820b5a95721` | test |
 | `internal/api/next_audit_work_test.go` | `3f85599730c5ce6255cbade02b3945c6b8c9e4595f3ef2c9c11e3bc0b6872d1f` | test |
-| `internal/api/next_pass_work_test.go` | `cf1f2666eff4bbe3ce092cb40c613197f9584998ea405032f8f13a5321254d60` | test |
+| `internal/api/next_pass_work_test.go` | `2a67ab8ff1c609db7d849de71c9d586f864838406f304ee828f57a7c194ecf05` | test |
 | `internal/api/plans/attempt_dto.go` | `5bbd7273cf01cf336f4d5a10f66c6a2aacfc5458aaa74cb3eb5bc5b74d00361e` | source |
 | `internal/api/plans/attempt_handler.go` | `0c3306e9eae40bca3c21dd30271ede345fcabe5c8da86beb82ce081bd4ec6925` | source |
 | `internal/api/plans/attempt_handler_test.go` | `926c231f5662ef3b0837d817c7c42baaa2846a108c527c41df14d07911ce81a0` | test |
@@ -73,7 +73,7 @@ Schema version: `1.0.0`
 | `internal/api/runs/doc.go` | `fd6fb829e1dec2d547e12bed9259627263d139a15cc90c16597e1fd2335463e5` | source |
 | `internal/api/runs/dto.go` | `3beed0ac9d25e290259744cc788cdab4c91caa9d7a8856ef28557d43e2d4d7e1` | source |
 | `internal/api/runs/handler.go` | `02047467e6add40182e1d7b7b08c9cc5141b0842f7427d8f41ceb7f5a4f06c63` | source |
-| `internal/api/runs/presenter.go` | `75a45ae618d8b21203d2ee4ae021aaae3044ed79b082b47cf973b050d51e17f9` | source |
+| `internal/api/runs/presenter.go` | `ca03a9b4fa9ab1e2bb0b6814f46237ee892a5ef2482b2dde3bb719ee6cc52bb2` | source |
 | `internal/api/runs/routes.go` | `c4826589811059c986998b17dea88c866d6d674f202fc894fbb2addb6ca0243e` | source |
 | `internal/api/shared/doc.go` | `af8bd8002ec78c84f55e220452afbc9290bb1c0cf11c800990e1e762f2ebf2a2` | source |
 | `internal/api/shared/middleware.go` | `2a7f8f63272125b4b60753ce914b8bbe4ee801991a15dbeb837f36e9092cea23` | source |
@@ -121,8 +121,8 @@ Schema version: `1.0.0`
 | `internal/app/plans/service_test.go` | `4d61e8bde7b0eddda3d1136a98505ea374b210b5ec8be83328c65c69a752725c` | test |
 | `internal/app/plans/types.go` | `8e61e722378940b93ad98db9e68ed915840c568fedf958ec9f86152afd89da53` | source |
 | `internal/app/plans/validator.go` | `9eb5323bcbe1b6f76a25d5f1c53607b06232c99b73674e5947ba1a6de81891dd` | source |
-| `internal/app/plans/work_packets.go` | `00fbd059dfda25b75477af02c702f0df228337706f0c5de214087342519bfa59` | source |
-| `internal/app/plans/work_packets_test.go` | `40bdd7cc08b26eaf17d935b611b5dd0a85abd3e2d9648e72d262221f2d8a648c` | test |
+| `internal/app/plans/work_packets.go` | `88f488f0c6da28703a09877246bb35c13899d0a4a87c0f25697b5d37238f108c` | source |
+| `internal/app/plans/work_packets_test.go` | `b1acee5c20a5d57ae6c2b38f49cb7ebb6146f9bd8d810a8633a03ace97b2805d` | test |
 | `internal/app/projects/doc.go` | `05785c89f12cd3c6466520e3a36dea624fcfcb0c5017477a253f074ba5946287` | source |
 | `internal/app/projects/plan_seed_service.go` | `e5963863344a9aa8d4497bf52a53ebeb32e5d1fd22096da593024eed74170528` | source |
 | `internal/app/projects/plan_seed_service_test.go` | `84025b75ff1dc3564fc2990a886e0a5bae7e62af194ec475742eb8fbec7353c4` | test |
@@ -134,7 +134,7 @@ Schema version: `1.0.0`
 | `internal/app/projects/validator.go` | `4201311ea95bdecb0ebaae7852a23cbaf805874a29f3b65fb336778da82797e3` | source |
 | `internal/app/projects/validator_test.go` | `5460991238917a7d12ff146fe1fcb4bbd7bcaa77df6e349d0710699f8e839888` | test |
 | `internal/app/runs/doc.go` | `5826384076932ba46393f1b9697d460e092d5763d3bccaf7e0cc9e3b6234215f` | source |
-| `internal/app/runs/lifecycle.go` | `9bf73a211e3d522fdf039f3dc1dbffe7f859717e65d00a6335a32013d4dd86ce` | source |
+| `internal/app/runs/lifecycle.go` | `03647918410f7b4922959cfdec1809709fe31238a0f220ec38bd62223a798d8c` | source |
 | `internal/app/runs/service.go` | `245f124438b677b7dd1bb57f8f8bdbffd667adf7fde9bb1e9d830b9e1141f06a` | source |
 | `internal/app/runs/types.go` | `0631b18e8df8367a971be32e8adcb1ab66ba4a96fea257730b23f3c4a6b4178d` | source |
 | `internal/mcp/context_broker_git_tools.go` | `483ab61f6534750817724fdd79841efee3a4fc6708fa3ab3758e87b28c084572` | source |
@@ -145,8 +145,8 @@ Schema version: `1.0.0`
 | `internal/mcp/http_handler_test.go` | `28e607c54c8328d995ea63731ea1e166edaabec75524bdd649d46f06338970a3` | test |
 | `internal/mcp/local_audit_tools.go` | `dcdb5b2485267f170781711640de73fa3b1d99c7ed52b088d68a147cf5bbade1` | source |
 | `internal/mcp/mcp_test.go` | `b09fa87828689566f40d57069f1e7c4aca5a20e6766ea25938f0edc400699bcb` | test |
-| `internal/mcp/orchestrator_work_tools.go` | `a3f8deb350295ad2e44d1d08536483a266b8fe46385904049b5b8083a836b0c9` | source |
-| `internal/mcp/orchestrator_work_tools_test.go` | `38da67622ec18448e01c33fa224c18a9672e275fc3f3be88ff9601fbc79b7d2f` | test |
+| `internal/mcp/orchestrator_work_tools.go` | `96f0c01a8213e5f4f01087ebfb2c4440d8d6381fde7eae2b1cf537c549479080` | source |
+| `internal/mcp/orchestrator_work_tools_test.go` | `93a073c370de7c9cf621fec0cf1c3be9a1cb8c4fc6b3fe75e7df668fdcd1b77b` | test |
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | source |
 | `internal/mcp/plan_attempt_tools_test.go` | `1cf74dc584a0ae40d670ff0375653a36c2f03fdb762e63232d09d0a99d4a9502` | test |
 | `internal/mcp/plan_seed_tools.go` | `19a7bede46ae71836a0a942123f2d24015e7faaf93896850b57e7bd6cbbb0ad4` | source |
@@ -4348,6 +4348,30 @@ Evidence:
 
 - source: `internal/app/plans/work_packets.go`
 
+### backend-symbol-internal-app-plans-const-blockerrequiredseedfilemissingfromsnapshot (proven)
+
+Exported const BlockerRequiredSeedFileMissingFromSnapshot in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-const-blockerrequiredseedfileoversized (proven)
+
+Exported const BlockerRequiredSeedFileOversized in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-const-blockerrequiredseedrangeunresolved (proven)
+
+Exported const BlockerRequiredSeedRangeUnresolved in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-const-blockerrequiredsourcecontextmissing (proven)
 
 Exported const BlockerRequiredSourceContextMissing in internal/app/plans/work_packets.go
@@ -6171,6 +6195,14 @@ Exported type RunPlanAttemptDriftReviewRequest in internal/app/plans/review_gate
 Evidence:
 
 - source: `internal/app/plans/review_gate.go`
+
+### backend-symbol-internal-app-plans-type-seedrangefailuredetail (proven)
+
+Exported type SeedRangeFailureDetail in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
 
 ### backend-symbol-internal-app-plans-type-service (proven)
 
@@ -10412,6 +10444,14 @@ Evidence:
 
 - test: `internal/api/next_pass_work_test.go`
 
+### backend-test-internal-api-testgetnextpasswork-api-nomatchrequiredsearchnotunusable (proven)
+
+Test function TestGetNextPassWork_API_NoMatchRequiredSearchNotUnusable in internal/api/next_pass_work_test.go
+
+Evidence:
+
+- test: `internal/api/next_pass_work_test.go`
+
 ### backend-test-internal-api-testgetnextpasswork-api-preservesacquisitionfailurereport (proven)
 
 Test function TestGetNextPassWork_API_PreservesAcquisitionFailureReport in internal/api/next_pass_work_test.go
@@ -11260,6 +11300,38 @@ Evidence:
 
 - test: `internal/app/plans/work_packets_test.go`
 
+### backend-test-internal-app-plans-testgetnextpasswork-internalseedfilesuserangeandpassbudgetmaxbytes (proven)
+
+Test function TestGetNextPassWork_InternalSeedFilesUseRangeAndPassBudgetMaxBytes in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-metadatapresentmissingfilefailsclosed (proven)
+
+Test function TestGetNextPassWork_MetadataPresentMissingFileFailsClosed in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-metadatapresentoversizedfilefailsclosed (proven)
+
+Test function TestGetNextPassWork_MetadataPresentOversizedFileFailsClosed in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-metadatapresentsmallfileoptimisticrange (proven)
+
+Test function TestGetNextPassWork_MetadataPresentSmallFileOptimisticRange in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
 ### backend-test-internal-app-plans-testgetnextpasswork-missingcontextpacketincludesjumpstart (proven)
 
 Test function TestGetNextPassWork_MissingContextPacketIncludesJumpstart in internal/app/plans/work_packets_test.go
@@ -11495,6 +11567,14 @@ Evidence:
 ### backend-test-internal-app-plans-testgetnextpasswork-selectssecondpasswhenfirstskipped (proven)
 
 Test function TestGetNextPassWork_SelectsSecondPassWhenFirstSkipped in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-suggestedseedfilesincluderangeandbudget (proven)
+
+Test function TestGetNextPassWork_SuggestedSeedFilesIncludeRangeAndBudget in internal/app/plans/work_packets_test.go
 
 Evidence:
 
@@ -12067,6 +12147,14 @@ Test function TestContextBrokerToolsRejectUnknownFields in internal/mcp/context_
 Evidence:
 
 - test: `internal/mcp/context_broker_tools_test.go`
+
+### backend-test-internal-mcp-testcontextpacketadapterpreservesseedfilerangeandmaxbytes (proven)
+
+Test function TestContextPacketAdapterPreservesSeedFileRangeAndMaxBytes in internal/mcp/orchestrator_work_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/orchestrator_work_tools_test.go`
 
 ### backend-test-internal-mcp-testcreatecontextpacketacceptsunambiguousrepoalias (proven)
 
@@ -12751,6 +12839,14 @@ Evidence:
 ### backend-test-internal-mcp-testorchestratorworktools-getnextpassworkactionfeedscreatecontextpacket (proven)
 
 Test function TestOrchestratorWorkTools_GetNextPassWorkActionFeedsCreateContextPacket in internal/mcp/orchestrator_work_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/orchestrator_work_tools_test.go`
+
+### backend-test-internal-mcp-testorchestratorworktools-getnextpassworknomatchrequiredsearchnotblocked (proven)
+
+Test function TestOrchestratorWorkTools_GetNextPassWorkNoMatchRequiredSearchNotBlocked in internal/mcp/orchestrator_work_tools_test.go
 
 Evidence:
 
