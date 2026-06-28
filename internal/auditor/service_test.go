@@ -692,3 +692,190 @@ func TestCollector_NestedChangedFilesFail(t *testing.T) {
 		t.Errorf("file-scope failure must not name schema/planner_pass_plan.schema.json without the relay-contracts prefix: %+v", ev.FileScopeResults)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// filePathInScope helper tests (run-155 path normalization)
+// ---------------------------------------------------------------------------
+
+func TestFilePathInScope_ExactMatch(t *testing.T) {
+	targets := []string{"relay-contracts/agents/instructions/planner_agent_instructions.md"}
+	if !filePathInScope("relay-contracts/agents/instructions/planner_agent_instructions.md", targets) {
+		t.Error("expected exact match to pass")
+	}
+}
+
+func TestFilePathInScope_NestedRootRelativeMatch(t *testing.T) {
+	targets := []string{"relay-contracts/agents/instructions/planner_agent_instructions.md"}
+	if !filePathInScope("agents/instructions/planner_agent_instructions.md", targets) {
+		t.Error("expected nested-root relative match to pass")
+	}
+}
+
+func TestFilePathInScope_NoMatch(t *testing.T) {
+	targets := []string{"relay-contracts/contracts/planner_to_compiler_contract.md"}
+	if filePathInScope("schema/planner_pass_plan.schema.json", targets) {
+		t.Error("expected unrelated path to not match")
+	}
+}
+
+func TestFilePathInScope_BackslashNormalization(t *testing.T) {
+	targets := []string{"relay-contracts/agents/instructions/planner_agent_instructions.md"}
+	if !filePathInScope(`agents\instructions\planner_agent_instructions.md`, targets) {
+		t.Error("expected backslash path to match after normalization")
+	}
+}
+
+func TestFilePathInScope_WhitespaceTrim(t *testing.T) {
+	targets := []string{"  relay-contracts/agents/instructions/planner_agent_instructions.md  "}
+	if !filePathInScope("agents/instructions/planner_agent_instructions.md", targets) {
+		t.Error("expected whitespace-trimmed target to match")
+	}
+}
+
+func TestFilePathInScope_EmptyTargets(t *testing.T) {
+	if filePathInScope("some/file.go", nil) {
+		t.Error("expected no match for nil targets")
+	}
+	if filePathInScope("some/file.go", []string{}) {
+		t.Error("expected no match for empty targets")
+	}
+}
+
+func TestFilePathInScope_EmptyPath(t *testing.T) {
+	targets := []string{"relay-contracts/agents/instructions/planner_agent_instructions.md"}
+	if filePathInScope("", targets) {
+		t.Error("expected empty path to not match")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Run-155 regression: standalone nested repo-root path equivalence
+// ---------------------------------------------------------------------------
+
+// TestRun155_NestedPathEquivalencePass verifies that changed files with nested-root-relative
+// paths match packet targets with workspace-root prefix, producing FS-TARGETS pass.
+func TestRun155_NestedPathEquivalencePass(t *testing.T) {
+	ev := &Evidence{
+		RunID: 600, RunTitle: "run-155 nested path eq", RunStatus: "executor_done",
+		Packet: PacketMetadata{
+			FileTargets: []string{
+				"relay-contracts/agents/instructions/planner_agent_instructions.md",
+				"relay-contracts/contracts/docs_review_contract.md",
+			},
+		},
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files: []ChangedFileEntry{
+				{Status: "M", Path: "relay-contracts"},
+				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
+			},
+			ImplementationFiles: []ChangedFileEntry{
+				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
+			},
+			NestedCheckoutMarkers:  []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutFiles:    nil,
+			NestedEvidenceGap:      true,
+			RawArtifactPath:        "/fake/path",
+			SourceKind:             "git_diff_name_status",
+		},
+	}
+	c := &Collector{}
+	c.evaluateFileScopeResults(ev)
+
+	for _, r := range ev.FileScopeResults {
+		if r.ID == "FS-TARGETS" || r.ID == "FS-EXPECTED-ONLY" {
+			if r.Result == CheckFail {
+				t.Errorf("%s must not fail for nested-root-relative path equivalence: %s", r.ID, r.Rationale)
+			}
+		}
+	}
+}
+
+// TestRun155_UnmatchedNestedFileStillFails verifies that a changed file that does
+// not match any target (even after nested-root normalization) produces FS-TARGETS fail.
+func TestRun155_UnmatchedNestedFileStillFails(t *testing.T) {
+	ev := &Evidence{
+		RunID: 601, RunTitle: "run-155 unmatched nested", RunStatus: "executor_done",
+		Packet: PacketMetadata{
+			FileTargets: []string{
+				"relay-contracts/contracts/intent_drift_review_contract.md",
+			},
+		},
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files: []ChangedFileEntry{
+				{Status: "M", Path: "relay-contracts"},
+				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
+			},
+			ImplementationFiles: []ChangedFileEntry{
+				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
+			},
+			NestedCheckoutMarkers:  []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutFiles:    nil,
+			NestedEvidenceGap:      true,
+			RawArtifactPath:        "/fake/path",
+			SourceKind:             "git_diff_name_status",
+		},
+	}
+	c := &Collector{}
+	c.evaluateFileScopeResults(ev)
+
+	foundFail := false
+	for _, r := range ev.FileScopeResults {
+		if (r.ID == "FS-TARGETS" || r.ID == "FS-EXPECTED-ONLY") && r.Result == CheckFail {
+			foundFail = true
+			if !strings.Contains(r.Rationale, "agents/instructions/planner_agent_instructions.md") {
+				t.Errorf("expected failure to name the unmatched file, got: %s", r.Rationale)
+			}
+		}
+	}
+	if !foundFail {
+		t.Errorf("expected FS-TARGETS/FS-EXPECTED-ONLY fail for unmatched nested file, got: %+v", ev.FileScopeResults)
+	}
+}
+
+// TestRun155_ParentRuntimeDriftStillFails verifies that a real out-of-scope parent
+// workspace file still produces FS-TARGETS fail even when other files show nested-root equivalence.
+func TestRun155_ParentRuntimeDriftStillFails(t *testing.T) {
+	ev := &Evidence{
+		RunID: 602, RunTitle: "run-155 parent drift", RunStatus: "executor_done",
+		Packet: PacketMetadata{
+			FileTargets: []string{
+				"relay-contracts/contracts/intent_drift_review_contract.md",
+			},
+		},
+		ChangedFiles: ChangedFilesEvidence{
+			Present: true,
+			Files: []ChangedFileEntry{
+				{Status: "M", Path: "relay-contracts"},
+				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
+				{Status: "M", Path: "internal/server/routes.go"},
+			},
+			ImplementationFiles: []ChangedFileEntry{
+				{Status: "M", Path: "internal/server/routes.go"},
+				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
+			},
+			NestedCheckoutMarkers:  []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutFiles:    nil,
+			NestedEvidenceGap:      true,
+			RawArtifactPath:        "/fake/path",
+			SourceKind:             "git_diff_name_status",
+		},
+	}
+	c := &Collector{}
+	c.evaluateFileScopeResults(ev)
+
+	// agents/instructions/planner_agent_instructions.md should match via nested-root equivalence.
+	// internal/server/routes.go should fail as it is an unrelated parent-path file.
+	foundFailNamingRoutes := false
+	for _, r := range ev.FileScopeResults {
+		if (r.ID == "FS-TARGETS" || r.ID == "FS-EXPECTED-ONLY") && r.Result == CheckFail {
+			if strings.Contains(r.Rationale, "internal/server/routes.go") {
+				foundFailNamingRoutes = true
+			}
+		}
+	}
+	if !foundFailNamingRoutes {
+		t.Errorf("expected FS-TARGETS/FS-EXPECTED-ONLY failure naming internal/server/routes.go, got: %+v", ev.FileScopeResults)
+	}
+}

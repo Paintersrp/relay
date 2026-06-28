@@ -920,9 +920,15 @@ func (c *Collector) collectValidationResults(runID int64, ev *Evidence) {
 				status = CheckFail
 				exitResult = "non-zero exit (inferred)"
 			}
+			id := "VAL-ARTIFACT"
+			command := "validation artifact status"
+			if best.kind == "validation_run_json" {
+				id = "VAL-RUN"
+				command = "validation_run_json artifact status"
+			}
 			ev.ValidationResults = append(ev.ValidationResults, ValidationCommandResult{
-				ID:              "V?",
-				Command:         "(unknown — not in packet)",
+				ID:              id,
+				Command:         command,
 				Required:        false,
 				Status:          status,
 				ExitResult:      exitResult,
@@ -1155,6 +1161,35 @@ func normalizeNestedChangedPath(nestedRoot string, rawPath string) string {
 	return nestedRoot + "/" + cleaned
 }
 
+// filePathInScope reports whether a changed file path is considered in scope
+// given the packet's file targets. It normalizes paths and supports nested-root
+// relative path equivalence: a target with a first segment that does not appear
+// at the start of the changed path is treated as matching when the remaining
+// suffix equals the changed path.
+func filePathInScope(changedPath string, fileTargets []string) bool {
+	changedPath = strings.TrimSpace(strings.ReplaceAll(changedPath, "\\", "/"))
+	if changedPath == "" {
+		return false
+	}
+	for _, target := range fileTargets {
+		target = strings.TrimSpace(strings.ReplaceAll(target, "\\", "/"))
+		if target == "" {
+			continue
+		}
+		if target == changedPath {
+			return true
+		}
+		if idx := strings.Index(target, "/"); idx > 0 {
+			firstSeg := target[:idx]
+			suffix := target[idx+1:]
+			if !strings.HasPrefix(changedPath, firstSeg+"/") && changedPath != firstSeg && suffix == changedPath {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func implementationScopeChangedFiles(ev *Evidence) []ChangedFileEntry {
 	var base []ChangedFileEntry
 	if len(ev.ChangedFiles.ImplementationFiles) > 0 {
@@ -1274,19 +1309,15 @@ func (c *Collector) evaluateChecklistResults(ev *Evidence) {
 			strings.Contains(lowerCheck, "security-sensitive") || strings.Contains(lowerCheck, "auth") && strings.Contains(lowerCheck, "file") ||
 			strings.Contains(lowerCheck, "scope") || strings.Contains(lowerCheck, "outside expected"):
 
-			if hasChangedFiles {
-				evidenceSource = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
-				targetSet := map[string]bool{}
-				for _, t := range ev.Packet.FileTargets {
-					targetSet[t] = true
+		if hasChangedFiles {
+			evidenceSource = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
+			var outOfScope []string
+			checkFiles := implementationScopeChangedFiles(ev)
+			for _, f := range checkFiles {
+				if !filePathInScope(f.Path, ev.Packet.FileTargets) {
+					outOfScope = append(outOfScope, f.Path)
 				}
-				var outOfScope []string
-				checkFiles := implementationScopeChangedFiles(ev)
-				for _, f := range checkFiles {
-					if !targetSet[f.Path] {
-						outOfScope = append(outOfScope, f.Path)
-					}
-				}
+			}
 				if len(outOfScope) == 0 {
 					if ev.ChangedFiles.NestedEvidenceGap {
 						result = CheckUnknown
@@ -1387,14 +1418,10 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 		src := "none"
 		if ev.ChangedFiles.Present {
 			src = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
-			targetSet := map[string]bool{}
-			for _, t := range fileTargets {
-				targetSet[t] = true
-			}
 			var outOfScope []string
 			checkFiles := implementationScopeChangedFiles(ev)
 			for _, f := range checkFiles {
-				if !targetSet[f.Path] {
+				if !filePathInScope(f.Path, fileTargets) {
 					outOfScope = append(outOfScope, f.Path)
 				}
 			}
@@ -1434,14 +1461,10 @@ func (c *Collector) evaluateFileScopeResults(ev *Evidence) {
 		src := "none"
 		if ev.ChangedFiles.Present {
 			src = fmt.Sprintf("changed_files artifact: %s", ev.ChangedFiles.RawArtifactPath)
-			targetSet := map[string]bool{}
-			for _, t := range fileTargets {
-				targetSet[t] = true
-			}
 			var outOfScope []string
 			checkFiles := implementationScopeChangedFiles(ev)
 			for _, f := range checkFiles {
-				if !targetSet[f.Path] {
+				if !filePathInScope(f.Path, fileTargets) {
 					outOfScope = append(outOfScope, f.Path)
 				}
 			}

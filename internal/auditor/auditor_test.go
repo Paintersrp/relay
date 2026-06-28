@@ -1673,3 +1673,85 @@ func TestAuditPacketTemplateContractPathRegression(t *testing.T) {
 		t.Fatalf("Authoritative template is missing or cannot be read: %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Validation fallback label regression (run-155) — no V? or (unknown — not in packet)
+// ---------------------------------------------------------------------------
+
+func TestValidationFallback_NoVQ(t *testing.T) {
+	setupTestArtifactDir(t)
+	const runID = int64(700)
+
+	// Write only a validation_stdout artifact — no packet commands, no validation_run_json
+	writeArtifactFile(t, runID, "validation_stdout.txt", []byte("ok  \tpkg/foo\n"))
+
+	ev := &Evidence{RunID: runID, RunTitle: "val fallback", RunStatus: "executor_done"}
+	c := &Collector{
+		store: &fakeStore{
+			artifactPaths: map[string][]string{
+				"validation_stdout": {filepath.Join(artifacts.Dir(runID), "validation_stdout.txt")},
+			},
+		},
+	}
+	c.collectValidationResults(runID, ev)
+
+	if len(ev.ValidationResults) != 1 {
+		t.Fatalf("expected 1 validation fallback result, got %d", len(ev.ValidationResults))
+	}
+	vr := ev.ValidationResults[0]
+	if vr.ID == "V?" {
+		t.Error("validation fallback ID must not be V?")
+	}
+	if strings.Contains(vr.Command, "not in packet") {
+		t.Errorf("validation fallback command must not say '(unknown — not in packet)', got %q", vr.Command)
+	}
+	// Must use a stable label
+	if vr.ID != "VAL-ARTIFACT" {
+		t.Errorf("expected fallback ID VAL-ARTIFACT, got %q", vr.ID)
+	}
+	if vr.Command != "validation artifact status" {
+		t.Errorf("expected fallback command 'validation artifact status', got %q", vr.Command)
+	}
+	if vr.Required {
+		t.Error("generic validation fallback must not be required")
+	}
+	if !strings.Contains(vr.EvidenceSummary, "validation_stdout") {
+		t.Errorf("evidence summary should reference artifact kind, got %q", vr.EvidenceSummary)
+	}
+}
+
+func TestValidationFallback_NoVQ_ValidationRunJson(t *testing.T) {
+	setupTestArtifactDir(t)
+	const runID = int64(701)
+
+	// Write validation_run.json that does not match ValidationRun or Progress schema
+	writeArtifactFile(t, runID, "validation_run.json", []byte(`{"some":"unknown","data":true}`))
+
+	ev := &Evidence{RunID: runID, RunTitle: "val fallback json", RunStatus: "executor_done"}
+	c := &Collector{
+		store: &fakeStore{
+			artifactPaths: map[string][]string{
+				"validation_run_json": {filepath.Join(artifacts.Dir(runID), "validation_run.json")},
+			},
+		},
+	}
+	c.collectValidationResults(runID, ev)
+
+	if len(ev.ValidationResults) != 1 {
+		t.Fatalf("expected 1 validation fallback result, got %d", len(ev.ValidationResults))
+	}
+	vr := ev.ValidationResults[0]
+	if vr.ID == "V?" {
+		t.Error("validation fallback ID must not be V?")
+	}
+	if strings.Contains(vr.Command, "not in packet") {
+		t.Errorf("validation fallback command must not say '(unknown — not in packet)', got %q", vr.Command)
+	}
+	// Must use VAL-RUN for validation_run_json kind
+	if vr.ID != "VAL-RUN" {
+		t.Errorf("expected fallback ID VAL-RUN for validation_run_json kind, got %q", vr.ID)
+	}
+	if vr.Command != "validation_run_json artifact status" {
+		t.Errorf("expected fallback command 'validation_run_json artifact status', got %q", vr.Command)
+	}
+}
