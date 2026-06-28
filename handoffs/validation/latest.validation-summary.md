@@ -1,28 +1,22 @@
 # Latest Relay Validation Report
 
 - status: passed
-- base_commit: 01695bd8c8ce2c0d6ec88321b84b94b77ab2e7fe
-- validated_source_snapshot: 629d8417943fb2a93018ed26b38671ef086e618dfb85e9c7a974256bd1e7bf7f
+- base_commit: b97823d9fa53e8d2d37e9ad50545b60b0df6e6e9
+- validated_source_snapshot: 8a8dfc53c28a2c73e0c8a1c326b3f0b5e1409933ec474ef94c7fc4877645b496
 - worktree_dirty: true
-- created_at: 2026-06-27T23:56:58Z
+- created_at: 2026-06-28T00:04:46Z
 
 ## Validated source changes
 
-- A cmd/agentrefs/main_test.go
-- M cmd/agentrefs/main.go
-- A docs/generated/agent-references/frontend-backend-contract.json
-- A docs/generated/agent-references/frontend-backend-contract.md
+- M AGENTS.md
+- M docs/agent-reference.md
+- M docs/backend-code-surface-map.md
+- M docs/generated/agent-references/backend-surface.json
+- M docs/generated/agent-references/backend-surface.md
 - M docs/generated/agent-references/index.json
 - M docs/generated/agent-references/index.md
-- M internal/agentrefs/agentrefs_test.go
-- A internal/agentrefs/frontend_backend_contract.go
-- M internal/agentrefs/http_api.go
-- M internal/agentrefs/mcp.go
-- M internal/agentrefs/paths.go
-- M internal/agentrefs/storage.go
-- M internal/agentrefs/types.go
-- M package.json
-- M scripts/validate.sh
+- ?? internal/agentrefs/docs_integration_test.go
+- M internal/instructions/assets/AGENTS.md
 
 ## Commands
 

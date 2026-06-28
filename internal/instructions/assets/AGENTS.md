@@ -83,9 +83,14 @@ A managed plan stores a Planner pass plan JSON submission as a `plans` row plus 
 
 For deeper repo orientation, see `docs/agent-reference.md`.
 
-That file is a human-maintained reference only. It does not override the current task, source code, Planner handoffs, canonical packets, Relay DB state, run artifacts, audit evidence, or relay-contracts.
+`docs/agent-reference.md` remains compact human orientation and does not override generated references, source code, tests, selected handoffs, canonical packets, Relay DB state, run artifacts, audit evidence, or relay-contracts.
 
-For backend/API/MCP/storage/drift/settings planning, consult `docs/backend-code-surface-map.md` before broad rediscovery. That map is only a compiled navigation reference: checked-out source code, tests, selected handoffs/canonical packets, Relay DB state, run artifacts, audit evidence, and relay-contracts remain higher authority. Refresh stale map sections rather than reprocessing the whole backend by default.
+For backend/API/MCP/storage/workflow/contract navigation, use the generated project-level agent references as the default source-backed navigation entry point:
+
+- `docs/generated/agent-references/index.json` is the machine-readable generated reference index.
+- `docs/generated/agent-references/index.md` is the human-readable generated reference index.
+
+`docs/backend-code-surface-map.md` is a retired compatibility pointer and not the default source-backed navigation map.
 
 ## RTK Shell Command Rule
 

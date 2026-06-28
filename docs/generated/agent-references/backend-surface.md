@@ -25,7 +25,7 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `docs/backend-code-surface-map.md` | `5e3570632b271a41d36d98a2f0feab993500361605b93955475e65ab3af21a3a` | manual map |
+| `docs/backend-code-surface-map.md` | `f3eb4c9e1fdfc1d4ea3f38dc7f4cac8dc5611b78dc9ce6bcb73542f44afc1382` | manual map |
 | `internal/api/api.go` | `344edea0bf5ff8e9af5788b8a88e6b0ad05b301c484703bed81932610fd52086` | source |
 | `internal/api/api_test.go` | `5503587d03c7f62d3a964f8af9ff60c8292d7865f1cc9ef154d969c6de88ca11` | test |
 | `internal/api/artifacts/doc.go` | `65f3caf6725ec4f881de4cc245e27fb7bbc54ab509343b131ff71dda2ddbf52a` | source |

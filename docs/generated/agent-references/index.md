@@ -25,10 +25,10 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `AGENTS.md` | `56eec5004c6cfe91dc459506a239017398ce68bc6eb3fad88fc1e8a94b05c5ff` | agent instructions |
+| `AGENTS.md` | `1646d2e76f942e0dd2b56c745240d2dc879282156e7aa4177fbc9aa5e393bf8e` | agent instructions |
 | `Makefile` | `1ef4f7151eef34ef65ad81bf4b9eff7202a73d7bc435cfe9fbc550e0984500d6` | build configuration |
-| `docs/agent-reference.md` | `6addc6c02275fb947b37d25726d6f367cb1c7d8b4b1b9ac13b7d7b94e70ae614` | agent reference |
-| `docs/backend-code-surface-map.md` | `5e3570632b271a41d36d98a2f0feab993500361605b93955475e65ab3af21a3a` | backend surface map |
+| `docs/agent-reference.md` | `781ce7a717be265d38611dc1cf4fdbcb0686fde93d64de015227d01a75075691` | agent reference |
+| `docs/backend-code-surface-map.md` | `f3eb4c9e1fdfc1d4ea3f38dc7f4cac8dc5611b78dc9ce6bcb73542f44afc1382` | backend surface map |
 | `schema/project_agent_reference.schema.json` | `d48d8471f6d8d99a2ae978b2efd94dab52ca2b307b34f00b4fa71cc95d5fedfd` | schema contract |
 
 ## Fact Labels

@@ -20,7 +20,7 @@
   "source_inputs": [
     {
       "path": "docs/backend-code-surface-map.md",
-      "sha256": "5e3570632b271a41d36d98a2f0feab993500361605b93955475e65ab3af21a3a",
+      "sha256": "f3eb4c9e1fdfc1d4ea3f38dc7f4cac8dc5611b78dc9ce6bcb73542f44afc1382",
       "role": "manual map"
     },
     {

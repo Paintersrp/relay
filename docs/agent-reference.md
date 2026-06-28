@@ -20,7 +20,24 @@ The backend is a local Go daemon using `net/http`, `chi`, `database/sql`, SQLite
 
 The primary UI is the React/TanStack Start workbench under `apps/web`; root `web/` and templ assets remain for legacy/utility surfaces.
 
-For a precise source-backed backend routing index across API, MCP, storage, drift, plan-attempt, settings, and refactor surfaces, see `docs/backend-code-surface-map.md`. This file stays compact orientation; the backend map carries detailed rows and should have only stale sections refreshed when source-backed surfaces move or change. Neither document overrides source code, tests, selected handoffs, canonical packets, Relay artifacts, or relay-contracts.
+`docs/backend-code-surface-map.md` is retained only as a retired compatibility pointer; it should not be expanded with new manual routing tables.
+
+## Generated Agent References
+
+The default source-backed navigation entry point is `docs/generated/agent-references/index.json`. The readable companion is `docs/generated/agent-references/index.md`.
+
+Agents should use the generated index to locate backend, workflow, storage, MCP, HTTP API, and frontend/backend contract references.
+
+Generated reference outputs:
+
+- `docs/generated/agent-references/backend-surface.json` — Generated backend package, service, handler, symbol, import-edge, and adjacent-test surface reference.
+- `docs/generated/agent-references/frontend-backend-contract.json` — Generated frontend/backend contract reference: frontend API clients, query keys, TypeScript contracts, backend HTTP route matches, and backend Go DTO alignment.
+- `docs/generated/agent-references/http-api-surface.json` — Generated HTTP/API route surface reference: method, path, handler, source file, and route group from route source files.
+- `docs/generated/agent-references/mcp-surface.json` — Generated MCP action registry reference: tool definitions, dispatch handlers, profile gating, mutating vs retrieval-only behavior, and forbidden side effects.
+- `docs/generated/agent-references/storage-surface.json` — Generated storage, migration, SQL query, sqlc-boundary, and store-wrapper surface reference.
+- `docs/generated/agent-references/workflow-surfaces.json` — Generated Plan v2 workflow, intent packet, drift review, refactor backlog, and work-packet lifecycle surface reference.
+
+Generated references do not override checked-out source code, tests, selected Planner handoffs, canonical packets, Relay DB state, run artifacts, audit evidence, or relay-contracts.
 
 ## Key Components
 
