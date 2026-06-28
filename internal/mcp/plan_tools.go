@@ -1,8 +1,10 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	appplans "relay/internal/app/plans"
@@ -11,16 +13,24 @@ import (
 var submitPlannerPassPlanSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,
-  "required": ["planner_pass_plan_json", "unmanaged_acknowledged"],
+  "required": ["unmanaged_acknowledged"],
+  "oneOf": [
+    {"required": ["planner_pass_plan"]},
+    {"required": ["planner_pass_plan_json"]}
+  ],
   "properties": {
+    "planner_pass_plan": {
+      "type": "object",
+      "description": "Preferred reviewed Planner pass plan JSON object."
+    },
     "planner_pass_plan_json": {
       "type": "string",
       "minLength": 1,
-      "description": "The reviewed Planner pass plan JSON content. Do not pass chat context or a Planner handoff Markdown artifact."
+      "description": "Legacy raw JSON string for backward compatibility. Prefer planner_pass_plan for large plans."
     },
     "source_artifact_path": {
       "type": "string",
-      "description": "Optional repo-relative path to the reviewed .planner-pass-plan.json source artifact."
+      "description": "Optional repo-relative durable artifact path; not a local filesystem path."
     },
     "source": {
       "type": "string",
@@ -34,10 +44,11 @@ var submitPlannerPassPlanSchema = json.RawMessage(`{
 }`)
 
 type submitPlannerPassPlanArgs struct {
-	PlannerPassPlanJSON   string `json:"planner_pass_plan_json"`
-	SourceArtifactPath    string `json:"source_artifact_path,omitempty"`
-	Source                string `json:"source,omitempty"`
-	UnmanagedAcknowledged bool   `json:"unmanaged_acknowledged"`
+	PlannerPassPlan       json.RawMessage `json:"planner_pass_plan,omitempty"`
+	PlannerPassPlanJSON   json.RawMessage `json:"planner_pass_plan_json,omitempty"`
+	SourceArtifactPath    string          `json:"source_artifact_path,omitempty"`
+	Source                string          `json:"source,omitempty"`
+	UnmanagedAcknowledged bool            `json:"unmanaged_acknowledged"`
 }
 
 type submitPlannerPassPlanOutput struct {
@@ -77,6 +88,46 @@ var ToolSubmitPlannerPassPlan = ToolDefinition{
 	InputSchema: submitPlannerPassPlanSchema,
 }
 
+// normalizePlanPayload extracts raw plan JSON bytes from either the preferred
+// object field or the legacy string field. It returns a structured error for
+// invalid payload combinations or malformed input.
+func normalizePlanPayload(args *submitPlannerPassPlanArgs) ([]byte, error) {
+	hasObject := len(bytes.TrimSpace(args.PlannerPassPlan)) > 0 &&
+		!bytes.Equal(bytes.TrimSpace(args.PlannerPassPlan), []byte("null"))
+	hasString := len(bytes.TrimSpace(args.PlannerPassPlanJSON)) > 0 &&
+		!bytes.Equal(bytes.TrimSpace(args.PlannerPassPlanJSON), []byte("null"))
+
+	if hasObject && hasString {
+		return nil, errors.New("must supply exactly one of planner_pass_plan or planner_pass_plan_json")
+	}
+	if !hasObject && !hasString {
+		return nil, errors.New("must supply exactly one of planner_pass_plan or planner_pass_plan_json")
+	}
+
+	if hasObject {
+		raw := bytes.TrimSpace(args.PlannerPassPlan)
+		if len(raw) == 0 || raw[0] != '{' {
+			return nil, errors.New("planner_pass_plan must be a JSON object")
+		}
+		return raw, nil
+	}
+
+	// Legacy string path: require a valid JSON string value.
+	raw := bytes.TrimSpace(args.PlannerPassPlanJSON)
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return nil, errors.New("planner_pass_plan_json must be a valid JSON string")
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, errors.New("planner_pass_plan_json must not be empty")
+	}
+	if !json.Valid([]byte(s)) {
+		return nil, errors.New("planner_pass_plan_json must contain valid JSON")
+	}
+	return []byte(s), nil
+}
+
 // HandleSubmitPlannerPassPlan implements the submit_planner_pass_plan MCP tool.
 func (s *Server) HandleSubmitPlannerPassPlan(args json.RawMessage) ToolCallResult {
 	var in submitPlannerPassPlanArgs
@@ -84,9 +135,9 @@ func (s *Server) HandleSubmitPlannerPassPlan(args json.RawMessage) ToolCallResul
 		return submitPlannerPassPlanToolErr("VALIDATION_ERROR", "invalid params: "+err.Error(), nil)
 	}
 
-	trimmedPlanJSON := strings.TrimSpace(in.PlannerPassPlanJSON)
-	if trimmedPlanJSON == "" {
-		return submitPlannerPassPlanToolErr("VALIDATION_ERROR", "planner_pass_plan_json is required and must not be empty", nil)
+	rawJSON, err := normalizePlanPayload(&in)
+	if err != nil {
+		return submitPlannerPassPlanToolErr("VALIDATION_ERROR", err.Error(), nil)
 	}
 
 	if s.deps == nil || s.deps.Store == nil {
@@ -95,7 +146,7 @@ func (s *Server) HandleSubmitPlannerPassPlan(args json.RawMessage) ToolCallResul
 
 	svc := appplans.NewService(s.deps.Store)
 	result, err := svc.SubmitPlan(context.Background(), appplans.SubmitPlanRequest{
-		RawJSON:               []byte(trimmedPlanJSON),
+		RawJSON:               rawJSON,
 		SourceArtifactPath:    strings.TrimSpace(in.SourceArtifactPath),
 		UnmanagedAcknowledged: in.UnmanagedAcknowledged,
 	})
