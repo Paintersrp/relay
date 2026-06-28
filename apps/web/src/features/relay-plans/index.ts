@@ -5,6 +5,7 @@ export {
   submitPlan,
   validatePlan,
   getNextPassWork,
+  getPassNextWorkPreview,
   getNextAuditWork,
   // PASS-006 plan-attempt API
   getPlanReviewSettings,

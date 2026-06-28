@@ -29,7 +29,12 @@ import {
 } from "@/components/relay/relayPlanVisualState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { PlanAPIPass, PlanAPIPlan } from "@/features/relay-plans";
+import {
+  getPassNextWorkPreview,
+  type NextPassWorkResponse,
+  type PlanAPIPass,
+  type PlanAPIPlan,
+} from "@/features/relay-plans";
 import { cn } from "@/lib/utils";
 
 interface RelayPlanPassDetailProps {
@@ -189,11 +194,45 @@ export function RelayPlanPassDetail({
   const [passIdCopyState, setPassIdCopyState] = React.useState<CopyState>("idle");
   const [planIdCopyState, setPlanIdCopyState] = React.useState<CopyState>("idle");
   const [contextCopyState, setContextCopyState] = React.useState<CopyState>("idle");
+  const [previewCopyState, setPreviewCopyState] = React.useState<CopyState>("idle");
+  const [previewPayload, setPreviewPayload] = React.useState<NextPassWorkResponse | null>(null);
+  const [previewError, setPreviewError] = React.useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = React.useState(false);
+  const projectId = plan.projectId?.trim() ?? "";
 
   const contextText = React.useMemo(
     () => buildPassContextText({ plan, pass, blockingDependencies }),
     [plan, pass, blockingDependencies],
   );
+  const previewJSON = React.useMemo(
+    () => (previewPayload ? JSON.stringify(previewPayload, null, 2) : ""),
+    [previewPayload],
+  );
+
+  React.useEffect(() => {
+    setPreviewPayload(null);
+    setPreviewError(null);
+    setPreviewCopyState("idle");
+  }, [plan.planId, pass.passId, projectId]);
+
+  const handleGeneratePreview = async () => {
+    if (!projectId) {
+      setPreviewError("Project ID is required to generate a pass preview.");
+      return;
+    }
+
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreviewCopyState("idle");
+    try {
+      const payload = await getPassNextWorkPreview(projectId, plan.planId, pass.passId);
+      setPreviewPayload(payload);
+    } catch (err: any) {
+      setPreviewError(err?.message ?? "Failed to generate Planner Jumpstart preview.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5">
@@ -305,6 +344,16 @@ export function RelayPlanPassDetail({
                       ? "Copy failed"
                       : "Copy context"}
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  disabled={previewLoading || !projectId}
+                  className="rounded-sm px-3 text-[11px]"
+                  onClick={handleGeneratePreview}
+                >
+                  {previewLoading ? "Generating..." : "Generate Planner Jumpstart Preview"}
+                </Button>
                 {runnable ? (
                   <Button asChild size="xs" className="rounded-sm px-3 text-[11px]">
                     <Link
@@ -345,6 +394,47 @@ export function RelayPlanPassDetail({
               </div>
             ) : null}
           </section>
+
+          {(previewError || previewPayload) && (
+            <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
+              <div className="flex flex-col gap-2 border-b border-[var(--relay-row-border)] px-5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  Planner Jumpstart Preview
+                </span>
+                {previewPayload ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    className="w-fit rounded-sm px-3 text-[11px]"
+                    onClick={() => copyText(previewJSON, setPreviewCopyState)}
+                  >
+                    <Copy className="size-3" />
+                    {previewCopyState === "copied"
+                      ? "Copied"
+                      : previewCopyState === "failed"
+                        ? "Copy failed"
+                        : "Copy JSON"}
+                  </Button>
+                ) : null}
+              </div>
+              <div className="px-5 py-4">
+                {previewError ? (
+                  <RelayStateBanner
+                    tone="blocked"
+                    density="compact"
+                    title="Preview unavailable"
+                    description={previewError}
+                  />
+                ) : null}
+                {previewPayload ? (
+                  <pre className="max-h-[32rem] overflow-auto rounded-sm border border-[var(--relay-row-border)] bg-[var(--relay-content-bg)] p-3 font-mono text-[11px] leading-relaxed text-foreground">
+                    {previewJSON}
+                  </pre>
+                ) : null}
+              </div>
+            </section>
+          )}
 
           <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
             <SectionHeader>Parent Plan</SectionHeader>

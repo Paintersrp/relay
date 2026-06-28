@@ -275,6 +275,30 @@ func (h *Handler) GetNextPassWork(w http.ResponseWriter, r *http.Request) {
 	shared.JSON(w, http.StatusOK, resp)
 }
 
+// GET /api/projects/{projectId}/plans/{planId}/passes/{passId}/next-pass-work-preview
+func (h *Handler) GetPassNextWorkPreview(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectId")
+	planID := chi.URLParam(r, "planId")
+	passID := chi.URLParam(r, "passId")
+
+	resp, err := h.orchestrator.GetNextPassWork(r.Context(), appplans.NextPassWorkRequest{
+		ProjectID: projectID,
+		PlanID:    planID,
+		PassID:    passID,
+	})
+	if err != nil {
+		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "an unexpected error occurred")
+		return
+	}
+
+	if !resp.OK && len(resp.Blockers) > 0 && resp.Blockers[0].Code == appplans.BlockerUnsafeRequest {
+		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", resp.Blockers[0].Message)
+		return
+	}
+
+	shared.JSON(w, http.StatusOK, resp)
+}
+
 // GET /api/projects/{projectId}/plans/{planId}/next-audit-work
 func (h *Handler) GetNextAuditWork(w http.ResponseWriter, r *http.Request) {
 	projectID := strings.TrimSpace(chi.URLParam(r, "projectId"))

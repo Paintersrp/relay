@@ -64,6 +64,7 @@ func TestBuildHTTPAPISurfaceDoc_KnownRoutes(t *testing.T) {
 		"/runs/{id}/events",
 		"/plans",
 		"/projects/{projectId}/plans/{planId}/next-pass-work",
+		"/projects/{projectId}/plans/{planId}/passes/{passId}/next-pass-work-preview",
 		"/mcp",
 	}
 

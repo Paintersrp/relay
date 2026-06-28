@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	plansapi "relay/internal/api/plans"
@@ -149,6 +150,28 @@ func seedNextPassWorkPlan(t *testing.T, router http.Handler, planID string) {
 	}
 }
 
+func setNextPassWorkPlanPassStatus(t *testing.T, st *store.Store, planID, passID, status string) {
+	t.Helper()
+
+	plan, err := st.GetPlanByPlanID(planID)
+	if err != nil {
+		t.Fatalf("GetPlanByPlanID %q: %v", planID, err)
+	}
+	passes, err := st.ListPlanPassesByPlan(plan.ID)
+	if err != nil {
+		t.Fatalf("ListPlanPassesByPlan %q: %v", planID, err)
+	}
+	for _, pass := range passes {
+		if pass.PassID == passID {
+			if _, err := st.UpdatePlanPassStatus(pass.ID, status); err != nil {
+				t.Fatalf("UpdatePlanPassStatus %q => %q: %v", passID, status, err)
+			}
+			return
+		}
+	}
+	t.Fatalf("pass %q not found in plan %q", passID, planID)
+}
+
 func TestGetNextPassWork_RouteExists_ReturnsToolField(t *testing.T) {
 	t.Parallel()
 
@@ -287,5 +310,70 @@ func TestGetNextPassWork_SuccessReturns200WithOKTrue(t *testing.T) {
 	}
 	if resp.SuggestedRunSubmission.Arguments.PassID != "PASS-001" {
 		t.Fatalf("expected pass_id PASS-001 in suggested args, got %q", resp.SuggestedRunSubmission.Arguments.PassID)
+	}
+}
+
+func TestGetPassNextWorkPreview_RequestedPassReturnsSelectedPassPayload(t *testing.T) {
+	t.Parallel()
+
+	_, st, router := newNextPassWorkTestServer(t)
+	seedNextPassWorkPlan(t, router, "api-plan-preview-selected")
+	setNextPassWorkPlanPassStatus(t, st, "api-plan-preview-selected", "PASS-001", appplans.StatusPassCompleted)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plans/api-plan-preview-selected/passes/PASS-002/next-pass-work-preview", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp appplans.NextPassWorkResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected ok=true, got blockers: %+v", resp.Blockers)
+	}
+	if resp.SelectedPass == nil {
+		t.Fatal("expected selected_pass in response")
+	}
+	if resp.SelectedPass.PassID != "PASS-002" {
+		t.Fatalf("expected PASS-002 selected, got %q", resp.SelectedPass.PassID)
+	}
+	if resp.SuggestedRunSubmission == nil || resp.SuggestedRunSubmission.Arguments.PassID != "PASS-002" {
+		t.Fatalf("expected suggested run submission for PASS-002, got %+v", resp.SuggestedRunSubmission)
+	}
+}
+
+func TestGetPassNextWorkPreview_RequestedPassBlockedByPriorPassReturnsPayload(t *testing.T) {
+	t.Parallel()
+
+	_, _, router := newNextPassWorkTestServer(t)
+	seedNextPassWorkPlan(t, router, "api-plan-preview-blocked")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plans/api-plan-preview-blocked/passes/PASS-002/next-pass-work-preview", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp appplans.NextPassWorkResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.OK {
+		t.Fatal("expected ok=false for requested pass blocked by prior pass")
+	}
+	if len(resp.Blockers) == 0 {
+		t.Fatal("expected blocker payload")
+	}
+	if resp.Blockers[0].Code != appplans.BlockerRequestedPassNotEligible {
+		t.Fatalf("expected requested_pass_not_eligible blocker, got %+v", resp.Blockers)
+	}
+	if !strings.Contains(resp.Blockers[0].Message, "PASS-002") {
+		t.Fatalf("expected blocker to reference requested pass PASS-002, got %q", resp.Blockers[0].Message)
 	}
 }

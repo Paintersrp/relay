@@ -603,6 +603,17 @@ export async function getNextPassWork(
   return normalizeNextPassWorkResponse(response);
 }
 
+export async function getPassNextWorkPreview(
+  projectId: string,
+  planId: string,
+  passId: string,
+): Promise<NextPassWorkResponse> {
+  const response = await getPlanJson<any>(
+    `/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(planId)}/passes/${encodeURIComponent(passId)}/next-pass-work-preview`,
+  );
+  return normalizeNextPassWorkResponse(response);
+}
+
 export async function getNextAuditWork(
   projectId: string,
   planId: string,

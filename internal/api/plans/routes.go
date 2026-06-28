@@ -30,5 +30,6 @@ func MountRoutes(r chi.Router, h *Handler) {
 	r.Post("/projects/{projectId}/plan-attempts/{planAttemptId}/submit", h.SubmitPlanAttempt)
 
 	r.Get("/projects/{projectId}/plans/{planId}/next-pass-work", h.GetNextPassWork)
+	r.Get("/projects/{projectId}/plans/{planId}/passes/{passId}/next-pass-work-preview", h.GetPassNextWorkPreview)
 	r.Get("/projects/{projectId}/plans/{planId}/next-audit-work", h.GetNextAuditWork)
 }
