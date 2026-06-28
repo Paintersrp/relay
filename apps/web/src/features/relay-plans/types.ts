@@ -280,6 +280,8 @@ export interface PlannerJumpstartBasisReport {
 export interface ContextAcquisitionAction {
   tool: string;
   arguments: Record<string, unknown>;
+  dependsOn?: string;
+  argumentBindings?: Record<string, string>;
 }
 
 export interface PlannerJumpstart {

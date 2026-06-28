@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"relay/internal/store"
@@ -160,13 +161,13 @@ type SuggestedRunArguments struct {
 // PlannerJumpstart is the deterministic Planner jumpstart guidance payload
 // returned for selected passes. No raw file contents are included.
 type PlannerJumpstart struct {
-	ReadinessState                  string                       `json:"readiness_state"`
-	SelectedPassSummary             *WorkPassSummary             `json:"selected_pass_summary"`
-	SourceRequirements              *SourceSnapshotRequirements  `json:"source_requirements,omitempty"`
-	ContextRequirements             ContextPlan                  `json:"context_requirements,omitempty"`
-	SourceBasisReport               *PlannerJumpstartBasisReport `json:"source_basis_report,omitempty"`
-	SuggestedContextAcquisitionActions []ContextAcquisitionAction  `json:"suggested_context_acquisition_actions,omitempty"`
-	HandoffPreflightChecklist       []string                     `json:"handoff_preflight_checklist,omitempty"`
+	ReadinessState                     string                       `json:"readiness_state"`
+	SelectedPassSummary                *WorkPassSummary             `json:"selected_pass_summary"`
+	SourceRequirements                 *SourceSnapshotRequirements  `json:"source_requirements,omitempty"`
+	ContextRequirements                ContextPlan                  `json:"context_requirements,omitempty"`
+	SourceBasisReport                  *PlannerJumpstartBasisReport `json:"source_basis_report,omitempty"`
+	SuggestedContextAcquisitionActions []ContextAcquisitionAction   `json:"suggested_context_acquisition_actions,omitempty"`
+	HandoffPreflightChecklist          []string                     `json:"handoff_preflight_checklist,omitempty"`
 }
 
 // PlannerJumpstartBasisReport summarizes the current source snapshot and
@@ -181,9 +182,25 @@ type PlannerJumpstartBasisReport struct {
 // ContextAcquisitionAction describes a safe suggested MCP tool call for
 // acquiring required context or source data.
 type ContextAcquisitionAction struct {
-	Tool      string      `json:"tool"`
-	Arguments interface{} `json:"arguments"`
+	Tool             string                 `json:"tool"`
+	Arguments        map[string]interface{} `json:"arguments"`
+	DependsOn        string                 `json:"depends_on,omitempty"`
+	ArgumentBindings map[string]string      `json:"argument_bindings,omitempty"`
 }
+
+const (
+	defaultContextPacketIncludeInventory = true
+	defaultContextPacketMaxSources       = 50
+	defaultContextPacketMaxTotalBytes    = 262144
+	defaultSeedSearchMaxResults          = 20
+	defaultSeedFileMaxBytes              = 65536
+	maxContextPacketSources              = 200
+	maxContextPacketTotalBytes           = 1048576
+	maxSeedSearchResults                 = 200
+	maxSeedFileBytes                     = 262144
+)
+
+var taskSlugUnsafeChars = regexp.MustCompile(`[^a-z0-9]+`)
 
 // ----------------------------------------------------------------------------
 // Service
@@ -407,13 +424,18 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		_ = json.Unmarshal([]byte(pass.ContextPlanJson), &ctxPlan)
 	}
 
+	var ctxBudget ContextBudget
+	if pass.ContextBudgetJson != "" && pass.ContextBudgetJson != "{}" {
+		_ = json.Unmarshal([]byte(pass.ContextBudgetJson), &ctxBudget)
+	}
+
 	requireSnapshot := (ssReqs.RequireGitStatus != nil && *ssReqs.RequireGitStatus) ||
 		(ssReqs.RequireCommitSHA != nil && *ssReqs.RequireCommitSHA)
 
 	var snapshotID string
 	var snapshotStatus string
 	var snapshotFound bool
-	if requireSnapshot {
+	if requireSnapshot || hasRequiredContextInputs(ctxPlan) {
 		snapshot, err := svc.store.GetLatestSourceSnapshotForProject(project.ID)
 		if err != nil {
 			if !errors.Is(err, sql.ErrNoRows) {
@@ -485,7 +507,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	}
 
 	// Build the shared Planner jumpstart payload.
-	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound)
+	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound)
 
 	// Determine readiness state and optional blocker.
 	var readinessState string
@@ -563,6 +585,7 @@ func buildPlannerJumpstart(
 	planID string,
 	ssReqs *SourceSnapshotRequirements,
 	ctxPlan ContextPlan,
+	ctxBudget *ContextBudget,
 	snapshotID, snapshotStatus, packetID, packetStatus string,
 	requireSnapshot, requirePacket, snapshotFound, packetFound bool,
 ) *PlannerJumpstart {
@@ -599,15 +622,27 @@ func buildPlannerJumpstart(
 	}
 
 	if requirePacket && !packetFound {
-		actions = append(actions, ContextAcquisitionAction{
-			Tool: "create_context_packet",
-			Arguments: map[string]interface{}{
-				"project_id": project.ProjectID,
-				"plan_id":    planID,
-				"pass_id":    selectedPass.PassID,
-			},
-		})
-		checklist = append(checklist, "Context packet: needed — run create_context_packet with project_id, plan_id, pass_id")
+		contextPacketAction := ContextAcquisitionAction{
+			Tool:      "create_context_packet",
+			Arguments: buildContextPacketActionArguments(project.ProjectID, planID, selectedPass.PassID, snapshotID, ctxPlan, ctxBudget),
+		}
+		if snapshotID == "" {
+			if !(requireSnapshot && !snapshotFound) {
+				actions = append(actions, ContextAcquisitionAction{
+					Tool: "create_source_snapshot",
+					Arguments: map[string]interface{}{
+						"project_id": project.ProjectID,
+					},
+				})
+				checklist = append(checklist, "Source snapshot: needed - run create_source_snapshot")
+			}
+			contextPacketAction.DependsOn = "create_source_snapshot"
+			contextPacketAction.ArgumentBindings = map[string]string{
+				"source_snapshot_id": "$.result.source_snapshot_id",
+			}
+		}
+		actions = append(actions, contextPacketAction)
+		checklist = append(checklist, "Context packet: needed - run create_context_packet with project_id, plan_id, pass_id, task_slug, source_snapshot_id, seed_files, and seed_searches")
 	} else if packetFound {
 		checklist = append(checklist, "Context packet: ready ("+packetID+")")
 	}
@@ -624,13 +659,115 @@ func buildPlannerJumpstart(
 	}
 
 	return &PlannerJumpstart{
-		SelectedPassSummary:               selectedPass,
-		SourceRequirements:                ssReqs,
-		ContextRequirements:               ctxPlan,
-		SourceBasisReport:                 basis,
+		SelectedPassSummary:                selectedPass,
+		SourceRequirements:                 ssReqs,
+		ContextRequirements:                ctxPlan,
+		SourceBasisReport:                  basis,
 		SuggestedContextAcquisitionActions: actions,
-		HandoffPreflightChecklist:         checklist,
+		HandoffPreflightChecklist:          checklist,
 	}
+}
+
+func buildContextPacketActionArguments(projectID, planID, passID, sourceSnapshotID string, ctxPlan ContextPlan, ctxBudget *ContextBudget) map[string]interface{} {
+	args := map[string]interface{}{
+		"project_id":        projectID,
+		"plan_id":           planID,
+		"pass_id":           passID,
+		"task_slug":         safeTaskSlug("next-pass-work", planID, passID),
+		"seed_files":        buildContextPacketSeedFiles(ctxPlan, ctxBudget),
+		"seed_searches":     buildContextPacketSeedSearches(ctxPlan, ctxBudget),
+		"include_inventory": defaultContextPacketIncludeInventory,
+		"max_sources":       contextBudgetInt(ctxBudget, "max_files", defaultContextPacketMaxSources, maxContextPacketSources),
+		"max_total_bytes":   contextBudgetInt(ctxBudget, "max_bytes", defaultContextPacketMaxTotalBytes, maxContextPacketTotalBytes),
+	}
+	if strings.TrimSpace(sourceSnapshotID) != "" {
+		args["source_snapshot_id"] = strings.TrimSpace(sourceSnapshotID)
+	}
+	return args
+}
+
+func buildContextPacketSeedFiles(ctxPlan ContextPlan, ctxBudget *ContextBudget) []map[string]interface{} {
+	seedFiles := make([]map[string]interface{}, 0, len(ctxPlan.SeedFilesToRead))
+	maxBytes := contextBudgetInt(ctxBudget, "max_bytes", defaultSeedFileMaxBytes, maxSeedFileBytes)
+	for _, seed := range ctxPlan.SeedFilesToRead {
+		repoID := strings.TrimSpace(seed.RepoID)
+		path := strings.TrimSpace(seed.Path)
+		reason := strings.TrimSpace(seed.Purpose)
+		if repoID == "" || path == "" || reason == "" || isLocalAbsolutePath(path) {
+			continue
+		}
+		seedFiles = append(seedFiles, map[string]interface{}{
+			"repo_id":   repoID,
+			"path":      path,
+			"reason":    reason,
+			"required":  boolValue(seed.Required),
+			"max_bytes": maxBytes,
+		})
+	}
+	return seedFiles
+}
+
+func buildContextPacketSeedSearches(ctxPlan ContextPlan, ctxBudget *ContextBudget) []map[string]interface{} {
+	seedSearches := make([]map[string]interface{}, 0, len(ctxPlan.SeedSearchTerms))
+	maxResults := contextBudgetInt(ctxBudget, "max_search_results", defaultSeedSearchMaxResults, maxSeedSearchResults)
+	for _, seed := range ctxPlan.SeedSearchTerms {
+		query := strings.TrimSpace(seed.Query)
+		reason := strings.TrimSpace(seed.Purpose)
+		if query == "" || reason == "" {
+			continue
+		}
+		item := map[string]interface{}{
+			"pattern":       query,
+			"reason":        reason,
+			"required":      boolValue(seed.Required),
+			"max_results":   maxResults,
+			"context_lines": 2,
+		}
+		if repoID := strings.TrimSpace(seed.RepoID); repoID != "" {
+			item["repo_ids"] = []string{repoID}
+		}
+		seedSearches = append(seedSearches, item)
+	}
+	return seedSearches
+}
+
+func contextBudgetInt(ctxBudget *ContextBudget, field string, defaultValue, maxValue int) int {
+	if ctxBudget == nil {
+		return defaultValue
+	}
+	var value *int64
+	switch field {
+	case "max_files":
+		value = ctxBudget.MaxFiles
+	case "max_bytes":
+		value = ctxBudget.MaxBytes
+	case "max_search_results":
+		value = ctxBudget.MaxSearchResults
+	}
+	if value == nil || *value <= 0 {
+		return defaultValue
+	}
+	if *value > int64(maxValue) {
+		return maxValue
+	}
+	return int(*value)
+}
+
+func boolValue(value *bool) bool {
+	return value != nil && *value
+}
+
+func safeTaskSlug(parts ...string) string {
+	joined := strings.ToLower(strings.Join(parts, "-"))
+	slug := strings.Trim(taskSlugUnsafeChars.ReplaceAllString(joined, "-"), "-")
+	if slug == "" {
+		return "next-pass-work"
+	}
+	return slug
+}
+
+func isLocalAbsolutePath(path string) bool {
+	return strings.HasPrefix(path, "/") || (len(path) >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/'))
 }
 
 // getPassByIDWithSafety validates that a requested pass can be safely

@@ -68,6 +68,26 @@ func newWorkPacketService(t *testing.T) (*OrchestratorWorkService, *store.Store)
 	return NewOrchestratorWorkService(st), st
 }
 
+func seedSourceSnapshot(t *testing.T, st *store.Store, projectID, sourceSnapshotID string) {
+	t.Helper()
+
+	project, err := st.GetProjectByProjectID(projectID)
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	if _, err := st.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+		SourceSnapshotID: sourceSnapshotID,
+		ProjectRowID:     project.ID,
+		ProjectID:        project.ProjectID,
+		SnapshotKind:     "clean_commit",
+		Status:           "created",
+		CompletedAt:      "2026-06-28T00:00:00Z",
+		SummaryJSON:      "{}",
+	}); err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+}
+
 // seedPlan submits a two-pass plan using plans.Service.
 // PASS-001 has no dependencies; PASS-002 depends on PASS-001.
 // Both start with status "planned" and no required context inputs so
@@ -889,12 +909,170 @@ func TestGetNextPassWork_MissingContextPacketIncludesJumpstart(t *testing.T) {
 		t.Fatal("expected at least one suggested context acquisition action")
 	}
 	firstAction := resp.PlannerJumpstart.SuggestedContextAcquisitionActions[0]
-	if firstAction.Tool != "create_context_packet" {
-		t.Fatalf("expected first suggested action to be create_context_packet, got %q", firstAction.Tool)
+	if firstAction.Tool != "create_source_snapshot" {
+		t.Fatalf("expected first suggested action to be create_source_snapshot, got %q", firstAction.Tool)
 	}
 	// Must include pass and context details.
 	if resp.PlannerJumpstart.SelectedPassSummary == nil || resp.PlannerJumpstart.SelectedPassSummary.PassID != "PASS-001" {
 		t.Fatalf("expected selected_pass_summary PASS-001 in jumpstart, got %+v", resp.PlannerJumpstart.SelectedPassSummary)
+	}
+}
+
+func TestGetNextPassWork_MissingContextPacketWithSnapshotIncludesInvokableAction(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	planSvc := NewService(st)
+	ctxPlan := baseContextPlan()
+	plan := PlannerPassPlan{
+		PlanMeta: PlanMeta{
+			PlanID: "plan-js-packet-action", SchemaVersion: "2.0.0",
+			CreatedAt: "2026-06-23T00:00:00Z", Title: "T", Goal: "G",
+			RepoTarget: "Paintersrp/relay", BranchContext: "main", Status: "active",
+			ProjectID: "relay",
+			MCPCapabilityProfile: &MCPCapabilityProfile{
+				ProfileID: "p", Mode: "submission_only", ContextBrokerEnabled: boolPtr(false),
+			},
+		},
+		SourceIntent:       SourceIntent{Summary: "S"},
+		GlobalContextRules: &GlobalContextRules{DefaultSourceOfTruth: "D", PlannerContextBoundary: "B", ForbiddenContextDomains: []string{"X"}},
+		Passes: []PlanPassInput{{
+			PassID: "PASS-001", Sequence: 1, Name: "N", Goal: "G",
+			IntendedExecutionScope: []string{"a"}, NonGoals: []string{"b"},
+			Dependencies: []string{}, Status: "planned", PassType: "backend_vertical_slice",
+			ContextPlan: ctxPlan,
+			SourceSnapshotRequirements: SourceSnapshotRequirements{
+				RequireGitStatus: boolPtr(false), RequireCommitSHA: boolPtr(false), AllowDirtyWorktree: boolPtr(true),
+			},
+			ContextBudget:            &ContextBudget{MaxFiles: int64Ptr(12), MaxBytes: int64Ptr(131072), MaxSearchResults: int64Ptr(7)},
+			HandoffReadinessCriteria: []string{"c"},
+		}},
+	}
+	raw := mustMarshalPlan(t, plan)
+	result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw})
+	if err != nil || !result.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
+	}
+	seedSourceSnapshot(t, st, "relay", "srcsnap-existing")
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-js-packet-action",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertBlockerCode(t, resp, BlockerRequiredContextPacketMissing)
+	actions := resp.PlannerJumpstart.SuggestedContextAcquisitionActions
+	if len(actions) != 1 {
+		t.Fatalf("expected one suggested action, got %d: %+v", len(actions), actions)
+	}
+	action := actions[0]
+	if action.Tool != "create_context_packet" {
+		t.Fatalf("expected create_context_packet action, got %q", action.Tool)
+	}
+	if action.DependsOn != "" || len(action.ArgumentBindings) != 0 {
+		t.Fatalf("expected no dependency when source snapshot is known, got depends_on=%q bindings=%v", action.DependsOn, action.ArgumentBindings)
+	}
+	args := action.Arguments
+	for _, key := range []string{"project_id", "plan_id", "pass_id", "task_slug", "source_snapshot_id", "seed_files", "seed_searches", "include_inventory", "max_sources", "max_total_bytes"} {
+		if _, ok := args[key]; !ok {
+			t.Fatalf("expected create_context_packet arguments to include %q: %#v", key, args)
+		}
+	}
+	if args["project_id"] != "relay" || args["plan_id"] != "plan-js-packet-action" || args["pass_id"] != "PASS-001" {
+		t.Fatalf("unexpected ID arguments: %#v", args)
+	}
+	if args["task_slug"] != "next-pass-work-plan-js-packet-action-pass-001" {
+		t.Fatalf("unexpected task_slug: %#v", args["task_slug"])
+	}
+	if args["source_snapshot_id"] != "srcsnap-existing" {
+		t.Fatalf("unexpected source_snapshot_id: %#v", args["source_snapshot_id"])
+	}
+	if args["include_inventory"] != true || args["max_sources"] != 12 || args["max_total_bytes"] != 131072 {
+		t.Fatalf("unexpected inventory/budget arguments: %#v", args)
+	}
+	seedFiles, ok := args["seed_files"].([]map[string]interface{})
+	if !ok || len(seedFiles) != 1 {
+		t.Fatalf("expected one seed_file, got %#v", args["seed_files"])
+	}
+	if seedFiles[0]["repo_id"] != "relay" || seedFiles[0]["path"] != ctxPlan.SeedFilesToRead[0].Path || seedFiles[0]["reason"] != ctxPlan.SeedFilesToRead[0].Purpose {
+		t.Fatalf("unexpected seed_file: %#v", seedFiles[0])
+	}
+	seedSearches, ok := args["seed_searches"].([]map[string]interface{})
+	if !ok || len(seedSearches) != 1 {
+		t.Fatalf("expected one seed_search, got %#v", args["seed_searches"])
+	}
+	if seedSearches[0]["pattern"] != ctxPlan.SeedSearchTerms[0].Query || seedSearches[0]["reason"] != ctxPlan.SeedSearchTerms[0].Purpose || seedSearches[0]["max_results"] != 7 {
+		t.Fatalf("unexpected seed_search: %#v", seedSearches[0])
+	}
+}
+
+func TestGetNextPassWork_MissingContextPacketWithoutSnapshotIncludesDependency(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	planSvc := NewService(st)
+	plan := PlannerPassPlan{
+		PlanMeta: PlanMeta{
+			PlanID: "plan-js-packet-snapshot-action", SchemaVersion: "2.0.0",
+			CreatedAt: "2026-06-23T00:00:00Z", Title: "T", Goal: "G",
+			RepoTarget: "Paintersrp/relay", BranchContext: "main", Status: "active",
+			ProjectID: "relay",
+			MCPCapabilityProfile: &MCPCapabilityProfile{
+				ProfileID: "p", Mode: "submission_only", ContextBrokerEnabled: boolPtr(false),
+			},
+		},
+		SourceIntent:       SourceIntent{Summary: "S"},
+		GlobalContextRules: &GlobalContextRules{DefaultSourceOfTruth: "D", PlannerContextBoundary: "B", ForbiddenContextDomains: []string{"X"}},
+		Passes: []PlanPassInput{{
+			PassID: "PASS-001", Sequence: 1, Name: "N", Goal: "G",
+			IntendedExecutionScope: []string{"a"}, NonGoals: []string{"b"},
+			Dependencies: []string{}, Status: "planned", PassType: "backend_vertical_slice",
+			ContextPlan: baseContextPlan(),
+			SourceSnapshotRequirements: SourceSnapshotRequirements{
+				RequireGitStatus: boolPtr(false), RequireCommitSHA: boolPtr(false), AllowDirtyWorktree: boolPtr(true),
+			},
+			HandoffReadinessCriteria: []string{"c"},
+		}},
+	}
+	raw := mustMarshalPlan(t, plan)
+	result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw})
+	if err != nil || !result.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
+	}
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-js-packet-snapshot-action",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertBlockerCode(t, resp, BlockerRequiredContextPacketMissing)
+	actions := resp.PlannerJumpstart.SuggestedContextAcquisitionActions
+	if len(actions) != 2 {
+		t.Fatalf("expected two suggested actions, got %d: %+v", len(actions), actions)
+	}
+	if actions[0].Tool != "create_source_snapshot" {
+		t.Fatalf("expected first action create_source_snapshot, got %q", actions[0].Tool)
+	}
+	if actions[1].Tool != "create_context_packet" {
+		t.Fatalf("expected second action create_context_packet, got %q", actions[1].Tool)
+	}
+	if actions[1].DependsOn != "create_source_snapshot" {
+		t.Fatalf("expected create_context_packet depends_on create_source_snapshot, got %q", actions[1].DependsOn)
+	}
+	if got := actions[1].ArgumentBindings["source_snapshot_id"]; got != "$.result.source_snapshot_id" {
+		t.Fatalf("expected source_snapshot_id binding, got %q", got)
+	}
+	if _, ok := actions[1].Arguments["source_snapshot_id"]; ok {
+		t.Fatalf("did not expect static source_snapshot_id when no snapshot exists: %#v", actions[1].Arguments)
+	}
+	for _, key := range []string{"project_id", "plan_id", "pass_id", "task_slug", "seed_files", "seed_searches", "include_inventory", "max_sources", "max_total_bytes"} {
+		if _, ok := actions[1].Arguments[key]; !ok {
+			t.Fatalf("expected create_context_packet static arguments to include %q: %#v", key, actions[1].Arguments)
+		}
 	}
 }
 

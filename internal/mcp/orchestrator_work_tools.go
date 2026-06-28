@@ -69,7 +69,7 @@ var getNextAuditWorkSchema = json.RawMessage(`{
 
 var ToolGetNextPassWork = ToolDefinition{
 	Name:        appplans.NextPassWorkTool,
-	Description: "Return the next eligible project-scoped plan pass work packet for Planner handoff creation. Includes deterministic planner_jumpstart guidance with readiness state, source/context requirements, suggested acquisition actions, and handoff preflight checklist. Retrieval-only: does not create runs, submit plans, generate handoffs, create context packets, mutate git, run shell commands, or expose arbitrary filesystem access.",
+	Description: "Return the next eligible project-scoped plan pass work packet for Planner handoff creation. Includes deterministic planner_jumpstart guidance with readiness state, source/context requirements, suggested acquisition actions, dependency/binding metadata for ordered acquisition, and handoff preflight checklist. Retrieval-only: does not create runs, submit plans, generate handoffs, create context packets, mutate git, run shell commands, or expose arbitrary filesystem access.",
 	InputSchema: getNextPassWorkSchema,
 }
 

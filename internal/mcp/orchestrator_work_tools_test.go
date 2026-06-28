@@ -673,6 +673,112 @@ func TestOrchestratorWorkTools_GetNextPassWorkSuccessThroughTool(t *testing.T) {
 	}
 }
 
+func TestOrchestratorWorkTools_GetNextPassWorkPlannerJumpstartActions(t *testing.T) {
+	t.Parallel()
+
+	st := setupOrchestratorTestStore(t)
+	if _, err := st.CreateProject("relay", "Relay", "Orchestrator MCP test project", "active", ""); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	planSvc := appplans.NewService(st)
+	plan := appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
+			PlanID:        "plan-mcp-jumpstart-actions",
+			SchemaVersion: "2.0.0",
+			CreatedAt:     "2026-06-23T00:00:00Z",
+			Title:         "Orchestrator MCP jumpstart test plan",
+			Goal:          "Exercise jumpstart action payloads.",
+			RepoTarget:    "Paintersrp/relay",
+			BranchContext: "main",
+			Status:        "active",
+			ProjectID:     "relay",
+			MCPCapabilityProfile: &appplans.MCPCapabilityProfile{
+				ProfileID:            "test-profile",
+				Mode:                 "submission_only",
+				ContextBrokerEnabled: mcpBoolPtr(false),
+			},
+		},
+		SourceIntent: appplans.SourceIntent{Summary: "MCP jumpstart action test plan."},
+		GlobalContextRules: &appplans.GlobalContextRules{
+			DefaultSourceOfTruth:    "Relay managed plan.",
+			PlannerContextBoundary:  "Test only.",
+			ForbiddenContextDomains: []string{"GitHub issues"},
+		},
+		Passes: []appplans.PlanPassInput{{
+			PassID: "PASS-001", Sequence: 1, Name: "Context pass", Goal: "Collect context.",
+			IntendedExecutionScope: []string{"Inspect jumpstart actions."},
+			NonGoals:               []string{"No run creation."},
+			Dependencies:           []string{},
+			Status:                 appplans.StatusPassPlanned,
+			PassType:               "backend_vertical_slice",
+			ContextPlan: appplans.ContextPlan{
+				RequiredRepositories: []string{"relay"},
+				SeedSearchTerms: []appplans.ContextSearchTerm{
+					{RepoID: "relay", Query: "planner_jumpstart", Purpose: "Find jumpstart code.", Required: mcpBoolPtr(true)},
+				},
+				SeedFilesToRead: []appplans.ContextFileRead{
+					{RepoID: "relay", Path: "internal/app/plans/work_packets.go", Purpose: "Review work packet logic.", Required: mcpBoolPtr(true)},
+				},
+				ContextCoverageExpectations: []string{"Jumpstart action contract is covered."},
+				BlockedIfMissing:            []string{"Action payload cannot be checked."},
+			},
+			SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
+				RequireGitStatus:   mcpBoolPtr(false),
+				RequireCommitSHA:   mcpBoolPtr(false),
+				AllowDirtyWorktree: mcpBoolPtr(true),
+			},
+			HandoffReadinessCriteria: []string{"Jumpstart payload reviewed."},
+		}},
+	}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	submitResult, err := planSvc.SubmitPlan(context.Background(), appplans.SubmitPlanRequest{
+		RawJSON:               raw,
+		UnmanagedAcknowledged: true,
+	})
+	if err != nil || !submitResult.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, submitResult.Report.Issues)
+	}
+
+	srv := NewServer(nil, &MCPDeps{Store: st, ToolProfile: ToolProfileLocalOperator})
+	toolResult := srv.HandleGetNextPassWork(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-jumpstart-actions"}`))
+	if toolResult.IsError {
+		t.Fatalf("expected IsError=false, got error result: %+v", toolResult.Content)
+	}
+	payload := decodeToolJSON(t, toolResult)
+	js, _ := payload["planner_jumpstart"].(map[string]any)
+	if js == nil {
+		t.Fatal("expected planner_jumpstart in response JSON")
+	}
+	actions, _ := js["suggested_context_acquisition_actions"].([]any)
+	if len(actions) != 2 {
+		t.Fatalf("expected two suggested actions, got %d: %#v", len(actions), actions)
+	}
+	first, _ := actions[0].(map[string]any)
+	second, _ := actions[1].(map[string]any)
+	if first["tool"] != "create_source_snapshot" || second["tool"] != "create_context_packet" {
+		t.Fatalf("unexpected actions: %#v", actions)
+	}
+	if second["depends_on"] != "create_source_snapshot" {
+		t.Fatalf("expected depends_on create_source_snapshot, got %#v", second["depends_on"])
+	}
+	bindings, _ := second["argument_bindings"].(map[string]any)
+	if bindings["source_snapshot_id"] != "$.result.source_snapshot_id" {
+		t.Fatalf("expected source_snapshot_id binding, got %#v", bindings)
+	}
+	args, _ := second["arguments"].(map[string]any)
+	for _, key := range []string{"project_id", "plan_id", "pass_id", "task_slug", "seed_files", "seed_searches", "include_inventory", "max_sources", "max_total_bytes"} {
+		if _, ok := args[key]; !ok {
+			t.Fatalf("expected create_context_packet arguments to include %q: %#v", key, args)
+		}
+	}
+	if _, ok := args["source_snapshot_id"]; ok {
+		t.Fatalf("did not expect static source_snapshot_id without a snapshot: %#v", args)
+	}
+}
+
 func TestOrchestratorWorkTools_GetNextPassWorkWithPassID(t *testing.T) {
 	t.Parallel()
 

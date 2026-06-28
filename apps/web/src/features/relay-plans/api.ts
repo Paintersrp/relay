@@ -83,6 +83,17 @@ function normalizeStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string");
 }
 
+function normalizeStringRecord(value: unknown): Record<string, string> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string",
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
 function normalizeContextSearchTerm(term: any): PlanAPIContextSearchTerm {
   return {
     repoId: firstNonEmptyString(term?.repoId, term?.repo_id) || "",
@@ -524,6 +535,8 @@ function normalizePlannerJumpstart(js: any): PlannerJumpstart {
       ? (js.suggestedContextAcquisitionActions ?? js.suggested_context_acquisition_actions).map((a: any) => ({
           tool: firstNonEmptyString(a?.tool) || "",
           arguments: typeof a?.arguments === "object" && a?.arguments !== null ? a.arguments : {},
+          dependsOn: firstNonEmptyString(a?.dependsOn, a?.depends_on),
+          argumentBindings: normalizeStringRecord(a?.argumentBindings ?? a?.argument_bindings),
         }))
       : undefined,
     handoffPreflightChecklist: normalizeStringArray(js?.handoffPreflightChecklist ?? js?.handoff_preflight_checklist),
