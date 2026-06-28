@@ -57,7 +57,8 @@ type toolCallResult struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
-	IsError bool `json:"isError,omitempty"`
+	StructuredContent map[string]interface{} `json:"structuredContent,omitempty"`
+	IsError           bool                   `json:"isError,omitempty"`
 }
 
 // --- harness state ---
@@ -524,7 +525,7 @@ Validates that create_run_from_planner_handoff can associate a new run to a plan
 	if err := json.Unmarshal(resp.Result, &auditResult); err != nil {
 		return h.fatal("submit_audit_packet parse", err)
 	}
-	
+
 	// The smoke test creates a run but doesn't execute it, so audit submission
 	// will fail with STATE_ERROR. This is expected behavior since audits require
 	// the run to be in audit_ready status (which requires executor completion).
@@ -566,15 +567,13 @@ Validates that create_run_from_planner_handoff can associate a new run to a plan
 		return h.fatal("get_next_pass_work parse", err)
 	}
 	h.check("get_next_pass_work !isError", !nextPassWorkResult.IsError)
-	if len(nextPassWorkResult.Content) > 0 {
-		var out map[string]interface{}
-		if err := json.Unmarshal([]byte(nextPassWorkResult.Content[0].Text), &out); err == nil {
-			h.check("get_next_pass_work ok=false", out["ok"] == false)
-			h.check("get_next_pass_work tool=get_next_pass_work", out["tool"] == "get_next_pass_work")
-			if blockers, ok := out["blockers"].([]interface{}); ok && len(blockers) > 0 {
-				if blocker, ok := blockers[0].(map[string]interface{}); ok {
-					h.check("get_next_pass_work blocker code=unknown_project", blocker["code"] == "unknown_project")
-				}
+	out := nextPassWorkResult.StructuredContent
+	if out != nil {
+		h.check("get_next_pass_work ok=false", out["ok"] == false)
+		h.check("get_next_pass_work tool=get_next_pass_work", out["tool"] == "get_next_pass_work")
+		if blockers, ok := out["blockers"].([]interface{}); ok && len(blockers) > 0 {
+			if blocker, ok := blockers[0].(map[string]interface{}); ok {
+				h.check("get_next_pass_work blocker code=unknown_project", blocker["code"] == "unknown_project")
 			}
 		}
 	}
@@ -912,19 +911,19 @@ func (h *harness) fatal(context string, err error) error {
 func seedTestDatabase(dbPath string) error {
 	// Use a discard logger for the test setup
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	
+
 	// Open the store
 	s, err := store.Open(dbPath, logger)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}
 	defer s.Close()
-	
+
 	// Create the "relay" project that the smoke plan fixture references
 	_, err = s.CreateProject("relay", "Relay", "Smoke Test Project", "active", "")
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
 	}
-	
+
 	return nil
 }

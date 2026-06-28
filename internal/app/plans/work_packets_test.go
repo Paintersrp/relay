@@ -3,9 +3,11 @@ package plans
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"relay/internal/store"
@@ -212,6 +214,87 @@ func assertBlockerCode(t *testing.T, resp NextPassWorkResponse, expected string)
 // -------------------------------------------------------------------
 // Tests
 // -------------------------------------------------------------------
+
+func TestCompactNextPassWorkSummaryOmitsVerboseHookText(t *testing.T) {
+	t.Parallel()
+
+	verbose := "Do not repeat pre-commit, pre-push, or ordinary commit/push flow guidance."
+	resp := NextPassWorkResponse{
+		OK:   false,
+		Tool: NextPassWorkTool,
+		Project: &WorkProjectSummary{
+			ProjectID: "relay",
+			Name:      "Relay",
+		},
+		Plan: &WorkPlanSummary{
+			PlanID: "plan-compact-summary",
+			Status: "active",
+			Title:  "Compact summary",
+		},
+		SelectedPass: &WorkPassSummary{
+			PassID:   "PASS-002",
+			Sequence: 2,
+			Name:     "Context packet pass",
+			Status:   "planned",
+			Goal:     verbose,
+		},
+		Context: &WorkContextSummary{
+			SourceSnapshotID: "srcsnap-001",
+			ContextReady:     false,
+		},
+		PlannerJumpstart: &PlannerJumpstart{
+			ReadinessState: "needs_context_packet",
+			SuggestedContextAcquisitionActions: []ContextAcquisitionAction{{
+				Tool: "create_context_packet",
+				Arguments: map[string]interface{}{
+					"seed_searches": []map[string]string{{"purpose": verbose}},
+				},
+			}},
+		},
+		Blockers: []WorkBlocker{{
+			Code:        BlockerRequiredContextPacketMissing,
+			Message:     verbose,
+			Recoverable: true,
+		}},
+	}
+
+	raw, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal full response: %v", err)
+	}
+	if !strings.Contains(string(raw), "pre-commit") {
+		t.Fatal("expected full service response to preserve verbose text")
+	}
+
+	summary := CompactNextPassWorkSummary(resp)
+	summaryJSON, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("marshal summary: %v", err)
+	}
+	for _, banned := range []string{"pre-commit", "pre-push", "ordinary commit/push flow"} {
+		if strings.Contains(string(summaryJSON), banned) {
+			t.Fatalf("summary leaked verbose text %q: %s", banned, summaryJSON)
+		}
+	}
+	if summary.SelectedPass == nil || summary.SelectedPass.PassID != "PASS-002" {
+		t.Fatalf("expected selected PASS-002, got %+v", summary.SelectedPass)
+	}
+	if summary.ReadinessState != "needs_context_packet" {
+		t.Fatalf("expected needs_context_packet, got %q", summary.ReadinessState)
+	}
+	if summary.SourceSnapshotID != "srcsnap-001" {
+		t.Fatalf("expected source snapshot ID, got %q", summary.SourceSnapshotID)
+	}
+	if len(summary.Blockers) != 1 || summary.Blockers[0].Code != BlockerRequiredContextPacketMissing || !summary.Blockers[0].Recoverable {
+		t.Fatalf("expected recoverable context-packet blocker, got %+v", summary.Blockers)
+	}
+	if len(summary.NextActions) == 0 || !strings.Contains(summary.NextActions[0].Arguments, "get_pass_context") {
+		t.Fatalf("expected concise context-packet next action, got %+v", summary.NextActions)
+	}
+	if !strings.Contains(summary.LocalPreviewHint, "pass-detail preview") {
+		t.Fatalf("expected local preview hint, got %q", summary.LocalPreviewHint)
+	}
+}
 
 func TestGetNextPassWork_UnknownProject(t *testing.T) {
 	t.Parallel()

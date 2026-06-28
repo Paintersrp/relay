@@ -85,6 +85,127 @@ type NextPassWorkResponse struct {
 	Blockers                 []WorkBlocker           `json:"blockers"`
 }
 
+// NextPassWorkMCPSummary is the compact model-visible summary returned by MCP.
+// It deliberately omits verbose pass goals, context prose, and seed details
+// while keeping enough IDs and next-action references for follow-up tool calls.
+type NextPassWorkMCPSummary struct {
+	OK               bool                         `json:"ok"`
+	Tool             string                       `json:"tool"`
+	ProjectID        string                       `json:"project_id,omitempty"`
+	PlanID           string                       `json:"plan_id,omitempty"`
+	SelectedPass     *NextPassWorkSummaryPass     `json:"selected_pass,omitempty"`
+	ReadinessState   string                       `json:"readiness_state,omitempty"`
+	SourceSnapshotID string                       `json:"source_snapshot_id,omitempty"`
+	ContextPacketID  string                       `json:"context_packet_id,omitempty"`
+	ContextReady     bool                         `json:"context_ready"`
+	Blockers         []NextPassWorkSummaryBlocker `json:"blockers"`
+	NextActions      []NextPassWorkSummaryAction  `json:"next_actions,omitempty"`
+	LocalPreviewHint string                       `json:"local_preview_hint"`
+}
+
+// NextPassWorkSummaryPass contains the selected pass fields safe for MCP text.
+type NextPassWorkSummaryPass struct {
+	PassID   string `json:"pass_id"`
+	Sequence int64  `json:"sequence"`
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+}
+
+// NextPassWorkSummaryBlocker contains compact blocker facts.
+type NextPassWorkSummaryBlocker struct {
+	Code        string `json:"code"`
+	Recoverable bool   `json:"recoverable"`
+}
+
+// NextPassWorkSummaryAction describes concise follow-up guidance.
+type NextPassWorkSummaryAction struct {
+	Tool        string `json:"tool,omitempty"`
+	Description string `json:"description"`
+	Arguments   string `json:"arguments,omitempty"`
+}
+
+// CompactNextPassWorkSummary returns the MCP-safe projection of the full local
+// NextPassWorkResponse.
+func CompactNextPassWorkSummary(resp NextPassWorkResponse) NextPassWorkMCPSummary {
+	summary := NextPassWorkMCPSummary{
+		OK:               resp.OK,
+		Tool:             resp.Tool,
+		Blockers:         []NextPassWorkSummaryBlocker{},
+		LocalPreviewHint: "Use the Relay pass-detail preview for exact raw payload inspection.",
+	}
+	if resp.Project != nil {
+		summary.ProjectID = resp.Project.ProjectID
+	}
+	if resp.Plan != nil {
+		summary.PlanID = resp.Plan.PlanID
+	}
+	if resp.SelectedPass != nil {
+		summary.SelectedPass = &NextPassWorkSummaryPass{
+			PassID:   resp.SelectedPass.PassID,
+			Sequence: resp.SelectedPass.Sequence,
+			Name:     resp.SelectedPass.Name,
+			Status:   resp.SelectedPass.Status,
+		}
+	}
+	if resp.PlannerJumpstart != nil {
+		summary.ReadinessState = resp.PlannerJumpstart.ReadinessState
+	}
+	if resp.Context != nil {
+		summary.SourceSnapshotID = resp.Context.SourceSnapshotID
+		summary.ContextPacketID = resp.Context.ContextPacketID
+		summary.ContextReady = resp.Context.ContextReady
+	}
+	for _, blocker := range resp.Blockers {
+		summary.Blockers = append(summary.Blockers, NextPassWorkSummaryBlocker{
+			Code:        blocker.Code,
+			Recoverable: blocker.Recoverable,
+		})
+	}
+	summary.NextActions = compactNextPassWorkActions(resp)
+	return summary
+}
+
+func compactNextPassWorkActions(resp NextPassWorkResponse) []NextPassWorkSummaryAction {
+	actions := []NextPassWorkSummaryAction{}
+	if resp.SuggestedRunSubmission != nil {
+		actions = append(actions, NextPassWorkSummaryAction{
+			Tool:        resp.SuggestedRunSubmission.Tool,
+			Description: "Selected pass is ready for a Planner handoff run.",
+			Arguments:   "plan_id and pass_id",
+		})
+	}
+	if resp.PlannerJumpstart != nil {
+		for _, action := range resp.PlannerJumpstart.SuggestedContextAcquisitionActions {
+			switch action.Tool {
+			case "create_context_packet":
+				arguments := "full create_context_packet arguments are available in the local pass-detail preview or retrievable through get_pass_context"
+				actions = append(actions, NextPassWorkSummaryAction{
+					Tool:        action.Tool,
+					Description: "Create the required context packet for the selected pass.",
+					Arguments:   arguments,
+				})
+			case "create_source_snapshot":
+				actions = append(actions, NextPassWorkSummaryAction{
+					Tool:        action.Tool,
+					Description: "Create or select a source snapshot before context packet creation.",
+					Arguments:   "project_id",
+				})
+			default:
+				actions = append(actions, NextPassWorkSummaryAction{
+					Tool:        action.Tool,
+					Description: "Use the local pass-detail preview for exact action arguments.",
+				})
+			}
+		}
+	}
+	if len(actions) == 0 && len(resp.Blockers) > 0 {
+		actions = append(actions, NextPassWorkSummaryAction{
+			Description: "Resolve recoverable blockers, then call get_next_pass_work again.",
+		})
+	}
+	return actions
+}
+
 // WorkProjectSummary contains bounded project metadata.
 type WorkProjectSummary struct {
 	ProjectID string `json:"project_id"`
