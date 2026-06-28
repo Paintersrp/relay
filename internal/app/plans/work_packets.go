@@ -160,7 +160,9 @@ type AcquisitionFailureReport struct {
 	ReadinessState            string                            `json:"readiness_state"`
 	SourceSnapshotID          string                            `json:"source_snapshot_id,omitempty"`
 	ContextPacketID           string                            `json:"context_packet_id,omitempty"`
+	PacketStatus              string                            `json:"packet_status,omitempty"`
 	ContextPacketStatus       string                            `json:"context_packet_status,omitempty"`
+	LimitHit                  string                            `json:"limit_hit,omitempty"`
 	TerminalReason            string                            `json:"terminal_reason"`
 	AttemptedStrategies       []AcquisitionAttemptReport        `json:"attempted_strategies"`
 	PacketSummary             *ContextPacketDiagnosticSummary   `json:"packet_summary,omitempty"`
@@ -188,28 +190,36 @@ type AcquisitionAttemptStrategy struct {
 }
 
 type ContextPacketDiagnosticSummary struct {
-	MaxSources        int    `json:"max_sources"`
-	MaxTotalBytes     int    `json:"max_total_bytes"`
-	TotalSourceBytes  int    `json:"total_source_bytes"`
-	SourceCount       int    `json:"source_count"`
-	CoveredSeedCount  int    `json:"covered_seed_count"`
-	BlockedSeedCount  int    `json:"blocked_seed_count"`
-	MissingSeedCount  int    `json:"missing_seed_count"`
-	Truncated         bool   `json:"truncated"`
-	InventoryIncluded bool   `json:"inventory_included"`
-	LimitHit          string `json:"limit_hit"`
+	MaxSources                 int    `json:"max_sources"`
+	MaxTotalBytes              int    `json:"max_total_bytes"`
+	TotalSourceBytes           int    `json:"total_source_bytes"`
+	SourceCount                int    `json:"source_count"`
+	CoveredSeedCount           int    `json:"covered_seed_count"`
+	BlockedSeedCount           int    `json:"blocked_seed_count"`
+	MissingSeedCount           int    `json:"missing_seed_count"`
+	Truncated                  bool   `json:"truncated"`
+	InventoryIncluded          bool   `json:"inventory_included"`
+	OptionalInventoryTruncated bool   `json:"optional_inventory_truncated"`
+	LimitHit                   string `json:"limit_hit"`
 }
 
 type ContextCoverageDiagnosticSummary struct {
-	EntryCount      int                         `json:"entry_count"`
-	CoveredCount    int                         `json:"covered_count"`
-	PartialCount    int                         `json:"partial_count"`
-	BlockedCount    int                         `json:"blocked_count"`
-	MissingCount    int                         `json:"missing_count"`
-	TruncatedCount  int                         `json:"truncated_count"`
-	RequiredCount   int                         `json:"required_count"`
-	RequiredCovered int                         `json:"required_covered_count"`
-	Entries         []ContextCoverageDiagnostic `json:"entries,omitempty"`
+	EntryCount                        int                         `json:"entry_count"`
+	CoveredCount                      int                         `json:"covered_count"`
+	PartialCount                      int                         `json:"partial_count"`
+	BlockedCount                      int                         `json:"blocked_count"`
+	MissingCount                      int                         `json:"missing_count"`
+	TruncatedCount                    int                         `json:"truncated_count"`
+	RequiredCount                     int                         `json:"required_count"`
+	RequiredCovered                   int                         `json:"required_covered_count"`
+	RequiredSeedCount                 int                         `json:"required_seed_count"`
+	RequiredSeedCoveredCount          int                         `json:"required_seed_covered_count"`
+	RequiredSeedBlockedCount          int                         `json:"required_seed_blocked_count"`
+	RequiredSeedMissingCount          int                         `json:"required_seed_missing_count"`
+	RequiredSeedTruncatedCount        int                         `json:"required_seed_truncated_count"`
+	OptionalInventoryTruncated        bool                        `json:"optional_inventory_truncated"`
+	OptionalInventoryTruncatedSeedIDs []string                    `json:"optional_inventory_truncated_seed_ids,omitempty"`
+	Entries                           []ContextCoverageDiagnostic `json:"entries,omitempty"`
 }
 
 type ContextCoverageDiagnostic struct {
@@ -512,7 +522,7 @@ type HandoffAuthoringReadinessCheck struct {
 }
 
 const (
-	defaultContextPacketIncludeInventory = true
+	defaultContextPacketIncludeInventory = false
 	defaultContextPacketMaxSources       = 50
 	defaultContextPacketMaxTotalBytes    = 262144
 	defaultSeedSearchMaxResults          = 20
@@ -601,15 +611,16 @@ type CtxPacketResult struct {
 }
 
 type CtxPacketSummary struct {
-	SourceCount       int
-	CoveredSeedCount  int
-	BlockedSeedCount  int
-	MissingSeedCount  int
-	Truncated         bool
-	MaxSources        int
-	MaxTotalBytes     int
-	TotalSourceBytes  int
-	InventoryIncluded bool
+	SourceCount                int
+	CoveredSeedCount           int
+	BlockedSeedCount           int
+	MissingSeedCount           int
+	Truncated                  bool
+	MaxSources                 int
+	MaxTotalBytes              int
+	TotalSourceBytes           int
+	InventoryIncluded          bool
+	OptionalInventoryTruncated bool
 }
 
 type CtxCoverageEntry struct {
@@ -1292,7 +1303,7 @@ func buildContextPacketActionArguments(projectID, planID, passID, sourceSnapshot
 		"task_slug":         safeTaskSlug("next-pass-work", planID, passID),
 		"seed_files":        buildContextPacketSeedFiles(ctxPlan, ctxBudget, repoAliases),
 		"seed_searches":     buildContextPacketSeedSearches(ctxPlan, ctxBudget, repoAliases),
-		"include_inventory": defaultContextPacketIncludeInventory,
+		"include_inventory": false,
 		"max_sources":       contextBudgetInt(ctxBudget, "max_files", defaultContextPacketMaxSources, maxContextPacketSources),
 		"max_total_bytes":   contextBudgetInt(ctxBudget, "max_bytes", defaultContextPacketMaxTotalBytes, maxContextPacketTotalBytes),
 	}
@@ -1332,7 +1343,7 @@ func buildContextPacketSeedSearches(ctxPlan ContextPlan, ctxBudget *ContextBudge
 		if query == "" || reason == "" {
 			continue
 		}
-		contextLines := contextBudgetInt(ctxBudget, "max_context_lines", 2, 10)
+		contextLines := 0
 		item := map[string]interface{}{
 			"pattern":       query,
 			"reason":        reason,
@@ -1866,7 +1877,7 @@ func buildContextAcquisitionAttempts(projectID, planID, passID string, ctxPlan C
 	plannedMaxSources := contextBudgetInt(ctxBudget, "max_files", defaultContextPacketMaxSources, maxContextPacketSources)
 	plannedMaxBytes := contextBudgetInt(ctxBudget, "max_bytes", defaultContextPacketMaxTotalBytes, maxContextPacketTotalBytes)
 	plannedMaxResults := contextBudgetInt(ctxBudget, "max_search_results", defaultSeedSearchMaxResults, maxSeedSearchResults)
-	plannedContextLines := contextBudgetInt(ctxBudget, "max_context_lines", 2, 10)
+	plannedContextLines := 0
 	base := CtxPacketInput{
 		ProjectID:        projectID,
 		PlanID:           planID,
@@ -1875,7 +1886,7 @@ func buildContextAcquisitionAttempts(projectID, planID, passID string, ctxPlan C
 		SourceSnapshotID: snapshotID,
 	}
 	planned := base
-	planned.IncludeInventory = defaultContextPacketIncludeInventory
+	planned.IncludeInventory = false
 	planned.MaxSources = plannedMaxSources
 	planned.MaxTotalBytes = plannedMaxBytes
 	planned.SeedFiles = buildCtxSeedFiles(ctxPlan, repoAliases, false)
@@ -1884,10 +1895,10 @@ func buildContextAcquisitionAttempts(projectID, planID, passID string, ctxPlan C
 	focused := base
 	focused.TaskSlug = safeTaskSlug("next-pass-work-focused", planID, passID)
 	focused.IncludeInventory = false
-	focused.MaxSources = minInt(80, maxContextPacketSources)
-	focused.MaxTotalBytes = minInt(600000, maxContextPacketTotalBytes)
+	focused.MaxSources = plannedMaxSources
+	focused.MaxTotalBytes = plannedMaxBytes
 	focused.SeedFiles = buildCtxSeedFiles(ctxPlan, repoAliases, false)
-	focused.SeedSearches = buildCtxSeedSearches(ctxPlan, repoAliases, 10, 2, true, true)
+	focused.SeedSearches = buildCtxSeedSearches(ctxPlan, repoAliases, 10, 0, true, true)
 
 	return []contextAcquisitionAttempt{
 		{
@@ -1908,7 +1919,7 @@ func buildContextAcquisitionAttempts(projectID, planID, passID string, ctxPlan C
 				MaxSources:       focused.MaxSources,
 				MaxTotalBytes:    focused.MaxTotalBytes,
 				MaxSearchResults: 10,
-				ContextLines:     2,
+				ContextLines:     0,
 			},
 			input: focused,
 		},
@@ -2030,7 +2041,9 @@ func buildAcquisitionFailureReport(snapshotID string, blocker *WorkBlocker, atte
 		ReadinessState:            "context_acquisition_failed",
 		SourceSnapshotID:          snapshotID,
 		ContextPacketID:           packetID,
+		PacketStatus:              packetStatus,
 		ContextPacketStatus:       packetStatus,
+		LimitHit:                  limitHitFromResult(result),
 		TerminalReason:            blocker.Message,
 		AttemptedStrategies:       attempts,
 		PacketSummary:             packetDiagnosticSummary(result),
@@ -2061,17 +2074,25 @@ func packetDiagnosticSummary(result *CtxPacketResult) *ContextPacketDiagnosticSu
 		summary.Truncated = result.Truncated
 	}
 	return &ContextPacketDiagnosticSummary{
-		MaxSources:        summary.MaxSources,
-		MaxTotalBytes:     summary.MaxTotalBytes,
-		TotalSourceBytes:  summary.TotalSourceBytes,
-		SourceCount:       summary.SourceCount,
-		CoveredSeedCount:  summary.CoveredSeedCount,
-		BlockedSeedCount:  summary.BlockedSeedCount,
-		MissingSeedCount:  summary.MissingSeedCount,
-		Truncated:         summary.Truncated,
-		InventoryIncluded: summary.InventoryIncluded,
-		LimitHit:          limitHit,
+		MaxSources:                 summary.MaxSources,
+		MaxTotalBytes:              summary.MaxTotalBytes,
+		TotalSourceBytes:           summary.TotalSourceBytes,
+		SourceCount:                summary.SourceCount,
+		CoveredSeedCount:           summary.CoveredSeedCount,
+		BlockedSeedCount:           summary.BlockedSeedCount,
+		MissingSeedCount:           summary.MissingSeedCount,
+		Truncated:                  summary.Truncated,
+		InventoryIncluded:          summary.InventoryIncluded,
+		OptionalInventoryTruncated: summary.OptionalInventoryTruncated,
+		LimitHit:                   limitHit,
 	}
+}
+
+func limitHitFromResult(result *CtxPacketResult) string {
+	if result == nil || strings.TrimSpace(result.LimitHit) == "" {
+		return "unknown"
+	}
+	return result.LimitHit
 }
 
 func coverageDiagnosticSummary(result *CtxPacketResult) *ContextCoverageDiagnosticSummary {
@@ -2098,9 +2119,24 @@ func coverageDiagnosticSummary(result *CtxPacketResult) *ContextCoverageDiagnost
 		}
 		if entry.Required {
 			out.RequiredCount++
+			out.RequiredSeedCount++
 			if entry.Status == "covered" {
 				out.RequiredCovered++
+				out.RequiredSeedCoveredCount++
 			}
+			if entry.Status == "blocked" {
+				out.RequiredSeedBlockedCount++
+			}
+			if entry.Status == "missing" {
+				out.RequiredSeedMissingCount++
+			}
+			if entry.Truncated {
+				out.RequiredSeedTruncatedCount++
+			}
+		}
+		if entry.SeedType == "inventory" && !entry.Required && entry.Truncated {
+			out.OptionalInventoryTruncated = true
+			out.OptionalInventoryTruncatedSeedIDs = append(out.OptionalInventoryTruncatedSeedIDs, entry.SeedID)
 		}
 		if i >= 40 {
 			continue

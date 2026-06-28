@@ -638,7 +638,7 @@ func TestGetNextPassWork_API_PreservesAcquisitionFailureReport(t *testing.T) {
 			CoverageReportPath: "/artifacts/focused.json",
 			SourceSnapshotID:   "snap-api-acq",
 			BlockedSeedCount:   1,
-			Summary:            appplans.CtxPacketSummary{SourceCount: 5, BlockedSeedCount: 1, MaxSources: 80, MaxTotalBytes: 600000},
+			Summary:            appplans.CtxPacketSummary{SourceCount: 5, BlockedSeedCount: 1, MaxSources: 12, MaxTotalBytes: 180000},
 			Coverage: []appplans.CtxCoverageEntry{
 				{SeedID: "file:1", SeedType: "file", Required: true, Status: "blocked", Path: "internal/app/plans/work_packets.go"},
 			},
@@ -703,7 +703,7 @@ func TestGetNextPassWork_API_PreservesFallbackHandoffWork(t *testing.T) {
 	workSvc.SetSourceService(apiFakeSourceSnapshotAcquirer{snapshotID: "snap-api-success", status: "created", included: 10})
 	workSvc.SetContextPacketService(&apiFakeContextPacketAcquirer{results: []appplans.CtxPacketResult{
 		{ContextPacketID: "ctxpkt-api-truncated", Status: "created", CoverageReportPath: "/artifacts/truncated.json", SourceSnapshotID: "snap-api-success", SourceCount: 12, Truncated: true, Summary: appplans.CtxPacketSummary{SourceCount: 12, Truncated: true, MaxSources: 12, MaxTotalBytes: 180000, InventoryIncluded: true}, LimitHit: "max_sources"},
-		{ContextPacketID: "ctxpkt-api-success", Status: "created", CoverageReportPath: "/artifacts/success.json", SourceSnapshotID: "snap-api-success", SourceCount: 7, Summary: appplans.CtxPacketSummary{SourceCount: 7, CoveredSeedCount: 7, MaxSources: 80, MaxTotalBytes: 600000}, LimitHit: "none"},
+		{ContextPacketID: "ctxpkt-api-success", Status: "created", CoverageReportPath: "/artifacts/success.json", SourceSnapshotID: "snap-api-success", SourceCount: 7, Summary: appplans.CtxPacketSummary{SourceCount: 7, CoveredSeedCount: 7, MaxSources: 12, MaxTotalBytes: 180000}, LimitHit: "none"},
 	}})
 	planH := plansapi.NewHandler(planSvc, workSvc, nil)
 	router := chi.NewRouter()

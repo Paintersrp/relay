@@ -38,6 +38,14 @@ func TestStatusFromCoverage(t *testing.T) {
 			want: ContextPacketStatusPartial,
 		},
 		{
+			name: "required covered optional inventory partial",
+			entries: []ContextCoverageEntry{
+				{Status: CoverageStatusCovered, Required: true},
+				{Status: CoverageStatusPartial, SeedType: "inventory", Truncated: true},
+			},
+			want: ContextPacketStatusCreated,
+		},
+		{
 			name: "truncated",
 			entries: []ContextCoverageEntry{
 				{Status: CoverageStatusCovered, Required: true},

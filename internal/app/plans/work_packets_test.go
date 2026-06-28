@@ -1252,7 +1252,7 @@ func TestGetNextPassWork_MissingContextPacketWithSnapshotIncludesInvokableAction
 	if args["source_snapshot_id"] != "srcsnap-existing" {
 		t.Fatalf("unexpected source_snapshot_id: %#v", args["source_snapshot_id"])
 	}
-	if args["include_inventory"] != true || args["max_sources"] != 12 || args["max_total_bytes"] != 131072 {
+	if args["include_inventory"] != false || args["max_sources"] != 12 || args["max_total_bytes"] != 131072 {
 		t.Fatalf("unexpected inventory/budget arguments: %#v", args)
 	}
 	seedFiles, ok := args["seed_files"].([]map[string]interface{})
@@ -1266,7 +1266,7 @@ func TestGetNextPassWork_MissingContextPacketWithSnapshotIncludesInvokableAction
 	if !ok || len(seedSearches) != 1 {
 		t.Fatalf("expected one seed_search, got %#v", args["seed_searches"])
 	}
-	if seedSearches[0]["pattern"] != ctxPlan.SeedSearchTerms[0].Query || seedSearches[0]["reason"] != ctxPlan.SeedSearchTerms[0].Purpose || seedSearches[0]["max_results"] != 7 {
+	if seedSearches[0]["pattern"] != ctxPlan.SeedSearchTerms[0].Query || seedSearches[0]["reason"] != ctxPlan.SeedSearchTerms[0].Purpose || seedSearches[0]["max_results"] != 7 || seedSearches[0]["context_lines"] != 0 {
 		t.Fatalf("unexpected seed_search: %#v", seedSearches[0])
 	}
 }
@@ -1766,19 +1766,22 @@ func TestGetNextPassWork_PASS002FallbackCreatesUsableHandoffWork(t *testing.T) {
 	fakeCtx := &fakeContextPacketAcquirer{results: []CtxPacketResult{
 		{
 			ContextPacketID:    "ctxpkt-planned",
-			Status:             "created",
+			Status:             "partial",
 			CoverageReportPath: "/artifacts/ctxpkt/planned-coverage.json",
 			SourceSnapshotID:   "snap-pass002",
 			SourceCount:        12,
 			Truncated:          true,
 			Summary: CtxPacketSummary{
-				SourceCount:       12,
-				CoveredSeedCount:  7,
-				Truncated:         true,
-				MaxSources:        12,
-				MaxTotalBytes:     180000,
-				TotalSourceBytes:  180000,
-				InventoryIncluded: true,
+				SourceCount:      12,
+				CoveredSeedCount: 6,
+				Truncated:        true,
+				MaxSources:       12,
+				MaxTotalBytes:    180000,
+				TotalSourceBytes: 180000,
+			},
+			Coverage: []CtxCoverageEntry{
+				{SeedID: "file:1", SeedType: "file", Required: true, Status: "covered", Path: "internal/app/plans/work_packets.go"},
+				{SeedID: "search:2", SeedType: "search", Required: true, Status: "partial", Pattern: "context_acquisition_failed acquisition_failure_report", Truncated: true},
 			},
 			LimitHit: "max_sources",
 		},
@@ -1791,8 +1794,8 @@ func TestGetNextPassWork_PASS002FallbackCreatesUsableHandoffWork(t *testing.T) {
 			Summary: CtxPacketSummary{
 				SourceCount:      7,
 				CoveredSeedCount: 7,
-				MaxSources:       80,
-				MaxTotalBytes:    600000,
+				MaxSources:       12,
+				MaxTotalBytes:    180000,
 			},
 			LimitHit: "none",
 		},
@@ -1812,10 +1815,10 @@ func TestGetNextPassWork_PASS002FallbackCreatesUsableHandoffWork(t *testing.T) {
 	if len(fakeCtx.inputs) != 2 {
 		t.Fatalf("expected two context acquisition attempts, got %d", len(fakeCtx.inputs))
 	}
-	if fakeCtx.inputs[0].IncludeInventory != true || fakeCtx.inputs[0].MaxSources != 12 || fakeCtx.inputs[0].MaxTotalBytes != 180000 || fakeCtx.inputs[0].SeedSearches[0].MaxResults != 25 || fakeCtx.inputs[0].SeedSearches[0].ContextLines != 10 {
+	if fakeCtx.inputs[0].IncludeInventory || fakeCtx.inputs[0].MaxSources != 12 || fakeCtx.inputs[0].MaxTotalBytes != 180000 || fakeCtx.inputs[0].SeedSearches[0].MaxResults != 25 || fakeCtx.inputs[0].SeedSearches[0].ContextLines != 0 {
 		t.Fatalf("unexpected planned attempt input: %+v", fakeCtx.inputs[0])
 	}
-	if fakeCtx.inputs[1].IncludeInventory || fakeCtx.inputs[1].MaxSources != 80 || fakeCtx.inputs[1].MaxTotalBytes != 600000 || fakeCtx.inputs[1].SeedSearches[0].MaxResults != 10 || fakeCtx.inputs[1].SeedSearches[0].ContextLines != 2 {
+	if fakeCtx.inputs[1].IncludeInventory || fakeCtx.inputs[1].MaxSources != 12 || fakeCtx.inputs[1].MaxTotalBytes != 180000 || fakeCtx.inputs[1].SeedSearches[0].MaxResults != 10 || fakeCtx.inputs[1].SeedSearches[0].ContextLines != 0 {
 		t.Fatalf("unexpected focused attempt input: %+v", fakeCtx.inputs[1])
 	}
 }
@@ -1833,10 +1836,10 @@ func TestGetNextPassWork_ContextAcquisitionFailureReport(t *testing.T) {
 			SourceSnapshotID:   "snap-pass002-fail",
 			SourceCount:        12,
 			Truncated:          true,
-			Summary:            CtxPacketSummary{SourceCount: 12, Truncated: true, MaxSources: 12, MaxTotalBytes: 180000, InventoryIncluded: true},
+			Summary:            CtxPacketSummary{SourceCount: 12, Truncated: true, MaxSources: 12, MaxTotalBytes: 180000},
 			Coverage: []CtxCoverageEntry{
 				{SeedID: "file:1", SeedType: "file", Required: true, Status: "covered", Path: "internal/app/plans/work_packets.go"},
-				{SeedID: "inventory", SeedType: "inventory", Status: "partial", Truncated: true},
+				{SeedID: "search:2", SeedType: "search", Required: true, Status: "partial", Pattern: "context_acquisition_failed acquisition_failure_report", Truncated: true},
 			},
 			LimitHit: "max_sources",
 		},
@@ -1847,7 +1850,7 @@ func TestGetNextPassWork_ContextAcquisitionFailureReport(t *testing.T) {
 			SourceSnapshotID:   "snap-pass002-fail",
 			BlockedSeedCount:   1,
 			SourceCount:        6,
-			Summary:            CtxPacketSummary{SourceCount: 6, CoveredSeedCount: 6, BlockedSeedCount: 1, MaxSources: 80, MaxTotalBytes: 600000},
+			Summary:            CtxPacketSummary{SourceCount: 6, CoveredSeedCount: 6, BlockedSeedCount: 1, MaxSources: 12, MaxTotalBytes: 180000},
 			Coverage: []CtxCoverageEntry{
 				{SeedID: "file:1", SeedType: "file", Required: true, Status: "covered", Path: "internal/app/plans/work_packets.go"},
 				{SeedID: "file:5", SeedType: "file", Required: true, Status: "blocked", Path: "relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md", MissingCause: "blocked"},

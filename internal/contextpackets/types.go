@@ -94,15 +94,16 @@ type ContextPacket struct {
 }
 
 type ContextPacketSummary struct {
-	SourceCount       int  `json:"source_count"`
-	CoveredSeedCount  int  `json:"covered_seed_count"`
-	BlockedSeedCount  int  `json:"blocked_seed_count"`
-	MissingSeedCount  int  `json:"missing_seed_count"`
-	Truncated         bool `json:"truncated"`
-	MaxSources        int  `json:"max_sources"`
-	MaxTotalBytes     int  `json:"max_total_bytes"`
-	TotalSourceBytes  int  `json:"total_source_bytes"`
-	InventoryIncluded bool `json:"inventory_included"`
+	SourceCount                int  `json:"source_count"`
+	CoveredSeedCount           int  `json:"covered_seed_count"`
+	BlockedSeedCount           int  `json:"blocked_seed_count"`
+	MissingSeedCount           int  `json:"missing_seed_count"`
+	Truncated                  bool `json:"truncated"`
+	MaxSources                 int  `json:"max_sources"`
+	MaxTotalBytes              int  `json:"max_total_bytes"`
+	TotalSourceBytes           int  `json:"total_source_bytes"`
+	InventoryIncluded          bool `json:"inventory_included"`
+	OptionalInventoryTruncated bool `json:"optional_inventory_truncated"`
 }
 
 type ContextSource struct {

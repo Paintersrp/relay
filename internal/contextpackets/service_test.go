@@ -2,6 +2,7 @@ package contextpackets
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -125,8 +126,8 @@ func TestCreateContextPacketRequiredSeedFilePrecedesInventory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateContextPacket error: %v", err)
 	}
-	if result.Summary.MaxSources != 1 || !result.Summary.InventoryIncluded || result.LimitHit != LimitHitMaxSources {
-		t.Fatalf("expected bounded summary and max_sources limit hit, got summary=%+v limit=%q", result.Summary, result.LimitHit)
+	if result.Status != ContextPacketStatusCreated || result.Truncated || result.Summary.MaxSources != 1 || !result.Summary.InventoryIncluded || !result.Summary.OptionalInventoryTruncated || result.LimitHit != LimitHitNone {
+		t.Fatalf("expected created packet with optional inventory warning, got status=%q truncated=%t summary=%+v limit=%q", result.Status, result.Truncated, result.Summary, result.LimitHit)
 	}
 	if len(result.Coverage) < 2 || result.Coverage[0].SeedType != "file" || result.Coverage[1].SeedType != "inventory" {
 		t.Fatalf("expected required file coverage before inventory, got %+v", result.Coverage)
@@ -134,6 +135,55 @@ func TestCreateContextPacketRequiredSeedFilePrecedesInventory(t *testing.T) {
 	packet := readPacketArtifact(t, result.PacketJSONPath)
 	if len(packet.Sources) != 1 || packet.Sources[0].SourceType != SourceTypeFileRead {
 		t.Fatalf("expected required file to consume the single source slot, got %+v", packet.Sources)
+	}
+}
+
+func TestCreateContextPacketRequiredSeedsRemainUsableWhenInventoryTruncates(t *testing.T) {
+	fixture := setupContextPacketFixture(t, fixtureOptions{})
+	requiredFiles := []ContextSeedFile{
+		{RepoID: "relay", Path: "src/app.txt", Required: true, Reason: "required source 1"},
+		{RepoID: "relay", Path: "src/file-1.txt", Required: true, Reason: "required source 2"},
+		{RepoID: "relay", Path: "src/file-2.txt", Required: true, Reason: "required source 3"},
+		{RepoID: "relay", Path: "src/file-3.txt", Required: true, Reason: "required source 4"},
+		{RepoID: "relay", Path: "src/file-4.txt", Required: true, Reason: "required source 5"},
+	}
+	for i := 1; i <= 16; i++ {
+		writeFile(t, filepath.Join(fixture.repoRoot, "src", fmt.Sprintf("file-%d.txt", i)), fmt.Sprintf("needle-%d\n", i))
+	}
+	runGit(t, fixture.repoRoot, "git", "add", ".")
+	runGit(t, fixture.repoRoot, "git", "commit", "-m", "add inventory pressure")
+	snapshot, err := sources.NewService(fixture.store).CreateSourceSnapshot(t.Context(), sources.SourceSnapshotInput{
+		ProjectID:           "relay",
+		RepoIDs:             []string{"relay"},
+		IncludeFileMetadata: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+
+	result, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
+		ProjectID:        "relay",
+		TaskSlug:         "pass002-inventory-warning",
+		SourceSnapshotID: snapshot.SourceSnapshotID,
+		IncludeInventory: true,
+		MaxSources:       12,
+		MaxTotalBytes:    180000,
+		SeedFiles:        requiredFiles,
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket error: %v", err)
+	}
+	if result.Status != ContextPacketStatusCreated || result.Truncated || !result.Summary.OptionalInventoryTruncated {
+		t.Fatalf("expected required-complete packet with inventory warning, got %+v", result)
+	}
+	packet := readPacketArtifact(t, result.PacketJSONPath)
+	if len(packet.Sources) < len(requiredFiles) {
+		t.Fatalf("expected required file sources, got %+v", packet.Sources)
+	}
+	for i, src := range packet.Sources[:len(requiredFiles)] {
+		if src.SourceType != SourceTypeFileRead {
+			t.Fatalf("source %d should be required file before inventory, got %+v", i, src)
+		}
 	}
 }
 

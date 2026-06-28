@@ -347,19 +347,21 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 	}
 	builder.totalBytes = totalBytes
 
-	truncated := builder.truncated || hasAnyTruncatedCoverage(coverage)
+	optionalInventoryTruncated := hasOptionalInventoryTruncatedCoverage(coverage)
+	truncated := hasBlockingTruncatedCoverage(coverage)
 	covered, blocked, missing := coverageCounts(coverage)
 	status := statusFromCoverage(coverage, truncated)
 	summary := ContextPacketSummary{
-		SourceCount:       len(builder.sources),
-		CoveredSeedCount:  covered,
-		BlockedSeedCount:  blocked,
-		MissingSeedCount:  missing,
-		Truncated:         truncated,
-		MaxSources:        maxSources,
-		MaxTotalBytes:     maxTotalBytes,
-		TotalSourceBytes:  builder.totalBytes,
-		InventoryIncluded: input.IncludeInventory,
+		SourceCount:                len(builder.sources),
+		CoveredSeedCount:           covered,
+		BlockedSeedCount:           blocked,
+		MissingSeedCount:           missing,
+		Truncated:                  truncated,
+		MaxSources:                 maxSources,
+		MaxTotalBytes:              maxTotalBytes,
+		TotalSourceBytes:           builder.totalBytes,
+		InventoryIncluded:          input.IncludeInventory,
+		OptionalInventoryTruncated: optionalInventoryTruncated,
 	}
 
 	// Lookup source snapshot row ID
@@ -544,6 +546,35 @@ func sourceID(sourceType, repoID, path string, lineStart, lineEnd int, hash stri
 func hasAnyTruncatedCoverage(entries []ContextCoverageEntry) bool {
 	for _, entry := range entries {
 		if entry.Truncated {
+			return true
+		}
+	}
+	return false
+}
+
+func hasBlockingTruncatedCoverage(entries []ContextCoverageEntry) bool {
+	hasRequired := false
+	for _, entry := range entries {
+		if entry.Required {
+			hasRequired = true
+			if entry.Truncated {
+				return true
+			}
+			continue
+		}
+		if entry.Truncated && entry.SeedType != "inventory" {
+			return true
+		}
+	}
+	if hasRequired {
+		return false
+	}
+	return hasAnyTruncatedCoverage(entries)
+}
+
+func hasOptionalInventoryTruncatedCoverage(entries []ContextCoverageEntry) bool {
+	for _, entry := range entries {
+		if entry.SeedType == "inventory" && !entry.Required && entry.Truncated {
 			return true
 		}
 	}

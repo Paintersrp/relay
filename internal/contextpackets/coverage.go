@@ -18,6 +18,18 @@ func statusFromCoverage(entries []ContextCoverageEntry, truncated bool) string {
 	if hasRequiredStatus(entries, CoverageStatusBlocked) || hasRequiredStatus(entries, CoverageStatusMissing) {
 		return ContextPacketStatusBlocked
 	}
+	requiredCount := 0
+	for _, entry := range entries {
+		if entry.Required {
+			requiredCount++
+		}
+	}
+	if requiredCount > 0 {
+		if truncated || hasRequiredStatus(entries, CoverageStatusPartial) || hasRequiredTruncatedCoverage(entries) {
+			return ContextPacketStatusPartial
+		}
+		return ContextPacketStatusCreated
+	}
 	if truncated || hasAnyStatus(entries, CoverageStatusBlocked) || hasAnyStatus(entries, CoverageStatusMissing) || hasAnyStatus(entries, CoverageStatusPartial) {
 		return ContextPacketStatusPartial
 	}
@@ -36,6 +48,15 @@ func hasRequiredStatus(entries []ContextCoverageEntry, status string) bool {
 func hasAnyStatus(entries []ContextCoverageEntry, status string) bool {
 	for _, entry := range entries {
 		if entry.Status == status {
+			return true
+		}
+	}
+	return false
+}
+
+func hasRequiredTruncatedCoverage(entries []ContextCoverageEntry) bool {
+	for _, entry := range entries {
+		if entry.Required && entry.Truncated {
 			return true
 		}
 	}

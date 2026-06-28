@@ -1392,9 +1392,9 @@ func TestOrchestratorWorkTools_GetNextPassWorkAcquisitionFailureSummary(t *testi
 			ContextPacketStatus: "blocked",
 			TerminalReason:      "context packet blocked",
 			AttemptedStrategies: []appplans.AcquisitionAttemptReport{{
-				Strategy: appplans.AcquisitionAttemptStrategy{Name: "focused_required_context", IncludeInventory: false, MaxSources: 80, MaxTotalBytes: 600000, MaxSearchResults: 10, ContextLines: 2},
+				Strategy: appplans.AcquisitionAttemptStrategy{Name: "focused_required_context", IncludeInventory: false, MaxSources: 12, MaxTotalBytes: 180000, MaxSearchResults: 10, ContextLines: 0},
 			}},
-			PacketSummary: &appplans.ContextPacketDiagnosticSummary{SourceCount: 6, MaxSources: 80, MaxTotalBytes: 600000, LimitHit: "none"},
+			PacketSummary: &appplans.ContextPacketDiagnosticSummary{SourceCount: 6, MaxSources: 12, MaxTotalBytes: 180000, LimitHit: "none"},
 			CoverageSummary: &appplans.ContextCoverageDiagnosticSummary{
 				EntryCount: 1,
 				Entries: []appplans.ContextCoverageDiagnostic{{
