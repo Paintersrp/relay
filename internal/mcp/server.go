@@ -38,7 +38,7 @@ type Server struct {
 	tools []ToolDefinition
 }
 
-// NewServer constructs an MCP server with the full Pass 16 tool set registered.
+// NewServer constructs an MCP server with the profile-appropriate tool set registered.
 // deps may be nil for tests that only need protocol-level behavior (no real tools).
 func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 	var d *MCPDeps
@@ -46,6 +46,18 @@ func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 		d = deps[0]
 	}
 	s := &Server{log: log, deps: d}
+
+	profile := s.activeProfile()
+	switch profile {
+	case ToolProfileAudit:
+		s.tools = auditToolDefinitions()
+		return s
+	case ToolProfileRestricted:
+		// restricted keeps the base tool surface without broker/refactor tools.
+	default:
+		// local-operator includes everything.
+	}
+
 	s.tools = []ToolDefinition{
 		// Pass 13A feasibility tool — preserved for backward compatibility.
 		ToolSubmitTestAuditPacket,
@@ -74,6 +86,35 @@ func (s *Server) contextBrokerEnabled() bool {
 		profile = s.deps.ToolProfile
 	}
 	return profile.ContextBrokerEnabled()
+}
+
+func (s *Server) activeProfile() ToolProfile {
+	if s.deps == nil || strings.TrimSpace(string(s.deps.ToolProfile)) == "" {
+		return ToolProfileLocalOperator
+	}
+	return s.deps.ToolProfile
+}
+
+func auditToolDefinitions() []ToolDefinition {
+	return []ToolDefinition{
+		ToolSubmitTestAuditPacket,
+		ToolListOpenRuns,
+		ToolGetRunStatus,
+		ToolSubmitAuditPacket,
+		ToolGetNextAuditWork,
+		ToolCreateLocalAudit,
+		ToolGetLocalAudit,
+		ToolListProjectLocalAudits,
+	}
+}
+
+func (s *Server) toolRegistered(name string) bool {
+	for _, tool := range s.tools {
+		if tool.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Serve reads JSON-RPC 2.0 requests from r and writes responses to w until r
@@ -174,6 +215,10 @@ func (s *Server) handleToolsCall(req Request) Response {
 		return errResponse(req.ID, CodeInvalidParams, "invalid params: "+err.Error())
 	}
 
+	if !s.toolRegistered(params.Name) {
+		return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
+	}
+
 	args := params.Arguments
 	if args == nil {
 		args = json.RawMessage("{}")
@@ -224,214 +269,88 @@ func (s *Server) handleToolsCall(req Request) Response {
 	case toolRejectPlanSeed:
 		result = s.HandleRejectPlanSeed(args)
 	case "get_project":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetProject(args)
 	case "get_plan":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetPlan(args)
 	case "get_pass":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetPass(args)
 	case "get_pass_context":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetPassContext(args)
 	case appplans.NextPassWorkTool:
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetNextPassWork(args)
 	case appplans.NextAuditWorkTool:
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetNextAuditWork(args)
 	case "create_source_snapshot":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleCreateSourceSnapshot(args)
 	case "list_project_files":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleListProjectFiles(args)
 	case "search_project_files":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleSearchProjectFiles(args)
 	case "read_project_file":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleReadProjectFile(args)
 	case "get_repository_git_status":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetRepositoryGitStatus(args)
 	case "get_repository_recent_commit":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetRepositoryRecentCommit(args)
 	case "list_repository_changed_files":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleListRepositoryChangedFiles(args)
 	case "get_repository_diff":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetRepositoryDiff(args)
 	case "create_context_packet":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleCreateContextPacket(args)
 	case "get_context_packet":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetContextPacket(args)
 	case "create_local_audit":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleCreateLocalAudit(args)
 	case "get_local_audit":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetLocalAudit(args)
 	case "list_project_local_audits":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleListProjectLocalAudits(args)
 	case "search_project_context_memory":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleSearchProjectContextMemory(args)
 	case "list_project_context_records":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleListProjectContextRecords(args)
 	case "get_project_context_record":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetProjectContextRecord(args)
 	case "create_project_context_record":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleCreateProjectContextRecord(args)
 	case "supersede_project_context_record":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleSupersedeProjectContextRecord(args)
 	case "list_refactor_discovery_tasks":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleListRefactorDiscoveryTasks(args)
 	case "get_refactor_discovery_task":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetRefactorDiscoveryTask(args)
 	case "create_refactor_discovery_task":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleCreateRefactorDiscoveryTask(args)
 	case "update_refactor_discovery_task":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleUpdateRefactorDiscoveryTask(args)
 	case "complete_refactor_discovery_task":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleCompleteRefactorDiscoveryTask(args)
 	case "close_refactor_discovery_task":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleCloseRefactorDiscoveryTask(args)
 	case "supersede_refactor_discovery_task":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleSupersedeRefactorDiscoveryTask(args)
 	case "list_refactor_candidates":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleListRefactorCandidates(args)
 	case "get_refactor_candidate":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGetRefactorCandidate(args)
 	case "search_refactor_candidates":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleSearchRefactorCandidates(args)
 	case "create_refactor_candidate":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleCreateRefactorCandidate(args)
 	case "update_refactor_candidate":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleUpdateRefactorCandidate(args)
 	case "defer_refactor_candidate":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleDeferRefactorCandidate(args)
 	case "reject_refactor_candidate":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleRejectRefactorCandidate(args)
 	case "supersede_refactor_candidate":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleSupersedeRefactorCandidate(args)
 	case "suggest_refactor_candidate_placement":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleSuggestRefactorCandidatePlacement(args)
 	case "promote_refactor_candidate_to_plan":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandlePromoteRefactorCandidateToPlan(args)
 	case "generate_refactor_only_plan":
-		if !s.contextBrokerEnabled() {
-			return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
-		}
 		result = s.HandleGenerateRefactorOnlyPlan(args)
 	default:
 		return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
