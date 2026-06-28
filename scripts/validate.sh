@@ -27,12 +27,15 @@ const [jsonPath, mdPath] = process.argv.slice(2)
 const repoRoot = process.cwd()
 
 const commandsToRun = [
-  { step: 1, name: 'agentrefs-check', command: 'go run ./cmd/agentrefs check', shell: true },
-  { step: 2, name: 'go-fmt-executor', command: 'go fmt ./internal/executor', argv: ['go', ['fmt', './internal/executor']] },
-  { step: 3, name: 'go-test-executor', command: 'go test ./internal/executor/...', argv: ['go', ['test', './internal/executor/...']] },
-  { step: 4, name: 'go-test-all', command: 'go test ./...', argv: ['go', ['test', './...']] },
-  { step: 5, name: 'web-typecheck', command: 'cd apps/web && npm run typecheck', shell: true },
-  { step: 6, name: 'web-build', command: 'cd apps/web && npm run build', shell: true },
+  { step: 1, name: 'go-fmt-agentrefs-executor', command: 'go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor', argv: ['go', ['fmt', './cmd/agentrefs', './internal/agentrefs', './internal/executor']] },
+  { step: 2, name: 'go-test-agentrefs', command: 'go test ./internal/agentrefs/... ./cmd/agentrefs/...', argv: ['go', ['test', './internal/agentrefs/...', './cmd/agentrefs/...']] },
+  { step: 3, name: 'agentrefs-check', command: 'go run ./cmd/agentrefs check', shell: true },
+  { step: 4, name: 'go-test-executor', command: 'go test ./internal/executor/...', argv: ['go', ['test', './internal/executor/...']] },
+  { step: 5, name: 'go-test-all', command: 'go test ./...', argv: ['go', ['test', './...']] },
+  { step: 6, name: 'web-typecheck', command: 'cd apps/web && npm run typecheck', shell: true },
+  { step: 7, name: 'web-test', command: 'cd apps/web && npm run test', shell: true },
+  { step: 8, name: 'web-build', command: 'cd apps/web && npm run build', shell: true },
+  { step: 9, name: 'no-root-agentrefs-exe', command: 'test ! -e agentrefs.exe', shell: true },
 ]
 
 function redactCommandOutput(value) {
@@ -110,7 +113,7 @@ function sha256Text(value) {
   return crypto.createHash('sha256').update(value).digest('hex')
 }
 
-function captureSourceSnapshot(baseCommitSha) {
+function captureSourceSnapshot(baseRef, baseCommitSha) {
   const capturedAt = new Date().toISOString()
   const exclusionArgs = [
     `:(exclude)${trackedJsonRepoPath}`,
@@ -119,7 +122,7 @@ function captureSourceSnapshot(baseCommitSha) {
 
   const statusPorcelain = parseStatusLines(runGit(['status', '--porcelain=v1', '--untracked-files=normal']))
   const trackedEntries = parseTrackedNameStatus(
-    runGit(['diff', '--name-status', '--find-renames', '-z', 'HEAD', '--', '.', ...exclusionArgs]),
+    runGit(['diff', '--name-status', '--find-renames', '-z', baseRef, '--', '.', ...exclusionArgs]),
   )
 
   const untrackedPaths = runGit(['ls-files', '--others', '--exclude-standard', '-z', '--', '.', ...exclusionArgs])
@@ -136,8 +139,8 @@ function captureSourceSnapshot(baseCommitSha) {
     return leftKey.localeCompare(rightKey)
   })
 
-  const diffStat = runGit(['diff', '--stat', 'HEAD', '--', '.', ...exclusionArgs]).trim()
-  const binaryDiff = runGit(['diff', '--binary', 'HEAD', '--', '.', ...exclusionArgs])
+  const diffStat = runGit(['diff', '--stat', baseRef, '--', '.', ...exclusionArgs]).trim()
+  const binaryDiff = runGit(['diff', '--binary', baseRef, '--', '.', ...exclusionArgs])
 
   const untrackedFileDigests = untrackedPaths.map((entry) => {
     const absolutePath = path.resolve(repoRoot, entry)
@@ -245,8 +248,9 @@ function renderMarkdown(report) {
   return markdown.join('\n')
 }
 
-const baseCommitSha = runGit(['rev-parse', 'HEAD']).trim()
-const baseCommitShort = runGit(['rev-parse', '--short=12', 'HEAD']).trim()
+const baseRef = process.env.RELAY_VALIDATE_BASE_REF || 'HEAD'
+const baseCommitSha = runGit(['rev-parse', baseRef]).trim()
+const baseCommitShort = runGit(['rev-parse', '--short=12', baseRef]).trim()
 const createdAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
 
 const commands = commandsToRun.map(runValidationCommand)
@@ -259,7 +263,7 @@ const report = {
   created_at: createdAt,
   base_commit_short: baseCommitShort,
   base_commit_sha: baseCommitSha,
-  validated_source_snapshot: captureSourceSnapshot(baseCommitSha),
+  validated_source_snapshot: captureSourceSnapshot(baseRef, baseCommitSha),
   post_report_status_porcelain: [],
   report_files: [trackedJsonRepoPath, trackedMdRepoPath],
   commands,

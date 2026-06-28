@@ -30,10 +30,10 @@ type GeneratorIdentity struct {
 }
 
 type RenderingContract struct {
-	JSONPrimary      bool `json:"json_primary"`
-	MarkdownFromJSON bool `json:"markdown_from_json"`
+	JSONPrimary       bool `json:"json_primary"`
+	MarkdownFromJSON  bool `json:"markdown_from_json"`
 	DeterministicSort bool `json:"deterministic_sort"`
-	NoTimestamps     bool `json:"no_timestamps"`
+	NoTimestamps      bool `json:"no_timestamps"`
 	RelativePathsOnly bool `json:"relative_paths_only"`
 }
 
@@ -63,13 +63,13 @@ type ReferenceEntry struct {
 }
 
 type ReferenceDocument struct {
-	SchemaVersion string             `json:"schema_version"`
-	ReferenceID   string             `json:"reference_id"`
-	Repo          RepoIdentity       `json:"repo"`
-	GeneratedBy   GeneratorIdentity  `json:"generated_by"`
-	Rendering     RenderingContract  `json:"rendering"`
-	SourceInputs  []SourceInput      `json:"source_inputs"`
-	FactLabels    []FactLabel        `json:"fact_labels"`
-	Facts         []Fact             `json:"facts"`
-	References    []ReferenceEntry   `json:"references"`
+	SchemaVersion string            `json:"schema_version"`
+	ReferenceID   string            `json:"reference_id"`
+	Repo          RepoIdentity      `json:"repo"`
+	GeneratedBy   GeneratorIdentity `json:"generated_by"`
+	Rendering     RenderingContract `json:"rendering"`
+	SourceInputs  []SourceInput     `json:"source_inputs"`
+	FactLabels    []FactLabel       `json:"fact_labels"`
+	Facts         []Fact            `json:"facts"`
+	References    []ReferenceEntry  `json:"references"`
 }

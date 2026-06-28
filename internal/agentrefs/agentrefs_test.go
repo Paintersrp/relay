@@ -1368,7 +1368,7 @@ func TestAllDomainDocs_NoWallClockMetadata(t *testing.T) {
 		{"frontend-backend-contract", BuildFrontendBackendContractDoc},
 	}
 
-		for _, b := range builders {
+	for _, b := range builders {
 		t.Run(b.name, func(t *testing.T) {
 			doc, err := b.fn(repoRoot)
 			if err != nil {

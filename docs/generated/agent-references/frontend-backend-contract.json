@@ -55,7 +55,7 @@
     },
     {
       "path": "internal/agentrefs/http_api.go",
-      "sha256": "c14e2b2abfad3181cc89c304c4b3a613e049013289e2c5d7568e53105ffbb231",
+      "sha256": "1836cb8c0699d067b6eaf190de18d45d16b8a3e0e766c88ef6f4c0305fb143d4",
       "role": "backend route scanner source"
     },
     {

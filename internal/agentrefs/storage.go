@@ -52,10 +52,10 @@ type MigrationFile struct {
 }
 
 type StoreWrapper struct {
-	File    string
-	Name    string
-	Kind    string
-	Recv    string
+	File string
+	Name string
+	Kind string
+	Recv string
 }
 
 var sqlcQueryDeclRegex = regexp.MustCompile(`^\s*--\s*name:\s*(\w+)\s*:(\w+)\s*`)

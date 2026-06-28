@@ -27,38 +27,38 @@ type FrontendQueryBindingEntry struct {
 }
 
 type TypeDTOAlignmentEntry struct {
-	FrontendType      string   `json:"frontendType"`
-	FrontendFile      string   `json:"frontendFile"`
-	BackendType       string   `json:"backendType"`
-	BackendFile       string   `json:"backendFile"`
-	MatchedFields     []string `json:"matchedFields"`
+	FrontendType       string   `json:"frontendType"`
+	FrontendFile       string   `json:"frontendFile"`
+	BackendType        string   `json:"backendType"`
+	BackendFile        string   `json:"backendFile"`
+	MatchedFields      []string `json:"matchedFields"`
 	FrontendOnlyFields []string `json:"frontendOnlyFields"`
 	BackendOnlyFields  []string `json:"backendOnlyFields"`
 }
 
 type RouteContractMatchEntry struct {
-	FunctionName        string `json:"functionName"`
-	Method              string `json:"method"`
+	FunctionName         string `json:"functionName"`
+	Method               string `json:"method"`
 	FrontendPathTemplate string `json:"frontendPathTemplate"`
 	BackendPathTemplate  string `json:"backendPathTemplate"`
-	BackendHandler      string `json:"backendHandler"`
-	BackendSourceFile   string `json:"backendSourceFile"`
+	BackendHandler       string `json:"backendHandler"`
+	BackendSourceFile    string `json:"backendSourceFile"`
 }
 
 type RouteContractMismatchEntry struct {
-	FunctionName   string `json:"functionName"`
-	Method         string `json:"method"`
+	FunctionName         string `json:"functionName"`
+	Method               string `json:"method"`
 	FrontendPathTemplate string `json:"frontendPathTemplate"`
-	SourceFile     string `json:"sourceFile"`
-	Reason         string `json:"reason"`
+	SourceFile           string `json:"sourceFile"`
+	Reason               string `json:"reason"`
 }
 
 type FrontendBackendContractInventory struct {
-	FrontendCalls      []FrontendAPICallEntry       `json:"frontendCalls"`
-	QueryBindings      []FrontendQueryBindingEntry  `json:"queryBindings"`
-	TypeDTOAlignments  []TypeDTOAlignmentEntry      `json:"typeDTOAlignments"`
-	RouteMatches       []RouteContractMatchEntry    `json:"routeMatches"`
-	RouteMismatches    []RouteContractMismatchEntry `json:"routeMismatches"`
+	FrontendCalls     []FrontendAPICallEntry       `json:"frontendCalls"`
+	QueryBindings     []FrontendQueryBindingEntry  `json:"queryBindings"`
+	TypeDTOAlignments []TypeDTOAlignmentEntry      `json:"typeDTOAlignments"`
+	RouteMatches      []RouteContractMatchEntry    `json:"routeMatches"`
+	RouteMismatches   []RouteContractMismatchEntry `json:"routeMismatches"`
 }
 
 var frontendRunSourceFiles = []string{
@@ -601,11 +601,11 @@ func buildRouteContractMatches(inv *FrontendBackendContractInventory, httpInv *H
 	if httpInv == nil {
 		for _, call := range inv.FrontendCalls {
 			inv.RouteMismatches = append(inv.RouteMismatches, RouteContractMismatchEntry{
-				FunctionName:        call.FunctionName,
-				Method:              call.Method,
+				FunctionName:         call.FunctionName,
+				Method:               call.Method,
 				FrontendPathTemplate: call.PathTemplate,
-				SourceFile:          call.SourceFile,
-				Reason:              "no_backend_route_match",
+				SourceFile:           call.SourceFile,
+				Reason:               "no_backend_route_match",
 			})
 		}
 		return
@@ -617,20 +617,20 @@ func buildRouteContractMatches(inv *FrontendBackendContractInventory, httpInv *H
 		key := normalizeMethod(call.Method) + " " + normalizeBackendPath(call.PathTemplate)
 		if br, ok := backendIndex[key]; ok {
 			inv.RouteMatches = append(inv.RouteMatches, RouteContractMatchEntry{
-				FunctionName:        call.FunctionName,
-				Method:              call.Method,
+				FunctionName:         call.FunctionName,
+				Method:               call.Method,
 				FrontendPathTemplate: call.PathTemplate,
 				BackendPathTemplate:  br.Path,
-				BackendHandler:      br.Handler,
-				BackendSourceFile:   br.SourceFile,
+				BackendHandler:       br.Handler,
+				BackendSourceFile:    br.SourceFile,
 			})
 		} else {
 			inv.RouteMismatches = append(inv.RouteMismatches, RouteContractMismatchEntry{
-				FunctionName:        call.FunctionName,
-				Method:              call.Method,
+				FunctionName:         call.FunctionName,
+				Method:               call.Method,
 				FrontendPathTemplate: call.PathTemplate,
-				SourceFile:          call.SourceFile,
-				Reason:              "no_backend_route_match",
+				SourceFile:           call.SourceFile,
+				Reason:               "no_backend_route_match",
 			})
 		}
 	}

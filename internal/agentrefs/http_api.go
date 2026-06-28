@@ -12,11 +12,11 @@ import (
 )
 
 type HTTPAPIRouteEntry struct {
-	Method    string
-	Path      string
-	Handler   string
+	Method     string
+	Path       string
+	Handler    string
 	SourceFile string
-	Group     string
+	Group      string
 }
 
 type HTTPAPIInventory struct {
