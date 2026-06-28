@@ -530,6 +530,12 @@ func TestOrchestratorWorkTools_SchemasAreStrictAndScoped(t *testing.T) {
 			t.Errorf("get_next_pass_work outputSchema must require %q", field)
 		}
 	}
+	outputProps, _ := outputSchema["properties"].(map[string]any)
+	for _, field := range []string{"handoff_work", "handoff_authoring_packet"} {
+		if _, ok := outputProps[field]; !ok {
+			t.Errorf("get_next_pass_work outputSchema must define %q", field)
+		}
+	}
 	if ToolGetNextPassWork.Annotations["readOnlyHint"] != true {
 		t.Error("get_next_pass_work annotations must include readOnlyHint=true")
 	}
@@ -659,14 +665,31 @@ func TestOrchestratorWorkTools_GetNextPassWorkSuccessThroughTool(t *testing.T) {
 	if resp.SelectedPass == nil || resp.SelectedPass.PassID != "PASS-001" {
 		t.Fatalf("expected PASS-001 selected, got %+v", resp.SelectedPass)
 	}
-	if resp.ReadinessState != "ready" {
-		t.Errorf("expected readiness_state=ready, got %q", resp.ReadinessState)
+	if resp.ReadinessState != "ready_for_handoff_authoring" {
+		t.Errorf("expected readiness_state=ready_for_handoff_authoring, got %q", resp.ReadinessState)
 	}
-	if len(resp.NextActions) == 0 || resp.NextActions[0].Tool != "create_run_from_planner_handoff" {
-		t.Fatalf("expected create_run_from_planner_handoff next action, got %+v", resp.NextActions)
+	if len(resp.NextActions) == 0 || resp.NextActions[0].Tool != "draft_planner_handoff" {
+		t.Fatalf("expected draft_planner_handoff next action, got %+v", resp.NextActions)
+	}
+	if resp.HandoffWork == nil || resp.HandoffPacket == nil {
+		t.Fatalf("expected handoff_work and handoff_authoring_packet in structuredContent: %+v", resp)
+	}
+	if resp.HandoffWork.PlanID != "plan-mcp-passwork" || resp.HandoffWork.PassID != "PASS-001" {
+		t.Fatalf("unexpected handoff_work IDs: %+v", resp.HandoffWork)
+	}
+	if resp.HandoffWork.SuggestedAuthoringAction != "draft_planner_handoff" {
+		t.Fatalf("unexpected authoring action: %+v", resp.HandoffWork)
+	}
+	for _, action := range resp.NextActions {
+		if action.Tool == "create_run_from_planner_handoff" {
+			t.Fatalf("ready planned pass must not suggest run submission without reviewed handoff: %+v", resp.NextActions)
+		}
 	}
 	if !strings.Contains(result.Content[0].Text, "Use the Relay pass-detail preview") {
 		t.Fatalf("expected local preview hint in text, got %q", result.Content[0].Text)
+	}
+	if strings.Contains(result.Content[0].Text, "create_run_from_planner_handoff") {
+		t.Fatalf("text must describe handoff authoring, not run submission: %q", result.Content[0].Text)
 	}
 }
 

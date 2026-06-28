@@ -302,14 +302,17 @@ func TestGetNextPassWork_SuccessReturns200WithOKTrue(t *testing.T) {
 	if resp.SelectedPass.PassID != "PASS-001" {
 		t.Fatalf("expected PASS-001, got %q", resp.SelectedPass.PassID)
 	}
-	if resp.SuggestedRunSubmission == nil {
-		t.Fatal("expected suggested_run_submission in response")
+	if resp.SuggestedRunSubmission != nil {
+		t.Fatalf("expected no run submission suggestion before reviewed handoff, got %+v", resp.SuggestedRunSubmission)
 	}
-	if resp.SuggestedRunSubmission.Arguments.PlanID != "api-plan-success" {
-		t.Fatalf("expected plan_id api-plan-success in suggested args, got %q", resp.SuggestedRunSubmission.Arguments.PlanID)
+	if resp.PlannerJumpstart == nil || resp.PlannerJumpstart.ReadinessState != "ready_for_handoff_authoring" {
+		t.Fatalf("expected ready_for_handoff_authoring jumpstart, got %+v", resp.PlannerJumpstart)
 	}
-	if resp.SuggestedRunSubmission.Arguments.PassID != "PASS-001" {
-		t.Fatalf("expected pass_id PASS-001 in suggested args, got %q", resp.SuggestedRunSubmission.Arguments.PassID)
+	if resp.HandoffWork == nil {
+		t.Fatal("expected handoff_work in response")
+	}
+	if resp.HandoffWork.PlanID != "api-plan-success" || resp.HandoffWork.PassID != "PASS-001" {
+		t.Fatalf("unexpected handoff_work IDs: %+v", resp.HandoffWork)
 	}
 }
 
@@ -341,8 +344,11 @@ func TestGetPassNextWorkPreview_RequestedPassReturnsSelectedPassPayload(t *testi
 	if resp.SelectedPass.PassID != "PASS-002" {
 		t.Fatalf("expected PASS-002 selected, got %q", resp.SelectedPass.PassID)
 	}
-	if resp.SuggestedRunSubmission == nil || resp.SuggestedRunSubmission.Arguments.PassID != "PASS-002" {
-		t.Fatalf("expected suggested run submission for PASS-002, got %+v", resp.SuggestedRunSubmission)
+	if resp.SuggestedRunSubmission != nil {
+		t.Fatalf("expected no run submission suggestion before reviewed handoff, got %+v", resp.SuggestedRunSubmission)
+	}
+	if resp.HandoffWork == nil || resp.HandoffWork.PassID != "PASS-002" {
+		t.Fatalf("expected handoff_work for PASS-002, got %+v", resp.HandoffWork)
 	}
 }
 

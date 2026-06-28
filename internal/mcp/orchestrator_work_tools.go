@@ -59,6 +59,16 @@ var getNextPassWorkOutputSchema = json.RawMessage(`{
     "source_snapshot_id": {"type": "string"},
     "context_packet_id": {"type": "string"},
     "context_ready": {"type": "boolean"},
+    "handoff_work": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Bounded Planner handoff-authoring packet for the selected pass. Present only when ready for handoff authoring."
+    },
+    "handoff_authoring_packet": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Alias of handoff_work for clients that prefer explicit authoring semantics."
+    },
     "blockers": {
       "type": "array",
       "items": {
@@ -220,6 +230,9 @@ func nextPassWorkSummaryText(summary appplans.NextPassWorkMCPSummary) string {
 		if summary.NextActions[0].Tool != "" {
 			next = summary.NextActions[0].Tool + ": " + next
 		}
+	}
+	if summary.HandoffWork != nil && summary.ReadinessState == "ready_for_handoff_authoring" {
+		next = "draft_planner_handoff: Use structuredContent.handoff_work to draft the Planner handoff; do not submit a run until the handoff is reviewed."
 	}
 	return fmt.Sprintf(
 		"get_next_pass_work: selected_pass=%s readiness=%s context_ready=%t source_snapshot_id=%q context_packet_id=%q blockers=%s. %s. %s",

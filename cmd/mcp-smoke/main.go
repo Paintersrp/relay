@@ -397,15 +397,24 @@ func run() error {
 	h.check("get_next_pass_work actionable !isError", !actionableNextPassWorkResult.IsError)
 	if out := actionableNextPassWorkResult.StructuredContent; out != nil {
 		h.check("get_next_pass_work actionable ok=true", out["ok"] == true)
+		h.check("get_next_pass_work readiness handoff authoring", out["readiness_state"] == "ready_for_handoff_authoring")
+		if packet, ok := out["handoff_work"].(map[string]interface{}); ok {
+			h.check("get_next_pass_work handoff_work plan_id", packet["plan_id"] == smokePlanID)
+			h.check("get_next_pass_work handoff_work pass_id", packet["pass_id"] == "PASS-001")
+			h.check("get_next_pass_work handoff_work action", packet["suggested_authoring_action"] == "draft_planner_handoff")
+		} else {
+			h.check("get_next_pass_work handoff_work present", false)
+		}
 		if actions, ok := out["next_actions"].([]interface{}); ok && len(actions) > 0 {
 			if action, ok := actions[0].(map[string]interface{}); ok {
-				h.check("get_next_pass_work next_action has tool", action["tool"] == "create_run_from_planner_handoff")
+				h.check("get_next_pass_work next_action has tool", action["tool"] == "draft_planner_handoff")
 				if args, ok := action["arguments"].(map[string]interface{}); ok {
 					h.check("get_next_pass_work next_action plan_id", args["plan_id"] == smokePlanID)
 					h.check("get_next_pass_work next_action pass_id", args["pass_id"] == "PASS-001")
 				} else {
 					h.check("get_next_pass_work next_action arguments object", false)
 				}
+				h.check("get_next_pass_work next_action not run submission", action["tool"] != "create_run_from_planner_handoff")
 			}
 		} else {
 			h.check("get_next_pass_work next_actions present", false)

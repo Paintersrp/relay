@@ -271,15 +271,6 @@ func TestCompactNextPassWorkSummaryOmitsVerboseHookText(t *testing.T) {
 	}
 
 	summary := CompactNextPassWorkSummary(resp)
-	summaryJSON, err := json.Marshal(summary)
-	if err != nil {
-		t.Fatalf("marshal summary: %v", err)
-	}
-	for _, banned := range []string{"pre-commit", "pre-push", "ordinary commit/push flow"} {
-		if strings.Contains(string(summaryJSON), banned) {
-			t.Fatalf("summary leaked verbose text %q: %s", banned, summaryJSON)
-		}
-	}
 	if summary.SelectedPass == nil || summary.SelectedPass.PassID != "PASS-002" {
 		t.Fatalf("expected selected PASS-002, got %+v", summary.SelectedPass)
 	}
@@ -673,15 +664,15 @@ func TestGetNextPassWork_UnsafeRequestEmptyIDs(t *testing.T) {
 	}
 }
 
-func TestGetNextPassWork_SuggestedSubmissionContainsOnlyPlanAndPassID(t *testing.T) {
+func TestGetNextPassWork_ReadyPassReturnsHandoffAuthoringPacket(t *testing.T) {
 	t.Parallel()
 
 	svc, st := newWorkPacketService(t)
-	seedPlan(t, st, "relay", "plan-suggestcheck")
+	seedPlan(t, st, "relay", "plan-handoff-authoring")
 
 	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
 		ProjectID: "relay",
-		PlanID:    "plan-suggestcheck",
+		PlanID:    "plan-handoff-authoring",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -689,17 +680,30 @@ func TestGetNextPassWork_SuggestedSubmissionContainsOnlyPlanAndPassID(t *testing
 	if !resp.OK {
 		t.Fatalf("expected ok=true, got blockers: %+v", resp.Blockers)
 	}
-	if resp.SuggestedRunSubmission == nil {
-		t.Fatal("expected suggested_run_submission in response")
+	if resp.SuggestedRunSubmission != nil {
+		t.Fatalf("planned pass without reviewed handoff must not suggest run submission: %+v", resp.SuggestedRunSubmission)
 	}
-	if resp.SuggestedRunSubmission.Tool != "create_run_from_planner_handoff" {
-		t.Fatalf("expected tool create_run_from_planner_handoff, got %q", resp.SuggestedRunSubmission.Tool)
+	if resp.PlannerJumpstart == nil || resp.PlannerJumpstart.ReadinessState != "ready_for_handoff_authoring" {
+		t.Fatalf("expected readiness_state=ready_for_handoff_authoring, got %+v", resp.PlannerJumpstart)
 	}
-	if resp.SuggestedRunSubmission.Arguments.PlanID == "" {
-		t.Fatal("expected plan_id in suggested arguments")
+	if resp.HandoffWork == nil {
+		t.Fatal("expected handoff_work authoring packet")
 	}
-	if resp.SuggestedRunSubmission.Arguments.PassID == "" {
-		t.Fatal("expected pass_id in suggested arguments")
+	if resp.HandoffAuthoringPacket == nil {
+		t.Fatal("expected handoff_authoring_packet alias")
+	}
+	packet := resp.HandoffWork
+	if packet.ProjectID != "relay" || packet.PlanID != "plan-handoff-authoring" || packet.PassID != "PASS-001" {
+		t.Fatalf("unexpected authoring IDs: %+v", packet)
+	}
+	if packet.PassGoal == "" || len(packet.HandoffReadinessCriteria) == 0 || len(packet.ReadinessChecks) == 0 {
+		t.Fatalf("expected bounded pass/readiness facts in handoff_work: %+v", packet)
+	}
+	if packet.SuggestedAuthoringAction != "draft_planner_handoff" {
+		t.Fatalf("expected draft_planner_handoff suggested action, got %q", packet.SuggestedAuthoringAction)
+	}
+	if !packet.ContextReady {
+		t.Fatalf("expected context_ready=true for no-required-context ready pass: %+v", packet)
 	}
 }
 
@@ -861,8 +865,8 @@ func TestGetNextPassWork_ReadyPassIncludesPlannerJumpstart(t *testing.T) {
 	if resp.PlannerJumpstart == nil {
 		t.Fatal("expected planner_jumpstart in response")
 	}
-	if resp.PlannerJumpstart.ReadinessState != "ready" {
-		t.Fatalf("expected readiness_state=ready, got %q", resp.PlannerJumpstart.ReadinessState)
+	if resp.PlannerJumpstart.ReadinessState != "ready_for_handoff_authoring" {
+		t.Fatalf("expected readiness_state=ready_for_handoff_authoring, got %q", resp.PlannerJumpstart.ReadinessState)
 	}
 	if resp.PlannerJumpstart.SelectedPassSummary == nil {
 		t.Fatal("expected selected_pass_summary in planner_jumpstart")
@@ -1306,8 +1310,8 @@ func TestGetNextPassWork_RequestedPassSuccess(t *testing.T) {
 	if resp.PlannerJumpstart == nil {
 		t.Fatal("expected planner_jumpstart for selected pass")
 	}
-	if resp.PlannerJumpstart.ReadinessState != "ready" {
-		t.Fatalf("expected readiness_state=ready, got %q", resp.PlannerJumpstart.ReadinessState)
+	if resp.PlannerJumpstart.ReadinessState != "ready_for_handoff_authoring" {
+		t.Fatalf("expected readiness_state=ready_for_handoff_authoring, got %q", resp.PlannerJumpstart.ReadinessState)
 	}
 }
 

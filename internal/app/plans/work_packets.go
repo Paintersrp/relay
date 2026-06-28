@@ -80,6 +80,8 @@ type NextPassWorkResponse struct {
 	AssociatedRuns           []WorkRunSummary        `json:"associated_runs,omitempty"`
 	Context                  *WorkContextSummary     `json:"context,omitempty"`
 	HandoffReadinessCriteria []string                `json:"handoff_readiness_criteria,omitempty"`
+	HandoffWork              *HandoffAuthoringPacket `json:"handoff_work,omitempty"`
+	HandoffAuthoringPacket   *HandoffAuthoringPacket `json:"handoff_authoring_packet,omitempty"`
 	SuggestedRunSubmission   *SuggestedRunSubmission `json:"suggested_run_submission,omitempty"`
 	PlannerJumpstart         *PlannerJumpstart       `json:"planner_jumpstart,omitempty"`
 	Blockers                 []WorkBlocker           `json:"blockers"`
@@ -98,6 +100,8 @@ type NextPassWorkMCPSummary struct {
 	SourceSnapshotID string                       `json:"source_snapshot_id,omitempty"`
 	ContextPacketID  string                       `json:"context_packet_id,omitempty"`
 	ContextReady     bool                         `json:"context_ready"`
+	HandoffWork      *HandoffAuthoringPacket      `json:"handoff_work,omitempty"`
+	HandoffPacket    *HandoffAuthoringPacket      `json:"handoff_authoring_packet,omitempty"`
 	Blockers         []NextPassWorkSummaryBlocker `json:"blockers"`
 	NextActions      []NextPassWorkSummaryAction  `json:"next_actions,omitempty"`
 	LocalPreviewHint string                       `json:"local_preview_hint"`
@@ -157,6 +161,13 @@ func CompactNextPassWorkSummary(resp NextPassWorkResponse) NextPassWorkMCPSummar
 		summary.ContextPacketID = resp.Context.ContextPacketID
 		summary.ContextReady = resp.Context.ContextReady
 	}
+	if resp.HandoffWork != nil {
+		summary.HandoffWork = resp.HandoffWork
+		summary.HandoffPacket = resp.HandoffWork
+	} else if resp.HandoffAuthoringPacket != nil {
+		summary.HandoffWork = resp.HandoffAuthoringPacket
+		summary.HandoffPacket = resp.HandoffAuthoringPacket
+	}
 	for _, blocker := range resp.Blockers {
 		summary.Blockers = append(summary.Blockers, NextPassWorkSummaryBlocker{
 			Code:        blocker.Code,
@@ -169,6 +180,28 @@ func CompactNextPassWorkSummary(resp NextPassWorkResponse) NextPassWorkMCPSummar
 
 func compactNextPassWorkActions(resp NextPassWorkResponse) []NextPassWorkSummaryAction {
 	actions := []NextPassWorkSummaryAction{}
+	if resp.HandoffWork != nil || resp.HandoffAuthoringPacket != nil {
+		packet := resp.HandoffWork
+		if packet == nil {
+			packet = resp.HandoffAuthoringPacket
+		}
+		args := map[string]interface{}{
+			"project_id": packet.ProjectID,
+			"plan_id":    packet.PlanID,
+			"pass_id":    packet.PassID,
+		}
+		if packet.SourceSnapshotID != "" {
+			args["source_snapshot_id"] = packet.SourceSnapshotID
+		}
+		if packet.ContextPacketID != "" {
+			args["context_packet_id"] = packet.ContextPacketID
+		}
+		actions = append(actions, NextPassWorkSummaryAction{
+			Tool:        "draft_planner_handoff",
+			Description: "Draft the Planner handoff from structuredContent.handoff_work; submit only after user review.",
+			Arguments:   args,
+		})
+	}
 	if resp.SuggestedRunSubmission != nil {
 		actions = append(actions, NextPassWorkSummaryAction{
 			Tool:        resp.SuggestedRunSubmission.Tool,
@@ -336,6 +369,44 @@ type ContextAcquisitionAction struct {
 	Arguments        map[string]interface{} `json:"arguments"`
 	DependsOn        string                 `json:"depends_on,omitempty"`
 	ArgumentBindings map[string]string      `json:"argument_bindings,omitempty"`
+}
+
+// HandoffAuthoringPacket is the bounded, model-visible packet needed to draft
+// a Planner handoff. It includes contract facts and artifact IDs, never raw
+// source/context file contents.
+type HandoffAuthoringPacket struct {
+	ProjectID                string                           `json:"project_id"`
+	PlanID                   string                           `json:"plan_id"`
+	PlanTitle                string                           `json:"plan_title,omitempty"`
+	PassID                   string                           `json:"pass_id"`
+	PassSequence             int64                            `json:"pass_sequence"`
+	PassName                 string                           `json:"pass_name"`
+	PassStatus               string                           `json:"pass_status"`
+	PassGoal                 string                           `json:"pass_goal,omitempty"`
+	RefactorCandidate        *WorkRefactorCandidateMetadata   `json:"refactor_candidate,omitempty"`
+	SourceSnapshotID         string                           `json:"source_snapshot_id,omitempty"`
+	SourceSnapshotStatus     string                           `json:"source_snapshot_status,omitempty"`
+	ContextPacketID          string                           `json:"context_packet_id,omitempty"`
+	ContextPacketStatus      string                           `json:"context_packet_status,omitempty"`
+	CoverageReportPath       string                           `json:"coverage_report_path,omitempty"`
+	ContextReady             bool                             `json:"context_ready"`
+	ContextPlan              ContextPlan                      `json:"context_plan"`
+	ContextBudget            *ContextBudget                   `json:"context_budget,omitempty"`
+	SourceRequirements       SourceSnapshotRequirements       `json:"source_snapshot_requirements"`
+	HandoffReadinessCriteria []string                         `json:"handoff_readiness_criteria"`
+	ReadinessCriteria        []string                         `json:"readiness_criteria"`
+	ReadinessChecks          []HandoffAuthoringReadinessCheck `json:"readiness_checks"`
+	ContextCoverageExpected  []string                         `json:"context_coverage_expectations,omitempty"`
+	BlockedIfMissing         []string                         `json:"blocked_if_missing,omitempty"`
+	SuggestedAuthoringAction string                           `json:"suggested_authoring_action"`
+	SubmissionPrerequisites  []string                         `json:"submission_prerequisites"`
+}
+
+// HandoffAuthoringReadinessCheck is a compact fact used while drafting.
+type HandoffAuthoringReadinessCheck struct {
+	Name   string `json:"name"`
+	Ready  bool   `json:"ready"`
+	Detail string `json:"detail,omitempty"`
 }
 
 const (
@@ -683,7 +754,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 			Recoverable: true,
 		}
 	default:
-		readinessState = "ready"
+		readinessState = "ready_for_handoff_authoring"
 	}
 
 	jumpstart.ReadinessState = readinessState
@@ -720,16 +791,72 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	if blocker != nil {
 		resp.Blockers = []WorkBlocker{*blocker}
 	} else {
-		resp.SuggestedRunSubmission = &SuggestedRunSubmission{
-			Tool: "create_run_from_planner_handoff",
-			Arguments: SuggestedRunArguments{
-				PlanID: plan.PlanID,
-				PassID: pass.PassID,
-			},
-		}
+		handoffWork := buildHandoffAuthoringPacket(project, plan, selectedPass, ctxPlan, &ctxBudget, ssReqs, criteria, snapshotID, snapshotStatus, packetID, packetStatus, coverageReportPath, contextReady, requireSnapshot, requirePacket)
+		resp.HandoffWork = handoffWork
+		resp.HandoffAuthoringPacket = handoffWork
 	}
 
 	return resp, nil
+}
+
+func buildHandoffAuthoringPacket(
+	project *store.Project,
+	plan *store.Plan,
+	selectedPass *WorkPassSummary,
+	ctxPlan ContextPlan,
+	ctxBudget *ContextBudget,
+	ssReqs SourceSnapshotRequirements,
+	criteria []string,
+	snapshotID, snapshotStatus, packetID, packetStatus, coverageReportPath string,
+	contextReady bool,
+	requireSnapshot, requirePacket bool,
+) *HandoffAuthoringPacket {
+	checks := []HandoffAuthoringReadinessCheck{
+		{Name: "dependencies_satisfied", Ready: true, Detail: "Selected pass dependencies are satisfied."},
+		{Name: "active_runs_absent", Ready: true, Detail: "No active run is associated with the selected pass."},
+		{Name: "plan_active", Ready: true, Detail: "Managed plan status is active."},
+	}
+	if requireSnapshot {
+		checks = append(checks, HandoffAuthoringReadinessCheck{Name: "source_snapshot_available", Ready: snapshotID != "", Detail: snapshotID})
+	}
+	if requirePacket {
+		checks = append(checks, HandoffAuthoringReadinessCheck{Name: "context_packet_available", Ready: packetID != "", Detail: packetID})
+	}
+	checks = append(checks, HandoffAuthoringReadinessCheck{Name: "reviewed_handoff_artifact_absent", Ready: true, Detail: "Draft and review a Planner handoff before run submission."})
+
+	copiedCriteria := append([]string(nil), criteria...)
+	packet := &HandoffAuthoringPacket{
+		ProjectID:                project.ProjectID,
+		PlanID:                   plan.PlanID,
+		PlanTitle:                plan.Title,
+		PassID:                   selectedPass.PassID,
+		PassSequence:             selectedPass.Sequence,
+		PassName:                 selectedPass.Name,
+		PassStatus:               selectedPass.Status,
+		PassGoal:                 selectedPass.Goal,
+		RefactorCandidate:        selectedPass.RefactorCandidate,
+		SourceSnapshotID:         snapshotID,
+		SourceSnapshotStatus:     snapshotStatus,
+		ContextPacketID:          packetID,
+		ContextPacketStatus:      packetStatus,
+		CoverageReportPath:       coverageReportPath,
+		ContextReady:             contextReady,
+		ContextPlan:              ctxPlan,
+		ContextBudget:            ctxBudget,
+		SourceRequirements:       ssReqs,
+		HandoffReadinessCriteria: copiedCriteria,
+		ReadinessCriteria:        append([]string(nil), copiedCriteria...),
+		ReadinessChecks:          checks,
+		ContextCoverageExpected:  append([]string(nil), ctxPlan.ContextCoverageExpectations...),
+		BlockedIfMissing:         append([]string(nil), ctxPlan.BlockedIfMissing...),
+		SuggestedAuthoringAction: "draft_planner_handoff",
+		SubmissionPrerequisites: []string{
+			"Planner handoff markdown is drafted from this packet.",
+			"User reviews and explicitly approves the handoff.",
+			"create_run_from_planner_handoff receives the reviewed handoff content and artifact IDs.",
+		},
+	}
+	return packet
 }
 
 // buildPlannerJumpstart constructs the PlannerJumpstart payload from
