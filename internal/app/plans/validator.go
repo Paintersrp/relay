@@ -100,6 +100,7 @@ func sanitizePlanSchemaForRuntime(schemaBytes []byte) ([]byte, error) {
 func sanitizePlanSchemaRegexes(schemaContent string) string {
 	schemaContent = strings.ReplaceAll(schemaContent, `(?!/)`, "")
 	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(^|/)\\.\\.($|/))`, "")
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(^|/)\\.($|/))`, "")
 	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*\\\\)`, "")
 	return schemaContent
 }
@@ -124,12 +125,7 @@ func isSafeRepoRelativePath(path string) bool {
 		}
 	}
 
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".md", ".txt", ".json", ".xml", ".go", ".ts", ".tsx", ".js", ".jsx", ".css", ".html", ".yml", ".yaml", ".sql", ".toml", ".mod", ".sum":
-		return true
-	default:
-		return false
-	}
+	return true
 }
 
 func validatePlanSemantics(plan *PlannerPassPlan, report *PlanValidationReport) {
@@ -436,7 +432,7 @@ func validateContextPlan(report *PlanValidationReport, path string, contextPlan 
 			report.addIssue(
 				IssuePlanSchemaInvalid,
 				filePath+".path",
-				"context file read paths must be safe repo-relative paths with an allowed extension",
+				"context file read paths must be safe repo-relative paths",
 			)
 		}
 	}

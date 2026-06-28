@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"relay/internal/store"
@@ -739,4 +740,83 @@ func TestSubmitPlanRequiresProject(t *testing.T) {
 		t.Fatal("expected invalid report due to missing project")
 	}
 	assertIssueCode(t, result.Report, IssuePlanProjectRequired)
+}
+
+func TestValidatePlanAcceptSafeRepoRelativePaths(t *testing.T) {
+	t.Parallel()
+
+	validPaths := []string{
+		"scripts/validate.sh",
+		"Makefile",
+		".gitignore",
+		"CODEOWNERS",
+		"tools/build",
+		"apps/web/src/features/relay-plans/api.ts",
+	}
+
+	for _, path := range validPaths {
+		path := path
+		t.Run("valid_"+strings.ReplaceAll(path, "/", "_"), func(t *testing.T) {
+			t.Parallel()
+
+			svc, _ := newTestService(t)
+			plan := validPlannerPassPlan()
+			plan.PlanMeta.PlanID = "plan-safe-" + strings.ReplaceAll(path, "/", "-")
+			plan.Passes[0].ContextPlan.SeedFilesToRead[0].Path = path
+
+			_, report, err := svc.ValidatePlanJSON(context.Background(), mustMarshalPlan(t, plan))
+			if err != nil {
+				t.Fatalf("ValidatePlanJSON error: %v", err)
+			}
+			if !report.Valid {
+				t.Fatalf("expected valid for path %q, got issues: %+v", path, report.Issues)
+			}
+		})
+	}
+}
+
+func TestSubmitPlanRejectsUnsafeRepoRelativePaths(t *testing.T) {
+	t.Parallel()
+
+	invalidPaths := []struct {
+		name string
+		path string
+	}{
+		{name: "absolute_path", path: "/absolute/path"},
+		{name: "parent_traversal", path: "../Makefile"},
+		{name: "traversal_via_dotdot", path: "scripts/../Makefile"},
+		{name: "current_dir_segment", path: "docs/./file"},
+		{name: "double_slash", path: "dir//file"},
+		{name: "backslash", path: "scripts\\validate.sh"},
+		{name: "overlong", path: strings.Repeat("a/", 150) + "file"},
+	}
+
+	for _, tc := range invalidPaths {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc, st := newTestService(t)
+			plan := validPlannerPassPlan()
+			plan.Passes[0].ContextPlan.SeedFilesToRead[0].Path = tc.path
+
+			result, err := svc.SubmitPlan(context.Background(), SubmitPlanRequest{
+				UnmanagedAcknowledged: true,
+				RawJSON:              mustMarshalPlan(t, plan),
+			})
+			if err != nil {
+				t.Fatalf("SubmitPlan error: %v", err)
+			}
+			if result.Report.Valid {
+				t.Fatalf("expected invalid report for path %q", tc.path)
+			}
+			assertIssueCode(t, result.Report, IssuePlanSchemaInvalid)
+			if got := countRows(t, st.DB(), "plans"); got != 0 {
+				t.Fatalf("expected 0 plan rows for invalid path %q, got %d", tc.path, got)
+			}
+			if got := countRows(t, st.DB(), "plan_passes"); got != 0 {
+				t.Fatalf("expected 0 plan_passes rows for invalid path %q, got %d", tc.path, got)
+			}
+		})
+	}
 }
