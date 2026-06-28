@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -1758,5 +1759,276 @@ func TestKiroCLIAdapter_NormalizeResultANSI_PromptPrefix(t *testing.T) {
 	}
 	if !strings.Contains(res.ExecutorResultText, "STATUS: DONE") {
 		t.Errorf("expected text to contain STATUS: DONE, got %s", res.ExecutorResultText)
+	}
+}
+
+func TestKiroParseFixture_DisabledByDefault(t *testing.T) {
+	if isKiroParseFixtureEnabled() {
+		t.Errorf("expected fixture to be disabled by default")
+	}
+}
+
+func TestKiroParseFixture_EnabledWhenEnvTrue(t *testing.T) {
+	t.Setenv("RELAY_KIRO_CAPTURE_PARSE_FIXTURE", "true")
+	if !isKiroParseFixtureEnabled() {
+		t.Errorf("expected fixture to be enabled when env=true")
+	}
+}
+
+func TestKiroParseFixture_DisabledWhenEnvFalse(t *testing.T) {
+	t.Setenv("RELAY_KIRO_CAPTURE_PARSE_FIXTURE", "false")
+	if isKiroParseFixtureEnabled() {
+		t.Errorf("expected fixture to be disabled when env=false")
+	}
+}
+
+func TestKiroParseFixture_DisabledWhenEnvEmpty(t *testing.T) {
+	t.Setenv("RELAY_KIRO_CAPTURE_PARSE_FIXTURE", "")
+	if isKiroParseFixtureEnabled() {
+		t.Errorf("expected fixture to be disabled when env empty")
+	}
+}
+
+func TestKiroParseFixture_EmittedForKiroWhenEnabled(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	if _, err := s.UpdateRunModel(runID, "claude-sonnet-4.6", "claude-sonnet-4.6"); err != nil {
+		t.Fatalf("update run model: %v", err)
+	}
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	t.Setenv("RELAY_KIRO_CAPTURE_PARSE_FIXTURE", "true")
+
+	done := make(chan struct{})
+
+	adapter := &KiroCLIAdapter{
+		Config: KiroCLIAdapterConfig{
+			Binary:     "kiro-cli",
+			Effort:     "high",
+			TrustTools: "fs_read,fs_write,grep",
+		},
+	}
+	_, err := DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: adapter,
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			// Emit some stdout via callbacks
+			if callbacks.OnStdout != nil {
+				callbacks.OnStdout([]byte("\x1b[0m\x1b[38;5;10mSTATUS: DONE\n"))
+			}
+			return pipeline.AgentCommandRunResult{
+				ExitCode: 0,
+				Stdout:   "\x1b[0m\x1b[38;5;10mSTATUS: DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 5\n",
+			}
+		},
+		LaunchAsync: func(fn func()) {
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	<-done
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("get artifacts: %v", err)
+	}
+
+	foundFixture := false
+	for _, a := range artifactsList {
+		if a.Kind == ArtifactKindKiroParseFixtureJSON {
+			foundFixture = true
+			content, err := os.ReadFile(a.Path)
+			if err != nil {
+				t.Fatalf("read fixture: %v", err)
+			}
+			var fixture kiroParseFixtureJSON
+			if err := json.Unmarshal(content, &fixture); err != nil {
+				t.Fatalf("parse fixture: %v", err)
+			}
+			if fixture.SchemaVersion != "1" {
+				t.Errorf("expected schema version 1, got %s", fixture.SchemaVersion)
+			}
+			if !fixture.Temporary {
+				t.Errorf("expected Temporary=true")
+			}
+			if fixture.Adapter != "kiro_cli" {
+				t.Errorf("expected adapter kiro_cli, got %s", fixture.Adapter)
+			}
+			if fixture.RunID != runID {
+				t.Errorf("expected runId %d, got %d", runID, fixture.RunID)
+			}
+			if len(fixture.CandidateResults) == 0 {
+				t.Errorf("expected candidate results")
+			}
+			// Verify escaped ANSI bytes in quoted output
+			if !strings.Contains(fixture.RunResultStdoutQ, "\\x1b") {
+				t.Errorf("expected escaped ANSI in quoted stdout, got %s", fixture.RunResultStdoutQ)
+			}
+			break
+		}
+	}
+
+	if !foundFixture {
+		t.Errorf("expected kiro_parse_fixture_json artifact for Kiro when enabled")
+	}
+}
+
+func TestKiroParseFixture_NotEmittedForNonKiroAdapter(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	t.Setenv("RELAY_KIRO_CAPTURE_PARSE_FIXTURE", "true")
+
+	done := make(chan struct{})
+
+	_, err := DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: &fakeAdapter{},
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "STATUS: DONE\n"}
+		},
+		LaunchAsync: func(fn func()) {
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	<-done
+
+	artifactsList, _ := s.ListArtifactsByRun(runID)
+	for _, a := range artifactsList {
+		if a.Kind == ArtifactKindKiroParseFixtureJSON {
+			t.Errorf("expected no kiro_parse_fixture_json artifact for non-Kiro adapter")
+		}
+	}
+}
+
+func TestKiroParseFixture_RedactsSecrets(t *testing.T) {
+	t.Setenv("KIRO_API_KEY", "sk-super-secret-key-999")
+	defer os.Unsetenv("KIRO_API_KEY")
+
+	raw := "STATUS: DONE\nUsing sk-super-secret-key-999\n"
+	candidate := makeKiroCandidate("test", raw)
+
+	if strings.Contains(candidate.NormalizedQ, "sk-super-secret-key-999") {
+		t.Errorf("expected secret to be redacted, got: %s", candidate.NormalizedQ)
+	}
+	if !strings.Contains(candidate.NormalizedQ, "[REDACTED]") {
+		t.Errorf("expected [REDACTED], got: %s", candidate.NormalizedQ)
+	}
+}
+
+func TestKiroParseFixture_CandidateResultsIncludeParsedStatuses(t *testing.T) {
+	raw := "STATUS: DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 42\n"
+	candidate := makeKiroCandidate("test", raw)
+
+	if candidate.ParsedStatus != "DONE" {
+		t.Errorf("expected parsed status DONE, got %s", candidate.ParsedStatus)
+	}
+	if candidate.BuildStatus != "PASS" {
+		t.Errorf("expected build status PASS, got %s", candidate.BuildStatus)
+	}
+	if candidate.TestStatus != "PASS" {
+		t.Errorf("expected test status PASS, got %s", candidate.TestStatus)
+	}
+	if candidate.LOCChanged != "42" {
+		t.Errorf("expected LOC changed 42, got %s", candidate.LOCChanged)
+	}
+}
+
+func TestKiroParseFixture_BoundsLargeOutput(t *testing.T) {
+	// Create a string larger than the bound
+	large := strings.Repeat("x", 20000)
+	quoted := boundAndQuote(large)
+
+	// Should be bounded and quoted
+	if len(quoted) > kiroFixtureMaxLen+50 { // +50 for quotes and some escape overhead
+		t.Errorf("expected quoted output to be bounded, got length %d", len(quoted))
+	}
+}
+
+func TestKiroParseFixture_HasStatusToken(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"STATUS: DONE\n", true},
+		{"DONE\n", true},
+		{"BLOCKED by error\n", true},
+		{"random output", false},
+		{"build passed", false},
+	}
+
+	for _, tc := range tests {
+		got := hasStatusToken(tc.input)
+		if got != tc.expected {
+			t.Errorf("hasStatusToken(%q) = %v, want %v", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func TestKiroParseFixture_DoesNotChangeTerminalStatus(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	if _, err := s.UpdateRunModel(runID, "claude-sonnet-4.6", "claude-sonnet-4.6"); err != nil {
+		t.Fatalf("update run model: %v", err)
+	}
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	t.Setenv("RELAY_KIRO_CAPTURE_PARSE_FIXTURE", "true")
+
+	done := make(chan struct{})
+
+	adapter := &KiroCLIAdapter{
+		Config: KiroCLIAdapterConfig{
+			Binary:     "kiro-cli",
+			Effort:     "high",
+			TrustTools: "fs_read,fs_write,grep",
+		},
+	}
+	_, err := DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: adapter,
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			return pipeline.AgentCommandRunResult{
+				ExitCode: 0,
+				Stdout:   "STATUS: DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 5\n",
+			}
+		},
+		LaunchAsync: func(fn func()) {
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	<-done
+
+	run, _ := s.GetRun(runID)
+	// Status should still be DONE, not changed by fixture emission
+	if run.Status != StatusExecutorDone {
+		t.Errorf("expected run status %s, got %s", StatusExecutorDone, run.Status)
 	}
 }

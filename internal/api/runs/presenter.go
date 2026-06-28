@@ -137,6 +137,8 @@ func mapArtifactKindAndLabel(kind string) (string, string) {
 		return "audit", "Audit Input Summary"
 	case "executor_usage_json":
 		return "result", "Executor Usage (JSON)"
+	case "kiro_parse_fixture_json":
+		return "result", "Kiro Parse Fixture (JSON)"
 	default:
 		lower := strings.ToLower(kind)
 		if strings.Contains(lower, "diff") || strings.Contains(lower, "patch") || strings.Contains(lower, "status") {
