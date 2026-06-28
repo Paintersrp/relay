@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# pre-push: run broad (or full) validation evidence before push (advisory)
+# Install: make hooks-setup  OR  git config core.hooksPath .githooks
+#
+# Timing note: pre-push runs synchronously before push. Broad validation
+# includes go test ./... and web typecheck/test, which may take 30–120s
+# depending on machine and cache state. Full validation adds web build and
+# can take significantly longer. Set RELAY_PUSH_TIER=full only when a
+# complete build artifact check is required before push.
+#
+# This hook does NOT stage files. Evidence artifacts are written but not
+# automatically added to the commit.
+set -u
+
+TIER="${RELAY_PUSH_TIER:-broad}"
+
+case "$TIER" in
+  broad|full) ;;
+  *)
+    echo "[pre-push] Unknown RELAY_PUSH_TIER='$TIER'. Using 'broad'." >&2
+    TIER=broad
+    ;;
+esac
+
+echo "[pre-push] Running $TIER validation evidence (RELAY_PUSH_TIER=$TIER)..."
+
+RELAY_VALIDATE_TIER="$TIER" bash scripts/validate.sh
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+  echo "[pre-push] $TIER validation evidence: FAILED (exit $EXIT_CODE)" >&2
+  echo "[pre-push] Review handoffs/validation/latest.validation-report.${TIER}.json for details." >&2
+  echo "[pre-push] This hook is advisory. Push blocked by validation failure." >&2
+  exit $EXIT_CODE
+fi
+
+echo "[pre-push] $TIER validation evidence: passed (artifacts not staged)"
+exit 0

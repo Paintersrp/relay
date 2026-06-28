@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# pre-commit: run fast validation evidence before commit (advisory)
+# Install: make hooks-setup  OR  git config core.hooksPath .githooks
+set -u
+
+RELAY_VALIDATE_TIER=fast bash scripts/validate.sh
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+  echo "[pre-commit] fast validation evidence: FAILED (exit $EXIT_CODE)" >&2
+  echo "[pre-commit] Review handoffs/validation/latest.validation-report.fast.json for details." >&2
+  echo "[pre-commit] This hook is advisory. Commit blocked by validation failure." >&2
+  exit $EXIT_CODE
+fi
+
+# Stage only fast validation artifacts
+git add handoffs/validation/latest.validation-report.fast.json \
+        handoffs/validation/latest.validation-summary.fast.md 2>/dev/null || true
+
+echo "[pre-commit] fast validation evidence: passed"
+exit 0

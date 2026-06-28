@@ -1,4 +1,4 @@
-.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean validate mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke plan-api-smoke plan-seed-smoke agentrefs-generate agentrefs-check
+.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean validate validate-fast validate-broad validate-full hooks-setup mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke plan-api-smoke plan-seed-smoke agentrefs-generate agentrefs-check
 
 install:
 	npm install
@@ -29,6 +29,18 @@ test:
 
 validate:
 	bash scripts/validate.sh
+
+validate-fast:
+	RELAY_VALIDATE_TIER=fast bash scripts/validate.sh
+
+validate-broad:
+	RELAY_VALIDATE_TIER=broad bash scripts/validate.sh
+
+validate-full:
+	RELAY_VALIDATE_TIER=full bash scripts/validate.sh
+
+hooks-setup:
+	git config core.hooksPath .githooks
 
 fmt:
 	go fmt ./...

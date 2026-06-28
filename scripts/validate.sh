@@ -11,32 +11,68 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
+# Tier: fast | broad | full (default: full)
+RELAY_VALIDATE_TIER="${RELAY_VALIDATE_TIER:-full}"
+
 TRACKED_DIR="${RELAY_VALIDATE_TRACKED_DIR:-handoffs/validation}"
 TRACKED_JSON="${TRACKED_DIR}/latest.validation-report.json"
 TRACKED_MD="${TRACKED_DIR}/latest.validation-summary.md"
 
+case "$RELAY_VALIDATE_TIER" in
+  fast)
+    TIER_JSON="${TRACKED_DIR}/latest.validation-report.fast.json"
+    TIER_MD="${TRACKED_DIR}/latest.validation-summary.fast.md"
+    ;;
+  broad)
+    TIER_JSON="${TRACKED_DIR}/latest.validation-report.broad.json"
+    TIER_MD="${TRACKED_DIR}/latest.validation-summary.broad.md"
+    ;;
+  full)
+    TIER_JSON="$TRACKED_JSON"
+    TIER_MD="$TRACKED_MD"
+    ;;
+  *)
+    echo "Unknown validation tier: $RELAY_VALIDATE_TIER (expected: fast, broad, full)" >&2
+    exit 1
+    ;;
+esac
+
 mkdir -p "$TRACKED_DIR"
 
-node - "$TRACKED_JSON" "$TRACKED_MD" <<'NODE'
+node - "$TIER_JSON" "$TIER_MD" "$TRACKED_JSON" "$TRACKED_MD" "$RELAY_VALIDATE_TIER" <<'NODE'
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const { spawnSync } = require('child_process')
 
-const [jsonPath, mdPath] = process.argv.slice(2)
+const [tierJsonPath, tierMdPath, fullJsonPath, fullMdPath, tier] = process.argv.slice(2)
 const repoRoot = process.cwd()
 
-const commandsToRun = [
+// Fast: deterministic formatting/freshness/unit checks for affected surfaces
+const fastCommands = [
   { step: 1, name: 'go-fmt-agentrefs-executor', command: 'go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor', argv: ['go', ['fmt', './cmd/agentrefs', './internal/agentrefs', './internal/executor']] },
   { step: 2, name: 'go-test-agentrefs', command: 'go test ./internal/agentrefs/... ./cmd/agentrefs/...', argv: ['go', ['test', './internal/agentrefs/...', './cmd/agentrefs/...']] },
   { step: 3, name: 'agentrefs-check', command: 'go run ./cmd/agentrefs check', shell: true },
   { step: 4, name: 'go-test-executor', command: 'go test ./internal/executor/...', argv: ['go', ['test', './internal/executor/...']] },
+]
+
+// Broad: fast + broader Go/web checks
+const broadCommands = [
+  ...fastCommands,
   { step: 5, name: 'go-test-all', command: 'go test ./...', argv: ['go', ['test', './...']] },
   { step: 6, name: 'web-typecheck', command: 'cd apps/web && npm run typecheck', shell: true },
   { step: 7, name: 'web-test', command: 'cd apps/web && npm run test', shell: true },
+]
+
+// Full: broad + final build coverage
+const fullCommands = [
+  ...broadCommands,
   { step: 8, name: 'web-build', command: 'cd apps/web && npm run build', shell: true },
   { step: 9, name: 'no-root-agentrefs-exe', command: 'test ! -e agentrefs.exe', shell: true },
 ]
+
+const commandsByTier = { fast: fastCommands, broad: broadCommands, full: fullCommands }
+const commandsToRun = commandsByTier[tier] || fullCommands
 
 function redactCommandOutput(value) {
   return String(value ?? '')
@@ -54,12 +90,16 @@ function normalizeInputPath(value) {
   return String(value).replace(/\\/g, '/')
 }
 
-const trackedJsonRepoPath = normalizeRepoPath(jsonPath)
-const trackedMdRepoPath = normalizeRepoPath(mdPath)
+// Exclude all tier artifact paths from source snapshot
+const excludedRepoPaths = new Set([
+  normalizeRepoPath(tierJsonPath),
+  normalizeRepoPath(tierMdPath),
+  normalizeRepoPath(fullJsonPath),
+  normalizeRepoPath(fullMdPath),
+])
 
 function isExcludedPath(repoPath) {
-  const normalized = normalizeInputPath(repoPath)
-  return normalized === trackedJsonRepoPath || normalized === trackedMdRepoPath
+  return excludedRepoPaths.has(normalizeInputPath(repoPath))
 }
 
 function runGit(args, options = {}) {
@@ -115,10 +155,7 @@ function sha256Text(value) {
 
 function captureSourceSnapshot(baseRef, baseCommitSha) {
   const capturedAt = new Date().toISOString()
-  const exclusionArgs = [
-    `:(exclude)${trackedJsonRepoPath}`,
-    `:(exclude)${trackedMdRepoPath}`,
-  ]
+  const exclusionArgs = [...excludedRepoPaths].map((p) => `:(exclude)${p}`)
 
   const statusPorcelain = parseStatusLines(runGit(['status', '--porcelain=v1', '--untracked-files=normal']))
   const trackedEntries = parseTrackedNameStatus(
@@ -203,9 +240,10 @@ function runValidationCommand(spec) {
 
 function renderMarkdown(report) {
   const markdown = [
-    '# Latest Relay Validation Report',
+    `# Latest Relay Validation Report (${report.validation_tier})`,
     '',
     `- status: ${report.status}`,
+    `- validation_tier: ${report.validation_tier}`,
     `- base_commit: ${report.base_commit_sha}`,
     `- validated_source_snapshot: ${report.validated_source_snapshot.diff_sha256}`,
     `- worktree_dirty: ${report.validated_source_snapshot.worktree_dirty}`,
@@ -256,23 +294,30 @@ const createdAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
 const commands = commandsToRun.map(runValidationCommand)
 const overall = commands.some((command) => command.exit_code !== 0) ? 1 : 0
 
+const reportFiles = [normalizeRepoPath(tierJsonPath), normalizeRepoPath(tierMdPath)]
+// For full tier, the tier paths ARE the full paths; no duplication needed
+if (tier !== 'full') {
+  reportFiles.push(normalizeRepoPath(fullJsonPath), normalizeRepoPath(fullMdPath))
+}
+
 const report = {
   schema_version: '3.0.0',
   report_kind: 'relay_make_validate_latest',
+  validation_tier: tier,
   status: overall === 0 ? 'passed' : 'failed',
   created_at: createdAt,
   base_commit_short: baseCommitShort,
   base_commit_sha: baseCommitSha,
   validated_source_snapshot: captureSourceSnapshot(baseRef, baseCommitSha),
   post_report_status_porcelain: [],
-  report_files: [trackedJsonRepoPath, trackedMdRepoPath],
+  report_files: reportFiles,
   commands,
 }
 
-fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2) + '\n')
-fs.writeFileSync(mdPath, renderMarkdown(report) + '\n')
+fs.writeFileSync(tierJsonPath, JSON.stringify(report, null, 2) + '\n')
+fs.writeFileSync(tierMdPath, renderMarkdown(report) + '\n')
 report.post_report_status_porcelain = capturePostReportStatus()
-fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2) + '\n')
+fs.writeFileSync(tierJsonPath, JSON.stringify(report, null, 2) + '\n')
 
 process.exit(overall)
 NODE
