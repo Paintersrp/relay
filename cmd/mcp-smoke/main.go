@@ -72,6 +72,7 @@ type harness struct {
 	fail      int
 	httpURL   string
 	httpToken string
+	dbPath    string
 }
 
 func main() {
@@ -154,6 +155,7 @@ func run() error {
 			stdin:  stdinPipe,
 			stdout: bufio.NewScanner(stdoutPipe),
 			nextID: 1,
+			dbPath: dbPath,
 		}
 		h.stdout.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
 
@@ -220,6 +222,22 @@ func run() error {
 		"list_open_runs":                  true,
 		"get_run_status":                  true,
 		"submit_audit_packet":             true,
+		// Plan v2 attempt / intent / seed tools
+		"create_plan_attempt_with_intent": true,
+		"get_plan_intent_review_packet":   true,
+		"submit_intent_drift_review":      true,
+		"revise_plan_attempt":             true,
+		"void_plan_attempt":               true,
+		"approve_plan_attempt":            true,
+		"submit_plan_attempt":             true,
+		"create_plan_seed":                true,
+		"list_plan_seeds":                 true,
+		"get_plan_seed":                   true,
+		"get_plan_seed_planning_context":  true,
+		"create_plan_attempt_from_seed":   true,
+		"update_plan_seed":                true,
+		"defer_plan_seed":                 true,
+		"reject_plan_seed":                true,
 	}
 
 	contextBrokerTools := map[string]bool{
@@ -247,12 +265,18 @@ func run() error {
 		"get_project_context_record":       true,
 		"create_project_context_record":    true,
 		"supersede_project_context_record": true,
+		// Refactor discovery tools
+		"list_refactor_discovery_tasks":    true,
+		"get_refactor_discovery_task":      true,
+		"create_refactor_discovery_task":   true,
+		"update_refactor_discovery_task":   true,
+		"complete_refactor_discovery_task": true,
 	}
 
 	unsafeKeywords := []string{"exec", "shell", "write_file", "git_commit", "git_push", "checkout", "reset", "branch"}
 
-	// In default/local-operator profile, we expect 6 core + 24 context broker = 30 tools
-	expectedToolCount := 30
+	// In default/local-operator profile, we expect 50 tools
+	expectedToolCount := 50
 	h.check(fmt.Sprintf("tools/list count=%d", expectedToolCount), len(toolsList.Tools) == expectedToolCount)
 
 	hasNextPassWork := false
@@ -326,6 +350,7 @@ func run() error {
 		"arguments": map[string]interface{}{
 			"planner_pass_plan_json": smokePlanFixture(),
 			"source":                 "mcp_smoke_test",
+			"unmanaged_acknowledged": true,
 		},
 	})
 	if err != nil {
@@ -447,6 +472,7 @@ Validates that create_run_from_planner_handoff can associate a new run to a plan
 			"source":                   "mcp_smoke_test",
 			"plan_id":                  smokePlanID,
 			"pass_id":                  "PASS-001",
+			"source_snapshot_id":       "snap-smoke-base",
 		},
 	})
 	if err != nil {
@@ -702,6 +728,185 @@ Validates that create_run_from_planner_handoff can associate a new run to a plan
 	}
 
 	// -------------------------------------------------------
+	// 13. Context packet usability regression checks (stdio-only)
+	// -------------------------------------------------------
+	if h.dbPath != "" {
+		fmt.Println("Running context packet usability checks...")
+		// Submit the required-context plan
+		resp, err = h.call("tools/call", map[string]interface{}{
+			"name": "submit_planner_pass_plan",
+			"arguments": map[string]interface{}{
+				"planner_pass_plan_json": smokePlanRequiredContextFixture(),
+				"source":                 "mcp_smoke_test_usability",
+				"unmanaged_acknowledged": true,
+			},
+		})
+		if err != nil {
+			return h.fatal("submit_planner_pass_plan usability", err)
+		}
+		var planUsabilityResult toolCallResult
+		if err := json.Unmarshal(resp.Result, &planUsabilityResult); err != nil {
+			return h.fatal("submit_planner_pass_plan usability parse", err)
+		}
+		h.check("submit_planner_pass_plan usability !isError", !planUsabilityResult.IsError)
+
+		// Open store to seed snapshot and context packet
+		discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		dbStore, err := store.Open(h.dbPath, discardLogger)
+		if err != nil {
+			return h.fatal("open store for seeding usability", err)
+		}
+
+		proj, err := dbStore.GetProjectByProjectID("relay")
+		if err != nil {
+			dbStore.Close()
+			return h.fatal("usability lookup project", err)
+		}
+
+		// Seed source snapshot "snap-smoke-1"
+		snap, err := dbStore.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+			SourceSnapshotID: "snap-smoke-1",
+			ProjectRowID:     proj.ID,
+			ProjectID:        proj.ProjectID,
+			SnapshotKind:     "clean_commit",
+			Status:           "created",
+			CompletedAt:      "2026-06-28T00:00:00Z",
+			SummaryJSON:      "{}",
+		})
+		if err != nil {
+			dbStore.Close()
+			return h.fatal("usability seed snapshot", err)
+		}
+
+		// Seed unusable context packet (status blocked)
+		_, err = dbStore.CreateContextPacket(store.CreateContextPacketParams{
+			ContextPacketID:     "packet-smoke-unusable",
+			ProjectRowID:        proj.ID,
+			ProjectID:           proj.ProjectID,
+			PlanID:              "mcp-smoke-plan-req-ctx",
+			PassID:              "PASS-001",
+			TaskSlug:            "slug",
+			SourceSnapshotRowID: snap.ID,
+			SourceSnapshotID:    "snap-smoke-1",
+			Status:              "blocked",
+			BlockedSeedCount:    0,
+			MissingSeedCount:    0,
+			CompletedAt:         "2026-06-28T12:00:00Z",
+		})
+		if err != nil {
+			dbStore.Close()
+			return h.fatal("usability seed unusable packet", err)
+		}
+		dbStore.Close()
+
+		// Call get_next_pass_work and assert blocked
+		resp, err = h.call("tools/call", map[string]interface{}{
+			"name": "get_next_pass_work",
+			"arguments": map[string]interface{}{
+				"project_id": "relay",
+				"plan_id":    "mcp-smoke-plan-req-ctx",
+			},
+		})
+		if err != nil {
+			return h.fatal("get_next_pass_work usability blocked", err)
+		}
+		var mcpBlockedResult toolCallResult
+		if err := json.Unmarshal(resp.Result, &mcpBlockedResult); err != nil {
+			return h.fatal("get_next_pass_work usability blocked parse", err)
+		}
+		h.check("get_next_pass_work usability blocked !isError", !mcpBlockedResult.IsError)
+		out := mcpBlockedResult.StructuredContent
+		if out != nil {
+			h.check("get_next_pass_work usability blocked ok=false", out["ok"] == false)
+			h.check("get_next_pass_work usability blocked readiness state", out["readiness_state"] == "needs_context_packet")
+			h.check("get_next_pass_work usability blocked handoff_work is nil", out["handoff_work"] == nil)
+
+			// Assert next actions has create_context_packet with correct snapshot ID
+			var foundCreate bool
+			if nextActions, ok := out["next_actions"].([]interface{}); ok {
+				for _, act := range nextActions {
+					if m, ok := act.(map[string]interface{}); ok {
+						if m["tool"] == "create_context_packet" {
+							foundCreate = true
+							if args, ok := m["arguments"].(map[string]interface{}); ok {
+								h.check("get_next_pass_work usability action snapshot ID", args["source_snapshot_id"] == "snap-smoke-1")
+							}
+						}
+						if m["tool"] == "draft_planner_handoff" {
+							h.failf("did not expect draft_planner_handoff tool action when blocked")
+						}
+					}
+				}
+			}
+			h.check("get_next_pass_work usability actions has create_context_packet", foundCreate)
+		} else {
+			h.check("get_next_pass_work usability blocked structuredContent present", false)
+		}
+
+		// Open store again to write usable context packet (status created)
+		dbStore, err = store.Open(h.dbPath, discardLogger)
+		if err != nil {
+			return h.fatal("open store for seeding usability usable", err)
+		}
+		_, err = dbStore.CreateContextPacket(store.CreateContextPacketParams{
+			ContextPacketID:     "packet-smoke-usable",
+			ProjectRowID:        proj.ID,
+			ProjectID:           proj.ProjectID,
+			PlanID:              "mcp-smoke-plan-req-ctx",
+			PassID:              "PASS-001",
+			TaskSlug:            "slug",
+			SourceSnapshotRowID: snap.ID,
+			SourceSnapshotID:    "snap-smoke-1",
+			Status:              "created",
+			BlockedSeedCount:    0,
+			MissingSeedCount:    0,
+			CompletedAt:         "2026-06-28T13:00:00Z", // later makes it latest
+		})
+		if err != nil {
+			dbStore.Close()
+			return h.fatal("usability seed usable packet", err)
+		}
+		dbStore.Close()
+
+		// Call get_next_pass_work and assert ready
+		resp, err = h.call("tools/call", map[string]interface{}{
+			"name": "get_next_pass_work",
+			"arguments": map[string]interface{}{
+				"project_id": "relay",
+				"plan_id":    "mcp-smoke-plan-req-ctx",
+			},
+		})
+		if err != nil {
+			return h.fatal("get_next_pass_work usability ready", err)
+		}
+		var mcpReadyResult toolCallResult
+		if err := json.Unmarshal(resp.Result, &mcpReadyResult); err != nil {
+			return h.fatal("get_next_pass_work usability ready parse", err)
+		}
+		h.check("get_next_pass_work usability ready !isError", !mcpReadyResult.IsError)
+		out = mcpReadyResult.StructuredContent
+		if out != nil {
+			h.check("get_next_pass_work usability ready ok=true", out["ok"] == true)
+			h.check("get_next_pass_work usability ready readiness state", out["readiness_state"] == "ready_for_handoff_authoring")
+			h.check("get_next_pass_work usability ready handoff_work non-nil", out["handoff_work"] != nil)
+
+			var foundDraft bool
+			if nextActions, ok := out["next_actions"].([]interface{}); ok {
+				for _, act := range nextActions {
+					if m, ok := act.(map[string]interface{}); ok {
+						if m["tool"] == "draft_planner_handoff" {
+							foundDraft = true
+						}
+					}
+				}
+			}
+			h.check("get_next_pass_work usability actions has draft_planner_handoff", foundDraft)
+		} else {
+			h.check("get_next_pass_work usability ready structuredContent present", false)
+		}
+	}
+
+	// -------------------------------------------------------
 	// Summary
 	// -------------------------------------------------------
 	fmt.Printf("\n=== MCP Smoke Results ===\n")
@@ -806,6 +1011,65 @@ func smokePlanFixture() string {
         "allow_dirty_worktree": true
       },
       "handoff_readiness_criteria": ["docs_ready"],
+      "status": "planned"
+    }
+  ]
+}`
+}
+
+func smokePlanRequiredContextFixture() string {
+	return `{
+  "plan_meta": {
+    "plan_id": "mcp-smoke-plan-req-ctx",
+    "schema_version": "2.0.0",
+    "created_at": "2026-06-21T00:00:00Z",
+    "project_id": "relay",
+    "title": "MCP Smoke Required Context Plan",
+    "goal": "Verify context usability in smoke harness.",
+    "repo_target": "smoke-test-repo",
+    "branch_context": "main",
+    "status": "active"
+  },
+  "source_intent": {
+    "summary": "Synthetic smoke plan for required context coverage."
+  },
+  "passes": [
+    {
+      "pass_id": "PASS-001",
+      "sequence": 1,
+      "name": "Context pass",
+      "goal": "Exercise required context usability.",
+      "pass_type": "backend_vertical_slice",
+      "intended_execution_scope": ["cmd/mcp-smoke/main.go"],
+      "non_goals": ["No production data mutation"],
+      "dependencies": [],
+      "context_plan": {
+        "required_repositories": ["smoke-test-repo"],
+        "context_coverage_expectations": ["basic_smoke_coverage"],
+        "blocked_if_missing": ["none"],
+        "seed_files_to_read": [
+          {
+            "repo_id": "smoke-test-repo",
+            "path": "cmd/mcp-smoke/main.go",
+            "purpose": "smoke test entry point",
+            "required": true
+          }
+        ],
+        "seed_search_terms": [
+          {
+            "repo_id": "smoke-test-repo",
+            "query": "smoke",
+            "purpose": "locate smoke test code",
+            "required": true
+          }
+        ]
+      },
+      "source_snapshot_requirements": {
+        "require_git_status": false,
+        "require_commit_sha": false,
+        "allow_dirty_worktree": true
+      },
+      "handoff_readiness_criteria": ["smoke_test_pass_ready"],
       "status": "planned"
     }
   ]
@@ -967,9 +1231,23 @@ func seedTestDatabase(dbPath string) error {
 	defer s.Close()
 
 	// Create the "relay" project that the smoke plan fixture references
-	_, err = s.CreateProject("relay", "Relay", "Smoke Test Project", "active", "")
+	proj, err := s.CreateProject("relay", "Relay", "Smoke Test Project", "active", "")
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
+	}
+
+	// Create a source snapshot to satisfy the managed-pass provenance gate
+	_, err = s.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+		SourceSnapshotID: "snap-smoke-base",
+		ProjectRowID:     proj.ID,
+		ProjectID:        proj.ProjectID,
+		SnapshotKind:     "clean_commit",
+		Status:           "created",
+		CompletedAt:      "2026-06-28T00:00:00Z",
+		SummaryJSON:      "{}",
+	})
+	if err != nil {
+		return fmt.Errorf("create source snapshot: %w", err)
 	}
 
 	return nil

@@ -1379,3 +1379,210 @@ func TestGetNextPassWork_RequestedPassWithActiveRun(t *testing.T) {
 	}
 	assertBlockerCode(t, resp, BlockerActiveRunExists)
 }
+
+func TestGetNextPassWork_ContextPacketUsabilityGates(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name                 string
+		status               string
+		blockedSeedCount     int64
+		missingSeedCount     int64
+		snapshotID           string // for the context packet
+		selectedSnapshotID   string // for the project's latest source snapshot
+		expectOK             bool
+		expectReadinessState string
+		expectBlockerCode    string
+	}{
+		{
+			name:                 "status blocked",
+			status:               "blocked",
+			blockedSeedCount:     0,
+			missingSeedCount:     0,
+			snapshotID:           "snap-1",
+			selectedSnapshotID:   "snap-1",
+			expectOK:             false,
+			expectReadinessState: "needs_context_packet",
+			expectBlockerCode:    BlockerRequiredContextPacketMissing,
+		},
+		{
+			name:                 "missing seeds",
+			status:               "created",
+			blockedSeedCount:     0,
+			missingSeedCount:     2,
+			snapshotID:           "snap-1",
+			selectedSnapshotID:   "snap-1",
+			expectOK:             false,
+			expectReadinessState: "needs_context_packet",
+			expectBlockerCode:    BlockerRequiredContextPacketMissing,
+		},
+		{
+			name:                 "blocked seeds",
+			status:               "created",
+			blockedSeedCount:     3,
+			missingSeedCount:     0,
+			snapshotID:           "snap-1",
+			selectedSnapshotID:   "snap-1",
+			expectOK:             false,
+			expectReadinessState: "needs_context_packet",
+			expectBlockerCode:    BlockerRequiredContextPacketMissing,
+		},
+		{
+			name:                 "snapshot ID mismatch",
+			status:               "created",
+			blockedSeedCount:     0,
+			missingSeedCount:     0,
+			snapshotID:           "snap-2",
+			selectedSnapshotID:   "snap-1",
+			expectOK:             false,
+			expectReadinessState: "needs_context_packet",
+			expectBlockerCode:    BlockerRequiredContextPacketMissing,
+		},
+		{
+			name:                 "usable packet matching snapshot",
+			status:               "created",
+			blockedSeedCount:     0,
+			missingSeedCount:     0,
+			snapshotID:           "snap-1",
+			selectedSnapshotID:   "snap-1",
+			expectOK:             true,
+			expectReadinessState: "ready_for_handoff_authoring",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			svc, st := newWorkPacketService(t)
+
+			// Seed snapshots in order so that tc.selectedSnapshotID is the latest.
+			if tc.snapshotID != "" && tc.snapshotID != tc.selectedSnapshotID {
+				seedSourceSnapshot(t, st, "relay", tc.snapshotID)
+			}
+			if tc.selectedSnapshotID != "" {
+				seedSourceSnapshot(t, st, "relay", tc.selectedSnapshotID)
+			}
+
+			// Submit plan with context requirements
+			planSvc := NewService(st)
+			plan := PlannerPassPlan{
+				PlanMeta: PlanMeta{
+					PlanID: "plan-test", SchemaVersion: "2.0.0",
+					CreatedAt: "2026-06-23T00:00:00Z", Title: "T", Goal: "G",
+					RepoTarget: "Paintersrp/relay", BranchContext: "main", Status: "active",
+					ProjectID: "relay",
+					MCPCapabilityProfile: &MCPCapabilityProfile{
+						ProfileID: "p", Mode: "submission_only", ContextBrokerEnabled: boolPtr(false),
+					},
+				},
+				SourceIntent:       SourceIntent{Summary: "S"},
+				GlobalContextRules: &GlobalContextRules{DefaultSourceOfTruth: "D", PlannerContextBoundary: "B", ForbiddenContextDomains: []string{"X"}},
+				Passes: []PlanPassInput{{
+					PassID: "PASS-001", Sequence: 1, Name: "N", Goal: "G",
+					IntendedExecutionScope: []string{"a"}, NonGoals: []string{"b"},
+					Dependencies: []string{}, Status: "planned", PassType: "backend_vertical_slice",
+					ContextPlan: baseContextPlan(),
+					SourceSnapshotRequirements: SourceSnapshotRequirements{
+						RequireGitStatus: boolPtr(false), RequireCommitSHA: boolPtr(false), AllowDirtyWorktree: boolPtr(true),
+					},
+					HandoffReadinessCriteria: []string{"c"},
+				}},
+			}
+			raw := mustMarshalPlan(t, plan)
+			result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw})
+			if err != nil || !result.Report.Valid {
+				t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
+			}
+
+			// Create context packet in DB
+			project, err := st.GetProjectByProjectID("relay")
+			if err != nil {
+				t.Fatalf("GetProjectByProjectID: %v", err)
+			}
+			var snapshotRowID int64
+			if tc.snapshotID != "" {
+				snap, err := st.GetSourceSnapshotByID(tc.snapshotID)
+				if err != nil {
+					t.Fatalf("GetSourceSnapshotByID %q: %v", tc.snapshotID, err)
+				}
+				snapshotRowID = snap.ID
+			}
+
+			_, err = st.CreateContextPacket(store.CreateContextPacketParams{
+				ContextPacketID:     "packet-1",
+				ProjectRowID:        project.ID,
+				ProjectID:           project.ProjectID,
+				PlanID:              "plan-test",
+				PassID:              "PASS-001",
+				TaskSlug:            "slug",
+				SourceSnapshotRowID: snapshotRowID,
+				SourceSnapshotID:    tc.snapshotID,
+				Status:              tc.status,
+				BlockedSeedCount:    tc.blockedSeedCount,
+				MissingSeedCount:    tc.missingSeedCount,
+				CompletedAt:         "2026-06-28T12:00:00Z",
+			})
+			if err != nil {
+				t.Fatalf("CreateContextPacket: %v", err)
+			}
+
+			resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+				ProjectID: "relay",
+				PlanID:    "plan-test",
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if resp.OK != tc.expectOK {
+				t.Errorf("expected OK=%t, got %t", tc.expectOK, resp.OK)
+			}
+
+			if resp.Context == nil {
+				t.Fatal("expected Context in response to be non-nil")
+			}
+			if resp.Context.ContextReady != tc.expectOK {
+				t.Errorf("expected ContextReady=%t, got %t", tc.expectOK, resp.Context.ContextReady)
+			}
+
+			if resp.PlannerJumpstart == nil {
+				t.Fatal("expected PlannerJumpstart to be non-nil")
+			}
+			if resp.PlannerJumpstart.ReadinessState != tc.expectReadinessState {
+				t.Errorf("expected ReadinessState=%q, got %q", tc.expectReadinessState, resp.PlannerJumpstart.ReadinessState)
+			}
+
+			if tc.expectOK {
+				if resp.HandoffWork == nil {
+					t.Error("expected HandoffWork to be non-nil")
+				} else {
+					if resp.HandoffWork.SourceSnapshotID != tc.selectedSnapshotID {
+						t.Errorf("expected HandoffWork.SourceSnapshotID=%q, got %q", tc.selectedSnapshotID, resp.HandoffWork.SourceSnapshotID)
+					}
+				}
+				if len(resp.Blockers) > 0 {
+					t.Errorf("expected no blockers, got %+v", resp.Blockers)
+				}
+			} else {
+				if resp.HandoffWork != nil {
+					t.Error("expected HandoffWork to be nil")
+				}
+				assertBlockerCode(t, resp, tc.expectBlockerCode)
+
+				var foundCreateContextPacket bool
+				for _, act := range resp.PlannerJumpstart.SuggestedContextAcquisitionActions {
+					if act.Tool == "create_context_packet" {
+						foundCreateContextPacket = true
+						if act.Arguments["source_snapshot_id"] != tc.selectedSnapshotID {
+							t.Errorf("expected suggested action source_snapshot_id=%q, got %q", tc.selectedSnapshotID, act.Arguments["source_snapshot_id"])
+						}
+					}
+				}
+				if !foundCreateContextPacket {
+					t.Error("expected suggested actions to include create_context_packet")
+				}
+			}
+		})
+	}
+}

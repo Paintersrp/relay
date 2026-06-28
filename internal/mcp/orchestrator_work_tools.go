@@ -291,6 +291,11 @@ func (s *Server) HandleGetNextPassWork(rawArgs json.RawMessage) ToolCallResult {
 		return orchestratorWorkToolErr(appplans.NextPassWorkTool, appplans.BlockerUnsafeRequest, fmt.Sprintf("service error: %v", err))
 	}
 
+	// Ensure that when the service response has no handoff work, MCP structured content does not include it.
+	if resp.HandoffWork == nil {
+		resp.HandoffAuthoringPacket = nil
+	}
+
 	return orchestratorWorkNextPassPayload(resp)
 }
 

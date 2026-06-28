@@ -1132,3 +1132,186 @@ func TestOrchestratorWorkTools_GetNextAuditWorkSuccessThroughTool(t *testing.T) 
 		t.Error("audit work response must not embed full artifact content")
 	}
 }
+
+func TestOrchestratorWorkTools_GetNextPassWork_ContextPacketUsability(t *testing.T) {
+	t.Parallel()
+
+	st := setupOrchestratorTestStore(t)
+	if _, err := st.CreateProject("relay", "Relay", "Orchestrator MCP test project", "active", ""); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	project, err := st.GetProjectByProjectID("relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+
+	// Seed source snapshot
+	if _, err := st.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+		SourceSnapshotID: "snap-mcp-1",
+		ProjectRowID:     project.ID,
+		ProjectID:        project.ProjectID,
+		SnapshotKind:     "clean_commit",
+		Status:           "created",
+		CompletedAt:      "2026-06-28T00:00:00Z",
+		SummaryJSON:      "{}",
+	}); err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+
+	planSvc := appplans.NewService(st)
+	plan := appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
+			PlanID:        "plan-mcp-usability",
+			SchemaVersion: "2.0.0",
+			CreatedAt:     "2026-06-23T00:00:00Z",
+			Title:         "Orchestrator MCP usability test plan",
+			Goal:          "Exercise context packet usability.",
+			RepoTarget:    "Paintersrp/relay",
+			BranchContext: "main",
+			Status:        "active",
+			ProjectID:     "relay",
+			MCPCapabilityProfile: &appplans.MCPCapabilityProfile{
+				ProfileID:            "test-profile",
+				Mode:                 "submission_only",
+				ContextBrokerEnabled: mcpBoolPtr(false),
+			},
+		},
+		SourceIntent: appplans.SourceIntent{Summary: "MCP context packet usability test plan."},
+		GlobalContextRules: &appplans.GlobalContextRules{
+			DefaultSourceOfTruth:    "Relay managed plan.",
+			PlannerContextBoundary:  "Test only.",
+			ForbiddenContextDomains: []string{"GitHub issues"},
+		},
+		Passes: []appplans.PlanPassInput{{
+			PassID: "PASS-001", Sequence: 1, Name: "Context pass", Goal: "Collect context.",
+			IntendedExecutionScope: []string{"Inspect usability."},
+			NonGoals:               []string{"No run creation."},
+			Dependencies:           []string{},
+			Status:                 appplans.StatusPassPlanned,
+			PassType:               "backend_vertical_slice",
+			ContextPlan: appplans.ContextPlan{
+				RequiredRepositories: []string{"relay"},
+				SeedSearchTerms: []appplans.ContextSearchTerm{
+					{RepoID: "relay", Query: "planner_jumpstart", Purpose: "Find jumpstart code.", Required: mcpBoolPtr(true)},
+				},
+				SeedFilesToRead: []appplans.ContextFileRead{
+					{RepoID: "relay", Path: "internal/app/plans/work_packets.go", Purpose: "Review work packet logic.", Required: mcpBoolPtr(true)},
+				},
+				ContextCoverageExpectations: []string{"Usability contract is covered."},
+				BlockedIfMissing:            []string{"Action payload cannot be checked."},
+			},
+			SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
+				RequireGitStatus:   mcpBoolPtr(false),
+				RequireCommitSHA:   mcpBoolPtr(false),
+				AllowDirtyWorktree: mcpBoolPtr(true),
+			},
+			HandoffReadinessCriteria: []string{"Usability packet reviewed."},
+		}},
+	}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	submitResult, err := planSvc.SubmitPlan(context.Background(), appplans.SubmitPlanRequest{
+		RawJSON:               raw,
+		UnmanagedAcknowledged: true,
+	})
+	if err != nil || !submitResult.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, submitResult.Report.Issues)
+	}
+
+	// Seed unusable context packet (status blocked)
+	_, err = st.CreateContextPacket(store.CreateContextPacketParams{
+		ContextPacketID:     "packet-mcp-unusable",
+		ProjectRowID:        project.ID,
+		ProjectID:           project.ProjectID,
+		PlanID:              "plan-mcp-usability",
+		PassID:              "PASS-001",
+		TaskSlug:            "slug",
+		SourceSnapshotRowID: 1, // dummy
+		SourceSnapshotID:    "snap-mcp-1",
+		Status:              "blocked", // blocked makes it unusable
+		BlockedSeedCount:    0,
+		MissingSeedCount:    0,
+		CompletedAt:         "2026-06-28T12:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket: %v", err)
+	}
+
+	srv := NewServer(nil, &MCPDeps{Store: st, ToolProfile: ToolProfileLocalOperator})
+
+	// 1. Unusable packet check
+	toolResult := srv.HandleGetNextPassWork(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-usability"}`))
+	if toolResult.IsError {
+		t.Fatalf("expected IsError=false, got: %+v", toolResult.Content)
+	}
+	payload := decodeNextPassSummary(t, toolResult)
+	if payload.OK {
+		t.Fatal("expected ok=false for unusable context packet")
+	}
+	if payload.HandoffWork != nil || payload.HandoffPacket != nil {
+		t.Fatal("expected handoff_work and handoff_authoring_packet to be nil in structured content when unusable")
+	}
+	if payload.ReadinessState != "needs_context_packet" {
+		t.Errorf("expected readiness_state=needs_context_packet, got %q", payload.ReadinessState)
+	}
+	var foundCreateAction bool
+	for _, act := range payload.NextActions {
+		if act.Tool == "create_context_packet" {
+			foundCreateAction = true
+			if act.Arguments["source_snapshot_id"] != "snap-mcp-1" {
+				t.Errorf("expected suggested action source_snapshot_id=\"snap-mcp-1\", got %q", act.Arguments["source_snapshot_id"])
+			}
+		}
+		if act.Tool == "draft_planner_handoff" {
+			t.Fatal("did not expect draft_planner_handoff next action when context is unusable")
+		}
+	}
+	if !foundCreateAction {
+		t.Fatal("expected create_context_packet action")
+	}
+
+	// 2. Usable packet check
+	_, err = st.CreateContextPacket(store.CreateContextPacketParams{
+		ContextPacketID:     "packet-mcp-usable",
+		ProjectRowID:        project.ID,
+		ProjectID:           project.ProjectID,
+		PlanID:              "plan-mcp-usability",
+		PassID:              "PASS-001",
+		TaskSlug:            "slug",
+		SourceSnapshotRowID: 1, // dummy
+		SourceSnapshotID:    "snap-mcp-1",
+		Status:              "created", // created is usable
+		BlockedSeedCount:    0,
+		MissingSeedCount:    0,
+		CompletedAt:         "2026-06-28T13:00:00Z", // later completed_at makes it latest
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket: %v", err)
+	}
+
+	toolResult = srv.HandleGetNextPassWork(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-usability"}`))
+	if toolResult.IsError {
+		t.Fatalf("expected IsError=false, got: %+v", toolResult.Content)
+	}
+	payload = decodeNextPassSummary(t, toolResult)
+	if !payload.OK {
+		t.Fatalf("expected ok=true for usable context packet, got blockers: %+v", payload.Blockers)
+	}
+	if payload.HandoffWork == nil || payload.HandoffPacket == nil {
+		t.Fatal("expected handoff_work and handoff_authoring_packet to be non-nil when usable")
+	}
+	if payload.ReadinessState != "ready_for_handoff_authoring" {
+		t.Errorf("expected readiness_state=ready_for_handoff_authoring, got %q", payload.ReadinessState)
+	}
+	var foundDraftAction bool
+	for _, act := range payload.NextActions {
+		if act.Tool == "draft_planner_handoff" {
+			foundDraftAction = true
+		}
+	}
+	if !foundDraftAction {
+		t.Fatal("expected draft_planner_handoff action when usable")
+	}
+}

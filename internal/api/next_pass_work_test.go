@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -381,5 +382,131 @@ func TestGetPassNextWorkPreview_RequestedPassBlockedByPriorPassReturnsPayload(t 
 	}
 	if !strings.Contains(resp.Blockers[0].Message, "PASS-002") {
 		t.Fatalf("expected blocker to reference requested pass PASS-002, got %q", resp.Blockers[0].Message)
+	}
+}
+
+func TestGetNextPassWork_API_ContextPacketUsability(t *testing.T) {
+	t.Parallel()
+
+	_, st, router := newNextPassWorkTestServer(t)
+
+	// Seed source snapshot
+	project, err := st.GetProjectByProjectID("relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	if _, err := st.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+		SourceSnapshotID: "snap-api-1",
+		ProjectRowID:     project.ID,
+		ProjectID:        project.ProjectID,
+		SnapshotKind:     "clean_commit",
+		Status:           "created",
+		CompletedAt:      "2026-06-28T00:00:00Z",
+		SummaryJSON:      "{}",
+	}); err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+
+	planSvc := appplans.NewService(st)
+	plan := appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
+			PlanID:        "api-plan-usability",
+			SchemaVersion: "2.0.0",
+			CreatedAt:     "2026-06-23T00:00:00Z",
+			Title:         "API usability test plan",
+			Goal:          "Exercise context packet usability over API.",
+			RepoTarget:    "Paintersrp/relay",
+			BranchContext: "main",
+			Status:        "active",
+			ProjectID:     "relay",
+			MCPCapabilityProfile: &appplans.MCPCapabilityProfile{
+				ProfileID:            "test",
+				Mode:                 "submission_only",
+				ContextBrokerEnabled: planAPIBoolPtr(false),
+			},
+		},
+		SourceIntent: appplans.SourceIntent{Summary: "API context packet usability test plan."},
+		GlobalContextRules: &appplans.GlobalContextRules{
+			DefaultSourceOfTruth:    "Relay managed plan.",
+			PlannerContextBoundary:  "Test only.",
+			ForbiddenContextDomains: []string{"GitHub issues"},
+		},
+		Passes: []appplans.PlanPassInput{{
+			PassID: "PASS-001", Sequence: 1, Name: "Context pass", Goal: "Collect context.",
+			IntendedExecutionScope: []string{"Inspect usability."},
+			NonGoals:               []string{"No run creation."},
+			Dependencies:           []string{},
+			Status:                 appplans.StatusPassPlanned,
+			PassType:               "backend_vertical_slice",
+			ContextPlan: appplans.ContextPlan{
+				RequiredRepositories: []string{"relay"},
+				SeedSearchTerms: []appplans.ContextSearchTerm{
+					{RepoID: "relay", Query: "planner_jumpstart", Purpose: "Find jumpstart code.", Required: planAPIBoolPtr(true)},
+				},
+				SeedFilesToRead: []appplans.ContextFileRead{
+					{RepoID: "relay", Path: "internal/app/plans/work_packets.go", Purpose: "Review work packet logic.", Required: planAPIBoolPtr(true)},
+				},
+				ContextCoverageExpectations: []string{"Usability contract is covered."},
+				BlockedIfMissing:            []string{"Action payload cannot be checked."},
+			},
+			SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
+				RequireGitStatus:   planAPIBoolPtr(false),
+				RequireCommitSHA:   planAPIBoolPtr(false),
+				AllowDirtyWorktree: planAPIBoolPtr(true),
+			},
+			HandoffReadinessCriteria: []string{"Usability packet reviewed."},
+		}},
+	}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	submitResult, err := planSvc.SubmitPlan(context.Background(), appplans.SubmitPlanRequest{
+		RawJSON:               raw,
+		UnmanagedAcknowledged: true,
+	})
+	if err != nil || !submitResult.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, submitResult.Report.Issues)
+	}
+
+	// Create blocked context packet
+	_, err = st.CreateContextPacket(store.CreateContextPacketParams{
+		ContextPacketID:     "packet-api-unusable",
+		ProjectRowID:        project.ID,
+		ProjectID:           project.ProjectID,
+		PlanID:              "api-plan-usability",
+		PassID:              "PASS-001",
+		TaskSlug:            "slug",
+		SourceSnapshotRowID: 1,
+		SourceSnapshotID:    "snap-api-1",
+		Status:              "blocked", // blocked makes it unusable
+		BlockedSeedCount:    0,
+		MissingSeedCount:    0,
+		CompletedAt:         "2026-06-28T12:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/projects/relay/plans/api-plan-usability/next-pass-work", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp appplans.NextPassWorkResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.OK {
+		t.Fatal("expected ok=false for unusable context packet")
+	}
+	if resp.Context == nil || resp.Context.ContextReady {
+		t.Error("expected ContextReady=false for unusable context packet")
+	}
+	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != appplans.BlockerRequiredContextPacketMissing {
+		t.Fatalf("expected required_context_packet_missing blocker, got %+v", resp.Blockers)
 	}
 }

@@ -675,6 +675,9 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	var packetStatus string
 	var coverageReportPath string
 	var packetFound bool
+	var packetUsable bool
+	var packetUnusableReason string
+
 	if requirePacket {
 		packet, err := svc.store.GetLatestContextPacketForPass(project.ProjectID, plan.PlanID, pass.PassID)
 		if err != nil {
@@ -686,10 +689,11 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 			packetStatus = packet.Status
 			coverageReportPath = packet.CoverageReportPath
 			packetFound = true
+			packetUsable, packetUnusableReason = contextPacketUsableForHandoff(*packet, snapshotID)
 		}
 	}
 
-	contextReady := (!requireSnapshot || snapshotID != "") && (!requirePacket || packetID != "")
+	contextReady := (!requireSnapshot || snapshotFound) && (!requirePacket || packetUsable)
 
 	var criteria []string
 	if pass.HandoffReadinessCriteriaJson != "" && pass.HandoffReadinessCriteriaJson != "[]" {
@@ -733,7 +737,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	}
 
 	// Build the shared Planner jumpstart payload.
-	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound)
+	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, packetUnusableReason)
 
 	// Determine readiness state and optional blocker.
 	var readinessState string
@@ -751,6 +755,13 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		blocker = &WorkBlocker{
 			Code:        BlockerRequiredContextPacketMissing,
 			Message:     fmt.Sprintf("pass %q has required context inputs but no context packet exists for project=%q plan=%q pass=%q", pass.PassID, project.ProjectID, plan.PlanID, pass.PassID),
+			Recoverable: true,
+		}
+	case requirePacket && !packetUsable:
+		readinessState = "needs_context_packet"
+		blocker = &WorkBlocker{
+			Code:        BlockerRequiredContextPacketMissing,
+			Message:     fmt.Sprintf("pass %q context packet %q is unusable: %s", pass.PassID, packetID, packetUnusableReason),
 			Recoverable: true,
 		}
 	default:
@@ -871,6 +882,8 @@ func buildPlannerJumpstart(
 	repoAliases map[string]string,
 	snapshotID, snapshotStatus, packetID, packetStatus string,
 	requireSnapshot, requirePacket, snapshotFound, packetFound bool,
+	packetUsable bool,
+	packetUnusableReason string,
 ) *PlannerJumpstart {
 	var basis *PlannerJumpstartBasisReport
 	if requireSnapshot || requirePacket {
@@ -904,7 +917,7 @@ func buildPlannerJumpstart(
 		checklist = append(checklist, "Source snapshot: ready ("+snapshotID+")")
 	}
 
-	if requirePacket && !packetFound {
+	if requirePacket && (!packetFound || !packetUsable) {
 		contextPacketAction := ContextAcquisitionAction{
 			Tool:      "create_context_packet",
 			Arguments: buildContextPacketActionArguments(project.ProjectID, planID, selectedPass.PassID, snapshotID, ctxPlan, ctxBudget, repoAliases),
@@ -925,8 +938,12 @@ func buildPlannerJumpstart(
 			}
 		}
 		actions = append(actions, contextPacketAction)
-		checklist = append(checklist, "Context packet: needed - run create_context_packet with project_id, plan_id, pass_id, task_slug, source_snapshot_id, seed_files, and seed_searches")
-	} else if packetFound {
+		if !packetFound {
+			checklist = append(checklist, "Context packet: needed - run create_context_packet with project_id, plan_id, pass_id, task_slug, source_snapshot_id, seed_files, and seed_searches")
+		} else {
+			checklist = append(checklist, "Context packet: unusable - "+packetUnusableReason)
+		}
+	} else if requirePacket && packetFound && packetUsable {
 		checklist = append(checklist, "Context packet: ready ("+packetID+")")
 	}
 
@@ -1298,6 +1315,23 @@ func hasRequiredContextInputs(cp ContextPlan) bool {
 		}
 	}
 	return false
+}
+
+func contextPacketUsableForHandoff(packet store.ContextPacket, selectedSourceSnapshotID string) (bool, string) {
+	status := strings.TrimSpace(packet.Status)
+	if status != "created" {
+		return false, fmt.Sprintf("packet status is %q, expected \"created\"", status)
+	}
+	if packet.BlockedSeedCount > 0 {
+		return false, fmt.Sprintf("packet has %d blocked seeds", packet.BlockedSeedCount)
+	}
+	if packet.MissingSeedCount > 0 {
+		return false, fmt.Sprintf("packet has %d missing seeds", packet.MissingSeedCount)
+	}
+	if selectedSourceSnapshotID != "" && packet.SourceSnapshotID != selectedSourceSnapshotID {
+		return false, fmt.Sprintf("packet source snapshot ID %q does not match selected source snapshot ID %q", packet.SourceSnapshotID, selectedSourceSnapshotID)
+	}
+	return true, ""
 }
 
 func isUnsafePath(s string) bool {
