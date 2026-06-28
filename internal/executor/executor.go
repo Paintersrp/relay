@@ -874,16 +874,6 @@ func persistGitArtifact(s *store.Store, runID int64, kind, content string) {
 		s.CreateArtifact(runID, kind, path, "text/plain")
 	}
 }
-func persistGitArtifact(s *store.Store, runID int64, kind, content string) {
-	if content == "" {
-		return
-	}
-	filename := pipeline.ArtifactFilename(kind)
-	path, err := artifacts.Write(runID, kind, filename, []byte(content))
-	if err == nil && path != "" {
-		s.CreateArtifact(runID, kind, path, "text/plain")
-	}
-}
 
 // isKiroParseFixtureEnabled returns true iff RELAY_KIRO_CAPTURE_PARSE_FIXTURE=true (case-insensitive).
 func isKiroParseFixtureEnabled() bool {
