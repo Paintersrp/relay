@@ -103,9 +103,11 @@ type ToolsListParams struct {
 
 // ToolDefinition describes an MCP tool exposed by the server.
 type ToolDefinition struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"inputSchema"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	InputSchema  json.RawMessage `json:"inputSchema"`
+	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
+	Annotations  map[string]any  `json:"annotations,omitempty"`
 }
 
 // ToolCallParams is the params for tools/call.
@@ -116,8 +118,10 @@ type ToolCallParams struct {
 
 // ToolCallResult is the response body for tools/call.
 type ToolCallResult struct {
-	Content []ContentBlock `json:"content"`
-	IsError bool           `json:"isError,omitempty"`
+	Content           []ContentBlock `json:"content"`
+	StructuredContent any            `json:"structuredContent,omitempty"`
+	Meta              any            `json:"_meta,omitempty"`
+	IsError           bool           `json:"isError,omitempty"`
 }
 
 // ContentBlock is a piece of content returned by a tool.

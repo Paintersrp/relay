@@ -35,6 +35,59 @@ var getNextPassWorkSchema = json.RawMessage(`{
   }
 }`)
 
+var getNextPassWorkOutputSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok", "tool", "context_ready", "blockers", "local_preview_hint"],
+  "properties": {
+    "ok": {"type": "boolean"},
+    "tool": {"type": "string", "const": "get_next_pass_work"},
+    "project_id": {"type": "string"},
+    "plan_id": {"type": "string"},
+    "selected_pass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass_id", "sequence", "name", "status"],
+      "properties": {
+        "pass_id": {"type": "string"},
+        "sequence": {"type": "integer"},
+        "name": {"type": "string"},
+        "status": {"type": "string"}
+      }
+    },
+    "readiness_state": {"type": "string"},
+    "source_snapshot_id": {"type": "string"},
+    "context_packet_id": {"type": "string"},
+    "context_ready": {"type": "boolean"},
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "recoverable"],
+        "properties": {
+          "code": {"type": "string"},
+          "recoverable": {"type": "boolean"}
+        }
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description"],
+        "properties": {
+          "tool": {"type": "string"},
+          "description": {"type": "string"},
+          "arguments": {"type": "string"}
+        }
+      }
+    },
+    "local_preview_hint": {"type": "string"}
+  }
+}`)
+
 var getNextAuditWorkSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,
@@ -68,9 +121,14 @@ var getNextAuditWorkSchema = json.RawMessage(`{
 // ----------------------------------------------------------------------------
 
 var ToolGetNextPassWork = ToolDefinition{
-	Name:        appplans.NextPassWorkTool,
-	Description: "Return the next eligible project-scoped plan pass work packet for Planner handoff creation. Includes deterministic planner_jumpstart guidance with readiness state, source/context requirements, suggested acquisition actions, dependency/binding metadata for ordered acquisition, and handoff preflight checklist. Retrieval-only: does not create runs, submit plans, generate handoffs, create context packets, mutate git, run shell commands, or expose arbitrary filesystem access.",
-	InputSchema: getNextPassWorkSchema,
+	Name:         appplans.NextPassWorkTool,
+	Description:  "Return the next eligible project-scoped plan pass work packet for Planner handoff creation. Includes deterministic planner_jumpstart guidance with readiness state, source/context requirements, suggested acquisition actions, dependency/binding metadata for ordered acquisition, and handoff preflight checklist. Retrieval-only: does not create runs, submit plans, generate handoffs, create context packets, mutate git, run shell commands, or expose arbitrary filesystem access.",
+	InputSchema:  getNextPassWorkSchema,
+	OutputSchema: getNextPassWorkOutputSchema,
+	Annotations: map[string]any{
+		"readOnlyHint":    true,
+		"destructiveHint": false,
+	},
 }
 
 var ToolGetNextAuditWork = ToolDefinition{
@@ -122,6 +180,52 @@ func orchestratorWorkToolPayload(payload interface{}, isError bool) ToolCallResu
 	}
 }
 
+func orchestratorWorkNextPassPayload(resp appplans.NextPassWorkResponse) ToolCallResult {
+	summary := appplans.CompactNextPassWorkSummary(resp)
+	return ToolCallResult{
+		Content: []ContentBlock{{
+			Type: "text",
+			Text: nextPassWorkSummaryText(summary),
+		}},
+		StructuredContent: summary,
+	}
+}
+
+func nextPassWorkSummaryText(summary appplans.NextPassWorkMCPSummary) string {
+	selected := "none"
+	if summary.SelectedPass != nil {
+		selected = fmt.Sprintf("%s seq=%d name=%q status=%s", summary.SelectedPass.PassID, summary.SelectedPass.Sequence, summary.SelectedPass.Name, summary.SelectedPass.Status)
+	}
+	blockers := "none"
+	if len(summary.Blockers) > 0 {
+		blockers = ""
+		for i, blocker := range summary.Blockers {
+			if i > 0 {
+				blockers += "; "
+			}
+			blockers += fmt.Sprintf("%s recoverable=%t", blocker.Code, blocker.Recoverable)
+		}
+	}
+	next := "Use structuredContent.next_actions for follow-up references."
+	if len(summary.NextActions) > 0 {
+		next = summary.NextActions[0].Description
+		if summary.NextActions[0].Tool != "" {
+			next = summary.NextActions[0].Tool + ": " + next
+		}
+	}
+	return fmt.Sprintf(
+		"get_next_pass_work: selected_pass=%s readiness=%s context_ready=%t source_snapshot_id=%q context_packet_id=%q blockers=%s. %s. %s",
+		selected,
+		summary.ReadinessState,
+		summary.ContextReady,
+		summary.SourceSnapshotID,
+		summary.ContextPacketID,
+		blockers,
+		next,
+		summary.LocalPreviewHint,
+	)
+}
+
 // orchestratorWorkToolErr builds a top-level error payload shaped as a work packet blocker response.
 func orchestratorWorkToolErr(toolName string, code string, message string) ToolCallResult {
 	payload := map[string]interface{}{
@@ -166,7 +270,7 @@ func (s *Server) HandleGetNextPassWork(rawArgs json.RawMessage) ToolCallResult {
 		return orchestratorWorkToolErr(appplans.NextPassWorkTool, appplans.BlockerUnsafeRequest, fmt.Sprintf("service error: %v", err))
 	}
 
-	return orchestratorWorkToolPayload(resp, false)
+	return orchestratorWorkNextPassPayload(resp)
 }
 
 // HandleGetNextAuditWork retrieves the next eligible audit work packet

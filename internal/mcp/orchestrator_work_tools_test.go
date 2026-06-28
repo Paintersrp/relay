@@ -262,11 +262,7 @@ func TestGetNextPassWorkUnknownProject(t *testing.T) {
 		t.Fatal("expected content block")
 	}
 
-	var payload appplans.NextPassWorkResponse
-	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
-		t.Fatalf("unmarshal payload: %v", err)
-	}
-
+	payload := decodeNextPassSummary(t, result)
 	if payload.OK {
 		t.Error("expected ok=false for unknown project, got true")
 	}
@@ -383,6 +379,22 @@ func decodeToolJSON(t *testing.T, result ToolCallResult) map[string]any {
 		t.Fatalf("unmarshal tool JSON: %v", err)
 	}
 	return payload
+}
+
+func decodeNextPassSummary(t *testing.T, result ToolCallResult) appplans.NextPassWorkMCPSummary {
+	t.Helper()
+	if result.StructuredContent == nil {
+		t.Fatal("expected structuredContent")
+	}
+	data, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal structuredContent: %v", err)
+	}
+	var summary appplans.NextPassWorkMCPSummary
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Fatalf("unmarshal structuredContent: %v", err)
+	}
+	return summary
 }
 
 // seedMCPOrchestratorPlan submits a valid two-pass plan for project "relay"
@@ -509,6 +521,16 @@ func TestOrchestratorWorkTools_SchemasAreStrictAndScoped(t *testing.T) {
 	if passRequired["pass_id"] {
 		t.Error("get_next_pass_work schema must not require pass_id")
 	}
+	outputSchema := schemaMap(t, ToolGetNextPassWork.OutputSchema)
+	outputRequired := requiredSet(t, outputSchema)
+	for _, field := range []string{"ok", "tool", "context_ready", "blockers", "local_preview_hint"} {
+		if !outputRequired[field] {
+			t.Errorf("get_next_pass_work outputSchema must require %q", field)
+		}
+	}
+	if ToolGetNextPassWork.Annotations["readOnlyHint"] != true {
+		t.Error("get_next_pass_work annotations must include readOnlyHint=true")
+	}
 
 	// get_next_audit_work schema.
 	auditSchema := schemaMap(t, ToolGetNextAuditWork.InputSchema)
@@ -625,10 +647,7 @@ func TestOrchestratorWorkTools_GetNextPassWorkSuccessThroughTool(t *testing.T) {
 		t.Fatalf("expected IsError=false, got error result: %+v", result.Content)
 	}
 
-	var resp appplans.NextPassWorkResponse
-	if err := json.Unmarshal([]byte(result.Content[0].Text), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
+	resp := decodeNextPassSummary(t, result)
 	if !resp.OK {
 		t.Fatalf("expected ok=true, got blockers: %+v", resp.Blockers)
 	}
@@ -638,38 +657,14 @@ func TestOrchestratorWorkTools_GetNextPassWorkSuccessThroughTool(t *testing.T) {
 	if resp.SelectedPass == nil || resp.SelectedPass.PassID != "PASS-001" {
 		t.Fatalf("expected PASS-001 selected, got %+v", resp.SelectedPass)
 	}
-	if resp.SuggestedRunSubmission == nil {
-		t.Fatal("expected suggested_run_submission")
+	if resp.ReadinessState != "ready" {
+		t.Errorf("expected readiness_state=ready, got %q", resp.ReadinessState)
 	}
-
-	// The suggested run submission must include only plan_id and pass_id.
-	payload := decodeToolJSON(t, result)
-	suggested, _ := payload["suggested_run_submission"].(map[string]any)
-	args, _ := suggested["arguments"].(map[string]any)
-	if len(args) != 2 {
-		t.Fatalf("expected exactly 2 suggested arguments (plan_id, pass_id), got %d: %v", len(args), args)
+	if len(resp.NextActions) == 0 || resp.NextActions[0].Tool != "create_run_from_planner_handoff" {
+		t.Fatalf("expected create_run_from_planner_handoff next action, got %+v", resp.NextActions)
 	}
-	if _, ok := args["plan_id"]; !ok {
-		t.Error("suggested arguments missing plan_id")
-	}
-	if _, ok := args["pass_id"]; !ok {
-		t.Error("suggested arguments missing pass_id")
-	}
-
-	// Verify jumpstart field is present in the JSON payload.
-	js, _ := payload["planner_jumpstart"].(map[string]any)
-	if js == nil {
-		t.Fatal("expected planner_jumpstart in response JSON")
-	}
-	if state, _ := js["readiness_state"].(string); state != "ready" {
-		t.Errorf("expected readiness_state=ready, got %q", state)
-	}
-	if summary, _ := js["selected_pass_summary"].(map[string]any); summary == nil {
-		t.Error("expected selected_pass_summary in planner_jumpstart")
-	}
-	checklist, _ := js["handoff_preflight_checklist"].([]any)
-	if len(checklist) == 0 {
-		t.Error("expected non-empty handoff_preflight_checklist")
+	if !strings.Contains(result.Content[0].Text, "Use the Relay pass-detail preview") {
+		t.Fatalf("expected local preview hint in text, got %q", result.Content[0].Text)
 	}
 }
 
@@ -747,35 +742,124 @@ func TestOrchestratorWorkTools_GetNextPassWorkPlannerJumpstartActions(t *testing
 	if toolResult.IsError {
 		t.Fatalf("expected IsError=false, got error result: %+v", toolResult.Content)
 	}
-	payload := decodeToolJSON(t, toolResult)
-	js, _ := payload["planner_jumpstart"].(map[string]any)
-	if js == nil {
-		t.Fatal("expected planner_jumpstart in response JSON")
+	payload := decodeNextPassSummary(t, toolResult)
+	if payload.ReadinessState != "needs_context_packet" {
+		t.Fatalf("expected readiness_state=needs_context_packet, got %q", payload.ReadinessState)
 	}
-	actions, _ := js["suggested_context_acquisition_actions"].([]any)
-	if len(actions) != 2 {
-		t.Fatalf("expected two suggested actions, got %d: %#v", len(actions), actions)
+	if len(payload.NextActions) != 2 {
+		t.Fatalf("expected two concise next actions, got %d: %#v", len(payload.NextActions), payload.NextActions)
 	}
-	first, _ := actions[0].(map[string]any)
-	second, _ := actions[1].(map[string]any)
-	if first["tool"] != "create_source_snapshot" || second["tool"] != "create_context_packet" {
-		t.Fatalf("unexpected actions: %#v", actions)
+	if payload.NextActions[0].Tool != "create_source_snapshot" || payload.NextActions[1].Tool != "create_context_packet" {
+		t.Fatalf("unexpected actions: %#v", payload.NextActions)
 	}
-	if second["depends_on"] != "create_source_snapshot" {
-		t.Fatalf("expected depends_on create_source_snapshot, got %#v", second["depends_on"])
+	if !strings.Contains(payload.NextActions[1].Arguments, "local pass-detail preview") {
+		t.Fatalf("expected local preview argument reference, got %#v", payload.NextActions[1])
 	}
-	bindings, _ := second["argument_bindings"].(map[string]any)
-	if bindings["source_snapshot_id"] != "$.result.source_snapshot_id" {
-		t.Fatalf("expected source_snapshot_id binding, got %#v", bindings)
+}
+
+func TestOrchestratorWorkTools_GetNextPassWorkTextOmitsVerboseHookProse(t *testing.T) {
+	t.Parallel()
+
+	st := setupOrchestratorTestStore(t)
+	if _, err := st.CreateProject("relay", "Relay", "Orchestrator MCP test project", "active", ""); err != nil {
+		t.Fatalf("CreateProject: %v", err)
 	}
-	args, _ := second["arguments"].(map[string]any)
-	for _, key := range []string{"project_id", "plan_id", "pass_id", "task_slug", "seed_files", "seed_searches", "include_inventory", "max_sources", "max_total_bytes"} {
-		if _, ok := args[key]; !ok {
-			t.Fatalf("expected create_context_packet arguments to include %q: %#v", key, args)
+	verbose := "pre-commit, pre-push, and ordinary commit/push flow details stay in local preview only."
+	planSvc := appplans.NewService(st)
+	plan := appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
+			PlanID:        "plan-mcp-compact-text",
+			SchemaVersion: "2.0.0",
+			CreatedAt:     "2026-06-23T00:00:00Z",
+			Title:         "Compact text test plan",
+			Goal:          "Exercise compact MCP output.",
+			RepoTarget:    "Paintersrp/relay",
+			BranchContext: "main",
+			Status:        "active",
+			ProjectID:     "relay",
+			MCPCapabilityProfile: &appplans.MCPCapabilityProfile{
+				ProfileID:            "test-profile",
+				Mode:                 "submission_only",
+				ContextBrokerEnabled: mcpBoolPtr(false),
+			},
+		},
+		SourceIntent:       appplans.SourceIntent{Summary: "MCP compact text test plan."},
+		GlobalContextRules: &appplans.GlobalContextRules{DefaultSourceOfTruth: "Relay managed plan.", PlannerContextBoundary: "Test only.", ForbiddenContextDomains: []string{"GitHub issues"}},
+		Passes: []appplans.PlanPassInput{{
+			PassID: "PASS-002", Sequence: 2, Name: "Context packet pass", Goal: verbose,
+			IntendedExecutionScope: []string{"Inspect compact output."},
+			NonGoals:               []string{"No run creation."},
+			Dependencies:           []string{},
+			Status:                 appplans.StatusPassPlanned,
+			PassType:               "backend_vertical_slice",
+			ContextPlan: appplans.ContextPlan{
+				RequiredRepositories: []string{"relay"},
+				SeedSearchTerms: []appplans.ContextSearchTerm{
+					{RepoID: "relay", Query: "pre-commit", Purpose: verbose, Required: mcpBoolPtr(true)},
+				},
+				SeedFilesToRead: []appplans.ContextFileRead{
+					{RepoID: "relay", Path: "internal/app/plans/work_packets.go", Purpose: verbose, Required: mcpBoolPtr(true)},
+				},
+				ContextCoverageExpectations: []string{verbose},
+				BlockedIfMissing:            []string{verbose},
+			},
+			SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
+				RequireGitStatus:   mcpBoolPtr(false),
+				RequireCommitSHA:   mcpBoolPtr(false),
+				AllowDirtyWorktree: mcpBoolPtr(true),
+			},
+			HandoffReadinessCriteria: []string{"Context packet exists."},
+		}},
+	}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	submitResult, err := planSvc.SubmitPlan(context.Background(), appplans.SubmitPlanRequest{
+		RawJSON:               raw,
+		UnmanagedAcknowledged: true,
+	})
+	if err != nil || !submitResult.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, submitResult.Report.Issues)
+	}
+
+	fullResp, err := appplans.NewOrchestratorWorkService(st).GetNextPassWork(context.Background(), appplans.NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-mcp-compact-text",
+	})
+	if err != nil {
+		t.Fatalf("GetNextPassWork: %v", err)
+	}
+	fullJSON, err := json.Marshal(fullResp)
+	if err != nil {
+		t.Fatalf("marshal full response: %v", err)
+	}
+	if !strings.Contains(string(fullJSON), "pre-commit") {
+		t.Fatal("expected full service response to preserve verbose hook text")
+	}
+
+	srv := NewServer(nil, &MCPDeps{Store: st, ToolProfile: ToolProfileLocalOperator})
+	result := srv.HandleGetNextPassWork(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-compact-text"}`))
+	if result.IsError {
+		t.Fatalf("expected IsError=false, got error result: %+v", result.Content)
+	}
+	for _, banned := range []string{"pre-commit", "pre-push", "ordinary commit/push flow"} {
+		if strings.Contains(result.Content[0].Text, banned) {
+			t.Fatalf("MCP text leaked verbose text %q: %s", banned, result.Content[0].Text)
 		}
 	}
-	if _, ok := args["source_snapshot_id"]; ok {
-		t.Fatalf("did not expect static source_snapshot_id without a snapshot: %#v", args)
+	summary := decodeNextPassSummary(t, result)
+	if summary.SelectedPass == nil || summary.SelectedPass.PassID != "PASS-002" {
+		t.Fatalf("expected PASS-002 selected, got %+v", summary.SelectedPass)
+	}
+	if summary.ReadinessState != "needs_context_packet" {
+		t.Fatalf("expected needs_context_packet, got %q", summary.ReadinessState)
+	}
+	if len(summary.Blockers) == 0 || summary.Blockers[0].Code != appplans.BlockerRequiredContextPacketMissing {
+		t.Fatalf("expected context-packet blocker, got %+v", summary.Blockers)
+	}
+	if !strings.Contains(summary.LocalPreviewHint, "pass-detail preview") {
+		t.Fatalf("expected local preview hint, got %q", summary.LocalPreviewHint)
 	}
 }
 
@@ -793,18 +877,15 @@ func TestOrchestratorWorkTools_GetNextPassWorkWithPassID(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("expected IsError=false, got error result: %+v", result.Content)
 	}
-	var resp appplans.NextPassWorkResponse
-	if err := json.Unmarshal([]byte(result.Content[0].Text), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
+	resp := decodeNextPassSummary(t, result)
 	if !resp.OK {
 		t.Fatalf("expected ok=true for requested PASS-001, got blockers: %+v", resp.Blockers)
 	}
 	if resp.SelectedPass == nil || resp.SelectedPass.PassID != "PASS-001" {
 		t.Fatalf("expected PASS-001 selected, got %+v", resp.SelectedPass)
 	}
-	if resp.PlannerJumpstart == nil {
-		t.Fatal("expected planner_jumpstart for pass_id request")
+	if resp.ReadinessState == "" {
+		t.Fatal("expected readiness_state for pass_id request")
 	}
 }
 
