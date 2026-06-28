@@ -12,7 +12,6 @@ type ToolProfile string
 const (
 	ToolProfileLocalOperator ToolProfile = "local-operator"
 	ToolProfileRestricted    ToolProfile = "restricted"
-	ToolProfileAudit         ToolProfile = "audit"
 
 	EnvMCPProfile                 = "RELAY_MCP_PROFILE"
 	EnvLegacyContextBrokerEnabled = "RELAY_MCP_CONTEXT_BROKER_ENABLED"
@@ -24,8 +23,8 @@ func NormalizeToolProfile(raw string) (ToolProfile, bool) {
 		return ToolProfileLocalOperator, true
 	case string(ToolProfileRestricted):
 		return ToolProfileRestricted, true
-	case string(ToolProfileAudit):
-		return ToolProfileAudit, true
+	case "audit":
+		return ToolProfileLocalOperator, true
 	default:
 		return ToolProfileLocalOperator, false
 	}

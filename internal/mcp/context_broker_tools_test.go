@@ -835,21 +835,7 @@ func createContextPacketViaTool(t *testing.T, fixture brokerFixture, slug string
 
 func listTools(t *testing.T, srv *Server) ToolsListResult {
 	t.Helper()
-	req := Request{
-		JSONRPC: JSONRPCVersion,
-		ID:      json.RawMessage(`1`),
-		Method:  "tools/list",
-	}
-	resp := srv.handleLine(mustMarshal(t, req))
-	if resp.Error != nil {
-		t.Fatalf("tools/list error: %v", resp.Error)
-	}
-	var list ToolsListResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &list); err != nil {
-		t.Fatalf("unmarshal tools list: %v", err)
-	}
-	return list
+	return collectAllTools(t, srv, ToolsListParams{})
 }
 
 func hasTool(list ToolsListResult, name string) bool {

@@ -25,10 +25,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	appplans "relay/internal/app/plans"
 )
+
+const toolsListPageSize = 50
 
 // Server is the MCP stdio server. It reads newline-delimited JSON-RPC 2.0
 // requests from r and writes responses to w.
@@ -49,9 +52,6 @@ func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 
 	profile := s.activeProfile()
 	switch profile {
-	case ToolProfileAudit:
-		s.tools = auditToolDefinitions()
-		return s
 	case ToolProfileRestricted:
 		// restricted keeps the base tool surface without broker/refactor tools.
 	default:
@@ -93,19 +93,6 @@ func (s *Server) activeProfile() ToolProfile {
 		return ToolProfileLocalOperator
 	}
 	return s.deps.ToolProfile
-}
-
-func auditToolDefinitions() []ToolDefinition {
-	return []ToolDefinition{
-		ToolSubmitTestAuditPacket,
-		ToolListOpenRuns,
-		ToolGetRunStatus,
-		ToolSubmitAuditPacket,
-		ToolGetNextAuditWork,
-		ToolCreateLocalAudit,
-		ToolGetLocalAudit,
-		ToolListProjectLocalAudits,
-	}
 }
 
 func (s *Server) toolRegistered(name string) bool {
@@ -203,9 +190,170 @@ func (s *Server) handleInitialize(req Request) Response {
 	return okResponse(req.ID, result)
 }
 
-// handleToolsList returns the list of registered tools.
+// handleToolsList returns a bounded, pageable list of registered tools.
 func (s *Server) handleToolsList(req Request) Response {
-	return okResponse(req.ID, ToolsListResult{Tools: s.tools})
+	params, paramKeys, err := parseToolsListParams(req.Params)
+	if err != nil {
+		return errResponse(req.ID, CodeInvalidParams, "invalid params: "+err.Error())
+	}
+	start := 0
+	if params.Cursor != "" {
+		start, err = strconv.Atoi(params.Cursor)
+		if err != nil || start < 0 {
+			return errResponse(req.ID, CodeInvalidParams, "invalid params: invalid cursor")
+		}
+	}
+
+	filtered := filterToolsList(s.tools, params)
+	if start > len(filtered) {
+		return errResponse(req.ID, CodeInvalidParams, "invalid params: invalid cursor")
+	}
+	end := start + toolsListPageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	result := ToolsListResult{Tools: append([]ToolDefinition(nil), filtered[start:end]...)}
+	if end < len(filtered) {
+		result.NextCursor = strconv.Itoa(end)
+	}
+	if s.log != nil {
+		approxBytes := 0
+		if b, err := json.Marshal(result); err == nil {
+			approxBytes = len(b)
+		}
+		s.log.Debug("mcp tools/list",
+			"method", req.Method,
+			"param_keys", paramKeys,
+			"has_cursor", params.Cursor != "",
+			"has_query", strings.TrimSpace(params.Query) != "",
+			"has_include_tags", len(params.IncludeTags) > 0,
+			"registered_count", len(s.tools),
+			"filtered_count", len(filtered),
+			"returned_count", len(result.Tools),
+			"has_next_cursor", result.NextCursor != "",
+			"approx_response_bytes", approxBytes,
+		)
+	}
+	return okResponse(req.ID, result)
+}
+
+func parseToolsListParams(raw json.RawMessage) (ToolsListParams, []string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ToolsListParams{}, nil, nil
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return ToolsListParams{}, nil, err
+	}
+	keys := make([]string, 0, len(envelope))
+	for key := range envelope {
+		keys = append(keys, key)
+	}
+	var params ToolsListParams
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return ToolsListParams{}, keys, err
+	}
+	params.Query = strings.TrimSpace(params.Query)
+	cleanTags := make([]string, 0, len(params.IncludeTags))
+	seen := map[string]struct{}{}
+	for _, tag := range params.IncludeTags {
+		tag = strings.ToLower(strings.TrimSpace(tag))
+		if tag == "" {
+			continue
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		seen[tag] = struct{}{}
+		cleanTags = append(cleanTags, tag)
+	}
+	params.IncludeTags = cleanTags
+	return params, keys, nil
+}
+
+func filterToolsList(tools []ToolDefinition, params ToolsListParams) []ToolDefinition {
+	query := strings.ToLower(strings.TrimSpace(params.Query))
+	tags := map[string]struct{}{}
+	for _, tag := range params.IncludeTags {
+		tags[strings.ToLower(strings.TrimSpace(tag))] = struct{}{}
+	}
+	if query == "" && len(tags) == 0 {
+		return append([]ToolDefinition(nil), tools...)
+	}
+	out := make([]ToolDefinition, 0, len(tools))
+	for _, tool := range tools {
+		toolTags := toolTagsByName(tool.Name)
+		if len(tags) > 0 && !toolHasAnyTag(toolTags, tags) {
+			continue
+		}
+		if query != "" && !toolMatchesQuery(tool, toolTags, query) {
+			continue
+		}
+		out = append(out, tool)
+	}
+	return out
+}
+
+func toolMatchesQuery(tool ToolDefinition, tags []string, query string) bool {
+	if strings.Contains(strings.ToLower(tool.Name), query) || strings.Contains(strings.ToLower(tool.Description), query) {
+		return true
+	}
+	for _, tag := range tags {
+		if strings.Contains(tag, query) {
+			return true
+		}
+	}
+	return false
+}
+
+func toolHasAnyTag(toolTags []string, wanted map[string]struct{}) bool {
+	for _, tag := range toolTags {
+		if _, ok := wanted[tag]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func toolTagsByName(name string) []string {
+	lower := strings.ToLower(name)
+	tags := []string{}
+	add := func(tag string) {
+		for _, existing := range tags {
+			if existing == tag {
+				return
+			}
+		}
+		tags = append(tags, tag)
+	}
+	switch {
+	case strings.Contains(lower, "audit"):
+		add("audit")
+	case strings.Contains(lower, "planner") || strings.Contains(lower, "plan_attempt") || strings.Contains(lower, "plan_seed"):
+		add("planner")
+		add("plan")
+	case strings.Contains(lower, "run"):
+		add("run")
+	}
+	if strings.Contains(lower, "plan") {
+		add("plan")
+	}
+	if strings.Contains(lower, "pass") {
+		add("planner")
+	}
+	if strings.Contains(lower, "context") {
+		add("context")
+	}
+	if strings.Contains(lower, "source") || strings.Contains(lower, "repository") || strings.Contains(lower, "project_file") {
+		add("source")
+	}
+	if strings.Contains(lower, "refactor") {
+		add("refactor")
+	}
+	if strings.Contains(lower, "test") || strings.Contains(lower, "validation") {
+		add("test")
+	}
+	return tags
 }
 
 // handleToolsCall dispatches a tools/call request to the matching handler.

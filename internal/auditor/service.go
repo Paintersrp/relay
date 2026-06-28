@@ -188,8 +188,9 @@ func (svc *Service) Generate(runID int64) (*GeneratedAudit, error) {
 }
 
 func BuildEvidenceManifest(ev *Evidence, decision Decision, generatedAt time.Time) AuditEvidenceManifest {
-	validationResults := make([]AuditManifestValidationResult, 0, len(ev.ValidationResults))
-	for _, result := range ev.ValidationResults {
+	sanitizedResults := sanitizedValidationResults(ev.ValidationResults)
+	validationResults := make([]AuditManifestValidationResult, 0, len(sanitizedResults))
+	for _, result := range sanitizedResults {
 		validationResults = append(validationResults, AuditManifestValidationResult{
 			ID:              result.ID,
 			Required:        result.Required,
@@ -220,14 +221,14 @@ func BuildEvidenceManifest(ev *Evidence, decision Decision, generatedAt time.Tim
 				PreviewTruncated: previewWasTruncated(ev.ExecutorResult.Content),
 			},
 			ValidationResults: validationResults,
-		ChangedFiles: AuditManifestChangedFiles{
-			Present:                 ev.ChangedFiles.Present,
-			SourceKind:              ev.ChangedFiles.SourceKind,
-			Count:                   len(ev.ChangedFiles.Files),
-			ImplementationFileCount: len(ev.ChangedFiles.ImplementationFiles),
-			GeneratedArtifactCount:  len(ev.ChangedFiles.GeneratedArtifactFiles),
-			ArtifactPath:            ev.ChangedFiles.RawArtifactPath,
-		},
+			ChangedFiles: AuditManifestChangedFiles{
+				Present:                 ev.ChangedFiles.Present,
+				SourceKind:              ev.ChangedFiles.SourceKind,
+				Count:                   len(ev.ChangedFiles.Files),
+				ImplementationFileCount: len(ev.ChangedFiles.ImplementationFiles),
+				GeneratedArtifactCount:  len(ev.ChangedFiles.GeneratedArtifactFiles),
+				ArtifactPath:            ev.ChangedFiles.RawArtifactPath,
+			},
 			GitDiff: AuditManifestDiff{
 				Present:          ev.GitDiff.Present,
 				ArtifactPath:     ev.GitDiff.RawArtifactPath,

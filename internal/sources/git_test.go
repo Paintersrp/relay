@@ -83,6 +83,9 @@ func TestGetRepositoryGitStatusCountsChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "committed.txt"), []byte("updated\n"), 0644); err != nil {
 		t.Fatalf("WriteFile committed: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "untracked.txt"), []byte("new\n"), 0644); err != nil {
+		t.Fatalf("WriteFile untracked: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("new\n"), 0644); err != nil {
 		t.Fatalf("WriteFile new: %v", err)
 	}
@@ -106,8 +109,8 @@ func TestGetRepositoryGitStatusCountsChanges(t *testing.T) {
 	if status.UnstagedCount != 1 {
 		t.Fatalf("expected 1 unstaged change, got %d", status.UnstagedCount)
 	}
-	if status.UntrackedCount != 1 {
-		t.Fatalf("expected 1 untracked change, got %d", status.UntrackedCount)
+	if status.UntrackedCount != 2 {
+		t.Fatalf("expected 2 untracked changes, got %d", status.UntrackedCount)
 	}
 }
 
@@ -147,6 +150,9 @@ func TestGetChangedFilesByMode(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "committed.txt"), []byte("updated\n"), 0644); err != nil {
 		t.Fatalf("WriteFile committed: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "untracked.txt"), []byte("new\n"), 0644); err != nil {
+		t.Fatalf("WriteFile untracked: %v", err)
+	}
 
 	stagedFiles, err := service.GetChangedFiles(t.Context(), store.ProjectRepository{RepoID: "relay", LocalPath: root}, DiffModeStaged)
 	if err != nil {
@@ -160,8 +166,15 @@ func TestGetChangedFilesByMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetChangedFiles worktree error: %v", err)
 	}
-	if len(worktreeFiles) != 1 || worktreeFiles[0].Path != "committed.txt" || worktreeFiles[0].Status != "M" {
-		t.Fatalf("unexpected worktree files: %+v", worktreeFiles)
+	byPath := map[string]ChangedFile{}
+	for _, file := range worktreeFiles {
+		byPath[file.Path] = file
+	}
+	if byPath["committed.txt"].Status != "M" {
+		t.Fatalf("expected modified committed.txt in worktree files, got %+v", worktreeFiles)
+	}
+	if byPath["untracked.txt"].Status != "A" {
+		t.Fatalf("expected untracked.txt as added worktree evidence, got %+v", worktreeFiles)
 	}
 }
 

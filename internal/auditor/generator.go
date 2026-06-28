@@ -11,6 +11,7 @@ import (
 // Missing evidence produces explicit warnings and audit consequence notes.
 func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 	var b strings.Builder
+	validationResults := sanitizedValidationResults(ev.ValidationResults)
 
 	b.WriteString("# Audit Packet\n\n")
 
@@ -91,7 +92,7 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 	} else {
 		b.WriteString("| Git Diff Patch | `git_diff_patch` | ⚠ not present |\n")
 	}
-	for _, vr := range ev.ValidationResults {
+	for _, vr := range validationResults {
 		kind := vr.RawArtifactKind
 		if kind == "" {
 			kind = "validation_stdout"
@@ -132,13 +133,13 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 
 	// --- Validation Evidence ---
 	b.WriteString("## Validation Evidence\n\n")
-	if len(ev.ValidationResults) == 0 {
+	if len(validationResults) == 0 {
 		b.WriteString("⚠ **EVIDENCE GAP: No validation evidence found.**\n")
 		b.WriteString("**Audit consequence:** Validation cannot be confirmed. Required validation checks are marked `unknown`.\n")
 	} else {
 		b.WriteString("| ID | Command | Required | Status | Exit Result | Evidence Summary | Raw Artifact Path |\n")
 		b.WriteString("|---|---|---|---|---|---|---|\n")
-		for _, vr := range ev.ValidationResults {
+		for _, vr := range validationResults {
 			req := "no"
 			if vr.Required {
 				req = "**yes**"
@@ -153,7 +154,7 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 				vr.ID, vr.Command, req, string(vr.Status), vr.ExitResult, vr.EvidenceSummary, rawPath))
 		}
 		b.WriteString("\n")
-		for _, vr := range ev.ValidationResults {
+		for _, vr := range validationResults {
 			if vr.RawArtifactPath != "" {
 				b.WriteString(fmt.Sprintf("**%s full artifact:** `%s`\n\n", vr.ID, vr.RawArtifactPath))
 			}
@@ -376,6 +377,38 @@ func GenerateAuditPacket(ev *Evidence, decision Decision) string {
 	b.WriteString("An explicit human approval action is required to accept or close this run.*\n")
 
 	return b.String()
+}
+
+func sanitizedValidationResults(results []ValidationCommandResult) []ValidationCommandResult {
+	out := make([]ValidationCommandResult, 0, len(results))
+	for _, result := range results {
+		result.ID = strings.TrimSpace(result.ID)
+		result.Command = strings.TrimSpace(result.Command)
+		if result.ID == "" || result.ID == "V?" {
+			result.ID = fallbackValidationID(result.RawArtifactKind)
+		}
+		if strings.Contains(result.Command, "unknown - not in packet") ||
+			strings.Contains(result.Command, "unknown — not in packet") ||
+			result.Command == "" {
+			result.Command = fallbackValidationCommand(result.RawArtifactKind)
+		}
+		out = append(out, result)
+	}
+	return out
+}
+
+func fallbackValidationID(kind string) string {
+	if kind == "validation_run_json" {
+		return "VAL-RUN"
+	}
+	return "VAL-ARTIFACT"
+}
+
+func fallbackValidationCommand(kind string) string {
+	if kind == "validation_run_json" {
+		return "validation_run_json artifact status"
+	}
+	return "validation artifact status"
 }
 
 // DetermineDefaultDecision derives a preliminary decision from the collected evidence.

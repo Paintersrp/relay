@@ -90,7 +90,15 @@ type ServerInfo struct {
 
 // ToolsListResult is the response body for tools/list.
 type ToolsListResult struct {
-	Tools []ToolDefinition `json:"tools"`
+	Tools      []ToolDefinition `json:"tools"`
+	NextCursor string           `json:"nextCursor,omitempty"`
+}
+
+// ToolsListParams is the params body for tools/list.
+type ToolsListParams struct {
+	Cursor      string   `json:"cursor,omitempty"`
+	Query       string   `json:"query,omitempty"`
+	IncludeTags []string `json:"include_tags,omitempty"`
 }
 
 // ToolDefinition describes an MCP tool exposed by the server.

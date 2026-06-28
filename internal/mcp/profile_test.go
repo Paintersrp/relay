@@ -76,20 +76,20 @@ func TestNewDepsFromEnvUsesCanonicalProfileForAllLaunchers(t *testing.T) {
 	}
 }
 
-func TestToolProfileAuditNormalization(t *testing.T) {
+func TestToolProfileAuditAliasNormalizesToLocalOperator(t *testing.T) {
 	t.Run("ExactAudit", func(t *testing.T) {
 		profile, ok := NormalizeToolProfile("audit")
-		if profile != ToolProfileAudit {
-			t.Errorf("expected ToolProfileAudit, got %s", profile)
+		if profile != ToolProfileLocalOperator {
+			t.Errorf("expected ToolProfileLocalOperator, got %s", profile)
 		}
 		if !ok {
-			t.Error("expected ok=true for valid audit profile")
+			t.Error("expected ok=true for legacy audit profile alias")
 		}
 	})
 	t.Run("CaseInsensitiveAudit", func(t *testing.T) {
 		profile, ok := NormalizeToolProfile("AUDIT")
-		if profile != ToolProfileAudit {
-			t.Errorf("expected ToolProfileAudit, got %s", profile)
+		if profile != ToolProfileLocalOperator {
+			t.Errorf("expected ToolProfileLocalOperator, got %s", profile)
 		}
 		if !ok {
 			t.Error("expected ok=true for AUDIT")
@@ -97,8 +97,8 @@ func TestToolProfileAuditNormalization(t *testing.T) {
 	})
 	t.Run("WhitespaceTrimmedAudit", func(t *testing.T) {
 		profile, ok := NormalizeToolProfile("  audit  ")
-		if profile != ToolProfileAudit {
-			t.Errorf("expected ToolProfileAudit, got %s", profile)
+		if profile != ToolProfileLocalOperator {
+			t.Errorf("expected ToolProfileLocalOperator, got %s", profile)
 		}
 		if !ok {
 			t.Error("expected ok=true for trimmed audit")
@@ -106,34 +106,34 @@ func TestToolProfileAuditNormalization(t *testing.T) {
 	})
 }
 
-func TestToolProfileAuditFromEnv(t *testing.T) {
+func TestToolProfileAuditFromEnvUsesLocalOperator(t *testing.T) {
 	t.Run("RELAY_MCP_PROFILE_audit", func(t *testing.T) {
 		t.Setenv(EnvMCPProfile, "audit")
 		t.Setenv(EnvLegacyContextBrokerEnabled, "true") // profile takes precedence
 		got := ToolProfileFromEnv(nil)
-		if got != ToolProfileAudit {
-			t.Errorf("expected ToolProfileAudit, got %s", got)
+		if got != ToolProfileLocalOperator {
+			t.Errorf("expected ToolProfileLocalOperator, got %s", got)
 		}
 	})
 	t.Run("AuditProfilePrecedenceOverContextBroker", func(t *testing.T) {
 		t.Setenv(EnvMCPProfile, "audit")
-		t.Setenv(EnvLegacyContextBrokerEnabled, "true")
+		t.Setenv(EnvLegacyContextBrokerEnabled, "false")
 		got := ToolProfileFromEnv(nil)
-		if got != ToolProfileAudit {
-			t.Errorf("expected audit profile to take precedence over context broker env, got %s", got)
+		if got != ToolProfileLocalOperator {
+			t.Errorf("expected audit alias to use local-operator and take precedence over context broker env, got %s", got)
 		}
 	})
 }
 
-func TestToolProfileAuditContextBrokerDisabled(t *testing.T) {
-	if ToolProfileAudit.ContextBrokerEnabled() {
-		t.Error("expected audit profile to disable context broker")
-	}
+func TestToolProfileContextBrokerEnabled(t *testing.T) {
 	if ToolProfileRestricted.ContextBrokerEnabled() {
 		t.Error("expected restricted profile to disable context broker")
 	}
 	if !ToolProfileLocalOperator.ContextBrokerEnabled() {
 		t.Error("expected local-operator profile to enable context broker")
+	}
+	if !ToolProfile("audit").ContextBrokerEnabled() {
+		t.Error("expected legacy audit alias to enable full local-operator context broker")
 	}
 }
 

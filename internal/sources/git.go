@@ -215,7 +215,37 @@ func (s *Service) GetChangedFiles(ctx context.Context, repo store.ProjectReposit
 	if err != nil {
 		return nil, err
 	}
-	return parseNameStatusZ(result.stdout, repo.RepoID, mode == DiffModeStaged)
+	files, err := parseNameStatusZ(result.stdout, repo.RepoID, mode == DiffModeStaged)
+	if err != nil {
+		return nil, err
+	}
+	if mode != DiffModeWorktree {
+		return files, nil
+	}
+	capture, err := s.inspectRepositoryGitStatus(ctx, repo)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]struct{}{}
+	for _, file := range files {
+		seen[file.Path] = struct{}{}
+	}
+	for _, entry := range capture.entries {
+		if !entry.untracked {
+			continue
+		}
+		if _, ok := seen[entry.path]; ok {
+			continue
+		}
+		files = append(files, ChangedFile{
+			RepoID: repo.RepoID,
+			Path:   entry.path,
+			Status: "A",
+			Staged: false,
+		})
+		seen[entry.path] = struct{}{}
+	}
+	return files, nil
 }
 
 func (s *Service) GetRecentCommitChangedFiles(ctx context.Context, repo store.ProjectRepository) ([]ChangedFile, error) {

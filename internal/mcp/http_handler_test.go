@@ -425,30 +425,7 @@ func TestHTTPHandlerToolsListUsesServerToolSurface(t *testing.T) {
 		srv := NewServer(discardLogger(), &MCPDeps{ToolProfile: ToolProfileLocalOperator})
 		h := NewHTTPHandler(srv, discardLogger())
 
-		body := mustMarshal(t, Request{
-			JSONRPC: JSONRPCVersion,
-			ID:      json.RawMessage(`1`),
-			Method:  "tools/list",
-		})
-		req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
-		rec := httptest.NewRecorder()
-
-		h.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d", rec.Code)
-		}
-
-		var resp Response
-		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-			t.Fatalf("unmarshal response: %v", err)
-		}
-
-		var toolsResult ToolsListResult
-		b, _ := json.Marshal(resp.Result)
-		if err := json.Unmarshal(b, &toolsResult); err != nil {
-			t.Fatalf("unmarshal tools: %v", err)
-		}
+		toolsResult := collectHTTPTools(t, h)
 
 		gotNames := toolNamesFromList(toolsResult.Tools)
 		expected := append(baseToolNamesForTest(),
@@ -535,6 +512,49 @@ func TestHTTPHandlerToolsListUsesServerToolSurface(t *testing.T) {
 			t.Errorf("expected tools:\n%v\ngot:\n%v", expected, gotNames)
 		}
 	})
+}
+
+func collectHTTPTools(t *testing.T, h *HTTPHandler) ToolsListResult {
+	t.Helper()
+	var out ToolsListResult
+	cursor := ""
+	for {
+		var params json.RawMessage
+		if cursor != "" {
+			params = mustMarshal(t, ToolsListParams{Cursor: cursor})
+		}
+		body := mustMarshal(t, Request{
+			JSONRPC: JSONRPCVersion,
+			ID:      json.RawMessage(`1`),
+			Method:  "tools/list",
+			Params:  params,
+		})
+		req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+		var resp Response
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal response: %v", err)
+		}
+		if resp.Error != nil {
+			t.Fatalf("unexpected tools/list error: %v", resp.Error)
+		}
+		var page ToolsListResult
+		b, _ := json.Marshal(resp.Result)
+		if err := json.Unmarshal(b, &page); err != nil {
+			t.Fatalf("unmarshal tools: %v", err)
+		}
+		out.Tools = append(out.Tools, page.Tools...)
+		if page.NextCursor == "" {
+			return out
+		}
+		cursor = page.NextCursor
+	}
 }
 
 func toolNamesFromList(tools []ToolDefinition) []string {

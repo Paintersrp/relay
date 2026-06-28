@@ -64,6 +64,14 @@ func TestLocalAuditServiceCreatesAllModes(t *testing.T) {
 		if !manifest.LocalOnly || manifest.RemoteEvidence["github_pr"] != "not_used" || manifest.RemoteEvidence["github_actions"] != "not_used" {
 			t.Fatalf("manifest is not local-only for %s: %+v", input.Mode, manifest.RemoteEvidence)
 		}
+		if manifest.EvidenceMode == "" {
+			t.Fatalf("manifest missing evidence mode for %s", input.Mode)
+		}
+		if input.Mode == string(LocalAuditModeSelectedPassChanges) {
+			if manifest.DiffMode != "worktree" || manifest.EvidenceMode != "selected_pass_changes:worktree" {
+				t.Fatalf("selected pass manifest missing normalized diff evidence mode: %+v", manifest)
+			}
+		}
 		if strings.Contains(string(manifestBytes), "diff --git") || strings.Contains(string(manifestBytes), "super-secret-token") {
 			t.Fatalf("manifest contains raw diff or secret for %s: %s", input.Mode, string(manifestBytes))
 		}
@@ -73,6 +81,15 @@ func TestLocalAuditServiceCreatesAllModes(t *testing.T) {
 		}
 		if strings.Contains(string(packetBytes), "super-secret-token") {
 			t.Fatalf("packet contains unredacted token for %s: %s", input.Mode, string(packetBytes))
+		}
+		if !strings.Contains(string(packetBytes), "Evidence mode: "+manifest.EvidenceMode) {
+			t.Fatalf("packet missing evidence mode for %s: %s", input.Mode, string(packetBytes))
+		}
+		if manifest.DiffMode != "" && !strings.Contains(string(packetBytes), "Diff mode: "+manifest.DiffMode) {
+			t.Fatalf("packet missing diff mode for %s: %s", input.Mode, string(packetBytes))
+		}
+		if !strings.Contains(string(packetBytes), "Repositories: relay") {
+			t.Fatalf("packet missing repo IDs for %s: %s", input.Mode, string(packetBytes))
 		}
 	}
 }

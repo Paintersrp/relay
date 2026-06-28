@@ -9,31 +9,7 @@ import (
 func TestToolsList_LocalOperatorSchemasAreValidAndBounded(t *testing.T) {
 	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
 
-	req := Request{
-		JSONRPC: JSONRPCVersion,
-		ID:      json.RawMessage(`1`),
-		Method:  "tools/list",
-	}
-	resp := srv.handleLine(mustMarshal(t, req))
-	if resp.Error != nil {
-		t.Fatalf("unexpected error: %v", resp.Error)
-	}
-
-	raw, err := json.Marshal(resp)
-	if err != nil {
-		t.Fatalf("marshal full response: %v", err)
-	}
-
-	const maxBytes = 512 * 1024
-	if len(raw) > maxBytes {
-		t.Errorf("response size %d exceeds cap %d", len(raw), maxBytes)
-	}
-
-	var list ToolsListResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &list); err != nil {
-		t.Fatalf("unmarshal tools list: %v", err)
-	}
+	list := collectAllTools(t, srv, ToolsListParams{})
 
 	seen := map[string]bool{}
 	for _, tool := range list.Tools {
@@ -63,34 +39,9 @@ func TestToolsList_LocalOperatorSchemasAreValidAndBounded(t *testing.T) {
 	}
 }
 
-func TestToolsList_AuditProfileIsSmallAndAuditScoped(t *testing.T) {
-	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAudit})
-
-	req := Request{
-		JSONRPC: JSONRPCVersion,
-		ID:      json.RawMessage(`1`),
-		Method:  "tools/list",
-	}
-	resp := srv.handleLine(mustMarshal(t, req))
-	if resp.Error != nil {
-		t.Fatalf("unexpected error: %v", resp.Error)
-	}
-
-	raw, err := json.Marshal(resp)
-	if err != nil {
-		t.Fatalf("marshal full response: %v", err)
-	}
-
-	const maxBytes = 64 * 1024
-	if len(raw) > maxBytes {
-		t.Errorf("audit response size %d exceeds cap %d", len(raw), maxBytes)
-	}
-
-	var list ToolsListResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &list); err != nil {
-		t.Fatalf("unmarshal tools list: %v", err)
-	}
+func TestToolsList_LocalOperatorPagedDiscoveryIncludesPlannerAndAuditor(t *testing.T) {
+	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
+	list := collectAllTools(t, srv, ToolsListParams{})
 
 	requiredTools := []string{
 		"submit_test_audit_packet",
@@ -101,6 +52,10 @@ func TestToolsList_AuditProfileIsSmallAndAuditScoped(t *testing.T) {
 		"create_local_audit",
 		"get_local_audit",
 		"list_project_local_audits",
+		"create_run_from_planner_handoff",
+		"submit_planner_pass_plan",
+		toolCreatePlanAttemptWithIntent,
+		toolCreatePlanSeed,
 	}
 	registered := toolNames(list.Tools)
 	for _, required := range requiredTools {
@@ -116,59 +71,54 @@ func TestToolsList_AuditProfileIsSmallAndAuditScoped(t *testing.T) {
 		}
 	}
 
-	excludedTools := []string{
-		"create_run_from_planner_handoff",
-		"submit_planner_pass_plan",
-		"create_source_snapshot",
-		"read_project_file",
-		"list_refactor_candidates",
-		"generate_refactor_only_plan",
-		toolCreatePlanAttemptWithIntent,
-		toolCreatePlanSeed,
+	firstPage := listToolsPage(t, srv, ToolsListParams{})
+	if len(firstPage.Tools) > toolsListPageSize {
+		t.Fatalf("first page returned %d tools, exceeds page size %d", len(firstPage.Tools), toolsListPageSize)
 	}
-	for _, excluded := range excludedTools {
-		for _, name := range registered {
-			if name == excluded {
-				t.Errorf("tool %q should not be in audit profile", excluded)
-			}
-		}
-	}
-
-	localOperatorSrv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
-	localResp := localOperatorSrv.handleLine(mustMarshal(t, req))
-	localRaw, _ := json.Marshal(localResp)
-	if len(raw) >= len(localRaw) {
-		t.Errorf("audit profile response size %d should be smaller than local-operator size %d", len(raw), len(localRaw))
+	if firstPage.NextCursor == "" && len(list.Tools) > toolsListPageSize {
+		t.Fatal("expected next cursor for paged local-operator discovery")
 	}
 }
 
-func TestToolsCall_AuditProfileRejectsUnlistedTools(t *testing.T) {
-	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAudit})
+func TestToolsList_QueryFilteringDoesNotMutateRegistry(t *testing.T) {
+	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
+	allBefore := collectAllTools(t, srv, ToolsListParams{})
+	auditOnly := collectAllTools(t, srv, ToolsListParams{Query: "audit"})
+	if len(auditOnly.Tools) == 0 {
+		t.Fatal("expected audit query to return tools")
+	}
+	for _, tool := range auditOnly.Tools {
+		text := strings.ToLower(tool.Name + " " + tool.Description + " " + strings.Join(toolTagsByName(tool.Name), " "))
+		if !strings.Contains(text, "audit") {
+			t.Fatalf("query returned non-audit tool %q", tool.Name)
+		}
+	}
+	allAfter := collectAllTools(t, srv, ToolsListParams{})
+	if strings.Join(toolNames(allBefore.Tools), "\n") != strings.Join(toolNames(allAfter.Tools), "\n") {
+		t.Fatal("filtered tools/list mutated registry order or contents")
+	}
+}
 
-	params, _ := json.Marshal(ToolCallParams{
-		Name:      "create_run_from_planner_handoff",
-		Arguments: json.RawMessage(`{}`),
-	})
+func TestToolsList_InvalidCursor(t *testing.T) {
+	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
+	params, _ := json.Marshal(ToolsListParams{Cursor: "not-a-cursor"})
 	req := Request{
 		JSONRPC: JSONRPCVersion,
 		ID:      json.RawMessage(`1`),
-		Method:  "tools/call",
+		Method:  "tools/list",
 		Params:  params,
 	}
 	resp := srv.handleLine(mustMarshal(t, req))
 	if resp.Error == nil {
-		t.Fatal("expected JSON-RPC error for unlisted tool under audit profile")
+		t.Fatal("expected JSON-RPC error for invalid cursor")
 	}
-	if resp.Error.Code != CodeMethodNotFound {
-		t.Errorf("expected CodeMethodNotFound, got %d", resp.Error.Code)
-	}
-	if !strings.Contains(resp.Error.Message, "unknown tool") {
-		t.Errorf("expected 'unknown tool' in error, got %q", resp.Error.Message)
+	if resp.Error.Code != CodeInvalidParams {
+		t.Errorf("expected CodeInvalidParams, got %d", resp.Error.Code)
 	}
 }
 
-func TestToolsCall_AuditProfileAllowsRegisteredAuditToolValidation(t *testing.T) {
-	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAudit})
+func TestToolsCall_AuditProfileAliasUsesFullLocalOperatorRegistry(t *testing.T) {
+	srv := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileLocalOperator})
 
 	tests := []struct {
 		name string
@@ -211,5 +161,50 @@ func TestToolsCall_AuditProfileAllowsRegisteredAuditToolValidation(t *testing.T)
 				t.Errorf("tool %q should reach handler (DEPENDENCY_ERROR or VALIDATION_ERROR), not unknown tool: %s", tt.name, text)
 			}
 		})
+	}
+}
+
+func listToolsPage(t *testing.T, srv *Server, params ToolsListParams) ToolsListResult {
+	t.Helper()
+	var rawParams json.RawMessage
+	if params.Cursor != "" || params.Query != "" || len(params.IncludeTags) > 0 {
+		rawParams = mustMarshal(t, params)
+	}
+	req := Request{
+		JSONRPC: JSONRPCVersion,
+		ID:      json.RawMessage(`1`),
+		Method:  "tools/list",
+		Params:  rawParams,
+	}
+	resp := srv.handleLine(mustMarshal(t, req))
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %v", resp.Error)
+	}
+	raw, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal page response: %v", err)
+	}
+	const maxBytes = 256 * 1024
+	if len(raw) > maxBytes {
+		t.Errorf("response size %d exceeds cap %d", len(raw), maxBytes)
+	}
+	var list ToolsListResult
+	b, _ := json.Marshal(resp.Result)
+	if err := json.Unmarshal(b, &list); err != nil {
+		t.Fatalf("unmarshal tools list: %v", err)
+	}
+	return list
+}
+
+func collectAllTools(t *testing.T, srv *Server, params ToolsListParams) ToolsListResult {
+	t.Helper()
+	var out ToolsListResult
+	for {
+		page := listToolsPage(t, srv, params)
+		out.Tools = append(out.Tools, page.Tools...)
+		if page.NextCursor == "" {
+			return out
+		}
+		params.Cursor = page.NextCursor
 	}
 }

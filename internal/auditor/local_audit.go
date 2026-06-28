@@ -89,6 +89,8 @@ type LocalAuditManifest struct {
 	SchemaVersion    string                 `json:"schema_version"`
 	AuditID          string                 `json:"audit_id"`
 	Mode             string                 `json:"mode"`
+	EvidenceMode     string                 `json:"evidence_mode"`
+	DiffMode         string                 `json:"diff_mode,omitempty"`
 	ProjectID        string                 `json:"project_id"`
 	RepoIDs          []string               `json:"repo_ids"`
 	PlanID           string                 `json:"plan_id"`
@@ -167,6 +169,8 @@ func (s *LocalAuditService) Create(ctx context.Context, input LocalAuditInput) (
 		SchemaVersion:    "1.0.0",
 		AuditID:          auditID,
 		Mode:             normalized.Mode,
+		EvidenceMode:     localAuditEvidenceMode(normalized),
+		DiffMode:         normalized.DiffMode,
 		ProjectID:        project.ProjectID,
 		RepoIDs:          normalized.RepoIDs,
 		PlanID:           normalized.PlanID,
@@ -637,6 +641,10 @@ func renderLocalAuditInputSummary(input LocalAuditInput, manifest LocalAuditMani
 	b.WriteString("# Local Audit Input Summary\n\n")
 	b.WriteString("- Audit ID: " + manifest.AuditID + "\n")
 	b.WriteString("- Mode: " + input.Mode + "\n")
+	b.WriteString("- Evidence mode: " + manifest.EvidenceMode + "\n")
+	if manifest.DiffMode != "" {
+		b.WriteString("- Diff mode: " + manifest.DiffMode + "\n")
+	}
 	b.WriteString("- Project: " + input.ProjectID + "\n")
 	b.WriteString("- Status: " + manifest.Status + "\n")
 	b.WriteString(fmt.Sprintf("- Bounds: max_files=%d max_bytes=%d context_lines=%d\n", input.MaxFiles, input.MaxBytes, input.ContextLines))
@@ -662,7 +670,14 @@ func renderLocalAuditPacket(input LocalAuditInput, manifest LocalAuditManifest, 
 	b.WriteString("## Summary\n\n")
 	b.WriteString("- Audit ID: " + manifest.AuditID + "\n")
 	b.WriteString("- Mode: " + manifest.Mode + "\n")
+	b.WriteString("- Evidence mode: " + manifest.EvidenceMode + "\n")
+	if manifest.DiffMode != "" {
+		b.WriteString("- Diff mode: " + manifest.DiffMode + "\n")
+	}
 	b.WriteString("- Project: " + manifest.ProjectID + "\n")
+	if len(manifest.RepoIDs) > 0 {
+		b.WriteString("- Repositories: " + strings.Join(manifest.RepoIDs, ", ") + "\n")
+	}
 	b.WriteString("- Status: " + manifest.Status + "\n")
 	b.WriteString(fmt.Sprintf("- Changed files: %d\n", len(manifest.Evidence.ChangedFiles)))
 	b.WriteString(fmt.Sprintf("- Search matches: %d\n", len(manifest.Evidence.SearchMatches)))
@@ -675,7 +690,7 @@ func renderLocalAuditPacket(input LocalAuditInput, manifest LocalAuditManifest, 
 		b.WriteString(fmt.Sprintf("- Recent commit `%s` in `%s`: %s\n", shortSHA(commit.CommitSHA), commit.RepoID, commit.Subject))
 	}
 	for _, status := range manifest.Evidence.GitStatus {
-		b.WriteString(fmt.Sprintf("- Git status `%s`: dirty=%t changed=%d staged=%d unstaged=%d untracked=%d\n", status.RepoID, status.Dirty, status.ChangedFileCount, status.StagedCount, status.UnstagedCount, status.UntrackedCount))
+		b.WriteString(fmt.Sprintf("- Git status `%s` at `%s`: dirty=%t changed=%d staged=%d unstaged=%d untracked=%d\n", status.RepoID, shortSHA(status.HeadSHA), status.Dirty, status.ChangedFileCount, status.StagedCount, status.UnstagedCount, status.UntrackedCount))
 	}
 	if len(manifest.Evidence.ChangedFiles) > 0 {
 		b.WriteString("\n## Changed Files\n\n")
@@ -715,6 +730,13 @@ func localAuditStatus(blockers, warnings []string) string {
 		return string(LocalAuditStatusPartial)
 	}
 	return string(LocalAuditStatusCreated)
+}
+
+func localAuditEvidenceMode(input LocalAuditInput) string {
+	if input.DiffMode == "" {
+		return input.Mode
+	}
+	return input.Mode + ":" + input.DiffMode
 }
 
 func notUsedRemoteEvidence() map[string]string {

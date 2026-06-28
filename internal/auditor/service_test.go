@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"relay/internal/artifacts"
 	"relay/internal/store"
@@ -24,6 +25,54 @@ func writeArtifact(t *testing.T, s *store.Store, runID int64, kind, filename str
 		t.Fatalf("create artifact record %s: %v", kind, err)
 	}
 	return path
+}
+
+func TestGeneratedAuditPacketSanitizesValidationFallbackLabels(t *testing.T) {
+	ev := &Evidence{
+		RunID:     900,
+		RunTitle:  "placeholder validation labels",
+		RunStatus: "executor_done",
+		ValidationResults: []ValidationCommandResult{
+			{
+				ID:              "V?",
+				Command:         "(unknown - not in packet)",
+				Status:          CheckUnknown,
+				ExitResult:      "unknown",
+				EvidenceSummary: "legacy generic validation artifact",
+				RawArtifactKind: "validation_run_json",
+			},
+			{
+				ID:              "",
+				Command:         "(unknown — not in packet)",
+				Status:          CheckUnknown,
+				ExitResult:      "unknown",
+				EvidenceSummary: "legacy generic validation artifact",
+				RawArtifactKind: "validation_stdout",
+			},
+		},
+	}
+
+	packet := GenerateAuditPacket(ev, DecisionManualReviewRequired)
+	if strings.Contains(packet, "| V? |") {
+		t.Fatalf("generated audit packet must not render V? rows:\n%s", packet)
+	}
+	if strings.Contains(packet, "(unknown - not in packet)") || strings.Contains(packet, "(unknown — not in packet)") {
+		t.Fatalf("generated audit packet must not render unknown-not-in-packet commands:\n%s", packet)
+	}
+	if !strings.Contains(packet, "| VAL-RUN | `validation_run_json artifact status` |") {
+		t.Fatalf("generated audit packet missing VAL-RUN fallback row:\n%s", packet)
+	}
+	if !strings.Contains(packet, "| VAL-ARTIFACT | `validation artifact status` |") {
+		t.Fatalf("generated audit packet missing VAL-ARTIFACT fallback row:\n%s", packet)
+	}
+
+	manifest := BuildEvidenceManifest(ev, DecisionManualReviewRequired, time.Now().UTC())
+	if len(manifest.Evidence.ValidationResults) != 2 {
+		t.Fatalf("expected 2 manifest validation rows, got %d", len(manifest.Evidence.ValidationResults))
+	}
+	if manifest.Evidence.ValidationResults[0].ID != "VAL-RUN" || manifest.Evidence.ValidationResults[1].ID != "VAL-ARTIFACT" {
+		t.Fatalf("manifest validation IDs not sanitized: %+v", manifest.Evidence.ValidationResults)
+	}
 }
 
 func TestService_Generate_Gating(t *testing.T) {
@@ -322,12 +371,12 @@ func TestNestedCheckout_CollapsedMarker_NoFalseFail(t *testing.T) {
 			Files: []ChangedFileEntry{
 				{Status: "M", Path: "relay-contracts"},
 			},
-			ImplementationFiles:    nil,                       // filtered as nested marker
-			NestedCheckoutMarkers:  []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
-			NestedCheckoutFiles:    nil,
-			NestedEvidenceGap:      true,
-			RawArtifactPath:        "/fake/path",
-			SourceKind:             "git_diff_name_status",
+			ImplementationFiles:   nil, // filtered as nested marker
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutFiles:   nil,
+			NestedEvidenceGap:     true,
+			RawArtifactPath:       "/fake/path",
+			SourceKind:            "git_diff_name_status",
 		},
 	}
 	c := &Collector{}
@@ -364,9 +413,9 @@ func TestNestedCheckout_ExpandedEvidencePassing(t *testing.T) {
 			NestedCheckoutFiles: []ChangedFileEntry{
 				{Status: "M", Path: "relay-contracts/contracts/intent_drift_review_contract.md"},
 			},
-			NestedEvidenceGap:      false,
-			RawArtifactPath:        "/fake/path",
-			SourceKind:             "git_diff_name_status",
+			NestedEvidenceGap: false,
+			RawArtifactPath:   "/fake/path",
+			SourceKind:        "git_diff_name_status",
 		},
 	}
 	c := &Collector{}
@@ -401,9 +450,9 @@ func TestNestedCheckout_ExpandedEvidenceFailing(t *testing.T) {
 			NestedCheckoutFiles: []ChangedFileEntry{
 				{Status: "M", Path: "relay-contracts/schema/planner_pass_plan.schema.json"},
 			},
-			NestedEvidenceGap:      false,
-			RawArtifactPath:        "/fake/path",
-			SourceKind:             "git_diff_name_status",
+			NestedEvidenceGap: false,
+			RawArtifactPath:   "/fake/path",
+			SourceKind:        "git_diff_name_status",
 		},
 	}
 	c := &Collector{}
@@ -437,11 +486,11 @@ func TestNestedCheckout_UnrelatedParentDrift(t *testing.T) {
 			ImplementationFiles: []ChangedFileEntry{
 				{Status: "M", Path: "internal/server/routes.go"},
 			},
-			NestedCheckoutMarkers:  []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
-			NestedCheckoutFiles:    nil,
-			NestedEvidenceGap:      true,
-			RawArtifactPath:        "/fake/path",
-			SourceKind:             "git_diff_name_status",
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutFiles:   nil,
+			NestedEvidenceGap:     true,
+			RawArtifactPath:       "/fake/path",
+			SourceKind:            "git_diff_name_status",
 		},
 	}
 	c := &Collector{}
@@ -471,10 +520,10 @@ func TestNestedCheckout_ValidationSeparation(t *testing.T) {
 			Files: []ChangedFileEntry{
 				{Status: "M", Path: "relay-contracts"},
 			},
-			NestedCheckoutMarkers:  []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
-			NestedEvidenceGap:      true,
-			RawArtifactPath:        "/fake/path",
-			SourceKind:             "git_diff_name_status",
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedEvidenceGap:     true,
+			RawArtifactPath:       "/fake/path",
+			SourceKind:            "git_diff_name_status",
 		},
 	}
 	c := &Collector{}
@@ -772,11 +821,11 @@ func TestRun155_NestedPathEquivalencePass(t *testing.T) {
 			ImplementationFiles: []ChangedFileEntry{
 				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
 			},
-			NestedCheckoutMarkers:  []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
-			NestedCheckoutFiles:    nil,
-			NestedEvidenceGap:      true,
-			RawArtifactPath:        "/fake/path",
-			SourceKind:             "git_diff_name_status",
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutFiles:   nil,
+			NestedEvidenceGap:     true,
+			RawArtifactPath:       "/fake/path",
+			SourceKind:            "git_diff_name_status",
 		},
 	}
 	c := &Collector{}
@@ -810,11 +859,11 @@ func TestRun155_UnmatchedNestedFileStillFails(t *testing.T) {
 			ImplementationFiles: []ChangedFileEntry{
 				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
 			},
-			NestedCheckoutMarkers:  []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
-			NestedCheckoutFiles:    nil,
-			NestedEvidenceGap:      true,
-			RawArtifactPath:        "/fake/path",
-			SourceKind:             "git_diff_name_status",
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutFiles:   nil,
+			NestedEvidenceGap:     true,
+			RawArtifactPath:       "/fake/path",
+			SourceKind:            "git_diff_name_status",
 		},
 	}
 	c := &Collector{}
@@ -855,11 +904,11 @@ func TestRun155_ParentRuntimeDriftStillFails(t *testing.T) {
 				{Status: "M", Path: "internal/server/routes.go"},
 				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
 			},
-			NestedCheckoutMarkers:  []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
-			NestedCheckoutFiles:    nil,
-			NestedEvidenceGap:      true,
-			RawArtifactPath:        "/fake/path",
-			SourceKind:             "git_diff_name_status",
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutFiles:   nil,
+			NestedEvidenceGap:     true,
+			RawArtifactPath:       "/fake/path",
+			SourceKind:            "git_diff_name_status",
 		},
 	}
 	c := &Collector{}

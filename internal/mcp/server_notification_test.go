@@ -73,21 +73,7 @@ func TestHandleLineWithSkipUnknownRequestStillErrors(t *testing.T) {
 
 func TestServerToolsList_ExactMatch(t *testing.T) {
 	srv := NewServer(discardLogger())
-	req := Request{
-		JSONRPC: JSONRPCVersion,
-		ID:      json.RawMessage(`1`),
-		Method:  "tools/list",
-	}
-	resp := srv.handleLine(mustMarshal(t, req))
-	if resp.Error != nil {
-		t.Fatalf("unexpected error: %v", resp.Error)
-	}
-
-	var list ToolsListResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &list); err != nil {
-		t.Fatalf("unmarshal tools list: %v", err)
-	}
+	list := collectAllTools(t, srv, ToolsListParams{})
 
 	expectedTools := append(baseToolNamesForTest(),
 		"get_project",
@@ -150,21 +136,7 @@ func TestServerToolsList_BrokerEnabled_ExactMatch(t *testing.T) {
 	deps.ToolProfile = ToolProfileLocalOperator
 	deps.ContextBrokerEnabled = true
 	srv := NewServer(discardLogger(), deps)
-	req := Request{
-		JSONRPC: JSONRPCVersion,
-		ID:      json.RawMessage(`1`),
-		Method:  "tools/list",
-	}
-	resp := srv.handleLine(mustMarshal(t, req))
-	if resp.Error != nil {
-		t.Fatalf("unexpected error: %v", resp.Error)
-	}
-
-	var list ToolsListResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &list); err != nil {
-		t.Fatalf("unmarshal tools list: %v", err)
-	}
+	list := collectAllTools(t, srv, ToolsListParams{})
 
 	expectedTools := append(baseToolNamesForTest(),
 		"get_project",
