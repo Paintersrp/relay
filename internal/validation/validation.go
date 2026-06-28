@@ -210,12 +210,12 @@ func checkPaths(packet map[string]interface{}) []ValidationError {
 		if targets, ok := exec["file_targets"].([]interface{}); ok {
 			for _, t := range targets {
 				if pathStr, ok := t.(string); ok {
-					if err := validatePathSafety(pathStr); err != nil {
+					if err := validateRepoRelativeSourcePath(pathStr); err != nil {
 						issues = append(issues, ValidationError{Type: "path", Code: "CANONICAL_PACKET_UNSAFE_PATH", Message: fmt.Sprintf("unsafe file target: %s (%v)", pathStr, err), RepairEligible: false})
 					}
 				} else if targetObj, ok := t.(map[string]interface{}); ok {
 					if pathStr, ok := targetObj["path"].(string); ok {
-						if err := validatePathSafety(pathStr); err != nil {
+						if err := validateRepoRelativeSourcePath(pathStr); err != nil {
 							issues = append(issues, ValidationError{Type: "path", Code: "CANONICAL_PACKET_UNSAFE_PATH", Message: fmt.Sprintf("unsafe file target: %s (%v)", pathStr, err), RepairEligible: false})
 						}
 					}
@@ -225,11 +225,15 @@ func checkPaths(packet map[string]interface{}) []ValidationError {
 	}
 
 	// Check artifact_paths in packet_meta
+	// Artifact paths remain on the stricter legacy validator because they can
+	// name generated evidence locations rather than source files. Keep this
+	// separate from source file target validation so route filenames such as
+	// TanStack's "$param" syntax do not loosen artifact-path rules by accident.
 	if meta, ok := packet["packet_meta"].(map[string]interface{}); ok {
 		if paths, ok := meta["artifact_paths"].(map[string]interface{}); ok {
 			for k, p := range paths {
 				if pathStr, ok := p.(string); ok {
-					if err := validatePathSafety(pathStr); err != nil {
+					if err := validateArtifactPathSafety(pathStr); err != nil {
 						issues = append(issues, ValidationError{Type: "path", Code: "CANONICAL_PACKET_UNSAFE_PATH", Message: fmt.Sprintf("unsafe artifact path for %s: %s (%v)", k, pathStr, err), RepairEligible: false})
 					}
 				}
@@ -241,8 +245,9 @@ func checkPaths(packet map[string]interface{}) []ValidationError {
 }
 
 var unsafeMetaChars = []string{"*", "?", "[", "]", ";", "&", "|", "$", ">", "<", "(", ")", "`", "!"}
+var unsafeSourcePathChars = []string{";", "&", "|", ">", "<", "`"}
 
-func validatePathSafety(p string) error {
+func validateArtifactPathSafety(p string) error {
 	pClean := filepath.Clean(p)
 	if filepath.IsAbs(pClean) || strings.HasPrefix(pClean, "/") || strings.HasPrefix(pClean, "\\") {
 		return fmt.Errorf("absolute path not allowed")
@@ -259,6 +264,64 @@ func validatePathSafety(p string) error {
 		}
 	}
 	return nil
+}
+
+func validateRepoRelativeSourcePath(p string) error {
+	if p == "" {
+		return fmt.Errorf("empty path not allowed")
+	}
+	if hasControlCharacter(p) {
+		return fmt.Errorf("control characters not allowed")
+	}
+	if strings.Contains(p, "\\") {
+		return fmt.Errorf("backslashes not allowed (use forward slashes)")
+	}
+	if filepath.IsAbs(p) || strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
+		return fmt.Errorf("absolute path not allowed")
+	}
+	if filepath.VolumeName(p) != "" {
+		return fmt.Errorf("absolute path not allowed")
+	}
+	if looksLikeURI(p) {
+		return fmt.Errorf("URL or URI paths not allowed")
+	}
+	for _, segment := range strings.Split(p, "/") {
+		if segment == ".." {
+			return fmt.Errorf("parent directory traversal not allowed")
+		}
+	}
+	for _, mc := range unsafeSourcePathChars {
+		if strings.Contains(p, mc) {
+			return fmt.Errorf("shell metacharacter %q not allowed", mc)
+		}
+	}
+	return nil
+}
+
+func hasControlCharacter(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeURI(p string) bool {
+	schemeEnd := strings.Index(p, ":")
+	if schemeEnd <= 0 {
+		return false
+	}
+	for i, r := range p[:schemeEnd] {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			continue
+		}
+		if i > 0 && ((r >= '0' && r <= '9') || r == '+' || r == '-' || r == '.') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func checkRequiredPayloadFields(packet map[string]interface{}) []ValidationError {

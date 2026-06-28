@@ -194,8 +194,88 @@ func TestValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("Unsafe Path Still Rejected - Shell Metacharacters", func(t *testing.T) {
-		for _, mc := range []string{";", "&", "|", ">", "<", "(", ")", "`"} {
+	t.Run("TanStack Dynamic Route File Target Allows Dollar Parameters", func(t *testing.T) {
+		packet := cloneValidPacket()
+		exec := packet["execution_payload"].(map[string]interface{})
+		exec["file_targets"] = []interface{}{
+			map[string]interface{}{
+				"path":   "apps/web/src/routes/plans/$planId.passes.$passId.tsx",
+				"role":   "primary",
+				"action": "must_edit",
+				"reason": "run-160 dynamic route regression",
+			},
+		}
+
+		packetJSON, _ := json.Marshal(packet)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if hasErrorCode(report, "CANONICAL_PACKET_UNSAFE_PATH") {
+			t.Fatalf("expected no CANONICAL_PACKET_UNSAFE_PATH for TanStack dynamic route target, got %v", report.Errors)
+		}
+	})
+
+	t.Run("Unsafe Source File Paths Still Rejected", func(t *testing.T) {
+		tests := []struct {
+			name string
+			path string
+		}{
+			{name: "empty", path: ""},
+			{name: "posix absolute", path: "/etc/passwd"},
+			{name: "parent traversal segment", path: "../outside.go"},
+			{name: "backslash", path: "apps\\web\\src\\bad.tsx"},
+			{name: "uri", path: "https://example.com/bad.tsx"},
+			{name: "nul", path: "apps/web/src/bad\x00.tsx"},
+			{name: "command separator semicolon", path: "src/file;.go"},
+			{name: "command separator ampersand", path: "src/file&.go"},
+			{name: "command separator pipe", path: "src/file|.go"},
+			{name: "redirect greater than", path: "src/file>.go"},
+			{name: "redirect less than", path: "src/file<.go"},
+			{name: "command substitution backtick", path: "src/file`.go"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				invalidPacket := make(map[string]interface{})
+				for k, v := range validPacket {
+					invalidPacket[k] = v
+				}
+				exec := make(map[string]interface{})
+				for k, v := range validPacket["execution_payload"].(map[string]interface{}) {
+					exec[k] = v
+				}
+				exec["file_targets"] = []string{tt.path}
+				invalidPacket["execution_payload"] = exec
+
+				packetJSON, _ := json.Marshal(invalidPacket)
+				report, err := ValidatePacketJSON(packetJSON, schemaPath)
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				if !hasErrorCode(report, "CANONICAL_PACKET_UNSAFE_PATH") {
+					t.Errorf("expected CANONICAL_PACKET_UNSAFE_PATH for %q, got %v", tt.path, report.Errors)
+				}
+			})
+		}
+	})
+
+	t.Run("Repo Relative File Target Allows Literal Dollar", func(t *testing.T) {
+		packet := cloneValidPacket()
+		exec := packet["execution_payload"].(map[string]interface{})
+		exec["file_targets"] = []string{"src/file$name.go"}
+
+		packetJSON, _ := json.Marshal(packet)
+		report, err := ValidatePacketJSON(packetJSON, schemaPath)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if hasErrorCode(report, "CANONICAL_PACKET_UNSAFE_PATH") {
+			t.Fatalf("expected literal dollar in source file target path to be allowed, got %v", report.Errors)
+		}
+	})
+
+	t.Run("Unsafe Path Still Rejected - Shell Command Separators", func(t *testing.T) {
+		for _, mc := range []string{";", "&", "|", ">", "<", "`"} {
 			invalidPacket := make(map[string]interface{})
 			for k, v := range validPacket {
 				invalidPacket[k] = v
