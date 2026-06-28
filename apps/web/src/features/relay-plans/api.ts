@@ -20,6 +20,8 @@ import type {
   PlanListResponse,
   PlanPassDetailResponse,
   PlanReviewSettingsAPIResponse,
+  PlannerJumpstart,
+  PlannerJumpstartBasisReport,
   RevisePlanAttemptRequest,
   RunPlanAttemptDriftReviewRequest,
   SubmitPlanAttemptRequest,
@@ -496,9 +498,44 @@ function normalizeNextPassWorkResponse(response: any): NextPassWorkResponse {
     suggestedRunSubmission: response?.suggestedRunSubmission || response?.suggested_run_submission
       ? normalizeSuggestedRunSubmission(response.suggestedRunSubmission ?? response.suggested_run_submission)
       : undefined,
+    plannerJumpstart: response?.plannerJumpstart || response?.planner_jumpstart
+      ? normalizePlannerJumpstart(response.plannerJumpstart ?? response.planner_jumpstart)
+      : undefined,
     blockers: Array.isArray(response?.blockers)
       ? response.blockers.map(normalizeWorkBlocker)
       : [],
+  };
+}
+
+function normalizePlannerJumpstart(js: any): PlannerJumpstart {
+  return {
+    readinessState: js?.readinessState ?? js?.readiness_state ?? "blocked",
+    selectedPassSummary: js?.selectedPassSummary || js?.selected_pass_summary
+      ? normalizeWorkPassSummary(js.selectedPassSummary ?? js.selected_pass_summary)
+      : undefined,
+    sourceRequirements: js?.sourceRequirements || js?.source_requirements
+      ? normalizeSourceSnapshotRequirements(js.sourceRequirements ?? js.source_requirements)
+      : undefined,
+    contextRequirements: normalizeContextPlan(js?.contextRequirements ?? js?.context_requirements ?? {}),
+    sourceBasisReport: js?.sourceBasisReport || js?.source_basis_report
+      ? normalizePlannerJumpstartBasisReport(js.sourceBasisReport ?? js.source_basis_report)
+      : undefined,
+    suggestedContextAcquisitionActions: Array.isArray(js?.suggestedContextAcquisitionActions ?? js?.suggested_context_acquisition_actions)
+      ? (js.suggestedContextAcquisitionActions ?? js.suggested_context_acquisition_actions).map((a: any) => ({
+          tool: firstNonEmptyString(a?.tool) || "",
+          arguments: typeof a?.arguments === "object" && a?.arguments !== null ? a.arguments : {},
+        }))
+      : undefined,
+    handoffPreflightChecklist: normalizeStringArray(js?.handoffPreflightChecklist ?? js?.handoff_preflight_checklist),
+  };
+}
+
+function normalizePlannerJumpstartBasisReport(report: any): PlannerJumpstartBasisReport {
+  return {
+    snapshotId: firstNonEmptyString(report?.snapshotId, report?.snapshot_id),
+    snapshotStatus: firstNonEmptyString(report?.snapshotStatus, report?.snapshot_status),
+    packetId: firstNonEmptyString(report?.packetId, report?.packet_id),
+    packetStatus: firstNonEmptyString(report?.packetStatus, report?.packet_status),
   };
 }
 

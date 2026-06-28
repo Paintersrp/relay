@@ -27,6 +27,8 @@ const (
 	BlockerRevisionRequiredSamePass     = "revision_required_same_pass"
 	BlockerNoEligiblePass               = "no_eligible_pass"
 	BlockerUnsafeRequest                = "unsafe_request"
+	BlockerRequestedPassNotFound        = "requested_pass_not_found"
+	BlockerRequestedPassNotEligible     = "requested_pass_not_eligible"
 )
 
 // Refactor scheduling constants. These mirror the schema-approved refactor
@@ -78,6 +80,7 @@ type NextPassWorkResponse struct {
 	Context                  *WorkContextSummary     `json:"context,omitempty"`
 	HandoffReadinessCriteria []string                `json:"handoff_readiness_criteria,omitempty"`
 	SuggestedRunSubmission   *SuggestedRunSubmission `json:"suggested_run_submission,omitempty"`
+	PlannerJumpstart         *PlannerJumpstart       `json:"planner_jumpstart,omitempty"`
 	Blockers                 []WorkBlocker           `json:"blockers"`
 }
 
@@ -154,6 +157,34 @@ type SuggestedRunArguments struct {
 	PassID string `json:"pass_id"`
 }
 
+// PlannerJumpstart is the deterministic Planner jumpstart guidance payload
+// returned for selected passes. No raw file contents are included.
+type PlannerJumpstart struct {
+	ReadinessState                  string                       `json:"readiness_state"`
+	SelectedPassSummary             *WorkPassSummary             `json:"selected_pass_summary"`
+	SourceRequirements              *SourceSnapshotRequirements  `json:"source_requirements,omitempty"`
+	ContextRequirements             ContextPlan                  `json:"context_requirements,omitempty"`
+	SourceBasisReport               *PlannerJumpstartBasisReport `json:"source_basis_report,omitempty"`
+	SuggestedContextAcquisitionActions []ContextAcquisitionAction  `json:"suggested_context_acquisition_actions,omitempty"`
+	HandoffPreflightChecklist       []string                     `json:"handoff_preflight_checklist,omitempty"`
+}
+
+// PlannerJumpstartBasisReport summarizes the current source snapshot and
+// context packet readiness without exposing raw file contents.
+type PlannerJumpstartBasisReport struct {
+	SnapshotID     string `json:"snapshot_id,omitempty"`
+	SnapshotStatus string `json:"snapshot_status,omitempty"`
+	PacketID       string `json:"packet_id,omitempty"`
+	PacketStatus   string `json:"packet_status,omitempty"`
+}
+
+// ContextAcquisitionAction describes a safe suggested MCP tool call for
+// acquiring required context or source data.
+type ContextAcquisitionAction struct {
+	Tool      string      `json:"tool"`
+	Arguments interface{} `json:"arguments"`
+}
+
 // ----------------------------------------------------------------------------
 // Service
 // ----------------------------------------------------------------------------
@@ -173,6 +204,7 @@ func NewOrchestratorWorkService(s *store.Store) *OrchestratorWorkService {
 type NextPassWorkRequest struct {
 	ProjectID string
 	PlanID    string
+	PassID    string // optional; empty selects earliest eligible pass
 }
 
 // GetNextPassWork returns the next eligible Planner work packet or structured blockers.
@@ -237,6 +269,10 @@ func (svc *OrchestratorWorkService) GetNextPassWork(ctx context.Context, req Nex
 	for i := range passes {
 		p := &passes[i]
 		passByID[p.PassID] = p
+	}
+
+	if req.PassID != "" {
+		return svc.getPassByIDWithSafety(ctx, project, plan, passes, passByID, req.PassID)
 	}
 
 	for i := range passes {
@@ -376,20 +412,18 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 
 	var snapshotID string
 	var snapshotStatus string
+	var snapshotFound bool
 	if requireSnapshot {
 		snapshot, err := svc.store.GetLatestSourceSnapshotForProject(project.ID)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return blockerResponse(WorkBlocker{
-					Code:        BlockerRequiredSourceContextMissing,
-					Message:     fmt.Sprintf("pass %q requires a source snapshot (require_git_status or require_commit_sha) but none exists for project %q", pass.PassID, project.ProjectID),
-					Recoverable: true,
-				}), nil
+			if !errors.Is(err, sql.ErrNoRows) {
+				return NextPassWorkResponse{}, fmt.Errorf("get latest source snapshot for project %q: %w", project.ProjectID, err)
 			}
-			return NextPassWorkResponse{}, fmt.Errorf("get latest source snapshot for project %q: %w", project.ProjectID, err)
+		} else {
+			snapshotID = snapshot.SourceSnapshotID
+			snapshotStatus = snapshot.Status
+			snapshotFound = true
 		}
-		snapshotID = snapshot.SourceSnapshotID
-		snapshotStatus = snapshot.Status
 	}
 
 	requirePacket := hasRequiredContextInputs(ctxPlan)
@@ -397,21 +431,19 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	var packetID string
 	var packetStatus string
 	var coverageReportPath string
+	var packetFound bool
 	if requirePacket {
 		packet, err := svc.store.GetLatestContextPacketForPass(project.ProjectID, plan.PlanID, pass.PassID)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return blockerResponse(WorkBlocker{
-					Code:        BlockerRequiredContextPacketMissing,
-					Message:     fmt.Sprintf("pass %q has required context inputs but no context packet exists for project=%q plan=%q pass=%q", pass.PassID, project.ProjectID, plan.PlanID, pass.PassID),
-					Recoverable: true,
-				}), nil
+			if !errors.Is(err, sql.ErrNoRows) {
+				return NextPassWorkResponse{}, fmt.Errorf("get latest context packet for pass %q: %w", pass.PassID, err)
 			}
-			return NextPassWorkResponse{}, fmt.Errorf("get latest context packet for pass %q: %w", pass.PassID, err)
+		} else {
+			packetID = packet.ContextPacketID
+			packetStatus = packet.Status
+			coverageReportPath = packet.CoverageReportPath
+			packetFound = true
 		}
-		packetID = packet.ContextPacketID
-		packetStatus = packet.Status
-		coverageReportPath = packet.CoverageReportPath
 	}
 
 	contextReady := (!requireSnapshot || snapshotID != "") && (!requirePacket || packetID != "")
@@ -452,8 +484,35 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		RefactorCandidate: refMeta,
 	}
 
-	return NextPassWorkResponse{
-		OK:   true,
+	// Build the shared Planner jumpstart payload.
+	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound)
+
+	// Determine readiness state and optional blocker.
+	var readinessState string
+	var blocker *WorkBlocker
+	switch {
+	case requireSnapshot && !snapshotFound:
+		readinessState = "needs_source_snapshot"
+		blocker = &WorkBlocker{
+			Code:        BlockerRequiredSourceContextMissing,
+			Message:     fmt.Sprintf("pass %q requires a source snapshot (require_git_status or require_commit_sha) but none exists for project %q", pass.PassID, project.ProjectID),
+			Recoverable: true,
+		}
+	case requirePacket && !packetFound:
+		readinessState = "needs_context_packet"
+		blocker = &WorkBlocker{
+			Code:        BlockerRequiredContextPacketMissing,
+			Message:     fmt.Sprintf("pass %q has required context inputs but no context packet exists for project=%q plan=%q pass=%q", pass.PassID, project.ProjectID, plan.PlanID, pass.PassID),
+			Recoverable: true,
+		}
+	default:
+		readinessState = "ready"
+	}
+
+	jumpstart.ReadinessState = readinessState
+
+	resp := NextPassWorkResponse{
+		OK:   blocker == nil,
 		Tool: NextPassWorkTool,
 		Project: &WorkProjectSummary{
 			ProjectID: project.ProjectID,
@@ -477,15 +536,220 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 			ContextReady:         contextReady,
 		},
 		HandoffReadinessCriteria: criteria,
-		SuggestedRunSubmission: &SuggestedRunSubmission{
+		PlannerJumpstart:         jumpstart,
+		Blockers:                 []WorkBlocker{},
+	}
+
+	if blocker != nil {
+		resp.Blockers = []WorkBlocker{*blocker}
+	} else {
+		resp.SuggestedRunSubmission = &SuggestedRunSubmission{
 			Tool: "create_run_from_planner_handoff",
 			Arguments: SuggestedRunArguments{
 				PlanID: plan.PlanID,
 				PassID: pass.PassID,
 			},
-		},
-		Blockers: []WorkBlocker{},
-	}, nil
+		}
+	}
+
+	return resp, nil
+}
+
+// buildPlannerJumpstart constructs the PlannerJumpstart payload from
+// the evaluated candidate data. No raw file contents are included.
+func buildPlannerJumpstart(
+	selectedPass *WorkPassSummary,
+	project *store.Project,
+	planID string,
+	ssReqs *SourceSnapshotRequirements,
+	ctxPlan ContextPlan,
+	snapshotID, snapshotStatus, packetID, packetStatus string,
+	requireSnapshot, requirePacket, snapshotFound, packetFound bool,
+) *PlannerJumpstart {
+	var basis *PlannerJumpstartBasisReport
+	if requireSnapshot || requirePacket {
+		basis = &PlannerJumpstartBasisReport{
+			SnapshotID:     snapshotID,
+			SnapshotStatus: snapshotStatus,
+			PacketID:       packetID,
+			PacketStatus:   packetStatus,
+		}
+	}
+
+	var actions []ContextAcquisitionAction
+	var checklist []string
+
+	if requireSnapshot && !snapshotFound {
+		repoIDs := ctxPlan.RequiredRepositories
+		args := map[string]interface{}{
+			"project_id": project.ProjectID,
+		}
+		if len(repoIDs) > 0 {
+			args["repo_ids"] = repoIDs
+		} else {
+			checklist = append(checklist, "Look up project repository IDs to pass to create_source_snapshot")
+		}
+		actions = append(actions, ContextAcquisitionAction{
+			Tool:      "create_source_snapshot",
+			Arguments: args,
+		})
+		checklist = append(checklist, "Source snapshot: needed — run create_source_snapshot")
+	} else if snapshotFound {
+		checklist = append(checklist, "Source snapshot: ready ("+snapshotID+")")
+	}
+
+	if requirePacket && !packetFound {
+		actions = append(actions, ContextAcquisitionAction{
+			Tool: "create_context_packet",
+			Arguments: map[string]interface{}{
+				"project_id": project.ProjectID,
+				"plan_id":    planID,
+				"pass_id":    selectedPass.PassID,
+			},
+		})
+		checklist = append(checklist, "Context packet: needed — run create_context_packet with project_id, plan_id, pass_id")
+	} else if packetFound {
+		checklist = append(checklist, "Context packet: ready ("+packetID+")")
+	}
+
+	if selectedPass != nil {
+		checklist = append(checklist,
+			"Dependencies: satisfied",
+			"Active runs: none",
+			"Plan status: active",
+			"Pass goal: "+selectedPass.Goal,
+			"Pass scope: seq "+fmt.Sprintf("%d", selectedPass.Sequence)+" — "+selectedPass.Name,
+			"Handoff readiness criteria: review required",
+		)
+	}
+
+	return &PlannerJumpstart{
+		SelectedPassSummary:               selectedPass,
+		SourceRequirements:                ssReqs,
+		ContextRequirements:               ctxPlan,
+		SourceBasisReport:                 basis,
+		SuggestedContextAcquisitionActions: actions,
+		HandoffPreflightChecklist:         checklist,
+	}
+}
+
+// getPassByIDWithSafety validates that a requested pass can be safely
+// reached (all prior passes are terminal) and then evaluates it.
+// It does not bypass sequential safety.
+func (svc *OrchestratorWorkService) getPassByIDWithSafety(
+	ctx context.Context,
+	project *store.Project,
+	plan *store.Plan,
+	passes []store.PlanPass,
+	passByID map[string]*store.PlanPass,
+	targetPassID string,
+) (NextPassWorkResponse, error) {
+	var targetIdx int = -1
+	for i := range passes {
+		if passes[i].PassID == targetPassID {
+			targetIdx = i
+			break
+		}
+	}
+	if targetIdx == -1 {
+		return blockerResponse(WorkBlocker{
+			Code:        BlockerRequestedPassNotFound,
+			Message:     fmt.Sprintf("requested pass %q does not exist in plan %q", targetPassID, plan.PlanID),
+			Recoverable: false,
+		}), nil
+	}
+
+	for i := 0; i < targetIdx; i++ {
+		prior := &passes[i]
+		switch prior.Status {
+		case StatusPassCompleted, StatusPassSkipped:
+			continue
+		case StatusPassAuditReady:
+			return blockerResponse(WorkBlocker{
+				Code:        BlockerPriorPassAwaitsAudit,
+				Message:     fmt.Sprintf("pass %q (seq %d) has status %q and must be audited before pass %q can start", prior.PassID, prior.Sequence, prior.Status, targetPassID),
+				Recoverable: true,
+			}), nil
+		case StatusPassRevisionRequired:
+			return blockerResponse(WorkBlocker{
+				Code:        BlockerRevisionRequiredSamePass,
+				Message:     fmt.Sprintf("pass %q (seq %d) requires revision before pass %q can start", prior.PassID, prior.Sequence, targetPassID),
+				Recoverable: true,
+			}), nil
+		case StatusPassHandoffReady:
+			return blockerResponse(WorkBlocker{
+				Code:        BlockerNoEligiblePass,
+				Message:     fmt.Sprintf("pass %q (seq %d) is awaiting handoff submission; pass %q cannot start yet", prior.PassID, prior.Sequence, targetPassID),
+				Recoverable: true,
+			}), nil
+		case StatusPassRunCreated, StatusPassInProgress:
+			return blockerResponse(WorkBlocker{
+				Code:        BlockerActiveRunExists,
+				Message:     fmt.Sprintf("pass %q (seq %d) has an active associated run; pass %q cannot start yet", prior.PassID, prior.Sequence, targetPassID),
+				Recoverable: true,
+			}), nil
+		case StatusPassBlocked:
+			return blockerResponse(WorkBlocker{
+				Code:        BlockerNoEligiblePass,
+				Message:     fmt.Sprintf("pass %q (seq %d) is blocked and prevents pass %q from starting", prior.PassID, prior.Sequence, targetPassID),
+				Recoverable: true,
+			}), nil
+		default:
+			return blockerResponse(WorkBlocker{
+				Code:        BlockerRequestedPassNotEligible,
+				Message:     fmt.Sprintf("pass %q (seq %d) has status %q; pass %q cannot start until it is terminal", prior.PassID, prior.Sequence, prior.Status, targetPassID),
+				Recoverable: true,
+			}), nil
+		}
+	}
+
+	target := &passes[targetIdx]
+	switch target.Status {
+	case StatusPassCompleted, StatusPassSkipped:
+		return blockerResponse(WorkBlocker{
+			Code:        BlockerRequestedPassNotEligible,
+			Message:     fmt.Sprintf("requested pass %q (seq %d) has status %q and cannot be started", target.PassID, target.Sequence, target.Status),
+			Recoverable: false,
+		}), nil
+	case StatusPassAuditReady:
+		return blockerResponse(WorkBlocker{
+			Code:        BlockerPriorPassAwaitsAudit,
+			Message:     fmt.Sprintf("requested pass %q (seq %d) has status %q and must be audited first", target.PassID, target.Sequence, target.Status),
+			Recoverable: true,
+		}), nil
+	case StatusPassRevisionRequired:
+		return blockerResponse(WorkBlocker{
+			Code:        BlockerRevisionRequiredSamePass,
+			Message:     fmt.Sprintf("requested pass %q (seq %d) requires revision before proceeding", target.PassID, target.Sequence),
+			Recoverable: true,
+		}), nil
+	case StatusPassHandoffReady:
+		return blockerResponse(WorkBlocker{
+			Code:        BlockerNoEligiblePass,
+			Message:     fmt.Sprintf("requested pass %q (seq %d) is awaiting handoff submission", target.PassID, target.Sequence),
+			Recoverable: true,
+		}), nil
+	case StatusPassRunCreated, StatusPassInProgress:
+		return blockerResponse(WorkBlocker{
+			Code:        BlockerActiveRunExists,
+			Message:     fmt.Sprintf("requested pass %q (seq %d) has an active associated run", target.PassID, target.Sequence),
+			Recoverable: true,
+		}), nil
+	case StatusPassBlocked:
+		return blockerResponse(WorkBlocker{
+			Code:        BlockerNoEligiblePass,
+			Message:     fmt.Sprintf("requested pass %q (seq %d) is blocked", target.PassID, target.Sequence),
+			Recoverable: true,
+		}), nil
+	case StatusPassPlanned, StatusPassReadyForPlanner:
+		return svc.evaluateCandidate(ctx, project, plan, target, passByID)
+	default:
+		return blockerResponse(WorkBlocker{
+			Code:        BlockerRequestedPassNotEligible,
+			Message:     fmt.Sprintf("requested pass %q (seq %d) has unrecognised status %q", target.PassID, target.Sequence, target.Status),
+			Recoverable: false,
+		}), nil
+	}
 }
 
 // ----------------------------------------------------------------------------

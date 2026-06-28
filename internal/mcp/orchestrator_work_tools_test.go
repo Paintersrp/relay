@@ -502,6 +502,13 @@ func TestOrchestratorWorkTools_SchemasAreStrictAndScoped(t *testing.T) {
 			t.Errorf("get_next_pass_work schema must require %q", field)
 		}
 	}
+	passProps, _ := passSchema["properties"].(map[string]any)
+	if _, ok := passProps["pass_id"]; !ok {
+		t.Error("get_next_pass_work schema must define optional pass_id")
+	}
+	if passRequired["pass_id"] {
+		t.Error("get_next_pass_work schema must not require pass_id")
+	}
 
 	// get_next_audit_work schema.
 	auditSchema := schemaMap(t, ToolGetNextAuditWork.InputSchema)
@@ -647,6 +654,51 @@ func TestOrchestratorWorkTools_GetNextPassWorkSuccessThroughTool(t *testing.T) {
 	}
 	if _, ok := args["pass_id"]; !ok {
 		t.Error("suggested arguments missing pass_id")
+	}
+
+	// Verify jumpstart field is present in the JSON payload.
+	js, _ := payload["planner_jumpstart"].(map[string]any)
+	if js == nil {
+		t.Fatal("expected planner_jumpstart in response JSON")
+	}
+	if state, _ := js["readiness_state"].(string); state != "ready" {
+		t.Errorf("expected readiness_state=ready, got %q", state)
+	}
+	if summary, _ := js["selected_pass_summary"].(map[string]any); summary == nil {
+		t.Error("expected selected_pass_summary in planner_jumpstart")
+	}
+	checklist, _ := js["handoff_preflight_checklist"].([]any)
+	if len(checklist) == 0 {
+		t.Error("expected non-empty handoff_preflight_checklist")
+	}
+}
+
+func TestOrchestratorWorkTools_GetNextPassWorkWithPassID(t *testing.T) {
+	t.Parallel()
+
+	st := setupOrchestratorTestStore(t)
+	plan := seedMCPOrchestratorPlan(t, st, "plan-mcp-passid")
+	_ = plan
+
+	srv := NewServer(nil, &MCPDeps{Store: st, ToolProfile: ToolProfileLocalOperator})
+
+	// Request PASS-001 explicitly (the earliest eligible pass).
+	result := srv.HandleGetNextPassWork(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-passid","pass_id":"PASS-001"}`))
+	if result.IsError {
+		t.Fatalf("expected IsError=false, got error result: %+v", result.Content)
+	}
+	var resp appplans.NextPassWorkResponse
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected ok=true for requested PASS-001, got blockers: %+v", resp.Blockers)
+	}
+	if resp.SelectedPass == nil || resp.SelectedPass.PassID != "PASS-001" {
+		t.Fatalf("expected PASS-001 selected, got %+v", resp.SelectedPass)
+	}
+	if resp.PlannerJumpstart == nil {
+		t.Fatal("expected planner_jumpstart for pass_id request")
 	}
 }
 

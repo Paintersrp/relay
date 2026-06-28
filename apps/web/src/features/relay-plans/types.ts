@@ -270,6 +270,28 @@ export interface SuggestedRunSubmission {
   };
 }
 
+export interface PlannerJumpstartBasisReport {
+  snapshotId?: string;
+  snapshotStatus?: string;
+  packetId?: string;
+  packetStatus?: string;
+}
+
+export interface ContextAcquisitionAction {
+  tool: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface PlannerJumpstart {
+  readinessState: "ready" | "needs_source_snapshot" | "needs_context_packet" | "blocked";
+  selectedPassSummary?: WorkPassSummary;
+  sourceRequirements?: PlanAPISourceSnapshotRequirements;
+  contextRequirements: PlanAPIContextPlan;
+  sourceBasisReport?: PlannerJumpstartBasisReport;
+  suggestedContextAcquisitionActions?: ContextAcquisitionAction[];
+  handoffPreflightChecklist?: string[];
+}
+
 export interface NextPassWorkResponse {
   ok: boolean;
   tool: "get_next_pass_work" | string;
@@ -281,6 +303,7 @@ export interface NextPassWorkResponse {
   context?: WorkContextSummary;
   handoffReadinessCriteria?: string[];
   suggestedRunSubmission?: SuggestedRunSubmission;
+  plannerJumpstart?: PlannerJumpstart;
   blockers: WorkBlocker[];
 }
 

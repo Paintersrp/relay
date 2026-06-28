@@ -727,3 +727,309 @@ func TestGetNextPassWork_BlockedPassPreventsAdvancement(t *testing.T) {
 		t.Fatalf("expected no suggested run submission when PASS-001 is blocked, got %+v", resp.SuggestedRunSubmission)
 	}
 }
+
+// -------------------------------------------------------------------
+// Planner jumpstart tests
+// -------------------------------------------------------------------
+
+func TestGetNextPassWork_ReadyPassIncludesPlannerJumpstart(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	seedPlan(t, st, "relay", "plan-js-ready")
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-js-ready",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected ok=true, got blockers: %+v", resp.Blockers)
+	}
+	if resp.PlannerJumpstart == nil {
+		t.Fatal("expected planner_jumpstart in response")
+	}
+	if resp.PlannerJumpstart.ReadinessState != "ready" {
+		t.Fatalf("expected readiness_state=ready, got %q", resp.PlannerJumpstart.ReadinessState)
+	}
+	if resp.PlannerJumpstart.SelectedPassSummary == nil {
+		t.Fatal("expected selected_pass_summary in planner_jumpstart")
+	}
+	if resp.PlannerJumpstart.SelectedPassSummary.PassID != "PASS-001" {
+		t.Fatalf("expected PASS-001 in planner_jumpstart, got %q", resp.PlannerJumpstart.SelectedPassSummary.PassID)
+	}
+	if len(resp.PlannerJumpstart.HandoffPreflightChecklist) == 0 {
+		t.Fatal("expected non-empty handoff_preflight_checklist")
+	}
+	// A ready pass should not have suggested acquisition actions.
+	if len(resp.PlannerJumpstart.SuggestedContextAcquisitionActions) != 0 {
+		t.Fatalf("expected no suggested acquisition actions for ready pass, got %d",
+			len(resp.PlannerJumpstart.SuggestedContextAcquisitionActions))
+	}
+}
+
+func TestGetNextPassWork_MissingSourceSnapshotIncludesJumpstart(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	planSvc := NewService(st)
+	plan := PlannerPassPlan{
+		PlanMeta: PlanMeta{
+			PlanID: "plan-js-snapshotmiss", SchemaVersion: "2.0.0",
+			CreatedAt: "2026-06-23T00:00:00Z", Title: "T", Goal: "G",
+			RepoTarget: "Paintersrp/relay", BranchContext: "main", Status: "active",
+			ProjectID: "relay",
+			MCPCapabilityProfile: &MCPCapabilityProfile{
+				ProfileID: "p", Mode: "submission_only", ContextBrokerEnabled: boolPtr(false),
+			},
+		},
+		SourceIntent:       SourceIntent{Summary: "S"},
+		GlobalContextRules: &GlobalContextRules{DefaultSourceOfTruth: "D", PlannerContextBoundary: "B", ForbiddenContextDomains: []string{"X"}},
+		Passes: []PlanPassInput{{
+			PassID: "PASS-001", Sequence: 1, Name: "N", Goal: "G",
+			IntendedExecutionScope: []string{"a"}, NonGoals: []string{"b"},
+			Dependencies: []string{}, Status: "planned", PassType: "backend_vertical_slice",
+			ContextPlan: noContextRequirementsPlan(),
+			SourceSnapshotRequirements: SourceSnapshotRequirements{
+				RequireGitStatus: boolPtr(true), RequireCommitSHA: boolPtr(false), AllowDirtyWorktree: boolPtr(true),
+			},
+			HandoffReadinessCriteria: []string{"c"},
+		}},
+	}
+	raw := mustMarshalPlan(t, plan)
+	result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw})
+	if err != nil || !result.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
+	}
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-js-snapshotmiss",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should still maintain the blocker.
+	assertBlockerCode(t, resp, BlockerRequiredSourceContextMissing)
+
+	// But should include the jumpstart payload with actionable guidance.
+	if resp.PlannerJumpstart == nil {
+		t.Fatal("expected planner_jumpstart even when source snapshot is missing")
+	}
+	if resp.PlannerJumpstart.ReadinessState != "needs_source_snapshot" {
+		t.Fatalf("expected readiness_state=needs_source_snapshot, got %q", resp.PlannerJumpstart.ReadinessState)
+	}
+	if len(resp.PlannerJumpstart.SuggestedContextAcquisitionActions) == 0 {
+		t.Fatal("expected at least one suggested context acquisition action")
+	}
+	firstAction := resp.PlannerJumpstart.SuggestedContextAcquisitionActions[0]
+	if firstAction.Tool != "create_source_snapshot" {
+		t.Fatalf("expected first suggested action to be create_source_snapshot, got %q", firstAction.Tool)
+	}
+	// Must include selected pass summary for context prep.
+	if resp.PlannerJumpstart.SelectedPassSummary == nil || resp.PlannerJumpstart.SelectedPassSummary.PassID != "PASS-001" {
+		t.Fatalf("expected selected_pass_summary PASS-001 in jumpstart, got %+v", resp.PlannerJumpstart.SelectedPassSummary)
+	}
+}
+
+func TestGetNextPassWork_MissingContextPacketIncludesJumpstart(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	planSvc := NewService(st)
+	plan := PlannerPassPlan{
+		PlanMeta: PlanMeta{
+			PlanID: "plan-js-packetmiss", SchemaVersion: "2.0.0",
+			CreatedAt: "2026-06-23T00:00:00Z", Title: "T", Goal: "G",
+			RepoTarget: "Paintersrp/relay", BranchContext: "main", Status: "active",
+			ProjectID: "relay",
+			MCPCapabilityProfile: &MCPCapabilityProfile{
+				ProfileID: "p", Mode: "submission_only", ContextBrokerEnabled: boolPtr(false),
+			},
+		},
+		SourceIntent:       SourceIntent{Summary: "S"},
+		GlobalContextRules: &GlobalContextRules{DefaultSourceOfTruth: "D", PlannerContextBoundary: "B", ForbiddenContextDomains: []string{"X"}},
+		Passes: []PlanPassInput{{
+			PassID: "PASS-001", Sequence: 1, Name: "N", Goal: "G",
+			IntendedExecutionScope: []string{"a"}, NonGoals: []string{"b"},
+			Dependencies: []string{}, Status: "planned", PassType: "backend_vertical_slice",
+			ContextPlan: baseContextPlan(),
+			SourceSnapshotRequirements: SourceSnapshotRequirements{
+				RequireGitStatus: boolPtr(false), RequireCommitSHA: boolPtr(false), AllowDirtyWorktree: boolPtr(true),
+			},
+			HandoffReadinessCriteria: []string{"c"},
+		}},
+	}
+	raw := mustMarshalPlan(t, plan)
+	result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw})
+	if err != nil || !result.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
+	}
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-js-packetmiss",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should still maintain the blocker.
+	assertBlockerCode(t, resp, BlockerRequiredContextPacketMissing)
+
+	// But should include the jumpstart payload with actionable guidance.
+	if resp.PlannerJumpstart == nil {
+		t.Fatal("expected planner_jumpstart even when context packet is missing")
+	}
+	if resp.PlannerJumpstart.ReadinessState != "needs_context_packet" {
+		t.Fatalf("expected readiness_state=needs_context_packet, got %q", resp.PlannerJumpstart.ReadinessState)
+	}
+	if len(resp.PlannerJumpstart.SuggestedContextAcquisitionActions) == 0 {
+		t.Fatal("expected at least one suggested context acquisition action")
+	}
+	firstAction := resp.PlannerJumpstart.SuggestedContextAcquisitionActions[0]
+	if firstAction.Tool != "create_context_packet" {
+		t.Fatalf("expected first suggested action to be create_context_packet, got %q", firstAction.Tool)
+	}
+	// Must include pass and context details.
+	if resp.PlannerJumpstart.SelectedPassSummary == nil || resp.PlannerJumpstart.SelectedPassSummary.PassID != "PASS-001" {
+		t.Fatalf("expected selected_pass_summary PASS-001 in jumpstart, got %+v", resp.PlannerJumpstart.SelectedPassSummary)
+	}
+}
+
+// -------------------------------------------------------------------
+// Optional pass_id tests
+// -------------------------------------------------------------------
+
+func TestGetNextPassWork_RequestedPassNotFound(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	seedPlan(t, st, "relay", "plan-passid-notfound")
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-passid-notfound",
+		PassID:    "PASS-NONEXISTENT",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertBlockerCode(t, resp, BlockerRequestedPassNotFound)
+}
+
+func TestGetNextPassWork_RequestedPassBlocksOnPriorAudit(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	seedPlan(t, st, "relay", "plan-passid-audit")
+
+	setPassStatus(t, st, "plan-passid-audit", "PASS-001", StatusPassAuditReady)
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-passid-audit",
+		PassID:    "PASS-002",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertBlockerCode(t, resp, BlockerPriorPassAwaitsAudit)
+}
+
+func TestGetNextPassWork_RequestedPassSuccess(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	seedPlan(t, st, "relay", "plan-passid-success")
+
+	setPassStatus(t, st, "plan-passid-success", "PASS-001", StatusPassCompleted)
+
+	// Request PASS-002 after PASS-001 is completed.
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-passid-success",
+		PassID:    "PASS-002",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.OK {
+		t.Fatalf("expected ok=true for requested PASS-002, got blockers: %+v", resp.Blockers)
+	}
+	if resp.SelectedPass == nil || resp.SelectedPass.PassID != "PASS-002" {
+		t.Fatalf("expected selected_pass PASS-002, got %+v", resp.SelectedPass)
+	}
+	if resp.PlannerJumpstart == nil {
+		t.Fatal("expected planner_jumpstart for selected pass")
+	}
+	if resp.PlannerJumpstart.ReadinessState != "ready" {
+		t.Fatalf("expected readiness_state=ready, got %q", resp.PlannerJumpstart.ReadinessState)
+	}
+}
+
+func TestGetNextPassWork_RequestedPassAlreadyCompleted(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	seedPlan(t, st, "relay", "plan-passid-completed")
+
+	setPassStatus(t, st, "plan-passid-completed", "PASS-001", StatusPassCompleted)
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-passid-completed",
+		PassID:    "PASS-001",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertBlockerCode(t, resp, BlockerRequestedPassNotEligible)
+}
+
+func TestGetNextPassWork_RequestedPassWithActiveRun(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	seedPlan(t, st, "relay", "plan-passid-activerun")
+
+	repo, err := st.CreateRepo("test-repo", t.TempDir())
+	if err != nil {
+		t.Fatalf("CreateRepo: %v", err)
+	}
+	plan, err := st.GetPlanByPlanID("plan-passid-activerun")
+	if err != nil {
+		t.Fatalf("GetPlanByPlanID: %v", err)
+	}
+	pass, err := st.GetPlanPassByPassID(plan.ID, "PASS-001")
+	if err != nil {
+		t.Fatalf("GetPlanPassByPassID: %v", err)
+	}
+	_, err = st.CreateRunWithAssociation(
+		repo.ID,
+		"active run on PASS-001",
+		"executor_running",
+		"", "", "opencode_go", "main",
+		sql.NullInt64{Int64: plan.ID, Valid: true},
+		sql.NullInt64{Int64: pass.ID, Valid: true},
+	)
+	if err != nil {
+		t.Fatalf("CreateRunWithAssociation: %v", err)
+	}
+	// Update pass status to reflect active run (real flow does this via lifecycle service).
+	if _, err := st.UpdatePlanPassStatus(pass.ID, StatusPassInProgress); err != nil {
+		t.Fatalf("UpdatePlanPassStatus: %v", err)
+	}
+
+	// PASS-001 is active, so requesting PASS-002 should block.
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-passid-activerun",
+		PassID:    "PASS-002",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertBlockerCode(t, resp, BlockerActiveRunExists)
+}
