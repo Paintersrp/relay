@@ -480,6 +480,8 @@ func TestNormalizeAdapterID(t *testing.T) {
 		{"codex", "codex"},
 		{"agy", "antigravity"},
 		{"antigravity", "antigravity"},
+		{"kiro", "kiro_cli"},
+		{"kiro_cli", "kiro_cli"},
 		{"invalid", "invalid"},
 	}
 	for _, c := range cases {
@@ -503,6 +505,9 @@ func TestNormalizeKnownAdapterID(t *testing.T) {
 		{" CODEX ", "codex", false},
 		{"agy", "antigravity", false},
 		{"Antigravity", "antigravity", false},
+		{"kiro", "kiro_cli", false},
+		{"kiro_cli", "kiro_cli", false},
+		{" KIRO_CLI ", "kiro_cli", false},
 		{"invalid", "", true},
 		{"deepseek-v4-flash", "", true},
 	}
@@ -1214,5 +1219,340 @@ func TestDispatchBrief_PreflightInjectionAllowsExistingFakeRunnerTests(t *testin
 	<-done
 	if !runnerCalled {
 		t.Errorf("expected runner to be called")
+	}
+}
+
+func TestKiroCLIAdapter_BuildInvocationDefaults(t *testing.T) {
+	adapter := KiroCLIAdapter{
+		Config: KiroCLIAdapterConfig{
+			Binary:     "kiro-cli",
+			Effort:     "high",
+			TrustTools: "fs_read,fs_write,grep",
+		},
+	}
+	req := ExecutorAdapterRequest{
+		RunID:         1,
+		RepoPath:      "/tmp/repo",
+		BriefContent:  "# Brief\nDo the thing.",
+		BriefPath:     "/tmp/repo/executor_brief.md",
+		SelectedModel: "",
+	}
+	inv, err := adapter.BuildInvocation(req)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if inv.Adapter != AdapterKiroCLI {
+		t.Errorf("expected adapter %s, got %s", AdapterKiroCLI, inv.Adapter)
+	}
+	if inv.Binary != "kiro-cli" {
+		t.Errorf("expected binary kiro-cli, got %s", inv.Binary)
+	}
+	if inv.Model != "auto" {
+		t.Errorf("expected model auto, got %s", inv.Model)
+	}
+	if inv.Agent != "kiro-cli" {
+		t.Errorf("expected agent kiro-cli, got %s", inv.Agent)
+	}
+	if !inv.RequireZeroExit {
+		t.Errorf("expected RequireZeroExit true")
+	}
+
+	hasChat := false
+	hasNoInteractive := false
+	hasWrap := false
+	hasModel := false
+	hasEffort := false
+	hasTrustTools := false
+	hasResume := false
+	hasTrustAll := false
+	for _, a := range inv.Args {
+		if a == "chat" {
+			hasChat = true
+		}
+		if a == "--no-interactive" {
+			hasNoInteractive = true
+		}
+		if a == "never" {
+			hasWrap = true
+		}
+		if a == "--model" {
+			hasModel = true
+		}
+		if a == "--effort" {
+			hasEffort = true
+		}
+		if a == "--trust-tools=fs_read,fs_write,grep" {
+			hasTrustTools = true
+		}
+		if strings.HasPrefix(a, "--resume") {
+			hasResume = true
+		}
+		if a == "--trust-all-tools" {
+			hasTrustAll = true
+		}
+	}
+	if !hasChat || !hasNoInteractive || !hasWrap || !hasModel || !hasEffort || !hasTrustTools {
+		t.Errorf("missing expected args in: %v", inv.Args)
+	}
+	if hasResume {
+		t.Errorf("unexpected resume flag in args: %v", inv.Args)
+	}
+	if hasTrustAll {
+		t.Errorf("unexpected trust-all-tools flag in args: %v", inv.Args)
+	}
+	if inv.Stdin != "# Brief\nDo the thing." {
+		t.Errorf("expected stdin to be brief content, got %s", inv.Stdin)
+	}
+	if !strings.Contains(inv.Preview, "kiro-cli") || !strings.Contains(inv.Preview, " < ") {
+		t.Errorf("preview missing expected components: %s", inv.Preview)
+	}
+}
+
+func TestKiroCLIAdapter_BuildInvocationSelectedModel(t *testing.T) {
+	adapter := KiroCLIAdapter{
+		Config: KiroCLIAdapterConfig{
+			Binary:     "kiro-cli",
+			Effort:     "high",
+			TrustTools: "fs_read,fs_write,grep",
+		},
+	}
+	req := ExecutorAdapterRequest{
+		RunID:         1,
+		RepoPath:      "/tmp/repo",
+		BriefContent:  "# Brief",
+		BriefPath:     "/tmp/brief.md",
+		SelectedModel: "claude-sonnet-4.6",
+	}
+	inv, err := adapter.BuildInvocation(req)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if inv.Model != "claude-sonnet-4.6" {
+		t.Errorf("expected model claude-sonnet-4.6, got %s", inv.Model)
+	}
+	foundModelArg := false
+	for i, a := range inv.Args {
+		if a == "--model" && i+1 < len(inv.Args) && inv.Args[i+1] == "claude-sonnet-4.6" {
+			foundModelArg = true
+		}
+	}
+	if !foundModelArg {
+		t.Errorf("expected --model claude-sonnet-4.6 in args: %v", inv.Args)
+	}
+}
+
+func TestKiroCLIAdapter_BuildInvocationEnvModelOverride(t *testing.T) {
+	adapter := KiroCLIAdapter{
+		Config: KiroCLIAdapterConfig{
+			Binary:     "kiro-cli",
+			Model:      "gpt-5.1-codex-max",
+			Effort:     "high",
+			TrustTools: "fs_read,fs_write,grep",
+		},
+	}
+	req := ExecutorAdapterRequest{
+		RunID:         1,
+		RepoPath:      "/tmp/repo",
+		BriefContent:  "# Brief",
+		BriefPath:     "/tmp/brief.md",
+		SelectedModel: "claude-sonnet-4.6",
+	}
+	inv, err := adapter.BuildInvocation(req)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if inv.Model != "gpt-5.1-codex-max" {
+		t.Errorf("expected model gpt-5.1-codex-max, got %s", inv.Model)
+	}
+}
+
+func TestKiroCLIAdapter_BuildInvocationRequireMCPStartupOptIn(t *testing.T) {
+	t.Run("off by default", func(t *testing.T) {
+		adapter := KiroCLIAdapter{
+			Config: KiroCLIAdapterConfig{
+				Binary:     "kiro-cli",
+				Effort:     "high",
+				TrustTools: "fs_read,fs_write,grep",
+			},
+		}
+		req := ExecutorAdapterRequest{
+			RunID:         1,
+			RepoPath:      "/tmp/repo",
+			BriefContent:  "# Brief",
+			BriefPath:     "/tmp/brief.md",
+			SelectedModel: "",
+		}
+		inv, err := adapter.BuildInvocation(req)
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		for _, a := range inv.Args {
+			if a == "--require-mcp-startup" {
+				t.Errorf("expected no --require-mcp-startup by default")
+			}
+		}
+	})
+
+	t.Run("on when configured true", func(t *testing.T) {
+		adapter := KiroCLIAdapter{
+			Config: KiroCLIAdapterConfig{
+				Binary:            "kiro-cli",
+				Effort:            "high",
+				TrustTools:        "fs_read,fs_write,grep",
+				RequireMCPStartup: true,
+			},
+		}
+		req := ExecutorAdapterRequest{
+			RunID:         1,
+			RepoPath:      "/tmp/repo",
+			BriefContent:  "# Brief",
+			BriefPath:     "/tmp/brief.md",
+			SelectedModel: "",
+		}
+		inv, err := adapter.BuildInvocation(req)
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		found := false
+		for _, a := range inv.Args {
+			if a == "--require-mcp-startup" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected --require-mcp-startup flag, args: %v", inv.Args)
+		}
+	})
+}
+
+func TestKiroCLIAdapter_NormalizeResultDone(t *testing.T) {
+	adapter := KiroCLIAdapter{}
+	raw := "DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 5"
+	res := adapter.NormalizeResult(raw)
+	if res.Status != pipeline.AgentResultDone {
+		t.Errorf("expected DONE, got %v", res.Status)
+	}
+	if !strings.Contains(res.ExecutorResultText, "STATUS: DONE") {
+		t.Errorf("expected text to contain STATUS: DONE, got %s", res.ExecutorResultText)
+	}
+}
+
+func TestKiroCLIAdapter_NormalizeResultBlocked(t *testing.T) {
+	adapter := KiroCLIAdapter{}
+	raw := "BLOCKED\nBLOCKER: auth failed"
+	res := adapter.NormalizeResult(raw)
+	if res.Status != pipeline.AgentResultBlocked {
+		t.Errorf("expected BLOCKED, got %v", res.Status)
+	}
+	if !strings.Contains(res.BlockerText, "auth failed") {
+		t.Errorf("expected blocker text to contain auth failed, got %s", res.BlockerText)
+	}
+	if !strings.Contains(res.ExecutorResultText, "STATUS: BLOCKED") {
+		t.Errorf("expected text to contain STATUS: BLOCKED, got %s", res.ExecutorResultText)
+	}
+}
+
+func TestKiroCLIAdapter_NormalizeResultUnknown(t *testing.T) {
+	adapter := KiroCLIAdapter{}
+	raw := "Some random output without status block"
+	res := adapter.NormalizeResult(raw)
+	if res.Status != pipeline.AgentResultUnknown {
+		t.Errorf("expected UNKNOWN, got %v", res.Status)
+	}
+	if !strings.Contains(res.ParseError, "missing or invalid STATUS line") {
+		t.Errorf("expected parse error, got %s", res.ParseError)
+	}
+	if !strings.Contains(res.ExecutorResultText, "STATUS: UNKNOWN") {
+		t.Errorf("expected text to contain STATUS: UNKNOWN, got %s", res.ExecutorResultText)
+	}
+}
+
+func TestDispatchBrief_KiroCLIZeroExitBlocked(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	done := make(chan struct{})
+
+	adapter := &KiroCLIAdapter{
+		Config: KiroCLIAdapterConfig{
+			Binary:     "kiro-cli",
+			Effort:     "high",
+			TrustTools: "fs_read,fs_write,grep",
+		},
+	}
+	_, err := DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: adapter,
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			return pipeline.AgentCommandRunResult{ExitCode: 1, Error: "execution failed"}
+		},
+		LaunchAsync: func(fn func()) {
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	<-done
+
+	run, _ := s.GetRun(runID)
+	if run.Status != StatusExecutorBlocked {
+		t.Errorf("expected run status %s, got %s", StatusExecutorBlocked, run.Status)
+	}
+
+	artifactsList, err := s.ListArtifactsByRun(runID)
+	if err != nil {
+		t.Fatalf("get artifacts: %v", err)
+	}
+	foundResult := false
+	for _, a := range artifactsList {
+		if a.Kind == ArtifactKindExecutorResult {
+			foundResult = true
+			content, _ := os.ReadFile(a.Path)
+			if !strings.Contains(string(content), "STATUS: BLOCKED") {
+				t.Errorf("executor_result should contain STATUS: BLOCKED, got: %s", string(content))
+			}
+		}
+	}
+	if !foundResult {
+		t.Errorf("expected executor_result artifact")
+	}
+}
+
+func TestKiroRedactSensitive(t *testing.T) {
+	t.Setenv("KIRO_API_KEY", "sk-kiro-secret-key-12345")
+	result := redactSensitive("using sk-kiro-secret-key-12345 here")
+	if strings.Contains(result, "sk-kiro-secret-key-12345") {
+		t.Errorf("expected redacted output, got %q", result)
+	}
+	if !strings.Contains(result, "[REDACTED]") {
+		t.Errorf("expected [REDACTED], got %q", result)
+	}
+}
+
+func TestNewAdapterFromID_KiroCLIReturnsAdapter(t *testing.T) {
+	adapter, err := NewAdapterFromID("kiro_cli")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if adapter.ID() != AdapterKiroCLI {
+		t.Errorf("expected AdapterKiroCLI, got %s", adapter.ID())
+	}
+}
+
+func TestNewAdapterFromID_KiroAliasReturnsKiroCLIAdapter(t *testing.T) {
+	adapter, err := NewAdapterFromID("kiro")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if adapter.ID() != AdapterKiroCLI {
+		t.Errorf("expected AdapterKiroCLI, got %s", adapter.ID())
 	}
 }

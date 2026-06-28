@@ -36,9 +36,7 @@ Ensure the following ports are free before starting local processes:
 
 ---
 
-## First-Time Setup
-
-1.  **Install Prerequisites**: Ensure you have Go 1.25+, Node.js 18+, `sqlc`, `goose`, and `templ` installed.
+## First-Time Setup: Ensure you have Go 1.25+, Node.js 18+, `sqlc`, `goose`, and `templ` installed.
 2.  **Install Dependencies**:
     ```bash
     npm install
@@ -272,6 +270,51 @@ Relay's audit workflows are local-first and artifact-backed:
 | `full_repository` | Performing a broad local repository health/audit scan without remote evidence. | Source snapshot inventory, repository git status, bounded metadata summaries, blockers/warnings, and local-only audit artifacts. |
 
 Local audit modes are read-only. They do not create PRs, run GitHub Actions, mutate git, run arbitrary shell commands, or replace the normal run audit/decision gates.
+
+---
+
+## Executor Adapters
+
+Relay supports multiple executor adapters for dispatching agent runs. The following adapters are available:
+
+### Kiro CLI Adapter
+
+The Kiro CLI adapter (`kiro_cli`) invokes `kiro-cli chat` in non-interactive headless mode, passing the executor brief through stdin.
+
+**Prerequisites**: `kiro-cli` must be installed and authenticated outside Relay. Kiro MCP dependencies are not required by default.
+
+**Default command shape**:
+
+```
+kiro-cli chat --no-interactive --wrap never --model auto --effort high --trust-tools=fs_read,fs_write,grep < executor_brief.md
+```
+
+**Environment variables**:
+
+| Variable | Default | Description |
+|---|---|---|
+| `RELAY_KIRO_BIN` | `kiro-cli` | Path or name of the Kiro CLI binary |
+| `RELAY_KIRO_MODEL` | (empty → `auto`) | Model override; if unset, the run's selected model or `auto` is used |
+| `RELAY_KIRO_EFFORT` | `high` | Effort level passed via `--effort` |
+| `RELAY_KIRO_TRUST_TOOLS` | `fs_read,fs_write,grep` | Comma-separated trusted tool list |
+| `RELAY_KIRO_REQUIRE_MCP_STARTUP` | `false` | Set to `true` to require MCP startup before tool use |
+| `RELAY_KIRO_AGENT` | (empty) | Agent name passed via `--agent` |
+| `RELAY_KIRO_AGENT_ENGINE` | (empty) | Agent engine passed via `--agent-engine` |
+
+**Safety defaults**:
+
+- `--trust-all-tools` is never enabled by default.
+- `--resume` / `--resume-id` / `--resume-picker` are never used by Relay.
+- `--require-mcp-startup` is opt-in only.
+- Relay sets `RequireZeroExit`, so nonzero exits produce a BLOCKED result.
+
+**Smoke test** (requires local Kiro installation and authentication):
+
+```bash
+kiro-cli chat --no-interactive --model auto "Say only MODEL_OK"
+```
+
+Expected: exit code 0, output contains `MODEL_OK`.
 
 ---
 

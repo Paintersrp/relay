@@ -364,6 +364,8 @@ Step 4 (OpenCode Go Handoff) shows a preflight readiness checklist with checks f
 Relay has a built-in OpenCode adapter that invokes `opencode run` in non-interactive mode with `--format json` and `--thinking max`. The compact Agent Prompt is piped into stdin.
 The adapter parses JSONL text events from stdout to extract the final assistant text (DONE/BLOCKED). Execution is manual only. 
 
+Relay also supports adapters for Codex, Antigravity, and Kiro CLI (`kiro_cli`). See the [Operator Guide](docs/operator-guide.md) for configuration details.
+
 ### Manual agent result intake
 
 Relay can store the final output from an external repo agent after the user runs that agent outside Relay. It parses metadata like Build status, Test status, Count of LOC changed, and Blocker/error.

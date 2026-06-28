@@ -14,6 +14,7 @@ const (
 	AdapterOpenCodeGo  AdapterID = "opencode_go"
 	AdapterCodex       AdapterID = "codex"
 	AdapterAntigravity AdapterID = "antigravity"
+	AdapterKiroCLI     AdapterID = "kiro_cli"
 )
 
 func NormalizeKnownAdapterID(id string) (string, error) {
@@ -26,6 +27,8 @@ func NormalizeKnownAdapterID(id string) (string, error) {
 		return string(AdapterCodex), nil
 	case "agy", "antigravity", "antigravity_cli":
 		return string(AdapterAntigravity), nil
+	case "kiro", "kiro_cli":
+		return string(AdapterKiroCLI), nil
 	default:
 		return "", fmt.Errorf("invalid executor adapter %q", id)
 	}
@@ -55,6 +58,8 @@ func NewAdapterFromID(id string) (ExecutorAdapter, error) {
 		return NewCodexAdapterFromEnv(), nil
 	case AdapterAntigravity:
 		return NewAntigravityAdapterFromEnv(), nil
+	case AdapterKiroCLI:
+		return NewKiroCLIAdapterFromEnv(), nil
 	default:
 		return nil, fmt.Errorf("unknown executor adapter %q", id)
 	}
