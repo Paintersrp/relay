@@ -88,5 +88,12 @@ export type {
 export {
   RELAY_AUDIT_DECISION_VALUES,
 } from './types'
+export {
+  EXECUTOR_ADAPTER_OPTIONS,
+  KIRO_MODEL_OPTIONS,
+  getDefaultModelForAdapter,
+  getModelOptionsForAdapter,
+  isKnownExecutorAdapter,
+} from './executorOptions'
 export { runArtifactContentQueryOptions } from './queries'
 export { evaluateValidationGate, evaluateExecuteValidationAction, evaluateRepairEligibility, isAuditCandidateStatus } from './validationGate'

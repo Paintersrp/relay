@@ -294,12 +294,32 @@ kiro-cli chat --no-interactive --wrap never --model auto --effort high --trust-t
 | Variable | Default | Description |
 |---|---|---|
 | `RELAY_KIRO_BIN` | `kiro-cli` | Path or name of the Kiro CLI binary |
-| `RELAY_KIRO_MODEL` | (empty → `auto`) | Model override; if unset, the run's selected model or `auto` is used |
+| `RELAY_KIRO_DEFAULT_MODEL` | `auto` | Default model when the run does not select one |
 | `RELAY_KIRO_EFFORT` | `high` | Effort level passed via `--effort` |
 | `RELAY_KIRO_TRUST_TOOLS` | `fs_read,fs_write,grep` | Comma-separated trusted tool list |
 | `RELAY_KIRO_REQUIRE_MCP_STARTUP` | `false` | Set to `true` to require MCP startup before tool use |
 | `RELAY_KIRO_AGENT` | (empty) | Agent name passed via `--agent` |
 | `RELAY_KIRO_AGENT_ENGINE` | (empty) | Agent engine passed via `--agent-engine` |
+| `RELAY_KIRO_MODEL` | (empty) | Deprecated fallback only, used when no run model and no `RELAY_KIRO_DEFAULT_MODEL` are set |
+
+Model precedence is: selected run model, `RELAY_KIRO_DEFAULT_MODEL`, deprecated `RELAY_KIRO_MODEL`, then `auto`.
+
+Supported Kiro model IDs:
+
+- `auto`
+- `claude-opus-4.8`
+- `claude-opus-4.7`
+- `claude-opus-4.6`
+- `claude-sonnet-4.6`
+- `claude-opus-4.5`
+- `claude-sonnet-4.5`
+- `claude-sonnet-4`
+- `claude-haiku-4.5`
+- `deepseek-3.2`
+- `minimax-m2.5`
+- `minimax-m2.1`
+- `glm-5`
+- `qwen3-coder-next`
 
 **Safety defaults**:
 
@@ -311,10 +331,10 @@ kiro-cli chat --no-interactive --wrap never --model auto --effort high --trust-t
 **Smoke test** (requires local Kiro installation and authentication):
 
 ```bash
-kiro-cli chat --no-interactive --model auto "Say only MODEL_OK"
+kiro-cli chat --no-interactive --wrap never --model auto --effort high --trust-tools=fs_read,fs_write,grep "Say only MODEL_OK"
 ```
 
-Expected: exit code 0, output contains `MODEL_OK`.
+Expected: exit code 0, output contains `MODEL_OK`. Nonzero exits during Relay dispatch are converted to BLOCKED results.
 
 ---
 

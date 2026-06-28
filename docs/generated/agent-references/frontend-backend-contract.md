@@ -30,8 +30,8 @@ Schema version: `1.0.0`
 | `apps/web/src/features/relay-plans/types.ts` | `4389b7f9031592cf427020f1ad1529931f32b993f8cdec4f2390e22a91cecc30` | frontend source |
 | `apps/web/src/features/relay-runs/api.ts` | `6015b4d1c3490bdaaa07c6a8b7fc9be36ad8048daf0c7ef1354bb3cb66abc532` | frontend source |
 | `apps/web/src/features/relay-runs/queries.ts` | `b972ee125f7c13c8c3a12a18fbec656efbe95ba7d7b0ea79e7552328d1c0e50b` | frontend source |
-| `apps/web/src/features/relay-runs/types.ts` | `cb7bc7a7952aabe406d8ec8f6031b2c5d556d29f42da0d8c3baab6cc543f23cd` | frontend source |
-| `docs/generated/agent-references/http-api-surface.json` | `da15184eb14b899393e2107eecf3b8e96a62e76b98febb3ea3541efda0582fbb` | generated HTTP API reference |
+| `apps/web/src/features/relay-runs/types.ts` | `ad01561097f1cc27ede0c33c7770497b94b0388df9c8efe2eef26922e473f89e` | frontend source |
+| `docs/generated/agent-references/http-api-surface.json` | `80aa5234a41b33fbeffcc9609c9ff126283d85520bf6c6a3ffec7e529b7b2c03` | generated HTTP API reference |
 | `internal/agentrefs/http_api.go` | `1836cb8c0699d067b6eaf190de18d45d16b8a3e0e766c88ef6f4c0305fb143d4` | backend route scanner source |
 | `internal/api/plans/dto.go` | `c3ba1102687ba750aa73773869c12bc9c1fd6fa376cb6b877b0771b0d8c2d1fe` | backend DTO source |
 | `internal/api/runs/dto.go` | `3beed0ac9d25e290259744cc788cdab4c91caa9d7a8856ef28557d43e2d4d7e1` | backend DTO source |

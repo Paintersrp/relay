@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { ArrowLeft, AlertTriangle, CheckCircle2, Circle, Loader2, Upload } from "lucide-react";
@@ -9,8 +9,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RelayStateBanner } from "@/components/relay/RelayStateSurface";
 import { relayPlanKeys } from "@/features/relay-plans";
-import { submitPlannerHandoff, RelayApiError } from "@/features/relay-runs";
+import {
+  submitPlannerHandoff,
+  RelayApiError,
+  EXECUTOR_ADAPTER_OPTIONS,
+  getDefaultModelForAdapter,
+  getModelOptionsForAdapter,
+  isKnownExecutorAdapter,
+} from "@/features/relay-runs";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export const Route = createFileRoute("/runs/new")({
   validateSearch: (search) => ({
@@ -57,6 +72,29 @@ function detectHandoffMetadata(markdown: string): DetectedHandoffMetadata {
 
   const detectedCount = Object.values(metadata).filter(Boolean).length;
   return { ...metadata, detectedCount };
+}
+
+function chooseDetectedAdapter(metadata: DetectedHandoffMetadata): string {
+  const candidate = metadata.targetExecutor?.trim().toLowerCase();
+  if (candidate === "kiro") return "kiro_cli";
+  if (candidate === "opencode") return "opencode_go";
+  return isKnownExecutorAdapter(candidate) ? candidate : "opencode_go";
+}
+
+function chooseDetectedModel(metadata: DetectedHandoffMetadata, adapter: string): string {
+  const options = getModelOptionsForAdapter(adapter);
+  const candidates = [
+    metadata.executorModelProfile,
+    metadata.recommendedModel,
+    metadata.model,
+  ];
+  for (const candidate of candidates) {
+    const value = candidate?.trim();
+    if (value && options.some((option) => option.value === value)) {
+      return value;
+    }
+  }
+  return getDefaultModelForAdapter(adapter);
 }
 
 function IntakeStep({
@@ -126,13 +164,28 @@ function NewRunPage() {
   const [branch, setBranch] = useState("");
   const [name, setName] = useState("");
   const [source, setSource] = useState("react_workbench");
+  const [executorAdapter, setExecutorAdapter] = useState("opencode_go");
+  const [executorModel, setExecutorModel] = useState(getDefaultModelForAdapter("opencode_go"));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const detectedMetadata = detectHandoffMetadata(markdown);
+  const modelOptions = getModelOptionsForAdapter(executorAdapter, executorModel);
   const hasHandoff = markdown.trim().length > 0;
   const hasInvalidAssociation = Boolean(passId && !planId);
   const isFormValid = hasHandoff && !hasInvalidAssociation;
+
+  useEffect(() => {
+    const nextAdapter = chooseDetectedAdapter(detectedMetadata);
+    const nextModel = chooseDetectedModel(detectedMetadata, nextAdapter);
+    setExecutorAdapter(nextAdapter);
+    setExecutorModel(nextModel);
+  }, [
+    detectedMetadata.targetExecutor,
+    detectedMetadata.executorModelProfile,
+    detectedMetadata.recommendedModel,
+    detectedMetadata.model,
+  ]);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -181,6 +234,12 @@ function NewRunPage() {
         branch_context: branch.trim() || undefined,
         name: name.trim() || undefined,
         source: source.trim() || undefined,
+        executorAdapter,
+        executor_adapter: executorAdapter,
+        executorModelProfile: executorModel || undefined,
+        executor_model_profile: executorModel || undefined,
+        recommended_model: executorModel || undefined,
+        model: executorModel || undefined,
         ...associationPayload,
       });
 
@@ -418,6 +477,53 @@ function NewRunPage() {
                           onChange={(e) => setSource(e.target.value)}
                           className="border-[var(--relay-row-border)] bg-background/70 text-xs"
                         />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="executor-adapter-input" className="text-xs">
+                          Executor Adapter
+                        </Label>
+                        <Select
+                          value={executorAdapter}
+                          onValueChange={(nextAdapter) => {
+                            setExecutorAdapter(nextAdapter);
+                            const nextOptions = getModelOptionsForAdapter(nextAdapter);
+                            if (!nextOptions.some((option) => option.value === executorModel)) {
+                              setExecutorModel(nextOptions[0]?.value ?? "");
+                            }
+                          }}
+                        >
+                          <SelectTrigger id="executor-adapter-input">
+                            <SelectValue placeholder="Select executor adapter" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              {EXECUTOR_ADAPTER_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="executor-model-input" className="text-xs">
+                          Executor Model
+                        </Label>
+                        <Select value={executorModel} onValueChange={setExecutorModel}>
+                          <SelectTrigger id="executor-model-input">
+                            <SelectValue placeholder="Select executor model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              {modelOptions.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                   </details>

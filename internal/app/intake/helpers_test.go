@@ -195,6 +195,18 @@ func TestResolveIntakeRecommendedModel(t *testing.T) {
 			wantModel: "claude-4",
 		},
 		{
+			name:      "explicit input ExecutorModelProfile2 overrides metadata",
+			input:     IntakeInput{ExecutorModelProfile2: "claude-sonnet-4.6"},
+			metadata:  map[string]string{"recommended_model": "deepseek-v4-pro"},
+			wantModel: "claude-sonnet-4.6",
+		},
+		{
+			name:      "explicit input RecommendedModel overrides metadata",
+			input:     IntakeInput{RecommendedModel: "claude-opus-4.6"},
+			metadata:  map[string]string{"executor_model_profile": "deepseek-v4-pro"},
+			wantModel: "claude-opus-4.6",
+		},
+		{
 			name:      "explicit input ExecutorModelProfile overrides target_executor fallback",
 			input:     IntakeInput{ExecutorModelProfile: "deepseek-v4-pro"},
 			metadata:  map[string]string{"target_executor": "deepseek-v4-flash"},

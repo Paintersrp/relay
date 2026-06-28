@@ -16,7 +16,7 @@ import {
 import { RelayStateSurface } from '@/components/relay/RelayStateSurface'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { CheckCircle2, Clock, FileText, XCircle } from 'lucide-react'
+import { Check, CheckCircle2, Clock, Copy, FileText, XCircle } from 'lucide-react'
 
 type EvidenceStageKey = 'intake' | 'compile' | 'execute' | 'audit' | 'provenance'
 
@@ -860,6 +860,8 @@ function RawTab({
   isLoading: boolean
   error: unknown
 }) {
+  const [copyState, setCopyState] = React.useState<'idle' | 'copied' | 'failed'>('idle')
+
   if (isLoading && !content) {
     return (
       <div className='font-mono text-xs leading-relaxed text-muted-foreground'>
@@ -885,10 +887,43 @@ function RawTab({
   }
 
   const raw = content || JSON.stringify(artifact, null, 2)
+  const handleCopy = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard unavailable')
+      }
+      await navigator.clipboard.writeText(raw)
+      setCopyState('copied')
+      window.setTimeout(() => setCopyState('idle'), 1600)
+    } catch {
+      setCopyState('failed')
+      window.setTimeout(() => setCopyState('idle'), 1600)
+    }
+  }
 
   return (
-    <div className='min-w-0 max-w-full overflow-auto font-mono text-xs leading-relaxed text-foreground'>
-      <pre className='min-w-max max-w-full'>{raw}</pre>
+    <div className='flex h-full min-w-0 max-w-full flex-col gap-3'>
+      <div className='flex shrink-0 justify-end'>
+        <button
+          type='button'
+          onClick={handleCopy}
+          className='inline-flex h-8 items-center gap-1.5 rounded border border-[var(--relay-row-border)] px-2.5 text-xs text-muted-foreground hover:bg-[var(--relay-panel-hover-bg)] hover:text-foreground'
+        >
+          {copyState === 'copied' ? (
+            <Check className='size-3.5' />
+          ) : (
+            <Copy className='size-3.5' />
+          )}
+          {copyState === 'copied'
+            ? 'Copied'
+            : copyState === 'failed'
+              ? 'Copy failed'
+              : 'Copy raw'}
+        </button>
+      </div>
+      <div className='min-h-0 min-w-0 max-w-full flex-1 overflow-auto font-mono text-xs leading-relaxed text-foreground'>
+        <pre className='min-w-max max-w-full'>{raw}</pre>
+      </div>
     </div>
   )
 }

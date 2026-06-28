@@ -11,7 +11,11 @@ import {
 } from "lucide-react";
 
 import type { RelayArtifact, RelayRun } from "@/features/relay-runs";
-import { approveIntake } from "@/features/relay-runs";
+import {
+  approveIntake,
+  EXECUTOR_ADAPTER_OPTIONS,
+  getModelOptionsForAdapter,
+} from "@/features/relay-runs";
 import { RelayStateBanner } from "@/components/relay/RelayStateSurface";
 import {
   RunStageInspectorSection,
@@ -64,89 +68,6 @@ type SelectOption = {
   value: string;
   label: string;
 };
-
-const EXECUTION_PROFILE_OPTIONS = [
-  {
-    value: "opencode_go",
-    label: "OpenCode Go",
-    description: "Run through the OpenCode Go executor adapter.",
-    models: [
-      { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
-      { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
-      { value: "glm-5.2", label: "GLM-5.2" },
-      { value: "kimi-k2.6", label: "Kimi K2.6" },
-      { value: "kimi-k2.7-code", label: "Kimi K2.7 Code" },
-      { value: "mimo-v2.5", label: "MiMo V2.5" },
-      { value: "mimo-v2.5-pro", label: "MiMo V2.5 Pro" },
-      { value: "minimax-m2.7", label: "MiniMax M2.7" },
-      { value: "minimax-m3", label: "MiniMax M3" },
-      { value: "qwen3.6-plus", label: "Qwen3.6 Plus" },
-      { value: "qwen-3.7-max", label: "Qwen 3.7 Max" },
-      { value: "qwen-3.7-plus", label: "Qwen 3.7 Plus" },
-    ],
-  },
-  {
-    value: "codex",
-    label: "Codex",
-    description: "Run through the Codex executor adapter.",
-    models: [
-      { value: "gpt-5.4-mini", label: "GPT 5.4 Mini" },
-      { value: "gpt-5.4", label: "GPT 5.4" },
-      { value: "gpt-5.5", label: "GPT 5.5" },
-    ],
-  },
-  {
-    value: "antigravity",
-    label: "Antigravity",
-    description: "Run through the Antigravity executor adapter.",
-    models: [
-      { value: "gemini-3.5-flash-low", label: "Gemini 3.5 Flash (Low)" },
-      {
-        value: "gemini-3.5-flash-medium",
-        label: "Gemini 3.5 Flash (Medium)",
-      },
-      { value: "gemini-3.5-flash-high", label: "Gemini 3.5 Flash (High)" },
-      { value: "gemini-3.1-pro-low", label: "Gemini 3.1 Pro (Low)" },
-      { value: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro (High)" },
-      {
-        value: "claude-sonnet-4.6-thinking",
-        label: "Claude Sonnet 4.6 (Thinking)",
-      },
-      {
-        value: "claude-opus-4.6-thinking",
-        label: "Claude Opus 4.6 (Thinking)",
-      },
-      { value: "gpt-oss-120b", label: "GPT-OSS 120B" },
-    ],
-  },
-] as const;
-
-function getExecutionProfile(value: string) {
-  return (
-    EXECUTION_PROFILE_OPTIONS.find((profile) => profile.value === value) ??
-    EXECUTION_PROFILE_OPTIONS[0]
-  );
-}
-
-function getModelOptionsForProfile(profileValue: string, currentModel?: string) {
-  const profile = getExecutionProfile(profileValue);
-  const modelOptions: SelectOption[] = profile.models.map((option) => ({
-    value: option.value,
-    label: option.label,
-  }));
-
-  if (
-    currentModel &&
-    !modelOptions.some((option) => option.value === currentModel)
-  ) {
-    modelOptions.push({
-      value: currentModel,
-      label: `${currentModel} (current)`,
-    });
-  }
-
-  return modelOptions;
-}
 
 function findArtifact(
   artifacts: RelayArtifact[],
@@ -549,7 +470,7 @@ export function useRunIntakeReviewController({
   const handleExecutionProfileChange = (nextProfile: string) => {
     setExecutorAdapter(nextProfile);
 
-    const nextModelOptions = getModelOptionsForProfile(nextProfile);
+    const nextModelOptions = getModelOptionsForAdapter(nextProfile);
     if (!nextModelOptions.some((option) => option.value === model)) {
       setModel(nextModelOptions[0]?.value ?? "");
     }
@@ -615,7 +536,7 @@ export function useRunIntakeReviewController({
     runConfig,
     frontmatterObject,
   });
-  const currentModelOptions = getModelOptionsForProfile(executorAdapter, model);
+  const currentModelOptions = getModelOptionsForAdapter(executorAdapter, model);
 
   const validationSummary = run.validationSummary;
   const validationIssues = validationSummary?.issues || [];
@@ -1130,7 +1051,7 @@ export function RunIntakeReviewPanel({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  {EXECUTION_PROFILE_OPTIONS.map((option) => (
+                  {EXECUTOR_ADAPTER_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>

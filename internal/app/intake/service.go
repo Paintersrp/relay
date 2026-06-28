@@ -177,16 +177,22 @@ func (s *Service) IntakePlannerHandoff(ctx context.Context, input IntakeInput) (
 		if err != nil {
 			return nil, &Error{HTTPStatus: http.StatusInternalServerError, Code: "INTERNAL_ERROR", Message: "Failed to update run status: " + err.Error()}
 		}
+		run = updatedRun
 		if recommendedModel != "" {
-			_, _ = s.store.UpdateRunModel(run.ID, recommendedModel, recommendedModel)
+			if modelRun, err := s.store.UpdateRunModel(run.ID, recommendedModel, selectedModel); err == nil {
+				run = modelRun
+			}
 		}
 		if branchContext != "" {
-			_, _ = s.store.UpdateRunBranch(run.ID, branchContext, "", "")
+			if branchRun, err := s.store.UpdateRunBranch(run.ID, branchContext, "", ""); err == nil {
+				run = branchRun
+			}
 		}
 		if explicitAdapter {
-			_, _ = s.store.UpdateRunExecutorAdapter(run.ID, executorAdapter)
+			if adapterRun, err := s.store.UpdateRunExecutorAdapter(run.ID, executorAdapter); err == nil {
+				run = adapterRun
+			}
 		}
-		run = updatedRun
 	}
 
 	s.writeIntakeArtifacts(run, markdown, metadata, branchContext, repo, planID, passID, input.Source)
@@ -201,8 +207,10 @@ func (s *Service) IntakePlannerHandoff(ctx context.Context, input IntakeInput) (
 }
 
 func resolveIntakeRecommendedModel(input IntakeInput, metadata map[string]string) string {
-	if v := strings.TrimSpace(input.ExecutorModelProfile); v != "" {
-		return v
+	for _, v := range []string{input.ExecutorModelProfile, input.ExecutorModelProfile2, input.RecommendedModel, input.Model} {
+		if v := strings.TrimSpace(v); v != "" {
+			return v
+		}
 	}
 	for _, key := range []string{"recommended_model", "executor_model_profile", "model"} {
 		if v := strings.TrimSpace(metadata[key]); v != "" {
@@ -269,6 +277,7 @@ func (s *Service) writeIntakeArtifacts(run *generated.Run, markdown string, meta
 		"source":           sourceStr,
 		"created_from":     "intake_endpoint",
 		"executor_adapter": run.ExecutorAdapter,
+		"selected_model":   run.SelectedModel,
 	}
 	if planID != "" {
 		configMap["plan_id"] = planID

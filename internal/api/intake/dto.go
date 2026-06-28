@@ -17,6 +17,10 @@ type PlannerHandoffIntakeRequest struct {
 	Source                 string `json:"source,omitempty"`
 	ExecutorAdapter        string `json:"executorAdapter,omitempty"`
 	ExecutorAdapter2       string `json:"executor_adapter,omitempty"`
+	ExecutorModelProfile   string `json:"executorModelProfile,omitempty"`
+	ExecutorModelProfile2  string `json:"executor_model_profile,omitempty"`
+	RecommendedModel       string `json:"recommended_model,omitempty"`
+	Model                  string `json:"model,omitempty"`
 	PlanID                 string `json:"planId,omitempty"`
 	PlanIDSnake            string `json:"plan_id,omitempty"`
 	PassID                 string `json:"passId,omitempty"`

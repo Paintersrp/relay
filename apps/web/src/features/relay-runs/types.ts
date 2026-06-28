@@ -194,6 +194,10 @@ export interface PlannerHandoffIntakeRequest {
   source?: string;
   executorAdapter?: string;
   executor_adapter?: string;
+  executorModelProfile?: string;
+  executor_model_profile?: string;
+  recommended_model?: string;
+  model?: string;
 }
 
 export interface PlannerHandoffIntakeResponse {
@@ -350,7 +354,7 @@ export interface RelayRunStepInfo {
 
 // Step 4: Audit / Close-specific types
 
-export type RelayExecutorAdapter = "opencode_go" | "codex" | "antigravity";
+export type RelayExecutorAdapter = "opencode_go" | "codex" | "antigravity" | "kiro_cli";
 
 export type RelayAuditDecisionValue =
   | "accepted"

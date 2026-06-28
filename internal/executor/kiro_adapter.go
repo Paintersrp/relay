@@ -18,6 +18,23 @@ type KiroCLIAdapterConfig struct {
 	AgentEngine       string
 }
 
+var supportedKiroModels = map[string]struct{}{
+	"auto":              {},
+	"claude-opus-4.8":   {},
+	"claude-opus-4.7":   {},
+	"claude-opus-4.6":   {},
+	"claude-sonnet-4.6": {},
+	"claude-opus-4.5":   {},
+	"claude-sonnet-4.5": {},
+	"claude-sonnet-4":   {},
+	"claude-haiku-4.5":  {},
+	"deepseek-3.2":      {},
+	"minimax-m2.5":      {},
+	"minimax-m2.1":      {},
+	"glm-5":             {},
+	"qwen3-coder-next":  {},
+}
+
 type KiroCLIAdapter struct {
 	Config KiroCLIAdapterConfig
 }
@@ -36,7 +53,7 @@ func NewKiroCLIAdapterFromEnv() *KiroCLIAdapter {
 	return &KiroCLIAdapter{
 		Config: KiroCLIAdapterConfig{
 			Binary:            bin,
-			Model:             strings.TrimSpace(os.Getenv("RELAY_KIRO_MODEL")),
+			Model:             stringOr(os.Getenv("RELAY_KIRO_DEFAULT_MODEL"), strings.TrimSpace(os.Getenv("RELAY_KIRO_MODEL"))),
 			Effort:            stringOr(os.Getenv("RELAY_KIRO_EFFORT"), "high"),
 			TrustTools:        stringOr(os.Getenv("RELAY_KIRO_TRUST_TOOLS"), "fs_read,fs_write,grep"),
 			RequireMCPStartup: requireMCP,
@@ -61,13 +78,15 @@ func (a *KiroCLIAdapter) BuildInvocation(req ExecutorAdapterRequest) (ExecutorIn
 		return ExecutorInvocation{}, fmt.Errorf("executor brief content is empty")
 	}
 
-	model := strings.TrimSpace(a.Config.Model)
-	if model != "" {
-		// env override takes priority
-	} else if strings.TrimSpace(req.SelectedModel) != "" {
-		model = req.SelectedModel
-	} else {
+	model := strings.TrimSpace(req.SelectedModel)
+	if model == "" {
+		model = strings.TrimSpace(a.Config.Model)
+	}
+	if model == "" {
 		model = "auto"
+	}
+	if _, ok := supportedKiroModels[model]; !ok {
+		return ExecutorInvocation{}, fmt.Errorf("unsupported Kiro model %q", model)
 	}
 
 	args := []string{
@@ -110,7 +129,8 @@ func (a *KiroCLIAdapter) BuildInvocation(req ExecutorAdapterRequest) (ExecutorIn
 }
 
 func (a *KiroCLIAdapter) NormalizeResult(raw string) NormalizedExecutorResult {
-	parsed := pipeline.ParseAgentResult(raw)
+	normalizedRaw := normalizeKiroHeadlessOutput(raw)
+	parsed := pipeline.ParseAgentResult(normalizedRaw)
 
 	res := NormalizedExecutorResult{
 		Status:        parsed.Status,
@@ -138,6 +158,17 @@ func (a *KiroCLIAdapter) NormalizeResult(raw string) NormalizedExecutorResult {
 	res.BlockerText = blockerText
 
 	return res
+}
+
+func normalizeKiroHeadlessOutput(raw string) string {
+	lines := strings.Split(raw, "\n")
+	for i, line := range lines {
+		trimmedLeft := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trimmedLeft, ">") {
+			lines[i] = strings.TrimLeft(strings.TrimPrefix(trimmedLeft, ">"), " \t")
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func boundedRaw(raw string) string {

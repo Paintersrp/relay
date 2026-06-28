@@ -1341,11 +1341,84 @@ func TestKiroCLIAdapter_BuildInvocationSelectedModel(t *testing.T) {
 	}
 }
 
-func TestKiroCLIAdapter_BuildInvocationEnvModelOverride(t *testing.T) {
+func TestKiroCLIAdapter_BuildInvocationModelPrecedence(t *testing.T) {
+	t.Run("selected model wins over configured default", func(t *testing.T) {
+		adapter := KiroCLIAdapter{
+			Config: KiroCLIAdapterConfig{
+				Binary:     "kiro-cli",
+				Model:      "claude-opus-4.6",
+				Effort:     "high",
+				TrustTools: "fs_read,fs_write,grep",
+			},
+		}
+		req := ExecutorAdapterRequest{
+			RunID:         1,
+			RepoPath:      "/tmp/repo",
+			BriefContent:  "# Brief",
+			BriefPath:     "/tmp/brief.md",
+			SelectedModel: "claude-sonnet-4.6",
+		}
+		inv, err := adapter.BuildInvocation(req)
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if inv.Model != "claude-sonnet-4.6" {
+			t.Errorf("expected selected model claude-sonnet-4.6, got %s", inv.Model)
+		}
+	})
+
+	t.Run("configured default used when selected model is empty", func(t *testing.T) {
+		adapter := KiroCLIAdapter{
+			Config: KiroCLIAdapterConfig{
+				Binary:     "kiro-cli",
+				Model:      "claude-opus-4.6",
+				Effort:     "high",
+				TrustTools: "fs_read,fs_write,grep",
+			},
+		}
+		req := ExecutorAdapterRequest{
+			RunID:        1,
+			RepoPath:     "/tmp/repo",
+			BriefContent: "# Brief",
+			BriefPath:    "/tmp/brief.md",
+		}
+		inv, err := adapter.BuildInvocation(req)
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if inv.Model != "claude-opus-4.6" {
+			t.Errorf("expected configured default claude-opus-4.6, got %s", inv.Model)
+		}
+	})
+
+	t.Run("auto used when selected model and default are empty", func(t *testing.T) {
+		adapter := KiroCLIAdapter{
+			Config: KiroCLIAdapterConfig{
+				Binary:     "kiro-cli",
+				Effort:     "high",
+				TrustTools: "fs_read,fs_write,grep",
+			},
+		}
+		req := ExecutorAdapterRequest{
+			RunID:        1,
+			RepoPath:     "/tmp/repo",
+			BriefContent: "# Brief",
+			BriefPath:    "/tmp/brief.md",
+		}
+		inv, err := adapter.BuildInvocation(req)
+		if err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if inv.Model != "auto" {
+			t.Errorf("expected auto, got %s", inv.Model)
+		}
+	})
+}
+
+func TestKiroCLIAdapter_BuildInvocationInvalidModel(t *testing.T) {
 	adapter := KiroCLIAdapter{
 		Config: KiroCLIAdapterConfig{
 			Binary:     "kiro-cli",
-			Model:      "gpt-5.1-codex-max",
 			Effort:     "high",
 			TrustTools: "fs_read,fs_write,grep",
 		},
@@ -1355,15 +1428,79 @@ func TestKiroCLIAdapter_BuildInvocationEnvModelOverride(t *testing.T) {
 		RepoPath:      "/tmp/repo",
 		BriefContent:  "# Brief",
 		BriefPath:     "/tmp/brief.md",
-		SelectedModel: "claude-sonnet-4.6",
+		SelectedModel: "gpt-5.1-codex-max",
 	}
-	inv, err := adapter.BuildInvocation(req)
-	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+	_, err := adapter.BuildInvocation(req)
+	if err == nil {
+		t.Fatalf("expected invalid model error")
 	}
-	if inv.Model != "gpt-5.1-codex-max" {
-		t.Errorf("expected model gpt-5.1-codex-max, got %s", inv.Model)
+	if !strings.Contains(err.Error(), "unsupported Kiro model") {
+		t.Fatalf("expected unsupported Kiro model error, got %v", err)
 	}
+}
+
+func TestKiroCLIAdapter_BuildInvocationSupportsObservedModels(t *testing.T) {
+	models := []string{
+		"auto",
+		"claude-opus-4.8",
+		"claude-opus-4.7",
+		"claude-opus-4.6",
+		"claude-sonnet-4.6",
+		"claude-opus-4.5",
+		"claude-sonnet-4.5",
+		"claude-sonnet-4",
+		"claude-haiku-4.5",
+		"deepseek-3.2",
+		"minimax-m2.5",
+		"minimax-m2.1",
+		"glm-5",
+		"qwen3-coder-next",
+	}
+	for _, model := range models {
+		t.Run(model, func(t *testing.T) {
+			adapter := KiroCLIAdapter{
+				Config: KiroCLIAdapterConfig{
+					Binary:     "kiro-cli",
+					Effort:     "high",
+					TrustTools: "fs_read,fs_write,grep",
+				},
+			}
+			req := ExecutorAdapterRequest{
+				RunID:         1,
+				RepoPath:      "/tmp/repo",
+				BriefContent:  "# Brief",
+				BriefPath:     "/tmp/brief.md",
+				SelectedModel: model,
+			}
+			inv, err := adapter.BuildInvocation(req)
+			if err != nil {
+				t.Fatalf("expected model %s to be accepted: %v", model, err)
+			}
+			if inv.Model != model {
+				t.Fatalf("expected model %s, got %s", model, inv.Model)
+			}
+		})
+	}
+}
+
+func TestNewKiroCLIAdapterFromEnvModelFallback(t *testing.T) {
+	t.Run("default model env wins over deprecated fallback", func(t *testing.T) {
+		t.Setenv("RELAY_KIRO_DEFAULT_MODEL", "claude-sonnet-4.6")
+		t.Setenv("RELAY_KIRO_MODEL", "claude-opus-4.6")
+		adapter := NewKiroCLIAdapterFromEnv()
+		if adapter.Config.Model != "claude-sonnet-4.6" {
+			t.Fatalf("expected RELAY_KIRO_DEFAULT_MODEL, got %q", adapter.Config.Model)
+		}
+	})
+
+	t.Run("deprecated model env is fallback only", func(t *testing.T) {
+		t.Setenv("RELAY_KIRO_DEFAULT_MODEL", "")
+		t.Setenv("RELAY_KIRO_MODEL", "claude-opus-4.6")
+		adapter := NewKiroCLIAdapterFromEnv()
+		if adapter.Config.Model != "claude-opus-4.6" {
+			t.Fatalf("expected deprecated fallback model, got %q", adapter.Config.Model)
+		}
+	})
 }
 
 func TestKiroCLIAdapter_BuildInvocationRequireMCPStartupOptIn(t *testing.T) {
@@ -1427,7 +1564,7 @@ func TestKiroCLIAdapter_BuildInvocationRequireMCPStartupOptIn(t *testing.T) {
 
 func TestKiroCLIAdapter_NormalizeResultDone(t *testing.T) {
 	adapter := KiroCLIAdapter{}
-	raw := "DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 5"
+	raw := "> STATUS: DONE\n> Build status: PASS\n> Test status: PASS\n> Count of LOC changed: 5"
 	res := adapter.NormalizeResult(raw)
 	if res.Status != pipeline.AgentResultDone {
 		t.Errorf("expected DONE, got %v", res.Status)
@@ -1439,7 +1576,7 @@ func TestKiroCLIAdapter_NormalizeResultDone(t *testing.T) {
 
 func TestKiroCLIAdapter_NormalizeResultBlocked(t *testing.T) {
 	adapter := KiroCLIAdapter{}
-	raw := "BLOCKED\nBLOCKER: auth failed"
+	raw := "> STATUS: BLOCKED\n> BLOCKER: auth failed"
 	res := adapter.NormalizeResult(raw)
 	if res.Status != pipeline.AgentResultBlocked {
 		t.Errorf("expected BLOCKED, got %v", res.Status)
@@ -1449,6 +1586,24 @@ func TestKiroCLIAdapter_NormalizeResultBlocked(t *testing.T) {
 	}
 	if !strings.Contains(res.ExecutorResultText, "STATUS: BLOCKED") {
 		t.Errorf("expected text to contain STATUS: BLOCKED, got %s", res.ExecutorResultText)
+	}
+}
+
+func TestKiroCLIAdapter_NormalizeResultCanonicalWithoutPromptPrefix(t *testing.T) {
+	adapter := KiroCLIAdapter{}
+	raw := "STATUS: DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 5"
+	res := adapter.NormalizeResult(raw)
+	if res.Status != pipeline.AgentResultDone {
+		t.Errorf("expected DONE, got %v", res.Status)
+	}
+}
+
+func TestKiroCLIAdapter_NormalizeResultProgressBeforePrefixedStatus(t *testing.T) {
+	adapter := KiroCLIAdapter{}
+	raw := "Using tool fs_read\nProgress: inspected files\n> STATUS: DONE\n> Build status: PASS\n> Test status: PASS\n> Count of LOC changed: 0"
+	res := adapter.NormalizeResult(raw)
+	if res.Status != pipeline.AgentResultDone {
+		t.Errorf("expected DONE, got %v", res.Status)
 	}
 }
 
@@ -1470,6 +1625,9 @@ func TestKiroCLIAdapter_NormalizeResultUnknown(t *testing.T) {
 func TestDispatchBrief_KiroCLIZeroExitBlocked(t *testing.T) {
 	s := setupExecutorTestStore(t)
 	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	if _, err := s.UpdateRunModel(runID, "claude-sonnet-4.6", "claude-sonnet-4.6"); err != nil {
+		t.Fatalf("update run model: %v", err)
+	}
 	writeExecutorBrief(t, s, runID, "# Brief")
 
 	done := make(chan struct{})
