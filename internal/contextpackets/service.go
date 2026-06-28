@@ -64,6 +64,14 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 		return nil, fmt.Errorf("lookup project by ID %s: %w", projectID, err)
 	}
 	projectRowID := project.ID
+	projectRepos, err := s.store.ListProjectRepositories(projectRowID)
+	if err != nil {
+		return nil, fmt.Errorf("list project repositories for %s: %w", projectID, err)
+	}
+	normalizedSeedFiles, normalizedSeedSearches, err := normalizeContextPacketSeeds(input.SeedFiles, input.SeedSearches, projectRepos)
+	if err != nil {
+		return nil, err
+	}
 
 	taskSlug := normalizeTaskSlug(input.TaskSlug)
 	maxSources := boundedPositive(input.MaxSources, defaultMaxSources, hardMaxSources)
@@ -136,7 +144,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 		coverage = append(coverage, entry)
 	}
 
-	for i, seed := range input.SeedFiles {
+	for i, seed := range normalizedSeedFiles {
 		seedID := fmt.Sprintf("file:%d", i+1)
 		entry := ContextCoverageEntry{
 			SeedID:   seedID,
@@ -214,7 +222,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 		coverage = append(coverage, entry)
 	}
 
-	for i, seed := range input.SeedSearches {
+	for i, seed := range normalizedSeedSearches {
 		seedID := fmt.Sprintf("search:%d", i+1)
 		entry := ContextCoverageEntry{
 			SeedID:   seedID,
@@ -504,6 +512,93 @@ func boundedPositive(value, defaultValue, hardCap int) int {
 		value = hardCap
 	}
 	return value
+}
+
+func normalizeContextPacketSeeds(files []ContextSeedFile, searches []ContextSeedSearch, repos []store.ProjectRepository) ([]ContextSeedFile, []ContextSeedSearch, error) {
+	repoMap := make(map[string]store.ProjectRepository, len(repos))
+	for _, repo := range repos {
+		repoMap[repo.RepoID] = repo
+	}
+
+	normalizedFiles := make([]ContextSeedFile, 0, len(files))
+	for _, seed := range files {
+		seed.RepoID = strings.TrimSpace(seed.RepoID)
+		repoID, err := normalizeContextPacketRepoID(seed.RepoID, repoMap)
+		if err != nil {
+			return nil, nil, err
+		}
+		seed.RepoID = repoID
+		normalizedFiles = append(normalizedFiles, seed)
+	}
+
+	normalizedSearches := make([]ContextSeedSearch, 0, len(searches))
+	for _, seed := range searches {
+		repoIDs, err := normalizeContextPacketRepoIDs(seed.RepoIDs, repoMap)
+		if err != nil {
+			return nil, nil, err
+		}
+		seed.RepoIDs = repoIDs
+		normalizedSearches = append(normalizedSearches, seed)
+	}
+
+	return normalizedFiles, normalizedSearches, nil
+}
+
+func normalizeContextPacketRepoIDs(repoIDs []string, repos map[string]store.ProjectRepository) ([]string, error) {
+	if len(repoIDs) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(repoIDs))
+	seen := map[string]struct{}{}
+	for _, raw := range repoIDs {
+		repoID, err := normalizeContextPacketRepoID(raw, repos)
+		if err != nil {
+			return nil, err
+		}
+		if repoID == "" {
+			continue
+		}
+		if _, ok := seen[repoID]; ok {
+			continue
+		}
+		out = append(out, repoID)
+		seen[repoID] = struct{}{}
+	}
+	return out, nil
+}
+
+func normalizeContextPacketRepoID(raw string, repos map[string]store.ProjectRepository) (string, error) {
+	repoID := strings.TrimSpace(raw)
+	if repoID == "" {
+		return "", nil
+	}
+	if _, ok := repos[repoID]; ok {
+		return repoID, nil
+	}
+	var match string
+	for registered := range repos {
+		if repoIDAliasMatches(repoID, registered) {
+			if match != "" && match != registered {
+				return "", fmt.Errorf("repo_id %q is ambiguous for project repositories", repoID)
+			}
+			match = registered
+		}
+	}
+	if match != "" {
+		return match, nil
+	}
+	return repoID, nil
+}
+
+func repoIDAliasMatches(alias, registered string) bool {
+	registered = strings.TrimSpace(registered)
+	if alias == registered {
+		return true
+	}
+	if idx := strings.LastIndex(registered, "/"); idx >= 0 && idx+1 < len(registered) {
+		return alias == registered[idx+1:]
+	}
+	return false
 }
 
 func boolToInt64(value bool) int64 {

@@ -119,9 +119,11 @@ type NextPassWorkSummaryBlocker struct {
 
 // NextPassWorkSummaryAction describes concise follow-up guidance.
 type NextPassWorkSummaryAction struct {
-	Tool        string `json:"tool,omitempty"`
-	Description string `json:"description"`
-	Arguments   string `json:"arguments,omitempty"`
+	Tool             string                 `json:"tool,omitempty"`
+	Description      string                 `json:"description"`
+	Arguments        map[string]interface{} `json:"arguments,omitempty"`
+	DependsOn        string                 `json:"depends_on,omitempty"`
+	ArgumentBindings map[string]string      `json:"argument_bindings,omitempty"`
 }
 
 // CompactNextPassWorkSummary returns the MCP-safe projection of the full local
@@ -171,29 +173,34 @@ func compactNextPassWorkActions(resp NextPassWorkResponse) []NextPassWorkSummary
 		actions = append(actions, NextPassWorkSummaryAction{
 			Tool:        resp.SuggestedRunSubmission.Tool,
 			Description: "Selected pass is ready for a Planner handoff run.",
-			Arguments:   "plan_id and pass_id",
+			Arguments: map[string]interface{}{
+				"plan_id": resp.SuggestedRunSubmission.Arguments.PlanID,
+				"pass_id": resp.SuggestedRunSubmission.Arguments.PassID,
+			},
 		})
 	}
 	if resp.PlannerJumpstart != nil {
 		for _, action := range resp.PlannerJumpstart.SuggestedContextAcquisitionActions {
 			switch action.Tool {
 			case "create_context_packet":
-				arguments := "full create_context_packet arguments are available in the local pass-detail preview or retrievable through get_pass_context"
 				actions = append(actions, NextPassWorkSummaryAction{
-					Tool:        action.Tool,
-					Description: "Create the required context packet for the selected pass.",
-					Arguments:   arguments,
+					Tool:             action.Tool,
+					Description:      "Create the required context packet for the selected pass.",
+					Arguments:        cloneActionArguments(action.Arguments),
+					DependsOn:        action.DependsOn,
+					ArgumentBindings: cloneStringMap(action.ArgumentBindings),
 				})
 			case "create_source_snapshot":
 				actions = append(actions, NextPassWorkSummaryAction{
 					Tool:        action.Tool,
 					Description: "Create or select a source snapshot before context packet creation.",
-					Arguments:   "project_id",
+					Arguments:   cloneActionArguments(action.Arguments),
 				})
 			default:
 				actions = append(actions, NextPassWorkSummaryAction{
 					Tool:        action.Tool,
 					Description: "Use the local pass-detail preview for exact action arguments.",
+					Arguments:   cloneActionArguments(action.Arguments),
 				})
 			}
 		}
@@ -204,6 +211,28 @@ func compactNextPassWorkActions(resp NextPassWorkResponse) []NextPassWorkSummary
 		})
 	}
 	return actions
+}
+
+func cloneActionArguments(in map[string]interface{}) map[string]interface{} {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]interface{}, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 // WorkProjectSummary contains bounded project metadata.
@@ -627,8 +656,13 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		RefactorCandidate: refMeta,
 	}
 
+	repoAliases, err := svc.projectRepoAliases(project.ID)
+	if err != nil {
+		return NextPassWorkResponse{}, fmt.Errorf("list project repositories for %q: %w", project.ProjectID, err)
+	}
+
 	// Build the shared Planner jumpstart payload.
-	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound)
+	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound)
 
 	// Determine readiness state and optional blocker.
 	var readinessState string
@@ -707,6 +741,7 @@ func buildPlannerJumpstart(
 	ssReqs *SourceSnapshotRequirements,
 	ctxPlan ContextPlan,
 	ctxBudget *ContextBudget,
+	repoAliases map[string]string,
 	snapshotID, snapshotStatus, packetID, packetStatus string,
 	requireSnapshot, requirePacket, snapshotFound, packetFound bool,
 ) *PlannerJumpstart {
@@ -724,7 +759,7 @@ func buildPlannerJumpstart(
 	var checklist []string
 
 	if requireSnapshot && !snapshotFound {
-		repoIDs := ctxPlan.RequiredRepositories
+		repoIDs := normalizeContextRepoIDs(ctxPlan.RequiredRepositories, repoAliases)
 		args := map[string]interface{}{
 			"project_id": project.ProjectID,
 		}
@@ -745,7 +780,7 @@ func buildPlannerJumpstart(
 	if requirePacket && !packetFound {
 		contextPacketAction := ContextAcquisitionAction{
 			Tool:      "create_context_packet",
-			Arguments: buildContextPacketActionArguments(project.ProjectID, planID, selectedPass.PassID, snapshotID, ctxPlan, ctxBudget),
+			Arguments: buildContextPacketActionArguments(project.ProjectID, planID, selectedPass.PassID, snapshotID, ctxPlan, ctxBudget, repoAliases),
 		}
 		if snapshotID == "" {
 			if !(requireSnapshot && !snapshotFound) {
@@ -789,14 +824,14 @@ func buildPlannerJumpstart(
 	}
 }
 
-func buildContextPacketActionArguments(projectID, planID, passID, sourceSnapshotID string, ctxPlan ContextPlan, ctxBudget *ContextBudget) map[string]interface{} {
+func buildContextPacketActionArguments(projectID, planID, passID, sourceSnapshotID string, ctxPlan ContextPlan, ctxBudget *ContextBudget, repoAliases map[string]string) map[string]interface{} {
 	args := map[string]interface{}{
 		"project_id":        projectID,
 		"plan_id":           planID,
 		"pass_id":           passID,
 		"task_slug":         safeTaskSlug("next-pass-work", planID, passID),
-		"seed_files":        buildContextPacketSeedFiles(ctxPlan, ctxBudget),
-		"seed_searches":     buildContextPacketSeedSearches(ctxPlan, ctxBudget),
+		"seed_files":        buildContextPacketSeedFiles(ctxPlan, ctxBudget, repoAliases),
+		"seed_searches":     buildContextPacketSeedSearches(ctxPlan, ctxBudget, repoAliases),
 		"include_inventory": defaultContextPacketIncludeInventory,
 		"max_sources":       contextBudgetInt(ctxBudget, "max_files", defaultContextPacketMaxSources, maxContextPacketSources),
 		"max_total_bytes":   contextBudgetInt(ctxBudget, "max_bytes", defaultContextPacketMaxTotalBytes, maxContextPacketTotalBytes),
@@ -807,11 +842,11 @@ func buildContextPacketActionArguments(projectID, planID, passID, sourceSnapshot
 	return args
 }
 
-func buildContextPacketSeedFiles(ctxPlan ContextPlan, ctxBudget *ContextBudget) []map[string]interface{} {
+func buildContextPacketSeedFiles(ctxPlan ContextPlan, ctxBudget *ContextBudget, repoAliases map[string]string) []map[string]interface{} {
 	seedFiles := make([]map[string]interface{}, 0, len(ctxPlan.SeedFilesToRead))
 	maxBytes := contextBudgetInt(ctxBudget, "max_bytes", defaultSeedFileMaxBytes, maxSeedFileBytes)
 	for _, seed := range ctxPlan.SeedFilesToRead {
-		repoID := strings.TrimSpace(seed.RepoID)
+		repoID := normalizeContextRepoID(seed.RepoID, repoAliases)
 		path := strings.TrimSpace(seed.Path)
 		reason := strings.TrimSpace(seed.Purpose)
 		if repoID == "" || path == "" || reason == "" || isLocalAbsolutePath(path) {
@@ -828,7 +863,7 @@ func buildContextPacketSeedFiles(ctxPlan ContextPlan, ctxBudget *ContextBudget) 
 	return seedFiles
 }
 
-func buildContextPacketSeedSearches(ctxPlan ContextPlan, ctxBudget *ContextBudget) []map[string]interface{} {
+func buildContextPacketSeedSearches(ctxPlan ContextPlan, ctxBudget *ContextBudget, repoAliases map[string]string) []map[string]interface{} {
 	seedSearches := make([]map[string]interface{}, 0, len(ctxPlan.SeedSearchTerms))
 	maxResults := contextBudgetInt(ctxBudget, "max_search_results", defaultSeedSearchMaxResults, maxSeedSearchResults)
 	for _, seed := range ctxPlan.SeedSearchTerms {
@@ -844,12 +879,75 @@ func buildContextPacketSeedSearches(ctxPlan ContextPlan, ctxBudget *ContextBudge
 			"max_results":   maxResults,
 			"context_lines": 2,
 		}
-		if repoID := strings.TrimSpace(seed.RepoID); repoID != "" {
+		if repoID := normalizeContextRepoID(seed.RepoID, repoAliases); repoID != "" {
 			item["repo_ids"] = []string{repoID}
 		}
 		seedSearches = append(seedSearches, item)
 	}
 	return seedSearches
+}
+
+func (svc *OrchestratorWorkService) projectRepoAliases(projectRowID int64) (map[string]string, error) {
+	repos, err := svc.store.ListProjectRepositories(projectRowID)
+	if err != nil {
+		return nil, err
+	}
+	aliases := make(map[string]string, len(repos)*2)
+	ambiguous := map[string]bool{}
+	for _, repo := range repos {
+		for _, alias := range repoAliases(repo.RepoID) {
+			if alias == "" || ambiguous[alias] {
+				continue
+			}
+			if existing, ok := aliases[alias]; ok && existing != repo.RepoID {
+				delete(aliases, alias)
+				ambiguous[alias] = true
+				continue
+			}
+			aliases[alias] = repo.RepoID
+		}
+	}
+	return aliases, nil
+}
+
+func repoAliases(repoID string) []string {
+	repoID = strings.TrimSpace(repoID)
+	if repoID == "" {
+		return nil
+	}
+	aliases := []string{repoID}
+	if idx := strings.LastIndex(repoID, "/"); idx >= 0 && idx+1 < len(repoID) {
+		aliases = append(aliases, repoID[idx+1:])
+	}
+	return aliases
+}
+
+func normalizeContextRepoIDs(repoIDs []string, aliases map[string]string) []string {
+	out := make([]string, 0, len(repoIDs))
+	seen := map[string]struct{}{}
+	for _, raw := range repoIDs {
+		repoID := normalizeContextRepoID(raw, aliases)
+		if repoID == "" {
+			continue
+		}
+		if _, ok := seen[repoID]; ok {
+			continue
+		}
+		out = append(out, repoID)
+		seen[repoID] = struct{}{}
+	}
+	return out
+}
+
+func normalizeContextRepoID(raw string, aliases map[string]string) string {
+	repoID := strings.TrimSpace(raw)
+	if repoID == "" {
+		return ""
+	}
+	if normalized, ok := aliases[repoID]; ok {
+		return normalized
+	}
+	return repoID
 }
 
 func contextBudgetInt(ctxBudget *ContextBudget, field string, defaultValue, maxValue int) int {

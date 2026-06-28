@@ -1246,7 +1246,7 @@ func (s *Server) HandleCreateContextPacket(rawArgs json.RawMessage) ToolCallResu
 	}
 	for _, seed := range args.SeedSearches {
 		input.SeedSearches = append(input.SeedSearches, contextpackets.ContextSeedSearch{
-			RepoIDs:       seed.RepoIDs,
+			RepoIDs:       nonEmptyToolStrings(seed.RepoIDs),
 			Pattern:       strings.TrimSpace(seed.Pattern),
 			Literal:       true,
 			CaseSensitive: seed.CaseSensitive,

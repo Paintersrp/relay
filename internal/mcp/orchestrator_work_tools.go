@@ -80,7 +80,15 @@ var getNextPassWorkOutputSchema = json.RawMessage(`{
         "properties": {
           "tool": {"type": "string"},
           "description": {"type": "string"},
-          "arguments": {"type": "string"}
+          "arguments": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "depends_on": {"type": "string"},
+          "argument_bindings": {
+            "type": "object",
+            "additionalProperties": {"type": "string"}
+          }
         }
       }
     },

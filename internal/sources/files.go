@@ -127,7 +127,11 @@ func (s *Service) ListProjectFiles(ctx context.Context, input FileInventoryInput
 	result.ProjectID = resolved.project.ProjectID
 	result.SourceSnapshotID = resolved.snapshot.SourceSnapshotID
 
-	allowedRepos := repoIDSet(input.RepoIDs)
+	normalizedRepoIDs, err := normalizeRepoIDList(input.RepoIDs, resolved.projectRepos)
+	if err != nil {
+		return nil, err
+	}
+	allowedRepos := repoIDSet(normalizedRepoIDs)
 	maxResults := boundedPositive(input.MaxResults, defaultInventoryMaxResults, hardInventoryMaxResults)
 
 	for _, snapshotRepo := range resolved.repositories {
@@ -187,7 +191,11 @@ func (s *Service) ReadProjectFile(ctx context.Context, input BoundedFileReadInpu
 	result.ProjectID = resolved.project.ProjectID
 	result.SourceSnapshotID = resolved.snapshot.SourceSnapshotID
 
-	repoID := strings.TrimSpace(input.RepoID)
+	repoID, err := normalizeRepoID(input.RepoID, resolved.projectRepos)
+	if err != nil {
+		return nil, err
+	}
+	result.RepoID = repoID
 	repo, ok := resolved.projectRepos[repoID]
 	if !ok {
 		result.Blockers = append(result.Blockers, SourceBlocker{RepoID: repoID, Code: SourceBlockerExcludedPath, Message: "repository is not registered for project"})
@@ -472,4 +480,61 @@ func sortedSourceSnapshotRepos(repos []store.SourceSnapshotRepository) []store.S
 		return out[i].Role < out[j].Role
 	})
 	return out
+}
+
+func normalizeRepoIDList(repoIDs []string, repos map[string]store.ProjectRepository) ([]string, error) {
+	if len(repoIDs) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(repoIDs))
+	seen := map[string]struct{}{}
+	for _, raw := range repoIDs {
+		repoID, err := normalizeRepoID(raw, repos)
+		if err != nil {
+			return nil, err
+		}
+		if repoID == "" {
+			continue
+		}
+		if _, ok := seen[repoID]; ok {
+			continue
+		}
+		out = append(out, repoID)
+		seen[repoID] = struct{}{}
+	}
+	return out, nil
+}
+
+func normalizeRepoID(raw string, repos map[string]store.ProjectRepository) (string, error) {
+	repoID := strings.TrimSpace(raw)
+	if repoID == "" {
+		return "", nil
+	}
+	if _, ok := repos[repoID]; ok {
+		return repoID, nil
+	}
+	var match string
+	for registered := range repos {
+		if repoIDAliasMatches(repoID, registered) {
+			if match != "" && match != registered {
+				return "", fmt.Errorf("repo_id %q is ambiguous for project repositories", repoID)
+			}
+			match = registered
+		}
+	}
+	if match != "" {
+		return match, nil
+	}
+	return repoID, nil
+}
+
+func repoIDAliasMatches(alias, registered string) bool {
+	registered = strings.TrimSpace(registered)
+	if alias == registered {
+		return true
+	}
+	if idx := strings.LastIndex(registered, "/"); idx >= 0 && idx+1 < len(registered) {
+		return alias == registered[idx+1:]
+	}
+	return false
 }

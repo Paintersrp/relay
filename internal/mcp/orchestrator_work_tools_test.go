@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	appplans "relay/internal/app/plans"
+	"relay/internal/app/projects"
+	"relay/internal/sources"
 	"relay/internal/store"
 )
 
@@ -752,8 +754,162 @@ func TestOrchestratorWorkTools_GetNextPassWorkPlannerJumpstartActions(t *testing
 	if payload.NextActions[0].Tool != "create_source_snapshot" || payload.NextActions[1].Tool != "create_context_packet" {
 		t.Fatalf("unexpected actions: %#v", payload.NextActions)
 	}
-	if !strings.Contains(payload.NextActions[1].Arguments, "local pass-detail preview") {
-		t.Fatalf("expected local preview argument reference, got %#v", payload.NextActions[1])
+	args := payload.NextActions[1].Arguments
+	for _, key := range []string{"project_id", "plan_id", "pass_id", "task_slug", "seed_files", "seed_searches", "include_inventory", "max_sources", "max_total_bytes"} {
+		if _, ok := args[key]; !ok {
+			t.Fatalf("expected create_context_packet arguments to include %q: %#v", key, args)
+		}
+	}
+	if payload.NextActions[1].DependsOn != "create_source_snapshot" {
+		t.Fatalf("expected create_context_packet depends_on create_source_snapshot, got %#v", payload.NextActions[1])
+	}
+	if payload.NextActions[1].ArgumentBindings["source_snapshot_id"] != "$.result.source_snapshot_id" {
+		t.Fatalf("expected source_snapshot_id binding, got %#v", payload.NextActions[1].ArgumentBindings)
+	}
+}
+
+func TestOrchestratorWorkTools_GetNextPassWorkActionFeedsCreateContextPacket(t *testing.T) {
+	t.Parallel()
+
+	deps := setupTestDeps(t)
+	deps.ToolProfile = ToolProfileLocalOperator
+	deps.ContextBrokerEnabled = true
+	st := deps.Store
+	srv := NewServer(nil, deps)
+
+	projectService := projects.NewService(st)
+	sourceService := sources.NewService(st)
+	repoRoot := brokerSetupGitRepo(t)
+	brokerMkdirAll(t, filepath.Join(repoRoot, "src"))
+	brokerWriteFile(t, filepath.Join(repoRoot, "src", "app.txt"), "alpha\nneedle\n")
+	brokerRunGit(t, repoRoot, "add", ".")
+	brokerRunGit(t, repoRoot, "commit", "-m", "next pass alias fixture")
+
+	project, err := projectService.GetProjectByProjectID(context.Background(), "relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	_, issues, err := projectService.UpsertProjectRepository(context.Background(), project.ProjectID, projects.ProjectRepositoryInput{
+		RepoID:           "Paintersrp/relay",
+		Role:             projects.RepositoryRolePrimary,
+		LocalPath:        repoRoot,
+		DefaultBranch:    "main",
+		AllowedRoots:     []string{"src"},
+		MaxFileSizeBytes: projects.MinMaxFileSizeBytes,
+		Enabled:          true,
+	})
+	if err != nil {
+		t.Fatalf("UpsertProjectRepository: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("unexpected repository issues: %+v", issues)
+	}
+	snapshot, err := sourceService.CreateSourceSnapshot(context.Background(), sources.SourceSnapshotInput{
+		ProjectID:           project.ProjectID,
+		RepoIDs:             []string{"relay"},
+		IncludeFileMetadata: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+
+	planSvc := appplans.NewService(st)
+	plan := appplans.PlannerPassPlan{
+		PlanMeta: appplans.PlanMeta{
+			PlanID:        "plan-mcp-action-chain",
+			SchemaVersion: "2.0.0",
+			CreatedAt:     "2026-06-23T00:00:00Z",
+			Title:         "Action chain",
+			Goal:          "Verify action chain.",
+			RepoTarget:    "Paintersrp/relay",
+			BranchContext: "main",
+			Status:        "active",
+			ProjectID:     "relay",
+			MCPCapabilityProfile: &appplans.MCPCapabilityProfile{
+				ProfileID:            "test-profile",
+				Mode:                 "submission_only",
+				ContextBrokerEnabled: mcpBoolPtr(true),
+			},
+		},
+		SourceIntent: appplans.SourceIntent{Summary: "Action chain test."},
+		GlobalContextRules: &appplans.GlobalContextRules{
+			DefaultSourceOfTruth:    "Relay managed plan.",
+			PlannerContextBoundary:  "Test only.",
+			ForbiddenContextDomains: []string{"GitHub issues"},
+		},
+		Passes: []appplans.PlanPassInput{{
+			PassID: "PASS-002", Sequence: 2, Name: "Context pass", Goal: "Collect context.",
+			IntendedExecutionScope: []string{"src/app.txt"},
+			NonGoals:               []string{"No run creation."},
+			Dependencies:           []string{},
+			Status:                 appplans.StatusPassPlanned,
+			PassType:               "backend_vertical_slice",
+			ContextPlan: appplans.ContextPlan{
+				RequiredRepositories: []string{"relay"},
+				SeedSearchTerms: []appplans.ContextSearchTerm{
+					{RepoID: "relay", Query: "needle", Purpose: "Find fixture marker.", Required: mcpBoolPtr(true)},
+				},
+				SeedFilesToRead: []appplans.ContextFileRead{
+					{RepoID: "relay", Path: "src/app.txt", Purpose: "Read fixture source.", Required: mcpBoolPtr(true)},
+				},
+				ContextCoverageExpectations: []string{"Fixture source is covered."},
+				BlockedIfMissing:            []string{"Fixture source cannot be located."},
+			},
+			SourceSnapshotRequirements: appplans.SourceSnapshotRequirements{
+				RequireGitStatus:   mcpBoolPtr(false),
+				RequireCommitSHA:   mcpBoolPtr(false),
+				AllowDirtyWorktree: mcpBoolPtr(true),
+			},
+			HandoffReadinessCriteria: []string{"Context packet exists."},
+		}},
+	}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	submitResult, err := planSvc.SubmitPlan(context.Background(), appplans.SubmitPlanRequest{
+		RawJSON:               raw,
+		UnmanagedAcknowledged: true,
+	})
+	if err != nil || !submitResult.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, submitResult.Report.Issues)
+	}
+
+	toolResult := srv.HandleGetNextPassWork(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-action-chain"}`))
+	if toolResult.IsError {
+		t.Fatalf("get_next_pass_work failed: %+v", toolResult.Content)
+	}
+	payload := decodeNextPassSummary(t, toolResult)
+	if len(payload.NextActions) != 1 || payload.NextActions[0].Tool != "create_context_packet" {
+		t.Fatalf("expected create_context_packet action, got %+v", payload.NextActions)
+	}
+	args := payload.NextActions[0].Arguments
+	if args["source_snapshot_id"] != snapshot.SourceSnapshotID {
+		t.Fatalf("expected latest source_snapshot_id %q, got %#v", snapshot.SourceSnapshotID, args["source_snapshot_id"])
+	}
+	seedFiles := args["seed_files"].([]interface{})
+	if seedFiles[0].(map[string]interface{})["repo_id"] != "Paintersrp/relay" {
+		t.Fatalf("expected normalized seed file repo_id, got %#v", seedFiles[0])
+	}
+
+	rawArgs, err := json.Marshal(args)
+	if err != nil {
+		t.Fatalf("marshal action args: %v", err)
+	}
+	contextResult := srv.HandleCreateContextPacket(rawArgs)
+	if contextResult.IsError {
+		t.Fatalf("create_context_packet failed from get_next_pass_work args: %s", contextResult.Content[0].Text)
+	}
+	success := decodeBrokerSuccess(t, contextResult)
+	var contextPayload struct {
+		ContextPacketID string `json:"context_packet_id"`
+		BlockedSeeds    int    `json:"blocked_seed_count"`
+	}
+	if err := json.Unmarshal(success.Result, &contextPayload); err != nil {
+		t.Fatalf("unmarshal create_context_packet result: %v", err)
+	}
+	if contextPayload.ContextPacketID == "" || contextPayload.BlockedSeeds != 0 {
+		t.Fatalf("unexpected create_context_packet result: %+v", contextPayload)
 	}
 }
 

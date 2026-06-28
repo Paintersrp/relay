@@ -375,6 +375,44 @@ func run() error {
 	fmt.Printf("  created plan_id: %s\n", smokePlanID)
 
 	// -------------------------------------------------------
+	// 6. get_next_pass_work - verify actionable structuredContent for selected pass
+	// -------------------------------------------------------
+	resp, err = h.call("tools/call", map[string]interface{}{
+		"name": "get_next_pass_work",
+		"arguments": map[string]interface{}{
+			"project_id": "relay",
+			"plan_id":    smokePlanID,
+		},
+	})
+	if err != nil {
+		return h.fatal("get_next_pass_work actionable", err)
+	}
+	if resp.Error != nil {
+		return h.fatal("get_next_pass_work actionable", fmt.Errorf("RPC error: %s", resp.Error.Message))
+	}
+	var actionableNextPassWorkResult toolCallResult
+	if err := json.Unmarshal(resp.Result, &actionableNextPassWorkResult); err != nil {
+		return h.fatal("get_next_pass_work actionable parse", err)
+	}
+	h.check("get_next_pass_work actionable !isError", !actionableNextPassWorkResult.IsError)
+	if out := actionableNextPassWorkResult.StructuredContent; out != nil {
+		h.check("get_next_pass_work actionable ok=true", out["ok"] == true)
+		if actions, ok := out["next_actions"].([]interface{}); ok && len(actions) > 0 {
+			if action, ok := actions[0].(map[string]interface{}); ok {
+				h.check("get_next_pass_work next_action has tool", action["tool"] == "create_run_from_planner_handoff")
+				if args, ok := action["arguments"].(map[string]interface{}); ok {
+					h.check("get_next_pass_work next_action plan_id", args["plan_id"] == smokePlanID)
+					h.check("get_next_pass_work next_action pass_id", args["pass_id"] == "PASS-001")
+				} else {
+					h.check("get_next_pass_work next_action arguments object", false)
+				}
+			}
+		} else {
+			h.check("get_next_pass_work next_actions present", false)
+		}
+	}
+
+	// -------------------------------------------------------
 	// 6. create_run_from_planner_handoff — create pass-associated run
 	// -------------------------------------------------------
 	handoffMarkdown := `---

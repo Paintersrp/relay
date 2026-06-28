@@ -247,7 +247,11 @@ func TestCompactNextPassWorkSummaryOmitsVerboseHookText(t *testing.T) {
 			SuggestedContextAcquisitionActions: []ContextAcquisitionAction{{
 				Tool: "create_context_packet",
 				Arguments: map[string]interface{}{
-					"seed_searches": []map[string]string{{"purpose": verbose}},
+					"project_id":         "relay",
+					"plan_id":            "plan-compact-summary",
+					"pass_id":            "PASS-002",
+					"task_slug":          "next-pass-work-plan-compact-summary-pass-002",
+					"source_snapshot_id": "srcsnap-001",
 				},
 			}},
 		},
@@ -288,8 +292,11 @@ func TestCompactNextPassWorkSummaryOmitsVerboseHookText(t *testing.T) {
 	if len(summary.Blockers) != 1 || summary.Blockers[0].Code != BlockerRequiredContextPacketMissing || !summary.Blockers[0].Recoverable {
 		t.Fatalf("expected recoverable context-packet blocker, got %+v", summary.Blockers)
 	}
-	if len(summary.NextActions) == 0 || !strings.Contains(summary.NextActions[0].Arguments, "get_pass_context") {
-		t.Fatalf("expected concise context-packet next action, got %+v", summary.NextActions)
+	if len(summary.NextActions) == 0 || summary.NextActions[0].Tool != "create_context_packet" {
+		t.Fatalf("expected context-packet next action, got %+v", summary.NextActions)
+	}
+	if summary.NextActions[0].Arguments["source_snapshot_id"] != "srcsnap-001" {
+		t.Fatalf("expected actionable source_snapshot_id, got %+v", summary.NextActions[0].Arguments)
 	}
 	if !strings.Contains(summary.LocalPreviewHint, "pass-detail preview") {
 		t.Fatalf("expected local preview hint, got %q", summary.LocalPreviewHint)
@@ -1088,6 +1095,80 @@ func TestGetNextPassWork_MissingContextPacketWithSnapshotIncludesInvokableAction
 	}
 	if seedSearches[0]["pattern"] != ctxPlan.SeedSearchTerms[0].Query || seedSearches[0]["reason"] != ctxPlan.SeedSearchTerms[0].Purpose || seedSearches[0]["max_results"] != 7 {
 		t.Fatalf("unexpected seed_search: %#v", seedSearches[0])
+	}
+}
+
+func TestGetNextPassWork_ContextPacketActionNormalizesRepoAliases(t *testing.T) {
+	t.Parallel()
+
+	svc, st := newWorkPacketService(t)
+	project, err := st.GetProjectByProjectID("relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	if _, err := st.UpsertProjectRepository(store.UpsertProjectRepositoryParams{
+		ProjectRowID:     project.ID,
+		RepoID:           "Paintersrp/relay",
+		Role:             "primary",
+		LocalPath:        t.TempDir(),
+		DefaultBranch:    "main",
+		AllowedRootsJSON: "[]",
+		IgnoredGlobsJSON: "[]",
+		MaxFileSizeBytes: 1024,
+		Enabled:          1,
+	}); err != nil {
+		t.Fatalf("UpsertProjectRepository: %v", err)
+	}
+	seedSourceSnapshot(t, st, "relay", "srcsnap-alias")
+	planSvc := NewService(st)
+	plan := PlannerPassPlan{
+		PlanMeta: PlanMeta{
+			PlanID: "plan-js-packet-alias", SchemaVersion: "2.0.0",
+			CreatedAt: "2026-06-23T00:00:00Z", Title: "T", Goal: "G",
+			RepoTarget: "Paintersrp/relay", BranchContext: "main", Status: "active",
+			ProjectID: "relay",
+			MCPCapabilityProfile: &MCPCapabilityProfile{
+				ProfileID: "p", Mode: "submission_only", ContextBrokerEnabled: boolPtr(false),
+			},
+		},
+		SourceIntent:       SourceIntent{Summary: "S"},
+		GlobalContextRules: &GlobalContextRules{DefaultSourceOfTruth: "D", PlannerContextBoundary: "B", ForbiddenContextDomains: []string{"X"}},
+		Passes: []PlanPassInput{{
+			PassID: "PASS-001", Sequence: 1, Name: "N", Goal: "G",
+			IntendedExecutionScope: []string{"a"}, NonGoals: []string{"b"},
+			Dependencies: []string{}, Status: "planned", PassType: "backend_vertical_slice",
+			ContextPlan: baseContextPlan(),
+			SourceSnapshotRequirements: SourceSnapshotRequirements{
+				RequireGitStatus: boolPtr(false), RequireCommitSHA: boolPtr(false), AllowDirtyWorktree: boolPtr(true),
+			},
+			HandoffReadinessCriteria: []string{"c"},
+		}},
+	}
+	raw := mustMarshalPlan(t, plan)
+	result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: raw})
+	if err != nil || !result.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
+	}
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{
+		ProjectID: "relay",
+		PlanID:    "plan-js-packet-alias",
+	})
+	if err != nil {
+		t.Fatalf("GetNextPassWork: %v", err)
+	}
+	actions := resp.PlannerJumpstart.SuggestedContextAcquisitionActions
+	if len(actions) != 1 || actions[0].Tool != "create_context_packet" {
+		t.Fatalf("expected create_context_packet action, got %+v", actions)
+	}
+	seedFiles := actions[0].Arguments["seed_files"].([]map[string]interface{})
+	if seedFiles[0]["repo_id"] != "Paintersrp/relay" {
+		t.Fatalf("expected normalized seed file repo_id, got %#v", seedFiles[0])
+	}
+	seedSearches := actions[0].Arguments["seed_searches"].([]map[string]interface{})
+	repoIDs := seedSearches[0]["repo_ids"].([]string)
+	if len(repoIDs) != 1 || repoIDs[0] != "Paintersrp/relay" {
+		t.Fatalf("expected normalized seed search repo_ids, got %#v", seedSearches[0])
 	}
 }
 

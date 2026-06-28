@@ -55,7 +55,11 @@ func (s *Service) SearchProjectFiles(ctx context.Context, input SourceSearchInpu
 	result.ProjectID = resolved.project.ProjectID
 	result.SourceSnapshotID = resolved.snapshot.SourceSnapshotID
 
-	allowedRepos := repoIDSet(input.RepoIDs)
+	normalizedRepoIDs, err := normalizeRepoIDList(input.RepoIDs, resolved.projectRepos)
+	if err != nil {
+		return nil, err
+	}
+	allowedRepos := repoIDSet(normalizedRepoIDs)
 	maxResults := boundedPositive(input.MaxResults, defaultRGMaxResults, hardRGMaxResults)
 	maxBytes := boundedPositive(input.MaxBytes, defaultRGStdoutMaxByte, hardRGStdoutMaxByte)
 	contextLines := boundedPositive(input.ContextLines, defaultRGContextLines, hardRGContextLines)

@@ -221,7 +221,10 @@ func (s *Service) selectRepositories(projectRowID int64, input SourceSnapshotInp
 		selected := make([]store.ProjectRepository, 0, len(input.RepoIDs))
 		seen := map[string]struct{}{}
 		for _, rawRepoID := range input.RepoIDs {
-			repoID := strings.TrimSpace(rawRepoID)
+			repoID, err := normalizeRepoID(rawRepoID, byRepoID)
+			if err != nil {
+				return nil, err
+			}
 			if repoID == "" {
 				continue
 			}

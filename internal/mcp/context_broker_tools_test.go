@@ -833,6 +833,95 @@ func createContextPacketViaTool(t *testing.T, fixture brokerFixture, slug string
 	return payload.ContextPacketID
 }
 
+func TestCreateContextPacketAcceptsUnambiguousRepoAlias(t *testing.T) {
+	t.Parallel()
+
+	deps := setupTestDeps(t)
+	deps.ToolProfile = ToolProfileLocalOperator
+	deps.ContextBrokerEnabled = true
+	srv := NewServer(discardLogger(), deps)
+
+	projectService := projects.NewService(deps.Store)
+	sourceService := sources.NewService(deps.Store)
+
+	repoRoot := brokerSetupGitRepo(t)
+	brokerMkdirAll(t, filepath.Join(repoRoot, "src"))
+	brokerWriteFile(t, filepath.Join(repoRoot, "src", "app.txt"), "alpha\nneedle\n")
+	brokerRunGit(t, repoRoot, "add", ".")
+	brokerRunGit(t, repoRoot, "commit", "-m", "alias fixture")
+
+	project, err := projectService.GetProjectByProjectID(t.Context(), "relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID error: %v", err)
+	}
+	_, issues, err := projectService.UpsertProjectRepository(t.Context(), project.ProjectID, projects.ProjectRepositoryInput{
+		RepoID:           "Paintersrp/relay",
+		Role:             projects.RepositoryRolePrimary,
+		LocalPath:        repoRoot,
+		DefaultBranch:    "main",
+		AllowedRoots:     []string{"src"},
+		MaxFileSizeBytes: projects.MinMaxFileSizeBytes,
+		Enabled:          true,
+	})
+	if err != nil {
+		t.Fatalf("UpsertProjectRepository error: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("unexpected repository issues: %+v", issues)
+	}
+	snapshot, err := sourceService.CreateSourceSnapshot(t.Context(), sources.SourceSnapshotInput{
+		ProjectID:           project.ProjectID,
+		RepoIDs:             []string{"relay"},
+		IncludeFileMetadata: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot with alias error: %v", err)
+	}
+
+	result := callTool(t, srv, ToolCreateContextPacket.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"plan_id":"plan-alias",
+		"pass_id":"PASS-002",
+		"task_slug":"alias-context",
+		"source_snapshot_id":"`+snapshot.SourceSnapshotID+`",
+		"seed_files":[{"repo_id":"relay","path":"src/app.txt","reason":"Read alias fixture.","required":true,"max_bytes":65536}],
+		"seed_searches":[{"repo_ids":["relay"],"pattern":"needle","context_lines":0,"max_results":10,"reason":"Search alias fixture.","required":true}],
+		"include_inventory":false,
+		"max_sources":25,
+		"max_total_bytes":262144
+	}`))
+	if result.IsError {
+		t.Fatalf("create_context_packet failed: %s", result.Content[0].Text)
+	}
+	success := decodeBrokerSuccess(t, result)
+	var payload struct {
+		ContextPacketID string `json:"context_packet_id"`
+		BlockedSeeds    int    `json:"blocked_seed_count"`
+	}
+	if err := json.Unmarshal(success.Result, &payload); err != nil {
+		t.Fatalf("unmarshal create_context_packet payload: %v", err)
+	}
+	if payload.ContextPacketID == "" || payload.BlockedSeeds != 0 {
+		t.Fatalf("unexpected create_context_packet payload: %+v", payload)
+	}
+	row, err := deps.Store.GetContextPacketByID(payload.ContextPacketID)
+	if err != nil {
+		t.Fatalf("GetContextPacketByID error: %v", err)
+	}
+	sourceRows, err := deps.Store.ListContextPacketSources(row.ID)
+	if err != nil {
+		t.Fatalf("ListContextPacketSources error: %v", err)
+	}
+	if len(sourceRows) == 0 {
+		t.Fatal("expected context packet sources")
+	}
+	for _, source := range sourceRows {
+		if source.RepoID != "Paintersrp/relay" {
+			t.Fatalf("expected normalized repo_id, got %q", source.RepoID)
+		}
+	}
+}
+
 func listTools(t *testing.T, srv *Server) ToolsListResult {
 	t.Helper()
 	return collectAllTools(t, srv, ToolsListParams{})
