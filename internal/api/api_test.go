@@ -1448,6 +1448,118 @@ func TestAPI(t *testing.T) {
 		}
 	})
 
+	// --- Execute state-consistency tests ---
+
+	blockedRun, err := s.CreateRun(repo.ID, "Execute Blocked Test", "executor_blocked", "gpt-4o", "gpt-4o", "main")
+	if err != nil {
+		t.Fatalf("failed to create executor_blocked run: %v", err)
+	}
+
+	t.Run("POST /api/runs/{id}/execute - executor_blocked returns 422 with status/lifecycle", func(t *testing.T) {
+		idStr := strconv.FormatInt(blockedRun.ID, 10)
+		req := httptest.NewRequest("POST", "/api/runs/"+idStr+"/execute", strings.NewReader(`{"action":"start"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnprocessableEntity {
+			t.Errorf("expected 422 for executor_blocked, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode execute error response: %v", err)
+		}
+		if resp["success"] != false {
+			t.Errorf("expected success=false, got %v", resp["success"])
+		}
+		if resp["runId"] == nil {
+			t.Error("expected runId in response")
+		}
+		if resp["error"] == nil || resp["error"] == "" {
+			t.Error("expected error field in response")
+		}
+		if resp["status"] == nil || resp["status"] == "" {
+			t.Error("expected status field in response for executor_blocked run")
+		}
+		if st, ok := resp["status"].(string); ok && st != "executor_blocked" {
+			t.Errorf("expected status executor_blocked, got %q", st)
+		}
+		if resp["lifecycleState"] == nil || resp["lifecycleState"] == "" {
+			t.Error("expected lifecycleState field in response for executor_blocked run")
+		}
+		if ls, ok := resp["lifecycleState"].(string); ok && ls != "failed" {
+			t.Errorf("expected lifecycleState failed for executor_blocked, got %q", ls)
+		}
+	})
+
+	t.Run("POST /api/runs/{id}/execute - block rejection preserves dispatch gate", func(t *testing.T) {
+		idStr := strconv.FormatInt(blockedRun.ID, 10)
+		req := httptest.NewRequest("POST", "/api/runs/"+idStr+"/execute", strings.NewReader(`{"action":"start"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		var resp map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode: %v", err)
+		}
+		errMsg, _ := resp["error"].(string)
+		if errMsg == "" || !strings.Contains(errMsg, "must be approved_for_executor") {
+			t.Errorf("expected dispatch gate error, got %q", errMsg)
+		}
+	})
+
+	approvedRun, err := s.CreateRun(repo.ID, "Execute Approved Test", "approved_for_executor", "gpt-4o", "gpt-4o", "main")
+	if err != nil {
+		t.Fatalf("failed to create approved_for_executor run: %v", err)
+	}
+
+	t.Run("POST /api/runs/{id}/execute - approved_for_executor without brief returns 422 with status", func(t *testing.T) {
+		idStr := strconv.FormatInt(approvedRun.ID, 10)
+		req := httptest.NewRequest("POST", "/api/runs/"+idStr+"/execute", strings.NewReader(`{"action":"start"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnprocessableEntity {
+			t.Errorf("expected 422 without brief, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode: %v", err)
+		}
+		if resp["status"] == nil || resp["status"] == "" {
+			t.Error("expected status field when run can be loaded")
+		}
+		if resp["lifecycleState"] == nil || resp["lifecycleState"] == "" {
+			t.Error("expected lifecycleState field when run can be loaded")
+		}
+		if st, ok := resp["status"].(string); ok && st != "approved_for_executor" {
+			t.Errorf("expected status approved_for_executor, got %q", st)
+		}
+	})
+
+	t.Run("POST /api/runs/{id}/execute - unknown run ID returns not found", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/runs/99999/execute", strings.NewReader(`{"action":"start"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnprocessableEntity {
+			t.Errorf("expected 422 for unknown run, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode: %v", err)
+		}
+		if resp["status"] != nil {
+			t.Errorf("expected no status for unknown run, got %v", resp["status"])
+		}
+	})
+
 	// Cleanup: restore the test run to a clean state for any further tests
 	s.UpdateRunStatus(run.ID, "completed")
 

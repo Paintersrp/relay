@@ -231,13 +231,19 @@ func (s *Service) ExecuteRun(ctx context.Context, runID int64) (ExecuteResult, e
 	}
 
 	if _, err := executor.DispatchBrief(params); err != nil {
+		body := map[string]interface{}{
+			"success": false,
+			"runId":   fmt.Sprintf("%d", runID),
+			"error":   err.Error(),
+		}
+		if run, loadErr := s.store.GetRun(runID); loadErr == nil && run != nil {
+			status, _, lifecycleState, _, _ := resolveRunDisplayState(run.Status)
+			body["status"] = status
+			body["lifecycleState"] = lifecycleState
+		}
 		return ExecuteResult{}, &RunError{
 			HTTPStatus: http.StatusUnprocessableEntity,
-			Body: map[string]interface{}{
-				"success": false,
-				"runId":   fmt.Sprintf("%d", runID),
-				"error":   err.Error(),
-			},
+			Body:       body,
 		}
 	}
 
@@ -416,4 +422,70 @@ func (s *Service) RepairValidation(ctx context.Context, runID int64) (RepairResu
 		return RepairResult{HTTPStatus: http.StatusUnprocessableEntity, Body: body}, nil
 	}
 	return RepairResult{HTTPStatus: http.StatusOK, Body: body}, nil
+}
+
+func resolveRunDisplayState(rawStatus string) (status, activeStep, lifecycleState, state, statusSeverity string) {
+	status = rawStatus
+	activeStep = "intake"
+	lifecycleState = "intake"
+	state = "Intake Review"
+	statusSeverity = "warning"
+
+	switch status {
+	case "draft", "needs_cleanup":
+		activeStep, lifecycleState, state, statusSeverity = "intake", "intake", "Intake Review", "warning"
+		if status == "needs_cleanup" {
+			statusSeverity = "danger"
+		}
+	case "intake_needs_review", "intake_received":
+		activeStep, lifecycleState, state, statusSeverity = "intake", "intake", "Intake Needs Review", "warning"
+		if status == "intake_received" {
+			state, statusSeverity = "Intake Received", "info"
+		}
+	case "approved_for_prepare":
+		activeStep, lifecycleState, state, statusSeverity = "prepare", "prepare", "Approved for Prepare", "success"
+	case "packet_validated", "repair_validated":
+		activeStep, lifecycleState, state, statusSeverity = "prepare", "prepare", "Packet Validated", "info"
+	case "packet_validation_failed":
+		activeStep, lifecycleState, state, statusSeverity = "prepare", "prepare", "Packet Validation Failed", "danger"
+	case "brief_ready_for_review":
+		activeStep, lifecycleState, state, statusSeverity = "prepare", "prepare", "Brief Ready for Review", "success"
+	case "approved_for_executor":
+		activeStep, lifecycleState, state, statusSeverity = "execute", "execute", "Approved for Executor", "success"
+	case "executor_dispatched":
+		activeStep, lifecycleState, state, statusSeverity = "execute", "execute", "Executor Dispatched", "info"
+	case "local_validation_running":
+		activeStep, lifecycleState, state, statusSeverity = "execute", "execute", "Local Validation Running", "info"
+	case "executor_done":
+		activeStep, lifecycleState, state, statusSeverity = "execute", "execute", "Executor Done", "success"
+	case "executor_blocked":
+		activeStep, lifecycleState, state, statusSeverity = "execute", "failed", "Executor Blocked", "danger"
+	case "blocked":
+		activeStep, lifecycleState, state, statusSeverity = "intake", "failed", "Blocked", "danger"
+	case "agent_done":
+		activeStep, lifecycleState, state, statusSeverity = "execute", "execute", "Agent Done", "success"
+	case "agent_blocked":
+		activeStep, lifecycleState, state, statusSeverity = "execute", "failed", "Agent Blocked", "danger"
+	case "agent_result_needs_review":
+		activeStep, lifecycleState, state, statusSeverity = "execute", "execute", "Agent Result Needs Review", "warning"
+	case "validation_passed":
+		activeStep, lifecycleState, state, statusSeverity = "execute", "execute", "Validation Passed", "success"
+	case "validation_failed":
+		activeStep, lifecycleState, state, statusSeverity = "execute", "failed", "Validation Failed", "danger"
+	case "validation_failed_accepted":
+		activeStep, lifecycleState, state, statusSeverity = "execute", "execute", "Validation Failure Accepted", "warning"
+	case "audit_ready":
+		activeStep, lifecycleState, state, statusSeverity = "audit", "audit", "Audit Ready", "info"
+	case "audit_ready_for_review":
+		activeStep, lifecycleState, state, statusSeverity = "audit", "audit", "Audit Ready for Review", "success"
+	case "revision_required":
+		activeStep, lifecycleState, state, statusSeverity = "audit", "audit", "Revision Required", "warning"
+	case "accepted":
+		activeStep, lifecycleState, state, statusSeverity = "audit", "completed", "Accepted", "success"
+	case "accepted_with_warnings":
+		activeStep, lifecycleState, state, statusSeverity = "audit", "completed", "Accepted with Warnings", "warning"
+	case "completed":
+		activeStep, lifecycleState, state, statusSeverity = "audit", "completed", "Completed", "success"
+	}
+	return
 }

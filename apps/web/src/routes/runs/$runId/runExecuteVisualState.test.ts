@@ -123,4 +123,26 @@ describe("runExecuteVisualState", () => {
       title: "Executor needs attention",
     });
   });
+
+  it("never maps executor_blocked to ready", () => {
+    expect(getExecuteDisplayState(input("executor_blocked"))).not.toBe("ready");
+    const cardCopy = getExecuteStateCardCopy("failed");
+    expect(cardCopy.eyebrow).not.toBe("READY TO DISPATCH");
+    expect(cardCopy.tone).not.toBe("info");
+  });
+
+  it("only maps approved_for_executor to ready (no recovery gate)", () => {
+    expect(getExecuteDisplayState(input("approved_for_executor"))).toBe("ready");
+    expect(getExecuteDisplayState(input("executor_blocked"))).toBe("failed");
+    expect(getExecuteDisplayState(input("agent_blocked"))).toBe("failed");
+    expect(getExecuteDisplayState(input("executor_running"))).toBe("running");
+    expect(getExecuteDisplayState(input("executor_done"))).toBe("complete");
+  });
+
+  it("failed state card never says Ready to dispatch", () => {
+    const cardCopy = getExecuteStateCardCopy("failed");
+    expect(cardCopy.eyebrow).toBe("EXECUTION BLOCKED");
+    expect(cardCopy.message).toContain("Review blocker evidence");
+    expect(cardCopy.message).not.toContain("Ready");
+  });
 });

@@ -255,11 +255,15 @@ function ExecuteMainContent({
       runStatus === "executor_dispatched" || runStatus === "executor_running";
     const isBlocked = executorPhase === "blocked" || executorPhase === "failed";
     return {
-      canStart: isApproved || (isBlocked && runLifecycle === "execute"),
+      canStart: isApproved,
       canCancel: isExecuting,
-      canRecover: isBlocked && runLifecycle === "execute",
+      canRecover: false,
       startUnavailableReason:
-        !isApproved && !isBlocked ? `Current status: ${runStatus}` : undefined,
+        !isApproved
+          ? isBlocked
+            ? `Start is unavailable while blocked (status: ${runStatus})`
+            : `Current status: ${runStatus}`
+          : undefined,
       cancelUnavailableReason:
         "Cancellation is not yet implemented in the backend.",
       recoverUnavailableReason:
@@ -352,6 +356,7 @@ function ExecuteMainContent({
     },
     onError: (err: any) => {
       setMutationError(err.message || "Failed to start executor.");
+      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
     },
   });
 
@@ -364,6 +369,7 @@ function ExecuteMainContent({
     },
     onError: (err: any) => {
       setMutationError(err.message || "Failed to cancel executor.");
+      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
     },
   });
 
@@ -376,6 +382,7 @@ function ExecuteMainContent({
     },
     onError: (err: any) => {
       setMutationError(err.message || "Failed to recover executor.");
+      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
     },
   });
 
@@ -388,6 +395,7 @@ function ExecuteMainContent({
     },
     onError: (err: any) => {
       setMutationError(err.message || "Failed to run validation.");
+      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
     },
   });
 
@@ -492,9 +500,7 @@ function ExecuteMainContent({
                 ) : (
                   <Play className="w-3.5 h-3.5" />
                 )}
-                {runStatus === "approved_for_executor"
-                  ? "Start Executor"
-                  : "Restart Executor"}
+                Start Executor
               </Button>
             )}
 
