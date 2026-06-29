@@ -2070,8 +2070,11 @@ func TestGetNextPassWork_SuggestedSeedFilesIncludeRangeAndBudget(t *testing.T) {
 	if !ok || len(seedFiles) != 1 {
 		t.Fatalf("expected one seed file, got %#v", action.Arguments["seed_files"])
 	}
-	if seedFiles[0]["line_start"] != 1 || seedFiles[0]["line_end"] != optimisticSeedFileLineEnd {
-		t.Fatalf("expected line_start=1 line_end=%d, got %#v", optimisticSeedFileLineEnd, seedFiles[0])
+	if seedFiles[0]["line_start"] != 1 {
+		t.Fatalf("expected line_start=1, got %#v", seedFiles[0])
+	}
+	if _, ok := seedFiles[0]["line_end"]; ok {
+		t.Fatalf("did not expect required seed line_end cap, got %#v", seedFiles[0])
 	}
 	if seedFiles[0]["max_bytes"] != 180000 {
 		t.Fatalf("expected max_bytes=180000, got %#v", seedFiles[0]["max_bytes"])
@@ -2106,8 +2109,8 @@ func TestGetNextPassWork_InternalSeedFilesUseRangeAndPassBudgetMaxBytes(t *testi
 	if required == nil {
 		t.Fatalf("expected a required seed file, got %+v", fakeCtx.inputs[0].SeedFiles)
 	}
-	if required.LineStart != 1 || required.LineEnd != optimisticSeedFileLineEnd {
-		t.Fatalf("expected line_start=1 line_end=%d, got %+v", optimisticSeedFileLineEnd, required)
+	if required.LineStart != 1 || required.LineEnd != 0 {
+		t.Fatalf("expected open-ended required seed from line 1, got %+v", required)
 	}
 	// Pass budget max_bytes=180000 must be used, not defaultSeedFileMaxBytes.
 	if required.MaxBytes != 180000 {
@@ -2118,7 +2121,7 @@ func TestGetNextPassWork_InternalSeedFilesUseRangeAndPassBudgetMaxBytes(t *testi
 	}
 }
 
-func TestGetNextPassWork_MetadataPresentSmallFileOptimisticRange(t *testing.T) {
+func TestGetNextPassWork_MetadataPresentSmallFileUsesOpenEndedChunkingRange(t *testing.T) {
 	t.Parallel()
 	svc, st := newWorkPacketService(t)
 	seedAcquisitionPlanWithContext(t, st, "plan-range-small",
@@ -2148,43 +2151,43 @@ func TestGetNextPassWork_MetadataPresentSmallFileOptimisticRange(t *testing.T) {
 			break
 		}
 	}
-	if required == nil || required.LineStart != 1 || required.LineEnd != 1000 {
-		t.Fatalf("expected metadata-backed optimistic range 1-1000, got %+v", required)
+	if required == nil || required.LineStart != 1 || required.LineEnd != 0 {
+		t.Fatalf("expected metadata-backed open-ended required range from line 1, got %+v", required)
 	}
 }
 
-func TestGetNextPassWork_MetadataPresentOversizedFileFailsClosed(t *testing.T) {
+func TestGetNextPassWork_MetadataPresentLargeRequiredFileUsesChunkingRange(t *testing.T) {
 	t.Parallel()
 	svc, st := newWorkPacketService(t)
-	seedAcquisitionPlanWithContext(t, st, "plan-range-oversized",
+	seedAcquisitionPlanWithContext(t, st, "plan-range-large",
 		singleRequiredFileContextPlan("internal/app/plans/huge.go"),
 		&ContextBudget{MaxFiles: int64Ptr(12), MaxBytes: int64Ptr(180000), MaxSearchResults: int64Ptr(25)})
-	seedSnapshotFileMetadata(t, st, "snap-range-oversized", []store.CreateSourceSnapshotFileParams{
+	seedSnapshotFileMetadata(t, st, "snap-range-large", []store.CreateSourceSnapshotFileParams{
 		{Path: "internal/app/plans/huge.go", SizeBytes: 250000, ContentHash: "h2", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
 	})
 	svc.SetSourceService(fakeSourceSnapshotAcquirer{snapshotID: "unused", status: "created", included: 1})
-	fakeCtx := usableContextPacketAcquirer("snap-range-oversized")
+	fakeCtx := usableContextPacketAcquirer("snap-range-large")
 	svc.SetContextPacketService(fakeCtx)
 
-	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{ProjectID: "relay", PlanID: "plan-range-oversized"})
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{ProjectID: "relay", PlanID: "plan-range-large"})
 	if err != nil {
 		t.Fatalf("GetNextPassWork: %v", err)
 	}
-	if resp.OK || resp.HandoffWork != nil {
-		t.Fatalf("expected fail-closed without handoff work, got ok=%t handoff=%v", resp.OK, resp.HandoffWork)
+	if !resp.OK {
+		t.Fatalf("expected ok=true with chunk-capable required acquisition, got blockers: %+v", resp.Blockers)
 	}
-	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != BlockerRequiredSeedFileOversized {
-		t.Fatalf("expected required_seed_file_oversized blocker, got %+v", resp.Blockers)
+	if len(fakeCtx.inputs) == 0 {
+		t.Fatal("expected context acquirer call for large required file")
 	}
-	if len(fakeCtx.inputs) != 0 {
-		t.Fatalf("expected no acquirer call before range-planning failure, got %d", len(fakeCtx.inputs))
+	var required *CtxSeedFile
+	for i := range fakeCtx.inputs[0].SeedFiles {
+		if fakeCtx.inputs[0].SeedFiles[i].Required {
+			required = &fakeCtx.inputs[0].SeedFiles[i]
+			break
+		}
 	}
-	report := resp.AcquisitionFailureReport
-	if report == nil || report.SeedRangeFailure == nil {
-		t.Fatalf("expected seed_range_failure report, got %+v", report)
-	}
-	if report.SeedRangeFailure.Path != "internal/app/plans/huge.go" || !report.SeedRangeFailure.SizeKnown || report.SeedRangeFailure.SizeBytes != 250000 {
-		t.Fatalf("unexpected seed_range_failure detail: %+v", report.SeedRangeFailure)
+	if required == nil || required.LineStart != 1 || required.LineEnd != 0 {
+		t.Fatalf("expected large required seed to use open-ended chunking range, got %+v", required)
 	}
 }
 

@@ -44,7 +44,6 @@ const (
 	// distinct from context_packet_unusable so the Planner is not instructed to
 	// retry create_context_packet with the same broken inputs.
 	BlockerRequiredSeedRangeUnresolved         = "required_seed_range_unresolved"
-	BlockerRequiredSeedFileOversized           = "required_seed_file_oversized"
 	BlockerRequiredSeedFileMissingFromSnapshot = "required_seed_file_missing_from_snapshot"
 )
 
@@ -554,11 +553,6 @@ const (
 	maxContextPacketTotalBytes           = 1048576
 	maxSeedSearchResults                 = 200
 	maxSeedFileBytes                     = 262144
-	// Optimistic line cap for range-aware seed file reads when exact EOF is unknown.
-	// This avoids relying on the context packet default 1-200 line range.
-	optimisticSeedFileLineEnd = 1000
-	// Threshold for large files that require targeted ranges rather than optimistic caps.
-	largeFileSizeThreshold = 180000
 )
 
 var taskSlugUnsafeChars = regexp.MustCompile(`[^a-z0-9]+`)
@@ -1441,19 +1435,17 @@ func seedFileMaxBytes(ctxBudget *ContextBudget) int {
 // file using source snapshot metadata when available.
 //
 //   - optional seed file: no explicit range is required by this pass.
-//   - required seed file with usable metadata (present, included, small enough):
-//     line_start=1, line_end=optimisticSeedFileLineEnd, MaxBytes=budget seed max bytes.
+//   - required seed file with usable metadata (present and included):
+//     line_start=1 with an open-ended line_end so packet acquisition can chunk
+//     deterministically until EOF.
 //   - required seed file with metadata unavailable: bounded fallback
-//     line_start=1, line_end=optimisticSeedFileLineEnd with a safe diagnostic.
+//     line_start=1 with a safe diagnostic.
 //   - required seed file missing/excluded in an available metadata index: blocker.
-//   - required seed file larger than largeFileSizeThreshold or larger than
-//     max bytes: blocker.
 func planSeedFileRange(repoID, path string, required bool, maxBytes int, idx snapshotMetadataIndex) seedFileRangePlan {
 	plan := seedFileRangePlan{
-		RepoID:    repoID,
-		Path:      path,
-		MaxBytes:  maxBytes,
-		Threshold: largeFileSizeThreshold,
+		RepoID:   repoID,
+		Path:     path,
+		MaxBytes: maxBytes,
 	}
 	if !required {
 		// Optional seed file: no explicit range required by this pass.
@@ -1461,12 +1453,11 @@ func planSeedFileRange(repoID, path string, required bool, maxBytes int, idx sna
 	}
 	plan.Planned = true
 	if !idx.available {
-		// Snapshot file metadata was not captured. Use a bounded fallback range
-		// rather than relying on the context packet default 1-200 line reads.
+		// Snapshot file metadata was not captured. Start at line 1 and let the
+		// context packet service chunk required context until EOF.
 		plan.LineStart = 1
-		plan.LineEnd = optimisticSeedFileLineEnd
 		plan.Fallback = true
-		plan.Diagnostic = fmt.Sprintf("source snapshot file metadata unavailable; using bounded fallback range 1-%d", optimisticSeedFileLineEnd)
+		plan.Diagnostic = "source snapshot file metadata unavailable; using chunked required-file acquisition from line 1"
 		return plan
 	}
 	meta, ok := idx.files[snapshotMetaKey(repoID, path)]
@@ -1492,18 +1483,9 @@ func planSeedFileRange(repoID, path string, required bool, maxBytes int, idx sna
 		}
 		return plan
 	}
-	if meta.sizeBytes > int64(largeFileSizeThreshold) || (maxBytes > 0 && meta.sizeBytes > int64(maxBytes)) {
-		plan.Blocker = &WorkBlocker{
-			Code:        BlockerRequiredSeedFileOversized,
-			Message:     fmt.Sprintf("required seed file %s:%s is %d bytes, exceeding the safe range-planning threshold (%d) or max_bytes (%d)", repoID, path, meta.sizeBytes, largeFileSizeThreshold, maxBytes),
-			Recoverable: true,
-		}
-		return plan
-	}
-	// Metadata present, included, and small enough: explicit optimistic range.
-	// EOF-before-line_end is covered through bounded file-read behavior.
+	// Metadata present and included: explicit open-ended range. The context
+	// packet service owns deterministic chunking and EOF detection.
 	plan.LineStart = 1
-	plan.LineEnd = optimisticSeedFileLineEnd
 	return plan
 }
 
@@ -1580,7 +1562,9 @@ func buildContextPacketSeedFiles(ctxPlan ContextPlan, ctxBudget *ContextBudget, 
 		// avoid default 1-200 behavior. The same plan drives internal acquisition.
 		if plan.Planned && plan.Blocker == nil {
 			item["line_start"] = plan.LineStart
-			item["line_end"] = plan.LineEnd
+			if plan.LineEnd > 0 {
+				item["line_end"] = plan.LineEnd
+			}
 		}
 		seedFiles = append(seedFiles, item)
 	}
@@ -2207,11 +2191,13 @@ func buildCtxSeedFiles(ctxPlan ContextPlan, repoAliases map[string]string, maxBy
 			Required: requiredFlag,
 			MaxBytes: plan.MaxBytes,
 		}
-		// Add explicit line ranges for range-planned seed files to avoid default
-		// 1-200 behavior. The same plan drives the suggested action args.
+		// Add explicit start ranges for required seed files so the context
+		// packet service can chunk from the beginning until EOF.
 		if plan.Planned && plan.Blocker == nil {
 			item.LineStart = plan.LineStart
-			item.LineEnd = plan.LineEnd
+			if plan.LineEnd > 0 {
+				item.LineEnd = plan.LineEnd
+			}
 		}
 		if item.Required {
 			required = append(required, item)

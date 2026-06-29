@@ -514,7 +514,7 @@ func setupContextPacketFixture(t *testing.T, opts fixtureOptions) contextFixture
 		LocalPath:        repoRoot,
 		DefaultBranch:    "main",
 		AllowedRoots:     []string{"src"},
-		MaxFileSizeBytes: projects.MinMaxFileSizeBytes,
+		MaxFileSizeBytes: 262144,
 		Enabled:          true,
 	})
 	if err != nil {
@@ -614,6 +614,65 @@ func mustPacketRow(t *testing.T, st *store.Store, contextPacketID string) *store
 		t.Fatalf("GetContextPacketByID: %v", err)
 	}
 	return row
+}
+
+func TestCreateContextPacketRequiredLargeFileChunksUntilComplete(t *testing.T) {
+	fixture := setupContextPacketFixture(t, fixtureOptions{})
+	var b strings.Builder
+	for i := 1; i <= 1267; i++ {
+		fmt.Fprintf(&b, "schema-line-%04d\n", i)
+	}
+	writeFile(t, filepath.Join(fixture.repoRoot, "src", "canonical_packet.schema.json"), b.String())
+	runGit(t, fixture.repoRoot, "git", "add", ".")
+	runGit(t, fixture.repoRoot, "git", "commit", "-m", "add schema fixture")
+	snapshot, err := sources.NewService(fixture.store).CreateSourceSnapshot(t.Context(), sources.SourceSnapshotInput{
+		ProjectID:           "relay",
+		RepoIDs:             []string{"relay"},
+		IncludeFileMetadata: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+
+	result, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
+		ProjectID:        "relay",
+		TaskSlug:         "required-schema-chunking",
+		SourceSnapshotID: snapshot.SourceSnapshotID,
+		MaxSources:       1,
+		MaxTotalBytes:    128,
+		SeedFiles: []ContextSeedFile{{
+			RepoID:    "relay",
+			Path:      "src/canonical_packet.schema.json",
+			LineStart: 1,
+			Required:  true,
+			Reason:    "PASS-001-shaped required schema context",
+			MaxBytes:  262144,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket error: %v", err)
+	}
+	if result.Status != ContextPacketStatusCreated || result.Truncated || result.LimitHit != LimitHitNone {
+		t.Fatalf("expected complete required context despite packet limits, got %+v", result)
+	}
+	if result.SourceCount != 3 || len(result.Coverage) != 1 || len(result.Coverage[0].SourceIDs) != 3 {
+		t.Fatalf("expected one logical required seed covered by three chunks, got sources=%d coverage=%+v", result.SourceCount, result.Coverage)
+	}
+	if result.Coverage[0].Status != CoverageStatusCovered || result.Coverage[0].Truncated {
+		t.Fatalf("expected covered non-truncated required coverage, got %+v", result.Coverage[0])
+	}
+	packet := readPacketArtifact(t, result.PacketJSONPath)
+	if len(packet.Sources) != 3 {
+		t.Fatalf("expected three retained chunks, got %+v", packet.Sources)
+	}
+	for _, source := range packet.Sources {
+		if source.Truncated {
+			t.Fatalf("required chunk should be retained as non-truncated after continuation, got %+v", source)
+		}
+	}
+	if !strings.Contains(packet.Sources[2].Content, "schema-line-1267") {
+		t.Fatalf("expected final required chunk to include EOF content, got %+v", packet.Sources[2])
+	}
 }
 
 func TestCreateContextPacketRequiresAtLeastOneSourceRequest(t *testing.T) {

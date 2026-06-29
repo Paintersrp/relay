@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	defaultMaxSources    = 50
-	hardMaxSources       = 200
-	defaultMaxTotalBytes = 256 * 1024
-	hardMaxTotalBytes    = 1024 * 1024
+	defaultMaxSources      = 50
+	hardMaxSources         = 200
+	defaultMaxTotalBytes   = 256 * 1024
+	hardMaxTotalBytes      = 1024 * 1024
+	requiredFileChunkLines = 500
 
 	LimitHitMaxSources        = "max_sources"
 	LimitHitMaxTotalBytes     = "max_total_bytes"
@@ -160,6 +161,15 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			RepoID:   strings.TrimSpace(seed.RepoID),
 			Path:     strings.TrimSpace(seed.Path),
 			Reason:   strings.TrimSpace(seed.Reason),
+		}
+		if seed.Required {
+			entry, seedBlockers, err := s.readRequiredSeedFileChunks(ctx, projectID, input.SourceSnapshotID, seedID, seed, generatedAt, &builder)
+			if err != nil {
+				return err
+			}
+			blockers = append(blockers, seedBlockers...)
+			coverage = append(coverage, entry)
+			return nil
 		}
 		read, err := s.sources.ReadProjectFile(ctx, sources.BoundedFileReadInput{
 			ProjectID:        projectID,
@@ -505,6 +515,91 @@ type packetBuilder struct {
 	sources          []ContextSource
 }
 
+func (s *Service) readRequiredSeedFileChunks(ctx context.Context, projectID, sourceSnapshotID, seedID string, seed ContextSeedFile, generatedAt string, builder *packetBuilder) (ContextCoverageEntry, []sources.SourceBlocker, error) {
+	entry := ContextCoverageEntry{
+		SeedID:   seedID,
+		SeedType: "file",
+		Required: true,
+		RepoID:   strings.TrimSpace(seed.RepoID),
+		Path:     strings.TrimSpace(seed.Path),
+		Reason:   strings.TrimSpace(seed.Reason),
+	}
+	start := seed.LineStart
+	if start <= 0 {
+		start = 1
+	}
+	requestedEnd := seed.LineEnd
+	var blockers []sources.SourceBlocker
+	for {
+		chunkEnd := start + requiredFileChunkLines - 1
+		if requestedEnd > 0 && requestedEnd < chunkEnd {
+			chunkEnd = requestedEnd
+		}
+		read, err := s.sources.ReadProjectFile(ctx, sources.BoundedFileReadInput{
+			ProjectID:        projectID,
+			SourceSnapshotID: sourceSnapshotID,
+			RepoID:           seed.RepoID,
+			Path:             seed.Path,
+			LineStart:        start,
+			LineEnd:          chunkEnd,
+			MaxBytes:         seed.MaxBytes,
+		})
+		if err != nil {
+			return entry, nil, err
+		}
+		if read.SourceSnapshotID != "" {
+			builder.sourceSnapshotID = read.SourceSnapshotID
+		}
+		if len(read.Blockers) > 0 {
+			entry.Blockers = read.Blockers
+			entry.Status = CoverageStatusBlocked
+			blockers = append(blockers, read.Blockers...)
+			return entry, blockers, nil
+		}
+		if read.Content == "" {
+			if len(entry.SourceIDs) == 0 {
+				entry.Status = CoverageStatusMissing
+				entry.MissingCause = "file read returned no content"
+			} else {
+				entry.Status = CoverageStatusCovered
+			}
+			return entry, blockers, nil
+		}
+		sourceTruncated := read.Truncated && read.LineEnd < chunkEnd
+		source := ContextSource{
+			SourceID:         sourceID(SourceTypeFileRead, read.RepoID, read.Path, read.LineStart, read.LineEnd, read.SnippetHash),
+			SourceType:       SourceTypeFileRead,
+			ProjectID:        read.ProjectID,
+			RepoID:           read.RepoID,
+			SourceSnapshotID: read.SourceSnapshotID,
+			Path:             read.Path,
+			LineStart:        read.LineStart,
+			LineEnd:          read.LineEnd,
+			Content:          read.Content,
+			ContentHash:      read.ContentHash,
+			SnippetHash:      read.SnippetHash,
+			RedactionStatus:  read.RedactionStatus,
+			Truncated:        sourceTruncated,
+			GeneratedAt:      generatedAt,
+			Reason:           seed.Reason,
+		}
+		builder.addRequiredSource(source)
+		entry.SourceIDs = append(entry.SourceIDs, source.SourceID)
+		if read.Truncated {
+			if read.LineEnd >= chunkEnd {
+				start = read.LineEnd + 1
+				continue
+			}
+			entry.Status = CoverageStatusPartial
+			entry.Truncated = true
+			entry.MissingCause = "required file chunk exceeded max_bytes before completing the requested line range"
+			return entry, blockers, nil
+		}
+		entry.Status = CoverageStatusCovered
+		return entry, blockers, nil
+	}
+}
+
 func (b *packetBuilder) addSource(source ContextSource) bool {
 	if b.seen == nil {
 		b.seen = make(map[string]struct{})
@@ -528,6 +623,21 @@ func (b *packetBuilder) addSource(source ContextSource) bool {
 		b.sourceSnapshotID = source.SourceSnapshotID
 	}
 	return true
+}
+
+func (b *packetBuilder) addRequiredSource(source ContextSource) {
+	if b.seen == nil {
+		b.seen = make(map[string]struct{})
+	}
+	if _, ok := b.seen[source.SourceID]; ok {
+		return
+	}
+	b.seen[source.SourceID] = struct{}{}
+	b.sources = append(b.sources, source)
+	b.totalBytes += len([]byte(source.Content)) + len([]byte(source.Snippet))
+	if b.sourceSnapshotID == "" {
+		b.sourceSnapshotID = source.SourceSnapshotID
+	}
 }
 
 func normalizeTaskSlug(value string) string {
