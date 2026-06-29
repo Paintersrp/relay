@@ -29,10 +29,10 @@ const (
 
 	DefaultExecutorTimeout = 30 * time.Minute
 
-	ArtifactKindExecutorStdout       = "executor_stdout"
-	ArtifactKindExecutorStderr       = "executor_stderr"
-	ArtifactKindCommandLog           = "command_log"
-	ArtifactKindExecutorResult       = "executor_result"
+	ArtifactKindExecutorStdout   = "executor_stdout"
+	ArtifactKindExecutorStderr   = "executor_stderr"
+	ArtifactKindCommandLog       = "command_log"
+	ArtifactKindExecutorResult   = "executor_result"
 	ArtifactKindCodexLastMessage = "codex_last_message"
 	ArtifactKindExecutorUsage    = "executor_usage_json"
 )

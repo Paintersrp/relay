@@ -1222,7 +1222,6 @@ func TestDispatchBrief_PreflightInjectionAllowsExistingFakeRunnerTests(t *testin
 	}
 }
 
-
 func TestKiroCLIAdapter_BuildInvocationSelectedModel(t *testing.T) {
 	adapter := KiroCLIAdapter{
 		Config: KiroCLIAdapterConfig{
@@ -1675,4 +1674,3 @@ func TestKiroCLIAdapter_NormalizeResultANSI_PromptPrefix(t *testing.T) {
 		t.Errorf("expected text to contain STATUS: DONE, got %s", res.ExecutorResultText)
 	}
 }
-
