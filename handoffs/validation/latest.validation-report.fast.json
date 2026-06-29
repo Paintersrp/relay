@@ -3,58 +3,26 @@
   "report_kind": "relay_make_validate_latest",
   "validation_tier": "fast",
   "status": "failed",
-  "created_at": "2026-06-28T23:47:17Z",
-  "base_commit_short": "9e8bd864a358",
-  "base_commit_sha": "9e8bd864a3580681b733c8101b9e9388d5fefdeb",
+  "created_at": "2026-06-29T02:02:42Z",
+  "base_commit_short": "fb08b7a0c3c7",
+  "base_commit_sha": "fb08b7a0c3c77ae4699e76875e32bc417f4c66f2",
   "validated_source_snapshot": {
-    "captured_at": "2026-06-28T23:47:31.946Z",
+    "captured_at": "2026-06-29T02:03:00.286Z",
     "model": "base_commit_plus_worktree_diff_excluding_validation_report_artifacts",
     "worktree_dirty": true,
-    "diff_sha256": "055d00d5fe64ae8176686d123c0ea2ff54a9aef2513666bfa87b1c4701bf27b9",
+    "diff_sha256": "6a85f279a3dab51547f9fdbe66471ea28abb6ebbc51190d0ac3ca1e5c292e0ca",
     "diff_name_status": [
       {
-        "status": "M",
-        "path": ".githooks/pre-commit"
+        "status": "A",
+        "path": "handoffs/validation/latest.validation-report.broad.json"
+      },
+      {
+        "status": "A",
+        "path": "handoffs/validation/latest.validation-summary.broad.md"
       },
       {
         "status": "M",
-        "path": ".githooks/pre-push"
-      },
-      {
-        "status": "M",
-        "path": "AGENTS.md"
-      },
-      {
-        "status": "M",
-        "path": "docs/generated/agent-references/backend-surface.json"
-      },
-      {
-        "status": "M",
-        "path": "docs/generated/agent-references/backend-surface.md"
-      },
-      {
-        "status": "M",
-        "path": "docs/generated/agent-references/frontend-backend-contract.json"
-      },
-      {
-        "status": "M",
-        "path": "docs/generated/agent-references/frontend-backend-contract.md"
-      },
-      {
-        "status": "M",
-        "path": "docs/generated/agent-references/index.json"
-      },
-      {
-        "status": "M",
-        "path": "docs/generated/agent-references/index.md"
-      },
-      {
-        "status": "M",
-        "path": "docs/generated/agent-references/workflow-surfaces.json"
-      },
-      {
-        "status": "M",
-        "path": "docs/generated/agent-references/workflow-surfaces.md"
+        "path": "internal/artifacts/paths.go"
       },
       {
         "status": "M",
@@ -63,43 +31,31 @@
       {
         "status": "M",
         "path": "internal/executor/executor.go"
+      },
+      {
+        "status": "M",
+        "path": "internal/instructions/assets/AGENTS.md"
       }
     ],
-    "diff_stat": ".githooks/pre-commit                               |  13 +-\n .githooks/pre-push                                 |   7 +-\n AGENTS.md                                          |   6 +-\n .../agent-references/backend-surface.json          | 148 ++++++++++++++++-\n docs/generated/agent-references/backend-surface.md | 112 ++++++++++++-\n .../frontend-backend-contract.json                 |   4 +-\n .../agent-references/frontend-backend-contract.md  |   4 +-\n docs/generated/agent-references/index.json         |   4 +-\n docs/generated/agent-references/index.md           |   4 +-\n .../agent-references/workflow-surfaces.json        |   2 +-\n .../agent-references/workflow-surfaces.md          |   2 +-\n internal/executor/executor.go                      | 134 +++++++--------\n internal/executor/executor_test.go                 | 182 +++++++++++++++++++++\n 13 files changed, 517 insertions(+), 105 deletions(-)",
+    "diff_stat": ".../validation/latest.validation-report.broad.json | 100 ++++\n .../validation/latest.validation-summary.broad.md  | 129 +++++\n internal/artifacts/paths.go                        |   1 +\n internal/executor/executor.go                      | 198 +-------\n internal/executor/executor_test.go                 | 540 ---------------------\n internal/instructions/assets/AGENTS.md             |  40 ++\n 6 files changed, 276 insertions(+), 732 deletions(-)",
     "status_porcelain": [
-      "M  .githooks/pre-commit",
-      "M  .githooks/pre-push",
-      "M  AGENTS.md",
-      "M  docs/generated/agent-references/backend-surface.json",
-      "M  docs/generated/agent-references/backend-surface.md",
-      "M  docs/generated/agent-references/frontend-backend-contract.json",
-      "M  docs/generated/agent-references/frontend-backend-contract.md",
-      "M  docs/generated/agent-references/index.json",
-      "M  docs/generated/agent-references/index.md",
-      "M  docs/generated/agent-references/workflow-surfaces.json",
-      "M  docs/generated/agent-references/workflow-surfaces.md",
-      "M  internal/executor/executor_test.go",
-      "M  internal/executor/executor.go"
+      "A  handoffs/validation/latest.validation-report.broad.json",
+      "A  handoffs/validation/latest.validation-summary.broad.md",
+      "M  internal/artifacts/paths.go",
+      "M  internal/instructions/assets/AGENTS.md",
+      "MM internal/executor/executor_test.go",
+      "MM internal/executor/executor.go"
     ]
   },
   "post_report_status_porcelain": [
-    "AM handoffs/validation/latest.validation-report.fast.json",
-    "AM handoffs/validation/latest.validation-summary.fast.md",
-    "M  .githooks/pre-commit",
-    "M  .githooks/pre-push",
-    "M  AGENTS.md",
-    "M  docs/generated/agent-references/backend-surface.json",
-    "M  docs/generated/agent-references/backend-surface.md",
-    "M  docs/generated/agent-references/frontend-backend-contract.json",
-    "M  docs/generated/agent-references/frontend-backend-contract.md",
-    "M  docs/generated/agent-references/index.json",
-    "M  docs/generated/agent-references/index.md",
-    "M  docs/generated/agent-references/workflow-surfaces.json",
-    "M  docs/generated/agent-references/workflow-surfaces.md",
-    "M  handoffs/validation/latest.validation-report.json",
-    "M  handoffs/validation/latest.validation-summary.md",
-    "M  internal/executor/executor_test.go",
-    "M  internal/executor/executor.go"
+    " M handoffs/validation/latest.validation-report.fast.json",
+    " M handoffs/validation/latest.validation-summary.fast.md",
+    "A  handoffs/validation/latest.validation-report.broad.json",
+    "A  handoffs/validation/latest.validation-summary.broad.md",
+    "M  internal/artifacts/paths.go",
+    "M  internal/instructions/assets/AGENTS.md",
+    "MM internal/executor/executor_test.go",
+    "MM internal/executor/executor.go"
   ],
   "report_files": [
     "handoffs/validation/latest.validation-report.fast.json",
@@ -112,41 +68,41 @@
       "step": 1,
       "name": "go-fmt-agentrefs-executor",
       "command": "go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor",
-      "started_at": "2026-06-28T23:47:17.702Z",
-      "completed_at": "2026-06-28T23:47:18.066Z",
+      "started_at": "2026-06-29T02:02:42.068Z",
+      "completed_at": "2026-06-29T02:02:42.950Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "$ go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor\nexit_code: 0\n"
+      "output_tail": "$ go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor\ninternal\\executor\\executor.go\ninternal\\executor\\executor_test.go\nexit_code: 0\n"
     },
     {
       "step": 2,
       "name": "go-test-agentrefs",
       "command": "go test ./internal/agentrefs/... ./cmd/agentrefs/...",
-      "started_at": "2026-06-28T23:47:18.067Z",
-      "completed_at": "2026-06-28T23:47:21.592Z",
+      "started_at": "2026-06-29T02:02:42.951Z",
+      "completed_at": "2026-06-29T02:02:47.986Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "$ go test ./internal/agentrefs/... ./cmd/agentrefs/...\nok  \trelay/internal/agentrefs\t1.766s\nok  \trelay/cmd/agentrefs\t1.428s\nexit_code: 0\n"
+      "output_tail": "$ go test ./internal/agentrefs/... ./cmd/agentrefs/...\nok  \trelay/internal/agentrefs\t2.387s\nok  \trelay/cmd/agentrefs\t2.125s\nexit_code: 0\n"
     },
     {
       "step": 3,
       "name": "agentrefs-check",
       "command": "go run ./cmd/agentrefs check",
-      "started_at": "2026-06-28T23:47:21.593Z",
-      "completed_at": "2026-06-28T23:47:22.360Z",
+      "started_at": "2026-06-29T02:02:47.987Z",
+      "completed_at": "2026-06-29T02:02:49.773Z",
       "exit_code": 1,
       "status": "failed",
-      "output_tail": "$ go run ./cmd/agentrefs check\ndocs/generated/agent-references/index.json: stale\ndocs/generated/agent-references/index.md: stale\n2026/06/28 19:47:22 found 2 stale or missing output(s)\nexit status 1\nexit_code: 1\n"
+      "output_tail": "$ go run ./cmd/agentrefs check\ndocs/generated/agent-references/index.json: stale\ndocs/generated/agent-references/index.md: stale\n2026/06/28 22:02:49 found 2 stale or missing output(s)\nexit status 1\nexit_code: 1\n"
     },
     {
       "step": 4,
       "name": "go-test-executor",
       "command": "go test ./internal/executor/...",
-      "started_at": "2026-06-28T23:47:22.360Z",
-      "completed_at": "2026-06-28T23:47:31.945Z",
+      "started_at": "2026-06-29T02:02:49.773Z",
+      "completed_at": "2026-06-29T02:03:00.286Z",
       "exit_code": 1,
       "status": "failed",
-      "output_tail": "2026/06/28 19:47:31 OK   20260624000200_plan_attempts_intent_drift.sql (16.3ms)\n2026/06/28 19:47:31 OK   20260626000500_plan_review_settings.sql (7.43ms)\n2026/06/28 19:47:31 OK   20260627000100_plan_seeds.sql (7.32ms)\n2026/06/28 19:47:31 goose: successfully migrated database to version: 20260627000100\ntime=2026-06-28T19:47:31.521-04:00 level=INFO msg=\"executor: dispatching from executor_brief.md\" run_id=1 exec_id=1 model=claude-sonnet-4.6\ntime=2026-06-28T19:47:31.555-04:00 level=WARN msg=\"executor: failed to write kiro parse fixture\" error=\"unknown artifact kind: kiro_parse_fixture_json\"\n--- FAIL: TestKiroParseFixture_EmittedOnNonzeroExit (0.31s)\n    executor_test.go:2131: expected kiro_parse_fixture_json artifact on nonzero exit when flag enabled\n2026/06/28 19:47:31 OK   00001_init.sql (8.18ms)\n2026/06/28 19:47:31 OK   00002_repo_roots.sql (8.98ms)\n2026/06/28 19:47:31 OK   00003_agent_executions.sql (7.77ms)\n2026/06/28 19:47:31 OK   00004_validation_executions.sql (6.34ms)\n2026/06/28 19:47:31 OK   00005_add_executor_adapter_to_runs.sql (6.27ms)\n2026/06/28 19:47:31 OK   00006_create_plans_and_plan_passes.sql (7.49ms)\n2026/06/28 19:47:31 OK   00007_add_run_plan_pass_association.sql (8.47ms)\n2026/06/28 19:47:31 OK   00008_projects_registry.sql (7.87ms)\n2026/06/28 19:47:31 OK   00009_source_snapshots.sql (11.6ms)\n2026/06/28 19:47:31 OK   00010_context_packets.sql (8.46ms)\n2026/06/28 19:47:31 OK   00011_plan_v2_fields.sql (14.11ms)\n2026/06/28 19:47:31 OK   00012_run_submission_provenance.sql (7.14ms)\n2026/06/28 19:47:31 OK   00013_project_context_memory.sql (8.12ms)\n2026/06/28 19:47:31 OK   00014_context_packets_schema_repair.go (6.35ms)\n2026/06/28 19:47:31 OK   00015_local_audits.sql (6.98ms)\n2026/06/28 19:47:31 OK   00016_project_owned_plans.sql (16.9ms)\n2026/06/28 19:47:31 OK   00017_refactor_backlog.sql (10.52ms)\n2026/06/28 19:47:31 OK   20260624000200_plan_attempts_intent_drift.sql (15.57ms)\n2026/06/28 19:47:31 OK   20260626000500_plan_review_settings.sql (8.31ms)\n2026/06/28 19:47:31 OK   20260627000100_plan_seeds.sql (7.11ms)\n2026/06/28 19:47:31 goose: successfully migrated database to version: 20260627000100\ntime=2026-06-28T19:47:31.825-04:00 level=INFO msg=\"executor: dispatching from executor_brief.md\" run_id=1 exec_id=1 model=claude-sonnet-4.6\ntime=2026-06-28T19:47:31.859-04:00 level=WARN msg=\"executor: failed to write kiro parse fixture\" error=\"unknown artifact kind: kiro_parse_fixture_json\"\n--- FAIL: TestKiroParseFixture_EmittedOnTimeout (0.28s)\n    executor_test.go:2214: expected kiro_parse_fixture_json artifact on timeout when flag enabled\n--- FAIL: TestParser_ANSI_PromptPrefix (0.00s)\n    progress_parser_test.go:360: event message should not start with >: \"> STATUS: DONE\"\nFAIL\nFAIL\trelay/internal/executor\t8.126s\nFAIL\nexit_code: 1\n"
+      "output_tail": "2026/06/28 22:02:58 OK   00012_run_submission_provenance.sql (7.27ms)\n2026/06/28 22:02:58 OK   00013_project_context_memory.sql (9.14ms)\n2026/06/28 22:02:58 OK   00014_context_packets_schema_repair.go (6.09ms)\n2026/06/28 22:02:58 OK   00015_local_audits.sql (8.38ms)\n2026/06/28 22:02:58 OK   00016_project_owned_plans.sql (17.19ms)\n2026/06/28 22:02:58 OK   00017_refactor_backlog.sql (10.77ms)\n2026/06/28 22:02:58 OK   20260624000200_plan_attempts_intent_drift.sql (19.88ms)\n2026/06/28 22:02:58 OK   20260626000500_plan_review_settings.sql (9.04ms)\n2026/06/28 22:02:58 OK   20260627000100_plan_seeds.sql (7.72ms)\n2026/06/28 22:02:58 goose: successfully migrated database to version: 20260627000100\ntime=2026-06-28T22:02:58.243-04:00 level=INFO msg=\"executor: dispatching from executor_brief.md\" run_id=1 exec_id=1 model=\"\"\n2026/06/28 22:02:59 OK   00001_init.sql (10.84ms)\n2026/06/28 22:02:59 OK   00002_repo_roots.sql (16.55ms)\n2026/06/28 22:02:59 OK   00003_agent_executions.sql (10.6ms)\n2026/06/28 22:02:59 OK   00004_validation_executions.sql (13.41ms)\n2026/06/28 22:02:59 OK   00005_add_executor_adapter_to_runs.sql (23.19ms)\n2026/06/28 22:02:59 OK   00006_create_plans_and_plan_passes.sql (10.61ms)\n2026/06/28 22:02:59 OK   00007_add_run_plan_pass_association.sql (19.54ms)\n2026/06/28 22:02:59 OK   00008_projects_registry.sql (10.53ms)\n2026/06/28 22:02:59 OK   00009_source_snapshots.sql (11.17ms)\n2026/06/28 22:03:00 OK   00010_context_packets.sql (11.31ms)\n2026/06/28 22:03:00 OK   00011_plan_v2_fields.sql (20.18ms)\n2026/06/28 22:03:00 OK   00012_run_submission_provenance.sql (8.09ms)\n2026/06/28 22:03:00 OK   00013_project_context_memory.sql (8.66ms)\n2026/06/28 22:03:00 OK   00014_context_packets_schema_repair.go (6.97ms)\n2026/06/28 22:03:00 OK   00015_local_audits.sql (9.48ms)\n2026/06/28 22:03:00 OK   00016_project_owned_plans.sql (16.52ms)\n2026/06/28 22:03:00 OK   00017_refactor_backlog.sql (12.04ms)\n2026/06/28 22:03:00 OK   20260624000200_plan_attempts_intent_drift.sql (16.18ms)\n2026/06/28 22:03:00 OK   20260626000500_plan_review_settings.sql (8.51ms)\n2026/06/28 22:03:00 OK   20260627000100_plan_seeds.sql (7.53ms)\n2026/06/28 22:03:00 goose: successfully migrated database to version: 20260627000100\ntime=2026-06-28T22:03:00.163-04:00 level=INFO msg=\"executor: dispatching from executor_brief.md\" run_id=1 exec_id=1 model=claude-sonnet-4.6\n--- FAIL: TestParser_ANSI_PromptPrefix (0.00s)\n    progress_parser_test.go:360: event message should not start with >: \"> STATUS: DONE\"\nFAIL\nFAIL\trelay/internal/executor\t8.386s\nFAIL\nexit_code: 1\n"
     }
   ]
 }
