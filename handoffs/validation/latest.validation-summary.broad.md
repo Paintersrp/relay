@@ -2,10 +2,10 @@
 
 - status: failed
 - validation_tier: broad
-- base_commit: fb08b7a0c3c77ae4699e76875e32bc417f4c66f2
-- validated_source_snapshot: 880f4d74cb06734e20229f733c958d6b80bdd99a70bc1a15e4689e354f73ffa9
+- base_commit: b3a4ff4bca6c50969b3d44da848577dc3d9a86a7
+- validated_source_snapshot: fc015b3d4c15bfac5022c70b8a4d02474fd404cbad6cdecad2fde58c5f39660e
 - worktree_dirty: false
-- created_at: 2026-06-28T23:47:52Z
+- created_at: 2026-06-29T02:03:50Z
 
 ## Validated source changes
 
@@ -31,7 +31,7 @@ No source changes relative to base commit.
 $ go run ./cmd/agentrefs check
 docs/generated/agent-references/index.json: stale
 docs/generated/agent-references/index.md: stale
-2026/06/28 19:47:53 found 2 stale or missing output(s)
+2026/06/28 22:03:52 found 2 stale or missing output(s)
 exit status 1
 exit_code: 1
 
@@ -40,43 +40,43 @@ exit_code: 1
 ### go-test-executor
 
 ```text
-2026/06/28 19:48:02 OK   20260624000200_plan_attempts_intent_drift.sql (16.78ms)
-2026/06/28 19:48:03 OK   20260626000500_plan_review_settings.sql (14.87ms)
-2026/06/28 19:48:03 OK   20260627000100_plan_seeds.sql (9.79ms)
-2026/06/28 19:48:03 goose: successfully migrated database to version: 20260627000100
-time=2026-06-28T19:48:03.052-04:00 level=INFO msg="executor: dispatching from executor_brief.md" run_id=1 exec_id=1 model=claude-sonnet-4.6
-time=2026-06-28T19:48:03.088-04:00 level=WARN msg="executor: failed to write kiro parse fixture" error="unknown artifact kind: kiro_parse_fixture_json"
---- FAIL: TestKiroParseFixture_EmittedOnNonzeroExit (0.35s)
-    executor_test.go:2131: expected kiro_parse_fixture_json artifact on nonzero exit when flag enabled
-2026/06/28 19:48:03 OK   00001_init.sql (8.76ms)
-2026/06/28 19:48:03 OK   00002_repo_roots.sql (8.03ms)
-2026/06/28 19:48:03 OK   00003_agent_executions.sql (6.42ms)
-2026/06/28 19:48:03 OK   00004_validation_executions.sql (6.88ms)
-2026/06/28 19:48:03 OK   00005_add_executor_adapter_to_runs.sql (6.29ms)
-2026/06/28 19:48:03 OK   00006_create_plans_and_plan_passes.sql (11.6ms)
-2026/06/28 19:48:03 OK   00007_add_run_plan_pass_association.sql (7.35ms)
-2026/06/28 19:48:03 OK   00008_projects_registry.sql (7.42ms)
-2026/06/28 19:48:03 OK   00009_source_snapshots.sql (8.51ms)
-2026/06/28 19:48:03 OK   00010_context_packets.sql (9.02ms)
-2026/06/28 19:48:03 OK   00011_plan_v2_fields.sql (15.94ms)
-2026/06/28 19:48:03 OK   00012_run_submission_provenance.sql (12.38ms)
-2026/06/28 19:48:03 OK   00013_project_context_memory.sql (8.3ms)
-2026/06/28 19:48:03 OK   00014_context_packets_schema_repair.go (6.36ms)
-2026/06/28 19:48:03 OK   00015_local_audits.sql (7.37ms)
-2026/06/28 19:48:03 OK   00016_project_owned_plans.sql (15.31ms)
-2026/06/28 19:48:03 OK   00017_refactor_backlog.sql (10.66ms)
-2026/06/28 19:48:03 OK   20260624000200_plan_attempts_intent_drift.sql (15.55ms)
-2026/06/28 19:48:03 OK   20260626000500_plan_review_settings.sql (11.59ms)
-2026/06/28 19:48:03 OK   20260627000100_plan_seeds.sql (7.91ms)
-2026/06/28 19:48:03 goose: successfully migrated database to version: 20260627000100
-time=2026-06-28T19:48:03.358-04:00 level=INFO msg="executor: dispatching from executor_brief.md" run_id=1 exec_id=1 model=claude-sonnet-4.6
-time=2026-06-28T19:48:03.391-04:00 level=WARN msg="executor: failed to write kiro parse fixture" error="unknown artifact kind: kiro_parse_fixture_json"
---- FAIL: TestKiroParseFixture_EmittedOnTimeout (0.30s)
-    executor_test.go:2214: expected kiro_parse_fixture_json artifact on timeout when flag enabled
+2026/06/28 22:04:01 OK   00012_run_submission_provenance.sql (7.64ms)
+2026/06/28 22:04:01 OK   00013_project_context_memory.sql (8.3ms)
+2026/06/28 22:04:01 OK   00014_context_packets_schema_repair.go (7.37ms)
+2026/06/28 22:04:01 OK   00015_local_audits.sql (8.36ms)
+2026/06/28 22:04:01 OK   00016_project_owned_plans.sql (18.64ms)
+2026/06/28 22:04:01 OK   00017_refactor_backlog.sql (11.53ms)
+2026/06/28 22:04:01 OK   20260624000200_plan_attempts_intent_drift.sql (17.26ms)
+2026/06/28 22:04:01 OK   20260626000500_plan_review_settings.sql (7.98ms)
+2026/06/28 22:04:01 OK   20260627000100_plan_seeds.sql (7.89ms)
+2026/06/28 22:04:01 goose: successfully migrated database to version: 20260627000100
+time=2026-06-28T22:04:01.469-04:00 level=INFO msg="executor: dispatching from executor_brief.md" run_id=1 exec_id=1 model=""
+2026/06/28 22:04:01 OK   00001_init.sql (8.52ms)
+2026/06/28 22:04:01 OK   00002_repo_roots.sql (7.88ms)
+2026/06/28 22:04:01 OK   00003_agent_executions.sql (6.91ms)
+2026/06/28 22:04:01 OK   00004_validation_executions.sql (6.86ms)
+2026/06/28 22:04:01 OK   00005_add_executor_adapter_to_runs.sql (6.71ms)
+2026/06/28 22:04:01 OK   00006_create_plans_and_plan_passes.sql (7.95ms)
+2026/06/28 22:04:01 OK   00007_add_run_plan_pass_association.sql (8.92ms)
+2026/06/28 22:04:01 OK   00008_projects_registry.sql (8.04ms)
+2026/06/28 22:04:01 OK   00009_source_snapshots.sql (9.62ms)
+2026/06/28 22:04:01 OK   00010_context_packets.sql (10.2ms)
+2026/06/28 22:04:01 OK   00011_plan_v2_fields.sql (14.92ms)
+2026/06/28 22:04:01 OK   00012_run_submission_provenance.sql (7.17ms)
+2026/06/28 22:04:01 OK   00013_project_context_memory.sql (10.47ms)
+2026/06/28 22:04:01 OK   00014_context_packets_schema_repair.go (7.27ms)
+2026/06/28 22:04:01 OK   00015_local_audits.sql (9.07ms)
+2026/06/28 22:04:01 OK   00016_project_owned_plans.sql (16.8ms)
+2026/06/28 22:04:01 OK   00017_refactor_backlog.sql (11.27ms)
+2026/06/28 22:04:01 OK   20260624000200_plan_attempts_intent_drift.sql (16.38ms)
+2026/06/28 22:04:01 OK   20260626000500_plan_review_settings.sql (8.72ms)
+2026/06/28 22:04:01 OK   20260627000100_plan_seeds.sql (7.4ms)
+2026/06/28 22:04:01 goose: successfully migrated database to version: 20260627000100
+time=2026-06-28T22:04:01.803-04:00 level=INFO msg="executor: dispatching from executor_brief.md" run_id=1 exec_id=1 model=claude-sonnet-4.6
 --- FAIL: TestParser_ANSI_PromptPrefix (0.00s)
     progress_parser_test.go:360: event message should not start with >: "> STATUS: DONE"
 FAIL
-FAIL	relay/internal/executor	8.635s
+FAIL	relay/internal/executor	7.526s
 FAIL
 exit_code: 1
 
@@ -85,42 +85,42 @@ exit_code: 1
 ### go-test-all
 
 ```text
-2026/06/28 19:48:45 OK   00014_context_packets_schema_repair.go (13ms)
-2026/06/28 19:48:45 OK   00015_local_audits.sql (32.37ms)
-2026/06/28 19:48:45 OK   00016_project_owned_plans.sql (28.13ms)
-2026/06/28 19:48:45 OK   00017_refactor_backlog.sql (23.13ms)
-2026/06/28 19:48:45 OK   20260624000200_plan_attempts_intent_drift.sql (38.97ms)
-2026/06/28 19:48:45 OK   20260626000500_plan_review_settings.sql (19.96ms)
-2026/06/28 19:48:45 OK   20260627000100_plan_seeds.sql (17.63ms)
-2026/06/28 19:48:45 goose: successfully migrated database to version: 20260627000100
-time=2026-06-28T19:48:45.489-04:00 level=INFO msg="executor: dispatching from executor_brief.md" run_id=1 exec_id=1 model=claude-sonnet-4.6
-time=2026-06-28T19:48:45.763-04:00 level=WARN msg="executor: failed to write kiro parse fixture" error="unknown artifact kind: kiro_parse_fixture_json"
---- FAIL: TestKiroParseFixture_EmittedOnTimeout (1.01s)
-    executor_test.go:2214: expected kiro_parse_fixture_json artifact on timeout when flag enabled
+2026/06/28 22:04:43 OK   00008_projects_registry.sql (18.04ms)
+2026/06/28 22:04:43 OK   00009_source_snapshots.sql (19.27ms)
+2026/06/28 22:04:43 OK   00010_context_packets.sql (22.67ms)
+2026/06/28 22:04:43 OK   00011_plan_v2_fields.sql (32.85ms)
+2026/06/28 22:04:43 OK   00012_run_submission_provenance.sql (16.43ms)
+2026/06/28 22:04:43 OK   00013_project_context_memory.sql (21.6ms)
+2026/06/28 22:04:43 OK   00014_context_packets_schema_repair.go (19.73ms)
+2026/06/28 22:04:43 OK   00015_local_audits.sql (18.45ms)
+2026/06/28 22:04:43 OK   00016_project_owned_plans.sql (29.28ms)
+2026/06/28 22:04:43 OK   00017_refactor_backlog.sql (39ms)
+2026/06/28 22:04:43 OK   20260624000200_plan_attempts_intent_drift.sql (39.34ms)
+2026/06/28 22:04:43 OK   20260626000500_plan_review_settings.sql (19ms)
+2026/06/28 22:04:43 OK   20260627000100_plan_seeds.sql (20.59ms)
+2026/06/28 22:04:43 goose: successfully migrated database to version: 20260627000100
+time=2026-06-28T22:04:43.596-04:00 level=INFO msg="executor: dispatching from executor_brief.md" run_id=1 exec_id=1 model=claude-sonnet-4.6
 --- FAIL: TestParser_ANSI_PromptPrefix (0.00s)
     progress_parser_test.go:360: event message should not start with >: "> STATUS: DONE"
 FAIL
-FAIL	relay/internal/executor	32.484s
-ok  	relay/internal/handlers	21.727s
---- FAIL: TestRootAGENTSMDMatchesCanonical (0.00s)
-    instructions_test.go:74: root AGENTS.md does not match canonical assets/AGENTS.md
-FAIL
-FAIL	relay/internal/instructions	0.531s
-ok  	relay/internal/intake	(cached)
-ok  	relay/internal/mcp	53.549s
-ok  	relay/internal/pipeline	3.692s
+FAIL	relay/internal/executor	25.338s
+ok  	relay/internal/handlers	19.414s
+ok  	relay/internal/instructions	1.159s
+ok  	relay/internal/intake	9.940s
+ok  	relay/internal/mcp	56.432s
+ok  	relay/internal/pipeline	(cached)
 ok  	relay/internal/projectmemory	(cached)
-ok  	relay/internal/refactors	(cached)
-ok  	relay/internal/renderer	(cached)
-ok  	relay/internal/repairer	4.842s
-ok  	relay/internal/repos	23.117s
-ok  	relay/internal/server	(cached)
-ok  	relay/internal/smoke	12.970s
-ok  	relay/internal/sources	33.356s
+ok  	relay/internal/refactors	38.470s
+ok  	relay/internal/renderer	4.814s
+ok  	relay/internal/repairer	4.838s
+ok  	relay/internal/repos	(cached)
+ok  	relay/internal/server	6.924s
+ok  	relay/internal/smoke	9.207s
+ok  	relay/internal/sources	(cached)
 ok  	relay/internal/store	(cached)
 ?   	relay/internal/store/generated	[no test files]
 ok  	relay/internal/validation	(cached)
-ok  	relay/internal/validationrunner	1.785s
+ok  	relay/internal/validationrunner	2.111s
 ok  	relay/internal/views	(cached)
 FAIL
 exit_code: 1
