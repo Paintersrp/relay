@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -356,6 +357,66 @@ func TestRenderer(t *testing.T) {
 		briefText := string(briefBytes)
 		if strings.Contains(briefText, "planner_context") || strings.Contains(briefText, "audit_seed") {
 			t.Error("rendered brief contains planner_context or audit_seed")
+		}
+	})
+
+	t.Run("Validation commands split required and advisory sections", func(t *testing.T) {
+		packet := make(map[string]interface{})
+		for k, v := range validPacket {
+			packet[k] = v
+		}
+		execPayload := make(map[string]interface{})
+		for k, v := range validPacket["execution_payload"].(map[string]interface{}) {
+			execPayload[k] = v
+		}
+		execPayload["validation_contract"] = map[string]interface{}{
+			"mode":           "commands",
+			"failure_policy": "block",
+			"commands": []interface{}{
+				map[string]interface{}{
+					"id":               "V1",
+					"command":          "go test ./internal/renderer",
+					"required":         true,
+					"purpose":          "Affected-area renderer regression coverage.",
+					"success_signal":   "Command exits 0.",
+					"failure_handling": "attempt_fix_once_then_block",
+				},
+				map[string]interface{}{
+					"id":               "V2",
+					"command":          "make validate",
+					"required":         false,
+					"purpose":          "Advisory final validation evidence.",
+					"success_signal":   "Command exits 0 and writes full validation evidence.",
+					"failure_handling": "report_if_fails",
+				},
+			},
+		}
+		packet["execution_payload"] = execPayload
+
+		templateBytes, err := os.ReadFile(locateTemplateFile("handoffs/templates/executor_brief_template.md"))
+		if err != nil {
+			t.Fatalf("failed to read executor brief template: %v", err)
+		}
+		briefText, err := renderTemplate(string(templateBytes), packet)
+		if err != nil {
+			t.Fatalf("failed to render template: %v", err)
+		}
+
+		requiredHeading := strings.Index(briefText, "Required Executor validation commands:")
+		advisoryHeading := strings.Index(briefText, "Advisory/final validation evidence:")
+		if requiredHeading == -1 || advisoryHeading == -1 {
+			t.Fatalf("expected required and advisory validation sections, got:\n%s", briefText)
+		}
+		requiredSection := briefText[requiredHeading:advisoryHeading]
+		advisorySection := briefText[advisoryHeading:]
+		if !strings.Contains(requiredSection, "go test ./internal/renderer") {
+			t.Fatalf("required command missing from required section:\n%s", requiredSection)
+		}
+		if strings.Contains(requiredSection, "make validate") {
+			t.Fatalf("advisory full validation rendered as required:\n%s", requiredSection)
+		}
+		if !strings.Contains(advisorySection, "make validate") || !strings.Contains(advisorySection, "not pass-local Executor-required work") {
+			t.Fatalf("advisory command or guidance missing from advisory section:\n%s", advisorySection)
 		}
 	})
 

@@ -352,6 +352,10 @@ func TestCompiler(t *testing.T) {
 		if got := exec["goal"]; got != "Compile structured compiler input YAML into a canonical packet." {
 			t.Fatalf("goal was not populated from YAML, got %q", got)
 		}
+		nonGoals, ok := exec["non_goals"].([]interface{})
+		if !ok || len(nonGoals) != 1 || nonGoals[0] != "Do not change the canonical packet schema." {
+			t.Fatalf("non_goals were not mapped from YAML: %+v", exec["non_goals"])
+		}
 
 		targets, ok := exec["file_targets"].([]interface{})
 		if !ok || len(targets) != 1 {
@@ -392,12 +396,31 @@ func TestCompiler(t *testing.T) {
 			t.Fatal("validation_contract missing")
 		}
 		cmds, ok := contract["commands"].([]interface{})
-		if !ok || len(cmds) != 1 {
-			t.Fatalf("expected one YAML validation command, got %+v", contract["commands"])
+		if !ok || len(cmds) != 2 {
+			t.Fatalf("expected two YAML validation commands, got %+v", contract["commands"])
 		}
-		cmd := cmds[0].(map[string]interface{})
-		if cmd["id"] != "V1" || cmd["command"] != "go test ./internal/compiler" || cmd["failure_handling"] != "block_if_fails" {
-			t.Fatalf("validation command was not mapped from YAML: %+v", cmd)
+		requiredCmd := cmds[0].(map[string]interface{})
+		if requiredCmd["id"] != "V1" || requiredCmd["command"] != "go test ./internal/compiler" || requiredCmd["required"] != true || requiredCmd["failure_handling"] != "block_if_fails" {
+			t.Fatalf("required validation command was not mapped from YAML: %+v", requiredCmd)
+		}
+		if requiredCmd["purpose"] != "Verify compiler parser regression coverage." ||
+			requiredCmd["success_signal"] != "Command exits 0." {
+			t.Fatalf("required validation command metadata was not preserved: %+v", requiredCmd)
+		}
+		advisoryCmd := cmds[1].(map[string]interface{})
+		if advisoryCmd["id"] != "V2" || advisoryCmd["command"] != "make validate" || advisoryCmd["required"] != false {
+			t.Fatalf("advisory validation command required flag was not preserved: %+v", advisoryCmd)
+		}
+		if advisoryCmd["purpose"] != "Advisory final/full validation compatibility evidence." ||
+			advisoryCmd["success_signal"] != "Command exits 0 and writes full validation evidence." ||
+			advisoryCmd["failure_handling"] != "report_if_fails" {
+			t.Fatalf("advisory validation command metadata was not preserved: %+v", advisoryCmd)
+		}
+		for _, cmdVal := range cmds {
+			cmd := cmdVal.(map[string]interface{})
+			if cmd["command"] == "make validate-fast" {
+				t.Fatalf("unexpected default full/fast validation injection: %+v", cmds)
+			}
 		}
 
 		completion, ok := exec["completion_contract"].(map[string]interface{})

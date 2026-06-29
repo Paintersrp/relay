@@ -701,6 +701,13 @@ func renderTemplate(tmpl string, packet map[string]interface{}) (string, error) 
 			renderCtx["validation_contract_is_external"] = mode == "external"
 			renderCtx["validation_contract_is_not_applicable"] = mode == "not_applicable"
 			renderCtx["validation_contract_is_deferred"] = mode == "deferred"
+			if mode == "commands" {
+				requiredCommands, advisoryCommands := splitValidationCommands(contract["commands"])
+				renderCtx["required_validation_commands"] = requiredCommands
+				renderCtx["advisory_validation_commands"] = advisoryCommands
+				renderCtx["has_required_validation_commands"] = len(requiredCommands) > 0
+				renderCtx["has_advisory_validation_commands"] = len(advisoryCommands) > 0
+			}
 		}
 	}
 
@@ -715,4 +722,25 @@ func renderTemplate(tmpl string, packet map[string]interface{}) (string, error) 
 		sb.WriteString(res)
 	}
 	return sb.String(), nil
+}
+
+func splitValidationCommands(raw interface{}) ([]interface{}, []interface{}) {
+	commands, ok := raw.([]interface{})
+	if !ok {
+		return nil, nil
+	}
+	requiredCommands := make([]interface{}, 0, len(commands))
+	advisoryCommands := make([]interface{}, 0, len(commands))
+	for _, command := range commands {
+		required := false
+		if commandMap, ok := command.(map[string]interface{}); ok {
+			required, _ = commandMap["required"].(bool)
+		}
+		if required {
+			requiredCommands = append(requiredCommands, command)
+		} else {
+			advisoryCommands = append(advisoryCommands, command)
+		}
+	}
+	return requiredCommands, advisoryCommands
 }

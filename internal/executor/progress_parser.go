@@ -36,6 +36,14 @@ func stripANSI(text string) string {
 	return text
 }
 
+func stripPromptPrefix(text string) string {
+	trimmedLeft := strings.TrimLeft(text, " \t")
+	if strings.HasPrefix(trimmedLeft, ">") {
+		return strings.TrimLeft(strings.TrimPrefix(trimmedLeft, ">"), " \t")
+	}
+	return text
+}
+
 func (p *progressParser) feed(chunk []byte) []ExecutorProgressEvent {
 	p.buf.Write(chunk)
 	return p.drainCompleteLines()
@@ -97,6 +105,7 @@ func parseOneLine(line []byte) []ExecutorProgressEvent {
 
 	// Strip ANSI control sequences before processing
 	text := stripANSI(string(trimmed))
+	text = stripPromptPrefix(text)
 	if text == "" {
 		return nil
 	}

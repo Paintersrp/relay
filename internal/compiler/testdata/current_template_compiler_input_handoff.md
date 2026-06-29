@@ -76,6 +76,12 @@ compiler_input:
         purpose: "Verify compiler parser regression coverage."
         success_signal: "Command exits 0."
         failure_handling: "block_if_fails"
+      - id: "CHECK-2"
+        command: "make validate"
+        required: false
+        purpose: "Advisory final/full validation compatibility evidence."
+        success_signal: "Command exits 0 and writes full validation evidence."
+        failure_handling: "report_if_fails"
   completion_contract:
     done_when:
       - "The YAML-only fixture compiles successfully."
