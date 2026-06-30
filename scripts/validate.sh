@@ -11,6 +11,8 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
+# Scope: tier | touched | changed (default: tier)
+RELAY_VALIDATE_SCOPE="${RELAY_VALIDATE_SCOPE:-tier}"
 # Tier: fast | broad | full (default: full)
 RELAY_VALIDATE_TIER="${RELAY_VALIDATE_TIER:-full}"
 
@@ -18,37 +20,48 @@ TRACKED_DIR="${RELAY_VALIDATE_TRACKED_DIR:-handoffs/validation}"
 TRACKED_JSON="${TRACKED_DIR}/latest.validation-report.json"
 TRACKED_MD="${TRACKED_DIR}/latest.validation-summary.md"
 
-case "$RELAY_VALIDATE_TIER" in
-  fast)
-    TIER_JSON="${TRACKED_DIR}/latest.validation-report.fast.json"
-    TIER_MD="${TRACKED_DIR}/latest.validation-summary.fast.md"
+case "$RELAY_VALIDATE_SCOPE" in
+  tier)
+    case "$RELAY_VALIDATE_TIER" in
+      fast)
+        TIER_JSON="${TRACKED_DIR}/latest.validation-report.fast.json"
+        TIER_MD="${TRACKED_DIR}/latest.validation-summary.fast.md"
+        ;;
+      broad)
+        TIER_JSON="${TRACKED_DIR}/latest.validation-report.broad.json"
+        TIER_MD="${TRACKED_DIR}/latest.validation-summary.broad.md"
+        ;;
+      full)
+        TIER_JSON="$TRACKED_JSON"
+        TIER_MD="$TRACKED_MD"
+        ;;
+      *)
+        echo "Unknown validation tier: $RELAY_VALIDATE_TIER (expected: fast, broad, full)" >&2
+        exit 1
+        ;;
+    esac
     ;;
-  broad)
-    TIER_JSON="${TRACKED_DIR}/latest.validation-report.broad.json"
-    TIER_MD="${TRACKED_DIR}/latest.validation-summary.broad.md"
-    ;;
-  full)
-    TIER_JSON="$TRACKED_JSON"
-    TIER_MD="$TRACKED_MD"
+  touched|changed)
+    TIER_JSON="${TRACKED_DIR}/latest.validation-report.${RELAY_VALIDATE_SCOPE}.json"
+    TIER_MD="${TRACKED_DIR}/latest.validation-summary.${RELAY_VALIDATE_SCOPE}.md"
     ;;
   *)
-    echo "Unknown validation tier: $RELAY_VALIDATE_TIER (expected: fast, broad, full)" >&2
+    echo "Unknown validation scope: $RELAY_VALIDATE_SCOPE (expected: tier, touched, changed)" >&2
     exit 1
     ;;
 esac
 
 mkdir -p "$TRACKED_DIR"
 
-node - "$TIER_JSON" "$TIER_MD" "$TRACKED_JSON" "$TRACKED_MD" "$RELAY_VALIDATE_TIER" <<'NODE'
+node - "$TIER_JSON" "$TIER_MD" "$TRACKED_JSON" "$TRACKED_MD" "$RELAY_VALIDATE_TIER" "$RELAY_VALIDATE_SCOPE" <<'NODE'
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const { spawnSync } = require('child_process')
 
-const [tierJsonPath, tierMdPath, fullJsonPath, fullMdPath, tier] = process.argv.slice(2)
+const [tierJsonPath, tierMdPath, fullJsonPath, fullMdPath, tier, scope] = process.argv.slice(2)
 const repoRoot = process.cwd()
 
-// Fast: deterministic formatting/freshness/unit checks for affected surfaces
 const fastCommands = [
   { step: 1, name: 'go-fmt-agentrefs-executor', command: 'go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor', argv: ['go', ['fmt', './cmd/agentrefs', './internal/agentrefs', './internal/executor']] },
   { step: 2, name: 'go-test-agentrefs', command: 'go test ./internal/agentrefs/... ./cmd/agentrefs/...', argv: ['go', ['test', './internal/agentrefs/...', './cmd/agentrefs/...']] },
@@ -56,7 +69,6 @@ const fastCommands = [
   { step: 4, name: 'go-test-executor', command: 'go test ./internal/executor/...', argv: ['go', ['test', './internal/executor/...']] },
 ]
 
-// Broad: fast + broader Go/web checks
 const broadCommands = [
   ...fastCommands,
   { step: 5, name: 'go-test-all', command: 'go test ./...', argv: ['go', ['test', './...']] },
@@ -64,7 +76,6 @@ const broadCommands = [
   { step: 7, name: 'web-test', command: 'cd apps/web && npm run test', shell: true },
 ]
 
-// Full: broad + final build coverage
 const fullCommands = [
   ...broadCommands,
   { step: 8, name: 'web-build', command: 'cd apps/web && npm run build', shell: true },
@@ -72,7 +83,6 @@ const fullCommands = [
 ]
 
 const commandsByTier = { fast: fastCommands, broad: broadCommands, full: fullCommands }
-const commandsToRun = commandsByTier[tier] || fullCommands
 
 function redactCommandOutput(value) {
   return String(value ?? '')
@@ -87,10 +97,15 @@ function normalizeRepoPath(value) {
 }
 
 function normalizeInputPath(value) {
-  return String(value).replace(/\\/g, '/')
+  return String(value).replace(/\\/g, '/').replace(/^\.\//, '')
 }
 
-// Exclude all tier artifact paths from source snapshot
+const reportArtifactPattern = /^handoffs\/validation\/latest\.validation-(?:report|summary)(?:\.[^.\/]+)?\.(?:json|md)$/
+
+function isValidationReportPath(repoPath) {
+  return reportArtifactPattern.test(normalizeInputPath(repoPath))
+}
+
 const excludedRepoPaths = new Set([
   normalizeRepoPath(tierJsonPath),
   normalizeRepoPath(tierMdPath),
@@ -99,7 +114,8 @@ const excludedRepoPaths = new Set([
 ])
 
 function isExcludedPath(repoPath) {
-  return excludedRepoPaths.has(normalizeInputPath(repoPath))
+  const normalized = normalizeInputPath(repoPath)
+  return excludedRepoPaths.has(normalized) || isValidationReportPath(normalized)
 }
 
 function runGit(args, options = {}) {
@@ -238,20 +254,161 @@ function runValidationCommand(spec) {
   }
 }
 
+function stableUnique(values) {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right))
+}
+
+function normalizeTouchedPaths(rawValues) {
+  return rawValues
+    .flatMap((value) => String(value || '').split(/\s+/))
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => normalizeRepoPath(value))
+    .filter((value) => value && value !== '..' && !value.startsWith('../'))
+    .filter((value) => !isExcludedPath(value))
+}
+
+function changedPathsFromGit() {
+  const paths = []
+  const status = runGit(['status', '--porcelain=v1', '--untracked-files=normal'])
+  for (const line of status.split(/\r?\n/).filter(Boolean)) {
+    const pathPart = line.slice(3)
+    const currentPath = pathPart.includes(' -> ') ? pathPart.split(' -> ').at(-1) : pathPart
+    const normalized = normalizeInputPath(currentPath)
+    if (!isExcludedPath(normalized)) paths.push(normalized)
+  }
+  return stableUnique(paths)
+}
+
+function isDocsPath(repoPath) {
+  return repoPath.startsWith('docs/') || repoPath.endsWith('.md') || repoPath.endsWith('.mdx') || repoPath === 'AGENTS.md'
+}
+
+function isGoPath(repoPath) {
+  return repoPath.endsWith('.go')
+}
+
+function isWebPath(repoPath) {
+  return repoPath.startsWith('apps/web/')
+}
+
+function isValidationInfraPath(repoPath) {
+  return repoPath === 'Makefile' || repoPath === 'scripts/validate.sh' || repoPath.startsWith('.githooks/')
+}
+
+function isGlobalEscalationPath(repoPath) {
+  if (isValidationInfraPath(repoPath)) return false
+  if (isWebPath(repoPath) || isGoPath(repoPath) || isDocsPath(repoPath)) return false
+  return [
+    'go.mod',
+    'go.sum',
+    'package.json',
+    'package-lock.json',
+    'sqlc.yaml',
+    'templ.yaml',
+  ].includes(repoPath) ||
+    repoPath.startsWith('internal/db/migrations/') ||
+    repoPath.startsWith('web/') ||
+    repoPath.endsWith('.sql') ||
+    repoPath.endsWith('.templ')
+}
+
+function goPackageFor(repoPath) {
+  const dir = path.posix.dirname(repoPath)
+  return dir === '.' ? '.' : `./${dir}`
+}
+
+function classifyPaths(paths) {
+  const classification = {
+    docs_only: false,
+    docs: [],
+    go: [],
+    go_packages: [],
+    web: [],
+    validation_infrastructure: [],
+    global_escalation: [],
+    other: [],
+    global_escalation_required: false,
+  }
+
+  for (const repoPath of paths) {
+    if (isDocsPath(repoPath)) classification.docs.push(repoPath)
+    if (isGoPath(repoPath)) {
+      classification.go.push(repoPath)
+      classification.go_packages.push(goPackageFor(repoPath))
+    }
+    if (isWebPath(repoPath)) classification.web.push(repoPath)
+    if (isValidationInfraPath(repoPath)) classification.validation_infrastructure.push(repoPath)
+    if (isGlobalEscalationPath(repoPath)) classification.global_escalation.push(repoPath)
+    if (!isDocsPath(repoPath) && !isGoPath(repoPath) && !isWebPath(repoPath) && !isValidationInfraPath(repoPath) && !isGlobalEscalationPath(repoPath)) {
+      classification.other.push(repoPath)
+    }
+  }
+
+  for (const key of ['docs', 'go', 'go_packages', 'web', 'validation_infrastructure', 'global_escalation', 'other']) {
+    classification[key] = stableUnique(classification[key])
+  }
+  classification.global_escalation_required = classification.global_escalation.length > 0
+  classification.docs_only = paths.length > 0 && paths.every((repoPath) => isDocsPath(repoPath))
+  return classification
+}
+
+function affectedCommands(classification) {
+  const specs = []
+  let step = 1
+
+  if (classification.validation_infrastructure.length > 0) {
+    specs.push({ step: step++, name: 'validate-script-syntax', command: 'bash -n scripts/validate.sh', shell: true })
+  }
+
+  if (classification.global_escalation_required) {
+    specs.push({ step: step++, name: 'go-test-all', command: 'go test ./...', argv: ['go', ['test', './...']] })
+    specs.push({ step: step++, name: 'web-typecheck', command: 'cd apps/web && npm run typecheck', shell: true })
+    specs.push({ step: step++, name: 'web-test', command: 'cd apps/web && npm run test', shell: true })
+    return specs
+  }
+
+  if (classification.go_packages.length > 0) {
+    const packages = classification.go_packages.join(' ')
+    specs.push({ step: step++, name: 'go-fmt-affected-packages', command: `go fmt ${packages}`, shell: true })
+    specs.push({ step: step++, name: 'go-test-affected-packages', command: `go test ${packages}`, shell: true })
+  }
+
+  if (classification.web.length > 0) {
+    specs.push({ step: step++, name: 'web-typecheck', command: 'cd apps/web && npm run typecheck', shell: true })
+    specs.push({ step: step++, name: 'web-test', command: 'cd apps/web && npm run test', shell: true })
+  }
+
+  return specs
+}
+
 function renderMarkdown(report) {
+  const titleScope = report.validation_scope || report.validation_tier
   const markdown = [
-    `# Latest Relay Validation Report (${report.validation_tier})`,
+    `# Latest Relay Validation Report (${titleScope})`,
     '',
     `- status: ${report.status}`,
     `- validation_tier: ${report.validation_tier}`,
+    `- validation_scope: ${report.validation_scope}`,
     `- base_commit: ${report.base_commit_sha}`,
     `- validated_source_snapshot: ${report.validated_source_snapshot.diff_sha256}`,
     `- worktree_dirty: ${report.validated_source_snapshot.worktree_dirty}`,
     `- created_at: ${report.created_at}`,
     '',
-    '## Validated source changes',
-    '',
   ]
+
+  if (report.normalized_paths) {
+    markdown.push('## Affected paths', '')
+    if (report.normalized_paths.length === 0) {
+      markdown.push('No affected paths after normalization.', '')
+    } else {
+      for (const repoPath of report.normalized_paths) markdown.push(`- ${repoPath}`)
+      markdown.push('')
+    }
+    markdown.push(`Global escalation required: ${report.path_classification.global_escalation_required}`, '')
+  }
+
+  markdown.push('## Validated source changes', '')
 
   if (report.validated_source_snapshot.diff_name_status.length === 0) {
     markdown.push('No source changes relative to base commit.', '')
@@ -266,13 +423,16 @@ function renderMarkdown(report) {
   markdown.push(
     '## Commands',
     '',
-    '| Step | Name | Exit | Status |',
-    '|---:|---|---:|---|',
-    ...report.commands.map((command) => `| ${command.step} | \`${command.name}\` | ${command.exit_code} | ${command.status} |`),
-    '',
-    '## Failure output tails',
-    '',
+    '| Step | Name | Command | Exit | Status |',
+    '|---:|---|---|---:|---|',
   )
+  if (report.commands.length === 0) {
+    markdown.push('| - | no-derived-commands | docs-only or no runnable affected-path checks | 0 | passed |')
+  } else {
+    markdown.push(...report.commands.map((command) => `| ${command.step} | \`${command.name}\` | \`${command.command.replace(/\|/g, '\\|')}\` | ${command.exit_code} | ${command.status} |`))
+  }
+
+  markdown.push('', '## Failure output tails', '')
 
   const failedCommands = report.commands.filter((command) => command.exit_code !== 0)
   if (failedCommands.length === 0) {
@@ -291,19 +451,42 @@ const baseCommitSha = runGit(['rev-parse', baseRef]).trim()
 const baseCommitShort = runGit(['rev-parse', '--short=12', baseRef]).trim()
 const createdAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
 
-const commands = commandsToRun.map(runValidationCommand)
+let inputPaths = []
+let normalizedPaths = []
+let pathClassification = null
+let commandSpecs = []
+
+if (scope === 'touched') {
+  inputPaths = normalizeTouchedPaths([process.env.RELAY_VALIDATE_PATHS, process.env.PATHS])
+  if (inputPaths.length === 0) {
+    console.error('validate-touched requires explicit paths through PATHS or RELAY_VALIDATE_PATHS')
+    process.exit(2)
+  }
+  normalizedPaths = stableUnique(inputPaths)
+  pathClassification = classifyPaths(normalizedPaths)
+  commandSpecs = affectedCommands(pathClassification)
+} else if (scope === 'changed') {
+  inputPaths = changedPathsFromGit()
+  normalizedPaths = inputPaths
+  pathClassification = classifyPaths(normalizedPaths)
+  commandSpecs = affectedCommands(pathClassification)
+} else {
+  commandSpecs = commandsByTier[tier] || fullCommands
+}
+
+const commands = commandSpecs.map(runValidationCommand)
 const overall = commands.some((command) => command.exit_code !== 0) ? 1 : 0
 
 const reportFiles = [normalizeRepoPath(tierJsonPath), normalizeRepoPath(tierMdPath)]
-// For full tier, the tier paths ARE the full paths; no duplication needed
-if (tier !== 'full') {
+if (scope === 'tier' && tier !== 'full') {
   reportFiles.push(normalizeRepoPath(fullJsonPath), normalizeRepoPath(fullMdPath))
 }
 
 const report = {
-  schema_version: '3.0.0',
-  report_kind: 'relay_make_validate_latest',
-  validation_tier: tier,
+  schema_version: scope === 'tier' ? '3.0.0' : '3.1.0',
+  report_kind: scope === 'tier' ? 'relay_make_validate_latest' : 'relay_make_validate_affected_paths',
+  validation_tier: scope === 'tier' ? tier : 'affected',
+  validation_scope: scope,
   status: overall === 0 ? 'passed' : 'failed',
   created_at: createdAt,
   base_commit_short: baseCommitShort,
@@ -312,6 +495,16 @@ const report = {
   post_report_status_porcelain: [],
   report_files: reportFiles,
   commands,
+}
+
+if (scope !== 'tier') {
+  report.input_paths = inputPaths
+  report.normalized_paths = normalizedPaths
+  report.path_classification = pathClassification
+  report.command_table = commandSpecs.map((spec) => ({ step: spec.step, name: spec.name, command: spec.command }))
+  report.failure_output_tails = commands
+    .filter((command) => command.exit_code !== 0)
+    .map((command) => ({ name: command.name, output_tail: command.output_tail }))
 }
 
 fs.writeFileSync(tierJsonPath, JSON.stringify(report, null, 2) + '\n')

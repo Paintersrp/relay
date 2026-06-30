@@ -375,6 +375,30 @@ You can also run narrow validation checks:
 - **TypeScript Frontend Compilation**: `npm --prefix apps/web run typecheck`
 - **Frontend Unit Tests**: `npm --prefix apps/web test`
 
+### Affected-Path Validation
+
+Use affected-path validation when an executor needs deterministic checks derived from explicit paths or the current git worktree instead of a broad package or full-repo run.
+
+For explicit touched paths:
+
+```bash
+RELAY_VALIDATE_PATHS="docs/operator-guide.md" make validate-touched
+```
+
+The same target also accepts `PATHS`:
+
+```bash
+make validate-touched PATHS="scripts/validate.sh apps/web/package.json"
+```
+
+For current git changes:
+
+```bash
+make validate-changed
+```
+
+These commands write affected-path reports under `handoffs/validation`, including normalized inputs, path classification, derived commands, and command results.
+
 ---
 
 ## Troubleshooting

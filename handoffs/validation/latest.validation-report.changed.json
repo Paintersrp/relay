@@ -1,0 +1,95 @@
+{
+  "schema_version": "3.1.0",
+  "report_kind": "relay_make_validate_affected_paths",
+  "validation_tier": "affected",
+  "validation_scope": "changed",
+  "status": "passed",
+  "created_at": "2026-06-30T01:58:22Z",
+  "base_commit_short": "8d2cf10fed20",
+  "base_commit_sha": "8d2cf10fed2028dd24bb3821aecbae73e5f54d06",
+  "validated_source_snapshot": {
+    "captured_at": "2026-06-30T01:58:22.713Z",
+    "model": "base_commit_plus_worktree_diff_excluding_validation_report_artifacts",
+    "worktree_dirty": true,
+    "diff_sha256": "eb459ea18423bf383842ff6c3bbeee0a48ac24bf5a60e7870fe7f4a114449ac2",
+    "diff_name_status": [
+      {
+        "status": "M",
+        "path": "docs/operator-guide.md"
+      },
+      {
+        "status": "M",
+        "path": "Makefile"
+      },
+      {
+        "status": "M",
+        "path": "scripts/validate.sh"
+      }
+    ],
+    "diff_stat": "Makefile               |   8 +-\n docs/operator-guide.md |  24 +++++\n scripts/validate.sh    | 265 ++++++++++++++++++++++++++++++++++++++++++-------\n 3 files changed, 260 insertions(+), 37 deletions(-)",
+    "status_porcelain": [
+      " M docs/operator-guide.md",
+      " M Makefile",
+      " M scripts/validate.sh"
+    ]
+  },
+  "post_report_status_porcelain": [
+    " M docs/operator-guide.md",
+    " M Makefile",
+    " M scripts/validate.sh",
+    "?? handoffs/validation/latest.validation-report.changed.json",
+    "?? handoffs/validation/latest.validation-report.touched.json",
+    "?? handoffs/validation/latest.validation-summary.changed.md",
+    "?? handoffs/validation/latest.validation-summary.touched.md"
+  ],
+  "report_files": [
+    "handoffs/validation/latest.validation-report.changed.json",
+    "handoffs/validation/latest.validation-summary.changed.md"
+  ],
+  "commands": [
+    {
+      "step": 1,
+      "name": "validate-script-syntax",
+      "command": "bash -n scripts/validate.sh",
+      "started_at": "2026-06-30T01:58:22.301Z",
+      "completed_at": "2026-06-30T01:58:22.712Z",
+      "exit_code": 0,
+      "status": "passed",
+      "output_tail": "$ bash -n scripts/validate.sh\nexit_code: 0\n"
+    }
+  ],
+  "input_paths": [
+    "docs/operator-guide.md",
+    "Makefile",
+    "scripts/validate.sh"
+  ],
+  "normalized_paths": [
+    "docs/operator-guide.md",
+    "Makefile",
+    "scripts/validate.sh"
+  ],
+  "path_classification": {
+    "docs_only": false,
+    "docs": [
+      "docs/operator-guide.md"
+    ],
+    "go": [],
+    "go_packages": [],
+    "web": [],
+    "validation_infrastructure": [
+      "Makefile",
+      "scripts/validate.sh"
+    ],
+    "global_escalation": [],
+    "other": [],
+    "global_escalation_required": false
+  },
+  "command_table": [
+    {
+      "step": 1,
+      "name": "validate-script-syntax",
+      "command": "bash -n scripts/validate.sh"
+    }
+  ],
+  "failure_output_tails": []
+}
