@@ -386,7 +386,7 @@ func TestRenderer(t *testing.T) {
 					"command":          "make validate",
 					"required":         false,
 					"purpose":          "Optional executor-local check.",
-					"success_signal":   "Command exits 0 and writes full validation evidence.",
+					"success_signal":   "Command exits 0 when optional check is run.",
 					"failure_handling": "report_if_fails",
 				},
 			},
@@ -452,13 +452,43 @@ func TestRenderer(t *testing.T) {
 		}
 
 		// The brief must not contain any of the forbidden classification terms anywhere.
+		advisoryFinalEvidence := "Advisory/final" + " validation evidence"
 		forbiddenBriefWords := []string{
-			"Advisory/final validation evidence",
-			"advisory/final validation evidence",
+			advisoryFinalEvidence,
+			strings.ToLower(advisoryFinalEvidence),
 		}
 		for _, word := range forbiddenBriefWords {
 			if strings.Contains(briefText, word) {
 				t.Errorf("rendered brief contains stale advisory/final wording %q", word)
+			}
+		}
+
+		advisoryCommandsKey := "advisory_" + "validation_commands"
+		hasAdvisoryCommandsKey := "has_advisory_" + "validation_commands"
+		ownershipScrubberName := "removeValidation" + "OwnershipClassifications"
+		ownershipSentence := "They are not finalization, " + "closeout, audit, or hook evidence."
+		targetFiles := []string{
+			"renderer.go",
+			locateTemplateFile("handoffs/templates/executor_brief_template.md"),
+		}
+		forbiddenSourceStrings := []string{
+			advisoryCommandsKey,
+			hasAdvisoryCommandsKey,
+			ownershipScrubberName,
+			ownershipSentence,
+			advisoryFinalEvidence,
+			strings.ToLower(advisoryFinalEvidence),
+		}
+		for _, targetFile := range targetFiles {
+			content, err := os.ReadFile(targetFile)
+			if err != nil {
+				t.Fatalf("failed to read cleanup target %s: %v", targetFile, err)
+			}
+			source := string(content)
+			for _, forbidden := range forbiddenSourceStrings {
+				if strings.Contains(source, forbidden) {
+					t.Errorf("%s contains stale renderer/template cleanup string %q", targetFile, forbidden)
+				}
 			}
 		}
 	})

@@ -705,10 +705,8 @@ func renderTemplate(tmpl string, packet map[string]interface{}) (string, error) 
 				requiredCommands, optionalCommands := splitValidationCommands(contract["commands"])
 				renderCtx["required_validation_commands"] = requiredCommands
 				renderCtx["optional_validation_commands"] = optionalCommands
-				renderCtx["advisory_validation_commands"] = optionalCommands
 				renderCtx["has_required_validation_commands"] = len(requiredCommands) > 0
 				renderCtx["has_optional_validation_commands"] = len(optionalCommands) > 0
-				renderCtx["has_advisory_validation_commands"] = len(optionalCommands) > 0
 			}
 		}
 	}
@@ -723,18 +721,7 @@ func renderTemplate(tmpl string, packet map[string]interface{}) (string, error) 
 		}
 		sb.WriteString(res)
 	}
-	return removeValidationOwnershipClassifications(sb.String()), nil
-}
-
-func removeValidationOwnershipClassifications(brief string) string {
-	forbiddenLines := []string{
-		"They are not finalization, closeout, audit, or hook evidence.",
-		"They are not finalization, closeout, audit, or hook evidence.\r",
-	}
-	for _, line := range forbiddenLines {
-		brief = strings.ReplaceAll(brief, line, "")
-	}
-	return brief
+	return sb.String(), nil
 }
 
 func splitValidationCommands(raw interface{}) ([]interface{}, []interface{}) {
