@@ -20,6 +20,8 @@ type KiroCLIAdapterConfig struct {
 	AgentEngine       string
 }
 
+const defaultKiroTrustTools = "fs_read,fs_write,grep,execute_cmd"
+
 var supportedKiroModels = map[string]struct{}{
 	"auto":              {},
 	"claude-opus-4.8":   {},
@@ -57,7 +59,7 @@ func NewKiroCLIAdapterFromEnv() *KiroCLIAdapter {
 			Binary:            bin,
 			Model:             stringOr(os.Getenv("RELAY_KIRO_DEFAULT_MODEL"), strings.TrimSpace(os.Getenv("RELAY_KIRO_MODEL"))),
 			Effort:            stringOr(os.Getenv("RELAY_KIRO_EFFORT"), "high"),
-			TrustTools:        stringOr(os.Getenv("RELAY_KIRO_TRUST_TOOLS"), "fs_read,fs_write,grep"),
+			TrustTools:        stringOr(os.Getenv("RELAY_KIRO_TRUST_TOOLS"), defaultKiroTrustTools),
 			RequireMCPStartup: requireMCP,
 			Agent:             strings.TrimSpace(os.Getenv("RELAY_KIRO_AGENT")),
 			AgentEngine:       strings.TrimSpace(os.Getenv("RELAY_KIRO_AGENT_ENGINE")),

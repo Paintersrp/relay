@@ -1227,7 +1227,7 @@ func TestKiroCLIAdapter_BuildInvocationSelectedModel(t *testing.T) {
 		Config: KiroCLIAdapterConfig{
 			Binary:     "kiro-cli",
 			Effort:     "high",
-			TrustTools: "fs_read,fs_write,grep",
+			TrustTools: defaultKiroTrustTools,
 		},
 	}
 	req := ExecutorAdapterRequest{
@@ -1262,7 +1262,7 @@ func TestKiroCLIAdapter_BuildInvocationModelPrecedence(t *testing.T) {
 				Binary:     "kiro-cli",
 				Model:      "claude-opus-4.6",
 				Effort:     "high",
-				TrustTools: "fs_read,fs_write,grep",
+				TrustTools: defaultKiroTrustTools,
 			},
 		}
 		req := ExecutorAdapterRequest{
@@ -1287,7 +1287,7 @@ func TestKiroCLIAdapter_BuildInvocationModelPrecedence(t *testing.T) {
 				Binary:     "kiro-cli",
 				Model:      "claude-opus-4.6",
 				Effort:     "high",
-				TrustTools: "fs_read,fs_write,grep",
+				TrustTools: defaultKiroTrustTools,
 			},
 		}
 		req := ExecutorAdapterRequest{
@@ -1310,7 +1310,7 @@ func TestKiroCLIAdapter_BuildInvocationModelPrecedence(t *testing.T) {
 			Config: KiroCLIAdapterConfig{
 				Binary:     "kiro-cli",
 				Effort:     "high",
-				TrustTools: "fs_read,fs_write,grep",
+				TrustTools: defaultKiroTrustTools,
 			},
 		}
 		req := ExecutorAdapterRequest{
@@ -1334,7 +1334,7 @@ func TestKiroCLIAdapter_BuildInvocationInvalidModel(t *testing.T) {
 		Config: KiroCLIAdapterConfig{
 			Binary:     "kiro-cli",
 			Effort:     "high",
-			TrustTools: "fs_read,fs_write,grep",
+			TrustTools: defaultKiroTrustTools,
 		},
 	}
 	req := ExecutorAdapterRequest{
@@ -1376,7 +1376,7 @@ func TestKiroCLIAdapter_BuildInvocationSupportsObservedModels(t *testing.T) {
 				Config: KiroCLIAdapterConfig{
 					Binary:     "kiro-cli",
 					Effort:     "high",
-					TrustTools: "fs_read,fs_write,grep",
+					TrustTools: defaultKiroTrustTools,
 				},
 			}
 			req := ExecutorAdapterRequest{
@@ -1398,6 +1398,17 @@ func TestKiroCLIAdapter_BuildInvocationSupportsObservedModels(t *testing.T) {
 }
 
 func TestNewKiroCLIAdapterFromEnvModelFallback(t *testing.T) {
+	t.Run("default trust tools include command exec", func(t *testing.T) {
+		t.Setenv("RELAY_KIRO_TRUST_TOOLS", "")
+		adapter := NewKiroCLIAdapterFromEnv()
+		if adapter.Config.TrustTools != defaultKiroTrustTools {
+			t.Fatalf("expected default trust tools %q, got %q", defaultKiroTrustTools, adapter.Config.TrustTools)
+		}
+		if !strings.Contains(adapter.Config.TrustTools, "execute_cmd") {
+			t.Fatalf("expected execute_cmd in default trust tools, got %q", adapter.Config.TrustTools)
+		}
+	})
+
 	t.Run("default model env wins over deprecated fallback", func(t *testing.T) {
 		t.Setenv("RELAY_KIRO_DEFAULT_MODEL", "claude-sonnet-4.6")
 		t.Setenv("RELAY_KIRO_MODEL", "claude-opus-4.6")
@@ -1423,7 +1434,7 @@ func TestKiroCLIAdapter_BuildInvocationRequireMCPStartupOptIn(t *testing.T) {
 			Config: KiroCLIAdapterConfig{
 				Binary:     "kiro-cli",
 				Effort:     "high",
-				TrustTools: "fs_read,fs_write,grep",
+				TrustTools: defaultKiroTrustTools,
 			},
 		}
 		req := ExecutorAdapterRequest{
@@ -1449,7 +1460,7 @@ func TestKiroCLIAdapter_BuildInvocationRequireMCPStartupOptIn(t *testing.T) {
 			Config: KiroCLIAdapterConfig{
 				Binary:            "kiro-cli",
 				Effort:            "high",
-				TrustTools:        "fs_read,fs_write,grep",
+				TrustTools:        defaultKiroTrustTools,
 				RequireMCPStartup: true,
 			},
 		}
@@ -1550,7 +1561,7 @@ func TestDispatchBrief_KiroCLIZeroExitBlocked(t *testing.T) {
 		Config: KiroCLIAdapterConfig{
 			Binary:     "kiro-cli",
 			Effort:     "high",
-			TrustTools: "fs_read,fs_write,grep",
+			TrustTools: defaultKiroTrustTools,
 		},
 	}
 	_, err := DispatchBrief(&DispatchParams{
