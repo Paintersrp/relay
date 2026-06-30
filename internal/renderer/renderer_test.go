@@ -360,7 +360,7 @@ func TestRenderer(t *testing.T) {
 		}
 	})
 
-	t.Run("Validation commands split required and advisory sections", func(t *testing.T) {
+	t.Run("Validation commands split required and optional executor-local sections", func(t *testing.T) {
 		packet := make(map[string]interface{})
 		for k, v := range validPacket {
 			packet[k] = v
@@ -385,7 +385,7 @@ func TestRenderer(t *testing.T) {
 					"id":               "V2",
 					"command":          "make validate",
 					"required":         false,
-					"purpose":          "Advisory final validation evidence.",
+					"purpose":          "Optional executor-local check.",
 					"success_signal":   "Command exits 0 and writes full validation evidence.",
 					"failure_handling": "report_if_fails",
 				},
@@ -402,21 +402,64 @@ func TestRenderer(t *testing.T) {
 			t.Fatalf("failed to render template: %v", err)
 		}
 
+		// Required commands must appear in the required section.
 		requiredHeading := strings.Index(briefText, "Required Executor validation commands:")
-		advisoryHeading := strings.Index(briefText, "Advisory/final validation evidence:")
-		if requiredHeading == -1 || advisoryHeading == -1 {
-			t.Fatalf("expected required and advisory validation sections, got:\n%s", briefText)
+		if requiredHeading == -1 {
+			t.Fatalf("expected 'Required Executor validation commands:' heading, got:\n%s", briefText)
 		}
-		requiredSection := briefText[requiredHeading:advisoryHeading]
-		advisorySection := briefText[advisoryHeading:]
+
+		// Optional executor-local commands must appear in the optional section.
+		optionalHeading := strings.Index(briefText, "Optional executor-local validation commands:")
+		if optionalHeading == -1 {
+			t.Fatalf("expected 'Optional executor-local validation commands:' heading, got:\n%s", briefText)
+		}
+
+		// The required section must precede the optional section.
+		if requiredHeading >= optionalHeading {
+			t.Fatalf("required section must come before optional section; requiredAt=%d optionalAt=%d", requiredHeading, optionalHeading)
+		}
+
+		requiredSection := briefText[requiredHeading:optionalHeading]
+		optionalSection := briefText[optionalHeading:]
+
+		// Required command in required section.
 		if !strings.Contains(requiredSection, "go test ./internal/renderer") {
 			t.Fatalf("required command missing from required section:\n%s", requiredSection)
 		}
+		// Optional command must not appear in required section.
 		if strings.Contains(requiredSection, "make validate") {
-			t.Fatalf("advisory full validation rendered as required:\n%s", requiredSection)
+			t.Fatalf("optional command rendered as required:\n%s", requiredSection)
 		}
-		if !strings.Contains(advisorySection, "make validate") || !strings.Contains(advisorySection, "not pass-local Executor-required work") {
-			t.Fatalf("advisory command or guidance missing from advisory section:\n%s", advisorySection)
+		// Optional command in optional section.
+		if !strings.Contains(optionalSection, "make validate") {
+			t.Fatalf("optional command missing from optional executor-local section:\n%s", optionalSection)
+		}
+
+		// Optional section must not use finalization/closeout/audit/hook/advisory wording.
+		forbiddenOptionalWords := []string{
+			"advisory/final",
+			"Advisory/final",
+			"finalization",
+			"closeout",
+			"hook evidence",
+			"audit evidence",
+			"not pass-local Executor-required work",
+		}
+		for _, word := range forbiddenOptionalWords {
+			if strings.Contains(optionalSection, word) {
+				t.Errorf("optional section contains forbidden ownership wording %q:\n%s", word, optionalSection)
+			}
+		}
+
+		// The brief must not contain any of the forbidden classification terms anywhere.
+		forbiddenBriefWords := []string{
+			"Advisory/final validation evidence",
+			"advisory/final validation evidence",
+		}
+		for _, word := range forbiddenBriefWords {
+			if strings.Contains(briefText, word) {
+				t.Errorf("rendered brief contains stale advisory/final wording %q", word)
+			}
 		}
 	})
 

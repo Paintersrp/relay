@@ -667,7 +667,9 @@ func (c *Compiler) parseHandoff(
 		if len(valText) == 0 {
 			valText, _ = getSection("validation", "validation")
 		}
-		validationCmds = parseValidationCommands(valText)
+		if strings.TrimSpace(valText) != "" {
+			validationCmds = parseValidationCommands(valText)
+		}
 	}
 	if len(validationCmds) == 0 {
 		// Try load from config
@@ -675,17 +677,33 @@ func (c *Compiler) parseHandoff(
 			if cfgCmds, ok := cfgContract["commands"].([]interface{}); ok {
 				for _, c := range cfgCmds {
 					if cmdMap, ok := c.(map[string]interface{}); ok {
+						id, _ := cmdMap["id"].(string)
+						if strings.TrimSpace(id) == "" {
+							id = fmt.Sprintf("V%d", len(validationCmds)+1)
+						}
 						cmdStr, _ := cmdMap["command"].(string)
 						reqVal, _ := cmdMap["required"].(bool)
 						purp, _ := cmdMap["purpose"].(string)
+						successSignal, _ := cmdMap["success_signal"].(string)
+						if successSignal == "" {
+							successSignal = "Command exits 0."
+						}
+						failureHandling, _ := cmdMap["failure_handling"].(string)
+						if failureHandling == "" {
+							if reqVal {
+								failureHandling = "attempt_fix_once_then_block"
+							} else {
+								failureHandling = "report_if_fails"
+							}
+						}
 						if cmdStr != "" {
 							validationCmds = append(validationCmds, ValidationCommand{
-								ID:              fmt.Sprintf("V%d", len(validationCmds)+1),
+								ID:              id,
 								Command:         cmdStr,
 								Required:        reqVal,
 								Purpose:         purp,
-								SuccessSignal:   "Command exits 0.",
-								FailureHandling: "attempt_fix_once_then_block",
+								SuccessSignal:   successSignal,
+								FailureHandling: failureHandling,
 							})
 						}
 					}

@@ -439,6 +439,197 @@ func TestCompiler(t *testing.T) {
 		}
 	})
 
+	t.Run("RunConfig fallback preserves required:false and report_if_fails", func(t *testing.T) {
+		run, err := s.CreateRun(repo.ID, "Run config fallback optional command", "approved_for_prepare", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+
+		// Provide validation_contract in runConfig with a required:false/report_if_fails command.
+		configMap := map[string]interface{}{
+			"repo_target":    repo.Path,
+			"branch_context": "main",
+			"validation_contract": map[string]interface{}{
+				"mode":           "commands",
+				"failure_policy": "block",
+				"commands": []interface{}{
+					map[string]interface{}{
+						"id":               "V7",
+						"command":          "go test ./internal/renderer",
+						"required":         true,
+						"purpose":          "Verify renderer.",
+						"success_signal":   "Command exits 0.",
+						"failure_handling": "attempt_fix_once_then_block",
+					},
+					map[string]interface{}{
+						"id":               "V8",
+						"command":          "go test ./internal/validation",
+						"required":         false,
+						"purpose":          "Optional executor-local check only if validation package files were edited.",
+						"success_signal":   "Command exits 0 when validation package was touched.",
+						"failure_handling": "report_if_fails",
+					},
+				},
+			},
+		}
+		configJSON, _ := json.Marshal(configMap)
+		configPath, _ := artifacts.Write(run.ID, "run_config", "run_config.json", configJSON)
+		_, _ = s.CreateArtifact(run.ID, "run_config", configPath, "application/json")
+
+		// Write a minimal handoff that produces no validation commands of its own.
+		handoffText := `# Planner Handoff
+
+<context_snapshot>
+Minimal handoff for runConfig fallback validation test.
+</context_snapshot>
+
+<decision_log>
+- D1: Use runConfig fallback for validation commands.
+  Rationale: Tests optional command metadata preservation.
+</decision_log>
+
+<constraints>
+- C1: Respect target boundary.
+  Applies to: executor
+</constraints>
+
+<pass_boundary>
+current_pass: 1
+total_planned_passes: 1
+this_pass_scope: scope
+out_of_scope_for_this_pass:
+  - none
+</pass_boundary>
+
+<compiler_input>
+Goal:
+Verify that optional validation commands from runConfig are preserved in the compiled packet.
+
+Scope:
+Compiler fallback path for validation_contract commands in run_config.json.
+
+Non-goals:
+- Do not change the canonical packet schema.
+
+Likely file targets:
+- ` + "`internal/compiler/compiler.go`" + `
+  role: primary
+  action: must_edit
+  reason: Owns runConfig fallback validation command handling.
+
+Required implementation steps:
+1. Preserve optional command metadata from runConfig.
+   action: modify
+   target_paths:
+     - internal/compiler/compiler.go
+   instructions: ensure required:false and report_if_fails survive
+   acceptance_criteria:
+     - required:false remains false in compiled packet
+
+Code requirements:
+- CR1: The runConfig fallback must preserve required and failure_handling per command.
+  Applies to:
+    - internal/compiler/compiler.go
+
+Expected behavior:
+- required:false commands remain optional in compiled execution_payload.validation_contract.commands.
+
+Completion requirements:
+- DONE when optional commands compile with required:false and report_if_fails preserved.
+- BLOCKED when compiler promotes optional commands to required or blocking.
+</compiler_input>
+`
+		handoffPath, _ := artifacts.Write(run.ID, "planner_handoff", "planner_handoff.md", []byte(handoffText))
+		_, _ = s.CreateArtifact(run.ID, "planner_handoff", handoffPath, "text/markdown")
+
+		res, err := c.CompileApprovedRun(context.Background(), run.ID)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if len(res.Issues) > 0 {
+			t.Fatalf("expected no parse issues, got: %v", res.Issues)
+		}
+		if !res.Success {
+			t.Fatalf("expected compilation success, got errors: %+v", res.ValidationReport.Errors)
+		}
+
+		packetBytes, err := artifacts.Read(run.ID, "canonical_packet", "canonical_packet.json")
+		if err != nil {
+			t.Fatalf("failed to read packet: %v", err)
+		}
+		var packet map[string]interface{}
+		if err := json.Unmarshal(packetBytes, &packet); err != nil {
+			t.Fatalf("failed to parse packet: %v", err)
+		}
+
+		exec, ok := packet["execution_payload"].(map[string]interface{})
+		if !ok {
+			t.Fatal("missing execution_payload")
+		}
+		contract, ok := exec["validation_contract"].(map[string]interface{})
+		if !ok {
+			t.Fatal("missing validation_contract")
+		}
+		cmds, ok := contract["commands"].([]interface{})
+		if !ok || len(cmds) == 0 {
+			t.Fatal("validation_contract.commands is empty or not a list")
+		}
+
+		// Find the optional command and assert required:false and report_if_fails are preserved.
+		foundOptional := false
+		for _, cmdVal := range cmds {
+			cmdMap, ok := cmdVal.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if cmdMap["command"] == "go test ./internal/validation" {
+				foundOptional = true
+				if id, _ := cmdMap["id"].(string); id != "V8" {
+					t.Errorf("optional command id was not preserved, got %q: %+v", id, cmdMap)
+				}
+				if reqVal, _ := cmdMap["required"].(bool); reqVal {
+					t.Errorf("optional command was promoted to required:true in compiled packet: %+v", cmdMap)
+				}
+				if purpose, _ := cmdMap["purpose"].(string); purpose != "Optional executor-local check only if validation package files were edited." {
+					t.Errorf("optional command purpose was not preserved, got %q: %+v", purpose, cmdMap)
+				}
+				if fh, _ := cmdMap["failure_handling"].(string); fh != "report_if_fails" {
+					t.Errorf("optional command failure_handling was not preserved as report_if_fails, got %q: %+v", fh, cmdMap)
+				}
+				if ss, _ := cmdMap["success_signal"].(string); ss != "Command exits 0 when validation package was touched." {
+					t.Errorf("optional command success_signal was not preserved, got %q: %+v", ss, cmdMap)
+				}
+			}
+		}
+		if !foundOptional {
+			t.Errorf("optional validation command 'go test ./internal/validation' was not found in compiled packet commands: %+v", cmds)
+		}
+
+		// Find the required command and confirm it remains required.
+		foundRequired := false
+		for _, cmdVal := range cmds {
+			cmdMap, ok := cmdVal.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if cmdMap["command"] == "go test ./internal/renderer" {
+				foundRequired = true
+				if id, _ := cmdMap["id"].(string); id != "V7" {
+					t.Errorf("required command id was not preserved, got %q: %+v", id, cmdMap)
+				}
+				if reqVal, _ := cmdMap["required"].(bool); !reqVal {
+					t.Errorf("required command was demoted to required:false in compiled packet: %+v", cmdMap)
+				}
+				if fh, _ := cmdMap["failure_handling"].(string); fh != "attempt_fix_once_then_block" {
+					t.Errorf("required command failure_handling was not preserved, got %q: %+v", fh, cmdMap)
+				}
+			}
+		}
+		if !foundRequired {
+			t.Errorf("required validation command 'go test ./internal/renderer' was not found in compiled packet commands: %+v", cmds)
+		}
+	})
+
 	t.Run("Nested field extraction inside compiler_input", func(t *testing.T) {
 		run, err := s.CreateRun(repo.ID, "Run with Nested Fields", "approved_for_prepare", "gpt-4o", "gpt-4o", "main")
 		if err != nil {
@@ -477,6 +668,15 @@ this_pass_scope: scope
 out_of_scope_for_this_pass:
   - none
 </pass_boundary>
+
+<validation_expectations>
+- V1:
+  command: go test ./internal/compiler
+  required: true
+  purpose: Verify nested field extraction.
+  success_signal: Command exits 0.
+  failure_handling: attempt_fix_once_then_block
+</validation_expectations>
 
 <compiler_input>
 Goal:

@@ -702,11 +702,13 @@ func renderTemplate(tmpl string, packet map[string]interface{}) (string, error) 
 			renderCtx["validation_contract_is_not_applicable"] = mode == "not_applicable"
 			renderCtx["validation_contract_is_deferred"] = mode == "deferred"
 			if mode == "commands" {
-				requiredCommands, advisoryCommands := splitValidationCommands(contract["commands"])
+				requiredCommands, optionalCommands := splitValidationCommands(contract["commands"])
 				renderCtx["required_validation_commands"] = requiredCommands
-				renderCtx["advisory_validation_commands"] = advisoryCommands
+				renderCtx["optional_validation_commands"] = optionalCommands
+				renderCtx["advisory_validation_commands"] = optionalCommands
 				renderCtx["has_required_validation_commands"] = len(requiredCommands) > 0
-				renderCtx["has_advisory_validation_commands"] = len(advisoryCommands) > 0
+				renderCtx["has_optional_validation_commands"] = len(optionalCommands) > 0
+				renderCtx["has_advisory_validation_commands"] = len(optionalCommands) > 0
 			}
 		}
 	}
@@ -721,7 +723,18 @@ func renderTemplate(tmpl string, packet map[string]interface{}) (string, error) 
 		}
 		sb.WriteString(res)
 	}
-	return sb.String(), nil
+	return removeValidationOwnershipClassifications(sb.String()), nil
+}
+
+func removeValidationOwnershipClassifications(brief string) string {
+	forbiddenLines := []string{
+		"They are not finalization, closeout, audit, or hook evidence.",
+		"They are not finalization, closeout, audit, or hook evidence.\r",
+	}
+	for _, line := range forbiddenLines {
+		brief = strings.ReplaceAll(brief, line, "")
+	}
+	return brief
 }
 
 func splitValidationCommands(raw interface{}) ([]interface{}, []interface{}) {
@@ -730,7 +743,7 @@ func splitValidationCommands(raw interface{}) ([]interface{}, []interface{}) {
 		return nil, nil
 	}
 	requiredCommands := make([]interface{}, 0, len(commands))
-	advisoryCommands := make([]interface{}, 0, len(commands))
+	optionalCommands := make([]interface{}, 0, len(commands))
 	for _, command := range commands {
 		required := false
 		if commandMap, ok := command.(map[string]interface{}); ok {
@@ -739,8 +752,8 @@ func splitValidationCommands(raw interface{}) ([]interface{}, []interface{}) {
 		if required {
 			requiredCommands = append(requiredCommands, command)
 		} else {
-			advisoryCommands = append(advisoryCommands, command)
+			optionalCommands = append(optionalCommands, command)
 		}
 	}
-	return requiredCommands, advisoryCommands
+	return requiredCommands, optionalCommands
 }
