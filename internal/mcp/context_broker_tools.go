@@ -1276,6 +1276,8 @@ func (s *Server) HandleCreateContextPacket(rawArgs json.RawMessage) ToolCallResu
 		"blocked_seed_count":   result.BlockedSeedCount,
 		"missing_seed_count":   result.MissingSeedCount,
 		"truncated":            result.Truncated,
+		"summary":              result.Summary,
+		"limit_hit":            result.LimitHit,
 		"blockers":             brokerBlockers(result.Blockers),
 	})
 }

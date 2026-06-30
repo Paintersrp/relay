@@ -46,6 +46,14 @@ func TestStatusFromCoverage(t *testing.T) {
 			want: ContextPacketStatusCreated,
 		},
 		{
+			name: "required covered optional search pruned",
+			entries: []ContextCoverageEntry{
+				{Status: CoverageStatusCovered, Required: true},
+				{Status: CoverageStatusPartial, SeedType: "search", Truncated: true, TruncationClass: TruncationClassOptionalSearch},
+			},
+			want: ContextPacketStatusCreated,
+		},
+		{
 			name: "truncated",
 			entries: []ContextCoverageEntry{
 				{Status: CoverageStatusCovered, Required: true},

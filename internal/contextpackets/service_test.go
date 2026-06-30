@@ -337,6 +337,105 @@ func TestCreateContextPacketRequiredFileCoveredAndNoMatchSearchUsable(t *testing
 	}
 }
 
+func TestCreateContextPacketRequiredFileReadyWithOptionalSearchPruned(t *testing.T) {
+	requireRG(t)
+	fixture := setupContextPacketFixture(t, fixtureOptions{})
+
+	writeFile(t, filepath.Join(fixture.repoRoot, "src", "needle-2.txt"), "needle optional two\n")
+	writeFile(t, filepath.Join(fixture.repoRoot, "src", "needle-3.txt"), "needle optional three\n")
+	runGit(t, fixture.repoRoot, "git", "add", ".")
+	runGit(t, fixture.repoRoot, "git", "commit", "-m", "add optional search pressure")
+	snapshot, err := sources.NewService(fixture.store).CreateSourceSnapshot(t.Context(), sources.SourceSnapshotInput{
+		ProjectID:           "relay",
+		RepoIDs:             []string{"relay"},
+		IncludeFileMetadata: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+
+	result, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
+		ProjectID:        "relay",
+		TaskSlug:         "optional-search-pruned",
+		SourceSnapshotID: snapshot.SourceSnapshotID,
+		MaxSources:       10,
+		SeedFiles: []ContextSeedFile{{
+			RepoID:   "relay",
+			Path:     "src/app.txt",
+			Required: true,
+			Reason:   "required source",
+		}},
+		SeedSearches: []ContextSeedSearch{{
+			RepoIDs:    []string{"relay"},
+			Pattern:    "needle",
+			Required:   false,
+			Reason:     "optional breadth check",
+			MaxResults: 1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket error: %v", err)
+	}
+	if result.Status != ContextPacketStatusCreated || result.Truncated || result.LimitHit != LimitHitNone {
+		t.Fatalf("expected created nonblocking packet, got status=%q truncated=%t limit=%q summary=%+v", result.Status, result.Truncated, result.LimitHit, result.Summary)
+	}
+	if !result.Summary.OptionalSearchTruncated || result.Summary.RequiredContextTruncated || result.Summary.RequiredSearchNonExhaustive {
+		t.Fatalf("expected only optional search pruning, got summary=%+v", result.Summary)
+	}
+	var optionalSearch *ContextCoverageEntry
+	for i := range result.Coverage {
+		if result.Coverage[i].SeedType == "search" && !result.Coverage[i].Required {
+			optionalSearch = &result.Coverage[i]
+		}
+	}
+	if optionalSearch == nil || optionalSearch.Status != CoverageStatusPartial || !optionalSearch.Truncated || optionalSearch.TruncationClass != TruncationClassOptionalSearch {
+		t.Fatalf("expected optional search pruning diagnostics, got %+v", optionalSearch)
+	}
+}
+
+func TestCreateContextPacketRequiredSearchNonExhaustiveIsPrecise(t *testing.T) {
+	requireRG(t)
+	fixture := setupContextPacketFixture(t, fixtureOptions{})
+
+	writeFile(t, filepath.Join(fixture.repoRoot, "src", "needle-2.txt"), "needle required two\n")
+	runGit(t, fixture.repoRoot, "git", "add", ".")
+	runGit(t, fixture.repoRoot, "git", "commit", "-m", "add required search pressure")
+	snapshot, err := sources.NewService(fixture.store).CreateSourceSnapshot(t.Context(), sources.SourceSnapshotInput{
+		ProjectID:           "relay",
+		RepoIDs:             []string{"relay"},
+		IncludeFileMetadata: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+
+	result, err := fixture.service.CreateContextPacket(t.Context(), ContextPacketInput{
+		ProjectID:        "relay",
+		TaskSlug:         "required-search-non-exhaustive",
+		SourceSnapshotID: snapshot.SourceSnapshotID,
+		MaxSources:       10,
+		SeedSearches: []ContextSeedSearch{{
+			RepoIDs:    []string{"relay"},
+			Pattern:    "needle",
+			Required:   true,
+			Reason:     "required evidence search",
+			MaxResults: 1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateContextPacket error: %v", err)
+	}
+	if result.Status != ContextPacketStatusPartial || !result.Truncated || result.LimitHit != LimitHitRequiredSearch {
+		t.Fatalf("expected partial required-search non-exhaustive packet, got status=%q truncated=%t limit=%q summary=%+v", result.Status, result.Truncated, result.LimitHit, result.Summary)
+	}
+	if !result.Summary.RequiredSearchNonExhaustive || result.Summary.OptionalSearchTruncated || result.Summary.RequiredContextTruncated {
+		t.Fatalf("expected required search non-exhaustive summary, got %+v", result.Summary)
+	}
+	if len(result.Coverage) != 1 || result.Coverage[0].TruncationClass != TruncationClassRequiredSearch || result.Coverage[0].MissingCause == "" {
+		t.Fatalf("expected required search truncation diagnostics, got %+v", result.Coverage)
+	}
+}
+
 func TestCreateContextPacketRequiredSearchWithBlockersStaysBlocked(t *testing.T) {
 	requireRG(t)
 	fixture := setupContextPacketFixture(t, fixtureOptions{withPrivateKey: true})

@@ -1823,6 +1823,72 @@ func TestGetNextPassWork_PASS002FallbackCreatesUsableHandoffWork(t *testing.T) {
 	}
 }
 
+func TestContextPacketResultUsableForHandoffAllowsOptionalSearchPruning(t *testing.T) {
+	result := &CtxPacketResult{
+		ContextPacketID:    "ctxpkt-optional-search-pruned",
+		Status:             "created",
+		CoverageReportPath: "/artifacts/coverage.json",
+		SourceSnapshotID:   "snap-ready",
+		SourceCount:        2,
+		Summary: CtxPacketSummary{
+			SourceCount:             2,
+			CoveredSeedCount:        1,
+			OptionalSearchTruncated: true,
+			MaxSources:              10,
+			MaxTotalBytes:           180000,
+		},
+		Coverage: []CtxCoverageEntry{
+			{SeedID: "file:1", SeedType: "file", Required: true, Status: "covered", Path: "internal/app/plans/work_packets.go"},
+			{SeedID: "search:1", SeedType: "search", Required: false, Status: "partial", Pattern: "optional", Truncated: true, TruncationClass: "optional_search_truncated"},
+		},
+		LimitHit: "none",
+	}
+
+	usable, reason := contextPacketResultUsableForHandoff(result, "snap-ready")
+	if !usable || reason != "" {
+		t.Fatalf("expected optional search pruning to remain usable, usable=%t reason=%q", usable, reason)
+	}
+	summary := packetDiagnosticSummary(result)
+	if summary == nil || !summary.OptionalSearchTruncated || summary.Truncated || summary.LimitHit != "none" {
+		t.Fatalf("expected optional search pruning diagnostics without blocking truncation, got %+v", summary)
+	}
+	coverage := coverageDiagnosticSummary(result)
+	if coverage == nil || !coverage.OptionalSearchTruncated || len(coverage.OptionalSearchTruncatedSeedIDs) != 1 || coverage.RequiredSeedTruncatedCount != 0 {
+		t.Fatalf("expected optional search coverage diagnostics, got %+v", coverage)
+	}
+}
+
+func TestContextPacketResultUsableForHandoffBlocksRequiredSearchNonExhaustive(t *testing.T) {
+	result := &CtxPacketResult{
+		ContextPacketID:    "ctxpkt-required-search",
+		Status:             "partial",
+		CoverageReportPath: "/artifacts/coverage.json",
+		SourceSnapshotID:   "snap-ready",
+		SourceCount:        1,
+		Truncated:          true,
+		Summary: CtxPacketSummary{
+			SourceCount:                 1,
+			Truncated:                   true,
+			RequiredSearchNonExhaustive: true,
+			MaxSources:                  10,
+			MaxTotalBytes:               180000,
+		},
+		Coverage: []CtxCoverageEntry{
+			{SeedID: "search:1", SeedType: "search", Required: true, Status: "partial", Pattern: "required", Truncated: true, TruncationClass: "required_search_non_exhaustive"},
+		},
+		LimitHit: "required_search_non_exhaustive",
+	}
+
+	usable, reason := contextPacketResultUsableForHandoff(result, "snap-ready")
+	if usable || !strings.Contains(reason, "partial") {
+		t.Fatalf("expected required search non-exhaustive packet to be unusable, usable=%t reason=%q", usable, reason)
+	}
+	blocker := blockerForContextPacketResult(result, reason)
+	if blocker == nil || blocker.Code != BlockerContextPacketTruncated || !strings.Contains(blocker.Message, "required_search_non_exhaustive") {
+		t.Fatalf("expected precise truncation blocker, got %+v", blocker)
+	}
+}
+
 func TestGetNextPassWork_ContextAcquisitionFailureReport(t *testing.T) {
 	t.Parallel()
 	svc, st := newWorkPacketService(t)

@@ -26,6 +26,8 @@ const (
 	LimitHitMaxSources        = "max_sources"
 	LimitHitMaxTotalBytes     = "max_total_bytes"
 	LimitHitCoverageTruncated = "coverage_truncated"
+	LimitHitRequiredContext   = "required_context_truncated"
+	LimitHitRequiredSearch    = "required_search_non_exhaustive"
 	LimitHitNone              = "none"
 	LimitHitUnknown           = "unknown"
 )
@@ -126,6 +128,9 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			blockers = append(blockers, inventory.Blockers...)
 		}
 		entry.Truncated = inventory.Truncated
+		if entry.Truncated {
+			entry.TruncationClass = TruncationClassOptionalInventory
+		}
 		for _, file := range inventory.Files {
 			source := ContextSource{
 				SourceID:         sourceID(SourceTypeInventory, file.RepoID, file.Path, 0, 0, file.ContentHash),
@@ -140,6 +145,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			}
 			if !builder.addSource(source) {
 				entry.Truncated = true
+				entry.TruncationClass = packetLimitTruncationClass(builder)
 				break
 			}
 			entry.SourceIDs = append(entry.SourceIDs, source.SourceID)
@@ -227,6 +233,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 		if !builder.addSource(source) {
 			entry.Status = CoverageStatusPartial
 			entry.Truncated = true
+			entry.TruncationClass = packetLimitTruncationClass(builder)
 			coverage = append(coverage, entry)
 			return nil
 		}
@@ -235,6 +242,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 		entry.Truncated = read.Truncated
 		if read.Truncated {
 			entry.Status = CoverageStatusPartial
+			entry.TruncationClass = TruncationClassRequiredContext
 		}
 		coverage = append(coverage, entry)
 		return nil
@@ -289,13 +297,28 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			}
 			if !builder.addSource(source) {
 				entry.Truncated = true
+				entry.TruncationClass = packetLimitTruncationClass(builder)
 				break
 			}
 			entry.SourceIDs = append(entry.SourceIDs, source.SourceID)
 		}
-		entry.Truncated = entry.Truncated || search.Truncated
+		searchTruncated := search.Truncated
+		entry.Truncated = entry.Truncated || searchTruncated
+		if entry.Truncated && entry.TruncationClass == "" {
+			if seed.Required {
+				entry.TruncationClass = TruncationClassRequiredSearch
+			} else {
+				entry.TruncationClass = TruncationClassOptionalSearch
+			}
+		}
 		switch {
-		case len(entry.SourceIDs) > 0 && (entry.Truncated || len(entry.Blockers) > 0):
+		case len(entry.SourceIDs) > 0 && seed.Required && entry.Truncated:
+			entry.Status = CoverageStatusPartial
+			entry.MissingCause = "required search captured bounded evidence but was non-exhaustive"
+		case len(entry.SourceIDs) > 0 && !seed.Required && entry.Truncated:
+			entry.Status = CoverageStatusPartial
+			entry.MissingCause = "optional search results were pruned by declared bounds"
+		case len(entry.SourceIDs) > 0 && len(entry.Blockers) > 0:
 			entry.Status = CoverageStatusPartial
 		case len(entry.SourceIDs) > 0:
 			entry.Status = CoverageStatusCovered
@@ -314,6 +337,7 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 			// Truncated required search with no captured matches remains partial.
 			entry.Status = CoverageStatusPartial
 			entry.MissingCause = "search truncated before matches were captured"
+			entry.TruncationClass = TruncationClassRequiredSearch
 		default:
 			entry.Status = CoverageStatusPartial
 			entry.MissingCause = "optional search returned no matches"
@@ -365,21 +389,29 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 	}
 	builder.totalBytes = totalBytes
 
+	requiredContextTruncated := hasRequiredContextTruncatedCoverage(coverage)
+	requiredSearchNonExhaustive := hasRequiredSearchNonExhaustiveCoverage(coverage)
+	optionalSearchTruncated := hasOptionalSearchTruncatedCoverage(coverage)
 	optionalInventoryTruncated := hasOptionalInventoryTruncatedCoverage(coverage)
 	truncated := hasBlockingTruncatedCoverage(coverage)
 	covered, blocked, missing := coverageCounts(coverage)
 	status := statusFromCoverage(coverage, truncated)
 	summary := ContextPacketSummary{
-		SourceCount:                len(builder.sources),
-		CoveredSeedCount:           covered,
-		BlockedSeedCount:           blocked,
-		MissingSeedCount:           missing,
-		Truncated:                  truncated,
-		MaxSources:                 maxSources,
-		MaxTotalBytes:              maxTotalBytes,
-		TotalSourceBytes:           builder.totalBytes,
-		InventoryIncluded:          input.IncludeInventory,
-		OptionalInventoryTruncated: optionalInventoryTruncated,
+		SourceCount:                   len(builder.sources),
+		CoveredSeedCount:              covered,
+		BlockedSeedCount:              blocked,
+		MissingSeedCount:              missing,
+		Truncated:                     truncated,
+		RequiredContextTruncated:      requiredContextTruncated,
+		RequiredSearchNonExhaustive:   requiredSearchNonExhaustive,
+		OptionalSearchTruncated:       optionalSearchTruncated,
+		MaxSources:                    maxSources,
+		MaxTotalBytes:                 maxTotalBytes,
+		TotalSourceBytes:              builder.totalBytes,
+		InventoryIncluded:             input.IncludeInventory,
+		OptionalInventoryTruncated:    optionalInventoryTruncated,
+		PacketSourceLimitTruncated:    builder.sourceLimitTruncated,
+		PacketTotalByteLimitTruncated: builder.byteLimitTruncated,
 	}
 
 	// Lookup source snapshot row ID
@@ -505,14 +537,16 @@ func (s *Service) CreateContextPacket(ctx context.Context, input ContextPacketIn
 }
 
 type packetBuilder struct {
-	projectID        string
-	sourceSnapshotID string
-	maxSources       int
-	maxTotalBytes    int
-	totalBytes       int
-	truncated        bool
-	seen             map[string]struct{}
-	sources          []ContextSource
+	projectID            string
+	sourceSnapshotID     string
+	maxSources           int
+	maxTotalBytes        int
+	totalBytes           int
+	truncated            bool
+	sourceLimitTruncated bool
+	byteLimitTruncated   bool
+	seen                 map[string]struct{}
+	sources              []ContextSource
 }
 
 func (s *Service) readRequiredSeedFileChunks(ctx context.Context, projectID, sourceSnapshotID, seedID string, seed ContextSeedFile, generatedAt string, builder *packetBuilder) (ContextCoverageEntry, []sources.SourceBlocker, error) {
@@ -592,6 +626,7 @@ func (s *Service) readRequiredSeedFileChunks(ctx context.Context, projectID, sou
 			}
 			entry.Status = CoverageStatusPartial
 			entry.Truncated = true
+			entry.TruncationClass = TruncationClassRequiredContext
 			entry.MissingCause = "required file chunk exceeded max_bytes before completing the requested line range"
 			return entry, blockers, nil
 		}
@@ -609,11 +644,13 @@ func (b *packetBuilder) addSource(source ContextSource) bool {
 	}
 	if len(b.sources) >= b.maxSources {
 		b.truncated = true
+		b.sourceLimitTruncated = true
 		return false
 	}
 	bytes := len([]byte(source.Content)) + len([]byte(source.Snippet))
 	if b.totalBytes+bytes > b.maxTotalBytes {
 		b.truncated = true
+		b.byteLimitTruncated = true
 		return false
 	}
 	b.seen[source.SourceID] = struct{}{}
@@ -638,6 +675,16 @@ func (b *packetBuilder) addRequiredSource(source ContextSource) {
 	if b.sourceSnapshotID == "" {
 		b.sourceSnapshotID = source.SourceSnapshotID
 	}
+}
+
+func packetLimitTruncationClass(b packetBuilder) string {
+	if b.byteLimitTruncated {
+		return TruncationClassPacketTotalByteLimit
+	}
+	if b.sourceLimitTruncated {
+		return TruncationClassPacketSourceLimit
+	}
+	return TruncationClassRequiredContext
 }
 
 func normalizeTaskSlug(value string) string {
@@ -680,7 +727,7 @@ func hasBlockingTruncatedCoverage(entries []ContextCoverageEntry) bool {
 			}
 			continue
 		}
-		if entry.Truncated && entry.SeedType != "inventory" {
+		if entry.Truncated && entry.SeedType != "inventory" && entry.SeedType != "search" {
 			return true
 		}
 	}
@@ -688,6 +735,33 @@ func hasBlockingTruncatedCoverage(entries []ContextCoverageEntry) bool {
 		return false
 	}
 	return hasAnyTruncatedCoverage(entries)
+}
+
+func hasRequiredContextTruncatedCoverage(entries []ContextCoverageEntry) bool {
+	for _, entry := range entries {
+		if entry.Required && entry.Truncated && entry.SeedType != "search" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasRequiredSearchNonExhaustiveCoverage(entries []ContextCoverageEntry) bool {
+	for _, entry := range entries {
+		if entry.Required && entry.SeedType == "search" && entry.Truncated {
+			return true
+		}
+	}
+	return false
+}
+
+func hasOptionalSearchTruncatedCoverage(entries []ContextCoverageEntry) bool {
+	for _, entry := range entries {
+		if entry.SeedType == "search" && !entry.Required && entry.Truncated {
+			return true
+		}
+	}
+	return false
 }
 
 func hasOptionalInventoryTruncatedCoverage(entries []ContextCoverageEntry) bool {
@@ -703,10 +777,16 @@ func detectLimitHit(summary ContextPacketSummary, coverage []ContextCoverageEntr
 	if !summary.Truncated {
 		return LimitHitNone
 	}
-	if summary.MaxSources > 0 && summary.SourceCount >= summary.MaxSources {
+	if summary.RequiredContextTruncated {
+		return LimitHitRequiredContext
+	}
+	if summary.RequiredSearchNonExhaustive {
+		return LimitHitRequiredSearch
+	}
+	if summary.PacketSourceLimitTruncated || (summary.MaxSources > 0 && summary.SourceCount >= summary.MaxSources) {
 		return LimitHitMaxSources
 	}
-	if summary.MaxTotalBytes > 0 && summary.TotalSourceBytes >= summary.MaxTotalBytes {
+	if summary.PacketTotalByteLimitTruncated || (summary.MaxTotalBytes > 0 && summary.TotalSourceBytes >= summary.MaxTotalBytes) {
 		return LimitHitMaxTotalBytes
 	}
 	for _, entry := range coverage {

@@ -212,17 +212,22 @@ type AcquisitionAttemptStrategy struct {
 }
 
 type ContextPacketDiagnosticSummary struct {
-	MaxSources                 int    `json:"max_sources"`
-	MaxTotalBytes              int    `json:"max_total_bytes"`
-	TotalSourceBytes           int    `json:"total_source_bytes"`
-	SourceCount                int    `json:"source_count"`
-	CoveredSeedCount           int    `json:"covered_seed_count"`
-	BlockedSeedCount           int    `json:"blocked_seed_count"`
-	MissingSeedCount           int    `json:"missing_seed_count"`
-	Truncated                  bool   `json:"truncated"`
-	InventoryIncluded          bool   `json:"inventory_included"`
-	OptionalInventoryTruncated bool   `json:"optional_inventory_truncated"`
-	LimitHit                   string `json:"limit_hit"`
+	MaxSources                    int    `json:"max_sources"`
+	MaxTotalBytes                 int    `json:"max_total_bytes"`
+	TotalSourceBytes              int    `json:"total_source_bytes"`
+	SourceCount                   int    `json:"source_count"`
+	CoveredSeedCount              int    `json:"covered_seed_count"`
+	BlockedSeedCount              int    `json:"blocked_seed_count"`
+	MissingSeedCount              int    `json:"missing_seed_count"`
+	Truncated                     bool   `json:"truncated"`
+	RequiredContextTruncated      bool   `json:"required_context_truncated"`
+	RequiredSearchNonExhaustive   bool   `json:"required_search_non_exhaustive"`
+	OptionalSearchTruncated       bool   `json:"optional_search_truncated"`
+	InventoryIncluded             bool   `json:"inventory_included"`
+	OptionalInventoryTruncated    bool   `json:"optional_inventory_truncated"`
+	PacketSourceLimitTruncated    bool   `json:"packet_source_limit_truncated"`
+	PacketTotalByteLimitTruncated bool   `json:"packet_total_byte_limit_truncated"`
+	LimitHit                      string `json:"limit_hit"`
 }
 
 type ContextCoverageDiagnosticSummary struct {
@@ -239,23 +244,27 @@ type ContextCoverageDiagnosticSummary struct {
 	RequiredSeedBlockedCount          int                         `json:"required_seed_blocked_count"`
 	RequiredSeedMissingCount          int                         `json:"required_seed_missing_count"`
 	RequiredSeedTruncatedCount        int                         `json:"required_seed_truncated_count"`
+	RequiredSearchNonExhaustiveCount  int                         `json:"required_search_non_exhaustive_count"`
+	OptionalSearchTruncated           bool                        `json:"optional_search_truncated"`
+	OptionalSearchTruncatedSeedIDs    []string                    `json:"optional_search_truncated_seed_ids,omitempty"`
 	OptionalInventoryTruncated        bool                        `json:"optional_inventory_truncated"`
 	OptionalInventoryTruncatedSeedIDs []string                    `json:"optional_inventory_truncated_seed_ids,omitempty"`
 	Entries                           []ContextCoverageDiagnostic `json:"entries,omitempty"`
 }
 
 type ContextCoverageDiagnostic struct {
-	SeedID       string             `json:"seed_id"`
-	SeedType     string             `json:"seed_type"`
-	Required     bool               `json:"required"`
-	Path         string             `json:"path,omitempty"`
-	Pattern      string             `json:"pattern,omitempty"`
-	Reason       string             `json:"reason,omitempty"`
-	Status       string             `json:"status"`
-	Truncated    bool               `json:"truncated"`
-	MissingCause string             `json:"missing_cause,omitempty"`
-	Blockers     []CtxSourceBlocker `json:"blockers,omitempty"`
-	SourceIDs    []string           `json:"source_ids,omitempty"`
+	SeedID          string             `json:"seed_id"`
+	SeedType        string             `json:"seed_type"`
+	Required        bool               `json:"required"`
+	Path            string             `json:"path,omitempty"`
+	Pattern         string             `json:"pattern,omitempty"`
+	Reason          string             `json:"reason,omitempty"`
+	Status          string             `json:"status"`
+	Truncated       bool               `json:"truncated"`
+	TruncationClass string             `json:"truncation_class,omitempty"`
+	MissingCause    string             `json:"missing_cause,omitempty"`
+	Blockers        []CtxSourceBlocker `json:"blockers,omitempty"`
+	SourceIDs       []string           `json:"source_ids,omitempty"`
 }
 
 // CompactNextPassWorkSummary returns the MCP-safe projection of the full local
@@ -636,30 +645,36 @@ type CtxPacketResult struct {
 }
 
 type CtxPacketSummary struct {
-	SourceCount                int
-	CoveredSeedCount           int
-	BlockedSeedCount           int
-	MissingSeedCount           int
-	Truncated                  bool
-	MaxSources                 int
-	MaxTotalBytes              int
-	TotalSourceBytes           int
-	InventoryIncluded          bool
-	OptionalInventoryTruncated bool
+	SourceCount                   int
+	CoveredSeedCount              int
+	BlockedSeedCount              int
+	MissingSeedCount              int
+	Truncated                     bool
+	RequiredContextTruncated      bool
+	RequiredSearchNonExhaustive   bool
+	OptionalSearchTruncated       bool
+	MaxSources                    int
+	MaxTotalBytes                 int
+	TotalSourceBytes              int
+	InventoryIncluded             bool
+	OptionalInventoryTruncated    bool
+	PacketSourceLimitTruncated    bool
+	PacketTotalByteLimitTruncated bool
 }
 
 type CtxCoverageEntry struct {
-	SeedID       string
-	SeedType     string
-	Required     bool
-	Status       string
-	Path         string
-	Pattern      string
-	Reason       string
-	SourceIDs    []string
-	Truncated    bool
-	Blockers     []CtxSourceBlocker
-	MissingCause string
+	SeedID          string
+	SeedType        string
+	Required        bool
+	Status          string
+	Path            string
+	Pattern         string
+	Reason          string
+	SourceIDs       []string
+	Truncated       bool
+	TruncationClass string
+	Blockers        []CtxSourceBlocker
+	MissingCause    string
 }
 
 type CtxSourceBlocker struct {
@@ -2270,9 +2285,13 @@ func blockerForContextPacketResult(result *CtxPacketResult, reason string) *Work
 		}
 	}
 	if result != nil && result.Truncated {
+		limitHit := limitHitFromResult(result)
+		if limitHit == "unknown" {
+			limitHit = "coverage_truncated"
+		}
 		return &WorkBlocker{
 			Code:        BlockerContextPacketTruncated,
-			Message:     fmt.Sprintf("context packet %q is truncated (source count=%d)", result.ContextPacketID, result.SourceCount),
+			Message:     fmt.Sprintf("context packet %q has blocking truncation %q (source count=%d)", result.ContextPacketID, limitHit, result.SourceCount),
 			Recoverable: true,
 		}
 	}
@@ -2331,17 +2350,22 @@ func packetDiagnosticSummary(result *CtxPacketResult) *ContextPacketDiagnosticSu
 		summary.Truncated = result.Truncated
 	}
 	return &ContextPacketDiagnosticSummary{
-		MaxSources:                 summary.MaxSources,
-		MaxTotalBytes:              summary.MaxTotalBytes,
-		TotalSourceBytes:           summary.TotalSourceBytes,
-		SourceCount:                summary.SourceCount,
-		CoveredSeedCount:           summary.CoveredSeedCount,
-		BlockedSeedCount:           summary.BlockedSeedCount,
-		MissingSeedCount:           summary.MissingSeedCount,
-		Truncated:                  summary.Truncated,
-		InventoryIncluded:          summary.InventoryIncluded,
-		OptionalInventoryTruncated: summary.OptionalInventoryTruncated,
-		LimitHit:                   limitHit,
+		MaxSources:                    summary.MaxSources,
+		MaxTotalBytes:                 summary.MaxTotalBytes,
+		TotalSourceBytes:              summary.TotalSourceBytes,
+		SourceCount:                   summary.SourceCount,
+		CoveredSeedCount:              summary.CoveredSeedCount,
+		BlockedSeedCount:              summary.BlockedSeedCount,
+		MissingSeedCount:              summary.MissingSeedCount,
+		Truncated:                     summary.Truncated,
+		RequiredContextTruncated:      summary.RequiredContextTruncated,
+		RequiredSearchNonExhaustive:   summary.RequiredSearchNonExhaustive,
+		OptionalSearchTruncated:       summary.OptionalSearchTruncated,
+		InventoryIncluded:             summary.InventoryIncluded,
+		OptionalInventoryTruncated:    summary.OptionalInventoryTruncated,
+		PacketSourceLimitTruncated:    summary.PacketSourceLimitTruncated,
+		PacketTotalByteLimitTruncated: summary.PacketTotalByteLimitTruncated,
+		LimitHit:                      limitHit,
 	}
 }
 
@@ -2390,6 +2414,13 @@ func coverageDiagnosticSummary(result *CtxPacketResult) *ContextCoverageDiagnost
 			if entry.Truncated {
 				out.RequiredSeedTruncatedCount++
 			}
+			if entry.SeedType == "search" && entry.Truncated {
+				out.RequiredSearchNonExhaustiveCount++
+			}
+		}
+		if entry.SeedType == "search" && !entry.Required && entry.Truncated {
+			out.OptionalSearchTruncated = true
+			out.OptionalSearchTruncatedSeedIDs = append(out.OptionalSearchTruncatedSeedIDs, entry.SeedID)
 		}
 		if entry.SeedType == "inventory" && !entry.Required && entry.Truncated {
 			out.OptionalInventoryTruncated = true
@@ -2399,17 +2430,18 @@ func coverageDiagnosticSummary(result *CtxPacketResult) *ContextCoverageDiagnost
 			continue
 		}
 		out.Entries = append(out.Entries, ContextCoverageDiagnostic{
-			SeedID:       entry.SeedID,
-			SeedType:     entry.SeedType,
-			Required:     entry.Required,
-			Path:         entry.Path,
-			Pattern:      entry.Pattern,
-			Reason:       entry.Reason,
-			Status:       entry.Status,
-			Truncated:    entry.Truncated,
-			MissingCause: entry.MissingCause,
-			Blockers:     append([]CtxSourceBlocker(nil), entry.Blockers...),
-			SourceIDs:    append([]string(nil), entry.SourceIDs...),
+			SeedID:          entry.SeedID,
+			SeedType:        entry.SeedType,
+			Required:        entry.Required,
+			Path:            entry.Path,
+			Pattern:         entry.Pattern,
+			Reason:          entry.Reason,
+			Status:          entry.Status,
+			Truncated:       entry.Truncated,
+			TruncationClass: entry.TruncationClass,
+			MissingCause:    entry.MissingCause,
+			Blockers:        append([]CtxSourceBlocker(nil), entry.Blockers...),
+			SourceIDs:       append([]string(nil), entry.SourceIDs...),
 		})
 	}
 	return out

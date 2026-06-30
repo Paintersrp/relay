@@ -17,6 +17,13 @@ const (
 	CoverageStatusPartial = "partial"
 	CoverageStatusBlocked = "blocked"
 	CoverageStatusMissing = "missing"
+
+	TruncationClassRequiredContext      = "required_context_truncated"
+	TruncationClassRequiredSearch       = "required_search_non_exhaustive"
+	TruncationClassOptionalSearch       = "optional_search_truncated"
+	TruncationClassOptionalInventory    = "optional_inventory_truncated"
+	TruncationClassPacketSourceLimit    = "packet_source_limit"
+	TruncationClassPacketTotalByteLimit = "packet_total_byte_limit"
 )
 
 type ContextPacketInput struct {
@@ -94,16 +101,21 @@ type ContextPacket struct {
 }
 
 type ContextPacketSummary struct {
-	SourceCount                int  `json:"source_count"`
-	CoveredSeedCount           int  `json:"covered_seed_count"`
-	BlockedSeedCount           int  `json:"blocked_seed_count"`
-	MissingSeedCount           int  `json:"missing_seed_count"`
-	Truncated                  bool `json:"truncated"`
-	MaxSources                 int  `json:"max_sources"`
-	MaxTotalBytes              int  `json:"max_total_bytes"`
-	TotalSourceBytes           int  `json:"total_source_bytes"`
-	InventoryIncluded          bool `json:"inventory_included"`
-	OptionalInventoryTruncated bool `json:"optional_inventory_truncated"`
+	SourceCount                   int  `json:"source_count"`
+	CoveredSeedCount              int  `json:"covered_seed_count"`
+	BlockedSeedCount              int  `json:"blocked_seed_count"`
+	MissingSeedCount              int  `json:"missing_seed_count"`
+	Truncated                     bool `json:"truncated"`
+	RequiredContextTruncated      bool `json:"required_context_truncated"`
+	RequiredSearchNonExhaustive   bool `json:"required_search_non_exhaustive"`
+	OptionalSearchTruncated       bool `json:"optional_search_truncated"`
+	MaxSources                    int  `json:"max_sources"`
+	MaxTotalBytes                 int  `json:"max_total_bytes"`
+	TotalSourceBytes              int  `json:"total_source_bytes"`
+	InventoryIncluded             bool `json:"inventory_included"`
+	OptionalInventoryTruncated    bool `json:"optional_inventory_truncated"`
+	PacketSourceLimitTruncated    bool `json:"packet_source_limit_truncated"`
+	PacketTotalByteLimitTruncated bool `json:"packet_total_byte_limit_truncated"`
 }
 
 type ContextSource struct {
@@ -140,16 +152,17 @@ type ContextCoverageReport struct {
 }
 
 type ContextCoverageEntry struct {
-	SeedID       string                  `json:"seed_id"`
-	SeedType     string                  `json:"seed_type"`
-	Required     bool                    `json:"required"`
-	Status       string                  `json:"status"`
-	RepoID       string                  `json:"repo_id,omitempty"`
-	Path         string                  `json:"path,omitempty"`
-	Pattern      string                  `json:"pattern,omitempty"`
-	Reason       string                  `json:"reason,omitempty"`
-	SourceIDs    []string                `json:"source_ids,omitempty"`
-	Truncated    bool                    `json:"truncated"`
-	Blockers     []sources.SourceBlocker `json:"blockers,omitempty"`
-	MissingCause string                  `json:"missing_cause,omitempty"`
+	SeedID          string                  `json:"seed_id"`
+	SeedType        string                  `json:"seed_type"`
+	Required        bool                    `json:"required"`
+	Status          string                  `json:"status"`
+	RepoID          string                  `json:"repo_id,omitempty"`
+	Path            string                  `json:"path,omitempty"`
+	Pattern         string                  `json:"pattern,omitempty"`
+	Reason          string                  `json:"reason,omitempty"`
+	SourceIDs       []string                `json:"source_ids,omitempty"`
+	Truncated       bool                    `json:"truncated"`
+	TruncationClass string                  `json:"truncation_class,omitempty"`
+	Blockers        []sources.SourceBlocker `json:"blockers,omitempty"`
+	MissingCause    string                  `json:"missing_cause,omitempty"`
 }

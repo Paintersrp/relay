@@ -28,6 +28,12 @@ func renderMarkdown(packet ContextPacket) string {
 	fmt.Fprintf(&b, "| Blocked Seed Count | %d |\n", packet.Summary.BlockedSeedCount)
 	fmt.Fprintf(&b, "| Missing Seed Count | %d |\n", packet.Summary.MissingSeedCount)
 	fmt.Fprintf(&b, "| Truncated | %t |\n", packet.Summary.Truncated)
+	fmt.Fprintf(&b, "| Required Context Truncated | %t |\n", packet.Summary.RequiredContextTruncated)
+	fmt.Fprintf(&b, "| Required Search Non-Exhaustive | %t |\n", packet.Summary.RequiredSearchNonExhaustive)
+	fmt.Fprintf(&b, "| Optional Search Truncated | %t |\n", packet.Summary.OptionalSearchTruncated)
+	fmt.Fprintf(&b, "| Optional Inventory Truncated | %t |\n", packet.Summary.OptionalInventoryTruncated)
+	fmt.Fprintf(&b, "| Packet Source Limit Truncated | %t |\n", packet.Summary.PacketSourceLimitTruncated)
+	fmt.Fprintf(&b, "| Packet Total Byte Limit Truncated | %t |\n", packet.Summary.PacketTotalByteLimitTruncated)
 	fmt.Fprintf(&b, "| Max Sources | %d |\n", packet.Summary.MaxSources)
 	fmt.Fprintf(&b, "| Max Total Bytes | %d |\n", packet.Summary.MaxTotalBytes)
 	fmt.Fprintf(&b, "| Total Source Bytes | %d |\n", packet.Summary.TotalSourceBytes)
@@ -47,6 +53,12 @@ func renderMarkdown(packet ContextPacket) string {
 				blockersStr += "; "
 			}
 			blockersStr += "missing cause: " + entry.MissingCause
+		}
+		if entry.TruncationClass != "" {
+			if blockersStr != "" {
+				blockersStr += "; "
+			}
+			blockersStr += "truncation class: " + entry.TruncationClass
 		}
 		sourcesStr := strings.Join(entry.SourceIDs, ", ")
 		fmt.Fprintf(&b, "| %s | %s | %t | %s | %s | %s |\n",
