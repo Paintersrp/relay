@@ -15,6 +15,8 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -216,12 +218,13 @@ func run() error {
 	}
 
 	coreTools := map[string]bool{
-		"submit_test_audit_packet":        true,
-		"create_run_from_planner_handoff": true,
-		"submit_planner_pass_plan":        true,
-		"list_open_runs":                  true,
-		"get_run_status":                  true,
-		"submit_audit_packet":             true,
+		"submit_test_audit_packet":             true,
+		"create_run_from_planner_handoff":      true,
+		"create_run_from_planner_handoff_file": true,
+		"submit_planner_pass_plan":             true,
+		"list_open_runs":                       true,
+		"get_run_status":                       true,
+		"submit_audit_packet":                  true,
 		// Plan v2 attempt / intent / seed tools
 		"create_plan_attempt_with_intent": true,
 		"get_plan_intent_review_packet":   true,
@@ -275,7 +278,7 @@ func run() error {
 
 	unsafeKeywords := []string{"exec", "shell", "write_file", "git_commit", "git_push", "checkout", "reset", "branch"}
 
-	// In default/local-operator profile, we expect 50 tools
+	// tools/list returns the first bounded page by default.
 	expectedToolCount := 50
 	h.check(fmt.Sprintf("tools/list count=%d", expectedToolCount), len(toolsList.Tools) == expectedToolCount)
 
@@ -398,6 +401,11 @@ func run() error {
 		return fmt.Errorf("submit_planner_pass_plan did not return a plan_id; cannot continue smoke test")
 	}
 	fmt.Printf("  created plan_id: %s\n", smokePlanID)
+	if h.dbPath != "" {
+		if err := seedSmokeContextPacket(h.dbPath, smokePlanID, "PASS-001", "packet-smoke-plan-pass-001", "snap-smoke-base", "created", "2026-06-28T00:05:00Z"); err != nil {
+			return h.fatal("seed smoke context packet", err)
+		}
+	}
 
 	// -------------------------------------------------------
 	// 6. get_next_pass_work - verify actionable structuredContent for selected pass
@@ -509,7 +517,69 @@ Validates that create_run_from_planner_handoff can associate a new run to a plan
 	fmt.Printf("  created run_id: %s\n", createdRunID)
 
 	// -------------------------------------------------------
-	// 6. get_run_status — verify bounded snapshot for created run
+	// 6b. create_run_from_planner_handoff_file — create standalone run from exact file bytes
+	// -------------------------------------------------------
+	if h.dbPath != "" {
+		fileHandoffBytes := []byte(`---
+title: Smoke Test File Handoff
+repo_target: smoke-test-repo
+branch_context: main
+---
+
+# Smoke Test File Handoff
+
+This synthetic handoff validates exact file-byte MCP run submission.
+`)
+		fileSum := sha256.Sum256(fileHandoffBytes)
+		fileSHA := hex.EncodeToString(fileSum[:])
+		fileDir, err := os.MkdirTemp("", "relay-mcp-smoke-handoff-*")
+		if err != nil {
+			return h.fatal("create_run_from_planner_handoff_file tempdir", err)
+		}
+		defer os.RemoveAll(fileDir)
+		filePath := filepath.Join(fileDir, "reviewed-handoff.md")
+		if err := os.WriteFile(filePath, fileHandoffBytes, 0644); err != nil {
+			return h.fatal("create_run_from_planner_handoff_file write fixture", err)
+		}
+
+		resp, err = h.call("tools/call", map[string]interface{}{
+			"name": "create_run_from_planner_handoff_file",
+			"arguments": map[string]interface{}{
+				"planner_handoff_file": filePath,
+				"expected_sha256":      fileSHA,
+				"repo_target":          "smoke-test-repo",
+				"branch_context":       "main",
+				"source":               "mcp_smoke_test_file",
+			},
+		})
+		if err != nil {
+			return h.fatal("create_run_from_planner_handoff_file", err)
+		}
+		if resp.Error != nil {
+			return h.fatal("create_run_from_planner_handoff_file", fmt.Errorf("RPC error: %s", resp.Error.Message))
+		}
+
+		var createFileResult toolCallResult
+		if err := json.Unmarshal(resp.Result, &createFileResult); err != nil {
+			return h.fatal("create_run_from_planner_handoff_file parse", err)
+		}
+		h.check("create_run_from_planner_handoff_file !isError", !createFileResult.IsError)
+		if len(createFileResult.Content) > 0 {
+			var out map[string]interface{}
+			if err := json.Unmarshal([]byte(createFileResult.Content[0].Text), &out); err == nil {
+				h.check("create_run_from_planner_handoff_file ok=true", out["ok"] == true)
+				h.check("create_run_from_planner_handoff_file submitted SHA", out["submitted_handoff_sha256"] == fileSHA)
+				h.check("create_run_from_planner_handoff_file sha_match=true", out["sha_match"] == true)
+				h.check("create_run_from_planner_handoff_file source_mode", out["source_mode"] == "file_parameter")
+				if runID, ok := out["run_id"].(float64); ok {
+					h.check("create_run_from_planner_handoff_file run_id non-zero", int64(runID) > 0)
+				}
+			}
+		}
+	}
+
+	// -------------------------------------------------------
+	// 6c. get_run_status — verify bounded snapshot for created run
 	// -------------------------------------------------------
 	resp, err = h.call("tools/call", map[string]interface{}{
 		"name":      "get_run_status",
@@ -792,6 +862,8 @@ Validates that create_run_from_planner_handoff can associate a new run to a plan
 			BlockedSeedCount:    0,
 			MissingSeedCount:    0,
 			CompletedAt:         "2026-06-28T12:00:00Z",
+			PacketJSONPath:      "/artifacts/context/packet-smoke-unusable.json",
+			CoverageReportPath:  "/artifacts/context/packet-smoke-unusable-coverage.json",
 		})
 		if err != nil {
 			dbStore.Close()
@@ -857,6 +929,8 @@ Validates that create_run_from_planner_handoff can associate a new run to a plan
 			BlockedSeedCount:    0,
 			MissingSeedCount:    0,
 			CompletedAt:         "2026-06-28T13:00:00Z", // later makes it latest
+			PacketJSONPath:      "/artifacts/context/packet-smoke-usable.json",
+			CoverageReportPath:  "/artifacts/context/packet-smoke-usable-coverage.json",
 		})
 		if err != nil {
 			dbStore.Close()
@@ -1231,6 +1305,9 @@ func seedTestDatabase(dbPath string) error {
 	if err != nil {
 		return fmt.Errorf("create project: %w", err)
 	}
+	if _, err := s.CreateRepo("smoke-test-repo", "."); err != nil {
+		return fmt.Errorf("create smoke repo: %w", err)
+	}
 
 	// Create a source snapshot to satisfy the managed-pass provenance gate
 	_, err = s.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
@@ -1246,5 +1323,42 @@ func seedTestDatabase(dbPath string) error {
 		return fmt.Errorf("create source snapshot: %w", err)
 	}
 
+	return nil
+}
+
+func seedSmokeContextPacket(dbPath, planID, passID, packetID, snapshotID, status, completedAt string) error {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s, err := store.Open(dbPath, logger)
+	if err != nil {
+		return fmt.Errorf("open store: %w", err)
+	}
+	defer s.Close()
+
+	proj, err := s.GetProjectByProjectID("relay")
+	if err != nil {
+		return fmt.Errorf("lookup project: %w", err)
+	}
+	snap, err := s.GetSourceSnapshotByID(snapshotID)
+	if err != nil {
+		return fmt.Errorf("lookup source snapshot %q: %w", snapshotID, err)
+	}
+	if _, err := s.CreateContextPacket(store.CreateContextPacketParams{
+		ContextPacketID:     packetID,
+		ProjectRowID:        proj.ID,
+		ProjectID:           proj.ProjectID,
+		PlanID:              planID,
+		PassID:              passID,
+		TaskSlug:            "smoke",
+		SourceSnapshotRowID: snap.ID,
+		SourceSnapshotID:    snap.SourceSnapshotID,
+		Status:              status,
+		BlockedSeedCount:    0,
+		MissingSeedCount:    0,
+		CompletedAt:         completedAt,
+		PacketJSONPath:      "/artifacts/context/" + packetID + ".json",
+		CoverageReportPath:  "/artifacts/context/" + packetID + "-coverage.json",
+	}); err != nil {
+		return fmt.Errorf("create context packet: %w", err)
+	}
 	return nil
 }

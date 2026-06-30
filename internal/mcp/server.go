@@ -11,7 +11,8 @@
 //
 // Safety boundaries:
 //   - No shell execution is exposed.
-//   - No arbitrary file read/write is exposed.
+//   - No arbitrary file read/write is exposed; file-based run submission reads
+//     only the single MCP-supplied planner handoff file parameter for intake.
 //   - No git commit, push, branch, or worktree mutation is exposed.
 //   - All artifact writes go through relay/internal/artifacts conventions.
 //   - All run state changes use existing relay store and service behavior.
@@ -63,6 +64,7 @@ func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 		ToolSubmitTestAuditPacket,
 		// Pass 16 real tools.
 		ToolCreateRunFromPlannerHandoff,
+		ToolCreateRunFromPlannerHandoffFile,
 		ToolSubmitPlannerPassPlan,
 		ToolListOpenRuns,
 		ToolGetRunStatus,
@@ -378,6 +380,8 @@ func (s *Server) handleToolsCall(req Request) Response {
 		result = HandleSubmitTestAuditPacket(args)
 	case "create_run_from_planner_handoff":
 		result = s.HandleCreateRunFromPlannerHandoff(args)
+	case "create_run_from_planner_handoff_file":
+		result = s.HandleCreateRunFromPlannerHandoffFile(args)
 	case "submit_planner_pass_plan":
 		result = s.HandleSubmitPlannerPassPlan(args)
 	case "list_open_runs":

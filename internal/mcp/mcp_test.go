@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -587,6 +588,193 @@ func TestHandleCreateRunFromPlannerHandoff_Success(t *testing.T) {
 	}
 	if out.Provenance.ArtifactKind != "planner_handoff_provenance_json" {
 		t.Fatalf("expected provenance artifact kind, got %q", out.Provenance.ArtifactKind)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoffFile_SuccessExactSHA(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	markdownBytes := []byte("---\ntitle: File Run\nrepo_target: test-repo\nbranch_context: main\n---\r\n\r\n# File Run\r\n\r\nExact bytes.\r\n")
+	handoffPath := filepath.Join(t.TempDir(), "reviewed-handoff.md")
+	if err := os.WriteFile(handoffPath, markdownBytes, 0644); err != nil {
+		t.Fatalf("write handoff fixture: %v", err)
+	}
+	sum := sha256.Sum256(markdownBytes)
+	expectedSHA := hex.EncodeToString(sum[:])
+
+	args, _ := json.Marshal(map[string]any{
+		"planner_handoff_file": handoffPath,
+		"expected_sha256":      expectedSHA,
+		"repo_target":          "test-repo",
+		"source":               "mcp_test_file",
+	})
+	result := srv.HandleCreateRunFromPlannerHandoffFile(args)
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.Content[0].Text)
+	}
+
+	var out createRunOutput
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &out); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if out.Tool != "create_run_from_planner_handoff_file" {
+		t.Fatalf("unexpected tool: %q", out.Tool)
+	}
+	if out.SubmittedHandoffSHA256 != expectedSHA {
+		t.Fatalf("expected submitted SHA %q, got %q", expectedSHA, out.SubmittedHandoffSHA256)
+	}
+	if out.ExpectedSHA256 != expectedSHA {
+		t.Fatalf("expected echoed SHA %q, got %q", expectedSHA, out.ExpectedSHA256)
+	}
+	if !out.SHAMatch {
+		t.Fatal("expected sha_match=true")
+	}
+	if out.SourceMode != "file_parameter" {
+		t.Fatalf("expected source_mode=file_parameter, got %q", out.SourceMode)
+	}
+	if out.Provenance.PlannerHandoffSHA256 != expectedSHA {
+		t.Fatalf("expected provenance SHA %q, got %q", expectedSHA, out.Provenance.PlannerHandoffSHA256)
+	}
+	if out.Provenance.SourceArtifactPath != "" {
+		t.Fatalf("file submission should not persist local source path, got %q", out.Provenance.SourceArtifactPath)
+	}
+	if out.Provenance.SourceMode != "file_parameter" {
+		t.Fatalf("expected provenance source_mode=file_parameter, got %q", out.Provenance.SourceMode)
+	}
+
+	row, err := deps.Store.GetRunSubmissionProvenanceByRun(out.RunID)
+	if err != nil {
+		t.Fatalf("load provenance row: %v", err)
+	}
+	if row.PlannerHandoffSha256 != expectedSHA {
+		t.Fatalf("unexpected provenance row hash: %q", row.PlannerHandoffSha256)
+	}
+	if row.SourceArtifactPath != "" {
+		t.Fatalf("provenance row should not persist local file path, got %q", row.SourceArtifactPath)
+	}
+	if contains(row.SubmissionArgsJson, handoffPath) {
+		t.Fatalf("submission args should not persist local file path: %s", row.SubmissionArgsJson)
+	}
+
+	storedHandoff, err := artifacts.Read(out.RunID, "planner_handoff", "planner_handoff.md")
+	if err != nil {
+		t.Fatalf("read stored handoff artifact: %v", err)
+	}
+	if string(storedHandoff) != string(markdownBytes) {
+		t.Fatalf("stored handoff bytes differ from submitted file bytes")
+	}
+
+	provenanceArtifact, err := artifacts.Read(out.RunID, "planner_handoff_provenance_json", "planner_handoff_provenance.json")
+	if err != nil {
+		t.Fatalf("read provenance artifact: %v", err)
+	}
+	provenanceText := string(provenanceArtifact)
+	if !contains(provenanceText, `"source_mode": "file_parameter"`) {
+		t.Fatalf("expected file source mode in provenance artifact: %s", provenanceText)
+	}
+	if contains(provenanceText, handoffPath) {
+		t.Fatalf("provenance artifact should not persist local file path: %s", provenanceText)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoffFile_SHAMismatchCreatesNoRun(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	handoffPath := filepath.Join(t.TempDir(), "reviewed-handoff.md")
+	if err := os.WriteFile(handoffPath, []byte("---\ntitle: File Run\nrepo_target: test-repo\n---\n\n# File Run\n"), 0644); err != nil {
+		t.Fatalf("write handoff fixture: %v", err)
+	}
+
+	args, _ := json.Marshal(map[string]any{
+		"planner_handoff_file": handoffPath,
+		"expected_sha256":      strings.Repeat("0", 64),
+		"repo_target":          "test-repo",
+	})
+	result := srv.HandleCreateRunFromPlannerHandoffFile(args)
+	if !result.IsError {
+		t.Fatal("expected SHA mismatch validation error")
+	}
+	if !contains(result.Content[0].Text, "VALIDATION_ERROR") || !contains(result.Content[0].Text, "expected_sha256") {
+		t.Fatalf("expected expected_sha256 validation error, got: %s", result.Content[0].Text)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+		t.Fatalf("expected no run rows, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "run_submission_provenance"); got != 0 {
+		t.Fatalf("expected no provenance rows, got %d", got)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoffFile_InvalidFileInputs(t *testing.T) {
+	cases := []struct {
+		name string
+		path func(t *testing.T) string
+	}{
+		{
+			name: "missing",
+			path: func(t *testing.T) string {
+				return ""
+			},
+		},
+		{
+			name: "directory",
+			path: func(t *testing.T) string {
+				return t.TempDir()
+			},
+		},
+		{
+			name: "oversized",
+			path: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "too-large.md")
+				if err := os.WriteFile(path, bytes.Repeat([]byte("a"), maxPlannerHandoffFileBytes+1), 0644); err != nil {
+					t.Fatalf("write oversized fixture: %v", err)
+				}
+				return path
+			},
+		},
+		{
+			name: "non_md",
+			path: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "handoff.txt")
+				if err := os.WriteFile(path, []byte("# Handoff\n"), 0644); err != nil {
+					t.Fatalf("write non-md fixture: %v", err)
+				}
+				return path
+			},
+		},
+		{
+			name: "empty",
+			path: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "empty.md")
+				if err := os.WriteFile(path, nil, 0644); err != nil {
+					t.Fatalf("write empty fixture: %v", err)
+				}
+				return path
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deps := setupTestDeps(t)
+			srv := NewServer(discardLogger(), deps)
+			args, _ := json.Marshal(map[string]any{
+				"planner_handoff_file": tc.path(t),
+				"repo_target":          "test-repo",
+			})
+			result := srv.HandleCreateRunFromPlannerHandoffFile(args)
+			if !result.IsError {
+				t.Fatal("expected validation error")
+			}
+			if !contains(result.Content[0].Text, "VALIDATION_ERROR") {
+				t.Fatalf("expected VALIDATION_ERROR, got: %s", result.Content[0].Text)
+			}
+			if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+				t.Fatalf("expected no run rows, got %d", got)
+			}
+		})
 	}
 }
 

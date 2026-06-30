@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > **Current GPT-Facing MCP Action Surface:**
-> The current Planner Project-facing MCP actions are `create_run_from_planner_handoff` and `submit_planner_pass_plan` by default. The first submits a reviewed Planner handoff to Relay to create/start a run; the second submits a reviewed structured Plan of Passes JSON to create managed plan/pass records.
+> The current Planner Project-facing MCP actions are `create_run_from_planner_handoff_file`, `create_run_from_planner_handoff`, and `submit_planner_pass_plan` by default. The file-based handoff tool is preferred when a reviewed Planner handoff exists as a durable Markdown file and exact byte identity matters; the inline handoff tool remains a fallback for chat-only drafts. `submit_planner_pass_plan` submits a reviewed structured Plan of Passes JSON to create managed plan/pass records.
 > 
 > The Planner does **not** have status-query, run-listing, audit-submission, or downstream-dispatch MCP actions by default. Tools such as `list_open_runs`, `get_run_status`, `submit_audit_packet`, and `submit_test_audit_packet` exist in the local/dev/server inventory but are **not** current Planner Project actions unless configuration changes.
 >
@@ -15,7 +15,8 @@
 ## Current GPT-Facing Action vs. Local/Dev Tool Inventory
 
 1.  **Project MCP Actions (Production/GPT-Facing):**
-    *   **Action:** `create_run_from_planner_handoff` — Submits a reviewed Planner handoff to Relay. Relay creates/starts the run and handles all downstream compiler, validator, and executor tasks.
+    *   **Action:** `create_run_from_planner_handoff_file` - Preferred for reviewed Planner handoff Markdown files. Relay reads the single MCP-supplied `planner_handoff_file`, verifies optional `expected_sha256`, creates/starts the run, and records exact submitted-byte provenance.
+    *   **Action:** `create_run_from_planner_handoff` - Fallback for chat-only reviewed handoff Markdown content. Relay creates/starts the run and handles all downstream compiler, validator, and executor tasks.
     *   **Action:** `submit_planner_pass_plan` — Submits a reviewed structured Plan of Passes JSON artifact to Relay. Relay creates managed plan/pass records only.
     *   **User Gating:** Each submission action requires explicit user confirmation in chat before invocation.
 2.  **Local/Dev/Server Tool Inventory (Optional/Developer-Only beyond the two submission actions):**
@@ -143,7 +144,7 @@ For the local ChatGPT tunnel workflow, the default Relay integration path is std
 - `scripts/local/relay-mcp-stdio.mjs` is the launcher used by the default ChatGPT tunnel profile.
 - `npm run chatgpt-mcp:init` configures `tunnel-client` with `--mcp-command`, which launches the stdio MCP server through that wrapper.
 - `cmd/relay` still exposes HTTP `/mcp`, but that route is optional/dev for explicit HTTP tunnel mode or local HTTP testing.
-- Project-facing ChatGPT actions remain `create_run_from_planner_handoff` and `submit_planner_pass_plan` unless project configuration explicitly exposes more.
+- Project-facing ChatGPT actions remain `create_run_from_planner_handoff_file`, `create_run_from_planner_handoff`, and `submit_planner_pass_plan` unless project configuration explicitly exposes more.
 
 ### Claude Desktop
 
@@ -199,9 +200,43 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 
 ---
 
-### 2. `create_run_from_planner_handoff`
+### 2. `create_run_from_planner_handoff_file`
 
-**Purpose:** Submit planner handoff markdown from the current chat conversation to Relay as a new run. Use when the user asks to send, submit, or register a handoff.
+**Purpose:** Submit one reviewed Planner handoff Markdown file to Relay as a new run, preserving exact file bytes. This is the preferred submission path when the reviewed handoff exists as a file.
+
+**The LLM should call this tool when:**
+- The user says "submit this reviewed handoff file to Relay"
+- The user attaches or selects a reviewed `.md` handoff and asks to register it
+- The operator needs the submitted handoff SHA to match the reviewed artifact SHA
+
+**Input:**
+```json
+{
+  "planner_handoff_file": "string (required) - MCP file-parameter path to the reviewed .md handoff",
+  "expected_sha256": "string (optional) - lowercase hex SHA-256 of the exact file bytes",
+  "repo_target": "string (optional) - falls back to handoff metadata/frontmatter repo_target",
+  "branch_context": "string (optional) - falls back to handoff metadata/frontmatter branch_context or 'main'",
+  "name": "string (optional) - run title",
+  "source": "string (optional) - default 'mcp_file_parameter'",
+  "client_trace_id": "string (optional)",
+  "plan_id": "string (optional) - Relay plan identifier to associate with the new run",
+  "pass_id": "string (optional) - Relay pass identifier under plan_id; requires plan_id",
+  "source_snapshot_id": "string (optional)",
+  "context_packet_id": "string (optional)"
+}
+```
+
+**Output:** `ok`, `tool`, `run_id`, `status`, `lifecycle_state`, `review_url`, `artifact_kinds`, `validation_summary`, `plan_id` (when associated), `pass_id` (when associated), `provenance`, `submitted_handoff_sha256`, `expected_sha256` (when supplied), `sha_match`, `source_mode`
+
+**Validation:** Relay reads only the supplied `planner_handoff_file`, requires a `.md` file, rejects directories, empty files, and files larger than 1 MiB, computes SHA-256 over the exact bytes before converting to text, and rejects `expected_sha256` mismatches before creating any run or artifact.
+
+**Safety boundary:** This is a controlled run-submission ingestion path, not a context broker file-read tool. It does not browse paths, read repositories generically, execute shell commands, mutate git, or persist absolute local file paths as artifact identity.
+
+---
+
+### 3. `create_run_from_planner_handoff`
+
+**Purpose:** Submit planner handoff markdown from the current chat conversation to Relay as a new run. Use this fallback when the user has a reviewed chat-only handoff but no reviewed handoff file to pass through `create_run_from_planner_handoff_file`.
 
 **The LLM should call this tool when:**
 - The user says "submit this handoff to Relay"
@@ -237,7 +272,7 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 
 ---
 
-### 3. `list_open_runs`
+### 4. `list_open_runs`
 
 **Purpose:** List recent non-terminal Relay runs. Returns bounded summaries only.
 
@@ -255,7 +290,7 @@ No artifact content, no logs, no diffs are returned.
 
 ---
 
-### 4. `get_run_status`
+### 5. `get_run_status`
 
 **Purpose:** Get a bounded status snapshot for a specific run. Use before deciding the next chat-derived handback action.
 
@@ -272,7 +307,7 @@ No full artifact contents, no log dumps, no secrets, and no full handoff markdow
 
 ---
 
-### 5. `submit_audit_packet`
+### 6. `submit_audit_packet`
 
 **Purpose:** Submit an audit or review result from the current chat back to an existing Relay run.
 
@@ -311,7 +346,7 @@ No full artifact contents, no log dumps, no secrets, and no full handoff markdow
 
 **Does NOT:** close the run, commit, push, stage, merge, branch, checkout, reset, or mutate the target repository.
 
-### 6. `submit_planner_pass_plan`
+### 7. `submit_planner_pass_plan`
 
 **Purpose:** Submit a reviewed Planner pass plan JSON artifact to Relay. This creates `plans` and derived `plan_passes` records only, validates the full Plan v2 schema-backed payload, and stores plan/pass context metadata for later workflows; it does not create runs, attach runs to passes, dispatch executors, mutate git, or read chat context.
 

@@ -4,40 +4,70 @@
   "validation_tier": "affected",
   "validation_scope": "touched",
   "status": "passed",
-  "created_at": "2026-06-30T22:07:08Z",
-  "base_commit_short": "fab408c7b3bf",
-  "base_commit_sha": "fab408c7b3bfdfc223d848ab5bfeb54f6258a9f2",
+  "created_at": "2026-06-30T22:44:47Z",
+  "base_commit_short": "f426b410f8ec",
+  "base_commit_sha": "f426b410f8ec743720038382e45301b980379154",
   "validated_source_snapshot": {
-    "captured_at": "2026-06-30T22:07:10.999Z",
+    "captured_at": "2026-06-30T22:44:51.684Z",
     "model": "base_commit_plus_worktree_diff_excluding_validation_report_artifacts",
     "worktree_dirty": true,
-    "diff_sha256": "f26d9e734c6ff914cf4818de4474d447c97ce3bc36fce834b91b7468cdb7a6f0",
+    "diff_sha256": "56f7d842ea2310077015a4f363cc00b4f2b02bce2ffadcbaf1ea49210bda2747",
     "diff_name_status": [
       {
         "status": "M",
-        "path": "internal/artifacts/paths_test.go"
+        "path": "cmd/mcp-smoke/main.go"
       },
       {
         "status": "M",
-        "path": "internal/artifacts/paths.go"
+        "path": "docs/mcp.md"
+      },
+      {
+        "status": "M",
+        "path": "internal/intake/service.go"
+      },
+      {
+        "status": "M",
+        "path": "internal/mcp/mcp_test.go"
+      },
+      {
+        "status": "M",
+        "path": "internal/mcp/plan_attempt_tools_test.go"
+      },
+      {
+        "status": "M",
+        "path": "internal/mcp/server.go"
+      },
+      {
+        "status": "M",
+        "path": "internal/mcp/tool_create_run.go"
       },
       {
         "status": "M",
         "path": "relay-contracts"
       }
     ],
-    "diff_stat": "internal/artifacts/paths.go      | 48 ++++++++++++++++++++++++++++++++++++++++\n internal/artifacts/paths_test.go | 27 ++++++++++++++++++++++\n relay-contracts                  |  0\n 3 files changed, 75 insertions(+)",
+    "diff_stat": "cmd/mcp-smoke/main.go                   | 130 ++++++++++++++++-\n docs/mcp.md                             |  53 +++++--\n internal/intake/service.go              |  11 ++\n internal/mcp/mcp_test.go                | 188 ++++++++++++++++++++++++\n internal/mcp/plan_attempt_tools_test.go |   1 +\n internal/mcp/server.go                  |   6 +-\n internal/mcp/tool_create_run.go         | 251 ++++++++++++++++++++++++++++++--\n relay-contracts                         |   0\n 8 files changed, 611 insertions(+), 29 deletions(-)",
     "status_porcelain": [
-      " M internal/artifacts/paths_test.go",
-      " M internal/artifacts/paths.go",
+      " M cmd/mcp-smoke/main.go",
+      " M docs/mcp.md",
+      " M internal/intake/service.go",
+      " M internal/mcp/mcp_test.go",
+      " M internal/mcp/plan_attempt_tools_test.go",
+      " M internal/mcp/server.go",
+      " M internal/mcp/tool_create_run.go",
       " M relay-contracts"
     ]
   },
   "post_report_status_porcelain": [
+    " M cmd/mcp-smoke/main.go",
+    " M docs/mcp.md",
     " M handoffs/validation/latest.validation-report.touched.json",
     " M handoffs/validation/latest.validation-summary.touched.md",
-    " M internal/artifacts/paths_test.go",
-    " M internal/artifacts/paths.go",
+    " M internal/intake/service.go",
+    " M internal/mcp/mcp_test.go",
+    " M internal/mcp/plan_attempt_tools_test.go",
+    " M internal/mcp/server.go",
+    " M internal/mcp/tool_create_run.go",
     " M relay-contracts"
   ],
   "report_files": [
@@ -48,73 +78,80 @@
     {
       "step": 1,
       "name": "gofmt-touched-files",
-      "command": "gofmt -w internal/artifacts/paths_test.go internal/artifacts/paths.go",
-      "started_at": "2026-06-30T22:07:08.435Z",
-      "completed_at": "2026-06-30T22:07:08.468Z",
+      "command": "gofmt -w cmd/mcp-smoke/main.go internal/intake/service.go internal/mcp/mcp_test.go internal/mcp/server.go internal/mcp/tool_create_run.go",
+      "started_at": "2026-06-30T22:44:47.143Z",
+      "completed_at": "2026-06-30T22:44:47.195Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "$ gofmt -w internal/artifacts/paths_test.go internal/artifacts/paths.go\nexit_code: 0\n"
+      "output_tail": "$ gofmt -w cmd/mcp-smoke/main.go internal/intake/service.go internal/mcp/mcp_test.go internal/mcp/server.go internal/mcp/tool_create_run.go\nexit_code: 0\n"
     },
     {
       "step": 2,
       "name": "go-test-affected-packages",
-      "command": "go test ./internal/artifacts",
-      "started_at": "2026-06-30T22:07:08.469Z",
-      "completed_at": "2026-06-30T22:07:10.998Z",
+      "command": "go test ./cmd/mcp-smoke ./internal/intake ./internal/mcp",
+      "started_at": "2026-06-30T22:44:47.196Z",
+      "completed_at": "2026-06-30T22:44:51.684Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "$ go test ./internal/artifacts\nok  \trelay/internal/artifacts\t0.563s\nexit_code: 0\n"
+      "output_tail": "$ go test ./cmd/mcp-smoke ./internal/intake ./internal/mcp\n?   \trelay/cmd/mcp-smoke\t[no test files]\nok  \trelay/internal/intake\t(cached)\nok  \trelay/internal/mcp\t(cached)\nexit_code: 0\n"
     }
   ],
   "input_paths": [
-    "internal/artifacts/paths.go",
-    "internal/artifacts/paths_test.go",
-    "relay-contracts/schema/closeout_evidence.schema.json",
-    "relay-contracts/contracts/pipeline_artifact_model.md",
-    "relay-contracts/policies/artifact_naming_policy.md",
-    "relay-contracts/contracts/planner_to_compiler_contract.md"
+    "internal/mcp/tool_create_run.go",
+    "internal/mcp/server.go",
+    "internal/mcp/mcp_test.go",
+    "internal/intake/service.go",
+    "cmd/mcp-smoke/main.go",
+    "docs/mcp.md",
+    "relay-contracts/contracts/planner_mcp_run_submission_contract.md",
+    "relay-contracts/contracts/planner_mcp_context_broker_contract.md"
   ],
   "normalized_paths": [
-    "internal/artifacts/paths_test.go",
-    "internal/artifacts/paths.go",
-    "relay-contracts/contracts/pipeline_artifact_model.md",
-    "relay-contracts/contracts/planner_to_compiler_contract.md",
-    "relay-contracts/policies/artifact_naming_policy.md",
-    "relay-contracts/schema/closeout_evidence.schema.json"
+    "cmd/mcp-smoke/main.go",
+    "docs/mcp.md",
+    "internal/intake/service.go",
+    "internal/mcp/mcp_test.go",
+    "internal/mcp/server.go",
+    "internal/mcp/tool_create_run.go",
+    "relay-contracts/contracts/planner_mcp_context_broker_contract.md",
+    "relay-contracts/contracts/planner_mcp_run_submission_contract.md"
   ],
   "path_classification": {
     "docs_only": false,
     "docs": [
-      "relay-contracts/contracts/pipeline_artifact_model.md",
-      "relay-contracts/contracts/planner_to_compiler_contract.md",
-      "relay-contracts/policies/artifact_naming_policy.md"
+      "docs/mcp.md",
+      "relay-contracts/contracts/planner_mcp_context_broker_contract.md",
+      "relay-contracts/contracts/planner_mcp_run_submission_contract.md"
     ],
     "go": [
-      "internal/artifacts/paths_test.go",
-      "internal/artifacts/paths.go"
+      "cmd/mcp-smoke/main.go",
+      "internal/intake/service.go",
+      "internal/mcp/mcp_test.go",
+      "internal/mcp/server.go",
+      "internal/mcp/tool_create_run.go"
     ],
     "go_packages": [
-      "./internal/artifacts"
+      "./cmd/mcp-smoke",
+      "./internal/intake",
+      "./internal/mcp"
     ],
     "web": [],
     "validation_infrastructure": [],
     "dependency_sensitive": [],
     "global_escalation": [],
-    "other": [
-      "relay-contracts/schema/closeout_evidence.schema.json"
-    ],
+    "other": [],
     "global_escalation_required": false
   },
   "command_table": [
     {
       "step": 1,
       "name": "gofmt-touched-files",
-      "command": "gofmt -w internal/artifacts/paths_test.go internal/artifacts/paths.go"
+      "command": "gofmt -w cmd/mcp-smoke/main.go internal/intake/service.go internal/mcp/mcp_test.go internal/mcp/server.go internal/mcp/tool_create_run.go"
     },
     {
       "step": 2,
       "name": "go-test-affected-packages",
-      "command": "go test ./internal/artifacts"
+      "command": "go test ./cmd/mcp-smoke ./internal/intake ./internal/mcp"
     }
   ],
   "failure_output_tails": []

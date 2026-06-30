@@ -14,6 +14,7 @@ func baseToolNamesForTest() []string {
 	return []string{
 		"submit_test_audit_packet",
 		"create_run_from_planner_handoff",
+		"create_run_from_planner_handoff_file",
 		"submit_planner_pass_plan",
 		"list_open_runs",
 		"get_run_status",

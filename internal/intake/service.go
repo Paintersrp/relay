@@ -40,6 +40,8 @@ type CreateRunInput struct {
 	Name string
 	// Source tags the creation origin (e.g., "mcp_chat", "api"). Default "api".
 	Source string
+	// SourceMode identifies the submission transport without storing local file paths.
+	SourceMode string
 	// ClientTraceID is an optional opaque trace identifier from the calling client.
 	ClientTraceID string
 	// PlanID optionally associates the run to an existing Relay plan.
@@ -55,6 +57,7 @@ type CreateRunInput struct {
 type ProvenanceSummary struct {
 	PlannerHandoffSHA256 string `json:"planner_handoff_sha256"`
 	SourceArtifactPath   string `json:"source_artifact_path,omitempty"`
+	SourceMode           string `json:"source_mode,omitempty"`
 	PlanID               string `json:"plan_id,omitempty"`
 	PassID               string `json:"pass_id,omitempty"`
 	ContextPacketID      string `json:"context_packet_id,omitempty"`
@@ -171,6 +174,7 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 	if source == "" {
 		source = "api"
 	}
+	sourceMode := strings.TrimSpace(input.SourceMode)
 
 	tx, err := svc.store.DB().BeginTx(context.Background(), nil)
 	if err != nil {
@@ -334,6 +338,9 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 	if len(provenanceNotes) > 0 {
 		provenanceArtifact["provenance_notes"] = provenanceNotes
 	}
+	if sourceMode != "" {
+		provenanceArtifact["source_mode"] = sourceMode
+	}
 	if association.PlanRowID.Valid {
 		provenanceArtifact["plan_row_id"] = association.PlanRowID.Int64
 	}
@@ -391,6 +398,7 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 		Provenance: ProvenanceSummary{
 			PlannerHandoffSHA256: handoffSHA,
 			SourceArtifactPath:   sourceArtifactPath,
+			SourceMode:           sourceMode,
 			PlanID:               association.PlanID,
 			PassID:               association.PassID,
 			ContextPacketID:      provenanceIDs.ContextPacketID,
@@ -620,6 +628,9 @@ func marshalSubmissionArgs(source string, input CreateRunInput, association RunP
 		"has_pass_id":         association.PassID != "",
 		"has_client_trace_id": strings.TrimSpace(input.ClientTraceID) != "",
 		"source":              source,
+	}
+	if strings.TrimSpace(input.SourceMode) != "" {
+		payload["source_mode"] = strings.TrimSpace(input.SourceMode)
 	}
 	return marshalJSON(payload)
 }
