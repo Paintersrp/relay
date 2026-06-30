@@ -1,31 +1,54 @@
-# Latest Relay Validation Report (full)
+# Latest Relay Validation Report (tier)
 
-- status: passed
+- status: failed
 - validation_tier: full
-- base_commit: 7aeec7a4ade0f49d828ef56a5343e31c6f93ddcf
-- validated_source_snapshot: c779c6ab867c6c09d0b9d7ee53a1021219de4590d449b52bc22e617d21743baf
-- worktree_dirty: false
-- created_at: 2026-06-29T02:26:08Z
+- validation_scope: tier
+- base_commit: 212902fa0b95566cd523e2bca21ed282e5b13ad6
+- validated_source_snapshot: 38008ccea1b324b42eeb8caeb191285506986279b5b10412fc5994a47c47b116
+- worktree_dirty: true
+- created_at: 2026-06-30T23:51:12Z
 
 ## Validated source changes
 
-No source changes relative to base commit.
+- A cmd/relay-closeout/main.go
+- A handoffs/closeout/2026-06-30_repo-owned-closeout-command.closeout-evidence.json
+- A handoffs/closeout/2026-06-30_repo-owned-closeout-command.closeout-evidence.md
+- A internal/artifacts/paths_closeout_test.go
+- M internal/artifacts/paths.go
+- A internal/closeout/closeout_test.go
+- A internal/closeout/closeout.go
+- M Makefile
+- M scripts/validate.sh
 
 ## Commands
 
-| Step | Name | Exit | Status |
-|---:|---|---:|---|
-| 1 | `go-fmt-agentrefs-executor` | 0 | passed |
-| 2 | `go-test-agentrefs` | 0 | passed |
-| 3 | `agentrefs-check` | 0 | passed |
-| 4 | `go-test-executor` | 0 | passed |
-| 5 | `go-test-all` | 0 | passed |
-| 6 | `web-typecheck` | 0 | passed |
-| 7 | `web-test` | 0 | passed |
-| 8 | `web-build` | 0 | passed |
-| 9 | `no-root-agentrefs-exe` | 0 | passed |
+| Step | Name | Command | Exit | Status |
+|---:|---|---|---:|---|
+| 1 | `go-fmt-agentrefs-executor` | `go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor` | 0 | passed |
+| 2 | `go-test-agentrefs` | `go test ./internal/agentrefs/... ./cmd/agentrefs/...` | 0 | passed |
+| 3 | `agentrefs-check` | `go run ./cmd/agentrefs check` | 1 | failed |
+| 4 | `go-test-executor` | `go test ./internal/executor/...` | 0 | passed |
+| 5 | `go-test-all` | `go test ./...` | 0 | passed |
+| 6 | `web-typecheck` | `cd apps/web && npm run typecheck` | 0 | passed |
+| 7 | `web-test` | `cd apps/web && npm run test` | 0 | passed |
+| 8 | `web-build` | `cd apps/web && npm run build` | 0 | passed |
+| 9 | `no-root-agentrefs-exe` | `test ! -e agentrefs.exe` | 0 | passed |
 
 ## Failure output tails
 
-No command failures captured.
+### agentrefs-check
+
+```text
+$ go run ./cmd/agentrefs check
+docs/generated/agent-references/index.json: stale
+docs/generated/agent-references/index.md: stale
+docs/generated/agent-references/backend-surface.json: stale
+docs/generated/agent-references/backend-surface.md: stale
+docs/generated/agent-references/mcp-surface.json: stale
+docs/generated/agent-references/mcp-surface.md: stale
+2026/06/30 19:51:17 found 6 stale or missing output(s)
+exit status 1
+exit_code: 1
+
+```
 

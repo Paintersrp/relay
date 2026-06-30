@@ -362,6 +362,17 @@ func CloseoutPath(dateYYYYMMDD string, taskSlug string, kind string) (string, er
 	return p, nil
 }
 
+func WriteCloseout(dateYYYYMMDD string, taskSlug string, kind string, data []byte) (string, error) {
+	p, err := CloseoutPath(dateYYYYMMDD, taskSlug, kind)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(CloseoutDir(), 0755); err != nil {
+		return "", err
+	}
+	return p, os.WriteFile(p, data, 0644)
+}
+
 func closeoutKindSuffix(kind string) (string, bool) {
 	switch kind {
 	case "closeout_evidence_json":
