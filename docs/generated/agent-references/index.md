@@ -26,7 +26,7 @@ Schema version: `1.0.0`
 | Path | SHA256 | Role |
 | --- | --- | --- |
 | `AGENTS.md` | `e9b318d2dfb8cedc29db3c8beffb3ca500a7e0945acd5683373082e92a1ba7de` | agent instructions |
-| `Makefile` | `15aefa83783ac4cfe6530c6213317a45bfbf4be0d96cc43f2eb2b5c921e89d96` | build configuration |
+| `Makefile` | `a52e218641c451f2ecd4b8f1562bdff9f6123f89c7498eb2575e0118489cc87d` | build configuration |
 | `docs/agent-reference.md` | `781ce7a717be265d38611dc1cf4fdbcb0686fde93d64de015227d01a75075691` | agent reference |
 | `docs/backend-code-surface-map.md` | `f3eb4c9e1fdfc1d4ea3f38dc7f4cac8dc5611b78dc9ce6bcb73542f44afc1382` | backend surface map |
 | `schema/project_agent_reference.schema.json` | `d48d8471f6d8d99a2ae978b2efd94dab52ca2b307b34f00b4fa71cc95d5fedfd` | schema contract |

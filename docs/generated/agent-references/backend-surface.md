@@ -121,8 +121,8 @@ Schema version: `1.0.0`
 | `internal/app/plans/service_test.go` | `4d61e8bde7b0eddda3d1136a98505ea374b210b5ec8be83328c65c69a752725c` | test |
 | `internal/app/plans/types.go` | `8e61e722378940b93ad98db9e68ed915840c568fedf958ec9f86152afd89da53` | source |
 | `internal/app/plans/validator.go` | `9eb5323bcbe1b6f76a25d5f1c53607b06232c99b73674e5947ba1a6de81891dd` | source |
-| `internal/app/plans/work_packets.go` | `88f488f0c6da28703a09877246bb35c13899d0a4a87c0f25697b5d37238f108c` | source |
-| `internal/app/plans/work_packets_test.go` | `b1acee5c20a5d57ae6c2b38f49cb7ebb6146f9bd8d810a8633a03ace97b2805d` | test |
+| `internal/app/plans/work_packets.go` | `36be85742d17a80f28e1ec4b9931d34bfb6a96bd5ae76213ebe5aeee6f1b1dd3` | source |
+| `internal/app/plans/work_packets_test.go` | `fcb7271dbe58076aa22c13fc00641d7e5dc93341ce98e6b14882f475acae1b62` | test |
 | `internal/app/projects/doc.go` | `05785c89f12cd3c6466520e3a36dea624fcfcb0c5017477a253f074ba5946287` | source |
 | `internal/app/projects/plan_seed_service.go` | `e5963863344a9aa8d4497bf52a53ebeb32e5d1fd22096da593024eed74170528` | source |
 | `internal/app/projects/plan_seed_service_test.go` | `84025b75ff1dc3564fc2990a886e0a5bae7e62af194ec475742eb8fbec7353c4` | test |
@@ -138,14 +138,14 @@ Schema version: `1.0.0`
 | `internal/app/runs/service.go` | `245f124438b677b7dd1bb57f8f8bdbffd667adf7fde9bb1e9d830b9e1141f06a` | source |
 | `internal/app/runs/types.go` | `0631b18e8df8367a971be32e8adcb1ab66ba4a96fea257730b23f3c4a6b4178d` | source |
 | `internal/mcp/context_broker_git_tools.go` | `483ab61f6534750817724fdd79841efee3a4fc6708fa3ab3758e87b28c084572` | source |
-| `internal/mcp/context_broker_tools.go` | `5029ca2a7ce3e51d31dc1714d89978966d1763af5fc6dbb280107a51e24272a8` | source |
+| `internal/mcp/context_broker_tools.go` | `d860b1ab59415aed878cb6f7e025a2d319f744a771ce69c40439a63d05dd50ce` | source |
 | `internal/mcp/context_broker_tools_test.go` | `bf29a670e1e71a4917f16acf53c2a3374f059827bc40b795e7c1a7a4aedc2d09` | test |
 | `internal/mcp/deps.go` | `02c2771e9855a53b2c26170b99c84d7948640e1eb34235d6cd63ac9fd159de2c` | source |
 | `internal/mcp/http_handler.go` | `490414d00c581a709bf44c232dccd0d2ddde1b03bd6a1bd2d94b520025065d7c` | source |
 | `internal/mcp/http_handler_test.go` | `28e607c54c8328d995ea63731ea1e166edaabec75524bdd649d46f06338970a3` | test |
 | `internal/mcp/local_audit_tools.go` | `dcdb5b2485267f170781711640de73fa3b1d99c7ed52b088d68a147cf5bbade1` | source |
 | `internal/mcp/mcp_test.go` | `b09fa87828689566f40d57069f1e7c4aca5a20e6766ea25938f0edc400699bcb` | test |
-| `internal/mcp/orchestrator_work_tools.go` | `96f0c01a8213e5f4f01087ebfb2c4440d8d6381fde7eae2b1cf537c549479080` | source |
+| `internal/mcp/orchestrator_work_tools.go` | `6f9c8ca688f10be814496b59b3e9a1db8d32dac02dd73891ed827dd40a09e8c2` | source |
 | `internal/mcp/orchestrator_work_tools_test.go` | `93a073c370de7c9cf621fec0cf1c3be9a1cb8c4fc6b3fe75e7df668fdcd1b77b` | test |
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | source |
 | `internal/mcp/plan_attempt_tools_test.go` | `1cf74dc584a0ae40d670ff0375653a36c2f03fdb762e63232d09d0a99d4a9502` | test |
@@ -4351,14 +4351,6 @@ Evidence:
 ### backend-symbol-internal-app-plans-const-blockerrequiredseedfilemissingfromsnapshot (proven)
 
 Exported const BlockerRequiredSeedFileMissingFromSnapshot in internal/app/plans/work_packets.go
-
-Evidence:
-
-- source: `internal/app/plans/work_packets.go`
-
-### backend-symbol-internal-app-plans-const-blockerrequiredseedfileoversized (proven)
-
-Exported const BlockerRequiredSeedFileOversized in internal/app/plans/work_packets.go
 
 Evidence:
 
@@ -11100,6 +11092,22 @@ Evidence:
 
 - test: `internal/app/plans/work_packets_test.go`
 
+### backend-test-internal-app-plans-testcontextpacketresultusableforhandoffallowsoptionalsearchpruning (proven)
+
+Test function TestContextPacketResultUsableForHandoffAllowsOptionalSearchPruning in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testcontextpacketresultusableforhandoffblocksrequiredsearchnonexhaustive (proven)
+
+Test function TestContextPacketResultUsableForHandoffBlocksRequiredSearchNonExhaustive in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
 ### backend-test-internal-app-plans-testcreateplanattemptusesprojectreviewsettings (proven)
 
 Test function TestCreatePlanAttemptUsesProjectReviewSettings in internal/app/plans/review_gate_test.go
@@ -11308,6 +11316,14 @@ Evidence:
 
 - test: `internal/app/plans/work_packets_test.go`
 
+### backend-test-internal-app-plans-testgetnextpasswork-metadatapresentlargerequiredfileuseschunkingrange (proven)
+
+Test function TestGetNextPassWork_MetadataPresentLargeRequiredFileUsesChunkingRange in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
 ### backend-test-internal-app-plans-testgetnextpasswork-metadatapresentmissingfilefailsclosed (proven)
 
 Test function TestGetNextPassWork_MetadataPresentMissingFileFailsClosed in internal/app/plans/work_packets_test.go
@@ -11316,17 +11332,9 @@ Evidence:
 
 - test: `internal/app/plans/work_packets_test.go`
 
-### backend-test-internal-app-plans-testgetnextpasswork-metadatapresentoversizedfilefailsclosed (proven)
+### backend-test-internal-app-plans-testgetnextpasswork-metadatapresentsmallfileusesopenendedchunkingrange (proven)
 
-Test function TestGetNextPassWork_MetadataPresentOversizedFileFailsClosed in internal/app/plans/work_packets_test.go
-
-Evidence:
-
-- test: `internal/app/plans/work_packets_test.go`
-
-### backend-test-internal-app-plans-testgetnextpasswork-metadatapresentsmallfileoptimisticrange (proven)
-
-Test function TestGetNextPassWork_MetadataPresentSmallFileOptimisticRange in internal/app/plans/work_packets_test.go
+Test function TestGetNextPassWork_MetadataPresentSmallFileUsesOpenEndedChunkingRange in internal/app/plans/work_packets_test.go
 
 Evidence:
 

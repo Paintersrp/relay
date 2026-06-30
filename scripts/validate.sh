@@ -296,14 +296,21 @@ function isValidationInfraPath(repoPath) {
   return repoPath === 'Makefile' || repoPath === 'scripts/validate.sh' || repoPath.startsWith('.githooks/')
 }
 
-function isGlobalEscalationPath(repoPath) {
-  if (isValidationInfraPath(repoPath)) return false
-  if (isWebPath(repoPath) || isGoPath(repoPath) || isDocsPath(repoPath)) return false
+function isDependencySensitivePath(repoPath) {
   return [
     'go.mod',
     'go.sum',
     'package.json',
     'package-lock.json',
+    'apps/web/package.json',
+    'apps/web/package-lock.json',
+  ].includes(repoPath)
+}
+
+function isGlobalEscalationPath(repoPath) {
+  if (isValidationInfraPath(repoPath) || isDependencySensitivePath(repoPath)) return false
+  if (isWebPath(repoPath) || isGoPath(repoPath) || isDocsPath(repoPath)) return false
+  return [
     'sqlc.yaml',
     'templ.yaml',
   ].includes(repoPath) ||
@@ -326,6 +333,7 @@ function classifyPaths(paths) {
     go_packages: [],
     web: [],
     validation_infrastructure: [],
+    dependency_sensitive: [],
     global_escalation: [],
     other: [],
     global_escalation_required: false,
@@ -339,16 +347,20 @@ function classifyPaths(paths) {
     }
     if (isWebPath(repoPath)) classification.web.push(repoPath)
     if (isValidationInfraPath(repoPath)) classification.validation_infrastructure.push(repoPath)
+    if (isDependencySensitivePath(repoPath)) classification.dependency_sensitive.push(repoPath)
     if (isGlobalEscalationPath(repoPath)) classification.global_escalation.push(repoPath)
-    if (!isDocsPath(repoPath) && !isGoPath(repoPath) && !isWebPath(repoPath) && !isValidationInfraPath(repoPath) && !isGlobalEscalationPath(repoPath)) {
+    if (!isDocsPath(repoPath) && !isGoPath(repoPath) && !isWebPath(repoPath) && !isValidationInfraPath(repoPath) && !isDependencySensitivePath(repoPath) && !isGlobalEscalationPath(repoPath)) {
       classification.other.push(repoPath)
     }
   }
 
-  for (const key of ['docs', 'go', 'go_packages', 'web', 'validation_infrastructure', 'global_escalation', 'other']) {
+  for (const key of ['docs', 'go', 'go_packages', 'web', 'validation_infrastructure', 'dependency_sensitive', 'global_escalation', 'other']) {
     classification[key] = stableUnique(classification[key])
   }
-  classification.global_escalation_required = classification.global_escalation.length > 0
+  classification.global_escalation_required =
+    classification.global_escalation.length > 0 ||
+    classification.validation_infrastructure.length > 0 ||
+    classification.dependency_sensitive.length > 0
   classification.docs_only = paths.length > 0 && paths.every((repoPath) => isDocsPath(repoPath))
   return classification
 }
@@ -356,27 +368,36 @@ function classifyPaths(paths) {
 function affectedCommands(classification) {
   const specs = []
   let step = 1
+  const seenCommands = new Set()
+
+  function pushSpec(spec) {
+    if (seenCommands.has(spec.command)) return
+    seenCommands.add(spec.command)
+    specs.push({ ...spec, step: step++ })
+  }
 
   if (classification.validation_infrastructure.length > 0) {
-    specs.push({ step: step++, name: 'validate-script-syntax', command: 'bash -n scripts/validate.sh', shell: true })
+    pushSpec({ name: 'validate-script-syntax', command: 'bash -n scripts/validate.sh', shell: true })
   }
 
   if (classification.global_escalation_required) {
-    specs.push({ step: step++, name: 'go-test-all', command: 'go test ./...', argv: ['go', ['test', './...']] })
-    specs.push({ step: step++, name: 'web-typecheck', command: 'cd apps/web && npm run typecheck', shell: true })
-    specs.push({ step: step++, name: 'web-test', command: 'cd apps/web && npm run test', shell: true })
+    for (const spec of broadCommands) pushSpec(spec)
     return specs
+  }
+
+  if (classification.go.length > 0) {
+    const goFiles = classification.go.join(' ')
+    pushSpec({ name: 'gofmt-touched-files', command: `gofmt -w ${goFiles}`, argv: ['gofmt', ['-w', ...classification.go]] })
   }
 
   if (classification.go_packages.length > 0) {
     const packages = classification.go_packages.join(' ')
-    specs.push({ step: step++, name: 'go-fmt-affected-packages', command: `go fmt ${packages}`, shell: true })
-    specs.push({ step: step++, name: 'go-test-affected-packages', command: `go test ${packages}`, shell: true })
+    pushSpec({ name: 'go-test-affected-packages', command: `go test ${packages}`, shell: true })
   }
 
   if (classification.web.length > 0) {
-    specs.push({ step: step++, name: 'web-typecheck', command: 'cd apps/web && npm run typecheck', shell: true })
-    specs.push({ step: step++, name: 'web-test', command: 'cd apps/web && npm run test', shell: true })
+    pushSpec({ name: 'web-typecheck', command: 'cd apps/web && npm run typecheck', shell: true })
+    pushSpec({ name: 'web-test', command: 'cd apps/web && npm run test', shell: true })
   }
 
   return specs

@@ -20,7 +20,7 @@
   "source_inputs": [
     {
       "path": "internal/mcp/context_broker_tools.go",
-      "sha256": "5029ca2a7ce3e51d31dc1714d89978966d1763af5fc6dbb280107a51e24272a8",
+      "sha256": "d860b1ab59415aed878cb6f7e025a2d319f744a771ce69c40439a63d05dd50ce",
       "role": "mcp_tool_source"
     },
     {

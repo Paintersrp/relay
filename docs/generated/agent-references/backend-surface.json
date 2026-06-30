@@ -500,12 +500,12 @@
     },
     {
       "path": "internal/app/plans/work_packets.go",
-      "sha256": "88f488f0c6da28703a09877246bb35c13899d0a4a87c0f25697b5d37238f108c",
+      "sha256": "36be85742d17a80f28e1ec4b9931d34bfb6a96bd5ae76213ebe5aeee6f1b1dd3",
       "role": "source"
     },
     {
       "path": "internal/app/plans/work_packets_test.go",
-      "sha256": "b1acee5c20a5d57ae6c2b38f49cb7ebb6146f9bd8d810a8633a03ace97b2805d",
+      "sha256": "fcb7271dbe58076aa22c13fc00641d7e5dc93341ce98e6b14882f475acae1b62",
       "role": "test"
     },
     {
@@ -585,7 +585,7 @@
     },
     {
       "path": "internal/mcp/context_broker_tools.go",
-      "sha256": "5029ca2a7ce3e51d31dc1714d89978966d1763af5fc6dbb280107a51e24272a8",
+      "sha256": "d860b1ab59415aed878cb6f7e025a2d319f744a771ce69c40439a63d05dd50ce",
       "role": "source"
     },
     {
@@ -620,7 +620,7 @@
     },
     {
       "path": "internal/mcp/orchestrator_work_tools.go",
-      "sha256": "96f0c01a8213e5f4f01087ebfb2c4440d8d6381fde7eae2b1cf537c549479080",
+      "sha256": "6f9c8ca688f10be814496b59b3e9a1db8d32dac02dd73891ed827dd40a09e8c2",
       "role": "source"
     },
     {
@@ -6894,17 +6894,6 @@
       "id": "backend-symbol-internal-app-plans-const-blockerrequiredseedfilemissingfromsnapshot",
       "label": "proven",
       "statement": "Exported const BlockerRequiredSeedFileMissingFromSnapshot in internal/app/plans/work_packets.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/plans/work_packets.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-plans-const-blockerrequiredseedfileoversized",
-      "label": "proven",
-      "statement": "Exported const BlockerRequiredSeedFileOversized in internal/app/plans/work_packets.go",
       "evidence": [
         {
           "kind": "source",
@@ -16175,6 +16164,28 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-plans-testcontextpacketresultusableforhandoffallowsoptionalsearchpruning",
+      "label": "proven",
+      "statement": "Test function TestContextPacketResultUsableForHandoffAllowsOptionalSearchPruning in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testcontextpacketresultusableforhandoffblocksrequiredsearchnonexhaustive",
+      "label": "proven",
+      "statement": "Test function TestContextPacketResultUsableForHandoffBlocksRequiredSearchNonExhaustive in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-plans-testcreateplanattemptusesprojectreviewsettings",
       "label": "proven",
       "statement": "Test function TestCreatePlanAttemptUsesProjectReviewSettings in internal/app/plans/review_gate_test.go",
@@ -16461,6 +16472,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-metadatapresentlargerequiredfileuseschunkingrange",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_MetadataPresentLargeRequiredFileUsesChunkingRange in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-plans-testgetnextpasswork-metadatapresentmissingfilefailsclosed",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_MetadataPresentMissingFileFailsClosed in internal/app/plans/work_packets_test.go",
@@ -16472,20 +16494,9 @@
       ]
     },
     {
-      "id": "backend-test-internal-app-plans-testgetnextpasswork-metadatapresentoversizedfilefailsclosed",
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-metadatapresentsmallfileusesopenendedchunkingrange",
       "label": "proven",
-      "statement": "Test function TestGetNextPassWork_MetadataPresentOversizedFileFailsClosed in internal/app/plans/work_packets_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/app/plans/work_packets_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-app-plans-testgetnextpasswork-metadatapresentsmallfileoptimisticrange",
-      "label": "proven",
-      "statement": "Test function TestGetNextPassWork_MetadataPresentSmallFileOptimisticRange in internal/app/plans/work_packets_test.go",
+      "statement": "Test function TestGetNextPassWork_MetadataPresentSmallFileUsesOpenEndedChunkingRange in internal/app/plans/work_packets_test.go",
       "evidence": [
         {
           "kind": "test",

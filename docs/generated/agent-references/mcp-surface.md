@@ -25,7 +25,7 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `internal/mcp/context_broker_tools.go` | `5029ca2a7ce3e51d31dc1714d89978966d1763af5fc6dbb280107a51e24272a8` | mcp_tool_source |
+| `internal/mcp/context_broker_tools.go` | `d860b1ab59415aed878cb6f7e025a2d319f744a771ce69c40439a63d05dd50ce` | mcp_tool_source |
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | mcp_tool_source |
 | `internal/mcp/plan_seed_tools.go` | `19a7bede46ae71836a0a942123f2d24015e7faaf93896850b57e7bd6cbbb0ad4` | mcp_tool_source |
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | mcp_tool_source |
