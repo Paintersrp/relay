@@ -3,43 +3,34 @@
 - status: passed
 - validation_tier: affected
 - validation_scope: touched
-- base_commit: 4354dfbd0edc327088bb59582bf278f1e0823660
-- validated_source_snapshot: 0cad98189af7e6efda5e415585a7585b8454210951f9385a8c1cb4db8907e37d
+- base_commit: fab408c7b3bfdfc223d848ab5bfeb54f6258a9f2
+- validated_source_snapshot: f26d9e734c6ff914cf4818de4474d447c97ce3bc36fce834b91b7468cdb7a6f0
 - worktree_dirty: true
-- created_at: 2026-06-30T10:03:49Z
+- created_at: 2026-06-30T22:07:08Z
 
 ## Affected paths
 
-- apps/web/package.json
-- Makefile
-- scripts/validate.sh
+- internal/artifacts/paths_test.go
+- internal/artifacts/paths.go
+- relay-contracts/contracts/pipeline_artifact_model.md
+- relay-contracts/contracts/planner_to_compiler_contract.md
+- relay-contracts/policies/artifact_naming_policy.md
+- relay-contracts/schema/closeout_evidence.schema.json
 
-Global escalation required: true
+Global escalation required: false
 
 ## Validated source changes
 
-- M docs/generated/agent-references/backend-surface.json
-- M docs/generated/agent-references/backend-surface.md
-- M docs/generated/agent-references/index.json
-- M docs/generated/agent-references/index.md
-- M docs/generated/agent-references/mcp-surface.json
-- M docs/generated/agent-references/mcp-surface.md
-- M docs/generated/agent-references/workflow-surfaces.json
-- M docs/generated/agent-references/workflow-surfaces.md
-- M scripts/validate.sh
+- M internal/artifacts/paths_test.go
+- M internal/artifacts/paths.go
+- M relay-contracts
 
 ## Commands
 
 | Step | Name | Command | Exit | Status |
 |---:|---|---|---:|---|
-| 1 | `validate-script-syntax` | `bash -n scripts/validate.sh` | 0 | passed |
-| 2 | `go-fmt-agentrefs-executor` | `go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor` | 0 | passed |
-| 3 | `go-test-agentrefs` | `go test ./internal/agentrefs/... ./cmd/agentrefs/...` | 0 | passed |
-| 4 | `agentrefs-check` | `go run ./cmd/agentrefs check` | 0 | passed |
-| 5 | `go-test-executor` | `go test ./internal/executor/...` | 0 | passed |
-| 6 | `go-test-all` | `go test ./...` | 0 | passed |
-| 7 | `web-typecheck` | `cd apps/web && npm run typecheck` | 0 | passed |
-| 8 | `web-test` | `cd apps/web && npm run test` | 0 | passed |
+| 1 | `gofmt-touched-files` | `gofmt -w internal/artifacts/paths_test.go internal/artifacts/paths.go` | 0 | passed |
+| 2 | `go-test-affected-packages` | `go test ./internal/artifacts` | 0 | passed |
 
 ## Failure output tails
 

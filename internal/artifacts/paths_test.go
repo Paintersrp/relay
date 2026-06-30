@@ -77,3 +77,30 @@ func TestWritePlanRoundTrips(t *testing.T) {
 		t.Fatalf("unexpected written path %q", p)
 	}
 }
+
+func TestCloseoutPathValidJSON(t *testing.T) {
+	got, err := CloseoutPath("2026-06-30", "closeout-evidence-model", "closeout_evidence_json")
+	if err != nil {
+		t.Fatalf("CloseoutPath returned unexpected error: %v", err)
+	}
+	want := filepath.Join(BaseDir, "handoffs", "closeout", "2026-06-30_closeout-evidence-model.closeout-evidence.json")
+	if got != want {
+		t.Fatalf("CloseoutPath = %q, want %q", got, want)
+	}
+}
+
+func TestCloseoutPathValidMarkdown(t *testing.T) {
+	got, err := CloseoutPath("2026-06-30", "closeout-evidence-model", "closeout_evidence_markdown")
+	if err != nil {
+		t.Fatalf("CloseoutPath returned unexpected error: %v", err)
+	}
+	if !strings.HasSuffix(got, ".closeout-evidence.md") {
+		t.Fatalf("expected markdown suffix, got %q", got)
+	}
+}
+
+func TestCloseoutPathRejectsUnknownKind(t *testing.T) {
+	if _, err := CloseoutPath("2026-06-30", "closeout-evidence-model", "unknown_closeout_kind"); err == nil {
+		t.Fatal("expected unknown closeout artifact kind to be rejected")
+	}
+}

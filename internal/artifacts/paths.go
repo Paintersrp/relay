@@ -80,6 +80,8 @@ var allowedKinds = map[string]bool{
 	"local_audit_input_summary":          true,
 	"planner_pass_plan_json":             true,
 	"planner_pass_plan_markdown":         true,
+	"closeout_evidence_json":             true,
+	"closeout_evidence_markdown":         true,
 }
 
 var (
@@ -320,6 +322,52 @@ func planKindSuffix(kind string) (string, bool) {
 		return ".planner-pass-plan.json", true
 	case "planner_pass_plan_markdown":
 		return ".planner-pass-plan.md", true
+	default:
+		return "", false
+	}
+}
+
+func CloseoutDir() string {
+	return filepath.Join(BaseDir, "handoffs", "closeout")
+}
+
+// CloseoutPath builds a safe, validated path for repo-owned closeout evidence.
+// It only models artifact naming; it does not perform closeout, commit, or push
+// behavior.
+func CloseoutPath(dateYYYYMMDD string, taskSlug string, kind string) (string, error) {
+	if !allowedKinds[kind] {
+		return "", fmt.Errorf("unknown artifact kind: %s", kind)
+	}
+	if !contextDatePattern.MatchString(dateYYYYMMDD) {
+		return "", fmt.Errorf("invalid closeout artifact date: %s", dateYYYYMMDD)
+	}
+	if !contextSlugPattern.MatchString(taskSlug) {
+		return "", fmt.Errorf("invalid closeout artifact slug: %s", taskSlug)
+	}
+	suffix, ok := closeoutKindSuffix(kind)
+	if !ok {
+		return "", fmt.Errorf("artifact kind is not a closeout artifact: %s", kind)
+	}
+	filename := dateYYYYMMDD + "_" + taskSlug + suffix
+	if strings.Contains(filename, "..") || filepath.IsAbs(filename) || strings.ContainsAny(filename, `/\`) {
+		return "", fmt.Errorf("invalid closeout artifact filename: %s", filename)
+	}
+	dir := CloseoutDir()
+	p := filepath.Join(dir, filename)
+	cleanDir := filepath.Clean(dir)
+	cleanPath := filepath.Clean(p)
+	if cleanPath != filepath.Join(cleanDir, filepath.Base(cleanPath)) || !strings.HasPrefix(cleanPath, cleanDir+string(filepath.Separator)) {
+		return "", fmt.Errorf("closeout artifact path escapes directory: %s", p)
+	}
+	return p, nil
+}
+
+func closeoutKindSuffix(kind string) (string, bool) {
+	switch kind {
+	case "closeout_evidence_json":
+		return ".closeout-evidence.json", true
+	case "closeout_evidence_markdown":
+		return ".closeout-evidence.md", true
 	default:
 		return "", false
 	}
