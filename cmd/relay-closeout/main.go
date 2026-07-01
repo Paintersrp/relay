@@ -12,21 +12,23 @@ import (
 
 func main() {
 	var (
-		messageFlag string
-		slugFlag    string
-		dryRun      bool
-		projectID   string
-		repoTarget  string
-		runID       string
-		planID      string
-		passID      string
-		baseRef     string
-		headRef     string
+		messageFlag            string
+		slugFlag               string
+		dryRun                 bool
+		promoteRuntimeEvidence bool
+		projectID              string
+		repoTarget             string
+		runID                  string
+		planID                 string
+		passID                 string
+		baseRef                string
+		headRef                string
 	)
 
 	flag.StringVar(&messageFlag, "message", "", "commit message")
 	flag.StringVar(&slugFlag, "slug", "", "closeout artifact slug")
-	flag.BoolVar(&dryRun, "dry-run", false, "skip commit and push")
+	flag.BoolVar(&dryRun, "dry-run", false, "write evidence and report would-stage paths without staging, committing, or pushing")
+	flag.BoolVar(&promoteRuntimeEvidence, "promote-runtime-evidence", false, "include Relay-managed runtime evidence in explicit staging (env: RELAY_CLOSEOUT_PROMOTE_RUNTIME_EVIDENCE=1)")
 	flag.StringVar(&projectID, "project-id", "", "closeout project_id (default: relay, env: RELAY_CLOSEOUT_PROJECT_ID)")
 	flag.StringVar(&repoTarget, "repo-target", "", "closeout repo_target (default: Paintersrp/relay, env: RELAY_CLOSEOUT_REPO_TARGET)")
 	flag.StringVar(&runID, "run-id", "", "closeout run_id (default: local-closeout, env: RELAY_CLOSEOUT_RUN_ID)")
@@ -50,16 +52,17 @@ func main() {
 	}
 
 	report, err := closeout.Run(context.Background(), closeout.Options{
-		Message:    message,
-		Slug:       slug,
-		DryRun:     dryRun,
-		ProjectID:  projectID,
-		RepoTarget: repoTarget,
-		RunID:      runID,
-		PlanID:     planID,
-		PassID:     passID,
-		BaseRef:    baseRef,
-		HeadRef:    headRef,
+		Message:                message,
+		Slug:                   slug,
+		DryRun:                 dryRun,
+		ProjectID:              projectID,
+		RepoTarget:             repoTarget,
+		RunID:                  runID,
+		PlanID:                 planID,
+		PassID:                 passID,
+		BaseRef:                baseRef,
+		HeadRef:                headRef,
+		PromoteRuntimeEvidence: promoteRuntimeEvidence,
 	})
 
 	fmt.Printf("validation: %s\n", report.ValidationStatus())

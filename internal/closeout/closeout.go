@@ -50,6 +50,7 @@ type Options struct {
 	PassID                     string
 	BaseRef                    string
 	HeadRef                    string
+	PromoteRuntimeEvidence     bool
 	Now                        func() time.Time
 	Runner                     CommandRunner
 	CloseoutEvidenceSchemaPath string
@@ -201,6 +202,7 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		agentRefsCheck = defaultAgentRefsCheck
 	}
 	dryRun := opts.DryRun || os.Getenv("RELAY_CLOSEOUT_DRY_RUN") == "1"
+	promoteRuntimeEvidence := opts.PromoteRuntimeEvidence || os.Getenv("RELAY_CLOSEOUT_PROMOTE_RUNTIME_EVIDENCE") == "1"
 
 	metadata := resolveMetadata(opts)
 
@@ -262,18 +264,14 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		return report.blockFromError("evidence_write", err)
 	}
 
-	stage := runner.Run(ctx, "git", "add", "-A")
-	if !commandOK(stage) {
-		return report.blockAndWrite("git_stage", resultMessage(stage))
+	stagePaths, err := sourceStagePaths(ctx, runner, promoteRuntimeEvidence)
+	if err != nil {
+		return report.blockAndWrite("git_stage", err.Error())
 	}
-
-	staged := runner.Run(ctx, "git", "diff", "--cached", "--name-only")
-	if !commandOK(staged) {
-		return report.blockAndWrite("git_stage", resultMessage(staged))
-	}
-	report.recordStagedFiles(parseLines(staged.Stdout))
+	report.recordStagedFiles(stagePaths)
 
 	if dryRun {
+		report.addIssue("info", "dry_run_would_stage: "+stageSummary(stagePaths))
 		report.RepositoryEvidence.Commit = RepositoryEvidenceReference{State: "not_run", Summary: "dry_run"}
 		report.RepositoryEvidence.Push = RepositoryEvidenceReference{State: "not_run", Summary: "dry_run"}
 		if err := report.writeEvidence(); err != nil {
@@ -281,6 +279,20 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		}
 		return report, nil
 	}
+
+	if len(stagePaths) > 0 {
+		stageArgs := append([]string{"add", "--"}, stagePaths...)
+		stage := runner.Run(ctx, "git", stageArgs...)
+		if !commandOK(stage) {
+			return report.blockAndWrite("git_stage", resultMessage(stage))
+		}
+	}
+
+	staged := runner.Run(ctx, "git", "diff", "--cached", "--name-only")
+	if !commandOK(staged) {
+		return report.blockAndWrite("git_stage", resultMessage(staged))
+	}
+	report.recordStagedFiles(parseLines(staged.Stdout))
 
 	commit := runner.Run(ctx, "git", "commit", "-m", message)
 	if !commandOK(commit) {
@@ -706,6 +718,68 @@ func parseLines(raw string) []string {
 		}
 	}
 	return lines
+}
+
+func sourceStagePaths(ctx context.Context, runner CommandRunner, promoteRuntimeEvidence bool) ([]string, error) {
+	status := runner.Run(ctx, "git", "status", "--porcelain=v1", "--untracked-files=normal")
+	if !commandOK(status) {
+		return nil, fmt.Errorf("%s", resultMessage(status))
+	}
+	paths := make([]string, 0)
+	seen := map[string]bool{}
+	for _, p := range parseStatusPaths(status.Stdout) {
+		if !promoteRuntimeEvidence && isRuntimeEvidencePath(p) {
+			continue
+		}
+		if !seen[p] {
+			seen[p] = true
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
+}
+
+func parseStatusPaths(raw string) []string {
+	paths := []string{}
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if strings.TrimSpace(line) == "" || len(line) < 4 {
+			continue
+		}
+		pathPart := strings.TrimSpace(line[3:])
+		if strings.Contains(pathPart, " -> ") {
+			parts := strings.Split(pathPart, " -> ")
+			pathPart = parts[len(parts)-1]
+		}
+		pathPart = strings.Trim(pathPart, `"`)
+		if pathPart != "" {
+			paths = append(paths, filepath.ToSlash(pathPart))
+		}
+	}
+	return paths
+}
+
+func stageSummary(paths []string) string {
+	if len(paths) == 0 {
+		return "(none)"
+	}
+	return strings.Join(paths, ", ")
+}
+
+func isRuntimeEvidencePath(p string) bool {
+	normalized := filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(p), "./"))
+	for _, prefix := range []string{
+		"handoffs/validation/",
+		"handoffs/closeout/",
+		"handoffs/audits/",
+		"handoffs/results/",
+		"data/artifacts/",
+	} {
+		if strings.HasPrefix(normalized, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func safeSlug(raw string) string {

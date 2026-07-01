@@ -71,7 +71,7 @@ func TestValidationFailureContinuesInDryRun(t *testing.T) {
 	if report.CommitStatus() != "skipped_dry_run" || report.PushStatus() != "skipped_dry_run" {
 		t.Fatalf("commit/push statuses = %q/%q, want skipped_dry_run", report.CommitStatus(), report.PushStatus())
 	}
-	assertCalled(t, runner.calls, "git add -A")
+	assertNotCalled(t, runner.calls, "git add --")
 	assertNotCalled(t, runner.calls, "git commit")
 	assertNotCalled(t, runner.calls, "git push")
 	assertFileExists(t, report.EvidenceJSONPath())
@@ -112,9 +112,57 @@ func TestValidationFailureContinuesCommitPush(t *testing.T) {
 	if report.PushStatus() != "pushed" {
 		t.Fatalf("push status = %q, want pushed", report.PushStatus())
 	}
+	assertCalled(t, runner.calls, "git add -- internal/closeout/closeout.go")
+	assertNotCalled(t, runner.calls, "git add -- handoffs/validation")
 	assertSchemaConformant(t, report.EvidenceJSONPath())
 	assertHasIssueSeverity(t, report, "error")
 	assertNoIssueSeverity(t, report, "blocker")
+}
+
+func TestDryRunRecordsWouldStagePathsWithoutGitMutation(t *testing.T) {
+	withTempWorkingDir(t)
+	runner := &fakeRunner{}
+
+	report, err := Run(context.Background(), Options{
+		Message: "dry-run stage summary",
+		DryRun:  true,
+		Now:     fixedNow,
+		Runner:  runner,
+	})
+	if err != nil {
+		t.Fatalf("Run returned unexpected error: %v", err)
+	}
+	got := strings.Join(report.StagedFiles(), "\n")
+	if !strings.Contains(got, "internal/closeout/closeout.go") {
+		t.Fatalf("would-stage paths = %v, want source path", report.StagedFiles())
+	}
+	if strings.Contains(got, "handoffs/validation") || strings.Contains(got, "handoffs/closeout") {
+		t.Fatalf("would-stage paths include runtime evidence: %v", report.StagedFiles())
+	}
+	assertNotCalled(t, runner.calls, "git add --")
+	assertNotCalled(t, runner.calls, "git commit")
+	assertNotCalled(t, runner.calls, "git push")
+	assertFileExists(t, report.EvidenceJSONPath())
+	assertSchemaConformant(t, report.EvidenceJSONPath())
+}
+
+func TestRuntimeEvidencePromotionIncludesEvidencePaths(t *testing.T) {
+	withTempWorkingDir(t)
+	runner := &fakeRunner{}
+
+	report, err := Run(context.Background(), Options{
+		Message:                "promote runtime evidence",
+		PromoteRuntimeEvidence: true,
+		Now:                    fixedNow,
+		Runner:                 runner,
+	})
+	if err != nil {
+		t.Fatalf("Run returned unexpected error: %v", err)
+	}
+	assertCalled(t, runner.calls, "git add -- internal/closeout/closeout.go handoffs/validation/latest.validation-report.json handoffs/closeout/2026-06-30_defaults.closeout-evidence.json")
+	if report.Status != "closed_out" {
+		t.Fatalf("status = %q, want closed_out", report.Status)
+	}
 }
 
 func TestMissingMessageBlocks(t *testing.T) {
@@ -184,7 +232,7 @@ func TestEvidenceSchemaValidationFailureBlocksBeforeStage(t *testing.T) {
 		t.Fatalf("status = %q want blocked", report.Status)
 	}
 	assertHasIssueSeverity(t, report, "blocker")
-	assertNotCalled(t, runner.calls, "git add -A")
+	assertNotCalled(t, runner.calls, "git add --")
 	assertNotCalled(t, runner.calls, "git commit")
 	assertNotCalled(t, runner.calls, "git push")
 }
@@ -209,7 +257,7 @@ func TestEvidenceSchemaLoadFailureBlocksBeforeStage(t *testing.T) {
 	if report.Status != "blocked" {
 		t.Fatalf("status = %q want blocked", report.Status)
 	}
-	assertNotCalled(t, runner.calls, "git add -A")
+	assertNotCalled(t, runner.calls, "git add --")
 	assertNotCalled(t, runner.calls, "git commit")
 	assertNotCalled(t, runner.calls, "git push")
 }
@@ -237,13 +285,13 @@ func TestStageFailureBlocks(t *testing.T) {
 	withTempWorkingDir(t)
 	runner := &fakeRunner{run: func(ctx context.Context, name string, args ...string) CommandResult {
 		command := strings.TrimSpace(name + " " + strings.Join(args, " "))
-		if command == "git add -A" {
+		if strings.HasPrefix(command, "git add --") {
 			return CommandResult{Command: command, ExitCode: 1, Stderr: "stage failed\n", Err: errors.New("exit status 1")}
 		}
 		return defaultFakeResult(command)
 	}}
 
-	report, err := Run(context.Background(), Options{Message: "stage failure", DryRun: true, Now: fixedNow, Runner: runner})
+	report, err := Run(context.Background(), Options{Message: "stage failure", Now: fixedNow, Runner: runner})
 	if err == nil {
 		t.Fatal("expected stage failure")
 	}
@@ -327,7 +375,7 @@ func TestCommandOrder(t *testing.T) {
 	withTempWorkingDir(t)
 	runner := &fakeRunner{run: func(ctx context.Context, name string, args ...string) CommandResult {
 		command := strings.TrimSpace(name + " " + strings.Join(args, " "))
-		if command == "git add -A" {
+		if strings.HasPrefix(command, "git add --") {
 			assertFileExists(t, filepath.Join("handoffs", "closeout", "2026-06-30_order-check.closeout-evidence.json"))
 		}
 		return defaultFakeResult(command)
@@ -340,7 +388,8 @@ func TestCommandOrder(t *testing.T) {
 
 	assertOrder(t, runner.calls, "bash -lc make agentrefs-generate", "bash -lc make agentrefs-check")
 	assertOrder(t, runner.calls, "bash -lc make agentrefs-check", "bash -lc make validate-full")
-	assertOrder(t, runner.calls, "bash -lc make validate-full", "git add -A")
+	assertOrder(t, runner.calls, "bash -lc make validate-full", "git status --porcelain=v1 --untracked-files=normal")
+	assertOrder(t, runner.calls, "git add -- internal/closeout/closeout.go", "git commit -m order check")
 	assertOrder(t, runner.calls, "git commit -m order check", "git push")
 }
 
@@ -370,9 +419,9 @@ func TestAgentRefsFailureContinues(t *testing.T) {
 	// Agentrefs failures are recorded as error-severity issues, not blockers.
 	assertHasIssueSeverity(t, report, "error")
 	assertNoIssueSeverity(t, report, "blocker")
-	// Validation and staging still proceed.
+	// Validation and would-stage summaries still proceed.
 	assertCalled(t, runner.calls, "bash -lc make validate-full")
-	assertCalled(t, runner.calls, "git add -A")
+	assertNotCalled(t, runner.calls, "git add --")
 	assertSchemaConformant(t, report.EvidenceJSONPath())
 }
 
@@ -458,7 +507,9 @@ func defaultFakeResult(command string) CommandResult {
 		return CommandResult{Command: command}
 	case "bash -lc make agentrefs-check":
 		return CommandResult{Command: command}
-	case "git add -A":
+	case "git status --porcelain=v1 --untracked-files=normal":
+		return CommandResult{Command: command, Stdout: " M internal/closeout/closeout.go\n?? handoffs/validation/latest.validation-report.json\n?? handoffs/closeout/2026-06-30_defaults.closeout-evidence.json\n"}
+	case "git add -- internal/closeout/closeout.go":
 		return CommandResult{Command: command}
 	case "git diff --cached --name-only":
 		return CommandResult{Command: command, Stdout: "internal/closeout/closeout.go\n"}

@@ -264,7 +264,7 @@ Relay's audit workflows are local-first and artifact-backed:
 - Manual audit submissions and MCP-based submissions (`submit_audit_packet`) invoke the same backend decision service.
 - Decisions of `blocked` or `manual_review_required` map the run status to `revision_required` while retaining the original decision details in the database.
 - Audit acceptance does **not** implicitly close the run, commit code, or push branches.
-- After audit acceptance, operators use the explicit closeout workflow to run final validation, preserve closeout evidence, stage all source changes and generated evidence, commit, and push:
+- After audit acceptance, operators use the explicit closeout workflow to run final validation, preserve Relay-managed closeout evidence, stage source changes and generated source artifacts by explicit path selection, commit, and push:
   ```bash
   make closeout MESSAGE="your commit message" SLUG="short-task-slug"
   ```
@@ -272,6 +272,8 @@ Relay's audit workflows are local-first and artifact-backed:
   ```bash
   make closeout-dry-run MESSAGE="your commit message" SLUG="short-task-slug"
   ```
+- Runtime evidence such as validation reports, dry-run output, audit artifacts, executor results, and closeout evidence remains Relay-managed and unstaged by default. Promote it into source control only with an explicit opt-in such as `--promote-runtime-evidence` or `RELAY_CLOSEOUT_PROMOTE_RUNTIME_EVIDENCE=1`.
+- Closeout dry-run writes validation and closeout evidence and reports would-stage source paths, but it does not mutate the git index, commit, or push.
 - Closeout validation failure is recorded as delivery evidence and does not by itself block staging, commit, or push. Mechanical failures such as evidence write, staging, commit, or push failures remain blocking.
 - Relay does not create branches, reset worktrees, create PRs, run GitHub Actions, or administer remote repository settings as part of local audit or closeout.
 
@@ -416,9 +418,9 @@ Use closeout only after the implementation has gone through Executor result inta
 make closeout MESSAGE="your commit message" SLUG="short-task-slug"
 ```
 
-Closeout is the repo-owned final delivery workflow. It runs the repo-defined final validation command, writes closeout evidence under `handoffs/closeout/`, stages all source changes and generated evidence, commits, and pushes.
+Closeout is the repo-owned final delivery workflow. It runs the repo-defined final validation command, writes closeout evidence under `handoffs/closeout/`, stages source changes and generated source artifacts by explicit path selection, commits, and pushes. Runtime evidence is Relay-managed and unstaged by default unless the operator explicitly promotes it with `--promote-runtime-evidence` or `RELAY_CLOSEOUT_PROMOTE_RUNTIME_EVIDENCE=1`.
 
-To verify closeout evidence generation and staging behavior without commit or push:
+To verify closeout evidence generation and would-stage behavior without mutating the git index, committing, or pushing:
 
 ```bash
 make closeout-dry-run MESSAGE="your commit message" SLUG="short-task-slug"

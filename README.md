@@ -26,7 +26,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | Validation | Local/user-triggered validation command execution |
 | Git Diff | Local git diff inspection |
 | Audit Handoff | Generation of audit handoffs for review |
-| Closeout Support | Explicit repo-owned closeout command for final validation evidence, closeout evidence, staging, commit, and push |
+| Closeout Support | Explicit repo-owned closeout command for final validation evidence, Relay-managed closeout evidence, explicit source staging, commit, and push |
 | React Workbench | Primary workflow UI |
 | Go Backend | Ownership of JSON APIs, orchestration, run lifecycle, artifact storage, utility server-rendered pages, and event streaming |
 
@@ -147,7 +147,9 @@ Relay's current workflow is:
     make closeout-dry-run MESSAGE="your commit message" SLUG="short-task-slug"
     ```
 
-The closeout workflow runs the repo-defined final validation command, writes closeout evidence under `handoffs/closeout/`, stages source changes and generated evidence, commits, and pushes. A final validation failure is preserved as closeout evidence and does not by itself block staging, commit, or push. Mechanical failures such as evidence write, staging, commit, or push failures remain blocking.
+The closeout workflow runs the repo-defined final validation command, writes closeout evidence under `handoffs/closeout/`, stages source changes and generated source artifacts by explicit path selection, commits, and pushes. Runtime evidence such as validation reports, dry-run output, audit artifacts, executor results, and closeout evidence remains Relay-managed and unstaged by default. Operators can promote runtime evidence into source control only with an explicit opt-in such as `--promote-runtime-evidence` or `RELAY_CLOSEOUT_PROMOTE_RUNTIME_EVIDENCE=1`. A final validation failure is preserved as closeout evidence and does not by itself block staging, commit, or push. Mechanical failures such as evidence write, staging, commit, or push failures remain blocking.
+
+Closeout dry-run writes validation and closeout evidence and reports the source paths it would stage, but it does not mutate the git index, commit, or push.
 
 Relay does not perform implicit git mutation from run submission, validation, execution, or audit. Git staging, commit, and push happen only when the operator explicitly invokes the closeout workflow or runs manual git commands. Relay does not create PRs, run GitHub Actions, or administer branch protection as part of this local workflow.
 
