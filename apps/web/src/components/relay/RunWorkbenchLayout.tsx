@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/resizable'
 import { StatusBadge } from './StatusBadge'
 import { RunStepper } from './RunStepper'
+import { useStageShortcuts } from './useStageShortcuts'
 import { RelayStateSurface } from './RelayStateSurface'
 import {
   RunPlanContextCard,
@@ -21,6 +22,7 @@ import {
   RunStageInspectorTabStrip,
 } from './RunStagePrimitives'
 import { cn } from '@/lib/utils'
+import { useIsDesktop } from '@/lib/useIsDesktop'
 import { ArrowLeft } from 'lucide-react'
 
 type InspectorPanelKey =
@@ -150,11 +152,17 @@ export function RunWorkbenchLayout({
       () => initialInspectorTab ?? resolvedTabs[0]?.key ?? 'logs',
     )
 
+  const isDesktop = useIsDesktop()
+
   const isRunning =
     run.status === 'executor_dispatched' || run.status === 'executor_running'
 
   const activeShellStep = currentStep ?? run.activeStep
   const activeStageCopy = STAGE_COPY[activeShellStep]
+
+  // Next/previous stage keyboard shortcuts, scoped to the active workbench
+  // route (Req 4.8, 4.9). Navigation-only; clamps at Intake/Audit boundaries.
+  useStageShortcuts(activeShellStep, run.id)
 
   const resolvedPanels: InspectorPanels =
     inspectorPanels ?? (sideContent ? { logs: sideContent } : {})
@@ -180,6 +188,35 @@ export function RunWorkbenchLayout({
       : resolvedActiveTab
         ? getInspectorFallback(resolvedActiveTab)
         : null
+
+  const mainRegion = (
+    <>
+      <RunStageHeader
+        title={activeStageCopy.title}
+        description={activeStageCopy.description}
+        status={<StatusBadge status={run.status} className="shrink-0" />}
+      />
+      <div className="min-w-0 px-6 py-5">{mainContent}</div>
+    </>
+  )
+
+  const inspectorTabStrip = (
+    <RunStageInspectorTabStrip
+      tabs={resolvedTabs}
+      activeTab={resolvedActiveTab}
+      onTabChange={setActiveInspectorTab}
+      className="min-w-0 flex-1"
+    />
+  )
+
+  const inspectorBody = (
+    <div className="flex min-w-0 flex-col gap-3">
+      {resolvedActiveTab === 'details' && hasRunPlanContext(run.planContext) ? (
+        <RunPlanContextCard context={run.planContext} />
+      ) : null}
+      {activePanel}
+    </div>
+  )
 
   return (
     <section
@@ -246,7 +283,7 @@ export function RunWorkbenchLayout({
         <div className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-3 px-4">
           <RunStepper
             runId={run.id}
-            activeStep={activeShellStep}
+            status={run.status}
             isRunning={isRunning}
             className="min-w-0 flex-1 px-0"
           />
@@ -256,54 +293,33 @@ export function RunWorkbenchLayout({
         </div>
       </div>
 
-      {/* Full-height split pane */}
-      <ResizablePanelGroup
-        orientation="horizontal"
-        className="min-h-0 flex-1 overflow-hidden"
-      >
-        <ResizablePanel
-          id="run-workbench-main"
-          defaultSize="72%"
-          minSize="45%"
-          className="min-w-0"
+      {/*
+        Content region. At/above the desktop breakpoint (1024px) the main
+        content and Inspector_Panel share a resizable side-by-side split pane.
+        Below 1024px the Inspector_Panel content stacks vertically below the
+        main content instead (Requirement 8.5). We conditionally render the two
+        layouts rather than toggling with CSS: the resizable panel primitive
+        applies size/flex styles to the outer panel element that CSS `hidden`
+        cannot suppress, so a hidden inspector panel would still reserve its
+        column below the breakpoint.
+      */}
+      {isDesktop ? (
+        <ResizablePanelGroup
+          orientation="horizontal"
+          className="min-h-0 flex-1 overflow-hidden"
         >
-          <main className="h-full min-w-0 overflow-y-auto">
-            <RunStageHeader
-              title={activeStageCopy.title}
-              description={activeStageCopy.description}
-              status={<StatusBadge status={run.status} className="shrink-0" />}
-            />
-            <div className="min-w-0 px-6 py-5">
-              {mainContent}
+          <ResizablePanel
+            id="run-workbench-main"
+            defaultSize="72%"
+            minSize="45%"
+            className="min-w-0"
+          >
+            <main className="h-full min-w-0 overflow-y-auto">{mainRegion}</main>
+          </ResizablePanel>
 
-              <section className="mt-4 lg:hidden">
-                <div className="overflow-hidden rounded border border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]">
-                  <div className="border-b border-[var(--relay-row-border)] px-3 pt-2">
-                    <RunStageInspectorTabStrip
-                      tabs={resolvedTabs}
-                      activeTab={resolvedActiveTab}
-                      onTabChange={setActiveInspectorTab}
-                    />
-                  </div>
-                  <div className="p-4">
-                    <div className="flex min-w-0 flex-col gap-3">
-                      {resolvedActiveTab === 'details' &&
-                      hasRunPlanContext(run.planContext) ? (
-                        <RunPlanContextCard context={run.planContext} />
-                      ) : null}
-                      {activePanel}
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </div>
-          </main>
-        </ResizablePanel>
-
-        <>
           <ResizableHandle
             withHandle
-            className="hidden bg-[var(--relay-row-border)] lg:flex"
+            className="bg-[var(--relay-row-border)]"
           />
 
           <ResizablePanel
@@ -311,31 +327,31 @@ export function RunWorkbenchLayout({
             defaultSize="28%"
             minSize="20%"
             maxSize="42%"
-            className="hidden min-h-0 lg:flex"
+            className="min-h-0"
           >
             <aside className="flex h-full min-h-0 w-full flex-col border-l border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]">
               <div className="flex h-12 shrink-0 items-center border-b border-[var(--relay-row-border)] px-3">
-                <RunStageInspectorTabStrip
-                  tabs={resolvedTabs}
-                  activeTab={resolvedActiveTab}
-                  onTabChange={setActiveInspectorTab}
-                  className="min-w-0 flex-1"
-                />
+                {inspectorTabStrip}
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                <div className="flex flex-col gap-3">
-                  {resolvedActiveTab === 'details' &&
-                  hasRunPlanContext(run.planContext) ? (
-                    <RunPlanContextCard context={run.planContext} />
-                  ) : null}
-                  {activePanel}
-                </div>
+                {inspectorBody}
               </div>
             </aside>
           </ResizablePanel>
-        </>
-      </ResizablePanelGroup>
+        </ResizablePanelGroup>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <main className="min-w-0">{mainRegion}</main>
+
+          <aside className="flex min-w-0 flex-col border-t border-[var(--relay-row-border)] bg-[var(--relay-inspector-bg)]">
+            <div className="flex h-12 shrink-0 items-center border-b border-[var(--relay-row-border)] px-3">
+              {inspectorTabStrip}
+            </div>
+            <div className="min-w-0 p-4">{inspectorBody}</div>
+          </aside>
+        </div>
+      )}
     </section>
   )
 }

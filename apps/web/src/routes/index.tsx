@@ -1,8 +1,11 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { HomeOverview } from "@/components/relay/shell/HomeOverview";
 
-// Redirect index to the runs list
+// Render the Home_Overview landing surface at the application root (Req 3.1, 10.2).
 export const Route = createFileRoute("/")({
-  beforeLoad: () => {
-    throw redirect({ to: "/runs" });
-  },
+  component: HomeOverviewPage,
 });
+
+function HomeOverviewPage() {
+  return <HomeOverview />;
+}

@@ -65,7 +65,7 @@ export function RunSummaryHeader({ run }: RunSummaryHeaderProps) {
       {/* Stepper */}
       <RunStepper
         runId={run.id}
-        activeStep={run.activeStep}
+        status={run.status}
         isRunning={isRunning}
       />
     </div>
