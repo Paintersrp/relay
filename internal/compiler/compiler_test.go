@@ -11,6 +11,7 @@ import (
 	"relay/internal/artifacts"
 	"relay/internal/store"
 	"relay/internal/validation"
+	"strings"
 	"testing"
 	"time"
 )
@@ -436,6 +437,169 @@ func TestCompiler(t *testing.T) {
 			if !ok || len(values) == 0 {
 				t.Fatalf("completion_contract field %s missing defaults/content: %+v", field, completion)
 			}
+		}
+	})
+
+	t.Run("Execution Spec compatibility projection", func(t *testing.T) {
+		run, err := s.CreateRun(repo.ID, "Runtime Compatibility Path", "approved_for_prepare", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+
+		configMap := map[string]interface{}{
+			"repo_target":    "Paintersrp/relay",
+			"branch_context": "main",
+		}
+		configJSON, _ := json.Marshal(configMap)
+		configPath, _ := artifacts.Write(run.ID, "run_config", "run_config.json", configJSON)
+		_, _ = s.CreateArtifact(run.ID, "run_config", configPath, "application/json")
+
+		exampleBytes, err := os.ReadFile(filepath.Join("testdata", "execution_spec_compiler_input_handoff.md"))
+		if err != nil {
+			t.Fatalf("failed to read Execution Spec fixture: %v", err)
+		}
+		if strings.Contains(string(exampleBytes), "<compiler_input>") || strings.Contains(string(exampleBytes), "compiler_input:") {
+			t.Fatal("Execution Spec fixture must not contain structured compiler input")
+		}
+		handoffPath, _ := artifacts.Write(run.ID, "planner_handoff", "planner_handoff.md", exampleBytes)
+		_, _ = s.CreateArtifact(run.ID, "planner_handoff", handoffPath, "text/markdown")
+
+		res, err := c.CompileApprovedRun(context.Background(), run.ID)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if len(res.Issues) > 0 {
+			t.Fatalf("expected no parse issues, got: %v", res.Issues)
+		}
+		if !res.Success {
+			t.Fatalf("expected validation success, got errors: %+v", res.ValidationReport.Errors)
+		}
+
+		packetBytes, err := artifacts.Read(run.ID, "canonical_packet", "canonical_packet.json")
+		if err != nil {
+			t.Fatalf("failed to read packet: %v", err)
+		}
+		var packet map[string]interface{}
+		if err := json.Unmarshal(packetBytes, &packet); err != nil {
+			t.Fatalf("failed to parse packet: %v", err)
+		}
+
+		exec, ok := packet["execution_payload"].(map[string]interface{})
+		if !ok {
+			t.Fatal("missing execution_payload")
+		}
+		allowedExecKeys := map[string]bool{
+			"goal": true, "scope": true, "non_goals": true, "file_targets": true,
+			"implementation_steps": true, "code_requirements": true, "validation_contract": true,
+			"expected_behavior": true, "completion_contract": true, "executor_final_response_format": true,
+		}
+		for key := range exec {
+			if !allowedExecKeys[key] {
+				t.Fatalf("Execution Spec-only key leaked into execution_payload: %s", key)
+			}
+		}
+		for _, forbidden := range []string{"target_symbols", "source_requirements", "source_design", "traceability", "vague_instruction_lint", "open_questions"} {
+			if _, ok := exec[forbidden]; ok {
+				t.Fatalf("forbidden Execution Spec field leaked into execution_payload: %s", forbidden)
+			}
+		}
+
+		steps, ok := exec["implementation_steps"].([]interface{})
+		if !ok || len(steps) < 2 {
+			t.Fatalf("expected projected implementation steps, got %+v", exec["implementation_steps"])
+		}
+		firstStep := steps[0].(map[string]interface{})
+		if firstStep["id"] != "S1" {
+			t.Fatalf("expected EXEC-001 to normalize to S1, got %+v", firstStep)
+		}
+		if !strings.Contains(firstStep["instructions"].(string), "EXEC-001") {
+			t.Fatalf("expected original EXEC-001 label in human-readable text: %+v", firstStep)
+		}
+		if !strings.Contains(firstStep["instructions"].(string), "projectExecutionSpecCompatibility in internal/compiler/compiler.go") {
+			t.Fatalf("expected concise target symbol text in step instructions: %+v", firstStep)
+		}
+
+		reqs, ok := exec["code_requirements"].([]interface{})
+		if !ok || len(reqs) < 2 {
+			t.Fatalf("expected projected code requirements, got %+v", exec["code_requirements"])
+		}
+		firstReq := reqs[0].(map[string]interface{})
+		if firstReq["id"] != "CR1" {
+			t.Fatalf("expected CR-001 to normalize to CR1, got %+v", firstReq)
+		}
+		if !strings.Contains(firstReq["requirement"].(string), "CR-001") {
+			t.Fatalf("expected original CR-001 label in requirement text: %+v", firstReq)
+		}
+
+		contract := exec["validation_contract"].(map[string]interface{})
+		cmds, ok := contract["commands"].([]interface{})
+		if !ok || len(cmds) != 1 {
+			t.Fatalf("expected one projected validation command, got %+v", contract["commands"])
+		}
+		firstCmd := cmds[0].(map[string]interface{})
+		if firstCmd["id"] != "V1" || firstCmd["command"] != "go test ./internal/compiler ./internal/renderer" {
+			t.Fatalf("expected V-001 to normalize to V1 with command_or_check mapped, got %+v", firstCmd)
+		}
+		if !strings.Contains(firstCmd["purpose"].(string), "V-001") {
+			t.Fatalf("expected original V-001 label in validation purpose: %+v", firstCmd)
+		}
+
+		auditBytes, _ := json.Marshal(packet["audit_seed"])
+		auditText := string(auditBytes)
+		for _, forbidden := range []string{
+			"execution_spec_id", "traceability_boundary", "source_requirements",
+			"source_design", "requirements_record_id", "design_record_id",
+			"Mechanical under-specification", "prior chat",
+		} {
+			if strings.Contains(auditText, forbidden) {
+				t.Fatalf("audit seed contains wholesale upstream artifact marker %q: %s", forbidden, auditText)
+			}
+		}
+	})
+
+	t.Run("Execution Spec blocking open question blocks compilation", func(t *testing.T) {
+		run, err := s.CreateRun(repo.ID, "Runtime Compatibility Blocking Question", "approved_for_prepare", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("failed to create run: %v", err)
+		}
+		configJSON, _ := json.Marshal(map[string]interface{}{
+			"repo_target":    "Paintersrp/relay",
+			"branch_context": "main",
+		})
+		configPath, _ := artifacts.Write(run.ID, "run_config", "run_config.json", configJSON)
+		_, _ = s.CreateArtifact(run.ID, "run_config", configPath, "application/json")
+
+		exampleBytes, err := os.ReadFile(filepath.Join("testdata", "execution_spec_compiler_input_handoff.md"))
+		if err != nil {
+			t.Fatalf("failed to read Execution Spec fixture: %v", err)
+		}
+		blockingHandoff := strings.Replace(string(exampleBytes), `"open_questions": [],`, `"open_questions": [
+    {
+      "id": "OQ-001",
+      "question": "Which executable behavior should be selected?",
+      "blocking": true,
+      "affected_area": "execution_payload",
+      "resolution_needed": "Planner must resolve behavior before execution."
+    }
+  ],`, 1)
+		handoffPath, _ := artifacts.Write(run.ID, "planner_handoff", "planner_handoff.md", []byte(blockingHandoff))
+		_, _ = s.CreateArtifact(run.ID, "planner_handoff", handoffPath, "text/markdown")
+
+		res, err := c.CompileApprovedRun(context.Background(), run.ID)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if res.Success {
+			t.Fatal("expected blocking open question to fail compilation")
+		}
+		found := false
+		for _, issue := range res.Issues {
+			if strings.Contains(issue, "blocking open question") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("expected blocking open question issue, got %+v", res.Issues)
 		}
 	})
 

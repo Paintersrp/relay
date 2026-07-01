@@ -458,9 +458,6 @@ func (c *Compiler) parseHandoff(
 
 	// 3. Parse execution_payload
 	briefText, ok = getSection("compiler_input", "compiler input")
-	if !ok || briefText == "" {
-		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingCompilerInput, Message: "Missing required section: compiler_input", RepairEligible: false})
-	}
 	var goal, scope, expectedBehaviorRaw, completionContractRaw string
 	var nonGoals []string
 	var fileTargets []map[string]interface{}
@@ -472,6 +469,7 @@ func (c *Compiler) parseHandoff(
 	var expectedBehavior []string
 	var completionContract map[string]interface{}
 	structuredParsed := false
+	executionSpecProjected := false
 
 	if ok && briefText != "" {
 		if parsed, parsedOK := parseStructuredCompilerInput(briefText); parsedOK {
@@ -547,64 +545,101 @@ func (c *Compiler) parseHandoff(
 			}
 		}
 	} else {
-		// Try parsing from top-level headings directly
-		goal = extractBriefSection(content, "goal")
-		if goal == "" {
-			goal, _ = getSection("goal", "goal")
-		}
-		scope = extractBriefSection(content, "scope")
-		if scope == "" {
-			scope, _ = getSection("scope", "scope")
-		}
+		if projected, projectionIssues, projectedOK := projectExecutionSpecCompatibility(content); projectedOK {
+			executionSpecProjected = true
+			goal = projected.Goal
+			scope = projected.Scope
+			nonGoals = projected.NonGoals
+			fileTargets = projected.FileTargets
+			implementationSteps = projected.ImplementationSteps
+			codeRequirements = projected.CodeRequirements
+			validationCmds = projected.ValidationCommands
+			validationMode = projected.ValidationMode
+			validationFailurePolicy = projected.ValidationFailurePolicy
+			expectedBehavior = projected.ExpectedBehavior
+			completionContract = projected.CompletionContract
+			if selectedPass := strings.TrimPrefix(projected.SelectedPassID, "PASS-"); selectedPass != projected.SelectedPassID {
+				if passNum, err := strconv.Atoi(selectedPass); err == nil && passNum > 0 {
+					boundary["current_pass"] = passNum
+				}
+			}
+			if len(nonGoals) > 0 {
+				boundary["out_of_scope_for_this_pass"] = nonGoals
+			}
+			if scope != "" {
+				boundary["this_pass_scope"] = scope
+			}
+			plannerContext["pass_boundary"] = boundary
+			for _, issue := range projectionIssues {
+				issues = append(issues, issue)
+			}
+		} else {
+			if len(projectionIssues) > 0 {
+				for _, issue := range projectionIssues {
+					issues = append(issues, issue)
+				}
+			} else {
+				issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingCompilerInput, Message: "Missing required section: compiler_input", RepairEligible: false})
+			}
+			// Try parsing from top-level headings directly for legacy handoffs.
+			goal = extractBriefSection(content, "goal")
+			if goal == "" {
+				goal, _ = getSection("goal", "goal")
+			}
+			scope = extractBriefSection(content, "scope")
+			if scope == "" {
+				scope, _ = getSection("scope", "scope")
+			}
 
-		nonGoalsText := extractBriefSection(content, "non-goals")
-		if nonGoalsText == "" {
-			nonGoalsText = extractBriefSection(content, "non_goals")
-		}
-		if nonGoalsText == "" {
-			nonGoalsText, _ = getSection("non_goals", "non-goals")
-		}
-		nonGoals = parseMarkdownList(nonGoalsText)
+			nonGoalsText := extractBriefSection(content, "non-goals")
+			if nonGoalsText == "" {
+				nonGoalsText = extractBriefSection(content, "non_goals")
+			}
+			if nonGoalsText == "" {
+				nonGoalsText, _ = getSection("non_goals", "non-goals")
+			}
+			nonGoals = parseMarkdownList(nonGoalsText)
 
-		targetsText := extractBriefSection(content, "likely file targets")
-		if targetsText == "" {
-			targetsText = extractBriefSection(content, "file targets")
-		}
-		if targetsText == "" {
-			targetsText, _ = getSection("file_targets", "likely file targets")
-		}
-		if targetsText == "" {
-			targetsText, _ = getSection("file_targets", "file targets")
-		}
-		fileTargets = parseFileTargetsStructured(targetsText)
+			targetsText := extractBriefSection(content, "likely file targets")
+			if targetsText == "" {
+				targetsText = extractBriefSection(content, "file targets")
+			}
+			if targetsText == "" {
+				targetsText, _ = getSection("file_targets", "likely file targets")
+			}
+			if targetsText == "" {
+				targetsText, _ = getSection("file_targets", "file targets")
+			}
+			fileTargets = parseFileTargetsStructured(targetsText)
 
-		stepsText := extractBriefSection(content, "required implementation steps")
-		if stepsText == "" {
-			stepsText = extractBriefSection(content, "implementation steps")
-		}
-		if stepsText == "" {
-			stepsText, _ = getSection("implementation_steps", "required implementation steps")
-		}
-		if stepsText == "" {
-			stepsText, _ = getSection("implementation_steps", "implementation steps")
-		}
-		implementationSteps = parseImplementationSteps(stepsText)
+			stepsText := extractBriefSection(content, "required implementation steps")
+			if stepsText == "" {
+				stepsText = extractBriefSection(content, "implementation steps")
+			}
+			if stepsText == "" {
+				stepsText, _ = getSection("implementation_steps", "required implementation steps")
+			}
+			if stepsText == "" {
+				stepsText, _ = getSection("implementation_steps", "implementation steps")
+			}
+			implementationSteps = parseImplementationSteps(stepsText)
 
-		expectedBehaviorRaw = extractBriefSection(content, "expected behavior")
-		if expectedBehaviorRaw == "" {
-			expectedBehaviorRaw, _ = getSection("expected_behavior", "expected behavior")
-		}
-		completionContractRaw = extractBriefSection(content, "completion requirements")
-		if completionContractRaw == "" {
-			completionContractRaw = extractBriefSection(content, "completion contract")
-		}
-		if completionContractRaw == "" {
-			completionContractRaw, _ = getSection("completion_contract", "completion contract")
+			expectedBehaviorRaw = extractBriefSection(content, "expected behavior")
+			if expectedBehaviorRaw == "" {
+				expectedBehaviorRaw, _ = getSection("expected_behavior", "expected behavior")
+			}
+			completionContractRaw = extractBriefSection(content, "completion requirements")
+			if completionContractRaw == "" {
+				completionContractRaw = extractBriefSection(content, "completion contract")
+			}
+			if completionContractRaw == "" {
+				completionContractRaw, _ = getSection("completion_contract", "completion contract")
+			}
 		}
 	}
 
 	// Parse code requirements (or provide default if empty)
-	if !structuredParsed {
+	if !structuredParsed && !executionSpecProjected {
 		reqText, _ := getSection("code_requirements", "code requirements")
 		if len(reqText) == 0 {
 			reqText, _ = getSection("code", "code requirements")
@@ -662,7 +697,7 @@ func (c *Compiler) parseHandoff(
 	}
 
 	// Parse validation expectations / commands
-	if !structuredParsed || len(validationCmds) == 0 {
+	if (!structuredParsed && !executionSpecProjected) || len(validationCmds) == 0 {
 		valText, _ := getSection("validation_expectations", "validation expectations")
 		if len(valText) == 0 {
 			valText, _ = getSection("validation", "validation")
@@ -1021,6 +1056,7 @@ type structuredCompilerInputResult struct {
 	ValidationFailurePolicy string
 	ExpectedBehavior        []string
 	CompletionContract      map[string]interface{}
+	SelectedPassID          string
 }
 
 type structuredCompilerInputDocument struct {
@@ -1084,6 +1120,64 @@ type structuredCompletionContractYAML struct {
 	ForbiddenDiscretion []string `yaml:"forbidden_discretion"`
 }
 
+type executionSpecCompatibilityDocument struct {
+	ExecutionSpecID string `yaml:"execution_spec_id"`
+	ProjectID       string `yaml:"project_id"`
+	SourceAuthority struct {
+		RepoTarget    string `yaml:"repo_target"`
+		BranchContext string `yaml:"branch_context"`
+	} `yaml:"source_authority"`
+	SelectedPass struct {
+		PassID       string   `yaml:"pass_id"`
+		PassName     string   `yaml:"pass_name"`
+		PassScope    string   `yaml:"pass_scope"`
+		PassNonGoals []string `yaml:"pass_non_goals"`
+	} `yaml:"selected_pass"`
+	ExecutionPayload struct {
+		Goal                        string                             `yaml:"goal"`
+		Scope                       string                             `yaml:"scope"`
+		NonGoals                    []string                           `yaml:"non_goals"`
+		FileTargets                 []structuredFileTargetYAML         `yaml:"file_targets"`
+		TargetSymbols               []executionSpecTargetSymbolYAML    `yaml:"target_symbols"`
+		ImplementationSteps         []structuredImplementationStepYAML `yaml:"implementation_steps"`
+		CodeRequirements            []structuredCodeRequirementYAML    `yaml:"code_requirements"`
+		ExpectedBehavior            interface{}                        `yaml:"expected_behavior"`
+		ValidationContract          executionSpecValidationYAML        `yaml:"validation_contract"`
+		CompletionContract          structuredCompletionContractYAML   `yaml:"completion_contract"`
+		ExecutorFinalResponseFormat string                             `yaml:"executor_final_response_format"`
+	} `yaml:"execution_payload"`
+	OpenQuestions []struct {
+		ID       string `yaml:"id"`
+		Question string `yaml:"question"`
+		Blocking bool   `yaml:"blocking"`
+	} `yaml:"open_questions"`
+}
+
+type executionSpecTargetSymbolYAML struct {
+	Path       string `yaml:"path"`
+	Symbol     string `yaml:"symbol"`
+	SymbolType string `yaml:"symbol_type"`
+	Action     string `yaml:"action"`
+	Reason     string `yaml:"reason"`
+}
+
+type executionSpecValidationYAML struct {
+	Mode          string                               `yaml:"mode"`
+	FailurePolicy string                               `yaml:"failure_policy"`
+	Commands      []executionSpecValidationCommandYAML `yaml:"commands"`
+	ManualChecks  []executionSpecValidationCommandYAML `yaml:"manual_checks"`
+}
+
+type executionSpecValidationCommandYAML struct {
+	ID              string `yaml:"id"`
+	Command         string `yaml:"command"`
+	CommandOrCheck  string `yaml:"command_or_check"`
+	Required        *bool  `yaml:"required"`
+	Purpose         string `yaml:"purpose"`
+	SuccessSignal   string `yaml:"success_signal"`
+	FailureHandling string `yaml:"failure_handling"`
+}
+
 func parseStructuredCompilerInput(text string) (*structuredCompilerInputResult, bool) {
 	cleaned := stripCodeFences(text)
 	if !strings.Contains(cleaned, "compiler_input:") {
@@ -1119,6 +1213,199 @@ func parseStructuredCompilerInput(text string) (*structuredCompilerInputResult, 
 	}
 
 	return result, true
+}
+
+// projectExecutionSpecCompatibility is a migration-only compatibility path for
+// reviewed handoffs that embed a selected-pass Execution Spec instead of
+// legacy structured compiler input.
+func projectExecutionSpecCompatibility(content string) (*structuredCompilerInputResult, []validation.ValidationError, bool) {
+	specText, ok := extractExecutionSpecBlock(content)
+	if !ok {
+		return nil, nil, false
+	}
+	var spec executionSpecCompatibilityDocument
+	if err := yaml.Unmarshal([]byte(stripCodeFences(specText)), &spec); err != nil {
+		return nil, []validation.ValidationError{{
+			Type:           "structural",
+			Code:           validation.CodeJSONSyntax,
+			Message:        "Embedded Execution Spec could not be parsed",
+			RepairEligible: true,
+		}}, true
+	}
+
+	var issues []validation.ValidationError
+	for _, q := range spec.OpenQuestions {
+		if q.Blocking {
+			msg := "Execution Spec has blocking open question"
+			if q.ID != "" || q.Question != "" {
+				msg = fmt.Sprintf("Execution Spec has blocking open question %s: %s", cleanParsedString(q.ID), cleanParsedString(q.Question))
+			}
+			issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingRequiredField, Message: msg, RepairEligible: false})
+		}
+	}
+
+	goal := cleanParsedString(spec.ExecutionPayload.Goal)
+	scope := cleanParsedString(spec.ExecutionPayload.Scope)
+	if scope == "" {
+		scope = cleanParsedString(spec.SelectedPass.PassScope)
+	}
+	nonGoals := cleanStringSlice(spec.ExecutionPayload.NonGoals)
+	if len(nonGoals) == 0 {
+		nonGoals = cleanStringSlice(spec.SelectedPass.PassNonGoals)
+	}
+	fileTargets := mapStructuredFileTargets(spec.ExecutionPayload.FileTargets)
+	implementationSteps := mapExecutionSpecImplementationSteps(spec.ExecutionPayload.ImplementationSteps, spec.ExecutionPayload.TargetSymbols)
+	codeRequirements := mapExecutionSpecCodeRequirements(spec.ExecutionPayload.CodeRequirements)
+	validationCmds := mapExecutionSpecValidationCommands(spec.ExecutionPayload.ValidationContract.Commands)
+	if len(validationCmds) == 0 {
+		validationCmds = mapExecutionSpecValidationCommands(spec.ExecutionPayload.ValidationContract.ManualChecks)
+	}
+	expectedBehavior := parseStructuredExpectedBehavior(spec.ExecutionPayload.ExpectedBehavior)
+	completionContract := mapStructuredCompletionContract(spec.ExecutionPayload.CompletionContract)
+
+	if goal == "" {
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingRequiredField, Message: "Execution Spec projection missing execution_payload.goal", RepairEligible: false})
+	}
+	if scope == "" {
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingRequiredField, Message: "Execution Spec projection missing execution_payload.scope", RepairEligible: false})
+	}
+	if len(fileTargets) == 0 {
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingRequiredField, Message: "Execution Spec projection missing execution_payload.file_targets", RepairEligible: false})
+	}
+	if len(implementationSteps) == 0 {
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingImplementationSteps, Message: "Execution Spec projection missing execution_payload.implementation_steps", RepairEligible: false})
+	}
+	if len(codeRequirements) == 0 {
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingCodeRequirements, Message: "Execution Spec projection missing execution_payload.code_requirements", RepairEligible: false})
+	}
+	if len(validationCmds) == 0 {
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingValidationContract, Message: "Execution Spec projection missing execution_payload.validation_contract.commands", RepairEligible: false})
+	}
+	if len(expectedBehavior) == 0 {
+		issues = append(issues, validation.ValidationError{Type: "structural", Code: validation.CodeMissingRequiredField, Message: "Execution Spec projection missing execution_payload.expected_behavior", RepairEligible: false})
+	}
+
+	return &structuredCompilerInputResult{
+		Goal:                    goal,
+		Scope:                   scope,
+		NonGoals:                nonGoals,
+		FileTargets:             fileTargets,
+		ImplementationSteps:     implementationSteps,
+		CodeRequirements:        codeRequirements,
+		ValidationCommands:      validationCmds,
+		ValidationMode:          normalizeValidationMode(spec.ExecutionPayload.ValidationContract.Mode),
+		ValidationFailurePolicy: normalizeValidationFailurePolicy(spec.ExecutionPayload.ValidationContract.FailurePolicy),
+		ExpectedBehavior:        expectedBehavior,
+		CompletionContract:      completionContract,
+		SelectedPassID:          cleanParsedString(spec.SelectedPass.PassID),
+	}, issues, true
+}
+
+func extractExecutionSpecBlock(content string) (string, bool) {
+	if val, ok := extractXMLSection(content, "execution_spec"); ok {
+		return val, true
+	}
+	if val, ok := extractMarkdownSection(content, "execution spec"); ok {
+		return val, true
+	}
+	return "", false
+}
+
+func mapExecutionSpecImplementationSteps(steps []structuredImplementationStepYAML, symbols []executionSpecTargetSymbolYAML) []map[string]interface{} {
+	result := mapStructuredImplementationSteps(steps)
+	for i := range result {
+		if i >= len(steps) {
+			continue
+		}
+		originalID := strings.ToUpper(cleanParsedString(steps[i].ID))
+		if originalID == "" {
+			continue
+		}
+		instructions, _ := result[i]["instructions"].(string)
+		if !strings.Contains(instructions, originalID) {
+			result[i]["instructions"] = fmt.Sprintf("[%s] %s", originalID, instructions)
+		}
+	}
+	symbolText := formatExecutionSpecTargetSymbols(symbols)
+	if symbolText == "" {
+		return result
+	}
+	for _, step := range result {
+		instructions, _ := step["instructions"].(string)
+		if strings.Contains(instructions, "Target symbols:") {
+			continue
+		}
+		step["instructions"] = strings.TrimSpace(instructions + "\n\nTarget symbols: " + symbolText)
+	}
+	return result
+}
+
+func mapExecutionSpecCodeRequirements(reqs []structuredCodeRequirementYAML) []map[string]interface{} {
+	var result []map[string]interface{}
+	for i, req := range reqs {
+		requirement := cleanParsedString(req.Requirement)
+		if requirement == "" {
+			continue
+		}
+		originalID := strings.ToUpper(cleanParsedString(req.ID))
+		if originalID != "" && !strings.Contains(requirement, originalID) {
+			requirement = fmt.Sprintf("[%s] %s", originalID, requirement)
+		}
+		appliesTo := cleanStringSlice(req.AppliesTo)
+		if len(appliesTo) == 0 {
+			appliesTo = []string{"*"}
+		}
+		result = append(result, map[string]interface{}{
+			"id":          fmt.Sprintf("CR%d", i+1),
+			"requirement": requirement,
+			"applies_to":  appliesTo,
+		})
+	}
+	return result
+}
+
+func mapExecutionSpecValidationCommands(commands []executionSpecValidationCommandYAML) []ValidationCommand {
+	var result []ValidationCommand
+	for i, command := range commands {
+		cmd := cleanParsedString(command.Command)
+		if cmd == "" {
+			cmd = cleanParsedString(command.CommandOrCheck)
+		}
+		if cmd == "" {
+			continue
+		}
+		required := true
+		if command.Required != nil {
+			required = *command.Required
+		}
+		originalID := strings.ToUpper(cleanParsedString(command.ID))
+		purpose := defaultString(command.Purpose, "Validate implementation")
+		if originalID != "" && !strings.Contains(purpose, originalID) {
+			purpose = fmt.Sprintf("[%s] %s", originalID, purpose)
+		}
+		result = append(result, ValidationCommand{
+			ID:              fmt.Sprintf("V%d", i+1),
+			Command:         cmd,
+			Required:        required,
+			Purpose:         purpose,
+			SuccessSignal:   defaultString(command.SuccessSignal, "Command exits 0."),
+			FailureHandling: normalizeValidationFailureHandling(command.FailureHandling),
+		})
+	}
+	return result
+}
+
+func formatExecutionSpecTargetSymbols(symbols []executionSpecTargetSymbolYAML) string {
+	var parts []string
+	for _, symbol := range symbols {
+		path := cleanParsedString(symbol.Path)
+		name := cleanParsedString(symbol.Symbol)
+		if path == "" || name == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s in %s", name, path))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func mapStructuredFileTargets(targets []structuredFileTargetYAML) []map[string]interface{} {

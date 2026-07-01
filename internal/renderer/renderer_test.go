@@ -110,7 +110,13 @@ func TestRenderer(t *testing.T) {
 					"acceptance_criteria": []interface{}{"it compiles"},
 				},
 			},
-			"code_requirements": []interface{}{},
+			"code_requirements": []interface{}{
+				map[string]interface{}{
+					"id":          "CR1",
+					"requirement": "Preserve compact label CR-001 while rendering canonical code requirement CR1.",
+					"applies_to":  []interface{}{"internal/renderer/renderer.go"},
+				},
+			},
 			"validation_contract": map[string]interface{}{
 				"mode":           "commands",
 				"failure_policy": "block",
@@ -358,6 +364,58 @@ func TestRenderer(t *testing.T) {
 		if strings.Contains(briefText, "planner_context") || strings.Contains(briefText, "audit_seed") {
 			t.Error("rendered brief contains planner_context or audit_seed")
 		}
+		for _, expected := range []string{
+			"## Code requirements",
+			"`CR1`: Preserve compact label CR-001 while rendering canonical code requirement CR1.",
+			"`internal/renderer/renderer.go`",
+		} {
+			if !strings.Contains(briefText, expected) {
+				t.Fatalf("rendered brief missing code requirement content %q:\n%s", expected, briefText)
+			}
+		}
+	})
+
+	t.Run("Rendered brief validation requires code requirements heading", func(t *testing.T) {
+		brief := `## Task
+Task.
+
+## Scope
+Scope.
+
+## Do not change
+None.
+
+## File targets
+None.
+
+## Implementation steps
+Step.
+
+## Expected behavior
+Works.
+
+## Validation
+Mode.
+
+## DONE
+Done.
+
+## BLOCKED
+Blocked.
+
+## Final response format
+Format.
+`
+		issues := validateRenderedBrief(brief)
+		found := false
+		for _, issue := range issues {
+			if strings.Contains(issue, "Code requirements") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("expected missing Code requirements heading issue, got %+v", issues)
+		}
 	})
 
 	t.Run("Validation commands split required and optional executor-local sections", func(t *testing.T) {
@@ -490,6 +548,70 @@ func TestRenderer(t *testing.T) {
 					t.Errorf("%s contains stale renderer/template cleanup string %q", targetFile, forbidden)
 				}
 			}
+		}
+	})
+
+	t.Run("Renderer preserves projection boundaries and compact labels", func(t *testing.T) {
+		packet := make(map[string]interface{})
+		for k, v := range validPacket {
+			packet[k] = v
+		}
+		plannerContext := make(map[string]interface{})
+		for k, v := range validPacket["planner_context"].(map[string]interface{}) {
+			plannerContext[k] = v
+		}
+		plannerContext["context_snapshot"] = []interface{}{
+			"planner_context source-requirements requirements-record-id execution-spec-id should stay outside brief",
+		}
+		packet["planner_context"] = plannerContext
+		auditSeed := make(map[string]interface{})
+		for k, v := range validPacket["audit_seed"].(map[string]interface{}) {
+			auditSeed[k] = v
+		}
+		auditSeed["manual_review_checklist"] = []interface{}{
+			"audit_seed source-design design-record-id vague-instruction-lint should stay outside brief",
+		}
+		packet["audit_seed"] = auditSeed
+
+		templateBytes, err := os.ReadFile(locateTemplateFile("handoffs/templates/executor_brief_template.md"))
+		if err != nil {
+			t.Fatalf("failed to read executor brief template: %v", err)
+		}
+		briefText, err := renderTemplate(string(templateBytes), packet)
+		if err != nil {
+			t.Fatalf("failed to render template: %v", err)
+		}
+		for _, expected := range []string{
+			"## Code requirements",
+			"`CR1`: Preserve compact label CR-001 while rendering canonical code requirement CR1.",
+			"`internal/renderer/renderer.go`",
+		} {
+			if !strings.Contains(briefText, expected) {
+				t.Fatalf("rendered brief missing expected code requirement content %q:\n%s", expected, briefText)
+			}
+		}
+		for _, forbidden := range []string{
+			"planner_context",
+			"audit_seed",
+			"source-requirements",
+			"source_requirements",
+			"source-design",
+			"source_design",
+			"vague-instruction-lint",
+			"vague_instruction_lint",
+			"requirements-record-id",
+			"requirements_record_id",
+			"design-record-id",
+			"design_record_id",
+			"execution-spec-id",
+			"execution_spec_id",
+		} {
+			if strings.Contains(briefText, forbidden) {
+				t.Fatalf("rendered brief leaked forbidden upstream marker %q:\n%s", forbidden, briefText)
+			}
+		}
+		if issues := validateRenderedBrief(briefText); len(issues) > 0 {
+			t.Fatalf("expected compact labels to pass rendered brief validation, got %+v\n%s", issues, briefText)
 		}
 	})
 
