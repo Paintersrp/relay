@@ -87,6 +87,11 @@ For detailed local operator workflows and setup guides, please refer to the foll
 
 These are human-readable documentation definitions only and do not add schema fields or runtime semantics.
 
+- **Requirements Record**: Captures what and why: source intent, current behavior, target requirements, unchanged behavior, acceptance criteria, non-goals, open questions, and traceability.
+- **Design Record**: Captures the selected design and visible rationale before execution, including alternatives, design decisions, validation strategy, audit strategy, and linked requirements.
+- **Plan of Passes**: Sequences reviewed work into managed passes when orchestration is needed. Plans are optional; standalone runs remain valid.
+- **Selected-pass Execution Spec**: Captures executable, pass-local instructions for one selected pass, including scope, targets, implementation steps, validation contract, completion contract, and trace links.
+- **Quick Spec**: A pre-execution shortcut only for trivial, low-risk, bounded work with clear authority and simple validation. It is not remediation for failed execution, audit revision routing, multi-pass planning, or a substitute for upstream artifact revision.
 - **Planner handoff**: A reviewed Markdown implementation handoff containing a selected pass, scope, constraints, repo facts, implementation requirements, validation expectations, and audit priorities.
 - **Relay run**: A local Relay work item created from a handoff grouping metadata, repository context, lifecycle status, artifacts, validation evidence, diff evidence, audit handoffs, and commit suggestions.
 - **Intake Review**: A validation step to review and approve the structure and scope of a new run before processing.
@@ -103,6 +108,8 @@ These are human-readable documentation definitions only and do not add schema fi
 ## Managed Plans (Backend)
 
 Managed plans are an optional orchestration layer in Relay. A **managed plan** is a reviewed Planner pass plan persisted as a `plans` row with derived `plan_passes` rows. A **pass** is a sequenced unit of work within a plan. Plans and passes are not required: standalone runs remain fully valid, and runs may be standalone, plan-only, or associated to a specific pass.
+
+In the staged planning flow, a Requirements Record establishes what needs to change and why. A Design Record records the selected design and visible rationale. A Plan of Passes sequences the work when multiple reviewed steps are needed. A selected-pass Execution Spec then provides pass-local executable instructions for the run. Quick Spec remains limited to trivial pre-execution work and is not used for remediation, audit revision routing, or non-trivial planning.
 
 Key behaviors:
 

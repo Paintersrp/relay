@@ -153,6 +153,10 @@ _Note: Exposure of MCP tools as GPT-facing actions is configuration-dependent. B
 
 Relay supports an optional managed plan orchestration layer where runs can be associated with specific plan passes:
 
+The staged planning flow separates upstream planning from pass-local execution. A Requirements Record captures what should change and why, including acceptance criteria and non-goals. A Design Record captures the selected design and visible rationale. A Plan of Passes sequences work when more than one reviewed step is needed. The selected-pass Execution Spec is the executable, pass-local instruction set used to create or prepare a run for that pass.
+
+Quick Spec is only for trivial pre-execution work with bounded files, clear authority, no blocking questions, and simple validation. Do not use Quick Spec for remediation after failed execution, audit revision routing, non-trivial or multi-pass work, upstream artifact revision, or unresolved semantic design decisions.
+
 1.  **Submit Plan**: A structured Plan of Passes JSON is submitted using the `submit_planner_pass_plan` tool or via the `POST /api/plans` endpoint. This creates plan/pass records in the database.
 2.  **Review Pass**: Operators or Planners inspect the plan detail (`/plans/{planId}`) and select a target pass.
 3.  **Associate Run**: A run is created and associated with the target pass by including its `plan_id` and `pass_id` in the handoff metadata or during `create_run_from_planner_handoff`.

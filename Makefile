@@ -1,4 +1,4 @@
-.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean validate validate-fast validate-broad validate-full validate-touched validate-changed closeout closeout-dry-run mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke plan-api-smoke plan-seed-smoke agentrefs-generate agentrefs-check
+.PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean validate validate-fast validate-broad validate-full validate-touched validate-changed contracts-validate closeout closeout-dry-run mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke plan-api-smoke plan-seed-smoke agentrefs-generate agentrefs-check
 
 install:
 	npm install
@@ -44,6 +44,9 @@ validate-touched:
 
 validate-changed:
 	RELAY_VALIDATE_SCOPE=changed bash scripts/validate.sh
+
+contracts-validate:
+	cd relay-contracts && python scripts/validate_release_readiness.py
 
 closeout:
 	go run ./cmd/relay-closeout --message "$(MESSAGE)" --slug "$(SLUG)"
