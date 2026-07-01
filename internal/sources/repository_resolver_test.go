@@ -54,7 +54,10 @@ func TestResolveProjectRepositoryAmbiguousReturnsCandidates(t *testing.T) {
 	result := ResolveProjectRepository("relay", resolverRepos("Paintersrp/relay", "example/relay"))
 
 	if len(result.Blockers) != 1 || result.Blockers[0].Code != SourceBlockerAmbiguousRepository {
-		t.Fatalf("expected ambiguous_repository blocker, got %+v", result.Blockers)
+		t.Fatalf("expected alias_ambiguous blocker, got %+v", result.Blockers)
+	}
+	if result.Blockers[0].Code != "alias_ambiguous" {
+		t.Fatalf("expected serialized blocker code alias_ambiguous, got %q", result.Blockers[0].Code)
 	}
 	if result.CanonicalRepoID != "" || len(result.Candidates) != 2 {
 		t.Fatalf("expected candidates without canonical selection, got %+v", result)

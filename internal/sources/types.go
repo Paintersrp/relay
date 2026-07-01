@@ -32,7 +32,7 @@ const (
 	SourceBlockerSnapshotFileChanged = "source_snapshot_file_changed"
 	SourceBlockerRipgrepMissing      = "ripgrep_unavailable"
 	SourceBlockerUnknownRepository   = "unknown_repository"
-	SourceBlockerAmbiguousRepository = "ambiguous_repository"
+	SourceBlockerAmbiguousRepository = "alias_ambiguous"
 )
 
 type SourceSnapshotInput struct {

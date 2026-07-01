@@ -242,7 +242,10 @@ func TestHandleResolveProjectRepositoryUnknownAndAmbiguousBlockers(t *testing.T)
 		t.Fatalf("unmarshal ambiguous payload: %v", err)
 	}
 	if ambiguousPayload.CanonicalRepoID != "" || len(ambiguousPayload.Candidates) != 2 || len(ambiguousPayload.Blockers) != 1 || ambiguousPayload.Blockers[0].Code != sources.SourceBlockerAmbiguousRepository {
-		t.Fatalf("expected ambiguous_repository blocker with candidates, got %+v", ambiguousPayload)
+		t.Fatalf("expected alias_ambiguous blocker with candidates, got %+v", ambiguousPayload)
+	}
+	if ambiguousPayload.Blockers[0].Code != "alias_ambiguous" {
+		t.Fatalf("expected serialized blocker code alias_ambiguous, got %q", ambiguousPayload.Blockers[0].Code)
 	}
 	if strings.Contains(string(ambiguousSuccess.Result), fixture.repoRoot) || strings.Contains(strings.ToLower(string(ambiguousSuccess.Result)), "local_path") {
 		t.Fatalf("resolve_project_repository leaked local path data: %s", ambiguousSuccess.Result)
@@ -738,8 +741,48 @@ func TestHandleRepositoryGitToolsValidateScopeAndMode(t *testing.T) {
 	if !result.IsError {
 		t.Fatalf("expected unknown repo error")
 	}
-	if errEnvelope := decodeBrokerError(t, result); errEnvelope.Error.Code != "NOT_FOUND" {
-		t.Fatalf("expected NOT_FOUND, got %+v", errEnvelope)
+	if errEnvelope := decodeBrokerError(t, result); errEnvelope.Error.Code != sources.SourceBlockerUnknownRepository {
+		t.Fatalf("expected unknown_repository, got %+v", errEnvelope)
+	}
+}
+
+func TestHandleRepositoryGitToolsResolveAliasToCanonicalRepoID(t *testing.T) {
+	fixture := setupBrokerFixture(t)
+	addBrokerRepository(t, fixture, "example/app")
+
+	result := callTool(t, fixture.server, ToolGetRepositoryGitStatus.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"repo_id":"app"
+	}`))
+	if result.IsError {
+		t.Fatalf("unexpected status error for alias: %s", result.Content[0].Text)
+	}
+	success := decodeBrokerSuccess(t, result)
+	var payload struct {
+		RepoID string `json:"repo_id"`
+	}
+	if err := json.Unmarshal(success.Result, &payload); err != nil {
+		t.Fatalf("unmarshal status payload: %v", err)
+	}
+	if payload.RepoID != "example/app" {
+		t.Fatalf("expected canonical repo_id example/app, got %q", payload.RepoID)
+	}
+}
+
+func TestHandleRepositoryGitToolsReturnResolverBlockers(t *testing.T) {
+	fixture := setupBrokerFixture(t)
+	addBrokerRepository(t, fixture, "example/app")
+	addBrokerRepository(t, fixture, "other/app")
+
+	result := callTool(t, fixture.server, ToolGetRepositoryGitStatus.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"repo_id":"app"
+	}`))
+	if !result.IsError {
+		t.Fatalf("expected ambiguous alias error")
+	}
+	if errEnvelope := decodeBrokerError(t, result); errEnvelope.Error.Code != sources.SourceBlockerAmbiguousRepository {
+		t.Fatalf("expected alias_ambiguous, got %+v", errEnvelope)
 	}
 }
 

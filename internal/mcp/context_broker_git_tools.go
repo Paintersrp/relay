@@ -229,7 +229,7 @@ func (s *Server) HandleGetRepositoryGitStatus(rawArgs json.RawMessage) ToolCallR
 	if err != nil {
 		return brokerWrappedErr(err)
 	}
-	repo, err := s.loadRegisteredProjectRepository(projectID, repoID)
+	repo, canonicalRepoID, err := s.loadRegisteredProjectRepository(projectID, repoID)
 	if err != nil {
 		return brokerWrappedErr(err)
 	}
@@ -239,7 +239,7 @@ func (s *Server) HandleGetRepositoryGitStatus(rawArgs json.RawMessage) ToolCallR
 	}
 	result := brokerRepositoryGitStatusResult{
 		ProjectID:          projectID,
-		RepoID:             repoID,
+		RepoID:             canonicalRepoID,
 		GeneratedAt:        brokerGeneratedAt(),
 		RedactionStatus:    sources.RedactionStatusNotNeeded,
 		Truncated:          false,
@@ -265,7 +265,7 @@ func (s *Server) HandleGetRepositoryRecentCommit(rawArgs json.RawMessage) ToolCa
 	if err != nil {
 		return brokerWrappedErr(err)
 	}
-	repo, err := s.loadRegisteredProjectRepository(projectID, repoID)
+	repo, canonicalRepoID, err := s.loadRegisteredProjectRepository(projectID, repoID)
 	if err != nil {
 		return brokerWrappedErr(err)
 	}
@@ -275,7 +275,7 @@ func (s *Server) HandleGetRepositoryRecentCommit(rawArgs json.RawMessage) ToolCa
 	}
 	result := brokerRepositoryRecentCommitResult{
 		ProjectID:       projectID,
-		RepoID:          repoID,
+		RepoID:          canonicalRepoID,
 		GeneratedAt:     brokerGeneratedAt(),
 		RedactionStatus: sources.RedactionStatusNotNeeded,
 		Truncated:       false,
@@ -307,7 +307,7 @@ func (s *Server) HandleListRepositoryChangedFiles(rawArgs json.RawMessage) ToolC
 	if maxResults > maxChangedFilesMaxResults {
 		maxResults = maxChangedFilesMaxResults
 	}
-	repo, err := s.loadRegisteredProjectRepository(projectID, repoID)
+	repo, canonicalRepoID, err := s.loadRegisteredProjectRepository(projectID, repoID)
 	if err != nil {
 		return brokerWrappedErr(err)
 	}
@@ -330,7 +330,7 @@ func (s *Server) HandleListRepositoryChangedFiles(rawArgs json.RawMessage) ToolC
 	}
 	result := brokerRepositoryChangedFilesResult{
 		ProjectID:       projectID,
-		RepoID:          repoID,
+		RepoID:          canonicalRepoID,
 		GeneratedAt:     brokerGeneratedAt(),
 		RedactionStatus: sources.RedactionStatusNotNeeded,
 		Truncated:       truncated,
@@ -362,7 +362,7 @@ func (s *Server) HandleGetRepositoryDiff(rawArgs json.RawMessage) ToolCallResult
 	if contextLines > maxDiffContextLines {
 		contextLines = maxDiffContextLines
 	}
-	repo, err := s.loadRegisteredProjectRepository(projectID, repoID)
+	repo, canonicalRepoID, err := s.loadRegisteredProjectRepository(projectID, repoID)
 	if err != nil {
 		return brokerWrappedErr(err)
 	}
@@ -376,7 +376,7 @@ func (s *Server) HandleGetRepositoryDiff(rawArgs json.RawMessage) ToolCallResult
 	}
 	result := brokerRepositoryDiffResult{
 		ProjectID:       projectID,
-		RepoID:          repoID,
+		RepoID:          canonicalRepoID,
 		GeneratedAt:     brokerGeneratedAt(),
 		RedactionStatus: diff.RedactionStatus,
 		Truncated:       diff.Truncated,
@@ -388,21 +388,38 @@ func (s *Server) HandleGetRepositoryDiff(rawArgs json.RawMessage) ToolCallResult
 	return brokerToolOK(ToolGetRepositoryDiff.Name, result)
 }
 
-func (s *Server) loadRegisteredProjectRepository(projectID, repoID string) (store.ProjectRepository, error) {
+func (s *Server) loadRegisteredProjectRepository(projectID, rawRepoID string) (store.ProjectRepository, string, error) {
 	project, repos, err := s.loadProjectWithRepos(projectID)
 	if err != nil {
-		return store.ProjectRepository{}, err
+		return store.ProjectRepository{}, "", err
 	}
+	byRepoID := make(map[string]store.ProjectRepository, len(repos))
 	for _, repo := range repos {
-		if repo.RepoID != repoID {
-			continue
-		}
-		if repo.Enabled != 1 {
-			return store.ProjectRepository{}, brokerOpError{Code: "NOT_FOUND", Message: fmt.Sprintf("repository %q not found under project %q", repoID, project.ProjectID)}
-		}
-		return repo, nil
+		byRepoID[repo.RepoID] = repo
 	}
-	return store.ProjectRepository{}, brokerOpError{Code: "NOT_FOUND", Message: fmt.Sprintf("repository %q not found under project %q", repoID, project.ProjectID)}
+
+	resolution := sources.ResolveProjectRepository(rawRepoID, byRepoID)
+	if len(resolution.Blockers) > 0 {
+		blocker := resolution.Blockers[0]
+		return store.ProjectRepository{}, "", brokerOpError{
+			Code:    blocker.Code,
+			Message: blocker.Message,
+		}
+	}
+
+	canonicalRepoID := strings.TrimSpace(resolution.CanonicalRepoID)
+	if canonicalRepoID == "" {
+		return store.ProjectRepository{}, "", brokerOpError{
+			Code:    sources.SourceBlockerUnknownRepository,
+			Message: fmt.Sprintf("repository %q not found under project %q", rawRepoID, project.ProjectID),
+		}
+	}
+
+	repo, ok := byRepoID[canonicalRepoID]
+	if !ok || repo.Enabled != 1 {
+		return store.ProjectRepository{}, "", brokerOpError{Code: "NOT_FOUND", Message: fmt.Sprintf("repository %q not found under project %q", canonicalRepoID, project.ProjectID)}
+	}
+	return repo, canonicalRepoID, nil
 }
 
 func validateRepositoryGitArgs(projectID, repoID string) (string, string, error) {

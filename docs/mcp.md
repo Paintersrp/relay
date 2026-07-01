@@ -457,7 +457,7 @@ Returns a bounded repository-relative file read from a source snapshot with prov
 
 Retrieval-only, project-scoped repository alias resolver. It maps a canonical registered repository ID or accepted alias to the canonical registered repository ID. Accepted aliases are derived only from registered repository IDs: the canonical ID itself and, for owner-qualified IDs, the suffix after the final `/`.
 
-The response includes `project_id`, the input alias, `canonical_repo_id` on success, `accepted_aliases`, ambiguity `candidates`, and shared source blocker envelopes. Unknown aliases return `unknown_repository` with recoverable evidence and next actions. Ambiguous aliases return `ambiguous_repository` with candidate repository IDs and do not select a repository.
+The response includes `project_id`, the input alias, `canonical_repo_id` on success, `accepted_aliases`, ambiguity `candidates`, and shared source blocker envelopes. Unknown aliases return `unknown_repository` with recoverable evidence and next actions. Ambiguous aliases return `alias_ambiguous` with candidate repository IDs and do not select a repository.
 
 This tool does not read arbitrary filesystem paths, inspect CWD, parse Git remotes, mutate repository registrations, run shell commands, mutate git, create context packets, create runs, or submit plans.
 
