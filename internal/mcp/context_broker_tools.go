@@ -253,6 +253,29 @@ var readProjectFileSchema = json.RawMessage(`{
   }
 }`)
 
+var resolveProjectRepositorySchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id"],
+  "properties": {
+    "project_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Relay project identifier."
+    },
+    "resource": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Repository alias or canonical registered repository ID to resolve."
+    },
+    "repo_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Repository alias or canonical registered repository ID to resolve."
+    }
+  }
+}`)
+
 var createContextPacketSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,
@@ -400,6 +423,11 @@ var (
 		Description: "Read a bounded repository-relative file range from a source snapshot with stale-hash and redaction blockers.",
 		InputSchema: readProjectFileSchema,
 	}
+	ToolResolveProjectRepository = ToolDefinition{
+		Name:        "resolve_project_repository",
+		Description: "Resolve a project-scoped repository alias to a canonical registered repository ID without filesystem discovery or mutation.",
+		InputSchema: resolveProjectRepositorySchema,
+	}
 	ToolCreateContextPacket = ToolDefinition{
 		Name:        "create_context_packet",
 		Description: "Create a bounded context packet from snapshots, file reads, searches, and optional inventory; returns metadata and artifact paths only.",
@@ -480,6 +508,12 @@ type readProjectFileArgs struct {
 	LineStart        int    `json:"line_start"`
 	LineEnd          int    `json:"line_end"`
 	MaxBytes         int    `json:"max_bytes"`
+}
+
+type resolveProjectRepositoryArgs struct {
+	ProjectID string `json:"project_id"`
+	Resource  string `json:"resource"`
+	RepoID    string `json:"repo_id"`
 }
 
 type createContextPacketSeedFileArgs struct {
@@ -731,9 +765,12 @@ type brokerContextPacketResult struct {
 }
 
 type brokerSourceBlockerResult struct {
-	RepoID  string `json:"repo_id,omitempty"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	RepoID      string   `json:"repo_id,omitempty"`
+	Code        string   `json:"code"`
+	Message     string   `json:"message"`
+	Recoverable bool     `json:"recoverable,omitempty"`
+	Evidence    []string `json:"evidence,omitempty"`
+	NextActions []string `json:"next_actions,omitempty"`
 }
 
 type brokerGitStatusResult struct {
@@ -815,6 +852,15 @@ type brokerBoundedFileReadResult struct {
 	Blockers         []brokerSourceBlockerResult `json:"blockers,omitempty"`
 }
 
+type brokerResolveProjectRepositoryResult struct {
+	ProjectID       string                                  `json:"project_id"`
+	Input           string                                  `json:"input"`
+	CanonicalRepoID string                                  `json:"canonical_repo_id,omitempty"`
+	AcceptedAliases []string                                `json:"accepted_aliases,omitempty"`
+	Candidates      []sources.RepositoryResolutionCandidate `json:"candidates,omitempty"`
+	Blockers        []brokerSourceBlockerResult             `json:"blockers,omitempty"`
+}
+
 func contextBrokerToolDefinitions() []ToolDefinition {
 	return []ToolDefinition{
 		ToolGetProject,
@@ -827,6 +873,7 @@ func contextBrokerToolDefinitions() []ToolDefinition {
 		ToolListProjectFiles,
 		ToolSearchProjectFiles,
 		ToolReadProjectFile,
+		ToolResolveProjectRepository,
 		ToolGetRepositoryGitStatus,
 		ToolGetRepositoryRecentCommit,
 		ToolListRepositoryChangedFiles,
@@ -1204,6 +1251,48 @@ func (s *Server) HandleReadProjectFile(rawArgs json.RawMessage) ToolCallResult {
 		return brokerWrappedErr(err)
 	}
 	return brokerToolOK(ToolReadProjectFile.Name, brokerBoundedFileReadFromResult(result))
+}
+
+func (s *Server) HandleResolveProjectRepository(rawArgs json.RawMessage) ToolCallResult {
+	var args resolveProjectRepositoryArgs
+	if err := brokerDecodeStrict(rawArgs, &args); err != nil {
+		return brokerToolErr("VALIDATION_ERROR", "invalid params: "+err.Error())
+	}
+	projectID := strings.TrimSpace(args.ProjectID)
+	resource := strings.TrimSpace(args.Resource)
+	repoID := strings.TrimSpace(args.RepoID)
+	if projectID == "" {
+		return brokerToolErr("VALIDATION_ERROR", "project_id is required")
+	}
+	if (resource == "" && repoID == "") || (resource != "" && repoID != "") {
+		return brokerToolErr("VALIDATION_ERROR", "exactly one of resource or repo_id is required")
+	}
+	input := resource
+	if input == "" {
+		input = repoID
+	}
+	if s.deps == nil || s.deps.Store == nil {
+		return brokerToolErr("DEPENDENCY_ERROR", "MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
+	}
+
+	project, repos, err := s.loadProjectWithRepos(projectID)
+	if err != nil {
+		return brokerWrappedErr(err)
+	}
+	byRepoID := make(map[string]store.ProjectRepository, len(repos))
+	for _, repo := range repos {
+		byRepoID[repo.RepoID] = repo
+	}
+	resolution := sources.ResolveProjectRepository(input, byRepoID)
+	result := brokerResolveProjectRepositoryResult{
+		ProjectID:       project.ProjectID,
+		Input:           resolution.Input,
+		CanonicalRepoID: resolution.CanonicalRepoID,
+		AcceptedAliases: resolution.AcceptedAliases,
+		Candidates:      resolution.Candidates,
+		Blockers:        brokerBlockers(resolution.Blockers),
+	}
+	return brokerToolOK(ToolResolveProjectRepository.Name, result)
 }
 
 func (s *Server) HandleCreateContextPacket(rawArgs json.RawMessage) ToolCallResult {
@@ -1763,9 +1852,12 @@ func brokerBlockers(blockers []sources.SourceBlocker) []brokerSourceBlockerResul
 	out := make([]brokerSourceBlockerResult, 0, len(blockers))
 	for _, blocker := range blockers {
 		out = append(out, brokerSourceBlockerResult{
-			RepoID:  blocker.RepoID,
-			Code:    blocker.Code,
-			Message: blocker.Message,
+			RepoID:      blocker.RepoID,
+			Code:        blocker.Code,
+			Message:     blocker.Message,
+			Recoverable: blocker.Recoverable,
+			Evidence:    blocker.Evidence,
+			NextActions: blocker.NextActions,
 		})
 	}
 	return out

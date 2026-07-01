@@ -439,6 +439,7 @@ func TestHTTPHandlerToolsListUsesServerToolSurface(t *testing.T) {
 			"list_project_files",
 			"search_project_files",
 			"read_project_file",
+			"resolve_project_repository",
 			"get_repository_git_status",
 			"get_repository_recent_commit",
 			"list_repository_changed_files",

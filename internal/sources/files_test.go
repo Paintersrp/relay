@@ -108,6 +108,56 @@ func TestReadProjectFileExactRangeAndRedaction(t *testing.T) {
 	}
 }
 
+func TestProjectFileOperationsResolveUniqueRepositoryAliases(t *testing.T) {
+	requireGit(t)
+	service, snapshotID := setupSourceSnapshotFixture(t, sourceFixtureOptions{repoID: "Paintersrp/relay"})
+
+	inventory, err := service.ListProjectFiles(t.Context(), FileInventoryInput{
+		ProjectID:        "relay",
+		SourceSnapshotID: snapshotID,
+		RepoIDs:          []string{"relay"},
+	})
+	if err != nil {
+		t.Fatalf("ListProjectFiles alias error: %v", err)
+	}
+	if len(inventory.Blockers) != 0 || len(inventory.Files) == 0 || inventory.Files[0].RepoID != "Paintersrp/relay" {
+		t.Fatalf("expected alias inventory to resolve canonical repo ID, got %+v", inventory)
+	}
+
+	read, err := service.ReadProjectFile(t.Context(), BoundedFileReadInput{
+		ProjectID:        "relay",
+		SourceSnapshotID: snapshotID,
+		RepoID:           "relay",
+		Path:             "src/app.txt",
+	})
+	if err != nil {
+		t.Fatalf("ReadProjectFile alias error: %v", err)
+	}
+	if len(read.Blockers) != 0 || read.RepoID != "Paintersrp/relay" || read.Content == "" {
+		t.Fatalf("expected alias read to resolve canonical repo ID, got %+v", read)
+	}
+}
+
+func TestProjectFileOperationsBlockUnknownRepositoryAlias(t *testing.T) {
+	requireGit(t)
+	service, snapshotID := setupSourceSnapshotFixture(t, sourceFixtureOptions{repoID: "Paintersrp/relay"})
+
+	inventory, err := service.ListProjectFiles(t.Context(), FileInventoryInput{
+		ProjectID:        "relay",
+		SourceSnapshotID: snapshotID,
+		RepoIDs:          []string{"missing"},
+	})
+	if err != nil {
+		t.Fatalf("ListProjectFiles unknown alias error: %v", err)
+	}
+	if len(inventory.Blockers) != 1 || inventory.Blockers[0].Code != SourceBlockerUnknownRepository {
+		t.Fatalf("expected unknown repository blocker, got %+v", inventory.Blockers)
+	}
+	if len(inventory.Files) != 0 {
+		t.Fatalf("expected unknown repository to stop inventory, got %+v", inventory.Files)
+	}
+}
+
 func TestReadProjectFileBlocksUnsafeExcludedBinaryOversizedAndPrivateKey(t *testing.T) {
 	requireGit(t)
 	service, snapshotID := setupSourceSnapshotFixture(t, sourceFixtureOptions{withPrivateKey: true, withBinary: true})
@@ -246,6 +296,7 @@ type sourceFixtureOptions struct {
 	withPrivateKey bool
 	withBinary     bool
 	longFileLines  int
+	repoID         string
 }
 
 func setupSourceSnapshotFixture(t *testing.T, opts sourceFixtureOptions) (*Service, string) {
@@ -282,6 +333,10 @@ func setupSourceSnapshotFixtureWithRoot(t *testing.T, opts sourceFixtureOptions)
 	}
 	runGit(t, repoRoot, "git", "add", ".")
 	runGit(t, repoRoot, "git", "commit", "-m", "source fixture")
+	repoID := opts.repoID
+	if repoID == "" {
+		repoID = "relay"
+	}
 
 	project, issues, err := projectService.CreateProject(t.Context(), projects.ProjectInput{
 		ProjectID: "relay",
@@ -295,7 +350,7 @@ func setupSourceSnapshotFixtureWithRoot(t *testing.T, opts sourceFixtureOptions)
 		t.Fatalf("expected no project issues, got %+v", issues)
 	}
 	_, issues, err = projectService.UpsertProjectRepository(t.Context(), project.ProjectID, projects.ProjectRepositoryInput{
-		RepoID:           "relay",
+		RepoID:           repoID,
 		Role:             projects.RepositoryRolePrimary,
 		LocalPath:        repoRoot,
 		DefaultBranch:    "main",

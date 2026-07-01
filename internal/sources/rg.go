@@ -57,6 +57,10 @@ func (s *Service) SearchProjectFiles(ctx context.Context, input SourceSearchInpu
 
 	normalizedRepoIDs, err := normalizeRepoIDList(input.RepoIDs, resolved.projectRepos)
 	if err != nil {
+		if blocker, ok := operationBlocker("", err); ok {
+			result.Blockers = append(result.Blockers, blocker)
+			return result, nil
+		}
 		return nil, err
 	}
 	allowedRepos := repoIDSet(normalizedRepoIDs)

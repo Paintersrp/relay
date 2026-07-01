@@ -440,6 +440,8 @@ func (s *Server) handleToolsCall(req Request) Response {
 		result = s.HandleSearchProjectFiles(args)
 	case "read_project_file":
 		result = s.HandleReadProjectFile(args)
+	case "resolve_project_repository":
+		result = s.HandleResolveProjectRepository(args)
 	case "get_repository_git_status":
 		result = s.HandleGetRepositoryGitStatus(args)
 	case "get_repository_recent_commit":

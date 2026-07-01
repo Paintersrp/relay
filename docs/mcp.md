@@ -453,6 +453,14 @@ Runs bounded fixed-string search only and returns provenance-rich matches. No ar
 
 Returns a bounded repository-relative file read from a source snapshot with provenance, redaction status, truncation state, and blockers such as `source_snapshot_file_changed`.
 
+### `resolve_project_repository`
+
+Retrieval-only, project-scoped repository alias resolver. It maps a canonical registered repository ID or accepted alias to the canonical registered repository ID. Accepted aliases are derived only from registered repository IDs: the canonical ID itself and, for owner-qualified IDs, the suffix after the final `/`.
+
+The response includes `project_id`, the input alias, `canonical_repo_id` on success, `accepted_aliases`, ambiguity `candidates`, and shared source blocker envelopes. Unknown aliases return `unknown_repository` with recoverable evidence and next actions. Ambiguous aliases return `ambiguous_repository` with candidate repository IDs and do not select a repository.
+
+This tool does not read arbitrary filesystem paths, inspect CWD, parse Git remotes, mutate repository registrations, run shell commands, mutate git, create context packets, create runs, or submit plans.
+
 ### `get_repository_git_status`
 
 Returns the current git status (`git status --short`) for a registered repository, including tracked/untracked changes.
@@ -539,6 +547,7 @@ Archives or supersedes an existing project context memory record.
 - **No run/executor/git side effects from plan submission.** `submit_planner_pass_plan` creates plan/pass records only and does not create runs, dispatch executors, mutate git, or read chat context.
 - **Broker retrieval is bounded and gated.** Context broker tools are enabled by default under the `local-operator` profile, register only under explicit profile selection, reject unknown input fields, and return bounded structured JSON with provenance fields.
 - **No shell or arbitrary filesystem access from broker tools.** Context broker tools wrap registered project repositories, snapshot-backed file inventory/search/read, git status/diff, and context packet services only.
+- **Repository alias resolution is registration-only.** `resolve_project_repository` derives aliases only from registered repository IDs and does not authorize arbitrary file browsing, shell execution, git mutation, repository registration mutation, context packet creation, plan submission, or run creation.
 - **Bounded outputs.** No tool dumps full artifact contents, log files, or secret values.
 - **Credential exclusion.** Tool descriptions warn callers not to pass secrets, tokens, auth headers, private keys, API keys, or signed URLs.
 

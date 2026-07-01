@@ -110,6 +110,7 @@ func TestContextBrokerToolsRejectUnknownFields(t *testing.T) {
 		"list_project_files":               `{"project_id":"relay","unexpected":true}`,
 		"search_project_files":             `{"project_id":"relay","pattern":"needle","unexpected":true}`,
 		"read_project_file":                `{"project_id":"relay","repo_id":"relay","path":"src/app.txt","unexpected":true}`,
+		"resolve_project_repository":       `{"project_id":"relay","repo_id":"relay","unexpected":true}`,
 		"get_repository_git_status":        `{"project_id":"relay","repo_id":"relay","unexpected":true}`,
 		"get_repository_recent_commit":     `{"project_id":"relay","repo_id":"relay","unexpected":true}`,
 		"list_repository_changed_files":    `{"project_id":"relay","repo_id":"relay","mode":"worktree","unexpected":true}`,
@@ -157,6 +158,110 @@ func TestHandleGetProjectOmitsLocalPaths(t *testing.T) {
 	}
 	if payload.ProjectID != "relay" || len(payload.Repositories) != 1 || payload.Repositories[0].RepoID != "relay" {
 		t.Fatalf("unexpected project payload: %+v", payload)
+	}
+}
+
+func TestHandleResolveProjectRepositoryCanonicalAndBounded(t *testing.T) {
+	fixture := setupBrokerFixture(t)
+
+	result := callTool(t, fixture.server, ToolResolveProjectRepository.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"repo_id":"relay"
+	}`))
+	if result.IsError {
+		t.Fatalf("unexpected resolve_project_repository error: %s", result.Content[0].Text)
+	}
+	success := decodeBrokerSuccess(t, result)
+	var payload struct {
+		ProjectID       string   `json:"project_id"`
+		Input           string   `json:"input"`
+		CanonicalRepoID string   `json:"canonical_repo_id"`
+		AcceptedAliases []string `json:"accepted_aliases"`
+		Blockers        []struct {
+			Code string `json:"code"`
+		} `json:"blockers"`
+	}
+	if err := json.Unmarshal(success.Result, &payload); err != nil {
+		t.Fatalf("unmarshal resolve payload: %v", err)
+	}
+	if payload.ProjectID != "relay" || payload.Input != "relay" || payload.CanonicalRepoID != "relay" || len(payload.Blockers) != 0 {
+		t.Fatalf("unexpected resolve payload: %+v", payload)
+	}
+	if strings.Contains(string(success.Result), fixture.repoRoot) || strings.Contains(strings.ToLower(string(success.Result)), "local_path") {
+		t.Fatalf("resolve_project_repository leaked local path data: %s", success.Result)
+	}
+}
+
+func TestHandleResolveProjectRepositoryUnknownAndAmbiguousBlockers(t *testing.T) {
+	fixture := setupBrokerFixture(t)
+
+	unknown := callTool(t, fixture.server, ToolResolveProjectRepository.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"resource":"missing"
+	}`))
+	if unknown.IsError {
+		t.Fatalf("expected unknown alias to return structured blocker: %s", unknown.Content[0].Text)
+	}
+	unknownSuccess := decodeBrokerSuccess(t, unknown)
+	var unknownPayload struct {
+		Blockers []struct {
+			Code        string   `json:"code"`
+			Recoverable bool     `json:"recoverable"`
+			Evidence    []string `json:"evidence"`
+			NextActions []string `json:"next_actions"`
+		} `json:"blockers"`
+	}
+	if err := json.Unmarshal(unknownSuccess.Result, &unknownPayload); err != nil {
+		t.Fatalf("unmarshal unknown payload: %v", err)
+	}
+	if len(unknownPayload.Blockers) != 1 || unknownPayload.Blockers[0].Code != sources.SourceBlockerUnknownRepository || !unknownPayload.Blockers[0].Recoverable || len(unknownPayload.Blockers[0].Evidence) == 0 || len(unknownPayload.Blockers[0].NextActions) == 0 {
+		t.Fatalf("expected recoverable unknown_repository blocker, got %+v", unknownPayload.Blockers)
+	}
+
+	addBrokerRepository(t, fixture, "example/app")
+	addBrokerRepository(t, fixture, "other/app")
+	ambiguous := callTool(t, fixture.server, ToolResolveProjectRepository.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"resource":"app"
+	}`))
+	if ambiguous.IsError {
+		t.Fatalf("expected ambiguous alias to return structured blocker: %s", ambiguous.Content[0].Text)
+	}
+	ambiguousSuccess := decodeBrokerSuccess(t, ambiguous)
+	var ambiguousPayload struct {
+		CanonicalRepoID string `json:"canonical_repo_id"`
+		Candidates      []struct {
+			RepoID string `json:"repo_id"`
+		} `json:"candidates"`
+		Blockers []struct {
+			Code     string   `json:"code"`
+			Evidence []string `json:"evidence"`
+		} `json:"blockers"`
+	}
+	if err := json.Unmarshal(ambiguousSuccess.Result, &ambiguousPayload); err != nil {
+		t.Fatalf("unmarshal ambiguous payload: %v", err)
+	}
+	if ambiguousPayload.CanonicalRepoID != "" || len(ambiguousPayload.Candidates) != 2 || len(ambiguousPayload.Blockers) != 1 || ambiguousPayload.Blockers[0].Code != sources.SourceBlockerAmbiguousRepository {
+		t.Fatalf("expected ambiguous_repository blocker with candidates, got %+v", ambiguousPayload)
+	}
+	if strings.Contains(string(ambiguousSuccess.Result), fixture.repoRoot) || strings.Contains(strings.ToLower(string(ambiguousSuccess.Result)), "local_path") {
+		t.Fatalf("resolve_project_repository leaked local path data: %s", ambiguousSuccess.Result)
+	}
+}
+
+func TestHandleResolveProjectRepositoryRequiresExactlyOneAlias(t *testing.T) {
+	fixture := setupBrokerFixture(t)
+
+	result := callTool(t, fixture.server, ToolResolveProjectRepository.Name, json.RawMessage(`{
+		"project_id":"relay",
+		"resource":"relay",
+		"repo_id":"other"
+	}`))
+	if !result.IsError {
+		t.Fatalf("expected conflicting aliases validation error")
+	}
+	if errEnvelope := decodeBrokerError(t, result); errEnvelope.Error.Code != "VALIDATION_ERROR" {
+		t.Fatalf("expected VALIDATION_ERROR, got %+v", errEnvelope)
 	}
 }
 
@@ -768,6 +873,32 @@ func setupBrokerFixture(t *testing.T) brokerFixture {
 		repoRoot:   repoRoot,
 		projectID:  project.ProjectID,
 		snapshotID: snapshot.SourceSnapshotID,
+	}
+}
+
+func addBrokerRepository(t *testing.T, fixture brokerFixture, repoID string) {
+	t.Helper()
+	repoRoot := brokerSetupGitRepo(t)
+	brokerMkdirAll(t, filepath.Join(repoRoot, "src"))
+	brokerWriteFile(t, filepath.Join(repoRoot, "src", "app.txt"), "secondary\n")
+	brokerRunGit(t, repoRoot, "add", ".")
+	brokerRunGit(t, repoRoot, "commit", "-m", "secondary broker fixture")
+
+	projectService := projects.NewService(fixture.deps.Store)
+	_, issues, err := projectService.UpsertProjectRepository(t.Context(), fixture.projectID, projects.ProjectRepositoryInput{
+		RepoID:           repoID,
+		Role:             projects.RepositoryRoleReference,
+		LocalPath:        repoRoot,
+		DefaultBranch:    "main",
+		AllowedRoots:     []string{"src"},
+		MaxFileSizeBytes: projects.MinMaxFileSizeBytes,
+		Enabled:          true,
+	})
+	if err != nil {
+		t.Fatalf("UpsertProjectRepository(%s) error: %v", repoID, err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("unexpected repository issues for %s: %+v", repoID, issues)
 	}
 }
 

@@ -100,13 +100,22 @@ func (s *Service) resolveSourceSnapshot(ctx context.Context, projectID string, s
 type sourceOperationError struct {
 	Code    string
 	Message string
+	Blocker SourceBlocker
 }
 
 func (e sourceOperationError) Error() string {
-	if e.Message == "" {
-		return e.Code
+	code := e.Code
+	message := e.Message
+	if code == "" {
+		code = e.Blocker.Code
 	}
-	return e.Code + ": " + e.Message
+	if message == "" {
+		message = e.Blocker.Message
+	}
+	if message == "" {
+		return code
+	}
+	return code + ": " + message
 }
 
 func (s *Service) ListProjectFiles(ctx context.Context, input FileInventoryInput) (*FileInventoryResult, error) {
@@ -129,6 +138,10 @@ func (s *Service) ListProjectFiles(ctx context.Context, input FileInventoryInput
 
 	normalizedRepoIDs, err := normalizeRepoIDList(input.RepoIDs, resolved.projectRepos)
 	if err != nil {
+		if blocker, ok := operationBlocker("", err); ok {
+			result.Blockers = append(result.Blockers, blocker)
+			return result, nil
+		}
 		return nil, err
 	}
 	allowedRepos := repoIDSet(normalizedRepoIDs)
@@ -193,6 +206,10 @@ func (s *Service) ReadProjectFile(ctx context.Context, input BoundedFileReadInpu
 
 	repoID, err := normalizeRepoID(input.RepoID, resolved.projectRepos)
 	if err != nil {
+		if blocker, ok := operationBlocker(input.RepoID, err); ok {
+			result.Blockers = append(result.Blockers, blocker)
+			return result, nil
+		}
 		return nil, err
 	}
 	result.RepoID = repoID
@@ -310,6 +327,13 @@ func operationBlocker(repoID string, err error) (SourceBlocker, bool) {
 	var opErr sourceOperationError
 	if !errors.As(err, &opErr) {
 		return SourceBlocker{}, false
+	}
+	if opErr.Blocker.Code != "" {
+		blocker := opErr.Blocker
+		if blocker.RepoID == "" {
+			blocker.RepoID = repoID
+		}
+		return blocker, true
 	}
 	return SourceBlocker{RepoID: repoID, Code: opErr.Code, Message: opErr.Message}, true
 }
@@ -510,31 +534,13 @@ func normalizeRepoID(raw string, repos map[string]store.ProjectRepository) (stri
 	if repoID == "" {
 		return "", nil
 	}
-	if _, ok := repos[repoID]; ok {
-		return repoID, nil
+	resolution := ResolveProjectRepository(repoID, repos)
+	if len(resolution.Blockers) > 0 {
+		return "", sourceOperationError{Blocker: resolution.Blockers[0]}
 	}
-	var match string
-	for registered := range repos {
-		if repoIDAliasMatches(repoID, registered) {
-			if match != "" && match != registered {
-				return "", fmt.Errorf("repo_id %q is ambiguous for project repositories", repoID)
-			}
-			match = registered
-		}
-	}
-	if match != "" {
-		return match, nil
-	}
-	return repoID, nil
+	return resolution.CanonicalRepoID, nil
 }
 
 func repoIDAliasMatches(alias, registered string) bool {
-	registered = strings.TrimSpace(registered)
-	if alias == registered {
-		return true
-	}
-	if idx := strings.LastIndex(registered, "/"); idx >= 0 && idx+1 < len(registered) {
-		return alias == registered[idx+1:]
-	}
-	return false
+	return repositoryAliasMatches(strings.TrimSpace(alias), acceptedRepositoryAliases(registered))
 }

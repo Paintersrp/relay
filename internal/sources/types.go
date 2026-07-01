@@ -31,6 +31,8 @@ const (
 	SourceBlockerSnapshotMissing     = "source_snapshot_missing"
 	SourceBlockerSnapshotFileChanged = "source_snapshot_file_changed"
 	SourceBlockerRipgrepMissing      = "ripgrep_unavailable"
+	SourceBlockerUnknownRepository   = "unknown_repository"
+	SourceBlockerAmbiguousRepository = "ambiguous_repository"
 )
 
 type SourceSnapshotInput struct {
@@ -62,9 +64,12 @@ type RepositorySnapshotResult struct {
 }
 
 type SourceBlocker struct {
-	RepoID  string
-	Code    string
-	Message string
+	RepoID      string   `json:"repo_id,omitempty"`
+	Code        string   `json:"code"`
+	Message     string   `json:"message"`
+	Recoverable bool     `json:"recoverable,omitempty"`
+	Evidence    []string `json:"evidence,omitempty"`
+	NextActions []string `json:"next_actions,omitempty"`
 }
 
 type RepositoryGitStatus struct {
