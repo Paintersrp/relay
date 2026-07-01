@@ -36,18 +36,21 @@ func TestOrchestratorWorkToolsListing(t *testing.T) {
 		name             string
 		profile          ToolProfile
 		wantNextPassWork bool
+		wantPrepare      bool
 		wantNextAudit    bool
 	}{
 		{
 			name:             "local-operator profile includes orchestrator work tools",
 			profile:          ToolProfileLocalOperator,
 			wantNextPassWork: true,
+			wantPrepare:      true,
 			wantNextAudit:    true,
 		},
 		{
 			name:             "restricted profile excludes orchestrator work tools",
 			profile:          ToolProfileRestricted,
 			wantNextPassWork: false,
+			wantPrepare:      false,
 			wantNextAudit:    false,
 		},
 	}
@@ -83,10 +86,14 @@ func TestOrchestratorWorkToolsListing(t *testing.T) {
 			}
 
 			hasNextPassWork := false
+			hasPrepare := false
 			hasNextAudit := false
 			for _, tool := range result.Tools {
 				if tool.Name == appplans.NextPassWorkTool {
 					hasNextPassWork = true
+				}
+				if tool.Name == appplans.PrepareHandoffContextTool {
+					hasPrepare = true
 				}
 				if tool.Name == appplans.NextAuditWorkTool {
 					hasNextAudit = true
@@ -95,6 +102,9 @@ func TestOrchestratorWorkToolsListing(t *testing.T) {
 
 			if hasNextPassWork != tt.wantNextPassWork {
 				t.Errorf("get_next_pass_work presence = %v, want %v", hasNextPassWork, tt.wantNextPassWork)
+			}
+			if hasPrepare != tt.wantPrepare {
+				t.Errorf("prepare_handoff_context presence = %v, want %v", hasPrepare, tt.wantPrepare)
 			}
 			if hasNextAudit != tt.wantNextAudit {
 				t.Errorf("get_next_audit_work presence = %v, want %v", hasNextAudit, tt.wantNextAudit)
@@ -119,6 +129,10 @@ func TestOrchestratorWorkToolsRestrictedProfileReturnsMethodNotFound(t *testing.
 		{
 			name:     "get_next_pass_work returns method not found under restricted profile",
 			toolName: appplans.NextPassWorkTool,
+		},
+		{
+			name:     "prepare_handoff_context returns method not found under restricted profile",
+			toolName: appplans.PrepareHandoffContextTool,
 		},
 		{
 			name:     "get_next_audit_work returns method not found under restricted profile",
@@ -168,6 +182,11 @@ func TestOrchestratorWorkToolsStrictArgumentDecoding(t *testing.T) {
 			name:     "get_next_pass_work rejects unknown fields",
 			toolName: appplans.NextPassWorkTool,
 			args:     `{"project_id":"test","plan_id":"test","unknown_field":"value"}`,
+		},
+		{
+			name:     "prepare_handoff_context rejects unknown fields",
+			toolName: appplans.PrepareHandoffContextTool,
+			args:     `{"project_id":"test","plan_id":"test","pass_id":"PASS-001","unknown_field":"value"}`,
 		},
 		{
 			name:     "get_next_audit_work rejects unknown fields",
@@ -400,6 +419,22 @@ func decodeNextPassSummary(t *testing.T, result ToolCallResult) appplans.NextPas
 	return summary
 }
 
+func decodePrepareHandoffContext(t *testing.T, result ToolCallResult) appplans.PrepareHandoffContextResponse {
+	t.Helper()
+	if result.StructuredContent == nil {
+		t.Fatal("expected structuredContent")
+	}
+	data, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal structuredContent: %v", err)
+	}
+	var summary appplans.PrepareHandoffContextResponse
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Fatalf("unmarshal structuredContent: %v", err)
+	}
+	return summary
+}
+
 // seedMCPOrchestratorPlan submits a valid two-pass plan for project "relay"
 // (which it also creates) using the real plans service, with no required
 // context inputs so PASS-001 is immediately selectable.
@@ -596,6 +631,28 @@ func TestOrchestratorWorkTools_SchemasAreStrictAndScoped(t *testing.T) {
 		t.Error("get_next_pass_work annotations must include readOnlyHint=false")
 	}
 
+	// prepare_handoff_context schema.
+	prepareSchema := schemaMap(t, ToolPrepareHandoffContext.InputSchema)
+	if additional, _ := prepareSchema["additionalProperties"].(bool); additional {
+		t.Error("prepare_handoff_context schema must set additionalProperties:false")
+	}
+	prepareRequired := requiredSet(t, prepareSchema)
+	for _, field := range []string{"project_id", "plan_id", "pass_id"} {
+		if !prepareRequired[field] {
+			t.Errorf("prepare_handoff_context schema must require %q", field)
+		}
+	}
+	prepareOutput := schemaMap(t, ToolPrepareHandoffContext.OutputSchema)
+	prepareOutputRequired := requiredSet(t, prepareOutput)
+	for _, field := range []string{"ok", "tool", "project_id", "plan_id", "pass_id", "readiness_state", "repo_heads", "required_coverage", "optional_coverage", "blockers", "recommended_next_action", "lower_level_recovery_actions"} {
+		if !prepareOutputRequired[field] {
+			t.Errorf("prepare_handoff_context outputSchema must require %q", field)
+		}
+	}
+	if ToolPrepareHandoffContext.Annotations["readOnlyHint"] != false {
+		t.Error("prepare_handoff_context annotations must include readOnlyHint=false")
+	}
+
 	// get_next_audit_work schema.
 	auditSchema := schemaMap(t, ToolGetNextAuditWork.InputSchema)
 	if additional, _ := auditSchema["additionalProperties"].(bool); additional {
@@ -619,7 +676,7 @@ func TestOrchestratorWorkTools_SchemasAreStrictAndScoped(t *testing.T) {
 
 	// Neither schema may expose mutation-oriented properties.
 	mutationProps := []string{"planner_handoff_markdown", "audit_packet_markdown", "decision", "command", "path", "repo_path"}
-	for _, schema := range []map[string]any{passSchema, auditSchema} {
+	for _, schema := range []map[string]any{passSchema, auditSchema, prepareSchema} {
 		props, _ := schema["properties"].(map[string]any)
 		for _, banned := range mutationProps {
 			if _, ok := props[banned]; ok {
@@ -668,6 +725,12 @@ func TestOrchestratorWorkTools_HandlersReturnStructuredBlockersWithoutStore(t *t
 			call: srv.HandleGetNextAuditWork,
 			args: `{"project_id":"relay","plan_id":"plan-x"}`,
 		},
+		{
+			name: "prepare_handoff_context",
+			tool: appplans.PrepareHandoffContextTool,
+			call: srv.HandlePrepareHandoffContext,
+			args: `{"project_id":"relay","plan_id":"plan-x","pass_id":"PASS-001"}`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -694,6 +757,60 @@ func TestOrchestratorWorkTools_HandlersReturnStructuredBlockersWithoutStore(t *t
 				t.Errorf("blocker code = %q, want %q", code, appplans.BlockerUnsafeRequest)
 			}
 		})
+	}
+}
+
+func TestOrchestratorWorkTools_PrepareHandoffContextMissingRequiredIDs(t *testing.T) {
+	t.Parallel()
+
+	st := setupOrchestratorTestStore(t)
+	srv := NewServer(nil, &MCPDeps{Store: st, ToolProfile: ToolProfileLocalOperator})
+
+	result := srv.HandlePrepareHandoffContext(json.RawMessage(`{"project_id":"relay","plan_id":"plan-x"}`))
+	if result.IsError {
+		t.Fatalf("expected structured blocker result, got IsError=true: %+v", result.Content)
+	}
+	resp := decodePrepareHandoffContext(t, result)
+	if resp.OK {
+		t.Fatalf("expected ok=false for missing pass_id, got %+v", resp)
+	}
+	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != appplans.BlockerUnsafeRequest {
+		t.Fatalf("expected unsafe_request blocker, got %+v", resp.Blockers)
+	}
+}
+
+func TestOrchestratorWorkTools_PrepareHandoffContextStructuredContentSafe(t *testing.T) {
+	t.Parallel()
+
+	st := setupOrchestratorTestStore(t)
+	seedMCPOrchestratorPlan(t, st, "plan-mcp-prepare")
+	srv := NewServer(nil, &MCPDeps{Store: st, ToolProfile: ToolProfileLocalOperator})
+
+	result := srv.HandlePrepareHandoffContext(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-prepare","pass_id":"PASS-001"}`))
+	if result.IsError {
+		t.Fatalf("expected IsError=false, got error result: %+v", result.Content)
+	}
+	resp := decodePrepareHandoffContext(t, result)
+	if !resp.OK || resp.Tool != appplans.PrepareHandoffContextTool {
+		t.Fatalf("expected ok prepare response, got %+v", resp)
+	}
+	if resp.ProjectID != "relay" || resp.PlanID != "plan-mcp-prepare" || resp.PassID != "PASS-001" {
+		t.Fatalf("unexpected IDs: %+v", resp)
+	}
+	if resp.SourceSnapshotID == "" || resp.ContextPacketID == "" {
+		t.Fatalf("expected artifact IDs, got snapshot=%q packet=%q", resp.SourceSnapshotID, resp.ContextPacketID)
+	}
+	if resp.RequiredContextBundle == nil {
+		t.Fatal("expected required_context_bundle")
+	}
+	data, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal structuredContent: %v", err)
+	}
+	for _, forbidden := range []string{"raw_content", "local_path", "planner_handoff_markdown", "D:/Code/relay"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("structuredContent contains forbidden token %q: %s", forbidden, string(data))
+		}
 	}
 }
 

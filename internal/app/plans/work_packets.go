@@ -12,8 +12,11 @@ import (
 	"relay/internal/store"
 )
 
-// Tool name constant.
-const NextPassWorkTool = "get_next_pass_work"
+// Tool name constants.
+const (
+	NextPassWorkTool          = "get_next_pass_work"
+	PrepareHandoffContextTool = "prepare_handoff_context"
+)
 
 // Blocker code constants -- all codes defined in the orchestrator work contract.
 const (
@@ -45,6 +48,13 @@ const (
 	// retry create_context_packet with the same broken inputs.
 	BlockerRequiredSeedRangeUnresolved         = "required_seed_range_unresolved"
 	BlockerRequiredSeedFileMissingFromSnapshot = "required_seed_file_missing_from_snapshot"
+
+	BlockerRequiredContextMissing           = "required_context_missing"
+	BlockerRequiredContextTruncated         = "required_context_truncated"
+	BlockerSourceSnapshotStale              = "source_snapshot_stale"
+	BlockerSourceSnapshotDirtyDisallowed    = "source_snapshot_dirty_disallowed"
+	BlockerRequiredContextBundleUnavailable = "required_context_bundle_unavailable"
+	BlockerPrepareContextAcquisitionFailed  = "prepare_context_acquisition_failed"
 )
 
 // Refactor scheduling constants. These mirror the schema-approved refactor
@@ -126,6 +136,85 @@ type NextPassWorkMCPSummary struct {
 	LocalPreviewHint         string                       `json:"local_preview_hint"`
 	AcquisitionSummary       *AcquisitionSummary          `json:"acquisition_summary,omitempty"`
 	AcquisitionFailureReport *AcquisitionFailureReport    `json:"acquisition_failure_report,omitempty"`
+}
+
+// PrepareHandoffContextRequest is the input for PrepareHandoffContext.
+// Unlike GetNextPassWork, pass_id is required; this tool prepares diagnostics
+// for one explicitly selected managed pass only.
+type PrepareHandoffContextRequest struct {
+	ProjectID              string
+	PlanID                 string
+	PassID                 string
+	RefreshPolicy          string
+	IncludeOptionalContext bool
+	MaxSources             int
+	MaxTotalBytes          int
+	MaxSearchResults       int
+	MaxContextLines        int
+}
+
+// PrepareHandoffContextResponse is a metadata-only readiness diagnostic for
+// handoff authoring. It never includes source contents, packet contents, local
+// absolute paths, logs, secrets, or generated handoff text.
+type PrepareHandoffContextResponse struct {
+	OK                        bool                        `json:"ok"`
+	Tool                      string                      `json:"tool"`
+	ProjectID                 string                      `json:"project_id,omitempty"`
+	PlanID                    string                      `json:"plan_id,omitempty"`
+	PassID                    string                      `json:"pass_id,omitempty"`
+	ReadinessState            string                      `json:"readiness_state"`
+	SourceSnapshotID          string                      `json:"source_snapshot_id,omitempty"`
+	ContextPacketID           string                      `json:"context_packet_id,omitempty"`
+	RepoHeads                 []PreparedRepoHead          `json:"repo_heads"`
+	RequiredCoverage          PreparedCoverageSummary     `json:"required_coverage"`
+	OptionalCoverage          PreparedCoverageSummary     `json:"optional_coverage"`
+	FreshnessReport           *PreparedFreshnessReport    `json:"freshness_report,omitempty"`
+	RequiredContextBundle     *RequiredContextBundle      `json:"required_context_bundle,omitempty"`
+	BundleUnavailable         *WorkBlocker                `json:"bundle_unavailable,omitempty"`
+	Blockers                  []WorkBlocker               `json:"blockers"`
+	Warnings                  []WorkBlocker               `json:"warnings,omitempty"`
+	RecommendedNextAction     string                      `json:"recommended_next_action"`
+	LowerLevelRecoveryActions []NextPassWorkSummaryAction `json:"lower_level_recovery_actions"`
+	AcquisitionSummary        *AcquisitionSummary         `json:"acquisition_summary,omitempty"`
+	AcquisitionFailureReport  *AcquisitionFailureReport   `json:"acquisition_failure_report,omitempty"`
+}
+
+// PreparedRepoHead is bounded repository HEAD metadata. It intentionally omits
+// local paths and raw git status.
+type PreparedRepoHead struct {
+	RepoID             string `json:"repo_id"`
+	Branch             string `json:"branch,omitempty"`
+	HeadSHA            string `json:"head_sha,omitempty"`
+	Dirty              bool   `json:"dirty"`
+	ChangedFileCount   int64  `json:"changed_file_count"`
+	GitStatusAvailable bool   `json:"git_status_available"`
+}
+
+// PreparedCoverageSummary reports required/optional seed coverage counts
+// without source excerpts.
+type PreparedCoverageSummary struct {
+	ExpectedCount       int      `json:"expected_count"`
+	CoveredCount        int      `json:"covered_count"`
+	MissingCount        int      `json:"missing_count"`
+	BlockedCount        int      `json:"blocked_count"`
+	TruncatedCount      int      `json:"truncated_count"`
+	WarningCount        int      `json:"warning_count"`
+	NonExhaustiveSearch bool     `json:"non_exhaustive_search"`
+	TruncatedSeedIDs    []string `json:"truncated_seed_ids,omitempty"`
+}
+
+// PreparedFreshnessReport is a compact source freshness diagnostic built from
+// persisted snapshot metadata; no raw diff or porcelain output is included.
+type PreparedFreshnessReport struct {
+	Status             string   `json:"status"`
+	ReusableForHandoff bool     `json:"reusable_for_handoff"`
+	SourceSnapshotID   string   `json:"source_snapshot_id,omitempty"`
+	SnapshotStatus     string   `json:"snapshot_status,omitempty"`
+	SnapshotKind       string   `json:"snapshot_kind,omitempty"`
+	RepositoryCount    int      `json:"repository_count"`
+	DirtyRepoCount     int      `json:"dirty_repo_count"`
+	MissingHeadRepos   []string `json:"missing_head_repos,omitempty"`
+	Warnings           []string `json:"warnings,omitempty"`
 }
 
 // NextPassWorkSummaryPass contains the selected pass fields safe for MCP text.
@@ -770,6 +859,370 @@ type NextPassWorkRequest struct {
 	ProjectID string
 	PlanID    string
 	PassID    string // optional; empty selects earliest eligible pass
+}
+
+// PrepareHandoffContext prepares source/context readiness diagnostics for one
+// explicitly selected managed pass. It reuses GetNextPassWork so pass
+// eligibility, active-run checks, source snapshot acquisition, context packet
+// acquisition, and terminal acquisition reports remain centralized.
+func (svc *OrchestratorWorkService) PrepareHandoffContext(ctx context.Context, req PrepareHandoffContextRequest) (PrepareHandoffContextResponse, error) {
+	projectID := strings.TrimSpace(req.ProjectID)
+	planID := strings.TrimSpace(req.PlanID)
+	passID := strings.TrimSpace(req.PassID)
+	if projectID == "" || planID == "" || passID == "" || isUnsafePath(projectID) || isUnsafePath(planID) || isUnsafePath(passID) {
+		return PrepareHandoffContextResponse{
+			OK:             false,
+			Tool:           PrepareHandoffContextTool,
+			ProjectID:      projectID,
+			PlanID:         planID,
+			PassID:         passID,
+			ReadinessState: "blocked",
+			RepoHeads:      []PreparedRepoHead{},
+			Blockers: []WorkBlocker{{
+				Code:        BlockerUnsafeRequest,
+				Message:     "project_id, plan_id, and pass_id are required and must be safe identifiers",
+				Recoverable: false,
+			}},
+			RecommendedNextAction: "Call prepare_handoff_context with explicit safe project_id, plan_id, and pass_id.",
+		}, nil
+	}
+
+	next, err := svc.GetNextPassWork(ctx, NextPassWorkRequest{ProjectID: projectID, PlanID: planID, PassID: passID})
+	if err != nil {
+		return PrepareHandoffContextResponse{}, err
+	}
+	return svc.prepareHandoffContextFromNextWork(next, projectID, planID, passID), nil
+}
+
+func (svc *OrchestratorWorkService) prepareHandoffContextFromNextWork(next NextPassWorkResponse, projectID, planID, passID string) PrepareHandoffContextResponse {
+	resp := PrepareHandoffContextResponse{
+		OK:                        next.OK,
+		Tool:                      PrepareHandoffContextTool,
+		ProjectID:                 projectID,
+		PlanID:                    planID,
+		PassID:                    passID,
+		ReadinessState:            "blocked",
+		RepoHeads:                 []PreparedRepoHead{},
+		Blockers:                  mapPrepareBlockers(next.Blockers),
+		LowerLevelRecoveryActions: lowerLevelRecoveryActions(next, projectID, planID, passID),
+		AcquisitionSummary:        next.AcquisitionSummary,
+		AcquisitionFailureReport:  next.AcquisitionFailureReport,
+	}
+	if next.Project != nil {
+		resp.ProjectID = next.Project.ProjectID
+	}
+	if next.Plan != nil {
+		resp.PlanID = next.Plan.PlanID
+	}
+	if next.SelectedPass != nil {
+		resp.PassID = next.SelectedPass.PassID
+	}
+	if next.Context != nil {
+		resp.SourceSnapshotID = next.Context.SourceSnapshotID
+		resp.ContextPacketID = next.Context.ContextPacketID
+	}
+	if next.PlannerJumpstart != nil && strings.TrimSpace(next.PlannerJumpstart.ReadinessState) != "" {
+		resp.ReadinessState = next.PlannerJumpstart.ReadinessState
+	}
+	if next.RequiredContextBundle != nil {
+		resp.RequiredContextBundle = next.RequiredContextBundle
+	} else if next.SelectedPass != nil {
+		blocker := WorkBlocker{
+			Code:        BlockerRequiredContextBundleUnavailable,
+			Message:     "required_context_bundle is unavailable; only context-plan derived metadata can be used",
+			Recoverable: true,
+		}
+		resp.BundleUnavailable = &blocker
+		resp.Blockers = append(resp.Blockers, blocker)
+	}
+
+	resp.RequiredCoverage, resp.OptionalCoverage = prepareCoverageFromNext(next)
+	svc.applyPreparedPacketSummary(resp.ContextPacketID, &resp.RequiredCoverage, &resp.OptionalCoverage)
+	resp.RepoHeads, resp.FreshnessReport = svc.preparedSourceFreshness(resp.SourceSnapshotID, sourceRequirementsFromNext(next))
+	resp.Blockers = append(resp.Blockers, prepareSourceBlockers(resp.FreshnessReport, sourceRequirementsFromNext(next))...)
+	resp.Blockers, resp.Warnings = splitPrepareWarnings(resp.Blockers)
+	if resp.OptionalCoverage.WarningCount > 0 {
+		resp.Warnings = append(resp.Warnings, WorkBlocker{
+			Code:        "optional_context_truncated",
+			Message:     "optional context was truncated or non-exhaustive; required context remains available",
+			Recoverable: true,
+		})
+	}
+	resp.OK = prepareOK(next, resp.Blockers)
+	resp.ReadinessState = prepareReadinessState(resp.ReadinessState, resp.OK, resp.Warnings, resp.Blockers)
+	resp.RecommendedNextAction = recommendedPrepareNextAction(resp)
+	return resp
+}
+
+func mapPrepareBlockers(blockers []WorkBlocker) []WorkBlocker {
+	out := make([]WorkBlocker, 0, len(blockers))
+	for _, blocker := range blockers {
+		mapped := blocker
+		switch blocker.Code {
+		case BlockerRequiredContextPacketMissing, BlockerContextCoverageIncomplete:
+			mapped.Code = BlockerRequiredContextMissing
+		case BlockerContextPacketTruncated:
+			mapped.Code = BlockerRequiredContextTruncated
+		case BlockerContextPacketAcquisitionFailed:
+			mapped.Code = BlockerPrepareContextAcquisitionFailed
+		}
+		out = append(out, mapped)
+	}
+	return out
+}
+
+func sourceRequirementsFromNext(next NextPassWorkResponse) SourceSnapshotRequirements {
+	if next.HandoffWork != nil {
+		return next.HandoffWork.SourceRequirements
+	}
+	if next.HandoffAuthoringPacket != nil {
+		return next.HandoffAuthoringPacket.SourceRequirements
+	}
+	if next.PlannerJumpstart != nil && next.PlannerJumpstart.SourceRequirements != nil {
+		return *next.PlannerJumpstart.SourceRequirements
+	}
+	return SourceSnapshotRequirements{}
+}
+
+func prepareCoverageFromNext(next NextPassWorkResponse) (PreparedCoverageSummary, PreparedCoverageSummary) {
+	required := PreparedCoverageSummary{}
+	optional := PreparedCoverageSummary{}
+	if bundle := next.RequiredContextBundle; bundle != nil {
+		required.ExpectedCount = len(bundle.RequiredFiles) + len(bundle.RequiredSearches)
+		optional.ExpectedCount = len(bundle.OptionalFiles) + len(bundle.OptionalSearches)
+		if next.OK {
+			required.CoveredCount = required.ExpectedCount
+			optional.CoveredCount = optional.ExpectedCount
+		}
+	}
+	if report := next.AcquisitionFailureReport; report != nil && report.CoverageSummary != nil {
+		cov := report.CoverageSummary
+		required.ExpectedCount = cov.RequiredSeedCount
+		required.CoveredCount = cov.RequiredSeedCoveredCount
+		required.MissingCount = cov.RequiredSeedMissingCount
+		required.BlockedCount = cov.RequiredSeedBlockedCount
+		required.TruncatedCount = cov.RequiredSeedTruncatedCount
+		required.NonExhaustiveSearch = cov.RequiredSearchNonExhaustiveCount > 0
+		optional.TruncatedSeedIDs = append(optional.TruncatedSeedIDs, cov.OptionalSearchTruncatedSeedIDs...)
+		optional.TruncatedSeedIDs = append(optional.TruncatedSeedIDs, cov.OptionalInventoryTruncatedSeedIDs...)
+		if cov.OptionalSearchTruncated {
+			optional.WarningCount++
+			optional.NonExhaustiveSearch = true
+		}
+		if cov.OptionalInventoryTruncated {
+			optional.WarningCount++
+		}
+		optional.TruncatedCount = len(optional.TruncatedSeedIDs)
+	}
+	return required, optional
+}
+
+func (svc *OrchestratorWorkService) applyPreparedPacketSummary(packetID string, required, optional *PreparedCoverageSummary) {
+	if svc == nil || svc.store == nil || strings.TrimSpace(packetID) == "" || required == nil || optional == nil {
+		return
+	}
+	packet, err := svc.store.GetContextPacketByID(packetID)
+	if err != nil || packet == nil || strings.TrimSpace(packet.SummaryJson) == "" {
+		return
+	}
+	var summary CtxPacketSummary
+	if err := json.Unmarshal([]byte(packet.SummaryJson), &summary); err != nil {
+		return
+	}
+	if summary.RequiredContextTruncated || summary.RequiredSearchNonExhaustive {
+		required.TruncatedCount++
+		required.NonExhaustiveSearch = summary.RequiredSearchNonExhaustive
+	}
+	if summary.OptionalSearchTruncated {
+		optional.WarningCount++
+		optional.TruncatedCount++
+		optional.NonExhaustiveSearch = true
+	}
+	if summary.OptionalInventoryTruncated {
+		optional.WarningCount++
+		optional.TruncatedCount++
+	}
+}
+
+func (svc *OrchestratorWorkService) preparedSourceFreshness(snapshotID string, reqs SourceSnapshotRequirements) ([]PreparedRepoHead, *PreparedFreshnessReport) {
+	if svc == nil || svc.store == nil || strings.TrimSpace(snapshotID) == "" {
+		return []PreparedRepoHead{}, nil
+	}
+	snapshot, err := svc.store.GetSourceSnapshotByID(snapshotID)
+	if err != nil || snapshot == nil {
+		return []PreparedRepoHead{}, &PreparedFreshnessReport{
+			Status:             "missing",
+			ReusableForHandoff: false,
+			SourceSnapshotID:   snapshotID,
+			Warnings:           []string{"source snapshot metadata could not be loaded"},
+		}
+	}
+	repos, err := svc.store.ListSourceSnapshotRepositories(snapshot.ID)
+	if err != nil {
+		return []PreparedRepoHead{}, &PreparedFreshnessReport{
+			Status:             "metadata_unavailable",
+			ReusableForHandoff: false,
+			SourceSnapshotID:   snapshotID,
+			SnapshotStatus:     snapshot.Status,
+			SnapshotKind:       snapshot.SnapshotKind,
+			Warnings:           []string{"repository metadata could not be loaded"},
+		}
+	}
+	heads := make([]PreparedRepoHead, 0, len(repos))
+	report := &PreparedFreshnessReport{
+		Status:             "fresh",
+		ReusableForHandoff: true,
+		SourceSnapshotID:   snapshot.SourceSnapshotID,
+		SnapshotStatus:     snapshot.Status,
+		SnapshotKind:       snapshot.SnapshotKind,
+		RepositoryCount:    len(repos),
+	}
+	if snapshot.Status != "created" {
+		report.Status = "stale"
+		report.ReusableForHandoff = false
+		report.Warnings = append(report.Warnings, "source snapshot status is not created")
+	}
+	requireHead := boolValue(reqs.RequireCommitSHA)
+	for _, repo := range repos {
+		head := PreparedRepoHead{
+			RepoID:             repo.RepoID,
+			Branch:             repo.CurrentBranch,
+			HeadSHA:            repo.HeadSha,
+			Dirty:              repo.Dirty != 0,
+			ChangedFileCount:   repo.ChangedFileCount,
+			GitStatusAvailable: repo.GitStatusAvailable != 0,
+		}
+		heads = append(heads, head)
+		if head.Dirty {
+			report.DirtyRepoCount++
+		}
+		if requireHead && strings.TrimSpace(head.HeadSHA) == "" {
+			report.MissingHeadRepos = append(report.MissingHeadRepos, repo.RepoID)
+		}
+	}
+	if report.DirtyRepoCount > 0 && !boolValue(reqs.AllowDirtyWorktree) {
+		report.Status = "dirty_worktree"
+		report.ReusableForHandoff = false
+	}
+	if len(report.MissingHeadRepos) > 0 {
+		report.Status = "stale"
+		report.ReusableForHandoff = false
+		report.Warnings = append(report.Warnings, "required commit SHA evidence is missing")
+	}
+	return heads, report
+}
+
+func prepareSourceBlockers(report *PreparedFreshnessReport, reqs SourceSnapshotRequirements) []WorkBlocker {
+	if report == nil {
+		if boolValue(reqs.RequireGitStatus) || boolValue(reqs.RequireCommitSHA) {
+			return []WorkBlocker{{
+				Code:        BlockerSourceSnapshotStale,
+				Message:     "source snapshot freshness evidence is unavailable",
+				Recoverable: true,
+			}}
+		}
+		return nil
+	}
+	var blockers []WorkBlocker
+	if report.DirtyRepoCount > 0 && !boolValue(reqs.AllowDirtyWorktree) {
+		blockers = append(blockers, WorkBlocker{
+			Code:        BlockerSourceSnapshotDirtyDisallowed,
+			Message:     "source snapshot captured dirty repository state but dirty worktrees are disallowed",
+			Recoverable: true,
+		})
+	}
+	if !report.ReusableForHandoff && report.Status != "dirty_worktree" {
+		blockers = append(blockers, WorkBlocker{
+			Code:        BlockerSourceSnapshotStale,
+			Message:     "source snapshot is not reusable for handoff authoring",
+			Recoverable: true,
+		})
+	}
+	return blockers
+}
+
+func splitPrepareWarnings(blockers []WorkBlocker) ([]WorkBlocker, []WorkBlocker) {
+	kept := make([]WorkBlocker, 0, len(blockers))
+	var warnings []WorkBlocker
+	for _, blocker := range blockers {
+		if blocker.Code == BlockerRequiredContextBundleUnavailable {
+			warnings = append(warnings, blocker)
+			continue
+		}
+		kept = append(kept, blocker)
+	}
+	return kept, warnings
+}
+
+func prepareOK(next NextPassWorkResponse, blockers []WorkBlocker) bool {
+	if len(blockers) > 0 {
+		return false
+	}
+	return next.OK
+}
+
+func prepareReadinessState(current string, ok bool, warnings []WorkBlocker, blockers []WorkBlocker) string {
+	if ok {
+		if len(warnings) > 0 {
+			return "ready_for_handoff_authoring_with_warnings"
+		}
+		if current == "" || current == "blocked" {
+			return "ready_for_handoff_authoring"
+		}
+		return current
+	}
+	if len(blockers) > 0 {
+		for _, blocker := range blockers {
+			switch blocker.Code {
+			case BlockerSourceSnapshotDirtyDisallowed, BlockerSourceSnapshotStale:
+				return "needs_source_snapshot"
+			case BlockerRequiredContextMissing, BlockerRequiredContextTruncated:
+				return "needs_required_context"
+			case BlockerPrepareContextAcquisitionFailed:
+				return "context_acquisition_failed"
+			}
+		}
+	}
+	if current == "" {
+		return "blocked"
+	}
+	return current
+}
+
+func recommendedPrepareNextAction(resp PrepareHandoffContextResponse) string {
+	if resp.OK {
+		return "Draft a Planner handoff from reviewed metadata and artifact IDs; do not create a run from this tool."
+	}
+	if len(resp.LowerLevelRecoveryActions) > 0 {
+		return "Resolve blockers using lower_level_recovery_actions, then call prepare_handoff_context again for the same pass."
+	}
+	return "Resolve blockers, then call prepare_handoff_context again for the same project_id, plan_id, and pass_id."
+}
+
+func lowerLevelRecoveryActions(next NextPassWorkResponse, projectID, planID, passID string) []NextPassWorkSummaryAction {
+	actions := compactNextPassWorkActions(next)
+	if len(actions) == 0 {
+		actions = append(actions, NextPassWorkSummaryAction{
+			Tool:        NextPassWorkTool,
+			Description: "Recheck selected pass eligibility and lower-level context acquisition diagnostics.",
+			Arguments: map[string]interface{}{
+				"project_id": projectID,
+				"plan_id":    planID,
+				"pass_id":    passID,
+			},
+		})
+	}
+	safe := make([]NextPassWorkSummaryAction, 0, len(actions))
+	for _, action := range actions {
+		switch action.Tool {
+		case "create_source_snapshot", "create_context_packet", "get_context_packet", NextPassWorkTool, "":
+			if action.Tool == "" {
+				action.Tool = NextPassWorkTool
+			}
+			safe = append(safe, action)
+		}
+	}
+	return safe
 }
 
 // GetNextPassWork returns the next eligible Planner work packet or structured blockers.

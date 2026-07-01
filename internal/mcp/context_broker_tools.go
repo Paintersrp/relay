@@ -875,6 +875,7 @@ func contextBrokerToolDefinitions() []ToolDefinition {
 		ToolGetPass,
 		ToolGetPassContext,
 		ToolGetNextPassWork,
+		ToolPrepareHandoffContext,
 		ToolGetNextAuditWork,
 		ToolCreateSourceSnapshot,
 		ToolListProjectFiles,

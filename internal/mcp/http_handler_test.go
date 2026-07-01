@@ -434,6 +434,7 @@ func TestHTTPHandlerToolsListUsesServerToolSurface(t *testing.T) {
 			"get_pass",
 			"get_pass_context",
 			"get_next_pass_work",
+			"prepare_handoff_context",
 			"get_next_audit_work",
 			"create_source_snapshot",
 			"list_project_files",

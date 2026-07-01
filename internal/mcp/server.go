@@ -430,6 +430,8 @@ func (s *Server) handleToolsCall(req Request) Response {
 		result = s.HandleGetPassContext(args)
 	case appplans.NextPassWorkTool:
 		result = s.HandleGetNextPassWork(args)
+	case appplans.PrepareHandoffContextTool:
+		result = s.HandlePrepareHandoffContext(args)
 	case appplans.NextAuditWorkTool:
 		result = s.HandleGetNextAuditWork(args)
 	case "create_source_snapshot":

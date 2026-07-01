@@ -2542,3 +2542,298 @@ func assertRequiredContextBundleSafeJSON(t *testing.T, bundle *RequiredContextBu
 		}
 	}
 }
+
+func TestPrepareHandoffContext_ReadySelectedPass(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedAcquisitionPlanWithContext(t, st, "plan-prepare-ready", pass002ShapedContextPlan(), &ContextBudget{MaxFiles: int64Ptr(12), MaxBytes: int64Ptr(180000)})
+	snapshotRowID := seedPreparedSnapshotWithRepo(t, st, "snap-prepare-ready", false, "abc123")
+	seedContextPacket(t, st, "relay", "plan-prepare-ready", "PASS-002", "snap-prepare-ready", snapshotRowID, "ctxpkt-prepare-ready")
+
+	resp, err := svc.PrepareHandoffContext(context.Background(), PrepareHandoffContextRequest{ProjectID: "relay", PlanID: "plan-prepare-ready", PassID: "PASS-002"})
+	if err != nil {
+		t.Fatalf("PrepareHandoffContext: %v", err)
+	}
+	if !resp.OK || resp.Tool != PrepareHandoffContextTool || resp.ReadinessState != "ready_for_handoff_authoring" {
+		t.Fatalf("expected ready response, got ok=%t tool=%q readiness=%q blockers=%+v", resp.OK, resp.Tool, resp.ReadinessState, resp.Blockers)
+	}
+	if resp.SourceSnapshotID != "snap-prepare-ready" || resp.ContextPacketID != "ctxpkt-prepare-ready" {
+		t.Fatalf("unexpected artifact ids: snapshot=%q packet=%q", resp.SourceSnapshotID, resp.ContextPacketID)
+	}
+	if len(resp.RepoHeads) != 1 || resp.RepoHeads[0].RepoID != "relay" || resp.RepoHeads[0].HeadSHA != "abc123" {
+		t.Fatalf("expected bounded repo head, got %+v", resp.RepoHeads)
+	}
+	if resp.RequiredCoverage.ExpectedCount == 0 || resp.RequiredCoverage.CoveredCount != resp.RequiredCoverage.ExpectedCount {
+		t.Fatalf("expected required coverage summary, got %+v", resp.RequiredCoverage)
+	}
+	if resp.FreshnessReport == nil || !resp.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected reusable freshness report, got %+v", resp.FreshnessReport)
+	}
+	if resp.RecommendedNextAction == "" {
+		t.Fatal("expected recommended next action")
+	}
+}
+
+func TestPrepareHandoffContext_MissingRequiredContextBlocks(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedAcquisitionPlanWithContext(t, st, "plan-prepare-missing", pass002ShapedContextPlan(), nil)
+	seedPreparedSnapshotWithRepo(t, st, "snap-prepare-missing", false, "abc123")
+
+	resp, err := svc.PrepareHandoffContext(context.Background(), PrepareHandoffContextRequest{ProjectID: "relay", PlanID: "plan-prepare-missing", PassID: "PASS-002"})
+	if err != nil {
+		t.Fatalf("PrepareHandoffContext: %v", err)
+	}
+	if resp.OK {
+		t.Fatalf("expected blocked response, got %+v", resp)
+	}
+	assertPrepareBlockerCode(t, resp, BlockerRequiredContextMissing)
+}
+
+func TestPrepareHandoffContext_RequiredContextTruncationBlocks(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedAcquisitionPlanWithContext(t, st, "plan-prepare-truncated", pass002ShapedContextPlan(), nil)
+	svc.SetSourceService(fakeSourceSnapshotAcquirer{snapshotID: "snap-prepare-truncated", status: "created", included: 10})
+	truncatedResult := CtxPacketResult{
+		ContextPacketID:    "ctxpkt-prepare-truncated",
+		Status:             "created",
+		CoverageReportPath: "/artifacts/ctxpkt/truncated-coverage.json",
+		SourceSnapshotID:   "snap-prepare-truncated",
+		SourceCount:        2,
+		Truncated:          true,
+		Summary:            CtxPacketSummary{SourceCount: 2, Truncated: true, RequiredContextTruncated: true, MaxSources: 2, MaxTotalBytes: 1000},
+		LimitHit:           "required_context",
+	}
+	svc.SetContextPacketService(&fakeContextPacketAcquirer{results: []CtxPacketResult{truncatedResult, truncatedResult}})
+
+	resp, err := svc.PrepareHandoffContext(context.Background(), PrepareHandoffContextRequest{ProjectID: "relay", PlanID: "plan-prepare-truncated", PassID: "PASS-002"})
+	if err != nil {
+		t.Fatalf("PrepareHandoffContext: %v", err)
+	}
+	if resp.OK {
+		t.Fatalf("expected required truncation to block, got %+v", resp)
+	}
+	assertPrepareBlockerCode(t, resp, BlockerRequiredContextTruncated)
+}
+
+func TestPrepareHandoffContext_OptionalContextTruncationWarns(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedAcquisitionPlanWithContext(t, st, "plan-prepare-optional-warning", pass002ShapedContextPlan(), nil)
+	snapshotRowID := seedPreparedSnapshotWithRepo(t, st, "snap-prepare-optional-warning", false, "abc123")
+	seedContextPacketWithSummary(t, st, "relay", "plan-prepare-optional-warning", "PASS-002", "snap-prepare-optional-warning", snapshotRowID, "ctxpkt-prepare-optional-warning", CtxPacketSummary{OptionalSearchTruncated: true})
+
+	resp, err := svc.PrepareHandoffContext(context.Background(), PrepareHandoffContextRequest{ProjectID: "relay", PlanID: "plan-prepare-optional-warning", PassID: "PASS-002"})
+	if err != nil {
+		t.Fatalf("PrepareHandoffContext: %v", err)
+	}
+	if !resp.OK || resp.ReadinessState != "ready_for_handoff_authoring_with_warnings" {
+		t.Fatalf("expected warning-ready response, got ok=%t readiness=%q blockers=%+v warnings=%+v", resp.OK, resp.ReadinessState, resp.Blockers, resp.Warnings)
+	}
+	if resp.OptionalCoverage.WarningCount == 0 || len(resp.Warnings) == 0 {
+		t.Fatalf("expected optional warning coverage, got coverage=%+v warnings=%+v", resp.OptionalCoverage, resp.Warnings)
+	}
+}
+
+func TestPrepareHandoffContext_DirtyDisallowedSourceBlocks(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedPreparePlanWithSourceRequirements(t, st, "plan-prepare-dirty", SourceSnapshotRequirements{RequireGitStatus: boolPtr(true), RequireCommitSHA: boolPtr(true), AllowDirtyWorktree: boolPtr(false)})
+	snapshotRowID := seedPreparedSnapshotWithRepo(t, st, "snap-prepare-dirty", true, "abc123")
+	seedContextPacket(t, st, "relay", "plan-prepare-dirty", "PASS-002", "snap-prepare-dirty", snapshotRowID, "ctxpkt-prepare-dirty")
+
+	resp, err := svc.PrepareHandoffContext(context.Background(), PrepareHandoffContextRequest{ProjectID: "relay", PlanID: "plan-prepare-dirty", PassID: "PASS-002"})
+	if err != nil {
+		t.Fatalf("PrepareHandoffContext: %v", err)
+	}
+	if resp.OK {
+		t.Fatalf("expected dirty disallowed source to block, got %+v", resp)
+	}
+	assertPrepareBlockerCode(t, resp, BlockerSourceSnapshotDirtyDisallowed)
+}
+
+func TestPrepareHandoffContext_RecoveryActionsUseSafeLowerLevelTools(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedAcquisitionPlanWithContext(t, st, "plan-prepare-recovery", pass002ShapedContextPlan(), nil)
+	seedPreparedSnapshotWithRepo(t, st, "snap-prepare-recovery", false, "abc123")
+
+	resp, err := svc.PrepareHandoffContext(context.Background(), PrepareHandoffContextRequest{ProjectID: "relay", PlanID: "plan-prepare-recovery", PassID: "PASS-002"})
+	if err != nil {
+		t.Fatalf("PrepareHandoffContext: %v", err)
+	}
+	if len(resp.LowerLevelRecoveryActions) == 0 {
+		t.Fatal("expected lower-level recovery actions")
+	}
+	allowed := map[string]bool{"create_source_snapshot": true, "create_context_packet": true, "get_context_packet": true, NextPassWorkTool: true}
+	for _, action := range resp.LowerLevelRecoveryActions {
+		if !allowed[action.Tool] {
+			t.Fatalf("unexpected recovery tool %q in %+v", action.Tool, resp.LowerLevelRecoveryActions)
+		}
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+	for _, forbidden := range []string{"raw_content", "local_path", "planner_handoff_markdown", "D:/Code/relay"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("prepare response contains forbidden token %q: %s", forbidden, string(data))
+		}
+	}
+}
+
+func seedPreparedSnapshotWithRepo(t *testing.T, st *store.Store, snapshotID string, dirty bool, headSHA string) int64 {
+	t.Helper()
+	project, err := st.GetProjectByProjectID("relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	repo, err := st.UpsertProjectRepository(store.UpsertProjectRepositoryParams{
+		ProjectRowID:     project.ID,
+		RepoID:           "relay",
+		Role:             "primary",
+		LocalPath:        "D:/Code/relay",
+		DefaultBranch:    "main",
+		AllowedRootsJSON: `["."]`,
+		MaxFileSizeBytes: 1048576,
+		Enabled:          1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertProjectRepository: %v", err)
+	}
+	snapshot, err := st.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+		SourceSnapshotID: snapshotID,
+		ProjectRowID:     project.ID,
+		ProjectID:        "relay",
+		SnapshotKind:     "clean_commit",
+		Status:           "created",
+		CompletedAt:      "2026-06-28T00:00:00Z",
+		SummaryJSON:      "{\"file_count\":1}",
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+	dirtyInt := int64(0)
+	changed := int64(0)
+	if dirty {
+		dirtyInt = 1
+		changed = 2
+	}
+	snapRepo, err := st.CreateSourceSnapshotRepository(store.CreateSourceSnapshotRepositoryParams{
+		SourceSnapshotRowID:    snapshot.ID,
+		ProjectRepositoryRowID: repo.ID,
+		RepoID:                 "relay",
+		Role:                   "primary",
+		LocalPath:              "D:/Code/relay",
+		DefaultBranch:          "main",
+		CurrentBranch:          "main",
+		HeadSHA:                headSHA,
+		Dirty:                  dirtyInt,
+		ChangedFileCount:       changed,
+		GitStatusAvailable:     1,
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshotRepository: %v", err)
+	}
+	if _, err := st.CreateSourceSnapshotFile(store.CreateSourceSnapshotFileParams{
+		SourceSnapshotRepositoryRowID: snapRepo.ID,
+		Path:                          "internal/app/plans/work_packets.go",
+		SizeBytes:                     12000,
+		ContentHash:                   "hash-work-packets",
+		HashAlgorithm:                 "sha256",
+		Tracked:                       1,
+		Included:                      1,
+		RedactionStatus:               "not_needed",
+	}); err != nil {
+		t.Fatalf("CreateSourceSnapshotFile: %v", err)
+	}
+	return snapshot.ID
+}
+
+func seedContextPacketWithSummary(t *testing.T, st *store.Store, projectID, planID, passID, sourceSnapshotID string, snapshotRowID int64, contextPacketID string, summary CtxPacketSummary) {
+	t.Helper()
+	project, err := st.GetProjectByProjectID(projectID)
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	summaryJSON, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("marshal summary: %v", err)
+	}
+	if _, err := st.CreateContextPacket(store.CreateContextPacketParams{
+		ContextPacketID:     contextPacketID,
+		ProjectRowID:        project.ID,
+		ProjectID:           projectID,
+		PlanID:              planID,
+		PassID:              passID,
+		TaskSlug:            "test-slug",
+		SourceSnapshotRowID: snapshotRowID,
+		SourceSnapshotID:    sourceSnapshotID,
+		Status:              "created",
+		CoveredSeedCount:    1,
+		CompletedAt:         "2026-06-28T00:00:00Z",
+		PacketJSONPath:      "/artifacts/ctxpkt/" + contextPacketID + ".json",
+		CoverageReportPath:  "/artifacts/ctxpkt/" + contextPacketID + "-coverage.json",
+		SummaryJSON:         string(summaryJSON),
+	}); err != nil {
+		t.Fatalf("CreateContextPacket: %v", err)
+	}
+}
+
+func seedPreparePlanWithSourceRequirements(t *testing.T, st *store.Store, planID string, reqs SourceSnapshotRequirements) {
+	t.Helper()
+	project, err := st.GetProjectByProjectID("relay")
+	if err != nil {
+		t.Fatalf("GetProjectByProjectID: %v", err)
+	}
+	planSvc := NewService(st)
+	plan := PlannerPassPlan{
+		PlanMeta: PlanMeta{
+			PlanID:        planID,
+			SchemaVersion: "2.0.0",
+			CreatedAt:     "2026-06-28T00:00:00Z",
+			Title:         "Prepare handoff context test",
+			Goal:          "Exercise prepare_handoff_context.",
+			RepoTarget:    "Paintersrp/relay",
+			BranchContext: "main",
+			Status:        "active",
+			ProjectID:     project.ProjectID,
+		},
+		SourceIntent:       SourceIntent{Summary: "Prepare context test."},
+		GlobalContextRules: &GlobalContextRules{DefaultSourceOfTruth: "test", PlannerContextBoundary: "test", ForbiddenContextDomains: []string{"external"}},
+		Passes: []PlanPassInput{
+			{
+				PassID: "PASS-001", Sequence: 1, Name: "First", Goal: "First complete pass.",
+				IntendedExecutionScope: []string{"setup"}, NonGoals: []string{"none"},
+				Dependencies: []string{}, Status: "planned", PassType: "backend_vertical_slice",
+				ContextPlan:                noContextRequirementsPlan(),
+				SourceSnapshotRequirements: SourceSnapshotRequirements{RequireGitStatus: boolPtr(false), RequireCommitSHA: boolPtr(false), AllowDirtyWorktree: boolPtr(true)},
+				HandoffReadinessCriteria:   []string{"complete"},
+			},
+			{
+				PassID: "PASS-002", Sequence: 2, Name: "Second", Goal: "Prepare context.",
+				IntendedExecutionScope: []string{"backend"}, NonGoals: []string{"validation tiers"},
+				Dependencies: []string{"PASS-001"}, Status: "planned", PassType: "workflow_backend_mcp",
+				ContextPlan:                pass002ShapedContextPlan(),
+				SourceSnapshotRequirements: reqs,
+				HandoffReadinessCriteria:   []string{"context acquired"},
+			},
+		},
+	}
+	result, err := planSvc.SubmitPlan(context.Background(), SubmitPlanRequest{UnmanagedAcknowledged: true, RawJSON: mustMarshalPlan(t, plan)})
+	if err != nil || !result.Report.Valid {
+		t.Fatalf("SubmitPlan failed: err=%v issues=%+v", err, result.Report.Issues)
+	}
+	setPassStatus(t, st, planID, "PASS-001", StatusPassCompleted)
+}
+
+func assertPrepareBlockerCode(t *testing.T, resp PrepareHandoffContextResponse, code string) {
+	t.Helper()
+	for _, blocker := range resp.Blockers {
+		if blocker.Code == code {
+			return
+		}
+	}
+	t.Fatalf("expected blocker %q in %+v", code, resp.Blockers)
+}

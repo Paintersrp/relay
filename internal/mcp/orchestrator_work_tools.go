@@ -261,6 +261,86 @@ var getNextPassWorkOutputSchema = json.RawMessage(`{
   }
 }`)
 
+var prepareHandoffContextSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "plan_id", "pass_id"],
+  "properties": {
+    "project_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Relay project identifier."
+    },
+    "plan_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Relay plan identifier."
+    },
+    "pass_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Explicit Relay pass identifier to prepare; this tool never selects an arbitrary next pass."
+    },
+    "refresh_policy": {
+      "type": "string",
+      "enum": ["reuse_if_fresh", "force_new_snapshot", "reuse_latest"],
+      "description": "Bounded source snapshot reuse preference. Current implementation delegates acquisition safety to get_next_pass_work."
+    },
+    "include_optional_context": {"type": "boolean"},
+    "max_sources": {"type": "integer", "minimum": 1, "maximum": 200},
+    "max_total_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
+    "max_search_results": {"type": "integer", "minimum": 1, "maximum": 200},
+    "max_context_lines": {"type": "integer", "minimum": 0, "maximum": 200}
+  }
+}`)
+
+var prepareHandoffContextOutputSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok", "tool", "project_id", "plan_id", "pass_id", "readiness_state", "repo_heads", "required_coverage", "optional_coverage", "blockers", "recommended_next_action", "lower_level_recovery_actions"],
+  "properties": {
+    "ok": {"type": "boolean"},
+    "tool": {"type": "string", "const": "prepare_handoff_context"},
+    "project_id": {"type": "string"},
+    "plan_id": {"type": "string"},
+    "pass_id": {"type": "string"},
+    "readiness_state": {"type": "string"},
+    "source_snapshot_id": {"type": "string"},
+    "context_packet_id": {"type": "string"},
+    "repo_heads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["repo_id", "dirty", "changed_file_count", "git_status_available"],
+        "properties": {
+          "repo_id": {"type": "string"},
+          "branch": {"type": "string"},
+          "head_sha": {"type": "string"},
+          "dirty": {"type": "boolean"},
+          "changed_file_count": {"type": "integer"},
+          "git_status_available": {"type": "boolean"}
+        }
+      }
+    },
+    "required_coverage": {"type": "object", "additionalProperties": true},
+    "optional_coverage": {"type": "object", "additionalProperties": true},
+    "freshness_report": {"type": "object", "additionalProperties": true},
+    "required_context_bundle": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Metadata-only bundle. Never includes raw source, context packet content, logs, local paths, or generated handoff text."
+    },
+    "bundle_unavailable": {"type": "object", "additionalProperties": true},
+    "blockers": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "warnings": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "recommended_next_action": {"type": "string"},
+    "lower_level_recovery_actions": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "acquisition_summary": {"type": "object", "additionalProperties": true},
+    "acquisition_failure_report": {"type": "object", "additionalProperties": true}
+  }
+}`)
+
 var getNextAuditWorkSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,
@@ -304,6 +384,17 @@ var ToolGetNextPassWork = ToolDefinition{
 	},
 }
 
+var ToolPrepareHandoffContext = ToolDefinition{
+	Name:         appplans.PrepareHandoffContextTool,
+	Description:  "Prepare bounded source/context readiness diagnostics for one explicit managed pass before Planner handoff authoring. May create or reuse source snapshot and context packet artifacts through existing services. Does NOT create runs, submit plans, generate handoffs, dispatch executors, mutate git, run shell commands, call GitHub/models, expose arbitrary filesystem access, or return raw source/context content.",
+	InputSchema:  prepareHandoffContextSchema,
+	OutputSchema: prepareHandoffContextOutputSchema,
+	Annotations: map[string]any{
+		"readOnlyHint":    false,
+		"destructiveHint": false,
+	},
+}
+
 var ToolGetNextAuditWork = ToolDefinition{
 	Name:        appplans.NextAuditWorkTool,
 	Description: "Return the next audit-ready project-scoped work packet for an Auditor agent. Retrieval-only: does not generate audit judgments, apply audit decisions, create runs, mutate git, run shell commands, or expose arbitrary filesystem access.",
@@ -318,6 +409,18 @@ type getNextPassWorkArgs struct {
 	ProjectID string `json:"project_id"`
 	PlanID    string `json:"plan_id"`
 	PassID    string `json:"pass_id,omitempty"`
+}
+
+type prepareHandoffContextArgs struct {
+	ProjectID              string `json:"project_id"`
+	PlanID                 string `json:"plan_id"`
+	PassID                 string `json:"pass_id"`
+	RefreshPolicy          string `json:"refresh_policy,omitempty"`
+	IncludeOptionalContext bool   `json:"include_optional_context,omitempty"`
+	MaxSources             int    `json:"max_sources,omitempty"`
+	MaxTotalBytes          int    `json:"max_total_bytes,omitempty"`
+	MaxSearchResults       int    `json:"max_search_results,omitempty"`
+	MaxContextLines        int    `json:"max_context_lines,omitempty"`
 }
 
 type getNextAuditWorkArgs struct {
@@ -362,6 +465,37 @@ func orchestratorWorkNextPassPayload(resp appplans.NextPassWorkResponse) ToolCal
 		}},
 		StructuredContent: summary,
 	}
+}
+
+func orchestratorWorkPrepareHandoffContextPayload(resp appplans.PrepareHandoffContextResponse) ToolCallResult {
+	return ToolCallResult{
+		Content: []ContentBlock{{
+			Type: "text",
+			Text: prepareHandoffContextSummaryText(resp),
+		}},
+		StructuredContent: resp,
+	}
+}
+
+func prepareHandoffContextSummaryText(resp appplans.PrepareHandoffContextResponse) string {
+	blockers := "none"
+	if len(resp.Blockers) > 0 {
+		parts := make([]string, 0, len(resp.Blockers))
+		for _, blocker := range resp.Blockers {
+			parts = append(parts, fmt.Sprintf("%s recoverable=%t", blocker.Code, blocker.Recoverable))
+		}
+		blockers = fmt.Sprintf("%s", parts)
+	}
+	return fmt.Sprintf(
+		"prepare_handoff_context: pass=%s readiness=%s ok=%t source_snapshot_id=%q context_packet_id=%q blockers=%s. %s",
+		resp.PassID,
+		resp.ReadinessState,
+		resp.OK,
+		resp.SourceSnapshotID,
+		resp.ContextPacketID,
+		blockers,
+		resp.RecommendedNextAction,
+	)
 }
 
 func nextPassWorkSummaryText(summary appplans.NextPassWorkMCPSummary) string {
@@ -481,6 +615,39 @@ func (s *Server) HandleGetNextPassWork(rawArgs json.RawMessage) ToolCallResult {
 	}
 
 	return orchestratorWorkNextPassPayload(resp)
+}
+
+// HandlePrepareHandoffContext prepares bounded source/context evidence and
+// readiness diagnostics for one explicit managed pass without generating a
+// Planner handoff or creating a run.
+func (s *Server) HandlePrepareHandoffContext(rawArgs json.RawMessage) ToolCallResult {
+	var args prepareHandoffContextArgs
+	if err := brokerDecodeStrict(rawArgs, &args); err != nil {
+		return orchestratorWorkToolErr(appplans.PrepareHandoffContextTool, appplans.BlockerUnsafeRequest, "invalid params: "+err.Error())
+	}
+
+	if s.deps == nil || s.deps.Store == nil {
+		return orchestratorWorkToolErr(appplans.PrepareHandoffContextTool, appplans.BlockerUnsafeRequest, "MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
+	}
+
+	svc := appplans.NewOrchestratorWorkService(s.deps.Store)
+	svc.SetSourceService(&sourceSnapshotAdapter{svc: sources.NewService(s.deps.Store)})
+	svc.SetContextPacketService(&contextPacketAdapter{svc: contextpackets.NewService(s.deps.Store)})
+	resp, err := svc.PrepareHandoffContext(context.Background(), appplans.PrepareHandoffContextRequest{
+		ProjectID:              args.ProjectID,
+		PlanID:                 args.PlanID,
+		PassID:                 args.PassID,
+		RefreshPolicy:          args.RefreshPolicy,
+		IncludeOptionalContext: args.IncludeOptionalContext,
+		MaxSources:             args.MaxSources,
+		MaxTotalBytes:          args.MaxTotalBytes,
+		MaxSearchResults:       args.MaxSearchResults,
+		MaxContextLines:        args.MaxContextLines,
+	})
+	if err != nil {
+		return orchestratorWorkToolErr(appplans.PrepareHandoffContextTool, appplans.BlockerUnsafeRequest, fmt.Sprintf("service error: %v", err))
+	}
+	return orchestratorWorkPrepareHandoffContextPayload(resp)
 }
 
 // HandleGetNextAuditWork retrieves the next eligible audit work packet
