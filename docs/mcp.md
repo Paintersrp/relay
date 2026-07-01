@@ -24,6 +24,52 @@
     *   `submit_planner_pass_plan` creates plan/pass records only and does not create runs, dispatch executors, mutate git, or read chat context.
     *   The additional status/list/audit tools are **not** currently exposed to the Planner Project unless the specific project configuration is modified to expose them.
 
+## Planned Context Workflow Grounded in Current MCP Inventory
+
+This section describes planned/contracted target behavior for the context-gathering workflow. It is not the currently guaranteed GPT-facing action inventory. The current grounding signals remain: the GPT-facing submission actions `create_run_from_planner_handoff_file`, `create_run_from_planner_handoff`, and `submit_planner_pass_plan`; and the local-operator context broker inventory registered under `RELAY_MCP_PROFILE=local-operator`.
+
+The planned contract-target surfaces are resource resolution, source snapshot freshness, required context bundles, prepared handoff context readiness, bounded artifact readback, compile-aware preflight, and exact artifact submission. These surfaces compose bounded primitives only. No high-level tool authorizes shell execution, git mutation, arbitrary filesystem reads, generic file browsing, unbounded source reads, unbounded artifact dumps, or secret persistence.
+
+Intended safe Planner workflow:
+
+1. Resolve project and repository aliases to registered Relay identities.
+2. Acquire or reuse a fresh clean source snapshot and report stale or dirty-worktree blockers.
+3. Receive required context bundle metadata from work-packet retrieval.
+4. Prepare bounded handoff context and context packet readiness without embedding raw source file contents.
+5. Read generated artifacts only through registered artifact kinds and bounded view modes.
+6. Validate Planner handoff compile readiness before run creation without treating preflight success as submission approval.
+7. Submit only the exact reviewed handoff artifact after explicit user confirmation. File submission preserves reviewed handoff bytes, computes submitted SHA-256, verifies optional `expected_sha256`, and blocks with `expected_hash_mismatch` before run creation when hashes differ.
+
+Shared blocker envelope fields in order: `code`, `message`, `recoverable`, `evidence`, `next_actions`.
+
+Example:
+
+```json
+{
+  "code": "source_snapshot_stale",
+  "message": "The selected source snapshot is stale for the requested pass context.",
+  "recoverable": true,
+  "evidence": [
+    {
+      "kind": "repo_relative_path",
+      "path": "apps/web/src/routes/index.tsx"
+    },
+    {
+      "kind": "source_snapshot_id",
+      "id": "snapshot-2026-07-01-001"
+    }
+  ],
+  "next_actions": [
+    {
+      "action": "refresh_source_snapshot",
+      "description": "Acquire a fresh bounded source snapshot for the registered repository."
+    }
+  ]
+}
+```
+
+Required shared taxonomy codes: `unknown_resource`, `unknown_repository`, `alias_ambiguous`, `source_snapshot_stale`, `dirty_worktree`, `required_context_missing`, `required_context_truncated`, `blocked_path`, `redaction_failed`, `schema_mismatch`, `expected_hash_mismatch`, `tool_unavailable`, `tool_schema_stale`, `unsafe_request`.
+
 ## Project-Orchestrator Work Tools (Context-Broker Profile)
 
 *   `get_next_pass_work` and `get_next_audit_work` are defined by the `Paintersrp/relay-contracts` repository at `contracts/planner_mcp_orchestrator_work_contract.md`.
