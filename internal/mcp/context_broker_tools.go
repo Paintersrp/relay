@@ -628,13 +628,14 @@ type brokerPassResult struct {
 }
 
 type brokerSourceSnapshotMetadata struct {
-	SourceSnapshotID string          `json:"source_snapshot_id"`
-	ProjectID        string          `json:"project_id"`
-	SnapshotKind     string          `json:"snapshot_kind"`
-	Status           string          `json:"status"`
-	CreatedAt        string          `json:"created_at"`
-	CompletedAt      string          `json:"completed_at,omitempty"`
-	Summary          json.RawMessage `json:"summary"`
+	SourceSnapshotID string                         `json:"source_snapshot_id"`
+	ProjectID        string                         `json:"project_id"`
+	SnapshotKind     string                         `json:"snapshot_kind"`
+	Status           string                         `json:"status"`
+	CreatedAt        string                         `json:"created_at"`
+	CompletedAt      string                         `json:"completed_at,omitempty"`
+	Summary          json.RawMessage                `json:"summary"`
+	FreshnessReport  *sources.SourceFreshnessReport `json:"freshness_report,omitempty"`
 }
 
 type brokerContextPacketMetadata struct {
@@ -697,13 +698,14 @@ type brokerHandoffReadinessResult struct {
 }
 
 type brokerRepositorySnapshotResult struct {
-	RepoID            string                      `json:"repo_id"`
-	Role              string                      `json:"role"`
-	DefaultBranch     string                      `json:"default_branch"`
-	GitStatus         sources.RepositoryGitStatus `json:"git_status"`
-	RecentCommit      *brokerRecentCommit         `json:"recent_commit,omitempty"`
-	FileCount         int                         `json:"file_count"`
-	IncludedFileCount int                         `json:"included_file_count"`
+	RepoID            string                            `json:"repo_id"`
+	Role              string                            `json:"role"`
+	DefaultBranch     string                            `json:"default_branch"`
+	GitStatus         sources.RepositoryGitStatus       `json:"git_status"`
+	RecentCommit      *brokerRecentCommit               `json:"recent_commit,omitempty"`
+	FileCount         int                               `json:"file_count"`
+	IncludedFileCount int                               `json:"included_file_count"`
+	Freshness         sources.RepositoryFreshnessReport `json:"freshness,omitempty"`
 }
 
 type brokerRecentCommit struct {
@@ -721,24 +723,26 @@ type brokerSourceSnapshotResult struct {
 	Status           string                           `json:"status"`
 	Repositories     []brokerRepositorySnapshotResult `json:"repositories"`
 	Blockers         []sources.SourceBlocker          `json:"blockers"`
+	FreshnessReport  sources.SourceFreshnessReport    `json:"freshness_report"`
 }
 
 type brokerContextPacketSourceResult struct {
-	SourceID         string `json:"source_id"`
-	SourceType       string `json:"source_type"`
-	ProjectID        string `json:"project_id"`
-	RepoID           string `json:"repo_id"`
-	SourceSnapshotID string `json:"source_snapshot_id"`
-	Path             string `json:"path"`
-	LineStart        int64  `json:"line_start,omitempty"`
-	LineEnd          int64  `json:"line_end,omitempty"`
-	ContentHash      string `json:"content_hash,omitempty"`
-	SnippetHash      string `json:"snippet_hash,omitempty"`
-	RedactionStatus  string `json:"redaction_status"`
-	Truncated        bool   `json:"truncated"`
-	GeneratedAt      string `json:"generated_at"`
-	Reason           string `json:"reason,omitempty"`
-	CreatedAt        string `json:"created_at"`
+	SourceID         string                         `json:"source_id"`
+	SourceType       string                         `json:"source_type"`
+	ProjectID        string                         `json:"project_id"`
+	RepoID           string                         `json:"repo_id"`
+	SourceSnapshotID string                         `json:"source_snapshot_id"`
+	Path             string                         `json:"path"`
+	LineStart        int64                          `json:"line_start,omitempty"`
+	LineEnd          int64                          `json:"line_end,omitempty"`
+	ContentHash      string                         `json:"content_hash,omitempty"`
+	SnippetHash      string                         `json:"snippet_hash,omitempty"`
+	RedactionStatus  string                         `json:"redaction_status"`
+	Truncated        bool                           `json:"truncated"`
+	GeneratedAt      string                         `json:"generated_at"`
+	Reason           string                         `json:"reason,omitempty"`
+	CreatedAt        string                         `json:"created_at"`
+	FreshnessReport  *sources.SourceFreshnessReport `json:"freshness_report,omitempty"`
 }
 
 type brokerContextPacketResult struct {
@@ -803,12 +807,13 @@ type brokerSourceFileRecord struct {
 }
 
 type brokerFileInventoryResult struct {
-	ProjectID        string                      `json:"project_id"`
-	SourceSnapshotID string                      `json:"source_snapshot_id"`
-	Files            []brokerSourceFileRecord    `json:"files"`
-	Truncated        bool                        `json:"truncated"`
-	Blockers         []brokerSourceBlockerResult `json:"blockers,omitempty"`
-	GeneratedAt      string                      `json:"generated_at"`
+	ProjectID        string                        `json:"project_id"`
+	SourceSnapshotID string                        `json:"source_snapshot_id"`
+	Files            []brokerSourceFileRecord      `json:"files"`
+	Truncated        bool                          `json:"truncated"`
+	Blockers         []brokerSourceBlockerResult   `json:"blockers,omitempty"`
+	GeneratedAt      string                        `json:"generated_at"`
+	FreshnessReport  sources.SourceFreshnessReport `json:"freshness_report"`
 }
 
 type brokerSourceSearchMatchResult struct {
@@ -833,23 +838,25 @@ type brokerSourceSearchResult struct {
 	Truncated        bool                            `json:"truncated"`
 	Blockers         []brokerSourceBlockerResult     `json:"blockers,omitempty"`
 	GeneratedAt      string                          `json:"generated_at"`
+	FreshnessReport  sources.SourceFreshnessReport   `json:"freshness_report"`
 }
 
 type brokerBoundedFileReadResult struct {
-	ProjectID        string                      `json:"project_id"`
-	RepoID           string                      `json:"repo_id"`
-	SourceSnapshotID string                      `json:"source_snapshot_id"`
-	Path             string                      `json:"path"`
-	LineStart        int                         `json:"line_start"`
-	LineEnd          int                         `json:"line_end"`
-	Content          string                      `json:"content,omitempty"`
-	ContentHash      string                      `json:"content_hash,omitempty"`
-	CurrentHash      string                      `json:"current_hash,omitempty"`
-	SnippetHash      string                      `json:"snippet_hash,omitempty"`
-	RedactionStatus  string                      `json:"redaction_status,omitempty"`
-	Truncated        bool                        `json:"truncated"`
-	GeneratedAt      string                      `json:"generated_at"`
-	Blockers         []brokerSourceBlockerResult `json:"blockers,omitempty"`
+	ProjectID        string                        `json:"project_id"`
+	RepoID           string                        `json:"repo_id"`
+	SourceSnapshotID string                        `json:"source_snapshot_id"`
+	Path             string                        `json:"path"`
+	LineStart        int                           `json:"line_start"`
+	LineEnd          int                           `json:"line_end"`
+	Content          string                        `json:"content,omitempty"`
+	ContentHash      string                        `json:"content_hash,omitempty"`
+	CurrentHash      string                        `json:"current_hash,omitempty"`
+	SnippetHash      string                        `json:"snippet_hash,omitempty"`
+	RedactionStatus  string                        `json:"redaction_status,omitempty"`
+	Truncated        bool                          `json:"truncated"`
+	GeneratedAt      string                        `json:"generated_at"`
+	Blockers         []brokerSourceBlockerResult   `json:"blockers,omitempty"`
+	FreshnessReport  sources.SourceFreshnessReport `json:"freshness_report"`
 }
 
 type brokerResolveProjectRepositoryResult struct {
@@ -1137,6 +1144,7 @@ func (s *Server) HandleCreateSourceSnapshot(rawArgs json.RawMessage) ToolCallRes
 		Status:           result.Status,
 		Repositories:     make([]brokerRepositorySnapshotResult, 0, len(result.Repositories)),
 		Blockers:         result.Blockers,
+		FreshnessReport:  result.FreshnessReport,
 	}
 	for _, repo := range result.Repositories {
 		snapshotRepo := brokerRepositorySnapshotResult{
@@ -1158,6 +1166,7 @@ func (s *Server) HandleCreateSourceSnapshot(rawArgs json.RawMessage) ToolCallRes
 			},
 			FileCount:         repo.FileCount,
 			IncludedFileCount: repo.IncludedFileCount,
+			Freshness:         repo.Freshness,
 		}
 		if repo.RecentCommit != nil {
 			snapshotRepo.RecentCommit = &brokerRecentCommit{
@@ -1400,6 +1409,13 @@ func (s *Server) HandleGetContextPacket(rawArgs json.RawMessage) ToolCallResult 
 		if err != nil {
 			return brokerToolErr("INTERNAL_ERROR", "failed to list context packet sources")
 		}
+		var freshness *sources.SourceFreshnessReport
+		if row.SourceSnapshotID != "" {
+			report, err := sources.NewService(s.deps.Store).GetSourceSnapshotFreshness(context.Background(), row.ProjectID, row.SourceSnapshotID)
+			if err == nil {
+				freshness = &report
+			}
+		}
 		result.Sources = make([]brokerContextPacketSourceResult, 0, len(rows))
 		for _, source := range rows {
 			result.Sources = append(result.Sources, brokerContextPacketSourceResult{
@@ -1418,6 +1434,7 @@ func (s *Server) HandleGetContextPacket(rawArgs json.RawMessage) ToolCallResult 
 				GeneratedAt:      source.GeneratedAt,
 				Reason:           source.Reason,
 				CreatedAt:        source.CreatedAt,
+				FreshnessReport:  freshness,
 			})
 		}
 	}
@@ -1489,6 +1506,11 @@ func (s *Server) loadLatestSourceSnapshotMetadata(projectID string) (*brokerSour
 	if err != nil {
 		return nil, false, brokerOpError{Code: "INTERNAL_ERROR", Message: "failed to decode source snapshot summary"}
 	}
+	var freshness *sources.SourceFreshnessReport
+	report, freshnessErr := sources.NewService(s.deps.Store).GetSourceSnapshotFreshness(context.Background(), row.ProjectID, row.SourceSnapshotID)
+	if freshnessErr == nil {
+		freshness = &report
+	}
 	return &brokerSourceSnapshotMetadata{
 		SourceSnapshotID: row.SourceSnapshotID,
 		ProjectID:        row.ProjectID,
@@ -1497,6 +1519,7 @@ func (s *Server) loadLatestSourceSnapshotMetadata(projectID string) (*brokerSour
 		CreatedAt:        row.CreatedAt,
 		CompletedAt:      row.CompletedAt,
 		Summary:          summary,
+		FreshnessReport:  freshness,
 	}, true, nil
 }
 
@@ -1778,6 +1801,7 @@ func brokerFileInventoryFromResult(result *sources.FileInventoryResult) brokerFi
 		Truncated:        result.Truncated,
 		Blockers:         brokerBlockers(result.Blockers),
 		GeneratedAt:      result.GeneratedAt,
+		FreshnessReport:  result.FreshnessReport,
 	}
 	for _, file := range result.Files {
 		out.Files = append(out.Files, brokerSourceFileRecord{
@@ -1806,6 +1830,7 @@ func brokerSourceSearchFromResult(result *sources.SourceSearchResult) brokerSour
 		Truncated:        result.Truncated,
 		Blockers:         brokerBlockers(result.Blockers),
 		GeneratedAt:      result.GeneratedAt,
+		FreshnessReport:  result.FreshnessReport,
 	}
 	for _, match := range result.Matches {
 		out.Matches = append(out.Matches, brokerSourceSearchMatchResult{
@@ -1842,6 +1867,7 @@ func brokerBoundedFileReadFromResult(result *sources.BoundedFileReadResult) brok
 		Truncated:        result.Truncated,
 		GeneratedAt:      result.GeneratedAt,
 		Blockers:         brokerBlockers(result.Blockers),
+		FreshnessReport:  result.FreshnessReport,
 	}
 }
 

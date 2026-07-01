@@ -33,6 +33,20 @@ const (
 	SourceBlockerRipgrepMissing      = "ripgrep_unavailable"
 	SourceBlockerUnknownRepository   = "unknown_repository"
 	SourceBlockerAmbiguousRepository = "alias_ambiguous"
+
+	DefaultSourceSnapshotFreshnessMaxAgeSeconds int64 = 900
+
+	SourceFreshnessStatusFresh         = "fresh"
+	SourceFreshnessStatusDirtyWorktree = "dirty_worktree"
+	SourceFreshnessStatusPartial       = "partial"
+	SourceFreshnessStatusBlocked       = "blocked"
+	SourceFreshnessStatusStaleByAge    = "stale_by_age"
+	SourceFreshnessStatusDrifted       = "drifted"
+
+	SourceFreshnessCodeDirtyWorktree = "source_snapshot_dirty_worktree"
+	SourceFreshnessCodeDrifted       = "source_snapshot_drifted"
+	SourceFreshnessCodeStale         = "source_snapshot_stale"
+	SourceFreshnessCodeUnavailable   = "source_snapshot_unavailable"
 )
 
 type SourceSnapshotInput struct {
@@ -50,6 +64,7 @@ type SourceSnapshotResult struct {
 	Status           string
 	Repositories     []RepositorySnapshotResult
 	Blockers         []SourceBlocker
+	FreshnessReport  SourceFreshnessReport `json:"freshness_report"`
 }
 
 type RepositorySnapshotResult struct {
@@ -61,6 +76,44 @@ type RepositorySnapshotResult struct {
 	RecentCommit      *RecentCommit
 	FileCount         int
 	IncludedFileCount int
+	Freshness         RepositoryFreshnessReport `json:"freshness,omitempty"`
+}
+
+type SourceFreshnessReport struct {
+	Status              string                      `json:"status"`
+	ReusableForHandoff  bool                        `json:"reusable_for_handoff"`
+	SourceSnapshotID    string                      `json:"source_snapshot_id"`
+	GeneratedAt         string                      `json:"generated_at"`
+	SnapshotCreatedAt   string                      `json:"snapshot_created_at"`
+	SnapshotCompletedAt string                      `json:"snapshot_completed_at,omitempty"`
+	AgeSeconds          int64                       `json:"age_seconds"`
+	MaxAgeSeconds       int64                       `json:"max_age_seconds"`
+	RepositoryReports   []RepositoryFreshnessReport `json:"repository_reports"`
+	Warnings            []SourceBlocker             `json:"warnings,omitempty"`
+	Blockers            []SourceBlocker             `json:"blockers,omitempty"`
+	NextActions         []SourceFreshnessNextAction `json:"next_actions,omitempty"`
+}
+
+type RepositoryFreshnessReport struct {
+	RepoID              string          `json:"repo_id"`
+	Status              string          `json:"status"`
+	ReusableForHandoff  bool            `json:"reusable_for_handoff"`
+	CapturedBranch      string          `json:"captured_branch,omitempty"`
+	CurrentBranch       string          `json:"current_branch,omitempty"`
+	CapturedHeadSHA     string          `json:"captured_head_sha,omitempty"`
+	CurrentHeadSHA      string          `json:"current_head_sha,omitempty"`
+	CapturedDirty       bool            `json:"captured_dirty"`
+	CurrentDirty        bool            `json:"current_dirty"`
+	CapturedChangeCount int             `json:"captured_change_count"`
+	CurrentChangeCount  int             `json:"current_change_count"`
+	GitStatusAvailable  bool            `json:"git_status_available"`
+	Warnings            []SourceBlocker `json:"warnings,omitempty"`
+	Blockers            []SourceBlocker `json:"blockers,omitempty"`
+}
+
+type SourceFreshnessNextAction struct {
+	Action string `json:"action"`
+	Reason string `json:"reason"`
 }
 
 type SourceBlocker struct {
@@ -143,6 +196,7 @@ type FileInventoryResult struct {
 	Truncated        bool
 	Blockers         []SourceBlocker
 	GeneratedAt      string
+	FreshnessReport  SourceFreshnessReport `json:"freshness_report"`
 }
 
 type SourceSearchInput struct {
@@ -180,6 +234,7 @@ type SourceSearchResult struct {
 	Truncated        bool
 	Blockers         []SourceBlocker
 	GeneratedAt      string
+	FreshnessReport  SourceFreshnessReport `json:"freshness_report"`
 }
 
 type BoundedFileReadInput struct {
@@ -207,4 +262,5 @@ type BoundedFileReadResult struct {
 	Truncated        bool
 	GeneratedAt      string
 	Blockers         []SourceBlocker
+	FreshnessReport  SourceFreshnessReport `json:"freshness_report"`
 }

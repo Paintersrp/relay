@@ -129,12 +129,14 @@ func (s *Service) ListProjectFiles(ctx context.Context, input FileInventoryInput
 	if err != nil {
 		if blocker, ok := operationBlocker("", err); ok {
 			result.Blockers = append(result.Blockers, blocker)
+			result.FreshnessReport = unavailableFreshnessReport(result.SourceSnapshotID, generatedAt, blocker)
 			return result, nil
 		}
 		return nil, err
 	}
 	result.ProjectID = resolved.project.ProjectID
 	result.SourceSnapshotID = resolved.snapshot.SourceSnapshotID
+	result.FreshnessReport = s.evaluateSourceSnapshotFreshness(ctx, resolved, generatedAt)
 
 	normalizedRepoIDs, err := normalizeRepoIDList(input.RepoIDs, resolved.projectRepos)
 	if err != nil {
@@ -197,12 +199,14 @@ func (s *Service) ReadProjectFile(ctx context.Context, input BoundedFileReadInpu
 	if err != nil {
 		if blocker, ok := operationBlocker(input.RepoID, err); ok {
 			result.Blockers = append(result.Blockers, blocker)
+			result.FreshnessReport = unavailableFreshnessReport(result.SourceSnapshotID, generatedAt, blocker)
 			return result, nil
 		}
 		return nil, err
 	}
 	result.ProjectID = resolved.project.ProjectID
 	result.SourceSnapshotID = resolved.snapshot.SourceSnapshotID
+	result.FreshnessReport = s.evaluateSourceSnapshotFreshness(ctx, resolved, generatedAt)
 
 	repoID, err := normalizeRepoID(input.RepoID, resolved.projectRepos)
 	if err != nil {
@@ -288,7 +292,9 @@ func (s *Service) ReadProjectFile(ctx context.Context, input BoundedFileReadInpu
 	}
 	result.CurrentHash = currentHash
 	if snapshotFile.ContentHash != "" && currentHash != "" && snapshotFile.ContentHash != currentHash {
-		result.Blockers = append(result.Blockers, SourceBlocker{RepoID: repoID, Code: SourceBlockerSnapshotFileChanged, Message: "current file hash differs from source snapshot hash"})
+		blocker := SourceBlocker{RepoID: repoID, Code: SourceBlockerSnapshotFileChanged, Message: "current file hash differs from source snapshot hash"}
+		result.Blockers = append(result.Blockers, blocker)
+		result.FreshnessReport = appendFreshnessBlocker(result.FreshnessReport, blocker)
 		return result, nil
 	}
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
@@ -312,6 +318,163 @@ func (s *Service) ReadProjectFile(ctx context.Context, input BoundedFileReadInpu
 	result.RedactionStatus = status
 	result.Truncated = truncated
 	return result, nil
+}
+
+func (s *Service) GetSourceSnapshotFreshness(ctx context.Context, projectID string, sourceSnapshotID string) (SourceFreshnessReport, error) {
+	generatedAt := nowSQLUTC()
+	resolved, err := s.resolveSourceSnapshot(ctx, projectID, sourceSnapshotID)
+	if err != nil {
+		return SourceFreshnessReport{}, err
+	}
+	return s.evaluateSourceSnapshotFreshness(ctx, resolved, generatedAt), nil
+}
+
+func (s *Service) evaluateSourceSnapshotFreshness(ctx context.Context, resolved *sourceSnapshotContext, generatedAt string) SourceFreshnessReport {
+	report := SourceFreshnessReport{
+		Status:              SourceFreshnessStatusFresh,
+		ReusableForHandoff:  true,
+		SourceSnapshotID:    resolved.snapshot.SourceSnapshotID,
+		GeneratedAt:         generatedAt,
+		SnapshotCreatedAt:   resolved.snapshot.CreatedAt,
+		SnapshotCompletedAt: resolved.snapshot.CompletedAt,
+		AgeSeconds:          freshnessAgeSeconds(snapshotFreshnessAnchor(resolved.snapshot), generatedAt),
+		MaxAgeSeconds:       DefaultSourceSnapshotFreshnessMaxAgeSeconds,
+		RepositoryReports:   make([]RepositoryFreshnessReport, 0, len(resolved.repositories)),
+	}
+
+	availableCount := 0
+	unavailableCount := 0
+	dirtyCount := 0
+	driftedCount := 0
+	for _, snapshotRepo := range sortedSourceSnapshotRepos(resolved.repositories) {
+		captured := repositoryGitStatusFromSnapshotRow(snapshotRepo)
+		repoReport := RepositoryFreshnessReport{
+			RepoID:              snapshotRepo.RepoID,
+			Status:              SourceFreshnessStatusFresh,
+			ReusableForHandoff:  true,
+			CapturedBranch:      captured.CurrentBranch,
+			CapturedHeadSHA:     captured.HeadSHA,
+			CapturedDirty:       captured.Dirty,
+			CapturedChangeCount: captured.ChangedFileCount,
+			GitStatusAvailable:  captured.GitStatusAvailable,
+		}
+		repo, ok := resolved.projectRepos[snapshotRepo.RepoID]
+		if !ok || !captured.GitStatusAvailable {
+			unavailableCount++
+			repoReport.Status = SourceFreshnessStatusBlocked
+			repoReport.ReusableForHandoff = false
+			repoReport.Blockers = append(repoReport.Blockers, freshnessBlocker(snapshotRepo.RepoID, SourceFreshnessCodeUnavailable, "repository git status metadata is unavailable for this source snapshot"))
+			report.RepositoryReports = append(report.RepositoryReports, repoReport)
+			report.Blockers = append(report.Blockers, repoReport.Blockers...)
+			continue
+		}
+
+		current, err := s.inspectRepositoryGitStatus(ctx, repo)
+		if err != nil {
+			unavailableCount++
+			repoReport.Status = SourceFreshnessStatusPartial
+			repoReport.ReusableForHandoff = false
+			repoReport.GitStatusAvailable = false
+			repoReport.Blockers = append(repoReport.Blockers, freshnessBlocker(snapshotRepo.RepoID, SourceFreshnessCodeUnavailable, "current repository git status is unavailable for source snapshot freshness comparison"))
+			report.RepositoryReports = append(report.RepositoryReports, repoReport)
+			report.Blockers = append(report.Blockers, repoReport.Blockers...)
+			continue
+		}
+
+		availableCount++
+		repoReport.CurrentBranch = current.status.CurrentBranch
+		repoReport.CurrentHeadSHA = current.status.HeadSHA
+		repoReport.CurrentDirty = current.status.Dirty
+		repoReport.CurrentChangeCount = current.status.ChangedFileCount
+
+		drifted := false
+		switch {
+		case captured.HeadSHA != "" && current.status.HeadSHA != "" && captured.HeadSHA != current.status.HeadSHA:
+			drifted = true
+		case captured.PorcelainHash != "" && current.status.PorcelainHash != "" && captured.PorcelainHash != current.status.PorcelainHash:
+			drifted = true
+		case !captured.Dirty && current.status.Dirty:
+			drifted = true
+		}
+		if drifted {
+			driftedCount++
+			repoReport.Status = SourceFreshnessStatusDrifted
+			repoReport.ReusableForHandoff = false
+			repoReport.Warnings = append(repoReport.Warnings, freshnessBlocker(snapshotRepo.RepoID, SourceFreshnessCodeDrifted, "current repository metadata differs from the captured source snapshot metadata"))
+		} else if current.status.Dirty || captured.Dirty {
+			dirtyCount++
+			repoReport.Status = SourceFreshnessStatusDirtyWorktree
+			repoReport.ReusableForHandoff = false
+			repoReport.Warnings = append(repoReport.Warnings, freshnessBlocker(snapshotRepo.RepoID, SourceFreshnessCodeDirtyWorktree, "repository has uncommitted or untracked changes associated with this source snapshot"))
+		}
+		report.RepositoryReports = append(report.RepositoryReports, repoReport)
+		report.Warnings = append(report.Warnings, repoReport.Warnings...)
+		report.Blockers = append(report.Blockers, repoReport.Blockers...)
+	}
+
+	switch {
+	case len(resolved.repositories) == 0 || availableCount == 0 || resolved.snapshot.Status == SnapshotStatusBlocked:
+		report.Status = SourceFreshnessStatusBlocked
+	case unavailableCount > 0 || resolved.snapshot.Status == SnapshotStatusPartial:
+		report.Status = SourceFreshnessStatusPartial
+	case driftedCount > 0:
+		report.Status = SourceFreshnessStatusDrifted
+	case report.AgeSeconds > report.MaxAgeSeconds:
+		report.Status = SourceFreshnessStatusStaleByAge
+		report.Warnings = append(report.Warnings, freshnessBlocker("", SourceFreshnessCodeStale, "source snapshot is older than the freshness guidance window"))
+	case dirtyCount > 0:
+		report.Status = SourceFreshnessStatusDirtyWorktree
+	default:
+		report.Status = SourceFreshnessStatusFresh
+	}
+	report.ReusableForHandoff = report.Status == SourceFreshnessStatusFresh
+	if !report.ReusableForHandoff {
+		report.NextActions = append(report.NextActions, SourceFreshnessNextAction{
+			Action: "create_source_snapshot",
+			Reason: "Create a new source snapshot after repository cleanup or project repository configuration correction.",
+		})
+	}
+	return report
+}
+
+func snapshotFreshnessAnchor(snapshot *store.SourceSnapshot) string {
+	if strings.TrimSpace(snapshot.CompletedAt) != "" {
+		return snapshot.CompletedAt
+	}
+	return snapshot.CreatedAt
+}
+
+func unavailableFreshnessReport(sourceSnapshotID string, generatedAt string, blocker SourceBlocker) SourceFreshnessReport {
+	if blocker.Code == "" {
+		blocker.Code = SourceFreshnessCodeUnavailable
+	}
+	return SourceFreshnessReport{
+		Status:             SourceFreshnessStatusBlocked,
+		ReusableForHandoff: false,
+		SourceSnapshotID:   strings.TrimSpace(sourceSnapshotID),
+		GeneratedAt:        generatedAt,
+		MaxAgeSeconds:      DefaultSourceSnapshotFreshnessMaxAgeSeconds,
+		Blockers:           []SourceBlocker{blocker},
+		NextActions: []SourceFreshnessNextAction{{
+			Action: "create_source_snapshot",
+			Reason: "Create a new source snapshot after repository cleanup or project repository configuration correction.",
+		}},
+	}
+}
+
+func appendFreshnessBlocker(report SourceFreshnessReport, blocker SourceBlocker) SourceFreshnessReport {
+	report.Blockers = append(report.Blockers, blocker)
+	report.ReusableForHandoff = false
+	if report.Status == "" || report.Status == SourceFreshnessStatusFresh {
+		report.Status = SourceFreshnessStatusBlocked
+	}
+	if len(report.NextActions) == 0 {
+		report.NextActions = append(report.NextActions, SourceFreshnessNextAction{
+			Action: "create_source_snapshot",
+			Reason: "Create a new source snapshot after repository cleanup or project repository configuration correction.",
+		})
+	}
+	return report
 }
 
 func (c *sourceSnapshotContext) includedFile(repoID, relPath string) (store.SourceSnapshotFile, bool) {

@@ -441,6 +441,20 @@ Returns retrieval-only pass context plus optional latest source snapshot metadat
 
 Creates a bounded source snapshot for registered repositories only. No arbitrary repo paths, no git mutation, and no raw diff dumps are exposed.
 
+Snapshot creation returns an additive `freshness_report` object. Snapshot-bound inventory, search, and read tools also return `freshness_report`; `get_pass_context` includes it on latest source snapshot metadata when available, and `get_context_packet` may include it on returned source metadata rows.
+
+`freshness_report` fields:
+
+- `status`: one of `fresh`, `dirty_worktree`, `partial`, `blocked`, `stale_by_age`, or `drifted`.
+- `reusable_for_handoff`: true only when the snapshot is fresh, clean, complete, and within current soft age guidance.
+- `source_snapshot_id`, `generated_at`, `snapshot_created_at`, `snapshot_completed_at`, `age_seconds`, and `max_age_seconds`: bounded provenance and age metadata.
+- `repository_reports`: per-repository freshness status using captured/current branch and HEAD SHA, dirty booleans/counts, and git availability. Raw git status porcelain text is not returned.
+- `warnings`, `blockers`, and `next_actions`: typed recovery guidance using source blocker envelopes.
+
+Freshness uses a soft default maximum age of 900 seconds (`source_snapshot_stale`) unless drift or dirty state makes the snapshot non-reusable sooner. A dirty captured or current worktree reports `source_snapshot_dirty_worktree`. Current HEAD/status-hash changes compared with captured snapshot metadata report `source_snapshot_drifted`. Missing or unavailable snapshot/repository metadata reports `source_snapshot_unavailable`. A changed requested file remains hard-blocked as `source_snapshot_file_changed`; unrelated repository drift can still return bounded unchanged file content while marking `reusable_for_handoff=false`.
+
+Recovery guidance is intentionally narrow: clean up or correct repository configuration as needed, then call `create_source_snapshot` again. Freshness reporting does not authorize shell access, arbitrary file reads, raw git output, git mutation, filesystem locks/leases, worktree cleanup, stash, checkout, reset, or commit.
+
 ### `list_project_files`
 
 Returns bounded snapshot-backed file inventory rows with provenance fields including project/repo/snapshot identity, content hash, redaction status, and indexed timestamp.

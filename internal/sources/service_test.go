@@ -88,6 +88,12 @@ func TestCreateSourceSnapshotRecordsRepositoryAndFiles(t *testing.T) {
 	if result.Repositories[0].GitStatus.UntrackedCount != 1 {
 		t.Fatalf("expected 1 untracked file, got %d", result.Repositories[0].GitStatus.UntrackedCount)
 	}
+	if result.FreshnessReport.Status != SourceFreshnessStatusDirtyWorktree || result.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected dirty non-reusable freshness report, got %+v", result.FreshnessReport)
+	}
+	if !freshnessHasCode(result.FreshnessReport, SourceFreshnessCodeDirtyWorktree) {
+		t.Fatalf("expected dirty worktree freshness code, got %+v", result.FreshnessReport)
+	}
 
 	snapshot, err := st.GetSourceSnapshotByID(result.SourceSnapshotID)
 	if err != nil {
@@ -130,6 +136,48 @@ func TestCreateSourceSnapshotRecordsRepositoryAndFiles(t *testing.T) {
 	}
 	if byPath["notes.txt"].Tracked != 0 || byPath["notes.txt"].Included != 1 {
 		t.Fatalf("expected untracked notes.txt to be recorded and included, got %+v", byPath["notes.txt"])
+	}
+}
+
+func TestCreateSourceSnapshotCleanFreshnessReport(t *testing.T) {
+	requireGit(t)
+	service, projectService, _ := newSourceTestServices(t)
+
+	repoRoot := setupGitRepo(t)
+	writeFile(t, filepath.Join(repoRoot, "app.txt"), "clean\n")
+	runGit(t, repoRoot, "git", "add", ".")
+	runGit(t, repoRoot, "git", "commit", "-m", "clean fixture")
+
+	project, _, err := projectService.CreateProject(t.Context(), projects.ProjectInput{
+		ProjectID: "relay",
+		Name:      "Relay",
+		Status:    projects.ProjectStatusActive,
+	})
+	if err != nil {
+		t.Fatalf("CreateProject error: %v", err)
+	}
+	if _, issues, err := projectService.UpsertProjectRepository(t.Context(), project.ProjectID, projects.ProjectRepositoryInput{
+		RepoID:           "relay",
+		Role:             projects.RepositoryRolePrimary,
+		LocalPath:        repoRoot,
+		DefaultBranch:    "main",
+		MaxFileSizeBytes: projects.DefaultMaxFileSizeBytes,
+		Enabled:          true,
+	}); err != nil {
+		t.Fatalf("UpsertProjectRepository error: %v", err)
+	} else if len(issues) != 0 {
+		t.Fatalf("expected no issues, got %+v", issues)
+	}
+
+	result, err := service.CreateSourceSnapshot(t.Context(), SourceSnapshotInput{ProjectID: project.ProjectID})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshot error: %v", err)
+	}
+	if result.FreshnessReport.Status != SourceFreshnessStatusFresh || !result.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected fresh reusable report, got %+v", result.FreshnessReport)
+	}
+	if result.FreshnessReport.SourceSnapshotID != result.SourceSnapshotID || result.FreshnessReport.MaxAgeSeconds != DefaultSourceSnapshotFreshnessMaxAgeSeconds {
+		t.Fatalf("expected snapshot freshness provenance, got %+v", result.FreshnessReport)
 	}
 }
 
@@ -187,6 +235,12 @@ func TestCreateSourceSnapshotPartialWhenOneRepoUnavailable(t *testing.T) {
 	if len(result.Blockers) == 0 {
 		t.Fatal("expected at least one blocker for unavailable repo")
 	}
+	if result.FreshnessReport.Status != SourceFreshnessStatusPartial || result.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected partial non-reusable freshness report, got %+v", result.FreshnessReport)
+	}
+	if !freshnessHasCode(result.FreshnessReport, SourceFreshnessCodeUnavailable) {
+		t.Fatalf("expected unavailable freshness code, got %+v", result.FreshnessReport)
+	}
 }
 
 func TestCreateSourceSnapshotBlockedWhenAllReposUnavailable(t *testing.T) {
@@ -225,6 +279,38 @@ func TestCreateSourceSnapshotBlockedWhenAllReposUnavailable(t *testing.T) {
 	if result.SnapshotKind != SnapshotKindUnavailable {
 		t.Fatalf("expected snapshot kind unavailable, got %q", result.SnapshotKind)
 	}
+	if result.FreshnessReport.Status != SourceFreshnessStatusBlocked || result.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected blocked non-reusable freshness report, got %+v", result.FreshnessReport)
+	}
+	if !freshnessHasCode(result.FreshnessReport, SourceFreshnessCodeUnavailable) {
+		t.Fatalf("expected unavailable freshness code, got %+v", result.FreshnessReport)
+	}
+}
+
+func freshnessHasCode(report SourceFreshnessReport, code string) bool {
+	for _, warning := range report.Warnings {
+		if warning.Code == code {
+			return true
+		}
+	}
+	for _, blocker := range report.Blockers {
+		if blocker.Code == code {
+			return true
+		}
+	}
+	for _, repo := range report.RepositoryReports {
+		for _, warning := range repo.Warnings {
+			if warning.Code == code {
+				return true
+			}
+		}
+		for _, blocker := range repo.Blockers {
+			if blocker.Code == code {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func newSourceTestServices(t *testing.T) (*Service, *projects.Service, *store.Store) {

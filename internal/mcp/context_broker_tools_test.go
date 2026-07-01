@@ -291,7 +291,8 @@ func TestHandleGetPassContextReturnsPlanV2Context(t *testing.T) {
 		SourceSnapshotRequirements json.RawMessage `json:"source_snapshot_requirements"`
 		HandoffReadinessCriteria   json.RawMessage `json:"handoff_readiness_criteria"`
 		LatestSourceSnapshot       *struct {
-			SourceSnapshotID string `json:"source_snapshot_id"`
+			SourceSnapshotID string                        `json:"source_snapshot_id"`
+			FreshnessReport  sources.SourceFreshnessReport `json:"freshness_report"`
 		} `json:"latest_source_snapshot"`
 		LatestContextPacket *struct {
 			ContextPacketID string `json:"context_packet_id"`
@@ -318,6 +319,9 @@ func TestHandleGetPassContextReturnsPlanV2Context(t *testing.T) {
 	}
 	if payload.LatestSourceSnapshot == nil || payload.LatestSourceSnapshot.SourceSnapshotID == "" {
 		t.Fatalf("expected latest source snapshot metadata, got %+v", payload)
+	}
+	if payload.LatestSourceSnapshot.FreshnessReport.Status != sources.SourceFreshnessStatusFresh {
+		t.Fatalf("expected latest source snapshot freshness, got %+v", payload.LatestSourceSnapshot.FreshnessReport)
 	}
 	if payload.LatestContextPacket == nil || payload.LatestContextPacket.ContextPacketID != packetID {
 		t.Fatalf("expected latest context packet %q, got %+v", packetID, payload)
@@ -449,6 +453,7 @@ func TestHandleCreateSourceSnapshotReturnsMetadata(t *testing.T) {
 		Repositories     []struct {
 			RepoID string `json:"repo_id"`
 		} `json:"repositories"`
+		FreshnessReport sources.SourceFreshnessReport `json:"freshness_report"`
 	}
 	if err := json.Unmarshal(success.Result, &payload); err != nil {
 		t.Fatalf("unmarshal source snapshot payload: %v", err)
@@ -456,6 +461,10 @@ func TestHandleCreateSourceSnapshotReturnsMetadata(t *testing.T) {
 	if payload.SourceSnapshotID == "" || len(payload.Repositories) != 1 || payload.Repositories[0].RepoID != "relay" {
 		t.Fatalf("unexpected source snapshot payload: %+v", payload)
 	}
+	if payload.FreshnessReport.Status != sources.SourceFreshnessStatusFresh || !payload.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected fresh source snapshot report, got %+v", payload.FreshnessReport)
+	}
+	assertNoFreshnessLeak(t, success.Result, fixture.repoRoot)
 }
 
 func TestHandleListProjectFilesReturnsProvenance(t *testing.T) {
@@ -480,6 +489,7 @@ func TestHandleListProjectFilesReturnsProvenance(t *testing.T) {
 			ContentHash      string `json:"content_hash"`
 			IndexedAt        string `json:"indexed_at"`
 		} `json:"files"`
+		FreshnessReport sources.SourceFreshnessReport `json:"freshness_report"`
 	}
 	if err := json.Unmarshal(success.Result, &payload); err != nil {
 		t.Fatalf("unmarshal inventory payload: %v", err)
@@ -490,6 +500,10 @@ func TestHandleListProjectFilesReturnsProvenance(t *testing.T) {
 	if payload.Files[0].ProjectID == "" || payload.Files[0].RepoID == "" || payload.Files[0].Path == "" || payload.Files[0].ContentHash == "" || payload.Files[0].IndexedAt == "" {
 		t.Fatalf("expected provenance fields, got %+v", payload.Files[0])
 	}
+	if payload.FreshnessReport.Status != sources.SourceFreshnessStatusFresh || !payload.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected fresh inventory report, got %+v", payload.FreshnessReport)
+	}
+	assertNoFreshnessLeak(t, success.Result, fixture.repoRoot)
 }
 
 func TestHandleSearchProjectFilesReturnsProvenance(t *testing.T) {
@@ -564,6 +578,7 @@ func TestHandleReadProjectFileReturnsProvenanceAndStaleBlocker(t *testing.T) {
 		Blockers         []struct {
 			Code string `json:"code"`
 		} `json:"blockers"`
+		FreshnessReport sources.SourceFreshnessReport `json:"freshness_report"`
 	}
 	if err := json.Unmarshal(success.Result, &payload); err != nil {
 		t.Fatalf("unmarshal read payload: %v", err)
@@ -574,6 +589,10 @@ func TestHandleReadProjectFileReturnsProvenanceAndStaleBlocker(t *testing.T) {
 	if len(payload.Blockers) != 0 {
 		t.Fatalf("did not expect blockers before file mutation: %+v", payload.Blockers)
 	}
+	if payload.FreshnessReport.Status != sources.SourceFreshnessStatusFresh || !payload.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected fresh read report, got %+v", payload.FreshnessReport)
+	}
+	assertNoFreshnessLeak(t, success.Result, fixture.repoRoot)
 
 	brokerWriteFile(t, filepath.Join(fixture.repoRoot, "src", "app.txt"), "line one\nchanged\nneedle\n")
 	second := callTool(t, fixture.server, ToolReadProjectFile.Name, readArgs())
@@ -587,6 +606,10 @@ func TestHandleReadProjectFileReturnsProvenanceAndStaleBlocker(t *testing.T) {
 	if len(payload.Blockers) != 1 || payload.Blockers[0].Code != sources.SourceBlockerSnapshotFileChanged {
 		t.Fatalf("expected stale snapshot blocker, got %+v", payload.Blockers)
 	}
+	if !mcpFreshnessHasCode(payload.FreshnessReport, sources.SourceBlockerSnapshotFileChanged) {
+		t.Fatalf("expected changed-file freshness blocker, got %+v", payload.FreshnessReport)
+	}
+	assertNoFreshnessLeak(t, success.Result, fixture.repoRoot)
 }
 
 func TestHandleRepositoryGitToolsReturnBoundedEvidence(t *testing.T) {
@@ -819,9 +842,10 @@ func TestHandleCreateAndGetContextPacketMetadata(t *testing.T) {
 		PacketMarkdownPath string `json:"packet_markdown_path"`
 		CoverageReportPath string `json:"coverage_report_path"`
 		Sources            []struct {
-			SourceID        string `json:"source_id"`
-			Path            string `json:"path"`
-			RedactionStatus string `json:"redaction_status"`
+			SourceID        string                        `json:"source_id"`
+			Path            string                        `json:"path"`
+			RedactionStatus string                        `json:"redaction_status"`
+			FreshnessReport sources.SourceFreshnessReport `json:"freshness_report"`
 		} `json:"sources"`
 	}
 	if err := json.Unmarshal(success.Result, &payload); err != nil {
@@ -839,6 +863,10 @@ func TestHandleCreateAndGetContextPacketMetadata(t *testing.T) {
 	if len(payload.Sources) == 0 || payload.Sources[0].SourceID == "" || payload.Sources[0].Path == "" || payload.Sources[0].RedactionStatus == "" {
 		t.Fatalf("expected source metadata rows, got %+v", payload.Sources)
 	}
+	if payload.Sources[0].FreshnessReport.Status != sources.SourceFreshnessStatusFresh {
+		t.Fatalf("expected source metadata freshness report, got %+v", payload.Sources[0].FreshnessReport)
+	}
+	assertNoFreshnessLeak(t, success.Result, fixture.repoRoot)
 }
 
 func setupBrokerFixture(t *testing.T) brokerFixture {
@@ -1168,6 +1196,47 @@ func decodeBrokerSuccess(t *testing.T, result ToolCallResult) brokerSuccessEnvel
 		t.Fatalf("expected success payload, got %s", result.Content[0].Text)
 	}
 	return success
+}
+
+func assertNoFreshnessLeak(t *testing.T, raw json.RawMessage, repoRoot string) {
+	t.Helper()
+	text := string(raw)
+	lower := strings.ToLower(text)
+	if strings.Contains(text, repoRoot) ||
+		strings.Contains(lower, "local_path") ||
+		strings.Contains(lower, "absolute_path") ||
+		strings.Contains(lower, "\"command\"") ||
+		strings.Contains(lower, "\"shell\"") ||
+		strings.Contains(text, "?? ") ||
+		strings.Contains(text, "\u0000") {
+		t.Fatalf("freshness payload leaked unsafe data: %s", text)
+	}
+}
+
+func mcpFreshnessHasCode(report sources.SourceFreshnessReport, code string) bool {
+	for _, warning := range report.Warnings {
+		if warning.Code == code {
+			return true
+		}
+	}
+	for _, blocker := range report.Blockers {
+		if blocker.Code == code {
+			return true
+		}
+	}
+	for _, repo := range report.RepositoryReports {
+		for _, warning := range repo.Warnings {
+			if warning.Code == code {
+				return true
+			}
+		}
+		for _, blocker := range repo.Blockers {
+			if blocker.Code == code {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func decodeBrokerError(t *testing.T, result ToolCallResult) brokerErrorEnvelope {

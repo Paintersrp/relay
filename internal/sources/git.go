@@ -381,6 +381,22 @@ func (s *Service) inspectRepositoryGitStatus(ctx context.Context, repo store.Pro
 	return capture, nil
 }
 
+func repositoryGitStatusFromSnapshotRow(row store.SourceSnapshotRepository) RepositoryGitStatus {
+	return RepositoryGitStatus{
+		RepoID:             row.RepoID,
+		CurrentBranch:      row.CurrentBranch,
+		HeadSHA:            row.HeadSha,
+		Dirty:              row.Dirty == 1,
+		StagedCount:        int(row.StagedCount),
+		UnstagedCount:      int(row.UnstagedCount),
+		UntrackedCount:     int(row.UntrackedCount),
+		ChangedFileCount:   int(row.ChangedFileCount),
+		PorcelainHash:      row.StatusPorcelainHash,
+		GitStatusAvailable: row.GitStatusAvailable == 1,
+		GitError:           row.GitError,
+	}
+}
+
 func listTrackedFiles(ctx context.Context, repo store.ProjectRepository) ([]string, error) {
 	result, err := runGitCommand(ctx, repo.LocalPath, defaultGitListFilesLimit, defaultGitStderrLimit, "ls-files", "-z")
 	if err != nil {

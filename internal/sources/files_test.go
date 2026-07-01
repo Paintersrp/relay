@@ -27,6 +27,9 @@ func TestListProjectFilesUsesSnapshotRowsAndCaps(t *testing.T) {
 	if inventory.Files[0].ContentHash == "" || inventory.Files[0].Path == "" {
 		t.Fatalf("expected provenance fields, got %+v", inventory.Files[0])
 	}
+	if inventory.FreshnessReport.Status != SourceFreshnessStatusFresh || !inventory.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected fresh inventory report, got %+v", inventory.FreshnessReport)
+	}
 	if strings.Contains(inventory.Files[0].Path, "secret") {
 		t.Fatalf("expected no content-like data in inventory path: %+v", inventory.Files[0])
 	}
@@ -89,6 +92,9 @@ func TestReadProjectFileExactRangeAndRedaction(t *testing.T) {
 	}
 	if result.Content != "line two\n" || result.LineStart != 2 || result.LineEnd != 2 {
 		t.Fatalf("unexpected read result: %+v", result)
+	}
+	if result.FreshnessReport.Status != SourceFreshnessStatusFresh || !result.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected fresh read report, got %+v", result.FreshnessReport)
 	}
 
 	secret, err := service.ReadProjectFile(t.Context(), BoundedFileReadInput{
@@ -262,6 +268,37 @@ func TestReadProjectFileBlocksWhenFileChangedAfterSnapshot(t *testing.T) {
 	}
 	if changed.CurrentHash == "" || changed.CurrentHash == changed.ContentHash {
 		t.Fatalf("expected diagnostic current hash to differ, got %+v", changed)
+	}
+	if !freshnessHasCode(changed.FreshnessReport, SourceBlockerSnapshotFileChanged) {
+		t.Fatalf("expected changed file code in freshness blockers, got %+v", changed.FreshnessReport)
+	}
+	if changed.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected changed file freshness to be non-reusable, got %+v", changed.FreshnessReport)
+	}
+}
+
+func TestReadProjectFileMarksUnrelatedRepositoryDrift(t *testing.T) {
+	requireGit(t)
+	service, snapshotID, repoRoot := setupSourceSnapshotFixtureWithRoot(t, sourceFixtureOptions{})
+
+	writeFile(t, filepath.Join(repoRoot, "src", "unrelated.txt"), "new drift\n")
+	result, err := service.ReadProjectFile(t.Context(), BoundedFileReadInput{
+		ProjectID:        "relay",
+		SourceSnapshotID: snapshotID,
+		RepoID:           "relay",
+		Path:             "src/app.txt",
+	})
+	if err != nil {
+		t.Fatalf("ReadProjectFile drift error: %v", err)
+	}
+	if len(result.Blockers) != 0 || result.Content == "" {
+		t.Fatalf("expected unchanged file content without read blockers, got %+v", result)
+	}
+	if result.FreshnessReport.Status != SourceFreshnessStatusDrifted || result.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected drifted non-reusable freshness, got %+v", result.FreshnessReport)
+	}
+	if !freshnessHasCode(result.FreshnessReport, SourceFreshnessCodeDrifted) {
+		t.Fatalf("expected drifted freshness code, got %+v", result.FreshnessReport)
 	}
 }
 

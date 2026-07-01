@@ -188,11 +188,14 @@ func (s *Service) CreateSourceSnapshot(ctx context.Context, input SourceSnapshot
 		return nil, fmt.Errorf("marshal source snapshot summary: %w", err)
 	}
 
+	completedAt := nowSQLUTC()
+	result.FreshnessReport = buildCreationFreshnessReport(result, snapshotRow.CreatedAt, completedAt, completedAt)
+
 	if _, err := txQueries.UpdateSourceSnapshotStatus(ctx, generated.UpdateSourceSnapshotStatusParams{
 		SourceSnapshotID: snapshotID,
 		SnapshotKind:     snapshotKind,
 		Status:           snapshotStatus,
-		CompletedAt:      nowSQLUTC(),
+		CompletedAt:      completedAt,
 		SummaryJson:      string(summaryJSON),
 	}); err != nil {
 		return nil, fmt.Errorf("update source snapshot status: %w", err)
@@ -413,6 +416,113 @@ func finalizeSnapshotState(repoCount, availableCount, unavailableCount, cleanCou
 		return SnapshotStatusCreated, SnapshotKindDirtyWorktree
 	}
 	return SnapshotStatusCreated, SnapshotKindMixed
+}
+
+func buildCreationFreshnessReport(result *SourceSnapshotResult, snapshotCreatedAt string, snapshotCompletedAt string, generatedAt string) SourceFreshnessReport {
+	report := SourceFreshnessReport{
+		Status:              SourceFreshnessStatusFresh,
+		ReusableForHandoff:  true,
+		SourceSnapshotID:    result.SourceSnapshotID,
+		GeneratedAt:         generatedAt,
+		SnapshotCreatedAt:   snapshotCreatedAt,
+		SnapshotCompletedAt: snapshotCompletedAt,
+		AgeSeconds:          freshnessAgeSeconds(snapshotCompletedAt, generatedAt),
+		MaxAgeSeconds:       DefaultSourceSnapshotFreshnessMaxAgeSeconds,
+		RepositoryReports:   make([]RepositoryFreshnessReport, 0, len(result.Repositories)),
+	}
+
+	availableCount := 0
+	unavailableCount := 0
+	dirtyCount := 0
+	for i := range result.Repositories {
+		repo := &result.Repositories[i]
+		repoReport := RepositoryFreshnessReport{
+			RepoID:              repo.RepoID,
+			Status:              SourceFreshnessStatusFresh,
+			ReusableForHandoff:  true,
+			CapturedBranch:      repo.GitStatus.CurrentBranch,
+			CurrentBranch:       repo.GitStatus.CurrentBranch,
+			CapturedHeadSHA:     repo.GitStatus.HeadSHA,
+			CurrentHeadSHA:      repo.GitStatus.HeadSHA,
+			CapturedDirty:       repo.GitStatus.Dirty,
+			CurrentDirty:        repo.GitStatus.Dirty,
+			CapturedChangeCount: repo.GitStatus.ChangedFileCount,
+			CurrentChangeCount:  repo.GitStatus.ChangedFileCount,
+			GitStatusAvailable:  repo.GitStatus.GitStatusAvailable,
+		}
+		switch {
+		case !repo.GitStatus.GitStatusAvailable:
+			unavailableCount++
+			repoReport.Status = SourceFreshnessStatusBlocked
+			repoReport.ReusableForHandoff = false
+			repoReport.Blockers = append(repoReport.Blockers, freshnessBlocker(repo.RepoID, SourceFreshnessCodeUnavailable, "repository git status was unavailable during source snapshot capture"))
+		case repo.GitStatus.Dirty:
+			availableCount++
+			dirtyCount++
+			repoReport.Status = SourceFreshnessStatusDirtyWorktree
+			repoReport.ReusableForHandoff = false
+			repoReport.Warnings = append(repoReport.Warnings, freshnessBlocker(repo.RepoID, SourceFreshnessCodeDirtyWorktree, "repository had uncommitted or untracked changes during source snapshot capture"))
+		default:
+			availableCount++
+		}
+		repo.Freshness = repoReport
+		report.RepositoryReports = append(report.RepositoryReports, repoReport)
+		report.Warnings = append(report.Warnings, repoReport.Warnings...)
+		report.Blockers = append(report.Blockers, repoReport.Blockers...)
+	}
+
+	switch {
+	case len(result.Repositories) == 0 || availableCount == 0 || result.Status == SnapshotStatusBlocked:
+		report.Status = SourceFreshnessStatusBlocked
+	case unavailableCount > 0:
+		report.Status = SourceFreshnessStatusPartial
+	case dirtyCount > 0:
+		report.Status = SourceFreshnessStatusDirtyWorktree
+	case report.AgeSeconds > report.MaxAgeSeconds:
+		report.Status = SourceFreshnessStatusStaleByAge
+		report.Warnings = append(report.Warnings, freshnessBlocker("", SourceFreshnessCodeStale, "source snapshot is older than the freshness guidance window"))
+	default:
+		report.Status = SourceFreshnessStatusFresh
+	}
+	report.ReusableForHandoff = report.Status == SourceFreshnessStatusFresh
+	if !report.ReusableForHandoff {
+		report.NextActions = append(report.NextActions, SourceFreshnessNextAction{
+			Action: "create_source_snapshot",
+			Reason: "Create a new source snapshot after repository cleanup or project repository configuration correction.",
+		})
+	}
+	return report
+}
+
+func freshnessBlocker(repoID string, code string, message string) SourceBlocker {
+	return SourceBlocker{
+		RepoID:      repoID,
+		Code:        code,
+		Message:     message,
+		Recoverable: true,
+		NextActions: []string{"create_source_snapshot"},
+	}
+}
+
+func freshnessAgeSeconds(snapshotCompletedAt string, generatedAt string) int64 {
+	snapshotTime := parseSQLUTC(snapshotCompletedAt)
+	generatedTime := parseSQLUTC(generatedAt)
+	if snapshotTime.IsZero() || generatedTime.IsZero() || generatedTime.Before(snapshotTime) {
+		return 0
+	}
+	return int64(generatedTime.Sub(snapshotTime).Seconds())
+}
+
+func parseSQLUTC(value string) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	parsed, err := time.ParseInLocation("2006-01-02 15:04:05", value, time.UTC)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed.UTC()
 }
 
 func decodePolicyStringArray(raw string) ([]string, error) {

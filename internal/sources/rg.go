@@ -48,12 +48,14 @@ func (s *Service) SearchProjectFiles(ctx context.Context, input SourceSearchInpu
 	if err != nil {
 		if blocker, ok := operationBlocker("", err); ok {
 			result.Blockers = append(result.Blockers, blocker)
+			result.FreshnessReport = unavailableFreshnessReport(result.SourceSnapshotID, generatedAt, blocker)
 			return result, nil
 		}
 		return nil, err
 	}
 	result.ProjectID = resolved.project.ProjectID
 	result.SourceSnapshotID = resolved.snapshot.SourceSnapshotID
+	result.FreshnessReport = s.evaluateSourceSnapshotFreshness(ctx, resolved, generatedAt)
 
 	normalizedRepoIDs, err := normalizeRepoIDList(input.RepoIDs, resolved.projectRepos)
 	if err != nil {
