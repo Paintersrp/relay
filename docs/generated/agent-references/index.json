@@ -20,12 +20,12 @@
   "source_inputs": [
     {
       "path": "AGENTS.md",
-      "sha256": "e9b318d2dfb8cedc29db3c8beffb3ca500a7e0945acd5683373082e92a1ba7de",
+      "sha256": "cb2480fa513f0639ed0fd90bab0f627f0ad6b82bdda8f7000a812b03da745957",
       "role": "agent instructions"
     },
     {
       "path": "Makefile",
-      "sha256": "a52e218641c451f2ecd4b8f1562bdff9f6123f89c7498eb2575e0118489cc87d",
+      "sha256": "5ba4211f67c2eaeee2340d01db211d2bb43c9d41d86f38daff1383c77ce3883e",
       "role": "build configuration"
     },
     {

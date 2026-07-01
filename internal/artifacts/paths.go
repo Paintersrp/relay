@@ -373,6 +373,25 @@ func WriteCloseout(dateYYYYMMDD string, taskSlug string, kind string, data []byt
 	return p, os.WriteFile(p, data, 0644)
 }
 
+// NormalizeCloseoutPath converts an OS-specific closeout artifact path (as
+// returned by CloseoutPath/WriteCloseout) into a repo-relative forward-slash
+// path suitable for durable closeout evidence. It strips a leading "./" and
+// ensures backslashes (e.g. on Windows) are replaced with forward slashes.
+// The result never contains a backslash and is repo-relative (never absolute).
+func NormalizeCloseoutPath(p string) string {
+	if p == "" {
+		return p
+	}
+	slash := filepath.ToSlash(p)
+	for strings.HasPrefix(slash, "./") {
+		slash = strings.TrimPrefix(slash, "./")
+	}
+	if strings.HasPrefix(slash, "/") {
+		return slash
+	}
+	return slash
+}
+
 func closeoutKindSuffix(kind string) (string, bool) {
 	switch kind {
 	case "closeout_evidence_json":

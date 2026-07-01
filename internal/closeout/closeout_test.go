@@ -2,15 +2,35 @@ package closeout
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"relay/internal/artifacts"
+
+	"github.com/xeipuuv/gojsonschema"
 )
+
+// repoSchemaPath returns the absolute filesystem path to a repo-root schema
+// file, independent of the current working directory (which closeout tests
+// override with t.TempDir).
+func repoSchemaPath(rel string) (string, bool) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", false
+	}
+	pkgDir := filepath.Dir(file)
+	candidate := filepath.Clean(filepath.Join(pkgDir, "..", "..", rel))
+	if _, err := os.Stat(candidate); err != nil {
+		return "", false
+	}
+	return candidate, true
+}
 
 type fakeRunner struct {
 	calls []string
@@ -45,17 +65,56 @@ func TestValidationFailureContinuesInDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run returned unexpected error: %v", err)
 	}
-	if report.Validation.Status != "failed" {
-		t.Fatalf("validation status = %q, want failed", report.Validation.Status)
+	if report.ValidationStatus() != "failed" {
+		t.Fatalf("validation status = %q, want failed", report.ValidationStatus())
 	}
-	if report.CommitStatus != "skipped_dry_run" || report.PushStatus != "skipped_dry_run" {
-		t.Fatalf("commit/push statuses = %q/%q, want skipped_dry_run", report.CommitStatus, report.PushStatus)
+	if report.CommitStatus() != "skipped_dry_run" || report.PushStatus() != "skipped_dry_run" {
+		t.Fatalf("commit/push statuses = %q/%q, want skipped_dry_run", report.CommitStatus(), report.PushStatus())
 	}
 	assertCalled(t, runner.calls, "git add -A")
 	assertNotCalled(t, runner.calls, "git commit")
 	assertNotCalled(t, runner.calls, "git push")
-	assertFileExists(t, report.EvidencePaths.JSON)
-	assertFileExists(t, report.EvidencePaths.Markdown)
+	assertFileExists(t, report.EvidenceJSONPath())
+	assertFileExists(t, report.EvidenceMarkdownPath())
+	assertSchemaConformant(t, report.EvidenceJSONPath())
+}
+
+// TestValidationFailureContinuesCommitPush covers the PASS-005 boundary for
+// the non-dry-run path: a failed final validation alone must not prevent
+// stage/commit/push from completing and closeout status must be closed_out.
+func TestValidationFailureContinuesCommitPush(t *testing.T) {
+	withTempWorkingDir(t)
+	runner := &fakeRunner{run: func(ctx context.Context, name string, args ...string) CommandResult {
+		command := strings.TrimSpace(name + " " + strings.Join(args, " "))
+		if command == "bash -lc make validate-full" {
+			return CommandResult{Command: command, ExitCode: 1, Stderr: "validation failed\n", Err: errors.New("exit status 1")}
+		}
+		return defaultFakeResult(command)
+	}}
+
+	report, err := Run(context.Background(), Options{
+		Message: "PASS-005 non-dry-run closeout smoke",
+		Now:     fixedNow,
+		Runner:  runner,
+	})
+	if err != nil {
+		t.Fatalf("Run returned unexpected error: %v", err)
+	}
+	if report.ValidationStatus() != "failed" {
+		t.Fatalf("validation status = %q, want failed", report.ValidationStatus())
+	}
+	if report.Status != "closed_out" {
+		t.Fatalf("status = %q, want closed_out", report.Status)
+	}
+	if report.CommitStatus() != "committed" {
+		t.Fatalf("commit status = %q, want committed", report.CommitStatus())
+	}
+	if report.PushStatus() != "pushed" {
+		t.Fatalf("push status = %q, want pushed", report.PushStatus())
+	}
+	assertSchemaConformant(t, report.EvidenceJSONPath())
+	assertHasIssueSeverity(t, report, "error")
+	assertNoIssueSeverity(t, report, "blocker")
 }
 
 func TestMissingMessageBlocks(t *testing.T) {
@@ -64,12 +123,16 @@ func TestMissingMessageBlocks(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing message to block")
 	}
-	if report.MechanicalBlocker == nil || report.MechanicalBlocker.Stage != "commit_message" {
-		t.Fatalf("blocker = %#v, want commit_message", report.MechanicalBlocker)
+	if _, ok := err.(*MechanicalBlockerError); !ok {
+		t.Fatalf("expected MechanicalBlockerError, got %#v", err)
 	}
 	if len(runner.calls) != 0 {
 		t.Fatalf("expected no commands, got %v", runner.calls)
 	}
+	if report.Status != "blocked" {
+		t.Fatalf("status = %q want blocked", report.Status)
+	}
+	assertHasIssueSeverity(t, report, "blocker")
 }
 
 func TestEvidenceWriteFailureBlocks(t *testing.T) {
@@ -87,9 +150,13 @@ func TestEvidenceWriteFailureBlocks(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected evidence write failure")
 	}
-	if report.MechanicalBlocker == nil || report.MechanicalBlocker.Stage != "evidence_write" {
-		t.Fatalf("blocker = %#v, want evidence_write", report.MechanicalBlocker)
+	if _, ok := err.(*MechanicalBlockerError); !ok {
+		t.Fatalf("expected MechanicalBlockerError, got %#v", err)
 	}
+	if report.Status != "blocked" {
+		t.Fatalf("status = %q want blocked", report.Status)
+	}
+	assertHasIssueSeverity(t, report, "blocker")
 }
 
 func TestStageFailureBlocks(t *testing.T) {
@@ -106,12 +173,16 @@ func TestStageFailureBlocks(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected stage failure")
 	}
-	if report.Validation.Status != "passed" {
-		t.Fatalf("validation status = %q, want passed", report.Validation.Status)
+	if report.ValidationStatus() != "passed" {
+		t.Fatalf("validation status = %q, want passed", report.ValidationStatus())
 	}
-	if report.MechanicalBlocker == nil || report.MechanicalBlocker.Stage != "git_stage" {
-		t.Fatalf("blocker = %#v, want git_stage", report.MechanicalBlocker)
+	if _, ok := err.(*MechanicalBlockerError); !ok || err.(*MechanicalBlockerError).Stage != "git_stage" {
+		t.Fatalf("expected git_stage blocker, got %#v", err)
 	}
+	if report.Status != "blocked" {
+		t.Fatalf("status = %q want blocked", report.Status)
+	}
+	assertHasIssueSeverity(t, report, "blocker")
 }
 
 func TestCommitFailureBlocks(t *testing.T) {
@@ -128,10 +199,13 @@ func TestCommitFailureBlocks(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected commit failure")
 	}
-	if report.MechanicalBlocker == nil || report.MechanicalBlocker.Stage != "git_commit" {
-		t.Fatalf("blocker = %#v, want git_commit", report.MechanicalBlocker)
+	if _, ok := err.(*MechanicalBlockerError); !ok || err.(*MechanicalBlockerError).Stage != "git_commit" {
+		t.Fatalf("expected git_commit blocker, got %#v", err)
 	}
 	assertNotCalled(t, runner.calls, "git push")
+	if report.Status != "blocked" {
+		t.Fatalf("status = %q want blocked", report.Status)
+	}
 }
 
 func TestPushFailureBlocks(t *testing.T) {
@@ -148,9 +222,31 @@ func TestPushFailureBlocks(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected push failure")
 	}
-	if report.MechanicalBlocker == nil || report.MechanicalBlocker.Stage != "git_push" {
-		t.Fatalf("blocker = %#v, want git_push", report.MechanicalBlocker)
+	if _, ok := err.(*MechanicalBlockerError); !ok || err.(*MechanicalBlockerError).Stage != "git_push" {
+		t.Fatalf("expected git_push blocker, got %#v", err)
 	}
+	if report.Status != "blocked" {
+		t.Fatalf("status = %q want blocked", report.Status)
+	}
+}
+
+// TestCommitPushFailureDoesNotContinue verifies that when a mechanical blocker
+// (commit failure) occurs, the push step is skipped entirely.
+func TestCommitFailureDoesNotCallPush(t *testing.T) {
+	withTempWorkingDir(t)
+	runner := &fakeRunner{run: func(ctx context.Context, name string, args ...string) CommandResult {
+		command := strings.TrimSpace(name + " " + strings.Join(args, " "))
+		if strings.HasPrefix(command, "git commit ") {
+			return CommandResult{Command: command, ExitCode: 1, Stderr: "commit failed\n", Err: errors.New("exit status 1")}
+		}
+		return defaultFakeResult(command)
+	}}
+
+	_, err := Run(context.Background(), Options{Message: "commit failure then push check", Now: fixedNow, Runner: runner})
+	if err == nil {
+		t.Fatal("expected commit failure")
+	}
+	assertNotCalled(t, runner.calls, "git push")
 }
 
 func TestCommandOrder(t *testing.T) {
@@ -168,8 +264,42 @@ func TestCommandOrder(t *testing.T) {
 		t.Fatalf("Run returned unexpected error: %v", err)
 	}
 
+	assertOrder(t, runner.calls, "bash -lc make agentrefs-generate", "bash -lc make agentrefs-check")
+	assertOrder(t, runner.calls, "bash -lc make agentrefs-check", "bash -lc make validate-full")
 	assertOrder(t, runner.calls, "bash -lc make validate-full", "git add -A")
 	assertOrder(t, runner.calls, "git commit -m order check", "git push")
+}
+
+// TestAgentRefsFailureContinues covers the closeout-owned generated-artifact
+// step: an agentrefs generate/check failure is recorded as evidence but does
+// not block final validation, staging, commit, or push.
+func TestAgentRefsFailureContinues(t *testing.T) {
+	withTempWorkingDir(t)
+	runner := &fakeRunner{run: func(ctx context.Context, name string, args ...string) CommandResult {
+		command := strings.TrimSpace(name + " " + strings.Join(args, " "))
+		if command == "bash -lc make agentrefs-generate" {
+			return CommandResult{Command: command, ExitCode: 1, Stderr: "generate failed\n", Err: errors.New("exit status 1")}
+		}
+		if command == "bash -lc make agentrefs-check" {
+			return CommandResult{Command: command, ExitCode: 1, Stderr: "check failed\n", Err: errors.New("exit status 1")}
+		}
+		return defaultFakeResult(command)
+	}}
+
+	report, err := Run(context.Background(), Options{Message: "agentrefs failure", DryRun: true, Now: fixedNow, Runner: runner})
+	if err != nil {
+		t.Fatalf("Run returned unexpected error: %v", err)
+	}
+	if report.Status == "blocked" {
+		t.Fatalf("status = blocked; agentrefs failure should not block closeout")
+	}
+	// Agentrefs failures are recorded as error-severity issues, not blockers.
+	assertHasIssueSeverity(t, report, "error")
+	assertNoIssueSeverity(t, report, "blocker")
+	// Validation and staging still proceed.
+	assertCalled(t, runner.calls, "bash -lc make validate-full")
+	assertCalled(t, runner.calls, "git add -A")
+	assertSchemaConformant(t, report.EvidenceJSONPath())
 }
 
 func TestOutputFiltering(t *testing.T) {
@@ -187,7 +317,7 @@ func TestOutputFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run returned unexpected error: %v", err)
 	}
-	data, err := os.ReadFile(report.EvidencePaths.JSON)
+	data, err := os.ReadFile(report.EvidenceJSONPath())
 	if err != nil {
 		t.Fatalf("failed reading evidence: %v", err)
 	}
@@ -199,6 +329,49 @@ func TestOutputFiltering(t *testing.T) {
 	}
 }
 
+// TestMetadataDefaults verifies safe local-closeout defaults when metadata is
+// not supplied.
+func TestMetadataDefaults(t *testing.T) {
+	withTempWorkingDir(t)
+	runner := &fakeRunner{}
+	report, err := Run(context.Background(), Options{Message: "defaults", DryRun: true, Now: fixedNow, Runner: runner})
+	if err != nil {
+		t.Fatalf("Run returned unexpected error: %v", err)
+	}
+	if report.ProjectID != "relay" {
+		t.Fatalf("project_id = %q want relay", report.ProjectID)
+	}
+	if report.RepoTarget != "Paintersrp/relay" {
+		t.Fatalf("repo_target = %q want Paintersrp/relay", report.RepoTarget)
+	}
+	if report.RunID != "local-closeout" {
+		t.Fatalf("run_id = %q want local-closeout", report.RunID)
+	}
+	if report.PlanID != nil {
+		t.Fatalf("plan_id = %v want nil", *report.PlanID)
+	}
+	if report.PassID != nil {
+		t.Fatalf("pass_id = %v want nil", *report.PassID)
+	}
+}
+
+// TestPathsForwardSlashNormalized ensures no persisted evidence path
+// contains a backslash, an absolute leading slash, or "..".
+func TestPathsForwardSlashNormalized(t *testing.T) {
+	withTempWorkingDir(t)
+	report, err := Run(context.Background(), Options{Message: "path normalization", DryRun: true, Now: fixedNow, Runner: &fakeRunner{}})
+	if err != nil {
+		t.Fatalf("Run returned unexpected error: %v", err)
+	}
+	for _, ref := range report.ArtifactReferences {
+		assertNormalizedRepoPath(t, ref.Path)
+	}
+	for _, ref := range report.ValidationEvidence.ValidationReports {
+		assertNormalizedRepoPath(t, ref.Path)
+	}
+	assertSchemaConformant(t, report.EvidenceJSONPath())
+}
+
 func defaultFakeResult(command string) CommandResult {
 	switch command {
 	case "git branch --show-current":
@@ -206,6 +379,10 @@ func defaultFakeResult(command string) CommandResult {
 	case "git rev-parse HEAD":
 		return CommandResult{Command: command, Stdout: "abc123456789\n"}
 	case "bash -lc make validate-full":
+		return CommandResult{Command: command}
+	case "bash -lc make agentrefs-generate":
+		return CommandResult{Command: command}
+	case "bash -lc make agentrefs-check":
 		return CommandResult{Command: command}
 	case "git add -A":
 		return CommandResult{Command: command}
@@ -284,4 +461,173 @@ func assertFileExists(t *testing.T, path string) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("expected file %q to exist: %v", path, err)
 	}
+}
+
+func assertHasIssueSeverity(t *testing.T, report Report, severity string) {
+	t.Helper()
+	for _, issue := range report.Issues {
+		if issue.Severity == severity {
+			return
+		}
+	}
+	t.Fatalf("expected a %q-severity issue in %v", severity, report.Issues)
+}
+
+func assertNoIssueSeverity(t *testing.T, report Report, severity string) {
+	t.Helper()
+	for _, issue := range report.Issues {
+		if issue.Severity == severity {
+			t.Fatalf("did not expect %q-severity issue %q", severity, issue.Message)
+		}
+	}
+}
+
+func assertNormalizedRepoPath(t *testing.T, p string) {
+	t.Helper()
+	if p == "" {
+		t.Fatalf("expected non-empty normalized path")
+	}
+	if strings.Contains(p, "\\") {
+		t.Fatalf("path %q contains backslash", p)
+	}
+	if strings.HasPrefix(p, "/") {
+		t.Fatalf("path %q is absolute", p)
+	}
+	if strings.Contains(p, "..") {
+		t.Fatalf("path %q contains ..", p)
+	}
+}
+
+// assertSchemaConformant parses the generated closeout evidence JSON and
+// asserts it has the required schema shape, no legacy custom top-level
+// fields, and forward-slash repo-relative path-like values. When the closeout
+// evidence schema file is available in the repo, it also runs a full JSON
+// schema validation pass via gojsonschema.
+func assertSchemaConformant(t *testing.T, jsonPath string) {
+	t.Helper()
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("failed reading evidence JSON %q: %v", jsonPath, err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("evidence JSON is not a valid object: %v", err)
+	}
+
+	required := []string{
+		"evidence_kind", "schema_version", "created_at", "project_id",
+		"plan_id", "pass_id", "run_id", "repo_target", "branch_context",
+		"status", "validation_evidence", "audit_evidence",
+		"repository_evidence", "artifact_references", "issues",
+	}
+	for _, field := range required {
+		if _, ok := raw[field]; !ok {
+			t.Fatalf("evidence JSON missing required field %q", field)
+		}
+	}
+	legacy := []string{
+		"report_kind", "message", "slug", "branch", "head_sha",
+		"validation", "evidence_paths", "staged_files",
+		"commit_status", "commit_sha", "push_status", "mechanical_blocker",
+	}
+	for _, field := range legacy {
+		if _, ok := raw[field]; ok {
+			t.Fatalf("evidence JSON contains legacy custom field %q", field)
+		}
+	}
+
+	var report Report
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("failed to unmarshal evidence into Report: %v", err)
+	}
+	if report.EvidenceKind != "closeout_evidence" {
+		t.Fatalf("evidence_kind = %q want closeout_evidence", report.EvidenceKind)
+	}
+	if report.BranchContext.BranchName == "" {
+		t.Fatalf("branch_context.branch_name missing")
+	}
+	if _, ok := raw["branch_context"]; !ok {
+		t.Fatalf("branch_context missing")
+	}
+	if err := json.Unmarshal(raw["branch_context"], &struct {
+		BranchName string  `json:"branch_name"`
+		BaseRef    *string `json:"base_ref"`
+		HeadRef    *string `json:"head_ref"`
+	}{}); err != nil {
+		t.Fatalf("branch_context shape invalid: %v", err)
+	}
+	if report.ValidationEvidence.ValidationReports == nil {
+		t.Fatalf("validation_evidence.validation_reports missing")
+	}
+	if _, ok := raw["validation_evidence"]; !ok {
+		t.Fatalf("validation_evidence missing")
+	}
+	if err := json.Unmarshal(raw["validation_evidence"], &struct {
+		ValidationReports []ArtifactReference `json:"validation_reports"`
+		Summary           string               `json:"summary"`
+	}{}); err != nil {
+		t.Fatalf("validation_evidence shape invalid: %v", err)
+	}
+	if err := json.Unmarshal(raw["audit_evidence"], &struct {
+		AuditPackets []ArtifactReference `json:"audit_packets"`
+		AuditStatus  string               `json:"audit_status"`
+	}{}); err != nil {
+		t.Fatalf("audit_evidence shape invalid: %v", err)
+	}
+	if err := json.Unmarshal(raw["repository_evidence"], &struct {
+		GitStatus RepositoryEvidenceReference `json:"git_status"`
+		Commit    RepositoryEvidenceReference `json:"commit"`
+		Push      RepositoryEvidenceReference `json:"push"`
+	}{}); err != nil {
+		t.Fatalf("repository_evidence shape invalid: %v", err)
+	}
+	for _, ref := range report.ArtifactReferences {
+		assertNormalizedRepoPath(t, ref.Path)
+	}
+	for _, ref := range report.ValidationEvidence.ValidationReports {
+		assertNormalizedRepoPath(t, ref.Path)
+	}
+
+	validateAgainstCloseoutSchema(t, data)
+}
+
+// validateAgainstCloseoutSchema runs a full JSON schema validation pass for
+// the generated evidence against relay-contracts/schema/closeout_evidence.schema.json.
+// The schema uses RE2-incompatible lookahead regexes which are sanitized
+// before validation (mirroring internal/validation's approach).
+func validateAgainstCloseoutSchema(t *testing.T, evidenceJSON []byte) {
+	t.Helper()
+	absPath, ok := repoSchemaPath("relay-contracts/schema/closeout_evidence.schema.json")
+	if !ok {
+		t.Logf("closeout evidence schema not available; skipping full JSON schema validation")
+		return
+	}
+	schemaBytes, err := os.ReadFile(absPath)
+	if err != nil {
+		t.Logf("failed reading closeout evidence schema: %v; skipping", err)
+		return
+	}
+	cleaned := sanitizeSchemaRegexesForTest(string(schemaBytes))
+	schemaLoader := gojsonschema.NewStringLoader(cleaned)
+	documentLoader := gojsonschema.NewBytesLoader(evidenceJSON)
+	result, err := gojsonschema.Validate(schemaLoader, documentLoader)
+	if err != nil {
+		t.Fatalf("closeout evidence JSON schema validation error: %v", err)
+	}
+	if !result.Valid() {
+		var sb strings.Builder
+		for _, rerr := range result.Errors() {
+			sb.WriteString("- ")
+			sb.WriteString(rerr.String())
+			sb.WriteString("\n")
+		}
+		t.Fatalf("closeout evidence JSON does not conform to schema:\n%s", sb.String())
+	}
+}
+
+func sanitizeSchemaRegexesForTest(schemaContent string) string {
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!/)`, "")
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(^|/)\\.\\.($|/))`, "")
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*\\\\)`, "")
+	return schemaContent
 }

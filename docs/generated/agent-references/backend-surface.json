@@ -615,7 +615,7 @@
     },
     {
       "path": "internal/mcp/mcp_test.go",
-      "sha256": "b09fa87828689566f40d57069f1e7c4aca5a20e6766ea25938f0edc400699bcb",
+      "sha256": "98ffb019d0cd0f1ea08faf9d14a803b5d297a2edb5be746e5e2f121dd8a0965b",
       "role": "test"
     },
     {
@@ -635,7 +635,7 @@
     },
     {
       "path": "internal/mcp/plan_attempt_tools_test.go",
-      "sha256": "1cf74dc584a0ae40d670ff0375653a36c2f03fdb762e63232d09d0a99d4a9502",
+      "sha256": "715958766aa19f3affe932d9ebc6d47d4e50b915d0e043d65cfb6ffbee79fa6b",
       "role": "test"
     },
     {
@@ -695,7 +695,7 @@
     },
     {
       "path": "internal/mcp/server.go",
-      "sha256": "fa8f88fa34e97d933d9d7cfa8b84dd52d61fc01c4e369e8e16d0c5466d4484f2",
+      "sha256": "71893bd6df036612aef4a0028ef8e14fe7055becb92d347576b5758b10243cef",
       "role": "source"
     },
     {
@@ -710,7 +710,7 @@
     },
     {
       "path": "internal/mcp/tool_create_run.go",
-      "sha256": "9e5434d1b9920ea72a14864a51e855363c729a6423a3d8b14009de3290655cd3",
+      "sha256": "771409c873aba6d8c9994ad53f831818d7f905ad4f0dd226725dbe3b5cbd4ed1",
       "role": "source"
     },
     {
@@ -11170,6 +11170,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-func-handlecreaterunfromplannerhandofffile",
+      "label": "proven",
+      "statement": "Exported func HandleCreateRunFromPlannerHandoffFile in internal/mcp/tool_create_run.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/tool_create_run.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-func-handlecreatesourcesnapshot",
       "label": "proven",
       "statement": "Exported func HandleCreateSourceSnapshot in internal/mcp/context_broker_tools.go",
@@ -12119,6 +12130,17 @@
       "id": "backend-symbol-internal-mcp-var-toolcreaterunfromplannerhandoff",
       "label": "proven",
       "statement": "Exported var ToolCreateRunFromPlannerHandoff in internal/mcp/tool_create_run.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/tool_create_run.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-var-toolcreaterunfromplannerhandofffile",
+      "label": "proven",
+      "statement": "Exported var ToolCreateRunFromPlannerHandoffFile in internal/mcp/tool_create_run.go",
       "evidence": [
         {
           "kind": "source",
@@ -17850,6 +17872,39 @@
       "id": "backend-test-internal-mcp-testhandlecreaterunfromplannerhandoff-unknownplanrejected",
       "label": "proven",
       "statement": "Test function TestHandleCreateRunFromPlannerHandoff_UnknownPlanRejected in internal/mcp/mcp_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/mcp_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhandlecreaterunfromplannerhandofffile-invalidfileinputs",
+      "label": "proven",
+      "statement": "Test function TestHandleCreateRunFromPlannerHandoffFile_InvalidFileInputs in internal/mcp/mcp_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/mcp_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhandlecreaterunfromplannerhandofffile-shamismatchcreatesnorun",
+      "label": "proven",
+      "statement": "Test function TestHandleCreateRunFromPlannerHandoffFile_SHAMismatchCreatesNoRun in internal/mcp/mcp_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/mcp_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhandlecreaterunfromplannerhandofffile-successexactsha",
+      "label": "proven",
+      "statement": "Test function TestHandleCreateRunFromPlannerHandoffFile_SuccessExactSHA in internal/mcp/mcp_test.go",
       "evidence": [
         {
           "kind": "test",

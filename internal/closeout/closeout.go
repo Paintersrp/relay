@@ -18,18 +18,37 @@ import (
 )
 
 const (
-	defaultValidationCommand = "make validate-full"
-	validationReportJSON     = "handoffs/validation/latest.validation-report.json"
-	validationReportMarkdown = "handoffs/validation/latest.validation-summary.md"
+	defaultValidationCommand  = "make validate-full"
+	defaultAgentRefsGenerate   = "make agentrefs-generate"
+	defaultAgentRefsCheck      = "make agentrefs-check"
+	validationReportJSON       = "handoffs/validation/latest.validation-report.json"
+	validationReportMarkdown   = "handoffs/validation/latest.validation-summary.md"
+	closeoutEvidenceSchemaPath = "relay-contracts/schema/closeout_evidence.schema.json"
+
+	defaultProjectID  = "relay"
+	defaultRepoTarget = "Paintersrp/relay"
+	defaultRunID      = "local-closeout"
 )
 
+// Options configures a closeout run. Metadata fields (ProjectID, RepoTarget,
+// RunID, PlanID, PassID, BaseRef, HeadRef) default to safe local-closeout
+// values when empty and may be supplied via CLI flags or env vars.
 type Options struct {
-	Message           string
-	Slug              string
-	DryRun            bool
-	ValidationCommand string
-	Now               func() time.Time
-	Runner            CommandRunner
+	Message            string
+	Slug               string
+	DryRun             bool
+	ValidationCommand  string
+	AgentRefsGenerate  string
+	AgentRefsCheck     string
+	ProjectID          string
+	RepoTarget         string
+	RunID              string
+	PlanID             string
+	PassID             string
+	BaseRef            string
+	HeadRef            string
+	Now                func() time.Time
+	Runner             CommandRunner
 }
 
 type CommandRunner interface {
@@ -44,43 +63,77 @@ type CommandResult struct {
 	Err      error  `json:"-"`
 }
 
+// Report is the schema-conformant closeout evidence document. It conforms to
+// relay-contracts/schema/closeout_evidence.schema.json and intentionally
+// avoids the legacy custom report-shape top-level fields.
 type Report struct {
-	SchemaVersion     string             `json:"schema_version"`
-	ReportKind        string             `json:"report_kind"`
-	Status            string             `json:"status"`
-	CreatedAt         string             `json:"created_at"`
-	Message           string             `json:"message"`
-	Slug              string             `json:"slug"`
-	Branch            string             `json:"branch"`
-	HeadSHA           string             `json:"head_sha"`
-	DryRun            bool               `json:"dry_run"`
-	Validation        ValidationEvidence `json:"validation"`
-	EvidencePaths     EvidencePaths      `json:"evidence_paths"`
-	StagedFiles       []string           `json:"staged_files"`
-	CommitStatus      string             `json:"commit_status"`
-	CommitSHA         string             `json:"commit_sha,omitempty"`
-	PushStatus        string             `json:"push_status"`
-	MechanicalBlocker *MechanicalBlocker `json:"mechanical_blocker,omitempty"`
+	EvidenceKind       string                 `json:"evidence_kind"`
+	SchemaVersion      string                 `json:"schema_version"`
+	CreatedAt          string                 `json:"created_at"`
+	ProjectID          string                 `json:"project_id"`
+	PlanID             *string                `json:"plan_id"`
+	PassID             *string                `json:"pass_id"`
+	RunID              string                 `json:"run_id"`
+	RepoTarget         string                 `json:"repo_target"`
+	BranchContext      BranchContext          `json:"branch_context"`
+	Status             string                 `json:"status"`
+	ValidationEvidence ValidationEvidenceSec  `json:"validation_evidence"`
+	AuditEvidence      AuditEvidenceSec       `json:"audit_evidence"`
+	RepositoryEvidence RepositoryEvidenceSec  `json:"repository_evidence"`
+	ArtifactReferences []ArtifactReference   `json:"artifact_references"`
+	Issues             []CloseoutIssue         `json:"issues"`
+
+	// Hidden accumulators kept out of the schema-conformant JSON output.
+	evidencePaths EvidencePaths `json:"-"`
+	stagedFiles   []string      `json:"-"`
 }
 
-type ValidationEvidence struct {
-	Command     string   `json:"command"`
-	ExitCode    int      `json:"exit_code"`
-	Status      string   `json:"status"`
-	OutputTail  string   `json:"output_tail"`
-	ReportPaths []string `json:"report_paths"`
+type BranchContext struct {
+	BranchName   string  `json:"branch_name"`
+	BaseRef      *string `json:"base_ref"`
+	HeadRef      *string `json:"head_ref"`
+	WorktreePath *string `json:"worktree_path,omitempty"`
 }
 
-type EvidencePaths struct {
-	JSON     string `json:"json"`
-	Markdown string `json:"markdown"`
+type ValidationEvidenceSec struct {
+	ValidationReports []ArtifactReference `json:"validation_reports"`
+	Summary           string               `json:"summary"`
 }
 
-type MechanicalBlocker struct {
-	Stage   string `json:"stage"`
-	Message string `json:"message"`
+type AuditEvidenceSec struct {
+	AuditPackets       []ArtifactReference `json:"audit_packets"`
+	AuditStatus        string               `json:"audit_status"`
+	AuditDecisionPath  *string              `json:"audit_decision_path,omitempty"`
 }
 
+type RepositoryEvidenceSec struct {
+	GitStatus RepositoryEvidenceReference `json:"git_status"`
+	Commit    RepositoryEvidenceReference `json:"commit"`
+	Push      RepositoryEvidenceReference `json:"push"`
+}
+
+type RepositoryEvidenceReference struct {
+	State        string  `json:"state"`
+	ArtifactPath *string `json:"artifact_path"`
+	Summary      string  `json:"summary,omitempty"`
+}
+
+type ArtifactReference struct {
+	Kind            string `json:"kind"`
+	Path            string `json:"path"`
+	ChecksumSHA256  string `json:"checksum_sha256,omitempty"`
+}
+
+type CloseoutIssue struct {
+	Severity     string  `json:"severity"`
+	Message      string  `json:"message"`
+	ArtifactPath *string `json:"artifact_path,omitempty"`
+}
+
+// MechanicalBlockerError is returned when a mechanical (evidence-write or git)
+// step fails. It is not persisted into the schema-conformant Report; instead
+// the blocker stage/message is recorded as a blocker-severity issue and the
+// Report status is set to "blocked".
 type MechanicalBlockerError struct {
 	Stage   string
 	Message string
@@ -119,7 +172,7 @@ func (execRunner) Run(ctx context.Context, name string, args ...string) CommandR
 func Run(ctx context.Context, opts Options) (Report, error) {
 	message := strings.TrimSpace(opts.Message)
 	if message == "" {
-		return blockedReport("commit_message", "commit message is required"), blockerError("commit_message", "commit message is required")
+		return blockedReport(opts, "commit_message", "commit message is required"), blockerError("commit_message", "commit message is required")
 	}
 
 	now := opts.Now
@@ -134,12 +187,24 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	if validationCommand == "" {
 		validationCommand = defaultValidationCommand
 	}
+	agentRefsGenerate := strings.TrimSpace(opts.AgentRefsGenerate)
+	if agentRefsGenerate == "" {
+		agentRefsGenerate = defaultAgentRefsGenerate
+	}
+	agentRefsCheck := strings.TrimSpace(opts.AgentRefsCheck)
+	if agentRefsCheck == "" {
+		agentRefsCheck = defaultAgentRefsCheck
+	}
 	dryRun := opts.DryRun || os.Getenv("RELAY_CLOSEOUT_DRY_RUN") == "1"
+
+	metadata := resolveMetadata(opts)
 
 	branch := runner.Run(ctx, "git", "branch", "--show-current")
 	head := runner.Run(ctx, "git", "rev-parse", "HEAD")
 	if !commandOK(branch) || !commandOK(head) {
-		return blockedReport("git_metadata", "failed to resolve branch or HEAD"), blockerError("git_metadata", "failed to resolve branch or HEAD")
+		report := newReport(metadata, branchContext(metadata, branch.Stdout, head.Stdout), "blocked")
+		report.addIssue("blocker", "git_metadata: failed to resolve branch or HEAD")
+		return report, blockerError("git_metadata", "failed to resolve branch or HEAD")
 	}
 
 	createdAt := now().UTC()
@@ -155,143 +220,340 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	artifacts.SetBaseDir(".")
 	defer artifacts.SetBaseDir(previousBaseDir)
 
-	finalSlug, evidencePaths, err := reserveEvidencePaths(createdAt.Format("2006-01-02"), slug)
+	_, evidencePaths, err := reserveEvidencePaths(createdAt.Format("2006-01-02"), slug)
 	if err != nil {
-		report := baseReport(message, slug, createdAt, dryRun, branch.Stdout, head.Stdout)
-		return block(report, "evidence_write", err.Error())
+		report := newReport(metadata, branchContext(metadata, branch.Stdout, head.Stdout), "blocked")
+		report.addIssue("blocker", "evidence_write: "+err.Error())
+		return report, blockerError("evidence_write", err.Error())
 	}
 
-	report := baseReport(message, finalSlug, createdAt, dryRun, branch.Stdout, head.Stdout)
-	report.EvidencePaths = evidencePaths
-	report.CommitStatus = "pending"
-	report.PushStatus = "pending"
+	branchCtx := branchContext(metadata, branch.Stdout, head.Stdout)
+	report := newReport(metadata, branchCtx, "ready_for_closeout")
+	report.CreatedAt = createdAt.Format(time.RFC3339)
+	report.setEvidencePaths(evidencePaths)
+	report.RepositoryEvidence = RepositoryEvidenceSec{
+		GitStatus: RepositoryEvidenceReference{State: "captured", ArtifactPath: nil, Summary: filterOutput(strings.TrimSpace(branch.Stdout))},
+		Commit:    RepositoryEvidenceReference{State: "not_run"},
+		Push:      RepositoryEvidenceReference{State: "not_run"},
+	}
+
+	// Closeout-owned deterministic generated-artifact step runs before final
+	// validation and before staging. Failures are recorded as evidence and
+	// do not block closeout unless git mechanics cannot proceed.
+	report.recordGeneratedArtifactStep(ctx, runner, agentRefsGenerate)
+	report.recordGeneratedArtifactStep(ctx, runner, agentRefsCheck)
 
 	validation := runValidation(ctx, runner, validationCommand)
-	report.Validation = validation
-	report.Status = validation.Status
+	report.ValidationEvidence = validation
+	if validation.summaryFailed() {
+		report.addIssue("error", "validation failure: "+validation.Summary)
+	}
 
-	if err := writeEvidence(&report); err != nil {
-		return block(report, "evidence_write", err.Error())
+	if err := report.writeEvidence(); err != nil {
+		return report.block("evidence_write", err.Error())
 	}
 
 	stage := runner.Run(ctx, "git", "add", "-A")
 	if !commandOK(stage) {
-		return blockAndWrite(report, "git_stage", resultMessage(stage))
+		return report.blockAndWrite("git_stage", resultMessage(stage))
 	}
 
 	staged := runner.Run(ctx, "git", "diff", "--cached", "--name-only")
 	if !commandOK(staged) {
-		return blockAndWrite(report, "git_stage", resultMessage(staged))
+		return report.blockAndWrite("git_stage", resultMessage(staged))
 	}
-	report.StagedFiles = parseLines(staged.Stdout)
+	report.recordStagedFiles(parseLines(staged.Stdout))
 
 	if dryRun {
-		report.CommitStatus = "skipped_dry_run"
-		report.PushStatus = "skipped_dry_run"
-		if err := writeEvidence(&report); err != nil {
-			return block(report, "evidence_write", err.Error())
+		report.RepositoryEvidence.Commit = RepositoryEvidenceReference{State: "not_run", Summary: "dry_run"}
+		report.RepositoryEvidence.Push = RepositoryEvidenceReference{State: "not_run", Summary: "dry_run"}
+		if err := report.writeEvidence(); err != nil {
+			return report.block("evidence_write", err.Error())
 		}
 		return report, nil
 	}
 
 	commit := runner.Run(ctx, "git", "commit", "-m", message)
 	if !commandOK(commit) {
-		return blockAndWrite(report, "git_commit", resultMessage(commit))
+		return report.blockAndWrite("git_commit", resultMessage(commit))
 	}
-	report.CommitStatus = "committed"
-
 	commitSHA := runner.Run(ctx, "git", "rev-parse", "HEAD")
 	if !commandOK(commitSHA) {
-		return blockAndWrite(report, "git_commit", resultMessage(commitSHA))
+		return report.blockAndWrite("git_commit", resultMessage(commitSHA))
 	}
-	report.CommitSHA = strings.TrimSpace(commitSHA.Stdout)
+	report.RepositoryEvidence.Commit = RepositoryEvidenceReference{
+		State:   "captured",
+		Summary: strings.TrimSpace(commitSHA.Stdout),
+	}
 
 	push := runner.Run(ctx, "git", "push")
 	if !commandOK(push) {
-		return blockAndWrite(report, "git_push", resultMessage(push))
+		return report.blockAndWrite("git_push", resultMessage(push))
 	}
-	report.PushStatus = "pushed"
+	report.RepositoryEvidence.Push = RepositoryEvidenceReference{State: "captured"}
 
-	if err := writeEvidence(&report); err != nil {
-		return block(report, "evidence_write", err.Error())
+	report.Status = "closed_out"
+	if err := report.writeEvidence(); err != nil {
+		return report.block("evidence_write", err.Error())
 	}
 	return report, nil
 }
 
-func blockedReport(stage, message string) Report {
+type closeoutMetadata struct {
+	ProjectID  string
+	PlanID     *string
+	PassID     *string
+	RunID      string
+	RepoTarget string
+	BaseRef    *string
+	HeadRef    *string
+}
+
+func resolveMetadata(opts Options) closeoutMetadata {
+	projectID := strings.TrimSpace(opts.ProjectID)
+	if projectID == "" {
+		projectID = strings.TrimSpace(os.Getenv("RELAY_CLOSEOUT_PROJECT_ID"))
+	}
+	if projectID == "" {
+		projectID = defaultProjectID
+	}
+	repoTarget := strings.TrimSpace(opts.RepoTarget)
+	if repoTarget == "" {
+		repoTarget = strings.TrimSpace(os.Getenv("RELAY_CLOSEOUT_REPO_TARGET"))
+	}
+	if repoTarget == "" {
+		repoTarget = defaultRepoTarget
+	}
+	runID := strings.TrimSpace(opts.RunID)
+	if runID == "" {
+		runID = strings.TrimSpace(os.Getenv("RELAY_CLOSEOUT_RUN_ID"))
+	}
+	if runID == "" {
+		runID = defaultRunID
+	}
+	var planID *string
+	if v := strings.TrimSpace(opts.PlanID); v != "" {
+		planID = ptr(v)
+	} else if v := strings.TrimSpace(os.Getenv("RELAY_CLOSEOUT_PLAN_ID")); v != "" {
+		planID = ptr(v)
+	}
+	var passID *string
+	if v := strings.TrimSpace(opts.PassID); v != "" {
+		passID = ptr(v)
+	} else if v := strings.TrimSpace(os.Getenv("RELAY_CLOSEOUT_PASS_ID")); v != "" {
+		passID = ptr(v)
+	}
+	var baseRef *string
+	if v := strings.TrimSpace(opts.BaseRef); v != "" {
+		baseRef = ptr(v)
+	}
+	var headRef *string
+	if v := strings.TrimSpace(opts.HeadRef); v != "" {
+		headRef = ptr(v)
+	}
+	return closeoutMetadata{
+		ProjectID:  projectID,
+		PlanID:     planID,
+		PassID:     passID,
+		RunID:      runID,
+		RepoTarget: repoTarget,
+		BaseRef:    baseRef,
+		HeadRef:    headRef,
+	}
+}
+
+func branchContext(meta closeoutMetadata, branchOut, headOut string) BranchContext {
+	branchName := strings.TrimSpace(branchOut)
+	if branchName == "" {
+		branchName = "unknown"
+	}
+	baseRef := meta.BaseRef
+	headRef := meta.HeadRef
+	if headRef == nil {
+		headRef = ptr(branchName)
+	}
+	_ = headOut
+	return BranchContext{
+		BranchName: branchName,
+		BaseRef:    baseRef,
+		HeadRef:    headRef,
+	}
+}
+
+func newReport(meta closeoutMetadata, branchCtx BranchContext, status string) Report {
 	return Report{
+		EvidenceKind:  "closeout_evidence",
 		SchemaVersion: "1.0.0",
-		ReportKind:    "relay_closeout_evidence",
-		Status:        "blocked",
-		MechanicalBlocker: &MechanicalBlocker{
-			Stage:   stage,
-			Message: message,
+		ProjectID:     meta.ProjectID,
+		PlanID:        meta.PlanID,
+		PassID:        meta.PassID,
+		RunID:         meta.RunID,
+		RepoTarget:    meta.RepoTarget,
+		BranchContext: branchCtx,
+		Status:        status,
+		ValidationEvidence: ValidationEvidenceSec{
+			ValidationReports: []ArtifactReference{},
+			Summary:           "",
 		},
+		AuditEvidence: AuditEvidenceSec{
+			AuditPackets: []ArtifactReference{},
+			AuditStatus:  "not_run",
+		},
+		RepositoryEvidence: RepositoryEvidenceSec{
+			GitStatus: RepositoryEvidenceReference{State: "not_run"},
+			Commit:    RepositoryEvidenceReference{State: "not_run"},
+			Push:      RepositoryEvidenceReference{State: "not_run"},
+		},
+		ArtifactReferences: []ArtifactReference{},
+		Issues:             []CloseoutIssue{},
 	}
 }
 
-func baseReport(message, slug string, createdAt time.Time, dryRun bool, branchOut, headOut string) Report {
-	return Report{
-		SchemaVersion: "1.0.0",
-		ReportKind:    "relay_closeout_evidence",
-		Status:        "pending",
-		CreatedAt:     createdAt.Format(time.RFC3339),
-		Message:       message,
-		Slug:          slug,
-		Branch:        strings.TrimSpace(branchOut),
-		HeadSHA:       strings.TrimSpace(headOut),
-		DryRun:        dryRun,
-	}
+// setEvidencePaths records the persisted evidence paths and adds artifact
+// references for the JSON and Markdown outputs. All paths are normalized to
+// repo-relative forward-slash form before assignment.
+func (r *Report) setEvidencePaths(paths EvidencePaths) {
+	r.ArtifactReferences = appendUniqueArtifact(r.ArtifactReferences, ArtifactReference{
+		Kind: "closeout_evidence",
+		Path: normalizeEvidencePath(paths.JSON),
+	})
+	r.ArtifactReferences = appendUniqueArtifact(r.ArtifactReferences, ArtifactReference{
+		Kind: "closeout_evidence_markdown",
+		Path: normalizeEvidencePath(paths.Markdown),
+	})
+	r.evidencePaths = paths
 }
 
-func block(report Report, stage, message string) (Report, error) {
-	report.Status = "blocked"
-	report.MechanicalBlocker = &MechanicalBlocker{Stage: stage, Message: message}
-	return report, blockerError(stage, message)
+func (r *Report) recordStagedFiles(files []string) {
+	r.stagedFiles = files
 }
 
-func blockAndWrite(report Report, stage, message string) (Report, error) {
-	report.Status = "blocked"
-	report.MechanicalBlocker = &MechanicalBlocker{Stage: stage, Message: message}
-	_ = writeEvidence(&report)
-	return report, blockerError(stage, message)
-}
-
-func blockerError(stage, message string) error {
-	return &MechanicalBlockerError{Stage: stage, Message: message}
-}
-
-func runValidation(ctx context.Context, runner CommandRunner, command string) ValidationEvidence {
+// recordGeneratedArtifactStep runs a closeout-owned deterministic
+// generated-artifact command and records the result as a closeout issue. The
+// command output tail is redacted. Failure is recorded as evidence and does
+// not block closeout.
+func (r *Report) recordGeneratedArtifactStep(ctx context.Context, runner CommandRunner, command string) {
 	result := runner.Run(ctx, "bash", "-lc", command)
-	status := "passed"
+	tail := outputTail(command, result.Stdout, result.Stderr, result.ExitCode)
+	severity := "info"
 	if result.ExitCode != 0 || result.Err != nil {
-		status = "failed"
+		severity = "error"
 	}
-	return ValidationEvidence{
-		Command:     command,
-		ExitCode:    result.ExitCode,
-		Status:      status,
-		OutputTail:  outputTail(command, result.Stdout, result.Stderr, result.ExitCode),
-		ReportPaths: []string{validationReportJSON, validationReportMarkdown},
-	}
+	r.addIssue(severity, "generated_artifact: "+tail)
 }
 
-func writeEvidence(report *Report) error {
-	jsonData, err := json.MarshalIndent(report, "", "  ")
+// ValidationEvidenceSec.summaryFailed reports whether validation evidence
+// indicates a failed command.
+func (v ValidationEvidenceSec) summaryFailed() bool {
+	return strings.Contains(v.Summary, "status=failed") || strings.Contains(v.Summary, "failed")
+}
+
+func (r *Report) addIssue(severity, message string) {
+	if message == "" {
+		return
+	}
+	r.Issues = append(r.Issues, CloseoutIssue{Severity: severity, Message: message})
+}
+
+func (r *Report) block(stage, message string) (Report, error) {
+	r.Status = "blocked"
+	r.addIssue("blocker", stage+": "+message)
+	return *r, blockerError(stage, message)
+}
+
+func (r *Report) blockAndWrite(stage, message string) (Report, error) {
+	r.Status = "blocked"
+	r.addIssue("blocker", stage+": "+message)
+	_ = r.writeEvidence()
+	return *r, blockerError(stage, message)
+}
+
+func blockedReport(opts Options, stage, message string) Report {
+	meta := resolveMetadata(opts)
+	report := newReport(meta, BranchContext{BranchName: "unknown"}, "blocked")
+	report.addIssue("blocker", stage+": "+message)
+	return report
+}
+
+// EvidencePaths are the persisted evidence output paths. They are not part of
+// the schema-conformant Report JSON; they are exposed via Report.evidencePaths
+// for callers (e.g. the CLI) and used to populate ArtifactReferences.
+type EvidencePaths struct {
+	JSON     string
+	Markdown string
+}
+
+// EvidenceJSONPath and EvidenceMarkdownPath expose the persisted evidence
+// output paths to callers (e.g. the CLI).
+func (r Report) EvidenceJSONPath() string    { return r.evidencePaths.JSON }
+func (r Report) EvidenceMarkdownPath() string { return r.evidencePaths.Markdown }
+func (r Report) CommitStatus() string {
+	switch r.RepositoryEvidence.Commit.State {
+	case "captured":
+		return "committed"
+	case "not_run":
+		if r.isDryRun() {
+			return "skipped_dry_run"
+		}
+		return "not_run"
+	default:
+		return r.RepositoryEvidence.Commit.State
+	}
+}
+func (r Report) PushStatus() string {
+	switch r.RepositoryEvidence.Push.State {
+	case "captured":
+		return "pushed"
+	case "not_run":
+		if r.isDryRun() {
+			return "skipped_dry_run"
+		}
+		return "not_run"
+	default:
+		return r.RepositoryEvidence.Push.State
+	}
+}
+func (r Report) ValidationStatus() string {
+	if strings.Contains(r.ValidationEvidence.Summary, "status=failed") {
+		return "failed"
+	}
+	if r.ValidationEvidence.Summary != "" {
+		return "passed"
+	}
+	return "not_run"
+}
+func (r Report) isDryRun() bool {
+	return r.RepositoryEvidence.Commit.Summary == "dry_run" || r.RepositoryEvidence.Push.Summary == "dry_run"
+}
+
+// StagedFiles exposes staged file paths for callers/tests.
+func (r Report) StagedFiles() []string {
+	return r.stagedFiles
+}
+
+// internal accumulators kept off the JSON output.
+func (r *Report) writeEvidence() error {
+	jsonData, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return err
 	}
 	jsonData = append(jsonData, '\n')
 
-	jsonPath, err := artifacts.WriteCloseout(report.CreatedAt[:10], report.Slug, "closeout_evidence_json", jsonData)
+	date := r.CreatedAt
+	if len(date) >= 10 {
+		date = date[:10]
+	}
+	slug := slugFromEvidencePath(r.evidencePaths.JSON)
+	jsonPath, err := artifacts.WriteCloseout(date, slug, "closeout_evidence_json", jsonData)
 	if err != nil {
 		return err
 	}
-	mdPath, err := artifacts.WriteCloseout(report.CreatedAt[:10], report.Slug, "closeout_evidence_markdown", []byte(renderMarkdown(*report)))
+	mdPath, err := artifacts.WriteCloseout(date, slug, "closeout_evidence_markdown", []byte(renderMarkdown(*r)))
 	if err != nil {
 		return err
 	}
-	report.EvidencePaths = EvidencePaths{JSON: jsonPath, Markdown: mdPath}
+	r.evidencePaths = EvidencePaths{JSON: jsonPath, Markdown: mdPath}
+	r.setEvidencePaths(r.evidencePaths)
 	return nil
 }
 
@@ -321,35 +583,64 @@ func pathExists(path string) bool {
 	return err == nil
 }
 
+func runValidation(ctx context.Context, runner CommandRunner, command string) ValidationEvidenceSec {
+	result := runner.Run(ctx, "bash", "-lc", command)
+	status := "passed"
+	if result.ExitCode != 0 || result.Err != nil {
+		status = "failed"
+	}
+	tail := outputTail(command, result.Stdout, result.Stderr, result.ExitCode)
+	return ValidationEvidenceSec{
+		ValidationReports: []ArtifactReference{
+			{Kind: "validation_report", Path: normalizeEvidencePath(validationReportJSON)},
+			{Kind: "validation_report", Path: normalizeEvidencePath(validationReportMarkdown)},
+		},
+		Summary: fmt.Sprintf("command=%s exit_code=%d status=%s\n%s", command, result.ExitCode, status, tail),
+	}
+}
+
 func renderMarkdown(report Report) string {
 	lines := []string{
 		"# Relay Closeout Evidence",
 		"",
+		"- evidence_kind: " + report.EvidenceKind,
+		"- schema_version: " + report.SchemaVersion,
 		"- status: " + report.Status,
-		"- validation_status: " + report.Validation.Status,
-		"- validation_exit_code: " + fmt.Sprint(report.Validation.ExitCode),
-		"- commit_status: " + report.CommitStatus,
-		"- push_status: " + report.PushStatus,
-		"- branch: " + report.Branch,
-		"- head_sha: " + report.HeadSHA,
-		"- dry_run: " + fmt.Sprint(report.DryRun),
+		"- project_id: " + report.ProjectID,
+		"- run_id: " + report.RunID,
+		"- repo_target: " + report.RepoTarget,
+		"- branch_name: " + report.BranchContext.BranchName,
 		"",
-		"## Evidence",
+		"## Repository Evidence",
 		"",
-		"- json: " + filepath.ToSlash(report.EvidencePaths.JSON),
-		"- markdown: " + filepath.ToSlash(report.EvidencePaths.Markdown),
-		"- validation_json: " + validationReportJSON,
-		"- validation_markdown: " + validationReportMarkdown,
+		"- git_status: " + report.RepositoryEvidence.GitStatus.State,
+		"- commit: " + report.RepositoryEvidence.Commit.State,
+		"- push: " + report.RepositoryEvidence.Push.State,
+		"",
+		"## Validation Evidence",
+		"",
+		"- summary:",
+		"```text",
+		report.ValidationEvidence.Summary,
+		"```",
+		"",
+		"## Artifact References",
 		"",
 	}
-	if report.MechanicalBlocker != nil {
-		lines = append(lines,
-			"## Mechanical Blocker",
-			"",
-			"- stage: "+report.MechanicalBlocker.Stage,
-			"- message: "+report.MechanicalBlocker.Message,
-			"",
-		)
+	if len(report.ArtifactReferences) == 0 {
+		lines = append(lines, "(none)")
+	} else {
+		for _, ref := range report.ArtifactReferences {
+			lines = append(lines, fmt.Sprintf("- %s: %s", ref.Kind, ref.Path))
+		}
+	}
+	lines = append(lines, "", "## Issues", "")
+	if len(report.Issues) == 0 {
+		lines = append(lines, "(none)")
+	} else {
+		for _, issue := range report.Issues {
+			lines = append(lines, fmt.Sprintf("- [%s] %s", issue.Severity, issue.Message))
+		}
 	}
 	return strings.Join(lines, "\n") + "\n"
 }
@@ -417,8 +708,8 @@ var redactors = []struct {
 	pattern *regexp.Regexp
 	repl    string
 }{
-	{regexp.MustCompile(`(?i)(Authorization:\s*Bearer\s+)[^\s]+`), `${1}[REDACTED_TOKEN]`},
-	{regexp.MustCompile(`(?i)([?&](?:token|access_token|auth|signature|X-Amz-Signature)=)[^&\s]+`), `${1}[REDACTED_TOKEN]`},
+	{regexp.MustCompile(`(?i)(Authorization:\s*Bearer\s+)[^\s]+`), "${1}[REDACTED_TOKEN]"},
+	{regexp.MustCompile(`(?i)([?&](?:token|access_token|auth|signature|X-Amz-Signature)=)[^&\s]+`), "${1}[REDACTED_TOKEN]"},
 	{regexp.MustCompile(`\b[A-Za-z0-9+_-]{48,}={0,2}\b`), `[REDACTED_SECRET]`},
 	{regexp.MustCompile(`(?i)([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|API_KEY|ACCESS_KEY|PRIVATE_KEY|AUTH|COOKIE|SESSION|CSRF|JWT)[A-Z0-9_]*=)[^\s]+`), `${1}[REDACTED_SECRET]`},
 }
@@ -429,4 +720,39 @@ func filterOutput(value string) string {
 		filtered = redactor.pattern.ReplaceAllString(filtered, redactor.repl)
 	}
 	return filtered
+}
+
+// normalizeEvidencePath converts an OS-specific closeout artifact path to a
+// repo-relative forward-slash path suitable for durable closeout evidence.
+// It strips a leading "./" and an absolute repo-root prefix when present.
+func normalizeEvidencePath(p string) string {
+	return artifacts.NormalizeCloseoutPath(p)
+}
+
+func appendUniqueArtifact(refs []ArtifactReference, ref ArtifactReference) []ArtifactReference {
+	for _, existing := range refs {
+		if existing.Kind == ref.Kind && existing.Path == ref.Path {
+			return refs
+		}
+	}
+	return append(refs, ref)
+}
+
+func slugFromEvidencePath(p string) string {
+	base := filepath.Base(p)
+	if idx := strings.Index(base, ".closeout-evidence"); idx >= 0 {
+		base = base[:idx]
+	} else if dot := strings.LastIndex(base, "."); dot > 0 {
+		base = base[:dot]
+	}
+	if und := strings.Index(base, "_"); und >= 0 {
+		return base[und+1:]
+	}
+	return base
+}
+
+func ptr(v string) *string { return &v }
+
+func blockerError(stage, message string) error {
+	return &MechanicalBlockerError{Stage: stage, Message: message}
 }

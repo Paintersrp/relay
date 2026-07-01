@@ -67,21 +67,20 @@ const repoRoot = process.cwd()
 const fastCommands = [
   { step: 1, name: 'go-fmt-agentrefs-executor', command: 'go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor', argv: ['go', ['fmt', './cmd/agentrefs', './internal/agentrefs', './internal/executor']] },
   { step: 2, name: 'go-test-agentrefs', command: 'go test ./internal/agentrefs/... ./cmd/agentrefs/...', argv: ['go', ['test', './internal/agentrefs/...', './cmd/agentrefs/...']] },
-  { step: 3, name: 'agentrefs-check', command: 'go run ./cmd/agentrefs check', shell: true },
-  { step: 4, name: 'go-test-executor', command: 'go test ./internal/executor/...', argv: ['go', ['test', './internal/executor/...']] },
+  { step: 3, name: 'go-test-executor', command: 'go test ./internal/executor/...', argv: ['go', ['test', './internal/executor/...']] },
 ]
 
 const broadCommands = [
   ...fastCommands,
-  { step: 5, name: 'go-test-all', command: 'go test ./...', argv: ['go', ['test', './...']] },
-  { step: 6, name: 'web-typecheck', command: 'cd apps/web && npm run typecheck', shell: true },
-  { step: 7, name: 'web-test', command: 'cd apps/web && npm run test', shell: true },
+  { step: 4, name: 'go-test-all', command: 'go test ./...', argv: ['go', ['test', './...']] },
+  { step: 5, name: 'web-typecheck', command: 'cd apps/web && npm run typecheck', shell: true },
+  { step: 6, name: 'web-test', command: 'cd apps/web && npm run test', shell: true },
 ]
 
 const fullCommands = [
   ...broadCommands,
-  { step: 8, name: 'web-build', command: 'cd apps/web && npm run build', shell: true },
-  { step: 9, name: 'no-root-agentrefs-exe', command: 'test ! -e agentrefs.exe', shell: true },
+  { step: 7, name: 'web-build', command: 'cd apps/web && npm run build', shell: true },
+  { step: 8, name: 'no-root-agentrefs-exe', command: 'test ! -e agentrefs.exe', shell: true },
 ]
 
 const commandsByTier = { fast: fastCommands, broad: broadCommands, full: fullCommands }

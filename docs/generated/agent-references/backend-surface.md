@@ -144,11 +144,11 @@ Schema version: `1.0.0`
 | `internal/mcp/http_handler.go` | `490414d00c581a709bf44c232dccd0d2ddde1b03bd6a1bd2d94b520025065d7c` | source |
 | `internal/mcp/http_handler_test.go` | `28e607c54c8328d995ea63731ea1e166edaabec75524bdd649d46f06338970a3` | test |
 | `internal/mcp/local_audit_tools.go` | `dcdb5b2485267f170781711640de73fa3b1d99c7ed52b088d68a147cf5bbade1` | source |
-| `internal/mcp/mcp_test.go` | `b09fa87828689566f40d57069f1e7c4aca5a20e6766ea25938f0edc400699bcb` | test |
+| `internal/mcp/mcp_test.go` | `98ffb019d0cd0f1ea08faf9d14a803b5d297a2edb5be746e5e2f121dd8a0965b` | test |
 | `internal/mcp/orchestrator_work_tools.go` | `6f9c8ca688f10be814496b59b3e9a1db8d32dac02dd73891ed827dd40a09e8c2` | source |
 | `internal/mcp/orchestrator_work_tools_test.go` | `93a073c370de7c9cf621fec0cf1c3be9a1cb8c4fc6b3fe75e7df668fdcd1b77b` | test |
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | source |
-| `internal/mcp/plan_attempt_tools_test.go` | `1cf74dc584a0ae40d670ff0375653a36c2f03fdb762e63232d09d0a99d4a9502` | test |
+| `internal/mcp/plan_attempt_tools_test.go` | `715958766aa19f3affe932d9ebc6d47d4e50b915d0e043d65cfb6ffbee79fa6b` | test |
 | `internal/mcp/plan_seed_tools.go` | `19a7bede46ae71836a0a942123f2d24015e7faaf93896850b57e7bd6cbbb0ad4` | source |
 | `internal/mcp/plan_seed_tools_test.go` | `b6692a1bc4b24fbbac5c88baa22f4456db0701bc3be9392a0c23cc7d376ddc91` | test |
 | `internal/mcp/plan_tools.go` | `cd624b354bc28812cc9ae68e9a7917506dc64004044b7e7d4d16afc40aef064c` | source |
@@ -160,10 +160,10 @@ Schema version: `1.0.0`
 | `internal/mcp/protocol.go` | `602351acabcaf9f1141f52921ae2db4828a9ea91fd3ce417a0099718ab0d33ea` | source |
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | source |
 | `internal/mcp/refactor_backlog_tools_test.go` | `80dab3bab0e3240676606dccc6c218d8b10bc6a2b09975e9cca552d67dec4b05` | test |
-| `internal/mcp/server.go` | `fa8f88fa34e97d933d9d7cfa8b84dd52d61fc01c4e369e8e16d0c5466d4484f2` | source |
+| `internal/mcp/server.go` | `71893bd6df036612aef4a0028ef8e14fe7055becb92d347576b5758b10243cef` | source |
 | `internal/mcp/server_notification_test.go` | `7738e90594c9f4ee221505d9a026a83be0b372e39ee44fb9e6dabe8deb80dbab` | test |
 | `internal/mcp/server_tools_list_test.go` | `4bb1163a046646181f8cedfaed435b64b464bd41b5d0b874ef71db8c1e7f5104` | test |
-| `internal/mcp/tool_create_run.go` | `9e5434d1b9920ea72a14864a51e855363c729a6423a3d8b14009de3290655cd3` | source |
+| `internal/mcp/tool_create_run.go` | `771409c873aba6d8c9994ad53f831818d7f905ad4f0dd226725dbe3b5cbd4ed1` | source |
 | `internal/mcp/tool_get_run_status.go` | `730691b5fd5d5aa1f99dd7b32a61163ac19354774694cb6a1bdb65cf45074f13` | source |
 | `internal/mcp/tool_list_runs.go` | `8c9be8897fb0fe5fee3862ea0629e855f130626412e34daa4b3b9e54af6c5f85` | source |
 | `internal/mcp/tool_submit_audit.go` | `2aaf19f4789d5a305a5813d3d7b24cb73455233a654b326945246f82f418cd27` | source |
@@ -7460,6 +7460,14 @@ Evidence:
 
 - source: `internal/mcp/tool_create_run.go`
 
+### backend-symbol-internal-mcp-func-handlecreaterunfromplannerhandofffile (proven)
+
+Exported func HandleCreateRunFromPlannerHandoffFile in internal/mcp/tool_create_run.go
+
+Evidence:
+
+- source: `internal/mcp/tool_create_run.go`
+
 ### backend-symbol-internal-mcp-func-handlecreatesourcesnapshot (proven)
 
 Exported func HandleCreateSourceSnapshot in internal/mcp/context_broker_tools.go
@@ -8151,6 +8159,14 @@ Evidence:
 ### backend-symbol-internal-mcp-var-toolcreaterunfromplannerhandoff (proven)
 
 Exported var ToolCreateRunFromPlannerHandoff in internal/mcp/tool_create_run.go
+
+Evidence:
+
+- source: `internal/mcp/tool_create_run.go`
+
+### backend-symbol-internal-mcp-var-toolcreaterunfromplannerhandofffile (proven)
+
+Exported var ToolCreateRunFromPlannerHandoffFile in internal/mcp/tool_create_run.go
 
 Evidence:
 
@@ -12319,6 +12335,30 @@ Evidence:
 ### backend-test-internal-mcp-testhandlecreaterunfromplannerhandoff-unknownplanrejected (proven)
 
 Test function TestHandleCreateRunFromPlannerHandoff_UnknownPlanRejected in internal/mcp/mcp_test.go
+
+Evidence:
+
+- test: `internal/mcp/mcp_test.go`
+
+### backend-test-internal-mcp-testhandlecreaterunfromplannerhandofffile-invalidfileinputs (proven)
+
+Test function TestHandleCreateRunFromPlannerHandoffFile_InvalidFileInputs in internal/mcp/mcp_test.go
+
+Evidence:
+
+- test: `internal/mcp/mcp_test.go`
+
+### backend-test-internal-mcp-testhandlecreaterunfromplannerhandofffile-shamismatchcreatesnorun (proven)
+
+Test function TestHandleCreateRunFromPlannerHandoffFile_SHAMismatchCreatesNoRun in internal/mcp/mcp_test.go
+
+Evidence:
+
+- test: `internal/mcp/mcp_test.go`
+
+### backend-test-internal-mcp-testhandlecreaterunfromplannerhandofffile-successexactsha (proven)
+
+Test function TestHandleCreateRunFromPlannerHandoffFile_SuccessExactSHA in internal/mcp/mcp_test.go
 
 Evidence:
 

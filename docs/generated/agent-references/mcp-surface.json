@@ -40,12 +40,12 @@
     },
     {
       "path": "internal/mcp/server.go",
-      "sha256": "fa8f88fa34e97d933d9d7cfa8b84dd52d61fc01c4e369e8e16d0c5466d4484f2",
+      "sha256": "71893bd6df036612aef4a0028ef8e14fe7055becb92d347576b5758b10243cef",
       "role": "mcp_tool_source"
     },
     {
       "path": "relay-contracts/contracts/planner_mcp_context_broker_contract.md",
-      "sha256": "d37f6c2b4f2fd3bd6da9ccc89541da93e144072f0d6a4432014c5f583351d5ef",
+      "sha256": "7ff202c0d56f8cd10edf5bb7d670451ccef2d2c948cae66eda2e3e06348862b9",
       "role": "mcp_contract_source"
     },
     {
