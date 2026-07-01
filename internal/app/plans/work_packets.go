@@ -1035,8 +1035,11 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 			snapshotID, snapshotStatus, snapshotFound, snapshotAcquired, acqBlocker = svc.acquireSourceSnapshot(
 				ctx, project, plan, pass, requireSnapshot, &ssReqs, ctxPlan, repoAliases)
 			if acqBlocker != nil {
-				jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, "", "", requireSnapshot, false, snapshotFound, false, false, "", svc.buildSnapshotMetadataIndex(snapshotID, repoAliases))
+				metaIdx := svc.buildSnapshotMetadataIndex(snapshotID, repoAliases)
+				requiredContextBundle := buildRequiredContextBundle(selectedPass, pass.PassType, ctxPlan, &ctxBudget, criteria, snapshotID, repoAliases, metaIdx)
+				jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, "", "", requireSnapshot, false, snapshotFound, false, false, "", metaIdx)
 				jumpstart.ReadinessState = "needs_source_snapshot"
+				jumpstart.RequiredContextBundle = requiredContextBundle
 				resp := NextPassWorkResponse{
 					OK:   false,
 					Tool: NextPassWorkTool,
@@ -1058,8 +1061,9 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 						SourceSnapshotStatus: snapshotStatus,
 						ContextReady:         false,
 					},
-					PlannerJumpstart: jumpstart,
-					Blockers:         []WorkBlocker{*acqBlocker},
+					PlannerJumpstart:      jumpstart,
+					RequiredContextBundle: requiredContextBundle,
+					Blockers:              []WorkBlocker{*acqBlocker},
 					AcquisitionSummary: &AcquisitionSummary{
 						SourceSnapshotAcquired: snapshotAcquired,
 						SourceSnapshotID:       snapshotID,
@@ -1085,8 +1089,10 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 
 	// Build the source snapshot metadata index once (when a snapshot is
 	// resolved) so required seed file ranges are planned from real metadata and
-	// shared by both the suggested action args and internal backend acquisition.
+	// shared by both the suggested action args, internal backend acquisition,
+	// and early-failure required context bundles.
 	metaIdx := svc.buildSnapshotMetadataIndex(snapshotID, repoAliases)
+	requiredContextBundle := buildRequiredContextBundle(selectedPass, pass.PassType, ctxPlan, &ctxBudget, criteria, snapshotID, repoAliases, metaIdx)
 
 	var packetID string
 	var packetStatus string
@@ -1106,6 +1112,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 			if acqBlocker != nil {
 				acquisitionFailureReport = report
 				jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, "", metaIdx)
+				jumpstart.RequiredContextBundle = requiredContextBundle
 				if acquisitionFailureReport != nil {
 					jumpstart.ReadinessState = acquisitionFailureReport.ReadinessState
 					jumpstart.SuggestedContextAcquisitionActions = nil
@@ -1128,11 +1135,12 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 						Status: plan.Status,
 						Title:  plan.Title,
 					},
-					SelectedPass:     selectedPass,
-					DependencyStatus: depStatuses,
-					AssociatedRuns:   terminalRunSummaries,
-					PlannerJumpstart: jumpstart,
-					Blockers:         []WorkBlocker{*acqBlocker},
+					SelectedPass:          selectedPass,
+					DependencyStatus:      depStatuses,
+					AssociatedRuns:        terminalRunSummaries,
+					PlannerJumpstart:      jumpstart,
+					RequiredContextBundle: requiredContextBundle,
+					Blockers:              []WorkBlocker{*acqBlocker},
 					AcquisitionSummary: &AcquisitionSummary{
 						SourceSnapshotAcquired: snapshotAcquired,
 						SourceSnapshotID:       snapshotID,
@@ -1190,8 +1198,6 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 	default:
 		readinessState = "ready_for_handoff_authoring"
 	}
-
-	requiredContextBundle := buildRequiredContextBundle(selectedPass, pass.PassType, ctxPlan, &ctxBudget, criteria, snapshotID, repoAliases, metaIdx)
 
 	// Build the shared Planner jumpstart payload.
 	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, packetUnusableReason, metaIdx)

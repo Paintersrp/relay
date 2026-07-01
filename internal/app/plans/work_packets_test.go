@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -21,6 +22,12 @@ type fakeSourceSnapshotAcquirer struct {
 
 func (f fakeSourceSnapshotAcquirer) CreateSourceSnapshot(ctx context.Context, projectID string, repoIDs []string, includeFileMetadata bool) (string, string, int, error) {
 	return f.snapshotID, f.status, f.included, nil
+}
+
+type failingSourceSnapshotAcquirer struct{}
+
+func (failingSourceSnapshotAcquirer) CreateSourceSnapshot(ctx context.Context, projectID string, repoIDs []string, includeFileMetadata bool) (string, string, int, error) {
+	return "", "", 0, errors.New("snapshot backend unavailable")
 }
 
 type fakeContextPacketAcquirer struct {
@@ -1950,6 +1957,82 @@ func TestGetNextPassWork_ContextAcquisitionFailureReport(t *testing.T) {
 		if action.Tool == "create_context_packet" {
 			t.Fatalf("did not expect manual create_context_packet action after backend retry failure: %+v", resp.PlannerJumpstart.SuggestedContextAcquisitionActions)
 		}
+	}
+	bundle := resp.RequiredContextBundle
+	if bundle == nil {
+		t.Fatal("expected required_context_bundle on context acquisition failure")
+	}
+	if resp.PlannerJumpstart.RequiredContextBundle == nil {
+		t.Fatal("expected planner_jumpstart required_context_bundle on context acquisition failure")
+	}
+	if resp.PlannerJumpstart.RequiredContextBundle.ManifestPath != bundle.ManifestPath ||
+		resp.PlannerJumpstart.RequiredContextBundle.TaskDomain != bundle.TaskDomain {
+		t.Fatalf("expected top-level and jumpstart bundle metadata to match: top=%+v jumpstart=%+v", bundle, resp.PlannerJumpstart.RequiredContextBundle)
+	}
+	if bundle.ManifestRepoID != "relay-contracts" || bundle.ManifestPath != requiredContextManifestPath {
+		t.Fatalf("expected manifest metadata in bundle, got %+v", bundle)
+	}
+	if bundle.TaskDomain == "" {
+		t.Fatal("expected task domain in bundle")
+	}
+	if len(bundle.RequiredFiles) == 0 || len(bundle.RequiredSearches) == 0 {
+		t.Fatalf("expected required seed metadata in bundle, got files=%+v searches=%+v", bundle.RequiredFiles, bundle.RequiredSearches)
+	}
+	assertRequiredContextBundleSafeJSON(t, bundle)
+	summary := CompactNextPassWorkSummary(resp)
+	if summary.RequiredContextBundle == nil || summary.RequiredContextBundle.ManifestPath != requiredContextManifestPath {
+		t.Fatalf("expected compact summary bundle manifest path, got %+v", summary.RequiredContextBundle)
+	}
+	if len(summary.RequiredContextBundle.RequiredFiles) == 0 {
+		t.Fatalf("expected compact summary required files, got %+v", summary.RequiredContextBundle)
+	}
+}
+
+func TestGetNextPassWork_SourceSnapshotAcquisitionFailureIncludesRequiredContextBundle(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedPass002AcquisitionPlan(t, st, "plan-pass002-source-failure")
+	svc.SetSourceService(failingSourceSnapshotAcquirer{})
+	svc.SetContextPacketService(&fakeContextPacketAcquirer{})
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{ProjectID: "relay", PlanID: "plan-pass002-source-failure"})
+	if err != nil {
+		t.Fatalf("GetNextPassWork: %v", err)
+	}
+	if resp.OK || resp.HandoffWork != nil {
+		t.Fatalf("expected source acquisition failure without handoff work, got ok=%t handoff=%v", resp.OK, resp.HandoffWork)
+	}
+	if resp.SelectedPass == nil || resp.SelectedPass.PassID != "PASS-002" {
+		t.Fatalf("expected selected PASS-002, got %+v", resp.SelectedPass)
+	}
+	if resp.PlannerJumpstart == nil || resp.PlannerJumpstart.ReadinessState != "needs_source_snapshot" {
+		t.Fatalf("expected needs_source_snapshot jumpstart, got %+v", resp.PlannerJumpstart)
+	}
+	assertBlockerCode(t, resp, BlockerSourceSnapshotAcquisitionFailed)
+	bundle := resp.RequiredContextBundle
+	if bundle == nil {
+		t.Fatal("expected required_context_bundle on source snapshot acquisition failure")
+	}
+	if resp.PlannerJumpstart.RequiredContextBundle == nil {
+		t.Fatal("expected planner_jumpstart required_context_bundle on source snapshot acquisition failure")
+	}
+	if resp.PlannerJumpstart.RequiredContextBundle.ManifestPath != bundle.ManifestPath ||
+		resp.PlannerJumpstart.RequiredContextBundle.TaskDomain != bundle.TaskDomain {
+		t.Fatalf("expected top-level and jumpstart bundle metadata to match: top=%+v jumpstart=%+v", bundle, resp.PlannerJumpstart.RequiredContextBundle)
+	}
+	if len(bundle.RequiredFiles) == 0 || bundle.RequiredFiles[0].Path != "internal/app/plans/work_packets.go" {
+		t.Fatalf("expected required files from selected pass context plan, got %+v", bundle.RequiredFiles)
+	}
+	if len(bundle.RequiredSearches) == 0 || bundle.RequiredSearches[0].Query != "get_next_pass_work context packet" {
+		t.Fatalf("expected required searches from selected pass context plan, got %+v", bundle.RequiredSearches)
+	}
+	assertRequiredContextBundleSafeJSON(t, bundle)
+	summary := CompactNextPassWorkSummary(resp)
+	if summary.RequiredContextBundle == nil || summary.RequiredContextBundle.ManifestPath != requiredContextManifestPath {
+		t.Fatalf("expected compact summary bundle manifest path, got %+v", summary.RequiredContextBundle)
+	}
+	if len(summary.RequiredContextBundle.RequiredFiles) == 0 {
+		t.Fatalf("expected compact summary required files, got %+v", summary.RequiredContextBundle)
 	}
 }
 
