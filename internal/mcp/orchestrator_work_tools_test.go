@@ -587,7 +587,7 @@ func TestOrchestratorWorkTools_SchemasAreStrictAndScoped(t *testing.T) {
 		}
 	}
 	outputProps, _ := outputSchema["properties"].(map[string]any)
-	for _, field := range []string{"handoff_work", "handoff_authoring_packet"} {
+	for _, field := range []string{"handoff_work", "handoff_authoring_packet", "required_context_bundle"} {
 		if _, ok := outputProps[field]; !ok {
 			t.Errorf("get_next_pass_work outputSchema must define %q", field)
 		}
@@ -730,6 +730,12 @@ func TestOrchestratorWorkTools_GetNextPassWorkSuccessThroughTool(t *testing.T) {
 	if resp.HandoffWork == nil || resp.HandoffPacket == nil {
 		t.Fatalf("expected handoff_work and handoff_authoring_packet in structuredContent: %+v", resp)
 	}
+	if resp.RequiredContextBundle == nil {
+		t.Fatalf("expected required_context_bundle in structuredContent: %+v", resp)
+	}
+	if resp.HandoffWork.RequiredContextBundle == nil || resp.HandoffWork.RequiredContextBundle.ManifestPath == "" {
+		t.Fatalf("expected handoff_work required_context_bundle metadata: %+v", resp.HandoffWork.RequiredContextBundle)
+	}
 	if resp.HandoffWork.PlanID != "plan-mcp-passwork" || resp.HandoffWork.PassID != "PASS-001" {
 		t.Fatalf("unexpected handoff_work IDs: %+v", resp.HandoffWork)
 	}
@@ -743,6 +749,12 @@ func TestOrchestratorWorkTools_GetNextPassWorkSuccessThroughTool(t *testing.T) {
 	}
 	if !strings.Contains(result.Content[0].Text, "Use the Relay pass-detail preview") {
 		t.Fatalf("expected local preview hint in text, got %q", result.Content[0].Text)
+	}
+	if !strings.Contains(result.Content[0].Text, "required_context_bundle=present") {
+		t.Fatalf("expected compact text to mention bundle presence, got %q", result.Content[0].Text)
+	}
+	if strings.Contains(result.Content[0].Text, "required_files") || strings.Contains(result.Content[0].Text, "required_searches") {
+		t.Fatalf("compact text must not enumerate bundle file/search lists: %q", result.Content[0].Text)
 	}
 	if strings.Contains(result.Content[0].Text, "create_run_from_planner_handoff") {
 		t.Fatalf("text must describe handoff authoring, not run submission: %q", result.Content[0].Text)

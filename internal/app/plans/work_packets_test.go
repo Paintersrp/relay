@@ -2027,7 +2027,7 @@ func seedAcquisitionPlanWithContext(t *testing.T, st *store.Store, planID string
 			{
 				PassID: "PASS-002", Sequence: 2, Name: "Second", Goal: "Range planning context acquisition.",
 				IntendedExecutionScope: []string{"backend"}, NonGoals: []string{"validation tiers"},
-				Dependencies: []string{"PASS-001"}, Status: "planned", PassType: "backend_vertical_slice",
+				Dependencies: []string{"PASS-001"}, Status: "planned", PassType: "workflow_backend_mcp",
 				ContextPlan:                ctxPlan,
 				SourceSnapshotRequirements: SourceSnapshotRequirements{RequireGitStatus: boolPtr(false), RequireCommitSHA: boolPtr(false), AllowDirtyWorktree: boolPtr(true)},
 				HandoffReadinessCriteria:   []string{"context acquired"},
@@ -2046,6 +2046,15 @@ func seedAcquisitionPlanWithContext(t *testing.T, st *store.Store, planID string
 // repository row and the provided file metadata rows.
 func seedSnapshotFileMetadata(t *testing.T, st *store.Store, snapshotID string, files []store.CreateSourceSnapshotFileParams) {
 	t.Helper()
+	seedSnapshotFileMetadataByRepo(t, st, snapshotID, map[string][]store.CreateSourceSnapshotFileParams{
+		"relay": files,
+	})
+}
+
+// seedSnapshotFileMetadataByRepo creates a usable source snapshot with file
+// metadata rows for each provided repository ID.
+func seedSnapshotFileMetadataByRepo(t *testing.T, st *store.Store, snapshotID string, filesByRepo map[string][]store.CreateSourceSnapshotFileParams) {
+	t.Helper()
 	project, err := st.GetProjectByProjectID("relay")
 	if err != nil {
 		t.Fatalf("GetProjectByProjectID: %v", err)
@@ -2062,36 +2071,66 @@ func seedSnapshotFileMetadata(t *testing.T, st *store.Store, snapshotID string, 
 	if err != nil {
 		t.Fatalf("CreateSourceSnapshot: %v", err)
 	}
+	existingRepos, err := st.ListProjectRepositories(project.ID)
+	if err != nil {
+		t.Fatalf("ListProjectRepositories: %v", err)
+	}
+	existingRepoIDs := map[string]struct{}{}
+	for _, repo := range existingRepos {
+		existingRepoIDs[repo.RepoID] = struct{}{}
+	}
+	for repoID := range filesByRepo {
+		if _, ok := existingRepoIDs[repoID]; ok {
+			continue
+		}
+		role := "reference"
+		if repoID == "relay-contracts" {
+			role = "contracts"
+		}
+		if _, err := st.UpsertProjectRepository(store.UpsertProjectRepositoryParams{
+			ProjectRowID:     project.ID,
+			RepoID:           repoID,
+			Role:             role,
+			LocalPath:        "D:/Code/" + repoID,
+			DefaultBranch:    "main",
+			AllowedRootsJSON: `["."]`,
+			MaxFileSizeBytes: 1048576,
+			Enabled:          1,
+		}); err != nil {
+			t.Fatalf("UpsertProjectRepository %q: %v", repoID, err)
+		}
+	}
 	repos, err := st.ListProjectRepositories(project.ID)
 	if err != nil {
 		t.Fatalf("ListProjectRepositories: %v", err)
 	}
-	var repoRowID int64
+	repoRowIDs := map[string]int64{}
 	for _, r := range repos {
-		if r.RepoID == "relay" {
-			repoRowID = r.ID
+		repoRowIDs[r.RepoID] = r.ID
+	}
+	for repoID, files := range filesByRepo {
+		repoRowID := repoRowIDs[repoID]
+		if repoRowID == 0 {
+			t.Fatalf("%s project repository not registered", repoID)
 		}
-	}
-	if repoRowID == 0 {
-		t.Fatalf("relay project repository not registered")
-	}
-	snapRepo, err := st.CreateSourceSnapshotRepository(store.CreateSourceSnapshotRepositoryParams{
-		SourceSnapshotRowID:    snapshot.ID,
-		ProjectRepositoryRowID: repoRowID,
-		RepoID:                 "relay",
-		Role:                   "primary",
-		LocalPath:              "D:/Code/relay",
-		DefaultBranch:          "main",
-		CurrentBranch:          "main",
-		GitStatusAvailable:     1,
-	})
-	if err != nil {
-		t.Fatalf("CreateSourceSnapshotRepository: %v", err)
-	}
-	for _, f := range files {
-		f.SourceSnapshotRepositoryRowID = snapRepo.ID
-		if _, err := st.CreateSourceSnapshotFile(f); err != nil {
-			t.Fatalf("CreateSourceSnapshotFile: %v", err)
+		snapRepo, err := st.CreateSourceSnapshotRepository(store.CreateSourceSnapshotRepositoryParams{
+			SourceSnapshotRowID:    snapshot.ID,
+			ProjectRepositoryRowID: repoRowID,
+			RepoID:                 repoID,
+			Role:                   "reference",
+			LocalPath:              "D:/Code/" + repoID,
+			DefaultBranch:          "main",
+			CurrentBranch:          "main",
+			GitStatusAvailable:     1,
+		})
+		if err != nil {
+			t.Fatalf("CreateSourceSnapshotRepository %q: %v", repoID, err)
+		}
+		for _, f := range files {
+			f.SourceSnapshotRepositoryRowID = snapRepo.ID
+			if _, err := st.CreateSourceSnapshotFile(f); err != nil {
+				t.Fatalf("CreateSourceSnapshotFile %q: %v", repoID, err)
+			}
 		}
 	}
 }
@@ -2286,5 +2325,137 @@ func TestGetNextPassWork_MetadataPresentMissingFileFailsClosed(t *testing.T) {
 	}
 	if resp.AcquisitionFailureReport == nil || resp.AcquisitionFailureReport.SeedRangeFailure == nil {
 		t.Fatalf("expected seed_range_failure report, got %+v", resp.AcquisitionFailureReport)
+	}
+}
+
+func TestGetNextPassWork_ReadyPassIncludesRequiredContextBundleWithSnapshotHashes(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	ctxPlan := singleRequiredFileContextPlan("internal/app/plans/work_packets.go")
+	ctxPlan.SeedFilesToRead = append(ctxPlan.SeedFilesToRead,
+		ContextFileRead{RepoID: "relay", Path: "docs/mcp.md", Purpose: "optional operator docs", Required: boolPtr(false)})
+	ctxPlan.SeedSearchTerms = append(ctxPlan.SeedSearchTerms,
+		ContextSearchTerm{RepoID: "relay", Query: "required_context_bundle", Purpose: "optional schema/docs search", Required: boolPtr(false)})
+	seedAcquisitionPlanWithContext(t, st, "plan-required-context-bundle", ctxPlan,
+		&ContextBudget{MaxFiles: int64Ptr(12), MaxBytes: int64Ptr(180000), MaxSearchResults: int64Ptr(25), MaxContextLines: int64Ptr(50)})
+	seedSnapshotFileMetadataByRepo(t, st, "snap-required-context-bundle", map[string][]store.CreateSourceSnapshotFileParams{
+		"relay": {
+			{Path: "internal/app/plans/work_packets.go", SizeBytes: 4096, ContentHash: "hash-work-packets", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
+			{Path: "docs/mcp.md", SizeBytes: 2048, ContentHash: "hash-docs-mcp", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
+		},
+		"relay-contracts": {
+			{Path: requiredContextManifestPath, SizeBytes: 1024, ContentHash: "hash-manifest", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
+		},
+	})
+	snapshot, err := st.GetSourceSnapshotByID("snap-required-context-bundle")
+	if err != nil {
+		t.Fatalf("GetSourceSnapshotByID: %v", err)
+	}
+	seedContextPacket(t, st, "relay", "plan-required-context-bundle", "PASS-002", "snap-required-context-bundle", snapshot.ID, "ctxpkt-required-context-bundle")
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{ProjectID: "relay", PlanID: "plan-required-context-bundle"})
+	if err != nil {
+		t.Fatalf("GetNextPassWork: %v", err)
+	}
+	if !resp.OK || resp.HandoffWork == nil || resp.PlannerJumpstart == nil {
+		t.Fatalf("expected ready handoff work, got ok=%t blockers=%+v", resp.OK, resp.Blockers)
+	}
+	bundle := resp.RequiredContextBundle
+	if bundle == nil {
+		t.Fatal("expected required_context_bundle")
+	}
+	if bundle.ManifestRepoID != "relay-contracts" || bundle.ManifestPath != requiredContextManifestPath || bundle.ManifestHash != "hash-manifest" {
+		t.Fatalf("unexpected manifest metadata: %+v", bundle)
+	}
+	if bundle.TaskDomain != "planner_mcp_behavior_update" {
+		t.Fatalf("expected planner_mcp_behavior_update task domain, got %q", bundle.TaskDomain)
+	}
+	if len(bundle.RequiredFiles) != 1 || bundle.RequiredFiles[0].ContentHash != "hash-work-packets" || bundle.RequiredFiles[0].SourceSnapshotID != "snap-required-context-bundle" {
+		t.Fatalf("unexpected required files: %+v", bundle.RequiredFiles)
+	}
+	if len(bundle.OptionalFiles) != 1 || bundle.OptionalFiles[0].ContentHash != "hash-docs-mcp" {
+		t.Fatalf("unexpected optional files: %+v", bundle.OptionalFiles)
+	}
+	if len(bundle.RequiredSearches) != 1 || bundle.RequiredSearches[0].MaxResults != 25 || bundle.RequiredSearches[0].ContextLines != 50 {
+		t.Fatalf("unexpected required searches: %+v", bundle.RequiredSearches)
+	}
+	if bundle.ContextBudget.MaxFiles != 12 || bundle.ContextBudget.MaxBytes != 180000 || bundle.ContextBudget.IncludeInventory {
+		t.Fatalf("unexpected context budget: %+v", bundle.ContextBudget)
+	}
+	if len(bundle.ReadinessCriteria) == 0 || len(bundle.ContextCoverageExpectations) == 0 || len(bundle.BlockedIfMissing) == 0 {
+		t.Fatalf("expected readiness/coverage/blocking guidance in bundle: %+v", bundle)
+	}
+	if len(bundle.Blockers) != 0 {
+		t.Fatalf("expected no bundle blockers, got %+v", bundle.Blockers)
+	}
+	if resp.HandoffWork.RequiredContextBundle != bundle || resp.PlannerJumpstart.RequiredContextBundle != bundle {
+		t.Fatalf("expected nested payloads to reuse required_context_bundle")
+	}
+	summary := CompactNextPassWorkSummary(resp)
+	if summary.RequiredContextBundle == nil || summary.RequiredContextBundle.ManifestHash != "hash-manifest" {
+		t.Fatalf("expected compact summary bundle hash, got %+v", summary.RequiredContextBundle)
+	}
+	assertRequiredContextBundleSafeJSON(t, bundle)
+}
+
+func TestGetNextPassWork_RequiredContextBundleReportsMissingSnapshotMetadata(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedAcquisitionPlanWithContext(t, st, "plan-required-context-bundle-missing",
+		singleRequiredFileContextPlan("internal/app/plans/work_packets.go"),
+		&ContextBudget{MaxFiles: int64Ptr(12), MaxBytes: int64Ptr(180000), MaxSearchResults: int64Ptr(25)})
+	seedSnapshotFileMetadataByRepo(t, st, "snap-required-context-bundle-missing", map[string][]store.CreateSourceSnapshotFileParams{
+		"relay": {
+			{Path: "docs/mcp.md", SizeBytes: 2048, ContentHash: "hash-docs-mcp", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
+		},
+		"relay-contracts": {
+			{Path: "agents/knowledge/planner_knowledge_manifest.json", SizeBytes: 1024, ContentHash: "hash-wrong-manifest", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
+		},
+	})
+	snapshot, err := st.GetSourceSnapshotByID("snap-required-context-bundle-missing")
+	if err != nil {
+		t.Fatalf("GetSourceSnapshotByID: %v", err)
+	}
+	seedContextPacket(t, st, "relay", "plan-required-context-bundle-missing", "PASS-002", "snap-required-context-bundle-missing", snapshot.ID, "ctxpkt-required-context-bundle-missing")
+
+	resp, err := svc.GetNextPassWork(context.Background(), NextPassWorkRequest{ProjectID: "relay", PlanID: "plan-required-context-bundle-missing"})
+	if err != nil {
+		t.Fatalf("GetNextPassWork: %v", err)
+	}
+	if !resp.OK || resp.HandoffWork == nil {
+		t.Fatalf("bundle blockers must not block otherwise ready handoff work: ok=%t blockers=%+v", resp.OK, resp.Blockers)
+	}
+	bundle := resp.RequiredContextBundle
+	if bundle == nil {
+		t.Fatal("expected required_context_bundle")
+	}
+	if bundle.ManifestHash != "" || len(bundle.RequiredFiles) != 1 || bundle.RequiredFiles[0].ContentHash != "" {
+		t.Fatalf("expected missing manifest and file hashes, got %+v", bundle)
+	}
+	if len(bundle.Blockers) < 2 {
+		t.Fatalf("expected manifest and required-file bundle blockers, got %+v", bundle.Blockers)
+	}
+	for _, blocker := range bundle.Blockers {
+		if blocker.Code != BlockerRequiredSeedFileMissingFromSnapshot || !blocker.Recoverable {
+			t.Fatalf("unexpected bundle blocker: %+v", blocker)
+		}
+	}
+	if len(bundle.NextActions) == 0 {
+		t.Fatalf("expected safe next action for bundle blockers")
+	}
+	assertRequiredContextBundleSafeJSON(t, bundle)
+}
+
+func assertRequiredContextBundleSafeJSON(t *testing.T, bundle *RequiredContextBundle) {
+	t.Helper()
+	data, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatalf("marshal required_context_bundle: %v", err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{`"content"`, `"raw"`, `"body"`, `D:/`, `D:\\`, `C:/`, `C:\\`} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("required_context_bundle contains forbidden token %q: %s", forbidden, text)
+		}
 	}
 }

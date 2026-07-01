@@ -192,6 +192,11 @@ var getNextPassWorkOutputSchema = json.RawMessage(`{
     "source_snapshot_id": {"type": "string"},
     "context_packet_id": {"type": "string"},
     "context_ready": {"type": "boolean"},
+    "required_context_bundle": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Metadata-only required context bundle with manifest metadata, required files/searches, readiness criteria, budget guidance, and safe blockers. Never includes raw source contents."
+    },
     "handoff_work": {
       "type": "object",
       "additionalProperties": true,
@@ -290,7 +295,7 @@ var getNextAuditWorkSchema = json.RawMessage(`{
 
 var ToolGetNextPassWork = ToolDefinition{
 	Name:         appplans.NextPassWorkTool,
-	Description:  "Return the next eligible project-scoped plan pass work packet for Planner handoff creation. Performs bounded source snapshot and context packet artifact creation when they are missing or stale. Includes deterministic planner_jumpstart guidance with readiness state, source/context requirements, and handoff preflight checklist. Does NOT create runs, submit plans, generate handoffs, dispatch executors, mutate git, run shell commands, or expose arbitrary filesystem access.",
+	Description:  "Return the next eligible project-scoped plan pass work packet for Planner handoff creation. Performs bounded source snapshot and context packet artifact creation when they are missing or stale. Includes deterministic planner_jumpstart guidance plus a metadata-only required_context_bundle with manifest metadata, required files/searches, readiness criteria, and budget guidance when a pass is selected. Does NOT create runs, submit plans, generate handoffs, dispatch executors, mutate git, run shell commands, or expose arbitrary filesystem access.",
 	InputSchema:  getNextPassWorkSchema,
 	OutputSchema: getNextPassWorkOutputSchema,
 	Annotations: map[string]any{
@@ -374,6 +379,13 @@ func nextPassWorkSummaryText(summary appplans.NextPassWorkMCPSummary) string {
 			blockers += fmt.Sprintf("%s recoverable=%t", blocker.Code, blocker.Recoverable)
 		}
 	}
+	bundle := "absent"
+	if summary.RequiredContextBundle != nil {
+		bundle = "present"
+		if len(summary.RequiredContextBundle.Blockers) > 0 {
+			bundle = fmt.Sprintf("present blockers=%d", len(summary.RequiredContextBundle.Blockers))
+		}
+	}
 	next := "Use structuredContent.next_actions for follow-up references."
 	if len(summary.NextActions) > 0 {
 		next = summary.NextActions[0].Description
@@ -401,12 +413,13 @@ func nextPassWorkSummaryText(summary appplans.NextPassWorkMCPSummary) string {
 		)
 	}
 	return fmt.Sprintf(
-		"get_next_pass_work: selected_pass=%s readiness=%s context_ready=%t source_snapshot_id=%q context_packet_id=%q blockers=%s. %s. %s",
+		"get_next_pass_work: selected_pass=%s readiness=%s context_ready=%t source_snapshot_id=%q context_packet_id=%q required_context_bundle=%s blockers=%s. %s. %s",
 		selected,
 		summary.ReadinessState,
 		summary.ContextReady,
 		summary.SourceSnapshotID,
 		summary.ContextPacketID,
+		bundle,
 		blockers,
 		next,
 		summary.LocalPreviewHint,

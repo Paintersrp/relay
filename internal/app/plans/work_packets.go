@@ -95,6 +95,7 @@ type NextPassWorkResponse struct {
 	AssociatedRuns           []WorkRunSummary          `json:"associated_runs,omitempty"`
 	Context                  *WorkContextSummary       `json:"context,omitempty"`
 	HandoffReadinessCriteria []string                  `json:"handoff_readiness_criteria,omitempty"`
+	RequiredContextBundle    *RequiredContextBundle    `json:"required_context_bundle,omitempty"`
 	HandoffWork              *HandoffAuthoringPacket   `json:"handoff_work,omitempty"`
 	HandoffAuthoringPacket   *HandoffAuthoringPacket   `json:"handoff_authoring_packet,omitempty"`
 	SuggestedRunSubmission   *SuggestedRunSubmission   `json:"suggested_run_submission,omitempty"`
@@ -117,6 +118,7 @@ type NextPassWorkMCPSummary struct {
 	SourceSnapshotID         string                       `json:"source_snapshot_id,omitempty"`
 	ContextPacketID          string                       `json:"context_packet_id,omitempty"`
 	ContextReady             bool                         `json:"context_ready"`
+	RequiredContextBundle    *RequiredContextBundle       `json:"required_context_bundle,omitempty"`
 	HandoffWork              *HandoffAuthoringPacket      `json:"handoff_work,omitempty"`
 	HandoffPacket            *HandoffAuthoringPacket      `json:"handoff_authoring_packet,omitempty"`
 	Blockers                 []NextPassWorkSummaryBlocker `json:"blockers"`
@@ -267,6 +269,56 @@ type ContextCoverageDiagnostic struct {
 	SourceIDs       []string           `json:"source_ids,omitempty"`
 }
 
+// RequiredContextBundle is a metadata-only handoff-authoring aid. It carries
+// manifest and seed context facts from persisted plan/source metadata, never
+// raw source, context packet, artifact, log, secret, or local path contents.
+type RequiredContextBundle struct {
+	ManifestRepoID              string                      `json:"manifest_repo_id"`
+	ManifestPath                string                      `json:"manifest_path"`
+	ManifestHash                string                      `json:"manifest_hash,omitempty"`
+	TaskDomain                  string                      `json:"task_domain"`
+	RequiredFiles               []RequiredContextFile       `json:"required_files"`
+	OptionalFiles               []RequiredContextFile       `json:"optional_files,omitempty"`
+	RequiredSearches            []RequiredContextSearch     `json:"required_searches"`
+	OptionalSearches            []RequiredContextSearch     `json:"optional_searches,omitempty"`
+	ContextBudget               RequiredContextBudget       `json:"context_budget"`
+	ReadinessCriteria           []string                    `json:"readiness_criteria,omitempty"`
+	ContextCoverageExpectations []string                    `json:"context_coverage_expectations,omitempty"`
+	BlockedIfMissing            []string                    `json:"blocked_if_missing,omitempty"`
+	Blockers                    []WorkBlocker               `json:"blockers,omitempty"`
+	NextActions                 []NextPassWorkSummaryAction `json:"next_actions,omitempty"`
+}
+
+// RequiredContextFile describes a seed source file expected by the pass.
+type RequiredContextFile struct {
+	RepoID           string `json:"repo_id"`
+	Path             string `json:"path"`
+	Required         bool   `json:"required"`
+	Purpose          string `json:"purpose,omitempty"`
+	SourceSnapshotID string `json:"source_snapshot_id,omitempty"`
+	ContentHash      string `json:"content_hash,omitempty"`
+	MaxBytes         int    `json:"max_bytes,omitempty"`
+}
+
+// RequiredContextSearch describes a bounded required or optional search.
+type RequiredContextSearch struct {
+	RepoIDs      []string `json:"repo_ids,omitempty"`
+	Query        string   `json:"query"`
+	Required     bool     `json:"required"`
+	Purpose      string   `json:"purpose,omitempty"`
+	MaxResults   int      `json:"max_results"`
+	ContextLines int      `json:"context_lines"`
+}
+
+// RequiredContextBudget resolves pass budget caps used by the bundle.
+type RequiredContextBudget struct {
+	MaxFiles         int  `json:"max_files"`
+	MaxBytes         int  `json:"max_bytes"`
+	MaxSearchResults int  `json:"max_search_results"`
+	MaxContextLines  int  `json:"max_context_lines"`
+	IncludeInventory bool `json:"include_inventory"`
+}
+
 // CompactNextPassWorkSummary returns the MCP-safe projection of the full local
 // NextPassWorkResponse.
 func CompactNextPassWorkSummary(resp NextPassWorkResponse) NextPassWorkMCPSummary {
@@ -303,6 +355,9 @@ func CompactNextPassWorkSummary(resp NextPassWorkResponse) NextPassWorkMCPSummar
 	}
 	if resp.AcquisitionFailureReport != nil {
 		summary.AcquisitionFailureReport = resp.AcquisitionFailureReport
+	}
+	if resp.RequiredContextBundle != nil {
+		summary.RequiredContextBundle = resp.RequiredContextBundle
 	}
 	if resp.HandoffWork != nil {
 		summary.HandoffWork = resp.HandoffWork
@@ -491,6 +546,7 @@ type PlannerJumpstart struct {
 	SelectedPassSummary                *WorkPassSummary             `json:"selected_pass_summary"`
 	SourceRequirements                 *SourceSnapshotRequirements  `json:"source_requirements,omitempty"`
 	ContextRequirements                ContextPlan                  `json:"context_requirements,omitempty"`
+	RequiredContextBundle              *RequiredContextBundle       `json:"required_context_bundle,omitempty"`
 	SourceBasisReport                  *PlannerJumpstartBasisReport `json:"source_basis_report,omitempty"`
 	SuggestedContextAcquisitionActions []ContextAcquisitionAction   `json:"suggested_context_acquisition_actions,omitempty"`
 	HandoffPreflightChecklist          []string                     `json:"handoff_preflight_checklist,omitempty"`
@@ -535,6 +591,7 @@ type HandoffAuthoringPacket struct {
 	ContextReady             bool                             `json:"context_ready"`
 	ContextPlan              ContextPlan                      `json:"context_plan"`
 	ContextBudget            *ContextBudget                   `json:"context_budget,omitempty"`
+	RequiredContextBundle    *RequiredContextBundle           `json:"required_context_bundle,omitempty"`
 	SourceRequirements       SourceSnapshotRequirements       `json:"source_snapshot_requirements"`
 	HandoffReadinessCriteria []string                         `json:"handoff_readiness_criteria"`
 	ReadinessCriteria        []string                         `json:"readiness_criteria"`
@@ -558,10 +615,17 @@ const (
 	defaultContextPacketMaxTotalBytes    = 262144
 	defaultSeedSearchMaxResults          = 20
 	defaultSeedFileMaxBytes              = 65536
+	defaultContextBudgetMaxContextLines  = 0
+	maxContextBudgetContextLines         = 200
 	maxContextPacketSources              = 200
 	maxContextPacketTotalBytes           = 1048576
 	maxSeedSearchResults                 = 200
 	maxSeedFileBytes                     = 262144
+)
+
+const (
+	requiredContextManifestRepoID = "relay-contracts"
+	requiredContextManifestPath   = "agents/knowledge/planner_github_knowledge_manifest.json"
 )
 
 var taskSlugUnsafeChars = regexp.MustCompile(`[^a-z0-9]+`)
@@ -1098,9 +1162,6 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 
 	contextReady := (!sourceSnapshotNeeded || snapshotFound) && (!requirePacket || packetUsable)
 
-	// Build the shared Planner jumpstart payload.
-	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, packetUnusableReason, metaIdx)
-
 	// Determine readiness state and optional blocker.
 	var readinessState string
 	var blocker *WorkBlocker
@@ -1130,7 +1191,12 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		readinessState = "ready_for_handoff_authoring"
 	}
 
+	requiredContextBundle := buildRequiredContextBundle(selectedPass, pass.PassType, ctxPlan, &ctxBudget, criteria, snapshotID, repoAliases, metaIdx)
+
+	// Build the shared Planner jumpstart payload.
+	jumpstart := buildPlannerJumpstart(selectedPass, project, plan.PlanID, &ssReqs, ctxPlan, &ctxBudget, repoAliases, snapshotID, snapshotStatus, packetID, packetStatus, requireSnapshot, requirePacket, snapshotFound, packetFound, packetUsable, packetUnusableReason, metaIdx)
 	jumpstart.ReadinessState = readinessState
+	jumpstart.RequiredContextBundle = requiredContextBundle
 
 	resp := NextPassWorkResponse{
 		OK:   blocker == nil,
@@ -1157,6 +1223,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 			ContextReady:         contextReady,
 		},
 		HandoffReadinessCriteria: criteria,
+		RequiredContextBundle:    requiredContextBundle,
 		PlannerJumpstart:         jumpstart,
 		Blockers:                 []WorkBlocker{},
 	}
@@ -1165,6 +1232,7 @@ func (svc *OrchestratorWorkService) evaluateCandidate(
 		resp.Blockers = []WorkBlocker{*blocker}
 	} else {
 		handoffWork := buildHandoffAuthoringPacket(project, plan, selectedPass, ctxPlan, &ctxBudget, ssReqs, criteria, snapshotID, snapshotStatus, packetID, packetStatus, coverageReportPath, contextReady, sourceSnapshotNeeded, requirePacket)
+		handoffWork.RequiredContextBundle = requiredContextBundle
 		resp.HandoffWork = handoffWork
 		resp.HandoffAuthoringPacket = handoffWork
 	}
@@ -1364,6 +1432,7 @@ func buildContextPacketActionArguments(projectID, planID, passID, sourceSnapshot
 // invents exact EOF line counts.
 type snapshotFileMeta struct {
 	sizeBytes       int64
+	contentHash     string
 	included        bool
 	tracked         bool
 	exclusionReason string
@@ -1409,6 +1478,7 @@ func (svc *OrchestratorWorkService) buildSnapshotMetadataIndex(snapshotID string
 		for _, f := range files {
 			idx.files[snapshotMetaKey(normRepo, f.Path)] = snapshotFileMeta{
 				sizeBytes:       f.SizeBytes,
+				contentHash:     strings.TrimSpace(f.ContentHash),
 				included:        f.Included != 0,
 				tracked:         f.Tracked != 0,
 				exclusionReason: f.ExclusionReason,
@@ -1609,6 +1679,135 @@ func buildContextPacketSeedSearches(ctxPlan ContextPlan, ctxBudget *ContextBudge
 		seedSearches = append(seedSearches, item)
 	}
 	return seedSearches
+}
+
+func buildRequiredContextBundle(selectedPass *WorkPassSummary, passType string, ctxPlan ContextPlan, ctxBudget *ContextBudget, criteria []string, snapshotID string, repoAliases map[string]string, idx snapshotMetadataIndex) *RequiredContextBundle {
+	manifestRepoID := normalizeContextRepoID(requiredContextManifestRepoID, repoAliases)
+	if manifestRepoID == "" {
+		manifestRepoID = requiredContextManifestRepoID
+	}
+	seedMaxBytes := seedFileMaxBytes(ctxBudget)
+	maxResults := contextBudgetInt(ctxBudget, "max_search_results", defaultSeedSearchMaxResults, maxSeedSearchResults)
+	searchContextLines := contextBudgetInt(ctxBudget, "max_context_lines", defaultContextBudgetMaxContextLines, maxContextBudgetContextLines)
+	bundle := &RequiredContextBundle{
+		ManifestRepoID:   manifestRepoID,
+		ManifestPath:     requiredContextManifestPath,
+		TaskDomain:       requiredContextTaskDomain(passType),
+		RequiredFiles:    []RequiredContextFile{},
+		RequiredSearches: []RequiredContextSearch{},
+		ContextBudget: RequiredContextBudget{
+			MaxFiles:         contextBudgetInt(ctxBudget, "max_files", defaultContextPacketMaxSources, maxContextPacketSources),
+			MaxBytes:         contextBudgetInt(ctxBudget, "max_bytes", defaultContextPacketMaxTotalBytes, maxContextPacketTotalBytes),
+			MaxSearchResults: maxResults,
+			MaxContextLines:  searchContextLines,
+			IncludeInventory: false,
+		},
+		ReadinessCriteria:           append([]string(nil), criteria...),
+		ContextCoverageExpectations: append([]string(nil), ctxPlan.ContextCoverageExpectations...),
+		BlockedIfMissing:            append([]string(nil), ctxPlan.BlockedIfMissing...),
+	}
+
+	if idx.available {
+		if meta, ok := idx.files[snapshotMetaKey(manifestRepoID, requiredContextManifestPath)]; ok && meta.included {
+			bundle.ManifestHash = meta.contentHash
+		}
+		if bundle.ManifestHash == "" {
+			bundle.Blockers = append(bundle.Blockers, WorkBlocker{
+				Code:        BlockerRequiredSeedFileMissingFromSnapshot,
+				Message:     fmt.Sprintf("required context bundle manifest metadata %s:%s is missing from source snapshot metadata", manifestRepoID, requiredContextManifestPath),
+				Recoverable: true,
+			})
+		}
+	} else if strings.TrimSpace(snapshotID) != "" {
+		bundle.Blockers = append(bundle.Blockers, WorkBlocker{
+			Code:        BlockerRequiredSeedFileMissingFromSnapshot,
+			Message:     fmt.Sprintf("required context bundle manifest hash for %s:%s is unavailable because source snapshot file metadata was not captured", manifestRepoID, requiredContextManifestPath),
+			Recoverable: true,
+		})
+	}
+
+	for _, seed := range ctxPlan.SeedFilesToRead {
+		repoID := normalizeContextRepoID(seed.RepoID, repoAliases)
+		path := strings.TrimSpace(seed.Path)
+		purpose := strings.TrimSpace(seed.Purpose)
+		if repoID == "" || path == "" || isLocalAbsolutePath(path) {
+			continue
+		}
+		required := boolValue(seed.Required)
+		item := RequiredContextFile{
+			RepoID:           repoID,
+			Path:             path,
+			Required:         required,
+			Purpose:          purpose,
+			SourceSnapshotID: strings.TrimSpace(snapshotID),
+			MaxBytes:         seedMaxBytes,
+		}
+		if idx.available {
+			meta, ok := idx.files[snapshotMetaKey(repoID, path)]
+			if ok && meta.included {
+				item.ContentHash = meta.contentHash
+			}
+			if required && item.ContentHash == "" {
+				bundle.Blockers = append(bundle.Blockers, WorkBlocker{
+					Code:        BlockerRequiredSeedFileMissingFromSnapshot,
+					Message:     fmt.Sprintf("required context bundle file metadata %s:%s is missing from source snapshot metadata", repoID, path),
+					Recoverable: true,
+				})
+			}
+		} else if required && strings.TrimSpace(snapshotID) != "" {
+			bundle.Blockers = append(bundle.Blockers, WorkBlocker{
+				Code:        BlockerRequiredSeedFileMissingFromSnapshot,
+				Message:     fmt.Sprintf("required context bundle file hash for %s:%s is unavailable because source snapshot file metadata was not captured", repoID, path),
+				Recoverable: true,
+			})
+		}
+		if required {
+			bundle.RequiredFiles = append(bundle.RequiredFiles, item)
+		} else {
+			bundle.OptionalFiles = append(bundle.OptionalFiles, item)
+		}
+	}
+
+	for _, seed := range ctxPlan.SeedSearchTerms {
+		query := strings.TrimSpace(seed.Query)
+		purpose := strings.TrimSpace(seed.Purpose)
+		if query == "" {
+			continue
+		}
+		item := RequiredContextSearch{
+			RepoIDs:      normalizeContextRepoIDs([]string{seed.RepoID}, repoAliases),
+			Query:        query,
+			Required:     boolValue(seed.Required),
+			Purpose:      purpose,
+			MaxResults:   maxResults,
+			ContextLines: searchContextLines,
+		}
+		if item.Required {
+			bundle.RequiredSearches = append(bundle.RequiredSearches, item)
+		} else {
+			bundle.OptionalSearches = append(bundle.OptionalSearches, item)
+		}
+	}
+
+	if len(bundle.Blockers) > 0 {
+		passID := ""
+		if selectedPass != nil {
+			passID = selectedPass.PassID
+		}
+		bundle.NextActions = append(bundle.NextActions, NextPassWorkSummaryAction{
+			Description: fmt.Sprintf("Review required_context_bundle.blockers for pass %q; refresh source snapshot metadata or correct manifest/seed paths before final handoff authoring.", passID),
+		})
+	}
+	return bundle
+}
+
+func requiredContextTaskDomain(passType string) string {
+	switch strings.TrimSpace(passType) {
+	case "workflow_backend_mcp", "mcp_vertical_slice", "contracts_schema_instructions":
+		return "planner_mcp_behavior_update"
+	default:
+		return "act_mode_planner_handoff_minimum"
+	}
 }
 
 func (svc *OrchestratorWorkService) projectRepoAliases(projectRowID int64) (map[string]string, error) {
