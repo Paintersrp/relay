@@ -102,20 +102,42 @@ func TestNormalizeCloseoutPathForwardSlash(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"empty", "", ""},
 		{"relative_dot", filepath.Join(".", "handoffs", "closeout", "2026-06-30_slug.closeout-evidence.json"), "handoffs/closeout/2026-06-30_slug.closeout-evidence.json"},
 		{"already_slash", "handoffs/closeout/2026-06-30_slug.closeout-evidence.json", "handoffs/closeout/2026-06-30_slug.closeout-evidence.json"},
 		{"double_dot_prefix", "./handoffs/closeout/x.json", "handoffs/closeout/x.json"},
-		{"absolute_is_returned_as_is", "/repo/handoffs/closeout/x.json", "/repo/handoffs/closeout/x.json"},
+		{"windows_separators", `handoffs\closeout\x.json`, "handoffs/closeout/x.json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := NormalizeCloseoutPath(tc.in)
+			got, err := NormalizeCloseoutPath(tc.in)
+			if err != nil {
+				t.Fatalf("NormalizeCloseoutPath(%q) returned unexpected error: %v", tc.in, err)
+			}
 			if got != tc.want {
 				t.Fatalf("NormalizeCloseoutPath(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 			if strings.Contains(got, "\\") {
 				t.Fatalf("normalized path %q contains backslash", got)
+			}
+		})
+	}
+}
+
+func TestNormalizeCloseoutPathRejectsUnsafeInputs(t *testing.T) {
+	cases := []string{
+		"",
+		"/repo/handoffs/closeout/x.json",
+		`C:\repo\handoffs\closeout\x.json`,
+		"C:/repo/handoffs/closeout/x.json",
+		"handoffs/../closeout/x.json",
+		"handoffs/closeout/../x.json",
+		"handoffs/closeout/x.json\n",
+		"handoffs/closeout/x;rm.json",
+	}
+	for _, in := range cases {
+		t.Run(in, func(t *testing.T) {
+			if got, err := NormalizeCloseoutPath(in); err == nil {
+				t.Fatalf("NormalizeCloseoutPath(%q) = %q, want error", in, got)
 			}
 		})
 	}
@@ -145,7 +167,10 @@ func TestCloseoutWritePathsAreRepoRelativeOnWindowsSim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteCloseout json returned unexpected error: %v", err)
 	}
-	normalizedJSON := NormalizeCloseoutPath(jsonPath)
+	normalizedJSON, err := NormalizeCloseoutPath(jsonPath)
+	if err != nil {
+		t.Fatalf("NormalizeCloseoutPath json returned unexpected error: %v", err)
+	}
 	wantJSONSuffix := "handoffs/closeout/2026-06-30_windows-sim-closeout.closeout-evidence.json"
 	if !strings.HasSuffix(normalizedJSON, wantJSONSuffix) {
 		t.Fatalf("normalized json = %q, want suffix %q", normalizedJSON, wantJSONSuffix)
@@ -161,7 +186,10 @@ func TestCloseoutWritePathsAreRepoRelativeOnWindowsSim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteCloseout markdown returned unexpected error: %v", err)
 	}
-	normalizedMD := NormalizeCloseoutPath(mdPath)
+	normalizedMD, err := NormalizeCloseoutPath(mdPath)
+	if err != nil {
+		t.Fatalf("NormalizeCloseoutPath markdown returned unexpected error: %v", err)
+	}
 	wantMDSuffix := "handoffs/closeout/2026-06-30_windows-sim-closeout.closeout-evidence.md"
 	if !strings.HasSuffix(normalizedMD, wantMDSuffix) {
 		t.Fatalf("normalized md = %q, want suffix %q", normalizedMD, wantMDSuffix)

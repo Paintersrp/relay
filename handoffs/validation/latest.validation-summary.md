@@ -3,29 +3,18 @@
 - status: passed
 - validation_tier: full
 - validation_scope: tier
-- base_commit: 9d8f662c7a976ccb8e0c8eb023a0f56767b5b789
-- validated_source_snapshot: 79cfbc37ae26ca14c6211cd957f015b073b78e9091f156b55eb46918d5377241
+- base_commit: c9165cb93b09c284b5e67ddb6a4b627e5116816d
+- validated_source_snapshot: 181da1f519e5e92736d020da3c581fe71e1445eb3cf7e952383561ae108b8d30
 - worktree_dirty: true
-- created_at: 2026-07-01T00:47:41Z
+- created_at: 2026-07-01T01:22:58Z
 
 ## Validated source changes
 
-- M AGENTS.md
 - M cmd/relay-closeout/main.go
-- M docs/generated/agent-references/backend-surface.json
-- M docs/generated/agent-references/backend-surface.md
-- M docs/generated/agent-references/index.json
-- M docs/generated/agent-references/index.md
-- M docs/generated/agent-references/mcp-surface.json
-- M docs/generated/agent-references/mcp-surface.md
-- ?? handoffs/closeout/2026-07-01_pass-005-closeout-remediation.closeout-evidence.json
-- ?? handoffs/closeout/2026-07-01_pass-005-closeout-remediation.closeout-evidence.md
 - M internal/artifacts/paths_closeout_test.go
 - M internal/artifacts/paths.go
 - M internal/closeout/closeout_test.go
 - M internal/closeout/closeout.go
-- M internal/instructions/assets/AGENTS.md
-- M scripts/validate.sh
 
 ## Commands
 

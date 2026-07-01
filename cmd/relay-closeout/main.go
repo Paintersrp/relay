@@ -5,22 +5,23 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"relay/internal/closeout"
 )
 
 func main() {
 	var (
-		messageFlag   string
-		slugFlag      string
-		dryRun        bool
-		projectID     string
-		repoTarget    string
-		runID         string
-		planID        string
-		passID        string
-		baseRef       string
-		headRef       string
+		messageFlag string
+		slugFlag    string
+		dryRun      bool
+		projectID   string
+		repoTarget  string
+		runID       string
+		planID      string
+		passID      string
+		baseRef     string
+		headRef     string
 	)
 
 	flag.StringVar(&messageFlag, "message", "", "commit message")
@@ -49,21 +50,21 @@ func main() {
 	}
 
 	report, err := closeout.Run(context.Background(), closeout.Options{
-		Message:     message,
-		Slug:        slug,
-		DryRun:      dryRun,
-		ProjectID:   projectID,
-		RepoTarget:  repoTarget,
-		RunID:       runID,
-		PlanID:      planID,
-		PassID:      passID,
-		BaseRef:     baseRef,
-		HeadRef:     headRef,
+		Message:    message,
+		Slug:       slug,
+		DryRun:     dryRun,
+		ProjectID:  projectID,
+		RepoTarget: repoTarget,
+		RunID:      runID,
+		PlanID:     planID,
+		PassID:     passID,
+		BaseRef:    baseRef,
+		HeadRef:    headRef,
 	})
 
 	fmt.Printf("validation: %s\n", report.ValidationStatus())
-	fmt.Printf("evidence_json: %s\n", report.EvidenceJSONPath())
-	fmt.Printf("evidence_markdown: %s\n", report.EvidenceMarkdownPath())
+	fmt.Printf("evidence_json: %s\n", filepath.ToSlash(report.EvidenceJSONPath()))
+	fmt.Printf("evidence_markdown: %s\n", filepath.ToSlash(report.EvidenceMarkdownPath()))
 	fmt.Printf("commit: %s\n", report.CommitStatus())
 	fmt.Printf("push: %s\n", report.PushStatus())
 

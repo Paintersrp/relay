@@ -10,15 +10,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 	"unicode"
 
 	"relay/internal/artifacts"
+
+	"github.com/xeipuuv/gojsonschema"
 )
 
 const (
-	defaultValidationCommand  = "make validate-full"
+	defaultValidationCommand   = "make validate-full"
 	defaultAgentRefsGenerate   = "make agentrefs-generate"
 	defaultAgentRefsCheck      = "make agentrefs-check"
 	validationReportJSON       = "handoffs/validation/latest.validation-report.json"
@@ -34,21 +37,22 @@ const (
 // RunID, PlanID, PassID, BaseRef, HeadRef) default to safe local-closeout
 // values when empty and may be supplied via CLI flags or env vars.
 type Options struct {
-	Message            string
-	Slug               string
-	DryRun             bool
-	ValidationCommand  string
-	AgentRefsGenerate  string
-	AgentRefsCheck     string
-	ProjectID          string
-	RepoTarget         string
-	RunID              string
-	PlanID             string
-	PassID             string
-	BaseRef            string
-	HeadRef            string
-	Now                func() time.Time
-	Runner             CommandRunner
+	Message                    string
+	Slug                       string
+	DryRun                     bool
+	ValidationCommand          string
+	AgentRefsGenerate          string
+	AgentRefsCheck             string
+	ProjectID                  string
+	RepoTarget                 string
+	RunID                      string
+	PlanID                     string
+	PassID                     string
+	BaseRef                    string
+	HeadRef                    string
+	Now                        func() time.Time
+	Runner                     CommandRunner
+	CloseoutEvidenceSchemaPath string
 }
 
 type CommandRunner interface {
@@ -67,25 +71,26 @@ type CommandResult struct {
 // relay-contracts/schema/closeout_evidence.schema.json and intentionally
 // avoids the legacy custom report-shape top-level fields.
 type Report struct {
-	EvidenceKind       string                 `json:"evidence_kind"`
-	SchemaVersion      string                 `json:"schema_version"`
-	CreatedAt          string                 `json:"created_at"`
-	ProjectID          string                 `json:"project_id"`
-	PlanID             *string                `json:"plan_id"`
-	PassID             *string                `json:"pass_id"`
-	RunID              string                 `json:"run_id"`
-	RepoTarget         string                 `json:"repo_target"`
-	BranchContext      BranchContext          `json:"branch_context"`
-	Status             string                 `json:"status"`
-	ValidationEvidence ValidationEvidenceSec  `json:"validation_evidence"`
-	AuditEvidence      AuditEvidenceSec       `json:"audit_evidence"`
-	RepositoryEvidence RepositoryEvidenceSec  `json:"repository_evidence"`
+	EvidenceKind       string                `json:"evidence_kind"`
+	SchemaVersion      string                `json:"schema_version"`
+	CreatedAt          string                `json:"created_at"`
+	ProjectID          string                `json:"project_id"`
+	PlanID             *string               `json:"plan_id"`
+	PassID             *string               `json:"pass_id"`
+	RunID              string                `json:"run_id"`
+	RepoTarget         string                `json:"repo_target"`
+	BranchContext      BranchContext         `json:"branch_context"`
+	Status             string                `json:"status"`
+	ValidationEvidence ValidationEvidenceSec `json:"validation_evidence"`
+	AuditEvidence      AuditEvidenceSec      `json:"audit_evidence"`
+	RepositoryEvidence RepositoryEvidenceSec `json:"repository_evidence"`
 	ArtifactReferences []ArtifactReference   `json:"artifact_references"`
-	Issues             []CloseoutIssue         `json:"issues"`
+	Issues             []CloseoutIssue       `json:"issues"`
 
 	// Hidden accumulators kept out of the schema-conformant JSON output.
 	evidencePaths EvidencePaths `json:"-"`
 	stagedFiles   []string      `json:"-"`
+	schemaPath    string        `json:"-"`
 }
 
 type BranchContext struct {
@@ -97,13 +102,13 @@ type BranchContext struct {
 
 type ValidationEvidenceSec struct {
 	ValidationReports []ArtifactReference `json:"validation_reports"`
-	Summary           string               `json:"summary"`
+	Summary           string              `json:"summary"`
 }
 
 type AuditEvidenceSec struct {
-	AuditPackets       []ArtifactReference `json:"audit_packets"`
-	AuditStatus        string               `json:"audit_status"`
-	AuditDecisionPath  *string              `json:"audit_decision_path,omitempty"`
+	AuditPackets      []ArtifactReference `json:"audit_packets"`
+	AuditStatus       string              `json:"audit_status"`
+	AuditDecisionPath *string             `json:"audit_decision_path,omitempty"`
 }
 
 type RepositoryEvidenceSec struct {
@@ -119,9 +124,9 @@ type RepositoryEvidenceReference struct {
 }
 
 type ArtifactReference struct {
-	Kind            string `json:"kind"`
-	Path            string `json:"path"`
-	ChecksumSHA256  string `json:"checksum_sha256,omitempty"`
+	Kind           string `json:"kind"`
+	Path           string `json:"path"`
+	ChecksumSHA256 string `json:"checksum_sha256,omitempty"`
 }
 
 type CloseoutIssue struct {
@@ -230,7 +235,11 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	branchCtx := branchContext(metadata, branch.Stdout, head.Stdout)
 	report := newReport(metadata, branchCtx, "ready_for_closeout")
 	report.CreatedAt = createdAt.Format(time.RFC3339)
-	report.setEvidencePaths(evidencePaths)
+	report.schemaPath = resolveCloseoutEvidenceSchemaPath(opts.CloseoutEvidenceSchemaPath)
+	if err := report.setEvidencePaths(evidencePaths); err != nil {
+		report.addIssue("blocker", "evidence_path_normalization: "+err.Error())
+		return report, blockerError("evidence_path_normalization", err.Error())
+	}
 	report.RepositoryEvidence = RepositoryEvidenceSec{
 		GitStatus: RepositoryEvidenceReference{State: "captured", ArtifactPath: nil, Summary: filterOutput(strings.TrimSpace(branch.Stdout))},
 		Commit:    RepositoryEvidenceReference{State: "not_run"},
@@ -250,7 +259,7 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 	}
 
 	if err := report.writeEvidence(); err != nil {
-		return report.block("evidence_write", err.Error())
+		return report.blockFromError("evidence_write", err)
 	}
 
 	stage := runner.Run(ctx, "git", "add", "-A")
@@ -268,7 +277,7 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 		report.RepositoryEvidence.Commit = RepositoryEvidenceReference{State: "not_run", Summary: "dry_run"}
 		report.RepositoryEvidence.Push = RepositoryEvidenceReference{State: "not_run", Summary: "dry_run"}
 		if err := report.writeEvidence(); err != nil {
-			return report.block("evidence_write", err.Error())
+			return report.blockFromError("evidence_write", err)
 		}
 		return report, nil
 	}
@@ -294,7 +303,7 @@ func Run(ctx context.Context, opts Options) (Report, error) {
 
 	report.Status = "closed_out"
 	if err := report.writeEvidence(); err != nil {
-		return report.block("evidence_write", err.Error())
+		return report.blockFromError("evidence_write", err)
 	}
 	return report, nil
 }
@@ -412,16 +421,25 @@ func newReport(meta closeoutMetadata, branchCtx BranchContext, status string) Re
 // setEvidencePaths records the persisted evidence paths and adds artifact
 // references for the JSON and Markdown outputs. All paths are normalized to
 // repo-relative forward-slash form before assignment.
-func (r *Report) setEvidencePaths(paths EvidencePaths) {
+func (r *Report) setEvidencePaths(paths EvidencePaths) error {
+	jsonPath, err := normalizeEvidencePath(paths.JSON)
+	if err != nil {
+		return err
+	}
+	markdownPath, err := normalizeEvidencePath(paths.Markdown)
+	if err != nil {
+		return err
+	}
 	r.ArtifactReferences = appendUniqueArtifact(r.ArtifactReferences, ArtifactReference{
 		Kind: "closeout_evidence",
-		Path: normalizeEvidencePath(paths.JSON),
+		Path: jsonPath,
 	})
 	r.ArtifactReferences = appendUniqueArtifact(r.ArtifactReferences, ArtifactReference{
 		Kind: "closeout_evidence_markdown",
-		Path: normalizeEvidencePath(paths.Markdown),
+		Path: markdownPath,
 	})
 	r.evidencePaths = paths
+	return nil
 }
 
 func (r *Report) recordStagedFiles(files []string) {
@@ -468,6 +486,17 @@ func (r *Report) blockAndWrite(stage, message string) (Report, error) {
 	return *r, blockerError(stage, message)
 }
 
+func (r *Report) blockFromError(defaultStage string, err error) (Report, error) {
+	stage := defaultStage
+	message := err.Error()
+	var blocker *MechanicalBlockerError
+	if errors.As(err, &blocker) {
+		stage = blocker.Stage
+		message = blocker.Message
+	}
+	return r.block(stage, message)
+}
+
 func blockedReport(opts Options, stage, message string) Report {
 	meta := resolveMetadata(opts)
 	report := newReport(meta, BranchContext{BranchName: "unknown"}, "blocked")
@@ -485,7 +514,7 @@ type EvidencePaths struct {
 
 // EvidenceJSONPath and EvidenceMarkdownPath expose the persisted evidence
 // output paths to callers (e.g. the CLI).
-func (r Report) EvidenceJSONPath() string    { return r.evidencePaths.JSON }
+func (r Report) EvidenceJSONPath() string     { return r.evidencePaths.JSON }
 func (r Report) EvidenceMarkdownPath() string { return r.evidencePaths.Markdown }
 func (r Report) CommitStatus() string {
 	switch r.RepositoryEvidence.Commit.State {
@@ -538,6 +567,9 @@ func (r *Report) writeEvidence() error {
 		return err
 	}
 	jsonData = append(jsonData, '\n')
+	if err := validateCloseoutEvidence(r.schemaPath, jsonData); err != nil {
+		return err
+	}
 
 	date := r.CreatedAt
 	if len(date) >= 10 {
@@ -553,7 +585,9 @@ func (r *Report) writeEvidence() error {
 		return err
 	}
 	r.evidencePaths = EvidencePaths{JSON: jsonPath, Markdown: mdPath}
-	r.setEvidencePaths(r.evidencePaths)
+	if err := r.setEvidencePaths(r.evidencePaths); err != nil {
+		return blockerError("evidence_path_normalization", err.Error())
+	}
 	return nil
 }
 
@@ -592,8 +626,8 @@ func runValidation(ctx context.Context, runner CommandRunner, command string) Va
 	tail := outputTail(command, result.Stdout, result.Stderr, result.ExitCode)
 	return ValidationEvidenceSec{
 		ValidationReports: []ArtifactReference{
-			{Kind: "validation_report", Path: normalizeEvidencePath(validationReportJSON)},
-			{Kind: "validation_report", Path: normalizeEvidencePath(validationReportMarkdown)},
+			{Kind: "validation_report", Path: mustNormalizeEvidencePath(validationReportJSON)},
+			{Kind: "validation_report", Path: mustNormalizeEvidencePath(validationReportMarkdown)},
 		},
 		Summary: fmt.Sprintf("command=%s exit_code=%d status=%s\n%s", command, result.ExitCode, status, tail),
 	}
@@ -724,9 +758,16 @@ func filterOutput(value string) string {
 
 // normalizeEvidencePath converts an OS-specific closeout artifact path to a
 // repo-relative forward-slash path suitable for durable closeout evidence.
-// It strips a leading "./" and an absolute repo-root prefix when present.
-func normalizeEvidencePath(p string) string {
+func normalizeEvidencePath(p string) (string, error) {
 	return artifacts.NormalizeCloseoutPath(p)
+}
+
+func mustNormalizeEvidencePath(p string) string {
+	normalized, err := normalizeEvidencePath(p)
+	if err != nil {
+		panic(err)
+	}
+	return normalized
 }
 
 func appendUniqueArtifact(refs []ArtifactReference, ref ArtifactReference) []ArtifactReference {
@@ -755,4 +796,104 @@ func ptr(v string) *string { return &v }
 
 func blockerError(stage, message string) error {
 	return &MechanicalBlockerError{Stage: stage, Message: message}
+}
+
+func resolveCloseoutEvidenceSchemaPath(optionPath string) string {
+	if p := strings.TrimSpace(optionPath); p != "" {
+		return p
+	}
+	if p := strings.TrimSpace(os.Getenv("RELAY_CLOSEOUT_EVIDENCE_SCHEMA_PATH")); p != "" {
+		return p
+	}
+	if _, err := os.Stat(closeoutEvidenceSchemaPath); err == nil {
+		return closeoutEvidenceSchemaPath
+	}
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return closeoutEvidenceSchemaPath
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", closeoutEvidenceSchemaPath))
+}
+
+func validateCloseoutEvidence(schemaPath string, evidenceJSON []byte) error {
+	if err := validateCloseoutEvidencePaths(evidenceJSON); err != nil {
+		return blockerError("evidence_path_normalization", err.Error())
+	}
+	if strings.TrimSpace(schemaPath) == "" {
+		schemaPath = resolveCloseoutEvidenceSchemaPath("")
+	}
+	schemaBytes, err := os.ReadFile(schemaPath)
+	if err != nil {
+		return blockerError("evidence_schema_validation", fmt.Sprintf("failed to read closeout evidence schema %q: %v", schemaPath, err))
+	}
+	schemaLoader := gojsonschema.NewStringLoader(sanitizeCloseoutSchemaRegexes(string(schemaBytes)))
+	documentLoader := gojsonschema.NewBytesLoader(evidenceJSON)
+	result, err := gojsonschema.Validate(schemaLoader, documentLoader)
+	if err != nil {
+		return blockerError("evidence_schema_validation", fmt.Sprintf("closeout evidence schema validation error: %v", err))
+	}
+	if result.Valid() {
+		return nil
+	}
+	var sb strings.Builder
+	for _, schemaErr := range result.Errors() {
+		if sb.Len() > 0 {
+			sb.WriteString("; ")
+		}
+		sb.WriteString(schemaErr.String())
+	}
+	return blockerError("evidence_schema_validation", sb.String())
+}
+
+func sanitizeCloseoutSchemaRegexes(schemaContent string) string {
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!/)`, "")
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(^|/)\\.\\.($|/))`, "")
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*\\\\)`, "")
+	return schemaContent
+}
+
+func validateCloseoutEvidencePaths(evidenceJSON []byte) error {
+	var report Report
+	if err := json.Unmarshal(evidenceJSON, &report); err != nil {
+		return err
+	}
+	for _, ref := range report.ArtifactReferences {
+		if _, err := normalizeEvidencePath(ref.Path); err != nil {
+			return fmt.Errorf("artifact_references path %q: %w", ref.Path, err)
+		}
+	}
+	for _, ref := range report.ValidationEvidence.ValidationReports {
+		if _, err := normalizeEvidencePath(ref.Path); err != nil {
+			return fmt.Errorf("validation_evidence path %q: %w", ref.Path, err)
+		}
+	}
+	for _, ref := range report.AuditEvidence.AuditPackets {
+		if _, err := normalizeEvidencePath(ref.Path); err != nil {
+			return fmt.Errorf("audit_evidence path %q: %w", ref.Path, err)
+		}
+	}
+	if report.AuditEvidence.AuditDecisionPath != nil {
+		if _, err := normalizeEvidencePath(*report.AuditEvidence.AuditDecisionPath); err != nil {
+			return fmt.Errorf("audit_decision_path %q: %w", *report.AuditEvidence.AuditDecisionPath, err)
+		}
+	}
+	for _, ref := range []RepositoryEvidenceReference{
+		report.RepositoryEvidence.GitStatus,
+		report.RepositoryEvidence.Commit,
+		report.RepositoryEvidence.Push,
+	} {
+		if ref.ArtifactPath != nil {
+			if _, err := normalizeEvidencePath(*ref.ArtifactPath); err != nil {
+				return fmt.Errorf("repository_evidence path %q: %w", *ref.ArtifactPath, err)
+			}
+		}
+	}
+	for _, issue := range report.Issues {
+		if issue.ArtifactPath != nil {
+			if _, err := normalizeEvidencePath(*issue.ArtifactPath); err != nil {
+				return fmt.Errorf("issue artifact_path %q: %w", *issue.ArtifactPath, err)
+			}
+		}
+	}
+	return nil
 }

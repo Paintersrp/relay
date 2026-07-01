@@ -159,6 +159,80 @@ func TestEvidenceWriteFailureBlocks(t *testing.T) {
 	assertHasIssueSeverity(t, report, "blocker")
 }
 
+func TestEvidenceSchemaValidationFailureBlocksBeforeStage(t *testing.T) {
+	withTempWorkingDir(t)
+	schemaPath := filepath.Join(t.TempDir(), "invalid-closeout-schema.json")
+	if err := os.WriteFile(schemaPath, []byte(`{"type":"object","required":["never_present"]}`), 0644); err != nil {
+		t.Fatalf("failed writing invalid schema: %v", err)
+	}
+	runner := &fakeRunner{}
+
+	report, err := Run(context.Background(), Options{
+		Message:                    "schema validation failure",
+		DryRun:                     true,
+		Now:                        fixedNow,
+		Runner:                     runner,
+		CloseoutEvidenceSchemaPath: schemaPath,
+	})
+	if err == nil {
+		t.Fatal("expected schema validation failure")
+	}
+	if _, ok := err.(*MechanicalBlockerError); !ok || err.(*MechanicalBlockerError).Stage != "evidence_schema_validation" {
+		t.Fatalf("expected evidence_schema_validation blocker, got %#v", err)
+	}
+	if report.Status != "blocked" {
+		t.Fatalf("status = %q want blocked", report.Status)
+	}
+	assertHasIssueSeverity(t, report, "blocker")
+	assertNotCalled(t, runner.calls, "git add -A")
+	assertNotCalled(t, runner.calls, "git commit")
+	assertNotCalled(t, runner.calls, "git push")
+}
+
+func TestEvidenceSchemaLoadFailureBlocksBeforeStage(t *testing.T) {
+	withTempWorkingDir(t)
+	runner := &fakeRunner{}
+
+	report, err := Run(context.Background(), Options{
+		Message:                    "schema load failure",
+		DryRun:                     true,
+		Now:                        fixedNow,
+		Runner:                     runner,
+		CloseoutEvidenceSchemaPath: filepath.Join(t.TempDir(), "missing-schema.json"),
+	})
+	if err == nil {
+		t.Fatal("expected schema load failure")
+	}
+	if _, ok := err.(*MechanicalBlockerError); !ok || err.(*MechanicalBlockerError).Stage != "evidence_schema_validation" {
+		t.Fatalf("expected evidence_schema_validation blocker, got %#v", err)
+	}
+	if report.Status != "blocked" {
+		t.Fatalf("status = %q want blocked", report.Status)
+	}
+	assertNotCalled(t, runner.calls, "git add -A")
+	assertNotCalled(t, runner.calls, "git commit")
+	assertNotCalled(t, runner.calls, "git push")
+}
+
+func TestRuntimePathValidationRejectsUnsafeEvidencePath(t *testing.T) {
+	report := newReport(resolveMetadata(Options{}), BranchContext{BranchName: "main"}, "ready_for_closeout")
+	report.CreatedAt = fixedNow().Format(time.RFC3339)
+	report.ArtifactReferences = []ArtifactReference{
+		{Kind: "closeout_evidence", Path: "/repo/handoffs/closeout/x.closeout-evidence.json"},
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("failed marshaling report: %v", err)
+	}
+	err = validateCloseoutEvidencePaths(data)
+	if err == nil {
+		t.Fatal("expected unsafe evidence path to be rejected")
+	}
+	if !strings.Contains(err.Error(), "must be repo-relative") {
+		t.Fatalf("unexpected path validation error: %v", err)
+	}
+}
+
 func TestStageFailureBlocks(t *testing.T) {
 	withTempWorkingDir(t)
 	runner := &fakeRunner{run: func(ctx context.Context, name string, args ...string) CommandResult {
@@ -564,13 +638,13 @@ func assertSchemaConformant(t *testing.T, jsonPath string) {
 	}
 	if err := json.Unmarshal(raw["validation_evidence"], &struct {
 		ValidationReports []ArtifactReference `json:"validation_reports"`
-		Summary           string               `json:"summary"`
+		Summary           string              `json:"summary"`
 	}{}); err != nil {
 		t.Fatalf("validation_evidence shape invalid: %v", err)
 	}
 	if err := json.Unmarshal(raw["audit_evidence"], &struct {
 		AuditPackets []ArtifactReference `json:"audit_packets"`
-		AuditStatus  string               `json:"audit_status"`
+		AuditStatus  string              `json:"audit_status"`
 	}{}); err != nil {
 		t.Fatalf("audit_evidence shape invalid: %v", err)
 	}
@@ -602,7 +676,6 @@ func validateAgainstCloseoutSchema(t *testing.T, evidenceJSON []byte) {
 		t.Logf("closeout evidence schema not available; skipping full JSON schema validation")
 		return
 	}
-	t.Logf("schema_path=%s", absPath)
 	schemaBytes, err := os.ReadFile(absPath)
 	if err != nil {
 		t.Logf("failed reading closeout evidence schema: %v; skipping", err)
@@ -624,7 +697,6 @@ func validateAgainstCloseoutSchema(t *testing.T, evidenceJSON []byte) {
 		}
 		t.Fatalf("closeout evidence JSON does not conform to schema:\n%s", sb.String())
 	}
-	t.Logf("schema_validated=true")
 }
 
 func sanitizeSchemaRegexesForTest(schemaContent string) string {

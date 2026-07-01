@@ -373,23 +373,39 @@ func WriteCloseout(dateYYYYMMDD string, taskSlug string, kind string, data []byt
 	return p, os.WriteFile(p, data, 0644)
 }
 
-// NormalizeCloseoutPath converts an OS-specific closeout artifact path (as
-// returned by CloseoutPath/WriteCloseout) into a repo-relative forward-slash
-// path suitable for durable closeout evidence. It strips a leading "./" and
-// ensures backslashes (e.g. on Windows) are replaced with forward slashes.
-// The result never contains a backslash and is repo-relative (never absolute).
-func NormalizeCloseoutPath(p string) string {
+// NormalizeCloseoutPath converts an OS-specific closeout artifact path into a
+// repo-relative forward-slash path suitable for durable closeout evidence.
+// Unsafe inputs return an error instead of being persisted.
+func NormalizeCloseoutPath(p string) (string, error) {
 	if p == "" {
-		return p
+		return "", fmt.Errorf("closeout path is empty")
+	}
+	if filepath.IsAbs(p) || driveQualifiedPath(p) {
+		return "", fmt.Errorf("closeout path %q must be repo-relative", p)
+	}
+	if strings.ContainsAny(p, "\r\n;&|$<>`") {
+		return "", fmt.Errorf("closeout path %q contains unsafe characters", p)
 	}
 	slash := filepath.ToSlash(p)
 	for strings.HasPrefix(slash, "./") {
 		slash = strings.TrimPrefix(slash, "./")
 	}
-	if strings.HasPrefix(slash, "/") {
-		return slash
+	if slash == "" {
+		return "", fmt.Errorf("closeout path is empty")
 	}
-	return slash
+	if strings.HasPrefix(slash, "/") || strings.Contains(slash, "\\") {
+		return "", fmt.Errorf("closeout path %q must be repo-relative and forward-slash separated", p)
+	}
+	for _, elem := range strings.Split(slash, "/") {
+		if elem == "" || elem == "." || elem == ".." {
+			return "", fmt.Errorf("closeout path %q contains unsafe path element %q", p, elem)
+		}
+	}
+	return slash, nil
+}
+
+func driveQualifiedPath(p string) bool {
+	return len(p) >= 2 && ((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z')) && p[1] == ':'
 }
 
 func closeoutKindSuffix(kind string) (string, bool) {
