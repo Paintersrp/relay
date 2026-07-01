@@ -38,11 +38,13 @@
     },
     "commit": {
       "state": "not_run",
-      "artifact_path": null
+      "artifact_path": null,
+      "summary": "dry_run"
     },
     "push": {
       "state": "not_run",
-      "artifact_path": null
+      "artifact_path": null,
+      "summary": "dry_run"
     }
   },
   "artifact_references": [

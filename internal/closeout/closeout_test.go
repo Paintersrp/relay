@@ -602,6 +602,7 @@ func validateAgainstCloseoutSchema(t *testing.T, evidenceJSON []byte) {
 		t.Logf("closeout evidence schema not available; skipping full JSON schema validation")
 		return
 	}
+	t.Logf("schema_path=%s", absPath)
 	schemaBytes, err := os.ReadFile(absPath)
 	if err != nil {
 		t.Logf("failed reading closeout evidence schema: %v; skipping", err)
@@ -623,6 +624,7 @@ func validateAgainstCloseoutSchema(t *testing.T, evidenceJSON []byte) {
 		}
 		t.Fatalf("closeout evidence JSON does not conform to schema:\n%s", sb.String())
 	}
+	t.Logf("schema_validated=true")
 }
 
 func sanitizeSchemaRegexesForTest(schemaContent string) string {
