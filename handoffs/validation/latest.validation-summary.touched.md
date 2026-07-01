@@ -3,36 +3,36 @@
 - status: passed
 - validation_tier: affected
 - validation_scope: touched
-- base_commit: c9165cb93b09c284b5e67ddb6a4b627e5116816d
-- validated_source_snapshot: 822513ccc6f3bb99de5c04ad7994941f4f7f45178b49fcdb6687df9e2f322812
+- base_commit: 041c6f021eec3477484d881087d41b8ed5eec9fa
+- validated_source_snapshot: ebbd38f2ccb809dae131e0126de9ce24cac9e7b8cb53ddeb4962bb134c31ce43
 - worktree_dirty: true
-- created_at: 2026-07-01T01:17:55Z
+- created_at: 2026-07-01T01:30:18Z
 
 ## Affected paths
 
-- internal/artifacts/paths_closeout_test.go
-- internal/artifacts/paths.go
-- internal/closeout/closeout_test.go
-- internal/closeout/closeout.go
+- docs/operator-guide.md
+- Makefile
+- README.md
 
-Global escalation required: false
+Global escalation required: true
 
 ## Validated source changes
 
-- M cmd/relay-closeout/main.go
-- A handoffs/closeout/2026-07-01_pass-005-warning-remediation.closeout-evidence.json
-- A handoffs/closeout/2026-07-01_pass-005-warning-remediation.closeout-evidence.md
-- M internal/artifacts/paths_closeout_test.go
-- M internal/artifacts/paths.go
-- M internal/closeout/closeout_test.go
-- M internal/closeout/closeout.go
+- M docs/operator-guide.md
+- M Makefile
+- M README.md
 
 ## Commands
 
 | Step | Name | Command | Exit | Status |
 |---:|---|---|---:|---|
-| 1 | `gofmt-touched-files` | `gofmt -w internal/artifacts/paths_closeout_test.go internal/artifacts/paths.go internal/closeout/closeout_test.go internal/closeout/closeout.go` | 0 | passed |
-| 2 | `go-test-affected-packages` | `go test ./internal/artifacts ./internal/closeout` | 0 | passed |
+| 1 | `validate-script-syntax` | `bash -n scripts/validate.sh` | 0 | passed |
+| 2 | `go-fmt-agentrefs-executor` | `go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor` | 0 | passed |
+| 3 | `go-test-agentrefs` | `go test ./internal/agentrefs/... ./cmd/agentrefs/...` | 0 | passed |
+| 4 | `go-test-executor` | `go test ./internal/executor/...` | 0 | passed |
+| 5 | `go-test-all` | `go test ./...` | 0 | passed |
+| 6 | `web-typecheck` | `cd apps/web && npm run typecheck` | 0 | passed |
+| 7 | `web-test` | `cd apps/web && npm run test` | 0 | passed |
 
 ## Failure output tails
 

@@ -263,8 +263,17 @@ Relay's audit workflows are local-first and artifact-backed:
 - Audit generation writes local files (`audit_input_summary.md`, `audit_evidence_manifest.json`, and `audit_packet.md`).
 - Manual audit submissions and MCP-based submissions (`submit_audit_packet`) invoke the same backend decision service.
 - Decisions of `blocked` or `manual_review_required` map the run status to `revision_required` while retaining the original decision details in the database.
-- Audit acceptance does **not** automatically close the run or commit code. Operators must manually execute `git commit` using conventional messages suggested by the workbench.
-- Relay never mutates the git repository, pushes branches, or creates PRs.
+- Audit acceptance does **not** implicitly close the run, commit code, or push branches.
+- After audit acceptance, operators use the explicit closeout workflow to run final validation, preserve closeout evidence, stage all source changes and generated evidence, commit, and push:
+  ```bash
+  make closeout MESSAGE="your commit message" SLUG="short-task-slug"
+  ```
+- For a no-commit/no-push rehearsal, use:
+  ```bash
+  make closeout-dry-run MESSAGE="your commit message" SLUG="short-task-slug"
+  ```
+- Closeout validation failure is recorded as delivery evidence and does not by itself block staging, commit, or push. Mechanical failures such as evidence write, staging, commit, or push failures remain blocking.
+- Relay does not create branches, reset worktrees, create PRs, run GitHub Actions, or administer remote repository settings as part of local audit or closeout.
 
 ### Local Audit Modes
 
@@ -399,6 +408,24 @@ make validate-changed
 
 These commands write affected-path reports under `handoffs/validation`, including normalized inputs, path classification, derived commands, and command results.
 
+### Explicit Closeout
+
+Use closeout only after the implementation has gone through Executor result intake and audit review.
+
+```bash
+make closeout MESSAGE="your commit message" SLUG="short-task-slug"
+```
+
+Closeout is the repo-owned final delivery workflow. It runs the repo-defined final validation command, writes closeout evidence under `handoffs/closeout/`, stages all source changes and generated evidence, commits, and pushes.
+
+To verify closeout evidence generation and staging behavior without commit or push:
+
+```bash
+make closeout-dry-run MESSAGE="your commit message" SLUG="short-task-slug"
+```
+
+Hooks are not the primary delivery workflow. Do not rely on pre-push or pre-commit hooks to create artifacts for the commit being pushed.
+
 ---
 
 ## Troubleshooting
@@ -433,7 +460,7 @@ If you are running the ChatGPT tunnel in HTTP mode and get connection failures, 
 
 To maintain a secure local-first workflow, respect these safety limits:
 
-1.  **No Git Mutation**: Relay does not perform git commits, pushes, checkouts, branch creation, or resets. Do not document or attempt to use tools for these actions.
+1.  **No Implicit Git Mutation**: Relay does not mutate git from run submission, validation, execution, or audit. The explicit closeout command is the repo-owned exception: when invoked by the operator, it may stage, commit, and push. Relay still does not create branches, reset worktrees, create PRs, run GitHub Actions, or administer remote repository settings.
 2.  **No Shell/Execution**: Relay does not support running arbitrary shell commands via MCP.
 3.  **No Secret Leaks**: Never commit `.env` or `.env.local` files, and never paste API keys, tunnel credentials, or private tokens into planner handoffs or MCP tool parameters.
 4.  **Local Isolation**: Ensure all database files (`relay.sqlite`) and artifacts (`data/artifacts/*`) are kept local. Do not attempt to sync these files to remote networks or push them to version control.

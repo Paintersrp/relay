@@ -26,7 +26,7 @@ Relay is a local-first handoff/run orchestration workbench.
 | Validation | Local/user-triggered validation command execution |
 | Git Diff | Local git diff inspection |
 | Audit Handoff | Generation of audit handoffs for review |
-| Commit Support | Manual git commit support |
+| Closeout Support | Explicit repo-owned closeout command for final validation evidence, closeout evidence, staging, commit, and push |
 | React Workbench | Primary workflow UI |
 | Go Backend | Ownership of JSON APIs, orchestration, run lifecycle, artifact storage, utility server-rendered pages, and event streaming |
 
@@ -71,7 +71,7 @@ Relay's audit workflow is local-only and artifact-backed:
 - `GET /api/runs/{id}/audit/status` is the read-only preflight/status source for the audit UI.
 - Manual audit submission from HTTP and `submit_audit_packet` from MCP use the same decision service and persist `audit_decision_json`.
 - Decisions of `blocked` and `manual_review_required` map the run status to `revision_required` while preserving the original decision in `audit_decision_json`.
-- Audit acceptance does not automatically prepare commit artifacts or close the run. Those remain explicit post-audit closeout actions.
+- Audit acceptance does not implicitly close the run, commit code, or push branches. Those remain explicit post-audit closeout actions.
 - GitHub PRs, CI, and Actions are not used as audit evidence sources.
 
 ## Operator Documentation
@@ -137,10 +137,19 @@ Relay's current workflow is:
 11. Store validation evidence.
 12. Inspect git diff for local changes.
 13. Generate audit handoff for review.
-14. Prepare git commit message suggestion based on handoff, audit, and diff evidence.
-15. Review and manually run `git commit` in the repo.
+14. Prepare or review the closeout commit message and slug.
+15. Run the explicit repo-owned closeout workflow when the audited work is ready for delivery:
+    ```bash
+    make closeout MESSAGE="your commit message" SLUG="short-task-slug"
+    ```
+16. For rehearsal without committing or pushing, run:
+    ```bash
+    make closeout-dry-run MESSAGE="your commit message" SLUG="short-task-slug"
+    ```
 
-Relay does not stage files, commit, push, or mutate git on the user's behalf.
+The closeout workflow runs the repo-defined final validation command, writes closeout evidence under `handoffs/closeout/`, stages source changes and generated evidence, commits, and pushes. A final validation failure is preserved as closeout evidence and does not by itself block staging, commit, or push. Mechanical failures such as evidence write, staging, commit, or push failures remain blocking.
+
+Relay does not perform implicit git mutation from run submission, validation, execution, or audit. Git staging, commit, and push happen only when the operator explicitly invokes the closeout workflow or runs manual git commands. Relay does not create PRs, run GitHub Actions, or administer branch protection as part of this local workflow.
 
 ## MCP Bridge & Current Project Action
 
@@ -405,9 +414,9 @@ When Relay Validation passes or after git diff evidence is collected, Step 7 pro
 
 The audit handoff generates a compact markdown artifact (`audit_handoff.md`) containing run metadata, agent results, validation results, and git diff evidence. The audit handoff is intended to be copied into GPT for audit/review.
 
-### Git Commit Step
+### Closeout Step
 
-Step 8: Git Commit is the final workflow step. After the commit suggestion is prepared, Relay shows Step 8 with a suggested conventional commit message and a copyable command. Relay does not stage files, does not run `git commit`, and does not execute any git mutating operations. The commit message is generated deterministically and stored as `commit_message_text` and `commit_suggestion_json`.
+Step 8 prepares closeout metadata. After the commit suggestion is prepared, Relay shows a suggested conventional commit message and preserves it as `commit_message_text` and `commit_suggestion_json`. Final delivery happens only when the operator explicitly runs `make closeout MESSAGE="your commit message" SLUG="short-task-slug"` or manual git commands.
 
 ## Routes and API
 

@@ -4,67 +4,41 @@
   "validation_tier": "affected",
   "validation_scope": "touched",
   "status": "passed",
-  "created_at": "2026-07-01T01:17:55Z",
-  "base_commit_short": "c9165cb93b09",
-  "base_commit_sha": "c9165cb93b09c284b5e67ddb6a4b627e5116816d",
+  "created_at": "2026-07-01T01:30:18Z",
+  "base_commit_short": "041c6f021eec",
+  "base_commit_sha": "041c6f021eec3477484d881087d41b8ed5eec9fa",
   "validated_source_snapshot": {
-    "captured_at": "2026-07-01T01:18:00.769Z",
+    "captured_at": "2026-07-01T01:31:01.534Z",
     "model": "base_commit_plus_worktree_diff_excluding_validation_report_artifacts",
     "worktree_dirty": true,
-    "diff_sha256": "822513ccc6f3bb99de5c04ad7994941f4f7f45178b49fcdb6687df9e2f322812",
+    "diff_sha256": "ebbd38f2ccb809dae131e0126de9ce24cac9e7b8cb53ddeb4962bb134c31ce43",
     "diff_name_status": [
       {
         "status": "M",
-        "path": "cmd/relay-closeout/main.go"
-      },
-      {
-        "status": "A",
-        "path": "handoffs/closeout/2026-07-01_pass-005-warning-remediation.closeout-evidence.json"
-      },
-      {
-        "status": "A",
-        "path": "handoffs/closeout/2026-07-01_pass-005-warning-remediation.closeout-evidence.md"
+        "path": "docs/operator-guide.md"
       },
       {
         "status": "M",
-        "path": "internal/artifacts/paths_closeout_test.go"
+        "path": "Makefile"
       },
       {
         "status": "M",
-        "path": "internal/artifacts/paths.go"
-      },
-      {
-        "status": "M",
-        "path": "internal/closeout/closeout_test.go"
-      },
-      {
-        "status": "M",
-        "path": "internal/closeout/closeout.go"
+        "path": "README.md"
       }
     ],
-    "diff_stat": "cmd/relay-closeout/main.go                         |  47 ++--\n ...-005-warning-remediation.closeout-evidence.json |  70 ++++++\n ...ss-005-warning-remediation.closeout-evidence.md |  63 ++++++\n internal/artifacts/paths.go                        |  36 ++-\n internal/artifacts/paths_closeout_test.go          |  38 +++-\n internal/closeout/closeout.go                      | 243 ++++++++++++++++-----\n internal/closeout/closeout_test.go                 |  82 ++++++-\n 7 files changed, 485 insertions(+), 94 deletions(-)",
+    "diff_stat": "Makefile               |  5 +----\n README.md              | 23 ++++++++++++++++-------\n docs/operator-guide.md | 33 ++++++++++++++++++++++++++++++---\n 3 files changed, 47 insertions(+), 14 deletions(-)",
     "status_porcelain": [
-      " M cmd/relay-closeout/main.go",
-      "A  handoffs/closeout/2026-07-01_pass-005-warning-remediation.closeout-evidence.md",
-      "AM handoffs/closeout/2026-07-01_pass-005-warning-remediation.closeout-evidence.json",
-      "M  internal/artifacts/paths_closeout_test.go",
-      "M  internal/artifacts/paths.go",
-      "M  internal/closeout/closeout_test.go",
-      "M  internal/closeout/closeout.go"
+      " M docs/operator-guide.md",
+      " M Makefile",
+      " M README.md"
     ]
   },
   "post_report_status_porcelain": [
-    " M cmd/relay-closeout/main.go",
-    "A  handoffs/closeout/2026-07-01_pass-005-warning-remediation.closeout-evidence.md",
-    "AM handoffs/closeout/2026-07-01_pass-005-warning-remediation.closeout-evidence.json",
-    "M  handoffs/validation/latest.validation-report.json",
-    "M  handoffs/validation/latest.validation-summary.md",
-    "M  internal/artifacts/paths_closeout_test.go",
-    "M  internal/artifacts/paths.go",
-    "M  internal/closeout/closeout_test.go",
-    "M  internal/closeout/closeout.go",
-    "MM handoffs/validation/latest.validation-report.touched.json",
-    "MM handoffs/validation/latest.validation-summary.touched.md"
+    " M docs/operator-guide.md",
+    " M handoffs/validation/latest.validation-report.touched.json",
+    " M handoffs/validation/latest.validation-summary.touched.md",
+    " M Makefile",
+    " M README.md"
   ],
   "report_files": [
     "handoffs/validation/latest.validation-report.touched.json",
@@ -73,67 +47,137 @@
   "commands": [
     {
       "step": 1,
-      "name": "gofmt-touched-files",
-      "command": "gofmt -w internal/artifacts/paths_closeout_test.go internal/artifacts/paths.go internal/closeout/closeout_test.go internal/closeout/closeout.go",
-      "started_at": "2026-07-01T01:17:55.137Z",
-      "completed_at": "2026-07-01T01:17:55.185Z",
+      "name": "validate-script-syntax",
+      "command": "bash -n scripts/validate.sh",
+      "started_at": "2026-07-01T01:30:18.817Z",
+      "completed_at": "2026-07-01T01:30:19.246Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "$ gofmt -w internal/artifacts/paths_closeout_test.go internal/artifacts/paths.go internal/closeout/closeout_test.go internal/closeout/closeout.go\nexit_code: 0\n"
+      "output_tail": "$ bash -n scripts/validate.sh\nexit_code: 0\n"
     },
     {
       "step": 2,
-      "name": "go-test-affected-packages",
-      "command": "go test ./internal/artifacts ./internal/closeout",
-      "started_at": "2026-07-01T01:17:55.186Z",
-      "completed_at": "2026-07-01T01:18:00.768Z",
+      "name": "go-fmt-agentrefs-executor",
+      "command": "go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor",
+      "started_at": "2026-07-01T01:30:19.247Z",
+      "completed_at": "2026-07-01T01:30:19.563Z",
       "exit_code": 0,
       "status": "passed",
-      "output_tail": "$ go test ./internal/artifacts ./internal/closeout\nok  \trelay/internal/artifacts\t(cached)\nok  \trelay/internal/closeout\t1.764s\nexit_code: 0\n"
+      "output_tail": "$ go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor\nexit_code: 0\n"
+    },
+    {
+      "step": 3,
+      "name": "go-test-agentrefs",
+      "command": "go test ./internal/agentrefs/... ./cmd/agentrefs/...",
+      "started_at": "2026-07-01T01:30:19.563Z",
+      "completed_at": "2026-07-01T01:30:23.593Z",
+      "exit_code": 0,
+      "status": "passed",
+      "output_tail": "$ go test ./internal/agentrefs/... ./cmd/agentrefs/...\nok  \trelay/internal/agentrefs\t2.163s\nok  \trelay/cmd/agentrefs\t1.889s\nexit_code: 0\n"
+    },
+    {
+      "step": 4,
+      "name": "go-test-executor",
+      "command": "go test ./internal/executor/...",
+      "started_at": "2026-07-01T01:30:23.593Z",
+      "completed_at": "2026-07-01T01:30:24.698Z",
+      "exit_code": 0,
+      "status": "passed",
+      "output_tail": "$ go test ./internal/executor/...\nok  \trelay/internal/executor\t(cached)\nexit_code: 0\n"
+    },
+    {
+      "step": 5,
+      "name": "go-test-all",
+      "command": "go test ./...",
+      "started_at": "2026-07-01T01:30:24.698Z",
+      "completed_at": "2026-07-01T01:30:43.070Z",
+      "exit_code": 0,
+      "status": "passed",
+      "output_tail": "?   \trelay/internal/api/runs\t[no test files]\n?   \trelay/internal/api/shared\t[no test files]\n?   \trelay/internal/app\t[no test files]\n?   \trelay/internal/app/audits\t[no test files]\nok  \trelay/internal/app/drift\t(cached)\nok  \trelay/internal/app/intake\t(cached)\nok  \trelay/internal/app/plans\t(cached)\nok  \trelay/internal/app/projects\t(cached)\n?   \trelay/internal/app/runs\t[no test files]\nok  \trelay/internal/architecture\t(cached)\nok  \trelay/internal/artifacts\t(cached)\nok  \trelay/internal/auditor\t(cached)\nok  \trelay/internal/closeout\t(cached)\nok  \trelay/internal/compiler\t(cached)\nok  \trelay/internal/config\t(cached)\nok  \trelay/internal/contextpackets\t(cached)\nok  \trelay/internal/db\t(cached)\n?   \trelay/internal/devreload\t[no test files]\nok  \trelay/internal/events\t(cached)\nok  \trelay/internal/executor\t(cached)\nok  \trelay/internal/handlers\t6.500s\nok  \trelay/internal/instructions\t(cached)\nok  \trelay/internal/intake\t(cached)\nok  \trelay/internal/mcp\t(cached)\nok  \trelay/internal/pipeline\t(cached)\nok  \trelay/internal/projectmemory\t(cached)\nok  \trelay/internal/refactors\t(cached)\nok  \trelay/internal/renderer\t(cached)\nok  \trelay/internal/repairer\t2.547s\nok  \trelay/internal/repos\t(cached)\nok  \trelay/internal/server\t(cached)\nok  \trelay/internal/smoke\t(cached)\nok  \trelay/internal/sources\t(cached)\nok  \trelay/internal/store\t(cached)\n?   \trelay/internal/store/generated\t[no test files]\nok  \trelay/internal/validation\t(cached)\nok  \trelay/internal/validationrunner\t(cached)\nok  \trelay/internal/views\t(cached)\nexit_code: 0\n"
+    },
+    {
+      "step": 6,
+      "name": "web-typecheck",
+      "command": "cd apps/web && npm run typecheck",
+      "started_at": "2026-07-01T01:30:43.070Z",
+      "completed_at": "2026-07-01T01:30:54.065Z",
+      "exit_code": 0,
+      "status": "passed",
+      "output_tail": "$ cd apps/web && npm run typecheck\n\n> relay-web@0.1.0 typecheck\n> tsc --noEmit\n\nexit_code: 0\n"
+    },
+    {
+      "step": 7,
+      "name": "web-test",
+      "command": "cd apps/web && npm run test",
+      "started_at": "2026-07-01T01:30:54.065Z",
+      "completed_at": "2026-07-01T01:31:01.534Z",
+      "exit_code": 0,
+      "status": "passed",
+      "output_tail": "  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runAuditVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runAuditVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/execute.test.tsx\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-execute.test.tsx\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runCompileRenderVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runCompileRenderVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nWarning: Route file \"D:/Code/relay/apps/web/src/routes/runs/$runId/runExecuteVisualState.test.ts\" does not export a Route. This file will not be included in the route tree.\n\nIf this file is not intended to be a route, you can exclude it using one of these options:\n  1. Rename the file to \"D:\\Code\\relay\\apps\\web\\src\\routes\\runs\\$runId\\-runExecuteVisualState.test.ts\" (prefix with \"-\")\n  2. Use 'routeFileIgnorePattern' in your config to match this file\n\nCurrent configuration:\n  routeFileIgnorePrefix: \"-\"\n  routeFileIgnorePattern: undefined\nexit_code: 0\n"
     }
   ],
   "input_paths": [
-    "internal/artifacts/paths.go",
-    "internal/artifacts/paths_closeout_test.go",
-    "internal/closeout/closeout.go",
-    "internal/closeout/closeout_test.go"
+    "Makefile",
+    "README.md",
+    "docs/operator-guide.md"
   ],
   "normalized_paths": [
-    "internal/artifacts/paths_closeout_test.go",
-    "internal/artifacts/paths.go",
-    "internal/closeout/closeout_test.go",
-    "internal/closeout/closeout.go"
+    "docs/operator-guide.md",
+    "Makefile",
+    "README.md"
   ],
   "path_classification": {
     "docs_only": false,
-    "docs": [],
-    "go": [
-      "internal/artifacts/paths_closeout_test.go",
-      "internal/artifacts/paths.go",
-      "internal/closeout/closeout_test.go",
-      "internal/closeout/closeout.go"
+    "docs": [
+      "docs/operator-guide.md",
+      "README.md"
     ],
-    "go_packages": [
-      "./internal/artifacts",
-      "./internal/closeout"
-    ],
+    "go": [],
+    "go_packages": [],
     "web": [],
-    "validation_infrastructure": [],
+    "validation_infrastructure": [
+      "Makefile"
+    ],
     "dependency_sensitive": [],
     "global_escalation": [],
     "other": [],
-    "global_escalation_required": false
+    "global_escalation_required": true
   },
   "command_table": [
     {
       "step": 1,
-      "name": "gofmt-touched-files",
-      "command": "gofmt -w internal/artifacts/paths_closeout_test.go internal/artifacts/paths.go internal/closeout/closeout_test.go internal/closeout/closeout.go"
+      "name": "validate-script-syntax",
+      "command": "bash -n scripts/validate.sh"
     },
     {
       "step": 2,
-      "name": "go-test-affected-packages",
-      "command": "go test ./internal/artifacts ./internal/closeout"
+      "name": "go-fmt-agentrefs-executor",
+      "command": "go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor"
+    },
+    {
+      "step": 3,
+      "name": "go-test-agentrefs",
+      "command": "go test ./internal/agentrefs/... ./cmd/agentrefs/..."
+    },
+    {
+      "step": 4,
+      "name": "go-test-executor",
+      "command": "go test ./internal/executor/..."
+    },
+    {
+      "step": 5,
+      "name": "go-test-all",
+      "command": "go test ./..."
+    },
+    {
+      "step": 6,
+      "name": "web-typecheck",
+      "command": "cd apps/web && npm run typecheck"
+    },
+    {
+      "step": 7,
+      "name": "web-test",
+      "command": "cd apps/web && npm run test"
     }
   ],
   "failure_output_tails": []
