@@ -700,8 +700,8 @@ func TestHandleCreateRunFromPlannerHandoffFile_SHAMismatchCreatesNoRun(t *testin
 	if !result.IsError {
 		t.Fatal("expected SHA mismatch validation error")
 	}
-	if !contains(result.Content[0].Text, "VALIDATION_ERROR") || !contains(result.Content[0].Text, "expected_sha256") {
-		t.Fatalf("expected expected_sha256 validation error, got: %s", result.Content[0].Text)
+	if !contains(result.Content[0].Text, MCPBlockerExpectedHashMismatch) || !contains(result.Content[0].Text, `"recoverable":true`) {
+		t.Fatalf("expected recoverable expected_hash_mismatch blocker, got: %s", result.Content[0].Text)
 	}
 	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 		t.Fatalf("expected no run rows, got %d", got)
@@ -836,6 +836,13 @@ func TestHandleValidatePlannerHandoffForCompile_FileMode(t *testing.T) {
 	if !mismatch.IsError || !contains(mismatch.Content[0].Text, "expected_sha256") {
 		t.Fatalf("expected expected_sha256 mismatch rejection, got: %+v", mismatch)
 	}
+	var blockedMismatch MCPBlockedResponse
+	if err := json.Unmarshal(mustMarshal(t, mismatch.StructuredContent), &blockedMismatch); err != nil {
+		t.Fatalf("decode mismatch structuredContent: %v", err)
+	}
+	if len(blockedMismatch.Blockers) != 1 || blockedMismatch.Blockers[0].Code != MCPBlockerExpectedHashMismatch || !blockedMismatch.Blockers[0].Recoverable {
+		t.Fatalf("expected recoverable expected_hash_mismatch blocker, got %+v", blockedMismatch.Blockers)
+	}
 	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 		t.Fatalf("standalone validation failures must not create runs, got %d", got)
 	}
@@ -854,11 +861,11 @@ func TestHandleValidatePlannerHandoffForCompile_PassWithoutPlanBlocks(t *testing
 		"pass_id":                  "PASS-007",
 	})
 	result := srv.HandleValidatePlannerHandoffForCompile(args)
-	if result.IsError {
-		t.Fatalf("expected structured preflight result, got tool error: %s", result.Content[0].Text)
+	if !result.IsError {
+		t.Fatal("expected blocked preflight tool error")
 	}
 	rawResult := string(mustMarshal(t, result.StructuredContent))
-	if !contains(rawResult, `"ok":false`) || !contains(rawResult, "managed_plan_missing") {
+	if !contains(rawResult, `"status":"blocked"`) || !contains(rawResult, "managed_plan_missing") {
 		t.Fatalf("expected managed_plan_missing structured blocker, got: %s", rawResult)
 	}
 	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
@@ -1085,8 +1092,8 @@ func TestHandleCreateRunFromPlannerHandoff_UnknownPlanRejected(t *testing.T) {
 	if !result.IsError {
 		t.Fatal("expected not found error for unknown plan")
 	}
-	if !contains(result.Content[0].Text, "NOT_FOUND") {
-		t.Fatalf("expected NOT_FOUND, got: %s", result.Content[0].Text)
+	if !contains(result.Content[0].Text, MCPBlockerUnknownResource) {
+		t.Fatalf("expected unknown_resource blocker, got: %s", result.Content[0].Text)
 	}
 	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 		t.Fatalf("expected no run rows, got %d", got)
@@ -1116,8 +1123,8 @@ func TestHandleCreateRunFromPlannerHandoff_UnknownPassRejected(t *testing.T) {
 	if !result.IsError {
 		t.Fatal("expected not found error for unknown pass")
 	}
-	if !contains(result.Content[0].Text, "NOT_FOUND") {
-		t.Fatalf("expected NOT_FOUND, got: %s", result.Content[0].Text)
+	if !contains(result.Content[0].Text, MCPBlockerUnknownResource) {
+		t.Fatalf("expected unknown_resource blocker, got: %s", result.Content[0].Text)
 	}
 	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 		t.Fatalf("expected no run rows, got %d", got)
@@ -1161,8 +1168,8 @@ func TestHandleCreateRunFromPlannerHandoff_PassNotOpenRejected(t *testing.T) {
 			if !result.IsError {
 				t.Fatal("expected closed pass to reject associated run creation")
 			}
-			if !contains(result.Content[0].Text, "PASS_NOT_OPEN") {
-				t.Fatalf("expected PASS_NOT_OPEN, got: %s", result.Content[0].Text)
+			if !contains(result.Content[0].Text, MCPBlockerSchemaMismatch) {
+				t.Fatalf("expected schema_mismatch blocker, got: %s", result.Content[0].Text)
 			}
 			if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 				t.Fatalf("expected no run rows, got %d", got)
@@ -1235,8 +1242,8 @@ func TestHandleCreateRunFromPlannerHandoff_PlanRepoConflictRejected(t *testing.T
 	if !result.IsError {
 		t.Fatal("expected conflicting repo_target to reject plan-associated run creation")
 	}
-	if !contains(result.Content[0].Text, "VALIDATION_ERROR") {
-		t.Fatalf("expected VALIDATION_ERROR, got: %s", result.Content[0].Text)
+	if !contains(result.Content[0].Text, MCPBlockerSchemaMismatch) {
+		t.Fatalf("expected schema_mismatch blocker, got: %s", result.Content[0].Text)
 	}
 	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 		t.Fatalf("expected no run rows, got %d", got)
@@ -1363,8 +1370,8 @@ func TestHandleCreateRunFromPlannerHandoff_ArtifactFailureRollsBackPassTransitio
 	if !result.IsError {
 		t.Fatal("expected artifact write failure to surface as tool error")
 	}
-	if !contains(result.Content[0].Text, "INTAKE_ERROR") {
-		t.Fatalf("expected INTAKE_ERROR, got: %s", result.Content[0].Text)
+	if !contains(result.Content[0].Text, MCPBlockerToolUnavailable) {
+		t.Fatalf("expected tool_unavailable blocker, got: %s", result.Content[0].Text)
 	}
 	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 		t.Fatalf("expected no run rows, got %d", got)

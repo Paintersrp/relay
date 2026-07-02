@@ -41,7 +41,9 @@ Intended safe Planner workflow:
 7. Submit only the exact reviewed handoff artifact after explicit user confirmation. File submission preserves reviewed handoff bytes, computes submitted SHA-256, verifies optional `expected_sha256`, and blocks with `expected_hash_mismatch` before run creation when hashes differ.
 
 Shared blocker envelope fields in order: `code`, `message`, `recoverable`, `evidence`, `next_actions`.
-Blocked MCP tool results set `ok=false`, `status="blocked"`, `isError=true`, and expose the bounded envelope in `structuredContent`. Evidence is limited to safe identifiers or repo-relative slash paths; absolute local paths, traversal paths, control characters, raw diagnostics, and full content dumps are rejected or omitted. Evidence and next-action arrays are bounded to eight items.
+Blocked MCP tool results set `ok=false`, `status="blocked"`, `isError=true`, and expose the bounded envelope in `structuredContent`. Business-state blockers are not successful tool calls. Deterministic compile-preflight blockers use the same envelope; bounded preflight details, work-packet summaries, and provenance diagnostics may appear only under `metadata`.
+
+Evidence is limited to safe identifiers or repo-relative slash paths; absolute local paths, traversal paths, drive-letter paths, UNC paths, control characters, raw diagnostics, and full content dumps are rejected or omitted. Artifact identity never exposes mounted MCP paths. Handoff metadata paths persisted as provenance are empty or normalized repo-relative slash paths only. Evidence and next-action arrays are bounded to eight items.
 
 Example:
 
@@ -68,7 +70,7 @@ Example:
 
 Required shared taxonomy codes: `unknown_resource`, `unknown_repository`, `alias_ambiguous`, `source_snapshot_stale`, `dirty_worktree`, `required_context_missing`, `required_context_truncated`, `blocked_path`, `redaction_failed`, `schema_mismatch`, `expected_hash_mismatch`, `tool_unavailable`, `tool_schema_stale`, `unsafe_request`.
 
-Successful run submission responses include normalized exact-artifact provenance without exposing MCP mount paths: `submitted_handoff_sha256`, optional `expected_sha256`, `sha_match_status` (`not_supplied`, `matched`, or `mismatched`), `source_mode` (`inline` or `file_parameter`), and `artifact_identity` containing `artifact_kind="planner_handoff"`, a sanitized `display_name`, and `byte_count`.
+Successful run submission responses include normalized exact-artifact provenance without exposing MCP mount paths: `submitted_handoff_sha256`, optional `expected_sha256`, `sha_match_status` (`not_supplied`, `matched`, or `mismatched`), `source_mode` (`inline` or `file_parameter`), and `artifact_identity` containing `artifact_kind="planner_handoff"`, a sanitized `display_name`, and `byte_count`. `expected_hash_mismatch` is recoverable and blocks before any durable run, artifact, provenance, event, or pass-status write.
 
 ## Project-Orchestrator Work Tools (Context-Broker Profile)
 
@@ -86,7 +88,7 @@ Successful run submission responses include normalized exact-artifact provenance
 *   Readiness states include `ready_for_handoff_authoring`, `ready_for_handoff_authoring_with_warnings`, `needs_source_snapshot`, `needs_required_context`, `context_acquisition_failed`, and other structured blocked states inherited from pass eligibility checks. Required missing, blocked, redaction-blocked, or truncated context returns `ok:false`; dirty-disallowed or stale/non-reusable source evidence returns `ok:false`; optional-only limitations may return warnings while keeping `ok:true`.
 *   `prepare_handoff_context` does not replace lower-level recovery tools. Its `lower_level_recovery_actions` may reference safe existing tools such as `create_source_snapshot`, `create_context_packet`, `get_context_packet`, or `get_next_pass_work` so operators can correct bounded source/context evidence and call `prepare_handoff_context` again.
 *   `get_next_audit_work` requires `project_id` and `plan_id` and accepts optional `pass_id` and `run_id` for scoped audit work selection.
-*   Outputs are bounded work-packet JSON with either `ok:true` or `ok:false` and structured `blockers`.
+*   Outputs are bounded work-packet JSON with `ok:true` for available work. Any `ok:false` work-packet blocker returns the shared blocked MCP envelope with `isError:true`; compatibility work-packet diagnostics, when present, are under bounded `metadata`.
 *   These tools do not submit plans, create runs, generate handoffs, generate audit judgments, apply audit decisions, dispatch executors, run shell commands, mutate git, or read/write arbitrary filesystem paths.
 *   They remain separate from submission tools (`submit_planner_pass_plan`, `create_run_from_planner_handoff`, `submit_audit_packet`) and are retrieval-only.
 
@@ -316,12 +318,13 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 }
 ```
 
-**Output (structuredContent):** `ok`, `status`, `is_compile_ready`, `issue_counts` (error/warning totals), `issues[]` (each with `code`, `severity`, `location`, `message`, `repair_guidance`, `blocks_submission`), `submitted_handoff_sha256`, `byte_count`, `source_mode`, `plan_id` (when supplied), `pass_id` (when supplied), `context_packet_id` (when supplied), `source_snapshot_id` (when supplied), `generated_at`
+**Success output (structuredContent):** `ok`, `status`, `is_compile_ready`, `issue_counts` (error/warning totals), `issues[]` (each with `code`, `severity`, `location`, `message`, `repair_guidance`, `blocks_submission`), `submitted_handoff_sha256`, `byte_count`, `source_mode`, `plan_id` (when supplied), `pass_id` (when supplied), `context_packet_id` (when supplied), `source_snapshot_id` (when supplied), `generated_at`
 
-**Example result (blocking):**
+Blocking validation results return `isError:true` and the shared blocker envelope in `structuredContent`; bounded preflight details remain available under `structuredContent.metadata.preflight`.
+
+**Example `metadata.preflight` (blocking):**
 ```json
 {
-  "ok": false,
   "status": "blocked",
   "is_compile_ready": false,
   "issue_counts": { "error": 2, "warning": 0 },
@@ -345,7 +348,7 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
   ],
   "submitted_handoff_sha256": "abc123...",
   "byte_count": 2048,
-  "generated_at": "2026-07-01T00:00:00Z"
+  "source_mode": "file_parameter"
 }
 ```
 
@@ -367,7 +370,7 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 
 **Strict input:** Unknown top-level fields are rejected. Provide exactly one source field: `planner_handoff_markdown` or `planner_handoff_file`. `expected_sha256` is valid only with `planner_handoff_file`, and `pass_id` requires `plan_id`.
 
-**Safety boundary:** This tool does not create runs, submit plans, dispatch executors, compile packets, mutate git, or browse arbitrary paths. It is a read-only validation gate. The text content block contains a short summary only; full issue payloads are in `structuredContent`.
+**Safety boundary:** This tool does not create runs, submit plans, dispatch executors, compile packets, mutate git, or browse arbitrary paths. It is a read-only validation gate. Success returns a non-error preflight payload. Blocking results return the shared typed blocker envelope with bounded compatibility details under `metadata`.
 
 **Relationship to run submission:** Run submission tools (`create_run_from_planner_handoff`, `create_run_from_planner_handoff_file`) perform the same preflight checks internally before creating any run. Blocking preflight failures prevent run/provenance/artifact writes. Preflight success is not a submission trigger — run submission still requires a reviewed Planner handoff and explicit user confirmation.
 
@@ -402,12 +405,12 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 
 **Plan/pass association behavior:**
 - `pass_id` requires `plan_id`.
-- Unknown `plan_id`, unknown `pass_id`, terminal pass status (`completed`/`skipped`), or explicit handoff/plan metadata conflicts reject submission and create no run.
+- Unknown `plan_id`, unknown `pass_id`, terminal pass status (`completed`/`skipped`), unsafe durable handoff metadata paths, or explicit handoff/plan metadata conflicts reject submission through the shared blocked MCP envelope and create no run.
 - When `plan_id`/`pass_id` point to an existing open plan/pass, the new run is associated with that pass and the pass status moves to `in_progress` only after run creation and provenance persistence succeed.
 - Audit acceptance for an associated run moves the pass to `completed`.
 - Audit revision for an associated run keeps/returns the pass to `in_progress`.
 - Compatibility note: this documents current pre-PASS-002 runtime behavior. The project-scoped orchestrator contract defines `revision_required` as a distinct pass/work state that blocks advancement and returns the same managed pass/run for repair or follow-up. Later runtime passes own migrating persistence and transition behavior from this current `in_progress` fallback to the expanded state model.
-- Provenance records include the handoff SHA-256, byte length, bounded handoff metadata, source/client trace data, optional plan/pass association, and optional `context_packet_id` / `source_snapshot_id`.
+- Provenance records include the handoff SHA-256, byte length, bounded handoff metadata, normalized repo-relative `source_artifact_path` when supplied, source/client trace data, optional plan/pass association, and optional `context_packet_id` / `source_snapshot_id`.
 
 ---
 

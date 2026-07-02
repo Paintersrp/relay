@@ -147,11 +147,7 @@ func (s *Server) HandleCreateRunFromPlannerHandoff(rawArgs json.RawMessage) Tool
 		SourceSnapshotID: input.SourceSnapshotID,
 	})
 	if err != nil {
-		var inputErr *intake.InputError
-		if errors.As(err, &inputErr) {
-			return toolErr(fmt.Sprintf("%s: %s", inputErr.Code, inputErr.Message))
-		}
-		return toolErr(fmt.Sprintf("INTAKE_ERROR: %s", err))
+		return toolBlockedResult("create_run_from_planner_handoff", []MCPBlocker{runSubmissionBlockerFromError(err)}, map[string]any{"provenance": provenance})
 	}
 
 	result := createRunOutput{
@@ -201,7 +197,7 @@ func (s *Server) HandleCreateRunFromPlannerHandoffFile(rawArgs json.RawMessage) 
 			return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerSchemaMismatch, err.Error(), false, []MCPBlockerEvidence{{Kind: "schema", Ref: "expected_sha256"}}, []string{"Use a 64-character lowercase hex SHA-256 value."}, map[string]any{"provenance": provenance})
 		}
 		if expectedSHA != submittedSHA {
-			return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerExpectedHashMismatch, "VALIDATION_ERROR: expected_sha256 does not match submitted handoff sha256", false, []MCPBlockerEvidence{{Kind: "hash", Ref: submittedSHA}, {Kind: "hash", Ref: expectedSHA}}, []string{"Review the supplied file and expected hash, then retry with matching bytes."}, map[string]any{"provenance": provenance})
+			return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerExpectedHashMismatch, "VALIDATION_ERROR: expected_sha256 does not match submitted handoff sha256", true, expectedHashMismatchEvidence(submittedSHA, expectedSHA, provenance.ArtifactIdentity.DisplayName), []string{"Recompute expected_sha256 from the reviewed handoff file or submit the exact reviewed bytes."}, map[string]any{"provenance": provenance})
 		}
 	}
 	preflight, err := intake.ValidatePlannerHandoffForCompile(intake.HandoffPreflightInput{
@@ -241,11 +237,7 @@ func (s *Server) HandleCreateRunFromPlannerHandoffFile(rawArgs json.RawMessage) 
 		SourceSnapshotID: input.SourceSnapshotID,
 	})
 	if err != nil {
-		var inputErr *intake.InputError
-		if errors.As(err, &inputErr) {
-			return toolErr(fmt.Sprintf("%s: %s", inputErr.Code, inputErr.Message))
-		}
-		return toolErr(fmt.Sprintf("INTAKE_ERROR: %s", err))
+		return toolBlockedResult("create_run_from_planner_handoff_file", []MCPBlocker{runSubmissionBlockerFromError(err)}, map[string]any{"provenance": provenance})
 	}
 
 	result := createRunOutput{
@@ -352,6 +344,56 @@ func exactSubmissionProvenance(data []byte, expectedSHA, sourceMode, displayName
 
 func createRunBlocked(tool, code, message string, recoverable bool, evidence []MCPBlockerEvidence, actions []string, metadata any) ToolCallResult {
 	return toolBlockedResult(tool, []MCPBlocker{newMCPBlocker(code, message, recoverable, evidence, actions)}, metadata)
+}
+
+func runSubmissionBlockerFromError(err error) MCPBlocker {
+	message := "run submission could not complete safely"
+	code := MCPBlockerToolUnavailable
+	recoverable := false
+	evidence := []MCPBlockerEvidence{{Kind: "tool", Ref: "create_run"}}
+	actions := []string{"Retry after the Relay operator inspects service availability."}
+
+	var inputErr *intake.InputError
+	if errors.As(err, &inputErr) {
+		message = inputErr.Message
+		recoverable = true
+		evidence = []MCPBlockerEvidence{{Kind: "field", Ref: "run_submission"}}
+		actions = []string{"Correct the submitted association, provenance, or metadata and retry the tool."}
+		switch inputErr.Code {
+		case intake.ErrCodeNotFound:
+			code = MCPBlockerUnknownResource
+		case intake.ErrCodeValidation, "PASS_NOT_OPEN":
+			code = MCPBlockerSchemaMismatch
+			lower := strings.ToLower(inputErr.Message)
+			switch {
+			case strings.Contains(lower, "source/context provenance"):
+				code = MCPBlockerRequiredContextMissing
+			case strings.Contains(lower, "safe repo-relative path"):
+				code = MCPBlockerBlockedPath
+				evidence = []MCPBlockerEvidence{{Kind: "field", Ref: "source_artifact_path"}, {Kind: "field", Ref: "intended_handoff_path"}}
+			case strings.Contains(lower, "not a path"):
+				code = MCPBlockerSchemaMismatch
+			}
+		}
+		return newMCPBlocker(code, message, recoverable, evidence, actions)
+	}
+
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "resolve repository") || strings.Contains(lower, "repo is required") || strings.Contains(lower, "repository target") {
+		return newMCPBlocker(MCPBlockerUnknownRepository, "repository target could not be resolved to a registered identity", true, []MCPBlockerEvidence{{Kind: "field", Ref: "repo_target"}}, []string{"Register or correct the repository target and retry the tool."})
+	}
+	if strings.Contains(lower, "preflight blocked") || strings.Contains(lower, "handoff validation blocked") {
+		return newMCPBlocker(MCPBlockerSchemaMismatch, "handoff failed deterministic validation", true, []MCPBlockerEvidence{{Kind: "field", Ref: "planner_handoff"}}, []string{"Correct the reviewed handoff and retry the tool."})
+	}
+	return newMCPBlocker(code, message, recoverable, evidence, actions)
+}
+
+func expectedHashMismatchEvidence(submittedSHA, expectedSHA, artifactName string) []MCPBlockerEvidence {
+	return []MCPBlockerEvidence{
+		{Kind: "submitted_sha256", Ref: submittedSHA},
+		{Kind: "expected_sha256", Ref: expectedSHA},
+		{Kind: "artifact_name", Ref: safeArtifactDisplayName(artifactName, "planner-handoff.md")},
+	}
 }
 
 // createRunSchema is the JSON Schema for create_run_from_planner_handoff.

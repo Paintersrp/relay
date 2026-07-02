@@ -431,8 +431,8 @@ func TestHandleCreateRunFromPlannerHandoffValidatesExplicitSourceContext(t *test
 	if !invalidResult.IsError {
 		t.Fatal("expected missing explicit context_packet_id to be rejected")
 	}
-	if !strings.Contains(invalidResult.Content[0].Text, "NOT_FOUND") {
-		t.Fatalf("expected NOT_FOUND for missing context packet, got %s", invalidResult.Content[0].Text)
+	if !strings.Contains(invalidResult.Content[0].Text, MCPBlockerUnknownResource) {
+		t.Fatalf("expected unknown_resource blocker for missing context packet, got %s", invalidResult.Content[0].Text)
 	}
 }
 

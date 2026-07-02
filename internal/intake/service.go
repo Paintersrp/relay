@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"relay/internal/artifacts"
+	"relay/internal/pathsafety"
 	"relay/internal/store"
 	"relay/internal/store/generated"
 )
@@ -194,6 +195,10 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 	if err := ValidateManagedRunSourceContextRequirement(association, provenanceIDs.ContextPacketID, provenanceIDs.SourceSnapshotID); err != nil {
 		return nil, err
 	}
+	sourceArtifactPath, err := durableHandoffMetadataPath(metadata)
+	if err != nil {
+		return nil, err
+	}
 
 	status := "intake_received"
 	if len(warnings) > 0 {
@@ -313,7 +318,6 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 
 	handoffHash := sha256.Sum256([]byte(input.Markdown))
 	handoffSHA := hex.EncodeToString(handoffHash[:])
-	sourceArtifactPath := firstNonEmpty(metadata["source_artifact_path"], metadata["intended_handoff_path"])
 	handoffMetadataJSON, err := marshalProvenanceMetadata(metadata, provenanceNotes)
 	if err != nil {
 		return nil, fmt.Errorf("marshal handoff metadata: %w", err)
@@ -607,10 +611,19 @@ func validateProvenanceID(field string, value string) error {
 	if value == "" {
 		return nil
 	}
-	if filepath.IsAbs(value) || strings.ContainsAny(value, `/\:`) {
+	if pathsafety.LooksLikePath(value) {
 		return &InputError{Code: ErrCodeValidation, Message: fmt.Sprintf("%s must be a safe identifier, not a path", field)}
 	}
 	return nil
+}
+
+func durableHandoffMetadataPath(metadata map[string]string) (string, error) {
+	value := firstNonEmpty(metadata["source_artifact_path"], metadata["intended_handoff_path"])
+	normalized, ok := pathsafety.NormalizeRepoRelativePath(value, false)
+	if !ok {
+		return "", &InputError{Code: ErrCodeValidation, Message: "handoff metadata source_artifact_path or intended_handoff_path must be a safe repo-relative path"}
+	}
+	return normalized, nil
 }
 
 func provenanceLookupError(field string, value string, err error) error {

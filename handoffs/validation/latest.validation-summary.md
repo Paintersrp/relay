@@ -3,18 +3,27 @@
 - status: passed
 - validation_tier: full
 - validation_scope: tier
-- base_commit: c9165cb93b09c284b5e67ddb6a4b627e5116816d
-- validated_source_snapshot: 181da1f519e5e92736d020da3c581fe71e1445eb3cf7e952383561ae108b8d30
+- base_commit: 6fc217fe221a076809304e6010c27a73d11aa6a6
+- validated_source_snapshot: d469136f4650c44af8dd6a17a599e8da46a459f71ec1e92c7dfcec825504e25b
 - worktree_dirty: true
-- created_at: 2026-07-01T01:22:58Z
+- created_at: 2026-07-02T22:47:19Z
 
 ## Validated source changes
 
-- M cmd/relay-closeout/main.go
-- M internal/artifacts/paths_closeout_test.go
-- M internal/artifacts/paths.go
-- M internal/closeout/closeout_test.go
-- M internal/closeout/closeout.go
+- M docs/mcp.md
+- M internal/intake/service_test.go
+- M internal/intake/service.go
+- M internal/mcp/blocker_envelope_test.go
+- M internal/mcp/blocker_envelope.go
+- M internal/mcp/context_broker_tools_test.go
+- M internal/mcp/mcp_test.go
+- M internal/mcp/orchestrator_work_tools_test.go
+- M internal/mcp/orchestrator_work_tools.go
+- M internal/mcp/tool_create_run_test.go
+- M internal/mcp/tool_create_run.go
+- M internal/mcp/tool_validate_planner_handoff.go
+- ?? internal/pathsafety/path_safety.go
+- M relay-contracts
 
 ## Commands
 

@@ -278,15 +278,15 @@ func TestGetNextPassWorkUnknownProject(t *testing.T) {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 
-	if result.IsError {
-		t.Error("expected IsError=false for business blocker, got true")
+	if !result.IsError {
+		t.Error("expected IsError=true for business blocker")
 	}
 
 	if len(result.Content) == 0 {
 		t.Fatal("expected content block")
 	}
 
-	payload := decodeNextPassSummary(t, result)
+	payload := decodeBlockedEnvelope(t, result)
 	if payload.OK {
 		t.Error("expected ok=false for unknown project, got true")
 	}
@@ -295,12 +295,16 @@ func TestGetNextPassWorkUnknownProject(t *testing.T) {
 		t.Errorf("tool = %q, want %q", payload.Tool, appplans.NextPassWorkTool)
 	}
 
+	if payload.Status != "blocked" {
+		t.Errorf("status = %q, want blocked", payload.Status)
+	}
+
 	if len(payload.Blockers) == 0 {
 		t.Fatal("expected at least one blocker")
 	}
 
-	if payload.Blockers[0].Code != string(appplans.BlockerUnknownProject) {
-		t.Errorf("blocker code = %q, want %q", payload.Blockers[0].Code, appplans.BlockerUnknownProject)
+	if payload.Blockers[0].Code != MCPBlockerUnknownResource {
+		t.Errorf("blocker code = %q, want %q", payload.Blockers[0].Code, MCPBlockerUnknownResource)
 	}
 }
 
@@ -338,19 +342,15 @@ func TestGetNextAuditWorkUnknownProject(t *testing.T) {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 
-	if result.IsError {
-		t.Error("expected IsError=false for business blocker, got true")
+	if !result.IsError {
+		t.Error("expected IsError=true for business blocker")
 	}
 
 	if len(result.Content) == 0 {
 		t.Fatal("expected content block")
 	}
 
-	var payload appplans.NextAuditWorkResponse
-	if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
-		t.Fatalf("unmarshal payload: %v", err)
-	}
-
+	payload := decodeBlockedEnvelope(t, result)
 	if payload.OK {
 		t.Error("expected ok=false for unknown project, got true")
 	}
@@ -359,12 +359,16 @@ func TestGetNextAuditWorkUnknownProject(t *testing.T) {
 		t.Errorf("tool = %q, want %q", payload.Tool, appplans.NextAuditWorkTool)
 	}
 
+	if payload.Status != "blocked" {
+		t.Errorf("status = %q, want blocked", payload.Status)
+	}
+
 	if len(payload.Blockers) == 0 {
 		t.Fatal("expected at least one blocker")
 	}
 
-	if payload.Blockers[0].Code != string(appplans.BlockerUnknownProject) {
-		t.Errorf("blocker code = %q, want %q", payload.Blockers[0].Code, appplans.BlockerUnknownProject)
+	if payload.Blockers[0].Code != MCPBlockerUnknownResource {
+		t.Errorf("blocker code = %q, want %q", payload.Blockers[0].Code, MCPBlockerUnknownResource)
 	}
 }
 
@@ -375,6 +379,41 @@ func mustMarshalJSON(t *testing.T, v interface{}) json.RawMessage {
 		t.Fatalf("marshal json: %v", err)
 	}
 	return data
+}
+
+func decodeBlockedEnvelope(t *testing.T, result ToolCallResult) MCPBlockedResponse {
+	t.Helper()
+	var blocked MCPBlockedResponse
+	data, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal structuredContent: %v", err)
+	}
+	if err := json.Unmarshal(data, &blocked); err != nil {
+		t.Fatalf("unmarshal blocked envelope: %v", err)
+	}
+	return blocked
+}
+
+func decodeBlockedNextPassSummary(t *testing.T, result ToolCallResult) appplans.NextPassWorkMCPSummary {
+	t.Helper()
+	blocked := decodeBlockedEnvelope(t, result)
+	meta, ok := blocked.Metadata.(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata map, got %T", blocked.Metadata)
+	}
+	raw, ok := meta["work_packet"]
+	if !ok {
+		t.Fatalf("expected metadata.work_packet, got %+v", meta)
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("marshal work_packet: %v", err)
+	}
+	var summary appplans.NextPassWorkMCPSummary
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Fatalf("unmarshal work_packet summary: %v", err)
+	}
+	return summary
 }
 
 // ----------------------------------------------------------------------------
@@ -884,14 +923,14 @@ func TestOrchestratorWorkTools_PrepareHandoffContextMissingRequiredIDs(t *testin
 	srv := NewServer(nil, &MCPDeps{Store: st, ToolProfile: ToolProfileLocalOperator})
 
 	result := srv.HandlePrepareHandoffContext(json.RawMessage(`{"project_id":"relay","plan_id":"plan-x"}`))
-	if result.IsError {
-		t.Fatalf("expected structured blocker result, got IsError=true: %+v", result.Content)
+	if !result.IsError {
+		t.Fatalf("expected blocked tool error, got IsError=false: %+v", result.Content)
 	}
-	resp := decodePrepareHandoffContext(t, result)
+	resp := decodeBlockedEnvelope(t, result)
 	if resp.OK {
 		t.Fatalf("expected ok=false for missing pass_id, got %+v", resp)
 	}
-	if len(resp.Blockers) == 0 || resp.Blockers[0].Code != appplans.BlockerUnsafeRequest {
+	if resp.Status != "blocked" || len(resp.Blockers) == 0 || resp.Blockers[0].Code != MCPBlockerUnsafeRequest {
 		t.Fatalf("expected unsafe_request blocker, got %+v", resp.Blockers)
 	}
 }
@@ -1066,10 +1105,10 @@ func TestOrchestratorWorkTools_GetNextPassWorkPlannerJumpstartActions(t *testing
 
 	srv := NewServer(nil, &MCPDeps{Store: st, ToolProfile: ToolProfileLocalOperator})
 	toolResult := srv.HandleGetNextPassWork(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-jumpstart-actions"}`))
-	if toolResult.IsError {
-		t.Fatalf("expected IsError=false, got error result: %+v", toolResult.Content)
+	if !toolResult.IsError {
+		t.Fatalf("expected IsError=true, got success result: %+v", toolResult.Content)
 	}
-	payload := decodeNextPassSummary(t, toolResult)
+	payload := decodeBlockedNextPassSummary(t, toolResult)
 	if payload.ReadinessState != "needs_context_packet" {
 		t.Fatalf("expected readiness_state=needs_context_packet, got %q", payload.ReadinessState)
 	}
@@ -1314,15 +1353,15 @@ func TestOrchestratorWorkTools_GetNextPassWorkTextOmitsVerboseHookProse(t *testi
 
 	srv := NewServer(nil, &MCPDeps{Store: st, ToolProfile: ToolProfileLocalOperator})
 	result := srv.HandleGetNextPassWork(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-compact-text"}`))
-	if result.IsError {
-		t.Fatalf("expected IsError=false, got error result: %+v", result.Content)
+	if !result.IsError {
+		t.Fatalf("expected IsError=true, got success result: %+v", result.Content)
 	}
 	for _, banned := range []string{"pre-commit", "pre-push", "ordinary commit/push flow"} {
 		if strings.Contains(result.Content[0].Text, banned) {
 			t.Fatalf("MCP text leaked verbose text %q: %s", banned, result.Content[0].Text)
 		}
 	}
-	summary := decodeNextPassSummary(t, result)
+	summary := decodeBlockedNextPassSummary(t, result)
 	if summary.SelectedPass == nil || summary.SelectedPass.PassID != "PASS-002" {
 		t.Fatalf("expected PASS-002 selected, got %+v", summary.SelectedPass)
 	}
@@ -1540,10 +1579,10 @@ func TestOrchestratorWorkTools_GetNextPassWork_ContextPacketUsability(t *testing
 
 	// 1. Unusable packet check
 	toolResult := srv.HandleGetNextPassWork(json.RawMessage(`{"project_id":"relay","plan_id":"plan-mcp-usability"}`))
-	if toolResult.IsError {
-		t.Fatalf("expected IsError=false, got: %+v", toolResult.Content)
+	if !toolResult.IsError {
+		t.Fatalf("expected IsError=true, got: %+v", toolResult.Content)
 	}
-	payload := decodeNextPassSummary(t, toolResult)
+	payload := decodeBlockedNextPassSummary(t, toolResult)
 	if payload.OK {
 		t.Fatal("expected ok=false for unusable context packet")
 	}

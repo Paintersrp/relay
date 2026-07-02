@@ -61,3 +61,50 @@ func TestToolBlockedResultStructuredContent(t *testing.T) {
 		t.Fatalf("unexpected blockers: %+v", structured.Blockers)
 	}
 }
+
+func TestPathEvidenceSafetyIsHostIndependent(t *testing.T) {
+	unsafe := []string{
+		`/absolute/posix/path.md`,
+		`\rooted\windows\path.md`,
+		`C:\Users\operator\reviewed.md`,
+		`C:/Users/operator/reviewed.md`,
+		`\\server\share\reviewed.md`,
+		`//server/share/reviewed.md`,
+		`../reviewed.md`,
+		`..\reviewed.md`,
+		`nested/../../reviewed.md`,
+		`nested\..\..\reviewed.md`,
+		"reviewed\x00.md",
+		"handoffs/reviewed.md;rm",
+	}
+	for _, ref := range unsafe {
+		t.Run(ref, func(t *testing.T) {
+			blocker := newMCPBlocker(MCPBlockerBlockedPath, "bad path", true, []MCPBlockerEvidence{{Kind: "path", Ref: ref}}, nil)
+			if len(blocker.Evidence) != 0 {
+				t.Fatalf("expected unsafe path evidence to be removed, got %+v", blocker.Evidence)
+			}
+		})
+	}
+
+	blocker := newMCPBlocker(MCPBlockerBlockedPath, "safe path", true, []MCPBlockerEvidence{{Kind: "path", Ref: `contracts\example.md`}}, nil)
+	if len(blocker.Evidence) != 1 || blocker.Evidence[0].Ref != "contracts/example.md" {
+		t.Fatalf("expected normalized repo-relative path evidence, got %+v", blocker.Evidence)
+	}
+}
+
+func TestSafeArtifactDisplayNameCrossPlatform(t *testing.T) {
+	cases := map[string]string{
+		`/tmp/reviewed.md`:           "reviewed.md",
+		`C:\Temp\reviewed.md`:        "reviewed.md",
+		`\\server\share\reviewed.md`: "reviewed.md",
+		`..\reviewed.md`:             "fallback.md",
+		`nested\..\..\reviewed.md`:   "fallback.md",
+		"":                           "fallback.md",
+		"reviewed\x00.md":            "fallback.md",
+	}
+	for input, want := range cases {
+		if got := safeArtifactDisplayName(input, "fallback.md"); got != want {
+			t.Fatalf("safeArtifactDisplayName(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

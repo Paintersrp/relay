@@ -581,6 +581,48 @@ func orchestratorWorkPrepareHandoffContextPayload(resp appplans.PrepareHandoffCo
 	}
 }
 
+func orchestratorWorkBlockedResult(toolName string, blockers []appplans.WorkBlocker, metadata any) ToolCallResult {
+	mcpBlockers := make([]MCPBlocker, 0, len(blockers))
+	for _, blocker := range blockers {
+		mcpBlockers = append(mcpBlockers, mcpBlockerFromWorkBlocker(blocker))
+	}
+	if len(mcpBlockers) == 0 {
+		mcpBlockers = append(mcpBlockers, newMCPBlocker(MCPBlockerUnsafeRequest, "work packet is blocked", true, []MCPBlockerEvidence{{Kind: "tool", Ref: toolName}}, []string{"Correct the request or workflow state and retry the tool."}))
+	}
+	result := toolBlockedResult(toolName, mcpBlockers, metadata)
+	result.Content = []ContentBlock{{Type: "text", Text: blockedSummaryText(toolName, mcpBlockers[0])}}
+	return result
+}
+
+func mcpBlockerFromWorkBlocker(blocker appplans.WorkBlocker) MCPBlocker {
+	evidence := make([]MCPBlockerEvidence, 0, len(blocker.Evidence))
+	for _, item := range blocker.Evidence {
+		evidence = append(evidence, MCPBlockerEvidence{Kind: item.Kind, Ref: item.Ref, Detail: item.Detail})
+	}
+	return newMCPBlocker(orchestratorWorkTaxonomyCode(blocker.Code), blocker.Message, blocker.Recoverable, evidence, blocker.NextActions)
+}
+
+func orchestratorWorkTaxonomyCode(code string) string {
+	switch code {
+	case "unknown_project", appplans.BlockerUnknownPlan, appplans.BlockerRequestedPassNotFound, appplans.BlockerUnknownPass, appplans.BlockerUnknownRun, appplans.BlockerNoEligiblePass:
+		return MCPBlockerUnknownResource
+	case appplans.BlockerSourceSnapshotStale:
+		return MCPBlockerSourceSnapshotStale
+	case appplans.BlockerSourceSnapshotDirtyDisallowed:
+		return MCPBlockerDirtyWorktree
+	case appplans.BlockerRequiredSourceContextMissing, appplans.BlockerRequiredContextPacketMissing, appplans.BlockerRequiredContextMissing, appplans.BlockerContextCoverageIncomplete, appplans.BlockerRequiredSeedFileMissingFromSnapshot:
+		return MCPBlockerRequiredContextMissing
+	case appplans.BlockerContextPacketTruncated, appplans.BlockerRequiredContextTruncated:
+		return MCPBlockerRequiredContextTruncated
+	case appplans.BlockerSourceSnapshotAcquisitionFailed, appplans.BlockerContextPacketAcquisitionFailed, appplans.BlockerPrepareContextAcquisitionFailed, appplans.BlockerRequiredContextBundleUnavailable:
+		return MCPBlockerToolUnavailable
+	case appplans.BlockerUnsafeRequest:
+		return MCPBlockerUnsafeRequest
+	default:
+		return MCPBlockerSchemaMismatch
+	}
+}
+
 func prepareHandoffContextSummaryText(resp appplans.PrepareHandoffContextResponse) string {
 	blockers := "none"
 	if len(resp.Blockers) > 0 {
@@ -731,6 +773,9 @@ func (s *Server) HandleGetNextPassWork(rawArgs json.RawMessage) ToolCallResult {
 	if resp.HandoffWork == nil {
 		resp.HandoffAuthoringPacket = nil
 	}
+	if !resp.OK {
+		return orchestratorWorkBlockedResult(appplans.NextPassWorkTool, resp.Blockers, map[string]any{"work_packet": appplans.CompactNextPassWorkSummary(resp)})
+	}
 
 	return orchestratorWorkNextPassPayload(resp)
 }
@@ -759,6 +804,9 @@ func (s *Server) HandlePrepareHandoffContext(rawArgs json.RawMessage) ToolCallRe
 	if err != nil {
 		return orchestratorWorkToolErr(appplans.PrepareHandoffContextTool, appplans.BlockerUnsafeRequest, fmt.Sprintf("service error: %v", err))
 	}
+	if !resp.OK {
+		return orchestratorWorkBlockedResult(appplans.PrepareHandoffContextTool, resp.Blockers, map[string]any{"work_packet": resp})
+	}
 	return orchestratorWorkPrepareHandoffContextPayload(resp)
 }
 
@@ -785,6 +833,9 @@ func (s *Server) HandleGetNextAuditWork(rawArgs json.RawMessage) ToolCallResult 
 	resp, err := svc.GetNextAuditWork(context.Background(), req)
 	if err != nil {
 		return orchestratorWorkToolErr(appplans.NextAuditWorkTool, appplans.BlockerUnsafeRequest, fmt.Sprintf("service error: %v", err))
+	}
+	if !resp.OK {
+		return orchestratorWorkBlockedResult(appplans.NextAuditWorkTool, resp.Blockers, map[string]any{"work_packet": resp})
 	}
 
 	return orchestratorWorkToolPayload(resp, false)

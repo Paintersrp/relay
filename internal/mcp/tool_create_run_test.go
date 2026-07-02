@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -97,10 +98,26 @@ func TestCreateRunFromPlannerHandoffFileHashMismatchStructuredBlocker(t *testing
 	if blocked.Status != "blocked" || len(blocked.Blockers) != 1 || blocked.Blockers[0].Code != MCPBlockerExpectedHashMismatch {
 		t.Fatalf("unexpected blocked response: %+v", blocked)
 	}
+	if !blocked.Blockers[0].Recoverable {
+		t.Fatal("expected hash mismatch to be recoverable")
+	}
+	evidence := string(mustMarshal(t, blocked.Blockers[0].Evidence))
+	if !strings.Contains(evidence, "submitted_sha256") || !strings.Contains(evidence, "expected_sha256") || !strings.Contains(evidence, "reviewed.md") {
+		t.Fatalf("expected safe hash and artifact-name evidence, got %s", evidence)
+	}
+	if strings.Contains(evidence, dir) || strings.Contains(evidence, path) {
+		t.Fatalf("evidence leaked local path: %s", evidence)
+	}
 	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 		t.Fatalf("expected no run rows, got %d", got)
 	}
+	if got := countTableRows(t, deps.Store.DB(), "artifacts"); got != 0 {
+		t.Fatalf("expected no artifact rows, got %d", got)
+	}
 	if got := countTableRows(t, deps.Store.DB(), "run_submission_provenance"); got != 0 {
 		t.Fatalf("expected no provenance rows, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "events"); got != 0 {
+		t.Fatalf("expected no event rows, got %d", got)
 	}
 }

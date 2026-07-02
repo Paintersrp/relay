@@ -83,7 +83,7 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 					},
 				}
 				return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
-					newMCPBlocker(MCPBlockerExpectedHashMismatch, "expected_sha256 does not match submitted handoff sha256", false, []MCPBlockerEvidence{{Kind: "hash", Ref: submittedSHA}, {Kind: "hash", Ref: expectedSHA}}, []string{"Review the supplied file and expected hash, then retry with matching bytes."}),
+					newMCPBlocker(MCPBlockerExpectedHashMismatch, "expected_sha256 does not match submitted handoff sha256", true, expectedHashMismatchEvidence(submittedSHA, expectedSHA, prov.ArtifactIdentity.DisplayName), []string{"Recompute expected_sha256 from the reviewed handoff file or submit the exact reviewed bytes."}),
 				}, map[string]any{"provenance": prov})
 			}
 		}
@@ -116,21 +116,17 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 		}, nil)
 	}
 
-	_ = submittedSHA
-
-	var textSummary string
 	if result.OK {
-		textSummary = fmt.Sprintf("Preflight passed: handoff is compile-ready (%d warnings). SHA-256: %s", result.IssueCounts["warning"], result.SubmittedHandoffSHA256)
-	} else {
-		textSummary = fmt.Sprintf("Preflight blocked: %d error(s), %d warning(s) found. Handoff is not compile-ready.", result.IssueCounts["error"], result.IssueCounts["warning"])
+		textSummary := fmt.Sprintf("Preflight passed: handoff is compile-ready (%d warnings). SHA-256: %s", result.IssueCounts["warning"], result.SubmittedHandoffSHA256)
+		return ToolCallResult{
+			Content:           []ContentBlock{{Type: "text", Text: textSummary}},
+			StructuredContent: result,
+		}
 	}
 
-	mcpResult := ToolCallResult{
-		Content:           []ContentBlock{{Type: "text", Text: textSummary}},
-		StructuredContent: result,
-	}
-
-	return mcpResult
+	return toolBlockedResult("validate_planner_handoff_for_compile", mcpBlockersFromPreflight(result.Blockers), map[string]any{
+		"preflight": boundedPreflightMetadata(result, submittedSHA, sourceMode),
+	})
 }
 
 func mcpBlockersFromPreflight(blockers []intake.HandoffPreflightBlocker) []MCPBlocker {
@@ -154,6 +150,33 @@ func prefixedMCPBlockers(prefix string, blockers []MCPBlocker) []MCPBlocker {
 		out = append(out, blocker)
 	}
 	return out
+}
+
+func boundedPreflightMetadata(result intake.HandoffPreflightResult, submittedSHA string, sourceMode string) map[string]any {
+	issues := make([]map[string]any, 0, len(result.Issues))
+	for _, issue := range result.Issues {
+		if len(issues) >= maxBlockerEvidence {
+			break
+		}
+		issues = append(issues, map[string]any{
+			"code":              sanitizeBlockerCode(issue.Code),
+			"severity":          string(issue.Severity),
+			"blocks_submission": issue.BlocksSubmission,
+		})
+	}
+	sha := result.SubmittedHandoffSHA256
+	if sha == "" {
+		sha = submittedSHA
+	}
+	return map[string]any{
+		"status":                   "blocked",
+		"is_compile_ready":         false,
+		"issue_counts":             result.IssueCounts,
+		"issues":                   issues,
+		"submitted_handoff_sha256": sha,
+		"byte_count":               result.ByteCount,
+		"source_mode":              sourceMode,
+	}
 }
 
 var validatePlannerHandoffSchema = json.RawMessage(`{

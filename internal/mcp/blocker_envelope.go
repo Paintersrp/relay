@@ -2,12 +2,13 @@ package mcp
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"relay/internal/pathsafety"
 )
 
 const (
@@ -191,16 +192,16 @@ func sanitizeEvidenceKind(s string) string {
 }
 
 func sanitizeEvidenceRef(kind, ref string) string {
+	if containsControlChars(ref) {
+		return ""
+	}
 	ref = sanitizeBoundedText(ref, 160)
 	if ref == "" {
 		return ""
 	}
 	if kind == "path" {
-		slash := filepath.ToSlash(ref)
-		if strings.HasPrefix(slash, "/") || strings.Contains(slash, "../") || strings.HasPrefix(slash, "../") || filepath.IsAbs(ref) {
-			return ""
-		}
-		if strings.ContainsAny(slash, "\x00\r\n;&|$<>`") {
+		slash, ok := pathsafety.NormalizeRepoRelativePath(ref, true)
+		if !ok || slash == "" {
 			return ""
 		}
 		return slash
@@ -209,6 +210,15 @@ func sanitizeEvidenceRef(kind, ref string) string {
 		return ref
 	}
 	return ""
+}
+
+func containsControlChars(s string) bool {
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
 }
 
 func sanitizeBlockerCode(code string) string {
@@ -255,9 +265,9 @@ func stripControlChars(s string) string {
 }
 
 func safeArtifactDisplayName(name, fallback string) string {
-	name = filepath.Base(strings.TrimSpace(name))
+	name = pathsafety.SafeDisplayBaseName(name, fallback)
 	name = sanitizeBoundedText(name, 120)
-	if name == "." || name == string(filepath.Separator) || name == "" || strings.Contains(name, "..") || filepath.IsAbs(name) {
+	if name == "" {
 		return fallback
 	}
 	return name

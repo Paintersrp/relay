@@ -2,11 +2,13 @@ package intake
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"relay/internal/app/plans"
@@ -195,6 +197,80 @@ compiler_input:
       - "Tests fail."
 ` + "```" + `
 </compiler_input>`
+}
+
+func serviceMarkdownWithMetadataPath(title, field, value string) string {
+	markdown := validServiceTestMarkdown(title)
+	if field == "" {
+		return markdown
+	}
+	return strings.Replace(markdown, "branch: main\n---", "branch: main\n"+field+": "+value+"\n---", 1)
+}
+
+func countServiceRows(t *testing.T, db *sql.DB, table string) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil {
+		t.Fatalf("count %s: %v", table, err)
+	}
+	return count
+}
+
+func TestCreateRunFromHandoff_DurableMetadataPathValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		field       string
+		value       string
+		wantPath    string
+		wantBlocked bool
+	}{
+		{name: "safe source path normalized", field: "source_artifact_path", value: `handoffs\planner\reviewed.md`, wantPath: "handoffs/planner/reviewed.md"},
+		{name: "safe intended path normalized", field: "intended_handoff_path", value: `handoffs\planner\intended.md`, wantPath: "handoffs/planner/intended.md"},
+		{name: "empty persists empty", wantPath: ""},
+		{name: "posix absolute blocks", field: "source_artifact_path", value: "/tmp/reviewed.md", wantBlocked: true},
+		{name: "windows drive blocks", field: "source_artifact_path", value: `C:\Temp\reviewed.md`, wantBlocked: true},
+		{name: "unc blocks", field: "source_artifact_path", value: `\\server\share\reviewed.md`, wantBlocked: true},
+		{name: "forward traversal blocks", field: "source_artifact_path", value: "../reviewed.md", wantBlocked: true},
+		{name: "backward traversal blocks", field: "source_artifact_path", value: `nested\..\..\reviewed.md`, wantBlocked: true},
+		{name: "control path blocks", field: "source_artifact_path", value: "handoffs/bad\x00path.md", wantBlocked: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := newIntakeServiceTestStore(t)
+			svc := NewService(st)
+			out, err := svc.CreateRunFromHandoff(CreateRunInput{
+				Markdown:   serviceMarkdownWithMetadataPath(tc.name, tc.field, tc.value),
+				RepoTarget: "relay",
+			})
+			if tc.wantBlocked {
+				if err == nil {
+					t.Fatal("expected blocked unsafe metadata path")
+				}
+				var inputErr *InputError
+				if !errors.As(err, &inputErr) || inputErr.Code != ErrCodeValidation {
+					t.Fatalf("expected validation InputError, got %T: %v", err, err)
+				}
+				for _, table := range []string{"runs", "artifacts", "run_submission_provenance", "events"} {
+					if got := countServiceRows(t, st.DB(), table); got != 0 {
+						t.Fatalf("expected no %s rows, got %d", table, got)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected success, got %v", err)
+			}
+			if out.Provenance.SourceArtifactPath != tc.wantPath {
+				t.Fatalf("output source path = %q, want %q", out.Provenance.SourceArtifactPath, tc.wantPath)
+			}
+			var stored string
+			if err := st.DB().QueryRow("SELECT source_artifact_path FROM run_submission_provenance WHERE run_id = ?", out.RunID).Scan(&stored); err != nil {
+				t.Fatalf("load provenance path: %v", err)
+			}
+			if stored != tc.wantPath {
+				t.Fatalf("stored source path = %q, want %q", stored, tc.wantPath)
+			}
+		})
+	}
 }
 
 // TestCreateRunFromHandoff_MissingManagedPassSourceContextBlocks verifies the shared
