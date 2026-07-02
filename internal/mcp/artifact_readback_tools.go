@@ -35,8 +35,10 @@ const (
 )
 
 const (
-	HashStatusComputed = "computed"
-	HashStatusOmitted  = "omitted_oversized"
+	HashStatusComputedFull     = "computed_full"
+	HashStatusOmittedByRequest = "omitted_by_request"
+	HashStatusOmittedOversized = "omitted_oversized"
+	HashStatusUnavailable      = "unavailable"
 )
 
 const (
@@ -131,12 +133,26 @@ type getRunArtifactBlockers struct {
 }
 
 type artifactBlocker struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code        string                   `json:"code"`
+	Message     string                   `json:"message"`
+	Recoverable bool                     `json:"recoverable"`
+	Evidence    []artifactBlockerEvidence `json:"evidence"`
+	NextActions []artifactNextAction      `json:"next_actions"`
+}
+
+type artifactBlockerEvidence struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id,omitempty"`
+	Value string `json:"value,omitempty"`
+}
+
+type artifactNextAction struct {
+	Action      string `json:"action"`
+	Description string `json:"description"`
 }
 
 type getRunArtifactOutput struct {
-	OK              string                  `json:"ok"`
+	OK              bool                    `json:"ok"`
 	Tool            string                  `json:"tool"`
 	RunID           string                  `json:"run_id"`
 	ArtifactKind    string                  `json:"artifact_kind"`
@@ -241,12 +257,19 @@ func isBinaryContent(data []byte, mimeType string) bool {
 	return false
 }
 
-func computeContentHash(data []byte) (string, string) {
-	if len(data) > oversizedContentHashSkip {
-		return "", HashStatusOmitted
+func computeFullArtifactHash(path string, size int64, includeHash bool) (string, string, error) {
+	if !includeHash {
+		return "", HashStatusOmittedByRequest, nil
+	}
+	if size > oversizedContentHashSkip {
+		return "", HashStatusOmittedOversized, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", HashStatusUnavailable, err
 	}
 	h := sha256.Sum256(data)
-	return hex.EncodeToString(h[:]), HashStatusComputed
+	return hex.EncodeToString(h[:]), HashStatusComputedFull, nil
 }
 
 func redactContent(data []byte) ([]byte, string) {
@@ -385,10 +408,10 @@ func validateArtifactPath(storedPath string, runID int64) (string, error) {
 	return fullPath, nil
 }
 
-func readAndStatArtifact(artifactPath string, maxBytes int, computeHash bool) ([]byte, int64, string, string, error) {
+func readAndStatArtifact(artifactPath string, maxBytes int) ([]byte, int64, error) {
 	info, err := os.Stat(artifactPath)
 	if err != nil {
-		return nil, 0, "", "", err
+		return nil, 0, err
 	}
 	size := info.Size()
 
@@ -403,26 +426,21 @@ func readAndStatArtifact(artifactPath string, maxBytes int, computeHash bool) ([
 	} else {
 		f, ferr := os.Open(artifactPath)
 		if ferr != nil {
-			return nil, size, "", "", ferr
+			return nil, size, ferr
 		}
 		defer f.Close()
 		buf := make([]byte, readLimit)
 		n, rerr := f.Read(buf)
 		if rerr != nil && rerr.Error() != "EOF" {
-			return nil, size, "", "", rerr
+			return nil, size, rerr
 		}
 		data = buf[:n]
 	}
 	if err != nil {
-		return nil, size, "", "", err
+		return nil, size, err
 	}
 
-	hash := ""
-	hashStatus := ""
-	if computeHash {
-		hash, hashStatus = computeContentHash(data)
-	}
-	return data, size, hash, hashStatus, nil
+	return data, size, nil
 }
 
 func buildArtifactRef(runID int64, artifactKind string) string {
@@ -693,31 +711,67 @@ func (s *Server) HandleGetRunArtifact(rawArgs json.RawMessage) ToolCallResult {
 
 	var input getRunArtifactInput
 	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
-		return buildArtifactBlockerResponse(BlockerUnsafeRequest, "invalid or unsafe arguments: "+err.Error())
+		return buildArtifactBlockerResponse("", newArtifactBlocker(
+			BlockerUnsafeRequest,
+			"invalid or unsafe arguments: "+err.Error(),
+			false,
+			[]artifactBlockerEvidence{{Kind: "argument", Value: "request_payload"}},
+			[]artifactNextAction{{Action: "retry_with_valid_arguments", Description: "retry with valid bounded arguments"}},
+		))
 	}
 
 	runIDStr := strings.TrimSpace(input.RunID)
 	if runIDStr == "" {
-		return buildArtifactBlockerResponse(BlockerUnsafeRequest, "run_id is required and must not be empty")
+		return buildArtifactBlockerResponse("", newArtifactBlocker(
+			BlockerUnsafeRequest,
+			"run_id is required and must not be empty",
+			false,
+			[]artifactBlockerEvidence{{Kind: "argument", Value: "run_id"}},
+			[]artifactNextAction{{Action: "retry_with_valid_arguments", Description: "retry with valid bounded arguments"}},
+		))
 	}
 
 	runID, err := strconv.ParseInt(runIDStr, 10, 64)
 	if err != nil || runID <= 0 {
-		return buildArtifactBlockerResponse(BlockerUnsafeRequest, fmt.Sprintf("run_id must be a positive integer, got %q", runIDStr))
+		return buildArtifactBlockerResponse("", newArtifactBlocker(
+			BlockerUnsafeRequest,
+			fmt.Sprintf("run_id must be a positive integer, got %q", runIDStr),
+			false,
+			[]artifactBlockerEvidence{{Kind: "argument", Value: "run_id"}},
+			[]artifactNextAction{{Action: "retry_with_valid_arguments", Description: "retry with valid bounded arguments"}},
+		))
 	}
 
 	artifactKind := strings.TrimSpace(input.ArtifactKind)
 	if artifactKind == "" {
-		return buildArtifactBlockerResponse(BlockerUnsafeRequest, "artifact_kind is required and must not be empty")
+		return buildArtifactBlockerResponse(runIDStr, newArtifactBlocker(
+			BlockerUnsafeRequest,
+			"artifact_kind is required and must not be empty",
+			false,
+			[]artifactBlockerEvidence{{Kind: "argument", Value: "artifact_kind"}},
+			[]artifactNextAction{{Action: "retry_with_valid_arguments", Description: "retry with valid bounded arguments"}},
+		))
 	}
 
 	viewMode := strings.TrimSpace(input.ViewMode)
 	if !viewModes[viewMode] {
-		return buildArtifactBlockerResponse(BlockerUnsafeRequest, fmt.Sprintf("view_mode must be one of: metadata_only, summary, errors, bounded_excerpt, got %q", viewMode))
+		return buildArtifactBlockerResponse(runIDStr, newArtifactBlocker(
+			BlockerUnsafeRequest,
+			fmt.Sprintf("view_mode must be one of: metadata_only, summary, errors, bounded_excerpt, got %q", viewMode),
+			false,
+			[]artifactBlockerEvidence{{Kind: "argument", Value: "view_mode"}},
+			[]artifactNextAction{{Action: "retry_with_valid_arguments", Description: "retry with valid bounded arguments"}},
+		))
 	}
 
 	if !isReadbackAllowedKind(artifactKind) {
-		return buildArtifactBlockerResponse(BlockerArtifactKindNotAllowed, fmt.Sprintf("artifact kind %q is not eligible for readback", artifactKind))
+		return buildArtifactBlockerResponse(runIDStr, newArtifactBlocker(
+			BlockerArtifactKindNotAllowed,
+			fmt.Sprintf("artifact kind %q is not eligible for readback", artifactKind),
+			true,
+			[]artifactBlockerEvidence{{Kind: "artifact_kind", ID: artifactKind}},
+			[]artifactNextAction{{Action: "select_allowed_kind", Description: "choose an eligible readback kind"}},
+		))
 	}
 
 	maxBytes := clampMaxBytes(input.MaxBytes)
@@ -725,27 +779,57 @@ func (s *Server) HandleGetRunArtifact(rawArgs json.RawMessage) ToolCallResult {
 
 	run, err := s.deps.Store.GetRun(runID)
 	if err != nil {
-		return buildArtifactBlockerResponse(BlockerUnknownRun, fmt.Sprintf("run %d not found", runID))
+		return buildArtifactBlockerResponse(runIDStr, newArtifactBlocker(
+			BlockerUnknownRun,
+			fmt.Sprintf("run %d not found", runID),
+			true,
+			[]artifactBlockerEvidence{{Kind: "run_id", ID: runIDStr}},
+			[]artifactNextAction{{Action: "verify_run_id", Description: "verify registered run ID"}},
+		))
 	}
 
 	artifactsList, err := s.deps.Store.ListArtifactsByRunKind(runID, artifactKind)
 	if err != nil || len(artifactsList) == 0 {
-		return buildArtifactBlockerResponse(BlockerArtifactNotFound, fmt.Sprintf("artifact kind %q not found for run %d", artifactKind, runID))
+		return buildArtifactBlockerResponse(runIDStr, newArtifactBlocker(
+			BlockerArtifactNotFound,
+			fmt.Sprintf("artifact kind %q not found for run %d", artifactKind, runID),
+			true,
+			[]artifactBlockerEvidence{{Kind: "run_id", ID: runIDStr}, {Kind: "artifact_kind", ID: artifactKind}},
+			[]artifactNextAction{{Action: "request_registered_kind", Description: "request an existing registered artifact kind for that run"}},
+		))
 	}
 	dbArtifact := artifactsList[0]
 
 	if dbArtifact.RunID != runID {
-		return buildArtifactBlockerResponse(BlockerArtifactNotFound, "artifact run_id mismatch")
+		return buildArtifactBlockerResponse(runIDStr, newArtifactBlocker(
+			BlockerArtifactNotFound,
+			"artifact run_id mismatch",
+			true,
+			[]artifactBlockerEvidence{{Kind: "run_id", ID: runIDStr}, {Kind: "artifact_kind", ID: artifactKind}},
+			[]artifactNextAction{{Action: "request_registered_kind", Description: "request an existing registered artifact kind for that run"}},
+		))
 	}
 
 	artifactPath, err := validateArtifactPath(dbArtifact.Path, runID)
 	if err != nil {
-		return buildArtifactBlockerResponse(BlockerUnsafeArtifactPath, err.Error())
+		return buildArtifactBlockerResponse(runIDStr, newArtifactBlocker(
+			BlockerUnsafeArtifactPath,
+			err.Error(),
+			false,
+			[]artifactBlockerEvidence{{Kind: "run_id", ID: runIDStr}, {Kind: "artifact_kind", ID: artifactKind}},
+			[]artifactNextAction{{Action: "repair_path_containment", Description: "operator must repair artifact registry/path containment"}},
+		))
 	}
 
 	fileInfo, err := os.Stat(artifactPath)
 	if err != nil {
-		return buildArtifactBlockerResponse(BlockerArtifactNotFound, "artifact file not accessible")
+		return buildArtifactBlockerResponse(runIDStr, newArtifactBlocker(
+			BlockerArtifactNotFound,
+			"artifact file not accessible",
+			true,
+			[]artifactBlockerEvidence{{Kind: "run_id", ID: runIDStr}, {Kind: "artifact_kind", ID: artifactKind}},
+			[]artifactNextAction{{Action: "request_registered_kind", Description: "request an existing registered artifact kind for that run"}},
+		))
 	}
 	size := fileInfo.Size()
 	mimeType := dbArtifact.MimeType
@@ -754,26 +838,36 @@ func (s *Server) HandleGetRunArtifact(rawArgs json.RawMessage) ToolCallResult {
 	ref := buildArtifactRef(runID, artifactKind)
 
 	var data []byte
-	var contentHash, hashStatus string
 	contentModes := viewMode == ViewModeBoundedExcerpt || viewMode == ViewModeSummary || viewMode == ViewModeErrors
 
+	contentHash, hashStatus, hashErr := computeFullArtifactHash(artifactPath, size, includeHash)
+	if hashErr != nil {
+		hashStatus = HashStatusUnavailable
+		contentHash = ""
+	}
+
 	if contentModes {
-		data, _, contentHash, hashStatus, err = readAndStatArtifact(artifactPath, maxBytes, includeHash)
-		if err != nil {
-			return buildArtifactBlockerResponse(BlockerArtifactReadFailed, "failed to read artifact: "+err.Error())
+		var readErr error
+		data, _, readErr = readAndStatArtifact(artifactPath, maxBytes)
+		if readErr != nil {
+			return buildArtifactBlockerResponse(runIDStr, newArtifactBlocker(
+				BlockerArtifactReadFailed,
+				"failed to read artifact: "+readErr.Error(),
+				true,
+				[]artifactBlockerEvidence{{Kind: "run_id", ID: runIDStr}, {Kind: "artifact_kind", ID: artifactKind}},
+				[]artifactNextAction{{Action: "verify_readability", Description: "verify artifact exists and is readable"}},
+			))
 		}
 
 		if isBinaryContent(data, mimeType) {
 			_ = run
-			return buildArtifactBlockerResponse(BlockerArtifactBinary, fmt.Sprintf("artifact is binary or unsupported (mime: %s)", mimeType))
-		}
-	} else {
-		if includeHash {
-			var hashData []byte
-			hashData, _, contentHash, hashStatus, _ = readAndStatArtifact(artifactPath, int(hardMaxBytes), true)
-			if hashData != nil {
-				_ = hashData
-			}
+			return buildArtifactBlockerResponse(runIDStr, newArtifactBlocker(
+				BlockerArtifactBinary,
+				fmt.Sprintf("artifact is binary or unsupported (mime: %s)", mimeType),
+				true,
+				[]artifactBlockerEvidence{{Kind: "mime_type", Value: mimeType}, {Kind: "artifact_kind", ID: artifactKind}},
+				[]artifactNextAction{{Action: "metadata_only_or_text", Description: "use metadata-only or request a text/JSON artifact"}},
+			))
 		}
 	}
 
@@ -783,12 +877,18 @@ func (s *Server) HandleGetRunArtifact(rawArgs json.RawMessage) ToolCallResult {
 	if data != nil && contentModes {
 		redactedData, redactionStatus = redactContent(data)
 		if redactionStatus == RedactionBlocked {
-			return buildArtifactBlockerResponse(BlockerRedactionBlocked, "artifact content contains high-risk sensitive material that cannot be safely redacted in bounded form")
+			return buildArtifactBlockerResponse(runIDStr, newArtifactBlocker(
+				BlockerRedactionBlocked,
+				"artifact content contains high-risk sensitive material that cannot be safely redacted in bounded form",
+				false,
+				[]artifactBlockerEvidence{{Kind: "artifact_kind", ID: artifactKind}, {Kind: "redaction_status", Value: redactionStatus}},
+				[]artifactNextAction{{Action: "operator_intervention", Description: "operator intervention required"}},
+			))
 		}
 	}
 
 	out := getRunArtifactOutput{
-		OK:              "true",
+		OK:              true,
 		Tool:            "get_run_artifact",
 		RunID:           runIDStr,
 		ArtifactKind:    artifactKind,
@@ -902,13 +1002,29 @@ func applyViewMode(viewMode string, data []byte, maxBytes int, fileSize int64, o
 	}
 }
 
-func buildArtifactBlockerResponse(code, message string) ToolCallResult {
+func newArtifactBlocker(code, message string, recoverable bool, evidence []artifactBlockerEvidence, nextActions []artifactNextAction) artifactBlocker {
+	if evidence == nil {
+		evidence = []artifactBlockerEvidence{}
+	}
+	if nextActions == nil {
+		nextActions = []artifactNextAction{}
+	}
+	return artifactBlocker{
+		Code:        code,
+		Message:     message,
+		Recoverable: recoverable,
+		Evidence:    evidence,
+		NextActions: nextActions,
+	}
+}
+
+func buildArtifactBlockerResponse(runID string, blocker artifactBlocker) ToolCallResult {
 	result := getRunArtifactBlockers{
 		OK:    false,
 		Tool:  "get_run_artifact",
-		RunID: "",
+		RunID: runID,
 		Blockers: []artifactBlocker{
-			{Code: code, Message: message},
+			blocker,
 		},
 	}
 	text, err := marshalTool(result)

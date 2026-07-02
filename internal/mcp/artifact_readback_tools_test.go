@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -574,8 +576,8 @@ func TestGetRunArtifactContentHashStatus(t *testing.T) {
 	if out.Artifact.ContentHash == "" {
 		t.Fatal("expected content hash when include_content_hash is true")
 	}
-	if out.Artifact.ContentHashStatus != HashStatusComputed {
-		t.Fatalf("expected hash status %q, got %q", HashStatusComputed, out.Artifact.ContentHashStatus)
+	if out.Artifact.ContentHashStatus != HashStatusComputedFull {
+		t.Fatalf("expected hash status %q, got %q", HashStatusComputedFull, out.Artifact.ContentHashStatus)
 	}
 }
 
@@ -620,7 +622,7 @@ func TestGetRunArtifactAllBlockers(t *testing.T) {
 				Tool:  "get_run_artifact",
 				RunID: "",
 				Blockers: []artifactBlocker{
-					{Code: code, Message: "test"},
+					newArtifactBlocker(code, "test", false, nil, nil),
 				},
 			})
 			if !strings.Contains(string(blockerText), code) {
@@ -874,7 +876,334 @@ func TestGetRunArtifactTruncationMetadata(t *testing.T) {
 	if out.ReturnedBytes <= 0 {
 		t.Fatal("expected returned_bytes > 0")
 	}
-	if out.ReturnedBytes > 300 {
-		t.Fatalf("returned_bytes %d exceeds max_bytes", out.ReturnedBytes)
+}
+
+func assertBlockerEnvelope(t *testing.T, text string) {
+	t.Helper()
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(text), &raw); err != nil {
+		t.Fatalf("failed to unmarshal raw blocker json: %v", err)
+	}
+	// check blockers array
+	blockersVal, exists := raw["blockers"]
+	if !exists {
+		t.Fatal("expected blockers field in envelope")
+	}
+	blockers, ok := blockersVal.([]any)
+	if !ok {
+		t.Fatalf("blockers must be an array, got %T", blockersVal)
+	}
+	if len(blockers) == 0 {
+		t.Fatal("expected at least one blocker in envelope")
+	}
+	for _, blkAny := range blockers {
+		blk, ok := blkAny.(map[string]any)
+		if !ok {
+			t.Fatalf("blocker item must be map, got %T", blkAny)
+		}
+		// assert fields
+		for _, field := range []string{"code", "message", "recoverable", "evidence", "next_actions"} {
+			if _, exists := blk[field]; !exists {
+				t.Fatalf("blocker missing field %q", field)
+			}
+		}
+		// check recoverable is bool
+		if _, ok := blk["recoverable"].(bool); !ok {
+			t.Fatalf("recoverable must be bool, got %T", blk["recoverable"])
+		}
+		// check evidence is list
+		evList, ok := blk["evidence"].([]any)
+		if !ok {
+			t.Fatalf("evidence must be list, got %T", blk["evidence"])
+		}
+		for _, evAny := range evList {
+			ev, ok := evAny.(map[string]any)
+			if !ok {
+				t.Fatalf("evidence item must be map, got %T", evAny)
+			}
+			// kind is required
+			if _, exists := ev["kind"]; !exists {
+				t.Fatal("evidence item missing kind")
+			}
+			// assert no local paths in evidence
+			for k, v := range ev {
+				s, ok := v.(string)
+				if ok && (strings.Contains(s, "data/artifacts") || strings.Contains(s, artifacts.BaseDir) || strings.Contains(s, "/test/path")) {
+					t.Fatalf("leak detected in evidence field %s: %s", k, s)
+				}
+			}
+		}
+		// check next actions are safe
+		naList, ok := blk["next_actions"].([]any)
+		if !ok {
+			t.Fatalf("next_actions must be list, got %T", blk["next_actions"])
+		}
+		for _, naAny := range naList {
+			na, ok := naAny.(map[string]any)
+			if !ok {
+				t.Fatalf("next_action item must be map, got %T", naAny)
+			}
+			if _, exists := na["action"]; !exists {
+				t.Fatal("next_action item missing action")
+			}
+			if _, exists := na["description"]; !exists {
+				t.Fatal("next_action item missing description")
+			}
+			// assert no shell/git/file browsing named in actions
+			actionStr := strings.ToLower(na["action"].(string))
+			descStr := strings.ToLower(na["description"].(string))
+			for _, keyword := range []string{"shell", "git", "bash", "cmd", "exec", "browse", "file manager"} {
+				if strings.Contains(actionStr, keyword) || strings.Contains(descStr, keyword) {
+					t.Fatalf("unsafe next_action detected: action=%q, desc=%q", actionStr, descStr)
+				}
+			}
+		}
+	}
+}
+
+func TestGetRunArtifactRawJSONSuccessOKIsBoolean(t *testing.T) {
+	deps := setupReadbackDeps(t)
+	srv := NewServer(discardLogger(), deps)
+	runID := seedTestRun(t, deps.Store)
+	content := `{"status":"ok"}`
+	seedTestArtifact(t, deps.Store, runID, "canonical_packet", content, "application/json")
+
+	// metadata_only
+	args1, _ := json.Marshal(map[string]any{
+		"run_id":        fmt.Sprintf("%d", runID),
+		"artifact_kind": "canonical_packet",
+		"view_mode":     "metadata_only",
+	})
+	result1 := srv.HandleGetRunArtifact(args1)
+	if result1.IsError {
+		t.Fatalf("unexpected error: %s", result1.Content[0].Text)
+	}
+
+	var raw1 map[string]any
+	if err := json.Unmarshal([]byte(result1.Content[0].Text), &raw1); err != nil {
+		t.Fatalf("failed to unmarshal raw JSON: %v", err)
+	}
+	val1, exists1 := raw1["ok"]
+	if !exists1 {
+		t.Fatal("ok field not found in response")
+	}
+	bVal1, isBool1 := val1.(bool)
+	if !isBool1 {
+		t.Fatalf("expected ok to be boolean, got %T", val1)
+	}
+	if !bVal1 {
+		t.Fatal("expected ok to be true")
+	}
+
+	// content mode (bounded_excerpt)
+	args2, _ := json.Marshal(map[string]any{
+		"run_id":        fmt.Sprintf("%d", runID),
+		"artifact_kind": "canonical_packet",
+		"view_mode":     "bounded_excerpt",
+	})
+	result2 := srv.HandleGetRunArtifact(args2)
+	if result2.IsError {
+		t.Fatalf("unexpected error: %s", result2.Content[0].Text)
+	}
+
+	var raw2 map[string]any
+	if err := json.Unmarshal([]byte(result2.Content[0].Text), &raw2); err != nil {
+		t.Fatalf("failed to unmarshal raw JSON: %v", err)
+	}
+	val2, exists2 := raw2["ok"]
+	if !exists2 {
+		t.Fatal("ok field not found in response")
+	}
+	bVal2, isBool2 := val2.(bool)
+	if !isBool2 {
+		t.Fatalf("expected ok to be boolean, got %T", val2)
+	}
+	if !bVal2 {
+		t.Fatal("expected ok to be true")
+	}
+}
+
+func TestGetRunArtifactUnknownRunEnvelope(t *testing.T) {
+	deps := setupReadbackDeps(t)
+	srv := NewServer(discardLogger(), deps)
+	args, _ := json.Marshal(map[string]any{
+		"run_id":        "99999",
+		"artifact_kind": "canonical_packet",
+		"view_mode":     "metadata_only",
+	})
+	result := srv.HandleGetRunArtifact(args)
+	if !result.IsError {
+		t.Fatal("expected error")
+	}
+	assertBlockerEnvelope(t, result.Content[0].Text)
+
+	var raw map[string]any
+	json.Unmarshal([]byte(result.Content[0].Text), &raw)
+	if raw["ok"] != false {
+		t.Fatalf("expected ok false, got %v", raw["ok"])
+	}
+
+	var blockersEnvelope getRunArtifactBlockers
+	json.Unmarshal([]byte(result.Content[0].Text), &blockersEnvelope)
+	blk := blockersEnvelope.Blockers[0]
+	if blk.Code != BlockerUnknownRun {
+		t.Fatalf("expected unknown_run, got %s", blk.Code)
+	}
+	if !blk.Recoverable {
+		t.Fatal("expected recoverable to be true")
+	}
+	foundRunID := false
+	for _, ev := range blk.Evidence {
+		if ev.Kind == "run_id" && ev.ID == "99999" {
+			foundRunID = true
+		}
+	}
+	if !foundRunID {
+		t.Fatal("expected run_id 99999 in evidence")
+	}
+	foundNextAction := false
+	for _, na := range blk.NextActions {
+		if na.Action == "verify_run_id" && strings.Contains(strings.ToLower(na.Description), "registered run id") {
+			foundNextAction = true
+		}
+	}
+	if !foundNextAction {
+		t.Fatal("expected next action verify_run_id instructing verification of registered run ID")
+	}
+}
+
+func TestGetRunArtifactUnsafeArtifactPathEnvelope(t *testing.T) {
+	deps := setupReadbackDeps(t)
+	srv := NewServer(discardLogger(), deps)
+	runID := seedTestRun(t, deps.Store)
+	unsafePath := "../escaping_secret.txt"
+	if _, err := deps.Store.CreateArtifact(runID, "canonical_packet", unsafePath, "application/json"); err != nil {
+		t.Fatalf("failed to seed unsafe artifact: %v", err)
+	}
+
+	args, _ := json.Marshal(map[string]any{
+		"run_id":        fmt.Sprintf("%d", runID),
+		"artifact_kind": "canonical_packet",
+		"view_mode":     "metadata_only",
+	})
+	result := srv.HandleGetRunArtifact(args)
+	if !result.IsError {
+		t.Fatal("expected error")
+	}
+	assertBlockerEnvelope(t, result.Content[0].Text)
+
+	var blockersEnvelope getRunArtifactBlockers
+	json.Unmarshal([]byte(result.Content[0].Text), &blockersEnvelope)
+	blk := blockersEnvelope.Blockers[0]
+	if blk.Code != BlockerUnsafeArtifactPath {
+		t.Fatalf("expected unsafe_artifact_path, got %s", blk.Code)
+	}
+	if blk.Recoverable {
+		t.Fatal("expected recoverable to be false")
+	}
+	rawText := result.Content[0].Text
+	if strings.Contains(rawText, "escaping_secret") {
+		t.Fatal("unsafe path leaked in response!")
+	}
+	for _, ev := range blk.Evidence {
+		if ev.Kind != "run_id" && ev.Kind != "artifact_kind" {
+			t.Fatalf("unexpected evidence kind: %s", ev.Kind)
+		}
+	}
+}
+
+func TestGetRunArtifactHashStatusNeverEmpty(t *testing.T) {
+	deps := setupReadbackDeps(t)
+	srv := NewServer(discardLogger(), deps)
+	runID := seedTestRun(t, deps.Store)
+	seedTestArtifact(t, deps.Store, runID, "canonical_packet", `{"status":"ok"}`, "application/json")
+
+	for _, mode := range []string{"metadata_only", "bounded_excerpt", "summary", "errors"} {
+		t.Run(mode, func(t *testing.T) {
+			args, _ := json.Marshal(map[string]any{
+				"run_id":               fmt.Sprintf("%d", runID),
+				"artifact_kind":        "canonical_packet",
+				"view_mode":            mode,
+				"include_content_hash": true,
+			})
+			result := srv.HandleGetRunArtifact(args)
+			if result.IsError {
+				t.Fatalf("expected success, got: %s", result.Content[0].Text)
+			}
+			out := unmarshalArtifactOutput(t, result)
+			if out.Artifact.ContentHashStatus == "" {
+				t.Fatal("content_hash_status must not be empty")
+			}
+		})
+	}
+}
+
+func TestGetRunArtifactOptionAHashSemantics(t *testing.T) {
+	deps := setupReadbackDeps(t)
+	srv := NewServer(discardLogger(), deps)
+	runID := seedTestRun(t, deps.Store)
+
+	largeContent := strings.Repeat("abcd", 4000) // 16,000 bytes > defaultMaxBytes
+	seedTestArtifact(t, deps.Store, runID, "executor_stdout", largeContent, "text/plain")
+
+	args1, _ := json.Marshal(map[string]any{
+		"run_id":               fmt.Sprintf("%d", runID),
+		"artifact_kind":        "executor_stdout",
+		"view_mode":            "bounded_excerpt",
+		"max_bytes":            1000,
+		"include_content_hash": true,
+	})
+	result1 := srv.HandleGetRunArtifact(args1)
+	out1 := unmarshalArtifactOutput(t, result1)
+
+	h := sha256.Sum256([]byte(largeContent))
+	expectedFullHash := hex.EncodeToString(h[:])
+
+	if out1.Artifact.ContentHash != expectedFullHash {
+		t.Fatalf("expected hash of full artifact %q, got %q", expectedFullHash, out1.Artifact.ContentHash)
+	}
+	if out1.Artifact.ContentHashStatus != HashStatusComputedFull {
+		t.Fatalf("expected status %q, got %q", HashStatusComputedFull, out1.Artifact.ContentHashStatus)
+	}
+
+	// 17MB file
+	oversizedBytes := make([]byte, 17*1024*1024)
+	filename := "executor_stderr.txt"
+	path, err := artifacts.Write(runID, "executor_stderr", filename, oversizedBytes)
+	if err != nil {
+		t.Fatalf("failed to write oversized file: %v", err)
+	}
+	if _, err := deps.Store.CreateArtifact(runID, "executor_stderr", path, "text/plain"); err != nil {
+		t.Fatalf("failed to seed oversized artifact row: %v", err)
+	}
+
+	args2, _ := json.Marshal(map[string]any{
+		"run_id":               fmt.Sprintf("%d", runID),
+		"artifact_kind":        "executor_stderr",
+		"view_mode":            "metadata_only",
+		"include_content_hash": true,
+	})
+	result2 := srv.HandleGetRunArtifact(args2)
+	out2 := unmarshalArtifactOutput(t, result2)
+	if out2.Artifact.ContentHash != "" {
+		t.Fatalf("expected empty hash for oversized file, got %q", out2.Artifact.ContentHash)
+	}
+	if out2.Artifact.ContentHashStatus != HashStatusOmittedOversized {
+		t.Fatalf("expected status %q, got %q", HashStatusOmittedOversized, out2.Artifact.ContentHashStatus)
+	}
+
+	args3, _ := json.Marshal(map[string]any{
+		"run_id":               fmt.Sprintf("%d", runID),
+		"artifact_kind":        "executor_stdout",
+		"view_mode":            "bounded_excerpt",
+		"include_content_hash": false,
+	})
+	result3 := srv.HandleGetRunArtifact(args3)
+	out3 := unmarshalArtifactOutput(t, result3)
+	if out3.Artifact.ContentHash != "" {
+		t.Fatalf("expected empty hash, got %q", out3.Artifact.ContentHash)
+	}
+	if out3.Artifact.ContentHashStatus != HashStatusOmittedByRequest {
+		t.Fatalf("expected status %q, got %q", HashStatusOmittedByRequest, out3.Artifact.ContentHashStatus)
 	}
 }

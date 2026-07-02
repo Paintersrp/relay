@@ -583,19 +583,34 @@ Archives or supersedes an existing project context memory record.
 
 **Blocker codes:**
 
+All blocker responses use the shared blocker envelope:
+```json
+{
+  "code": "string",
+  "message": "bounded string",
+  "recoverable": true,
+  "evidence": [],
+  "next_actions": []
+}
+```
+
+Active blocker codes:
 - `unsafe_request` — Invalid or unsafe arguments.
 - `unknown_run` — Run not found.
 - `artifact_kind_not_allowed` — Kind not in the readback eligibility allowlist.
 - `artifact_not_found` — No artifact of the requested kind for the run.
 - `unsafe_artifact_path` — Stored artifact path outside the run artifact directory.
-- `artifact_oversized` — Artifact exceeds configured size limits.
 - `artifact_binary_or_unsupported` — Binary or non-UTF-8 content blocked for content modes.
 - `artifact_read_failed` — Filesystem read error.
 - `artifact_redaction_blocked` — Content contains high-risk sensitive material that cannot be safely redacted.
+- `artifact_oversized` — (Reserved) Artifact exceeds configured size limits.
 
 **Response fields:**
-- `ok`, `tool`, `run_id`, `artifact_kind`, `view_mode`
+- `ok` — Boolean success indicator (`true` for success, `false` for blockers).
+- `tool`, `run_id`, `artifact_kind`, `view_mode`
 - `artifact` — Metadata object (artifact_id, kind, mime_type, size_bytes, created_at, content_hash, content_hash_status, artifact_ref). Never includes local absolute paths.
+  - `content_hash` is the SHA-256 of the full registered artifact when computed.
+  - `content_hash_status` is one of `computed_full`, `omitted_by_request`, `omitted_oversized`, or `unavailable`. It is never a hash of only the bounded excerpt unless explicitly labeled as returned-content scope.
 - `content` — Omitted for metadata_only; bounded/redacted content otherwise.
 - `redaction_status` — One of `not_required`, `redacted`, `blocked`.
 - `truncated`, `returned_bytes`, `max_bytes`, `blockers`.
