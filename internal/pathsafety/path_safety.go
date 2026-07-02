@@ -7,7 +7,7 @@ import (
 	"unicode"
 )
 
-var windowsDrivePathRE = regexp.MustCompile(`^[A-Za-z]:($|[\\/])`)
+var windowsDrivePathRE = regexp.MustCompile(`^[A-Za-z]:`)
 
 func NormalizeRepoRelativePath(value string, rejectShellMeta bool) (string, bool) {
 	raw := strings.TrimSpace(value)
@@ -49,7 +49,7 @@ func NormalizeRepoRelativePath(value string, rejectShellMeta bool) (string, bool
 
 func SafeDisplayBaseName(value, fallback string) string {
 	raw := strings.TrimSpace(value)
-	if raw == "" || hasControl(raw) {
+	if raw == "" || hasControl(raw) || windowsDrivePathRE.MatchString(raw) {
 		return fallback
 	}
 	slash := strings.ReplaceAll(raw, `\`, "/")

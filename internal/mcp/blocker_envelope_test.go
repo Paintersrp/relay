@@ -66,6 +66,8 @@ func TestPathEvidenceSafetyIsHostIndependent(t *testing.T) {
 	unsafe := []string{
 		`/absolute/posix/path.md`,
 		`\rooted\windows\path.md`,
+		`C:reviewed.md`,
+		`C:folder\reviewed.md`,
 		`C:\Users\operator\reviewed.md`,
 		`C:/Users/operator/reviewed.md`,
 		`\\server\share\reviewed.md`,
@@ -95,7 +97,10 @@ func TestPathEvidenceSafetyIsHostIndependent(t *testing.T) {
 func TestSafeArtifactDisplayNameCrossPlatform(t *testing.T) {
 	cases := map[string]string{
 		`/tmp/reviewed.md`:           "reviewed.md",
-		`C:\Temp\reviewed.md`:        "reviewed.md",
+		`C:\Temp\reviewed.md`:        "fallback.md",
+		`C:reviewed.md`:              "fallback.md",
+		`C:folder\reviewed.md`:       "fallback.md",
+		`C:/Temp/reviewed.md`:        "fallback.md",
 		`\\server\share\reviewed.md`: "reviewed.md",
 		`..\reviewed.md`:             "fallback.md",
 		`nested\..\..\reviewed.md`:   "fallback.md",

@@ -195,10 +195,11 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 	if err := ValidateManagedRunSourceContextRequirement(association, provenanceIDs.ContextPacketID, provenanceIDs.SourceSnapshotID); err != nil {
 		return nil, err
 	}
-	sourceArtifactPath, err := durableHandoffMetadataPath(metadata)
+	metadataPaths, err := normalizeHandoffMetadataPaths(metadata)
 	if err != nil {
 		return nil, err
 	}
+	sourceArtifactPath := metadataPaths.SelectedPath
 
 	status := "intake_received"
 	if len(warnings) > 0 {
@@ -617,13 +618,37 @@ func validateProvenanceID(field string, value string) error {
 	return nil
 }
 
-func durableHandoffMetadataPath(metadata map[string]string) (string, error) {
-	value := firstNonEmpty(metadata["source_artifact_path"], metadata["intended_handoff_path"])
-	normalized, ok := pathsafety.NormalizeRepoRelativePath(value, false)
-	if !ok {
-		return "", &InputError{Code: ErrCodeValidation, Message: "handoff metadata source_artifact_path or intended_handoff_path must be a safe repo-relative path"}
+type normalizedHandoffMetadataPaths struct {
+	SourceArtifactPath  string
+	IntendedHandoffPath string
+	SelectedPath        string
+}
+
+func normalizeHandoffMetadataPaths(metadata map[string]string) (normalizedHandoffMetadataPaths, error) {
+	var paths normalizedHandoffMetadataPaths
+	for _, field := range []string{"source_artifact_path", "intended_handoff_path"} {
+		value := strings.TrimSpace(metadata[field])
+		if value == "" {
+			continue
+		}
+		normalized, ok := pathsafety.NormalizeRepoRelativePath(value, false)
+		if !ok {
+			return normalizedHandoffMetadataPaths{}, &InputError{
+				Code:    ErrCodeValidation,
+				Message: "handoff metadata paths must be safe repo-relative paths",
+				Field:   field,
+			}
+		}
+		metadata[field] = normalized
+		switch field {
+		case "source_artifact_path":
+			paths.SourceArtifactPath = normalized
+		case "intended_handoff_path":
+			paths.IntendedHandoffPath = normalized
+		}
 	}
-	return normalized, nil
+	paths.SelectedPath = firstNonEmpty(paths.SourceArtifactPath, paths.IntendedHandoffPath)
+	return paths, nil
 }
 
 func provenanceLookupError(field string, value string, err error) error {

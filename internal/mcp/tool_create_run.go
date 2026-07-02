@@ -15,6 +15,15 @@ import (
 
 const maxPlannerHandoffFileBytes = 1 * 1024 * 1024
 
+var (
+	errPlannerHandoffFileRequired   = errors.New("planner_handoff_file is required")
+	errPlannerHandoffFileUnreadable = errors.New("planner_handoff_file is not readable")
+	errPlannerHandoffFileNotRegular = errors.New("planner_handoff_file must be a regular file")
+	errPlannerHandoffFileEmpty      = errors.New("planner_handoff_file must not be empty")
+	errPlannerHandoffFileTooLarge   = errors.New("planner_handoff_file exceeds the 1 MiB limit")
+	errPlannerHandoffFileInvalidExt = errors.New("planner_handoff_file must use the .md extension")
+)
+
 // createRunInput is the expected input for create_run_from_planner_handoff.
 //
 // WARNING: Do NOT include secrets, tokens, auth headers, private keys, or signed URLs
@@ -188,7 +197,7 @@ func (s *Server) HandleCreateRunFromPlannerHandoffFile(rawArgs json.RawMessage) 
 
 	markdownBytes, submittedSHA, err := readPlannerHandoffFile(input.PlannerHandoffFile)
 	if err != nil {
-		return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerBlockedPath, "VALIDATION_ERROR: "+err.Error(), false, []MCPBlockerEvidence{{Kind: "artifact", Ref: "planner_handoff"}}, []string{"Provide one readable reviewed .md handoff file through the MCP file parameter."}, nil)
+		return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerBlockedPath, "VALIDATION_ERROR: "+err.Error(), true, plannerHandoffFileEvidence(input.PlannerHandoffFile), []string{"Provide one readable reviewed Markdown handoff file and retry."}, nil)
 	}
 	expectedSHA := strings.TrimSpace(input.ExpectedSHA256)
 	provenance := exactSubmissionProvenance(markdownBytes, expectedSHA, "file_parameter", input.PlannerHandoffFile)
@@ -270,36 +279,44 @@ func (s *Server) HandleCreateRunFromPlannerHandoffFile(rawArgs json.RawMessage) 
 func readPlannerHandoffFile(path string) ([]byte, string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return nil, "", fmt.Errorf("planner_handoff_file is required")
+		return nil, "", errPlannerHandoffFileRequired
 	}
 	if !strings.EqualFold(filepath.Ext(path), ".md") {
-		return nil, "", fmt.Errorf("planner_handoff_file must have .md extension")
+		return nil, "", errPlannerHandoffFileInvalidExt
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, "", fmt.Errorf("planner_handoff_file is not readable: %w", err)
+		return nil, "", errPlannerHandoffFileUnreadable
 	}
 	if info.IsDir() {
-		return nil, "", fmt.Errorf("planner_handoff_file must be a file, not a directory")
+		return nil, "", errPlannerHandoffFileNotRegular
 	}
 	if info.Size() == 0 {
-		return nil, "", fmt.Errorf("planner_handoff_file must not be empty")
+		return nil, "", errPlannerHandoffFileEmpty
 	}
 	if info.Size() > maxPlannerHandoffFileBytes {
-		return nil, "", fmt.Errorf("planner_handoff_file must be at most 1 MiB")
+		return nil, "", errPlannerHandoffFileTooLarge
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, "", fmt.Errorf("read planner_handoff_file: %w", err)
+		return nil, "", errPlannerHandoffFileUnreadable
 	}
 	if len(data) == 0 {
-		return nil, "", fmt.Errorf("planner_handoff_file must not be empty")
+		return nil, "", errPlannerHandoffFileEmpty
 	}
 	if len(data) > maxPlannerHandoffFileBytes {
-		return nil, "", fmt.Errorf("planner_handoff_file must be at most 1 MiB")
+		return nil, "", errPlannerHandoffFileTooLarge
 	}
 	sum := sha256.Sum256(data)
 	return data, hex.EncodeToString(sum[:]), nil
+}
+
+func plannerHandoffFileEvidence(path string) []MCPBlockerEvidence {
+	name := safeArtifactDisplayName(path, "")
+	if name == "" {
+		return nil
+	}
+	return []MCPBlockerEvidence{{Kind: "artifact_name", Ref: name}}
 }
 
 func validateExpectedSHA256(value string) error {
@@ -370,7 +387,12 @@ func runSubmissionBlockerFromError(err error) MCPBlocker {
 				code = MCPBlockerRequiredContextMissing
 			case strings.Contains(lower, "safe repo-relative path"):
 				code = MCPBlockerBlockedPath
-				evidence = []MCPBlockerEvidence{{Kind: "field", Ref: "source_artifact_path"}, {Kind: "field", Ref: "intended_handoff_path"}}
+				if inputErr.Field != "" {
+					evidence = []MCPBlockerEvidence{{Kind: "field", Ref: inputErr.Field}}
+				} else {
+					evidence = []MCPBlockerEvidence{{Kind: "field", Ref: "source_artifact_path"}, {Kind: "field", Ref: "intended_handoff_path"}}
+				}
+				actions = []string{"Replace the metadata path with a normalized repo-relative path and retry."}
 			case strings.Contains(lower, "not a path"):
 				code = MCPBlockerSchemaMismatch
 			}

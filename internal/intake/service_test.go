@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -207,6 +208,18 @@ func serviceMarkdownWithMetadataPath(title, field, value string) string {
 	return strings.Replace(markdown, "branch: main\n---", "branch: main\n"+field+": "+value+"\n---", 1)
 }
 
+func serviceMarkdownWithMetadataPaths(title, sourcePath, intendedPath string) string {
+	markdown := validServiceTestMarkdown(title)
+	insert := ""
+	if sourcePath != "" {
+		insert += "source_artifact_path: " + sourcePath + "\n"
+	}
+	if intendedPath != "" {
+		insert += "intended_handoff_path: " + intendedPath + "\n"
+	}
+	return strings.Replace(markdown, "branch: main\n---", "branch: main\n"+insert+"---", 1)
+}
+
 func countServiceRows(t *testing.T, db *sql.DB, table string) int {
 	t.Helper()
 	var count int
@@ -217,7 +230,7 @@ func countServiceRows(t *testing.T, db *sql.DB, table string) int {
 }
 
 func TestCreateRunFromHandoff_DurableMetadataPathValidation(t *testing.T) {
-	for _, tc := range []struct {
+	cases := []struct {
 		name        string
 		field       string
 		value       string
@@ -227,15 +240,36 @@ func TestCreateRunFromHandoff_DurableMetadataPathValidation(t *testing.T) {
 		{name: "safe source path normalized", field: "source_artifact_path", value: `handoffs\planner\reviewed.md`, wantPath: "handoffs/planner/reviewed.md"},
 		{name: "safe intended path normalized", field: "intended_handoff_path", value: `handoffs\planner\intended.md`, wantPath: "handoffs/planner/intended.md"},
 		{name: "empty persists empty", wantPath: ""},
-		{name: "posix absolute blocks", field: "source_artifact_path", value: "/tmp/reviewed.md", wantBlocked: true},
-		{name: "windows drive blocks", field: "source_artifact_path", value: `C:\Temp\reviewed.md`, wantBlocked: true},
-		{name: "unc blocks", field: "source_artifact_path", value: `\\server\share\reviewed.md`, wantBlocked: true},
-		{name: "forward traversal blocks", field: "source_artifact_path", value: "../reviewed.md", wantBlocked: true},
-		{name: "backward traversal blocks", field: "source_artifact_path", value: `nested\..\..\reviewed.md`, wantBlocked: true},
-		{name: "control path blocks", field: "source_artifact_path", value: "handoffs/bad\x00path.md", wantBlocked: true},
-	} {
+	}
+	unsafeValues := []string{
+		"/absolute/path.md",
+		`\rooted\path.md`,
+		`C:\folder\file.md`,
+		"C:/folder/file.md",
+		`C:folder\file.md`,
+		`\\server\share\file.md`,
+		"//server/share/file.md",
+		"../file.md",
+		`..\file.md`,
+		"nested/../../file.md",
+		`nested\..\..\file.md`,
+		"handoffs/bad\x00path.md",
+	}
+	for _, field := range []string{"source_artifact_path", "intended_handoff_path"} {
+		for _, value := range unsafeValues {
+			cases = append(cases, struct {
+				name        string
+				field       string
+				value       string
+				wantPath    string
+				wantBlocked bool
+			}{name: field + " blocks " + value, field: field, value: value, wantBlocked: true})
+		}
+	}
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newIntakeServiceTestStore(t)
+			filesBefore := countServiceArtifactFiles(t, artifacts.BaseDir)
 			svc := NewService(st)
 			out, err := svc.CreateRunFromHandoff(CreateRunInput{
 				Markdown:   serviceMarkdownWithMetadataPath(tc.name, tc.field, tc.value),
@@ -254,6 +288,9 @@ func TestCreateRunFromHandoff_DurableMetadataPathValidation(t *testing.T) {
 						t.Fatalf("expected no %s rows, got %d", table, got)
 					}
 				}
+				if got := countServiceArtifactFiles(t, artifacts.BaseDir); got != filesBefore {
+					t.Fatalf("expected artifact filesystem file count to remain %d, got %d", filesBefore, got)
+				}
 				return
 			}
 			if err != nil {
@@ -271,6 +308,150 @@ func TestCreateRunFromHandoff_DurableMetadataPathValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCreateRunFromHandoff_NormalizesBothMetadataPathAliasesBeforePersistence(t *testing.T) {
+	st := newIntakeServiceTestStore(t)
+	svc := NewService(st)
+	out, err := svc.CreateRunFromHandoff(CreateRunInput{
+		Markdown:   serviceMarkdownWithMetadataPaths("Both Paths", `handoffs\planner\reviewed.md`, `handoffs\planner\intended.md`),
+		RepoTarget: "relay",
+	})
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if out.Provenance.SourceArtifactPath != "handoffs/planner/reviewed.md" {
+		t.Fatalf("output source path = %q", out.Provenance.SourceArtifactPath)
+	}
+
+	var storedPath, metadataJSON string
+	if err := st.DB().QueryRow("SELECT source_artifact_path, handoff_metadata_json FROM run_submission_provenance WHERE run_id = ?", out.RunID).Scan(&storedPath, &metadataJSON); err != nil {
+		t.Fatalf("load provenance row: %v", err)
+	}
+	if storedPath != "handoffs/planner/reviewed.md" {
+		t.Fatalf("stored source path = %q", storedPath)
+	}
+	assertMetadataPathsNormalizedJSON(t, metadataJSON)
+	assertArtifactMetadataPathsNormalized(t, st, out.RunID, "parsed_frontmatter")
+	assertArtifactMetadataPathsNormalized(t, st, out.RunID, "planner_handoff_provenance_json")
+}
+
+func TestCreateRunFromHandoff_BlocksWhenEitherMetadataAliasUnsafe(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		sourcePath   string
+		intendedPath string
+		wantField    string
+	}{
+		{name: "safe primary unsafe secondary", sourcePath: "handoffs/reviewed.md", intendedPath: `C:\Users\operator\secret.md`, wantField: "intended_handoff_path"},
+		{name: "unsafe primary safe secondary", sourcePath: "/tmp/reviewed.md", intendedPath: "handoffs/reviewed.md", wantField: "source_artifact_path"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := newIntakeServiceTestStore(t)
+			plan, pass := seedManagedPlanWithSourceContextPass(t, st, "metadata-alias-"+strings.ReplaceAll(tc.name, " ", "-"))
+			seedIntakeSourceSnapshot(t, st, plan, "snapshot-"+strings.ReplaceAll(tc.name, " ", "-"))
+			filesBefore := countServiceArtifactFiles(t, artifacts.BaseDir)
+			svc := NewService(st)
+			_, err := svc.CreateRunFromHandoff(CreateRunInput{
+				Markdown:         serviceMarkdownWithMetadataPaths(tc.name, tc.sourcePath, tc.intendedPath),
+				RepoTarget:       "relay",
+				PlanID:           plan.PlanID,
+				PassID:           "PASS-001",
+				SourceSnapshotID: "snapshot-" + strings.ReplaceAll(tc.name, " ", "-"),
+			})
+			if err == nil {
+				t.Fatal("expected unsafe alias to block")
+			}
+			var inputErr *InputError
+			if !errors.As(err, &inputErr) || inputErr.Code != ErrCodeValidation || inputErr.Field != tc.wantField {
+				t.Fatalf("expected validation InputError for %s, got %T: %+v", tc.wantField, err, err)
+			}
+			for _, table := range []string{"runs", "artifacts", "run_submission_provenance", "events"} {
+				if got := countServiceRows(t, st.DB(), table); got != 0 {
+					t.Fatalf("expected no %s rows, got %d", table, got)
+				}
+			}
+			refreshed, err := st.GetPlanPass(pass.ID)
+			if err != nil {
+				t.Fatalf("reload pass: %v", err)
+			}
+			if refreshed.Status != pass.Status {
+				t.Fatalf("expected pass status %q to remain unchanged, got %q", pass.Status, refreshed.Status)
+			}
+			if got := countServiceArtifactFiles(t, artifacts.BaseDir); got != filesBefore {
+				t.Fatalf("expected artifact filesystem file count to remain %d, got %d", filesBefore, got)
+			}
+		})
+	}
+}
+
+func assertMetadataPathsNormalizedJSON(t *testing.T, raw string) {
+	t.Helper()
+	if strings.Contains(raw, `\`) {
+		t.Fatalf("metadata JSON contains backslash: %s", raw)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatalf("unmarshal metadata JSON: %v", err)
+	}
+	if payload["source_artifact_path"] != "handoffs/planner/reviewed.md" {
+		t.Fatalf("source_artifact_path = %v", payload["source_artifact_path"])
+	}
+	if payload["intended_handoff_path"] != "handoffs/planner/intended.md" {
+		t.Fatalf("intended_handoff_path = %v", payload["intended_handoff_path"])
+	}
+}
+
+func assertArtifactMetadataPathsNormalized(t *testing.T, st *store.Store, runID int64, kind string) {
+	t.Helper()
+	var path string
+	if err := st.DB().QueryRow("SELECT path FROM artifacts WHERE run_id = ? AND kind = ?", runID, kind).Scan(&path); err != nil {
+		t.Fatalf("load artifact %s: %v", kind, err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read artifact %s: %v", kind, err)
+	}
+	raw := string(data)
+	if kind == "planner_handoff_provenance_json" {
+		if strings.Contains(raw, `handoffs\planner`) {
+			t.Fatalf("provenance artifact contains unnormalized metadata path: %s", raw)
+		}
+		var payload map[string]interface{}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			t.Fatalf("unmarshal provenance artifact: %v", err)
+		}
+		metadata, ok := payload["handoff_metadata"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("provenance artifact missing handoff_metadata: %+v", payload)
+		}
+		if metadata["source_artifact_path"] != "handoffs/planner/reviewed.md" {
+			t.Fatalf("provenance metadata source_artifact_path = %v", metadata["source_artifact_path"])
+		}
+		if metadata["intended_handoff_path"] != "handoffs/planner/intended.md" {
+			t.Fatalf("provenance metadata intended_handoff_path = %v", metadata["intended_handoff_path"])
+		}
+		return
+	}
+	assertMetadataPathsNormalizedJSON(t, raw)
+}
+
+func countServiceArtifactFiles(t *testing.T, root string) int {
+	t.Helper()
+	count := 0
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			count++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk artifact dir: %v", err)
+	}
+	return count
 }
 
 // TestCreateRunFromHandoff_MissingManagedPassSourceContextBlocks verifies the shared

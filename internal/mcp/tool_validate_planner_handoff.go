@@ -57,7 +57,7 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 		markdownBytes, sha, err := readPlannerHandoffFile(filePath)
 		if err != nil {
 			return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
-				newMCPBlocker(MCPBlockerBlockedPath, err.Error(), false, []MCPBlockerEvidence{{Kind: "artifact", Ref: "planner_handoff"}}, []string{"Provide one readable reviewed .md handoff file through the MCP file parameter."}),
+				newMCPBlocker(MCPBlockerBlockedPath, err.Error(), true, plannerHandoffFileEvidence(filePath), []string{"Provide one readable reviewed Markdown handoff file and retry."}),
 			}, nil)
 		}
 		submittedSHA = sha

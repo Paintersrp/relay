@@ -18,6 +18,7 @@ const (
 type InputError struct {
 	Code    string
 	Message string
+	Field   string
 }
 
 func (e *InputError) Error() string {

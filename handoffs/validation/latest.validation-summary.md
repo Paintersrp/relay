@@ -3,27 +3,22 @@
 - status: passed
 - validation_tier: full
 - validation_scope: tier
-- base_commit: 6fc217fe221a076809304e6010c27a73d11aa6a6
-- validated_source_snapshot: d469136f4650c44af8dd6a17a599e8da46a459f71ec1e92c7dfcec825504e25b
+- base_commit: 274128577dc18856ecddbb0bff10dd37b7043a7e
+- validated_source_snapshot: 202ef3d0cf49d575d9dbc67a8845f12ee18b28c61218180bb0b55be938058f98
 - worktree_dirty: true
-- created_at: 2026-07-02T22:47:19Z
+- created_at: 2026-07-02T23:32:48Z
 
 ## Validated source changes
 
-- M docs/mcp.md
+- M internal/intake/association.go
 - M internal/intake/service_test.go
 - M internal/intake/service.go
 - M internal/mcp/blocker_envelope_test.go
-- M internal/mcp/blocker_envelope.go
-- M internal/mcp/context_broker_tools_test.go
-- M internal/mcp/mcp_test.go
-- M internal/mcp/orchestrator_work_tools_test.go
-- M internal/mcp/orchestrator_work_tools.go
 - M internal/mcp/tool_create_run_test.go
 - M internal/mcp/tool_create_run.go
 - M internal/mcp/tool_validate_planner_handoff.go
-- ?? internal/pathsafety/path_safety.go
-- M relay-contracts
+- ?? internal/pathsafety/path_safety_test.go
+- M internal/pathsafety/path_safety.go
 
 ## Commands
 
