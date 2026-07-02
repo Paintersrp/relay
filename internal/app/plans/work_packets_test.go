@@ -7,10 +7,14 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"relay/internal/sources"
 	"relay/internal/store"
 )
 
@@ -126,7 +130,82 @@ func newWorkPacketService(t *testing.T) (*OrchestratorWorkService, *store.Store)
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	return NewOrchestratorWorkService(st), st
+	svc := NewOrchestratorWorkService(st)
+	svc.SetSourceService(testSourceServiceAdapter{svc: sources.NewService(st)})
+	return svc, st
+}
+
+type testSourceServiceAdapter struct {
+	svc *sources.Service
+}
+
+func (a testSourceServiceAdapter) CreateSourceSnapshot(ctx context.Context, projectID string, repoIDs []string, includeFileMetadata bool) (string, string, int, error) {
+	result, err := a.svc.CreateSourceSnapshot(ctx, sources.SourceSnapshotInput{
+		ProjectID:           projectID,
+		RepoIDs:             repoIDs,
+		IncludeFileMetadata: includeFileMetadata,
+	})
+	if err != nil {
+		return "", "", 0, err
+	}
+	included := 0
+	for _, repo := range result.Repositories {
+		included += repo.IncludedFileCount
+	}
+	return result.SourceSnapshotID, result.Status, included, nil
+}
+
+func (a testSourceServiceAdapter) GetSourceSnapshotFreshness(ctx context.Context, projectID string, sourceSnapshotID string) (SourceFreshnessReport, error) {
+	report, err := a.svc.GetSourceSnapshotFreshness(ctx, projectID, sourceSnapshotID)
+	if err != nil {
+		return SourceFreshnessReport{}, err
+	}
+	return SourceFreshnessReport{
+		Status:             report.Status,
+		ReusableForHandoff: report.ReusableForHandoff,
+		SourceSnapshotID:   report.SourceSnapshotID,
+		AgeSeconds:         report.AgeSeconds,
+		MaxAgeSeconds:      report.MaxAgeSeconds,
+		RepositoryReports:  testRepositoryFreshnessReports(report.RepositoryReports),
+		Warnings:           testSourceBlockers(report.Warnings),
+		Blockers:           testSourceBlockers(report.Blockers),
+		NextActions:        testSourceFreshnessNextActions(report.NextActions),
+	}, nil
+}
+
+func testRepositoryFreshnessReports(reports []sources.RepositoryFreshnessReport) []RepositoryFreshnessReport {
+	out := make([]RepositoryFreshnessReport, 0, len(reports))
+	for _, report := range reports {
+		out = append(out, RepositoryFreshnessReport{
+			CapturedDirty: report.CapturedDirty,
+			CurrentDirty:  report.CurrentDirty,
+		})
+	}
+	return out
+}
+
+func testSourceBlockers(blockers []sources.SourceBlocker) []SourceBlocker {
+	out := make([]SourceBlocker, 0, len(blockers))
+	for _, blocker := range blockers {
+		out = append(out, SourceBlocker{
+			RepoID:      blocker.RepoID,
+			Code:        blocker.Code,
+			Message:     blocker.Message,
+			Recoverable: blocker.Recoverable,
+		})
+	}
+	return out
+}
+
+func testSourceFreshnessNextActions(actions []sources.SourceFreshnessNextAction) []SourceFreshnessNextAction {
+	out := make([]SourceFreshnessNextAction, 0, len(actions))
+	for _, action := range actions {
+		out = append(out, SourceFreshnessNextAction{
+			Action: action.Action,
+			Reason: action.Reason,
+		})
+	}
+	return out
 }
 
 func seedSourceSnapshot(t *testing.T, st *store.Store, projectID, sourceSnapshotID string) int64 {
@@ -2560,7 +2639,7 @@ func TestPrepareHandoffContext_ReadySelectedPass(t *testing.T) {
 	if resp.SourceSnapshotID != "snap-prepare-ready" || resp.ContextPacketID != "ctxpkt-prepare-ready" {
 		t.Fatalf("unexpected artifact ids: snapshot=%q packet=%q", resp.SourceSnapshotID, resp.ContextPacketID)
 	}
-	if len(resp.RepoHeads) != 1 || resp.RepoHeads[0].RepoID != "relay" || resp.RepoHeads[0].HeadSHA != "abc123" {
+	if len(resp.RepoHeads) != 1 || resp.RepoHeads[0].RepoID != "relay" || strings.TrimSpace(resp.RepoHeads[0].HeadSHA) == "" {
 		t.Fatalf("expected bounded repo head, got %+v", resp.RepoHeads)
 	}
 	if resp.RequiredCoverage.ExpectedCount == 0 || resp.RequiredCoverage.CoveredCount != resp.RequiredCoverage.ExpectedCount {
@@ -2653,6 +2732,87 @@ func TestPrepareHandoffContext_DirtyDisallowedSourceBlocks(t *testing.T) {
 	assertPrepareBlockerCode(t, resp, BlockerSourceSnapshotDirtyDisallowed)
 }
 
+func TestPrepareHandoffContext_StaleByAgeBlocks(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedPreparePlanWithSourceRequirements(t, st, "plan-prepare-stale-age", SourceSnapshotRequirements{RequireGitStatus: boolPtr(true), RequireCommitSHA: boolPtr(true), AllowDirtyWorktree: boolPtr(true)})
+	snapshotRowID := seedPreparedSnapshotWithRepoAt(t, st, "snap-prepare-stale-age", false, "abc123", "2026-06-28 00:00:00")
+	seedContextPacket(t, st, "relay", "plan-prepare-stale-age", "PASS-002", "snap-prepare-stale-age", snapshotRowID, "ctxpkt-prepare-stale-age")
+
+	resp, err := svc.PrepareHandoffContext(context.Background(), PrepareHandoffContextRequest{ProjectID: "relay", PlanID: "plan-prepare-stale-age", PassID: "PASS-002"})
+	if err != nil {
+		t.Fatalf("PrepareHandoffContext: %v", err)
+	}
+	if resp.OK || resp.ReadinessState != "needs_source_snapshot" {
+		t.Fatalf("expected stale source to block, got ok=%t readiness=%q blockers=%+v freshness=%+v", resp.OK, resp.ReadinessState, resp.Blockers, resp.FreshnessReport)
+	}
+	assertPrepareBlockerCode(t, resp, BlockerSourceSnapshotStale)
+	if resp.FreshnessReport == nil || resp.FreshnessReport.Status != sources.SourceFreshnessStatusStaleByAge || resp.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected stale freshness report, got %+v", resp.FreshnessReport)
+	}
+}
+
+func TestPrepareHandoffContext_DriftedSnapshotBlocks(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedPreparePlanWithSourceRequirements(t, st, "plan-prepare-drifted", SourceSnapshotRequirements{RequireGitStatus: boolPtr(true), RequireCommitSHA: boolPtr(true), AllowDirtyWorktree: boolPtr(true)})
+	snapshotRowID := seedPreparedSnapshotWithRepo(t, st, "snap-prepare-drifted", false, "captured-different-head")
+	seedContextPacket(t, st, "relay", "plan-prepare-drifted", "PASS-002", "snap-prepare-drifted", snapshotRowID, "ctxpkt-prepare-drifted")
+
+	resp, err := svc.PrepareHandoffContext(context.Background(), PrepareHandoffContextRequest{ProjectID: "relay", PlanID: "plan-prepare-drifted", PassID: "PASS-002"})
+	if err != nil {
+		t.Fatalf("PrepareHandoffContext: %v", err)
+	}
+	if resp.OK {
+		t.Fatalf("expected drifted source to block, got %+v", resp)
+	}
+	assertPrepareBlockerCode(t, resp, BlockerSourceSnapshotStale)
+	if resp.FreshnessReport == nil || resp.FreshnessReport.Status != sources.SourceFreshnessStatusDrifted || resp.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected drifted freshness report, got %+v", resp.FreshnessReport)
+	}
+}
+
+func TestPrepareHandoffContext_SourceFreshnessMatchesSourceService(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedPreparePlanWithSourceRequirements(t, st, "plan-prepare-freshness-match", SourceSnapshotRequirements{RequireGitStatus: boolPtr(true), RequireCommitSHA: boolPtr(true), AllowDirtyWorktree: boolPtr(true)})
+	snapshotRowID := seedPreparedSnapshotWithRepo(t, st, "snap-prepare-freshness-match", false, "abc123")
+	seedContextPacket(t, st, "relay", "plan-prepare-freshness-match", "PASS-002", "snap-prepare-freshness-match", snapshotRowID, "ctxpkt-prepare-freshness-match")
+
+	resp, err := svc.PrepareHandoffContext(context.Background(), PrepareHandoffContextRequest{ProjectID: "relay", PlanID: "plan-prepare-freshness-match", PassID: "PASS-002"})
+	if err != nil {
+		t.Fatalf("PrepareHandoffContext: %v", err)
+	}
+	sourceReport, err := sources.NewService(st).GetSourceSnapshotFreshness(context.Background(), "relay", "snap-prepare-freshness-match")
+	if err != nil {
+		t.Fatalf("GetSourceSnapshotFreshness: %v", err)
+	}
+	if resp.FreshnessReport == nil {
+		t.Fatal("expected prepared freshness report")
+	}
+	if resp.FreshnessReport.Status != sourceReport.Status || resp.FreshnessReport.ReusableForHandoff != sourceReport.ReusableForHandoff {
+		t.Fatalf("prepared freshness does not match source service: prepared=%+v source=%+v", resp.FreshnessReport, sourceReport)
+	}
+}
+
+func TestPrepareHandoffContext_DirtyAllowedDoesNotBlockWhenFreshnessReusable(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedPreparePlanWithSourceRequirements(t, st, "plan-prepare-dirty-allowed", SourceSnapshotRequirements{RequireGitStatus: boolPtr(true), RequireCommitSHA: boolPtr(true), AllowDirtyWorktree: boolPtr(true)})
+	snapshotRowID := seedPreparedSnapshotWithRepo(t, st, "snap-prepare-dirty-allowed", true, "abc123")
+	seedContextPacket(t, st, "relay", "plan-prepare-dirty-allowed", "PASS-002", "snap-prepare-dirty-allowed", snapshotRowID, "ctxpkt-prepare-dirty-allowed")
+
+	resp, err := svc.PrepareHandoffContext(context.Background(), PrepareHandoffContextRequest{ProjectID: "relay", PlanID: "plan-prepare-dirty-allowed", PassID: "PASS-002"})
+	if err != nil {
+		t.Fatalf("PrepareHandoffContext: %v", err)
+	}
+	assertPrepareNoBlockerCode(t, resp, BlockerSourceSnapshotDirtyDisallowed)
+	if resp.OK || resp.FreshnessReport == nil || resp.FreshnessReport.ReusableForHandoff {
+		t.Fatalf("expected PASS-003 non-reusable dirty freshness to block as stale only, got %+v", resp)
+	}
+	assertPrepareBlockerCode(t, resp, BlockerSourceSnapshotStale)
+}
+
 func TestPrepareHandoffContext_RecoveryActionsUseSafeLowerLevelTools(t *testing.T) {
 	t.Parallel()
 	svc, st := newWorkPacketService(t)
@@ -2683,8 +2843,68 @@ func TestPrepareHandoffContext_RecoveryActionsUseSafeLowerLevelTools(t *testing.
 	}
 }
 
+func TestPrepareHandoffContext_FreshnessRecoveryActionsAreSafe(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedPreparePlanWithSourceRequirements(t, st, "plan-prepare-freshness-recovery", SourceSnapshotRequirements{RequireGitStatus: boolPtr(true), RequireCommitSHA: boolPtr(true), AllowDirtyWorktree: boolPtr(true)})
+	snapshotRowID := seedPreparedSnapshotWithRepoAt(t, st, "snap-prepare-freshness-recovery", false, "abc123", "2026-06-28 00:00:00")
+	seedContextPacket(t, st, "relay", "plan-prepare-freshness-recovery", "PASS-002", "snap-prepare-freshness-recovery", snapshotRowID, "ctxpkt-prepare-freshness-recovery")
+
+	resp, err := svc.PrepareHandoffContext(context.Background(), PrepareHandoffContextRequest{ProjectID: "relay", PlanID: "plan-prepare-freshness-recovery", PassID: "PASS-002"})
+	if err != nil {
+		t.Fatalf("PrepareHandoffContext: %v", err)
+	}
+	assertPrepareBlockerCode(t, resp, BlockerSourceSnapshotStale)
+	allowed := map[string]bool{"create_source_snapshot": true, NextPassWorkTool: true}
+	foundSourceSnapshot := false
+	for _, action := range resp.LowerLevelRecoveryActions {
+		if !allowed[action.Tool] {
+			t.Fatalf("unexpected freshness recovery tool %q in %+v", action.Tool, resp.LowerLevelRecoveryActions)
+		}
+		if action.Tool == "create_source_snapshot" {
+			foundSourceSnapshot = true
+		}
+	}
+	if !foundSourceSnapshot {
+		t.Fatalf("expected create_source_snapshot recovery action, got %+v", resp.LowerLevelRecoveryActions)
+	}
+}
+
+func TestPrepareHandoffContext_ResponseSafeJSON(t *testing.T) {
+	t.Parallel()
+	svc, st := newWorkPacketService(t)
+	seedPreparePlanWithSourceRequirements(t, st, "plan-prepare-safe-json", SourceSnapshotRequirements{RequireGitStatus: boolPtr(true), RequireCommitSHA: boolPtr(true), AllowDirtyWorktree: boolPtr(true)})
+	snapshotRowID := seedPreparedSnapshotWithRepo(t, st, "snap-prepare-safe-json", false, "abc123")
+	seedContextPacket(t, st, "relay", "plan-prepare-safe-json", "PASS-002", "snap-prepare-safe-json", snapshotRowID, "ctxpkt-prepare-safe-json")
+
+	resp, err := svc.PrepareHandoffContext(context.Background(), PrepareHandoffContextRequest{ProjectID: "relay", PlanID: "plan-prepare-safe-json", PassID: "PASS-002"})
+	if err != nil {
+		t.Fatalf("PrepareHandoffContext: %v", err)
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+	text := string(data)
+	for _, forbidden := range []string{"raw_content", `"content":`, "local_path", "planner_handoff_markdown", "canonical_packet", "executor_brief", "D:/", `D:\\`, "C:/", `C:\\`} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("prepare response contains forbidden token %q: %s", forbidden, text)
+		}
+	}
+}
+
 func seedPreparedSnapshotWithRepo(t *testing.T, st *store.Store, snapshotID string, dirty bool, headSHA string) int64 {
 	t.Helper()
+	return seedPreparedSnapshotWithRepoAt(t, st, snapshotID, dirty, headSHA, time.Now().UTC().Format("2006-01-02 15:04:05"))
+}
+
+func seedPreparedSnapshotWithRepoAt(t *testing.T, st *store.Store, snapshotID string, dirty bool, headSHA string, completedAt string) int64 {
+	t.Helper()
+	repoRoot, currentHead := seedPrepareGitRepo(t, dirty)
+	capturedHead := currentHead
+	if strings.TrimSpace(headSHA) != "" && headSHA != "abc123" {
+		capturedHead = headSHA
+	}
 	project, err := st.GetProjectByProjectID("relay")
 	if err != nil {
 		t.Fatalf("GetProjectByProjectID: %v", err)
@@ -2693,7 +2913,7 @@ func seedPreparedSnapshotWithRepo(t *testing.T, st *store.Store, snapshotID stri
 		ProjectRowID:     project.ID,
 		RepoID:           "relay",
 		Role:             "primary",
-		LocalPath:        "D:/Code/relay",
+		LocalPath:        repoRoot,
 		DefaultBranch:    "main",
 		AllowedRootsJSON: `["."]`,
 		MaxFileSizeBytes: 1048576,
@@ -2708,7 +2928,7 @@ func seedPreparedSnapshotWithRepo(t *testing.T, st *store.Store, snapshotID stri
 		ProjectID:        "relay",
 		SnapshotKind:     "clean_commit",
 		Status:           "created",
-		CompletedAt:      "2026-06-28T00:00:00Z",
+		CompletedAt:      completedAt,
 		SummaryJSON:      "{\"file_count\":1}",
 	})
 	if err != nil {
@@ -2725,10 +2945,10 @@ func seedPreparedSnapshotWithRepo(t *testing.T, st *store.Store, snapshotID stri
 		ProjectRepositoryRowID: repo.ID,
 		RepoID:                 "relay",
 		Role:                   "primary",
-		LocalPath:              "D:/Code/relay",
+		LocalPath:              repoRoot,
 		DefaultBranch:          "main",
 		CurrentBranch:          "main",
-		HeadSHA:                headSHA,
+		HeadSHA:                capturedHead,
 		Dirty:                  dirtyInt,
 		ChangedFileCount:       changed,
 		GitStatusAvailable:     1,
@@ -2749,6 +2969,35 @@ func seedPreparedSnapshotWithRepo(t *testing.T, st *store.Store, snapshotID stri
 		t.Fatalf("CreateSourceSnapshotFile: %v", err)
 	}
 	return snapshot.ID
+}
+
+func seedPrepareGitRepo(t *testing.T, dirty bool) (string, string) {
+	t.Helper()
+	repoRoot := t.TempDir()
+	runPrepareGit(t, repoRoot, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(repoRoot, "README.md"), []byte("seed\n"), 0644); err != nil {
+		t.Fatalf("write seed file: %v", err)
+	}
+	runPrepareGit(t, repoRoot, "add", ".")
+	runPrepareGit(t, repoRoot, "-c", "user.email=relay@example.test", "-c", "user.name=Relay Test", "commit", "-m", "seed")
+	head := strings.TrimSpace(runPrepareGit(t, repoRoot, "rev-parse", "HEAD"))
+	if dirty {
+		if err := os.WriteFile(filepath.Join(repoRoot, "dirty.txt"), []byte("dirty\n"), 0644); err != nil {
+			t.Fatalf("write dirty file: %v", err)
+		}
+	}
+	return repoRoot, head
+}
+
+func runPrepareGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, string(out))
+	}
+	return string(out)
 }
 
 func seedContextPacketWithSummary(t *testing.T, st *store.Store, projectID, planID, passID, sourceSnapshotID string, snapshotRowID int64, contextPacketID string, summary CtxPacketSummary) {
@@ -2836,4 +3085,13 @@ func assertPrepareBlockerCode(t *testing.T, resp PrepareHandoffContextResponse, 
 		}
 	}
 	t.Fatalf("expected blocker %q in %+v", code, resp.Blockers)
+}
+
+func assertPrepareNoBlockerCode(t *testing.T, resp PrepareHandoffContextResponse, code string) {
+	t.Helper()
+	for _, blocker := range resp.Blockers {
+		if blocker.Code == code {
+			t.Fatalf("unexpected blocker %q in %+v", code, resp.Blockers)
+		}
+	}
 }

@@ -32,6 +32,59 @@ func (a *sourceSnapshotAdapter) CreateSourceSnapshot(ctx context.Context, projec
 	return result.SourceSnapshotID, result.Status, includedCount, nil
 }
 
+func (a *sourceSnapshotAdapter) GetSourceSnapshotFreshness(ctx context.Context, projectID string, sourceSnapshotID string) (appplans.SourceFreshnessReport, error) {
+	report, err := a.svc.GetSourceSnapshotFreshness(ctx, projectID, sourceSnapshotID)
+	if err != nil {
+		return appplans.SourceFreshnessReport{}, err
+	}
+	return appplans.SourceFreshnessReport{
+		Status:             report.Status,
+		ReusableForHandoff: report.ReusableForHandoff,
+		SourceSnapshotID:   report.SourceSnapshotID,
+		AgeSeconds:         report.AgeSeconds,
+		MaxAgeSeconds:      report.MaxAgeSeconds,
+		RepositoryReports:  sourceFreshnessRepos(report.RepositoryReports),
+		Warnings:           sourceFreshnessBlockers(report.Warnings),
+		Blockers:           sourceFreshnessBlockers(report.Blockers),
+		NextActions:        sourceFreshnessNextActions(report.NextActions),
+	}, nil
+}
+
+func sourceFreshnessRepos(reports []sources.RepositoryFreshnessReport) []appplans.RepositoryFreshnessReport {
+	out := make([]appplans.RepositoryFreshnessReport, 0, len(reports))
+	for _, report := range reports {
+		out = append(out, appplans.RepositoryFreshnessReport{
+			CapturedDirty: report.CapturedDirty,
+			CurrentDirty:  report.CurrentDirty,
+		})
+	}
+	return out
+}
+
+func sourceFreshnessBlockers(blockers []sources.SourceBlocker) []appplans.SourceBlocker {
+	out := make([]appplans.SourceBlocker, 0, len(blockers))
+	for _, blocker := range blockers {
+		out = append(out, appplans.SourceBlocker{
+			RepoID:      blocker.RepoID,
+			Code:        blocker.Code,
+			Message:     blocker.Message,
+			Recoverable: blocker.Recoverable,
+		})
+	}
+	return out
+}
+
+func sourceFreshnessNextActions(actions []sources.SourceFreshnessNextAction) []appplans.SourceFreshnessNextAction {
+	out := make([]appplans.SourceFreshnessNextAction, 0, len(actions))
+	for _, action := range actions {
+		out = append(out, appplans.SourceFreshnessNextAction{
+			Action: action.Action,
+			Reason: action.Reason,
+		})
+	}
+	return out
+}
+
 // contextPacketAdapter adapts contextpackets.Service to the
 // appplans.contextPacketAcquirer interface.
 type contextPacketAdapter struct {
@@ -280,17 +333,7 @@ var prepareHandoffContextSchema = json.RawMessage(`{
       "type": "string",
       "minLength": 1,
       "description": "Explicit Relay pass identifier to prepare; this tool never selects an arbitrary next pass."
-    },
-    "refresh_policy": {
-      "type": "string",
-      "enum": ["reuse_if_fresh", "force_new_snapshot", "reuse_latest"],
-      "description": "Bounded source snapshot reuse preference. Current implementation delegates acquisition safety to get_next_pass_work."
-    },
-    "include_optional_context": {"type": "boolean"},
-    "max_sources": {"type": "integer", "minimum": 1, "maximum": 200},
-    "max_total_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
-    "max_search_results": {"type": "integer", "minimum": 1, "maximum": 200},
-    "max_context_lines": {"type": "integer", "minimum": 0, "maximum": 200}
+    }
   }
 }`)
 
@@ -412,15 +455,9 @@ type getNextPassWorkArgs struct {
 }
 
 type prepareHandoffContextArgs struct {
-	ProjectID              string `json:"project_id"`
-	PlanID                 string `json:"plan_id"`
-	PassID                 string `json:"pass_id"`
-	RefreshPolicy          string `json:"refresh_policy,omitempty"`
-	IncludeOptionalContext bool   `json:"include_optional_context,omitempty"`
-	MaxSources             int    `json:"max_sources,omitempty"`
-	MaxTotalBytes          int    `json:"max_total_bytes,omitempty"`
-	MaxSearchResults       int    `json:"max_search_results,omitempty"`
-	MaxContextLines        int    `json:"max_context_lines,omitempty"`
+	ProjectID string `json:"project_id"`
+	PlanID    string `json:"plan_id"`
+	PassID    string `json:"pass_id"`
 }
 
 type getNextAuditWorkArgs struct {
@@ -634,15 +671,9 @@ func (s *Server) HandlePrepareHandoffContext(rawArgs json.RawMessage) ToolCallRe
 	svc.SetSourceService(&sourceSnapshotAdapter{svc: sources.NewService(s.deps.Store)})
 	svc.SetContextPacketService(&contextPacketAdapter{svc: contextpackets.NewService(s.deps.Store)})
 	resp, err := svc.PrepareHandoffContext(context.Background(), appplans.PrepareHandoffContextRequest{
-		ProjectID:              args.ProjectID,
-		PlanID:                 args.PlanID,
-		PassID:                 args.PassID,
-		RefreshPolicy:          args.RefreshPolicy,
-		IncludeOptionalContext: args.IncludeOptionalContext,
-		MaxSources:             args.MaxSources,
-		MaxTotalBytes:          args.MaxTotalBytes,
-		MaxSearchResults:       args.MaxSearchResults,
-		MaxContextLines:        args.MaxContextLines,
+		ProjectID: args.ProjectID,
+		PlanID:    args.PlanID,
+		PassID:    args.PassID,
 	})
 	if err != nil {
 		return orchestratorWorkToolErr(appplans.PrepareHandoffContextTool, appplans.BlockerUnsafeRequest, fmt.Sprintf("service error: %v", err))

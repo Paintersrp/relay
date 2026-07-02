@@ -18,6 +18,19 @@ const (
 	PrepareHandoffContextTool = "prepare_handoff_context"
 )
 
+const (
+	sourceFreshnessStatusFresh         = "fresh"
+	sourceFreshnessStatusDirtyWorktree = "dirty_worktree"
+	sourceFreshnessStatusPartial       = "partial"
+	sourceFreshnessStatusBlocked       = "blocked"
+	sourceFreshnessStatusStaleByAge    = "stale_by_age"
+	sourceFreshnessStatusDrifted       = "drifted"
+
+	sourceFreshnessCodeDirtyWorktree = "source_snapshot_dirty_worktree"
+	sourceFreshnessCodeStale         = "source_snapshot_stale"
+	sourceFreshnessCodeUnavailable   = "source_snapshot_unavailable"
+)
+
 // Blocker code constants -- all codes defined in the orchestrator work contract.
 const (
 	BlockerUnknownPlan                  = "unknown_plan"
@@ -142,15 +155,9 @@ type NextPassWorkMCPSummary struct {
 // Unlike GetNextPassWork, pass_id is required; this tool prepares diagnostics
 // for one explicitly selected managed pass only.
 type PrepareHandoffContextRequest struct {
-	ProjectID              string
-	PlanID                 string
-	PassID                 string
-	RefreshPolicy          string
-	IncludeOptionalContext bool
-	MaxSources             int
-	MaxTotalBytes          int
-	MaxSearchResults       int
-	MaxContextLines        int
+	ProjectID string
+	PlanID    string
+	PassID    string
 }
 
 // PrepareHandoffContextResponse is a metadata-only readiness diagnostic for
@@ -203,18 +210,36 @@ type PreparedCoverageSummary struct {
 	TruncatedSeedIDs    []string `json:"truncated_seed_ids,omitempty"`
 }
 
-// PreparedFreshnessReport is a compact source freshness diagnostic built from
-// persisted snapshot metadata; no raw diff or porcelain output is included.
+// PreparedFreshnessReport is a compact projection of PASS-003 source freshness
+// semantics; no raw diff, porcelain output, or local paths are included.
 type PreparedFreshnessReport struct {
-	Status             string   `json:"status"`
-	ReusableForHandoff bool     `json:"reusable_for_handoff"`
-	SourceSnapshotID   string   `json:"source_snapshot_id,omitempty"`
-	SnapshotStatus     string   `json:"snapshot_status,omitempty"`
-	SnapshotKind       string   `json:"snapshot_kind,omitempty"`
-	RepositoryCount    int      `json:"repository_count"`
-	DirtyRepoCount     int      `json:"dirty_repo_count"`
-	MissingHeadRepos   []string `json:"missing_head_repos,omitempty"`
-	Warnings           []string `json:"warnings,omitempty"`
+	Status             string                        `json:"status"`
+	ReusableForHandoff bool                          `json:"reusable_for_handoff"`
+	SourceSnapshotID   string                        `json:"source_snapshot_id,omitempty"`
+	SnapshotStatus     string                        `json:"snapshot_status,omitempty"`
+	SnapshotKind       string                        `json:"snapshot_kind,omitempty"`
+	RepositoryCount    int                           `json:"repository_count"`
+	DirtyRepoCount     int                           `json:"dirty_repo_count"`
+	MissingHeadRepos   []string                      `json:"missing_head_repos,omitempty"`
+	Warnings           []PreparedFreshnessIssue      `json:"warnings,omitempty"`
+	Blockers           []PreparedFreshnessIssue      `json:"blockers,omitempty"`
+	NextActions        []PreparedFreshnessNextAction `json:"next_actions,omitempty"`
+	AgeSeconds         int64                         `json:"age_seconds,omitempty"`
+	MaxAgeSeconds      int64                         `json:"max_age_seconds,omitempty"`
+}
+
+// PreparedFreshnessIssue is a bounded freshness warning or blocker.
+type PreparedFreshnessIssue struct {
+	RepoID      string `json:"repo_id,omitempty"`
+	Code        string `json:"code"`
+	Message     string `json:"message"`
+	Recoverable bool   `json:"recoverable,omitempty"`
+}
+
+// PreparedFreshnessNextAction records safe lower-level recovery guidance.
+type PreparedFreshnessNextAction struct {
+	Action string `json:"action"`
+	Reason string `json:"reason"`
 }
 
 // NextPassWorkSummaryPass contains the selected pass fields safe for MCP text.
@@ -740,6 +765,10 @@ type sourceSnapshotAcquirer interface {
 	CreateSourceSnapshot(ctx context.Context, projectID string, repoIDs []string, includeFileMetadata bool) (snapshotID, status string, includedFileCount int, err error)
 }
 
+type sourceSnapshotFreshnessEvaluator interface {
+	GetSourceSnapshotFreshness(ctx context.Context, projectID string, sourceSnapshotID string) (SourceFreshnessReport, error)
+}
+
 // contextPacketAcquirer abstracts context packet creation for the
 // acquisition coordinator.
 type contextPacketAcquirer interface {
@@ -837,6 +866,37 @@ type CtxSourceBlocker struct {
 	Message string `json:"message,omitempty"`
 }
 
+// SourceFreshnessReport mirrors sources.SourceFreshnessReport without importing
+// sources into plans.
+type SourceFreshnessReport struct {
+	Status             string
+	ReusableForHandoff bool
+	SourceSnapshotID   string
+	AgeSeconds         int64
+	MaxAgeSeconds      int64
+	RepositoryReports  []RepositoryFreshnessReport
+	Warnings           []SourceBlocker
+	Blockers           []SourceBlocker
+	NextActions        []SourceFreshnessNextAction
+}
+
+type RepositoryFreshnessReport struct {
+	CapturedDirty bool
+	CurrentDirty  bool
+}
+
+type SourceBlocker struct {
+	RepoID      string
+	Code        string
+	Message     string
+	Recoverable bool
+}
+
+type SourceFreshnessNextAction struct {
+	Action string
+	Reason string
+}
+
 // NewOrchestratorWorkService constructs an OrchestratorWorkService.
 func NewOrchestratorWorkService(s *store.Store) *OrchestratorWorkService {
 	return &OrchestratorWorkService{store: s}
@@ -891,10 +951,10 @@ func (svc *OrchestratorWorkService) PrepareHandoffContext(ctx context.Context, r
 	if err != nil {
 		return PrepareHandoffContextResponse{}, err
 	}
-	return svc.prepareHandoffContextFromNextWork(next, projectID, planID, passID), nil
+	return svc.prepareHandoffContextFromNextWork(ctx, next, projectID, planID, passID), nil
 }
 
-func (svc *OrchestratorWorkService) prepareHandoffContextFromNextWork(next NextPassWorkResponse, projectID, planID, passID string) PrepareHandoffContextResponse {
+func (svc *OrchestratorWorkService) prepareHandoffContextFromNextWork(ctx context.Context, next NextPassWorkResponse, projectID, planID, passID string) PrepareHandoffContextResponse {
 	resp := PrepareHandoffContextResponse{
 		OK:                        next.OK,
 		Tool:                      PrepareHandoffContextTool,
@@ -938,8 +998,9 @@ func (svc *OrchestratorWorkService) prepareHandoffContextFromNextWork(next NextP
 
 	resp.RequiredCoverage, resp.OptionalCoverage = prepareCoverageFromNext(next)
 	svc.applyPreparedPacketSummary(resp.ContextPacketID, &resp.RequiredCoverage, &resp.OptionalCoverage)
-	resp.RepoHeads, resp.FreshnessReport = svc.preparedSourceFreshness(resp.SourceSnapshotID, sourceRequirementsFromNext(next))
+	resp.RepoHeads, resp.FreshnessReport = svc.preparedSourceFreshness(ctx, resp.SourceSnapshotID, sourceRequirementsFromNext(next))
 	resp.Blockers = append(resp.Blockers, prepareSourceBlockers(resp.FreshnessReport, sourceRequirementsFromNext(next))...)
+	resp.LowerLevelRecoveryActions = ensureFreshnessRecoveryActions(resp.LowerLevelRecoveryActions, resp.Blockers, projectID, planID, passID)
 	resp.Blockers, resp.Warnings = splitPrepareWarnings(resp.Blockers)
 	if resp.OptionalCoverage.WarningCount > 0 {
 		resp.Warnings = append(resp.Warnings, WorkBlocker{
@@ -1044,7 +1105,7 @@ func (svc *OrchestratorWorkService) applyPreparedPacketSummary(packetID string, 
 	}
 }
 
-func (svc *OrchestratorWorkService) preparedSourceFreshness(snapshotID string, reqs SourceSnapshotRequirements) ([]PreparedRepoHead, *PreparedFreshnessReport) {
+func (svc *OrchestratorWorkService) preparedSourceFreshness(ctx context.Context, snapshotID string, reqs SourceSnapshotRequirements) ([]PreparedRepoHead, *PreparedFreshnessReport) {
 	if svc == nil || svc.store == nil || strings.TrimSpace(snapshotID) == "" {
 		return []PreparedRepoHead{}, nil
 	}
@@ -1054,7 +1115,7 @@ func (svc *OrchestratorWorkService) preparedSourceFreshness(snapshotID string, r
 			Status:             "missing",
 			ReusableForHandoff: false,
 			SourceSnapshotID:   snapshotID,
-			Warnings:           []string{"source snapshot metadata could not be loaded"},
+			Blockers:           []PreparedFreshnessIssue{{Code: sourceFreshnessCodeUnavailable, Message: "source snapshot metadata could not be loaded", Recoverable: true}},
 		}
 	}
 	repos, err := svc.store.ListSourceSnapshotRepositories(snapshot.ID)
@@ -1065,24 +1126,12 @@ func (svc *OrchestratorWorkService) preparedSourceFreshness(snapshotID string, r
 			SourceSnapshotID:   snapshotID,
 			SnapshotStatus:     snapshot.Status,
 			SnapshotKind:       snapshot.SnapshotKind,
-			Warnings:           []string{"repository metadata could not be loaded"},
+			Blockers:           []PreparedFreshnessIssue{{Code: sourceFreshnessCodeUnavailable, Message: "repository metadata could not be loaded", Recoverable: true}},
 		}
 	}
 	heads := make([]PreparedRepoHead, 0, len(repos))
-	report := &PreparedFreshnessReport{
-		Status:             "fresh",
-		ReusableForHandoff: true,
-		SourceSnapshotID:   snapshot.SourceSnapshotID,
-		SnapshotStatus:     snapshot.Status,
-		SnapshotKind:       snapshot.SnapshotKind,
-		RepositoryCount:    len(repos),
-	}
-	if snapshot.Status != "created" {
-		report.Status = "stale"
-		report.ReusableForHandoff = false
-		report.Warnings = append(report.Warnings, "source snapshot status is not created")
-	}
 	requireHead := boolValue(reqs.RequireCommitSHA)
+	missingHeadRepos := []string{}
 	for _, repo := range repos {
 		head := PreparedRepoHead{
 			RepoID:             repo.RepoID,
@@ -1093,22 +1142,40 @@ func (svc *OrchestratorWorkService) preparedSourceFreshness(snapshotID string, r
 			GitStatusAvailable: repo.GitStatusAvailable != 0,
 		}
 		heads = append(heads, head)
-		if head.Dirty {
-			report.DirtyRepoCount++
-		}
 		if requireHead && strings.TrimSpace(head.HeadSHA) == "" {
-			report.MissingHeadRepos = append(report.MissingHeadRepos, repo.RepoID)
+			missingHeadRepos = append(missingHeadRepos, repo.RepoID)
 		}
 	}
-	if report.DirtyRepoCount > 0 && !boolValue(reqs.AllowDirtyWorktree) {
-		report.Status = "dirty_worktree"
-		report.ReusableForHandoff = false
+
+	freshnessSvc, ok := svc.sourcesSvc.(sourceSnapshotFreshnessEvaluator)
+	if !ok || freshnessSvc == nil {
+		return heads, &PreparedFreshnessReport{
+			Status:             sourceFreshnessStatusBlocked,
+			ReusableForHandoff: false,
+			SourceSnapshotID:   snapshot.SourceSnapshotID,
+			SnapshotStatus:     snapshot.Status,
+			SnapshotKind:       snapshot.SnapshotKind,
+			RepositoryCount:    len(repos),
+			MissingHeadRepos:   missingHeadRepos,
+			Blockers:           []PreparedFreshnessIssue{{Code: sourceFreshnessCodeUnavailable, Message: "source snapshot freshness evaluator is unavailable", Recoverable: true}},
+			NextActions:        []PreparedFreshnessNextAction{{Action: "create_source_snapshot", Reason: "Create a fresh source snapshot before preparing handoff context."}},
+		}
 	}
-	if len(report.MissingHeadRepos) > 0 {
-		report.Status = "stale"
-		report.ReusableForHandoff = false
-		report.Warnings = append(report.Warnings, "required commit SHA evidence is missing")
+	freshness, err := freshnessSvc.GetSourceSnapshotFreshness(ctx, snapshot.ProjectID, snapshot.SourceSnapshotID)
+	if err != nil {
+		return heads, &PreparedFreshnessReport{
+			Status:             sourceFreshnessStatusBlocked,
+			ReusableForHandoff: false,
+			SourceSnapshotID:   snapshot.SourceSnapshotID,
+			SnapshotStatus:     snapshot.Status,
+			SnapshotKind:       snapshot.SnapshotKind,
+			RepositoryCount:    len(repos),
+			MissingHeadRepos:   missingHeadRepos,
+			Blockers:           []PreparedFreshnessIssue{{Code: sourceFreshnessCodeUnavailable, Message: "source snapshot freshness could not be evaluated", Recoverable: true}},
+			NextActions:        []PreparedFreshnessNextAction{{Action: "create_source_snapshot", Reason: "Create a fresh source snapshot before preparing handoff context."}},
+		}
 	}
+	report := preparedFreshnessFromSourceReport(freshness, snapshot, missingHeadRepos)
 	return heads, report
 }
 
@@ -1131,7 +1198,7 @@ func prepareSourceBlockers(report *PreparedFreshnessReport, reqs SourceSnapshotR
 			Recoverable: true,
 		})
 	}
-	if !report.ReusableForHandoff && report.Status != "dirty_worktree" {
+	if !report.ReusableForHandoff && (report.Status != sourceFreshnessStatusDirtyWorktree || boolValue(reqs.AllowDirtyWorktree)) {
 		blockers = append(blockers, WorkBlocker{
 			Code:        BlockerSourceSnapshotStale,
 			Message:     "source snapshot is not reusable for handoff authoring",
@@ -1139,6 +1206,106 @@ func prepareSourceBlockers(report *PreparedFreshnessReport, reqs SourceSnapshotR
 		})
 	}
 	return blockers
+}
+
+func preparedFreshnessFromSourceReport(freshness SourceFreshnessReport, snapshot *store.SourceSnapshot, missingHeadRepos []string) *PreparedFreshnessReport {
+	report := &PreparedFreshnessReport{
+		Status:             freshness.Status,
+		ReusableForHandoff: freshness.ReusableForHandoff,
+		SourceSnapshotID:   freshness.SourceSnapshotID,
+		SnapshotStatus:     snapshot.Status,
+		SnapshotKind:       snapshot.SnapshotKind,
+		RepositoryCount:    len(freshness.RepositoryReports),
+		MissingHeadRepos:   append([]string{}, missingHeadRepos...),
+		AgeSeconds:         freshness.AgeSeconds,
+		MaxAgeSeconds:      freshness.MaxAgeSeconds,
+		Warnings:           preparedFreshnessIssues(freshness.Warnings),
+		Blockers:           preparedFreshnessIssues(freshness.Blockers),
+		NextActions:        preparedFreshnessNextActions(freshness.NextActions),
+	}
+	for _, repo := range freshness.RepositoryReports {
+		if repo.CapturedDirty || repo.CurrentDirty {
+			report.DirtyRepoCount++
+		}
+	}
+	if len(missingHeadRepos) > 0 {
+		report.ReusableForHandoff = false
+		if report.Status == "" || report.Status == sourceFreshnessStatusFresh {
+			report.Status = sourceFreshnessStatusStaleByAge
+		}
+		report.Blockers = append(report.Blockers, PreparedFreshnessIssue{
+			Code:        sourceFreshnessCodeStale,
+			Message:     "required commit SHA evidence is missing",
+			Recoverable: true,
+		})
+		if len(report.NextActions) == 0 {
+			report.NextActions = append(report.NextActions, PreparedFreshnessNextAction{
+				Action: "create_source_snapshot",
+				Reason: "Create a source snapshot with commit SHA evidence.",
+			})
+		}
+	}
+	return report
+}
+
+func preparedFreshnessIssues(blockers []SourceBlocker) []PreparedFreshnessIssue {
+	if len(blockers) == 0 {
+		return nil
+	}
+	issues := make([]PreparedFreshnessIssue, 0, len(blockers))
+	for _, blocker := range blockers {
+		issues = append(issues, PreparedFreshnessIssue{
+			RepoID:      blocker.RepoID,
+			Code:        blocker.Code,
+			Message:     blocker.Message,
+			Recoverable: blocker.Recoverable,
+		})
+	}
+	return issues
+}
+
+func preparedFreshnessNextActions(actions []SourceFreshnessNextAction) []PreparedFreshnessNextAction {
+	if len(actions) == 0 {
+		return nil
+	}
+	out := make([]PreparedFreshnessNextAction, 0, len(actions))
+	for _, action := range actions {
+		if action.Action != "create_source_snapshot" && action.Action != NextPassWorkTool {
+			continue
+		}
+		out = append(out, PreparedFreshnessNextAction{
+			Action: action.Action,
+			Reason: action.Reason,
+		})
+	}
+	return out
+}
+
+func ensureFreshnessRecoveryActions(actions []NextPassWorkSummaryAction, blockers []WorkBlocker, projectID, planID, passID string) []NextPassWorkSummaryAction {
+	needsSourceSnapshot := false
+	hasSourceSnapshot := false
+	for _, blocker := range blockers {
+		if blocker.Code == BlockerSourceSnapshotStale || blocker.Code == BlockerSourceSnapshotDirtyDisallowed {
+			needsSourceSnapshot = true
+		}
+	}
+	for _, action := range actions {
+		if action.Tool == "create_source_snapshot" {
+			hasSourceSnapshot = true
+		}
+	}
+	if !needsSourceSnapshot || hasSourceSnapshot {
+		return actions
+	}
+	return append([]NextPassWorkSummaryAction{{
+		Tool:        "create_source_snapshot",
+		Description: "Create a fresh bounded source snapshot before preparing handoff context again.",
+		Arguments: map[string]interface{}{
+			"project_id": projectID,
+			"plan_id":    planID,
+			"pass_id":    passID,
+		},
+	}}, actions...)
 }
 
 func splitPrepareWarnings(blockers []WorkBlocker) ([]WorkBlocker, []WorkBlocker) {

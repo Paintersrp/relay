@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	appplans "relay/internal/app/plans"
 	"relay/internal/app/projects"
@@ -554,6 +556,20 @@ func seedMCPPassArtifacts(t *testing.T, st *store.Store, planID, projectID strin
 	if err != nil {
 		t.Fatalf("GetProjectByProjectID: %v", err)
 	}
+	repoRoot, headSHA := seedMCPGitRepo(t)
+	repo, err := st.UpsertProjectRepository(store.UpsertProjectRepositoryParams{
+		ProjectRowID:     project.ID,
+		RepoID:           "relay",
+		Role:             "primary",
+		LocalPath:        repoRoot,
+		DefaultBranch:    "main",
+		AllowedRootsJSON: `["."]`,
+		MaxFileSizeBytes: 1048576,
+		Enabled:          1,
+	})
+	if err != nil {
+		t.Fatalf("UpsertProjectRepository: %v", err)
+	}
 
 	snapshotID := "snap-mcp-" + planID
 	snapshot, err := st.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
@@ -562,11 +578,37 @@ func seedMCPPassArtifacts(t *testing.T, st *store.Store, planID, projectID strin
 		ProjectID:        projectID,
 		SnapshotKind:     "clean_commit",
 		Status:           "created",
-		CompletedAt:      "2026-06-28T00:00:00Z",
+		CompletedAt:      time.Now().UTC().Format("2006-01-02 15:04:05"),
 		SummaryJSON:      "{\"file_count\":1}",
 	})
 	if err != nil {
 		t.Fatalf("CreateSourceSnapshot: %v", err)
+	}
+	snapshotRepo, err := st.CreateSourceSnapshotRepository(store.CreateSourceSnapshotRepositoryParams{
+		SourceSnapshotRowID:    snapshot.ID,
+		ProjectRepositoryRowID: repo.ID,
+		RepoID:                 "relay",
+		Role:                   "primary",
+		LocalPath:              repoRoot,
+		DefaultBranch:          "main",
+		CurrentBranch:          "main",
+		HeadSHA:                headSHA,
+		GitStatusAvailable:     1,
+	})
+	if err != nil {
+		t.Fatalf("CreateSourceSnapshotRepository: %v", err)
+	}
+	if _, err := st.CreateSourceSnapshotFile(store.CreateSourceSnapshotFileParams{
+		SourceSnapshotRepositoryRowID: snapshotRepo.ID,
+		Path:                          "README.md",
+		SizeBytes:                     5,
+		ContentHash:                   "hash-readme",
+		HashAlgorithm:                 "sha256",
+		Tracked:                       1,
+		Included:                      1,
+		RedactionStatus:               "not_needed",
+	}); err != nil {
+		t.Fatalf("CreateSourceSnapshotFile: %v", err)
 	}
 
 	for _, passID := range passIDs {
@@ -591,6 +633,29 @@ func seedMCPPassArtifacts(t *testing.T, st *store.Store, planID, projectID strin
 			t.Fatalf("CreateContextPacket: %v", err)
 		}
 	}
+}
+
+func seedMCPGitRepo(t *testing.T) (string, string) {
+	t.Helper()
+	repoRoot := t.TempDir()
+	runMCPGit(t, repoRoot, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(repoRoot, "README.md"), []byte("seed\n"), 0644); err != nil {
+		t.Fatalf("write seed file: %v", err)
+	}
+	runMCPGit(t, repoRoot, "add", ".")
+	runMCPGit(t, repoRoot, "-c", "user.email=relay@example.test", "-c", "user.name=Relay Test", "commit", "-m", "seed")
+	return repoRoot, strings.TrimSpace(runMCPGit(t, repoRoot, "rev-parse", "HEAD"))
+}
+
+func runMCPGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, string(out))
+	}
+	return string(out)
 }
 
 func TestOrchestratorWorkTools_SchemasAreStrictAndScoped(t *testing.T) {
@@ -642,6 +707,12 @@ func TestOrchestratorWorkTools_SchemasAreStrictAndScoped(t *testing.T) {
 			t.Errorf("prepare_handoff_context schema must require %q", field)
 		}
 	}
+	prepareProps, _ := prepareSchema["properties"].(map[string]any)
+	for _, field := range []string{"refresh_policy", "include_optional_context", "max_sources", "max_total_bytes", "max_search_results", "max_context_lines"} {
+		if _, ok := prepareProps[field]; ok {
+			t.Errorf("prepare_handoff_context schema must not define removed field %q", field)
+		}
+	}
 	prepareOutput := schemaMap(t, ToolPrepareHandoffContext.OutputSchema)
 	prepareOutputRequired := requiredSet(t, prepareOutput)
 	for _, field := range []string{"ok", "tool", "project_id", "plan_id", "pass_id", "readiness_state", "repo_heads", "required_coverage", "optional_coverage", "blockers", "recommended_next_action", "lower_level_recovery_actions"} {
@@ -682,6 +753,52 @@ func TestOrchestratorWorkTools_SchemasAreStrictAndScoped(t *testing.T) {
 			if _, ok := props[banned]; ok {
 				t.Errorf("schema must not expose mutation-oriented property %q", banned)
 			}
+		}
+	}
+}
+
+func TestPrepareHandoffContextSchemaOnlyAcceptsScopedIdentifiers(t *testing.T) {
+	t.Parallel()
+	schema := schemaMap(t, ToolPrepareHandoffContext.InputSchema)
+	if additional, _ := schema["additionalProperties"].(bool); additional {
+		t.Fatal("prepare_handoff_context schema must set additionalProperties:false")
+	}
+	required := requiredSet(t, schema)
+	if len(required) != 3 {
+		t.Fatalf("expected exactly 3 required fields, got %+v", required)
+	}
+	for _, field := range []string{"project_id", "plan_id", "pass_id"} {
+		if !required[field] {
+			t.Fatalf("expected required field %q in %+v", field, required)
+		}
+	}
+	props, _ := schema["properties"].(map[string]any)
+	if len(props) != 3 {
+		t.Fatalf("expected exactly scoped identifier properties, got %+v", props)
+	}
+	for _, field := range []string{"project_id", "plan_id", "pass_id"} {
+		if _, ok := props[field]; !ok {
+			t.Fatalf("expected property %q in %+v", field, props)
+		}
+	}
+	for _, removed := range []string{"refresh_policy", "include_optional_context", "max_sources", "max_total_bytes", "max_search_results", "max_context_lines"} {
+		if _, ok := props[removed]; ok {
+			t.Fatalf("removed prepare_handoff_context field %q is still exposed", removed)
+		}
+	}
+}
+
+func TestPrepareHandoffContextRejectsRemovedKnobs(t *testing.T) {
+	t.Parallel()
+	srv := &Server{}
+	for _, raw := range []string{
+		`{"project_id":"relay","plan_id":"plan","pass_id":"PASS-001","refresh_policy":"reuse_if_fresh"}`,
+		`{"project_id":"relay","plan_id":"plan","pass_id":"PASS-001","max_sources":10}`,
+		`{"project_id":"relay","plan_id":"plan","pass_id":"PASS-001","max_total_bytes":1024}`,
+	} {
+		result := srv.HandlePrepareHandoffContext(json.RawMessage(raw))
+		if !result.IsError {
+			t.Fatalf("expected removed knob to be rejected for args %s, got %+v", raw, result)
 		}
 	}
 }
