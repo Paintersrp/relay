@@ -79,15 +79,19 @@ type runSourceContextProvenance struct {
 
 // CreateRunOutput holds the result of a successful run creation.
 type CreateRunOutput struct {
-	RunID             int64             `json:"run_id"`
-	Status            string            `json:"status"`
-	LifecycleState    string            `json:"lifecycle_state"`
-	ReviewURL         string            `json:"review_url"`
-	ArtifactKinds     []string          `json:"artifact_kinds"`
-	ValidationSummary ValidationSummary `json:"validation_summary"`
-	PlanID            string            `json:"plan_id,omitempty"`
-	PassID            string            `json:"pass_id,omitempty"`
-	Provenance        ProvenanceSummary `json:"provenance"`
+	RunID                  int64                  `json:"run_id"`
+	Status                 string                 `json:"status"`
+	LifecycleState         string                 `json:"lifecycle_state"`
+	ReviewURL              string                 `json:"review_url"`
+	ArtifactKinds          []string               `json:"artifact_kinds"`
+	ValidationSummary      ValidationSummary      `json:"validation_summary"`
+	PlanID                 string                 `json:"plan_id,omitempty"`
+	PassID                 string                 `json:"pass_id,omitempty"`
+	Provenance             ProvenanceSummary      `json:"provenance"`
+	SubmittedHandoffSHA256 string                 `json:"submitted_handoff_sha256,omitempty"`
+	SHAMatchStatus         string                 `json:"sha_match_status,omitempty"`
+	SourceMode             string                 `json:"source_mode,omitempty"`
+	ArtifactIdentity       map[string]interface{} `json:"artifact_identity,omitempty"`
 }
 
 // CreateRunFromHandoff creates a new Relay run from planner handoff markdown.
@@ -430,6 +434,14 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 			ContextPacketID:      provenanceIDs.ContextPacketID,
 			SourceSnapshotID:     provenanceIDs.SourceSnapshotID,
 			ArtifactKind:         "planner_handoff_provenance_json",
+		},
+		SubmittedHandoffSHA256: handoffSHA,
+		SHAMatchStatus:         "not_supplied",
+		SourceMode:             sourceMode,
+		ArtifactIdentity: map[string]interface{}{
+			"artifact_kind": "planner_handoff",
+			"display_name":  "planner_handoff.md",
+			"byte_count":    len([]byte(input.Markdown)),
 		},
 	}, nil
 }

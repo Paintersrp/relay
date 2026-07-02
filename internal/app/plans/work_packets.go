@@ -102,9 +102,29 @@ var terminalRunStatuses = map[string]bool{
 
 // WorkBlocker describes a single business-state blocker.
 type WorkBlocker struct {
-	Code        string `json:"code"`
-	Message     string `json:"message"`
-	Recoverable bool   `json:"recoverable"`
+	Code        string                `json:"code"`
+	Message     string                `json:"message"`
+	Recoverable bool                  `json:"recoverable"`
+	Evidence    []WorkBlockerEvidence `json:"evidence"`
+	NextActions []string              `json:"next_actions"`
+}
+
+type WorkBlockerEvidence struct {
+	Kind   string `json:"kind"`
+	Ref    string `json:"ref,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
+func (b WorkBlocker) MarshalJSON() ([]byte, error) {
+	type alias WorkBlocker
+	out := alias(b)
+	if out.Evidence == nil {
+		out.Evidence = []WorkBlockerEvidence{}
+	}
+	if out.NextActions == nil {
+		out.NextActions = []string{}
+	}
+	return json.Marshal(out)
 }
 
 // NextPassWorkResponse is the top-level contract response.
@@ -252,8 +272,23 @@ type NextPassWorkSummaryPass struct {
 
 // NextPassWorkSummaryBlocker contains compact blocker facts.
 type NextPassWorkSummaryBlocker struct {
-	Code        string `json:"code"`
-	Recoverable bool   `json:"recoverable"`
+	Code        string                `json:"code"`
+	Message     string                `json:"message"`
+	Recoverable bool                  `json:"recoverable"`
+	Evidence    []WorkBlockerEvidence `json:"evidence"`
+	NextActions []string              `json:"next_actions"`
+}
+
+func (b NextPassWorkSummaryBlocker) MarshalJSON() ([]byte, error) {
+	type alias NextPassWorkSummaryBlocker
+	out := alias(b)
+	if out.Evidence == nil {
+		out.Evidence = []WorkBlockerEvidence{}
+	}
+	if out.NextActions == nil {
+		out.NextActions = []string{}
+	}
+	return json.Marshal(out)
 }
 
 // NextPassWorkSummaryAction describes concise follow-up guidance.
@@ -481,9 +516,13 @@ func CompactNextPassWorkSummary(resp NextPassWorkResponse) NextPassWorkMCPSummar
 		summary.HandoffPacket = resp.HandoffAuthoringPacket
 	}
 	for _, blocker := range resp.Blockers {
+		blocker = ensureWorkBlockerFields(blocker)
 		summary.Blockers = append(summary.Blockers, NextPassWorkSummaryBlocker{
 			Code:        blocker.Code,
+			Message:     blocker.Message,
 			Recoverable: blocker.Recoverable,
+			Evidence:    blocker.Evidence,
+			NextActions: blocker.NextActions,
 		})
 	}
 	summary.NextActions = compactNextPassWorkActions(resp)
@@ -1020,14 +1059,20 @@ func mapPrepareBlockers(blockers []WorkBlocker) []WorkBlocker {
 	for _, blocker := range blockers {
 		mapped := blocker
 		switch blocker.Code {
-		case BlockerRequiredContextPacketMissing, BlockerContextCoverageIncomplete:
+		case BlockerRequiredContextPacketMissing, BlockerContextCoverageIncomplete, BlockerRequiredSourceContextMissing:
 			mapped.Code = BlockerRequiredContextMissing
 		case BlockerContextPacketTruncated:
 			mapped.Code = BlockerRequiredContextTruncated
 		case BlockerContextPacketAcquisitionFailed:
-			mapped.Code = BlockerPrepareContextAcquisitionFailed
+			mapped.Code = "tool_unavailable"
+		case BlockerSourceSnapshotStale:
+			mapped.Code = BlockerSourceSnapshotStale
+		case BlockerSourceSnapshotDirtyDisallowed:
+			mapped.Code = "dirty_worktree"
+		case BlockerUnknownPlan, BlockerRequestedPassNotFound:
+			mapped.Code = "unknown_resource"
 		}
-		out = append(out, mapped)
+		out = append(out, normalizeWorkBlocker(mapped))
 	}
 	return out
 }
@@ -2664,11 +2709,44 @@ func (svc *OrchestratorWorkService) getPassByIDWithSafety(
 // ----------------------------------------------------------------------------
 
 func blockerResponse(b WorkBlocker) NextPassWorkResponse {
+	b = ensureWorkBlockerFields(b)
 	return NextPassWorkResponse{
 		OK:       false,
 		Tool:     NextPassWorkTool,
 		Blockers: []WorkBlocker{b},
 	}
+}
+
+func normalizeWorkBlocker(b WorkBlocker) WorkBlocker {
+	b = ensureWorkBlockerFields(b)
+	switch b.Code {
+	case BlockerRequiredSourceContextMissing, BlockerRequiredContextPacketMissing:
+		b.Code = BlockerRequiredContextMissing
+	case BlockerContextPacketTruncated:
+		b.Code = BlockerRequiredContextTruncated
+	case BlockerSourceSnapshotDirtyDisallowed:
+		b.Code = "dirty_worktree"
+	case BlockerSourceSnapshotStale:
+		b.Code = "source_snapshot_stale"
+	case BlockerContextPacketAcquisitionFailed, BlockerPrepareContextAcquisitionFailed, BlockerRequiredContextBundleUnavailable:
+		b.Code = "tool_unavailable"
+	case BlockerUnsafeRequest:
+		b.Code = "unsafe_request"
+	}
+	return b
+}
+
+func ensureWorkBlockerFields(b WorkBlocker) WorkBlocker {
+	if b.Message == "" {
+		b.Message = b.Code
+	}
+	if b.Evidence == nil {
+		b.Evidence = []WorkBlockerEvidence{}
+	}
+	if b.NextActions == nil {
+		b.NextActions = []string{"Resolve the blocker, then retry the workflow tool."}
+	}
+	return b
 }
 
 func appendDepStatusesToBlocker(resp NextPassWorkResponse, deps []WorkDependencyStatus) NextPassWorkResponse {

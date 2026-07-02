@@ -33,6 +33,20 @@ type HandoffPreflightIssue struct {
 	BlocksSubmission bool                           `json:"blocks_submission"`
 }
 
+type HandoffPreflightBlockerEvidence struct {
+	Kind   string `json:"kind"`
+	Ref    string `json:"ref,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type HandoffPreflightBlocker struct {
+	Code        string                            `json:"code"`
+	Message     string                            `json:"message"`
+	Recoverable bool                              `json:"recoverable"`
+	Evidence    []HandoffPreflightBlockerEvidence `json:"evidence"`
+	NextActions []string                          `json:"next_actions"`
+}
+
 type HandoffPreflightInput struct {
 	Markdown         string
 	RepoTarget       string
@@ -45,19 +59,20 @@ type HandoffPreflightInput struct {
 }
 
 type HandoffPreflightResult struct {
-	OK                     bool                    `json:"ok"`
-	Status                 string                  `json:"status"`
-	IsCompileReady         bool                    `json:"is_compile_ready"`
-	IssueCounts            map[string]int          `json:"issue_counts"`
-	Issues                 []HandoffPreflightIssue `json:"issues"`
-	SubmittedHandoffSHA256 string                  `json:"submitted_handoff_sha256"`
-	ByteCount              int64                   `json:"byte_count"`
-	SourceMode             string                  `json:"source_mode,omitempty"`
-	PlanID                 string                  `json:"plan_id,omitempty"`
-	PassID                 string                  `json:"pass_id,omitempty"`
-	ContextPacketID        string                  `json:"context_packet_id,omitempty"`
-	SourceSnapshotID       string                  `json:"source_snapshot_id,omitempty"`
-	GeneratedAt            string                  `json:"generated_at"`
+	OK                     bool                      `json:"ok"`
+	Status                 string                    `json:"status"`
+	IsCompileReady         bool                      `json:"is_compile_ready"`
+	IssueCounts            map[string]int            `json:"issue_counts"`
+	Issues                 []HandoffPreflightIssue   `json:"issues"`
+	Blockers               []HandoffPreflightBlocker `json:"blockers"`
+	SubmittedHandoffSHA256 string                    `json:"submitted_handoff_sha256"`
+	ByteCount              int64                     `json:"byte_count"`
+	SourceMode             string                    `json:"source_mode,omitempty"`
+	PlanID                 string                    `json:"plan_id,omitempty"`
+	PassID                 string                    `json:"pass_id,omitempty"`
+	ContextPacketID        string                    `json:"context_packet_id,omitempty"`
+	SourceSnapshotID       string                    `json:"source_snapshot_id,omitempty"`
+	GeneratedAt            string                    `json:"generated_at"`
 }
 
 // ValidatePlannerHandoffForCompile performs deterministic compile-aware preflight
@@ -77,7 +92,8 @@ func ValidatePlannerHandoffForCompile(input HandoffPreflightInput) (HandoffPrefl
 			"error":   0,
 			"warning": 0,
 		},
-		Issues: make([]HandoffPreflightIssue, 0),
+		Issues:   make([]HandoffPreflightIssue, 0),
+		Blockers: make([]HandoffPreflightBlocker, 0),
 	}
 
 	markdown := strings.TrimSpace(input.Markdown)
@@ -94,6 +110,7 @@ func ValidatePlannerHandoffForCompile(input HandoffPreflightInput) (HandoffPrefl
 	if markdown == "" {
 		issue := newBlockingIssue("handoff_empty", "Handoff markdown is empty.", "Provide non-empty Planner handoff Markdown content.", &HandoffPreflightIssueLocation{Section: "handoff"})
 		addPreflightIssue(&result, issue)
+		result.Blockers = MapPreflightIssuesToBlockers(result.Issues)
 		return result, nil
 	}
 
@@ -169,8 +186,49 @@ func ValidatePlannerHandoffForCompile(input HandoffPreflightInput) (HandoffPrefl
 			result.IsCompileReady = true
 		}
 	}
+	result.Blockers = MapPreflightIssuesToBlockers(result.Issues)
 
 	return result, nil
+}
+
+func MapPreflightIssuesToBlockers(issues []HandoffPreflightIssue) []HandoffPreflightBlocker {
+	blockers := make([]HandoffPreflightBlocker, 0, len(issues))
+	for _, issue := range issues {
+		if !issue.BlocksSubmission {
+			continue
+		}
+		code := PreflightIssueTaxonomyCode(issue.Code)
+		evidence := []HandoffPreflightBlockerEvidence{{Kind: "preflight_issue", Ref: issue.Code}}
+		if issue.Location != nil {
+			if issue.Location.Section != "" {
+				evidence = append(evidence, HandoffPreflightBlockerEvidence{Kind: "section", Ref: issue.Location.Section})
+			}
+			if issue.Location.Field != "" {
+				evidence = append(evidence, HandoffPreflightBlockerEvidence{Kind: "field", Ref: issue.Location.Field})
+			}
+		}
+		blockers = append(blockers, HandoffPreflightBlocker{
+			Code:        code,
+			Message:     issue.Message,
+			Recoverable: true,
+			Evidence:    evidence,
+			NextActions: []string{issue.RepairGuidance},
+		})
+	}
+	return blockers
+}
+
+func PreflightIssueTaxonomyCode(issueCode string) string {
+	switch issueCode {
+	case "compiler_input_yaml_invalid", "compiler_input_required_field_missing", "compiler_input_list_empty", "frontmatter_missing", "handoff_empty":
+		return "schema_mismatch"
+	case "compiler_input_missing", "repository_target_missing", "branch_context_missing", "managed_plan_missing":
+		return "required_context_missing"
+	case "managed_pass_mismatch":
+		return "schema_mismatch"
+	default:
+		return "schema_mismatch"
+	}
 }
 
 type compilerInputYAMLDoc struct {

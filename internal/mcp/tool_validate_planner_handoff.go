@@ -24,22 +24,30 @@ type validatePlannerHandoffInput struct {
 
 func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage) ToolCallResult {
 	if s.deps == nil || s.deps.Store == nil {
-		return toolErr("DEPENDENCY_ERROR: MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
+		return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
+			newMCPBlocker(MCPBlockerToolUnavailable, "MCP server is not connected to a Relay store.", false, []MCPBlockerEvidence{{Kind: "tool", Ref: "validate_planner_handoff_for_compile"}}, []string{"Start Relay MCP with RELAY_DB_PATH configured, then retry preflight."}),
+		}, nil)
 	}
 
 	var input validatePlannerHandoffInput
 	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
-		return toolErr(fmt.Sprintf("invalid arguments: %s", err))
+		return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
+			newMCPBlocker(MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, []MCPBlockerEvidence{{Kind: "schema", Ref: "validate_planner_handoff_for_compile"}}, []string{"Retry with arguments matching the validate_planner_handoff_for_compile schema."}),
+		}, nil)
 	}
 
 	markdownStr := strings.TrimSpace(input.PlannerHandoffMarkdown)
 	filePath := strings.TrimSpace(input.PlannerHandoffFile)
 
 	if markdownStr == "" && filePath == "" {
-		return toolErr("VALIDATION_ERROR: exactly one of planner_handoff_markdown or planner_handoff_file is required")
+		return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
+			newMCPBlocker(MCPBlockerSchemaMismatch, "exactly one of planner_handoff_markdown or planner_handoff_file is required", false, []MCPBlockerEvidence{{Kind: "schema", Ref: "planner_handoff_source"}}, []string{"Provide exactly one reviewed handoff source."}),
+		}, nil)
 	}
 	if markdownStr != "" && filePath != "" {
-		return toolErr("VALIDATION_ERROR: provide exactly one of planner_handoff_markdown or planner_handoff_file, not both")
+		return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
+			newMCPBlocker(MCPBlockerSchemaMismatch, "provide exactly one of planner_handoff_markdown or planner_handoff_file, not both", false, []MCPBlockerEvidence{{Kind: "schema", Ref: "planner_handoff_source"}}, []string{"Submit either inline markdown or one file parameter, not both."}),
+		}, nil)
 	}
 
 	var sourceMode string
@@ -48,7 +56,9 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 	if filePath != "" {
 		markdownBytes, sha, err := readPlannerHandoffFile(filePath)
 		if err != nil {
-			return toolErr(fmt.Sprintf("VALIDATION_ERROR: %s", err))
+			return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
+				newMCPBlocker(MCPBlockerBlockedPath, err.Error(), false, []MCPBlockerEvidence{{Kind: "artifact", Ref: "planner_handoff"}}, []string{"Provide one readable reviewed .md handoff file through the MCP file parameter."}),
+			}, nil)
 		}
 		submittedSHA = sha
 		sourceMode = "file_parameter"
@@ -56,19 +66,36 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 		expectedSHA := strings.TrimSpace(input.ExpectedSHA256)
 		if expectedSHA != "" {
 			if err := validateExpectedSHA256(expectedSHA); err != nil {
-				return toolErr(fmt.Sprintf("VALIDATION_ERROR: %s", err))
+				return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
+					newMCPBlocker(MCPBlockerSchemaMismatch, err.Error(), false, []MCPBlockerEvidence{{Kind: "schema", Ref: "expected_sha256"}}, []string{"Use a 64-character lowercase hex SHA-256 value."}),
+				}, nil)
 			}
 			if expectedSHA != submittedSHA {
-				return toolErr(fmt.Sprintf("VALIDATION_ERROR: expected_sha256 %q does not match submitted handoff sha256 %q", expectedSHA, submittedSHA))
+				prov := ExactSubmissionProvenance{
+					SubmittedSHA256: submittedSHA,
+					ExpectedSHA256:  expectedSHA,
+					SHAMatchStatus:  "mismatched",
+					SourceMode:      "file_parameter",
+					ArtifactIdentity: SubmittedArtifactIdentity{
+						ArtifactKind: "planner_handoff",
+						DisplayName:  safeArtifactDisplayName(filePath, "planner-handoff.md"),
+						ByteCount:    int64(len(markdownBytes)),
+					},
+				}
+				return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
+					newMCPBlocker(MCPBlockerExpectedHashMismatch, "expected_sha256 does not match submitted handoff sha256", false, []MCPBlockerEvidence{{Kind: "hash", Ref: submittedSHA}, {Kind: "hash", Ref: expectedSHA}}, []string{"Review the supplied file and expected hash, then retry with matching bytes."}),
+				}, map[string]any{"provenance": prov})
 			}
 		}
 
 		markdownStr = string(markdownBytes)
 	} else {
 		if strings.TrimSpace(input.ExpectedSHA256) != "" {
-			return toolErr("VALIDATION_ERROR: expected_sha256 is only supported with planner_handoff_file")
+			return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
+				newMCPBlocker(MCPBlockerSchemaMismatch, "expected_sha256 is only supported with planner_handoff_file", false, []MCPBlockerEvidence{{Kind: "schema", Ref: "expected_sha256"}}, []string{"Use planner_handoff_file when pinning exact file bytes by expected_sha256."}),
+			}, nil)
 		}
-		sourceMode = "mcp_chat"
+		sourceMode = "inline"
 		sum := sha256.Sum256([]byte(markdownStr))
 		submittedSHA = hex.EncodeToString(sum[:])
 	}
@@ -84,7 +111,9 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 		SourceMode:       sourceMode,
 	})
 	if err != nil {
-		return toolErr(fmt.Sprintf("INTERNAL_ERROR: %s", err))
+		return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
+			newMCPBlocker(MCPBlockerToolUnavailable, "preflight dependency failed: "+err.Error(), true, []MCPBlockerEvidence{{Kind: "tool", Ref: "preflight"}}, []string{"Retry after the preflight dependency is available."}),
+		}, nil)
 	}
 
 	_ = submittedSHA
@@ -102,6 +131,29 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 	}
 
 	return mcpResult
+}
+
+func mcpBlockersFromPreflight(blockers []intake.HandoffPreflightBlocker) []MCPBlocker {
+	out := make([]MCPBlocker, 0, len(blockers))
+	for _, blocker := range blockers {
+		evidence := make([]MCPBlockerEvidence, 0, len(blocker.Evidence))
+		for _, item := range blocker.Evidence {
+			evidence = append(evidence, MCPBlockerEvidence{Kind: item.Kind, Ref: item.Ref, Detail: item.Detail})
+		}
+		out = append(out, newMCPBlocker(blocker.Code, blocker.Message, blocker.Recoverable, evidence, blocker.NextActions))
+	}
+	return out
+}
+
+func prefixedMCPBlockers(prefix string, blockers []MCPBlocker) []MCPBlocker {
+	out := make([]MCPBlocker, 0, len(blockers))
+	for _, blocker := range blockers {
+		if !strings.HasPrefix(blocker.Message, prefix) {
+			blocker.Message = prefix + blocker.Message
+		}
+		out = append(out, blocker)
+	}
+	return out
 }
 
 var validatePlannerHandoffSchema = json.RawMessage(`{

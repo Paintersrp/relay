@@ -265,10 +265,25 @@ var getNextPassWorkOutputSchema = json.RawMessage(`{
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["code", "recoverable"],
+        "required": ["code", "message", "recoverable", "evidence", "next_actions"],
         "properties": {
           "code": {"type": "string"},
-          "recoverable": {"type": "boolean"}
+          "message": {"type": "string"},
+          "recoverable": {"type": "boolean"},
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind"],
+              "properties": {
+                "kind": {"type": "string"},
+                "ref": {"type": "string"},
+                "detail": {"type": "string"}
+              }
+            }
+          },
+          "next_actions": {"type": "array", "items": {"type": "string"}}
         }
       }
     },
@@ -375,8 +390,60 @@ var prepareHandoffContextOutputSchema = json.RawMessage(`{
       "description": "Metadata-only bundle. Never includes raw source, context packet content, logs, local paths, or generated handoff text."
     },
     "bundle_unavailable": {"type": "object", "additionalProperties": true},
-    "blockers": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
-    "warnings": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message", "recoverable", "evidence", "next_actions"],
+        "properties": {
+          "code": {"type": "string"},
+          "message": {"type": "string"},
+          "recoverable": {"type": "boolean"},
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind"],
+              "properties": {
+                "kind": {"type": "string"},
+                "ref": {"type": "string"},
+                "detail": {"type": "string"}
+              }
+            }
+          },
+          "next_actions": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message", "recoverable", "evidence", "next_actions"],
+        "properties": {
+          "code": {"type": "string"},
+          "message": {"type": "string"},
+          "recoverable": {"type": "boolean"},
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind"],
+              "properties": {
+                "kind": {"type": "string"},
+                "ref": {"type": "string"},
+                "detail": {"type": "string"}
+              }
+            }
+          },
+          "next_actions": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
     "recommended_next_action": {"type": "string"},
     "lower_level_recovery_actions": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
     "acquisition_summary": {"type": "object", "additionalProperties": true},
@@ -599,18 +666,32 @@ func nextPassWorkSummaryText(summary appplans.NextPassWorkMCPSummary) string {
 
 // orchestratorWorkToolErr builds a top-level error payload shaped as a work packet blocker response.
 func orchestratorWorkToolErr(toolName string, code string, message string) ToolCallResult {
-	payload := map[string]interface{}{
+	taxonomy := MCPBlockerUnsafeRequest
+	if code == "tool_unavailable" {
+		taxonomy = MCPBlockerToolUnavailable
+	}
+	result := toolBlockedResult(toolName, []MCPBlocker{
+		newMCPBlocker(taxonomy, message, false, []MCPBlockerEvidence{{Kind: "tool", Ref: toolName}}, []string{"Correct the request or tool dependency, then retry."}),
+	}, nil)
+	legacyCode := code
+	if code == "tool_unavailable" {
+		legacyCode = appplans.BlockerUnsafeRequest
+	}
+	legacy := map[string]any{
 		"ok":   false,
 		"tool": toolName,
-		"blockers": []map[string]interface{}{
-			{
-				"code":        code,
-				"message":     message,
-				"recoverable": false,
-			},
-		},
+		"blockers": []map[string]any{{
+			"code":         legacyCode,
+			"message":      message,
+			"recoverable":  false,
+			"evidence":     []any{},
+			"next_actions": []string{"Correct the request or tool dependency, then retry."},
+		}},
 	}
-	return orchestratorWorkToolPayload(payload, true)
+	if text, err := marshalTool(legacy); err == nil {
+		result.Content = []ContentBlock{{Type: "text", Text: text}}
+	}
+	return result
 }
 
 // ----------------------------------------------------------------------------
@@ -629,7 +710,7 @@ func (s *Server) HandleGetNextPassWork(rawArgs json.RawMessage) ToolCallResult {
 	}
 
 	if s.deps == nil || s.deps.Store == nil {
-		return orchestratorWorkToolErr(appplans.NextPassWorkTool, appplans.BlockerUnsafeRequest, "MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
+		return orchestratorWorkToolErr(appplans.NextPassWorkTool, "tool_unavailable", "MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
 	}
 
 	svc := appplans.NewOrchestratorWorkService(s.deps.Store)
@@ -664,7 +745,7 @@ func (s *Server) HandlePrepareHandoffContext(rawArgs json.RawMessage) ToolCallRe
 	}
 
 	if s.deps == nil || s.deps.Store == nil {
-		return orchestratorWorkToolErr(appplans.PrepareHandoffContextTool, appplans.BlockerUnsafeRequest, "MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
+		return orchestratorWorkToolErr(appplans.PrepareHandoffContextTool, "tool_unavailable", "MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
 	}
 
 	svc := appplans.NewOrchestratorWorkService(s.deps.Store)

@@ -133,9 +133,9 @@ type getRunArtifactBlockers struct {
 }
 
 type artifactBlocker struct {
-	Code        string                   `json:"code"`
-	Message     string                   `json:"message"`
-	Recoverable bool                     `json:"recoverable"`
+	Code        string                    `json:"code"`
+	Message     string                    `json:"message"`
+	Recoverable bool                      `json:"recoverable"`
 	Evidence    []artifactBlockerEvidence `json:"evidence"`
 	NextActions []artifactNextAction      `json:"next_actions"`
 }
@@ -706,7 +706,9 @@ func boundedString(s string, maxLen int) string {
 
 func (s *Server) HandleGetRunArtifact(rawArgs json.RawMessage) ToolCallResult {
 	if s.deps == nil || s.deps.Store == nil {
-		return toolErr("DEPENDENCY_ERROR: MCP server is not connected to a Relay store")
+		return toolBlockedResult("get_run_artifact", []MCPBlocker{
+			newMCPBlocker(MCPBlockerToolUnavailable, "MCP server is not connected to a Relay store.", false, []MCPBlockerEvidence{{Kind: "tool", Ref: "get_run_artifact"}}, []string{"Start Relay MCP with RELAY_DB_PATH configured, then retry artifact readback."}),
+		}, nil)
 	}
 
 	var input getRunArtifactInput
@@ -1019,6 +1021,28 @@ func newArtifactBlocker(code, message string, recoverable bool, evidence []artif
 }
 
 func buildArtifactBlockerResponse(runID string, blocker artifactBlocker) ToolCallResult {
+	evidence := make([]MCPBlockerEvidence, 0, len(blocker.Evidence))
+	for _, item := range blocker.Evidence {
+		ref := item.ID
+		detail := item.Value
+		if ref == "" && detail != "" {
+			ref = detail
+			detail = ""
+		}
+		evidence = append(evidence, MCPBlockerEvidence{Kind: item.Kind, Ref: ref, Detail: detail})
+	}
+	actions := make([]string, 0, len(blocker.NextActions))
+	for _, action := range blocker.NextActions {
+		if action.Description != "" {
+			actions = append(actions, action.Description)
+		} else {
+			actions = append(actions, action.Action)
+		}
+	}
+	metadata := map[string]any{}
+	if strings.TrimSpace(runID) != "" {
+		metadata["run_id"] = runID
+	}
 	result := getRunArtifactBlockers{
 		OK:    false,
 		Tool:  "get_run_artifact",
@@ -1031,7 +1055,28 @@ func buildArtifactBlockerResponse(runID string, blocker artifactBlocker) ToolCal
 	if err != nil {
 		return toolErr(fmt.Sprintf("INTERNAL_ERROR: %s", err))
 	}
-	return toolErr(text)
+	shared := toolBlockedResult("get_run_artifact", []MCPBlocker{
+		newMCPBlocker(artifactBlockerTaxonomyCode(blocker.Code), blocker.Message, blocker.Recoverable, evidence, actions),
+	}, metadata)
+	shared.Content = []ContentBlock{{Type: "text", Text: text}}
+	return shared
+}
+
+func artifactBlockerTaxonomyCode(code string) string {
+	switch code {
+	case BlockerUnknownRun, BlockerArtifactKindNotAllowed, BlockerArtifactNotFound:
+		return MCPBlockerUnknownResource
+	case BlockerUnsafeArtifactPath:
+		return MCPBlockerBlockedPath
+	case BlockerArtifactBinary, BlockerRedactionBlocked:
+		return MCPBlockerRedactionFailed
+	case BlockerArtifactReadFailed:
+		return MCPBlockerToolUnavailable
+	case BlockerUnsafeRequest:
+		return MCPBlockerSchemaMismatch
+	default:
+		return MCPBlockerUnsafeRequest
+	}
 }
 
 func newIntPtr(n int) *int    { return &n }

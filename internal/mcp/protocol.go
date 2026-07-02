@@ -163,6 +163,11 @@ func toolErr(msg string) ToolCallResult {
 	}
 }
 
+// toolBlockedResult wraps a bounded shared blocker envelope as a tool error.
+func toolBlockedResult(tool string, blockers []MCPBlocker, metadata any) ToolCallResult {
+	return toolBlockedJSON(tool, blockers, metadata)
+}
+
 // marshalTool marshals v as JSON for embedding in a ToolCallResult.
 func marshalTool(v interface{}) (string, error) {
 	b, err := json.MarshalIndent(v, "", "  ")

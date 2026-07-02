@@ -41,6 +41,7 @@ Intended safe Planner workflow:
 7. Submit only the exact reviewed handoff artifact after explicit user confirmation. File submission preserves reviewed handoff bytes, computes submitted SHA-256, verifies optional `expected_sha256`, and blocks with `expected_hash_mismatch` before run creation when hashes differ.
 
 Shared blocker envelope fields in order: `code`, `message`, `recoverable`, `evidence`, `next_actions`.
+Blocked MCP tool results set `ok=false`, `status="blocked"`, `isError=true`, and expose the bounded envelope in `structuredContent`. Evidence is limited to safe identifiers or repo-relative slash paths; absolute local paths, traversal paths, control characters, raw diagnostics, and full content dumps are rejected or omitted. Evidence and next-action arrays are bounded to eight items.
 
 Example:
 
@@ -51,24 +52,23 @@ Example:
   "recoverable": true,
   "evidence": [
     {
-      "kind": "repo_relative_path",
-      "path": "apps/web/src/routes/index.tsx"
+      "kind": "path",
+      "ref": "apps/web/src/routes/index.tsx"
     },
     {
       "kind": "source_snapshot_id",
-      "id": "snapshot-2026-07-01-001"
+      "ref": "snapshot-2026-07-01-001"
     }
   ],
   "next_actions": [
-    {
-      "action": "refresh_source_snapshot",
-      "description": "Acquire a fresh bounded source snapshot for the registered repository."
-    }
+    "Acquire a fresh bounded source snapshot for the registered repository."
   ]
 }
 ```
 
 Required shared taxonomy codes: `unknown_resource`, `unknown_repository`, `alias_ambiguous`, `source_snapshot_stale`, `dirty_worktree`, `required_context_missing`, `required_context_truncated`, `blocked_path`, `redaction_failed`, `schema_mismatch`, `expected_hash_mismatch`, `tool_unavailable`, `tool_schema_stale`, `unsafe_request`.
+
+Successful run submission responses include normalized exact-artifact provenance without exposing MCP mount paths: `submitted_handoff_sha256`, optional `expected_sha256`, `sha_match_status` (`not_supplied`, `matched`, or `mismatched`), `source_mode` (`inline` or `file_parameter`), and `artifact_identity` containing `artifact_kind="planner_handoff"`, a sanitized `display_name`, and `byte_count`.
 
 ## Project-Orchestrator Work Tools (Context-Broker Profile)
 

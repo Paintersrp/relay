@@ -76,41 +76,60 @@ type createRunFromFileInput struct {
 
 // createRunOutput is the structured success payload for create_run_from_planner_handoff.
 type createRunOutput struct {
-	OK                     bool                     `json:"ok"`
-	Tool                   string                   `json:"tool"`
-	RunID                  int64                    `json:"run_id"`
-	Status                 string                   `json:"status"`
-	LifecycleState         string                   `json:"lifecycle_state"`
-	ReviewURL              string                   `json:"review_url"`
-	ArtifactKinds          []string                 `json:"artifact_kinds"`
-	ValidationSummary      intake.ValidationSummary `json:"validation_summary"`
-	PlanID                 string                   `json:"plan_id,omitempty"`
-	PassID                 string                   `json:"pass_id,omitempty"`
-	Provenance             intake.ProvenanceSummary `json:"provenance"`
-	SubmittedHandoffSHA256 string                   `json:"submitted_handoff_sha256,omitempty"`
-	ExpectedSHA256         string                   `json:"expected_sha256,omitempty"`
-	SHAMatch               bool                     `json:"sha_match,omitempty"`
-	SourceMode             string                   `json:"source_mode,omitempty"`
+	OK                     bool                       `json:"ok"`
+	Tool                   string                     `json:"tool"`
+	RunID                  int64                      `json:"run_id"`
+	Status                 string                     `json:"status"`
+	LifecycleState         string                     `json:"lifecycle_state"`
+	ReviewURL              string                     `json:"review_url"`
+	ArtifactKinds          []string                   `json:"artifact_kinds"`
+	ValidationSummary      intake.ValidationSummary   `json:"validation_summary"`
+	PlanID                 string                     `json:"plan_id,omitempty"`
+	PassID                 string                     `json:"pass_id,omitempty"`
+	Provenance             intake.ProvenanceSummary   `json:"provenance"`
+	SubmittedHandoffSHA256 string                     `json:"submitted_handoff_sha256,omitempty"`
+	ExpectedSHA256         string                     `json:"expected_sha256,omitempty"`
+	SHAMatch               bool                       `json:"sha_match,omitempty"`
+	SHAMatchStatus         string                     `json:"sha_match_status,omitempty"`
+	SourceMode             string                     `json:"source_mode,omitempty"`
+	ArtifactIdentity       *SubmittedArtifactIdentity `json:"artifact_identity,omitempty"`
 }
 
 // HandleCreateRunFromPlannerHandoff implements the create_run_from_planner_handoff MCP tool.
 func (s *Server) HandleCreateRunFromPlannerHandoff(rawArgs json.RawMessage) ToolCallResult {
 	if s.deps == nil || s.deps.Store == nil {
-		return toolErr("DEPENDENCY_ERROR: MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
+		return createRunBlocked("create_run_from_planner_handoff", MCPBlockerToolUnavailable, "DEPENDENCY_ERROR: MCP server is not connected to a Relay store.", false, nil, nil, nil)
 	}
 
 	var input createRunInput
 	if err := json.Unmarshal(rawArgs, &input); err != nil {
-		return toolErr(fmt.Sprintf("invalid arguments: %s", err))
+		return createRunBlocked("create_run_from_planner_handoff", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, []MCPBlockerEvidence{{Kind: "schema", Ref: "create_run_from_planner_handoff"}}, []string{"Retry with arguments matching the create_run_from_planner_handoff schema."}, nil)
 	}
 
 	if strings.TrimSpace(input.PlannerHandoffMarkdown) == "" {
-		return toolErr("VALIDATION_ERROR: planner_handoff_markdown is required and must not be empty")
+		return createRunBlocked("create_run_from_planner_handoff", MCPBlockerSchemaMismatch, "VALIDATION_ERROR: planner_handoff_markdown is required and must not be empty", false, []MCPBlockerEvidence{{Kind: "schema", Ref: "planner_handoff_markdown"}}, []string{"Provide reviewed Planner handoff markdown before submitting a run."}, nil)
 	}
 
 	source := input.Source
 	if source == "" {
 		source = "mcp_chat"
+	}
+	provenance := exactSubmissionProvenance([]byte(input.PlannerHandoffMarkdown), "", "inline", "inline-planner-handoff")
+	preflight, err := intake.ValidatePlannerHandoffForCompile(intake.HandoffPreflightInput{
+		Markdown:         input.PlannerHandoffMarkdown,
+		RepoTarget:       input.RepoTarget,
+		BranchContext:    input.BranchContext,
+		PlanID:           input.PlanID,
+		PassID:           input.PassID,
+		ContextPacketID:  input.ContextPacketID,
+		SourceSnapshotID: input.SourceSnapshotID,
+		SourceMode:       "inline",
+	})
+	if err != nil {
+		return createRunBlocked("create_run_from_planner_handoff", MCPBlockerToolUnavailable, "preflight dependency failed: "+err.Error(), true, []MCPBlockerEvidence{{Kind: "tool", Ref: "preflight"}}, []string{"Retry after preflight dependencies are available."}, map[string]any{"provenance": provenance})
+	}
+	if !preflight.OK {
+		return toolBlockedResult("create_run_from_planner_handoff", prefixedMCPBlockers("INTAKE_ERROR: ", mcpBlockersFromPreflight(preflight.Blockers)), map[string]any{"provenance": provenance, "preflight": preflight})
 	}
 
 	svc := intake.NewService(s.deps.Store)
@@ -120,6 +139,7 @@ func (s *Server) HandleCreateRunFromPlannerHandoff(rawArgs json.RawMessage) Tool
 		BranchContext:    input.BranchContext,
 		Name:             input.Name,
 		Source:           source,
+		SourceMode:       "inline",
 		ClientTraceID:    input.ClientTraceID,
 		PlanID:           input.PlanID,
 		PassID:           input.PassID,
@@ -135,17 +155,21 @@ func (s *Server) HandleCreateRunFromPlannerHandoff(rawArgs json.RawMessage) Tool
 	}
 
 	result := createRunOutput{
-		OK:                true,
-		Tool:              "create_run_from_planner_handoff",
-		RunID:             out.RunID,
-		Status:            out.Status,
-		LifecycleState:    out.LifecycleState,
-		ReviewURL:         out.ReviewURL,
-		ArtifactKinds:     out.ArtifactKinds,
-		ValidationSummary: out.ValidationSummary,
-		PlanID:            out.PlanID,
-		PassID:            out.PassID,
-		Provenance:        out.Provenance,
+		OK:                     true,
+		Tool:                   "create_run_from_planner_handoff",
+		RunID:                  out.RunID,
+		Status:                 out.Status,
+		LifecycleState:         out.LifecycleState,
+		ReviewURL:              out.ReviewURL,
+		ArtifactKinds:          out.ArtifactKinds,
+		ValidationSummary:      out.ValidationSummary,
+		PlanID:                 out.PlanID,
+		PassID:                 out.PassID,
+		Provenance:             out.Provenance,
+		SubmittedHandoffSHA256: provenance.SubmittedSHA256,
+		SHAMatchStatus:         provenance.SHAMatchStatus,
+		SourceMode:             provenance.SourceMode,
+		ArtifactIdentity:       &provenance.ArtifactIdentity,
 	}
 
 	text, err := marshalTool(result)
@@ -158,26 +182,43 @@ func (s *Server) HandleCreateRunFromPlannerHandoff(rawArgs json.RawMessage) Tool
 // HandleCreateRunFromPlannerHandoffFile implements create_run_from_planner_handoff_file.
 func (s *Server) HandleCreateRunFromPlannerHandoffFile(rawArgs json.RawMessage) ToolCallResult {
 	if s.deps == nil || s.deps.Store == nil {
-		return toolErr("DEPENDENCY_ERROR: MCP server is not connected to a Relay store; start with RELAY_DB_PATH set")
+		return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerToolUnavailable, "DEPENDENCY_ERROR: MCP server is not connected to a Relay store.", false, nil, nil, nil)
 	}
 
 	var input createRunFromFileInput
 	if err := json.Unmarshal(rawArgs, &input); err != nil {
-		return toolErr(fmt.Sprintf("invalid arguments: %s", err))
+		return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, []MCPBlockerEvidence{{Kind: "schema", Ref: "create_run_from_planner_handoff_file"}}, []string{"Retry with arguments matching the create_run_from_planner_handoff_file schema."}, nil)
 	}
 
 	markdownBytes, submittedSHA, err := readPlannerHandoffFile(input.PlannerHandoffFile)
 	if err != nil {
-		return toolErr(fmt.Sprintf("VALIDATION_ERROR: %s", err))
+		return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerBlockedPath, "VALIDATION_ERROR: "+err.Error(), false, []MCPBlockerEvidence{{Kind: "artifact", Ref: "planner_handoff"}}, []string{"Provide one readable reviewed .md handoff file through the MCP file parameter."}, nil)
 	}
 	expectedSHA := strings.TrimSpace(input.ExpectedSHA256)
+	provenance := exactSubmissionProvenance(markdownBytes, expectedSHA, "file_parameter", input.PlannerHandoffFile)
 	if expectedSHA != "" {
 		if err := validateExpectedSHA256(expectedSHA); err != nil {
-			return toolErr(fmt.Sprintf("VALIDATION_ERROR: %s", err))
+			return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerSchemaMismatch, err.Error(), false, []MCPBlockerEvidence{{Kind: "schema", Ref: "expected_sha256"}}, []string{"Use a 64-character lowercase hex SHA-256 value."}, map[string]any{"provenance": provenance})
 		}
 		if expectedSHA != submittedSHA {
-			return toolErr(fmt.Sprintf("VALIDATION_ERROR: expected_sha256 %q does not match submitted handoff sha256 %q", expectedSHA, submittedSHA))
+			return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerExpectedHashMismatch, "VALIDATION_ERROR: expected_sha256 does not match submitted handoff sha256", false, []MCPBlockerEvidence{{Kind: "hash", Ref: submittedSHA}, {Kind: "hash", Ref: expectedSHA}}, []string{"Review the supplied file and expected hash, then retry with matching bytes."}, map[string]any{"provenance": provenance})
 		}
+	}
+	preflight, err := intake.ValidatePlannerHandoffForCompile(intake.HandoffPreflightInput{
+		Markdown:         string(markdownBytes),
+		RepoTarget:       input.RepoTarget,
+		BranchContext:    input.BranchContext,
+		PlanID:           input.PlanID,
+		PassID:           input.PassID,
+		ContextPacketID:  input.ContextPacketID,
+		SourceSnapshotID: input.SourceSnapshotID,
+		SourceMode:       "file_parameter",
+	})
+	if err != nil {
+		return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerToolUnavailable, "preflight dependency failed: "+err.Error(), true, []MCPBlockerEvidence{{Kind: "tool", Ref: "preflight"}}, []string{"Retry after preflight dependencies are available."}, map[string]any{"provenance": provenance})
+	}
+	if !preflight.OK {
+		return toolBlockedResult("create_run_from_planner_handoff_file", prefixedMCPBlockers("INTAKE_ERROR: ", mcpBlockersFromPreflight(preflight.Blockers)), map[string]any{"provenance": provenance, "preflight": preflight})
 	}
 
 	source := input.Source
@@ -222,7 +263,9 @@ func (s *Server) HandleCreateRunFromPlannerHandoffFile(rawArgs json.RawMessage) 
 		SubmittedHandoffSHA256: submittedSHA,
 		ExpectedSHA256:         expectedSHA,
 		SHAMatch:               true,
+		SHAMatchStatus:         provenance.SHAMatchStatus,
 		SourceMode:             "file_parameter",
+		ArtifactIdentity:       &provenance.ArtifactIdentity,
 	}
 
 	text, err := marshalTool(result)
@@ -278,6 +321,37 @@ func validateExpectedSHA256(value string) error {
 		return fmt.Errorf("expected_sha256 must be lowercase hex")
 	}
 	return nil
+}
+
+func exactSubmissionProvenance(data []byte, expectedSHA, sourceMode, displayName string) ExactSubmissionProvenance {
+	sum := sha256.Sum256(data)
+	submittedSHA := hex.EncodeToString(sum[:])
+	status := "not_supplied"
+	if strings.TrimSpace(expectedSHA) != "" {
+		status = "mismatched"
+		if expectedSHA == submittedSHA {
+			status = "matched"
+		}
+	}
+	fallback := "inline-planner-handoff"
+	if sourceMode == "file_parameter" {
+		fallback = "planner-handoff.md"
+	}
+	return ExactSubmissionProvenance{
+		SubmittedSHA256: submittedSHA,
+		ExpectedSHA256:  strings.TrimSpace(expectedSHA),
+		SHAMatchStatus:  status,
+		SourceMode:      sourceMode,
+		ArtifactIdentity: SubmittedArtifactIdentity{
+			ArtifactKind: "planner_handoff",
+			DisplayName:  safeArtifactDisplayName(displayName, fallback),
+			ByteCount:    int64(len(data)),
+		},
+	}
+}
+
+func createRunBlocked(tool, code, message string, recoverable bool, evidence []MCPBlockerEvidence, actions []string, metadata any) ToolCallResult {
+	return toolBlockedResult(tool, []MCPBlocker{newMCPBlocker(code, message, recoverable, evidence, actions)}, metadata)
 }
 
 // createRunSchema is the JSON Schema for create_run_from_planner_handoff.
