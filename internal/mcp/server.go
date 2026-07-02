@@ -65,6 +65,7 @@ func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 		// Pass 16 real tools.
 		ToolCreateRunFromPlannerHandoff,
 		ToolCreateRunFromPlannerHandoffFile,
+		ToolValidatePlannerHandoffForCompile,
 		ToolSubmitPlannerPassPlan,
 		ToolListOpenRuns,
 		ToolGetRunStatus,
@@ -382,6 +383,8 @@ func (s *Server) handleToolsCall(req Request) Response {
 		result = s.HandleCreateRunFromPlannerHandoff(args)
 	case "create_run_from_planner_handoff_file":
 		result = s.HandleCreateRunFromPlannerHandoffFile(args)
+	case "validate_planner_handoff_for_compile":
+		result = s.HandleValidatePlannerHandoffForCompile(args)
 	case "submit_planner_pass_plan":
 		result = s.HandleSubmitPlannerPassPlan(args)
 	case "list_open_runs":

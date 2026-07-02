@@ -100,6 +100,32 @@ func (svc *Service) CreateRunFromHandoff(input CreateRunInput) (*CreateRunOutput
 		return nil, fmt.Errorf("planner_handoff_markdown is required and must not be empty")
 	}
 
+	preflightResult, preflightErr := ValidatePlannerHandoffForCompile(HandoffPreflightInput{
+		Markdown:         input.Markdown,
+		RepoTarget:       input.RepoTarget,
+		BranchContext:    input.BranchContext,
+		PlanID:           input.PlanID,
+		PassID:           input.PassID,
+		ContextPacketID:  input.ContextPacketID,
+		SourceSnapshotID: input.SourceSnapshotID,
+		SourceMode:       input.SourceMode,
+	})
+	if preflightErr != nil {
+		return nil, fmt.Errorf("preflight error: %w", preflightErr)
+	}
+	if !preflightResult.OK {
+		var messages []string
+		for _, issue := range preflightResult.Issues {
+			if issue.BlocksSubmission {
+				messages = append(messages, fmt.Sprintf("[%s] %s", issue.Code, issue.Message))
+			}
+		}
+		if len(messages) == 0 {
+			messages = append(messages, "preflight blocked with unknown issues")
+		}
+		return nil, fmt.Errorf("preflight blocked: %s", strings.Join(messages, "; "))
+	}
+
 	metadata := ExtractHandoffMetadata(input.Markdown)
 	warnings, blockers := ValidateHandoffText(input.Markdown)
 

@@ -287,6 +287,86 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 
 **Safety boundary:** This is a controlled run-submission ingestion path, not a context broker file-read tool. It does not browse paths, read repositories generically, execute shell commands, mutate git, or persist absolute local file paths as artifact identity.
 
+**Preflight gate:** Before creating any run or artifact, both inline and file-based run submission handlers perform a deterministic compile-aware preflight (`validate_planner_handoff_for_compile`). Blocking preflight failures return a tool error and prevent durable run/provenance writes. The standalone preflight tool is also available for validation-only use without creating runs (see section 2a below).
+
+---
+
+### 2a. `validate_planner_handoff_for_compile`
+
+**Purpose:** Validate a Planner handoff for compile readiness without creating a run, writing artifacts, or performing any durable workflow transition. This is a bounded deterministic preflight gate that checks handoff structure, compiler_input YAML, provenance, and managed plan/pass association consistency.
+
+**The LLM should call this tool when:**
+- The user asks to validate a handoff before committing to submission
+- The user wants to verify compile readiness deterministically
+- The reviewer needs structured issue diagnostics without altering run state
+
+**Input:**
+```json
+{
+  "planner_handoff_markdown": "string (one of markdown or file required) — full handoff markdown content",
+  "planner_handoff_file": "string (one of markdown or file required) — MCP file-parameter path to the reviewed .md handoff",
+  "expected_sha256": "string (optional) — lowercase hex SHA-256 of the exact file bytes (file mode only)",
+  "repo_target": "string (optional) — falls back to handoff metadata/frontmatter repo_target",
+  "branch_context": "string (optional) — falls back to handoff metadata/frontmatter branch_context or 'main'",
+  "plan_id": "string (optional) — Relay plan identifier for managed pass association checks",
+  "pass_id": "string (optional) — Relay pass identifier for managed pass association checks; requires plan_id",
+  "context_packet_id": "string (optional)",
+  "source_snapshot_id": "string (optional)"
+}
+```
+
+**Output (structuredContent):** `ok`, `status`, `is_compile_ready`, `issue_counts` (error/warning totals), `issues[]` (each with `code`, `severity`, `location`, `message`, `repair_guidance`, `blocks_submission`), `submitted_handoff_sha256`, `byte_count`, `source_mode`, `plan_id` (when supplied), `pass_id` (when supplied), `context_packet_id` (when supplied), `source_snapshot_id` (when supplied), `generated_at`
+
+**Example result (blocking):**
+```json
+{
+  "ok": false,
+  "status": "blocked",
+  "is_compile_ready": false,
+  "issue_counts": { "error": 2, "warning": 0 },
+  "issues": [
+    {
+      "code": "compiler_input_missing",
+      "severity": "error",
+      "location": { "section": "compiler_input" },
+      "message": "Required section is missing: compiler_input.",
+      "repair_guidance": "Add a <compiler_input> section with a fenced YAML block.",
+      "blocks_submission": true
+    },
+    {
+      "code": "frontmatter_missing",
+      "severity": "error",
+      "location": { "section": "frontmatter" },
+      "message": "Handoff is missing a valid frontmatter block.",
+      "repair_guidance": "Add a YAML-style frontmatter block delimited by ---.",
+      "blocks_submission": true
+    }
+  ],
+  "submitted_handoff_sha256": "abc123...",
+  "byte_count": 2048,
+  "generated_at": "2026-07-01T00:00:00Z"
+}
+```
+
+**Preflight error codes:**
+
+| Code | Severity | Blocks |
+|------|----------|--------|
+| `handoff_empty` | error | yes |
+| `frontmatter_missing` | error | yes |
+| `repository_target_missing` | error | yes |
+| `branch_context_missing` | error | yes |
+| `semantic_section_missing` | warning | no |
+| `compiler_input_missing` | error | yes |
+| `compiler_input_yaml_invalid` | error | yes |
+| `compiler_input_required_field_missing` | error | yes |
+| `compiler_input_list_empty` | error | yes |
+| `managed_pass_mismatch` | error | yes |
+
+**Safety boundary:** This tool does not create runs, submit plans, dispatch executors, compile packets, mutate git, or browse arbitrary paths. It is a read-only validation gate. The text content block contains a short summary only; full issue payloads are in `structuredContent`.
+
+**Relationship to run submission:** Run submission tools (`create_run_from_planner_handoff`, `create_run_from_planner_handoff_file`) perform the same preflight checks internally before creating any run. Blocking preflight failures prevent run/provenance/artifact writes. Preflight success is not a submission trigger — run submission still requires a reviewed Planner handoff and explicit user confirmation.
+
 ---
 
 ### 3. `create_run_from_planner_handoff`

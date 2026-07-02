@@ -391,7 +391,7 @@ func TestHandleGetPassContextBlocksWhenContextPacketMissing(t *testing.T) {
 func TestHandleCreateRunFromPlannerHandoffValidatesExplicitSourceContext(t *testing.T) {
 	fixture := setupBrokerFixture(t)
 	packetID := createContextPacketViaTool(t, fixture, "run-provenance")
-	markdown := "---\ntitle: Source Context Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Source Context Run\n\nGrounded handoff."
+	markdown := "---\ntitle: Source Context Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Source Context Run\n\nGrounded handoff."
 
 	validArgs, _ := json.Marshal(map[string]string{
 		"planner_handoff_markdown": markdown,

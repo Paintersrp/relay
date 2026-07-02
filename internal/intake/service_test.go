@@ -143,6 +143,60 @@ func seedIntakeSourceSnapshot(t *testing.T, st *store.Store, plan *store.Plan, s
 	}
 }
 
+func validServiceTestMarkdown(title string) string {
+	return `---
+title: ` + title + `
+repo: relay
+branch: main
+---
+
+<decision_log>
+- D1: Test decision for service test.
+</decision_log>
+
+<constraints>
+- C1: Test constraint for service test.
+</constraints>
+
+<compiler_input>
+` + "```" + `yaml
+compiler_input:
+  goal: "Test service-level behavior."
+  scope: "Deterministic service testing only."
+  file_targets:
+    - path: "internal/intake/service.go"
+      role: primary
+      action: must_edit
+      reason: "Service implementation."
+  implementation_steps:
+    - id: S1
+      title: "Run service tests"
+      action: modify
+      target_paths:
+        - "internal/intake/service_test.go"
+      instructions: "Run the tests."
+      acceptance_criteria:
+        - "Tests pass."
+  code_requirements:
+    - id: CR1
+      requirement: "Service must handle provenance gating."
+      applies_to:
+        - "internal/intake/service.go"
+  validation_contract:
+    mode: commands
+    failure_policy: block
+    commands:
+      - command: "go test ./internal/intake -count=1"
+        required: true
+  completion_contract:
+    done_when:
+      - "Tests pass."
+    blocked_when:
+      - "Tests fail."
+` + "```" + `
+</compiler_input>`
+}
+
 // TestCreateRunFromHandoff_MissingManagedPassSourceContextBlocks verifies the shared
 // intake service blocks a managed pass-associated run lacking source/context provenance.
 func TestCreateRunFromHandoff_MissingManagedPassSourceContextBlocks(t *testing.T) {
@@ -151,7 +205,7 @@ func TestCreateRunFromHandoff_MissingManagedPassSourceContextBlocks(t *testing.T
 
 	svc := NewService(st)
 	_, err := svc.CreateRunFromHandoff(CreateRunInput{
-		Markdown:   "# Managed Pass Run\n\nNo provenance supplied.\n",
+		Markdown:   validServiceTestMarkdown("Managed Pass Run Missing Provenance"),
 		RepoTarget: "relay",
 		PlanID:     plan.PlanID,
 		PassID:     "PASS-001",
@@ -191,7 +245,7 @@ func TestCreateRunFromHandoff_ManagedPassWithValidSourceSnapshotCreatesRun(t *te
 
 	svc := NewService(st)
 	out, err := svc.CreateRunFromHandoff(CreateRunInput{
-		Markdown:         "# Managed Pass Run\n\nValid provenance supplied.\n",
+		Markdown:         validServiceTestMarkdown("Managed Pass Run Valid"),
 		RepoTarget:       "relay",
 		PlanID:           plan.PlanID,
 		PassID:           "PASS-001",
@@ -219,7 +273,7 @@ func TestCreateRunFromHandoff_StandaloneWithoutSourceContextStillAllowed(t *test
 
 	svc := NewService(st)
 	out, err := svc.CreateRunFromHandoff(CreateRunInput{
-		Markdown:   "# Standalone Run\n\nNo association, no provenance.\n",
+		Markdown:   validServiceTestMarkdown("Standalone Run"),
 		RepoTarget: "relay",
 	})
 	if err != nil {
@@ -241,7 +295,7 @@ func TestCreateRunFromHandoff_PlanOnlyWithoutSourceContextStillAllowed(t *testin
 
 	svc := NewService(st)
 	out, err := svc.CreateRunFromHandoff(CreateRunInput{
-		Markdown:   "# Plan-only Run\n\nPlan association without pass.\n",
+		Markdown:   validServiceTestMarkdown("Plan-only Run"),
 		RepoTarget: "relay",
 		PlanID:     plan.PlanID,
 	})

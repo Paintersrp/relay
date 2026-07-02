@@ -549,7 +549,7 @@ func TestHandleCreateRunFromPlannerHandoff_Success(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	markdown := fmt.Sprintf("---\ntitle: Test Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Test Run\n\nHandoff content for testing.")
+	markdown := fmt.Sprintf("---\ntitle: Test Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Test Run\n\nHandoff content for testing.")
 	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
 		"repo_target":              "test-repo",
@@ -683,7 +683,7 @@ func TestHandleCreateRunFromPlannerHandoffFile_SHAMismatchCreatesNoRun(t *testin
 	srv := NewServer(discardLogger(), deps)
 
 	handoffPath := filepath.Join(t.TempDir(), "reviewed-handoff.md")
-	if err := os.WriteFile(handoffPath, []byte("---\ntitle: File Run\nrepo_target: test-repo\n---\n\n# File Run\n"), 0644); err != nil {
+	if err := os.WriteFile(handoffPath, []byte("---\ntitle: File Run\nrepo_target: test-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# File Run\n"), 0644); err != nil {
 		t.Fatalf("write handoff fixture: %v", err)
 	}
 
@@ -792,7 +792,7 @@ func TestHandleCreateRunFromPlannerHandoff_PlanOnlyAssociation(t *testing.T) {
 	}
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_markdown": "---\ntitle: Planned Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Planned Run\n\nContent.",
+		"planner_handoff_markdown": "---\ntitle: Planned Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Planned Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
 	})
@@ -844,7 +844,7 @@ func TestHandleCreateRunFromPlannerHandoff_PlanPassAssociation(t *testing.T) {
 	seedMCPSourceSnapshot(t, deps.Store, "plan-123", "snapshot-mcp-plan-pass")
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_markdown": "---\ntitle: Pass Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Pass Run\n\nContent.",
+		"planner_handoff_markdown": "---\ntitle: Pass Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Pass Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
 		"pass_id":                  "PASS-002",
@@ -891,7 +891,7 @@ func TestHandleCreateRunFromPlannerHandoff_PassWithoutPlanRejected(t *testing.T)
 	srv := NewServer(discardLogger(), deps)
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_markdown": "---\ntitle: Invalid Run\nrepo_target: test-repo\n---\n\n# Invalid Run\n\nContent.",
+		"planner_handoff_markdown": "---\ntitle: Invalid Run\nrepo_target: test-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Invalid Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"pass_id":                  "PASS-001",
 	})
@@ -912,7 +912,7 @@ func TestHandleCreateRunFromPlannerHandoff_UnknownPlanRejected(t *testing.T) {
 	srv := NewServer(discardLogger(), deps)
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_markdown": "---\ntitle: Missing Plan Run\nrepo_target: test-repo\n---\n\n# Missing Plan Run\n\nContent.",
+		"planner_handoff_markdown": "---\ntitle: Missing Plan Run\nrepo_target: test-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Missing Plan Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-missing",
 	})
@@ -942,7 +942,7 @@ func TestHandleCreateRunFromPlannerHandoff_UnknownPassRejected(t *testing.T) {
 	}
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_markdown": "---\ntitle: Missing Pass Run\nrepo_target: test-repo\n---\n\n# Missing Pass Run\n\nContent.",
+		"planner_handoff_markdown": "---\ntitle: Missing Pass Run\nrepo_target: test-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Missing Pass Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
 		"pass_id":                  "PASS-999",
@@ -987,7 +987,7 @@ func TestHandleCreateRunFromPlannerHandoff_PassNotOpenRejected(t *testing.T) {
 			}
 
 			args, _ := json.Marshal(map[string]any{
-				"planner_handoff_markdown": "---\ntitle: Closed Pass Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Closed Pass Run\n\nContent.",
+				"planner_handoff_markdown": "---\ntitle: Closed Pass Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Closed Pass Run\n\nContent.",
 				"repo_target":              "test-repo",
 				"plan_id":                  "plan-123",
 				"pass_id":                  "PASS-001",
@@ -1070,7 +1070,7 @@ func TestHandleCreateRunFromPlannerHandoff_PlanRepoConflictRejected(t *testing.T
 	}
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_markdown": "---\ntitle: Repo Conflict Run\nrepo_target: other-repo\nbranch_context: main\n---\n\n# Repo Conflict Run\n\nContent.",
+		"planner_handoff_markdown": "---\ntitle: Repo Conflict Run\nrepo_target: other-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Repo Conflict Run\n\nContent.",
 		"repo_target":              "other-repo",
 		"plan_id":                  "plan-123",
 	})
@@ -1210,7 +1210,7 @@ func TestHandleCreateRunFromPlannerHandoff_ArtifactFailureRollsBackPassTransitio
 	t.Cleanup(func() { artifacts.SetBaseDir("data/artifacts") })
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_markdown": "---\ntitle: Rollback Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# Rollback Run\n\nContent.",
+		"planner_handoff_markdown": "---\ntitle: Rollback Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Rollback Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
 		"pass_id":                  "PASS-001",
@@ -1497,7 +1497,7 @@ func TestHandleSubmitAuditPacket_FullFlow(t *testing.T) {
 	srv := NewServer(discardLogger(), deps)
 
 	// First create a run via create_run tool.
-	markdown := "---\ntitle: Audit Test Run\nrepo_target: audit-test-repo\n---\n\n# Audit Test Run\n\nContent."
+	markdown := "---\ntitle: Audit Test Run\nrepo_target: audit-test-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Audit Test Run\n\nContent."
 	createArgs, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
 		"repo_target":              "audit-test-repo",
@@ -1560,7 +1560,7 @@ func TestHandleSubmitAuditPacket_AssociatedPassLifecycle(t *testing.T) {
 	seedMCPSourceSnapshot(t, deps.Store, "plan-123", "snapshot-mcp-audit-lifecycle")
 
 	createArgs, _ := json.Marshal(map[string]any{
-		"planner_handoff_markdown": "---\ntitle: MCP Associated Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n# MCP Associated Run\n\nContent.",
+		"planner_handoff_markdown": "---\ntitle: MCP Associated Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# MCP Associated Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
 		"pass_id":                  "PASS-001",
@@ -1616,7 +1616,7 @@ func TestHandleSubmitAuditPacket_TerminalRunRejected(t *testing.T) {
 	srv := NewServer(discardLogger(), deps)
 
 	// Create a run.
-	markdown := "---\ntitle: Terminal Test\nrepo_target: term-repo\n---\n\n# Terminal Test\n\nContent."
+	markdown := "---\ntitle: Terminal Test\nrepo_target: term-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Terminal Test\n\nContent."
 	createArgs, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
 		"repo_target":              "term-repo",

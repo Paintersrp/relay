@@ -217,7 +217,7 @@ func TestHTTPHandler_Protocol(t *testing.T) {
 
 	t.Run("CreateRunAndStatusFlow", func(t *testing.T) {
 		// 1. Create run.
-		markdown := "---\ntitle: HTTP Test Run\nrepo_target: http-repo\n---\n\n# HTTP Test Run\n\nContent for HTTP test."
+		markdown := "---\ntitle: HTTP Test Run\nrepo_target: http-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# HTTP Test Run\n\nContent for HTTP test."
 		args, _ := json.Marshal(map[string]string{
 			"planner_handoff_markdown": markdown,
 			"repo_target":              "http-repo",
