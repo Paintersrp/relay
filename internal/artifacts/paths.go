@@ -93,6 +93,16 @@ func SetBaseDir(dir string) {
 	BaseDir = dir
 }
 
+func IsAllowedKind(kind string) bool {
+	return allowedKinds[kind]
+}
+
+func RunDirContains(runID int64, p string) bool {
+	cleanDir := filepath.Clean(Dir(runID))
+	cleanPath := filepath.Clean(p)
+	return cleanPath == cleanDir || strings.HasPrefix(cleanPath, cleanDir+string(filepath.Separator))
+}
+
 func Dir(runID int64) string {
 	return filepath.Join(BaseDir, fmt.Sprintf("%d", runID))
 }

@@ -896,6 +896,7 @@ func contextBrokerToolDefinitions() []ToolDefinition {
 		ToolGetProjectContextRecord,
 		ToolCreateProjectContextRecord,
 		ToolSupersedeProjectContextRecord,
+		ToolGetRunArtifact,
 	}
 }
 

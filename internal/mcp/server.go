@@ -508,6 +508,8 @@ func (s *Server) handleToolsCall(req Request) Response {
 		result = s.HandlePromoteRefactorCandidateToPlan(args)
 	case "generate_refactor_only_plan":
 		result = s.HandleGenerateRefactorOnlyPlan(args)
+	case "get_run_artifact":
+		result = s.HandleGetRunArtifact(args)
 	default:
 		return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 	}

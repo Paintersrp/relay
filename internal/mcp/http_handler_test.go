@@ -455,6 +455,7 @@ func TestHTTPHandlerToolsListUsesServerToolSurface(t *testing.T) {
 			"get_project_context_record",
 			"create_project_context_record",
 			"supersede_project_context_record",
+			"get_run_artifact",
 			"list_refactor_discovery_tasks",
 			"get_refactor_discovery_task",
 			"create_refactor_discovery_task",

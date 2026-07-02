@@ -104,3 +104,58 @@ func TestCloseoutPathRejectsUnknownKind(t *testing.T) {
 		t.Fatal("expected unknown closeout artifact kind to be rejected")
 	}
 }
+
+func TestIsAllowedKindKnown(t *testing.T) {
+	for _, kind := range []string{"canonical_packet", "validation_run_json", "planner_handoff", "executor_result"} {
+		if !IsAllowedKind(kind) {
+			t.Fatalf("IsAllowedKind(%q) = false, want true", kind)
+		}
+	}
+}
+
+func TestIsAllowedKindUnknown(t *testing.T) {
+	if IsAllowedKind("nonexistent_kind_xyz") {
+		t.Fatal("IsAllowedKind for unknown kind should return false")
+	}
+	if IsAllowedKind("") {
+		t.Fatal("IsAllowedKind for empty string should return false")
+	}
+}
+
+func TestRunDirContainsValid(t *testing.T) {
+	orig := BaseDir
+	t.Cleanup(func() { SetBaseDir(orig) })
+	SetBaseDir(t.TempDir())
+
+	dir := Dir(42)
+	subPath := filepath.Join(dir, "sub", "file.txt")
+	if !RunDirContains(42, dir) {
+		t.Fatal("RunDirContains should accept the run dir itself")
+	}
+	if !RunDirContains(42, subPath) {
+		t.Fatalf("RunDirContains should accept a subpath under the run dir: %q", subPath)
+	}
+}
+
+func TestRunDirContainsRejectsEscape(t *testing.T) {
+	orig := BaseDir
+	t.Cleanup(func() { SetBaseDir(orig) })
+	SetBaseDir(t.TempDir())
+
+	dir := Dir(42)
+	escaped := filepath.Join(dir, "..", "other")
+	if RunDirContains(42, escaped) {
+		t.Fatal("RunDirContains should reject path escaping run dir")
+	}
+}
+
+func TestRunDirContainsDifferentRun(t *testing.T) {
+	orig := BaseDir
+	t.Cleanup(func() { SetBaseDir(orig) })
+	SetBaseDir(t.TempDir())
+
+	dir2 := Dir(2)
+	if RunDirContains(1, dir2) {
+		t.Fatal("RunDirContains should not accept a different run's directory")
+	}
+}

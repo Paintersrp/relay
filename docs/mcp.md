@@ -548,6 +548,61 @@ Stores a new project context memory record.
 
 Archives or supersedes an existing project context memory record.
 
+### `get_run_artifact`
+
+**Availability:** Local-operator (context-broker) profile only. Hidden under `restricted`.
+
+**Purpose:** Bounded, safe readback of registered run artifacts by `run_id` and `artifact_kind`. Allows Planner and Auditor workflows to inspect validation reports, compiler outputs, canonical packets, executor summaries, and related diagnostics without arbitrary filesystem access or unbounded dumps.
+
+**Safety boundaries:**
+- Only reads artifacts registered in the Relay artifacts table with a matching `(run_id, artifact_kind)`.
+- Does not accept arbitrary file paths, filenames, URLs, shell commands, globs, or filesystem handles.
+- All content is bounded and sensitivity-filtered before return.
+- Never returns local absolute paths or raw filesystem references.
+- Large logs are never dumped by default.
+- Not a replacement for downstream review gates, GitHub/CI readback, or shell execution.
+
+**Inputs** (`additionalProperties: false`):
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `run_id` | string | yes | Numeric Relay run identifier (positive base-10 int64). |
+| `artifact_kind` | string | yes | Registered artifact kind. Must be an eligible readback kind. |
+| `view_mode` | string | yes | One of `metadata_only`, `summary`, `errors`, `bounded_excerpt`. |
+| `max_bytes` | integer | no | Maximum bytes for content modes. Default 12000, hard cap 65536 (clamped). |
+| `include_content_hash` | boolean | no | Include SHA-256 of full readback content. Default true for content modes. |
+
+**View modes:**
+
+| Mode | Behavior |
+|------|----------|
+| `metadata_only` | Returns artifact identity (kind, MIME, size, created_at, hash status) without content. |
+| `bounded_excerpt` | Returns at most `max_bytes` of redacted content with truncation metadata. Rejects binary artifacts. |
+| `summary` | For JSON: top-level key metadata and counts. For text/markdown: bounded heading/first-line summary. Never returns full payloads. |
+| `errors` | For JSON: recursively extracts keys/values matching error/failure/blocker/warning patterns. For text: bounded lines matching error patterns. Returns `status: no_errors_found` when clean. |
+
+**Blocker codes:**
+
+- `unsafe_request` — Invalid or unsafe arguments.
+- `unknown_run` — Run not found.
+- `artifact_kind_not_allowed` — Kind not in the readback eligibility allowlist.
+- `artifact_not_found` — No artifact of the requested kind for the run.
+- `unsafe_artifact_path` — Stored artifact path outside the run artifact directory.
+- `artifact_oversized` — Artifact exceeds configured size limits.
+- `artifact_binary_or_unsupported` — Binary or non-UTF-8 content blocked for content modes.
+- `artifact_read_failed` — Filesystem read error.
+- `artifact_redaction_blocked` — Content contains high-risk sensitive material that cannot be safely redacted.
+
+**Response fields:**
+- `ok`, `tool`, `run_id`, `artifact_kind`, `view_mode`
+- `artifact` — Metadata object (artifact_id, kind, mime_type, size_bytes, created_at, content_hash, content_hash_status, artifact_ref). Never includes local absolute paths.
+- `content` — Omitted for metadata_only; bounded/redacted content otherwise.
+- `redaction_status` — One of `not_required`, `redacted`, `blocked`.
+- `truncated`, `returned_bytes`, `max_bytes`, `blockers`.
+
+**Eligible readback kinds:**
+Validation reports (`validation_run_json`, `packet_validation_report`, `brief_validation_report`, etc.), compiler outputs (`canonical_packet`, `executor_brief`), executor diagnostics (`executor_result`, `executor_stdout`, `executor_stderr`, `command_log`), audit packets, git evidence, planner handoffs, parsed frontmatter, context packets, and related diagnostics. Not all write-allowed artifact kinds are readback-eligible.
+
 ---
 
 ## Make Targets
@@ -564,7 +619,7 @@ Archives or supersedes an existing project context memory record.
 ## Safety Boundaries
 
 - **No shell execution.** No `exec`, `shell`, or `command` tools are exposed.
-- **No arbitrary file read/write.** All artifact writes go through `relay/internal/artifacts` conventions which enforce path containment and allowed kind lists.
+- **No arbitrary file read/write.** All artifact writes go through `relay/internal/artifacts` conventions which enforce path containment and allowed kind lists. `get_run_artifact` reads only artifacts registered by `(run_id, artifact_kind)` with strict path validation and does not accept caller-supplied filesystem paths or URLs.
 - **No git mutation.** No commit, push, stage, merge, branch, checkout, reset, or worktree operations.
 - **No run closure.** `submit_audit_packet` applies a status transition and writes artifacts but does not close or complete runs.
 - **No run/executor/git side effects from plan submission.** `submit_planner_pass_plan` creates plan/pass records only and does not create runs, dispatch executors, mutate git, or read chat context.
