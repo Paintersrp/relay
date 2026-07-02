@@ -73,6 +73,10 @@ func seedMCPSourceSnapshot(t *testing.T, s *store.Store, planID, snapshotID stri
 	}
 }
 
+func validMCPHandoffMarkdown(title, repo string) string {
+	return fmt.Sprintf("---\ntitle: %s\nrepo_target: %s\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# %s\n\nContent.", title, repo, title)
+}
+
 // --- submit_test_audit_packet tests (Pass 13A, preserved) ---
 
 // TestHandleSubmitTestAuditPacket_DocumentedPayload verifies that the standard
@@ -595,7 +599,7 @@ func TestHandleCreateRunFromPlannerHandoffFile_SuccessExactSHA(t *testing.T) {
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	markdownBytes := []byte("---\ntitle: File Run\nrepo_target: test-repo\nbranch_context: main\n---\r\n\r\n# File Run\r\n\r\nExact bytes.\r\n")
+	markdownBytes := []byte("---\ntitle: File Run\nrepo_target: test-repo\nbranch_context: main\n---\r\n\r\n<compiler_input>\r\n```yaml\r\ncompiler_input:\r\n  goal: Test.\r\n  scope: Test.\r\n  file_targets:\r\n    - path: test.go\r\n  implementation_steps:\r\n    - id: S1\r\n      title: Step\r\n      action: modify\r\n      instructions: Run.\r\n  code_requirements:\r\n    - id: CR1\r\n      requirement: Test.\r\n  validation_contract:\r\n    mode: commands\r\n    failure_policy: block\r\n  completion_contract:\r\n    done_when:\r\n      - Done.\r\n```\r\n</compiler_input>\r\n\r\n# File Run\r\n\r\nExact bytes.\r\n")
 	handoffPath := filepath.Join(t.TempDir(), "reviewed-handoff.md")
 	if err := os.WriteFile(handoffPath, markdownBytes, 0644); err != nil {
 		t.Fatalf("write handoff fixture: %v", err)
@@ -683,7 +687,7 @@ func TestHandleCreateRunFromPlannerHandoffFile_SHAMismatchCreatesNoRun(t *testin
 	srv := NewServer(discardLogger(), deps)
 
 	handoffPath := filepath.Join(t.TempDir(), "reviewed-handoff.md")
-	if err := os.WriteFile(handoffPath, []byte("---\ntitle: File Run\nrepo_target: test-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# File Run\n"), 0644); err != nil {
+	if err := os.WriteFile(handoffPath, []byte("---\ntitle: File Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# File Run\n"), 0644); err != nil {
 		t.Fatalf("write handoff fixture: %v", err)
 	}
 
@@ -704,6 +708,161 @@ func TestHandleCreateRunFromPlannerHandoffFile_SHAMismatchCreatesNoRun(t *testin
 	}
 	if got := countTableRows(t, deps.Store.DB(), "run_submission_provenance"); got != 0 {
 		t.Fatalf("expected no provenance rows, got %d", got)
+	}
+}
+
+func TestHandleCreateRunFromPlannerHandoffFile_PassWithoutPlanRejectedBeforeWrites(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	handoffPath := filepath.Join(t.TempDir(), "reviewed-handoff.md")
+	if err := os.WriteFile(handoffPath, []byte(validMCPHandoffMarkdown("File Pass Without Plan", "test-repo")), 0644); err != nil {
+		t.Fatalf("write handoff fixture: %v", err)
+	}
+
+	args, _ := json.Marshal(map[string]any{
+		"planner_handoff_file": handoffPath,
+		"repo_target":          "test-repo",
+		"pass_id":              "PASS-001",
+	})
+	result := srv.HandleCreateRunFromPlannerHandoffFile(args)
+	if !result.IsError {
+		t.Fatal("expected validation error for pass without plan")
+	}
+	if !contains(result.Content[0].Text, "managed_plan_missing") {
+		t.Fatalf("expected managed_plan_missing, got: %s", result.Content[0].Text)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+		t.Fatalf("expected no run rows, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "artifacts"); got != 0 {
+		t.Fatalf("expected no artifact rows, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "run_submission_provenance"); got != 0 {
+		t.Fatalf("expected no provenance rows, got %d", got)
+	}
+}
+
+func TestHandleValidatePlannerHandoffForCompile_StrictInputAndSources(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+	markdown := validMCPHandoffMarkdown("Standalone Validation", "test-repo")
+
+	cases := []struct {
+		name     string
+		args     map[string]any
+		wantErr  bool
+		wantText string
+	}{
+		{name: "unknown field rejected", args: map[string]any{"planner_handoff_markdown": markdown, "repo_target": "test-repo", "surprise": true}, wantErr: true, wantText: "unknown field"},
+		{name: "both source fields rejected", args: map[string]any{"planner_handoff_markdown": markdown, "planner_handoff_file": "handoff.md", "repo_target": "test-repo"}, wantErr: true, wantText: "exactly one"},
+		{name: "neither source field rejected", args: map[string]any{"repo_target": "test-repo"}, wantErr: true, wantText: "exactly one"},
+		{name: "inline expected sha rejected", args: map[string]any{"planner_handoff_markdown": markdown, "repo_target": "test-repo", "expected_sha256": strings.Repeat("0", 64)}, wantErr: true, wantText: "expected_sha256"},
+		{name: "valid inline accepted", args: map[string]any{"planner_handoff_markdown": markdown, "repo_target": "test-repo"}, wantErr: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, _ := json.Marshal(tc.args)
+			result := srv.HandleValidatePlannerHandoffForCompile(raw)
+			if tc.wantErr {
+				if !result.IsError {
+					t.Fatal("expected tool error")
+				}
+				if !contains(result.Content[0].Text, tc.wantText) {
+					t.Fatalf("expected error containing %q, got: %s", tc.wantText, result.Content[0].Text)
+				}
+				return
+			}
+			if result.IsError {
+				t.Fatalf("expected success, got: %s", result.Content[0].Text)
+			}
+			if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+				t.Fatalf("standalone validation must not create runs, got %d", got)
+			}
+			rawResult := string(mustMarshal(t, result.StructuredContent))
+			if contains(rawResult, markdown) {
+				t.Fatal("standalone validation result must not include full handoff markdown")
+			}
+		})
+	}
+}
+
+func TestHandleValidatePlannerHandoffForCompile_FileMode(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	markdownBytes := []byte(validMCPHandoffMarkdown("Standalone File Validation", "test-repo"))
+	handoffPath := filepath.Join(t.TempDir(), "reviewed-handoff.md")
+	if err := os.WriteFile(handoffPath, markdownBytes, 0644); err != nil {
+		t.Fatalf("write handoff fixture: %v", err)
+	}
+	sum := sha256.Sum256(markdownBytes)
+	expectedSHA := hex.EncodeToString(sum[:])
+
+	args, _ := json.Marshal(map[string]any{
+		"planner_handoff_file": handoffPath,
+		"expected_sha256":      expectedSHA,
+		"repo_target":          "test-repo",
+	})
+	result := srv.HandleValidatePlannerHandoffForCompile(args)
+	if result.IsError {
+		t.Fatalf("expected valid file request, got: %s", result.Content[0].Text)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+		t.Fatalf("standalone validation must not create runs, got %d", got)
+	}
+	rawResult := string(mustMarshal(t, result.StructuredContent))
+	if contains(rawResult, handoffPath) {
+		t.Fatalf("standalone validation result must not expose file path: %s", rawResult)
+	}
+
+	badFormatArgs, _ := json.Marshal(map[string]any{
+		"planner_handoff_file": handoffPath,
+		"expected_sha256":      "ABC",
+		"repo_target":          "test-repo",
+	})
+	badFormat := srv.HandleValidatePlannerHandoffForCompile(badFormatArgs)
+	if !badFormat.IsError || !contains(badFormat.Content[0].Text, "expected_sha256") {
+		t.Fatalf("expected malformed expected_sha256 rejection, got: %+v", badFormat)
+	}
+
+	mismatchArgs, _ := json.Marshal(map[string]any{
+		"planner_handoff_file": handoffPath,
+		"expected_sha256":      strings.Repeat("0", 64),
+		"repo_target":          "test-repo",
+	})
+	mismatch := srv.HandleValidatePlannerHandoffForCompile(mismatchArgs)
+	if !mismatch.IsError || !contains(mismatch.Content[0].Text, "expected_sha256") {
+		t.Fatalf("expected expected_sha256 mismatch rejection, got: %+v", mismatch)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+		t.Fatalf("standalone validation failures must not create runs, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "run_submission_provenance"); got != 0 {
+		t.Fatalf("standalone validation failures must not create provenance, got %d", got)
+	}
+}
+
+func TestHandleValidatePlannerHandoffForCompile_PassWithoutPlanBlocks(t *testing.T) {
+	deps := setupTestDeps(t)
+	srv := NewServer(discardLogger(), deps)
+
+	args, _ := json.Marshal(map[string]any{
+		"planner_handoff_markdown": validMCPHandoffMarkdown("Standalone Pass Without Plan", "test-repo"),
+		"repo_target":              "test-repo",
+		"pass_id":                  "PASS-007",
+	})
+	result := srv.HandleValidatePlannerHandoffForCompile(args)
+	if result.IsError {
+		t.Fatalf("expected structured preflight result, got tool error: %s", result.Content[0].Text)
+	}
+	rawResult := string(mustMarshal(t, result.StructuredContent))
+	if !contains(rawResult, `"ok":false`) || !contains(rawResult, "managed_plan_missing") {
+		t.Fatalf("expected managed_plan_missing structured blocker, got: %s", rawResult)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
+		t.Fatalf("standalone validation must not create runs, got %d", got)
 	}
 }
 
@@ -891,7 +1050,7 @@ func TestHandleCreateRunFromPlannerHandoff_PassWithoutPlanRejected(t *testing.T)
 	srv := NewServer(discardLogger(), deps)
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_markdown": "---\ntitle: Invalid Run\nrepo_target: test-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Invalid Run\n\nContent.",
+		"planner_handoff_markdown": "---\ntitle: Invalid Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Invalid Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"pass_id":                  "PASS-001",
 	})
@@ -899,11 +1058,17 @@ func TestHandleCreateRunFromPlannerHandoff_PassWithoutPlanRejected(t *testing.T)
 	if !result.IsError {
 		t.Fatal("expected validation error for pass without plan")
 	}
-	if !contains(result.Content[0].Text, "VALIDATION_ERROR") {
-		t.Fatalf("expected VALIDATION_ERROR, got: %s", result.Content[0].Text)
+	if !contains(result.Content[0].Text, "managed_plan_missing") {
+		t.Fatalf("expected managed_plan_missing, got: %s", result.Content[0].Text)
 	}
 	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 		t.Fatalf("expected no run rows, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "artifacts"); got != 0 {
+		t.Fatalf("expected no artifact rows, got %d", got)
+	}
+	if got := countTableRows(t, deps.Store.DB(), "run_submission_provenance"); got != 0 {
+		t.Fatalf("expected no provenance rows, got %d", got)
 	}
 }
 
@@ -912,7 +1077,7 @@ func TestHandleCreateRunFromPlannerHandoff_UnknownPlanRejected(t *testing.T) {
 	srv := NewServer(discardLogger(), deps)
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_markdown": "---\ntitle: Missing Plan Run\nrepo_target: test-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Missing Plan Run\n\nContent.",
+		"planner_handoff_markdown": "---\ntitle: Missing Plan Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Missing Plan Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-missing",
 	})
@@ -942,7 +1107,7 @@ func TestHandleCreateRunFromPlannerHandoff_UnknownPassRejected(t *testing.T) {
 	}
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_markdown": "---\ntitle: Missing Pass Run\nrepo_target: test-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Missing Pass Run\n\nContent.",
+		"planner_handoff_markdown": "---\ntitle: Missing Pass Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Missing Pass Run\n\nContent.",
 		"repo_target":              "test-repo",
 		"plan_id":                  "plan-123",
 		"pass_id":                  "PASS-999",
@@ -1030,15 +1195,7 @@ func TestHandleCreateRunFromPlannerHandoff_ManagedPassMismatchRejected(t *testin
 		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
 	}
 
-	markdown := "# Planner Handoff: Mismatch\n\n" +
-		"## Artifact Metadata\n\n" +
-		"```yaml\n" +
-		"repo_target: test-repo\n" +
-		"branch_context: main\n" +
-		"managed_plan_pass: PASS-001\n" +
-		"managed_plan_pass_name: First pass\n" +
-		"```\n\n" +
-		"# Body\n"
+	markdown := "---\ntitle: Mismatch Run\nrepo_target: test-repo\nbranch_context: main\nmanaged_plan_pass: PASS-001\nmanaged_plan_pass_name: First pass\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Mismatch Run\n\nBody content.\n"
 	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
 		"plan_id":                  "plan-123",
@@ -1048,8 +1205,8 @@ func TestHandleCreateRunFromPlannerHandoff_ManagedPassMismatchRejected(t *testin
 	if !result.IsError {
 		t.Fatal("expected managed_plan_pass mismatch to reject associated run creation")
 	}
-	if !contains(result.Content[0].Text, "VALIDATION_ERROR") {
-		t.Fatalf("expected VALIDATION_ERROR, got: %s", result.Content[0].Text)
+	if !contains(result.Content[0].Text, "managed_pass_mismatch") {
+		t.Fatalf("expected managed_pass_mismatch, got: %s", result.Content[0].Text)
 	}
 	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 		t.Fatalf("expected no run rows, got %d", got)
@@ -1099,21 +1256,7 @@ func TestHandleCreateRunFromPlannerHandoff_ProvenanceRecorded(t *testing.T) {
 		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
 	}
 
-	markdown := "# Planner Handoff: Provenance\n\n" +
-		"## Artifact Metadata\n\n" +
-		"```yaml\n" +
-		"handoff_id: planner-handoff-2026-06-23-provenance\n" +
-		"repo_target: test-repo\n" +
-		"branch_context: main\n" +
-		"intended_handoff_path: handoffs/planner/2026-06-23_provenance.planner-handoff.md\n" +
-		"managed_plan_pass: PASS-002\n" +
-		"managed_plan_pass_name: Store plans\n" +
-		"context_packet_id: ctxpkt-123\n" +
-		"source_snapshot_id: srcsnap-456\n" +
-		"```\n\n" +
-		"<context_snapshot>\n" +
-		"Only durable execution context belongs here.\n" +
-		"</context_snapshot>\n"
+	markdown := "---\ntitle: Provenance Run\nhandoff_id: planner-handoff-2026-06-23-provenance\nrepo_target: test-repo\nbranch_context: main\nintended_handoff_path: handoffs/planner/2026-06-23_provenance.planner-handoff.md\nmanaged_plan_pass: PASS-002\nmanaged_plan_pass_name: Store plans\ncontext_packet_id: ctxpkt-123\nsource_snapshot_id: srcsnap-456\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n<context_snapshot>\nOnly durable execution context belongs here.\n</context_snapshot>\n\n# Provenance Run\n\nProvenance test content.\n"
 
 	args, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
@@ -1251,16 +1394,7 @@ func TestHandleGetRunStatus_IncludesProvenance(t *testing.T) {
 		t.Fatalf("submit plan failed: %s", planResult.Content[0].Text)
 	}
 
-	markdown := "# Planner Handoff: Status\n\n" +
-		"## Artifact Metadata\n\n" +
-		"```yaml\n" +
-		"repo_target: test-repo\n" +
-		"branch_context: main\n" +
-		"intended_handoff_path: handoffs/planner/2026-06-23_status.planner-handoff.md\n" +
-		"managed_plan_pass: PASS-001\n" +
-		"context_packet_id: ctxpkt-status\n" +
-		"source_snapshot_id: srcsnap-status\n" +
-		"```\n"
+	markdown := "---\ntitle: Status Run\nrepo_target: test-repo\nbranch_context: main\nintended_handoff_path: handoffs/planner/2026-06-23_status.planner-handoff.md\nmanaged_plan_pass: PASS-001\ncontext_packet_id: ctxpkt-status\nsource_snapshot_id: srcsnap-status\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Status Run\n\nStatus test content.\n"
 
 	createArgs, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
@@ -1497,7 +1631,7 @@ func TestHandleSubmitAuditPacket_FullFlow(t *testing.T) {
 	srv := NewServer(discardLogger(), deps)
 
 	// First create a run via create_run tool.
-	markdown := "---\ntitle: Audit Test Run\nrepo_target: audit-test-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Audit Test Run\n\nContent."
+	markdown := "---\ntitle: Audit Test Run\nrepo_target: audit-test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Audit Test Run\n\nContent."
 	createArgs, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
 		"repo_target":              "audit-test-repo",
@@ -1616,7 +1750,7 @@ func TestHandleSubmitAuditPacket_TerminalRunRejected(t *testing.T) {
 	srv := NewServer(discardLogger(), deps)
 
 	// Create a run.
-	markdown := "---\ntitle: Terminal Test\nrepo_target: term-repo\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Terminal Test\n\nContent."
+	markdown := "---\ntitle: Terminal Test\nrepo_target: term-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Terminal Test\n\nContent."
 	createArgs, _ := json.Marshal(map[string]any{
 		"planner_handoff_markdown": markdown,
 		"repo_target":              "term-repo",

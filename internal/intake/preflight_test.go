@@ -95,6 +95,26 @@ func handoffWithInvalidYAML(title, repo, branch string) string {
 		1)
 }
 
+func handoffWithCompilerInputBody(body string) string {
+	return `---
+title: Compiler Input Shape
+repo: test-org/repo
+branch: main
+---
+
+<decision_log>
+- D1: Test decision.
+</decision_log>
+
+<constraints>
+- C1: Test constraint.
+</constraints>
+
+<compiler_input>
+` + body + `
+</compiler_input>`
+}
+
 func handoffMissingFrontmatter() string {
 	return `# No Frontmatter
 
@@ -271,6 +291,59 @@ func TestValidatePlannerHandoffForCompile_InvalidYAML(t *testing.T) {
 	assertIssueExists(t, result.Issues, "compiler_input_yaml_invalid")
 }
 
+func TestValidatePlannerHandoffForCompile_CompilerInputShape(t *testing.T) {
+	validYAML := "```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n  code_requirements:\n    - id: CR1\n      requirement: Requirement\n  validation_contract:\n    mode: commands\n  completion_contract:\n    done_when:\n      - Done.\n```"
+
+	cases := []struct {
+		name     string
+		body     string
+		wantOK   bool
+		wantCode string
+	}{
+		{name: "plain non yaml text", body: "not yaml", wantCode: "compiler_input_yaml_invalid"},
+		{name: "empty section", body: "   \n\t", wantCode: "compiler_input_yaml_invalid"},
+		{name: "fenced yaml no root", body: "```yaml\ngoal: No root\nscope: Wrong structure\n```", wantCode: "compiler_input_required_field_missing"},
+		{name: "null root", body: "```yaml\ncompiler_input: null\n```", wantCode: "compiler_input_required_field_missing"},
+		{name: "sequence root", body: "```yaml\ncompiler_input: []\n```", wantCode: "compiler_input_yaml_invalid"},
+		{name: "scalar root", body: "```yaml\ncompiler_input: text\n```", wantCode: "compiler_input_yaml_invalid"},
+		{name: "invalid yaml syntax", body: "```yaml\ncompiler_input:\n  goal: [broken { yaml\n```", wantCode: "compiler_input_yaml_invalid"},
+		{name: "missing required fields", body: "```yaml\ncompiler_input:\n  goal: Test.\n```", wantCode: "compiler_input_required_field_missing"},
+		{name: "empty required lists", body: "```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets: []\n  implementation_steps: []\n  code_requirements: []\n  validation_contract:\n    mode: commands\n  completion_contract:\n    done_when:\n      - Done.\n```", wantCode: "compiler_input_list_empty"},
+		{name: "wrong field types", body: "```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets: internal/intake/preflight.go\n  implementation_steps: do the work\n  code_requirements: be correct\n  validation_contract: true\n  completion_contract: 1\n```", wantCode: "compiler_input_list_empty"},
+		{name: "valid compiler input", body: validYAML, wantOK: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := ValidatePlannerHandoffForCompile(HandoffPreflightInput{
+				Markdown: handoffWithCompilerInputBody(tc.body),
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantOK {
+				if !result.OK || result.Status != "passed" || !result.IsCompileReady {
+					t.Fatalf("expected compile-ready result, got %+v", result)
+				}
+				return
+			}
+			if result.OK {
+				t.Fatalf("expected blocked result for %s", tc.name)
+			}
+			if result.Status != "blocked" {
+				t.Fatalf("expected status=blocked, got %q", result.Status)
+			}
+			if result.IsCompileReady {
+				t.Fatal("expected is_compile_ready=false")
+			}
+			if !hasBlockingIssue(result.Issues) {
+				t.Fatalf("expected at least one blocking issue, got %+v", result.Issues)
+			}
+			assertIssueExists(t, result.Issues, tc.wantCode)
+		})
+	}
+}
+
 func TestValidatePlannerHandoffForCompile_EmptyFileTargets(t *testing.T) {
 	markdown := `---
 title: No File Targets
@@ -424,6 +497,48 @@ managed_plan_pass: PASS-001
 	assertIssueExists(t, result.Issues, "managed_pass_mismatch")
 }
 
+func TestValidatePlannerHandoffForCompile_PassRequiresPlan(t *testing.T) {
+	result, err := ValidatePlannerHandoffForCompile(HandoffPreflightInput{
+		Markdown: validHandoffMarkdown("Pass Without Plan", "test-org/repo", "main"),
+		PassID:   "PASS-007",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.OK {
+		t.Fatal("expected pass_id without plan_id to block")
+	}
+	assertIssueExists(t, result.Issues, "managed_plan_missing")
+}
+
+func TestValidatePlannerHandoffForCompile_PlanOnlyAllowed(t *testing.T) {
+	result, err := ValidatePlannerHandoffForCompile(HandoffPreflightInput{
+		Markdown: validHandoffMarkdown("Plan Only", "test-org/repo", "main"),
+		PlanID:   "plan-123",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.OK {
+		t.Fatalf("expected plan-only preflight to pass, got %+v", result.Issues)
+	}
+}
+
+func TestValidatePlannerHandoffForCompile_PlanPassMatchAllowed(t *testing.T) {
+	markdown := strings.Replace(validHandoffMarkdown("Plan Pass Match", "test-org/repo", "main"), "recommended_model: deepseek-v4-flash\n", "recommended_model: deepseek-v4-flash\nmanaged_plan_pass: PASS-007\n", 1)
+	result, err := ValidatePlannerHandoffForCompile(HandoffPreflightInput{
+		Markdown: markdown,
+		PlanID:   "plan-123",
+		PassID:   "PASS-007",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.OK {
+		t.Fatalf("expected matching plan/pass preflight to pass, got %+v", result.Issues)
+	}
+}
+
 func TestValidatePlannerHandoffForCompile_StructFields(t *testing.T) {
 	markdown := validHandoffMarkdown("Struct Test", "test-org/repo", "main")
 	result, err := ValidatePlannerHandoffForCompile(HandoffPreflightInput{
@@ -521,4 +636,13 @@ func assertIssueExists(t *testing.T, issues []HandoffPreflightIssue, code string
 		}
 	}
 	t.Errorf("expected issue with code %q, but it was not found. Issues: %v", code, issues)
+}
+
+func hasBlockingIssue(issues []HandoffPreflightIssue) bool {
+	for _, issue := range issues {
+		if issue.BlocksSubmission {
+			return true
+		}
+	}
+	return false
 }

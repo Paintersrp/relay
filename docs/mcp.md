@@ -303,6 +303,7 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 **Input:**
 ```json
 {
+  "additionalProperties": false,
   "planner_handoff_markdown": "string (one of markdown or file required) — full handoff markdown content",
   "planner_handoff_file": "string (one of markdown or file required) — MCP file-parameter path to the reviewed .md handoff",
   "expected_sha256": "string (optional) — lowercase hex SHA-256 of the exact file bytes (file mode only)",
@@ -361,7 +362,10 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 | `compiler_input_yaml_invalid` | error | yes |
 | `compiler_input_required_field_missing` | error | yes |
 | `compiler_input_list_empty` | error | yes |
+| `managed_plan_missing` | error | yes |
 | `managed_pass_mismatch` | error | yes |
+
+**Strict input:** Unknown top-level fields are rejected. Provide exactly one source field: `planner_handoff_markdown` or `planner_handoff_file`. `expected_sha256` is valid only with `planner_handoff_file`, and `pass_id` requires `plan_id`.
 
 **Safety boundary:** This tool does not create runs, submit plans, dispatch executors, compile packets, mutate git, or browse arbitrary paths. It is a read-only validation gate. The text content block contains a short summary only; full issue payloads are in `structuredContent`.
 

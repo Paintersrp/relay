@@ -28,7 +28,7 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 	}
 
 	var input validatePlannerHandoffInput
-	if err := json.Unmarshal(rawArgs, &input); err != nil {
+	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
 		return toolErr(fmt.Sprintf("invalid arguments: %s", err))
 	}
 
@@ -65,6 +65,9 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 
 		markdownStr = string(markdownBytes)
 	} else {
+		if strings.TrimSpace(input.ExpectedSHA256) != "" {
+			return toolErr("VALIDATION_ERROR: expected_sha256 is only supported with planner_handoff_file")
+		}
 		sourceMode = "mcp_chat"
 		sum := sha256.Sum256([]byte(markdownStr))
 		submittedSHA = hex.EncodeToString(sum[:])
@@ -103,6 +106,7 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 
 var validatePlannerHandoffSchema = json.RawMessage(`{
   "type": "object",
+  "additionalProperties": false,
   "properties": {
     "planner_handoff_markdown": {
       "type": "string",
