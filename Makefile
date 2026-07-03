@@ -1,5 +1,10 @@
 .PHONY: dev dev-server build assets install sqlc templ db-migrate test fmt vet clean validate validate-fast validate-broad validate-full validate-touched validate-changed closeout closeout-dry-run mcp-build mcp-test mcp-smoke mcp-clean mcp-http-test mcp-http-smoke plan-api-smoke plan-seed-smoke agentrefs-generate agentrefs-check
 
+MCP_BINARY := bin/relay-mcpserver
+ifeq ($(OS),Windows_NT)
+MCP_BINARY := bin/relay-mcpserver.exe
+endif
+
 install:
 	npm install
 
@@ -63,13 +68,13 @@ clean:
 ## MCP targets
 
 mcp-build:
-	go build -o bin/relay-mcpserver.exe ./cmd/mcpserver
+	go build -o $(MCP_BINARY) ./cmd/mcpserver
 
 mcp-test:
 	go test ./internal/mcp/... ./cmd/mcpserver/...
 
 mcp-smoke: mcp-build
-	RELAY_MCP_URL='' RELAY_MCP_AUTH_TOKEN='' go run ./cmd/mcp-smoke
+	RELAY_MCP_URL='' RELAY_MCP_AUTH_TOKEN='' RELAY_MCP_BINARY='$(MCP_BINARY)' go run ./cmd/mcp-smoke
 
 plan-api-smoke:
 	go run ./cmd/plan-api-smoke
