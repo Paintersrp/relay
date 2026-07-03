@@ -8,16 +8,17 @@
 //   - Returns exactly four stages equal to `PIPELINE_STAGE_ORDER` in order,
 //     each carrying the correct label (`PIPELINE_STAGE_LABELS`) and route
 //     (`PIPELINE_STAGE_ROUTES`) (Requirement 6.1).
-//   - Marks exactly one stage as the CURRENT POSITION, expressed as exactly one
-//     stage whose status is in {"current", "attention"}. The implementation
-//     marks the current-position stage "attention" (instead of "current") when
-//     the run is in the closed attention set — this reconciles Property 10 with
-//     the single-enum stage-status design. All stages before the current
-//     position are "completed"; all stages after are "pending" (Requirement 6.2).
+//   - For canonical statuses, marks exactly one stage as the CURRENT POSITION,
+//     expressed as exactly one stage whose status is in {"current",
+//     "attention"}. The implementation marks the current-position stage
+//     "attention" (instead of "current") when the run is in the closed
+//     attention set — this reconciles Property 10 with the single-enum
+//     stage-status design. All stages before the current position are
+//     "completed"; all stages after are "pending" (Requirement 6.2).
 //   - Is deterministic: two calls with the same status are deep-equal
 //     (Requirements 6.3, 6.7).
-//   - Is total: arbitrary unknown / out-of-enum strings default to Intake as
-//     the current position.
+//   - Is total: arbitrary unknown / out-of-enum strings fall back to no
+//     current/attention stage and all four stages "pending" (Requirement 2.4).
 
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -69,16 +70,6 @@ const ALL_CANONICAL_STATUSES: readonly RelayRunStatus[] = [
   "completed",
 ];
 
-// The set of statuses that map to the Intake stage (per STATUS_TO_STAGE). Used
-// to assert the totality default: unknown strings behave like an Intake status.
-const INTAKE_STATUSES: ReadonlySet<string> = new Set<string>([
-  "draft",
-  "needs_cleanup",
-  "intake_received",
-  "intake_needs_review",
-  "validated",
-]);
-
 // ------------------------------------------------------------
 // Arbitraries
 // ------------------------------------------------------------
@@ -87,8 +78,9 @@ const canonicalStatusArb: fc.Arbitrary<string> = fc.constantFrom(
   ...ALL_CANONICAL_STATUSES,
 );
 
-// Arbitrary unknown strings exercise the total-function / default-to-Intake
-// behavior. Excludes any canonical status so the branch is unambiguous.
+// Arbitrary unknown strings exercise the total-function / all-pending
+// fallback behavior (Requirement 2.4). Excludes any canonical status so the
+// branch is unambiguous.
 const canonicalSet: ReadonlySet<string> = new Set<string>(ALL_CANONICAL_STATUSES);
 const unknownStringArb: fc.Arbitrary<string> = fc
   .string({ minLength: 0, maxLength: 24 })
@@ -118,9 +110,9 @@ describe("derivePipelineStages — Property 10: derivation well-formedness and d
     );
   });
 
-  it("marks exactly one current position with completed-before / pending-after ordering (Req 6.2)", () => {
+  it("marks exactly one current position with completed-before / pending-after ordering for canonical statuses (Req 6.2)", () => {
     fc.assert(
-      fc.property(anyStatusArb, (status) => {
+      fc.property(canonicalStatusArb, (status) => {
         const stages = derivePipelineStages(status);
 
         // The current position is the single stage whose status is in
@@ -157,7 +149,7 @@ describe("derivePipelineStages — Property 10: derivation well-formedness and d
     );
   });
 
-  it("is total — arbitrary unknown strings default to Intake as the current position", () => {
+  it("is total — arbitrary unknown strings fall back to no current/attention stage and all pending (Req 2.4)", () => {
     fc.assert(
       fc.property(unknownStringArb, (status) => {
         const stages = derivePipelineStages(status);
@@ -166,21 +158,21 @@ describe("derivePipelineStages — Property 10: derivation well-formedness and d
           (s) => s.status === "current" || s.status === "attention",
         );
 
-        // Intake is the first stage; unknown input defaults there.
-        expect(currentPositionIndex).toBe(0);
-        expect(stages[0].step).toBe(PIPELINE_STAGE_ORDER[0]);
+        // Non-canonical status: no stage is marked active, all four fall back
+        // to "pending" (upcoming).
+        expect(currentPositionIndex).toBe(-1);
+        expect(stages.every((s) => s.status === "pending")).toBe(true);
       }),
       { numRuns: 200 },
     );
   });
 
-  // Cross-check the totality default against the known Intake status set: an
-  // unknown string produces the same shape as any Intake-mapped canonical
-  // status.
-  it("unknown strings match the shape of an Intake-mapped canonical status", () => {
-    const intakeSample = [...INTAKE_STATUSES][0];
-    const reference = derivePipelineStages(intakeSample);
-    const unknown = derivePipelineStages("totally-not-a-status-xyz");
-    expect(unknown).toEqual(reference);
+  // Cross-check the totality fallback: every unknown string produces the same
+  // all-pending shape regardless of its value.
+  it("unknown strings all produce the same all-pending shape", () => {
+    const reference = derivePipelineStages("totally-not-a-status-xyz");
+    const other = derivePipelineStages("also-not-a-status-abc");
+    expect(other).toEqual(reference);
+    expect(reference.every((s) => s.status === "pending")).toBe(true);
   });
 });

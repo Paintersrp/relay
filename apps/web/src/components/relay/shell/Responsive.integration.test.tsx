@@ -8,12 +8,9 @@
 // 1024 CSS pixels (Requirement 8):
 //
 //   - >= 1024px: Activity_Rail + Top_Bar + content region render together   (Req 8.1)
-//               and the Run_Workbench uses a side-by-side resizable split    (Req 8.1)
 //   - <  1024px: the Activity_Rail collapses to a single trigger that hides
 //               the primary-domain destinations until activated, and
 //               activating it reveals Projects / Plans / Runs                (Req 8.2, 8.3)
-//               and the Run_Workbench stacks the Inspector below the main
-//               content instead of a side-by-side split                      (Req 8.5)
 //   - The Scope_Switcher stays a keyboard-operable control that shows its
 //     label regardless of viewport                                          (Req 8.4)
 //
@@ -23,9 +20,19 @@
 //     Sheet trigger exist in the DOM regardless of viewport. The rail-collapse
 //     contract is therefore asserted structurally: the mobile trigger exists
 //     and activating it reveals the domains inside the opened Sheet.
-//   * The Run_Workbench split-vs-stack is JS-driven via `useIsDesktop()` (a
-//     `useSyncExternalStore` read of `window.matchMedia("(min-width: 1024px)")`).
-//     We control `matchMedia` per-test and assert the conditional render.
+//   * The per-run shell used to be `RunWorkbenchLayout`, which rendered a
+//     side-by-side resizable split (main content + Inspector_Panel) at
+//     >= 1024px and stacked the Inspector below the main content at
+//     < 1024px (former Req 8.1/8.5). The run-status-tracker-redesign spec
+//     retired `RunWorkbenchLayout` in favor of `RunStatusTrackerLayout`,
+//     which composes its five regions (Identity_Strip, Current_Status_Block,
+//     Next_Action_Area, Progression_Rail, Detail_Disclosure) top to bottom
+//     in a single main column, UNCONDITIONALLY — it renders no resizable
+//     panel group and no side Inspector_Panel at any viewport width
+//     (run-status-tracker-redesign Requirements 6.1, 6.2, 6.3). The tests
+//     below assert that "no split, no side inspector" contract holds at
+//     both viewports, rather than testing a split-vs-stack distinction that
+//     no longer exists for the run detail page.
 
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import {
@@ -48,8 +55,12 @@ import {
   renderShell,
   type RenderShellResult,
 } from "@/test/shell-test-utils";
-import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
+import { RunStatusTrackerLayout } from "@/components/relay/RunStatusTrackerLayout";
 import type { RelayRun } from "@/features/relay-runs";
+import type {
+  CurrentStatusView,
+  DetailSection,
+} from "@/features/relay-runs/runStatusTrackerViews";
 
 // ------------------------------------------------------------
 // matchMedia control
@@ -57,9 +68,10 @@ import type { RelayRun } from "@/features/relay-runs";
 
 const DESKTOP_QUERY = "(min-width: 1024px)";
 
-// `react-resizable-panels` (used by the side-by-side workbench layout)
-// constructs a `ResizeObserver`, which jsdom does not implement. Provide a
-// no-op shim so the desktop split-pane branch can mount under test.
+// `RunStatusTrackerLayout` no longer uses `react-resizable-panels`, but
+// other shell surfaces exercised in this file may still construct a
+// `ResizeObserver`, which jsdom does not implement. Provide a no-op shim so
+// nothing throws under test.
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class {
     observe() {}
@@ -106,8 +118,9 @@ const PROJECTS_FIXTURE = {
 };
 
 // ------------------------------------------------------------
-// Run_Workbench render harness (renderShell mounts route stubs, not the
-// workbench, so the workbench is rendered directly inside its own router).
+// Run detail page (RunStatusTrackerLayout) render harness (renderShell
+// mounts route stubs, not the run detail page, so it's rendered directly
+// inside its own router).
 // ------------------------------------------------------------
 
 const WORKBENCH_RUN: RelayRun = {
@@ -123,8 +136,27 @@ const WORKBENCH_RUN: RelayRun = {
   updatedAt: "2024-01-01T00:00:00.000Z",
 } as unknown as RelayRun;
 
-const INSPECTOR_BODY_TEXT = "inspector-panel-body";
-const MAIN_BODY_TEXT = "workbench-main-body";
+// Minimal valid fixtures for `RunStatusTrackerLayout`'s required props.
+// `DETAIL_SECTION_BODY_TEXT` stands in for the old `INSPECTOR_BODY_TEXT`
+// marker — it's the content a single Detail_Disclosure section renders,
+// used to confirm the tracker layout still renders its full content
+// (not to verify any side-by-side/stacked positioning, which no longer
+// applies).
+const CURRENT_STATUS_FIXTURE: CurrentStatusView = {
+  tone: "neutral",
+  headline: "Waiting on intake review",
+  updatedAt: "2024-01-01T00:00:00.000Z",
+};
+
+const DETAIL_SECTION_BODY_TEXT = "detail-section-body";
+
+const DETAIL_SECTIONS_FIXTURE: DetailSection[] = [
+  {
+    key: "logs",
+    label: "Full logs",
+    render: () => <div>{DETAIL_SECTION_BODY_TEXT}</div>,
+  },
+];
 
 async function renderWorkbench(): Promise<RenderResult> {
   const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -133,12 +165,12 @@ async function renderWorkbench(): Promise<RenderResult> {
     getParentRoute: () => rootRoute,
     path: "/runs/$runId/intake",
     component: () => (
-      <RunWorkbenchLayout
+      <RunStatusTrackerLayout
         run={WORKBENCH_RUN}
         currentStep="intake"
-        mainContent={<div>{MAIN_BODY_TEXT}</div>}
-        inspectorPanels={{ logs: <div>{INSPECTOR_BODY_TEXT}</div> }}
-        inspectorTabs={[{ key: "logs", label: "Logs" }]}
+        currentStatus={CURRENT_STATUS_FIXTURE}
+        progression={[]}
+        detailSections={DETAIL_SECTIONS_FIXTURE}
       />
     ),
   });
@@ -190,7 +222,7 @@ function getTopBar(result: RenderShellResult): HTMLElement {
 }
 
 // ============================================================
-// >= 1024px (desktop): rail + top bar + content + side-by-side workbench
+// >= 1024px (desktop): rail + top bar + content region
 // ============================================================
 
 describe("At or above the 1024px breakpoint (Req 8.1)", () => {
@@ -207,29 +239,32 @@ describe("At or above the 1024px breakpoint (Req 8.1)", () => {
     expect(screen.getByTestId("route-content")).toBeInTheDocument();
   });
 
-  it("renders the Run_Workbench as a side-by-side resizable split pane", async () => {
+  it("renders the run detail page as a single column with no resizable split pane", async () => {
     setViewport(true);
     const screen = await renderWorkbench();
 
-    // The side-by-side layout renders the resizable panel group + handle.
+    // `RunStatusTrackerLayout` renders no resizable panel group and no side
+    // Inspector_Panel at any viewport width (run-status-tracker-redesign
+    // Requirements 6.1, 6.2, 6.3) — this superseded the former side-by-side
+    // split behavior at this breakpoint.
     expect(
       screen.container.querySelector('[data-slot="resizable-panel-group"]'),
-    ).not.toBeNull();
+    ).toBeNull();
     expect(
       screen.container.querySelector('[data-slot="resizable-handle"]'),
-    ).not.toBeNull();
+    ).toBeNull();
+    expect(screen.container.querySelector("aside")).toBeNull();
 
-    // Both the main content and the Inspector panel are present.
-    expect(screen.getByText(MAIN_BODY_TEXT)).toBeInTheDocument();
-    expect(screen.getByText(INSPECTOR_BODY_TEXT)).toBeInTheDocument();
+    // The tracker's regions still render their content.
+    expect(screen.getByText(CURRENT_STATUS_FIXTURE.headline)).toBeInTheDocument();
   });
 });
 
 // ============================================================
-// < 1024px (mobile): collapsed rail trigger + stacked workbench
+// < 1024px (mobile): collapsed rail trigger
 // ============================================================
 
-describe("Below the 1024px breakpoint (Req 8.2, 8.3, 8.5)", () => {
+describe("Below the 1024px breakpoint (Req 8.2, 8.3)", () => {
   it("collapses the Activity_Rail to a trigger that reveals the domains on activation", async () => {
     setViewport(false);
     active = await renderShell({ initialPath: "/runs" });
@@ -254,33 +289,33 @@ describe("Below the 1024px breakpoint (Req 8.2, 8.3, 8.5)", () => {
       expect(link).toHaveAttribute("href");
     }
   });
+});
 
-  it("stacks the Inspector below the main content instead of a side-by-side split", async () => {
+// ============================================================
+// Run detail page: single-column, unconditionally (no viewport-dependent
+// split/stack behavior post-run-status-tracker-redesign)
+// ============================================================
+
+describe("RunStatusTrackerLayout has no viewport-dependent split/stack behavior", () => {
+  it("renders no resizable split pane and no side Inspector_Panel below the 1024px breakpoint either", async () => {
     setViewport(false);
     const screen = await renderWorkbench();
 
-    // No resizable split pane is rendered below the breakpoint (Req 8.5).
+    // Same "no split, no side inspector" contract holds below the
+    // breakpoint — `RunStatusTrackerLayout` is single-column
+    // unconditionally, so there is no split-vs-stack distinction to
+    // observe at this viewport either (run-status-tracker-redesign
+    // Requirements 6.1, 6.2, 6.3).
     expect(
       screen.container.querySelector('[data-slot="resizable-panel-group"]'),
     ).toBeNull();
     expect(
       screen.container.querySelector('[data-slot="resizable-handle"]'),
     ).toBeNull();
+    expect(screen.container.querySelector("aside")).toBeNull();
 
-    // Main content and the Inspector (an <aside>) are both present, and the
-    // Inspector is stacked AFTER (below) the main content in document order.
-    const main = screen.container.querySelector("main");
-    const inspector = screen.container.querySelector("aside");
-    expect(main).not.toBeNull();
-    expect(inspector).not.toBeNull();
-    expect(screen.getByText(MAIN_BODY_TEXT)).toBeInTheDocument();
-    expect(screen.getByText(INSPECTOR_BODY_TEXT)).toBeInTheDocument();
-
-    // DOCUMENT_POSITION_FOLLOWING => inspector appears after main.
-    expect(
-      main!.compareDocumentPosition(inspector!) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    // The tracker's regions still render their content.
+    expect(screen.getByText(CURRENT_STATUS_FIXTURE.headline)).toBeInTheDocument();
   });
 });
 

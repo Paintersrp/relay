@@ -1,11 +1,10 @@
 import * as React from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   approveBrief,
   evaluateRepairEligibility,
   prepareRun,
-  RelayApiError,
   renderBrief,
   repairValidation,
   runArtifactsQueryOptions,
@@ -15,56 +14,41 @@ import {
 import type {
   RelayArtifact,
   RelayRun,
+  RelayRunEvent,
   RepairValidationResponse,
 } from "@/features/relay-runs";
-import { ArtifactInspectorDialog } from "@/components/relay/ArtifactInspectorDialog";
-import { LogPreviewPanel } from "@/components/relay/LogPreviewPanel";
-import {
-  RelayInlineState,
-  RelayStateBanner,
-} from "@/components/relay/RelayStateSurface";
-import { RunEvidenceBrowser } from "@/components/relay/RunEvidenceBrowser";
-import { RunWorkbenchLayout } from "@/components/relay/RunWorkbenchLayout";
+import { ArtifactPreviewCard } from "@/components/relay/ArtifactPreviewCard";
+import { RunStatusTrackerLayout } from "@/components/relay/RunStatusTrackerLayout";
 import {
   RunWorkbenchLoadFailedState,
   RunWorkbenchLoadingState,
 } from "@/components/relay/RunWorkbenchStates";
 import {
-  RunStageInspectorSection,
-  RunStageKeyValueRow,
-  RunStagePipeline,
-  RunStageStateCard,
-  RunStageSummaryCard,
-  RunStageSummaryChip,
-  RunStageContentSection,
-  RunStageEvidenceRow,
-  RunStageEvidenceList,
   RunStageFindingRow,
   RunStageFindingList,
-  RunStageActivityRow,
-  RunStageActivityList,
-  RunStageMainStack,
+  RunStageKeyValueRow,
 } from "@/components/relay/RunStagePrimitives";
-import { ValidationPanel } from "@/components/relay/ValidationPanel";
-import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  ArrowRight,
-  FileText,
-  Loader2,
-  Play,
-  RefreshCw,
-  ShieldCheck,
-  Wrench,
-} from "lucide-react";
-import {
-  COMPILE_RENDER_PIPELINE_STEPS,
-  getCompileRenderDisplayState,
-  getCompileRenderPipelineStatuses,
-  getCompileRenderStateCardCopy,
-} from "./runCompileRenderVisualState";
+import { Loader2 } from "lucide-react";
+import { getCompileRenderDisplayState } from "./runCompileRenderVisualState";
+import { deriveCurrentStatusText } from "@/features/relay-runs/deriveCurrentStatusText";
+import { deriveProgressionLog } from "@/features/relay-runs/deriveProgressionLog";
+import { resolvePlanPassLink } from "@/features/relay-runs/planPassLink";
+import type {
+  ActionControlView,
+  DetailSection,
+  StepActionsView,
+} from "@/features/relay-runs/runStatusTrackerViews";
 
 type PacketValidationIssue = {
   code?: string;
@@ -90,8 +74,6 @@ type BriefValidationReport = {
   issues?: BriefValidationIssue[];
 };
 
-type CompileRenderController = ReturnType<typeof useCompileRenderController>;
-
 export const Route = createFileRoute("/runs/$runId/prepare")({
   component: PreparePage,
 });
@@ -106,9 +88,11 @@ function PreparePage() {
   const { data: artifacts, isLoading: isLoadingArtifacts } = useQuery(
     runArtifactsQueryOptions(runId),
   );
-  const { data: events, isLoading: isLoadingEvents } = useQuery(
-    runEventsQueryOptions(runId),
-  );
+  const {
+    data: events,
+    isLoading: isLoadingEvents,
+    error: errorEvents,
+  } = useQuery(runEventsQueryOptions(runId));
 
   if (isLoadingRun || isLoadingArtifacts || isLoadingEvents) {
     return <RunWorkbenchLoadingState label="Loading run" />;
@@ -124,928 +108,78 @@ function PreparePage() {
     );
   }
 
-  const resolvedArtifacts = artifacts || [];
-  const resolvedEvents = events || [];
-  const controller = useCompileRenderController({
-    run: {
-      ...run,
-      latestEvents: resolvedEvents,
-    },
-    artifacts: resolvedArtifacts,
-  });
-
-  const formattedLogs = resolvedEvents.map((event) => {
-    const timeStr = new Date(event.createdAt).toLocaleTimeString("en-US", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-    return `[${timeStr}] ${event.message}`;
-  });
-
-  const logPreview = {
-    lines: formattedLogs.slice(-50),
-    truncated: formattedLogs.length > 50,
-  };
-
   return (
-    <RunWorkbenchLayout
-      run={{
-        ...run,
-        artifacts: resolvedArtifacts,
-        latestEvents: resolvedEvents,
-        logPreview,
-      }}
-      currentStep="prepare"
-      stageActions={<CompileRenderStageActions controller={controller} />}
-      mainContent={<CompileRenderMainContent controller={controller} />}
-      initialInspectorTab="details"
-      inspectorTabs={[
-        { key: "details", label: "Details" },
-        { key: "artifacts", label: "Artifacts" },
-        { key: "validation", label: "Validation" },
-        { key: "logs", label: "Logs" },
-      ]}
-      inspectorPanels={{
-        details: <CompileRenderDetailsPanel controller={controller} />,
-        artifacts: (
-          <RunEvidenceBrowser
-            runId={run.id}
-            artifacts={resolvedArtifacts}
-            events={resolvedEvents}
-          />
-        ),
-        validation: <ValidationPanel summary={run.validationSummary} />,
-        logs: <LogPreviewPanel logPreview={logPreview} />,
-      }}
+    <PrepareTracker
+      run={run}
+      artifacts={artifacts || []}
+      events={events || []}
+      eventsLoadFailed={Boolean(errorEvents)}
     />
   );
 }
 
-function useCompileRenderController({
-  run,
-  artifacts,
+// ------------------------------------------------------------
+// Prepare action-gating (task-5.7-style, per run-workbench-refinement)
+// ------------------------------------------------------------
+//
+// Prepare has no formally-declared `RelayPrepareActions` gating type in
+// `types.ts` the way execute/audit do. The existing `canCompile` /
+// `canRetryCompile` / `canRenderBrief` / `canApproveBrief` booleans (plus
+// the repair-attempt candidate, gated the same way the prior
+// `CompileRenderStageActions` gated its "Attempt Repair" button) already
+// carry the same action-gating information; this restates them as
+// `can*`-shaped candidates and runs them through the same
+// priority-order/primary-selection assembly `runStepActions.ts` uses for
+// execute/audit, per task 5.7 — no new gating semantics are introduced.
+// `ActionControlView.unavailableReason` is optional, so omitting reason
+// text (prepare's booleans have no companion `*UnavailableReason` strings)
+// does not require inventing any.
+
+interface PrepareActionCandidate {
+  id: string;
+  label: string;
+  enabled: boolean;
+}
+
+export function buildPrepareActionsView({
+  canCompile,
+  canRetryCompile,
+  canAttemptRepair,
+  canRenderBrief,
+  canApproveBrief,
 }: {
-  run: RelayRun;
-  artifacts: RelayArtifact[];
-}) {
-  const queryClient = useQueryClient();
-  const [approvalNotes, setApprovalNotes] = React.useState("");
-  const [mutationError, setMutationError] = React.useState<string | null>(null);
-  const [showValidationInspector, setShowValidationInspector] =
-    React.useState(false);
-  const [repairResult, setRepairResult] =
-    React.useState<RepairValidationResponse | null>(null);
-
-  const canonicalPacketArt = findArtifact(artifacts, "canonical_packet.json");
-  const packetValidationArt = findArtifact(
-    artifacts,
-    "packet_validation_report.json",
-  );
-  const executorBriefArt = findArtifact(artifacts, "executor_brief.md");
-  const briefValidationArt = findArtifact(
-    artifacts,
-    "brief_validation_report.json",
-  );
-
-  const status = run.status;
-  const isApprovedForPrepare = status === "approved_for_prepare";
-  const isPacketValidationFailed = status === "packet_validation_failed";
-  const isPacketValidated =
-    status === "packet_validated" || status === "repair_validated";
-  const isBriefReadyForReview = status === "brief_ready_for_review";
-  const isApprovedForExecutor = status === "approved_for_executor";
-
-  const canCompile = isApprovedForPrepare;
-  const canRetryCompile = isPacketValidationFailed;
-  const canRenderBrief = isPacketValidated;
-  const canApproveBrief = isBriefReadyForReview;
-  const compileAttempted = Boolean(canonicalPacketArt);
-
-  const compileMutation = useMutation({
-    mutationFn: () => prepareRun(run.id),
-    onSuccess: () => {
-      setMutationError(null);
-      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
+  canCompile: boolean;
+  canRetryCompile: boolean;
+  canAttemptRepair: boolean;
+  canRenderBrief: boolean;
+  canApproveBrief: boolean;
+}): StepActionsView {
+  const candidates: PrepareActionCandidate[] = [
+    { id: "compile", label: "Run Compile", enabled: canCompile },
+    { id: "retryCompile", label: "Retry Compile", enabled: canRetryCompile },
+    {
+      id: "attemptRepair",
+      label: "Attempt Repair",
+      enabled: canAttemptRepair,
     },
-    onError: (error: unknown) => {
-      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
+    { id: "renderBrief", label: "Render Executor Brief", enabled: canRenderBrief },
+    { id: "approveBrief", label: "Approve for Executor", enabled: canApproveBrief },
+  ];
 
-      if (error instanceof RelayApiError) {
-        if (error.status === 422) {
-          setMutationError(
-            "Compile failed packet validation. Review Packet Validation Report below.",
-          );
-          return;
-        }
+  const nextSafeActionId = candidates.find((candidate) => candidate.enabled)?.id;
 
-        if (error.status === 409) {
-          const currentStatus = error.errorShape?.currentStatus || run.status;
-          setMutationError(
-            `Compile cannot run from status "${currentStatus}". Return to the required step or refresh the run.`,
-          );
-          return;
-        }
-
-        setMutationError(error.message || "Compile failed.");
-        return;
-      }
-
-      setMutationError(
-        error instanceof Error ? error.message : "Compile failed.",
-      );
-    },
-  });
-
-  const renderBriefMutation = useMutation({
-    mutationFn: () => renderBrief(run.id),
-    onSuccess: () => {
-      setMutationError(null);
-      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
-    },
-    onError: (error: unknown) => {
-      setMutationError(
-        error instanceof Error ? error.message : "Render brief failed.",
-      );
-    },
-  });
-
-  const approveMutation = useMutation({
-    mutationFn: () =>
-      approveBrief(run.id, {
-        action: "approve",
-        notes: approvalNotes.trim() || undefined,
-      }),
-    onSuccess: () => {
-      setMutationError(null);
-      setApprovalNotes("");
-      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
-    },
-    onError: (error: unknown) => {
-      setMutationError(
-        error instanceof Error ? error.message : "Failed to approve brief.",
-      );
-    },
-  });
-
-  const repairMutation = useMutation({
-    mutationFn: () => repairValidation(run.id),
-    onSuccess: (data) => {
-      setMutationError(null);
-      setRepairResult(data);
-      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
-    },
-    onError: (error: unknown) => {
-      void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
-
-      if (error instanceof RelayApiError) {
-        const shape = error.errorShape;
-        if (shape?.error || shape?.message) {
-          setMutationError(shape.error || shape.message);
-          return;
-        }
-
-        setMutationError(error.message || "Repair failed.");
-        return;
-      }
-
-      setMutationError(
-        error instanceof Error ? error.message : "Repair failed.",
-      );
-    },
-  });
-
-  const packetValidationReport = parseArtifactPreview<PacketValidationReport>(
-    packetValidationArt,
-  );
-  const briefValidationReport = parseArtifactPreview<BriefValidationReport>(
-    briefValidationArt,
-  );
-
-  const repairEligibility = evaluateRepairEligibility(packetValidationReport);
-  const repairEligible = repairEligibility.canOfferRepair;
-
-  const isPending =
-    compileMutation.isPending ||
-    renderBriefMutation.isPending ||
-    approveMutation.isPending ||
-    repairMutation.isPending;
-
-  const compileRenderVisualStateInput = {
-    run,
-    repairEligible,
-    repairResult,
-    compilePending: compileMutation.isPending,
-    repairPending: repairMutation.isPending,
-    renderBriefPending: renderBriefMutation.isPending,
-    approvePending: approveMutation.isPending,
-    hasPassingBriefValidationReport:
-      briefValidationReport?.status === "passed",
-    hasFailingBriefValidationReport: Boolean(
-      briefValidationArt && briefValidationReport?.status !== "passed",
-    ),
-  };
-  const compileRenderDisplayState = getCompileRenderDisplayState(
-    compileRenderVisualStateInput,
-  );
-  const compileRenderPipelineStatuses = getCompileRenderPipelineStatuses(
-    compileRenderVisualStateInput,
-  );
-  const compileRenderStateCardCopy = getCompileRenderStateCardCopy(
-    compileRenderDisplayState,
-  );
-
-  const handleCompile = () => {
-    setMutationError(null);
-    compileMutation.mutate();
-  };
-
-  const handleRetryCompile = () => {
-    setMutationError(null);
-    compileMutation.mutate();
-  };
-
-  const handleRenderBrief = () => {
-    setMutationError(null);
-    renderBriefMutation.mutate();
-  };
-
-  const handleAttemptRepair = () => {
-    setMutationError(null);
-    setRepairResult(null);
-    repairMutation.mutate();
-  };
-
-  const handleApproveBrief = () => {
-    setMutationError(null);
-    approveMutation.mutate();
-  };
+  const controls: ActionControlView[] = candidates.map((candidate) => ({
+    id: candidate.id,
+    label: candidate.label,
+    enabled: candidate.enabled,
+    isPrimary: candidate.id === nextSafeActionId,
+  }));
 
   return {
-    run,
-    artifacts,
-    approvalNotes,
-    setApprovalNotes,
-    mutationError,
-    setMutationError,
-    showValidationInspector,
-    setShowValidationInspector,
-    canonicalPacketArt,
-    packetValidationArt,
-    executorBriefArt,
-    briefValidationArt,
-    packetValidationReport,
-    briefValidationReport,
-    repairEligibility,
-    repairEligible,
-    repairResult,
-    status,
-    isApprovedForPrepare,
-    isPacketValidationFailed,
-    isPacketValidated,
-    isBriefReadyForReview,
-    isApprovedForExecutor,
-    canCompile,
-    canRetryCompile,
-    canRenderBrief,
-    canApproveBrief,
-    compileAttempted,
-    isPending,
-    compileRenderDisplayState,
-    compileRenderPipelineStatuses,
-    compileRenderStateCardCopy,
-    compileMutation,
-    renderBriefMutation,
-    approveMutation,
-    repairMutation,
-    handleCompile,
-    handleRetryCompile,
-    handleRenderBrief,
-    handleAttemptRepair,
-    handleApproveBrief,
-    latestEvents: run.latestEvents || [],
+    controls,
+    ...(nextSafeActionId ? { nextSafeActionId } : {}),
   };
 }
-
-function CompileRenderStageActions({
-  controller,
-}: {
-  controller: CompileRenderController;
-}) {
-  const {
-    run,
-    canCompile,
-    canRetryCompile,
-    canApproveBrief,
-    executorBriefArt,
-    isApprovedForExecutor,
-    isPacketValidated,
-    isPacketValidationFailed,
-    isPending,
-    repairEligible,
-    repairResult,
-    compileMutation,
-    renderBriefMutation,
-    approveMutation,
-    repairMutation,
-    handleCompile,
-    handleRetryCompile,
-    handleRenderBrief,
-    handleAttemptRepair,
-    handleApproveBrief,
-  } = controller;
-
-  if (
-    !canCompile &&
-    !canRetryCompile &&
-    !isPacketValidated &&
-    !canApproveBrief &&
-    !isApprovedForExecutor &&
-    !(isPacketValidationFailed && repairEligible && repairResult === null)
-  ) {
-    return null;
-  }
-
-  return (
-    <div className="flex flex-wrap justify-end gap-2 py-2">
-      {canCompile ? (
-        <Button size="sm" onClick={handleCompile} disabled={isPending}>
-          {compileMutation.isPending ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Play className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          Run Compile
-        </Button>
-      ) : null}
-
-      {canRetryCompile ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRetryCompile}
-          disabled={isPending}
-        >
-          {compileMutation.isPending ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          Retry Compile
-        </Button>
-      ) : null}
-
-      {isPacketValidationFailed &&
-      repairEligible &&
-      repairResult === null ? (
-        <Button
-          size="sm"
-          onClick={handleAttemptRepair}
-          disabled={isPending}
-        >
-          {repairMutation.isPending ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Wrench className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          Attempt Repair
-        </Button>
-      ) : null}
-
-      {isPacketValidated ? (
-        <Button
-          size="sm"
-          onClick={handleRenderBrief}
-          disabled={isPending}
-        >
-          {renderBriefMutation.isPending ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : executorBriefArt ? (
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-          ) : (
-            <FileText className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          {executorBriefArt ? "Re-render Executor Brief" : "Render Executor Brief"}
-        </Button>
-      ) : null}
-
-      {canApproveBrief ? (
-        <Button size="sm" onClick={handleApproveBrief} disabled={isPending}>
-          {approveMutation.isPending ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          Approve for Executor
-        </Button>
-      ) : null}
-
-      {isApprovedForExecutor ? (
-        <Button size="sm" asChild>
-          <Link to="/runs/$runId/execute" params={{ runId: run.id }}>
-            Proceed to Execute
-            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-          </Link>
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
-function CompileRenderMainContent({
-  controller,
-}: {
-  controller: CompileRenderController;
-}) {
-  const {
-    run,
-    approvalNotes,
-    setApprovalNotes,
-    mutationError,
-    showValidationInspector,
-    setShowValidationInspector,
-    canonicalPacketArt,
-    packetValidationArt,
-    executorBriefArt,
-    briefValidationArt,
-    packetValidationReport,
-    briefValidationReport,
-    repairEligibility,
-    repairResult,
-    status,
-    isApprovedForPrepare,
-    isPacketValidationFailed,
-    isPacketValidated,
-    isApprovedForExecutor,
-    canApproveBrief,
-    compileAttempted,
-    isPending,
-    compileRenderPipelineStatuses,
-    compileRenderStateCardCopy,
-    latestEvents,
-  } = controller;
-
-  const packetValidationErrors = packetValidationReport?.errors || [];
-
-  return (
-    <RunStageMainStack>
-      {mutationError ? (
-        <RelayStateBanner
-          tone="danger"
-          title="Compile / Render action failed"
-          description={mutationError}
-        />
-      ) : null}
-
-      <RunStageStateCard
-        tone={compileRenderStateCardCopy.tone}
-        eyebrow={compileRenderStateCardCopy.eyebrow}
-        title={compileRenderStateCardCopy.title}
-        message={compileRenderStateCardCopy.message}
-      />
-
-      <RunStageSummaryCard
-        eyebrow="Compile / Render Pipeline"
-        title="Packet-to-brief progression"
-        description="Compile, validation, repair, brief rendering, brief validation, and approval readiness."
-      >
-        <div className="mb-3 flex flex-wrap gap-2">
-          <RunStageSummaryChip label="Status" value={status} mono />
-          <RunStageSummaryChip
-            label="Compile"
-            value={getCompileSummaryLabel(controller)}
-            tone={getCompileSummaryTone(controller)}
-          />
-          <RunStageSummaryChip
-            label="Packet"
-            value={getPacketValidationStateLabel(controller)}
-            tone={getPacketValidationStateTone(controller)}
-          />
-          <RunStageSummaryChip
-            label="Approval"
-            value={getApprovalStateLabel(controller)}
-            tone={getApprovalStateTone(controller)}
-          />
-        </div>
-        <RunStagePipeline
-          steps={COMPILE_RENDER_PIPELINE_STEPS}
-          statuses={compileRenderPipelineStatuses}
-        />
-      </RunStageSummaryCard>
-
-      <RunStageContentSection
-        eyebrow="Compile"
-        title="Compiled Packet"
-        description="The source handoff compiled into a canonical run execution packet."
-        status={
-          <Badge
-            variant={
-              isPacketValidationFailed
-                ? "destructive"
-                : compileAttempted
-                  ? "success"
-                  : "secondary"
-            }
-          >
-            {getCompileSummaryLabel(controller)}
-          </Badge>
-        }
-      >
-        <div className="flex flex-col gap-3">
-          {canonicalPacketArt ? (
-            <RunStageEvidenceRow
-              label="Canonical Packet"
-              value={canonicalPacketArt.path || canonicalPacketArt.filename}
-            />
-          ) : (
-            <RelayInlineState
-              tone="empty"
-              title="Canonical packet not created yet"
-              description={
-                isApprovedForPrepare
-                  ? "Use the stage rail to run compile when you are ready."
-                  : "Compile output will appear here after the prepare route produces a canonical packet."
-              }
-            />
-          )}
-
-          {isPacketValidationFailed ? (
-            <div className="flex flex-col gap-2">
-              <RelayStateBanner
-                tone="danger"
-                title="Validation failed"
-                description={`Compile failed packet validation with ${packetValidationErrors.length || 0} error${packetValidationErrors.length === 1 ? "" : "s"}. Review the report below.`}
-              />
-              {packetValidationErrors.length > 0 ? (
-                <RunStageFindingList>
-                  {packetValidationErrors.map((error, index) => (
-                    <RunStageFindingRow
-                      key={`${error.code || "issue"}-${index}`}
-                      severity="error"
-                      code={error.code}
-                      message={error.message || "Validation issue captured."}
-                    />
-                  ))}
-                </RunStageFindingList>
-              ) : null}
-            </div>
-          ) : compileAttempted ? (
-            <p className="text-sm text-muted-foreground">
-              Compile output is present. Review packet validation and brief readiness below.
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Compile has not run yet. The stage rail owns the compile action.
-            </p>
-          )}
-        </div>
-      </RunStageContentSection>
-
-      {(isPacketValidationFailed || status === "repair_validated" || repairResult != null) ? (
-        <RunStageContentSection
-          eyebrow="Repair"
-          title="Packet Validation & Repair"
-          description="Constrained repair options for packet validation failures."
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="flex flex-col gap-2">
-              <RunStageKeyValueRow
-                label="Eligibility"
-                value={getRepairEligibilityLabel(controller)}
-              />
-              <RunStageKeyValueRow
-                label="Latest result"
-                value={getRepairResultLabel(controller)}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                {getRepairGuidance(controller, repairEligibility.reason)}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2">
-              {status === "repair_validated" || repairResult?.reValidationValid ? (
-                <RelayInlineState
-                  tone="success"
-                  title="Repair validated"
-                  description="Repair passed validation. The packet can move forward to executor brief rendering."
-                />
-              ) : null}
-
-              {repairResult?.blockedReason ? (
-                <RelayStateBanner
-                  tone="blocked"
-                  title="Repair blocked"
-                  description={repairResult.blockedReason}
-                />
-              ) : null}
-
-              {repairResult?.ineligibleReason ? (
-                <RelayStateBanner
-                  tone="warning"
-                  title="Repair ineligible"
-                  description={repairResult.ineligibleReason}
-                />
-              ) : null}
-
-              {repairResult &&
-              !repairResult.blockedReason &&
-              !repairResult.ineligibleReason &&
-              repairResult.reValidationValid === false ? (
-                <RelayStateBanner
-                  tone="danger"
-                  title="Repair attempted but validation failed"
-                  description={
-                    repairResult.reValidationError ||
-                    "Repair did not produce a validation-passing packet."
-                  }
-                />
-              ) : null}
-            </div>
-          </div>
-        </RunStageContentSection>
-      ) : null}
-
-      <RunStageContentSection
-        eyebrow="Brief"
-        title="Executor Brief"
-        description="The executor instructions rendered from the validated packet."
-        status={
-          <Badge variant={executorBriefArt ? "success" : "secondary"}>
-            {getExecutorBriefSummaryLabel(controller)}
-          </Badge>
-        }
-      >
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap gap-2">
-            <Badge
-              variant={
-                briefValidationReport?.status === "passed"
-                  ? "success"
-                  : briefValidationArt
-                    ? "destructive"
-                    : "secondary"
-              }
-              className="text-xs"
-            >
-              Brief validation: {getBriefValidationStateLabel(controller)}
-            </Badge>
-          </div>
-
-          {executorBriefArt ? (
-            <>
-              <RunStageEvidenceRow
-                label="Executor Brief"
-                value={executorBriefArt.path || executorBriefArt.filename}
-              />
-              {executorBriefArt.preview ? (
-                <pre className="max-h-48 overflow-y-auto rounded border border-border/40 bg-[var(--relay-code-bg)] p-3 font-mono text-[11px] whitespace-pre-wrap text-foreground">
-                  {executorBriefArt.preview}
-                </pre>
-              ) : (
-                <RelayInlineState
-                  tone="empty"
-                  title="Brief preview unavailable"
-                  description="Relay captured the executor brief artifact but no preview text is available in this view."
-                />
-              )}
-            </>
-          ) : (
-            <RelayInlineState
-              tone="empty"
-              title="Executor brief not rendered"
-              description={
-                isPacketValidated
-                  ? "Use the stage rail to render the executor brief from the validated packet."
-                  : "A validated or repaired packet is required before the executor brief can be rendered."
-              }
-            />
-          )}
-
-          {briefValidationReport?.issues?.length ? (
-            <RunStageFindingList>
-              {briefValidationReport.issues.map((issue, index) => (
-                <RunStageFindingRow
-                  key={`${issue.severity || "issue"}-${index}`}
-                  severity={issue.severity === "error" ? "error" : "warning"}
-                  message={issue.message || "Validation issue captured."}
-                />
-              ))}
-            </RunStageFindingList>
-          ) : briefValidationReport?.status === "passed" ? (
-            <p className="text-sm text-muted-foreground">
-              Brief validation passed with no reported issues.
-            </p>
-          ) : null}
-        </div>
-      </RunStageContentSection>
-
-      <RunStageContentSection
-        eyebrow="Approval"
-        title="Approval"
-        description="Approve the compiled executor brief to advance to the execution stage."
-      >
-        <div className="flex flex-col gap-3">
-          {isApprovedForExecutor ? (
-            <RelayInlineState
-              tone="success"
-              title="Approved for executor"
-              description="Compile / Render is complete. Use the stage rail to continue into Execute."
-            />
-          ) : canApproveBrief ? (
-            <>
-              <RelayInlineState
-                tone="info"
-                title="Ready for approval"
-                description="Review notes can be captured here before approving the executor brief from the stage rail."
-              />
-              <div className="flex flex-col gap-1.5">
-                <Label
-                  htmlFor="approval-notes"
-                  className="text-xs text-muted-foreground"
-                >
-                  Approval Notes (Optional)
-                </Label>
-                <Textarea
-                  id="approval-notes"
-                  value={approvalNotes}
-                  onChange={(event) => setApprovalNotes(event.target.value)}
-                  placeholder="Optional notes for the approval decision..."
-                  className="h-20 resize-none text-xs"
-                  disabled={isPending}
-                />
-              </div>
-            </>
-          ) : (
-            <RelayInlineState
-              tone="empty"
-              title="Approval not ready"
-              description={
-                isApprovedForPrepare
-                  ? "Compile must run before approval can become available."
-                  : "Compile, packet validation, and executor brief review must complete before approval is available."
-              }
-            />
-          )}
-        </div>
-      </RunStageContentSection>
-
-      <RunStageContentSection
-        eyebrow="Artifacts"
-        title="Generated Artifacts"
-        description="Files generated or compiled during this stage."
-      >
-        <RunStageEvidenceList>
-          {canonicalPacketArt ? (
-            <RunStageEvidenceRow
-              label="Canonical Packet"
-              value={canonicalPacketArt.filename}
-            />
-          ) : null}
-          {packetValidationArt ? (
-            <RunStageEvidenceRow
-              label="Packet Validation Report"
-              value={packetValidationArt.filename}
-            />
-          ) : null}
-          {executorBriefArt ? (
-            <RunStageEvidenceRow
-              label="Executor Brief"
-              value={executorBriefArt.filename}
-            />
-          ) : null}
-          {briefValidationArt ? (
-            <RunStageEvidenceRow
-              label="Brief Validation Report"
-              value={briefValidationArt.filename}
-            />
-          ) : null}
-          {!canonicalPacketArt && !packetValidationArt && !executorBriefArt && !briefValidationArt ? (
-            <p className="text-xs text-muted-foreground italic">No artifacts generated yet.</p>
-          ) : null}
-        </RunStageEvidenceList>
-      </RunStageContentSection>
-
-      <RunStageContentSection
-        eyebrow="Activity"
-        title="Recent Activity"
-        description="Recent events logged during compile/render stage."
-      >
-        {latestEvents && latestEvents.length > 0 ? (
-          <RunStageActivityList>
-            {latestEvents.slice(-5).map((e: any, i: number) => {
-              const timeStr = new Date(e.createdAt).toLocaleTimeString("en-US", {
-                hour12: false,
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              });
-              return (
-                <RunStageActivityRow
-                  key={i}
-                  timestamp={timeStr}
-                  message={e.message}
-                />
-              );
-            })}
-          </RunStageActivityList>
-        ) : (
-          <p className="text-xs text-muted-foreground italic">No recent activity.</p>
-        )}
-      </RunStageContentSection>
-
-      {packetValidationArt ? (
-        <ArtifactInspectorDialog
-          runId={run.id}
-          artifact={packetValidationArt}
-          open={showValidationInspector}
-          onOpenChange={setShowValidationInspector}
-        />
-      ) : null}
-    </RunStageMainStack>
-  );
-}
-
-function CompileRenderDetailsPanel({
-  controller,
-}: {
-  controller: CompileRenderController;
-}) {
-  const {
-    run,
-    canonicalPacketArt,
-    packetValidationArt,
-    executorBriefArt,
-    briefValidationArt,
-  } = controller;
-
-  return (
-    <div className="flex flex-col gap-3">
-      <RunStageInspectorSection title="Run State">
-        <RunStageKeyValueRow label="Status" value={controller.status} mono />
-        <RunStageKeyValueRow label="Active step" value="Compile / Render" />
-        <RunStageKeyValueRow
-          label="Executor adapter"
-          value={run.executorAdapter || run.executor || "—"}
-          mono
-        />
-        <RunStageKeyValueRow label="Selected model" value={run.model || "—"} mono />
-      </RunStageInspectorSection>
-
-      <RunStageInspectorSection title="Compiled Packet">
-        <RunStageKeyValueRow
-          label="Canonical packet"
-          value={formatArtifactLocation(canonicalPacketArt)}
-          mono
-        />
-        <RunStageKeyValueRow
-          label="Validation status"
-          value={getPacketValidationStateLabel(controller)}
-        />
-        <RunStageKeyValueRow
-          label="Validation report"
-          value={formatArtifactLocation(packetValidationArt)}
-          mono
-        />
-      </RunStageInspectorSection>
-
-      <RunStageInspectorSection title="Repair">
-        <RunStageKeyValueRow
-          label="Eligibility"
-          value={getRepairEligibilityLabel(controller)}
-        />
-        <RunStageKeyValueRow
-          label="Latest repair result"
-          value={getRepairResultLabel(controller)}
-        />
-      </RunStageInspectorSection>
-
-      <RunStageInspectorSection title="Executor Brief">
-        <RunStageKeyValueRow
-          label="Brief artifact"
-          value={formatArtifactLocation(executorBriefArt)}
-          mono
-        />
-        <RunStageKeyValueRow
-          label="Validation status"
-          value={getBriefValidationStateLabel(controller)}
-        />
-        <RunStageKeyValueRow
-          label="Validation report"
-          value={formatArtifactLocation(briefValidationArt)}
-          mono
-        />
-      </RunStageInspectorSection>
-
-      <RunStageInspectorSection title="Approval">
-        <RunStageKeyValueRow
-          label="Approval state"
-          value={getApprovalStateLabel(controller)}
-        />
-      </RunStageInspectorSection>
-    </div>
-  );
-}
-
 
 function findArtifact(
   artifacts: RelayArtifact[],
@@ -1066,172 +200,422 @@ function parseArtifactPreview<T>(artifact?: RelayArtifact): T | null {
   }
 }
 
-function formatArtifactLocation(artifact?: RelayArtifact): string {
-  return artifact?.path || artifact?.filename || "—";
-}
+function PrepareTracker({
+  run,
+  artifacts,
+  events,
+  eventsLoadFailed,
+}: {
+  run: RelayRun;
+  artifacts: RelayArtifact[];
+  events: RelayRunEvent[];
+  eventsLoadFailed: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [approvalNotes, setApprovalNotes] = React.useState("");
+  const [showApproveForm, setShowApproveForm] = React.useState(false);
+  const [repairResult, setRepairResult] =
+    React.useState<RepairValidationResponse | null>(null);
+  const [pendingActionId, setPendingActionId] = React.useState<string | null>(
+    null,
+  );
 
-function getCompileSummaryLabel(controller: CompileRenderController): string {
-  if (controller.isPacketValidationFailed) {
-    return "Compile failed";
-  }
-  if (controller.compileAttempted) {
-    return "Compiled";
-  }
-  if (controller.isPending && controller.compileMutation.isPending) {
-    return "Compiling";
-  }
-  return "Pending";
-}
+  const canonicalPacketArt = findArtifact(artifacts, "canonical_packet.json");
+  const packetValidationArt = findArtifact(
+    artifacts,
+    "packet_validation_report.json",
+  );
+  const executorBriefArt = findArtifact(artifacts, "executor_brief.md");
+  const briefValidationArt = findArtifact(
+    artifacts,
+    "brief_validation_report.json",
+  );
 
-function getCompileSummaryTone(
-  controller: CompileRenderController,
-): "default" | "success" | "warning" | "danger" {
-  if (controller.isPacketValidationFailed) {
-    return "danger";
-  }
-  if (controller.compileAttempted) {
-    return "success";
-  }
-  if (controller.canCompile) {
-    return "warning";
-  }
-  return "default";
-}
+  const status = run.status;
+  const isApprovedForPrepare = status === "approved_for_prepare";
+  const isPacketValidationFailed = status === "packet_validation_failed";
+  const isPacketValidated =
+    status === "packet_validated" || status === "repair_validated";
+  const isBriefReadyForReview = status === "brief_ready_for_review";
 
-function getPacketValidationStateLabel(
-  controller: CompileRenderController,
-): string {
-  if (controller.packetValidationReport?.valid === true) {
-    return "Valid";
-  }
-  if (controller.isPacketValidationFailed) {
-    return "Invalid";
-  }
-  if (controller.packetValidationArt) {
-    return "Invalid";
-  }
-  return "Pending";
-}
+  const canCompile = isApprovedForPrepare;
+  const canRetryCompile = isPacketValidationFailed;
+  const canRenderBrief = isPacketValidated;
+  const canApproveBrief = isBriefReadyForReview;
 
-function getPacketValidationStateTone(
-  controller: CompileRenderController,
-): "default" | "success" | "warning" | "danger" {
-  if (controller.packetValidationReport?.valid === true) {
-    return "success";
-  }
-  if (controller.isPacketValidationFailed || controller.packetValidationArt) {
-    return "danger";
-  }
-  if (controller.compileAttempted) {
-    return "warning";
-  }
-  return "default";
-}
+  const packetValidationReport = parseArtifactPreview<PacketValidationReport>(
+    packetValidationArt,
+  );
+  const briefValidationReport = parseArtifactPreview<BriefValidationReport>(
+    briefValidationArt,
+  );
 
-function getRepairEligibilityLabel(controller: CompileRenderController): string {
-  if (controller.isPacketValidationFailed) {
-    return controller.repairEligible ? "Repair eligible" : "Not eligible";
-  }
-  if (
-    controller.isPacketValidated ||
-    controller.isBriefReadyForReview ||
-    controller.isApprovedForExecutor
-  ) {
-    return "Not applicable";
-  }
-  return "Pending";
-}
+  const repairEligibility = evaluateRepairEligibility(packetValidationReport);
+  const canAttemptRepair =
+    isPacketValidationFailed &&
+    repairEligibility.canOfferRepair &&
+    repairResult === null;
 
-function getRepairResultLabel(controller: CompileRenderController): string {
-  if (controller.repairMutation.isPending) {
-    return "Pending";
-  }
-  if (controller.status === "repair_validated") {
-    return "Validated";
-  }
-  if (controller.repairResult?.blockedReason) {
-    return "Blocked";
-  }
-  if (controller.repairResult?.ineligibleReason) {
-    return "Ineligible";
-  }
-  if (controller.repairResult?.reValidationValid === true) {
-    return "Validated";
-  }
-  if (
-    controller.repairResult?.reValidationValid === false ||
-    controller.repairResult?.error
-  ) {
-    return "Failed";
-  }
-  return "Pending";
-}
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ["relay-runs"] });
+  };
 
-function getRepairGuidance(
-  controller: CompileRenderController,
-  fallbackReason: string,
-): string {
-  if (controller.isPacketValidationFailed) {
-    if (controller.repairEligible) {
-      return "Repair is available for this validation failure. Use the stage rail if you want Relay to attempt a constrained repair pass.";
+  const compileMutation = useMutation({
+    mutationFn: () => prepareRun(run.id),
+    onSuccess: invalidate,
+    onError: invalidate,
+  });
+
+  const renderBriefMutation = useMutation({
+    mutationFn: () => renderBrief(run.id),
+    onSuccess: invalidate,
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: () =>
+      approveBrief(run.id, {
+        action: "approve",
+        notes: approvalNotes.trim() || undefined,
+      }),
+    onSuccess: () => {
+      setShowApproveForm(false);
+      setApprovalNotes("");
+      invalidate();
+    },
+  });
+
+  const repairMutation = useMutation({
+    mutationFn: () => repairValidation(run.id),
+    onSuccess: (data) => {
+      setRepairResult(data);
+      invalidate();
+    },
+    onError: invalidate,
+  });
+
+  const compileRenderVisualStateInput = {
+    run,
+    repairEligible: repairEligibility.canOfferRepair,
+    repairResult,
+    compilePending: compileMutation.isPending,
+    repairPending: repairMutation.isPending,
+    renderBriefPending: renderBriefMutation.isPending,
+    approvePending: approveMutation.isPending,
+    hasPassingBriefValidationReport:
+      briefValidationReport?.status === "passed",
+    hasFailingBriefValidationReport: Boolean(
+      briefValidationArt && briefValidationReport?.status !== "passed",
+    ),
+  };
+  const compileRenderDisplayState = getCompileRenderDisplayState(
+    compileRenderVisualStateInput,
+  );
+
+  const currentStatus = deriveCurrentStatusText(
+    "prepare",
+    compileRenderDisplayState,
+    { updatedAt: run.updatedAt },
+  );
+  const progression = deriveProgressionLog(events);
+
+  const baseActionsView = buildPrepareActionsView({
+    canCompile,
+    canRetryCompile,
+    canAttemptRepair,
+    canRenderBrief,
+    canApproveBrief,
+  });
+  const actionsView: StepActionsView = pendingActionId
+    ? {
+        ...baseActionsView,
+        controls: baseActionsView.controls.map((control) =>
+          control.id === pendingActionId
+            ? { ...control, enabled: false }
+            : control,
+        ),
+      }
+    : baseActionsView;
+
+  // approveBrief requires Operator-entered notes, so it opens a dialog
+  // rather than invoking a mutation directly from `onActionClick`. Every
+  // other id maps directly onto the existing mutation for this route; the
+  // returned Promise is passed straight back so `RunStatusTrackerLayout`'s
+  // built-in tone-escalation (Requirement 6.6) handles the failure banner
+  // — no separate manual error-banner state.
+  const onActionClick = (id: string) => {
+    if (id === "approveBrief") {
+      setShowApproveForm(true);
+      return;
     }
-    return fallbackReason || "Repair is not available for the current validation report.";
-  }
 
-  if (controller.status === "repair_validated") {
-    return "Repair already validated for this run. Continue with executor brief rendering.";
-  }
+    let mutationPromise: Promise<unknown> | undefined;
+    if (id === "compile" || id === "retryCompile") {
+      mutationPromise = compileMutation.mutateAsync();
+    } else if (id === "attemptRepair") {
+      setRepairResult(null);
+      mutationPromise = repairMutation.mutateAsync();
+    } else if (id === "renderBrief") {
+      mutationPromise = renderBriefMutation.mutateAsync();
+    }
 
-  if (!controller.compileAttempted) {
-    return "Repair becomes relevant only after a compile pass produces a validation report.";
-  }
+    if (!mutationPromise) {
+      return;
+    }
 
-  return "Repair is only relevant when compile validation fails with repair-eligible issues.";
+    setPendingActionId(id);
+    return mutationPromise.finally(() => setPendingActionId(null));
+  };
+
+  const planPassLinkView = resolvePlanPassLink(run.planContext);
+
+  // ------------------------------------------------------------
+  // Detail_Disclosure (Requirement 5.8) — canonical packet content, packet
+  // validation report detail, full executor brief text, brief validation
+  // issue list, repair result detail. Reuses the existing
+  // `ArtifactPreviewCard`/`ValidationPanel` preview-rendering components —
+  // the same components the prior inspector tabs used for this content —
+  // rather than inventing new rendering. Lazy: only invoked once a section
+  // is opened.
+  // ------------------------------------------------------------
+  const packetValidationErrors = packetValidationReport?.errors || [];
+  const briefValidationIssues = briefValidationReport?.issues || [];
+
+  const detailSections: DetailSection[] = [
+    {
+      key: "packet-content",
+      label: "Canonical packet",
+      render: () =>
+        canonicalPacketArt ? (
+          <ArtifactPreviewCard runId={run.id} artifact={canonicalPacketArt} />
+        ) : (
+          <p className="text-xs text-muted-foreground italic">
+            No canonical packet artifact found for this run.
+          </p>
+        ),
+    },
+    {
+      key: "packet-validation",
+      label: "Packet validation report",
+      render: () => (
+        <div className="flex flex-col gap-3">
+          <RunStageKeyValueRow
+            label="Status"
+            value={
+              packetValidationReport?.valid === true ? "Valid" : "Invalid"
+            }
+          />
+          {packetValidationErrors.length > 0 ? (
+            <RunStageFindingList>
+              {packetValidationErrors.map((error, index) => (
+                <RunStageFindingRow
+                  key={`${error.code || "issue"}-${index}`}
+                  severity="error"
+                  code={error.code}
+                  message={error.message || "Validation issue captured."}
+                />
+              ))}
+            </RunStageFindingList>
+          ) : null}
+          {packetValidationArt ? (
+            <ArtifactPreviewCard runId={run.id} artifact={packetValidationArt} />
+          ) : (
+            <p className="text-xs text-muted-foreground italic">
+              No packet validation report artifact found for this run.
+            </p>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "executor-brief",
+      label: "Executor brief",
+      render: () =>
+        executorBriefArt ? (
+          <div className="flex flex-col gap-3">
+            {executorBriefArt.preview ? (
+              <pre className="max-h-96 overflow-y-auto rounded border border-border/40 bg-[var(--relay-code-bg)] p-3 font-mono text-[11px] whitespace-pre-wrap text-foreground">
+                {executorBriefArt.preview}
+              </pre>
+            ) : null}
+            <ArtifactPreviewCard runId={run.id} artifact={executorBriefArt} />
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">
+            No executor brief artifact found for this run.
+          </p>
+        ),
+    },
+    {
+      key: "brief-validation",
+      label: "Brief validation issues",
+      render: () => (
+        <div className="flex flex-col gap-3">
+          <RunStageKeyValueRow
+            label="Status"
+            value={
+              briefValidationReport?.status === "passed" ? "Passed" : "Failed"
+            }
+          />
+          {briefValidationIssues.length > 0 ? (
+            <RunStageFindingList>
+              {briefValidationIssues.map((issue, index) => (
+                <RunStageFindingRow
+                  key={`${issue.severity || "issue"}-${index}`}
+                  severity={issue.severity === "error" ? "error" : "warning"}
+                  message={issue.message || "Validation issue captured."}
+                />
+              ))}
+            </RunStageFindingList>
+          ) : (
+            <p className="text-xs text-muted-foreground italic">
+              No brief validation issues reported.
+            </p>
+          )}
+          {briefValidationArt ? (
+            <ArtifactPreviewCard runId={run.id} artifact={briefValidationArt} />
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      key: "repair-result",
+      label: "Repair result",
+      render: () => (
+        <div className="flex flex-col gap-3">
+          <RunStageKeyValueRow
+            label="Eligibility"
+            value={
+              repairEligibility.canOfferRepair
+                ? "Repair eligible"
+                : repairEligibility.reason || "Not eligible"
+            }
+          />
+          {repairResult?.blockedReason ? (
+            <RunStageKeyValueRow
+              label="Blocked"
+              value={repairResult.blockedReason}
+            />
+          ) : null}
+          {repairResult?.ineligibleReason ? (
+            <RunStageKeyValueRow
+              label="Ineligible"
+              value={repairResult.ineligibleReason}
+            />
+          ) : null}
+          {repairResult?.reValidationValid !== undefined ? (
+            <RunStageKeyValueRow
+              label="Re-validation"
+              value={repairResult.reValidationValid ? "Passed" : "Failed"}
+            />
+          ) : null}
+          {repairResult?.reValidationError ? (
+            <RunStageKeyValueRow
+              label="Re-validation error"
+              value={repairResult.reValidationError}
+            />
+          ) : null}
+          {!repairResult ? (
+            <p className="text-xs text-muted-foreground italic">
+              Repair has not been attempted for this run.
+            </p>
+          ) : null}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <RunStatusTrackerLayout
+        run={run}
+        currentStep="prepare"
+        currentStatus={currentStatus}
+        actionsView={actionsView}
+        onActionClick={onActionClick}
+        progression={progression}
+        eventsLoadFailed={eventsLoadFailed}
+        detailSections={detailSections}
+        planPassLinkView={planPassLinkView}
+      />
+
+      <ApproveBriefDialog
+        open={showApproveForm}
+        onOpenChange={setShowApproveForm}
+        notes={approvalNotes}
+        setNotes={setApprovalNotes}
+        mutation={approveMutation}
+      />
+    </>
+  );
 }
 
-function getExecutorBriefSummaryLabel(
-  controller: CompileRenderController,
-): string {
-  if (controller.executorBriefArt) {
-    return "Rendered";
-  }
-  if (controller.canRenderBrief) {
-    return "Ready to render";
-  }
-  return "Pending";
-}
+// ------------------------------------------------------------
+// Action dialog — approveBrief requires an optional Operator-entered notes
+// field that cannot be derived from just a run id, so `onActionClick` opens
+// this dialog instead of invoking a mutation directly. Rendered outside
+// `RunStatusTrackerLayout` (Requirement 6.1's single main column describes
+// the tracker regions, not modal overlays).
+// ------------------------------------------------------------
 
-
-function getBriefValidationStateLabel(
-  controller: CompileRenderController,
-): string {
-  if (controller.briefValidationReport?.status === "passed") {
-    return "Passed";
-  }
-  if (controller.briefValidationArt) {
-    return "Failed";
-  }
-  return "Pending";
-}
-
-function getApprovalStateLabel(controller: CompileRenderController): string {
-  if (controller.isApprovedForExecutor) {
-    return "Approved for executor";
-  }
-  if (controller.canApproveBrief) {
-    return "Ready for approval";
-  }
-  return "Not ready";
-}
-
-function getApprovalStateTone(
-  controller: CompileRenderController,
-): "default" | "success" | "warning" | "danger" {
-  if (controller.isApprovedForExecutor) {
-    return "success";
-  }
-  if (controller.canApproveBrief) {
-    return "warning";
-  }
-  return "default";
+function ApproveBriefDialog({
+  open,
+  onOpenChange,
+  notes,
+  setNotes,
+  mutation,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  notes: string;
+  setNotes: (value: string) => void;
+  mutation: ReturnType<typeof useMutation<unknown, unknown, void>>;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Approve for Executor</DialogTitle>
+          <DialogDescription>
+            Approve the compiled executor brief to advance to the execution
+            stage.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="approval-notes" className="text-xs text-muted-foreground">
+            Approval Notes (Optional)
+          </Label>
+          <Textarea
+            id="approval-notes"
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            placeholder="Optional notes for the approval decision..."
+            className="h-20 resize-none text-xs"
+            disabled={mutation.isPending}
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onOpenChange(false)}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+            className="gap-1.5"
+          >
+            {mutation.isPending ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : null}
+            Confirm Approval
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }

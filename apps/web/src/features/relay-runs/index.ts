@@ -87,7 +87,9 @@ export type {
 } from './types'
 export {
   RELAY_AUDIT_DECISION_VALUES,
+  RELAY_RUN_STEPS,
 } from './types'
+export type { RelayRunStepInfo } from './types'
 export {
   EXECUTOR_ADAPTER_OPTIONS,
   KIRO_MODEL_OPTIONS,

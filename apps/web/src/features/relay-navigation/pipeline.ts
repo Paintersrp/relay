@@ -26,7 +26,7 @@
 //   - These are pure view derivations over the existing canonical `status`
 //     enum; they introduce no new status values and produce no state transition.
 
-import type { RelayRunStatus, RelayRunStep } from "@/features/relay-runs";
+import { RELAY_RUN_STEPS, type RelayRunStatus, type RelayRunStep } from "@/features/relay-runs";
 import { AWAITING_REVIEW_STATUSES, BLOCKED_STATUSES } from "./statusSets";
 import type { PipelineStageStatus, PipelineStageView } from "./types";
 
@@ -42,13 +42,19 @@ export const PIPELINE_STAGE_ORDER: readonly RelayRunStep[] = [
   "audit",
 ] as const;
 
-/** Human-readable stage labels for the pipeline stage rail. */
-export const PIPELINE_STAGE_LABELS: Record<RelayRunStep, string> = {
-  intake: "Intake",
-  prepare: "Compile / Render",
-  execute: "Execute",
-  audit: "Audit",
-};
+/**
+ * Human-readable stage labels for the pipeline stage rail, derived from the
+ * single canonical `RELAY_RUN_STEPS` step list rather than a separately
+ * maintained label list (Requirement 2.7). This keeps the Run_Stepper's
+ * labels in sync with `RELAY_RUN_STEPS` by construction.
+ */
+export const PIPELINE_STAGE_LABELS: Record<RelayRunStep, string> = RELAY_RUN_STEPS.reduce(
+  (labels: Record<RelayRunStep, string>, stepInfo) => {
+    labels[stepInfo.key] = stepInfo.label;
+    return labels;
+  },
+  {} as Record<RelayRunStep, string>,
+);
 
 /**
  * Stage -> route template mapping. Templates use the `$runId` param and are
@@ -107,17 +113,20 @@ const STATUS_TO_STAGE: Record<RelayRunStatus, RelayRunStep> = {
 };
 
 /**
- * Resolve the current pipeline stage from the canonical `status` alone. Unknown
- * / out-of-enum status strings resolve to the first stage (Intake) so the
- * derivation remains a total function that never crashes on unexpected input.
+ * Resolve the current pipeline stage from the canonical `status` alone.
+ * Returns `undefined` when `status` does not map to any of the four canonical
+ * step keys (Requirement 2.4), so the derivation stays a total function that
+ * never crashes on unexpected input while never fabricating a false "current"
+ * position for a non-canonical status.
  */
-function resolveCurrentStage(status: RelayRunStatus | string): RelayRunStep {
+function resolveCurrentStage(status: RelayRunStatus | string): RelayRunStep | undefined {
   // Guard with an own-property check so status strings that collide with
   // `Object.prototype` members (e.g. "valueOf", "toString", "constructor") do
-  // not resolve to inherited prototype values; unknown inputs default to Intake.
+  // not resolve to inherited prototype values; unknown inputs resolve to
+  // `undefined` (no canonical step match).
   return Object.prototype.hasOwnProperty.call(STATUS_TO_STAGE, status)
     ? STATUS_TO_STAGE[status as RelayRunStatus]
-    : "intake";
+    : undefined;
 }
 
 // ------------------------------------------------------------
@@ -153,17 +162,23 @@ function isAttentionStatus(status: RelayRunStatus | string): boolean {
  *   (Requirement 6.2) — unless the status is in the closed attention set, in
  *   which case the affected (current) stage is marked `attention` to surface
  *   the blocked / awaiting-review indicator (Requirement 6.4).
+ * - WHEN `status` does not map to any of the four canonical step keys, no
+ *   stage is marked `current`/`attention` and all four stages fall back to
+ *   `pending` (Requirement 2.4).
  * - Deterministic over `status` only; no derived display field is consulted
  *   (Requirements 6.3, 6.7, 6.8).
  */
 export function derivePipelineStages(status: RelayRunStatus | string): PipelineStageView[] {
   const currentStage = resolveCurrentStage(status);
-  const currentIndex = PIPELINE_STAGE_ORDER.indexOf(currentStage);
-  const needsAttention = isAttentionStatus(status);
+  const currentIndex = currentStage ? PIPELINE_STAGE_ORDER.indexOf(currentStage) : -1;
+  const needsAttention = currentIndex !== -1 && isAttentionStatus(status);
 
   return PIPELINE_STAGE_ORDER.map((step, index) => {
     let stageStatus: PipelineStageStatus;
-    if (index < currentIndex) {
+    if (currentIndex === -1) {
+      // Non-canonical status: no step is active, all steps are upcoming.
+      stageStatus = "pending";
+    } else if (index < currentIndex) {
       stageStatus = "completed";
     } else if (index > currentIndex) {
       stageStatus = "pending";

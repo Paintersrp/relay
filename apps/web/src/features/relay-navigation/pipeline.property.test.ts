@@ -88,18 +88,16 @@ const nonAttentionCanonicalArb: fc.Arbitrary<string> = fc.constantFrom(
   ...NON_ATTENTION_CANONICAL,
 );
 
-// (b) Arbitrary unknown strings that are guaranteed NOT to be in the attention
+// (c) Arbitrary unknown strings that are guaranteed NOT to be in the attention
 // set (unknown / out-of-enum input must never surface an attention indicator).
+// These are also non-canonical, so they fall back to the all-pending /
+// none-active shape (Requirement 2.4) rather than a "current" stage.
 const unknownStringArb: fc.Arbitrary<string> = fc
   .string({ minLength: 0, maxLength: 24 })
-  .filter((s) => !ATTENTION_SET.has(s));
+  .filter((s) => !ATTENTION_SET.has(s) && !ALL_CANONICAL_STATUSES.includes(s as RelayRunStatus));
 
-// The full non-attention input space: non-attention canonical statuses plus
-// arbitrary unknown strings.
-const nonAttentionStatusArb: fc.Arbitrary<string> = fc.oneof(
-  nonAttentionCanonicalArb,
-  unknownStringArb,
-);
+// The full non-attention canonical input space.
+const nonAttentionStatusArb: fc.Arbitrary<string> = nonAttentionCanonicalArb;
 
 describe("derivePipelineStages — Property 11: pipeline attention indicator", () => {
   it("marks exactly the current-position stage 'attention' (and none 'current') for attention statuses", () => {
@@ -120,7 +118,7 @@ describe("derivePipelineStages — Property 11: pipeline attention indicator", (
     );
   });
 
-  it("marks no stage 'attention' and exactly one 'current' for non-attention statuses", () => {
+  it("marks no stage 'attention' and exactly one 'current' for non-attention canonical statuses", () => {
     fc.assert(
       fc.property(nonAttentionStatusArb, (status) => {
         const stages = derivePipelineStages(status);
@@ -137,9 +135,26 @@ describe("derivePipelineStages — Property 11: pipeline attention indicator", (
     );
   });
 
+  it("never surfaces attention or a current position for non-canonical (unknown) statuses (Req 2.4)", () => {
+    fc.assert(
+      fc.property(unknownStringArb, (status) => {
+        const stages = derivePipelineStages(status);
+
+        const attentionCount = stages.filter((s) => s.status === "attention").length;
+        const currentCount = stages.filter((s) => s.status === "current").length;
+
+        expect(attentionCount).toBe(0);
+        expect(currentCount).toBe(0);
+        expect(stages.every((s) => s.status === "pending")).toBe(true);
+      }),
+      { numRuns: 200 },
+    );
+  });
+
   it("surfaces attention IF AND ONLY IF the status is in the closed attention set", () => {
     // Draw across the union of attention and non-attention canonical statuses
-    // plus unknown strings to exercise the biconditional directly.
+    // to exercise the biconditional directly (unknown/non-canonical statuses
+    // are covered separately above since they never map to any stage key).
     const anyStatusArb = fc.oneof(attentionStatusArb, nonAttentionStatusArb);
 
     fc.assert(
