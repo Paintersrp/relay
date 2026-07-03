@@ -133,7 +133,7 @@ func (a *contextPacketAdapter) CreateContextPacket(ctx context.Context, input ap
 	return &appplans.CtxPacketResult{
 		ContextPacketID:    result.ContextPacketID,
 		Status:             result.Status,
-		CoverageReportPath: result.CoverageReportPath,
+		CoverageReportPath: brokerSafeArtifactPath(result.CoverageReportPath),
 		BlockedSeedCount:   result.BlockedSeedCount,
 		MissingSeedCount:   result.MissingSeedCount,
 		Truncated:          result.Truncated,

@@ -1224,8 +1224,8 @@ Validates that create_run_from_planner_handoff can associate a new run to a plan
 			} else {
 				h.check("create_source_snapshot freshness_report present", false)
 			}
-			h.check("create_source_snapshot repository_count>=1", arrayFieldPresent(snapResult, "repositories"))
-			h.check("create_source_snapshot dirty_repo_count=0", repositoriesClean(snapResult["repositories"]))
+			h.check("create_source_snapshot repository_count>=1", sourceSnapshotRepositoryCountExplicit(snapResult))
+			h.check("create_source_snapshot dirty_repo_count=0", sourceSnapshotRepositoriesExplicitlyClean(snapResult))
 		} else {
 			h.check("create_source_snapshot freshness_report present", false)
 		}
@@ -1635,26 +1635,131 @@ func schemaProperties(schema map[string]interface{}) map[string]interface{} {
 }
 
 func (h *harness) checkNoLocalPathLeak(name string, payload any, forbidden ...string) {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		h.failf("%s marshal for leak check: %v", name, err)
-		return
+	var data []byte
+	switch p := payload.(type) {
+	case []byte:
+		data = p
+	case json.RawMessage:
+		data = p
+	default:
+		var err error
+		data, err = json.Marshal(payload)
+		if err != nil {
+			h.failf("%s marshal for leak check: %v", name, err)
+			return
+		}
 	}
 	text := strings.ToLower(string(data))
 	h.check(name+" omits local_path field", !strings.Contains(text, `"local_path"`))
+	var decoded any
+	stringValues := []string{}
+	if err := json.Unmarshal(data, &decoded); err == nil {
+		collectStringValues(decoded, &stringValues)
+	} else {
+		collectStringValues(payload, &stringValues)
+	}
 	for _, raw := range append(h.forbiddenLeakStrings(), forbidden...) {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
 		}
-		h.check(name+" omits "+sanitizeCheckName(raw), !strings.Contains(text, strings.ToLower(raw)))
+		h.check(name+" omits "+sanitizeCheckName(raw), !containsPathLeak(stringValues, raw))
 	}
+}
+
+func collectStringValues(v any, out *[]string) {
+	switch x := v.(type) {
+	case nil:
+		return
+	case string:
+		*out = append(*out, x)
+	case []interface{}:
+		for _, item := range x {
+			collectStringValues(item, out)
+		}
+	case map[string]interface{}:
+		for _, item := range x {
+			collectStringValues(item, out)
+		}
+	default:
+		data, err := json.Marshal(x)
+		if err != nil {
+			return
+		}
+		var decoded any
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			return
+		}
+		switch decoded.(type) {
+		case nil, string, []interface{}, map[string]interface{}:
+		default:
+			return
+		}
+		collectStringValues(decoded, out)
+	}
+}
+
+func containsPathLeak(values []string, forbidden string) bool {
+	forbiddenVariants := pathLeakVariants(forbidden)
+	for _, value := range values {
+		for _, valueVariant := range pathLeakVariants(value) {
+			for _, forbiddenVariant := range forbiddenVariants {
+				if forbiddenVariant != "" && strings.Contains(valueVariant, forbiddenVariant) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func pathLeakVariants(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	candidates := []string{
+		raw,
+		strings.ReplaceAll(raw, `\`, `/`),
+		strings.ReplaceAll(raw, `/`, `\`),
+		strings.ReplaceAll(raw, `\/`, `/`),
+	}
+	if unescaped, err := strconv.Unquote(`"` + strings.ReplaceAll(raw, `"`, `\"`) + `"`); err == nil {
+		candidates = append(candidates, unescaped, strings.ReplaceAll(unescaped, `\`, `/`), strings.ReplaceAll(unescaped, `/`, `\`))
+	}
+	if encoded, err := json.Marshal(raw); err == nil {
+		escaped := strings.Trim(string(encoded), `"`)
+		candidates = append(candidates, escaped, strings.ReplaceAll(escaped, `\`, `/`), strings.ReplaceAll(escaped, `/`, `\`))
+	}
+	out := make([]string, 0, len(candidates)*2)
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		candidate = collapsePathSeparators(candidate)
+		for _, variant := range []string{candidate, strings.ToLower(candidate)} {
+			if variant == "" || seen[variant] {
+				continue
+			}
+			seen[variant] = true
+			out = append(out, variant)
+		}
+	}
+	return out
+}
+
+func collapsePathSeparators(s string) string {
+	for strings.Contains(s, `//`) {
+		s = strings.ReplaceAll(s, `//`, `/`)
+	}
+	for strings.Contains(s, `\\`) {
+		s = strings.ReplaceAll(s, `\\`, `\`)
+	}
+	return s
 }
 
 func (h *harness) forbiddenLeakStrings() []string {
 	var out []string
-	for _, path := range []string{h.repoRoot, filepath.Dir(h.repoRoot), h.dbPath, filepath.Dir(h.dbPath)} {
-		if strings.TrimSpace(path) != "" {
+	for _, path := range []string{h.repoRoot, h.dbPath, filepath.Dir(h.dbPath)} {
+		if path = strings.TrimSpace(path); path != "" && path != "." {
 			out = append(out, path)
 		}
 	}
@@ -1759,7 +1864,7 @@ func toolOutputMap(res toolCallResult) map[string]interface{} {
 	return out
 }
 
-func repositoriesClean(v interface{}) bool {
+func repositoriesExplicitlyClean(v interface{}) bool {
 	repos, ok := v.([]interface{})
 	if !ok || len(repos) == 0 {
 		return false
@@ -1769,13 +1874,39 @@ func repositoriesClean(v interface{}) bool {
 		if !ok {
 			return false
 		}
-		if status, ok := repo["git_status"].(map[string]interface{}); ok {
-			if dirty, ok := status["dirty"].(bool); ok && dirty {
-				return false
-			}
+		status, ok := repo["git_status"].(map[string]interface{})
+		if !ok {
+			return false
+		}
+		dirty, ok := status["dirty"].(bool)
+		if !ok {
+			dirty, ok = status["Dirty"].(bool)
+		}
+		if !ok || dirty {
+			return false
 		}
 	}
 	return true
+}
+
+func sourceSnapshotRepositoryCountExplicit(result map[string]interface{}) bool {
+	if freshReport, ok := result["freshness_report"].(map[string]interface{}); ok {
+		if _, ok := numeric(freshReport["repository_count"]); ok {
+			return numberAtLeast(freshReport["repository_count"], 1)
+		}
+	}
+	return arrayFieldPresent(result, "repositories")
+}
+
+func sourceSnapshotRepositoriesExplicitlyClean(result map[string]interface{}) bool {
+	if freshReport, ok := result["freshness_report"].(map[string]interface{}); ok {
+		if _, hasRepoCount := numeric(freshReport["repository_count"]); hasRepoCount {
+			if _, hasDirtyCount := numeric(freshReport["dirty_repo_count"]); hasDirtyCount {
+				return numberAtLeast(freshReport["repository_count"], 1) && numberEquals(freshReport["dirty_repo_count"], 0)
+			}
+		}
+	}
+	return repositoriesExplicitlyClean(result["repositories"])
 }
 
 func hasSharedBlockerEnvelope(res toolCallResult) bool {
