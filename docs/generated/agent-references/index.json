@@ -25,7 +25,7 @@
     },
     {
       "path": "Makefile",
-      "sha256": "5ba4211f67c2eaeee2340d01db211d2bb43c9d41d86f38daff1383c77ce3883e",
+      "sha256": "9044d946228f48cb760e13cae83c21a018a2d36205c4c1eee2add6ac113d1ddd",
       "role": "build configuration"
     },
     {

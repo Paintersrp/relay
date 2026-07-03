@@ -25,13 +25,13 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `internal/mcp/context_broker_tools.go` | `d860b1ab59415aed878cb6f7e025a2d319f744a771ce69c40439a63d05dd50ce` | mcp_tool_source |
+| `internal/mcp/context_broker_tools.go` | `ec4994285c043f442dcceae02fe308917531c998899a6335a1282356b917bd58` | mcp_tool_source |
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | mcp_tool_source |
 | `internal/mcp/plan_seed_tools.go` | `19a7bede46ae71836a0a942123f2d24015e7faaf93896850b57e7bd6cbbb0ad4` | mcp_tool_source |
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | mcp_tool_source |
-| `internal/mcp/server.go` | `71893bd6df036612aef4a0028ef8e14fe7055becb92d347576b5758b10243cef` | mcp_tool_source |
-| `relay-contracts/contracts/planner_mcp_context_broker_contract.md` | `7ff202c0d56f8cd10edf5bb7d670451ccef2d2c948cae66eda2e3e06348862b9` | mcp_contract_source |
-| `relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md` | `73a3afeaccb27e089a0fe186c780d969eb1ca9404deaa857af0839a18b6d908f` | mcp_contract_source |
+| `internal/mcp/server.go` | `a40c21e9030a9538b8219cb24130131a27e3d25bd78f63bc5d1bffff4f76416c` | mcp_tool_source |
+| `relay-contracts/contracts/planner_mcp_context_broker_contract.md` | `3b687af22451b6818dbd42c512ca671f4838d263c7645d5e87d5eefe1a196035` | mcp_contract_source |
+| `relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md` | `bcd69134ce144ab2ad50f7589421b045dbb1001f9b5c5465afa1d5e3928a9ea7` | mcp_contract_source |
 | `relay-contracts/contracts/planner_mcp_plan_attempt_contract.md` | `3cf8df06e87a55560bd4fb900eef70061695c7d40bc81ec9d1c95ef694622997` | mcp_contract_source |
 | `relay-contracts/contracts/planner_mcp_plan_submission_contract.md` | `f234a568fcc5c503b86b298d18cddf632beeed22ae437d560cafe33d475320bc` | mcp_contract_source |
 
@@ -336,6 +336,15 @@ Evidence:
 
 ### mcp-tool-31 (proven)
 
+MCP tool "resolve_project_repository" registered from internal/mcp/context_broker_tools.go with profile gate always; context broker surface
+
+Evidence:
+
+- source: `internal/mcp/context_broker_tools.go`
+- schema_var: `ToolResolveProjectRepository (in internal/mcp/context_broker_tools.go)`
+
+### mcp-tool-32 (proven)
+
 MCP tool "revise_plan_attempt" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface
 
 Evidence:
@@ -343,7 +352,7 @@ Evidence:
 - source: `internal/mcp/plan_attempt_tools.go`
 - schema_var: `ToolRevisePlanAttempt (in internal/mcp/plan_attempt_tools.go)`
 
-### mcp-tool-32 (proven)
+### mcp-tool-33 (proven)
 
 MCP tool "search_project_files" registered from internal/mcp/context_broker_tools.go with profile gate context_broker_profile_required; context broker surface
 
@@ -352,7 +361,7 @@ Evidence:
 - source: `internal/mcp/context_broker_tools.go`
 - schema_var: `ToolSearchProjectFiles (in internal/mcp/context_broker_tools.go)`
 
-### mcp-tool-33 (proven)
+### mcp-tool-34 (proven)
 
 MCP tool "search_refactor_candidates" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; refactor backlog surface
 
@@ -361,7 +370,7 @@ Evidence:
 - source: `internal/mcp/refactor_backlog_tools.go`
 - schema_var: `ToolSearchRefactorCandidates (in internal/mcp/refactor_backlog_tools.go)`
 
-### mcp-tool-34 (proven)
+### mcp-tool-35 (proven)
 
 MCP tool "submit_intent_drift_review" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface
 
@@ -370,7 +379,7 @@ Evidence:
 - source: `internal/mcp/plan_attempt_tools.go`
 - schema_var: `ToolSubmitIntentDriftReview (in internal/mcp/plan_attempt_tools.go)`
 
-### mcp-tool-35 (proven)
+### mcp-tool-36 (proven)
 
 MCP tool "submit_plan_attempt" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface
 
@@ -379,7 +388,7 @@ Evidence:
 - source: `internal/mcp/plan_attempt_tools.go`
 - schema_var: `ToolSubmitPlanAttempt (in internal/mcp/plan_attempt_tools.go)`
 
-### mcp-tool-36 (proven)
+### mcp-tool-37 (proven)
 
 MCP tool "suggest_refactor_candidate_placement" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; refactor backlog surface
 
@@ -388,7 +397,7 @@ Evidence:
 - source: `internal/mcp/refactor_backlog_tools.go`
 - schema_var: `ToolSuggestRefactorCandidatePlacement (in internal/mcp/refactor_backlog_tools.go)`
 
-### mcp-tool-37 (proven)
+### mcp-tool-38 (proven)
 
 MCP tool "supersede_refactor_candidate" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface
 
@@ -397,7 +406,7 @@ Evidence:
 - source: `internal/mcp/refactor_backlog_tools.go`
 - schema_var: `ToolSupersedeRefactorCandidate (in internal/mcp/refactor_backlog_tools.go)`
 
-### mcp-tool-38 (proven)
+### mcp-tool-39 (proven)
 
 MCP tool "supersede_refactor_discovery_task" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface
 
@@ -405,14 +414,6 @@ Evidence:
 
 - source: `internal/mcp/refactor_backlog_tools.go`
 - schema_var: `ToolSupersedeRefactorDiscoveryTask (in internal/mcp/refactor_backlog_tools.go)`
-
-### mcp-tool-39 (proven)
-
-MCP tool "update_plan_seed" registered from internal/mcp/plan_seed_tools.go with profile gate always; mutating tool; plan seed surface
-
-Evidence:
-
-- source: `internal/mcp/plan_seed_tools.go`
 
 ### mcp-tool-4 (proven)
 
@@ -424,6 +425,14 @@ Evidence:
 
 ### mcp-tool-40 (proven)
 
+MCP tool "update_plan_seed" registered from internal/mcp/plan_seed_tools.go with profile gate always; mutating tool; plan seed surface
+
+Evidence:
+
+- source: `internal/mcp/plan_seed_tools.go`
+
+### mcp-tool-41 (proven)
+
 MCP tool "update_refactor_candidate" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface
 
 Evidence:
@@ -431,7 +440,7 @@ Evidence:
 - source: `internal/mcp/refactor_backlog_tools.go`
 - schema_var: `ToolUpdateRefactorCandidate (in internal/mcp/refactor_backlog_tools.go)`
 
-### mcp-tool-41 (proven)
+### mcp-tool-42 (proven)
 
 MCP tool "update_refactor_discovery_task" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface
 
@@ -440,7 +449,7 @@ Evidence:
 - source: `internal/mcp/refactor_backlog_tools.go`
 - schema_var: `ToolUpdateRefactorDiscoveryTask (in internal/mcp/refactor_backlog_tools.go)`
 
-### mcp-tool-42 (proven)
+### mcp-tool-43 (proven)
 
 MCP tool "void_plan_attempt" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface
 

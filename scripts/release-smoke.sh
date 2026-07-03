@@ -16,6 +16,9 @@ const commands = [
   // orchestrator/audit mapping, and MCP local-operator tools) runs next so a
   // refactor backlog regression fails fast before the broader suite.
   'go test ./internal/refactors ./internal/app/plans ./internal/mcp',
+  // Streamlined MCP context-gathering smoke — builds the MCP binary and
+  // executes the deterministic end-to-end streamlined workflow smoke.
+  'make mcp-smoke',
   'go test ./...',
   'npm run test:local-scripts',
   'npm --prefix apps/web run typecheck',

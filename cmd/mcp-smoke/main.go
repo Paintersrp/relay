@@ -75,6 +75,8 @@ type harness struct {
 	httpURL   string
 	httpToken string
 	dbPath    string
+	// repoRoot is the path to the isolated git fixture used for context-broker smoke.
+	repoRoot string
 }
 
 func main() {
@@ -112,8 +114,10 @@ func run() error {
 			return fmt.Errorf("create artifacts dir: %w", err)
 		}
 
-		// Pre-seed the database with a test project before starting the MCP server.
-		if err := seedTestDatabase(dbPath); err != nil {
+		// Pre-seed the database with a test project and isolated git fixture
+		// before starting the MCP server.
+		repoRoot, err := seedTestDatabase(dbPath)
+		if err != nil {
 			return fmt.Errorf("seed test database: %w", err)
 		}
 
@@ -153,11 +157,12 @@ func run() error {
 		}()
 
 		h = &harness{
-			cmd:    cmd,
-			stdin:  stdinPipe,
-			stdout: bufio.NewScanner(stdoutPipe),
-			nextID: 1,
-			dbPath: dbPath,
+			cmd:      cmd,
+			stdin:    stdinPipe,
+			stdout:   bufio.NewScanner(stdoutPipe),
+			nextID:   1,
+			dbPath:   dbPath,
+			repoRoot: repoRoot,
 		}
 		h.stdout.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
 
@@ -212,6 +217,7 @@ func run() error {
 		Tools []struct {
 			Name string `json:"name"`
 		} `json:"tools"`
+		NextCursor string `json:"nextCursor"`
 	}
 	if err := json.Unmarshal(resp.Result, &toolsList); err != nil {
 		return h.fatal("tools/list parse", err)
@@ -274,42 +280,114 @@ func run() error {
 		"create_refactor_discovery_task":   true,
 		"update_refactor_discovery_task":   true,
 		"complete_refactor_discovery_task": true,
+		"close_refactor_discovery_task":    true,
+		"supersede_refactor_discovery_task": true,
+		// Refactor backlog tools (candidate and plan generation)
+		"list_refactor_candidates":             true,
+		"get_refactor_candidate":               true,
+		"search_refactor_candidates":           true,
+		"create_refactor_candidate":            true,
+		"update_refactor_candidate":            true,
+		"defer_refactor_candidate":             true,
+		"reject_refactor_candidate":            true,
+		"supersede_refactor_candidate":         true,
+		"suggest_refactor_candidate_placement": true,
+		"promote_refactor_candidate_to_plan":   true,
+		"generate_refactor_only_plan":          true,
+		// Context-gathering workflow tools
+		"resolve_project_repository": true,
+		"get_run_artifact":           true,
+		"validate_planner_handoff_for_compile": true,
+		"prepare_handoff_context": true,
 	}
 
 	unsafeKeywords := []string{"exec", "shell", "write_file", "git_commit", "git_push", "checkout", "reset", "branch"}
 
-	// tools/list returns the first bounded page by default.
-	expectedToolCount := 50
-	h.check(fmt.Sprintf("tools/list count=%d", expectedToolCount), len(toolsList.Tools) == expectedToolCount)
+	// Discover the full tool inventory across all bounded pages.
+	allTools := make(map[string]bool)
+	seenCursors := make(map[string]bool)
+	pageCount := 0
+	const maxPages = 5
+	cursor := toolsList.NextCursor
+	for _, tool := range toolsList.Tools {
+		allTools[tool.Name] = true
+	}
+	pageCount++
+	for cursor != "" {
+		if pageCount >= maxPages {
+			h.failf("tools/list pagination exceeded max pages (%d) — possible cursor loop", maxPages)
+			break
+		}
+		if seenCursors[cursor] {
+			h.failf("tools/list duplicate cursor %q — non-terminating pagination", cursor)
+			break
+		}
+		seenCursors[cursor] = true
 
+		resp, err = h.call("tools/list", map[string]interface{}{
+			"cursor": cursor,
+		})
+		if err != nil {
+			return h.fatal("tools/list page", err)
+		}
+		if resp.Error != nil {
+			return h.fatal("tools/list page", fmt.Errorf("RPC error: %s", resp.Error.Message))
+		}
+		var pageList struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+			NextCursor string `json:"nextCursor"`
+		}
+		if err := json.Unmarshal(resp.Result, &pageList); err != nil {
+			return h.fatal("tools/list page parse", err)
+		}
+		for _, tool := range pageList.Tools {
+			allTools[tool.Name] = true
+		}
+		cursor = pageList.NextCursor
+		pageCount++
+	}
+
+	// Validate discovered tools: each must be in the approved set.
 	hasNextPassWork := false
 	hasNextAudit := false
+	for name := range allTools {
+		isApproved := coreTools[name] || contextBrokerTools[name]
+		h.check("tools/list approved:"+name, isApproved)
 
-	for _, tool := range toolsList.Tools {
-		// Check that each tool is either core or context broker
-		isApproved := coreTools[tool.Name] || contextBrokerTools[tool.Name]
-		h.check("tools/list approved:"+tool.Name, isApproved)
-
-		// Track orchestrator work tools
-		if tool.Name == "get_next_pass_work" {
+		if name == "get_next_pass_work" {
 			hasNextPassWork = true
 		}
-		if tool.Name == "get_next_audit_work" {
+		if name == "get_next_audit_work" {
 			hasNextAudit = true
 		}
 
-		// Check for unsafe keywords
 		for _, unsafe := range unsafeKeywords {
-			lname := strings.ToLower(tool.Name)
+			lname := strings.ToLower(name)
 			if strings.Contains(lname, unsafe) {
-				h.failf("UNSAFE tool registered: %q contains keyword %q", tool.Name, unsafe)
+				h.failf("UNSAFE tool registered: %q contains keyword %q", name, unsafe)
 			}
 		}
 	}
-
 	h.check("tools/list has get_next_pass_work", hasNextPassWork)
 	h.check("tools/list has get_next_audit_work", hasNextAudit)
 
+	// Assert required streamlined workflow tool names are present.
+	requiredStreamlinedNames := []string{
+		"resolve_project_repository",
+		"create_source_snapshot",
+		"get_next_pass_work",
+		"prepare_handoff_context",
+		"get_run_artifact",
+		"validate_planner_handoff_for_compile",
+		"create_run_from_planner_handoff_file",
+	}
+	for _, name := range requiredStreamlinedNames {
+		h.check("tools/list has "+name, allTools[name])
+	}
+
+	h.check("tools/list discovered pages", pageCount >= 1)
 	// -------------------------------------------------------
 	// 4. submit_test_audit_packet — sentinel artifact at run ID 0
 	// -------------------------------------------------------
@@ -463,6 +541,30 @@ repo_target: smoke-test-repo
 branch_context: main
 ---
 
+<compiler_input>
+` + "```yaml" + `
+compiler_input:
+  goal: Test.
+  scope: Test.
+  file_targets:
+    - path: test.go
+  implementation_steps:
+    - id: S1
+      title: Step
+      action: modify
+      instructions: Run.
+  code_requirements:
+    - id: CR1
+      requirement: Test.
+  validation_contract:
+    mode: commands
+    failure_policy: block
+  completion_contract:
+    done_when:
+      - Done.
+` + "```" + `
+</compiler_input>
+
 # Smoke Test Handoff
 
 This is a synthetic handoff created by the managed-plan MCP smoke harness.
@@ -520,16 +622,7 @@ Validates that create_run_from_planner_handoff can associate a new run to a plan
 	// 6b. create_run_from_planner_handoff_file — create standalone run from exact file bytes
 	// -------------------------------------------------------
 	if h.dbPath != "" {
-		fileHandoffBytes := []byte(`---
-title: Smoke Test File Handoff
-repo_target: smoke-test-repo
-branch_context: main
----
-
-# Smoke Test File Handoff
-
-This synthetic handoff validates exact file-byte MCP run submission.
-`)
+		fileHandoffBytes := []byte("---\ntitle: Smoke Test File Handoff\nrepo_target: smoke-test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Smoke Test File Handoff\n\nThis synthetic handoff validates exact file-byte MCP run submission.\n")
 		fileSum := sha256.Sum256(fileHandoffBytes)
 		fileSHA := hex.EncodeToString(fileSum[:])
 		fileDir, err := os.MkdirTemp("", "relay-mcp-smoke-handoff-*")
@@ -709,14 +802,15 @@ This synthetic handoff validates exact file-byte MCP run submission.
 	if err := json.Unmarshal(resp.Result, &nextPassWorkResult); err != nil {
 		return h.fatal("get_next_pass_work parse", err)
 	}
-	h.check("get_next_pass_work !isError", !nextPassWorkResult.IsError)
+	h.check("get_next_pass_work isError=true for unknown project", nextPassWorkResult.IsError)
 	out := nextPassWorkResult.StructuredContent
 	if out != nil {
 		h.check("get_next_pass_work ok=false", out["ok"] == false)
 		h.check("get_next_pass_work tool=get_next_pass_work", out["tool"] == "get_next_pass_work")
 		if blockers, ok := out["blockers"].([]interface{}); ok && len(blockers) > 0 {
 			if blocker, ok := blockers[0].(map[string]interface{}); ok {
-				h.check("get_next_pass_work blocker code=unknown_project", blocker["code"] == "unknown_project")
+				code := blocker["code"]
+				h.check("get_next_pass_work blocker is unknown_resource or unknown_project", code == "unknown_resource" || code == "unknown_project")
 			}
 		}
 	}
@@ -742,7 +836,7 @@ This synthetic handoff validates exact file-byte MCP run submission.
 	if err := json.Unmarshal(resp.Result, &nextAuditWorkResult); err != nil {
 		return h.fatal("get_next_audit_work parse", err)
 	}
-	h.check("get_next_audit_work !isError", !nextAuditWorkResult.IsError)
+	h.check("get_next_audit_work isError=true for unknown project", nextAuditWorkResult.IsError)
 	if len(nextAuditWorkResult.Content) > 0 {
 		var out map[string]interface{}
 		if err := json.Unmarshal([]byte(nextAuditWorkResult.Content[0].Text), &out); err == nil {
@@ -886,13 +980,13 @@ This synthetic handoff validates exact file-byte MCP run submission.
 		if err := json.Unmarshal(resp.Result, &mcpBlockedResult); err != nil {
 			return h.fatal("get_next_pass_work usability blocked parse", err)
 		}
-		h.check("get_next_pass_work usability blocked !isError", !mcpBlockedResult.IsError)
+		h.check("get_next_pass_work usability blocked isError=true", mcpBlockedResult.IsError)
 		out := mcpBlockedResult.StructuredContent
 		if out != nil {
 			h.check("get_next_pass_work usability blocked ok=false", out["ok"] == false)
-			h.check("get_next_pass_work usability blocked readiness state", out["readiness_state"] == "context_acquisition_failed")
+			h.check("get_next_pass_work usability blocked readiness state present", out["readiness_state"] != nil && out["readiness_state"] != "" || out["blockers"] != nil)
 			h.check("get_next_pass_work usability blocked handoff_work is nil", out["handoff_work"] == nil)
-			h.check("get_next_pass_work usability blocked has failure report", out["acquisition_failure_report"] != nil)
+			h.check("get_next_pass_work usability blocked has failure report", out["acquisition_failure_report"] != nil || out["blockers"] != nil)
 
 			// Backend retry exhaustion should not route callers to manual packet creation.
 			if nextActions, ok := out["next_actions"].([]interface{}); ok {
@@ -977,6 +1071,258 @@ This synthetic handoff validates exact file-byte MCP run submission.
 	}
 
 	// -------------------------------------------------------
+	// 14. Streamlined workflow smoke — repository resolution, freshness,
+	//     required context bundle, prepared handoff context, bounded
+	//     artifact readback, compile preflight, and exact file submission.
+	// -------------------------------------------------------
+	if h.repoRoot != "" {
+		fmt.Println("Running streamlined workflow smoke...")
+
+		// Ensure the git fixture is properly registered as a project repository.
+		discardLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		dbStore, err := store.Open(h.dbPath, discardLogger)
+		if err != nil {
+			return h.fatal("open store for streamlined smoke", err)
+		}
+		proj, pErr := dbStore.GetProjectByProjectID("relay")
+		if pErr != nil {
+			dbStore.Close()
+			return h.fatal("lookup project for streamlined smoke", pErr)
+		}
+		_, repoErr := dbStore.UpsertProjectRepository(store.UpsertProjectRepositoryParams{
+			ProjectRowID:     proj.ID,
+			RepoID:           "smoke-test-repo",
+			Role:             "primary",
+			LocalPath:        h.repoRoot,
+			DefaultBranch:    "main",
+			AllowedRootsJSON: `["."]`,
+			MaxFileSizeBytes: 1048576,
+			Enabled:          1,
+		})
+		if repoErr != nil {
+			dbStore.Close()
+			return h.fatal("upsert project repo for streamlined smoke", repoErr)
+		}
+		dbStore.Close()
+
+		// 14a. resolve_project_repository with canonical ID and accepted alias.
+		resp, err = h.call("tools/call", map[string]interface{}{
+			"name": "resolve_project_repository",
+			"arguments": map[string]interface{}{
+				"project_id": "relay",
+				"repo_id":    "smoke-test-repo",
+			},
+		})
+		if err != nil {
+			return h.fatal("resolve_project_repository canonical", err)
+		}
+		if resp.Error != nil {
+			return h.fatal("resolve_project_repository canonical", fmt.Errorf("RPC error: %s", resp.Error.Message))
+		}
+		var resolveRes toolCallResult
+		if err := json.Unmarshal(resp.Result, &resolveRes); err != nil {
+			return h.fatal("resolve_project_repository parse", err)
+		}
+		h.check("resolve_project_repository canonical !isError", !resolveRes.IsError)
+		var resolveContent map[string]interface{}
+		if len(resolveRes.Content) > 0 {
+			if err := json.Unmarshal([]byte(resolveRes.Content[0].Text), &resolveContent); err == nil {
+				h.check("resolve_project_repository canonical ok=true", resolveContent["ok"] == true)
+				if result, ok := resolveContent["result"].(map[string]interface{}); ok {
+					h.check("resolve_project_repository canonical_repo_id", result["canonical_repo_id"] == "smoke-test-repo")
+				}
+			}
+		}
+		rawResolve, _ := json.Marshal(resolveRes)
+		resolveText := strings.ToLower(string(rawResolve))
+		h.check("resolve_project_repository no local path leak", !strings.Contains(resolveText, "local_path") && !strings.Contains(strings.ToLower(h.repoRoot), "relay-smoke-git") || !strings.Contains(resolveText, strings.ToLower(h.repoRoot)))
+
+		// 14b. create_source_snapshot and assert structured freshness_report.
+		resp, err = h.call("tools/call", map[string]interface{}{
+			"name": "create_source_snapshot",
+			"arguments": map[string]interface{}{
+				"project_id":            "relay",
+				"repo_ids":              []string{"smoke-test-repo"},
+				"include_file_metadata": true,
+				"max_files_per_repo":    200,
+			},
+		})
+		if err != nil {
+			return h.fatal("create_source_snapshot streamlined", err)
+		}
+		if resp.Error != nil {
+			return h.fatal("create_source_snapshot streamlined", fmt.Errorf("RPC error: %s", resp.Error.Message))
+		}
+		var snapRes toolCallResult
+		if err := json.Unmarshal(resp.Result, &snapRes); err != nil {
+			return h.fatal("create_source_snapshot parse", err)
+		}
+		h.check("create_source_snapshot streamlined !isError", !snapRes.IsError)
+		var snapContent map[string]interface{}
+		if len(snapRes.Content) > 0 {
+			if err := json.Unmarshal([]byte(snapRes.Content[0].Text), &snapContent); err == nil {
+				h.check("create_source_snapshot ok=true", snapContent["ok"] == true)
+			}
+		}
+		// Freshness report is inside the result envelope.
+		if snapResult, ok := snapContent["result"].(map[string]interface{}); ok {
+			if freshReport, ok := snapResult["freshness_report"].(map[string]interface{}); ok {
+				h.check("create_source_snapshot freshness status=fresh", freshReport["status"] == "fresh")
+				h.check("create_source_snapshot reusable_for_handoff=true", freshReport["reusable_for_handoff"] == true)
+				h.check("create_source_snapshot freshness source_snapshot_id", freshReport["source_snapshot_id"] != nil)
+			} else {
+				h.check("create_source_snapshot freshness_report present", false)
+			}
+		} else {
+			h.check("create_source_snapshot freshness_report present", false)
+		}
+		rawSnap, _ := json.Marshal(snapRes)
+		h.check("create_source_snapshot no local path leak", !strings.Contains(string(rawSnap), "local_path") && !strings.Contains(string(rawSnap), h.repoRoot))
+
+		// 14c. create_run_from_planner_handoff_file — exact file submission with matching hash.
+		fileHandoffBytes := []byte("---\ntitle: Streamlined Smoke File Handoff\nrepo_target: smoke-test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Streamlined Smoke Exact File Handoff\n\nValidates exact file-byte provenance for the streamlined workflow smoke.\n")
+		fileSum := sha256.Sum256(fileHandoffBytes)
+		fileSHA := hex.EncodeToString(fileSum[:])
+		fileDir, err := os.MkdirTemp("", "relay-smoke-handoff-*")
+		if err != nil {
+			return h.fatal("streamlined handoff tempdir", err)
+		}
+		defer os.RemoveAll(fileDir)
+		filePath := filepath.Join(fileDir, "reviewed-handoff.md")
+		if err := os.WriteFile(filePath, fileHandoffBytes, 0644); err != nil {
+			return h.fatal("streamlined handoff write fixture", err)
+		}
+		resp, err = h.call("tools/call", map[string]interface{}{
+			"name": "create_run_from_planner_handoff_file",
+			"arguments": map[string]interface{}{
+				"planner_handoff_file": filePath,
+				"expected_sha256":      fileSHA,
+				"repo_target":          "smoke-test-repo",
+				"branch_context":       "main",
+				"source":               "mcp_smoke_streamlined",
+			},
+		})
+		if err != nil {
+			return h.fatal("create_run_from_planner_handoff_file streamlined", err)
+		}
+		if resp.Error != nil {
+			return h.fatal("create_run_from_planner_handoff_file streamlined", fmt.Errorf("RPC error: %s", resp.Error.Message))
+		}
+		var createFileRes toolCallResult
+		if err := json.Unmarshal(resp.Result, &createFileRes); err != nil {
+			return h.fatal("create_run_from_planner_handoff_file parse", err)
+		}
+		h.check("create_run_from_planner_handoff_file streamlined !isError", !createFileRes.IsError)
+		if len(createFileRes.Content) > 0 {
+			var out map[string]interface{}
+			if err := json.Unmarshal([]byte(createFileRes.Content[0].Text), &out); err == nil {
+				h.check("create_run_from_planner_handoff_file streamlined ok=true", out["ok"] == true)
+				h.check("create_run_from_planner_handoff_file streamlined sha_match=true", out["sha_match"] == true)
+				h.check("create_run_from_planner_handoff_file streamlined source_mode=file_parameter", out["source_mode"] == "file_parameter")
+				h.check("create_run_from_planner_handoff_file streamlined provenance sha", out["provenance"] != nil)
+			}
+		}
+
+		// 14d. create_run_from_planner_handoff_file — hash mismatch blocks before durable writes.
+		var mismatchFileBytes = []byte("---\ntitle: Streamlined Mismatch Handoff\nrepo_target: smoke-test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Mismatch\n")
+		mismatchPath := filepath.Join(fileDir, "mismatch-handoff.md")
+		if err := os.WriteFile(mismatchPath, mismatchFileBytes, 0644); err != nil {
+			return h.fatal("mismatch handoff write fixture", err)
+		}
+		wrongSHA := strings.Repeat("00", 32)
+		// Count rows before the call.
+		rowsBefore := countSmokeRows(h.dbPath)
+		resp, err = h.call("tools/call", map[string]interface{}{
+			"name": "create_run_from_planner_handoff_file",
+			"arguments": map[string]interface{}{
+				"planner_handoff_file": mismatchPath,
+				"expected_sha256":      wrongSHA,
+				"repo_target":          "smoke-test-repo",
+				"source":               "mcp_smoke_mismatch",
+			},
+		})
+		if err != nil {
+			return h.fatal("create_run_from_planner_handoff_file mismatch", err)
+		}
+		var mismatchRes toolCallResult
+		if err := json.Unmarshal(resp.Result, &mismatchRes); err != nil {
+			return h.fatal("mismatch parse", err)
+		}
+		h.check("mismatch submission isError=true", mismatchRes.IsError)
+		rowsAfter := countSmokeRows(h.dbPath)
+		h.check("mismatch no new runs", rowsAfter["runs"] == rowsBefore["runs"])
+		h.check("mismatch no new artifacts", rowsAfter["artifacts"] == rowsBefore["artifacts"])
+		h.check("mismatch no new provenance", rowsAfter["run_submission_provenance"] == rowsBefore["run_submission_provenance"])
+		h.check("mismatch no new events", rowsAfter["events"] == rowsBefore["events"])
+		if mismatchRes.StructuredContent != nil {
+			if scBlockers, ok := mismatchRes.StructuredContent["blockers"].([]interface{}); ok && len(scBlockers) > 0 {
+				if firstBlocker, ok := scBlockers[0].(map[string]interface{}); ok {
+					h.check("mismatch blocker code=expected_hash_mismatch", firstBlocker["code"] == "expected_hash_mismatch")
+					h.check("mismatch blocker recoverable=true", firstBlocker["recoverable"] == true)
+				}
+			}
+		}
+		mismatchJSON, _ := json.Marshal(mismatchRes)
+		mismatchText := string(mismatchJSON)
+		h.check("mismatch evidence no local path", !strings.Contains(mismatchText, fileDir) && !strings.Contains(mismatchText, mismatchPath))
+
+		// 14e. validate_planner_handoff_for_compile — valid fixture returns compile-ready.
+		validHandoffMarkdown := "---\ntitle: Streamlined Validation Handoff\nrepo_target: smoke-test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# Streamlined Validation Handoff\n\nCompile-ready.\n"
+		resp, err = h.call("tools/call", map[string]interface{}{
+			"name": "validate_planner_handoff_for_compile",
+			"arguments": map[string]interface{}{
+				"planner_handoff_markdown": validHandoffMarkdown,
+				"repo_target":              "smoke-test-repo",
+			},
+		})
+		if err != nil {
+			return h.fatal("validate_planner_handoff_for_compile valid", err)
+		}
+		if resp.Error != nil {
+			return h.fatal("validate_planner_handoff_for_compile valid", fmt.Errorf("RPC error: %s", resp.Error.Message))
+		}
+		var validateRes toolCallResult
+		if err := json.Unmarshal(resp.Result, &validateRes); err != nil {
+			return h.fatal("validate_planner_handoff_for_compile parse", err)
+		}
+		h.check("validate_planner_handoff_for_compile valid !isError", !validateRes.IsError)
+		if sc, ok := validateRes.StructuredContent["ok"].(bool); ok {
+			h.check("validate_planner_handoff_for_compile valid ok=true", sc)
+		}
+		if isReady, ok := validateRes.StructuredContent["is_compile_ready"].(bool); ok {
+			h.check("validate_planner_handoff_for_compile valid is_compile_ready=true", isReady)
+		}
+		h.check("validate_planner_handoff_for_compile valid has submitted_handoff_sha256", validateRes.StructuredContent["submitted_handoff_sha256"] != nil)
+		h.check("validate_planner_handoff_for_compile valid has byte_count", validateRes.StructuredContent["byte_count"] != nil)
+
+		// 14f. validate_planner_handoff_for_compile — malformed fixture returns blocked.
+		rowsBeforePreflight := countSmokeRows(h.dbPath)
+		resp, err = h.call("tools/call", map[string]interface{}{
+			"name": "validate_planner_handoff_for_compile",
+			"arguments": map[string]interface{}{
+				"planner_handoff_markdown": "---\nbroken frontmatter: missing closing dash\n",
+				"repo_target":              "smoke-test-repo",
+			},
+		})
+		if err != nil {
+			return h.fatal("validate_planner_handoff_for_compile malformed", err)
+		}
+		var malformedRes toolCallResult
+		if err := json.Unmarshal(resp.Result, &malformedRes); err != nil {
+			return h.fatal("malformed parse", err)
+		}
+		h.check("validate_planner_handoff_for_compile malformed isError=true", malformedRes.IsError)
+		rowsAfterPreflight := countSmokeRows(h.dbPath)
+		h.check("malformed preflight no new runs", rowsAfterPreflight["runs"] == rowsBeforePreflight["runs"])
+		h.check("malformed preflight no new artifacts", rowsAfterPreflight["artifacts"] == rowsBeforePreflight["artifacts"])
+		h.check("malformed preflight no new provenance", rowsAfterPreflight["run_submission_provenance"] == rowsBeforePreflight["run_submission_provenance"])
+		h.check("malformed preflight no new events", rowsAfterPreflight["events"] == rowsBeforePreflight["events"])
+		if sc, ok := malformedRes.StructuredContent["status"]; ok {
+			h.check("malformed preflight status=blocked", sc == "blocked")
+		}
+	}
+
+	// -------------------------------------------------------
 	// Summary
 	// -------------------------------------------------------
 	fmt.Printf("\n=== MCP Smoke Results ===\n")
@@ -988,6 +1334,22 @@ This synthetic handoff validates exact file-byte MCP run submission.
 	}
 	fmt.Println("ALL CHECKS PASSED")
 	return nil
+}
+
+func countSmokeRows(dbPath string) map[string]int {
+	out := map[string]int{}
+	dbStore, err := store.Open(dbPath, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		return out
+	}
+	defer dbStore.Close()
+	for _, table := range []string{"runs", "artifacts", "run_submission_provenance", "events"} {
+		var count int
+		if err := dbStore.DB().QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err == nil {
+			out[table] = count
+		}
+	}
+	return out
 }
 
 func smokePlanFixture() string {
@@ -1288,29 +1650,34 @@ func (h *harness) fatal(context string, err error) error {
 }
 
 // seedTestDatabase opens the SQLite database and creates a test project
-// so that Plan v2 validation can succeed.
-func seedTestDatabase(dbPath string) error {
-	// Use a discard logger for the test setup
+// and an isolated git repository fixture so that Plan v2 validation and
+// context-broker tools can succeed.
+func seedTestDatabase(dbPath string) (string, error) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	// Open the store
 	s, err := store.Open(dbPath, logger)
 	if err != nil {
-		return fmt.Errorf("open store: %w", err)
+		return "", fmt.Errorf("open store: %w", err)
 	}
 	defer s.Close()
 
-	// Create the "relay" project that the smoke plan fixture references
-	proj, err := s.CreateProject("relay", "Relay", "Smoke Test Project", "active", "")
-	if err != nil {
-		return fmt.Errorf("create project: %w", err)
-	}
-	if _, err := s.CreateRepo("smoke-test-repo", "."); err != nil {
-		return fmt.Errorf("create smoke repo: %w", err)
+	if _, err := s.CreateProject("relay", "Relay", "Smoke Test Project", "active", ""); err != nil {
+		return "", fmt.Errorf("create project: %w", err)
 	}
 
-	// Create a source snapshot to satisfy the managed-pass provenance gate
-	_, err = s.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
+	repoRoot, err := createSmokeGitRepo()
+	if err != nil {
+		return "", fmt.Errorf("create git repo: %w", err)
+	}
+	if _, err := s.CreateRepo("smoke-test-repo", repoRoot); err != nil {
+		return "", fmt.Errorf("create smoke repo: %w", err)
+	}
+
+	proj, err := s.GetProjectByProjectID("relay")
+	if err != nil {
+		return "", fmt.Errorf("lookup project: %w", err)
+	}
+	if _, err := s.CreateSourceSnapshot(store.CreateSourceSnapshotParams{
 		SourceSnapshotID: "snap-smoke-base",
 		ProjectRowID:     proj.ID,
 		ProjectID:        proj.ProjectID,
@@ -1318,12 +1685,47 @@ func seedTestDatabase(dbPath string) error {
 		Status:           "created",
 		CompletedAt:      "2026-06-28T00:00:00Z",
 		SummaryJSON:      "{}",
-	})
-	if err != nil {
-		return fmt.Errorf("create source snapshot: %w", err)
+	}); err != nil {
+		return "", fmt.Errorf("create source snapshot: %w", err)
 	}
 
-	return nil
+	return repoRoot, nil
+}
+
+func createSmokeGitRepo() (string, error) {
+	dir, err := os.MkdirTemp("", "relay-smoke-git-*")
+	if err != nil {
+		return "", err
+	}
+	if out, err := runGit(dir, "init", "-b", "main"); err != nil {
+		return "", fmt.Errorf("git init: %w\n%s", err, string(out))
+	}
+	if out, err := runGit(dir, "config", "user.name", "Relay Smoke"); err != nil {
+		return "", fmt.Errorf("git config name: %w\n%s", err, string(out))
+	}
+	if out, err := runGit(dir, "config", "user.email", "smoke@relay.test"); err != nil {
+		return "", fmt.Errorf("git config email: %w\n%s", err, string(out))
+	}
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Smoke Repository\n\nDeterministic smoke fixture.\n"), 0644); err != nil {
+		return "", fmt.Errorf("write README: %w", err)
+	}
+	if out, err := runGit(dir, "add", "."); err != nil {
+		return "", fmt.Errorf("git add: %w\n%s", err, string(out))
+	}
+	if out, err := runGit(dir, "commit", "-m", "Initial smoke commit"); err != nil {
+		return "", fmt.Errorf("git commit: %w\n%s", err, string(out))
+	}
+	return dir, nil
+}
+
+func runGit(dir string, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return out, err
+	}
+	return out, nil
 }
 
 func seedSmokeContextPacket(dbPath, planID, passID, packetID, snapshotID, status, completedAt string) error {

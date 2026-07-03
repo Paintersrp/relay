@@ -500,12 +500,12 @@
     },
     {
       "path": "internal/app/plans/work_packets.go",
-      "sha256": "36be85742d17a80f28e1ec4b9931d34bfb6a96bd5ae76213ebe5aeee6f1b1dd3",
+      "sha256": "dbe4eee9a2e2e1d44b1347344dabd36a1f7ffa2cf9d74a477be3b5bb7876b35c",
       "role": "source"
     },
     {
       "path": "internal/app/plans/work_packets_test.go",
-      "sha256": "fcb7271dbe58076aa22c13fc00641d7e5dc93341ce98e6b14882f475acae1b62",
+      "sha256": "ec1e43663b714632953cef9cd34e150ad90966088b848b79c98ef508abdff1d2",
       "role": "test"
     },
     {
@@ -579,18 +579,38 @@
       "role": "source"
     },
     {
+      "path": "internal/mcp/artifact_readback_tools.go",
+      "sha256": "c7712711b76eb824c71b1184c44f5b119adf0d656e8f78a0e9052ccf9a1487a8",
+      "role": "source"
+    },
+    {
+      "path": "internal/mcp/artifact_readback_tools_test.go",
+      "sha256": "a14651943ba8529dfede8a928c07eddacdf5381bf5ce37a6f4bc25187c4db005",
+      "role": "test"
+    },
+    {
+      "path": "internal/mcp/blocker_envelope.go",
+      "sha256": "3eb2264ccffda40f77cd3d3f28747f164eef361f43509c9ddf29329bb760c122",
+      "role": "source"
+    },
+    {
+      "path": "internal/mcp/blocker_envelope_test.go",
+      "sha256": "6830987aa8b5d25db4929797dce1b742d03cb37dcd1aaefdd02acb1c26a52e0a",
+      "role": "test"
+    },
+    {
       "path": "internal/mcp/context_broker_git_tools.go",
-      "sha256": "483ab61f6534750817724fdd79841efee3a4fc6708fa3ab3758e87b28c084572",
+      "sha256": "e8f7f942f10ee58aa9ed10cfa85995c9ba4c0b36fd7ca9aaca821fc51cfd4b7a",
       "role": "source"
     },
     {
       "path": "internal/mcp/context_broker_tools.go",
-      "sha256": "d860b1ab59415aed878cb6f7e025a2d319f744a771ce69c40439a63d05dd50ce",
+      "sha256": "ec4994285c043f442dcceae02fe308917531c998899a6335a1282356b917bd58",
       "role": "source"
     },
     {
       "path": "internal/mcp/context_broker_tools_test.go",
-      "sha256": "bf29a670e1e71a4917f16acf53c2a3374f059827bc40b795e7c1a7a4aedc2d09",
+      "sha256": "50ed1fb09bfa42c9404dea8aa7f34449cc6c4a2a4434c79a736426247e693cef",
       "role": "test"
     },
     {
@@ -605,7 +625,7 @@
     },
     {
       "path": "internal/mcp/http_handler_test.go",
-      "sha256": "28e607c54c8328d995ea63731ea1e166edaabec75524bdd649d46f06338970a3",
+      "sha256": "d4123f4eb0d57eb765ace044fd0520be59c70193119175145a7d9d831b84d69a",
       "role": "test"
     },
     {
@@ -615,17 +635,17 @@
     },
     {
       "path": "internal/mcp/mcp_test.go",
-      "sha256": "98ffb019d0cd0f1ea08faf9d14a803b5d297a2edb5be746e5e2f121dd8a0965b",
+      "sha256": "cb776444efc716e493700943e71386fde5716596516d5f59ab2ecfca76e2d4d7",
       "role": "test"
     },
     {
       "path": "internal/mcp/orchestrator_work_tools.go",
-      "sha256": "6f9c8ca688f10be814496b59b3e9a1db8d32dac02dd73891ed827dd40a09e8c2",
+      "sha256": "f4ecb486ec2c018139e5019abbe835ba4ccef748797b10042253bbf399ac6fb9",
       "role": "source"
     },
     {
       "path": "internal/mcp/orchestrator_work_tools_test.go",
-      "sha256": "93a073c370de7c9cf621fec0cf1c3be9a1cb8c4fc6b3fe75e7df668fdcd1b77b",
+      "sha256": "dbe5b3f19df9e719fdd78d62ba458808f627d9e9ffa30f948799e8fb1e731801",
       "role": "test"
     },
     {
@@ -635,7 +655,7 @@
     },
     {
       "path": "internal/mcp/plan_attempt_tools_test.go",
-      "sha256": "715958766aa19f3affe932d9ebc6d47d4e50b915d0e043d65cfb6ffbee79fa6b",
+      "sha256": "84e4da35631efe508d230719d5aac87e46a639529d6a29b9f5b8c44935455cbd",
       "role": "test"
     },
     {
@@ -680,7 +700,7 @@
     },
     {
       "path": "internal/mcp/protocol.go",
-      "sha256": "602351acabcaf9f1141f52921ae2db4828a9ea91fd3ce417a0099718ab0d33ea",
+      "sha256": "72e46ad20c3a2681b36d212a346659846bf14320df1fa401f56c6ec22eabd4aa",
       "role": "source"
     },
     {
@@ -695,12 +715,12 @@
     },
     {
       "path": "internal/mcp/server.go",
-      "sha256": "71893bd6df036612aef4a0028ef8e14fe7055becb92d347576b5758b10243cef",
+      "sha256": "a40c21e9030a9538b8219cb24130131a27e3d25bd78f63bc5d1bffff4f76416c",
       "role": "source"
     },
     {
       "path": "internal/mcp/server_notification_test.go",
-      "sha256": "7738e90594c9f4ee221505d9a026a83be0b372e39ee44fb9e6dabe8deb80dbab",
+      "sha256": "a0da26840ec83cdec144a3fc74a92d407c4facb8054ae439107130a0884c1208",
       "role": "test"
     },
     {
@@ -710,8 +730,13 @@
     },
     {
       "path": "internal/mcp/tool_create_run.go",
-      "sha256": "771409c873aba6d8c9994ad53f831818d7f905ad4f0dd226725dbe3b5cbd4ed1",
+      "sha256": "8613332fac78897b205bea91a81b775f867bc11b609f29759f4e2fe055fc3e63",
       "role": "source"
+    },
+    {
+      "path": "internal/mcp/tool_create_run_test.go",
+      "sha256": "1fc3b56f371dea370bd490cd5461d96e4f084e8cd8872194f828769f163bfdb6",
+      "role": "test"
     },
     {
       "path": "internal/mcp/tool_get_run_status.go",
@@ -730,12 +755,17 @@
     },
     {
       "path": "internal/mcp/tool_surface_test.go",
-      "sha256": "3a0e56afa65076d21a4cb5b97731005419123cc2d6f81090481016fe4bfebf29",
+      "sha256": "d04261b6adfb0a5d6c50c2efc106f82281711c1f788ae897f9713e0872c6b3b4",
       "role": "test"
     },
     {
       "path": "internal/mcp/tool_test_audit_packet.go",
       "sha256": "4f4a99672a360621c8717a2596c81558881153f85ddffbedda681f60dea85b01",
+      "role": "source"
+    },
+    {
+      "path": "internal/mcp/tool_validate_planner_handoff.go",
+      "sha256": "1ba5c69ceea8cce95298427f748c9153bcebfe8a33249a69bf4758d10d332b98",
       "role": "source"
     },
     {
@@ -1116,7 +1146,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/review_handler.go"
+          "value": "internal/api/plans/attempt_handler.go"
         }
       ]
     },
@@ -1127,7 +1157,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/attempt_handler.go"
+          "value": "internal/api/plans/handler.go"
         }
       ]
     },
@@ -1149,7 +1179,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/handler.go"
+          "value": "internal/api/plans/review_handler.go"
         }
       ]
     },
@@ -1160,7 +1190,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/handler.go"
+          "value": "internal/api/plans/review_handler.go"
         }
       ]
     },
@@ -1182,7 +1212,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/review_handler.go"
+          "value": "internal/api/plans/handler.go"
         }
       ]
     },
@@ -1193,7 +1223,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/attempt_handler.go"
+          "value": "internal/api/plans/attempt_dto.go"
         }
       ]
     },
@@ -1204,7 +1234,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/handler.go"
+          "value": "internal/api/plans/attempt_handler.go"
         }
       ]
     },
@@ -1215,7 +1245,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/review_handler.go"
+          "value": "internal/api/plans/dto.go"
         }
       ]
     },
@@ -1226,7 +1256,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/dto.go"
+          "value": "internal/api/plans/review_handler.go"
         }
       ]
     },
@@ -1237,7 +1267,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/attempt_dto.go"
+          "value": "internal/api/plans/handler.go"
         }
       ]
     },
@@ -1270,7 +1300,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/handler.go"
+          "value": "internal/api/projects/plan_seed_handler.go"
         }
       ]
     },
@@ -1292,7 +1322,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/plan_seed_handler.go"
+          "value": "internal/api/projects/handler.go"
         }
       ]
     },
@@ -1325,7 +1355,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/mapper.go"
+          "value": "internal/api/projects/plan_seed_handler.go"
         }
       ]
     },
@@ -1336,7 +1366,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/handler.go"
+          "value": "internal/api/projects/mapper.go"
         }
       ]
     },
@@ -1347,7 +1377,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/plan_seed_handler.go"
+          "value": "internal/api/projects/dto.go"
         }
       ]
     },
@@ -1358,7 +1388,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/dto.go"
+          "value": "internal/api/projects/handler.go"
         }
       ]
     },
@@ -1523,7 +1553,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/runs/handler.go"
+          "value": "internal/api/runs/presenter.go"
         }
       ]
     },
@@ -1534,7 +1564,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/runs/presenter.go"
+          "value": "internal/api/runs/handler.go"
         }
       ]
     },
@@ -1567,7 +1597,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/audits/service.go"
+          "value": "internal/app/audits/types.go"
         }
       ]
     },
@@ -1578,7 +1608,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/audits/types.go"
+          "value": "internal/app/audits/service.go"
         }
       ]
     },
@@ -1633,7 +1663,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/drift/validation.go"
+          "value": "internal/app/drift/prompt.go"
         }
       ]
     },
@@ -1655,7 +1685,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/drift/prompt.go"
+          "value": "internal/app/drift/validation.go"
         }
       ]
     },
@@ -1721,7 +1751,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/intake/service.go"
+          "value": "internal/app/intake/helpers.go"
         }
       ]
     },
@@ -1732,7 +1762,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/intake/helpers.go"
+          "value": "internal/app/intake/service.go"
         }
       ]
     },
@@ -1754,7 +1784,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/read_queries.go"
+          "value": "internal/app/plans/review_settings.go"
         }
       ]
     },
@@ -1765,7 +1795,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/review_settings.go"
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -1787,7 +1817,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/types.go"
+          "value": "internal/app/plans/attempt_service.go"
         }
       ]
     },
@@ -1831,7 +1861,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/work_packets.go"
+          "value": "internal/app/plans/read_queries.go"
         }
       ]
     },
@@ -1842,7 +1872,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/attempt_service.go"
+          "value": "internal/app/plans/service.go"
         }
       ]
     },
@@ -1853,7 +1883,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/service.go"
+          "value": "internal/app/plans/types.go"
         }
       ]
     },
@@ -1864,7 +1894,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/review_settings.go"
+          "value": "internal/app/plans/attempt_service.go"
         }
       ]
     },
@@ -1886,7 +1916,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/service.go"
+          "value": "internal/app/plans/review_settings.go"
         }
       ]
     },
@@ -1897,7 +1927,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/attempt_service.go"
+          "value": "internal/app/plans/service.go"
         }
       ]
     },
@@ -1908,7 +1938,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/attempt_hash.go"
+          "value": "internal/app/plans/validator.go"
         }
       ]
     },
@@ -1919,7 +1949,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/validator.go"
+          "value": "internal/app/plans/attempt_hash.go"
         }
       ]
     },
@@ -1930,7 +1960,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/projects/plan_seed_service.go"
+          "value": "internal/app/projects/plan_seed_types.go"
         }
       ]
     },
@@ -1941,7 +1971,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/projects/plan_seed_types.go"
+          "value": "internal/app/projects/plan_seed_service.go"
         }
       ]
     },
@@ -2073,7 +2103,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/runs/lifecycle.go"
+          "value": "internal/app/runs/service.go"
         }
       ]
     },
@@ -2084,7 +2114,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/runs/types.go"
+          "value": "internal/app/runs/lifecycle.go"
         }
       ]
     },
@@ -2095,7 +2125,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/runs/service.go"
+          "value": "internal/app/runs/types.go"
         }
       ]
     },
@@ -2150,7 +2180,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/server.go"
+          "value": "internal/mcp/plan_attempt_tools.go"
         }
       ]
     },
@@ -2161,7 +2191,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/deps.go"
+          "value": "internal/mcp/plan_tools.go"
         }
       ]
     },
@@ -2172,7 +2202,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/orchestrator_work_tools.go"
+          "value": "internal/mcp/deps.go"
         }
       ]
     },
@@ -2183,7 +2213,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/plan_tools.go"
+          "value": "internal/mcp/server.go"
         }
       ]
     },
@@ -2194,7 +2224,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/plan_attempt_tools.go"
+          "value": "internal/mcp/orchestrator_work_tools.go"
         }
       ]
     },
@@ -2216,7 +2246,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/context_broker_tools.go"
+          "value": "internal/mcp/tool_test_audit_packet.go"
         }
       ]
     },
@@ -2227,7 +2257,18 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/tool_test_audit_packet.go"
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-artifacts-3",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/artifacts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
         }
       ]
     },
@@ -2238,7 +2279,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/local_audit_tools.go"
+          "value": "internal/mcp/tool_submit_audit.go"
         }
       ]
     },
@@ -2249,7 +2290,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/tool_submit_audit.go"
+          "value": "internal/mcp/local_audit_tools.go"
         }
       ]
     },
@@ -2260,7 +2301,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/orchestrator_work_tools.go"
+          "value": "internal/mcp/context_broker_tools.go"
         }
       ]
     },
@@ -2271,7 +2312,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/context_broker_tools.go"
+          "value": "internal/mcp/orchestrator_work_tools.go"
         }
       ]
     },
@@ -2282,7 +2323,29 @@
       "evidence": [
         {
           "kind": "source",
+          "value": "internal/mcp/tool_validate_planner_handoff.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-intake-2",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/intake",
+      "evidence": [
+        {
+          "kind": "source",
           "value": "internal/mcp/tool_create_run.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-pathsafety",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/pathsafety",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
         }
       ]
     },
@@ -2315,7 +2378,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/orchestrator_work_tools.go"
+          "value": "internal/mcp/context_broker_git_tools.go"
         }
       ]
     },
@@ -2326,7 +2389,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/context_broker_tools.go"
+          "value": "internal/mcp/orchestrator_work_tools.go"
         }
       ]
     },
@@ -2337,7 +2400,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/context_broker_git_tools.go"
+          "value": "internal/mcp/context_broker_tools.go"
         }
       ]
     },
@@ -2392,7 +2455,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/run_submission_provenance.go"
+          "value": "internal/store/source_snapshots.go"
         }
       ]
     },
@@ -2403,7 +2466,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/refactor_backlog.go"
+          "value": "internal/store/run_submission_provenance.go"
         }
       ]
     },
@@ -2414,7 +2477,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/projects.go"
+          "value": "internal/store/refactor_backlog.go"
         }
       ]
     },
@@ -2425,7 +2488,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/project_context_records.go"
+          "value": "internal/store/projects.go"
         }
       ]
     },
@@ -2436,7 +2499,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/plan_seeds.go"
+          "value": "internal/store/project_context_records.go"
         }
       ]
     },
@@ -2447,7 +2510,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/local_audits.go"
+          "value": "internal/store/plan_seeds.go"
         }
       ]
     },
@@ -2458,7 +2521,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/db.go"
+          "value": "internal/store/local_audits.go"
         }
       ]
     },
@@ -2469,7 +2532,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/source_snapshots.go"
+          "value": "internal/store/db.go"
         }
       ]
     },
@@ -3040,6 +3103,14 @@
       "evidence": [
         {
           "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        },
+        {
+          "kind": "source",
           "value": "internal/mcp/context_broker_git_tools.go"
         },
         {
@@ -3115,6 +3186,18 @@
           "value": "internal/mcp/tool_test_audit_packet.go"
         },
         {
+          "kind": "source",
+          "value": "internal/mcp/tool_validate_planner_handoff.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/mcp/blocker_envelope_test.go"
+        },
+        {
           "kind": "test",
           "value": "internal/mcp/context_broker_tools_test.go"
         },
@@ -3161,6 +3244,10 @@
         {
           "kind": "test",
           "value": "internal/mcp/server_tools_list_test.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/mcp/tool_create_run_test.go"
         },
         {
           "kind": "test",
@@ -6836,6 +6923,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-const-blockerpreparecontextacquisitionfailed",
+      "label": "proven",
+      "statement": "Exported const BlockerPrepareContextAcquisitionFailed in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-const-blockerpriorpassawaitsaudit",
       "label": "proven",
       "statement": "Exported const BlockerPriorPassAwaitsAudit in internal/app/plans/work_packets.go",
@@ -6880,9 +6978,42 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-const-blockerrequiredcontextbundleunavailable",
+      "label": "proven",
+      "statement": "Exported const BlockerRequiredContextBundleUnavailable in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-const-blockerrequiredcontextmissing",
+      "label": "proven",
+      "statement": "Exported const BlockerRequiredContextMissing in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-const-blockerrequiredcontextpacketmissing",
       "label": "proven",
       "statement": "Exported const BlockerRequiredContextPacketMissing in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-const-blockerrequiredcontexttruncated",
+      "label": "proven",
+      "statement": "Exported const BlockerRequiredContextTruncated in internal/app/plans/work_packets.go",
       "evidence": [
         {
           "kind": "source",
@@ -6968,6 +7099,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-const-blockersourcesnapshotdirtydisallowed",
+      "label": "proven",
+      "statement": "Exported const BlockerSourceSnapshotDirtyDisallowed in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-const-blockersourcesnapshotmetadatamissing",
       "label": "proven",
       "statement": "Exported const BlockerSourceSnapshotMetadataMissing in internal/app/plans/work_packets.go",
@@ -6982,6 +7124,17 @@
       "id": "backend-symbol-internal-app-plans-const-blockersourcesnapshotrequiredseedmissing",
       "label": "proven",
       "statement": "Exported const BlockerSourceSnapshotRequiredSeedMissing in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-const-blockersourcesnapshotstale",
+      "label": "proven",
+      "statement": "Exported const BlockerSourceSnapshotStale in internal/app/plans/work_packets.go",
       "evidence": [
         {
           "kind": "source",
@@ -7650,6 +7803,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-const-preparehandoffcontexttool",
+      "label": "proven",
+      "statement": "Exported const PrepareHandoffContextTool in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-const-recommendedactionapprove",
       "label": "proven",
       "statement": "Exported const RecommendedActionApprove in internal/app/plans/attempt_types.go",
@@ -8244,6 +8408,28 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-func-marshaljson",
+      "label": "proven",
+      "statement": "Exported func MarshalJSON in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-func-marshaljson-2",
+      "label": "proven",
+      "statement": "Exported func MarshalJSON in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-func-neworchestratorworkservice",
       "label": "proven",
       "statement": "Exported func NewOrchestratorWorkService in internal/app/plans/work_packets.go",
@@ -8295,6 +8481,17 @@
         {
           "kind": "source",
           "value": "internal/app/plans/attempt_hash.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-func-preparehandoffcontext",
+      "label": "proven",
+      "statement": "Exported func PrepareHandoffContext in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -9289,6 +9486,50 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-type-preparedcoveragesummary",
+      "label": "proven",
+      "statement": "Exported type PreparedCoverageSummary in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-preparedfreshnessissue",
+      "label": "proven",
+      "statement": "Exported type PreparedFreshnessIssue in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-preparedfreshnessnextaction",
+      "label": "proven",
+      "statement": "Exported type PreparedFreshnessNextAction in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-preparedfreshnessreport",
+      "label": "proven",
+      "statement": "Exported type PreparedFreshnessReport in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-plans-type-preparedplanattemptdriftreview",
       "label": "proven",
       "statement": "Exported type PreparedPlanAttemptDriftReview in internal/app/plans/review_gate.go",
@@ -9296,6 +9537,39 @@
         {
           "kind": "source",
           "value": "internal/app/plans/review_gate.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-preparedrepohead",
+      "label": "proven",
+      "statement": "Exported type PreparedRepoHead in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-preparehandoffcontextrequest",
+      "label": "proven",
+      "statement": "Exported type PrepareHandoffContextRequest in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-preparehandoffcontextresponse",
+      "label": "proven",
+      "statement": "Exported type PrepareHandoffContextResponse in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -9362,6 +9636,61 @@
         {
           "kind": "source",
           "value": "internal/app/plans/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-repositoryfreshnessreport",
+      "label": "proven",
+      "statement": "Exported type RepositoryFreshnessReport in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-requiredcontextbudget",
+      "label": "proven",
+      "statement": "Exported type RequiredContextBudget in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-requiredcontextbundle",
+      "label": "proven",
+      "statement": "Exported type RequiredContextBundle in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-requiredcontextfile",
+      "label": "proven",
+      "statement": "Exported type RequiredContextFile in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-requiredcontextsearch",
+      "label": "proven",
+      "statement": "Exported type RequiredContextSearch in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -9439,6 +9768,39 @@
         {
           "kind": "source",
           "value": "internal/app/plans/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-sourceblocker",
+      "label": "proven",
+      "statement": "Exported type SourceBlocker in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-sourcefreshnessnextaction",
+      "label": "proven",
+      "statement": "Exported type SourceFreshnessNextAction in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-sourcefreshnessreport",
+      "label": "proven",
+      "statement": "Exported type SourceFreshnessReport in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -9567,6 +9929,17 @@
       "id": "backend-symbol-internal-app-plans-type-workblocker",
       "label": "proven",
       "statement": "Exported type WorkBlocker in internal/app/plans/work_packets.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/work_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-type-workblockerevidence",
+      "label": "proven",
+      "statement": "Exported type WorkBlockerEvidence in internal/app/plans/work_packets.go",
       "evidence": [
         {
           "kind": "source",
@@ -10873,6 +11246,105 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-const-blockerartifactbinary",
+      "label": "proven",
+      "statement": "Exported const BlockerArtifactBinary in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-blockerartifactkindnotallowed",
+      "label": "proven",
+      "statement": "Exported const BlockerArtifactKindNotAllowed in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-blockerartifactnotfound",
+      "label": "proven",
+      "statement": "Exported const BlockerArtifactNotFound in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-blockerartifactoversized",
+      "label": "proven",
+      "statement": "Exported const BlockerArtifactOversized in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-blockerartifactreadfailed",
+      "label": "proven",
+      "statement": "Exported const BlockerArtifactReadFailed in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-blockerredactionblocked",
+      "label": "proven",
+      "statement": "Exported const BlockerRedactionBlocked in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-blockerunknownrun",
+      "label": "proven",
+      "statement": "Exported const BlockerUnknownRun in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-blockerunsafeartifactpath",
+      "label": "proven",
+      "statement": "Exported const BlockerUnsafeArtifactPath in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-blockerunsaferequest",
+      "label": "proven",
+      "statement": "Exported const BlockerUnsafeRequest in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-const-codeinternalerror",
       "label": "proven",
       "statement": "Exported const CodeInternalError in internal/mcp/protocol.go",
@@ -10950,6 +11422,50 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-const-hashstatuscomputedfull",
+      "label": "proven",
+      "statement": "Exported const HashStatusComputedFull in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-hashstatusomittedbyrequest",
+      "label": "proven",
+      "statement": "Exported const HashStatusOmittedByRequest in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-hashstatusomittedoversized",
+      "label": "proven",
+      "statement": "Exported const HashStatusOmittedOversized in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-hashstatusunavailable",
+      "label": "proven",
+      "statement": "Exported const HashStatusUnavailable in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-const-jsonrpcversion",
       "label": "proven",
       "statement": "Exported const JSONRPCVersion in internal/mcp/protocol.go",
@@ -10961,6 +11477,160 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-const-mcpblockeraliasambiguous",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerAliasAmbiguous in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerblockedpath",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerBlockedPath in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerdirtyworktree",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerDirtyWorktree in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerexpectedhashmismatch",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerExpectedHashMismatch in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerredactionfailed",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerRedactionFailed in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerrequiredcontextmissing",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerRequiredContextMissing in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerrequiredcontexttruncated",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerRequiredContextTruncated in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerschemamismatch",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerSchemaMismatch in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockersourcesnapshotstale",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerSourceSnapshotStale in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockertoolschemastale",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerToolSchemaStale in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockertoolunavailable",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerToolUnavailable in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerunknownrepository",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerUnknownRepository in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerunknownresource",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerUnknownResource in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerunsaferequest",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerUnsafeRequest in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-const-mcpprotocolversion",
       "label": "proven",
       "statement": "Exported const MCPProtocolVersion in internal/mcp/protocol.go",
@@ -10968,6 +11638,39 @@
         {
           "kind": "source",
           "value": "internal/mcp/protocol.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-redactionblocked",
+      "label": "proven",
+      "statement": "Exported const RedactionBlocked in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-redactionnotrequired",
+      "label": "proven",
+      "statement": "Exported const RedactionNotRequired in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-redactionredacted",
+      "label": "proven",
+      "statement": "Exported const RedactionRedacted in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
         }
       ]
     },
@@ -10990,6 +11693,50 @@
         {
           "kind": "source",
           "value": "internal/mcp/profile.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-viewmodeboundedexcerpt",
+      "label": "proven",
+      "statement": "Exported const ViewModeBoundedExcerpt in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-viewmodeerrors",
+      "label": "proven",
+      "statement": "Exported const ViewModeErrors in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-viewmodemetadataonly",
+      "label": "proven",
+      "statement": "Exported const ViewModeMetadataOnly in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-viewmodesummary",
+      "label": "proven",
+      "statement": "Exported const ViewModeSummary in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
         }
       ]
     },
@@ -11034,6 +11781,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/context_broker_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-func-getsourcesnapshotfreshness",
+      "label": "proven",
+      "statement": "Exported func GetSourceSnapshotFreshness in internal/mcp/orchestrator_work_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/orchestrator_work_tools.go"
         }
       ]
     },
@@ -11412,6 +12170,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-func-handlegetrunartifact",
+      "label": "proven",
+      "statement": "Exported func HandleGetRunArtifact in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-func-handlegetrunstatus",
       "label": "proven",
       "statement": "Exported func HandleGetRunStatus in internal/mcp/tool_get_run_status.go",
@@ -11511,6 +12280,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-func-handlepreparehandoffcontext",
+      "label": "proven",
+      "statement": "Exported func HandlePrepareHandoffContext in internal/mcp/orchestrator_work_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/orchestrator_work_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-func-handlepromoterefactorcandidatetoplan",
       "label": "proven",
       "statement": "Exported func HandlePromoteRefactorCandidateToPlan in internal/mcp/refactor_backlog_tools.go",
@@ -11551,6 +12331,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/refactor_backlog_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-func-handleresolveprojectrepository",
+      "label": "proven",
+      "statement": "Exported func HandleResolveProjectRepository in internal/mcp/context_broker_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
         }
       ]
     },
@@ -11731,6 +12522,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-func-handlevalidateplannerhandoffforcompile",
+      "label": "proven",
+      "statement": "Exported func HandleValidatePlannerHandoffForCompile in internal/mcp/tool_validate_planner_handoff.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/tool_validate_planner_handoff.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-func-handlevoidplanattempt",
       "label": "proven",
       "statement": "Exported func HandleVoidPlanAttempt in internal/mcp/plan_attempt_tools.go",
@@ -11852,6 +12654,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-type-exactsubmissionprovenance",
+      "label": "proven",
+      "statement": "Exported type ExactSubmissionProvenance in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-type-httphandler",
       "label": "proven",
       "statement": "Exported type HTTPHandler in internal/mcp/http_handler.go",
@@ -11881,6 +12694,39 @@
         {
           "kind": "source",
           "value": "internal/mcp/protocol.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-type-mcpblockedresponse",
+      "label": "proven",
+      "statement": "Exported type MCPBlockedResponse in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-type-mcpblocker",
+      "label": "proven",
+      "statement": "Exported type MCPBlocker in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-type-mcpblockerevidence",
+      "label": "proven",
+      "statement": "Exported type MCPBlockerEvidence in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
         }
       ]
     },
@@ -11947,6 +12793,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/protocol.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-type-submittedartifactidentity",
+      "label": "proven",
+      "statement": "Exported type SubmittedArtifactIdentity in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
         }
       ]
     },
@@ -12347,6 +13204,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-var-toolgetrunartifact",
+      "label": "proven",
+      "statement": "Exported var ToolGetRunArtifact in internal/mcp/artifact_readback_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_readback_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-var-toolgetrunstatus",
       "label": "proven",
       "statement": "Exported var ToolGetRunStatus in internal/mcp/tool_get_run_status.go",
@@ -12435,6 +13303,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-var-toolpreparehandoffcontext",
+      "label": "proven",
+      "statement": "Exported var ToolPrepareHandoffContext in internal/mcp/orchestrator_work_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/orchestrator_work_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-var-toolpromoterefactorcandidatetoplan",
       "label": "proven",
       "statement": "Exported var ToolPromoteRefactorCandidateToPlan in internal/mcp/refactor_backlog_tools.go",
@@ -12464,6 +13343,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/refactor_backlog_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-var-toolresolveprojectrepository",
+      "label": "proven",
+      "statement": "Exported var ToolResolveProjectRepository in internal/mcp/context_broker_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
         }
       ]
     },
@@ -12629,6 +13519,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/refactor_backlog_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-var-toolvalidateplannerhandoffforcompile",
+      "label": "proven",
+      "statement": "Exported var ToolValidatePlannerHandoffForCompile in internal/mcp/tool_validate_planner_handoff.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/tool_validate_planner_handoff.go"
         }
       ]
     },
@@ -16659,6 +17560,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-readypassincludesrequiredcontextbundlewithsnapshothashes",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_ReadyPassIncludesRequiredContextBundleWithSnapshotHashes in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-plans-testgetnextpasswork-readypassreturnshandoffauthoringpacket",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_ReadyPassReturnsHandoffAuthoringPacket in internal/app/plans/work_packets_test.go",
@@ -16780,6 +17692,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-requiredcontextbundlereportsmissingsnapshotmetadata",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_RequiredContextBundleReportsMissingSnapshotMetadata in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-plans-testgetnextpasswork-requiredcontextpacketmissing",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_RequiredContextPacketMissing in internal/app/plans/work_packets_test.go",
@@ -16849,6 +17772,17 @@
       "id": "backend-test-internal-app-plans-testgetnextpasswork-selectssecondpasswhenfirstskipped",
       "label": "proven",
       "statement": "Test function TestGetNextPassWork_SelectsSecondPassWhenFirstSkipped in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testgetnextpasswork-sourcesnapshotacquisitionfailureincludesrequiredcontextbundle",
+      "label": "proven",
+      "statement": "Test function TestGetNextPassWork_SourceSnapshotAcquisitionFailureIncludesRequiredContextBundle in internal/app/plans/work_packets_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -17051,6 +17985,138 @@
         {
           "kind": "test",
           "value": "internal/app/plans/review_settings_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testpreparehandoffcontext-dirtyalloweddoesnotblockwhenfreshnessreusable",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContext_DirtyAllowedDoesNotBlockWhenFreshnessReusable in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testpreparehandoffcontext-dirtydisallowedsourceblocks",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContext_DirtyDisallowedSourceBlocks in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testpreparehandoffcontext-driftedsnapshotblocks",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContext_DriftedSnapshotBlocks in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testpreparehandoffcontext-freshnessrecoveryactionsaresafe",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContext_FreshnessRecoveryActionsAreSafe in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testpreparehandoffcontext-missingrequiredcontextblocks",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContext_MissingRequiredContextBlocks in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testpreparehandoffcontext-optionalcontexttruncationwarns",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContext_OptionalContextTruncationWarns in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testpreparehandoffcontext-readyselectedpass",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContext_ReadySelectedPass in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testpreparehandoffcontext-recoveryactionsusesafelowerleveltools",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContext_RecoveryActionsUseSafeLowerLevelTools in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testpreparehandoffcontext-requiredcontexttruncationblocks",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContext_RequiredContextTruncationBlocks in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testpreparehandoffcontext-responsesafejson",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContext_ResponseSafeJSON in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testpreparehandoffcontext-sourcefreshnessmatchessourceservice",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContext_SourceFreshnessMatchesSourceService in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-testpreparehandoffcontext-stalebyageblocks",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContext_StaleByAgeBlocks in internal/app/plans/work_packets_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/work_packets_test.go"
         }
       ]
     },
@@ -17627,6 +18693,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testblockerenvelopeboundsandsanitizes",
+      "label": "proven",
+      "statement": "Test function TestBlockerEnvelopeBoundsAndSanitizes in internal/mcp/blocker_envelope_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/blocker_envelope_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testcontextbrokertoolschemasareboundedandsafe",
       "label": "proven",
       "statement": "Test function TestContextBrokerToolSchemasAreBoundedAndSafe in internal/mcp/context_broker_tools_test.go",
@@ -17671,6 +18748,39 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testcreaterunfromplannerhandofffilehashmismatchstructuredblocker",
+      "label": "proven",
+      "statement": "Test function TestCreateRunFromPlannerHandoffFileHashMismatchStructuredBlocker in internal/mcp/tool_create_run_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/tool_create_run_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testcreaterunfromplannerhandofffilereturnssanitizedidentity",
+      "label": "proven",
+      "statement": "Test function TestCreateRunFromPlannerHandoffFileReturnsSanitizedIdentity in internal/mcp/tool_create_run_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/tool_create_run_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testcreaterunfromplannerhandoffinlinereturnsexactprovenance",
+      "label": "proven",
+      "statement": "Test function TestCreateRunFromPlannerHandoffInlineReturnsExactProvenance in internal/mcp/tool_create_run_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/tool_create_run_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testdefaultlocaloperatortoolsurfaceincludesallsafetools",
       "label": "proven",
       "statement": "Test function TestDefaultLocalOperatorToolSurfaceIncludesAllSafeTools in internal/mcp/tool_surface_test.go",
@@ -17700,6 +18810,435 @@
         {
           "kind": "test",
           "value": "internal/mcp/orchestrator_work_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactallblockers",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactAllBlockers in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactbinaryrejected",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactBinaryRejected in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactboundedexcerpt",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactBoundedExcerpt in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactboundedexcerptnolocalpath",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactBoundedExcerptNoLocalPath in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactcontenthashstatus",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactContentHashStatus in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactcontextpacketreadback",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactContextPacketReadback in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactdefaultmaxbytes",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactDefaultMaxBytes in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifacterrorsemptyresult",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactErrorsEmptyResult in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifacterrorsjson",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactErrorsJSON in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifacterrorsnoerrrors",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactErrorsNoErrrors in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifacterrorsredactionapplied",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactErrorsRedactionApplied in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifacterrorstext",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactErrorsText in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifacthashstatusneverempty",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactHashStatusNeverEmpty in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactincludehashfalse",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactIncludeHashFalse in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactinvalidviewmode",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactInvalidViewMode in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactkindnotallowed",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactKindNotAllowed in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactkindstartswithunsafe",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactKindStartsWithUnsafe in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactmaxbyteshardcap",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactMaxBytesHardcap in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactmaxbytesminmaxbounds",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactMaxBytesMinMaxBounds in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactmetadataonly",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactMetadataOnly in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactmissingkind",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactMissingKind in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactoptionahashsemantics",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactOptionAHashSemantics in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactoversizedcontenthashstatus",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactOversizedContentHashStatus in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactrawjsonsuccessokisboolean",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactRawJSONSuccessOKIsBoolean in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactredactionapplied",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactRedactionApplied in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactredactionpemredacted",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactRedactionPEMRedacted in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactredactionstatusexplicit",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactRedactionStatusExplicit in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactrejectsinvalidrunid",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactRejectsInvalidRunID in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactresponsehasnolocalpath",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactResponseHasNoLocalPath in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactstrictschemarejectsextraargs",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactStrictSchemaRejectsExtraArgs in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactsummaryjson",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactSummaryJSON in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactsummarymarkdown",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactSummaryMarkdown in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactsummarytext",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactSummaryText in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifacttoolregistration",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactToolRegistration in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifacttruncationmetadata",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactTruncationMetadata in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactunknownrun",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactUnknownRun in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactunknownrunenvelope",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactUnknownRunEnvelope in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactunsafeartifactpathenvelope",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactUnsafeArtifactPathEnvelope in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactusedbyrunidcheck",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactUsedByRunIDCheck in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
         }
       ]
     },
@@ -17883,6 +19422,17 @@
       "id": "backend-test-internal-mcp-testhandlecreaterunfromplannerhandofffile-invalidfileinputs",
       "label": "proven",
       "statement": "Test function TestHandleCreateRunFromPlannerHandoffFile_InvalidFileInputs in internal/mcp/mcp_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/mcp_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhandlecreaterunfromplannerhandofffile-passwithoutplanrejectedbeforewrites",
+      "label": "proven",
+      "statement": "Test function TestHandleCreateRunFromPlannerHandoffFile_PassWithoutPlanRejectedBeforeWrites in internal/mcp/mcp_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -18166,6 +19716,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testhandlerepositorygittoolsresolvealiastocanonicalrepoid",
+      "label": "proven",
+      "statement": "Test function TestHandleRepositoryGitToolsResolveAliasToCanonicalRepoID in internal/mcp/context_broker_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/context_broker_tools_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testhandlerepositorygittoolsreturnboundedevidence",
       "label": "proven",
       "statement": "Test function TestHandleRepositoryGitToolsReturnBoundedEvidence in internal/mcp/context_broker_tools_test.go",
@@ -18177,9 +19738,53 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testhandlerepositorygittoolsreturnresolverblockers",
+      "label": "proven",
+      "statement": "Test function TestHandleRepositoryGitToolsReturnResolverBlockers in internal/mcp/context_broker_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/context_broker_tools_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testhandlerepositorygittoolsvalidatescopeandmode",
       "label": "proven",
       "statement": "Test function TestHandleRepositoryGitToolsValidateScopeAndMode in internal/mcp/context_broker_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/context_broker_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhandleresolveprojectrepositorycanonicalandbounded",
+      "label": "proven",
+      "statement": "Test function TestHandleResolveProjectRepositoryCanonicalAndBounded in internal/mcp/context_broker_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/context_broker_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhandleresolveprojectrepositoryrequiresexactlyonealias",
+      "label": "proven",
+      "statement": "Test function TestHandleResolveProjectRepositoryRequiresExactlyOneAlias in internal/mcp/context_broker_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/context_broker_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhandleresolveprojectrepositoryunknownandambiguousblockers",
+      "label": "proven",
+      "statement": "Test function TestHandleResolveProjectRepositoryUnknownAndAmbiguousBlockers in internal/mcp/context_broker_tools_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -18422,6 +20027,39 @@
       "id": "backend-test-internal-mcp-testhandlesubmittestauditpacket-unsupporteddecision",
       "label": "proven",
       "statement": "Test function TestHandleSubmitTestAuditPacket_UnsupportedDecision in internal/mcp/mcp_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/mcp_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhandlevalidateplannerhandoffforcompile-filemode",
+      "label": "proven",
+      "statement": "Test function TestHandleValidatePlannerHandoffForCompile_FileMode in internal/mcp/mcp_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/mcp_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhandlevalidateplannerhandoffforcompile-passwithoutplanblocks",
+      "label": "proven",
+      "statement": "Test function TestHandleValidatePlannerHandoffForCompile_PassWithoutPlanBlocks in internal/mcp/mcp_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/mcp_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhandlevalidateplannerhandoffforcompile-strictinputandsources",
+      "label": "proven",
+      "statement": "Test function TestHandleValidatePlannerHandoffForCompile_StrictInputAndSources in internal/mcp/mcp_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -18705,6 +20343,28 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testorchestratorworktools-preparehandoffcontextmissingrequiredids",
+      "label": "proven",
+      "statement": "Test function TestOrchestratorWorkTools_PrepareHandoffContextMissingRequiredIDs in internal/mcp/orchestrator_work_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/orchestrator_work_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testorchestratorworktools-preparehandoffcontextstructuredcontentsafe",
+      "label": "proven",
+      "statement": "Test function TestOrchestratorWorkTools_PrepareHandoffContextStructuredContentSafe in internal/mcp/orchestrator_work_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/orchestrator_work_tools_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testorchestratorworktools-schemasarestrictandscoped",
       "label": "proven",
       "statement": "Test function TestOrchestratorWorkTools_SchemasAreStrictAndScoped in internal/mcp/orchestrator_work_tools_test.go",
@@ -18745,6 +20405,17 @@
         {
           "kind": "test",
           "value": "internal/mcp/orchestrator_work_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testpathevidencesafetyishostindependent",
+      "label": "proven",
+      "statement": "Test function TestPathEvidenceSafetyIsHostIndependent in internal/mcp/blocker_envelope_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/blocker_envelope_test.go"
         }
       ]
     },
@@ -18837,6 +20508,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testplannerhandofffilefailuresaresanitized",
+      "label": "proven",
+      "statement": "Test function TestPlannerHandoffFileFailuresAreSanitized in internal/mcp/tool_create_run_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/tool_create_run_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testplanseedmcpattemptmissingrequiredfields",
       "label": "proven",
       "statement": "Test function TestPlanSeedMCPAttemptMissingRequiredFields in internal/mcp/plan_seed_tools_test.go",
@@ -18921,6 +20603,28 @@
         {
           "kind": "test",
           "value": "internal/mcp/plan_seed_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testpreparehandoffcontextrejectsremovedknobs",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContextRejectsRemovedKnobs in internal/mcp/orchestrator_work_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/orchestrator_work_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testpreparehandoffcontextschemaonlyacceptsscopedidentifiers",
+      "label": "proven",
+      "statement": "Test function TestPrepareHandoffContextSchemaOnlyAcceptsScopedIdentifiers in internal/mcp/orchestrator_work_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/orchestrator_work_tools_test.go"
         }
       ]
     },
@@ -19079,6 +20783,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testsafeartifactdisplaynamecrossplatform",
+      "label": "proven",
+      "statement": "Test function TestSafeArtifactDisplayNameCrossPlatform in internal/mcp/blocker_envelope_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/blocker_envelope_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testserverinitialize",
       "label": "proven",
       "statement": "Test function TestServerInitialize in internal/mcp/mcp_test.go",
@@ -19167,6 +20882,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testservertoolslistincludesgetrunartifactlocaloperator",
+      "label": "proven",
+      "statement": "Test function TestServerToolsListIncludesGetRunArtifactLocalOperator in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testservertoolslistincludesplanseedtools",
       "label": "proven",
       "statement": "Test function TestServerToolsListIncludesPlanSeedTools in internal/mcp/plan_seed_tools_test.go",
@@ -19174,6 +20900,17 @@
         {
           "kind": "test",
           "value": "internal/mcp/plan_seed_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testservertoolslistomitsgetrunartifactrestricted",
+      "label": "proven",
+      "statement": "Test function TestServerToolsListOmitsGetRunArtifactRestricted in internal/mcp/artifact_readback_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_readback_tools_test.go"
         }
       ]
     },
@@ -19218,6 +20955,17 @@
         {
           "kind": "test",
           "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testtoolblockedresultstructuredcontent",
+      "label": "proven",
+      "statement": "Test function TestToolBlockedResultStructuredContent in internal/mcp/blocker_envelope_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/blocker_envelope_test.go"
         }
       ]
     },

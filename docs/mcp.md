@@ -24,21 +24,48 @@
     *   `submit_planner_pass_plan` creates plan/pass records only and does not create runs, dispatch executors, mutate git, or read chat context.
     *   The additional status/list/audit tools are **not** currently exposed to the Planner Project unless the specific project configuration is modified to expose them.
 
-## Planned Context Workflow Grounded in Current MCP Inventory
+## Context-Gathering Workflow (Implemented)
 
-This section describes planned/contracted target behavior for the context-gathering workflow. It is not the currently guaranteed GPT-facing action inventory. The current grounding signals remain: the GPT-facing submission actions `create_run_from_planner_handoff_file`, `create_run_from_planner_handoff`, and `submit_planner_pass_plan`; and the local-operator context broker inventory registered under `RELAY_MCP_PROFILE=local-operator`.
+The local-operator context-broker inventory implements a bounded context-gathering workflow built from retrieval-only tools. The surfaces are resource resolution, source snapshot freshness, required context bundles, prepared handoff context readiness, bounded artifact readback, compile-aware preflight, and exact artifact submission. These surfaces compose bounded primitives only. No high-level tool authorizes shell execution, git mutation, arbitrary filesystem reads, generic file browsing, unbounded source reads, unbounded artifact dumps, or secret persistence.
 
-The planned contract-target surfaces are resource resolution, source snapshot freshness, required context bundles, prepared handoff context readiness, bounded artifact readback, compile-aware preflight, and exact artifact submission. These surfaces compose bounded primitives only. No high-level tool authorizes shell execution, git mutation, arbitrary filesystem reads, generic file browsing, unbounded source reads, unbounded artifact dumps, or secret persistence.
+The workflow is built on the existing local-operator tool inventory and does not change the default Planner Project submission actions. The current default submission actions remain `create_run_from_planner_handoff_file`, `create_run_from_planner_handoff`, and `submit_planner_pass_plan`.
 
-Intended safe Planner workflow:
+### Preferred Managed-Pass Sequence
 
-1. Resolve project and repository aliases to registered Relay identities.
-2. Acquire or reuse a fresh clean source snapshot and report stale or dirty-worktree blockers.
-3. Receive required context bundle metadata from work-packet retrieval.
-4. Prepare bounded handoff context and context packet readiness without embedding raw source file contents.
-5. Read generated artifacts only through registered artifact kinds and bounded view modes.
-6. Validate Planner handoff compile readiness before run creation without treating preflight success as submission approval.
-7. Submit only the exact reviewed handoff artifact after explicit user confirmation. File submission preserves reviewed handoff bytes, computes submitted SHA-256, verifies optional `expected_sha256`, and blocks with `expected_hash_mismatch` before run creation when hashes differ.
+1. Call `get_next_pass_work` with `project_id` and `plan_id` to receive selected pass work and metadata-only `required_context_bundle`.
+2. Call `prepare_handoff_context` with explicit `project_id`, `plan_id`, and `pass_id` to prepare metadata-only source and context evidence readiness. The response includes `source_snapshot_id`, `context_packet_id`, `repo_heads`, `freshness_report`, `required_coverage`, `optional_coverage`, `required_context_bundle`, typed `blockers`, `recommended_next_action`, and `lower_level_recovery_actions`.
+3. Author the durable Planner handoff from the prepared context and handoff_work packet.
+4. Call `validate_planner_handoff_for_compile` to perform a deterministic compile-aware preflight without creating a run.
+5. Perform human review and explicit confirmation of the validated handoff.
+6. Call `create_run_from_planner_handoff_file` with `expected_sha256` when a reviewed file exists. Inline submission via `create_run_from_planner_handoff` is the documented fallback for chat-only drafts.
+
+### Bounded Recovery Path
+
+When `prepare_handoff_context` returns blocked or warning states:
+
+1. Call `resolve_project_repository` to verify registered repository identities and accepted aliases.
+2. Call `create_source_snapshot` to acquire a fresh bounded source snapshot. Assert the structured `freshness_report` for freshness, `reusable_for_handoff`, and repository identity.
+3. Call `create_context_packet` or `get_context_packet` to establish or retrieve required context packet evidence.
+4. Retry `prepare_handoff_context` with the updated source and context evidence.
+
+### Bounded Artifact Readback
+
+`get_run_artifact` is bounded generated-artifact inspection only. It reads only artifacts registered by `(run_id, artifact_kind)` with strict path validation. All view modes (`metadata_only`, `bounded_excerpt`, `summary`, `errors`) enforce byte caps, redaction, and path-safety. It never provides generic file access, arbitrary filesystem reads, or unbounded content dumps. Full documentation is in the `get_run_artifact` section below.
+
+### Safety
+
+- No preparation, preflight, or readback result bypasses human approval or triggers submission.
+- Exact file submission with `expected_sha256` blocks before any durable run, artifact, provenance, event, or pass-status write when hashes differ.
+- All responses are bounded, redacted, and omit local absolute paths.
+
+### Validation Commands
+
+| Command | Purpose |
+|---------|---------|
+| `make mcp-test` | Run MCP package unit tests for profile gating, schemas, tool handlers, and safety boundaries. |
+| `make mcp-smoke` | Build the real MCP server binary and execute the deterministic end-to-end streamlined workflow smoke harness against it. |
+| `npm run smoke` | Run the integrated Go, MCP, server, local-scripts, and web smoke command set. |
+| `npm run release:smoke` | Run the canonical local release gate (wraps `scripts/release-smoke.sh`), which includes `make mcp-smoke` and all retained broad checks. |
 
 Shared blocker envelope fields in order: `code`, `message`, `recoverable`, `evidence`, `next_actions`.
 Blocked MCP tool results set `ok=false`, `status="blocked"`, `isError=true`, and expose the bounded envelope in `structuredContent`. Business-state blockers are not successful tool calls. Deterministic compile-preflight blockers use the same envelope; bounded preflight details, work-packet summaries, and provenance diagnostics may appear only under `metadata`.

@@ -28,14 +28,14 @@ Schema version: `1.0.0`
 | `internal/api/plans/attempt_handler.go` | `0c3306e9eae40bca3c21dd30271ede345fcabe5c8da86beb82ce081bd4ec6925` | plan attempt HTTP handler |
 | `internal/app/plans/attempt_service.go` | `20aaf203df2b7d1f38c95ba0b1335034a8d0078ed6318e671fc1360c41c93633` | plan attempt service |
 | `internal/app/plans/attempt_types.go` | `5c9ba968328c4c99ea4ff87c0638dd8cac5c096290ce31fc67c152aa513590f5` | plan attempt type model |
-| `internal/app/plans/work_packets.go` | `36be85742d17a80f28e1ec4b9931d34bfb6a96bd5ae76213ebe5aeee6f1b1dd3` | next-pass work packet model |
+| `internal/app/plans/work_packets.go` | `dbe4eee9a2e2e1d44b1347344dabd36a1f7ffa2cf9d74a477be3b5bb7876b35c` | next-pass work packet model |
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | plan attempt MCP tools |
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | refactor backlog MCP tools |
 | `internal/refactors/types.go` | `09bd11e1868897593f61ca678a4ba221b4d0a58a37f68307669a319f80320eb7` | refactor backlog type model |
-| `relay-contracts/contracts/intent_drift_review_contract.md` | `819efc18fd9ae17678f7d51f5675f6d78227339e6a7b375f14be2a4b3b51921e` | intent drift review contract |
+| `relay-contracts/contracts/intent_drift_review_contract.md` | `1cac289dcc7beacd68ae56dd105b7788ca78b408d27a65168e92cb0971e6ecda` | intent drift review contract |
 | `relay-contracts/contracts/planner_mcp_plan_attempt_contract.md` | `3cf8df06e87a55560bd4fb900eef70061695c7d40bc81ec9d1c95ef694622997` | planner MCP plan attempt contract |
 | `relay-contracts/contracts/refactor_backlog_contract.md` | `7b4f61fef9650274546d498cce3c5b6943e4b85b84d70682bf7d861fe1604966` | refactor backlog contract |
-| `relay-contracts/policies/pipeline_lifecycle_policy.md` | `cab4372d929a2793c8e8b1248bc39434a1933f3191fadcfcea5a7ec284db2cd5` | pipeline lifecycle policy |
+| `relay-contracts/policies/pipeline_lifecycle_policy.md` | `550af4651703b9132a9bc6eeafab2a0192f69a4a59100653268606929f39437b` | pipeline lifecycle policy |
 
 ## Fact Labels
 

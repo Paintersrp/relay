@@ -55,18 +55,57 @@ fail-closed advancement.
 1. Open the project.
 2. Open the active plan.
 3. Click **Continue Plan**.
-4. Use the selected pass work packet to request a Planner handoff in chat.
-5. Review the generated Planner handoff.
-6. Submit the reviewed handoff with
-   `create_run_from_planner_handoff(plan_id, pass_id, ...)`.
-7. Progress the run through the configured gates (intake -> prepare -> execute ->
-   validate).
-8. When the run is audit-ready, click **Audit Ready** or call
-   `get_next_audit_work`.
-9. The Auditor reviews the evidence and proposes a decision.
-10. The user submits/approves the decision from the run audit workbench.
-11. **Continue Plan** returns the next pass only after the prior pass is
+4. Use the selected pass work packet to request a Planner handoff in chat. The
+   `get_next_pass_work` response includes metadata-only `required_context_bundle`,
+   `handoff_work`, and `handoff_authoring_packet`.
+5. Optionally call `prepare_handoff_context` with `project_id`, `plan_id`, and
+   `pass_id` to prepare metadata-only source and context evidence readiness before
+   authoring. The response includes `source_snapshot_id`, `context_packet_id`,
+   `repo_heads`, `freshness_report`, `required_coverage`, `optional_coverage`,
+   `required_context_bundle`, typed `blockers`, `recommended_next_action`, and
+   `lower_level_recovery_actions`.
+6. Author the reviewed Planner handoff from prepared context.
+7. Call `validate_planner_handoff_for_compile` for deterministic compile-aware
+   preflight without creating a run. Blocking preflight failures return the shared
+   blocker envelope with bounded `metadata.preflight` details.
+8. Perform human review and explicit confirmation of the validated handoff.
+9. Submit the reviewed handoff with
+   `create_run_from_planner_handoff_file(planner_handoff_file, expected_sha256, ...)`
+   when a reviewed file exists, preserving exact file-byte provenance. Inline
+   submission via `create_run_from_planner_handoff` remains the fallback for
+   chat-only drafts.
+10. Progress the run through the configured gates (intake -> prepare -> execute ->
+    validate).
+11. During or after execution, use `get_run_artifact` for bounded inspection of
+    registered run artifacts (validation reports, compiler outputs, executor
+    diagnostics) through safe view modes (`metadata_only`, `bounded_excerpt`,
+    `summary`, `errors`). Artifact readback is bounded, redacted, and path-safe;
+    it never provides generic file access or unbounded content dumps.
+12. When the run is audit-ready, click **Audit Ready** or call
+    `get_next_audit_work`.
+13. The Auditor reviews the evidence and proposes a decision.
+14. The user submits/approves the decision from the run audit workbench.
+15. **Continue Plan** returns the next pass only after the prior pass is
     `completed` or `skipped`.
+
+### Recovery Path
+
+When `prepare_handoff_context` returns blocked or warns of optional-context limitations:
+
+1. Use `resolve_project_repository` to verify registered repository identities
+   and accepted aliases. Unknown or ambiguous cases return structured blockers with
+   safe evidence and next actions.
+2. Use `create_source_snapshot` to acquire a fresh bounded source snapshot.
+   Assert the structured `freshness_report` for freshness, `reusable_for_handoff`,
+   and bounded repository identity. Stale, dirty, or drifted snapshots return typed
+   source blockers with recovery guidance.
+3. Use `create_context_packet` or `get_context_packet` to establish or retrieve
+   required context packet evidence.
+4. Retry `prepare_handoff_context` with the corrected source and context evidence.
+
+No recovery step bypasses human review, explicit confirmation, or the
+preflight/exact-file-submission gates. All responses remain bounded and
+path-safe.
 
 ## Blocking Behavior
 
@@ -160,8 +199,9 @@ are introduced by this pass.
 
 ```bash
 make mcp-test                          # MCP package tests (profile gating, schemas, responses)
-make mcp-smoke                         # builds the MCP binary and runs the smoke harness
+make mcp-smoke                         # builds the MCP binary and runs the deterministic streamlined workflow smoke harness
 npm run smoke                          # integrated Go/MCP/server/local-scripts/web smoke command
+npm run release:smoke                  # canonical local release gate including MCP smoke and all retained checks
 make validate                          # repository validation report (go fmt/test, web typecheck/build)
 ```
 

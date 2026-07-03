@@ -35,7 +35,7 @@
     },
     {
       "path": "internal/app/plans/work_packets.go",
-      "sha256": "36be85742d17a80f28e1ec4b9931d34bfb6a96bd5ae76213ebe5aeee6f1b1dd3",
+      "sha256": "dbe4eee9a2e2e1d44b1347344dabd36a1f7ffa2cf9d74a477be3b5bb7876b35c",
       "role": "next-pass work packet model"
     },
     {
@@ -55,7 +55,7 @@
     },
     {
       "path": "relay-contracts/contracts/intent_drift_review_contract.md",
-      "sha256": "819efc18fd9ae17678f7d51f5675f6d78227339e6a7b375f14be2a4b3b51921e",
+      "sha256": "1cac289dcc7beacd68ae56dd105b7788ca78b408d27a65168e92cb0971e6ecda",
       "role": "intent drift review contract"
     },
     {
@@ -70,7 +70,7 @@
     },
     {
       "path": "relay-contracts/policies/pipeline_lifecycle_policy.md",
-      "sha256": "cab4372d929a2793c8e8b1248bc39434a1933f3191fadcfcea5a7ec284db2cd5",
+      "sha256": "550af4651703b9132a9bc6eeafab2a0192f69a4a59100653268606929f39437b",
       "role": "pipeline lifecycle policy"
     }
   ],

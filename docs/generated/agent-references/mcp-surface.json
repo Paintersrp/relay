@@ -20,7 +20,7 @@
   "source_inputs": [
     {
       "path": "internal/mcp/context_broker_tools.go",
-      "sha256": "d860b1ab59415aed878cb6f7e025a2d319f744a771ce69c40439a63d05dd50ce",
+      "sha256": "ec4994285c043f442dcceae02fe308917531c998899a6335a1282356b917bd58",
       "role": "mcp_tool_source"
     },
     {
@@ -40,17 +40,17 @@
     },
     {
       "path": "internal/mcp/server.go",
-      "sha256": "71893bd6df036612aef4a0028ef8e14fe7055becb92d347576b5758b10243cef",
+      "sha256": "a40c21e9030a9538b8219cb24130131a27e3d25bd78f63bc5d1bffff4f76416c",
       "role": "mcp_tool_source"
     },
     {
       "path": "relay-contracts/contracts/planner_mcp_context_broker_contract.md",
-      "sha256": "7ff202c0d56f8cd10edf5bb7d670451ccef2d2c948cae66eda2e3e06348862b9",
+      "sha256": "3b687af22451b6818dbd42c512ca671f4838d263c7645d5e87d5eefe1a196035",
       "role": "mcp_contract_source"
     },
     {
       "path": "relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md",
-      "sha256": "73a3afeaccb27e089a0fe186c780d969eb1ca9404deaa857af0839a18b6d908f",
+      "sha256": "bcd69134ce144ab2ad50f7589421b045dbb1001f9b5c5465afa1d5e3928a9ea7",
       "role": "mcp_contract_source"
     },
     {
@@ -538,6 +538,21 @@
     {
       "id": "mcp-tool-31",
       "label": "proven",
+      "statement": "MCP tool \"resolve_project_repository\" registered from internal/mcp/context_broker_tools.go with profile gate always; context broker surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/context_broker_tools.go"
+        },
+        {
+          "kind": "schema_var",
+          "value": "ToolResolveProjectRepository (in internal/mcp/context_broker_tools.go)"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-32",
+      "label": "proven",
       "statement": "MCP tool \"revise_plan_attempt\" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface",
       "evidence": [
         {
@@ -551,7 +566,7 @@
       ]
     },
     {
-      "id": "mcp-tool-32",
+      "id": "mcp-tool-33",
       "label": "proven",
       "statement": "MCP tool \"search_project_files\" registered from internal/mcp/context_broker_tools.go with profile gate context_broker_profile_required; context broker surface",
       "evidence": [
@@ -566,7 +581,7 @@
       ]
     },
     {
-      "id": "mcp-tool-33",
+      "id": "mcp-tool-34",
       "label": "proven",
       "statement": "MCP tool \"search_refactor_candidates\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; refactor backlog surface",
       "evidence": [
@@ -581,7 +596,7 @@
       ]
     },
     {
-      "id": "mcp-tool-34",
+      "id": "mcp-tool-35",
       "label": "proven",
       "statement": "MCP tool \"submit_intent_drift_review\" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface",
       "evidence": [
@@ -596,7 +611,7 @@
       ]
     },
     {
-      "id": "mcp-tool-35",
+      "id": "mcp-tool-36",
       "label": "proven",
       "statement": "MCP tool \"submit_plan_attempt\" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface",
       "evidence": [
@@ -611,7 +626,7 @@
       ]
     },
     {
-      "id": "mcp-tool-36",
+      "id": "mcp-tool-37",
       "label": "proven",
       "statement": "MCP tool \"suggest_refactor_candidate_placement\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; refactor backlog surface",
       "evidence": [
@@ -626,7 +641,7 @@
       ]
     },
     {
-      "id": "mcp-tool-37",
+      "id": "mcp-tool-38",
       "label": "proven",
       "statement": "MCP tool \"supersede_refactor_candidate\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
       "evidence": [
@@ -641,7 +656,7 @@
       ]
     },
     {
-      "id": "mcp-tool-38",
+      "id": "mcp-tool-39",
       "label": "proven",
       "statement": "MCP tool \"supersede_refactor_discovery_task\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
       "evidence": [
@@ -652,17 +667,6 @@
         {
           "kind": "schema_var",
           "value": "ToolSupersedeRefactorDiscoveryTask (in internal/mcp/refactor_backlog_tools.go)"
-        }
-      ]
-    },
-    {
-      "id": "mcp-tool-39",
-      "label": "proven",
-      "statement": "MCP tool \"update_plan_seed\" registered from internal/mcp/plan_seed_tools.go with profile gate always; mutating tool; plan seed surface",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/mcp/plan_seed_tools.go"
         }
       ]
     },
@@ -680,6 +684,17 @@
     {
       "id": "mcp-tool-40",
       "label": "proven",
+      "statement": "MCP tool \"update_plan_seed\" registered from internal/mcp/plan_seed_tools.go with profile gate always; mutating tool; plan seed surface",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/plan_seed_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-41",
+      "label": "proven",
       "statement": "MCP tool \"update_refactor_candidate\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
       "evidence": [
         {
@@ -693,7 +708,7 @@
       ]
     },
     {
-      "id": "mcp-tool-41",
+      "id": "mcp-tool-42",
       "label": "proven",
       "statement": "MCP tool \"update_refactor_discovery_task\" registered from internal/mcp/refactor_backlog_tools.go with profile gate context_broker_profile_required; mutating tool; refactor backlog surface",
       "evidence": [
@@ -708,7 +723,7 @@
       ]
     },
     {
-      "id": "mcp-tool-42",
+      "id": "mcp-tool-43",
       "label": "proven",
       "statement": "MCP tool \"void_plan_attempt\" registered from internal/mcp/plan_attempt_tools.go with profile gate always; mutating tool; plan attempt surface",
       "evidence": [

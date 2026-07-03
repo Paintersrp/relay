@@ -69,7 +69,7 @@ mcp-test:
 	go test ./internal/mcp/... ./cmd/mcpserver/...
 
 mcp-smoke: mcp-build
-	go run ./cmd/mcp-smoke
+	RELAY_MCP_URL='' RELAY_MCP_AUTH_TOKEN='' go run ./cmd/mcp-smoke
 
 plan-api-smoke:
 	go run ./cmd/plan-api-smoke

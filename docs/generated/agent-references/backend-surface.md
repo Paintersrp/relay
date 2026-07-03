@@ -121,8 +121,8 @@ Schema version: `1.0.0`
 | `internal/app/plans/service_test.go` | `4d61e8bde7b0eddda3d1136a98505ea374b210b5ec8be83328c65c69a752725c` | test |
 | `internal/app/plans/types.go` | `8e61e722378940b93ad98db9e68ed915840c568fedf958ec9f86152afd89da53` | source |
 | `internal/app/plans/validator.go` | `9eb5323bcbe1b6f76a25d5f1c53607b06232c99b73674e5947ba1a6de81891dd` | source |
-| `internal/app/plans/work_packets.go` | `36be85742d17a80f28e1ec4b9931d34bfb6a96bd5ae76213ebe5aeee6f1b1dd3` | source |
-| `internal/app/plans/work_packets_test.go` | `fcb7271dbe58076aa22c13fc00641d7e5dc93341ce98e6b14882f475acae1b62` | test |
+| `internal/app/plans/work_packets.go` | `dbe4eee9a2e2e1d44b1347344dabd36a1f7ffa2cf9d74a477be3b5bb7876b35c` | source |
+| `internal/app/plans/work_packets_test.go` | `ec1e43663b714632953cef9cd34e150ad90966088b848b79c98ef508abdff1d2` | test |
 | `internal/app/projects/doc.go` | `05785c89f12cd3c6466520e3a36dea624fcfcb0c5017477a253f074ba5946287` | source |
 | `internal/app/projects/plan_seed_service.go` | `e5963863344a9aa8d4497bf52a53ebeb32e5d1fd22096da593024eed74170528` | source |
 | `internal/app/projects/plan_seed_service_test.go` | `84025b75ff1dc3564fc2990a886e0a5bae7e62af194ec475742eb8fbec7353c4` | test |
@@ -137,18 +137,22 @@ Schema version: `1.0.0`
 | `internal/app/runs/lifecycle.go` | `03647918410f7b4922959cfdec1809709fe31238a0f220ec38bd62223a798d8c` | source |
 | `internal/app/runs/service.go` | `245f124438b677b7dd1bb57f8f8bdbffd667adf7fde9bb1e9d830b9e1141f06a` | source |
 | `internal/app/runs/types.go` | `0631b18e8df8367a971be32e8adcb1ab66ba4a96fea257730b23f3c4a6b4178d` | source |
-| `internal/mcp/context_broker_git_tools.go` | `483ab61f6534750817724fdd79841efee3a4fc6708fa3ab3758e87b28c084572` | source |
-| `internal/mcp/context_broker_tools.go` | `d860b1ab59415aed878cb6f7e025a2d319f744a771ce69c40439a63d05dd50ce` | source |
-| `internal/mcp/context_broker_tools_test.go` | `bf29a670e1e71a4917f16acf53c2a3374f059827bc40b795e7c1a7a4aedc2d09` | test |
+| `internal/mcp/artifact_readback_tools.go` | `c7712711b76eb824c71b1184c44f5b119adf0d656e8f78a0e9052ccf9a1487a8` | source |
+| `internal/mcp/artifact_readback_tools_test.go` | `a14651943ba8529dfede8a928c07eddacdf5381bf5ce37a6f4bc25187c4db005` | test |
+| `internal/mcp/blocker_envelope.go` | `3eb2264ccffda40f77cd3d3f28747f164eef361f43509c9ddf29329bb760c122` | source |
+| `internal/mcp/blocker_envelope_test.go` | `6830987aa8b5d25db4929797dce1b742d03cb37dcd1aaefdd02acb1c26a52e0a` | test |
+| `internal/mcp/context_broker_git_tools.go` | `e8f7f942f10ee58aa9ed10cfa85995c9ba4c0b36fd7ca9aaca821fc51cfd4b7a` | source |
+| `internal/mcp/context_broker_tools.go` | `ec4994285c043f442dcceae02fe308917531c998899a6335a1282356b917bd58` | source |
+| `internal/mcp/context_broker_tools_test.go` | `50ed1fb09bfa42c9404dea8aa7f34449cc6c4a2a4434c79a736426247e693cef` | test |
 | `internal/mcp/deps.go` | `02c2771e9855a53b2c26170b99c84d7948640e1eb34235d6cd63ac9fd159de2c` | source |
 | `internal/mcp/http_handler.go` | `490414d00c581a709bf44c232dccd0d2ddde1b03bd6a1bd2d94b520025065d7c` | source |
-| `internal/mcp/http_handler_test.go` | `28e607c54c8328d995ea63731ea1e166edaabec75524bdd649d46f06338970a3` | test |
+| `internal/mcp/http_handler_test.go` | `d4123f4eb0d57eb765ace044fd0520be59c70193119175145a7d9d831b84d69a` | test |
 | `internal/mcp/local_audit_tools.go` | `dcdb5b2485267f170781711640de73fa3b1d99c7ed52b088d68a147cf5bbade1` | source |
-| `internal/mcp/mcp_test.go` | `98ffb019d0cd0f1ea08faf9d14a803b5d297a2edb5be746e5e2f121dd8a0965b` | test |
-| `internal/mcp/orchestrator_work_tools.go` | `6f9c8ca688f10be814496b59b3e9a1db8d32dac02dd73891ed827dd40a09e8c2` | source |
-| `internal/mcp/orchestrator_work_tools_test.go` | `93a073c370de7c9cf621fec0cf1c3be9a1cb8c4fc6b3fe75e7df668fdcd1b77b` | test |
+| `internal/mcp/mcp_test.go` | `cb776444efc716e493700943e71386fde5716596516d5f59ab2ecfca76e2d4d7` | test |
+| `internal/mcp/orchestrator_work_tools.go` | `f4ecb486ec2c018139e5019abbe835ba4ccef748797b10042253bbf399ac6fb9` | source |
+| `internal/mcp/orchestrator_work_tools_test.go` | `dbe5b3f19df9e719fdd78d62ba458808f627d9e9ffa30f948799e8fb1e731801` | test |
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | source |
-| `internal/mcp/plan_attempt_tools_test.go` | `715958766aa19f3affe932d9ebc6d47d4e50b915d0e043d65cfb6ffbee79fa6b` | test |
+| `internal/mcp/plan_attempt_tools_test.go` | `84e4da35631efe508d230719d5aac87e46a639529d6a29b9f5b8c44935455cbd` | test |
 | `internal/mcp/plan_seed_tools.go` | `19a7bede46ae71836a0a942123f2d24015e7faaf93896850b57e7bd6cbbb0ad4` | source |
 | `internal/mcp/plan_seed_tools_test.go` | `b6692a1bc4b24fbbac5c88baa22f4456db0701bc3be9392a0c23cc7d376ddc91` | test |
 | `internal/mcp/plan_tools.go` | `cd624b354bc28812cc9ae68e9a7917506dc64004044b7e7d4d16afc40aef064c` | source |
@@ -157,18 +161,20 @@ Schema version: `1.0.0`
 | `internal/mcp/profile_test.go` | `95e95c279c7dcf977a971d122e6a41fb7e362e7ba5cf63f6796389dfd3ba0ef5` | test |
 | `internal/mcp/project_context_memory_tools.go` | `2f342e8ed7c0154131fd5e04a3d40a9129c9f74d477f742428df2ec75f274d8d` | source |
 | `internal/mcp/project_context_memory_tools_test.go` | `57e1f70d298e7a24bfe169f938d871fb4981f3516e81cd42824ef9ebcd8a357a` | test |
-| `internal/mcp/protocol.go` | `602351acabcaf9f1141f52921ae2db4828a9ea91fd3ce417a0099718ab0d33ea` | source |
+| `internal/mcp/protocol.go` | `72e46ad20c3a2681b36d212a346659846bf14320df1fa401f56c6ec22eabd4aa` | source |
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | source |
 | `internal/mcp/refactor_backlog_tools_test.go` | `80dab3bab0e3240676606dccc6c218d8b10bc6a2b09975e9cca552d67dec4b05` | test |
-| `internal/mcp/server.go` | `71893bd6df036612aef4a0028ef8e14fe7055becb92d347576b5758b10243cef` | source |
-| `internal/mcp/server_notification_test.go` | `7738e90594c9f4ee221505d9a026a83be0b372e39ee44fb9e6dabe8deb80dbab` | test |
+| `internal/mcp/server.go` | `a40c21e9030a9538b8219cb24130131a27e3d25bd78f63bc5d1bffff4f76416c` | source |
+| `internal/mcp/server_notification_test.go` | `a0da26840ec83cdec144a3fc74a92d407c4facb8054ae439107130a0884c1208` | test |
 | `internal/mcp/server_tools_list_test.go` | `4bb1163a046646181f8cedfaed435b64b464bd41b5d0b874ef71db8c1e7f5104` | test |
-| `internal/mcp/tool_create_run.go` | `771409c873aba6d8c9994ad53f831818d7f905ad4f0dd226725dbe3b5cbd4ed1` | source |
+| `internal/mcp/tool_create_run.go` | `8613332fac78897b205bea91a81b775f867bc11b609f29759f4e2fe055fc3e63` | source |
+| `internal/mcp/tool_create_run_test.go` | `1fc3b56f371dea370bd490cd5461d96e4f084e8cd8872194f828769f163bfdb6` | test |
 | `internal/mcp/tool_get_run_status.go` | `730691b5fd5d5aa1f99dd7b32a61163ac19354774694cb6a1bdb65cf45074f13` | source |
 | `internal/mcp/tool_list_runs.go` | `8c9be8897fb0fe5fee3862ea0629e855f130626412e34daa4b3b9e54af6c5f85` | source |
 | `internal/mcp/tool_submit_audit.go` | `2aaf19f4789d5a305a5813d3d7b24cb73455233a654b326945246f82f418cd27` | source |
-| `internal/mcp/tool_surface_test.go` | `3a0e56afa65076d21a4cb5b97731005419123cc2d6f81090481016fe4bfebf29` | test |
+| `internal/mcp/tool_surface_test.go` | `d04261b6adfb0a5d6c50c2efc106f82281711c1f788ae897f9713e0872c6b3b4` | test |
 | `internal/mcp/tool_test_audit_packet.go` | `4f4a99672a360621c8717a2596c81558881153f85ddffbedda681f60dea85b01` | source |
+| `internal/mcp/tool_validate_planner_handoff.go` | `1ba5c69ceea8cce95298427f748c9153bcebfe8a33249a69bf4758d10d332b98` | source |
 | `internal/store/context_packets.go` | `7a5855b46da5d63a09cb54698cb4045a919615973af9eedd6fb27523e3f92187` | source |
 | `internal/store/context_packets_test.go` | `8a14adcc8f674b7bd1ca7dd9b689ae0b71f55cb42a702f401262822e3f83830f` | test |
 | `internal/store/db.go` | `44a032a3af37a60e835568211adc7675b48434da8b422afea5d70f365aeae0d8` | source |
@@ -415,7 +421,7 @@ Import edge: internal/api/plans imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/plans/review_handler.go`
+- source: `internal/api/plans/attempt_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-api-shared-2 (derived)
 
@@ -423,7 +429,7 @@ Import edge: internal/api/plans imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/plans/attempt_handler.go`
+- source: `internal/api/plans/handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-api-shared-3 (derived)
 
@@ -439,7 +445,7 @@ Import edge: internal/api/plans imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/plans/handler.go`
+- source: `internal/api/plans/review_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-drift (derived)
 
@@ -447,7 +453,7 @@ Import edge: internal/api/plans imports relay/internal/app/drift
 
 Evidence:
 
-- source: `internal/api/plans/handler.go`
+- source: `internal/api/plans/review_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-drift-2 (derived)
 
@@ -463,7 +469,7 @@ Import edge: internal/api/plans imports relay/internal/app/drift
 
 Evidence:
 
-- source: `internal/api/plans/review_handler.go`
+- source: `internal/api/plans/handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans (derived)
 
@@ -471,7 +477,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/attempt_handler.go`
+- source: `internal/api/plans/attempt_dto.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-2 (derived)
 
@@ -479,7 +485,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/handler.go`
+- source: `internal/api/plans/attempt_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-3 (derived)
 
@@ -487,7 +493,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/review_handler.go`
+- source: `internal/api/plans/dto.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-4 (derived)
 
@@ -495,7 +501,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/dto.go`
+- source: `internal/api/plans/review_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-5 (derived)
 
@@ -503,7 +509,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/attempt_dto.go`
+- source: `internal/api/plans/handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-6 (derived)
 
@@ -527,7 +533,7 @@ Import edge: internal/api/projects imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/projects/handler.go`
+- source: `internal/api/projects/plan_seed_handler.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-api-shared-2 (derived)
 
@@ -543,7 +549,7 @@ Import edge: internal/api/projects imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/projects/plan_seed_handler.go`
+- source: `internal/api/projects/handler.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-app-plans (derived)
 
@@ -567,7 +573,7 @@ Import edge: internal/api/projects imports relay/internal/app/projects
 
 Evidence:
 
-- source: `internal/api/projects/mapper.go`
+- source: `internal/api/projects/plan_seed_handler.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-app-projects-3 (derived)
 
@@ -575,7 +581,7 @@ Import edge: internal/api/projects imports relay/internal/app/projects
 
 Evidence:
 
-- source: `internal/api/projects/handler.go`
+- source: `internal/api/projects/mapper.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-app-projects-4 (derived)
 
@@ -583,7 +589,7 @@ Import edge: internal/api/projects imports relay/internal/app/projects
 
 Evidence:
 
-- source: `internal/api/projects/plan_seed_handler.go`
+- source: `internal/api/projects/dto.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-app-projects-5 (derived)
 
@@ -591,7 +597,7 @@ Import edge: internal/api/projects imports relay/internal/app/projects
 
 Evidence:
 
-- source: `internal/api/projects/dto.go`
+- source: `internal/api/projects/handler.go`
 
 ### backend-import-edge-internal-api-relay-internal-api-intake (derived)
 
@@ -711,7 +717,7 @@ Import edge: internal/api/runs imports relay/internal/app/runs
 
 Evidence:
 
-- source: `internal/api/runs/handler.go`
+- source: `internal/api/runs/presenter.go`
 
 ### backend-import-edge-internal-api-runs-relay-internal-app-runs-2 (derived)
 
@@ -719,7 +725,7 @@ Import edge: internal/api/runs imports relay/internal/app/runs
 
 Evidence:
 
-- source: `internal/api/runs/presenter.go`
+- source: `internal/api/runs/handler.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-app-plans (derived)
 
@@ -743,7 +749,7 @@ Import edge: internal/app/audits imports relay/internal/auditor
 
 Evidence:
 
-- source: `internal/app/audits/service.go`
+- source: `internal/app/audits/types.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-auditor-2 (derived)
 
@@ -751,7 +757,7 @@ Import edge: internal/app/audits imports relay/internal/auditor
 
 Evidence:
 
-- source: `internal/app/audits/types.go`
+- source: `internal/app/audits/service.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-executor (derived)
 
@@ -791,7 +797,7 @@ Import edge: internal/app/drift imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/app/drift/validation.go`
+- source: `internal/app/drift/prompt.go`
 
 ### backend-import-edge-internal-app-drift-relay-internal-app-plans-2 (derived)
 
@@ -807,7 +813,7 @@ Import edge: internal/app/drift imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/app/drift/prompt.go`
+- source: `internal/app/drift/validation.go`
 
 ### backend-import-edge-internal-app-drift-relay-internal-store (derived)
 
@@ -855,7 +861,7 @@ Import edge: internal/app/intake imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/intake/service.go`
+- source: `internal/app/intake/helpers.go`
 
 ### backend-import-edge-internal-app-intake-relay-internal-store-2 (derived)
 
@@ -863,7 +869,7 @@ Import edge: internal/app/intake imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/intake/helpers.go`
+- source: `internal/app/intake/service.go`
 
 ### backend-import-edge-internal-app-intake-relay-internal-store-generated (derived)
 
@@ -879,7 +885,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/read_queries.go`
+- source: `internal/app/plans/review_settings.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-10 (derived)
 
@@ -887,7 +893,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/review_settings.go`
+- source: `internal/app/plans/work_packets.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-2 (derived)
 
@@ -903,7 +909,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/types.go`
+- source: `internal/app/plans/attempt_service.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-4 (derived)
 
@@ -935,7 +941,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/work_packets.go`
+- source: `internal/app/plans/read_queries.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-8 (derived)
 
@@ -943,7 +949,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/attempt_service.go`
+- source: `internal/app/plans/service.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-9 (derived)
 
@@ -951,7 +957,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/service.go`
+- source: `internal/app/plans/types.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-generated (derived)
 
@@ -959,7 +965,7 @@ Import edge: internal/app/plans imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/app/plans/review_settings.go`
+- source: `internal/app/plans/attempt_service.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-generated-2 (derived)
 
@@ -975,7 +981,7 @@ Import edge: internal/app/plans imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/app/plans/service.go`
+- source: `internal/app/plans/review_settings.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-generated-4 (derived)
 
@@ -983,7 +989,7 @@ Import edge: internal/app/plans imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/app/plans/attempt_service.go`
+- source: `internal/app/plans/service.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-validation (derived)
 
@@ -991,7 +997,7 @@ Import edge: internal/app/plans imports relay/internal/validation
 
 Evidence:
 
-- source: `internal/app/plans/attempt_hash.go`
+- source: `internal/app/plans/validator.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-validation-2 (derived)
 
@@ -999,7 +1005,7 @@ Import edge: internal/app/plans imports relay/internal/validation
 
 Evidence:
 
-- source: `internal/app/plans/validator.go`
+- source: `internal/app/plans/attempt_hash.go`
 
 ### backend-import-edge-internal-app-projects-relay-internal-app-plans (derived)
 
@@ -1007,7 +1013,7 @@ Import edge: internal/app/projects imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/app/projects/plan_seed_service.go`
+- source: `internal/app/projects/plan_seed_types.go`
 
 ### backend-import-edge-internal-app-projects-relay-internal-app-plans-2 (derived)
 
@@ -1015,7 +1021,7 @@ Import edge: internal/app/projects imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/app/projects/plan_seed_types.go`
+- source: `internal/app/projects/plan_seed_service.go`
 
 ### backend-import-edge-internal-app-projects-relay-internal-store (derived)
 
@@ -1111,7 +1117,7 @@ Import edge: internal/app/runs imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/runs/lifecycle.go`
+- source: `internal/app/runs/service.go`
 
 ### backend-import-edge-internal-app-runs-relay-internal-store-2 (derived)
 
@@ -1119,7 +1125,7 @@ Import edge: internal/app/runs imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/runs/types.go`
+- source: `internal/app/runs/lifecycle.go`
 
 ### backend-import-edge-internal-app-runs-relay-internal-store-3 (derived)
 
@@ -1127,7 +1133,7 @@ Import edge: internal/app/runs imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/runs/service.go`
+- source: `internal/app/runs/types.go`
 
 ### backend-import-edge-internal-app-runs-relay-internal-store-generated (derived)
 
@@ -1167,7 +1173,7 @@ Import edge: internal/mcp imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/mcp/server.go`
+- source: `internal/mcp/plan_attempt_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-app-plans-2 (derived)
 
@@ -1175,7 +1181,7 @@ Import edge: internal/mcp imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/mcp/deps.go`
+- source: `internal/mcp/plan_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-app-plans-3 (derived)
 
@@ -1183,7 +1189,7 @@ Import edge: internal/mcp imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/mcp/orchestrator_work_tools.go`
+- source: `internal/mcp/deps.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-app-plans-4 (derived)
 
@@ -1191,7 +1197,7 @@ Import edge: internal/mcp imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/mcp/plan_tools.go`
+- source: `internal/mcp/server.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-app-plans-5 (derived)
 
@@ -1199,7 +1205,7 @@ Import edge: internal/mcp imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/mcp/plan_attempt_tools.go`
+- source: `internal/mcp/orchestrator_work_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-app-projects (derived)
 
@@ -1215,7 +1221,7 @@ Import edge: internal/mcp imports relay/internal/artifacts
 
 Evidence:
 
-- source: `internal/mcp/context_broker_tools.go`
+- source: `internal/mcp/tool_test_audit_packet.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-artifacts-2 (derived)
 
@@ -1223,7 +1229,15 @@ Import edge: internal/mcp imports relay/internal/artifacts
 
 Evidence:
 
-- source: `internal/mcp/tool_test_audit_packet.go`
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-import-edge-internal-mcp-relay-internal-artifacts-3 (derived)
+
+Import edge: internal/mcp imports relay/internal/artifacts
+
+Evidence:
+
+- source: `internal/mcp/context_broker_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-auditor (derived)
 
@@ -1231,7 +1245,7 @@ Import edge: internal/mcp imports relay/internal/auditor
 
 Evidence:
 
-- source: `internal/mcp/local_audit_tools.go`
+- source: `internal/mcp/tool_submit_audit.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-auditor-2 (derived)
 
@@ -1239,7 +1253,7 @@ Import edge: internal/mcp imports relay/internal/auditor
 
 Evidence:
 
-- source: `internal/mcp/tool_submit_audit.go`
+- source: `internal/mcp/local_audit_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-contextpackets (derived)
 
@@ -1247,7 +1261,7 @@ Import edge: internal/mcp imports relay/internal/contextpackets
 
 Evidence:
 
-- source: `internal/mcp/orchestrator_work_tools.go`
+- source: `internal/mcp/context_broker_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-contextpackets-2 (derived)
 
@@ -1255,7 +1269,7 @@ Import edge: internal/mcp imports relay/internal/contextpackets
 
 Evidence:
 
-- source: `internal/mcp/context_broker_tools.go`
+- source: `internal/mcp/orchestrator_work_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-intake (derived)
 
@@ -1263,7 +1277,23 @@ Import edge: internal/mcp imports relay/internal/intake
 
 Evidence:
 
+- source: `internal/mcp/tool_validate_planner_handoff.go`
+
+### backend-import-edge-internal-mcp-relay-internal-intake-2 (derived)
+
+Import edge: internal/mcp imports relay/internal/intake
+
+Evidence:
+
 - source: `internal/mcp/tool_create_run.go`
+
+### backend-import-edge-internal-mcp-relay-internal-pathsafety (derived)
+
+Import edge: internal/mcp imports relay/internal/pathsafety
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-projectmemory (derived)
 
@@ -1287,7 +1317,7 @@ Import edge: internal/mcp imports relay/internal/sources
 
 Evidence:
 
-- source: `internal/mcp/orchestrator_work_tools.go`
+- source: `internal/mcp/context_broker_git_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-sources-2 (derived)
 
@@ -1295,7 +1325,7 @@ Import edge: internal/mcp imports relay/internal/sources
 
 Evidence:
 
-- source: `internal/mcp/context_broker_tools.go`
+- source: `internal/mcp/orchestrator_work_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-sources-3 (derived)
 
@@ -1303,7 +1333,7 @@ Import edge: internal/mcp imports relay/internal/sources
 
 Evidence:
 
-- source: `internal/mcp/context_broker_git_tools.go`
+- source: `internal/mcp/context_broker_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-store (derived)
 
@@ -1343,7 +1373,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/run_submission_provenance.go`
+- source: `internal/store/source_snapshots.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-2 (derived)
 
@@ -1351,7 +1381,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/refactor_backlog.go`
+- source: `internal/store/run_submission_provenance.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-3 (derived)
 
@@ -1359,7 +1389,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/projects.go`
+- source: `internal/store/refactor_backlog.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-4 (derived)
 
@@ -1367,7 +1397,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/project_context_records.go`
+- source: `internal/store/projects.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-5 (derived)
 
@@ -1375,7 +1405,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/plan_seeds.go`
+- source: `internal/store/project_context_records.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-6 (derived)
 
@@ -1383,7 +1413,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/local_audits.go`
+- source: `internal/store/plan_seeds.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-7 (derived)
 
@@ -1391,7 +1421,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/db.go`
+- source: `internal/store/local_audits.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-8 (derived)
 
@@ -1399,7 +1429,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/source_snapshots.go`
+- source: `internal/store/db.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-9 (derived)
 
@@ -1631,6 +1661,8 @@ Backend package internal/mcp (mcp)
 
 Evidence:
 
+- source: `internal/mcp/artifact_readback_tools.go`
+- source: `internal/mcp/blocker_envelope.go`
 - source: `internal/mcp/context_broker_git_tools.go`
 - source: `internal/mcp/context_broker_tools.go`
 - source: `internal/mcp/deps.go`
@@ -1650,6 +1682,9 @@ Evidence:
 - source: `internal/mcp/tool_list_runs.go`
 - source: `internal/mcp/tool_submit_audit.go`
 - source: `internal/mcp/tool_test_audit_packet.go`
+- source: `internal/mcp/tool_validate_planner_handoff.go`
+- test: `internal/mcp/artifact_readback_tools_test.go`
+- test: `internal/mcp/blocker_envelope_test.go`
 - test: `internal/mcp/context_broker_tools_test.go`
 - test: `internal/mcp/http_handler_test.go`
 - test: `internal/mcp/mcp_test.go`
@@ -1662,6 +1697,7 @@ Evidence:
 - test: `internal/mcp/refactor_backlog_tools_test.go`
 - test: `internal/mcp/server_notification_test.go`
 - test: `internal/mcp/server_tools_list_test.go`
+- test: `internal/mcp/tool_create_run_test.go`
 - test: `internal/mcp/tool_surface_test.go`
 
 ### backend-package-internal-store (proven)
@@ -4308,6 +4344,14 @@ Evidence:
 
 - source: `internal/app/plans/work_packets.go`
 
+### backend-symbol-internal-app-plans-const-blockerpreparecontextacquisitionfailed (proven)
+
+Exported const BlockerPrepareContextAcquisitionFailed in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-const-blockerpriorpassawaitsaudit (proven)
 
 Exported const BlockerPriorPassAwaitsAudit in internal/app/plans/work_packets.go
@@ -4340,9 +4384,33 @@ Evidence:
 
 - source: `internal/app/plans/work_packets.go`
 
+### backend-symbol-internal-app-plans-const-blockerrequiredcontextbundleunavailable (proven)
+
+Exported const BlockerRequiredContextBundleUnavailable in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-const-blockerrequiredcontextmissing (proven)
+
+Exported const BlockerRequiredContextMissing in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-const-blockerrequiredcontextpacketmissing (proven)
 
 Exported const BlockerRequiredContextPacketMissing in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-const-blockerrequiredcontexttruncated (proven)
+
+Exported const BlockerRequiredContextTruncated in internal/app/plans/work_packets.go
 
 Evidence:
 
@@ -4404,6 +4472,14 @@ Evidence:
 
 - source: `internal/app/plans/work_packets.go`
 
+### backend-symbol-internal-app-plans-const-blockersourcesnapshotdirtydisallowed (proven)
+
+Exported const BlockerSourceSnapshotDirtyDisallowed in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-const-blockersourcesnapshotmetadatamissing (proven)
 
 Exported const BlockerSourceSnapshotMetadataMissing in internal/app/plans/work_packets.go
@@ -4415,6 +4491,14 @@ Evidence:
 ### backend-symbol-internal-app-plans-const-blockersourcesnapshotrequiredseedmissing (proven)
 
 Exported const BlockerSourceSnapshotRequiredSeedMissing in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-const-blockersourcesnapshotstale (proven)
+
+Exported const BlockerSourceSnapshotStale in internal/app/plans/work_packets.go
 
 Evidence:
 
@@ -4900,6 +4984,14 @@ Evidence:
 
 - source: `internal/app/plans/attempt_types.go`
 
+### backend-symbol-internal-app-plans-const-preparehandoffcontexttool (proven)
+
+Exported const PrepareHandoffContextTool in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-const-recommendedactionapprove (proven)
 
 Exported const RecommendedActionApprove in internal/app/plans/attempt_types.go
@@ -5332,6 +5424,22 @@ Evidence:
 
 - source: `internal/app/plans/lifecycle.go`
 
+### backend-symbol-internal-app-plans-func-marshaljson (proven)
+
+Exported func MarshalJSON in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-func-marshaljson-2 (proven)
+
+Exported func MarshalJSON in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-func-neworchestratorworkservice (proven)
 
 Exported func NewOrchestratorWorkService in internal/app/plans/work_packets.go
@@ -5371,6 +5479,14 @@ Exported func NullString in internal/app/plans/attempt_hash.go
 Evidence:
 
 - source: `internal/app/plans/attempt_hash.go`
+
+### backend-symbol-internal-app-plans-func-preparehandoffcontext (proven)
+
+Exported func PrepareHandoffContext in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
 
 ### backend-symbol-internal-app-plans-func-prepareplanattemptdriftreview (proven)
 
@@ -6092,6 +6208,38 @@ Evidence:
 
 - source: `internal/app/plans/types.go`
 
+### backend-symbol-internal-app-plans-type-preparedcoveragesummary (proven)
+
+Exported type PreparedCoverageSummary in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-preparedfreshnessissue (proven)
+
+Exported type PreparedFreshnessIssue in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-preparedfreshnessnextaction (proven)
+
+Exported type PreparedFreshnessNextAction in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-preparedfreshnessreport (proven)
+
+Exported type PreparedFreshnessReport in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
 ### backend-symbol-internal-app-plans-type-preparedplanattemptdriftreview (proven)
 
 Exported type PreparedPlanAttemptDriftReview in internal/app/plans/review_gate.go
@@ -6099,6 +6247,30 @@ Exported type PreparedPlanAttemptDriftReview in internal/app/plans/review_gate.g
 Evidence:
 
 - source: `internal/app/plans/review_gate.go`
+
+### backend-symbol-internal-app-plans-type-preparedrepohead (proven)
+
+Exported type PreparedRepoHead in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-preparehandoffcontextrequest (proven)
+
+Exported type PrepareHandoffContextRequest in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-preparehandoffcontextresponse (proven)
+
+Exported type PrepareHandoffContextResponse in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
 
 ### backend-symbol-internal-app-plans-type-priorattemptinfo (proven)
 
@@ -6147,6 +6319,46 @@ Exported type RefactorPlanMetadata in internal/app/plans/types.go
 Evidence:
 
 - source: `internal/app/plans/types.go`
+
+### backend-symbol-internal-app-plans-type-repositoryfreshnessreport (proven)
+
+Exported type RepositoryFreshnessReport in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-requiredcontextbudget (proven)
+
+Exported type RequiredContextBudget in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-requiredcontextbundle (proven)
+
+Exported type RequiredContextBundle in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-requiredcontextfile (proven)
+
+Exported type RequiredContextFile in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-requiredcontextsearch (proven)
+
+Exported type RequiredContextSearch in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
 
 ### backend-symbol-internal-app-plans-type-retrievalsemantics (proven)
 
@@ -6203,6 +6415,30 @@ Exported type Service in internal/app/plans/service.go
 Evidence:
 
 - source: `internal/app/plans/service.go`
+
+### backend-symbol-internal-app-plans-type-sourceblocker (proven)
+
+Exported type SourceBlocker in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-sourcefreshnessnextaction (proven)
+
+Exported type SourceFreshnessNextAction in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-sourcefreshnessreport (proven)
+
+Exported type SourceFreshnessReport in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
 
 ### backend-symbol-internal-app-plans-type-sourceintent (proven)
 
@@ -6295,6 +6531,14 @@ Evidence:
 ### backend-symbol-internal-app-plans-type-workblocker (proven)
 
 Exported type WorkBlocker in internal/app/plans/work_packets.go
+
+Evidence:
+
+- source: `internal/app/plans/work_packets.go`
+
+### backend-symbol-internal-app-plans-type-workblockerevidence (proven)
+
+Exported type WorkBlockerEvidence in internal/app/plans/work_packets.go
 
 Evidence:
 
@@ -7244,6 +7488,78 @@ Evidence:
 
 - source: `internal/app/runs/service.go`
 
+### backend-symbol-internal-mcp-const-blockerartifactbinary (proven)
+
+Exported const BlockerArtifactBinary in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-blockerartifactkindnotallowed (proven)
+
+Exported const BlockerArtifactKindNotAllowed in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-blockerartifactnotfound (proven)
+
+Exported const BlockerArtifactNotFound in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-blockerartifactoversized (proven)
+
+Exported const BlockerArtifactOversized in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-blockerartifactreadfailed (proven)
+
+Exported const BlockerArtifactReadFailed in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-blockerredactionblocked (proven)
+
+Exported const BlockerRedactionBlocked in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-blockerunknownrun (proven)
+
+Exported const BlockerUnknownRun in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-blockerunsafeartifactpath (proven)
+
+Exported const BlockerUnsafeArtifactPath in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-blockerunsaferequest (proven)
+
+Exported const BlockerUnsafeRequest in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
 ### backend-symbol-internal-mcp-const-codeinternalerror (proven)
 
 Exported const CodeInternalError in internal/mcp/protocol.go
@@ -7300,6 +7616,38 @@ Evidence:
 
 - source: `internal/mcp/profile.go`
 
+### backend-symbol-internal-mcp-const-hashstatuscomputedfull (proven)
+
+Exported const HashStatusComputedFull in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-hashstatusomittedbyrequest (proven)
+
+Exported const HashStatusOmittedByRequest in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-hashstatusomittedoversized (proven)
+
+Exported const HashStatusOmittedOversized in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-hashstatusunavailable (proven)
+
+Exported const HashStatusUnavailable in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
 ### backend-symbol-internal-mcp-const-jsonrpcversion (proven)
 
 Exported const JSONRPCVersion in internal/mcp/protocol.go
@@ -7308,6 +7656,118 @@ Evidence:
 
 - source: `internal/mcp/protocol.go`
 
+### backend-symbol-internal-mcp-const-mcpblockeraliasambiguous (proven)
+
+Exported const MCPBlockerAliasAmbiguous in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerblockedpath (proven)
+
+Exported const MCPBlockerBlockedPath in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerdirtyworktree (proven)
+
+Exported const MCPBlockerDirtyWorktree in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerexpectedhashmismatch (proven)
+
+Exported const MCPBlockerExpectedHashMismatch in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerredactionfailed (proven)
+
+Exported const MCPBlockerRedactionFailed in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerrequiredcontextmissing (proven)
+
+Exported const MCPBlockerRequiredContextMissing in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerrequiredcontexttruncated (proven)
+
+Exported const MCPBlockerRequiredContextTruncated in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerschemamismatch (proven)
+
+Exported const MCPBlockerSchemaMismatch in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockersourcesnapshotstale (proven)
+
+Exported const MCPBlockerSourceSnapshotStale in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockertoolschemastale (proven)
+
+Exported const MCPBlockerToolSchemaStale in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockertoolunavailable (proven)
+
+Exported const MCPBlockerToolUnavailable in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerunknownrepository (proven)
+
+Exported const MCPBlockerUnknownRepository in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerunknownresource (proven)
+
+Exported const MCPBlockerUnknownResource in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerunsaferequest (proven)
+
+Exported const MCPBlockerUnsafeRequest in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
 ### backend-symbol-internal-mcp-const-mcpprotocolversion (proven)
 
 Exported const MCPProtocolVersion in internal/mcp/protocol.go
@@ -7315,6 +7775,30 @@ Exported const MCPProtocolVersion in internal/mcp/protocol.go
 Evidence:
 
 - source: `internal/mcp/protocol.go`
+
+### backend-symbol-internal-mcp-const-redactionblocked (proven)
+
+Exported const RedactionBlocked in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-redactionnotrequired (proven)
+
+Exported const RedactionNotRequired in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-redactionredacted (proven)
+
+Exported const RedactionRedacted in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
 
 ### backend-symbol-internal-mcp-const-toolprofilelocaloperator (proven)
 
@@ -7331,6 +7815,38 @@ Exported const ToolProfileRestricted in internal/mcp/profile.go
 Evidence:
 
 - source: `internal/mcp/profile.go`
+
+### backend-symbol-internal-mcp-const-viewmodeboundedexcerpt (proven)
+
+Exported const ViewModeBoundedExcerpt in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-viewmodeerrors (proven)
+
+Exported const ViewModeErrors in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-viewmodemetadataonly (proven)
+
+Exported const ViewModeMetadataOnly in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
+### backend-symbol-internal-mcp-const-viewmodesummary (proven)
+
+Exported const ViewModeSummary in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
 
 ### backend-symbol-internal-mcp-func-contextbrokerenabled (proven)
 
@@ -7363,6 +7879,14 @@ Exported func Error in internal/mcp/context_broker_tools.go
 Evidence:
 
 - source: `internal/mcp/context_broker_tools.go`
+
+### backend-symbol-internal-mcp-func-getsourcesnapshotfreshness (proven)
+
+Exported func GetSourceSnapshotFreshness in internal/mcp/orchestrator_work_tools.go
+
+Evidence:
+
+- source: `internal/mcp/orchestrator_work_tools.go`
 
 ### backend-symbol-internal-mcp-func-handleapproveplanattempt (proven)
 
@@ -7636,6 +8160,14 @@ Evidence:
 
 - source: `internal/mcp/context_broker_git_tools.go`
 
+### backend-symbol-internal-mcp-func-handlegetrunartifact (proven)
+
+Exported func HandleGetRunArtifact in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
 ### backend-symbol-internal-mcp-func-handlegetrunstatus (proven)
 
 Exported func HandleGetRunStatus in internal/mcp/tool_get_run_status.go
@@ -7708,6 +8240,14 @@ Evidence:
 
 - source: `internal/mcp/context_broker_git_tools.go`
 
+### backend-symbol-internal-mcp-func-handlepreparehandoffcontext (proven)
+
+Exported func HandlePrepareHandoffContext in internal/mcp/orchestrator_work_tools.go
+
+Evidence:
+
+- source: `internal/mcp/orchestrator_work_tools.go`
+
 ### backend-symbol-internal-mcp-func-handlepromoterefactorcandidatetoplan (proven)
 
 Exported func HandlePromoteRefactorCandidateToPlan in internal/mcp/refactor_backlog_tools.go
@@ -7739,6 +8279,14 @@ Exported func HandleRejectRefactorCandidate in internal/mcp/refactor_backlog_too
 Evidence:
 
 - source: `internal/mcp/refactor_backlog_tools.go`
+
+### backend-symbol-internal-mcp-func-handleresolveprojectrepository (proven)
+
+Exported func HandleResolveProjectRepository in internal/mcp/context_broker_tools.go
+
+Evidence:
+
+- source: `internal/mcp/context_broker_tools.go`
 
 ### backend-symbol-internal-mcp-func-handlereviseplanattempt (proven)
 
@@ -7868,6 +8416,14 @@ Evidence:
 
 - source: `internal/mcp/refactor_backlog_tools.go`
 
+### backend-symbol-internal-mcp-func-handlevalidateplannerhandoffforcompile (proven)
+
+Exported func HandleValidatePlannerHandoffForCompile in internal/mcp/tool_validate_planner_handoff.go
+
+Evidence:
+
+- source: `internal/mcp/tool_validate_planner_handoff.go`
+
 ### backend-symbol-internal-mcp-func-handlevoidplanattempt (proven)
 
 Exported func HandleVoidPlanAttempt in internal/mcp/plan_attempt_tools.go
@@ -7956,6 +8512,14 @@ Evidence:
 
 - source: `internal/mcp/protocol.go`
 
+### backend-symbol-internal-mcp-type-exactsubmissionprovenance (proven)
+
+Exported type ExactSubmissionProvenance in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
 ### backend-symbol-internal-mcp-type-httphandler (proven)
 
 Exported type HTTPHandler in internal/mcp/http_handler.go
@@ -7979,6 +8543,30 @@ Exported type InitializeResult in internal/mcp/protocol.go
 Evidence:
 
 - source: `internal/mcp/protocol.go`
+
+### backend-symbol-internal-mcp-type-mcpblockedresponse (proven)
+
+Exported type MCPBlockedResponse in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-type-mcpblocker (proven)
+
+Exported type MCPBlocker in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-type-mcpblockerevidence (proven)
+
+Exported type MCPBlockerEvidence in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
 
 ### backend-symbol-internal-mcp-type-mcpdeps (proven)
 
@@ -8027,6 +8615,14 @@ Exported type ServerInfo in internal/mcp/protocol.go
 Evidence:
 
 - source: `internal/mcp/protocol.go`
+
+### backend-symbol-internal-mcp-type-submittedartifactidentity (proven)
+
+Exported type SubmittedArtifactIdentity in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
 
 ### backend-symbol-internal-mcp-type-toolcallparams (proven)
 
@@ -8316,6 +8912,14 @@ Evidence:
 
 - source: `internal/mcp/context_broker_git_tools.go`
 
+### backend-symbol-internal-mcp-var-toolgetrunartifact (proven)
+
+Exported var ToolGetRunArtifact in internal/mcp/artifact_readback_tools.go
+
+Evidence:
+
+- source: `internal/mcp/artifact_readback_tools.go`
+
 ### backend-symbol-internal-mcp-var-toolgetrunstatus (proven)
 
 Exported var ToolGetRunStatus in internal/mcp/tool_get_run_status.go
@@ -8380,6 +8984,14 @@ Evidence:
 
 - source: `internal/mcp/context_broker_git_tools.go`
 
+### backend-symbol-internal-mcp-var-toolpreparehandoffcontext (proven)
+
+Exported var ToolPrepareHandoffContext in internal/mcp/orchestrator_work_tools.go
+
+Evidence:
+
+- source: `internal/mcp/orchestrator_work_tools.go`
+
 ### backend-symbol-internal-mcp-var-toolpromoterefactorcandidatetoplan (proven)
 
 Exported var ToolPromoteRefactorCandidateToPlan in internal/mcp/refactor_backlog_tools.go
@@ -8403,6 +9015,14 @@ Exported var ToolRejectRefactorCandidate in internal/mcp/refactor_backlog_tools.
 Evidence:
 
 - source: `internal/mcp/refactor_backlog_tools.go`
+
+### backend-symbol-internal-mcp-var-toolresolveprojectrepository (proven)
+
+Exported var ToolResolveProjectRepository in internal/mcp/context_broker_tools.go
+
+Evidence:
+
+- source: `internal/mcp/context_broker_tools.go`
 
 ### backend-symbol-internal-mcp-var-toolreviseplanattempt (proven)
 
@@ -8523,6 +9143,14 @@ Exported var ToolUpdateRefactorDiscoveryTask in internal/mcp/refactor_backlog_to
 Evidence:
 
 - source: `internal/mcp/refactor_backlog_tools.go`
+
+### backend-symbol-internal-mcp-var-toolvalidateplannerhandoffforcompile (proven)
+
+Exported var ToolValidatePlannerHandoffForCompile in internal/mcp/tool_validate_planner_handoff.go
+
+Evidence:
+
+- source: `internal/mcp/tool_validate_planner_handoff.go`
 
 ### backend-symbol-internal-mcp-var-toolvoidplanattempt (proven)
 
@@ -11452,6 +12080,14 @@ Evidence:
 
 - test: `internal/app/plans/work_packets_test.go`
 
+### backend-test-internal-app-plans-testgetnextpasswork-readypassincludesrequiredcontextbundlewithsnapshothashes (proven)
+
+Test function TestGetNextPassWork_ReadyPassIncludesRequiredContextBundleWithSnapshotHashes in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
 ### backend-test-internal-app-plans-testgetnextpasswork-readypassreturnshandoffauthoringpacket (proven)
 
 Test function TestGetNextPassWork_ReadyPassReturnsHandoffAuthoringPacket in internal/app/plans/work_packets_test.go
@@ -11540,6 +12176,14 @@ Evidence:
 
 - test: `internal/app/plans/work_packets_test.go`
 
+### backend-test-internal-app-plans-testgetnextpasswork-requiredcontextbundlereportsmissingsnapshotmetadata (proven)
+
+Test function TestGetNextPassWork_RequiredContextBundleReportsMissingSnapshotMetadata in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
 ### backend-test-internal-app-plans-testgetnextpasswork-requiredcontextpacketmissing (proven)
 
 Test function TestGetNextPassWork_RequiredContextPacketMissing in internal/app/plans/work_packets_test.go
@@ -11591,6 +12235,14 @@ Evidence:
 ### backend-test-internal-app-plans-testgetnextpasswork-selectssecondpasswhenfirstskipped (proven)
 
 Test function TestGetNextPassWork_SelectsSecondPassWhenFirstSkipped in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testgetnextpasswork-sourcesnapshotacquisitionfailureincludesrequiredcontextbundle (proven)
+
+Test function TestGetNextPassWork_SourceSnapshotAcquisitionFailureIncludesRequiredContextBundle in internal/app/plans/work_packets_test.go
 
 Evidence:
 
@@ -11739,6 +12391,102 @@ Test function TestPlanReviewSettingsRejectsInvalidEnum in internal/app/plans/rev
 Evidence:
 
 - test: `internal/app/plans/review_settings_test.go`
+
+### backend-test-internal-app-plans-testpreparehandoffcontext-dirtyalloweddoesnotblockwhenfreshnessreusable (proven)
+
+Test function TestPrepareHandoffContext_DirtyAllowedDoesNotBlockWhenFreshnessReusable in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testpreparehandoffcontext-dirtydisallowedsourceblocks (proven)
+
+Test function TestPrepareHandoffContext_DirtyDisallowedSourceBlocks in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testpreparehandoffcontext-driftedsnapshotblocks (proven)
+
+Test function TestPrepareHandoffContext_DriftedSnapshotBlocks in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testpreparehandoffcontext-freshnessrecoveryactionsaresafe (proven)
+
+Test function TestPrepareHandoffContext_FreshnessRecoveryActionsAreSafe in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testpreparehandoffcontext-missingrequiredcontextblocks (proven)
+
+Test function TestPrepareHandoffContext_MissingRequiredContextBlocks in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testpreparehandoffcontext-optionalcontexttruncationwarns (proven)
+
+Test function TestPrepareHandoffContext_OptionalContextTruncationWarns in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testpreparehandoffcontext-readyselectedpass (proven)
+
+Test function TestPrepareHandoffContext_ReadySelectedPass in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testpreparehandoffcontext-recoveryactionsusesafelowerleveltools (proven)
+
+Test function TestPrepareHandoffContext_RecoveryActionsUseSafeLowerLevelTools in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testpreparehandoffcontext-requiredcontexttruncationblocks (proven)
+
+Test function TestPrepareHandoffContext_RequiredContextTruncationBlocks in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testpreparehandoffcontext-responsesafejson (proven)
+
+Test function TestPrepareHandoffContext_ResponseSafeJSON in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testpreparehandoffcontext-sourcefreshnessmatchessourceservice (proven)
+
+Test function TestPrepareHandoffContext_SourceFreshnessMatchesSourceService in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
+
+### backend-test-internal-app-plans-testpreparehandoffcontext-stalebyageblocks (proven)
+
+Test function TestPrepareHandoffContext_StaleByAgeBlocks in internal/app/plans/work_packets_test.go
+
+Evidence:
+
+- test: `internal/app/plans/work_packets_test.go`
 
 ### backend-test-internal-app-plans-testprepareplanattemptdriftreviewpolicy (proven)
 
@@ -12156,6 +12904,14 @@ Evidence:
 
 - test: `internal/app/projects/validator_test.go`
 
+### backend-test-internal-mcp-testblockerenvelopeboundsandsanitizes (proven)
+
+Test function TestBlockerEnvelopeBoundsAndSanitizes in internal/mcp/blocker_envelope_test.go
+
+Evidence:
+
+- test: `internal/mcp/blocker_envelope_test.go`
+
 ### backend-test-internal-mcp-testcontextbrokertoolschemasareboundedandsafe (proven)
 
 Test function TestContextBrokerToolSchemasAreBoundedAndSafe in internal/mcp/context_broker_tools_test.go
@@ -12188,6 +12944,30 @@ Evidence:
 
 - test: `internal/mcp/context_broker_tools_test.go`
 
+### backend-test-internal-mcp-testcreaterunfromplannerhandofffilehashmismatchstructuredblocker (proven)
+
+Test function TestCreateRunFromPlannerHandoffFileHashMismatchStructuredBlocker in internal/mcp/tool_create_run_test.go
+
+Evidence:
+
+- test: `internal/mcp/tool_create_run_test.go`
+
+### backend-test-internal-mcp-testcreaterunfromplannerhandofffilereturnssanitizedidentity (proven)
+
+Test function TestCreateRunFromPlannerHandoffFileReturnsSanitizedIdentity in internal/mcp/tool_create_run_test.go
+
+Evidence:
+
+- test: `internal/mcp/tool_create_run_test.go`
+
+### backend-test-internal-mcp-testcreaterunfromplannerhandoffinlinereturnsexactprovenance (proven)
+
+Test function TestCreateRunFromPlannerHandoffInlineReturnsExactProvenance in internal/mcp/tool_create_run_test.go
+
+Evidence:
+
+- test: `internal/mcp/tool_create_run_test.go`
+
 ### backend-test-internal-mcp-testdefaultlocaloperatortoolsurfaceincludesallsafetools (proven)
 
 Test function TestDefaultLocalOperatorToolSurfaceIncludesAllSafeTools in internal/mcp/tool_surface_test.go
@@ -12211,6 +12991,318 @@ Test function TestGetNextPassWorkUnknownProject in internal/mcp/orchestrator_wor
 Evidence:
 
 - test: `internal/mcp/orchestrator_work_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactallblockers (proven)
+
+Test function TestGetRunArtifactAllBlockers in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactbinaryrejected (proven)
+
+Test function TestGetRunArtifactBinaryRejected in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactboundedexcerpt (proven)
+
+Test function TestGetRunArtifactBoundedExcerpt in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactboundedexcerptnolocalpath (proven)
+
+Test function TestGetRunArtifactBoundedExcerptNoLocalPath in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactcontenthashstatus (proven)
+
+Test function TestGetRunArtifactContentHashStatus in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactcontextpacketreadback (proven)
+
+Test function TestGetRunArtifactContextPacketReadback in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactdefaultmaxbytes (proven)
+
+Test function TestGetRunArtifactDefaultMaxBytes in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifacterrorsemptyresult (proven)
+
+Test function TestGetRunArtifactErrorsEmptyResult in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifacterrorsjson (proven)
+
+Test function TestGetRunArtifactErrorsJSON in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifacterrorsnoerrrors (proven)
+
+Test function TestGetRunArtifactErrorsNoErrrors in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifacterrorsredactionapplied (proven)
+
+Test function TestGetRunArtifactErrorsRedactionApplied in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifacterrorstext (proven)
+
+Test function TestGetRunArtifactErrorsText in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifacthashstatusneverempty (proven)
+
+Test function TestGetRunArtifactHashStatusNeverEmpty in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactincludehashfalse (proven)
+
+Test function TestGetRunArtifactIncludeHashFalse in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactinvalidviewmode (proven)
+
+Test function TestGetRunArtifactInvalidViewMode in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactkindnotallowed (proven)
+
+Test function TestGetRunArtifactKindNotAllowed in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactkindstartswithunsafe (proven)
+
+Test function TestGetRunArtifactKindStartsWithUnsafe in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactmaxbyteshardcap (proven)
+
+Test function TestGetRunArtifactMaxBytesHardcap in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactmaxbytesminmaxbounds (proven)
+
+Test function TestGetRunArtifactMaxBytesMinMaxBounds in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactmetadataonly (proven)
+
+Test function TestGetRunArtifactMetadataOnly in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactmissingkind (proven)
+
+Test function TestGetRunArtifactMissingKind in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactoptionahashsemantics (proven)
+
+Test function TestGetRunArtifactOptionAHashSemantics in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactoversizedcontenthashstatus (proven)
+
+Test function TestGetRunArtifactOversizedContentHashStatus in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactrawjsonsuccessokisboolean (proven)
+
+Test function TestGetRunArtifactRawJSONSuccessOKIsBoolean in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactredactionapplied (proven)
+
+Test function TestGetRunArtifactRedactionApplied in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactredactionpemredacted (proven)
+
+Test function TestGetRunArtifactRedactionPEMRedacted in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactredactionstatusexplicit (proven)
+
+Test function TestGetRunArtifactRedactionStatusExplicit in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactrejectsinvalidrunid (proven)
+
+Test function TestGetRunArtifactRejectsInvalidRunID in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactresponsehasnolocalpath (proven)
+
+Test function TestGetRunArtifactResponseHasNoLocalPath in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactstrictschemarejectsextraargs (proven)
+
+Test function TestGetRunArtifactStrictSchemaRejectsExtraArgs in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactsummaryjson (proven)
+
+Test function TestGetRunArtifactSummaryJSON in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactsummarymarkdown (proven)
+
+Test function TestGetRunArtifactSummaryMarkdown in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactsummarytext (proven)
+
+Test function TestGetRunArtifactSummaryText in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifacttoolregistration (proven)
+
+Test function TestGetRunArtifactToolRegistration in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifacttruncationmetadata (proven)
+
+Test function TestGetRunArtifactTruncationMetadata in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactunknownrun (proven)
+
+Test function TestGetRunArtifactUnknownRun in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactunknownrunenvelope (proven)
+
+Test function TestGetRunArtifactUnknownRunEnvelope in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactunsafeartifactpathenvelope (proven)
+
+Test function TestGetRunArtifactUnsafeArtifactPathEnvelope in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
+### backend-test-internal-mcp-testgetrunartifactusedbyrunidcheck (proven)
+
+Test function TestGetRunArtifactUsedByRunIDCheck in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
 
 ### backend-test-internal-mcp-testhandlecreateandgetcontextpacketmetadata (proven)
 
@@ -12343,6 +13435,14 @@ Evidence:
 ### backend-test-internal-mcp-testhandlecreaterunfromplannerhandofffile-invalidfileinputs (proven)
 
 Test function TestHandleCreateRunFromPlannerHandoffFile_InvalidFileInputs in internal/mcp/mcp_test.go
+
+Evidence:
+
+- test: `internal/mcp/mcp_test.go`
+
+### backend-test-internal-mcp-testhandlecreaterunfromplannerhandofffile-passwithoutplanrejectedbeforewrites (proven)
+
+Test function TestHandleCreateRunFromPlannerHandoffFile_PassWithoutPlanRejectedBeforeWrites in internal/mcp/mcp_test.go
 
 Evidence:
 
@@ -12548,6 +13648,14 @@ Evidence:
 
 - test: `internal/mcp/context_broker_tools_test.go`
 
+### backend-test-internal-mcp-testhandlerepositorygittoolsresolvealiastocanonicalrepoid (proven)
+
+Test function TestHandleRepositoryGitToolsResolveAliasToCanonicalRepoID in internal/mcp/context_broker_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/context_broker_tools_test.go`
+
 ### backend-test-internal-mcp-testhandlerepositorygittoolsreturnboundedevidence (proven)
 
 Test function TestHandleRepositoryGitToolsReturnBoundedEvidence in internal/mcp/context_broker_tools_test.go
@@ -12556,9 +13664,41 @@ Evidence:
 
 - test: `internal/mcp/context_broker_tools_test.go`
 
+### backend-test-internal-mcp-testhandlerepositorygittoolsreturnresolverblockers (proven)
+
+Test function TestHandleRepositoryGitToolsReturnResolverBlockers in internal/mcp/context_broker_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/context_broker_tools_test.go`
+
 ### backend-test-internal-mcp-testhandlerepositorygittoolsvalidatescopeandmode (proven)
 
 Test function TestHandleRepositoryGitToolsValidateScopeAndMode in internal/mcp/context_broker_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/context_broker_tools_test.go`
+
+### backend-test-internal-mcp-testhandleresolveprojectrepositorycanonicalandbounded (proven)
+
+Test function TestHandleResolveProjectRepositoryCanonicalAndBounded in internal/mcp/context_broker_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/context_broker_tools_test.go`
+
+### backend-test-internal-mcp-testhandleresolveprojectrepositoryrequiresexactlyonealias (proven)
+
+Test function TestHandleResolveProjectRepositoryRequiresExactlyOneAlias in internal/mcp/context_broker_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/context_broker_tools_test.go`
+
+### backend-test-internal-mcp-testhandleresolveprojectrepositoryunknownandambiguousblockers (proven)
+
+Test function TestHandleResolveProjectRepositoryUnknownAndAmbiguousBlockers in internal/mcp/context_broker_tools_test.go
 
 Evidence:
 
@@ -12735,6 +13875,30 @@ Evidence:
 ### backend-test-internal-mcp-testhandlesubmittestauditpacket-unsupporteddecision (proven)
 
 Test function TestHandleSubmitTestAuditPacket_UnsupportedDecision in internal/mcp/mcp_test.go
+
+Evidence:
+
+- test: `internal/mcp/mcp_test.go`
+
+### backend-test-internal-mcp-testhandlevalidateplannerhandoffforcompile-filemode (proven)
+
+Test function TestHandleValidatePlannerHandoffForCompile_FileMode in internal/mcp/mcp_test.go
+
+Evidence:
+
+- test: `internal/mcp/mcp_test.go`
+
+### backend-test-internal-mcp-testhandlevalidateplannerhandoffforcompile-passwithoutplanblocks (proven)
+
+Test function TestHandleValidatePlannerHandoffForCompile_PassWithoutPlanBlocks in internal/mcp/mcp_test.go
+
+Evidence:
+
+- test: `internal/mcp/mcp_test.go`
+
+### backend-test-internal-mcp-testhandlevalidateplannerhandoffforcompile-strictinputandsources (proven)
+
+Test function TestHandleValidatePlannerHandoffForCompile_StrictInputAndSources in internal/mcp/mcp_test.go
 
 Evidence:
 
@@ -12940,6 +14104,22 @@ Evidence:
 
 - test: `internal/mcp/orchestrator_work_tools_test.go`
 
+### backend-test-internal-mcp-testorchestratorworktools-preparehandoffcontextmissingrequiredids (proven)
+
+Test function TestOrchestratorWorkTools_PrepareHandoffContextMissingRequiredIDs in internal/mcp/orchestrator_work_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/orchestrator_work_tools_test.go`
+
+### backend-test-internal-mcp-testorchestratorworktools-preparehandoffcontextstructuredcontentsafe (proven)
+
+Test function TestOrchestratorWorkTools_PrepareHandoffContextStructuredContentSafe in internal/mcp/orchestrator_work_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/orchestrator_work_tools_test.go`
+
 ### backend-test-internal-mcp-testorchestratorworktools-schemasarestrictandscoped (proven)
 
 Test function TestOrchestratorWorkTools_SchemasAreStrictAndScoped in internal/mcp/orchestrator_work_tools_test.go
@@ -12971,6 +14151,14 @@ Test function TestOrchestratorWorkToolsStrictArgumentDecoding in internal/mcp/or
 Evidence:
 
 - test: `internal/mcp/orchestrator_work_tools_test.go`
+
+### backend-test-internal-mcp-testpathevidencesafetyishostindependent (proven)
+
+Test function TestPathEvidenceSafetyIsHostIndependent in internal/mcp/blocker_envelope_test.go
+
+Evidence:
+
+- test: `internal/mcp/blocker_envelope_test.go`
 
 ### backend-test-internal-mcp-testplanattemptmcpcreateacceptswrappershape (proven)
 
@@ -13036,6 +14224,14 @@ Evidence:
 
 - test: `internal/mcp/plan_attempt_tools_test.go`
 
+### backend-test-internal-mcp-testplannerhandofffilefailuresaresanitized (proven)
+
+Test function TestPlannerHandoffFileFailuresAreSanitized in internal/mcp/tool_create_run_test.go
+
+Evidence:
+
+- test: `internal/mcp/tool_create_run_test.go`
+
 ### backend-test-internal-mcp-testplanseedmcpattemptmissingrequiredfields (proven)
 
 Test function TestPlanSeedMCPAttemptMissingRequiredFields in internal/mcp/plan_seed_tools_test.go
@@ -13099,6 +14295,22 @@ Test function TestPlanSeedMCPUpdateDoesNotAcceptStatusOrLinkageFields in interna
 Evidence:
 
 - test: `internal/mcp/plan_seed_tools_test.go`
+
+### backend-test-internal-mcp-testpreparehandoffcontextrejectsremovedknobs (proven)
+
+Test function TestPrepareHandoffContextRejectsRemovedKnobs in internal/mcp/orchestrator_work_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/orchestrator_work_tools_test.go`
+
+### backend-test-internal-mcp-testpreparehandoffcontextschemaonlyacceptsscopedidentifiers (proven)
+
+Test function TestPrepareHandoffContextSchemaOnlyAcceptsScopedIdentifiers in internal/mcp/orchestrator_work_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/orchestrator_work_tools_test.go`
 
 ### backend-test-internal-mcp-testrefactorbacklogschemasarestrictandprojectscoped (proven)
 
@@ -13212,6 +14424,14 @@ Evidence:
 
 - test: `internal/mcp/tool_surface_test.go`
 
+### backend-test-internal-mcp-testsafeartifactdisplaynamecrossplatform (proven)
+
+Test function TestSafeArtifactDisplayNameCrossPlatform in internal/mcp/blocker_envelope_test.go
+
+Evidence:
+
+- test: `internal/mcp/blocker_envelope_test.go`
+
 ### backend-test-internal-mcp-testserverinitialize (proven)
 
 Test function TestServerInitialize in internal/mcp/mcp_test.go
@@ -13276,6 +14496,14 @@ Evidence:
 
 - test: `internal/mcp/mcp_test.go`
 
+### backend-test-internal-mcp-testservertoolslistincludesgetrunartifactlocaloperator (proven)
+
+Test function TestServerToolsListIncludesGetRunArtifactLocalOperator in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
+
 ### backend-test-internal-mcp-testservertoolslistincludesplanseedtools (proven)
 
 Test function TestServerToolsListIncludesPlanSeedTools in internal/mcp/plan_seed_tools_test.go
@@ -13283,6 +14511,14 @@ Test function TestServerToolsListIncludesPlanSeedTools in internal/mcp/plan_seed
 Evidence:
 
 - test: `internal/mcp/plan_seed_tools_test.go`
+
+### backend-test-internal-mcp-testservertoolslistomitsgetrunartifactrestricted (proven)
+
+Test function TestServerToolsListOmitsGetRunArtifactRestricted in internal/mcp/artifact_readback_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/artifact_readback_tools_test.go`
 
 ### backend-test-internal-mcp-testserverunknowntool (proven)
 
@@ -13315,6 +14551,14 @@ Test function TestSubmitPlannerPassPlanSchema_HasOneOf in internal/mcp/plan_tool
 Evidence:
 
 - test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testtoolblockedresultstructuredcontent (proven)
+
+Test function TestToolBlockedResultStructuredContent in internal/mcp/blocker_envelope_test.go
+
+Evidence:
+
+- test: `internal/mcp/blocker_envelope_test.go`
 
 ### backend-test-internal-mcp-testtoolprofileauditaliasnormalizestolocaloperator (proven)
 
