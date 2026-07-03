@@ -1,84 +1,108 @@
 import { useRouter } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
-import type { RelayRunStep } from '@/features/relay-runs'
-import { Loader2 } from 'lucide-react'
+import type { RelayRunStatus, RelayRunStep } from '@/features/relay-runs'
+import { derivePipelineStages } from '@/features/relay-navigation/pipeline'
+import { resolveStatusColorToken } from '@/features/relay-navigation/statusColor'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 
-const STEPS: {
-  key: RelayRunStep
-  label: string
-  to:
-    | '/runs/$runId/intake'
-    | '/runs/$runId/prepare'
-    | '/runs/$runId/execute'
-    | '/runs/$runId/audit'
-}[] = [
-  { key: 'intake', label: 'Intake', to: '/runs/$runId/intake' },
-  { key: 'prepare', label: 'Compile / Render', to: '/runs/$runId/prepare' },
-  { key: 'execute', label: 'Execute', to: '/runs/$runId/execute' },
-  { key: 'audit', label: 'Audit', to: '/runs/$runId/audit' },
-]
-
-const STEP_ORDER: RelayRunStep[] = ['intake', 'prepare', 'execute', 'audit']
-
-function getStepState(
-  step: RelayRunStep,
-  activeStep: RelayRunStep,
-): 'completed' | 'active' | 'pending' {
-  const stepIdx = STEP_ORDER.indexOf(step)
-  const activeIdx = STEP_ORDER.indexOf(activeStep)
-  if (stepIdx < activeIdx) return 'completed'
-  if (stepIdx === activeIdx) return 'active'
-  return 'pending'
+// Typed route templates keyed by pipeline stage. `derivePipelineStages` returns
+// the same route templates as opaque strings; this map re-associates them with
+// the TanStack Router-typed `to` union so navigation stays type-checked.
+const STAGE_ROUTES: Record<
+  RelayRunStep,
+  | '/runs/$runId/intake'
+  | '/runs/$runId/prepare'
+  | '/runs/$runId/execute'
+  | '/runs/$runId/audit'
+> = {
+  intake: '/runs/$runId/intake',
+  prepare: '/runs/$runId/prepare',
+  execute: '/runs/$runId/execute',
+  audit: '/runs/$runId/audit',
 }
 
 interface RunStepperProps {
   runId: string
-  activeStep: RelayRunStep
+  /**
+   * Canonical Run `status`. Stage derivation is driven SOLELY by this field via
+   * `derivePipelineStages` (Requirements 6.3, 6.7); the stepper never gates on
+   * `activeStep`, `lifecycleState`, `state`, or `statusSeverity`.
+   */
+  status: RelayRunStatus
   isRunning?: boolean
   className?: string
 }
 
 export function RunStepper({
   runId,
-  activeStep,
+  status,
   isRunning = false,
   className,
 }: RunStepperProps) {
   const router = useRouter()
+  const stages = derivePipelineStages(status)
+  const attentionTokenColor = `var(${resolveStatusColorToken(status)})`
 
   return (
     <nav
       aria-label="Run steps"
       className={cn('flex h-10 items-stretch gap-0 overflow-x-auto', className)}
     >
-      {STEPS.map((step) => {
-        const state = getStepState(step.key, activeStep)
-        const isActive = state === 'active'
-        const isCompleted = state === 'completed'
+      {stages.map((stage) => {
+        // The affected (current-position) stage is reported as "attention" when
+        // the canonical status is in the closed blocked / awaiting-review set;
+        // it is still the current position, so treat both as "current" visually
+        // and add a distinct attention indicator on top (Req 6.2, 6.4).
+        const isAttention = stage.status === 'attention'
+        const isCurrent = stage.status === 'current' || isAttention
+        const isCompleted = stage.status === 'completed'
 
         return (
           <button
-            key={step.key}
+            key={stage.step}
             type="button"
-              className={cn(
-                'flex h-10 items-center gap-2 border-b-2 px-4 text-xs font-medium transition-colors whitespace-nowrap',
-                isActive &&
-                  'border-[var(--relay-accent,hsl(var(--primary)))] text-foreground',
-                isCompleted &&
-                'border-transparent text-emerald-400 hover:text-foreground',
-              !isActive &&
+            className={cn(
+              'flex h-10 items-center gap-2 border-b-2 px-4 text-xs font-medium transition-colors whitespace-nowrap',
+              isCurrent &&
+                !isAttention &&
+                'border-[var(--relay-accent,hsl(var(--primary)))] text-foreground',
+              isCurrent && isAttention && 'text-foreground',
+              isCompleted &&
+                'border-transparent text-[var(--relay-status-complete)] hover:text-foreground',
+              !isCurrent &&
                 !isCompleted &&
                 'border-transparent text-muted-foreground hover:text-foreground',
+              !stage.navigable && 'cursor-default',
             )}
-            aria-current={isActive ? 'step' : undefined}
+            style={
+              isAttention
+                ? { borderBottomColor: attentionTokenColor }
+                : undefined
+            }
+            aria-current={isCurrent ? 'step' : undefined}
+            data-stage-status={stage.status}
             onClick={() => {
-              void router.navigate({ to: step.to, params: { runId } })
+              // Non-navigable stages are a no-op and keep the current route
+              // (Req 6.6). Navigable stages route to their run-scoped stage
+              // route (Req 6.5).
+              if (!stage.navigable) return
+              void router.navigate({
+                to: STAGE_ROUTES[stage.step],
+                params: { runId },
+              })
             }}
           >
-            {isActive && isRunning ? (
+            {isCurrent && isRunning && !isAttention ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : null}
-            {step.label}
+            {isAttention ? (
+              <AlertTriangle
+                className="h-3.5 w-3.5 shrink-0"
+                style={{ color: attentionTokenColor }}
+                aria-hidden="true"
+              />
+            ) : null}
+            {stage.label}
           </button>
         )
       })}

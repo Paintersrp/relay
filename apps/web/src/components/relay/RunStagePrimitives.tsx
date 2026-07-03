@@ -129,13 +129,6 @@ const STEP_STATUS_CLASS: Record<
   },
 };
 
-type InspectorTabKey = string;
-
-export interface RunStageInspectorTabConfig<TTab extends InspectorTabKey> {
-  key: TTab;
-  label: string;
-}
-
 export interface RunStageSummaryChipProps {
   label?: React.ReactNode;
   value: React.ReactNode;
@@ -507,47 +500,6 @@ export function RunStageHeader({
           ) : null}
         </div>
         {status ? <div className="shrink-0">{status}</div> : null}
-      </div>
-    </div>
-  );
-}
-
-export interface RunStageInspectorTabStripProps<TTab extends InspectorTabKey> {
-  tabs: RunStageInspectorTabConfig<TTab>[];
-  activeTab?: TTab;
-  onTabChange: (tab: TTab) => void;
-  className?: string;
-}
-
-export function RunStageInspectorTabStrip<TTab extends InspectorTabKey>({
-  tabs,
-  activeTab,
-  onTabChange,
-  className,
-}: RunStageInspectorTabStripProps<TTab>) {
-  return (
-    <div className={cn("overflow-x-auto", className)}>
-      <div className="flex min-w-max items-center gap-4">
-        {tabs.map((tab) => {
-          const active = tab.key === activeTab;
-
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => onTabChange(tab.key)}
-              className={cn(
-                "flex h-12 items-center border-b-2 text-[13px] font-medium transition-colors",
-                active
-                  ? "border-[var(--relay-accent)] text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-              aria-pressed={active}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
       </div>
     </div>
   );
