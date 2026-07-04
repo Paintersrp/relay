@@ -11,15 +11,21 @@ import (
 )
 
 const createAgentExecution = `-- name: CreateAgentExecution :one
-INSERT INTO agent_executions (run_id, provider, status, command_preview)
-VALUES (?, ?, ?, ?) RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at
+INSERT INTO agent_executions (
+    run_id, provider, status, command_preview,
+    runner_kind, owner_instance_id, ownership_token
+)
+VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at
 `
 
 type CreateAgentExecutionParams struct {
-	RunID          int64  `json:"run_id"`
-	Provider       string `json:"provider"`
-	Status         string `json:"status"`
-	CommandPreview string `json:"command_preview"`
+	RunID           int64          `json:"run_id"`
+	Provider        string         `json:"provider"`
+	Status          string         `json:"status"`
+	CommandPreview  string         `json:"command_preview"`
+	RunnerKind      sql.NullString `json:"runner_kind"`
+	OwnerInstanceID sql.NullString `json:"owner_instance_id"`
+	OwnershipToken  sql.NullString `json:"ownership_token"`
 }
 
 func (q *Queries) CreateAgentExecution(ctx context.Context, arg CreateAgentExecutionParams) (AgentExecution, error) {
@@ -28,6 +34,9 @@ func (q *Queries) CreateAgentExecution(ctx context.Context, arg CreateAgentExecu
 		arg.Provider,
 		arg.Status,
 		arg.CommandPreview,
+		arg.RunnerKind,
+		arg.OwnerInstanceID,
+		arg.OwnershipToken,
 	)
 	var i AgentExecution
 	err := row.Scan(
@@ -46,12 +55,66 @@ func (q *Queries) CreateAgentExecution(ctx context.Context, arg CreateAgentExecu
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
+	)
+	return i, err
+}
+
+const getActiveAgentExecutionByRun = `-- name: GetActiveAgentExecutionByRun :one
+SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at FROM agent_executions
+WHERE run_id = ?
+  AND status IN ('starting', 'running', 'cancel_requested')
+  AND terminalized_at IS NULL
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetActiveAgentExecutionByRun(ctx context.Context, runID int64) (AgentExecution, error) {
+	row := q.db.QueryRowContext(ctx, getActiveAgentExecutionByRun, runID)
+	var i AgentExecution
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.Provider,
+		&i.Status,
+		&i.CommandPreview,
+		&i.ExitCode,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.StdoutArtifactPath,
+		&i.StderrArtifactPath,
+		&i.CombinedArtifactPath,
+		&i.ResultArtifactPath,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
 	)
 	return i, err
 }
 
 const getAgentExecution = `-- name: GetAgentExecution :one
-SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at FROM agent_executions WHERE id = ?
+SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at FROM agent_executions WHERE id = ?
 `
 
 func (q *Queries) GetAgentExecution(ctx context.Context, id int64) (AgentExecution, error) {
@@ -73,12 +136,23 @@ func (q *Queries) GetAgentExecution(ctx context.Context, id int64) (AgentExecuti
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
 	)
 	return i, err
 }
 
 const getLatestAgentExecutionByRun = `-- name: GetLatestAgentExecutionByRun :one
-SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at FROM agent_executions WHERE run_id = ? ORDER BY created_at DESC LIMIT 1
+SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at FROM agent_executions WHERE run_id = ? ORDER BY created_at DESC LIMIT 1
 `
 
 func (q *Queries) GetLatestAgentExecutionByRun(ctx context.Context, runID int64) (AgentExecution, error) {
@@ -100,12 +174,80 @@ func (q *Queries) GetLatestAgentExecutionByRun(ctx context.Context, runID int64)
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
 	)
 	return i, err
 }
 
+const listActiveAgentExecutions = `-- name: ListActiveAgentExecutions :many
+SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at FROM agent_executions
+WHERE status IN ('starting', 'running', 'cancel_requested')
+  AND terminalized_at IS NULL
+ORDER BY created_at ASC
+`
+
+func (q *Queries) ListActiveAgentExecutions(ctx context.Context) ([]AgentExecution, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveAgentExecutions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentExecution{}
+	for rows.Next() {
+		var i AgentExecution
+		if err := rows.Scan(
+			&i.ID,
+			&i.RunID,
+			&i.Provider,
+			&i.Status,
+			&i.CommandPreview,
+			&i.ExitCode,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.StdoutArtifactPath,
+			&i.StderrArtifactPath,
+			&i.CombinedArtifactPath,
+			&i.ResultArtifactPath,
+			&i.Error,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.RunnerKind,
+			&i.OwnerInstanceID,
+			&i.OwnershipToken,
+			&i.ProcessID,
+			&i.ProcessGroupID,
+			&i.ProcessIdentity,
+			&i.ProcessStartedAt,
+			&i.CancellationRequestedAt,
+			&i.CancellationCompletedAt,
+			&i.TerminalReason,
+			&i.TerminalizedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAgentExecutionsByRun = `-- name: ListAgentExecutionsByRun :many
-SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at FROM agent_executions WHERE run_id = ? ORDER BY created_at DESC
+SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at FROM agent_executions WHERE run_id = ? ORDER BY created_at DESC
 `
 
 func (q *Queries) ListAgentExecutionsByRun(ctx context.Context, runID int64) ([]AgentExecution, error) {
@@ -133,6 +275,17 @@ func (q *Queries) ListAgentExecutionsByRun(ctx context.Context, runID int64) ([]
 			&i.Error,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RunnerKind,
+			&i.OwnerInstanceID,
+			&i.OwnershipToken,
+			&i.ProcessID,
+			&i.ProcessGroupID,
+			&i.ProcessIdentity,
+			&i.ProcessStartedAt,
+			&i.CancellationRequestedAt,
+			&i.CancellationCompletedAt,
+			&i.TerminalReason,
+			&i.TerminalizedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -147,13 +300,216 @@ func (q *Queries) ListAgentExecutionsByRun(ctx context.Context, runID int64) ([]
 	return items, nil
 }
 
+const registerAgentExecutionProcess = `-- name: RegisterAgentExecutionProcess :one
+UPDATE agent_executions
+SET status = 'running',
+    process_id = ?,
+    process_group_id = ?,
+    process_identity = ?,
+    process_started_at = ?,
+    started_at = ?,
+    updated_at = datetime('now')
+WHERE id = ?
+  AND ownership_token = ?
+  AND status = 'starting'
+  AND terminalized_at IS NULL
+RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at
+`
+
+type RegisterAgentExecutionProcessParams struct {
+	ProcessID        sql.NullInt64  `json:"process_id"`
+	ProcessGroupID   sql.NullInt64  `json:"process_group_id"`
+	ProcessIdentity  sql.NullString `json:"process_identity"`
+	ProcessStartedAt sql.NullString `json:"process_started_at"`
+	StartedAt        sql.NullString `json:"started_at"`
+	ID               int64          `json:"id"`
+	OwnershipToken   sql.NullString `json:"ownership_token"`
+}
+
+func (q *Queries) RegisterAgentExecutionProcess(ctx context.Context, arg RegisterAgentExecutionProcessParams) (AgentExecution, error) {
+	row := q.db.QueryRowContext(ctx, registerAgentExecutionProcess,
+		arg.ProcessID,
+		arg.ProcessGroupID,
+		arg.ProcessIdentity,
+		arg.ProcessStartedAt,
+		arg.StartedAt,
+		arg.ID,
+		arg.OwnershipToken,
+	)
+	var i AgentExecution
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.Provider,
+		&i.Status,
+		&i.CommandPreview,
+		&i.ExitCode,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.StdoutArtifactPath,
+		&i.StderrArtifactPath,
+		&i.CombinedArtifactPath,
+		&i.ResultArtifactPath,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
+	)
+	return i, err
+}
+
+const requestAgentExecutionCancellation = `-- name: RequestAgentExecutionCancellation :one
+UPDATE agent_executions
+SET status = 'cancel_requested',
+    cancellation_requested_at = COALESCE(cancellation_requested_at, ?),
+    updated_at = datetime('now')
+WHERE id = ?
+  AND status IN ('starting', 'running', 'cancel_requested')
+  AND terminalized_at IS NULL
+RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at
+`
+
+type RequestAgentExecutionCancellationParams struct {
+	CancellationRequestedAt sql.NullString `json:"cancellation_requested_at"`
+	ID                      int64          `json:"id"`
+}
+
+func (q *Queries) RequestAgentExecutionCancellation(ctx context.Context, arg RequestAgentExecutionCancellationParams) (AgentExecution, error) {
+	row := q.db.QueryRowContext(ctx, requestAgentExecutionCancellation, arg.CancellationRequestedAt, arg.ID)
+	var i AgentExecution
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.Provider,
+		&i.Status,
+		&i.CommandPreview,
+		&i.ExitCode,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.StdoutArtifactPath,
+		&i.StderrArtifactPath,
+		&i.CombinedArtifactPath,
+		&i.ResultArtifactPath,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
+	)
+	return i, err
+}
+
+const terminalizeAgentExecutionCAS = `-- name: TerminalizeAgentExecutionCAS :one
+UPDATE agent_executions
+SET status = ?,
+    exit_code = ?,
+    started_at = COALESCE(started_at, ?),
+    finished_at = ?,
+    stdout_artifact_path = ?,
+    stderr_artifact_path = ?,
+    combined_artifact_path = ?,
+    result_artifact_path = ?,
+    error = ?,
+    cancellation_completed_at = ?,
+    terminal_reason = ?,
+    terminalized_at = ?,
+    updated_at = datetime('now')
+WHERE id = ?
+  AND status IN ('starting', 'running', 'cancel_requested')
+  AND terminalized_at IS NULL
+RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at
+`
+
+type TerminalizeAgentExecutionCASParams struct {
+	Status                  string         `json:"status"`
+	ExitCode                sql.NullInt64  `json:"exit_code"`
+	StartedAt               sql.NullString `json:"started_at"`
+	FinishedAt              sql.NullString `json:"finished_at"`
+	StdoutArtifactPath      sql.NullString `json:"stdout_artifact_path"`
+	StderrArtifactPath      sql.NullString `json:"stderr_artifact_path"`
+	CombinedArtifactPath    sql.NullString `json:"combined_artifact_path"`
+	ResultArtifactPath      sql.NullString `json:"result_artifact_path"`
+	Error                   sql.NullString `json:"error"`
+	CancellationCompletedAt sql.NullString `json:"cancellation_completed_at"`
+	TerminalReason          sql.NullString `json:"terminal_reason"`
+	TerminalizedAt          sql.NullString `json:"terminalized_at"`
+	ID                      int64          `json:"id"`
+}
+
+func (q *Queries) TerminalizeAgentExecutionCAS(ctx context.Context, arg TerminalizeAgentExecutionCASParams) (AgentExecution, error) {
+	row := q.db.QueryRowContext(ctx, terminalizeAgentExecutionCAS,
+		arg.Status,
+		arg.ExitCode,
+		arg.StartedAt,
+		arg.FinishedAt,
+		arg.StdoutArtifactPath,
+		arg.StderrArtifactPath,
+		arg.CombinedArtifactPath,
+		arg.ResultArtifactPath,
+		arg.Error,
+		arg.CancellationCompletedAt,
+		arg.TerminalReason,
+		arg.TerminalizedAt,
+		arg.ID,
+	)
+	var i AgentExecution
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.Provider,
+		&i.Status,
+		&i.CommandPreview,
+		&i.ExitCode,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.StdoutArtifactPath,
+		&i.StderrArtifactPath,
+		&i.CombinedArtifactPath,
+		&i.ResultArtifactPath,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
+	)
+	return i, err
+}
+
 const updateAgentExecutionStatus = `-- name: UpdateAgentExecutionStatus :one
 UPDATE agent_executions
 SET status = ?, exit_code = ?, started_at = ?, finished_at = ?,
     stdout_artifact_path = ?, stderr_artifact_path = ?,
     combined_artifact_path = ?, result_artifact_path = ?, error = ?,
     updated_at = datetime('now')
-WHERE id = ? RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at
+WHERE id = ? RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at
 `
 
 type UpdateAgentExecutionStatusParams struct {
@@ -199,6 +555,17 @@ func (q *Queries) UpdateAgentExecutionStatus(ctx context.Context, arg UpdateAgen
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
 	)
 	return i, err
 }

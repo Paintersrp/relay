@@ -9,21 +9,32 @@ import (
 )
 
 type AgentExecution struct {
-	ID                   int64          `json:"id"`
-	RunID                int64          `json:"run_id"`
-	Provider             string         `json:"provider"`
-	Status               string         `json:"status"`
-	CommandPreview       string         `json:"command_preview"`
-	ExitCode             sql.NullInt64  `json:"exit_code"`
-	StartedAt            sql.NullString `json:"started_at"`
-	FinishedAt           sql.NullString `json:"finished_at"`
-	StdoutArtifactPath   sql.NullString `json:"stdout_artifact_path"`
-	StderrArtifactPath   sql.NullString `json:"stderr_artifact_path"`
-	CombinedArtifactPath sql.NullString `json:"combined_artifact_path"`
-	ResultArtifactPath   sql.NullString `json:"result_artifact_path"`
-	Error                sql.NullString `json:"error"`
-	CreatedAt            string         `json:"created_at"`
-	UpdatedAt            string         `json:"updated_at"`
+	ID                      int64          `json:"id"`
+	RunID                   int64          `json:"run_id"`
+	Provider                string         `json:"provider"`
+	Status                  string         `json:"status"`
+	CommandPreview          string         `json:"command_preview"`
+	ExitCode                sql.NullInt64  `json:"exit_code"`
+	StartedAt               sql.NullString `json:"started_at"`
+	FinishedAt              sql.NullString `json:"finished_at"`
+	StdoutArtifactPath      sql.NullString `json:"stdout_artifact_path"`
+	StderrArtifactPath      sql.NullString `json:"stderr_artifact_path"`
+	CombinedArtifactPath    sql.NullString `json:"combined_artifact_path"`
+	ResultArtifactPath      sql.NullString `json:"result_artifact_path"`
+	Error                   sql.NullString `json:"error"`
+	CreatedAt               string         `json:"created_at"`
+	UpdatedAt               string         `json:"updated_at"`
+	RunnerKind              sql.NullString `json:"runner_kind"`
+	OwnerInstanceID         sql.NullString `json:"owner_instance_id"`
+	OwnershipToken          sql.NullString `json:"ownership_token"`
+	ProcessID               sql.NullInt64  `json:"process_id"`
+	ProcessGroupID          sql.NullInt64  `json:"process_group_id"`
+	ProcessIdentity         sql.NullString `json:"process_identity"`
+	ProcessStartedAt        sql.NullString `json:"process_started_at"`
+	CancellationRequestedAt sql.NullString `json:"cancellation_requested_at"`
+	CancellationCompletedAt sql.NullString `json:"cancellation_completed_at"`
+	TerminalReason          sql.NullString `json:"terminal_reason"`
+	TerminalizedAt          sql.NullString `json:"terminalized_at"`
 }
 
 type Artifact struct {

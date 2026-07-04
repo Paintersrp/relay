@@ -30,8 +30,8 @@ Schema version: `1.0.0`
 | `internal/api/intake/routes.go` | `153de0341933b08bdfee0e70b1263af9d9a3a5c7ffda37315dd687d1dbeae706` | route source |
 | `internal/api/plans/routes.go` | `0b4388c25653944639c8916c1545daf567708105deb2032d406a28e6980f4139` | route source |
 | `internal/api/projects/routes.go` | `e1425a7930b8738eb9ac729c36d6e44676ce60312312e84a994e6fbbcb3b8e90` | route source |
-| `internal/api/runs/routes.go` | `c4826589811059c986998b17dea88c866d6d674f202fc894fbb2addb6ca0243e` | route source |
-| `internal/server/routes.go` | `b8b1b6e9ff8087b505441ef60c0fe569f61332dafd33e568cbf3276f8e8f712b` | route source |
+| `internal/api/runs/routes.go` | `350b631dd4770b9b2c5b6b1fe7b7db54c40e64b7099da51f1b6bd72340082fb5` | route source |
+| `internal/server/routes.go` | `eb4edda21e2f45a30002985576afad64476dc5a51b03f974c7b9ce6f72c75ffc` | route source |
 
 ## Fact Labels
 

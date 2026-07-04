@@ -18,15 +18,20 @@ import (
 
 // Service owns run read/use-case logic and run lifecycle workflow operations.
 type Service struct {
-	store    *store.Store
-	log      *slog.Logger
-	eventHub *events.Hub
+	store           *store.Store
+	log             *slog.Logger
+	eventHub        *events.Hub
+	ownerInstanceID string
 }
 
 // NewService constructs a run app service. eventHub is required for executor
 // dispatch during ExecuteRun.
 func NewService(st *store.Store, log *slog.Logger, eventHub *events.Hub) *Service {
 	return &Service{store: st, log: log, eventHub: eventHub}
+}
+
+func (s *Service) SetExecutorOwnerInstanceID(ownerInstanceID string) {
+	s.ownerInstanceID = ownerInstanceID
 }
 
 // ListRuns preserves GET /api/runs behavior: list the 100 most recent runs with

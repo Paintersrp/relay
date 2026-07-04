@@ -224,10 +224,11 @@ func (s *Service) ApproveBrief(ctx context.Context, runID int64) (BriefResult, e
 func (s *Service) ExecuteRun(ctx context.Context, runID int64) (ExecuteResult, error) {
 	_ = ctx
 	params := &executor.DispatchParams{
-		Store:    s.store,
-		Log:      s.log,
-		EventHub: s.eventHub,
-		RunID:    runID,
+		Store:           s.store,
+		Log:             s.log,
+		EventHub:        s.eventHub,
+		RunID:           runID,
+		OwnerInstanceID: s.ownerInstanceID,
 	}
 
 	if _, err := executor.DispatchBrief(params); err != nil {
@@ -252,6 +253,34 @@ func (s *Service) ExecuteRun(ctx context.Context, runID int64) (ExecuteResult, e
 		return ExecuteResult{}, &RunError{HTTPStatus: http.StatusInternalServerError, Code: "INTERNAL_ERROR", Message: "run not found after dispatch"}
 	}
 	return ExecuteResult{Run: *run}, nil
+}
+
+func (s *Service) CancelRun(ctx context.Context, runID int64) (CancelResult, error) {
+	res, err := executor.CancelExecution(ctx, s.store, s.eventHub, s.log, runID, nil)
+	if err != nil {
+		return CancelResult{}, &RunError{HTTPStatus: http.StatusConflict, Code: "CONFLICT", Message: err.Error()}
+	}
+	run, _ := s.store.GetRun(runID)
+	runStatus := res.RunStatus
+	if run != nil {
+		runStatus = run.Status
+	}
+	_, _, lifecycleState, _, _ := resolveRunDisplayState(runStatus)
+	return CancelResult{
+		RunID:                   runID,
+		RunStatus:               runStatus,
+		ExecutionID:             res.ExecutionID,
+		ExecutionStatus:         res.ExecutionStatus,
+		CancellationRequestedAt: res.CancellationRequestedAt,
+		TerminalReason:          res.TerminalReason,
+		LifecycleState:          lifecycleState,
+		Initiated:               res.Initiated,
+		Terminal:                res.Terminal,
+	}, nil
+}
+
+func (s *Service) ReconcileExecutorOwnership(ownerInstanceID string) error {
+	return executor.ReconcileActiveExecutions(s.store, s.eventHub, s.log, ownerInstanceID, nil)
 }
 
 // ValidateRun preserves POST /api/runs/{id}/validate behavior.

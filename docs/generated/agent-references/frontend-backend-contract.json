@@ -50,7 +50,7 @@
     },
     {
       "path": "docs/generated/agent-references/http-api-surface.json",
-      "sha256": "80aa5234a41b33fbeffcc9609c9ff126283d85520bf6c6a3ffec7e529b7b2c03",
+      "sha256": "9e1d96e60805a45e18f08a19bee9661e1b88d268d87050265474d9a97c72631b",
       "role": "generated HTTP API reference"
     },
     {

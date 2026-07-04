@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"os"
 
+	appruns "relay/internal/app/runs"
 	"relay/internal/config"
+	"relay/internal/events"
+	"relay/internal/executor"
 	"relay/internal/repos"
 	"relay/internal/server"
 	"relay/internal/store"
@@ -32,6 +35,13 @@ func main() {
 	defer s.Close()
 
 	repoService := repos.NewService(s, log)
+	eventHub := events.NewHub(log)
+	ownerInstanceID := executor.NewOwnerInstanceID()
+	runService := appruns.NewService(s, log, eventHub)
+	if err := runService.ReconcileExecutorOwnership(ownerInstanceID); err != nil {
+		log.Error("reconcile executor ownership", "error", err)
+		os.Exit(1)
+	}
 
 	if err := s.EnsureDefaultRepoRoots([]string{"D:/Code"}); err != nil {
 		log.Warn("ensure default repo roots", "error", err)
@@ -47,7 +57,7 @@ func main() {
 		)
 	}()
 
-	srv := server.New(s, repoService, log)
+	srv := server.NewWithEvents(s, repoService, log, eventHub, ownerInstanceID)
 
 	port := "8080"
 	if p := os.Getenv("PORT"); p != "" {

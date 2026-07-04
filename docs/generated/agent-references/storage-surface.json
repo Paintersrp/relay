@@ -114,8 +114,13 @@
       "role": "migration"
     },
     {
+      "path": "internal/db/migrations/20260704000100_durable_agent_execution_ownership.sql",
+      "sha256": "95405f634258b95ec1d7752e58d5e988766a690118bbd1c93252a98043a52c33",
+      "role": "migration"
+    },
+    {
       "path": "internal/db/queries/agent_executions.sql",
-      "sha256": "2738d07bbe4ca2982294e62da302f9c618f21a81a4fd556cc9ae7711a93e64e5",
+      "sha256": "776aeee9d9e002ed48d21576abc38e48f8d953f60464dc98b92f5d0ec3fcf444",
       "role": "sqlc query file"
     },
     {
@@ -210,12 +215,12 @@
     },
     {
       "path": "internal/store/db.go",
-      "sha256": "44a032a3af37a60e835568211adc7675b48434da8b422afea5d70f365aeae0d8",
+      "sha256": "9e41bb12ccd32d18f15bd13a07012e0b03e794bec253c99748763f2ca1e9c730",
       "role": "store wrapper"
     },
     {
       "path": "internal/store/generated/agent_executions.sql.go",
-      "sha256": "e13612bebeea268d10047da36799c227c8798249f90528c5882da63c7a1c3801",
+      "sha256": "5ab51439973ef2b32b06c9a4058af34ecb1d37242ff3a2b3def56287cecccbd8",
       "role": "generated sqlc boundary"
     },
     {
@@ -250,7 +255,7 @@
     },
     {
       "path": "internal/store/generated/models.go",
-      "sha256": "b08f838ef2e13d7069dbda38fee48ead1bda2601bb91d2e78174889ed7e19f85",
+      "sha256": "32962325753d6bdb66e20105539248288a1550ad239e938937ae5491a5cd9aa4",
       "role": "generated sqlc boundary"
     },
     {
@@ -645,6 +650,17 @@
       ]
     },
     {
+      "id": "storage-migration-internal-db-migrations-20260704000100-durable-agent-execution-ownership-sql",
+      "label": "proven",
+      "statement": "Migration file \"internal/db/migrations/20260704000100_durable_agent_execution_ownership.sql\" contains a CREATE TABLE statement for table \"agent_executions\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/migrations/20260704000100_durable_agent_execution_ownership.sql"
+        }
+      ]
+    },
+    {
       "id": "storage-query-agent-executions-createagentexecution",
       "label": "proven",
       "statement": "sqlc query \"CreateAgentExecution\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
@@ -656,13 +672,24 @@
       ]
     },
     {
+      "id": "storage-query-agent-executions-getactiveagentexecutionbyrun",
+      "label": "proven",
+      "statement": "sqlc query \"GetActiveAgentExecutionByRun\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql#L25"
+        }
+      ]
+    },
+    {
       "id": "storage-query-agent-executions-getagentexecution",
       "label": "proven",
       "statement": "sqlc query \"GetAgentExecution\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/db/queries/agent_executions.sql#L5"
+          "value": "internal/db/queries/agent_executions.sql#L8"
         }
       ]
     },
@@ -673,7 +700,18 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/db/queries/agent_executions.sql#L11"
+          "value": "internal/db/queries/agent_executions.sql#L14"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-agent-executions-listactiveagentexecutions",
+      "label": "proven",
+      "statement": "sqlc query \"ListActiveAgentExecutions\" (many) declared in \"internal/db/queries/agent_executions.sql\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql#L33"
         }
       ]
     },
@@ -684,7 +722,40 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/db/queries/agent_executions.sql#L8"
+          "value": "internal/db/queries/agent_executions.sql#L11"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-agent-executions-registeragentexecutionprocess",
+      "label": "proven",
+      "statement": "sqlc query \"RegisterAgentExecutionProcess\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql#L39"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-agent-executions-requestagentexecutioncancellation",
+      "label": "proven",
+      "statement": "sqlc query \"RequestAgentExecutionCancellation\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql#L54"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-agent-executions-terminalizeagentexecutioncas",
+      "label": "proven",
+      "statement": "sqlc query \"TerminalizeAgentExecutionCAS\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql#L64"
         }
       ]
     },
@@ -695,7 +766,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/db/queries/agent_executions.sql#L14"
+          "value": "internal/db/queries/agent_executions.sql#L17"
         }
       ]
     },
@@ -887,6 +958,17 @@
       ]
     },
     {
+      "id": "storage-query-domain-agent-executions-getactiveagentexecutionbyrun",
+      "label": "derived",
+      "statement": "sqlc query \"GetActiveAgentExecutionByRun\" belongs to SQL domain \"agent_executions\" by file-path convention.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql"
+        }
+      ]
+    },
+    {
       "id": "storage-query-domain-agent-executions-getagentexecution",
       "label": "derived",
       "statement": "sqlc query \"GetAgentExecution\" belongs to SQL domain \"agent_executions\" by file-path convention.",
@@ -909,9 +991,53 @@
       ]
     },
     {
+      "id": "storage-query-domain-agent-executions-listactiveagentexecutions",
+      "label": "derived",
+      "statement": "sqlc query \"ListActiveAgentExecutions\" belongs to SQL domain \"agent_executions\" by file-path convention.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql"
+        }
+      ]
+    },
+    {
       "id": "storage-query-domain-agent-executions-listagentexecutionsbyrun",
       "label": "derived",
       "statement": "sqlc query \"ListAgentExecutionsByRun\" belongs to SQL domain \"agent_executions\" by file-path convention.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-domain-agent-executions-registeragentexecutionprocess",
+      "label": "derived",
+      "statement": "sqlc query \"RegisterAgentExecutionProcess\" belongs to SQL domain \"agent_executions\" by file-path convention.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-domain-agent-executions-requestagentexecutioncancellation",
+      "label": "derived",
+      "statement": "sqlc query \"RequestAgentExecutionCancellation\" belongs to SQL domain \"agent_executions\" by file-path convention.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-domain-agent-executions-terminalizeagentexecutioncas",
+      "label": "derived",
+      "statement": "sqlc query \"TerminalizeAgentExecutionCAS\" belongs to SQL domain \"agent_executions\" by file-path convention.",
       "evidence": [
         {
           "kind": "source",
@@ -2781,7 +2907,7 @@
     {
       "id": "storage-query-file-internal-db-queries-agent-executions-sql",
       "label": "proven",
-      "statement": "SQL query file \"internal/db/queries/agent_executions.sql\" defines 5 sqlc query declaration(s).",
+      "statement": "SQL query file \"internal/db/queries/agent_executions.sql\" defines 10 sqlc query declaration(s).",
       "evidence": [
         {
           "kind": "source",
@@ -4694,6 +4820,17 @@
       ]
     },
     {
+      "id": "storage-store-wrapper-store-wrapper-method-createownedagentexecution",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"CreateOwnedAgentExecution\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#CreateOwnedAgentExecution"
+        }
+      ]
+    },
+    {
       "id": "storage-store-wrapper-store-wrapper-method-createrepo",
       "label": "proven",
       "statement": "Store wrapper store_wrapper_method \"CreateRepo\" on receiver \"Store\" in \"internal/store/db.go\".",
@@ -4811,6 +4948,17 @@
         {
           "kind": "source",
           "value": "internal/store/db.go#FinishValidationExecution"
+        }
+      ]
+    },
+    {
+      "id": "storage-store-wrapper-store-wrapper-method-getactiveagentexecutionbyrun",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"GetActiveAgentExecutionByRun\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#GetActiveAgentExecutionByRun"
         }
       ]
     },
@@ -4965,6 +5113,17 @@
         {
           "kind": "source",
           "value": "internal/store/db.go#GetRun"
+        }
+      ]
+    },
+    {
+      "id": "storage-store-wrapper-store-wrapper-method-listactiveagentexecutions",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"ListActiveAgentExecutions\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#ListActiveAgentExecutions"
         }
       ]
     },
@@ -5189,6 +5348,28 @@
       ]
     },
     {
+      "id": "storage-store-wrapper-store-wrapper-method-registeragentexecutionprocess",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"RegisterAgentExecutionProcess\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#RegisterAgentExecutionProcess"
+        }
+      ]
+    },
+    {
+      "id": "storage-store-wrapper-store-wrapper-method-requestagentexecutioncancellation",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"RequestAgentExecutionCancellation\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#RequestAgentExecutionCancellation"
+        }
+      ]
+    },
+    {
       "id": "storage-store-wrapper-store-wrapper-method-setreporootenabled",
       "label": "proven",
       "statement": "Store wrapper store_wrapper_method \"SetRepoRootEnabled\" on receiver \"Store\" in \"internal/store/db.go\".",
@@ -5196,6 +5377,17 @@
         {
           "kind": "source",
           "value": "internal/store/db.go#SetRepoRootEnabled"
+        }
+      ]
+    },
+    {
+      "id": "storage-store-wrapper-store-wrapper-method-terminalizeagentexecutioncas",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"TerminalizeAgentExecutionCAS\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#TerminalizeAgentExecutionCAS"
         }
       ]
     },

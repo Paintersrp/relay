@@ -277,7 +277,26 @@ func (h *Handler) ExecuteRun(w http.ResponseWriter, r *http.Request) {
 			"updatedAt":      shared.ParseAndFormatTime(result.Run.UpdatedAt),
 		})
 	case "cancel":
-		shared.Error(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "Cancel action is not yet available for executor dispatch")
+		result, err := h.service.CancelRun(r.Context(), id)
+		if err != nil {
+			if writeRunError(w, err) {
+				return
+			}
+			shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+			return
+		}
+		shared.JSON(w, http.StatusOK, map[string]interface{}{
+			"success":                 true,
+			"runId":                   idStr,
+			"status":                  result.RunStatus,
+			"lifecycleState":          result.LifecycleState,
+			"executionId":             strconv.FormatInt(result.ExecutionID, 10),
+			"executionStatus":         result.ExecutionStatus,
+			"cancellationRequestedAt": result.CancellationRequestedAt,
+			"terminalReason":          result.TerminalReason,
+			"initiated":               result.Initiated,
+			"terminal":                result.Terminal,
+		})
 	case "recover":
 		shared.Error(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "Recover action is not yet available for executor dispatch")
 	default:

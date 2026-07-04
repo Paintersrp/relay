@@ -494,11 +494,18 @@ func (s *Store) GetChecksByRunKind(runID int64, kind string) ([]Check, error) {
 // Agent Executions
 
 func (s *Store) CreateAgentExecution(runID int64, provider, status, commandPreview string) (*AgentExecution, error) {
+	return s.CreateOwnedAgentExecution(runID, provider, status, commandPreview, "", "", "")
+}
+
+func (s *Store) CreateOwnedAgentExecution(runID int64, provider, status, commandPreview, runnerKind, ownerInstanceID, ownershipToken string) (*AgentExecution, error) {
 	exec, err := s.queries.CreateAgentExecution(context.Background(), generated.CreateAgentExecutionParams{
-		RunID:          runID,
-		Provider:       provider,
-		Status:         status,
-		CommandPreview: commandPreview,
+		RunID:           runID,
+		Provider:        provider,
+		Status:          status,
+		CommandPreview:  commandPreview,
+		RunnerKind:      nullString(runnerKind),
+		OwnerInstanceID: nullString(ownerInstanceID),
+		OwnershipToken:  nullString(ownershipToken),
 	})
 	if err != nil {
 		return nil, err
@@ -524,6 +531,108 @@ func (s *Store) GetLatestAgentExecutionByRun(runID int64) (*AgentExecution, erro
 		return nil, err
 	}
 	return &exec, nil
+}
+
+func (s *Store) GetActiveAgentExecutionByRun(runID int64) (*AgentExecution, error) {
+	exec, err := s.queries.GetActiveAgentExecutionByRun(context.Background(), runID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &exec, nil
+}
+
+func (s *Store) ListActiveAgentExecutions() ([]AgentExecution, error) {
+	return s.queries.ListActiveAgentExecutions(context.Background())
+}
+
+type AgentProcessIdentityUpdate struct {
+	ProcessID        int64
+	ProcessGroupID   int64
+	ProcessIdentity  string
+	ProcessStartedAt string
+	StartedAt        string
+	OwnershipToken   string
+}
+
+func (s *Store) RegisterAgentExecutionProcess(id int64, upd AgentProcessIdentityUpdate) (*AgentExecution, bool, error) {
+	exec, err := s.queries.RegisterAgentExecutionProcess(context.Background(), generated.RegisterAgentExecutionProcessParams{
+		ID:               id,
+		ProcessID:        nullInt64(upd.ProcessID),
+		ProcessGroupID:   nullInt64(upd.ProcessGroupID),
+		ProcessIdentity:  nullString(upd.ProcessIdentity),
+		ProcessStartedAt: nullString(upd.ProcessStartedAt),
+		StartedAt:        nullString(upd.StartedAt),
+		OwnershipToken:   nullString(upd.OwnershipToken),
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			current, getErr := s.GetAgentExecution(id)
+			return current, false, getErr
+		}
+		return nil, false, err
+	}
+	return &exec, true, nil
+}
+
+func (s *Store) RequestAgentExecutionCancellation(id int64, requestedAt string) (*AgentExecution, bool, error) {
+	before, _ := s.GetAgentExecution(id)
+	exec, err := s.queries.RequestAgentExecutionCancellation(context.Background(), generated.RequestAgentExecutionCancellationParams{
+		ID:                      id,
+		CancellationRequestedAt: nullString(requestedAt),
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			current, getErr := s.GetAgentExecution(id)
+			return current, false, getErr
+		}
+		return nil, false, err
+	}
+	initiated := before == nil || !before.CancellationRequestedAt.Valid
+	return &exec, initiated, nil
+}
+
+type AgentExecutionTerminalUpdate struct {
+	Status                  string
+	ExitCode                *int64
+	StartedAt               string
+	FinishedAt              string
+	StdoutPath              string
+	StderrPath              string
+	CombinedPath            string
+	ResultPath              string
+	Error                   string
+	CancellationCompletedAt string
+	TerminalReason          string
+	TerminalizedAt          string
+}
+
+func (s *Store) TerminalizeAgentExecutionCAS(id int64, upd AgentExecutionTerminalUpdate) (*AgentExecution, bool, error) {
+	exec, err := s.queries.TerminalizeAgentExecutionCAS(context.Background(), generated.TerminalizeAgentExecutionCASParams{
+		ID:                      id,
+		Status:                  upd.Status,
+		ExitCode:                nullInt64Ptr(upd.ExitCode),
+		StartedAt:               nullString(upd.StartedAt),
+		FinishedAt:              nullString(upd.FinishedAt),
+		StdoutArtifactPath:      nullString(upd.StdoutPath),
+		StderrArtifactPath:      nullString(upd.StderrPath),
+		CombinedArtifactPath:    nullString(upd.CombinedPath),
+		ResultArtifactPath:      nullString(upd.ResultPath),
+		Error:                   nullString(upd.Error),
+		CancellationCompletedAt: nullString(upd.CancellationCompletedAt),
+		TerminalReason:          nullString(upd.TerminalReason),
+		TerminalizedAt:          nullString(upd.TerminalizedAt),
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			current, getErr := s.GetAgentExecution(id)
+			return current, false, getErr
+		}
+		return nil, false, err
+	}
+	return &exec, true, nil
 }
 
 func (s *Store) UpdateAgentExecutionStatus(
@@ -590,6 +699,27 @@ func (s *Store) UpdateAgentExecutionStatus(
 		return nil, err
 	}
 	return &exec, nil
+}
+
+func nullString(value string) sql.NullString {
+	if value == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: value, Valid: true}
+}
+
+func nullInt64(value int64) sql.NullInt64 {
+	if value == 0 {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: value, Valid: true}
+}
+
+func nullInt64Ptr(value *int64) sql.NullInt64 {
+	if value == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: *value, Valid: true}
 }
 
 // Validation Executions

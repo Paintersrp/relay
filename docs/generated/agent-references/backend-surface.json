@@ -30,7 +30,7 @@
     },
     {
       "path": "internal/api/api_test.go",
-      "sha256": "728ebb47586af4aeafd212e9b0b75fb88d1be7a74ae6b90877769d7f74b390b9",
+      "sha256": "b7d668070c88ae5c60af0630c1e11756a741dff1b05db289f0969639e859921d",
       "role": "test"
     },
     {
@@ -245,7 +245,7 @@
     },
     {
       "path": "internal/api/runs/doc.go",
-      "sha256": "fd6fb829e1dec2d547e12bed9259627263d139a15cc90c16597e1fd2335463e5",
+      "sha256": "76c6725ab9fd8b59a267fc4f1608b6f35caea27a5f50bdcf683df8ea4884f97e",
       "role": "source"
     },
     {
@@ -255,7 +255,7 @@
     },
     {
       "path": "internal/api/runs/handler.go",
-      "sha256": "02047467e6add40182e1d7b7b08c9cc5141b0842f7427d8f41ceb7f5a4f06c63",
+      "sha256": "0569c895b6c8b133f3c55764f80b11d1f58c1f4023fc0f287a326ecc5cc036a1",
       "role": "source"
     },
     {
@@ -265,7 +265,7 @@
     },
     {
       "path": "internal/api/runs/routes.go",
-      "sha256": "c4826589811059c986998b17dea88c866d6d674f202fc894fbb2addb6ca0243e",
+      "sha256": "350b631dd4770b9b2c5b6b1fe7b7db54c40e64b7099da51f1b6bd72340082fb5",
       "role": "source"
     },
     {
@@ -560,22 +560,22 @@
     },
     {
       "path": "internal/app/runs/doc.go",
-      "sha256": "5826384076932ba46393f1b9697d460e092d5763d3bccaf7e0cc9e3b6234215f",
+      "sha256": "9b10a720bc25b2c175c5f54e4c13067b984f8d4bf1f2fbfcb86a7e749b3ecd81",
       "role": "source"
     },
     {
       "path": "internal/app/runs/lifecycle.go",
-      "sha256": "03647918410f7b4922959cfdec1809709fe31238a0f220ec38bd62223a798d8c",
+      "sha256": "1bdccb153181b8dd9e787d84dab63af36dcded614ef860c7169b7818b4ba60ae",
       "role": "source"
     },
     {
       "path": "internal/app/runs/service.go",
-      "sha256": "245f124438b677b7dd1bb57f8f8bdbffd667adf7fde9bb1e9d830b9e1141f06a",
+      "sha256": "87e7bfb6bf39648bb462db9ccef7c2ac5c6f14f449f217cfb8068b998a07cfc6",
       "role": "source"
     },
     {
       "path": "internal/app/runs/types.go",
-      "sha256": "0631b18e8df8367a971be32e8adcb1ab66ba4a96fea257730b23f3c4a6b4178d",
+      "sha256": "ef015042f180dcf3e9cf0214160f370f30e4abceb9da6cf880743f6a4eedd35a",
       "role": "source"
     },
     {
@@ -590,7 +590,7 @@
     },
     {
       "path": "internal/mcp/blocker_envelope.go",
-      "sha256": "3eb2264ccffda40f77cd3d3f28747f164eef361f43509c9ddf29329bb760c122",
+      "sha256": "0aff048cd566bd25beacaf4f90c752fb6f72d7317f30ba225f623abcbb5b337b",
       "role": "source"
     },
     {
@@ -615,8 +615,18 @@
     },
     {
       "path": "internal/mcp/deps.go",
-      "sha256": "02c2771e9855a53b2c26170b99c84d7948640e1eb34235d6cd63ac9fd159de2c",
+      "sha256": "122ae9f5bba0e0ae7f592b749a2e48f12e956c363e689e17f1e795a36d3c7035",
       "role": "source"
+    },
+    {
+      "path": "internal/mcp/file_parameter_fetcher.go",
+      "sha256": "5c0099b5e6457987a856c75dbf7bb2fe413ab1c6154b5f86eafc29ef330f6852",
+      "role": "source"
+    },
+    {
+      "path": "internal/mcp/file_parameter_fetcher_test.go",
+      "sha256": "bfe172c1a1dbdb314721885c19f6a02ab91381cef67fd94adcd85072c5daf8f5",
+      "role": "test"
     },
     {
       "path": "internal/mcp/http_handler.go",
@@ -635,12 +645,12 @@
     },
     {
       "path": "internal/mcp/mcp_test.go",
-      "sha256": "cb776444efc716e493700943e71386fde5716596516d5f59ab2ecfca76e2d4d7",
+      "sha256": "64c2231c6fcf971c594e318ce0fe83bbe1a8097b6ca1d66327a57d6831dbf6c6",
       "role": "test"
     },
     {
       "path": "internal/mcp/orchestrator_work_tools.go",
-      "sha256": "f4ecb486ec2c018139e5019abbe835ba4ccef748797b10042253bbf399ac6fb9",
+      "sha256": "6ea05a043751f9822747963e889ae5c5b3144c753fa472100b66445abe4d56f1",
       "role": "source"
     },
     {
@@ -700,7 +710,7 @@
     },
     {
       "path": "internal/mcp/protocol.go",
-      "sha256": "72e46ad20c3a2681b36d212a346659846bf14320df1fa401f56c6ec22eabd4aa",
+      "sha256": "b680a300990c446bba40107c347f779b2d2b6e8ea16e0bccc480ee4797c18f6c",
       "role": "source"
     },
     {
@@ -715,7 +725,7 @@
     },
     {
       "path": "internal/mcp/server.go",
-      "sha256": "a40c21e9030a9538b8219cb24130131a27e3d25bd78f63bc5d1bffff4f76416c",
+      "sha256": "520e62fdfe31fc41279bd4368d01a139eb9c009b0080c51a9a86b7ef6a7af60f",
       "role": "source"
     },
     {
@@ -730,12 +740,12 @@
     },
     {
       "path": "internal/mcp/tool_create_run.go",
-      "sha256": "8613332fac78897b205bea91a81b775f867bc11b609f29759f4e2fe055fc3e63",
+      "sha256": "e80f0afee7357dd8daf001bc5ea4134c5da60549379b13e26852c171ecd61360",
       "role": "source"
     },
     {
       "path": "internal/mcp/tool_create_run_test.go",
-      "sha256": "1fc3b56f371dea370bd490cd5461d96e4f084e8cd8872194f828769f163bfdb6",
+      "sha256": "fbe2d7eceaabd321b453a4def1acda8c05bd62762e76e0b907961bf81cd390b0",
       "role": "test"
     },
     {
@@ -765,8 +775,13 @@
     },
     {
       "path": "internal/mcp/tool_validate_planner_handoff.go",
-      "sha256": "1ba5c69ceea8cce95298427f748c9153bcebfe8a33249a69bf4758d10d332b98",
+      "sha256": "f8a293f087ffec8d206fa578d5549b00e36843fca86821605febb1bd29df43a0",
       "role": "source"
+    },
+    {
+      "path": "internal/store/agent_execution_ownership_test.go",
+      "sha256": "797dde59dd33499064e11b6757afa58f2e1e51eca952ef6943cb6156ab70f31f",
+      "role": "test"
     },
     {
       "path": "internal/store/context_packets.go",
@@ -780,7 +795,7 @@
     },
     {
       "path": "internal/store/db.go",
-      "sha256": "44a032a3af37a60e835568211adc7675b48434da8b422afea5d70f365aeae0d8",
+      "sha256": "9e41bb12ccd32d18f15bd13a07012e0b03e794bec253c99748763f2ca1e9c730",
       "role": "source"
     },
     {
@@ -3123,6 +3138,10 @@
         },
         {
           "kind": "source",
+          "value": "internal/mcp/file_parameter_fetcher.go"
+        },
+        {
+          "kind": "source",
           "value": "internal/mcp/http_handler.go"
         },
         {
@@ -3200,6 +3219,10 @@
         {
           "kind": "test",
           "value": "internal/mcp/context_broker_tools_test.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
         },
         {
           "kind": "test",
@@ -3295,6 +3318,10 @@
         {
           "kind": "source",
           "value": "internal/store/source_snapshots.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/store/agent_execution_ownership_test.go"
         },
         {
           "kind": "test",
@@ -10949,6 +10976,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-runs-func-cancelrun",
+      "label": "proven",
+      "statement": "Exported func CancelRun in internal/app/runs/lifecycle.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/lifecycle.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-runs-func-error",
       "label": "proven",
       "statement": "Exported func Error in internal/app/runs/types.go",
@@ -11048,6 +11086,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-runs-func-reconcileexecutorownership",
+      "label": "proven",
+      "statement": "Exported func ReconcileExecutorOwnership in internal/app/runs/lifecycle.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/lifecycle.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-runs-func-renderbrief",
       "label": "proven",
       "statement": "Exported func RenderBrief in internal/app/runs/lifecycle.go",
@@ -11073,6 +11122,17 @@
       "id": "backend-symbol-internal-app-runs-func-runexists",
       "label": "proven",
       "statement": "Exported func RunExists in internal/app/runs/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-func-setexecutorownerinstanceid",
+      "label": "proven",
+      "statement": "Exported func SetExecutorOwnerInstanceID in internal/app/runs/service.go",
       "evidence": [
         {
           "kind": "source",
@@ -11150,6 +11210,17 @@
       "id": "backend-symbol-internal-app-runs-type-briefresult",
       "label": "proven",
       "statement": "Exported type BriefResult in internal/app/runs/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-type-cancelresult",
+      "label": "proven",
+      "statement": "Exported type CancelResult in internal/app/runs/types.go",
       "evidence": [
         {
           "kind": "source",
@@ -11521,6 +11592,61 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerfiledownloadempty",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerFileDownloadEmpty in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerfiledownloadfailed",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerFileDownloadFailed in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerfiledownloadstatus",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerFileDownloadStatus in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerfiledownloadtoolarge",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerFileDownloadTooLarge in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerfilereferenceinvalid",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerFileReferenceInvalid in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-const-mcpblockerredactionfailed",
       "label": "proven",
       "statement": "Exported const MCPBlockerRedactionFailed in internal/mcp/blocker_envelope.go",
@@ -11612,6 +11738,17 @@
       "id": "backend-symbol-internal-mcp-const-mcpblockerunknownresource",
       "label": "proven",
       "statement": "Exported const MCPBlockerUnknownResource in internal/mcp/blocker_envelope.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/blocker_envelope.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-const-mcpblockerunsafedownloadtarget",
+      "label": "proven",
+      "statement": "Exported const MCPBlockerUnsafeDownloadTarget in internal/mcp/blocker_envelope.go",
       "evidence": [
         {
           "kind": "source",
@@ -11781,6 +11918,28 @@
         {
           "kind": "source",
           "value": "internal/mcp/context_broker_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-func-error-2",
+      "label": "proven",
+      "statement": "Exported func Error in internal/mcp/file_parameter_fetcher.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/file_parameter_fetcher.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-func-fetchplannerhandoff",
+      "label": "proven",
+      "statement": "Exported func FetchPlannerHandoff in internal/mcp/file_parameter_fetcher.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/file_parameter_fetcher.go"
         }
       ]
     },
@@ -12566,6 +12725,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-func-newhttpsfileparameterfetcher",
+      "label": "proven",
+      "statement": "Exported func NewHTTPSFileParameterFetcher in internal/mcp/file_parameter_fetcher.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/file_parameter_fetcher.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-func-newserver",
       "label": "proven",
       "statement": "Exported func NewServer in internal/mcp/server.go",
@@ -12632,6 +12802,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-type-chatgptfilereference",
+      "label": "proven",
+      "statement": "Exported type ChatGPTFileReference in internal/mcp/file_parameter_fetcher.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/file_parameter_fetcher.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-type-clientinfo",
       "label": "proven",
       "statement": "Exported type ClientInfo in internal/mcp/protocol.go",
@@ -12665,6 +12846,39 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-type-fileparametercontent",
+      "label": "proven",
+      "statement": "Exported type FileParameterContent in internal/mcp/file_parameter_fetcher.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/file_parameter_fetcher.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-type-fileparametererror",
+      "label": "proven",
+      "statement": "Exported type FileParameterError in internal/mcp/file_parameter_fetcher.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/file_parameter_fetcher.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-type-fileparameterfetcher",
+      "label": "proven",
+      "statement": "Exported type FileParameterFetcher in internal/mcp/file_parameter_fetcher.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/file_parameter_fetcher.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-type-httphandler",
       "label": "proven",
       "statement": "Exported type HTTPHandler in internal/mcp/http_handler.go",
@@ -12672,6 +12886,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/http_handler.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-type-httpsfileparameterfetcher",
+      "label": "proven",
+      "statement": "Exported type HTTPSFileParameterFetcher in internal/mcp/file_parameter_fetcher.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/file_parameter_fetcher.go"
         }
       ]
     },
@@ -13655,6 +13880,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-store-func-createownedagentexecution",
+      "label": "proven",
+      "statement": "Exported func CreateOwnedAgentExecution in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-store-func-createplanseed",
       "label": "proven",
       "statement": "Exported func CreatePlanSeed in internal/store/plan_seeds.go",
@@ -13922,6 +14158,17 @@
       "id": "backend-symbol-internal-store-func-finishvalidationexecution",
       "label": "proven",
       "statement": "Exported func FinishValidationExecution in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-func-getactiveagentexecutionbyrun",
+      "label": "proven",
+      "statement": "Exported func GetActiveAgentExecutionByRun in internal/store/db.go",
       "evidence": [
         {
           "kind": "source",
@@ -14267,6 +14514,17 @@
         {
           "kind": "source",
           "value": "internal/store/plan_seeds.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-func-listactiveagentexecutions",
+      "label": "proven",
+      "statement": "Exported func ListActiveAgentExecutions in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
         }
       ]
     },
@@ -14810,6 +15068,28 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-store-func-registeragentexecutionprocess",
+      "label": "proven",
+      "statement": "Exported func RegisterAgentExecutionProcess in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-func-requestagentexecutioncancellation",
+      "label": "proven",
+      "statement": "Exported func RequestAgentExecutionCancellation in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-store-func-searchprojectcontextrecords",
       "label": "proven",
       "statement": "Exported func SearchProjectContextRecords in internal/store/project_context_records.go",
@@ -14861,6 +15141,17 @@
         {
           "kind": "source",
           "value": "internal/store/project_context_records.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-func-terminalizeagentexecutioncas",
+      "label": "proven",
+      "statement": "Exported func TerminalizeAgentExecutionCAS in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
         }
       ]
     },
@@ -15099,6 +15390,28 @@
       "id": "backend-symbol-internal-store-type-agentexecution",
       "label": "proven",
       "statement": "Exported type AgentExecution in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-type-agentexecutionterminalupdate",
+      "label": "proven",
+      "statement": "Exported type AgentExecutionTerminalUpdate in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-type-agentprocessidentityupdate",
+      "label": "proven",
+      "statement": "Exported type AgentProcessIdentityUpdate in internal/store/db.go",
       "evidence": [
         {
           "kind": "source",
@@ -20101,6 +20414,127 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetcherdialsvalidatedliteralip",
+      "label": "proven",
+      "statement": "Test function TestHTTPSFileParameterFetcherDialsValidatedLiteralIP in internal/mcp/file_parameter_fetcher_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetchermissingdialtargetfailsclosed",
+      "label": "proven",
+      "statement": "Test function TestHTTPSFileParameterFetcherMissingDialTargetFailsClosed in internal/mcp/file_parameter_fetcher_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetcherreadsboundedexactbytes",
+      "label": "proven",
+      "statement": "Test function TestHTTPSFileParameterFetcherReadsBoundedExactBytes in internal/mcp/file_parameter_fetcher_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetcherredirectlimit",
+      "label": "proven",
+      "statement": "Test function TestHTTPSFileParameterFetcherRedirectLimit in internal/mcp/file_parameter_fetcher_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetcherredirecttargetisindependentlybound",
+      "label": "proven",
+      "statement": "Test function TestHTTPSFileParameterFetcherRedirectTargetIsIndependentlyBound in internal/mcp/file_parameter_fetcher_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetcherrejectsemptyandoversizedbodies",
+      "label": "proven",
+      "statement": "Test function TestHTTPSFileParameterFetcherRejectsEmptyAndOversizedBodies in internal/mcp/file_parameter_fetcher_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetcherrejectsunsaferedirectbeforefollow",
+      "label": "proven",
+      "statement": "Test function TestHTTPSFileParameterFetcherRejectsUnsafeRedirectBeforeFollow in internal/mcp/file_parameter_fetcher_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetcherrejectsunsaferesolvedaddresses",
+      "label": "proven",
+      "statement": "Test function TestHTTPSFileParameterFetcherRejectsUnsafeResolvedAddresses in internal/mcp/file_parameter_fetcher_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetchertransportfailuremappings",
+      "label": "proven",
+      "statement": "Test function TestHTTPSFileParameterFetcherTransportFailureMappings in internal/mcp/file_parameter_fetcher_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetchervalidation",
+      "label": "proven",
+      "statement": "Test function TestHTTPSFileParameterFetcherValidation in internal/mcp/file_parameter_fetcher_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetchervalidationresultcontrolsdialtarget",
+      "label": "proven",
+      "statement": "Test function TestHTTPSFileParameterFetcherValidationResultControlsDialTarget in internal/mcp/file_parameter_fetcher_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testinvalidprofiledefaultstolocaloperator",
       "label": "proven",
       "statement": "Test function TestInvalidProfileDefaultsToLocalOperator in internal/mcp/profile_test.go",
@@ -20508,9 +20942,20 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testplannerhandofffilefailuresaresanitized",
+      "id": "backend-test-internal-mcp-testplannerhandofffilefetcherfailuresaresanitized",
       "label": "proven",
-      "statement": "Test function TestPlannerHandoffFileFailuresAreSanitized in internal/mcp/tool_create_run_test.go",
+      "statement": "Test function TestPlannerHandoffFileFetcherFailuresAreSanitized in internal/mcp/tool_create_run_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/tool_create_run_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testplannerhandofffiletoolsdeclarechatgptfileparameter",
+      "label": "proven",
+      "statement": "Test function TestPlannerHandoffFileToolsDeclareChatGPTFileParameter in internal/mcp/tool_create_run_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -21065,6 +21510,17 @@
         {
           "kind": "test",
           "value": "internal/mcp/server_tools_list_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-store-testagentexecutionownershipcancellationandcas",
+      "label": "proven",
+      "statement": "Test function TestAgentExecutionOwnershipCancellationAndCAS in internal/store/agent_execution_ownership_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/store/agent_execution_ownership_test.go"
         }
       ]
     },

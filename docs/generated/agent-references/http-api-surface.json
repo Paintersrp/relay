@@ -45,12 +45,12 @@
     },
     {
       "path": "internal/api/runs/routes.go",
-      "sha256": "c4826589811059c986998b17dea88c866d6d674f202fc894fbb2addb6ca0243e",
+      "sha256": "350b631dd4770b9b2c5b6b1fe7b7db54c40e64b7099da51f1b6bd72340082fb5",
       "role": "route source"
     },
     {
       "path": "internal/server/routes.go",
-      "sha256": "b8b1b6e9ff8087b505441ef60c0fe569f61332dafd33e568cbf3276f8e8f712b",
+      "sha256": "eb4edda21e2f45a30002985576afad64476dc5a51b03f974c7b9ce6f72c75ffc",
       "role": "route source"
     }
   ],

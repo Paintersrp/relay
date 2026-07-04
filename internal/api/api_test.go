@@ -242,6 +242,54 @@ func TestAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("POST /api/runs/{id}/execute cancel is idempotent and bounded", func(t *testing.T) {
+		cancelRun, err := s.CreateRun(repo.ID, "Cancelable Run", "executor_dispatched", "gpt-4o", "gpt-4o", "main")
+		if err != nil {
+			t.Fatalf("create cancel run: %v", err)
+		}
+		exec, err := s.CreateOwnedAgentExecution(cancelRun.ID, "test", "starting", "secret-preview", "local_process", "owner-old", "token-secret")
+		if err != nil {
+			t.Fatalf("create execution: %v", err)
+		}
+
+		runIDStr := strconv.FormatInt(cancelRun.ID, 10)
+		for i := 0; i < 2; i++ {
+			req := httptest.NewRequest("POST", "/api/runs/"+runIDStr+"/execute", strings.NewReader(`{"action":"cancel"}`))
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("cancel %d expected 200, got %d body=%s", i, w.Code, w.Body.String())
+			}
+			var body map[string]interface{}
+			if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+				t.Fatalf("decode cancel response: %v", err)
+			}
+			if body["executionId"] != strconv.FormatInt(exec.ID, 10) {
+				t.Fatalf("expected executionId %d, got %#v", exec.ID, body["executionId"])
+			}
+			if i == 0 && body["initiated"] != true {
+				t.Fatalf("expected first cancellation to initiate, got %#v", body["initiated"])
+			}
+			if _, ok := body["process_id"]; ok {
+				t.Fatalf("response exposed process_id: %#v", body)
+			}
+			if _, ok := body["ownershipToken"]; ok {
+				t.Fatalf("response exposed ownership token: %#v", body)
+			}
+			if strings.Contains(w.Body.String(), "secret-preview") || strings.Contains(w.Body.String(), "token-secret") {
+				t.Fatalf("response exposed command preview or token: %s", w.Body.String())
+			}
+		}
+
+		latest, err := s.GetAgentExecution(exec.ID)
+		if err != nil {
+			t.Fatalf("reload execution: %v", err)
+		}
+		if latest.Status != "canceled" || !latest.TerminalizedAt.Valid {
+			t.Fatalf("expected canceled terminal execution, got %+v", latest)
+		}
+	})
+
 	t.Run("GET /api/runs/{id} includes bounded provenance and plan context", func(t *testing.T) {
 		createPlan(t, "plan-api-run-provenance")
 

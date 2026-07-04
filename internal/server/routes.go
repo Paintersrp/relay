@@ -126,6 +126,10 @@ func mountProjectRefactorRoutes(r chi.Router, h *api.APIHandler) {
 }
 
 func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handler {
+	return BuildRoutesWithRuntime(s, rs, log, nil, "")
+}
+
+func BuildRoutesWithRuntime(s *store.Store, rs *repos.Service, log *slog.Logger, eventHub *events.Hub, ownerInstanceID string) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.Logger)
@@ -138,7 +142,9 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	mcpHandler := mcp.NewHTTPHandler(mcpSrv, log)
 	r.Handle("/mcp", mcpHandler)
 
-	eventHub := events.NewHub(log)
+	if eventHub == nil {
+		eventHub = events.NewHub(log)
+	}
 
 	// JSON API adapter routes
 	apiH := api.NewAPIHandler(s, log, eventHub)
@@ -149,6 +155,7 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 	driftSvc := appdrift.NewService(planSvc, appdrift.NewReviewerFromEnv(log), log)
 	planH := plansapi.NewHandler(planSvc, planWorkSvc, driftSvc)
 	runSvc := appruns.NewService(s, log, eventHub)
+	runSvc.SetExecutorOwnerInstanceID(ownerInstanceID)
 	runH := runsapi.NewHandler(runSvc, planLifecycleSvc)
 	artifactH := artifactsapi.NewHandler(runSvc)
 	intakeH := intakeapi.NewHandler(appintake.NewService(s), runSvc)

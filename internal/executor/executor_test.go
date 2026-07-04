@@ -744,8 +744,8 @@ func TestDispatchBrief_CodexIntegrationWritesArtifact(t *testing.T) {
 	if recordedBin != "codex" {
 		t.Errorf("expected runner binary codex, got %s", recordedBin)
 	}
-	if exec.Status != "completed" {
-		t.Errorf("expected exec status completed, got %s", exec.Status)
+	if exec.Status != ExecutionStatusSucceeded {
+		t.Errorf("expected exec status %s, got %s", ExecutionStatusSucceeded, exec.Status)
 	}
 
 	run, _ := s.GetRun(runID)
@@ -992,8 +992,8 @@ func TestDispatchBrief_AntigravityJSONErrorWritesExecutorResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get execution: %v", err)
 	}
-	if exec.Status != "completed" {
-		t.Errorf("expected exec status completed, got %s", exec.Status)
+	if exec.Status != ExecutionStatusSucceeded {
+		t.Errorf("expected exec status %s, got %s", ExecutionStatusSucceeded, exec.Status)
 	}
 
 	run, _ := s.GetRun(runID)

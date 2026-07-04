@@ -93,6 +93,18 @@ type ExecuteResult struct {
 	Run store.Run
 }
 
+type CancelResult struct {
+	RunStatus               string
+	RunID                   int64
+	ExecutionID             int64
+	ExecutionStatus         string
+	CancellationRequestedAt string
+	TerminalReason          string
+	LifecycleState          string
+	Initiated               bool
+	Terminal                bool
+}
+
 // ValidateResult carries the outcome of a validate operation.
 type ValidateResult struct {
 	ValidationStatus string

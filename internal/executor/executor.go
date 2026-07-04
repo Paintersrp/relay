@@ -59,14 +59,16 @@ var knownSecrets = []string{
 }
 
 type DispatchParams struct {
-	Store       *store.Store
-	Log         *slog.Logger
-	EventHub    *events.Hub
-	RunID       int64
-	Adapter     ExecutorAdapter
-	Preflight   func(ExecutorInvocation) ExecutorPreflightResult
-	RunAgentCmd func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult
-	LaunchAsync func(func())
+	Store           *store.Store
+	Log             *slog.Logger
+	EventHub        *events.Hub
+	RunID           int64
+	OwnerInstanceID string
+	ProcessControl  pipeline.ProcessController
+	Adapter         ExecutorAdapter
+	Preflight       func(ExecutorInvocation) ExecutorPreflightResult
+	RunAgentCmd     func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult
+	LaunchAsync     func(func())
 }
 
 type DispatchResult struct {
@@ -103,6 +105,20 @@ func (p *DispatchParams) launcher() func(func()) {
 		return p.LaunchAsync
 	}
 	return func(fn func()) { go fn() }
+}
+
+func (p *DispatchParams) ownerInstanceID() string {
+	if p.OwnerInstanceID != "" {
+		return p.OwnerInstanceID
+	}
+	return NewOwnerInstanceID()
+}
+
+func (p *DispatchParams) processController() pipeline.ProcessController {
+	if p.ProcessControl != nil {
+		return p.ProcessControl
+	}
+	return pipeline.DefaultProcessController()
 }
 
 func publishRunEvent(hub *events.Hub, runID int64, kind, source, status string) {
@@ -392,6 +408,7 @@ func runBackgroundDispatch(
 	p *DispatchParams,
 	runID int64,
 	execID int64,
+	ownershipToken string,
 	invocation ExecutorInvocation,
 	adapter ExecutorAdapter,
 	repo *store.Repo,
@@ -402,8 +419,6 @@ func runBackgroundDispatch(
 	runner := p.runner()
 
 	startedAt := executionTimestampNow()
-	s.UpdateAgentExecutionStatus(execID, "running", nil, &startedAt, nil, nil, nil, nil, nil, nil)
-	publishRunEvent(hub, runID, events.KindStepAgent, "executor", "running")
 	createEvent(s, runID, "info", "Executor dispatched: "+invocation.Preview)
 
 	deleteExecutorArtifacts(s, runID)
@@ -493,6 +508,21 @@ func runBackgroundDispatch(
 					stream.emitProgressEvent(s, runID, ev)
 				}
 			},
+			OnProcessStarted: func(identity pipeline.ProcessIdentity) {
+				startedAt = executionTimestampNow()
+				if _, won, err := s.RegisterAgentExecutionProcess(execID, store.AgentProcessIdentityUpdate{
+					ProcessID:        int64(identity.PID),
+					ProcessGroupID:   int64(identity.GroupID),
+					ProcessIdentity:  identity.Encode(),
+					ProcessStartedAt: identity.StartedAt,
+					StartedAt:        startedAt,
+					OwnershipToken:   ownershipToken,
+				}); err != nil {
+					stream.recordWriteError("register_process_identity", err)
+				} else if won {
+					publishRunEvent(hub, runID, events.KindStepAgent, "executor", "running")
+				}
+			},
 		},
 	)
 
@@ -521,10 +551,38 @@ func runBackgroundDispatch(
 		recordExecutorArtifact(s, runID, ArtifactKindCommandLog, combinedPath, "text/plain")
 	}
 
-	if ctx.Err() != nil {
-		l.Info("executor: context canceled before finalization", "run_id", runID, "exec_id", execID)
-		createEvent(s, runID, "warn", "Executor execution canceled")
-		publishRunEvent(hub, runID, events.KindStepAgent, "executor", "canceled")
+	currentExec, _ := s.GetAgentExecution(execID)
+	if currentExec != nil && currentExec.CancellationRequestedAt.Valid {
+		collectAndPersistGitEvidence(s, runID, repo.Path)
+		finishedStr := runResult.FinishedAt.Format(time.RFC3339Nano)
+		ec := int64(runResult.ExitCode)
+		if runResult.TimedOut {
+			ec = -2
+		}
+		errMsg := strings.TrimSpace(runResult.Error)
+		if errMsg == "" && ctx.Err() != nil {
+			errMsg = "executor cancellation requested"
+		}
+		_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
+			Status:                  ExecutionStatusCanceled,
+			Reason:                  TerminalReasonCanceled,
+			ExitCode:                &ec,
+			StartedAt:               startedAt,
+			FinishedAt:              finishedStr,
+			StdoutPath:              stdoutPath,
+			StderrPath:              stderrPath,
+			CombinedPath:            combinedPath,
+			Error:                   errMsg,
+			CancellationCompletedAt: finishedStr,
+			EventLevel:              "warn",
+			EventMessage:            "Executor canceled by operator request",
+			StepEventStatus:         "canceled",
+			RunStatus:               StatusExecutorBlocked,
+			RunEventStatus:          "blocked",
+		})
+		if err != nil {
+			l.Error("executor: terminalize canceled execution", "run_id", runID, "exec_id", execID, "error", err)
+		}
 		return
 	}
 
@@ -532,19 +590,33 @@ func runBackgroundDispatch(
 		ec := int64(-2)
 		finishedStr := runResult.FinishedAt.Format(time.RFC3339Nano)
 		errMsg := "executor timed out"
-		s.UpdateAgentExecutionStatus(execID, "failed", &ec, &startedAt, &finishedStr, &stdoutPath, &stderrPath, &combinedPath, nil, &errMsg)
-		createEvent(s, runID, "warn", "Executor timed out")
-		publishRunEvent(hub, runID, events.KindStepAgent, "executor", "timed_out")
-		updateRunStatus(s, runID, StatusExecutorBlocked)
-		publishRunEvent(hub, runID, events.KindRunSummary, "executor", "blocked")
+		_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
+			Status:          ExecutionStatusTimedOut,
+			Reason:          TerminalReasonTimedOut,
+			ExitCode:        &ec,
+			StartedAt:       startedAt,
+			FinishedAt:      finishedStr,
+			StdoutPath:      stdoutPath,
+			StderrPath:      stderrPath,
+			CombinedPath:    combinedPath,
+			Error:           errMsg,
+			EventLevel:      "warn",
+			EventMessage:    "Executor timed out",
+			StepEventStatus: "timed_out",
+			RunStatus:       StatusExecutorBlocked,
+			RunEventStatus:  "blocked",
+		})
+		if err != nil {
+			l.Error("executor: terminalize timed out execution", "run_id", runID, "exec_id", execID, "error", err)
+		}
 		return
 	}
 
 	finishedStr := runResult.FinishedAt.Format(time.RFC3339Nano)
 	ec := int64(runResult.ExitCode)
-	execStatus := "completed"
+	execStatus := ExecutionStatusSucceeded
 	if runResult.ExitCode != 0 {
-		execStatus = "failed"
+		execStatus = ExecutionStatusFailed
 	}
 
 	errMsg := runResult.Error
@@ -561,8 +633,6 @@ func runBackgroundDispatch(
 		errPtr = &errMsg
 	}
 
-	s.UpdateAgentExecutionStatus(execID, execStatus, &ec, &startedAt, &finishedStr, &stdoutPath, &stderrPath, &combinedPath, nil, errPtr)
-
 	if invocation.RequireZeroExit && runResult.ExitCode != 0 {
 		blocker := strings.TrimSpace(runResult.Error)
 		if blocker == "" {
@@ -573,10 +643,26 @@ func runBackgroundDispatch(
 		if resultPath != "" {
 			recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
 		}
-		createEvent(s, runID, "warn", "Executor blocked: "+blocker)
-		publishRunEvent(hub, runID, events.KindStepAgent, "executor", "blocked")
-		updateRunStatus(s, runID, StatusExecutorBlocked)
-		publishRunEvent(hub, runID, events.KindRunSummary, "executor", "blocked")
+		_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
+			Status:          execStatus,
+			Reason:          TerminalReasonFailed,
+			ExitCode:        &ec,
+			StartedAt:       startedAt,
+			FinishedAt:      finishedStr,
+			StdoutPath:      stdoutPath,
+			StderrPath:      stderrPath,
+			CombinedPath:    combinedPath,
+			ResultPath:      resultPath,
+			Error:           nonEmpty(errPtr),
+			EventLevel:      "warn",
+			EventMessage:    "Executor blocked: " + blocker,
+			StepEventStatus: "blocked",
+			RunStatus:       StatusExecutorBlocked,
+			RunEventStatus:  "blocked",
+		})
+		if err != nil {
+			l.Error("executor: terminalize failed execution", "run_id", runID, "exec_id", execID, "error", err)
+		}
 		return
 	}
 
@@ -601,8 +687,9 @@ func runBackgroundDispatch(
 		if normalizationInput != "" {
 			res := adapter.NormalizeResult(normalizationInput)
 
+			resultPath := ""
 			if res.ExecutorResultText != "" {
-				resultPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte(res.ExecutorResultText))
+				resultPath, _ = writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte(res.ExecutorResultText))
 				if resultPath != "" {
 					recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
 				}
@@ -610,20 +697,67 @@ func runBackgroundDispatch(
 
 			switch res.Status {
 			case pipeline.AgentResultDone:
-				createEvent(s, runID, "info", "Executor completed: DONE")
-				publishRunEvent(hub, runID, events.KindStepAgent, "executor", "done")
-				updateRunStatus(s, runID, StatusExecutorDone)
-				publishRunEvent(hub, runID, events.KindRunSummary, "executor", "done")
+				_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
+					Status:          execStatus,
+					Reason:          TerminalReasonSucceeded,
+					ExitCode:        &ec,
+					StartedAt:       startedAt,
+					FinishedAt:      finishedStr,
+					StdoutPath:      stdoutPath,
+					StderrPath:      stderrPath,
+					CombinedPath:    combinedPath,
+					ResultPath:      resultPath,
+					Error:           nonEmpty(errPtr),
+					EventMessage:    "Executor completed: DONE",
+					StepEventStatus: "done",
+					RunStatus:       StatusExecutorDone,
+					RunEventStatus:  "done",
+				})
+				if err != nil {
+					l.Error("executor: terminalize succeeded execution", "run_id", runID, "exec_id", execID, "error", err)
+				}
 			case pipeline.AgentResultBlocked:
-				createEvent(s, runID, "warn", "Executor blocked: "+res.BlockerText)
-				publishRunEvent(hub, runID, events.KindStepAgent, "executor", "blocked")
-				updateRunStatus(s, runID, StatusExecutorBlocked)
-				publishRunEvent(hub, runID, events.KindRunSummary, "executor", "blocked")
+				_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
+					Status:          execStatus,
+					Reason:          TerminalReasonFailed,
+					ExitCode:        &ec,
+					StartedAt:       startedAt,
+					FinishedAt:      finishedStr,
+					StdoutPath:      stdoutPath,
+					StderrPath:      stderrPath,
+					CombinedPath:    combinedPath,
+					ResultPath:      resultPath,
+					Error:           nonEmpty(errPtr),
+					EventLevel:      "warn",
+					EventMessage:    "Executor blocked: " + res.BlockerText,
+					StepEventStatus: "blocked",
+					RunStatus:       StatusExecutorBlocked,
+					RunEventStatus:  "blocked",
+				})
+				if err != nil {
+					l.Error("executor: terminalize blocked execution", "run_id", runID, "exec_id", execID, "error", err)
+				}
 			default:
-				createEvent(s, runID, "warn", res.ParseError)
-				publishRunEvent(hub, runID, events.KindStepAgent, "executor", "parse_failed")
-				updateRunStatus(s, runID, StatusExecutorBlocked)
-				publishRunEvent(hub, runID, events.KindRunSummary, "executor", "blocked")
+				_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
+					Status:          ExecutionStatusFailed,
+					Reason:          TerminalReasonFailed,
+					ExitCode:        &ec,
+					StartedAt:       startedAt,
+					FinishedAt:      finishedStr,
+					StdoutPath:      stdoutPath,
+					StderrPath:      stderrPath,
+					CombinedPath:    combinedPath,
+					ResultPath:      resultPath,
+					Error:           res.ParseError,
+					EventLevel:      "warn",
+					EventMessage:    res.ParseError,
+					StepEventStatus: "parse_failed",
+					RunStatus:       StatusExecutorBlocked,
+					RunEventStatus:  "blocked",
+				})
+				if err != nil {
+					l.Error("executor: terminalize parse failed execution", "run_id", runID, "exec_id", execID, "error", err)
+				}
 			}
 			return
 		}
@@ -633,10 +767,33 @@ func runBackgroundDispatch(
 	if resultPath != "" {
 		recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
 	}
-	createEvent(s, runID, "warn", "Executor completed with no stdout")
-	publishRunEvent(hub, runID, events.KindStepAgent, "executor", "no_output")
-	updateRunStatus(s, runID, StatusExecutorBlocked)
-	publishRunEvent(hub, runID, events.KindRunSummary, "executor", "blocked")
+	_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
+		Status:          ExecutionStatusFailed,
+		Reason:          TerminalReasonFailed,
+		ExitCode:        &ec,
+		StartedAt:       startedAt,
+		FinishedAt:      finishedStr,
+		StdoutPath:      stdoutPath,
+		StderrPath:      stderrPath,
+		CombinedPath:    combinedPath,
+		ResultPath:      resultPath,
+		Error:           "no stdout captured from executor",
+		EventLevel:      "warn",
+		EventMessage:    "Executor completed with no stdout",
+		StepEventStatus: "no_output",
+		RunStatus:       StatusExecutorBlocked,
+		RunEventStatus:  "blocked",
+	})
+	if err != nil {
+		l.Error("executor: terminalize no output execution", "run_id", runID, "exec_id", execID, "error", err)
+	}
+}
+
+func nonEmpty(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }
 
 func getRepoWorkspacePath(s *store.Store, runID int64) (*store.Repo, error) {
@@ -733,8 +890,8 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 		return DispatchResult{}, fmt.Errorf("invocation build failed: %w", err)
 	}
 
-	existingExec, err := s.GetLatestAgentExecutionByRun(runID)
-	if err == nil && existingExec != nil && (existingExec.Status == "starting" || existingExec.Status == "running") {
+	existingExec, err := s.GetActiveAgentExecutionByRun(runID)
+	if err == nil && existingExec != nil {
 		createEvent(s, runID, "warn", "Executor dispatch blocked: an execution is already running")
 		publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
 		return DispatchResult{}, fmt.Errorf("an execution is already running for this run")
@@ -746,7 +903,9 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 		return DispatchResult{Dispatched: false}, fmt.Errorf("executor preflight failed: %s", preflightRes.BlockerText)
 	}
 
-	exec, err := s.CreateAgentExecution(runID, string(adapter.ID()), "starting", invocation.Preview)
+	ownerID := p.ownerInstanceID()
+	ownershipToken := newOwnershipToken()
+	exec, err := s.CreateOwnedAgentExecution(runID, string(adapter.ID()), ExecutionStatusStarting, invocation.Preview, "local_process", ownerID, ownershipToken)
 	if err != nil {
 		createEvent(s, runID, "warn", "Executor dispatch blocked: failed to create execution record: "+err.Error())
 		publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
@@ -756,6 +915,13 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 	l.Info("executor: dispatching from executor_brief.md", "run_id", runID, "exec_id", exec.ID, "model", invocation.Model)
 
 	commandCtx, cancel := context.WithCancel(context.Background())
+	globalRuntimeRegistry.put(runtimeHandle{
+		execID:         exec.ID,
+		runID:          runID,
+		ownershipToken: ownershipToken,
+		cancel:         cancel,
+		controller:     p.processController(),
+	})
 
 	createEvent(s, runID, "info", "Executor dispatched from executor_brief.md")
 	publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "starting")
@@ -764,7 +930,8 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 	publishRunEvent(p.EventHub, runID, events.KindRunSummary, "executor", "dispatched")
 
 	p.launcher()(func() {
-		runBackgroundDispatch(commandCtx, p, runID, exec.ID, invocation, adapter, repo)
+		defer globalRuntimeRegistry.delete(exec.ID)
+		runBackgroundDispatch(commandCtx, p, runID, exec.ID, ownershipToken, invocation, adapter, repo)
 	})
 
 	return DispatchResult{

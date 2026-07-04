@@ -27,7 +27,7 @@ Schema version: `1.0.0`
 | --- | --- | --- |
 | `docs/backend-code-surface-map.md` | `f3eb4c9e1fdfc1d4ea3f38dc7f4cac8dc5611b78dc9ce6bcb73542f44afc1382` | manual map |
 | `internal/api/api.go` | `344edea0bf5ff8e9af5788b8a88e6b0ad05b301c484703bed81932610fd52086` | source |
-| `internal/api/api_test.go` | `728ebb47586af4aeafd212e9b0b75fb88d1be7a74ae6b90877769d7f74b390b9` | test |
+| `internal/api/api_test.go` | `b7d668070c88ae5c60af0630c1e11756a741dff1b05db289f0969639e859921d` | test |
 | `internal/api/artifacts/doc.go` | `65f3caf6725ec4f881de4cc245e27fb7bbc54ab509343b131ff71dda2ddbf52a` | source |
 | `internal/api/artifacts/handler.go` | `77ee5f16b29fa2ea05d7a5be7afb4265e691ea85d8e3c362412889023fc97f78` | source |
 | `internal/api/artifacts/handler_test.go` | `6397aec03d7b98d79bf1f8a0ee0c2a068cf68cd44a4226cbcea61c324622a57a` | test |
@@ -70,11 +70,11 @@ Schema version: `1.0.0`
 | `internal/api/refactor_backlog_test.go` | `8a27785797534d8d540b1f711ddfdcc3d59c73e9a7b9f3322568d31c30b19790` | test |
 | `internal/api/refactors.go` | `8687f14cab937fa48be69c1d5fd7ef90521f44659bc0f74a164164cc01b4cc18` | source |
 | `internal/api/refactors_test.go` | `3d609eb5dadc7cb38fb19653757c0ff282f2acad9bfad010d78890a0ab28962b` | test |
-| `internal/api/runs/doc.go` | `fd6fb829e1dec2d547e12bed9259627263d139a15cc90c16597e1fd2335463e5` | source |
+| `internal/api/runs/doc.go` | `76c6725ab9fd8b59a267fc4f1608b6f35caea27a5f50bdcf683df8ea4884f97e` | source |
 | `internal/api/runs/dto.go` | `3beed0ac9d25e290259744cc788cdab4c91caa9d7a8856ef28557d43e2d4d7e1` | source |
-| `internal/api/runs/handler.go` | `02047467e6add40182e1d7b7b08c9cc5141b0842f7427d8f41ceb7f5a4f06c63` | source |
+| `internal/api/runs/handler.go` | `0569c895b6c8b133f3c55764f80b11d1f58c1f4023fc0f287a326ecc5cc036a1` | source |
 | `internal/api/runs/presenter.go` | `ca03a9b4fa9ab1e2bb0b6814f46237ee892a5ef2482b2dde3bb719ee6cc52bb2` | source |
-| `internal/api/runs/routes.go` | `c4826589811059c986998b17dea88c866d6d674f202fc894fbb2addb6ca0243e` | source |
+| `internal/api/runs/routes.go` | `350b631dd4770b9b2c5b6b1fe7b7db54c40e64b7099da51f1b6bd72340082fb5` | source |
 | `internal/api/shared/doc.go` | `af8bd8002ec78c84f55e220452afbc9290bb1c0cf11c800990e1e762f2ebf2a2` | source |
 | `internal/api/shared/middleware.go` | `2a7f8f63272125b4b60753ce914b8bbe4ee801991a15dbeb837f36e9092cea23` | source |
 | `internal/api/shared/request.go` | `ccf33d8bbcec46b27d552adcdb47f431886368b6d7f1b7b1c2eedf256ddf1efa` | source |
@@ -133,23 +133,25 @@ Schema version: `1.0.0`
 | `internal/app/projects/types.go` | `aa1a3676eb8d2b540abf3122d768c98381c50c4d2e575ab322d64aca2aed76b2` | source |
 | `internal/app/projects/validator.go` | `4201311ea95bdecb0ebaae7852a23cbaf805874a29f3b65fb336778da82797e3` | source |
 | `internal/app/projects/validator_test.go` | `5460991238917a7d12ff146fe1fcb4bbd7bcaa77df6e349d0710699f8e839888` | test |
-| `internal/app/runs/doc.go` | `5826384076932ba46393f1b9697d460e092d5763d3bccaf7e0cc9e3b6234215f` | source |
-| `internal/app/runs/lifecycle.go` | `03647918410f7b4922959cfdec1809709fe31238a0f220ec38bd62223a798d8c` | source |
-| `internal/app/runs/service.go` | `245f124438b677b7dd1bb57f8f8bdbffd667adf7fde9bb1e9d830b9e1141f06a` | source |
-| `internal/app/runs/types.go` | `0631b18e8df8367a971be32e8adcb1ab66ba4a96fea257730b23f3c4a6b4178d` | source |
+| `internal/app/runs/doc.go` | `9b10a720bc25b2c175c5f54e4c13067b984f8d4bf1f2fbfcb86a7e749b3ecd81` | source |
+| `internal/app/runs/lifecycle.go` | `1bdccb153181b8dd9e787d84dab63af36dcded614ef860c7169b7818b4ba60ae` | source |
+| `internal/app/runs/service.go` | `87e7bfb6bf39648bb462db9ccef7c2ac5c6f14f449f217cfb8068b998a07cfc6` | source |
+| `internal/app/runs/types.go` | `ef015042f180dcf3e9cf0214160f370f30e4abceb9da6cf880743f6a4eedd35a` | source |
 | `internal/mcp/artifact_readback_tools.go` | `c7712711b76eb824c71b1184c44f5b119adf0d656e8f78a0e9052ccf9a1487a8` | source |
 | `internal/mcp/artifact_readback_tools_test.go` | `a14651943ba8529dfede8a928c07eddacdf5381bf5ce37a6f4bc25187c4db005` | test |
-| `internal/mcp/blocker_envelope.go` | `3eb2264ccffda40f77cd3d3f28747f164eef361f43509c9ddf29329bb760c122` | source |
+| `internal/mcp/blocker_envelope.go` | `0aff048cd566bd25beacaf4f90c752fb6f72d7317f30ba225f623abcbb5b337b` | source |
 | `internal/mcp/blocker_envelope_test.go` | `6830987aa8b5d25db4929797dce1b742d03cb37dcd1aaefdd02acb1c26a52e0a` | test |
 | `internal/mcp/context_broker_git_tools.go` | `e8f7f942f10ee58aa9ed10cfa85995c9ba4c0b36fd7ca9aaca821fc51cfd4b7a` | source |
 | `internal/mcp/context_broker_tools.go` | `ec4994285c043f442dcceae02fe308917531c998899a6335a1282356b917bd58` | source |
 | `internal/mcp/context_broker_tools_test.go` | `50ed1fb09bfa42c9404dea8aa7f34449cc6c4a2a4434c79a736426247e693cef` | test |
-| `internal/mcp/deps.go` | `02c2771e9855a53b2c26170b99c84d7948640e1eb34235d6cd63ac9fd159de2c` | source |
+| `internal/mcp/deps.go` | `122ae9f5bba0e0ae7f592b749a2e48f12e956c363e689e17f1e795a36d3c7035` | source |
+| `internal/mcp/file_parameter_fetcher.go` | `5c0099b5e6457987a856c75dbf7bb2fe413ab1c6154b5f86eafc29ef330f6852` | source |
+| `internal/mcp/file_parameter_fetcher_test.go` | `bfe172c1a1dbdb314721885c19f6a02ab91381cef67fd94adcd85072c5daf8f5` | test |
 | `internal/mcp/http_handler.go` | `490414d00c581a709bf44c232dccd0d2ddde1b03bd6a1bd2d94b520025065d7c` | source |
 | `internal/mcp/http_handler_test.go` | `d4123f4eb0d57eb765ace044fd0520be59c70193119175145a7d9d831b84d69a` | test |
 | `internal/mcp/local_audit_tools.go` | `dcdb5b2485267f170781711640de73fa3b1d99c7ed52b088d68a147cf5bbade1` | source |
-| `internal/mcp/mcp_test.go` | `cb776444efc716e493700943e71386fde5716596516d5f59ab2ecfca76e2d4d7` | test |
-| `internal/mcp/orchestrator_work_tools.go` | `f4ecb486ec2c018139e5019abbe835ba4ccef748797b10042253bbf399ac6fb9` | source |
+| `internal/mcp/mcp_test.go` | `64c2231c6fcf971c594e318ce0fe83bbe1a8097b6ca1d66327a57d6831dbf6c6` | test |
+| `internal/mcp/orchestrator_work_tools.go` | `6ea05a043751f9822747963e889ae5c5b3144c753fa472100b66445abe4d56f1` | source |
 | `internal/mcp/orchestrator_work_tools_test.go` | `dbe5b3f19df9e719fdd78d62ba458808f627d9e9ffa30f948799e8fb1e731801` | test |
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | source |
 | `internal/mcp/plan_attempt_tools_test.go` | `84e4da35631efe508d230719d5aac87e46a639529d6a29b9f5b8c44935455cbd` | test |
@@ -161,23 +163,24 @@ Schema version: `1.0.0`
 | `internal/mcp/profile_test.go` | `95e95c279c7dcf977a971d122e6a41fb7e362e7ba5cf63f6796389dfd3ba0ef5` | test |
 | `internal/mcp/project_context_memory_tools.go` | `2f342e8ed7c0154131fd5e04a3d40a9129c9f74d477f742428df2ec75f274d8d` | source |
 | `internal/mcp/project_context_memory_tools_test.go` | `57e1f70d298e7a24bfe169f938d871fb4981f3516e81cd42824ef9ebcd8a357a` | test |
-| `internal/mcp/protocol.go` | `72e46ad20c3a2681b36d212a346659846bf14320df1fa401f56c6ec22eabd4aa` | source |
+| `internal/mcp/protocol.go` | `b680a300990c446bba40107c347f779b2d2b6e8ea16e0bccc480ee4797c18f6c` | source |
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | source |
 | `internal/mcp/refactor_backlog_tools_test.go` | `80dab3bab0e3240676606dccc6c218d8b10bc6a2b09975e9cca552d67dec4b05` | test |
-| `internal/mcp/server.go` | `a40c21e9030a9538b8219cb24130131a27e3d25bd78f63bc5d1bffff4f76416c` | source |
+| `internal/mcp/server.go` | `520e62fdfe31fc41279bd4368d01a139eb9c009b0080c51a9a86b7ef6a7af60f` | source |
 | `internal/mcp/server_notification_test.go` | `a0da26840ec83cdec144a3fc74a92d407c4facb8054ae439107130a0884c1208` | test |
 | `internal/mcp/server_tools_list_test.go` | `4bb1163a046646181f8cedfaed435b64b464bd41b5d0b874ef71db8c1e7f5104` | test |
-| `internal/mcp/tool_create_run.go` | `8613332fac78897b205bea91a81b775f867bc11b609f29759f4e2fe055fc3e63` | source |
-| `internal/mcp/tool_create_run_test.go` | `1fc3b56f371dea370bd490cd5461d96e4f084e8cd8872194f828769f163bfdb6` | test |
+| `internal/mcp/tool_create_run.go` | `e80f0afee7357dd8daf001bc5ea4134c5da60549379b13e26852c171ecd61360` | source |
+| `internal/mcp/tool_create_run_test.go` | `fbe2d7eceaabd321b453a4def1acda8c05bd62762e76e0b907961bf81cd390b0` | test |
 | `internal/mcp/tool_get_run_status.go` | `730691b5fd5d5aa1f99dd7b32a61163ac19354774694cb6a1bdb65cf45074f13` | source |
 | `internal/mcp/tool_list_runs.go` | `8c9be8897fb0fe5fee3862ea0629e855f130626412e34daa4b3b9e54af6c5f85` | source |
 | `internal/mcp/tool_submit_audit.go` | `2aaf19f4789d5a305a5813d3d7b24cb73455233a654b326945246f82f418cd27` | source |
 | `internal/mcp/tool_surface_test.go` | `d04261b6adfb0a5d6c50c2efc106f82281711c1f788ae897f9713e0872c6b3b4` | test |
 | `internal/mcp/tool_test_audit_packet.go` | `4f4a99672a360621c8717a2596c81558881153f85ddffbedda681f60dea85b01` | source |
-| `internal/mcp/tool_validate_planner_handoff.go` | `1ba5c69ceea8cce95298427f748c9153bcebfe8a33249a69bf4758d10d332b98` | source |
+| `internal/mcp/tool_validate_planner_handoff.go` | `f8a293f087ffec8d206fa578d5549b00e36843fca86821605febb1bd29df43a0` | source |
+| `internal/store/agent_execution_ownership_test.go` | `797dde59dd33499064e11b6757afa58f2e1e51eca952ef6943cb6156ab70f31f` | test |
 | `internal/store/context_packets.go` | `7a5855b46da5d63a09cb54698cb4045a919615973af9eedd6fb27523e3f92187` | source |
 | `internal/store/context_packets_test.go` | `8a14adcc8f674b7bd1ca7dd9b689ae0b71f55cb42a702f401262822e3f83830f` | test |
-| `internal/store/db.go` | `44a032a3af37a60e835568211adc7675b48434da8b422afea5d70f365aeae0d8` | source |
+| `internal/store/db.go` | `9e41bb12ccd32d18f15bd13a07012e0b03e794bec253c99748763f2ca1e9c730` | source |
 | `internal/store/local_audits.go` | `30723cecfb2d40df733045efb63af3c71623e568480e44b0b99a12cacce11ec0` | source |
 | `internal/store/migration_compatibility_test.go` | `70a7d2d3a645ecf2f8c914dbeebaf6efc6ada45e36c2226ec2e43501b356d777` | test |
 | `internal/store/plan_seeds.go` | `78ea1e694f7dcb1f93476073cc01cca935e26a51f03d02744167932fb19f5a76` | source |
@@ -1666,6 +1669,7 @@ Evidence:
 - source: `internal/mcp/context_broker_git_tools.go`
 - source: `internal/mcp/context_broker_tools.go`
 - source: `internal/mcp/deps.go`
+- source: `internal/mcp/file_parameter_fetcher.go`
 - source: `internal/mcp/http_handler.go`
 - source: `internal/mcp/local_audit_tools.go`
 - source: `internal/mcp/orchestrator_work_tools.go`
@@ -1686,6 +1690,7 @@ Evidence:
 - test: `internal/mcp/artifact_readback_tools_test.go`
 - test: `internal/mcp/blocker_envelope_test.go`
 - test: `internal/mcp/context_broker_tools_test.go`
+- test: `internal/mcp/file_parameter_fetcher_test.go`
 - test: `internal/mcp/http_handler_test.go`
 - test: `internal/mcp/mcp_test.go`
 - test: `internal/mcp/orchestrator_work_tools_test.go`
@@ -1715,6 +1720,7 @@ Evidence:
 - source: `internal/store/refactor_backlog.go`
 - source: `internal/store/run_submission_provenance.go`
 - source: `internal/store/source_snapshots.go`
+- test: `internal/store/agent_execution_ownership_test.go`
 - test: `internal/store/context_packets_test.go`
 - test: `internal/store/migration_compatibility_test.go`
 - test: `internal/store/refactor_backlog_test.go`
@@ -7272,6 +7278,14 @@ Evidence:
 
 - source: `internal/app/runs/lifecycle.go`
 
+### backend-symbol-internal-app-runs-func-cancelrun (proven)
+
+Exported func CancelRun in internal/app/runs/lifecycle.go
+
+Evidence:
+
+- source: `internal/app/runs/lifecycle.go`
+
 ### backend-symbol-internal-app-runs-func-error (proven)
 
 Exported func Error in internal/app/runs/types.go
@@ -7344,6 +7358,14 @@ Evidence:
 
 - source: `internal/app/runs/lifecycle.go`
 
+### backend-symbol-internal-app-runs-func-reconcileexecutorownership (proven)
+
+Exported func ReconcileExecutorOwnership in internal/app/runs/lifecycle.go
+
+Evidence:
+
+- source: `internal/app/runs/lifecycle.go`
+
 ### backend-symbol-internal-app-runs-func-renderbrief (proven)
 
 Exported func RenderBrief in internal/app/runs/lifecycle.go
@@ -7363,6 +7385,14 @@ Evidence:
 ### backend-symbol-internal-app-runs-func-runexists (proven)
 
 Exported func RunExists in internal/app/runs/service.go
+
+Evidence:
+
+- source: `internal/app/runs/service.go`
+
+### backend-symbol-internal-app-runs-func-setexecutorownerinstanceid (proven)
+
+Exported func SetExecutorOwnerInstanceID in internal/app/runs/service.go
 
 Evidence:
 
@@ -7419,6 +7449,14 @@ Evidence:
 ### backend-symbol-internal-app-runs-type-briefresult (proven)
 
 Exported type BriefResult in internal/app/runs/types.go
+
+Evidence:
+
+- source: `internal/app/runs/types.go`
+
+### backend-symbol-internal-app-runs-type-cancelresult (proven)
+
+Exported type CancelResult in internal/app/runs/types.go
 
 Evidence:
 
@@ -7688,6 +7726,46 @@ Evidence:
 
 - source: `internal/mcp/blocker_envelope.go`
 
+### backend-symbol-internal-mcp-const-mcpblockerfiledownloadempty (proven)
+
+Exported const MCPBlockerFileDownloadEmpty in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerfiledownloadfailed (proven)
+
+Exported const MCPBlockerFileDownloadFailed in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerfiledownloadstatus (proven)
+
+Exported const MCPBlockerFileDownloadStatus in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerfiledownloadtoolarge (proven)
+
+Exported const MCPBlockerFileDownloadTooLarge in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerfilereferenceinvalid (proven)
+
+Exported const MCPBlockerFileReferenceInvalid in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
 ### backend-symbol-internal-mcp-const-mcpblockerredactionfailed (proven)
 
 Exported const MCPBlockerRedactionFailed in internal/mcp/blocker_envelope.go
@@ -7755,6 +7833,14 @@ Evidence:
 ### backend-symbol-internal-mcp-const-mcpblockerunknownresource (proven)
 
 Exported const MCPBlockerUnknownResource in internal/mcp/blocker_envelope.go
+
+Evidence:
+
+- source: `internal/mcp/blocker_envelope.go`
+
+### backend-symbol-internal-mcp-const-mcpblockerunsafedownloadtarget (proven)
+
+Exported const MCPBlockerUnsafeDownloadTarget in internal/mcp/blocker_envelope.go
 
 Evidence:
 
@@ -7879,6 +7965,22 @@ Exported func Error in internal/mcp/context_broker_tools.go
 Evidence:
 
 - source: `internal/mcp/context_broker_tools.go`
+
+### backend-symbol-internal-mcp-func-error-2 (proven)
+
+Exported func Error in internal/mcp/file_parameter_fetcher.go
+
+Evidence:
+
+- source: `internal/mcp/file_parameter_fetcher.go`
+
+### backend-symbol-internal-mcp-func-fetchplannerhandoff (proven)
+
+Exported func FetchPlannerHandoff in internal/mcp/file_parameter_fetcher.go
+
+Evidence:
+
+- source: `internal/mcp/file_parameter_fetcher.go`
 
 ### backend-symbol-internal-mcp-func-getsourcesnapshotfreshness (proven)
 
@@ -8448,6 +8550,14 @@ Evidence:
 
 - source: `internal/mcp/http_handler.go`
 
+### backend-symbol-internal-mcp-func-newhttpsfileparameterfetcher (proven)
+
+Exported func NewHTTPSFileParameterFetcher in internal/mcp/file_parameter_fetcher.go
+
+Evidence:
+
+- source: `internal/mcp/file_parameter_fetcher.go`
+
 ### backend-symbol-internal-mcp-func-newserver (proven)
 
 Exported func NewServer in internal/mcp/server.go
@@ -8496,6 +8606,14 @@ Evidence:
 
 - source: `internal/mcp/protocol.go`
 
+### backend-symbol-internal-mcp-type-chatgptfilereference (proven)
+
+Exported type ChatGPTFileReference in internal/mcp/file_parameter_fetcher.go
+
+Evidence:
+
+- source: `internal/mcp/file_parameter_fetcher.go`
+
 ### backend-symbol-internal-mcp-type-clientinfo (proven)
 
 Exported type ClientInfo in internal/mcp/protocol.go
@@ -8520,6 +8638,30 @@ Evidence:
 
 - source: `internal/mcp/blocker_envelope.go`
 
+### backend-symbol-internal-mcp-type-fileparametercontent (proven)
+
+Exported type FileParameterContent in internal/mcp/file_parameter_fetcher.go
+
+Evidence:
+
+- source: `internal/mcp/file_parameter_fetcher.go`
+
+### backend-symbol-internal-mcp-type-fileparametererror (proven)
+
+Exported type FileParameterError in internal/mcp/file_parameter_fetcher.go
+
+Evidence:
+
+- source: `internal/mcp/file_parameter_fetcher.go`
+
+### backend-symbol-internal-mcp-type-fileparameterfetcher (proven)
+
+Exported type FileParameterFetcher in internal/mcp/file_parameter_fetcher.go
+
+Evidence:
+
+- source: `internal/mcp/file_parameter_fetcher.go`
+
 ### backend-symbol-internal-mcp-type-httphandler (proven)
 
 Exported type HTTPHandler in internal/mcp/http_handler.go
@@ -8527,6 +8669,14 @@ Exported type HTTPHandler in internal/mcp/http_handler.go
 Evidence:
 
 - source: `internal/mcp/http_handler.go`
+
+### backend-symbol-internal-mcp-type-httpsfileparameterfetcher (proven)
+
+Exported type HTTPSFileParameterFetcher in internal/mcp/file_parameter_fetcher.go
+
+Evidence:
+
+- source: `internal/mcp/file_parameter_fetcher.go`
 
 ### backend-symbol-internal-mcp-type-initializeparams (proven)
 
@@ -9240,6 +9390,14 @@ Evidence:
 
 - source: `internal/store/local_audits.go`
 
+### backend-symbol-internal-store-func-createownedagentexecution (proven)
+
+Exported func CreateOwnedAgentExecution in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
 ### backend-symbol-internal-store-func-createplanseed (proven)
 
 Exported func CreatePlanSeed in internal/store/plan_seeds.go
@@ -9435,6 +9593,14 @@ Evidence:
 ### backend-symbol-internal-store-func-finishvalidationexecution (proven)
 
 Exported func FinishValidationExecution in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
+### backend-symbol-internal-store-func-getactiveagentexecutionbyrun (proven)
+
+Exported func GetActiveAgentExecutionByRun in internal/store/db.go
 
 Evidence:
 
@@ -9687,6 +9853,14 @@ Exported func LinkPlanSeedManagedPlan in internal/store/plan_seeds.go
 Evidence:
 
 - source: `internal/store/plan_seeds.go`
+
+### backend-symbol-internal-store-func-listactiveagentexecutions (proven)
+
+Exported func ListActiveAgentExecutions in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
 
 ### backend-symbol-internal-store-func-listagentexecutionsbyrun (proven)
 
@@ -10080,6 +10254,22 @@ Evidence:
 
 - source: `internal/store/db.go`
 
+### backend-symbol-internal-store-func-registeragentexecutionprocess (proven)
+
+Exported func RegisterAgentExecutionProcess in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
+### backend-symbol-internal-store-func-requestagentexecutioncancellation (proven)
+
+Exported func RequestAgentExecutionCancellation in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
 ### backend-symbol-internal-store-func-searchprojectcontextrecords (proven)
 
 Exported func SearchProjectContextRecords in internal/store/project_context_records.go
@@ -10119,6 +10309,14 @@ Exported func SupersedeProjectContextRecord in internal/store/project_context_re
 Evidence:
 
 - source: `internal/store/project_context_records.go`
+
+### backend-symbol-internal-store-func-terminalizeagentexecutioncas (proven)
+
+Exported func TerminalizeAgentExecutionCAS in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
 
 ### backend-symbol-internal-store-func-touchreporootscanned (proven)
 
@@ -10291,6 +10489,22 @@ Evidence:
 ### backend-symbol-internal-store-type-agentexecution (proven)
 
 Exported type AgentExecution in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
+### backend-symbol-internal-store-type-agentexecutionterminalupdate (proven)
+
+Exported type AgentExecutionTerminalUpdate in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
+### backend-symbol-internal-store-type-agentprocessidentityupdate (proven)
+
+Exported type AgentProcessIdentityUpdate in internal/store/db.go
 
 Evidence:
 
@@ -13928,6 +14142,94 @@ Evidence:
 
 - test: `internal/mcp/http_handler_test.go`
 
+### backend-test-internal-mcp-testhttpsfileparameterfetcherdialsvalidatedliteralip (proven)
+
+Test function TestHTTPSFileParameterFetcherDialsValidatedLiteralIP in internal/mcp/file_parameter_fetcher_test.go
+
+Evidence:
+
+- test: `internal/mcp/file_parameter_fetcher_test.go`
+
+### backend-test-internal-mcp-testhttpsfileparameterfetchermissingdialtargetfailsclosed (proven)
+
+Test function TestHTTPSFileParameterFetcherMissingDialTargetFailsClosed in internal/mcp/file_parameter_fetcher_test.go
+
+Evidence:
+
+- test: `internal/mcp/file_parameter_fetcher_test.go`
+
+### backend-test-internal-mcp-testhttpsfileparameterfetcherreadsboundedexactbytes (proven)
+
+Test function TestHTTPSFileParameterFetcherReadsBoundedExactBytes in internal/mcp/file_parameter_fetcher_test.go
+
+Evidence:
+
+- test: `internal/mcp/file_parameter_fetcher_test.go`
+
+### backend-test-internal-mcp-testhttpsfileparameterfetcherredirectlimit (proven)
+
+Test function TestHTTPSFileParameterFetcherRedirectLimit in internal/mcp/file_parameter_fetcher_test.go
+
+Evidence:
+
+- test: `internal/mcp/file_parameter_fetcher_test.go`
+
+### backend-test-internal-mcp-testhttpsfileparameterfetcherredirecttargetisindependentlybound (proven)
+
+Test function TestHTTPSFileParameterFetcherRedirectTargetIsIndependentlyBound in internal/mcp/file_parameter_fetcher_test.go
+
+Evidence:
+
+- test: `internal/mcp/file_parameter_fetcher_test.go`
+
+### backend-test-internal-mcp-testhttpsfileparameterfetcherrejectsemptyandoversizedbodies (proven)
+
+Test function TestHTTPSFileParameterFetcherRejectsEmptyAndOversizedBodies in internal/mcp/file_parameter_fetcher_test.go
+
+Evidence:
+
+- test: `internal/mcp/file_parameter_fetcher_test.go`
+
+### backend-test-internal-mcp-testhttpsfileparameterfetcherrejectsunsaferedirectbeforefollow (proven)
+
+Test function TestHTTPSFileParameterFetcherRejectsUnsafeRedirectBeforeFollow in internal/mcp/file_parameter_fetcher_test.go
+
+Evidence:
+
+- test: `internal/mcp/file_parameter_fetcher_test.go`
+
+### backend-test-internal-mcp-testhttpsfileparameterfetcherrejectsunsaferesolvedaddresses (proven)
+
+Test function TestHTTPSFileParameterFetcherRejectsUnsafeResolvedAddresses in internal/mcp/file_parameter_fetcher_test.go
+
+Evidence:
+
+- test: `internal/mcp/file_parameter_fetcher_test.go`
+
+### backend-test-internal-mcp-testhttpsfileparameterfetchertransportfailuremappings (proven)
+
+Test function TestHTTPSFileParameterFetcherTransportFailureMappings in internal/mcp/file_parameter_fetcher_test.go
+
+Evidence:
+
+- test: `internal/mcp/file_parameter_fetcher_test.go`
+
+### backend-test-internal-mcp-testhttpsfileparameterfetchervalidation (proven)
+
+Test function TestHTTPSFileParameterFetcherValidation in internal/mcp/file_parameter_fetcher_test.go
+
+Evidence:
+
+- test: `internal/mcp/file_parameter_fetcher_test.go`
+
+### backend-test-internal-mcp-testhttpsfileparameterfetchervalidationresultcontrolsdialtarget (proven)
+
+Test function TestHTTPSFileParameterFetcherValidationResultControlsDialTarget in internal/mcp/file_parameter_fetcher_test.go
+
+Evidence:
+
+- test: `internal/mcp/file_parameter_fetcher_test.go`
+
 ### backend-test-internal-mcp-testinvalidprofiledefaultstolocaloperator (proven)
 
 Test function TestInvalidProfileDefaultsToLocalOperator in internal/mcp/profile_test.go
@@ -14224,9 +14526,17 @@ Evidence:
 
 - test: `internal/mcp/plan_attempt_tools_test.go`
 
-### backend-test-internal-mcp-testplannerhandofffilefailuresaresanitized (proven)
+### backend-test-internal-mcp-testplannerhandofffilefetcherfailuresaresanitized (proven)
 
-Test function TestPlannerHandoffFileFailuresAreSanitized in internal/mcp/tool_create_run_test.go
+Test function TestPlannerHandoffFileFetcherFailuresAreSanitized in internal/mcp/tool_create_run_test.go
+
+Evidence:
+
+- test: `internal/mcp/tool_create_run_test.go`
+
+### backend-test-internal-mcp-testplannerhandofffiletoolsdeclarechatgptfileparameter (proven)
+
+Test function TestPlannerHandoffFileToolsDeclareChatGPTFileParameter in internal/mcp/tool_create_run_test.go
 
 Evidence:
 
@@ -14631,6 +14941,14 @@ Test function TestToolsList_QueryFilteringDoesNotMutateRegistry in internal/mcp/
 Evidence:
 
 - test: `internal/mcp/server_tools_list_test.go`
+
+### backend-test-internal-store-testagentexecutionownershipcancellationandcas (proven)
+
+Test function TestAgentExecutionOwnershipCancellationAndCAS in internal/store/agent_execution_ownership_test.go
+
+Evidence:
+
+- test: `internal/store/agent_execution_ownership_test.go`
 
 ### backend-test-internal-store-testcontextpacketstorecreategetlist (proven)
 

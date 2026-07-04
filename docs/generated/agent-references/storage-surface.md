@@ -44,7 +44,8 @@ Schema version: `1.0.0`
 | `internal/db/migrations/20260624000200_plan_attempts_intent_drift.sql` | `24fe530bd17e2791fecb49b9995f73fbeda202c095343c9cb70eba2aee8b3f57` | migration |
 | `internal/db/migrations/20260626000500_plan_review_settings.sql` | `8c1285982fefa4002ae13592be351bb658907bc884869000d3b567026203224b` | migration |
 | `internal/db/migrations/20260627000100_plan_seeds.sql` | `4d87210653ba5e27108fe0ddebc632561dcb140e7f3c59379bce1a1b443d79fd` | migration |
-| `internal/db/queries/agent_executions.sql` | `2738d07bbe4ca2982294e62da302f9c618f21a81a4fd556cc9ae7711a93e64e5` | sqlc query file |
+| `internal/db/migrations/20260704000100_durable_agent_execution_ownership.sql` | `95405f634258b95ec1d7752e58d5e988766a690118bbd1c93252a98043a52c33` | migration |
+| `internal/db/queries/agent_executions.sql` | `776aeee9d9e002ed48d21576abc38e48f8d953f60464dc98b92f5d0ec3fcf444` | sqlc query file |
 | `internal/db/queries/artifacts.sql` | `eaf6f5c10b4b4cb90bdcc80c8ee56d8fc17f3f1719c33f282a25e4b3dc39d648` | sqlc query file |
 | `internal/db/queries/checks.sql` | `1af94a12f4acaffe20545c0826a2ecb561bb3bc5d2e463986499d05d08416223` | sqlc query file |
 | `internal/db/queries/context_packets.sql` | `36c1f5a91eb4db76b04821f498d394b83ad88f75e9092354bf9f7e458a4dd28c` | sqlc query file |
@@ -63,15 +64,15 @@ Schema version: `1.0.0`
 | `internal/db/queries/runs.sql` | `47f674c09a457249ed0ff18866250742316c1b73ceeff1719525c9415b9fc9af` | sqlc query file |
 | `internal/db/queries/source_snapshots.sql` | `b3e759a9cf1996500c44883eaa7cad56ce9fbb8d6fa06ec31786aeefc672b0be` | sqlc query file |
 | `internal/db/queries/validation_executions.sql` | `3ba0a7d5515de1812a6aefded80684d204b30f5b03d3660ea0cf7061dfc65b1b` | sqlc query file |
-| `internal/store/db.go` | `44a032a3af37a60e835568211adc7675b48434da8b422afea5d70f365aeae0d8` | store wrapper |
-| `internal/store/generated/agent_executions.sql.go` | `e13612bebeea268d10047da36799c227c8798249f90528c5882da63c7a1c3801` | generated sqlc boundary |
+| `internal/store/db.go` | `9e41bb12ccd32d18f15bd13a07012e0b03e794bec253c99748763f2ca1e9c730` | store wrapper |
+| `internal/store/generated/agent_executions.sql.go` | `5ab51439973ef2b32b06c9a4058af34ecb1d37242ff3a2b3def56287cecccbd8` | generated sqlc boundary |
 | `internal/store/generated/artifacts.sql.go` | `90af82cb23517dd99e0df1300260f08c2afb780525602a3bd0629e3006c45ef2` | generated sqlc boundary |
 | `internal/store/generated/checks.sql.go` | `cb65e61d2f0932518eaa1ebc8db6bab60f5ade05856c9d533379f436a75db9a7` | generated sqlc boundary |
 | `internal/store/generated/context_packets.sql.go` | `2f7a43974cab55dd1874ed4603a043b71cb809948c8c10f9e5eeb8df1fb6524b` | generated sqlc boundary |
 | `internal/store/generated/db.go` | `693c98a857e53105cd4f966b7bd7790a412f6fe558879e63f439cb6a79d23360` | generated sqlc boundary |
 | `internal/store/generated/events.sql.go` | `9e4d5ea0e03312ee3dfc0cf80c13135224836f4f02192bd8ce0a9174a48da587` | generated sqlc boundary |
 | `internal/store/generated/local_audits.sql.go` | `f214c0c9f803f07b87ced68ecd58d09d29165432ec6afeb638be4cffeda80b7e` | generated sqlc boundary |
-| `internal/store/generated/models.go` | `b08f838ef2e13d7069dbda38fee48ead1bda2601bb91d2e78174889ed7e19f85` | generated sqlc boundary |
+| `internal/store/generated/models.go` | `32962325753d6bdb66e20105539248288a1550ad239e938937ae5491a5cd9aa4` | generated sqlc boundary |
 | `internal/store/generated/plan_attempts.sql.go` | `acee38c6dbb91e061a11a1c655250fe6b7d9c7f1ad18ab3c6fbbb9a83272bfc4` | generated sqlc boundary |
 | `internal/store/generated/plan_review_settings.sql.go` | `c82f6af0217c281508499e5adb0018209e40f0385dd4a390d09601eff70ced34` | generated sqlc boundary |
 | `internal/store/generated/plan_seeds.sql.go` | `ab9be17266ca412dc9d1c15024b6482618dd097bf55c5aff7e481c5353576d3d` | generated sqlc boundary |
@@ -301,6 +302,14 @@ Evidence:
 
 - source: `internal/db/migrations/20260627000100_plan_seeds.sql`
 
+### storage-migration-internal-db-migrations-20260704000100-durable-agent-execution-ownership-sql (proven)
+
+Migration file "internal/db/migrations/20260704000100_durable_agent_execution_ownership.sql" contains a CREATE TABLE statement for table "agent_executions".
+
+Evidence:
+
+- source: `internal/db/migrations/20260704000100_durable_agent_execution_ownership.sql`
+
 ### storage-query-agent-executions-createagentexecution (proven)
 
 sqlc query "CreateAgentExecution" (one) declared in "internal/db/queries/agent_executions.sql".
@@ -309,13 +318,21 @@ Evidence:
 
 - source: `internal/db/queries/agent_executions.sql#L1`
 
+### storage-query-agent-executions-getactiveagentexecutionbyrun (proven)
+
+sqlc query "GetActiveAgentExecutionByRun" (one) declared in "internal/db/queries/agent_executions.sql".
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql#L25`
+
 ### storage-query-agent-executions-getagentexecution (proven)
 
 sqlc query "GetAgentExecution" (one) declared in "internal/db/queries/agent_executions.sql".
 
 Evidence:
 
-- source: `internal/db/queries/agent_executions.sql#L5`
+- source: `internal/db/queries/agent_executions.sql#L8`
 
 ### storage-query-agent-executions-getlatestagentexecutionbyrun (proven)
 
@@ -323,7 +340,15 @@ sqlc query "GetLatestAgentExecutionByRun" (one) declared in "internal/db/queries
 
 Evidence:
 
-- source: `internal/db/queries/agent_executions.sql#L11`
+- source: `internal/db/queries/agent_executions.sql#L14`
+
+### storage-query-agent-executions-listactiveagentexecutions (proven)
+
+sqlc query "ListActiveAgentExecutions" (many) declared in "internal/db/queries/agent_executions.sql".
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql#L33`
 
 ### storage-query-agent-executions-listagentexecutionsbyrun (proven)
 
@@ -331,7 +356,31 @@ sqlc query "ListAgentExecutionsByRun" (many) declared in "internal/db/queries/ag
 
 Evidence:
 
-- source: `internal/db/queries/agent_executions.sql#L8`
+- source: `internal/db/queries/agent_executions.sql#L11`
+
+### storage-query-agent-executions-registeragentexecutionprocess (proven)
+
+sqlc query "RegisterAgentExecutionProcess" (one) declared in "internal/db/queries/agent_executions.sql".
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql#L39`
+
+### storage-query-agent-executions-requestagentexecutioncancellation (proven)
+
+sqlc query "RequestAgentExecutionCancellation" (one) declared in "internal/db/queries/agent_executions.sql".
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql#L54`
+
+### storage-query-agent-executions-terminalizeagentexecutioncas (proven)
+
+sqlc query "TerminalizeAgentExecutionCAS" (one) declared in "internal/db/queries/agent_executions.sql".
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql#L64`
 
 ### storage-query-agent-executions-updateagentexecutionstatus (proven)
 
@@ -339,7 +388,7 @@ sqlc query "UpdateAgentExecutionStatus" (one) declared in "internal/db/queries/a
 
 Evidence:
 
-- source: `internal/db/queries/agent_executions.sql#L14`
+- source: `internal/db/queries/agent_executions.sql#L17`
 
 ### storage-query-artifacts-createartifact (proven)
 
@@ -477,6 +526,14 @@ Evidence:
 
 - source: `internal/db/queries/agent_executions.sql`
 
+### storage-query-domain-agent-executions-getactiveagentexecutionbyrun (derived)
+
+sqlc query "GetActiveAgentExecutionByRun" belongs to SQL domain "agent_executions" by file-path convention.
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql`
+
 ### storage-query-domain-agent-executions-getagentexecution (derived)
 
 sqlc query "GetAgentExecution" belongs to SQL domain "agent_executions" by file-path convention.
@@ -493,9 +550,41 @@ Evidence:
 
 - source: `internal/db/queries/agent_executions.sql`
 
+### storage-query-domain-agent-executions-listactiveagentexecutions (derived)
+
+sqlc query "ListActiveAgentExecutions" belongs to SQL domain "agent_executions" by file-path convention.
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql`
+
 ### storage-query-domain-agent-executions-listagentexecutionsbyrun (derived)
 
 sqlc query "ListAgentExecutionsByRun" belongs to SQL domain "agent_executions" by file-path convention.
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql`
+
+### storage-query-domain-agent-executions-registeragentexecutionprocess (derived)
+
+sqlc query "RegisterAgentExecutionProcess" belongs to SQL domain "agent_executions" by file-path convention.
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql`
+
+### storage-query-domain-agent-executions-requestagentexecutioncancellation (derived)
+
+sqlc query "RequestAgentExecutionCancellation" belongs to SQL domain "agent_executions" by file-path convention.
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql`
+
+### storage-query-domain-agent-executions-terminalizeagentexecutioncas (derived)
+
+sqlc query "TerminalizeAgentExecutionCAS" belongs to SQL domain "agent_executions" by file-path convention.
 
 Evidence:
 
@@ -1855,7 +1944,7 @@ Evidence:
 
 ### storage-query-file-internal-db-queries-agent-executions-sql (proven)
 
-SQL query file "internal/db/queries/agent_executions.sql" defines 5 sqlc query declaration(s).
+SQL query file "internal/db/queries/agent_executions.sql" defines 10 sqlc query declaration(s).
 
 Evidence:
 
@@ -3240,6 +3329,14 @@ Evidence:
 
 - source: `internal/store/db.go#CreateEvent`
 
+### storage-store-wrapper-store-wrapper-method-createownedagentexecution (proven)
+
+Store wrapper store_wrapper_method "CreateOwnedAgentExecution" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#CreateOwnedAgentExecution`
+
 ### storage-store-wrapper-store-wrapper-method-createrepo (proven)
 
 Store wrapper store_wrapper_method "CreateRepo" on receiver "Store" in "internal/store/db.go".
@@ -3327,6 +3424,14 @@ Store wrapper store_wrapper_method "FinishValidationExecution" on receiver "Stor
 Evidence:
 
 - source: `internal/store/db.go#FinishValidationExecution`
+
+### storage-store-wrapper-store-wrapper-method-getactiveagentexecutionbyrun (proven)
+
+Store wrapper store_wrapper_method "GetActiveAgentExecutionByRun" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#GetActiveAgentExecutionByRun`
 
 ### storage-store-wrapper-store-wrapper-method-getactivevalidationexecutionbyrun (proven)
 
@@ -3439,6 +3544,14 @@ Store wrapper store_wrapper_method "GetRun" on receiver "Store" in "internal/sto
 Evidence:
 
 - source: `internal/store/db.go#GetRun`
+
+### storage-store-wrapper-store-wrapper-method-listactiveagentexecutions (proven)
+
+Store wrapper store_wrapper_method "ListActiveAgentExecutions" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#ListActiveAgentExecutions`
 
 ### storage-store-wrapper-store-wrapper-method-listagentexecutionsbyrun (proven)
 
@@ -3600,6 +3713,22 @@ Evidence:
 
 - source: `internal/store/db.go#MarkValidationExecutionRunning`
 
+### storage-store-wrapper-store-wrapper-method-registeragentexecutionprocess (proven)
+
+Store wrapper store_wrapper_method "RegisterAgentExecutionProcess" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#RegisterAgentExecutionProcess`
+
+### storage-store-wrapper-store-wrapper-method-requestagentexecutioncancellation (proven)
+
+Store wrapper store_wrapper_method "RequestAgentExecutionCancellation" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#RequestAgentExecutionCancellation`
+
 ### storage-store-wrapper-store-wrapper-method-setreporootenabled (proven)
 
 Store wrapper store_wrapper_method "SetRepoRootEnabled" on receiver "Store" in "internal/store/db.go".
@@ -3607,6 +3736,14 @@ Store wrapper store_wrapper_method "SetRepoRootEnabled" on receiver "Store" in "
 Evidence:
 
 - source: `internal/store/db.go#SetRepoRootEnabled`
+
+### storage-store-wrapper-store-wrapper-method-terminalizeagentexecutioncas (proven)
+
+Store wrapper store_wrapper_method "TerminalizeAgentExecutionCAS" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#TerminalizeAgentExecutionCAS`
 
 ### storage-store-wrapper-store-wrapper-method-touchreporootscanned (proven)
 

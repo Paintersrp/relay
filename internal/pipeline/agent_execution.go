@@ -95,6 +95,7 @@ type AgentCommandWaitResult struct {
 type AgentCommandStreamCallbacks struct {
 	OnStartCalled         func()
 	OnStartReturned       func(pid int)
+	OnProcessStarted      func(identity ProcessIdentity)
 	OnStartError          func(err error)
 	OnStdoutReaderStarted func()
 	OnStdoutReaderDone    func(err error)
@@ -193,6 +194,19 @@ func RunLocalAgentCommandArgsStreaming(
 	timeout time.Duration,
 	callbacks AgentCommandStreamCallbacks,
 ) AgentCommandRunResult {
+	return RunLocalAgentCommandArgsStreamingWithController(ctx, workDir, binary, args, stdin, timeout, callbacks, DefaultProcessController())
+}
+
+func RunLocalAgentCommandArgsStreamingWithController(
+	ctx context.Context,
+	workDir string,
+	binary string,
+	args []string,
+	stdin string,
+	timeout time.Duration,
+	callbacks AgentCommandStreamCallbacks,
+	controller ProcessController,
+) AgentCommandRunResult {
 	start := time.Now()
 	commandPreview := binary
 	if len(args) > 0 {
@@ -204,6 +218,20 @@ func RunLocalAgentCommandArgsStreaming(
 
 	cmd := exec.CommandContext(runCtx, binary, args...)
 	cmd.Dir = workDir
+	if controller == nil {
+		controller = DefaultProcessController()
+	}
+	if err := controller.PrepareCommand(cmd); err != nil {
+		finished := time.Now()
+		return AgentCommandRunResult{
+			Command:    commandPreview,
+			WorkDir:    workDir,
+			ExitCode:   -1,
+			Error:      err.Error(),
+			StartedAt:  start,
+			FinishedAt: finished,
+		}
+	}
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -253,6 +281,13 @@ func RunLocalAgentCommandArgsStreaming(
 	}
 	if callbacks.OnStartReturned != nil {
 		callbacks.OnStartReturned(cmd.Process.Pid)
+	}
+	if callbacks.OnProcessStarted != nil {
+		if identity, err := controller.Identity(cmd, start); err == nil {
+			callbacks.OnProcessStarted(identity)
+		} else if callbacks.OnStartError != nil {
+			callbacks.OnStartError(err)
+		}
 	}
 
 	var stdoutBuf bytes.Buffer
