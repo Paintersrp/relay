@@ -18,15 +18,16 @@ import (
 )
 
 const (
-	ExecutionStatusStarting        = "starting"
-	ExecutionStatusRunning         = "running"
-	ExecutionStatusCancelRequested = "cancel_requested"
-	ExecutionStatusSucceeded       = "succeeded"
-	ExecutionStatusCompletedLegacy = "completed"
-	ExecutionStatusFailed          = "failed"
-	ExecutionStatusTimedOut        = "timed_out"
-	ExecutionStatusCanceled        = "canceled"
-	ExecutionStatusProcessLost     = "process_lost"
+	ExecutionStatusStarting           = "starting"
+	ExecutionStatusRunning            = "running"
+	ExecutionStatusCancelRequested    = "cancel_requested"
+	ExecutionStatusSucceeded          = "succeeded"
+	ExecutionStatusCompletedLegacy    = "completed"
+	ExecutionStatusFailed             = "failed"
+	ExecutionStatusTimedOut           = "timed_out"
+	ExecutionStatusCanceled           = "canceled"
+	ExecutionStatusProcessLost        = "process_lost"
+	ExecutionStatusTerminationPending = "termination_pending"
 
 	TerminalReasonSucceeded              = "executor_completed"
 	TerminalReasonFailed                 = "executor_failed"
@@ -167,6 +168,31 @@ func terminalizeExecution(st *store.Store, hub *events.Hub, log *slog.Logger, ru
 	return exec, true, nil
 }
 
+func markTerminationRequested(st *store.Store, execID int64, reason string) {
+	if st == nil {
+		return
+	}
+	_, _ = st.MarkAgentExecutionTerminationRequested(execID, reason, executionTimestampNow())
+}
+
+func markTerminationVerified(st *store.Store, execID int64) {
+	if st == nil {
+		return
+	}
+	_, _ = st.MarkAgentExecutionTreeVerifiedAbsent(execID, executionTimestampNow())
+}
+
+func markTerminationFailed(st *store.Store, execID int64, errText string) *store.AgentExecution {
+	if st == nil {
+		return nil
+	}
+	exec, err := st.MarkAgentExecutionTerminationFailed(execID, errText)
+	if err != nil {
+		return nil
+	}
+	return exec
+}
+
 type CancellationResult struct {
 	RunID                   int64
 	RunStatus               string
@@ -221,19 +247,36 @@ func CancelExecution(ctx context.Context, st *store.Store, hub *events.Hub, log 
 	} else {
 		identity, identityErr := processIdentityFromExecution(updated)
 		if identityErr == nil {
+			markTerminationRequested(st, updated.ID, TerminalReasonCanceled)
 			result, err := controller.TerminateTree(identity, 2*time.Second)
 			if err != nil && !errors.Is(err, pipeline.ErrProcessNotRunning) {
 				createEvent(st, runID, "warn", "Executor cancellation termination warning: "+err.Error())
+				if failed := markTerminationFailed(st, updated.ID, "executor cancellation termination failed: "+err.Error()); failed != nil {
+					updated = failed
+				}
 			} else if !result.VerifiedAbsent {
 				createEvent(st, runID, "warn", "Executor cancellation termination warning: process absence was not verified")
+				if failed := markTerminationFailed(st, updated.ID, "executor cancellation termination failed: process absence was not verified"); failed != nil {
+					updated = failed
+				}
+			} else {
+				markTerminationVerified(st, updated.ID)
 			}
 		} else if updated.Status == ExecutionStatusCancelRequested && updated.ProcessIdentity.Valid {
 			createEvent(st, runID, "warn", "Executor cancellation could not verify process identity: "+identityErr.Error())
+			if failed := markTerminationFailed(st, updated.ID, "executor cancellation identity unverifiable: "+identityErr.Error()); failed != nil {
+				updated = failed
+			}
+		} else if updated.Status == ExecutionStatusCancelRequested {
+			createEvent(st, runID, "warn", "Executor cancellation cannot prove the process never started because no process identity is registered")
+			if failed := markTerminationFailed(st, updated.ID, "executor cancellation unresolved: process identity is missing and start was not prevented"); failed != nil {
+				updated = failed
+			}
 		}
 	}
 
 	latest, _ := st.GetAgentExecution(updated.ID)
-	if latest != nil && latest.Status == ExecutionStatusCancelRequested && !latest.ProcessIdentity.Valid {
+	if latest != nil && latest.Status == ExecutionStatusCancelRequested && latest.LaunchState == "start_prevented" {
 		finished := executionTimestampNow()
 		latest, _, _ = terminalizeExecution(st, hub, log, runID, latest.ID, terminalExecutionInput{
 			Status:                  ExecutionStatusCanceled,

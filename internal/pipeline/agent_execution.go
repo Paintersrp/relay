@@ -96,6 +96,19 @@ type AgentCommandWaitResult struct {
 	ProcessState string
 }
 
+func waitForCommandBounded(cmd *exec.Cmd, timeout time.Duration) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		return fmt.Errorf("wait timed out after %s", timeout)
+	}
+}
+
 type AgentCommandStreamCallbacks struct {
 	OnStartCalled         func()
 	OnStartReturned       func(pid int)
@@ -308,7 +321,7 @@ func RunLocalAgentCommandArgsStreamingWithController(
 					callbacks.OnStartError(err)
 				}
 				termination, terminateErr := controller.TerminateTree(identity, 2*time.Second)
-				waitErr := cmd.Wait()
+				waitErr := waitForCommandBounded(cmd, 2*time.Second)
 				finished := time.Now()
 				errMsg := err.Error()
 				if terminateErr != nil && !errors.Is(terminateErr, ErrProcessNotRunning) {
@@ -317,15 +330,17 @@ func RunLocalAgentCommandArgsStreamingWithController(
 					errMsg += "; terminate unregistered process tree: absence was not verified"
 				}
 				if waitErr != nil {
-					errMsg += "; wait after registration failure: " + waitErr.Error()
+					errMsg += "; bounded wait after registration failure: " + waitErr.Error()
 				}
 				return AgentCommandRunResult{
-					Command:    commandPreview,
-					WorkDir:    workDir,
-					ExitCode:   -1,
-					Error:      errMsg,
-					StartedAt:  start,
-					FinishedAt: finished,
+					Command:             commandPreview,
+					WorkDir:             workDir,
+					ExitCode:            -1,
+					Error:               errMsg,
+					StartedAt:           start,
+					FinishedAt:          finished,
+					TerminationVerified: termination.VerifiedAbsent,
+					TerminationError:    errMsg,
 				}
 			}
 		}
@@ -334,20 +349,17 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		if callbacks.OnStartError != nil {
 			callbacks.OnStartError(err)
 		}
-		_ = cmd.Process.Kill()
-		waitErr := cmd.Wait()
 		finished := time.Now()
-		errMsg := err.Error()
-		if waitErr != nil {
-			errMsg += "; wait after identity failure: " + waitErr.Error()
-		}
+		errMsg := err.Error() + "; process identity unavailable, owned-tree cleanup was not attempted"
 		return AgentCommandRunResult{
-			Command:    commandPreview,
-			WorkDir:    workDir,
-			ExitCode:   -1,
-			Error:      errMsg,
-			StartedAt:  start,
-			FinishedAt: finished,
+			Command:             commandPreview,
+			WorkDir:             workDir,
+			ExitCode:            -1,
+			Error:               errMsg,
+			StartedAt:           start,
+			FinishedAt:          finished,
+			TerminationVerified: false,
+			TerminationError:    errMsg,
 		}
 	}
 

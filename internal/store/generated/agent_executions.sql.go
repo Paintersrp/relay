@@ -10,12 +10,71 @@ import (
 	"database/sql"
 )
 
+const claimAgentExecutionLaunch = `-- name: ClaimAgentExecutionLaunch :one
+UPDATE agent_executions
+SET launch_state = 'start_in_progress',
+    updated_at = datetime('now')
+WHERE id = ?
+  AND ownership_token = ?
+  AND status = 'starting'
+  AND cancellation_requested_at IS NULL
+  AND launch_state = 'created'
+  AND terminalized_at IS NULL
+RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id
+`
+
+type ClaimAgentExecutionLaunchParams struct {
+	ID             int64          `json:"id"`
+	OwnershipToken sql.NullString `json:"ownership_token"`
+}
+
+func (q *Queries) ClaimAgentExecutionLaunch(ctx context.Context, arg ClaimAgentExecutionLaunchParams) (AgentExecution, error) {
+	row := q.db.QueryRowContext(ctx, claimAgentExecutionLaunch, arg.ID, arg.OwnershipToken)
+	var i AgentExecution
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.Provider,
+		&i.Status,
+		&i.CommandPreview,
+		&i.ExitCode,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.StdoutArtifactPath,
+		&i.StderrArtifactPath,
+		&i.CombinedArtifactPath,
+		&i.ResultArtifactPath,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
+	)
+	return i, err
+}
+
 const createAgentExecution = `-- name: CreateAgentExecution :one
 INSERT INTO agent_executions (
     run_id, provider, status, command_preview,
     runner_kind, owner_instance_id, ownership_token
 )
-VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at
+VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id
 `
 
 type CreateAgentExecutionParams struct {
@@ -66,14 +125,21 @@ func (q *Queries) CreateAgentExecution(ctx context.Context, arg CreateAgentExecu
 		&i.CancellationCompletedAt,
 		&i.TerminalReason,
 		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
 	)
 	return i, err
 }
 
 const getActiveAgentExecutionByRun = `-- name: GetActiveAgentExecutionByRun :one
-SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at FROM agent_executions
+SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id FROM agent_executions
 WHERE run_id = ?
-  AND status IN ('starting', 'running', 'cancel_requested')
+  AND status IN ('starting', 'running', 'cancel_requested', 'termination_pending')
   AND terminalized_at IS NULL
 ORDER BY created_at DESC
 LIMIT 1
@@ -109,12 +175,19 @@ func (q *Queries) GetActiveAgentExecutionByRun(ctx context.Context, runID int64)
 		&i.CancellationCompletedAt,
 		&i.TerminalReason,
 		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
 	)
 	return i, err
 }
 
 const getAgentExecution = `-- name: GetAgentExecution :one
-SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at FROM agent_executions WHERE id = ?
+SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id FROM agent_executions WHERE id = ?
 `
 
 func (q *Queries) GetAgentExecution(ctx context.Context, id int64) (AgentExecution, error) {
@@ -147,12 +220,19 @@ func (q *Queries) GetAgentExecution(ctx context.Context, id int64) (AgentExecuti
 		&i.CancellationCompletedAt,
 		&i.TerminalReason,
 		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
 	)
 	return i, err
 }
 
 const getLatestAgentExecutionByRun = `-- name: GetLatestAgentExecutionByRun :one
-SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at FROM agent_executions WHERE run_id = ? ORDER BY created_at DESC LIMIT 1
+SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id FROM agent_executions WHERE run_id = ? ORDER BY created_at DESC LIMIT 1
 `
 
 func (q *Queries) GetLatestAgentExecutionByRun(ctx context.Context, runID int64) (AgentExecution, error) {
@@ -185,13 +265,20 @@ func (q *Queries) GetLatestAgentExecutionByRun(ctx context.Context, runID int64)
 		&i.CancellationCompletedAt,
 		&i.TerminalReason,
 		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
 	)
 	return i, err
 }
 
 const listActiveAgentExecutions = `-- name: ListActiveAgentExecutions :many
-SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at FROM agent_executions
-WHERE status IN ('starting', 'running', 'cancel_requested')
+SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id FROM agent_executions
+WHERE status IN ('starting', 'running', 'cancel_requested', 'termination_pending')
   AND terminalized_at IS NULL
 ORDER BY created_at ASC
 `
@@ -232,6 +319,13 @@ func (q *Queries) ListActiveAgentExecutions(ctx context.Context) ([]AgentExecuti
 			&i.CancellationCompletedAt,
 			&i.TerminalReason,
 			&i.TerminalizedAt,
+			&i.LaunchState,
+			&i.TerminationState,
+			&i.TerminationRequestedReason,
+			&i.TerminationAttemptedAt,
+			&i.TerminationVerifiedAt,
+			&i.TerminationLastError,
+			&i.PlatformOwnershipID,
 		); err != nil {
 			return nil, err
 		}
@@ -247,7 +341,7 @@ func (q *Queries) ListActiveAgentExecutions(ctx context.Context) ([]AgentExecuti
 }
 
 const listAgentExecutionsByRun = `-- name: ListAgentExecutionsByRun :many
-SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at FROM agent_executions WHERE run_id = ? ORDER BY created_at DESC
+SELECT id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id FROM agent_executions WHERE run_id = ? ORDER BY created_at DESC
 `
 
 func (q *Queries) ListAgentExecutionsByRun(ctx context.Context, runID int64) ([]AgentExecution, error) {
@@ -286,6 +380,13 @@ func (q *Queries) ListAgentExecutionsByRun(ctx context.Context, runID int64) ([]
 			&i.CancellationCompletedAt,
 			&i.TerminalReason,
 			&i.TerminalizedAt,
+			&i.LaunchState,
+			&i.TerminationState,
+			&i.TerminationRequestedReason,
+			&i.TerminationAttemptedAt,
+			&i.TerminationVerifiedAt,
+			&i.TerminationLastError,
+			&i.PlatformOwnershipID,
 		); err != nil {
 			return nil, err
 		}
@@ -300,6 +401,242 @@ func (q *Queries) ListAgentExecutionsByRun(ctx context.Context, runID int64) ([]
 	return items, nil
 }
 
+const markAgentExecutionTerminationFailed = `-- name: MarkAgentExecutionTerminationFailed :one
+UPDATE agent_executions
+SET status = 'termination_pending',
+    termination_state = 'failed',
+    termination_last_error = CASE
+        WHEN termination_last_error IS NULL OR termination_last_error = '' THEN ?
+        ELSE termination_last_error
+    END,
+    updated_at = datetime('now')
+WHERE id = ?
+  AND terminalized_at IS NULL
+RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id
+`
+
+type MarkAgentExecutionTerminationFailedParams struct {
+	TerminationLastError sql.NullString `json:"termination_last_error"`
+	ID                   int64          `json:"id"`
+}
+
+func (q *Queries) MarkAgentExecutionTerminationFailed(ctx context.Context, arg MarkAgentExecutionTerminationFailedParams) (AgentExecution, error) {
+	row := q.db.QueryRowContext(ctx, markAgentExecutionTerminationFailed, arg.TerminationLastError, arg.ID)
+	var i AgentExecution
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.Provider,
+		&i.Status,
+		&i.CommandPreview,
+		&i.ExitCode,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.StdoutArtifactPath,
+		&i.StderrArtifactPath,
+		&i.CombinedArtifactPath,
+		&i.ResultArtifactPath,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
+	)
+	return i, err
+}
+
+const markAgentExecutionTerminationRequested = `-- name: MarkAgentExecutionTerminationRequested :one
+UPDATE agent_executions
+SET termination_state = CASE
+        WHEN termination_state = 'none' THEN 'requested'
+        ELSE termination_state
+    END,
+    termination_requested_reason = COALESCE(termination_requested_reason, ?),
+    termination_attempted_at = COALESCE(termination_attempted_at, ?),
+    updated_at = datetime('now')
+WHERE id = ?
+  AND terminalized_at IS NULL
+RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id
+`
+
+type MarkAgentExecutionTerminationRequestedParams struct {
+	TerminationRequestedReason sql.NullString `json:"termination_requested_reason"`
+	TerminationAttemptedAt     sql.NullString `json:"termination_attempted_at"`
+	ID                         int64          `json:"id"`
+}
+
+func (q *Queries) MarkAgentExecutionTerminationRequested(ctx context.Context, arg MarkAgentExecutionTerminationRequestedParams) (AgentExecution, error) {
+	row := q.db.QueryRowContext(ctx, markAgentExecutionTerminationRequested, arg.TerminationRequestedReason, arg.TerminationAttemptedAt, arg.ID)
+	var i AgentExecution
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.Provider,
+		&i.Status,
+		&i.CommandPreview,
+		&i.ExitCode,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.StdoutArtifactPath,
+		&i.StderrArtifactPath,
+		&i.CombinedArtifactPath,
+		&i.ResultArtifactPath,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
+	)
+	return i, err
+}
+
+const markAgentExecutionTreeVerifiedAbsent = `-- name: MarkAgentExecutionTreeVerifiedAbsent :one
+UPDATE agent_executions
+SET termination_state = 'verified_absent',
+    termination_verified_at = ?,
+    termination_last_error = NULL,
+    updated_at = datetime('now')
+WHERE id = ?
+  AND terminalized_at IS NULL
+RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id
+`
+
+type MarkAgentExecutionTreeVerifiedAbsentParams struct {
+	TerminationVerifiedAt sql.NullString `json:"termination_verified_at"`
+	ID                    int64          `json:"id"`
+}
+
+func (q *Queries) MarkAgentExecutionTreeVerifiedAbsent(ctx context.Context, arg MarkAgentExecutionTreeVerifiedAbsentParams) (AgentExecution, error) {
+	row := q.db.QueryRowContext(ctx, markAgentExecutionTreeVerifiedAbsent, arg.TerminationVerifiedAt, arg.ID)
+	var i AgentExecution
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.Provider,
+		&i.Status,
+		&i.CommandPreview,
+		&i.ExitCode,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.StdoutArtifactPath,
+		&i.StderrArtifactPath,
+		&i.CombinedArtifactPath,
+		&i.ResultArtifactPath,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
+	)
+	return i, err
+}
+
+const recordAgentExecutionStartPrevented = `-- name: RecordAgentExecutionStartPrevented :one
+UPDATE agent_executions
+SET launch_state = 'start_prevented',
+    updated_at = datetime('now')
+WHERE id = ?
+  AND ownership_token = ?
+  AND status IN ('starting', 'cancel_requested')
+  AND launch_state IN ('created', 'start_in_progress')
+  AND terminalized_at IS NULL
+RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id
+`
+
+type RecordAgentExecutionStartPreventedParams struct {
+	ID             int64          `json:"id"`
+	OwnershipToken sql.NullString `json:"ownership_token"`
+}
+
+func (q *Queries) RecordAgentExecutionStartPrevented(ctx context.Context, arg RecordAgentExecutionStartPreventedParams) (AgentExecution, error) {
+	row := q.db.QueryRowContext(ctx, recordAgentExecutionStartPrevented, arg.ID, arg.OwnershipToken)
+	var i AgentExecution
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.Provider,
+		&i.Status,
+		&i.CommandPreview,
+		&i.ExitCode,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.StdoutArtifactPath,
+		&i.StderrArtifactPath,
+		&i.CombinedArtifactPath,
+		&i.ResultArtifactPath,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
+	)
+	return i, err
+}
+
 const registerAgentExecutionProcess = `-- name: RegisterAgentExecutionProcess :one
 UPDATE agent_executions
 SET status = 'running',
@@ -308,22 +645,26 @@ SET status = 'running',
     process_identity = ?,
     process_started_at = ?,
     started_at = ?,
+    launch_state = 'registered',
+    platform_ownership_id = ?,
     updated_at = datetime('now')
 WHERE id = ?
   AND ownership_token = ?
-  AND status = 'starting'
+  AND status IN ('starting', 'cancel_requested')
+  AND launch_state = 'start_in_progress'
   AND terminalized_at IS NULL
-RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at
+RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id
 `
 
 type RegisterAgentExecutionProcessParams struct {
-	ProcessID        sql.NullInt64  `json:"process_id"`
-	ProcessGroupID   sql.NullInt64  `json:"process_group_id"`
-	ProcessIdentity  sql.NullString `json:"process_identity"`
-	ProcessStartedAt sql.NullString `json:"process_started_at"`
-	StartedAt        sql.NullString `json:"started_at"`
-	ID               int64          `json:"id"`
-	OwnershipToken   sql.NullString `json:"ownership_token"`
+	ProcessID           sql.NullInt64  `json:"process_id"`
+	ProcessGroupID      sql.NullInt64  `json:"process_group_id"`
+	ProcessIdentity     sql.NullString `json:"process_identity"`
+	ProcessStartedAt    sql.NullString `json:"process_started_at"`
+	StartedAt           sql.NullString `json:"started_at"`
+	PlatformOwnershipID sql.NullString `json:"platform_ownership_id"`
+	ID                  int64          `json:"id"`
+	OwnershipToken      sql.NullString `json:"ownership_token"`
 }
 
 func (q *Queries) RegisterAgentExecutionProcess(ctx context.Context, arg RegisterAgentExecutionProcessParams) (AgentExecution, error) {
@@ -333,6 +674,7 @@ func (q *Queries) RegisterAgentExecutionProcess(ctx context.Context, arg Registe
 		arg.ProcessIdentity,
 		arg.ProcessStartedAt,
 		arg.StartedAt,
+		arg.PlatformOwnershipID,
 		arg.ID,
 		arg.OwnershipToken,
 	)
@@ -364,6 +706,13 @@ func (q *Queries) RegisterAgentExecutionProcess(ctx context.Context, arg Registe
 		&i.CancellationCompletedAt,
 		&i.TerminalReason,
 		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
 	)
 	return i, err
 }
@@ -377,9 +726,9 @@ SET status = 'cancel_requested',
         ELSE updated_at
     END
 WHERE id = ?
-  AND status IN ('starting', 'running', 'cancel_requested')
+  AND status IN ('starting', 'running', 'cancel_requested', 'termination_pending')
   AND terminalized_at IS NULL
-RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at
+RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id
 `
 
 type RequestAgentExecutionCancellationParams struct {
@@ -417,6 +766,13 @@ func (q *Queries) RequestAgentExecutionCancellation(ctx context.Context, arg Req
 		&i.CancellationCompletedAt,
 		&i.TerminalReason,
 		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
 	)
 	return i, err
 }
@@ -437,9 +793,13 @@ SET status = ?,
     terminalized_at = ?,
     updated_at = datetime('now')
 WHERE id = ?
-  AND status IN ('starting', 'running', 'cancel_requested')
+  AND status IN ('starting', 'running', 'cancel_requested', 'termination_pending')
+  AND (
+      launch_state = 'start_prevented'
+      OR termination_state = 'verified_absent'
+  )
   AND terminalized_at IS NULL
-RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at
+RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id
 `
 
 type TerminalizeAgentExecutionCASParams struct {
@@ -502,6 +862,13 @@ func (q *Queries) TerminalizeAgentExecutionCAS(ctx context.Context, arg Terminal
 		&i.CancellationCompletedAt,
 		&i.TerminalReason,
 		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
 	)
 	return i, err
 }
@@ -512,7 +879,7 @@ SET status = ?, exit_code = ?, started_at = ?, finished_at = ?,
     stdout_artifact_path = ?, stderr_artifact_path = ?,
     combined_artifact_path = ?, result_artifact_path = ?, error = ?,
     updated_at = datetime('now')
-WHERE id = ? RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at
+WHERE id = ? RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id
 `
 
 type UpdateAgentExecutionStatusParams struct {
@@ -569,6 +936,13 @@ func (q *Queries) UpdateAgentExecutionStatus(ctx context.Context, arg UpdateAgen
 		&i.CancellationCompletedAt,
 		&i.TerminalReason,
 		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
 	)
 	return i, err
 }

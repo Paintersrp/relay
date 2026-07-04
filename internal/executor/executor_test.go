@@ -478,11 +478,14 @@ func TestDispatchBrief_TimeoutWithoutVerifiedTerminationFailsClosed(t *testing.T
 	if err != nil {
 		t.Fatalf("get execution: %v", err)
 	}
-	if exec.Status != ExecutionStatusFailed {
-		t.Fatalf("expected fail-closed status %s, got %s", ExecutionStatusFailed, exec.Status)
+	if exec.Status != ExecutionStatusTerminationPending {
+		t.Fatalf("expected nonterminal status %s, got %s", ExecutionStatusTerminationPending, exec.Status)
 	}
-	if !exec.Error.Valid || !strings.Contains(exec.Error.String, "still alive") {
-		t.Fatalf("expected termination error to be retained, got %+v", exec.Error)
+	if exec.TerminalizedAt.Valid {
+		t.Fatalf("expected unverified timeout to leave terminalized_at unset, got %s", exec.TerminalizedAt.String)
+	}
+	if !exec.TerminationLastError.Valid || !strings.Contains(exec.TerminationLastError.String, "still alive") {
+		t.Fatalf("expected termination error to be retained, got %+v", exec.TerminationLastError)
 	}
 }
 
@@ -1289,6 +1292,13 @@ func TestDispatchBrief_ProcessRegistrationFailureBlocksExecution(t *testing.T) {
 			if callbacks.OnProcessStarted == nil {
 				t.Fatal("expected process-start callback")
 			}
+			exec, err := s.GetActiveAgentExecutionByRun(runID)
+			if err != nil || exec == nil {
+				t.Fatalf("expected active execution before process registration, got exec=%+v err=%v", exec, err)
+			}
+			if _, err := s.DB().Exec("UPDATE agent_executions SET ownership_token = 'stale-token' WHERE id = ?", exec.ID); err != nil {
+				t.Fatalf("stale ownership token: %v", err)
+			}
 			callbackErr = callbacks.OnProcessStarted(pipeline.ProcessIdentity{
 				PID:       1234,
 				GroupID:   1234,
@@ -1296,19 +1306,18 @@ func TestDispatchBrief_ProcessRegistrationFailureBlocksExecution(t *testing.T) {
 				Platform:  "test",
 			})
 			return pipeline.AgentCommandRunResult{
-				ExitCode:   -1,
-				Error:      callbackErr.Error(),
-				StartedAt:  time.Now(),
-				FinishedAt: time.Now(),
+				ExitCode:            -1,
+				Error:               callbackErr.Error(),
+				StartedAt:           time.Now(),
+				FinishedAt:          time.Now(),
+				TerminationVerified: false,
+				TerminationError:    callbackErr.Error(),
 			}
 		},
 		LaunchAsync: func(fn func()) {
 			exec, err := s.GetActiveAgentExecutionByRun(runID)
 			if err != nil || exec == nil {
 				t.Fatalf("expected active execution before launch, got exec=%+v err=%v", exec, err)
-			}
-			if _, err := s.DB().Exec("UPDATE agent_executions SET ownership_token = 'stale-token' WHERE id = ?", exec.ID); err != nil {
-				t.Fatalf("stale ownership token: %v", err)
 			}
 			fn()
 			close(done)
@@ -1326,15 +1335,15 @@ func TestDispatchBrief_ProcessRegistrationFailureBlocksExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get latest execution: %v", err)
 	}
-	if exec.Status != ExecutionStatusFailed {
-		t.Fatalf("expected failed execution, got %s", exec.Status)
+	if exec.Status != ExecutionStatusTerminationPending {
+		t.Fatalf("expected pending termination execution, got %s", exec.Status)
 	}
-	if !exec.Error.Valid || !strings.Contains(exec.Error.String, "process identity registration") {
-		t.Fatalf("expected registration error to be retained, got %+v", exec.Error)
+	if !exec.TerminationLastError.Valid || !strings.Contains(exec.TerminationLastError.String, "process identity registration") {
+		t.Fatalf("expected registration error to be retained, got %+v", exec.TerminationLastError)
 	}
 	run, _ := s.GetRun(runID)
-	if run.Status != StatusExecutorBlocked {
-		t.Fatalf("expected run status %s, got %s", StatusExecutorBlocked, run.Status)
+	if run.Status != StatusExecutorDispatched {
+		t.Fatalf("expected run status to remain %s while cleanup is pending, got %s", StatusExecutorDispatched, run.Status)
 	}
 }
 

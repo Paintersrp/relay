@@ -549,23 +549,19 @@ func (s *Store) ListActiveAgentExecutions() ([]AgentExecution, error) {
 }
 
 type AgentProcessIdentityUpdate struct {
-	ProcessID        int64
-	ProcessGroupID   int64
-	ProcessIdentity  string
-	ProcessStartedAt string
-	StartedAt        string
-	OwnershipToken   string
+	ProcessID           int64
+	ProcessGroupID      int64
+	ProcessIdentity     string
+	ProcessStartedAt    string
+	StartedAt           string
+	PlatformOwnershipID string
+	OwnershipToken      string
 }
 
-func (s *Store) RegisterAgentExecutionProcess(id int64, upd AgentProcessIdentityUpdate) (*AgentExecution, bool, error) {
-	exec, err := s.queries.RegisterAgentExecutionProcess(context.Background(), generated.RegisterAgentExecutionProcessParams{
-		ID:               id,
-		ProcessID:        nullInt64(upd.ProcessID),
-		ProcessGroupID:   nullInt64(upd.ProcessGroupID),
-		ProcessIdentity:  nullString(upd.ProcessIdentity),
-		ProcessStartedAt: nullString(upd.ProcessStartedAt),
-		StartedAt:        nullString(upd.StartedAt),
-		OwnershipToken:   nullString(upd.OwnershipToken),
+func (s *Store) ClaimAgentExecutionLaunch(id int64, ownershipToken string) (*AgentExecution, bool, error) {
+	exec, err := s.queries.ClaimAgentExecutionLaunch(context.Background(), generated.ClaimAgentExecutionLaunchParams{
+		ID:             id,
+		OwnershipToken: nullString(ownershipToken),
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -575,6 +571,76 @@ func (s *Store) RegisterAgentExecutionProcess(id int64, upd AgentProcessIdentity
 		return nil, false, err
 	}
 	return &exec, true, nil
+}
+
+func (s *Store) RecordAgentExecutionStartPrevented(id int64, ownershipToken string) (*AgentExecution, bool, error) {
+	exec, err := s.queries.RecordAgentExecutionStartPrevented(context.Background(), generated.RecordAgentExecutionStartPreventedParams{
+		ID:             id,
+		OwnershipToken: nullString(ownershipToken),
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			current, getErr := s.GetAgentExecution(id)
+			return current, false, getErr
+		}
+		return nil, false, err
+	}
+	return &exec, true, nil
+}
+
+func (s *Store) RegisterAgentExecutionProcess(id int64, upd AgentProcessIdentityUpdate) (*AgentExecution, bool, error) {
+	exec, err := s.queries.RegisterAgentExecutionProcess(context.Background(), generated.RegisterAgentExecutionProcessParams{
+		ID:                  id,
+		ProcessID:           nullInt64(upd.ProcessID),
+		ProcessGroupID:      nullInt64(upd.ProcessGroupID),
+		ProcessIdentity:     nullString(upd.ProcessIdentity),
+		ProcessStartedAt:    nullString(upd.ProcessStartedAt),
+		StartedAt:           nullString(upd.StartedAt),
+		PlatformOwnershipID: nullString(upd.PlatformOwnershipID),
+		OwnershipToken:      nullString(upd.OwnershipToken),
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			current, getErr := s.GetAgentExecution(id)
+			return current, false, getErr
+		}
+		return nil, false, err
+	}
+	return &exec, true, nil
+}
+
+func (s *Store) MarkAgentExecutionTerminationRequested(id int64, reason, attemptedAt string) (*AgentExecution, error) {
+	exec, err := s.queries.MarkAgentExecutionTerminationRequested(context.Background(), generated.MarkAgentExecutionTerminationRequestedParams{
+		ID:                         id,
+		TerminationRequestedReason: nullString(reason),
+		TerminationAttemptedAt:     nullString(attemptedAt),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &exec, nil
+}
+
+func (s *Store) MarkAgentExecutionTerminationFailed(id int64, errText string) (*AgentExecution, error) {
+	exec, err := s.queries.MarkAgentExecutionTerminationFailed(context.Background(), generated.MarkAgentExecutionTerminationFailedParams{
+		ID:                   id,
+		TerminationLastError: nullString(errText),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &exec, nil
+}
+
+func (s *Store) MarkAgentExecutionTreeVerifiedAbsent(id int64, verifiedAt string) (*AgentExecution, error) {
+	exec, err := s.queries.MarkAgentExecutionTreeVerifiedAbsent(context.Background(), generated.MarkAgentExecutionTreeVerifiedAbsentParams{
+		ID:                    id,
+		TerminationVerifiedAt: nullString(verifiedAt),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &exec, nil
 }
 
 func (s *Store) RequestAgentExecutionCancellation(id int64, requestedAt string) (*AgentExecution, bool, error) {

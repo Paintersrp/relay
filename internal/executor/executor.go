@@ -190,11 +190,12 @@ func writeExecutorArtifact(runID int64, kind string, data []byte) (string, error
 	return artifacts.Write(runID, kind, pipeline.ArtifactFilename(kind), redacted)
 }
 
-func recordExecutorArtifact(store *store.Store, runID int64, kind, path, mimeType string) {
+func recordExecutorArtifact(store *store.Store, runID int64, kind, path, mimeType string) error {
 	if store == nil || path == "" {
-		return
+		return nil
 	}
-	store.CreateArtifact(runID, kind, path, mimeType)
+	_, err := store.CreateArtifact(runID, kind, path, mimeType)
+	return err
 }
 
 func deleteExecutorArtifacts(store *store.Store, runID int64) {
@@ -431,6 +432,33 @@ func runBackgroundDispatch(
 		l.Error("executor: ensure artifact dir", "error", err)
 	}
 
+	if claimed, won, err := s.ClaimAgentExecutionLaunch(execID, ownershipToken); err != nil {
+		l.Error("executor: claim launch", "run_id", runID, "exec_id", execID, "error", err)
+		markTerminationFailed(s, execID, "claim launch failed: "+err.Error())
+		return
+	} else if !won {
+		if claimed != nil && claimed.CancellationRequestedAt.Valid {
+			if prevented, preventedWon, preventErr := s.RecordAgentExecutionStartPrevented(execID, ownershipToken); preventErr == nil && preventedWon {
+				finished := executionTimestampNow()
+				_, _, _ = terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
+					Status:                  ExecutionStatusCanceled,
+					Reason:                  TerminalReasonCanceled,
+					FinishedAt:              finished,
+					CancellationCompletedAt: finished,
+					EventLevel:              "warn",
+					EventMessage:            "Executor canceled before process start",
+					StepEventStatus:         "canceled",
+					RunStatus:               StatusExecutorBlocked,
+					RunEventStatus:          "blocked",
+				})
+				_ = prevented
+				return
+			}
+		}
+		markTerminationFailed(s, execID, "launch ownership could not be claimed and start was not durably prevented")
+		return
+	}
+
 	combinedLogText := func(stdout, stderr string) string {
 		var b strings.Builder
 		b.WriteString("Command: ")
@@ -513,12 +541,13 @@ func runBackgroundDispatch(
 			OnProcessStarted: func(identity pipeline.ProcessIdentity) error {
 				startedAt = executionTimestampNow()
 				if _, won, err := s.RegisterAgentExecutionProcess(execID, store.AgentProcessIdentityUpdate{
-					ProcessID:        int64(identity.PID),
-					ProcessGroupID:   int64(identity.GroupID),
-					ProcessIdentity:  identity.Encode(),
-					ProcessStartedAt: identity.StartedAt,
-					StartedAt:        startedAt,
-					OwnershipToken:   ownershipToken,
+					ProcessID:           int64(identity.PID),
+					ProcessGroupID:      int64(identity.GroupID),
+					ProcessIdentity:     identity.Encode(),
+					ProcessStartedAt:    identity.StartedAt,
+					StartedAt:           startedAt,
+					PlatformOwnershipID: identity.Nonce,
+					OwnershipToken:      ownershipToken,
 				}); err != nil {
 					stream.recordWriteError("register_process_identity", err)
 					return fmt.Errorf("register process identity: %w", err)
@@ -532,6 +561,13 @@ func runBackgroundDispatch(
 			},
 		},
 	)
+
+	if runResult.TerminationError == "" {
+		if current, err := s.GetAgentExecution(execID); err == nil && current != nil &&
+			current.LaunchState == "start_in_progress" && !current.ProcessIdentity.Valid {
+			_, _, _ = s.RecordAgentExecutionStartPrevented(execID, ownershipToken)
+		}
+	}
 
 	flushEvents := stream.progressParser.flush()
 	for _, ev := range flushEvents {
@@ -580,15 +616,22 @@ func runBackgroundDispatch(
 		if writeErrSummary != "" {
 			errMsg = appendError(errMsg, writeErrSummary)
 		}
+		if runResult.TerminationVerified {
+			markTerminationVerified(s, execID)
+		} else {
+			markTerminationFailed(s, execID, errMsg)
+			createEvent(s, runID, "warn", "Executor cancellation cleanup is still pending")
+			return
+		}
 		status := ExecutionStatusCanceled
 		reason := TerminalReasonCanceled
 		stepStatus := "canceled"
 		eventMessage := "Executor canceled by operator request"
-		if writeErrSummary != "" || !runResult.TerminationVerified {
+		if writeErrSummary != "" {
 			status = ExecutionStatusFailed
 			reason = TerminalReasonFailed
 			stepStatus = "blocked"
-			eventMessage = "Executor cancellation cleanup failed"
+			eventMessage = "Executor cancellation evidence persistence failed"
 		}
 		_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
 			Status:                  status,
@@ -624,15 +667,22 @@ func runBackgroundDispatch(
 		if writeErrSummary != "" {
 			errMsg = appendError(errMsg, writeErrSummary)
 		}
+		if runResult.TerminationVerified {
+			markTerminationVerified(s, execID)
+		} else {
+			markTerminationFailed(s, execID, errMsg)
+			createEvent(s, runID, "warn", "Executor timeout cleanup is still pending")
+			return
+		}
 		status := ExecutionStatusTimedOut
 		reason := TerminalReasonTimedOut
 		stepStatus := "timed_out"
 		eventMessage := "Executor timed out"
-		if writeErrSummary != "" || !runResult.TerminationVerified {
+		if writeErrSummary != "" {
 			status = ExecutionStatusFailed
 			reason = TerminalReasonFailed
 			stepStatus = "blocked"
-			eventMessage = "Executor timeout cleanup failed"
+			eventMessage = "Executor timeout evidence persistence failed"
 		}
 		_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
 			Status:          status,
@@ -653,6 +703,18 @@ func runBackgroundDispatch(
 		if err != nil {
 			l.Error("executor: terminalize timed out execution", "run_id", runID, "exec_id", execID, "error", err)
 		}
+		return
+	}
+
+	if runResult.TerminationError != "" && !runResult.TerminationVerified {
+		markTerminationFailed(s, execID, runResult.TerminationError)
+		createEvent(s, runID, "warn", "Executor cleanup is still pending: "+runResult.TerminationError)
+		return
+	}
+
+	if ok, blocker := ensureExecutionTreeAbsentForTerminal(s, p.processController(), execID); !ok {
+		markTerminationFailed(s, execID, blocker)
+		createEvent(s, runID, "warn", "Executor completion cleanup is still pending: "+blocker)
 		return
 	}
 
@@ -862,6 +924,38 @@ func appendError(base, extra string) string {
 	return base + "; " + extra
 }
 
+func ensureExecutionTreeAbsentForTerminal(st *store.Store, controller pipeline.ProcessController, execID int64) (bool, string) {
+	if st == nil {
+		return false, "store is unavailable for terminal cleanup verification"
+	}
+	exec, err := st.GetAgentExecution(execID)
+	if err != nil {
+		return false, "load execution for terminal cleanup verification: " + err.Error()
+	}
+	if exec == nil {
+		return false, "execution missing during terminal cleanup verification"
+	}
+	if exec.LaunchState == "start_prevented" || exec.TerminationState == "verified_absent" {
+		return true, ""
+	}
+	identity, err := processIdentityFromExecution(exec)
+	if err != nil {
+		return false, "process identity unavailable during terminal cleanup verification: " + err.Error()
+	}
+	if controller == nil {
+		controller = pipeline.DefaultProcessController()
+	}
+	running, err := controller.IsRunning(identity)
+	if err != nil {
+		return false, "process tree presence unverifiable during terminal cleanup verification: " + err.Error()
+	}
+	if running {
+		return false, "process tree still running after executor completion"
+	}
+	markTerminationVerified(st, execID)
+	return true, ""
+}
+
 func terminalReasonForStatus(status string) string {
 	if status == ExecutionStatusSucceeded {
 		return TerminalReasonSucceeded
@@ -1066,10 +1160,18 @@ func collectAndPersistGitEvidence(s *store.Store, runID int64, repoPath string) 
 	if repoPath == "" {
 		return nil
 	}
+	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("inspect git metadata: %w", err)
+	}
 	ev, err := pipeline.CollectGitDiffEvidence(context.Background(), repoPath, 30*time.Second)
 	if err != nil {
-		s.CreateEvent(runID, "warn", fmt.Sprintf("Failed to collect git evidence: %v", err))
-		return nil
+		if s != nil {
+			_, _ = s.CreateEvent(runID, "warn", fmt.Sprintf("Failed to collect git evidence: %v", err))
+		}
+		return fmt.Errorf("collect git evidence: %w", err)
 	}
 
 	var errs []string
@@ -1102,8 +1204,10 @@ func persistGitArtifact(s *store.Store, runID int64, kind, content string) error
 	if err != nil {
 		return err
 	}
-	if err == nil && path != "" {
-		s.CreateArtifact(runID, kind, path, "text/plain")
+	if err == nil && path != "" && s != nil {
+		if _, err := s.CreateArtifact(runID, kind, path, "text/plain"); err != nil {
+			return err
+		}
 	}
 	return nil
 }

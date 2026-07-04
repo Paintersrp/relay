@@ -52,6 +52,9 @@ func TestAgentExecutionOwnershipCancellationAndCAS(t *testing.T) {
 		t.Fatalf("expected active execution %d, got %+v", exec.ID, active)
 	}
 
+	if _, won, err := st.ClaimAgentExecutionLaunch(exec.ID, "token-a"); err != nil || !won {
+		t.Fatalf("claim launch won=%v err=%v", won, err)
+	}
 	registered, won, err := st.RegisterAgentExecutionProcess(exec.ID, AgentProcessIdentityUpdate{
 		ProcessID:        1234,
 		ProcessGroupID:   1234,
@@ -82,6 +85,9 @@ func TestAgentExecutionOwnershipCancellationAndCAS(t *testing.T) {
 		t.Fatalf("repeat cancellation changed updated_at: first=%s second=%s", first.UpdatedAt, second.UpdatedAt)
 	}
 
+	if _, err := st.MarkAgentExecutionTreeVerifiedAbsent(exec.ID, "2026-07-04T00:00:03Z"); err != nil {
+		t.Fatalf("mark verified absent: %v", err)
+	}
 	exitCode := int64(0)
 	var wg sync.WaitGroup
 	winners := make(chan bool, 2)
@@ -131,6 +137,9 @@ func TestTerminalizeAgentExecutionCASPreservesExistingArtifactPaths(t *testing.T
 	if err != nil {
 		t.Fatalf("create execution: %v", err)
 	}
+	if _, won, err := st.ClaimAgentExecutionLaunch(exec.ID, "token-a"); err != nil || !won {
+		t.Fatalf("claim launch won=%v err=%v", won, err)
+	}
 	registered, won, err := st.RegisterAgentExecutionProcess(exec.ID, AgentProcessIdentityUpdate{
 		ProcessID:        1234,
 		ProcessGroupID:   1234,
@@ -144,6 +153,9 @@ func TestTerminalizeAgentExecutionCASPreservesExistingArtifactPaths(t *testing.T
 	}
 	if _, err := st.UpdateAgentExecutionStatus(registered.ID, "running", nil, nil, nil, stringPtr("stdout.txt"), stringPtr("stderr.txt"), stringPtr("combined.txt"), stringPtr("result.txt"), nil); err != nil {
 		t.Fatalf("seed artifact paths: %v", err)
+	}
+	if _, err := st.MarkAgentExecutionTreeVerifiedAbsent(exec.ID, "2026-07-04T00:00:03Z"); err != nil {
+		t.Fatalf("mark verified absent: %v", err)
 	}
 
 	terminal, won, err := st.TerminalizeAgentExecutionCAS(exec.ID, AgentExecutionTerminalUpdate{

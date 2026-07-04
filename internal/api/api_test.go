@@ -285,8 +285,11 @@ func TestAPI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reload execution: %v", err)
 		}
-		if latest.Status != "canceled" || !latest.TerminalizedAt.Valid {
-			t.Fatalf("expected canceled terminal execution, got %+v", latest)
+		if latest.Status != "termination_pending" || latest.TerminalizedAt.Valid {
+			t.Fatalf("expected nonterminal pending cancellation cleanup, got %+v", latest)
+		}
+		if !latest.TerminationLastError.Valid || !strings.Contains(latest.TerminationLastError.String, "process identity is missing") {
+			t.Fatalf("expected missing identity blocker, got %+v", latest.TerminationLastError)
 		}
 	})
 

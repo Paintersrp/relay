@@ -3,6 +3,8 @@
 package pipeline
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -16,11 +18,38 @@ import (
 
 type defaultProcessController struct{}
 
-var windowsJobs sync.Map
+type windowsJobRecord struct {
+	name   string
+	handle windows.Handle
+}
+
+type jobObjectBasicAccountingInformation struct {
+	TotalUserTime             int64
+	TotalKernelTime           int64
+	ThisPeriodTotalUserTime   int64
+	ThisPeriodTotalKernelTime int64
+	TotalPageFaultCount       uint32
+	TotalProcesses            uint32
+	ActiveProcesses           uint32
+	TotalTerminatedProcesses  uint32
+}
+
+var (
+	windowsJobsByCommand sync.Map
+	windowsJobsByName    sync.Map
+)
 
 func (defaultProcessController) PrepareCommand(cmd *exec.Cmd) error {
 	cmd.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP}
-	job, err := windows.CreateJobObject(nil, nil)
+	name, err := newWindowsJobName()
+	if err != nil {
+		return err
+	}
+	namePtr, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return err
+	}
+	job, err := windows.CreateJobObject(nil, namePtr)
 	if err != nil {
 		return fmt.Errorf("create job object: %w", err)
 	}
@@ -35,7 +64,9 @@ func (defaultProcessController) PrepareCommand(cmd *exec.Cmd) error {
 		windows.CloseHandle(job)
 		return fmt.Errorf("configure job object: %w", err)
 	}
-	windowsJobs.Store(cmd, job)
+	rec := windowsJobRecord{name: name, handle: job}
+	windowsJobsByCommand.Store(cmd, rec)
+	windowsJobsByName.Store(name, rec)
 	return nil
 }
 
@@ -43,16 +74,16 @@ func (defaultProcessController) Identity(cmd *exec.Cmd, startedAt time.Time) (Pr
 	if cmd.Process == nil || cmd.Process.Pid <= 0 {
 		return ProcessIdentity{}, ErrProcessUnverifiable
 	}
-	rawJob, ok := windowsJobs.Load(cmd)
+	rawJob, ok := windowsJobsByCommand.Load(cmd)
 	if !ok {
 		return ProcessIdentity{}, fmt.Errorf("%w: missing job object", ErrProcessUnverifiable)
 	}
-	job := rawJob.(windows.Handle)
+	rec := rawJob.(windowsJobRecord)
 	handle, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(cmd.Process.Pid))
 	if err != nil {
 		return ProcessIdentity{}, fmt.Errorf("open process for job assignment: %w", err)
 	}
-	if err := windows.AssignProcessToJobObject(job, handle); err != nil {
+	if err := windows.AssignProcessToJobObject(rec.handle, handle); err != nil {
 		windows.CloseHandle(handle)
 		return ProcessIdentity{}, fmt.Errorf("assign process to job object: %w", err)
 	}
@@ -66,53 +97,55 @@ func (defaultProcessController) Identity(cmd *exec.Cmd, startedAt time.Time) (Pr
 		GroupID:   cmd.Process.Pid,
 		StartedAt: createdAt.UTC().Format(time.RFC3339Nano),
 		Platform:  runtime.GOOS,
-		Nonce:     fmt.Sprintf("%p", cmd),
+		Nonce:     rec.name,
 	}, nil
 }
 
 func (defaultProcessController) IsRunning(identity ProcessIdentity) (bool, error) {
+	if rec, ok := windowsJobRecordForIdentity(identity); ok {
+		active, err := windowsJobActiveProcessCount(rec.handle)
+		if err != nil {
+			return false, err
+		}
+		if active == 0 {
+			releaseWindowsJob(rec.name, rec.handle)
+			return false, nil
+		}
+		return true, nil
+	}
 	if err := verifyWindowsProcessIdentity(identity); err != nil {
 		if errors.Is(err, ErrProcessNotRunning) {
 			return false, nil
 		}
 		return false, err
 	}
-	return true, nil
+	return true, fmt.Errorf("%w: job handle unavailable for matching root process", ErrProcessUnverifiable)
 }
 
 func (defaultProcessController) TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
-	if err := verifyWindowsProcessIdentity(identity); err != nil {
-		if errors.Is(err, ErrProcessNotRunning) {
+	rec, ok := windowsJobRecordForIdentity(identity)
+	if !ok {
+		if err := verifyWindowsProcessIdentity(identity); errors.Is(err, ErrProcessNotRunning) {
 			return ProcessTerminationResult{VerifiedAbsent: true, AlreadyAbsent: true}, nil
 		}
-		return ProcessTerminationResult{}, err
+		return ProcessTerminationResult{}, fmt.Errorf("%w: job handle unavailable for matching root process", ErrProcessUnverifiable)
 	}
-	job, closeJob, err := windowsJobForIdentity(identity)
-	if err != nil {
-		return ProcessTerminationResult{}, err
-	}
-	defer closeJob()
-	if err := windows.TerminateJobObject(job, 1); err != nil {
+	defer releaseWindowsJob(rec.name, rec.handle)
+	if err := windows.TerminateJobObject(rec.handle, 1); err != nil {
 		return ProcessTerminationResult{}, fmt.Errorf("terminate job object: %w", err)
 	}
 	deadline := time.Now().Add(gracefulTimeout)
 	for time.Now().Before(deadline) {
-		running, err := defaultProcessController{}.IsRunning(identity)
+		active, err := windowsJobActiveProcessCount(rec.handle)
 		if err != nil {
 			return ProcessTerminationResult{}, err
 		}
-		if !running {
+		if active == 0 {
 			return ProcessTerminationResult{VerifiedAbsent: true, Forced: true}, nil
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if err := verifyWindowsProcessIdentity(identity); err != nil {
-		if errors.Is(err, ErrProcessNotRunning) {
-			return ProcessTerminationResult{VerifiedAbsent: true, Forced: true}, nil
-		}
-		return ProcessTerminationResult{}, err
-	}
-	return ProcessTerminationResult{Forced: true}, fmt.Errorf("%w: process still present after job termination", ErrProcessUnverifiable)
+	return ProcessTerminationResult{Forced: true}, fmt.Errorf("%w: job %s still has active processes after termination", ErrProcessUnverifiable, rec.name)
 }
 
 func verifyWindowsProcessIdentity(identity ProcessIdentity) error {
@@ -150,31 +183,47 @@ func windowsProcessCreationTime(pid int) (time.Time, error) {
 	return time.Unix(0, creation.Nanoseconds()).UTC(), nil
 }
 
-func windowsJobForIdentity(identity ProcessIdentity) (windows.Handle, func(), error) {
+func windowsJobRecordForIdentity(identity ProcessIdentity) (windowsJobRecord, bool) {
 	if identity.Nonce == "" {
-		return 0, func() {}, fmt.Errorf("%w: missing job identity", ErrProcessUnverifiable)
+		return windowsJobRecord{}, false
 	}
-	var job windows.Handle
-	var found bool
-	windowsJobs.Range(func(key, value any) bool {
-		if fmt.Sprintf("%p", key) == identity.Nonce {
-			job = value.(windows.Handle)
-			found = true
+	value, ok := windowsJobsByName.Load(identity.Nonce)
+	if !ok {
+		return windowsJobRecord{}, false
+	}
+	return value.(windowsJobRecord), true
+}
+
+func releaseWindowsJob(name string, handle windows.Handle) {
+	windowsJobsByName.Delete(name)
+	windowsJobsByCommand.Range(func(key, value any) bool {
+		if value.(windowsJobRecord).name == name {
+			windowsJobsByCommand.Delete(key)
 			return false
 		}
 		return true
 	})
-	if !found {
-		return 0, func() {}, fmt.Errorf("%w: job handle unavailable", ErrProcessUnverifiable)
+	_ = windows.CloseHandle(handle)
+}
+
+func windowsJobActiveProcessCount(job windows.Handle) (uint32, error) {
+	var info jobObjectBasicAccountingInformation
+	if err := windows.QueryInformationJobObject(
+		job,
+		windows.JobObjectBasicAccountingInformation,
+		uintptr(unsafe.Pointer(&info)),
+		uint32(unsafe.Sizeof(info)),
+		nil,
+	); err != nil {
+		return 0, fmt.Errorf("query job accounting: %w", err)
 	}
-	return job, func() {
-		windows.CloseHandle(job)
-		windowsJobs.Range(func(key, value any) bool {
-			if value.(windows.Handle) == job {
-				windowsJobs.Delete(key)
-				return false
-			}
-			return true
-		})
-	}, nil
+	return info.ActiveProcesses, nil
+}
+
+func newWindowsJobName() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("generate job name: %w", err)
+	}
+	return "RelayExecutor-" + hex.EncodeToString(b[:]), nil
 }

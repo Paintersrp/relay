@@ -42,8 +42,19 @@ func (defaultProcessController) Identity(cmd *exec.Cmd, startedAt time.Time) (Pr
 }
 
 func (defaultProcessController) IsRunning(identity ProcessIdentity) (bool, error) {
-	if err := verifyUnixProcessIdentity(identity); err != nil {
+	if err := verifyLeaderIdentity(identity); err != nil {
 		if errors.Is(err, ErrProcessNotRunning) {
+			groupID := identity.GroupID
+			if groupID <= 0 {
+				groupID = identity.PID
+			}
+			present, probeErr := processGroupPresent(groupID)
+			if probeErr != nil {
+				return false, probeErr
+			}
+			if present {
+				return false, fmt.Errorf("%w: leader absent but process group %d is still present", ErrProcessUnverifiable, groupID)
+			}
 			return false, nil
 		}
 		return false, err
@@ -52,8 +63,19 @@ func (defaultProcessController) IsRunning(identity ProcessIdentity) (bool, error
 }
 
 func (defaultProcessController) TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
-	if err := verifyUnixProcessIdentity(identity); err != nil {
+	if err := verifyLeaderIdentity(identity); err != nil {
 		if errors.Is(err, ErrProcessNotRunning) {
+			groupID := identity.GroupID
+			if groupID <= 0 {
+				groupID = identity.PID
+			}
+			present, probeErr := processGroupPresent(groupID)
+			if probeErr != nil {
+				return ProcessTerminationResult{}, probeErr
+			}
+			if present {
+				return ProcessTerminationResult{}, fmt.Errorf("%w: leader absent but process group %d is still present", ErrProcessUnverifiable, groupID)
+			}
 			return ProcessTerminationResult{VerifiedAbsent: true, AlreadyAbsent: true}, nil
 		}
 		return ProcessTerminationResult{}, err
@@ -62,12 +84,16 @@ func (defaultProcessController) TerminateTree(identity ProcessIdentity, graceful
 	if groupID <= 0 {
 		groupID = identity.PID
 	}
+	return terminateVerifiedProcessGroup(groupID, gracefulTimeout)
+}
+
+func terminateVerifiedProcessGroup(groupID int, gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
 	if err := syscall.Kill(-groupID, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return ProcessTerminationResult{}, err
 	}
 	deadline := time.Now().Add(gracefulTimeout)
 	for time.Now().Before(deadline) {
-		running, err := unixProcessGroupRunning(identity)
+		running, err := processGroupPresent(groupID)
 		if err != nil {
 			return ProcessTerminationResult{}, err
 		}
@@ -76,18 +102,12 @@ func (defaultProcessController) TerminateTree(identity ProcessIdentity, graceful
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if err := verifyUnixProcessIdentity(identity); err != nil {
-		if errors.Is(err, ErrProcessNotRunning) {
-			return ProcessTerminationResult{VerifiedAbsent: true}, nil
-		}
-		return ProcessTerminationResult{}, err
-	}
 	if err := syscall.Kill(-groupID, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return ProcessTerminationResult{}, err
 	}
 	deadline = time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		running, err := unixProcessGroupRunning(identity)
+		running, err := processGroupPresent(groupID)
 		if err != nil {
 			return ProcessTerminationResult{}, err
 		}
@@ -99,7 +119,7 @@ func (defaultProcessController) TerminateTree(identity ProcessIdentity, graceful
 	return ProcessTerminationResult{Forced: true}, fmt.Errorf("%w: process group %d still present after forced termination", ErrProcessUnverifiable, groupID)
 }
 
-func verifyUnixProcessIdentity(identity ProcessIdentity) error {
+func verifyLeaderIdentity(identity ProcessIdentity) error {
 	if identity.PID <= 0 || identity.StartedAt == "" {
 		return ErrProcessUnverifiable
 	}
@@ -136,22 +156,18 @@ func unixProcessStartFingerprint(pid int) (string, error) {
 	return fields[19], nil
 }
 
-func unixProcessGroupRunning(identity ProcessIdentity) (bool, error) {
-	if err := verifyUnixProcessIdentity(identity); err != nil {
-		if errors.Is(err, ErrProcessNotRunning) {
-			return false, nil
-		}
-		return false, err
-	}
-	groupID := identity.GroupID
+func processGroupPresent(groupID int) (bool, error) {
 	if groupID <= 0 {
-		groupID = identity.PID
+		return false, ErrProcessUnverifiable
 	}
 	if err := syscall.Kill(-groupID, 0); err != nil {
 		if errors.Is(err, syscall.ESRCH) {
 			return false, nil
 		}
-		return false, err
+		if errors.Is(err, syscall.EPERM) {
+			return true, nil
+		}
+		return true, err
 	}
 	return true, nil
 }
