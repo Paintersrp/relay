@@ -78,6 +78,9 @@ func TestAgentExecutionOwnershipCancellationAndCAS(t *testing.T) {
 	if first.CancellationRequestedAt.String != second.CancellationRequestedAt.String {
 		t.Fatalf("cancellation timestamp changed: first=%s second=%s", first.CancellationRequestedAt.String, second.CancellationRequestedAt.String)
 	}
+	if first.UpdatedAt != second.UpdatedAt {
+		t.Fatalf("repeat cancellation changed updated_at: first=%s second=%s", first.UpdatedAt, second.UpdatedAt)
+	}
 
 	exitCode := int64(0)
 	var wg sync.WaitGroup
@@ -118,4 +121,48 @@ func TestAgentExecutionOwnershipCancellationAndCAS(t *testing.T) {
 	if len(list) != 0 {
 		t.Fatalf("expected no active executions after terminalization, got %d", len(list))
 	}
+}
+
+func TestTerminalizeAgentExecutionCASPreservesExistingArtifactPaths(t *testing.T) {
+	st := newOwnershipTestStore(t)
+	runID := createOwnershipTestRun(t, st)
+
+	exec, err := st.CreateOwnedAgentExecution(runID, "test", "starting", "preview", "local_process", "owner-a", "token-a")
+	if err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	registered, won, err := st.RegisterAgentExecutionProcess(exec.ID, AgentProcessIdentityUpdate{
+		ProcessID:        1234,
+		ProcessGroupID:   1234,
+		ProcessIdentity:  `{"pid":1234,"group_id":1234,"started_at":"fingerprint","platform":"test"}`,
+		ProcessStartedAt: "fingerprint",
+		StartedAt:        "2026-07-04T00:00:00Z",
+		OwnershipToken:   "token-a",
+	})
+	if err != nil || !won {
+		t.Fatalf("register process won=%v err=%v", won, err)
+	}
+	if _, err := st.UpdateAgentExecutionStatus(registered.ID, "running", nil, nil, nil, stringPtr("stdout.txt"), stringPtr("stderr.txt"), stringPtr("combined.txt"), stringPtr("result.txt"), nil); err != nil {
+		t.Fatalf("seed artifact paths: %v", err)
+	}
+
+	terminal, won, err := st.TerminalizeAgentExecutionCAS(exec.ID, AgentExecutionTerminalUpdate{
+		Status:         "process_lost",
+		FinishedAt:     "2026-07-04T00:00:03Z",
+		TerminalReason: "process_lost",
+		TerminalizedAt: "2026-07-04T00:00:03Z",
+	})
+	if err != nil || !won {
+		t.Fatalf("terminalize won=%v err=%v", won, err)
+	}
+	if terminal.StdoutArtifactPath.String != "stdout.txt" ||
+		terminal.StderrArtifactPath.String != "stderr.txt" ||
+		terminal.CombinedArtifactPath.String != "combined.txt" ||
+		terminal.ResultArtifactPath.String != "result.txt" {
+		t.Fatalf("artifact paths were not preserved: %+v", terminal)
+	}
+}
+
+func stringPtr(v string) *string {
+	return &v
 }

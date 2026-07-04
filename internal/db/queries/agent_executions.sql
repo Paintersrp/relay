@@ -55,7 +55,10 @@ RETURNING *;
 UPDATE agent_executions
 SET status = 'cancel_requested',
     cancellation_requested_at = COALESCE(cancellation_requested_at, ?),
-    updated_at = datetime('now')
+    updated_at = CASE
+        WHEN cancellation_requested_at IS NULL THEN datetime('now')
+        ELSE updated_at
+    END
 WHERE id = ?
   AND status IN ('starting', 'running', 'cancel_requested')
   AND terminalized_at IS NULL
@@ -67,10 +70,10 @@ SET status = ?,
     exit_code = ?,
     started_at = COALESCE(started_at, ?),
     finished_at = ?,
-    stdout_artifact_path = ?,
-    stderr_artifact_path = ?,
-    combined_artifact_path = ?,
-    result_artifact_path = ?,
+    stdout_artifact_path = COALESCE(?, stdout_artifact_path),
+    stderr_artifact_path = COALESCE(?, stderr_artifact_path),
+    combined_artifact_path = COALESCE(?, combined_artifact_path),
+    result_artifact_path = COALESCE(?, result_artifact_path),
     error = ?,
     cancellation_completed_at = ?,
     terminal_reason = ?,

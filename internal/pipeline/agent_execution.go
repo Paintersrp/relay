@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -95,7 +96,7 @@ type AgentCommandWaitResult struct {
 type AgentCommandStreamCallbacks struct {
 	OnStartCalled         func()
 	OnStartReturned       func(pid int)
-	OnProcessStarted      func(identity ProcessIdentity)
+	OnProcessStarted      func(identity ProcessIdentity) error
 	OnStartError          func(err error)
 	OnStdoutReaderStarted func()
 	OnStdoutReaderDone    func(err error)
@@ -216,7 +217,7 @@ func RunLocalAgentCommandArgsStreamingWithController(
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, binary, args...)
+	cmd := exec.Command(binary, args...)
 	cmd.Dir = workDir
 	if controller == nil {
 		controller = DefaultProcessController()
@@ -282,11 +283,54 @@ func RunLocalAgentCommandArgsStreamingWithController(
 	if callbacks.OnStartReturned != nil {
 		callbacks.OnStartReturned(cmd.Process.Pid)
 	}
-	if callbacks.OnProcessStarted != nil {
-		if identity, err := controller.Identity(cmd, start); err == nil {
-			callbacks.OnProcessStarted(identity)
-		} else if callbacks.OnStartError != nil {
+	var identity ProcessIdentity
+	identityRegistered := false
+	if identityValue, err := controller.Identity(cmd, start); err == nil {
+		identity = identityValue
+		if callbacks.OnProcessStarted != nil {
+			if err := callbacks.OnProcessStarted(identity); err != nil {
+				if callbacks.OnStartError != nil {
+					callbacks.OnStartError(err)
+				}
+				terminateErr := controller.TerminateTree(identity, 2*time.Second)
+				waitErr := cmd.Wait()
+				finished := time.Now()
+				errMsg := err.Error()
+				if terminateErr != nil && !errors.Is(terminateErr, ErrProcessNotRunning) {
+					errMsg += "; terminate unregistered process tree: " + terminateErr.Error()
+				}
+				if waitErr != nil {
+					errMsg += "; wait after registration failure: " + waitErr.Error()
+				}
+				return AgentCommandRunResult{
+					Command:    commandPreview,
+					WorkDir:    workDir,
+					ExitCode:   -1,
+					Error:      errMsg,
+					StartedAt:  start,
+					FinishedAt: finished,
+				}
+			}
+		}
+		identityRegistered = true
+	} else {
+		if callbacks.OnStartError != nil {
 			callbacks.OnStartError(err)
+		}
+		_ = cmd.Process.Kill()
+		waitErr := cmd.Wait()
+		finished := time.Now()
+		errMsg := err.Error()
+		if waitErr != nil {
+			errMsg += "; wait after identity failure: " + waitErr.Error()
+		}
+		return AgentCommandRunResult{
+			Command:    commandPreview,
+			WorkDir:    workDir,
+			ExitCode:   -1,
+			Error:      errMsg,
+			StartedAt:  start,
+			FinishedAt: finished,
 		}
 	}
 
@@ -343,7 +387,32 @@ func RunLocalAgentCommandArgsStreamingWithController(
 	if callbacks.OnWaitStarted != nil {
 		callbacks.OnWaitStarted()
 	}
+	waitDone := make(chan struct{})
+	terminationErrCh := make(chan error, 1)
+	go func() {
+		select {
+		case <-runCtx.Done():
+		case <-waitDone:
+			terminationErrCh <- nil
+			return
+		}
+		if identityRegistered {
+			terminationErrCh <- controller.TerminateTree(identity, 2*time.Second)
+			return
+		}
+		if cmd.Process != nil {
+			terminationErrCh <- cmd.Process.Kill()
+			return
+		}
+		terminationErrCh <- nil
+	}()
 	waitErr := cmd.Wait()
+	close(waitDone)
+	var terminationErr error
+	if runCtx.Err() != nil {
+		terminationErr = <-terminationErrCh
+	}
+	cancel()
 	exitCode := 0
 	errMsg := ""
 	if waitErr != nil {
@@ -378,6 +447,10 @@ func RunLocalAgentCommandArgsStreamingWithController(
 	finished := time.Now()
 
 	if runCtx.Err() == context.DeadlineExceeded {
+		errText := ""
+		if terminationErr != nil && !errors.Is(terminationErr, ErrProcessNotRunning) {
+			errText = "terminate timed out process tree: " + terminationErr.Error()
+		}
 		return AgentCommandRunResult{
 			Command:    commandPreview,
 			WorkDir:    workDir,
@@ -385,8 +458,19 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			Stdout:     stdoutBuf.String(),
 			Stderr:     stderrBuf.String(),
 			TimedOut:   true,
+			Error:      errText,
 			StartedAt:  start,
 			FinishedAt: finished,
+		}
+	}
+
+	if terminationErr != nil && !errors.Is(terminationErr, ErrProcessNotRunning) {
+		if errMsg != "" {
+			errMsg += "; "
+		}
+		errMsg += "terminate canceled process tree: " + terminationErr.Error()
+		if exitCode == 0 {
+			exitCode = -1
 		}
 	}
 

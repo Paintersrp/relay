@@ -1222,6 +1222,75 @@ func TestDispatchBrief_PreflightInjectionAllowsExistingFakeRunnerTests(t *testin
 	}
 }
 
+func TestDispatchBrief_ProcessRegistrationFailureBlocksExecution(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	done := make(chan struct{})
+	var callbackErr error
+
+	_, err := DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: &fakeAdapter{},
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			if callbacks.OnProcessStarted == nil {
+				t.Fatal("expected process-start callback")
+			}
+			callbackErr = callbacks.OnProcessStarted(pipeline.ProcessIdentity{
+				PID:       1234,
+				GroupID:   1234,
+				StartedAt: "fingerprint",
+				Platform:  "test",
+			})
+			return pipeline.AgentCommandRunResult{
+				ExitCode:   -1,
+				Error:      callbackErr.Error(),
+				StartedAt:  time.Now(),
+				FinishedAt: time.Now(),
+			}
+		},
+		LaunchAsync: func(fn func()) {
+			exec, err := s.GetActiveAgentExecutionByRun(runID)
+			if err != nil || exec == nil {
+				t.Fatalf("expected active execution before launch, got exec=%+v err=%v", exec, err)
+			}
+			if _, err := s.DB().Exec("UPDATE agent_executions SET ownership_token = 'stale-token' WHERE id = ?", exec.ID); err != nil {
+				t.Fatalf("stale ownership token: %v", err)
+			}
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	<-done
+	if callbackErr == nil {
+		t.Fatal("expected process registration callback to fail")
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.Status != ExecutionStatusFailed {
+		t.Fatalf("expected failed execution, got %s", exec.Status)
+	}
+	if !exec.Error.Valid || !strings.Contains(exec.Error.String, "process identity registration") {
+		t.Fatalf("expected registration error to be retained, got %+v", exec.Error)
+	}
+	run, _ := s.GetRun(runID)
+	if run.Status != StatusExecutorBlocked {
+		t.Fatalf("expected run status %s, got %s", StatusExecutorBlocked, run.Status)
+	}
+}
+
 func TestKiroCLIAdapter_BuildInvocationSelectedModel(t *testing.T) {
 	adapter := KiroCLIAdapter{
 		Config: KiroCLIAdapterConfig{

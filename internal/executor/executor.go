@@ -97,7 +97,9 @@ func (p *DispatchParams) runner() func(ctx context.Context, workDir, binary stri
 	if p.RunAgentCmd != nil {
 		return p.RunAgentCmd
 	}
-	return pipeline.RunLocalAgentCommandArgsStreaming
+	return func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+		return pipeline.RunLocalAgentCommandArgsStreamingWithController(ctx, workDir, binary, args, stdin, timeout, callbacks, p.processController())
+	}
 }
 
 func (p *DispatchParams) launcher() func(func()) {
@@ -508,7 +510,7 @@ func runBackgroundDispatch(
 					stream.emitProgressEvent(s, runID, ev)
 				}
 			},
-			OnProcessStarted: func(identity pipeline.ProcessIdentity) {
+			OnProcessStarted: func(identity pipeline.ProcessIdentity) error {
 				startedAt = executionTimestampNow()
 				if _, won, err := s.RegisterAgentExecutionProcess(execID, store.AgentProcessIdentityUpdate{
 					ProcessID:        int64(identity.PID),
@@ -519,9 +521,14 @@ func runBackgroundDispatch(
 					OwnershipToken:   ownershipToken,
 				}); err != nil {
 					stream.recordWriteError("register_process_identity", err)
+					return fmt.Errorf("register process identity: %w", err)
 				} else if won {
 					publishRunEvent(hub, runID, events.KindStepAgent, "executor", "running")
+					return nil
 				}
+				err := fmt.Errorf("process identity registration lost ownership")
+				stream.recordWriteError("register_process_identity", err)
+				return err
 			},
 		},
 	)
@@ -767,6 +774,10 @@ func runBackgroundDispatch(
 	if resultPath != "" {
 		recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
 	}
+	noOutputError := "no stdout captured from executor"
+	if errMsg != "" {
+		noOutputError = errMsg + "; " + noOutputError
+	}
 	_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
 		Status:          ExecutionStatusFailed,
 		Reason:          TerminalReasonFailed,
@@ -777,7 +788,7 @@ func runBackgroundDispatch(
 		StderrPath:      stderrPath,
 		CombinedPath:    combinedPath,
 		ResultPath:      resultPath,
-		Error:           "no stdout captured from executor",
+		Error:           noOutputError,
 		EventLevel:      "warn",
 		EventMessage:    "Executor completed with no stdout",
 		StepEventStatus: "no_output",

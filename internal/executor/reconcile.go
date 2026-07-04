@@ -54,6 +54,9 @@ func ReconcileActiveExecutions(st *store.Store, hub *events.Hub, log *slog.Logge
 		}); err != nil {
 			return fmt.Errorf("terminalize stale execution %d: %w", exec.ID, err)
 		}
+		if reason == TerminalReasonProcessLost {
+			return fmt.Errorf("executor orphan termination unproven for execution %d: %s", exec.ID, message)
+		}
 	}
 	return nil
 }

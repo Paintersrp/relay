@@ -214,6 +214,9 @@ func CancelExecution(ctx context.Context, st *store.Store, hub *events.Hub, log 
 		token = updated.OwnershipToken.String
 	}
 	if h, ok := globalRuntimeRegistry.get(updated.ID, token); ok {
+		if h.controller != nil {
+			controller = h.controller
+		}
 		h.cancel()
 	}
 
@@ -243,6 +246,9 @@ func CancelExecution(ctx context.Context, st *store.Store, hub *events.Hub, log 
 	}
 	if latest == nil {
 		latest = updated
+	}
+	if refreshedRun, err := st.GetRun(runID); err == nil && refreshedRun != nil {
+		run = refreshedRun
 	}
 	return cancellationResultFrom(run.Status, latest, initiated), nil
 }

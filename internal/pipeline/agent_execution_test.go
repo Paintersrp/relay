@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -482,6 +483,69 @@ func TestRunLocalAgentCommandArgsStreamingTimeoutCapturesPartialOutput(t *testin
 	}
 	if !strings.Contains(streamedStdout.String(), "partial-before-timeout") {
 		t.Fatalf("expected timeout callback to receive partial stdout, got %q", streamedStdout.String())
+	}
+}
+
+type recordingProcessController struct {
+	terminated chan ProcessIdentity
+}
+
+func (c *recordingProcessController) PrepareCommand(cmd *exec.Cmd) error {
+	return nil
+}
+
+func (c *recordingProcessController) Identity(cmd *exec.Cmd, startedAt time.Time) (ProcessIdentity, error) {
+	if cmd.Process == nil {
+		return ProcessIdentity{}, ErrProcessUnverifiable
+	}
+	return ProcessIdentity{
+		PID:       cmd.Process.Pid,
+		StartedAt: processStartedAtString(startedAt),
+		Platform:  "test",
+	}, nil
+}
+
+func (c *recordingProcessController) IsRunning(identity ProcessIdentity) (bool, error) {
+	return false, nil
+}
+
+func (c *recordingProcessController) TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) error {
+	select {
+	case c.terminated <- identity:
+	default:
+	}
+	proc, err := os.FindProcess(identity.PID)
+	if err != nil {
+		return err
+	}
+	return proc.Kill()
+}
+
+func TestRunLocalAgentCommandArgsStreamingTimeoutUsesProcessController(t *testing.T) {
+	t.Setenv("GO_WANT_AGENT_STREAM_HELPER", "1")
+	controller := &recordingProcessController{terminated: make(chan ProcessIdentity, 1)}
+
+	result := RunLocalAgentCommandArgsStreamingWithController(
+		context.Background(),
+		".",
+		os.Args[0],
+		[]string{"-test.run=TestAgentCommandStreamingHelperProcess", "--", "timeout"},
+		"",
+		200*time.Millisecond,
+		AgentCommandStreamCallbacks{},
+		controller,
+	)
+
+	if !result.TimedOut {
+		t.Fatalf("expected timeout result, got exit code=%d stderr=%q error=%q", result.ExitCode, result.Stderr, result.Error)
+	}
+	select {
+	case identity := <-controller.terminated:
+		if identity.PID <= 0 {
+			t.Fatalf("expected recorded process identity, got %+v", identity)
+		}
+	default:
+		t.Fatal("expected timeout to call ProcessController.TerminateTree")
 	}
 }
 
