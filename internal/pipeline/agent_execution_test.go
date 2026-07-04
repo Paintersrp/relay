@@ -509,16 +509,19 @@ func (c *recordingProcessController) IsRunning(identity ProcessIdentity) (bool, 
 	return false, nil
 }
 
-func (c *recordingProcessController) TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) error {
+func (c *recordingProcessController) TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
 	select {
 	case c.terminated <- identity:
 	default:
 	}
 	proc, err := os.FindProcess(identity.PID)
 	if err != nil {
-		return err
+		return ProcessTerminationResult{}, err
 	}
-	return proc.Kill()
+	if err := proc.Kill(); err != nil {
+		return ProcessTerminationResult{}, err
+	}
+	return ProcessTerminationResult{VerifiedAbsent: true, Forced: true}, nil
 }
 
 func TestRunLocalAgentCommandArgsStreamingTimeoutUsesProcessController(t *testing.T) {
@@ -546,6 +549,35 @@ func TestRunLocalAgentCommandArgsStreamingTimeoutUsesProcessController(t *testin
 		}
 	default:
 		t.Fatal("expected timeout to call ProcessController.TerminateTree")
+	}
+}
+
+func TestRunLocalAgentCommandArgsStreamingCanceledBeforeStartDoesNotStart(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	startCalled := false
+	result := RunLocalAgentCommandArgsStreamingWithController(
+		ctx,
+		".",
+		os.Args[0],
+		[]string{"-test.run=TestAgentCommandStreamingHelperProcess", "--", "success"},
+		"",
+		time.Second,
+		AgentCommandStreamCallbacks{
+			OnStartCalled: func() { startCalled = true },
+		},
+		&recordingProcessController{terminated: make(chan ProcessIdentity, 1)},
+	)
+
+	if startCalled {
+		t.Fatal("expected canceled context to prevent cmd.Start")
+	}
+	if result.ExitCode != -1 {
+		t.Fatalf("expected pre-start cancellation exit -1, got %d", result.ExitCode)
+	}
+	if !strings.Contains(result.Error, context.Canceled.Error()) {
+		t.Fatalf("expected context canceled error, got %q", result.Error)
 	}
 }
 

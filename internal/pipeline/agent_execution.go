@@ -85,6 +85,9 @@ type AgentCommandRunResult struct {
 	Error      string    `json:"error,omitempty"`
 	StartedAt  time.Time `json:"started_at"`
 	FinishedAt time.Time `json:"finished_at"`
+
+	TerminationVerified bool   `json:"termination_verified"`
+	TerminationError    string `json:"termination_error,omitempty"`
 }
 
 type AgentCommandWaitResult struct {
@@ -237,6 +240,18 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		cmd.Stdin = strings.NewReader(stdin)
 	}
 
+	if err := runCtx.Err(); err != nil {
+		finished := time.Now()
+		return AgentCommandRunResult{
+			Command:    commandPreview,
+			WorkDir:    workDir,
+			ExitCode:   -1,
+			Error:      err.Error(),
+			StartedAt:  start,
+			FinishedAt: finished,
+		}
+	}
+
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		finished := time.Now()
@@ -292,12 +307,14 @@ func RunLocalAgentCommandArgsStreamingWithController(
 				if callbacks.OnStartError != nil {
 					callbacks.OnStartError(err)
 				}
-				terminateErr := controller.TerminateTree(identity, 2*time.Second)
+				termination, terminateErr := controller.TerminateTree(identity, 2*time.Second)
 				waitErr := cmd.Wait()
 				finished := time.Now()
 				errMsg := err.Error()
 				if terminateErr != nil && !errors.Is(terminateErr, ErrProcessNotRunning) {
 					errMsg += "; terminate unregistered process tree: " + terminateErr.Error()
+				} else if !termination.VerifiedAbsent {
+					errMsg += "; terminate unregistered process tree: absence was not verified"
 				}
 				if waitErr != nil {
 					errMsg += "; wait after registration failure: " + waitErr.Error()
@@ -388,29 +405,48 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		callbacks.OnWaitStarted()
 	}
 	waitDone := make(chan struct{})
-	terminationErrCh := make(chan error, 1)
+	terminationCh := make(chan struct {
+		result ProcessTerminationResult
+		err    error
+	}, 1)
 	go func() {
 		select {
 		case <-runCtx.Done():
 		case <-waitDone:
-			terminationErrCh <- nil
+			terminationCh <- struct {
+				result ProcessTerminationResult
+				err    error
+			}{result: ProcessTerminationResult{VerifiedAbsent: true}}
 			return
 		}
 		if identityRegistered {
-			terminationErrCh <- controller.TerminateTree(identity, 2*time.Second)
+			result, err := controller.TerminateTree(identity, 2*time.Second)
+			terminationCh <- struct {
+				result ProcessTerminationResult
+				err    error
+			}{result: result, err: err}
 			return
 		}
 		if cmd.Process != nil {
-			terminationErrCh <- cmd.Process.Kill()
+			terminationCh <- struct {
+				result ProcessTerminationResult
+				err    error
+			}{err: cmd.Process.Kill()}
 			return
 		}
-		terminationErrCh <- nil
+		terminationCh <- struct {
+			result ProcessTerminationResult
+			err    error
+		}{result: ProcessTerminationResult{VerifiedAbsent: true}}
 	}()
 	waitErr := cmd.Wait()
 	close(waitDone)
 	var terminationErr error
+	terminationVerified := true
 	if runCtx.Err() != nil {
-		terminationErr = <-terminationErrCh
+		termination := <-terminationCh
+		terminationErr = termination.err
+		terminationVerified = termination.result.VerifiedAbsent
 	}
 	cancel()
 	exitCode := 0
@@ -450,17 +486,21 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		errText := ""
 		if terminationErr != nil && !errors.Is(terminationErr, ErrProcessNotRunning) {
 			errText = "terminate timed out process tree: " + terminationErr.Error()
+		} else if !terminationVerified {
+			errText = "terminate timed out process tree: absence was not verified"
 		}
 		return AgentCommandRunResult{
-			Command:    commandPreview,
-			WorkDir:    workDir,
-			ExitCode:   -2,
-			Stdout:     stdoutBuf.String(),
-			Stderr:     stderrBuf.String(),
-			TimedOut:   true,
-			Error:      errText,
-			StartedAt:  start,
-			FinishedAt: finished,
+			Command:             commandPreview,
+			WorkDir:             workDir,
+			ExitCode:            -2,
+			Stdout:              stdoutBuf.String(),
+			Stderr:              stderrBuf.String(),
+			TimedOut:            true,
+			Error:               errText,
+			StartedAt:           start,
+			FinishedAt:          finished,
+			TerminationVerified: terminationVerified,
+			TerminationError:    errText,
 		}
 	}
 
@@ -469,6 +509,15 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			errMsg += "; "
 		}
 		errMsg += "terminate canceled process tree: " + terminationErr.Error()
+		if exitCode == 0 {
+			exitCode = -1
+		}
+	}
+	if !terminationVerified {
+		if errMsg != "" {
+			errMsg += "; "
+		}
+		errMsg += "terminate canceled process tree: absence was not verified"
 		if exitCode == 0 {
 			exitCode = -1
 		}
@@ -487,15 +536,16 @@ func RunLocalAgentCommandArgsStreamingWithController(
 	}
 
 	return AgentCommandRunResult{
-		Command:    commandPreview,
-		WorkDir:    workDir,
-		ExitCode:   exitCode,
-		Stdout:     stdoutBuf.String(),
-		Stderr:     stderrBuf.String(),
-		TimedOut:   false,
-		Error:      errMsg,
-		StartedAt:  start,
-		FinishedAt: finished,
+		Command:             commandPreview,
+		WorkDir:             workDir,
+		ExitCode:            exitCode,
+		Stdout:              stdoutBuf.String(),
+		Stderr:              stderrBuf.String(),
+		TimedOut:            false,
+		Error:               errMsg,
+		StartedAt:           start,
+		FinishedAt:          finished,
+		TerminationVerified: terminationVerified,
 	}
 }
 

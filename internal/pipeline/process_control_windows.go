@@ -7,16 +7,35 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
-	"strconv"
+	"sync"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
 type defaultProcessController struct{}
 
+var windowsJobs sync.Map
+
 func (defaultProcessController) PrepareCommand(cmd *exec.Cmd) error {
 	cmd.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP}
+	job, err := windows.CreateJobObject(nil, nil)
+	if err != nil {
+		return fmt.Errorf("create job object: %w", err)
+	}
+	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
+	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	if _, err := windows.SetInformationJobObject(
+		job,
+		windows.JobObjectExtendedLimitInformation,
+		uintptr(unsafe.Pointer(&info)),
+		uint32(unsafe.Sizeof(info)),
+	); err != nil {
+		windows.CloseHandle(job)
+		return fmt.Errorf("configure job object: %w", err)
+	}
+	windowsJobs.Store(cmd, job)
 	return nil
 }
 
@@ -24,6 +43,20 @@ func (defaultProcessController) Identity(cmd *exec.Cmd, startedAt time.Time) (Pr
 	if cmd.Process == nil || cmd.Process.Pid <= 0 {
 		return ProcessIdentity{}, ErrProcessUnverifiable
 	}
+	rawJob, ok := windowsJobs.Load(cmd)
+	if !ok {
+		return ProcessIdentity{}, fmt.Errorf("%w: missing job object", ErrProcessUnverifiable)
+	}
+	job := rawJob.(windows.Handle)
+	handle, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(cmd.Process.Pid))
+	if err != nil {
+		return ProcessIdentity{}, fmt.Errorf("open process for job assignment: %w", err)
+	}
+	if err := windows.AssignProcessToJobObject(job, handle); err != nil {
+		windows.CloseHandle(handle)
+		return ProcessIdentity{}, fmt.Errorf("assign process to job object: %w", err)
+	}
+	windows.CloseHandle(handle)
 	createdAt, err := windowsProcessCreationTime(cmd.Process.Pid)
 	if err != nil {
 		return ProcessIdentity{}, err
@@ -33,6 +66,7 @@ func (defaultProcessController) Identity(cmd *exec.Cmd, startedAt time.Time) (Pr
 		GroupID:   cmd.Process.Pid,
 		StartedAt: createdAt.UTC().Format(time.RFC3339Nano),
 		Platform:  runtime.GOOS,
+		Nonce:     fmt.Sprintf("%p", cmd),
 	}, nil
 }
 
@@ -46,30 +80,39 @@ func (defaultProcessController) IsRunning(identity ProcessIdentity) (bool, error
 	return true, nil
 }
 
-func (defaultProcessController) TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) error {
+func (defaultProcessController) TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
 	if err := verifyWindowsProcessIdentity(identity); err != nil {
-		return err
+		if errors.Is(err, ErrProcessNotRunning) {
+			return ProcessTerminationResult{VerifiedAbsent: true, AlreadyAbsent: true}, nil
+		}
+		return ProcessTerminationResult{}, err
 	}
-	pid := strconv.Itoa(identity.PID)
-	_ = exec.Command("taskkill.exe", "/PID", pid, "/T").Run()
+	job, closeJob, err := windowsJobForIdentity(identity)
+	if err != nil {
+		return ProcessTerminationResult{}, err
+	}
+	defer closeJob()
+	if err := windows.TerminateJobObject(job, 1); err != nil {
+		return ProcessTerminationResult{}, fmt.Errorf("terminate job object: %w", err)
+	}
 	deadline := time.Now().Add(gracefulTimeout)
 	for time.Now().Before(deadline) {
 		running, err := defaultProcessController{}.IsRunning(identity)
 		if err != nil {
-			return err
+			return ProcessTerminationResult{}, err
 		}
 		if !running {
-			return nil
+			return ProcessTerminationResult{VerifiedAbsent: true, Forced: true}, nil
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	if err := verifyWindowsProcessIdentity(identity); err != nil {
-		return err
+		if errors.Is(err, ErrProcessNotRunning) {
+			return ProcessTerminationResult{VerifiedAbsent: true, Forced: true}, nil
+		}
+		return ProcessTerminationResult{}, err
 	}
-	if err := exec.Command("taskkill.exe", "/PID", pid, "/T", "/F").Run(); err != nil {
-		return err
-	}
-	return nil
+	return ProcessTerminationResult{Forced: true}, fmt.Errorf("%w: process still present after job termination", ErrProcessUnverifiable)
 }
 
 func verifyWindowsProcessIdentity(identity ProcessIdentity) error {
@@ -105,4 +148,33 @@ func windowsProcessCreationTime(pid int) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("get process times: %w", err)
 	}
 	return time.Unix(0, creation.Nanoseconds()).UTC(), nil
+}
+
+func windowsJobForIdentity(identity ProcessIdentity) (windows.Handle, func(), error) {
+	if identity.Nonce == "" {
+		return 0, func() {}, fmt.Errorf("%w: missing job identity", ErrProcessUnverifiable)
+	}
+	var job windows.Handle
+	var found bool
+	windowsJobs.Range(func(key, value any) bool {
+		if fmt.Sprintf("%p", key) == identity.Nonce {
+			job = value.(windows.Handle)
+			found = true
+			return false
+		}
+		return true
+	})
+	if !found {
+		return 0, func() {}, fmt.Errorf("%w: job handle unavailable", ErrProcessUnverifiable)
+	}
+	return job, func() {
+		windows.CloseHandle(job)
+		windowsJobs.Range(func(key, value any) bool {
+			if value.(windows.Handle) == job {
+				windowsJobs.Delete(key)
+				return false
+			}
+			return true
+		})
+	}, nil
 }

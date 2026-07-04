@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build linux
 
 package pipeline
 
@@ -51,35 +51,52 @@ func (defaultProcessController) IsRunning(identity ProcessIdentity) (bool, error
 	return true, nil
 }
 
-func (defaultProcessController) TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) error {
+func (defaultProcessController) TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
 	if err := verifyUnixProcessIdentity(identity); err != nil {
-		return err
+		if errors.Is(err, ErrProcessNotRunning) {
+			return ProcessTerminationResult{VerifiedAbsent: true, AlreadyAbsent: true}, nil
+		}
+		return ProcessTerminationResult{}, err
 	}
 	groupID := identity.GroupID
 	if groupID <= 0 {
 		groupID = identity.PID
 	}
 	if err := syscall.Kill(-groupID, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
-		return err
+		return ProcessTerminationResult{}, err
 	}
 	deadline := time.Now().Add(gracefulTimeout)
 	for time.Now().Before(deadline) {
-		running, err := defaultProcessController{}.IsRunning(identity)
+		running, err := unixProcessGroupRunning(identity)
 		if err != nil {
-			return err
+			return ProcessTerminationResult{}, err
 		}
 		if !running {
-			return nil
+			return ProcessTerminationResult{VerifiedAbsent: true}, nil
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	if err := verifyUnixProcessIdentity(identity); err != nil {
-		return err
+		if errors.Is(err, ErrProcessNotRunning) {
+			return ProcessTerminationResult{VerifiedAbsent: true}, nil
+		}
+		return ProcessTerminationResult{}, err
 	}
 	if err := syscall.Kill(-groupID, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
-		return err
+		return ProcessTerminationResult{}, err
 	}
-	return nil
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		running, err := unixProcessGroupRunning(identity)
+		if err != nil {
+			return ProcessTerminationResult{}, err
+		}
+		if !running {
+			return ProcessTerminationResult{VerifiedAbsent: true, Forced: true}, nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return ProcessTerminationResult{Forced: true}, fmt.Errorf("%w: process group %d still present after forced termination", ErrProcessUnverifiable, groupID)
 }
 
 func verifyUnixProcessIdentity(identity ProcessIdentity) error {
@@ -117,4 +134,24 @@ func unixProcessStartFingerprint(pid int) (string, error) {
 		return "", fmt.Errorf("%w: missing proc starttime", ErrProcessUnverifiable)
 	}
 	return fields[19], nil
+}
+
+func unixProcessGroupRunning(identity ProcessIdentity) (bool, error) {
+	if err := verifyUnixProcessIdentity(identity); err != nil {
+		if errors.Is(err, ErrProcessNotRunning) {
+			return false, nil
+		}
+		return false, err
+	}
+	groupID := identity.GroupID
+	if groupID <= 0 {
+		groupID = identity.PID
+	}
+	if err := syscall.Kill(-groupID, 0); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }

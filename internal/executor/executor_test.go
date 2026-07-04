@@ -439,6 +439,53 @@ func TestDispatchBrief_UsesInjectedAdapter(t *testing.T) {
 	}
 }
 
+func TestDispatchBrief_TimeoutWithoutVerifiedTerminationFailsClosed(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	done := make(chan struct{})
+	_, err := DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: &fakeAdapter{},
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			return pipeline.AgentCommandRunResult{
+				ExitCode:            -2,
+				TimedOut:            true,
+				Error:               "terminate timed out process tree: still alive",
+				StartedAt:           time.Now(),
+				FinishedAt:          time.Now(),
+				TerminationVerified: false,
+				TerminationError:    "terminate timed out process tree: still alive",
+			}
+		},
+		LaunchAsync: func(fn func()) {
+			fn()
+			close(done)
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	<-done
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Status != ExecutionStatusFailed {
+		t.Fatalf("expected fail-closed status %s, got %s", ExecutionStatusFailed, exec.Status)
+	}
+	if !exec.Error.Valid || !strings.Contains(exec.Error.String, "still alive") {
+		t.Fatalf("expected termination error to be retained, got %+v", exec.Error)
+	}
+}
+
 func TestDispatchBrief_UnknownAdapterBlocks(t *testing.T) {
 	s := setupExecutorTestStore(t)
 	runID := createExecutorReadyRun(t, s, "approved_for_executor")

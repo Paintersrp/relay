@@ -44,11 +44,17 @@ type ProcessController interface {
 	PrepareCommand(cmd *exec.Cmd) error
 	Identity(cmd *exec.Cmd, startedAt time.Time) (ProcessIdentity, error)
 	IsRunning(identity ProcessIdentity) (bool, error)
-	TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) error
+	TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) (ProcessTerminationResult, error)
 }
 
 func DefaultProcessController() ProcessController {
 	return defaultProcessController{}
+}
+
+type ProcessTerminationResult struct {
+	VerifiedAbsent bool
+	AlreadyAbsent  bool
+	Forced         bool
 }
 
 func processStartedAtString(t time.Time) string {

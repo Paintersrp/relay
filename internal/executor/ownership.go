@@ -218,15 +218,18 @@ func CancelExecution(ctx context.Context, st *store.Store, hub *events.Hub, log 
 			controller = h.controller
 		}
 		h.cancel()
-	}
-
-	identity, identityErr := processIdentityFromExecution(updated)
-	if identityErr == nil {
-		if err := controller.TerminateTree(identity, 2*time.Second); err != nil && !errors.Is(err, pipeline.ErrProcessNotRunning) {
-			createEvent(st, runID, "warn", "Executor cancellation termination warning: "+err.Error())
+	} else {
+		identity, identityErr := processIdentityFromExecution(updated)
+		if identityErr == nil {
+			result, err := controller.TerminateTree(identity, 2*time.Second)
+			if err != nil && !errors.Is(err, pipeline.ErrProcessNotRunning) {
+				createEvent(st, runID, "warn", "Executor cancellation termination warning: "+err.Error())
+			} else if !result.VerifiedAbsent {
+				createEvent(st, runID, "warn", "Executor cancellation termination warning: process absence was not verified")
+			}
+		} else if updated.Status == ExecutionStatusCancelRequested && updated.ProcessIdentity.Valid {
+			createEvent(st, runID, "warn", "Executor cancellation could not verify process identity: "+identityErr.Error())
 		}
-	} else if updated.Status == ExecutionStatusCancelRequested && updated.ProcessIdentity.Valid {
-		createEvent(st, runID, "warn", "Executor cancellation could not verify process identity: "+identityErr.Error())
 	}
 
 	latest, _ := st.GetAgentExecution(updated.ID)

@@ -543,24 +543,27 @@ func runBackgroundDispatch(
 	finalStderr := stream.streamedStderr.String()
 	stream.mu.Unlock()
 
-	stdoutPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorStdout, []byte(finalStdout))
+	stdoutPath, err := writeExecutorArtifact(runID, ArtifactKindExecutorStdout, []byte(finalStdout))
+	stream.recordWriteError("final_stdout", err)
 	if stdoutPath != "" {
 		recordExecutorArtifact(s, runID, ArtifactKindExecutorStdout, stdoutPath, "text/plain")
 	}
-	stderrPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorStderr, []byte(finalStderr))
+	stderrPath, err := writeExecutorArtifact(runID, ArtifactKindExecutorStderr, []byte(finalStderr))
+	stream.recordWriteError("final_stderr", err)
 	if stderrPath != "" {
 		recordExecutorArtifact(s, runID, ArtifactKindExecutorStderr, stderrPath, "text/plain")
 	}
 
 	combinedLog := combinedLogText(finalStdout, finalStderr)
-	combinedPath, _ := writeExecutorArtifact(runID, ArtifactKindCommandLog, []byte(combinedLog))
+	combinedPath, err := writeExecutorArtifact(runID, ArtifactKindCommandLog, []byte(combinedLog))
+	stream.recordWriteError("combined_log", err)
 	if combinedPath != "" {
 		recordExecutorArtifact(s, runID, ArtifactKindCommandLog, combinedPath, "text/plain")
 	}
 
 	currentExec, _ := s.GetAgentExecution(execID)
 	if currentExec != nil && currentExec.CancellationRequestedAt.Valid {
-		collectAndPersistGitEvidence(s, runID, repo.Path)
+		stream.recordWriteError("git_evidence", collectAndPersistGitEvidence(s, runID, repo.Path))
 		finishedStr := runResult.FinishedAt.Format(time.RFC3339Nano)
 		ec := int64(runResult.ExitCode)
 		if runResult.TimedOut {
@@ -570,9 +573,26 @@ func runBackgroundDispatch(
 		if errMsg == "" && ctx.Err() != nil {
 			errMsg = "executor cancellation requested"
 		}
+		if runResult.TerminationError != "" {
+			errMsg = appendError(errMsg, runResult.TerminationError)
+		}
+		writeErrSummary := stream.writeErrorSummary()
+		if writeErrSummary != "" {
+			errMsg = appendError(errMsg, writeErrSummary)
+		}
+		status := ExecutionStatusCanceled
+		reason := TerminalReasonCanceled
+		stepStatus := "canceled"
+		eventMessage := "Executor canceled by operator request"
+		if writeErrSummary != "" || !runResult.TerminationVerified {
+			status = ExecutionStatusFailed
+			reason = TerminalReasonFailed
+			stepStatus = "blocked"
+			eventMessage = "Executor cancellation cleanup failed"
+		}
 		_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
-			Status:                  ExecutionStatusCanceled,
-			Reason:                  TerminalReasonCanceled,
+			Status:                  status,
+			Reason:                  reason,
 			ExitCode:                &ec,
 			StartedAt:               startedAt,
 			FinishedAt:              finishedStr,
@@ -582,8 +602,8 @@ func runBackgroundDispatch(
 			Error:                   errMsg,
 			CancellationCompletedAt: finishedStr,
 			EventLevel:              "warn",
-			EventMessage:            "Executor canceled by operator request",
-			StepEventStatus:         "canceled",
+			EventMessage:            eventMessage,
+			StepEventStatus:         stepStatus,
 			RunStatus:               StatusExecutorBlocked,
 			RunEventStatus:          "blocked",
 		})
@@ -597,9 +617,26 @@ func runBackgroundDispatch(
 		ec := int64(-2)
 		finishedStr := runResult.FinishedAt.Format(time.RFC3339Nano)
 		errMsg := "executor timed out"
+		if runResult.TerminationError != "" {
+			errMsg = appendError(errMsg, runResult.TerminationError)
+		}
+		writeErrSummary := stream.writeErrorSummary()
+		if writeErrSummary != "" {
+			errMsg = appendError(errMsg, writeErrSummary)
+		}
+		status := ExecutionStatusTimedOut
+		reason := TerminalReasonTimedOut
+		stepStatus := "timed_out"
+		eventMessage := "Executor timed out"
+		if writeErrSummary != "" || !runResult.TerminationVerified {
+			status = ExecutionStatusFailed
+			reason = TerminalReasonFailed
+			stepStatus = "blocked"
+			eventMessage = "Executor timeout cleanup failed"
+		}
 		_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
-			Status:          ExecutionStatusTimedOut,
-			Reason:          TerminalReasonTimedOut,
+			Status:          status,
+			Reason:          reason,
 			ExitCode:        &ec,
 			StartedAt:       startedAt,
 			FinishedAt:      finishedStr,
@@ -608,8 +645,8 @@ func runBackgroundDispatch(
 			CombinedPath:    combinedPath,
 			Error:           errMsg,
 			EventLevel:      "warn",
-			EventMessage:    "Executor timed out",
-			StepEventStatus: "timed_out",
+			EventMessage:    eventMessage,
+			StepEventStatus: stepStatus,
 			RunStatus:       StatusExecutorBlocked,
 			RunEventStatus:  "blocked",
 		})
@@ -673,7 +710,13 @@ func runBackgroundDispatch(
 		return
 	}
 
-	collectAndPersistGitEvidence(s, runID, repo.Path)
+	stream.recordWriteError("git_evidence", collectAndPersistGitEvidence(s, runID, repo.Path))
+	writeErrSummary = stream.writeErrorSummary()
+	if writeErrSummary != "" {
+		errMsg = appendError(errMsg, writeErrSummary)
+		errPtr = &errMsg
+		execStatus = ExecutionStatusFailed
+	}
 
 	if runResult.Stdout != "" || invocation.ResultFile != "" {
 		normalizationInput := runResult.Stdout
@@ -706,7 +749,7 @@ func runBackgroundDispatch(
 			case pipeline.AgentResultDone:
 				_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
 					Status:          execStatus,
-					Reason:          TerminalReasonSucceeded,
+					Reason:          terminalReasonForStatus(execStatus),
 					ExitCode:        &ec,
 					StartedAt:       startedAt,
 					FinishedAt:      finishedStr,
@@ -770,7 +813,8 @@ func runBackgroundDispatch(
 		}
 	}
 
-	resultPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte("STATUS: UNKNOWN\nNo stdout captured from executor.\n"))
+	resultPath, err := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte("STATUS: UNKNOWN\nNo stdout captured from executor.\n"))
+	stream.recordWriteError("executor_result", err)
 	if resultPath != "" {
 		recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
 	}
@@ -778,7 +822,7 @@ func runBackgroundDispatch(
 	if errMsg != "" {
 		noOutputError = errMsg + "; " + noOutputError
 	}
-	_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
+	_, _, err = terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
 		Status:          ExecutionStatusFailed,
 		Reason:          TerminalReasonFailed,
 		ExitCode:        &ec,
@@ -805,6 +849,24 @@ func nonEmpty(v *string) string {
 		return ""
 	}
 	return *v
+}
+
+func appendError(base, extra string) string {
+	extra = strings.TrimSpace(extra)
+	if extra == "" {
+		return base
+	}
+	if strings.TrimSpace(base) == "" {
+		return extra
+	}
+	return base + "; " + extra
+}
+
+func terminalReasonForStatus(status string) string {
+	if status == ExecutionStatusSucceeded {
+		return TerminalReasonSucceeded
+	}
+	return TerminalReasonFailed
 }
 
 func getRepoWorkspacePath(s *store.Store, runID int64) (*store.Repo, error) {
@@ -1000,30 +1062,48 @@ func extractBlocker(raw string) string {
 	return ""
 }
 
-func collectAndPersistGitEvidence(s *store.Store, runID int64, repoPath string) {
+func collectAndPersistGitEvidence(s *store.Store, runID int64, repoPath string) error {
 	if repoPath == "" {
-		return
+		return nil
 	}
 	ev, err := pipeline.CollectGitDiffEvidence(context.Background(), repoPath, 30*time.Second)
 	if err != nil {
 		s.CreateEvent(runID, "warn", fmt.Sprintf("Failed to collect git evidence: %v", err))
-		return
+		return nil
 	}
 
-	persistGitArtifact(s, runID, "git_status_text", ev.StatusText)
-	persistGitArtifact(s, runID, "git_diff_stat", ev.DiffStat)
-	persistGitArtifact(s, runID, "git_diff_numstat", ev.DiffNumstat)
-	persistGitArtifact(s, runID, "git_diff_name_status", ev.NameStatus)
-	persistGitArtifact(s, runID, "git_diff_patch", ev.DiffPatch)
+	var errs []string
+	for _, item := range []struct {
+		kind    string
+		content string
+	}{
+		{"git_status_text", ev.StatusText},
+		{"git_diff_stat", ev.DiffStat},
+		{"git_diff_numstat", ev.DiffNumstat},
+		{"git_diff_name_status", ev.NameStatus},
+		{"git_diff_patch", ev.DiffPatch},
+	} {
+		if err := persistGitArtifact(s, runID, item.kind, item.content); err != nil {
+			errs = append(errs, item.kind+": "+err.Error())
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return nil
 }
 
-func persistGitArtifact(s *store.Store, runID int64, kind, content string) {
+func persistGitArtifact(s *store.Store, runID int64, kind, content string) error {
 	if content == "" {
-		return
+		return nil
 	}
 	filename := pipeline.ArtifactFilename(kind)
 	path, err := artifacts.Write(runID, kind, filename, []byte(content))
+	if err != nil {
+		return err
+	}
 	if err == nil && path != "" {
 		s.CreateArtifact(runID, kind, path, "text/plain")
 	}
+	return nil
 }

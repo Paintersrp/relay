@@ -30,12 +30,18 @@ func ReconcileActiveExecutions(st *store.Store, hub *events.Hub, log *slog.Logge
 			if probeErr != nil {
 				message = "Executor process identity could not be verified during restart reconciliation: " + probeErr.Error()
 			} else if running {
-				if termErr := controller.TerminateTree(identity, 2*time.Second); termErr != nil {
+				result, termErr := controller.TerminateTree(identity, 2*time.Second)
+				if termErr != nil {
 					message = "Executor orphan termination failed during restart reconciliation: " + termErr.Error()
+				} else if !result.VerifiedAbsent {
+					message = "Executor orphan termination could not verify process absence during restart reconciliation"
 				} else {
 					reason = TerminalReasonRestartOrphanReconcile
 					message = "Executor orphan process terminated during restart reconciliation"
 				}
+			} else {
+				reason = TerminalReasonRestartOrphanReconcile
+				message = "Executor process already absent during restart reconciliation"
 			}
 		} else {
 			message = "Executor process identity missing during restart reconciliation"
