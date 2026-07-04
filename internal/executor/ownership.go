@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"relay/internal/app/plans"
 	"relay/internal/events"
 	"relay/internal/pipeline"
 	"relay/internal/store"
@@ -127,7 +128,7 @@ func terminalizeExecution(st *store.Store, hub *events.Hub, log *slog.Logger, ru
 	if in.TerminalizedAt == "" {
 		in.TerminalizedAt = in.FinishedAt
 	}
-	exec, won, err := st.TerminalizeAgentExecutionCAS(execID, store.AgentExecutionTerminalUpdate{
+	exec, won, err := st.FinalizeAgentExecutionCAS(runID, execID, store.AgentExecutionTerminalUpdate{
 		Status:                  in.Status,
 		ExitCode:                in.ExitCode,
 		StartedAt:               in.StartedAt,
@@ -140,28 +141,25 @@ func terminalizeExecution(st *store.Store, hub *events.Hub, log *slog.Logger, ru
 		CancellationCompletedAt: in.CancellationCompletedAt,
 		TerminalReason:          in.Reason,
 		TerminalizedAt:          in.TerminalizedAt,
-	})
+	}, in.RunStatus, in.EventLevel, in.EventMessage)
 	if err != nil {
 		return nil, false, err
 	}
 	if !won {
 		return exec, false, nil
 	}
-	if in.EventMessage != "" {
-		level := in.EventLevel
-		if level == "" {
-			level = "info"
-		}
-		createEvent(st, runID, level, in.EventMessage)
-	}
 	if in.StepEventStatus != "" {
 		publishRunEvent(hub, runID, events.KindStepAgent, "executor", in.StepEventStatus)
 	}
-	if in.RunStatus != "" {
-		updateRunStatus(st, runID, in.RunStatus)
-	}
 	if in.RunEventStatus != "" {
 		publishRunEvent(hub, runID, events.KindRunSummary, "executor", in.RunEventStatus)
+	}
+	if in.RunStatus != "" {
+		if updatedRun, err := st.GetRun(runID); err == nil && updatedRun != nil {
+			if err := plans.NewRunLifecycleService(st).SyncAssociatedPassForRunStatus(updatedRun); err != nil {
+				return exec, true, err
+			}
+		}
 	}
 	if log != nil {
 		log.Info("executor: terminalized execution", "run_id", runID, "exec_id", execID, "status", in.Status, "reason", in.Reason)
@@ -264,6 +262,11 @@ func CancelExecution(ctx context.Context, st *store.Store, hub *events.Hub, log 
 					updated = failed
 				}
 			} else {
+				defer func() {
+					if releaseErr := owned.Release(); releaseErr != nil {
+						createEvent(st, runID, "warn", "Executor cancellation ownership release warning: "+releaseErr.Error())
+					}
+				}()
 				result, err := owned.Terminate(2 * time.Second)
 				if err != nil && !errors.Is(err, pipeline.ErrProcessNotRunning) {
 					createEvent(st, runID, "warn", "Executor cancellation termination warning: "+err.Error())
@@ -277,9 +280,6 @@ func CancelExecution(ctx context.Context, st *store.Store, hub *events.Hub, log 
 					}
 				} else {
 					markTerminationVerified(st, updated.ID)
-				}
-				if result.VerifiedAbsent {
-					_ = owned.Release()
 				}
 			}
 		} else if updated.Status == ExecutionStatusCancelRequested && updated.ProcessIdentity.Valid {

@@ -87,6 +87,10 @@ type AgentCommandRunResult struct {
 	FinishedAt    time.Time `json:"finished_at"`
 	LaunchStarted bool      `json:"launch_started"`
 
+	LaunchDisposition AgentLaunchDisposition `json:"launch_disposition"`
+	ProcessIdentity   ProcessIdentity        `json:"process_identity,omitempty"`
+	IdentityAvailable bool                   `json:"identity_available"`
+
 	TerminationVerified bool   `json:"termination_verified"`
 	TerminationError    string `json:"termination_error,omitempty"`
 }
@@ -260,30 +264,80 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		Stdin:   stdin,
 		Timeout: timeout,
 	})
-	if err != nil {
+	if owned == nil && err != nil {
 		if callbacks.OnStartError != nil {
 			callbacks.OnStartError(err)
 		}
 		finished := time.Now()
 		return AgentCommandRunResult{
-			Command:    commandPreview,
-			WorkDir:    workDir,
-			ExitCode:   -1,
-			Error:      err.Error(),
-			StartedAt:  start,
-			FinishedAt: finished,
+			Command:           commandPreview,
+			WorkDir:           workDir,
+			ExitCode:          -1,
+			Error:             err.Error(),
+			StartedAt:         start,
+			FinishedAt:        finished,
+			LaunchDisposition: AgentLaunchNotStarted,
 		}
 	}
-	releaseOwned := true
-	defer func() {
-		if releaseOwned {
-			_ = owned.Release()
+	if owned == nil {
+		finished := time.Now()
+		errMsg := "process controller returned no owned process"
+		return AgentCommandRunResult{
+			Command:           commandPreview,
+			WorkDir:           workDir,
+			ExitCode:          -1,
+			Error:             errMsg,
+			StartedAt:         start,
+			FinishedAt:        finished,
+			LaunchDisposition: AgentLaunchNotStarted,
 		}
+	}
+	defer func() {
+		_ = owned.Release()
 	}()
 	launchStarted := true
 	identity := owned.Identity()
+	identityAvailable := identity.PID > 0
 	if callbacks.OnStartReturned != nil {
 		callbacks.OnStartReturned(identity.PID)
+	}
+	if err != nil {
+		if callbacks.OnStartError != nil {
+			callbacks.OnStartError(err)
+		}
+		registerErr := error(nil)
+		if callbacks.OnProcessStarted != nil && identityAvailable {
+			registerErr = callbacks.OnProcessStarted(identity)
+		}
+		termination, terminateErr := owned.Terminate(2 * time.Second)
+		finished := time.Now()
+		errMsg := err.Error()
+		if registerErr != nil {
+			errMsg = appendErrorText(errMsg, "register post-create process identity: "+registerErr.Error())
+		}
+		if terminateErr != nil && !errors.Is(terminateErr, ErrProcessNotRunning) {
+			errMsg = appendErrorText(errMsg, "terminate post-create failed process tree: "+terminateErr.Error())
+		} else if !termination.VerifiedAbsent {
+			errMsg = appendErrorText(errMsg, "terminate post-create failed process tree: absence was not verified")
+		}
+		disposition := AgentLaunchCleanupPending
+		if termination.VerifiedAbsent {
+			disposition = AgentLaunchCleanupVerified
+		}
+		return AgentCommandRunResult{
+			Command:             commandPreview,
+			WorkDir:             workDir,
+			ExitCode:            -1,
+			Error:               errMsg,
+			StartedAt:           start,
+			FinishedAt:          finished,
+			LaunchStarted:       launchStarted,
+			LaunchDisposition:   disposition,
+			ProcessIdentity:     identity,
+			IdentityAvailable:   identityAvailable,
+			TerminationVerified: termination.VerifiedAbsent,
+			TerminationError:    errMsg,
+		}
 	}
 	if callbacks.OnProcessStarted != nil {
 		if err := callbacks.OnProcessStarted(identity); err != nil {
@@ -306,6 +360,9 @@ func RunLocalAgentCommandArgsStreamingWithController(
 				StartedAt:           start,
 				FinishedAt:          finished,
 				LaunchStarted:       launchStarted,
+				LaunchDisposition:   dispositionForTermination(termination.VerifiedAbsent),
+				ProcessIdentity:     identity,
+				IdentityAvailable:   identityAvailable,
 				TerminationVerified: termination.VerifiedAbsent,
 				TerminationError:    errMsg,
 			}
@@ -328,6 +385,9 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			StartedAt:           start,
 			FinishedAt:          finished,
 			LaunchStarted:       launchStarted,
+			LaunchDisposition:   dispositionForTermination(termination.VerifiedAbsent),
+			ProcessIdentity:     identity,
+			IdentityAvailable:   identityAvailable,
 			TerminationVerified: termination.VerifiedAbsent,
 			TerminationError:    errMsg,
 		}
@@ -481,6 +541,9 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			StartedAt:           start,
 			FinishedAt:          finished,
 			LaunchStarted:       launchStarted,
+			LaunchDisposition:   dispositionForTermination(terminationVerified),
+			ProcessIdentity:     identity,
+			IdentityAvailable:   identityAvailable,
 			TerminationVerified: terminationVerified,
 			TerminationError:    errText,
 		}
@@ -528,8 +591,29 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		StartedAt:           start,
 		FinishedAt:          finished,
 		LaunchStarted:       launchStarted,
+		LaunchDisposition:   AgentLaunchOwned,
+		ProcessIdentity:     identity,
+		IdentityAvailable:   identityAvailable,
 		TerminationVerified: terminationVerified,
 	}
+}
+
+func dispositionForTermination(verified bool) AgentLaunchDisposition {
+	if verified {
+		return AgentLaunchCleanupVerified
+	}
+	return AgentLaunchCleanupPending
+}
+
+func appendErrorText(base, extra string) string {
+	extra = strings.TrimSpace(extra)
+	if extra == "" {
+		return base
+	}
+	if strings.TrimSpace(base) == "" {
+		return extra
+	}
+	return base + "; " + extra
 }
 
 // --- OpenCode adapter types ---

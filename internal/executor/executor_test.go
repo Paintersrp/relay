@@ -1403,6 +1403,79 @@ func TestDispatchBrief_ProcessRegistrationFailureBlocksExecution(t *testing.T) {
 	}
 }
 
+func TestDispatchBrief_PostCreateCleanupDispositionDoesNotRecordStartPrevented(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+
+	_, err := DispatchBrief(&DispatchParams{
+		Store:   s,
+		Log:     slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:   runID,
+		Adapter: &fakeAdapter{},
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			return pipeline.AgentCommandRunResult{
+				ExitCode:            -1,
+				Error:               "post-create setup failed",
+				LaunchStarted:       true,
+				LaunchDisposition:   pipeline.AgentLaunchCleanupVerified,
+				ProcessIdentity:     pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"},
+				IdentityAvailable:   true,
+				TerminationVerified: true,
+				TerminationError:    "post-create setup failed",
+				StartedAt:           time.Now(),
+				FinishedAt:          time.Now(),
+			}
+		},
+		LaunchAsync: func(fn func()) { fn() },
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get latest execution: %v", err)
+	}
+	if exec.LaunchState == "start_prevented" {
+		t.Fatalf("post-create cleanup disposition must not record start_prevented: %+v", exec)
+	}
+}
+
+func TestTerminalizeExecutionRequiredEventFailureRollsBack(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	exec, err := s.CreateOwnedAgentExecution(runID, "fake", ExecutionStatusRunning, "fake", "local_process", "owner", "token")
+	if err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	markTerminationVerified(s, exec.ID)
+
+	_, won, err := terminalizeExecution(s, nil, nil, runID+999, exec.ID, terminalExecutionInput{
+		Status:       ExecutionStatusSucceeded,
+		Reason:       TerminalReasonSucceeded,
+		FinishedAt:   executionTimestampNow(),
+		EventMessage: "required event should fail",
+		RunStatus:    StatusExecutorDone,
+	})
+	if err == nil {
+		t.Fatal("expected required event failure")
+	}
+	if won {
+		t.Fatal("expected transaction to roll back instead of reporting a won terminalization")
+	}
+	refreshed, err := s.GetAgentExecution(exec.ID)
+	if err != nil {
+		t.Fatalf("reload execution: %v", err)
+	}
+	if refreshed.TerminalizedAt.Valid || refreshed.Status == ExecutionStatusSucceeded {
+		t.Fatalf("expected terminalization rollback, got status=%s terminalized=%+v", refreshed.Status, refreshed.TerminalizedAt)
+	}
+}
+
 func TestKiroCLIAdapter_BuildInvocationSelectedModel(t *testing.T) {
 	adapter := KiroCLIAdapter{
 		Config: KiroCLIAdapterConfig{

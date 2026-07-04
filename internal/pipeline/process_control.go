@@ -30,6 +30,40 @@ type CommandSpec struct {
 	Timeout time.Duration
 }
 
+type AgentLaunchDisposition string
+
+const (
+	AgentLaunchNotStarted      AgentLaunchDisposition = "not_started"
+	AgentLaunchOwned           AgentLaunchDisposition = "owned"
+	AgentLaunchCleanupVerified AgentLaunchDisposition = "started_cleanup_verified"
+	AgentLaunchCleanupPending  AgentLaunchDisposition = "started_cleanup_pending"
+)
+
+type OwnedStartError struct {
+	Cause         error
+	NativeStarted bool
+	Identity      ProcessIdentity
+	Cleanup       ProcessTerminationResult
+	CleanupError  error
+}
+
+func (e *OwnedStartError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Cause == nil {
+		return "owned process start failed"
+	}
+	return e.Cause.Error()
+}
+
+func (e *OwnedStartError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
 func (p ProcessIdentity) Encode() string {
 	data, _ := json.Marshal(p)
 	return string(data)

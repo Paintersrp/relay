@@ -701,6 +701,100 @@ func (s *Store) TerminalizeAgentExecutionCAS(id int64, upd AgentExecutionTermina
 	return &exec, true, nil
 }
 
+func (s *Store) FinalizeAgentExecutionCAS(
+	runID int64,
+	execID int64,
+	upd AgentExecutionTerminalUpdate,
+	runStatus string,
+	eventLevel string,
+	eventMessage string,
+) (*AgentExecution, bool, error) {
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	rollback := func() {
+		_ = tx.Rollback()
+	}
+
+	result, err := tx.ExecContext(ctx, `
+UPDATE agent_executions
+SET status = ?,
+    exit_code = ?,
+    started_at = COALESCE(started_at, ?),
+    finished_at = ?,
+    stdout_artifact_path = COALESCE(?, stdout_artifact_path),
+    stderr_artifact_path = COALESCE(?, stderr_artifact_path),
+    combined_artifact_path = COALESCE(?, combined_artifact_path),
+    result_artifact_path = COALESCE(?, result_artifact_path),
+    error = ?,
+    cancellation_completed_at = ?,
+    terminal_reason = ?,
+    terminalized_at = ?,
+    updated_at = datetime('now')
+WHERE id = ?
+  AND status IN ('starting', 'running', 'cancel_requested', 'termination_pending')
+  AND (
+      launch_state = 'start_prevented'
+      OR termination_state = 'verified_absent'
+  )
+  AND terminalized_at IS NULL`,
+		upd.Status,
+		nullInt64Ptr(upd.ExitCode),
+		nullString(upd.StartedAt),
+		nullString(upd.FinishedAt),
+		nullString(upd.StdoutPath),
+		nullString(upd.StderrPath),
+		nullString(upd.CombinedPath),
+		nullString(upd.ResultPath),
+		nullString(upd.Error),
+		nullString(upd.CancellationCompletedAt),
+		nullString(upd.TerminalReason),
+		nullString(upd.TerminalizedAt),
+		execID,
+	)
+	if err != nil {
+		rollback()
+		return nil, false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		rollback()
+		return nil, false, err
+	}
+	if rows == 0 {
+		if err := tx.Commit(); err != nil {
+			return nil, false, err
+		}
+		current, getErr := s.GetAgentExecution(execID)
+		return current, false, getErr
+	}
+	if runStatus != "" {
+		if _, err := tx.ExecContext(ctx, `UPDATE runs SET status = ?, updated_at = datetime('now') WHERE id = ?`, runStatus, runID); err != nil {
+			rollback()
+			return nil, false, err
+		}
+	}
+	if eventMessage != "" {
+		if eventLevel == "" {
+			eventLevel = "info"
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO events (run_id, level, message, metadata_json) VALUES (?, ?, ?, ?)`, runID, eventLevel, eventMessage, "{}"); err != nil {
+			rollback()
+			return nil, false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, false, err
+	}
+	exec, err := s.GetAgentExecution(execID)
+	if err != nil {
+		return nil, false, err
+	}
+	return exec, true, nil
+}
+
 func (s *Store) UpdateAgentExecutionStatus(
 	id int64,
 	status string,

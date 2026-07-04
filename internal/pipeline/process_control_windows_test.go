@@ -4,6 +4,10 @@ package pipeline
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
+	"strings"
 	"testing"
 	"time"
 )
@@ -65,5 +69,38 @@ func TestWindowsOwnedProcessReleaseIsIdempotent(t *testing.T) {
 	}
 	if err := owned.Release(); err != nil {
 		t.Fatalf("second release: %v", err)
+	}
+}
+
+func TestWindowsOwnedProcessStdinDeliveryIsExact(t *testing.T) {
+	payload := strings.Repeat("relay-stdin-payload\n", 8192)
+	sum := sha256.Sum256([]byte(payload))
+	expected := hex.EncodeToString(sum[:])
+
+	controller := DefaultProcessController()
+	owned, err := controller.StartOwned(context.Background(), CommandSpec{
+		Binary: "powershell.exe",
+		Args: []string{
+			"-NoProfile",
+			"-Command",
+			`$inputText = [Console]::In.ReadToEnd(); $sha = [System.Security.Cryptography.SHA256]::Create(); $bytes = [Text.Encoding]::UTF8.GetBytes($inputText); [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace("-", "").ToLowerInvariant()`,
+		},
+		Stdin: payload,
+	})
+	if err != nil {
+		t.Fatalf("start owned: %v", err)
+	}
+	defer owned.Release()
+
+	out, readErr := io.ReadAll(owned.Stdout())
+	if readErr != nil {
+		t.Fatalf("read stdout: %v", readErr)
+	}
+	if err := owned.Wait(); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	got := strings.TrimSpace(string(out))
+	if got != expected {
+		t.Fatalf("stdin hash mismatch: got %s want %s", got, expected)
 	}
 }

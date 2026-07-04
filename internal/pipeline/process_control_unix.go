@@ -49,11 +49,31 @@ func (c defaultProcessController) StartOwned(ctx context.Context, spec CommandSp
 	}
 	identity, err := c.identity(cmd)
 	if err != nil {
+		owned := &unixOwnedProcess{
+			cmd: cmd,
+			identity: ProcessIdentity{
+				PID:      cmd.Process.Pid,
+				GroupID:  cmd.Process.Pid,
+				Platform: runtime.GOOS,
+			},
+			stdout: stdout,
+			stderr: stderr,
+		}
 		if cmd.Process != nil {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		}
-		_ = waitForCommandBounded(cmd, 2*time.Second)
-		return nil, err
+		waitErr := waitForCommandBounded(cmd, 2*time.Second)
+		cleanup := ProcessTerminationResult{Forced: true}
+		if waitErr == nil {
+			cleanup.VerifiedAbsent = true
+		}
+		return owned, &OwnedStartError{
+			Cause:         err,
+			NativeStarted: true,
+			Identity:      owned.identity,
+			Cleanup:       cleanup,
+			CleanupError:  waitErr,
+		}
 	}
 	return &unixOwnedProcess{cmd: cmd, identity: identity, stdout: stdout, stderr: stderr}, nil
 }

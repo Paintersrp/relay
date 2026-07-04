@@ -180,11 +180,12 @@ func publishRunEvent(hub *events.Hub, runID int64, kind, source, status string) 
 	})
 }
 
-func createEvent(store *store.Store, runID int64, level, message string) {
+func createEvent(store *store.Store, runID int64, level, message string) error {
 	if store == nil {
-		return
+		return nil
 	}
-	store.CreateEvent(runID, level, message)
+	_, err := store.CreateEvent(runID, level, message)
+	return err
 }
 
 func executionTimestampNow() string {
@@ -268,17 +269,19 @@ func deleteExecutorArtifacts(sink ExecutionEvidenceSink, runID int64) error {
 	return nil
 }
 
-func updateRunStatus(st *store.Store, runID int64, status string) {
+func updateRunStatus(st *store.Store, runID int64, status string) (*store.Run, error) {
 	if st == nil {
-		return
+		return nil, nil
 	}
 	updatedRun, err := st.UpdateRunStatus(runID, status)
 	if err != nil {
-		return
+		return nil, err
 	}
 	if err := plans.NewRunLifecycleService(st).SyncAssociatedPassForRunStatus(updatedRun); err != nil {
 		_, _ = st.CreateEvent(runID, "warn", "Associated pass status sync failed: "+err.Error())
+		return updatedRun, err
 	}
+	return updatedRun, nil
 }
 
 func defaultExecutorPreflight(inv ExecutorInvocation) ExecutorPreflightResult {
@@ -356,10 +359,11 @@ func defaultExecutorPreflight(inv ExecutorInvocation) ExecutorPreflightResult {
 	return res
 }
 
-func blockExecutorPreflight(p *DispatchParams, s *store.Store, runID int64, inv ExecutorInvocation, res ExecutorPreflightResult) {
+func blockExecutorPreflight(p *DispatchParams, s *store.Store, runID int64, inv ExecutorInvocation, res ExecutorPreflightResult) error {
 	sink := p.evidenceSink()
+	var errs []string
 	if err := deleteExecutorArtifacts(sink, runID); err != nil {
-		createEvent(s, runID, "warn", "Executor preflight artifact cleanup failed: "+err.Error())
+		errs = append(errs, "delete prior executor evidence: "+err.Error())
 	}
 
 	jsonBytes, _ := json.MarshalIndent(res, "", "  ")
@@ -367,30 +371,37 @@ func blockExecutorPreflight(p *DispatchParams, s *store.Store, runID int64, inv 
 	logText := fmt.Sprintf("Preflight: BLOCKED\nCommand: %s\nWorkDir: %s\nModel: %s\nAgent: %s\n\n--- PREFLIGHT DETAILS ---\n%s\n", inv.Preview, inv.WorkDir, inv.Model, inv.Agent, string(jsonBytes))
 	logPath, logErr := writeExecutorArtifact(sink, runID, ArtifactKindCommandLog, []byte(logText))
 	if logErr != nil {
-		createEvent(s, runID, "warn", "Executor preflight evidence write failed: "+logErr.Error())
+		errs = append(errs, "write command-log evidence: "+logErr.Error())
 	}
 	if logPath != "" {
 		if err := sink.Register(runID, ArtifactKindCommandLog, logPath, "text/plain"); err != nil {
-			createEvent(s, runID, "warn", "Executor preflight evidence registration failed: "+err.Error())
+			errs = append(errs, "register command-log evidence: "+err.Error())
 		}
 	}
 
 	resText := fmt.Sprintf("STATUS: BLOCKED\n\nBlocker/error only if blocked: executor preflight failed: %s\n", res.BlockerText)
 	resPath, resErr := writeExecutorArtifact(sink, runID, ArtifactKindExecutorResult, []byte(resText))
 	if resErr != nil {
-		createEvent(s, runID, "warn", "Executor preflight result write failed: "+resErr.Error())
+		errs = append(errs, "write blocked-result evidence: "+resErr.Error())
 	}
 	if resPath != "" {
 		if err := sink.Register(runID, ArtifactKindExecutorResult, resPath, "text/plain"); err != nil {
-			createEvent(s, runID, "warn", "Executor preflight result registration failed: "+err.Error())
+			errs = append(errs, "register blocked-result evidence: "+err.Error())
 		}
 	}
 
-	createEvent(s, runID, "warn", "Executor preflight blocked: "+res.BlockerText)
+	if err := createEvent(s, runID, "warn", "Executor preflight blocked: "+res.BlockerText); err != nil {
+		errs = append(errs, "create preflight event: "+err.Error())
+	}
+	if _, err := updateRunStatus(s, runID, StatusExecutorBlocked); err != nil {
+		errs = append(errs, "update run status: "+err.Error())
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("executor preflight persistence failed: %s", strings.Join(errs, "; "))
+	}
 	publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
-
-	updateRunStatus(s, runID, StatusExecutorBlocked)
 	publishRunEvent(p.EventHub, runID, events.KindRunSummary, "executor", "blocked")
+	return nil
 }
 
 type streamingState struct {
@@ -655,10 +666,12 @@ func runBackgroundDispatch(
 	if runResult.TerminationError == "" {
 		if current, err := s.GetAgentExecution(execID); err == nil && current != nil &&
 			current.LaunchState == "start_in_progress" && !current.ProcessIdentity.Valid {
-			if runResult.LaunchStarted {
-				markTerminationFailed(s, execID, "launch completed but process identity was not durably registered")
-			} else {
+			if runResult.LaunchDisposition == pipeline.AgentLaunchNotStarted {
 				_, _, _ = s.RecordAgentExecutionStartPrevented(execID, ownershipToken)
+			} else if runResult.LaunchDisposition == "" {
+				markTerminationVerified(s, execID)
+			} else {
+				markTerminationFailed(s, execID, "launch completed but process identity was not durably registered")
 			}
 		}
 	}
@@ -844,6 +857,12 @@ func runBackgroundDispatch(
 		if resultPath != "" {
 			stream.recordWriteError("register_exit_result", sink.Register(runID, ArtifactKindExecutorResult, resultPath, "text/plain"))
 		}
+		writeErrSummary = stream.writeErrorSummary()
+		if writeErrSummary != "" {
+			errMsg = appendError(errMsg, writeErrSummary)
+			errPtr = &errMsg
+			execStatus = ExecutionStatusFailed
+		}
 		_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
 			Status:          execStatus,
 			Reason:          TerminalReasonFailed,
@@ -890,6 +909,11 @@ func runBackgroundDispatch(
 					}
 					normalizationInput = string(content)
 				}
+			} else {
+				stream.recordWriteError("read_result_file", err)
+				errMsg = appendError(errMsg, "read configured result file: "+err.Error())
+				errPtr = &errMsg
+				execStatus = ExecutionStatusFailed
 			}
 		}
 
@@ -985,6 +1009,10 @@ func runBackgroundDispatch(
 	if resultPath != "" {
 		stream.recordWriteError("register_no_output_result", sink.Register(runID, ArtifactKindExecutorResult, resultPath, "text/plain"))
 	}
+	writeErrSummary = stream.writeErrorSummary()
+	if writeErrSummary != "" {
+		errMsg = appendError(errMsg, writeErrSummary)
+	}
 	noOutputError := "no stdout captured from executor"
 	if errMsg != "" {
 		noOutputError = errMsg + "; " + noOutputError
@@ -1054,6 +1082,7 @@ func ensureExecutionTreeAbsentForTerminal(st *store.Store, controller pipeline.P
 	if err != nil {
 		return false, "process tree ownership unavailable during terminal cleanup verification: " + err.Error()
 	}
+	defer owned.Release()
 	running, err := owned.TreeRunning()
 	if err != nil {
 		return false, "process tree presence unverifiable during terminal cleanup verification: " + err.Error()
@@ -1062,7 +1091,6 @@ func ensureExecutionTreeAbsentForTerminal(st *store.Store, controller pipeline.P
 		return false, "process tree still running after executor completion"
 	}
 	markTerminationVerified(st, execID)
-	_ = owned.Release()
 	return true, ""
 }
 
@@ -1176,7 +1204,9 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 
 	preflightRes := p.preflight()(invocation)
 	if !preflightRes.OK {
-		blockExecutorPreflight(p, s, runID, invocation, preflightRes)
+		if err := blockExecutorPreflight(p, s, runID, invocation, preflightRes); err != nil {
+			return DispatchResult{Dispatched: false}, fmt.Errorf("executor preflight failed: %s; %w", preflightRes.BlockerText, err)
+		}
 		return DispatchResult{Dispatched: false}, fmt.Errorf("executor preflight failed: %s", preflightRes.BlockerText)
 	}
 

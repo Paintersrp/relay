@@ -560,6 +560,105 @@ func (p *rootExitChildRunningProcess) Terminate(gracefulTimeout time.Duration) (
 }
 func (p *rootExitChildRunningProcess) Release() error { return nil }
 
+type postCreateFailureController struct {
+	proc *postCreateFailureProcess
+}
+
+type postCreateFailureProcess struct {
+	stdout       *io.PipeReader
+	stderr       *io.PipeReader
+	terminated   int
+	released     int
+	identity     ProcessIdentity
+	verifiedExit bool
+}
+
+func newPostCreateFailureController(verified bool) *postCreateFailureController {
+	stdoutR, stdoutW := io.Pipe()
+	stderrR, stderrW := io.Pipe()
+	_ = stdoutW.Close()
+	_ = stderrW.Close()
+	proc := &postCreateFailureProcess{
+		stdout: stdoutR,
+		stderr: stderrR,
+		identity: ProcessIdentity{
+			PID:       4321,
+			GroupID:   4321,
+			StartedAt: "fingerprint",
+			Platform:  "test",
+			Nonce:     "job",
+		},
+		verifiedExit: verified,
+	}
+	return &postCreateFailureController{proc: proc}
+}
+
+func (c *postCreateFailureController) StartOwned(ctx context.Context, spec CommandSpec) (OwnedProcess, error) {
+	return c.proc, &OwnedStartError{
+		Cause:         fmt.Errorf("post-create setup failed"),
+		NativeStarted: true,
+		Identity:      c.proc.identity,
+	}
+}
+
+func (c *postCreateFailureController) OpenOwned(identity ProcessIdentity) (OwnedProcess, error) {
+	return c.proc, nil
+}
+
+func (p *postCreateFailureProcess) Identity() ProcessIdentity  { return p.identity }
+func (p *postCreateFailureProcess) Stdout() io.ReadCloser      { return p.stdout }
+func (p *postCreateFailureProcess) Stderr() io.ReadCloser      { return p.stderr }
+func (p *postCreateFailureProcess) Wait() error                { return nil }
+func (p *postCreateFailureProcess) TreeRunning() (bool, error) { return false, nil }
+func (p *postCreateFailureProcess) Terminate(gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
+	p.terminated++
+	return ProcessTerminationResult{VerifiedAbsent: p.verifiedExit}, nil
+}
+func (p *postCreateFailureProcess) Release() error {
+	p.released++
+	return nil
+}
+
+func TestRunLocalAgentCommandArgsStreamingPostCreateFailurePreservesLaunchTruth(t *testing.T) {
+	controller := newPostCreateFailureController(true)
+	var registered ProcessIdentity
+
+	result := RunLocalAgentCommandArgsStreamingWithController(
+		context.Background(),
+		".",
+		"fake",
+		nil,
+		"",
+		time.Second,
+		AgentCommandStreamCallbacks{
+			OnProcessStarted: func(identity ProcessIdentity) error {
+				registered = identity
+				return nil
+			},
+		},
+		controller,
+	)
+
+	if result.LaunchDisposition != AgentLaunchCleanupVerified {
+		t.Fatalf("expected cleanup-verified disposition, got %q", result.LaunchDisposition)
+	}
+	if !result.LaunchStarted {
+		t.Fatal("expected launch_started compatibility field to remain true")
+	}
+	if !result.IdentityAvailable || result.ProcessIdentity.PID != controller.proc.identity.PID {
+		t.Fatalf("expected process identity in result, got %+v available=%v", result.ProcessIdentity, result.IdentityAvailable)
+	}
+	if registered.PID != controller.proc.identity.PID {
+		t.Fatalf("expected process-start callback with identity, got %+v", registered)
+	}
+	if controller.proc.terminated != 1 {
+		t.Fatalf("expected one terminate call, got %d", controller.proc.terminated)
+	}
+	if controller.proc.released != 1 {
+		t.Fatalf("expected one release call, got %d", controller.proc.released)
+	}
+}
+
 func TestRunLocalAgentCommandArgsStreamingTimeoutUsesProcessController(t *testing.T) {
 	t.Setenv("GO_WANT_AGENT_STREAM_HELPER", "1")
 	controller := &recordingProcessController{terminated: make(chan ProcessIdentity, 1)}

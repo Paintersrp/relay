@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -39,6 +40,8 @@ type windowsOwnedProcess struct {
 	process       windows.Handle
 	stdout        *os.File
 	stderr        *os.File
+	stdinDone     <-chan error
+	stdinRequired bool
 	releaseOnDone bool
 	released      bool
 }
@@ -75,7 +78,9 @@ func (c defaultProcessController) StartOwned(ctx context.Context, spec CommandSp
 	}
 	owned, err := c.createOwnedProcess(ctx, spec, jobName, job)
 	if err != nil {
-		_ = windows.CloseHandle(job)
+		if owned == nil {
+			_ = windows.CloseHandle(job)
+		}
 		return nil, err
 	}
 	return owned, nil
@@ -110,14 +115,15 @@ func (c defaultProcessController) createOwnedProcess(ctx context.Context, spec C
 	if err != nil {
 		return nil, err
 	}
-	defer stdinWrite.Close()
 	stdoutRead, stdoutWrite, err := os.Pipe()
 	if err != nil {
+		stdinWrite.Close()
 		stdinRead.Close()
 		return nil, err
 	}
 	stderrRead, stderrWrite, err := os.Pipe()
 	if err != nil {
+		stdinWrite.Close()
 		stdinRead.Close()
 		stdoutRead.Close()
 		stdoutWrite.Close()
@@ -215,36 +221,53 @@ func (c defaultProcessController) createOwnedProcess(ctx context.Context, spec C
 	}
 	_ = windows.CloseHandle(pi.Thread)
 	cleanupChild()
+	stdinDone := make(chan error, 1)
 	go func() {
+		var err error
 		if spec.Stdin != "" {
-			_, _ = io.WriteString(stdinWrite, spec.Stdin)
+			n, writeErr := io.WriteString(stdinWrite, spec.Stdin)
+			if writeErr != nil {
+				err = writeErr
+			} else if n != len(spec.Stdin) {
+				err = io.ErrShortWrite
+			}
 		}
-		_ = stdinWrite.Close()
+		closeErr := stdinWrite.Close()
+		if err == nil {
+			err = closeErr
+		}
+		stdinDone <- err
+		close(stdinDone)
 	}()
-	createdAt, err := windowsProcessCreationTime(int(pi.ProcessId))
-	if err != nil {
-		_ = windows.TerminateJobObject(job, 1)
-		_, _ = windows.WaitForSingleObject(pi.Process, 2000)
-		stdoutRead.Close()
-		stderrRead.Close()
-		windows.CloseHandle(pi.Process)
-		return nil, err
-	}
-	return &windowsOwnedProcess{
+	owned := &windowsOwnedProcess{
 		identity: ProcessIdentity{
-			PID:       int(pi.ProcessId),
-			GroupID:   int(pi.ProcessId),
-			StartedAt: createdAt.UTC().Format(time.RFC3339Nano),
-			Platform:  runtime.GOOS,
-			Nonce:     jobName,
+			PID:      int(pi.ProcessId),
+			GroupID:  int(pi.ProcessId),
+			Platform: runtime.GOOS,
+			Nonce:    jobName,
 		},
 		jobName:       jobName,
 		job:           job,
 		process:       pi.Process,
 		stdout:        stdoutRead,
 		stderr:        stderrRead,
+		stdinDone:     stdinDone,
+		stdinRequired: spec.Stdin != "",
 		releaseOnDone: true,
-	}, nil
+	}
+	createdAt, err := windowsProcessCreationTime(int(pi.ProcessId))
+	if err != nil {
+		cleanup, cleanupErr := owned.Terminate(2 * time.Second)
+		return owned, &OwnedStartError{
+			Cause:         fmt.Errorf("capture process identity: %w", err),
+			NativeStarted: true,
+			Identity:      owned.identity,
+			Cleanup:       cleanup,
+			CleanupError:  cleanupErr,
+		}
+	}
+	owned.identity.StartedAt = createdAt.UTC().Format(time.RFC3339Nano)
+	return owned, nil
 }
 
 func (p *windowsOwnedProcess) Identity() ProcessIdentity { return p.identity }
@@ -269,10 +292,13 @@ func (p *windowsOwnedProcess) Wait() error {
 		return err
 	}
 	if code == 0 {
-		return nil
+		return p.stdinError()
 	}
 	if code == stillActive {
 		return fmt.Errorf("%w: process still active after wait", ErrProcessUnverifiable)
+	}
+	if err := p.stdinError(); err != nil {
+		return fmt.Errorf("%w; stdin delivery: %v", windowsExitError{code: int(code)}, err)
 	}
 	return windowsExitError{code: int(code)}
 }
@@ -317,7 +343,6 @@ func (p *windowsOwnedProcess) Terminate(gracefulTimeout time.Duration) (ProcessT
 			return ProcessTerminationResult{}, err
 		}
 		if active == 0 {
-			_ = p.Release()
 			return ProcessTerminationResult{VerifiedAbsent: true, Forced: true}, nil
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -332,19 +357,45 @@ func (p *windowsOwnedProcess) Release() error {
 		return nil
 	}
 	p.released = true
+	var errs []string
 	if p.stdout != nil {
-		_ = p.stdout.Close()
+		if err := p.stdout.Close(); err != nil {
+			errs = append(errs, "close stdout: "+err.Error())
+		}
+		p.stdout = nil
 	}
 	if p.stderr != nil {
-		_ = p.stderr.Close()
+		if err := p.stderr.Close(); err != nil {
+			errs = append(errs, "close stderr: "+err.Error())
+		}
+		p.stderr = nil
 	}
 	if p.process != 0 {
-		_ = windows.CloseHandle(p.process)
+		if err := windows.CloseHandle(p.process); err != nil {
+			errs = append(errs, "close process: "+err.Error())
+		}
 		p.process = 0
 	}
 	if p.job != 0 {
-		_ = windows.CloseHandle(p.job)
+		if err := windows.CloseHandle(p.job); err != nil {
+			errs = append(errs, "close job: "+err.Error())
+		}
 		p.job = 0
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+func (p *windowsOwnedProcess) stdinError() error {
+	done := p.stdinDone
+	if done == nil {
+		return nil
+	}
+	err := <-done
+	if err != nil && p.stdinRequired {
+		return err
 	}
 	return nil
 }
