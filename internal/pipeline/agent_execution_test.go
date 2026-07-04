@@ -594,10 +594,15 @@ func newPostCreateFailureController(verified bool) *postCreateFailureController 
 }
 
 func (c *postCreateFailureController) StartOwned(ctx context.Context, spec CommandSpec) (OwnedProcess, error) {
+	cleanup := ProcessTerminationResult{}
+	if c.proc.verifiedExit {
+		cleanup.VerifiedAbsent = true
+	}
 	return c.proc, &OwnedStartError{
 		Cause:         fmt.Errorf("post-create setup failed"),
 		NativeStarted: true,
 		Identity:      c.proc.identity,
+		Cleanup:       cleanup,
 	}
 }
 
@@ -651,8 +656,8 @@ func TestRunLocalAgentCommandArgsStreamingPostCreateFailurePreservesLaunchTruth(
 	if registered.PID != controller.proc.identity.PID {
 		t.Fatalf("expected process-start callback with identity, got %+v", registered)
 	}
-	if controller.proc.terminated != 1 {
-		t.Fatalf("expected one terminate call, got %d", controller.proc.terminated)
+	if controller.proc.terminated != 0 {
+		t.Fatalf("expected zero terminate calls (controller cleanup consumed), got %d", controller.proc.terminated)
 	}
 	if controller.proc.released != 1 {
 		t.Fatalf("expected one release call, got %d", controller.proc.released)

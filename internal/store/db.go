@@ -260,6 +260,46 @@ func (s *Store) UpdateRunStatus(id int64, status string) (*Run, error) {
 	return &run, nil
 }
 
+func (s *Store) RecordExecutorPreflightBlocked(runID int64, status string, level string, message string) (*Run, error) {
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := tx.ExecContext(ctx, `UPDATE runs SET status = ?, updated_at = datetime('now') WHERE id = ?`, status, runID)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	ra, err := r.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	if ra != 1 {
+		_ = tx.Rollback()
+		return nil, fmt.Errorf("run update affected %d rows, expected 1", ra)
+	}
+
+	if level == "" {
+		level = "info"
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO events (run_id, level, message, metadata_json) VALUES (?, ?, ?, ?)`, runID, level, message, "{}"); err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	run, err := s.GetRun(runID)
+	if err != nil {
+		return nil, err
+	}
+	return run, nil
+}
+
 func (s *Store) UpdateRunBranch(id int64, branchName, baseCommit, headCommit string) (*Run, error) {
 	run, err := s.queries.UpdateRunBranch(context.Background(), generated.UpdateRunBranchParams{
 		BranchName: branchName,
@@ -734,6 +774,7 @@ SET status = ?,
     terminalized_at = ?,
     updated_at = datetime('now')
 WHERE id = ?
+  AND run_id = ?
   AND status IN ('starting', 'running', 'cancel_requested', 'termination_pending')
   AND (
       launch_state = 'start_prevented'
@@ -753,6 +794,7 @@ WHERE id = ?
 		nullString(upd.TerminalReason),
 		nullString(upd.TerminalizedAt),
 		execID,
+		runID,
 	)
 	if err != nil {
 		rollback()
@@ -771,9 +813,19 @@ WHERE id = ?
 		return current, false, getErr
 	}
 	if runStatus != "" {
-		if _, err := tx.ExecContext(ctx, `UPDATE runs SET status = ?, updated_at = datetime('now') WHERE id = ?`, runStatus, runID); err != nil {
+		r, err := tx.ExecContext(ctx, `UPDATE runs SET status = ?, updated_at = datetime('now') WHERE id = ?`, runStatus, runID)
+		if err != nil {
 			rollback()
 			return nil, false, err
+		}
+		ra, err := r.RowsAffected()
+		if err != nil {
+			rollback()
+			return nil, false, err
+		}
+		if ra != 1 {
+			rollback()
+			return nil, false, fmt.Errorf("run update affected %d rows, expected 1", ra)
 		}
 	}
 	if eventMessage != "" {

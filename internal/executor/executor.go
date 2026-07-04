@@ -284,6 +284,21 @@ func updateRunStatus(st *store.Store, runID int64, status string) (*store.Run, e
 	return updatedRun, nil
 }
 
+func recordDispatchBlocker(st *store.Store, runID int64, message string, terminalRunStatus string) error {
+	if st == nil {
+		return nil
+	}
+	if _, err := st.CreateEvent(runID, "warn", message); err != nil {
+		return err
+	}
+	if terminalRunStatus != "" {
+		if _, err := updateRunStatus(st, runID, terminalRunStatus); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func defaultExecutorPreflight(inv ExecutorInvocation) ExecutorPreflightResult {
 	res := ExecutorPreflightResult{
 		OK:             true,
@@ -361,9 +376,10 @@ func defaultExecutorPreflight(inv ExecutorInvocation) ExecutorPreflightResult {
 
 func blockExecutorPreflight(p *DispatchParams, s *store.Store, runID int64, inv ExecutorInvocation, res ExecutorPreflightResult) error {
 	sink := p.evidenceSink()
-	var errs []string
+
+	// Stage A: evidence — fail before any durable state mutation
 	if err := deleteExecutorArtifacts(sink, runID); err != nil {
-		errs = append(errs, "delete prior executor evidence: "+err.Error())
+		return fmt.Errorf("executor preflight persistence failed: %s", err.Error())
 	}
 
 	jsonBytes, _ := json.MarshalIndent(res, "", "  ")
@@ -371,36 +387,38 @@ func blockExecutorPreflight(p *DispatchParams, s *store.Store, runID int64, inv 
 	logText := fmt.Sprintf("Preflight: BLOCKED\nCommand: %s\nWorkDir: %s\nModel: %s\nAgent: %s\n\n--- PREFLIGHT DETAILS ---\n%s\n", inv.Preview, inv.WorkDir, inv.Model, inv.Agent, string(jsonBytes))
 	logPath, logErr := writeExecutorArtifact(sink, runID, ArtifactKindCommandLog, []byte(logText))
 	if logErr != nil {
-		errs = append(errs, "write command-log evidence: "+logErr.Error())
+		return fmt.Errorf("executor preflight persistence failed: %s", logErr.Error())
 	}
 	if logPath != "" {
 		if err := sink.Register(runID, ArtifactKindCommandLog, logPath, "text/plain"); err != nil {
-			errs = append(errs, "register command-log evidence: "+err.Error())
+			return fmt.Errorf("executor preflight persistence failed: %s", err.Error())
 		}
 	}
 
 	resText := fmt.Sprintf("STATUS: BLOCKED\n\nBlocker/error only if blocked: executor preflight failed: %s\n", res.BlockerText)
 	resPath, resErr := writeExecutorArtifact(sink, runID, ArtifactKindExecutorResult, []byte(resText))
 	if resErr != nil {
-		errs = append(errs, "write blocked-result evidence: "+resErr.Error())
+		return fmt.Errorf("executor preflight persistence failed: %s", resErr.Error())
 	}
 	if resPath != "" {
 		if err := sink.Register(runID, ArtifactKindExecutorResult, resPath, "text/plain"); err != nil {
-			errs = append(errs, "register blocked-result evidence: "+err.Error())
+			return fmt.Errorf("executor preflight persistence failed: %s", err.Error())
 		}
 	}
 
-	if err := createEvent(s, runID, "warn", "Executor preflight blocked: "+res.BlockerText); err != nil {
-		errs = append(errs, "create preflight event: "+err.Error())
+	// Stage B: durable blocker state — transactional
+	if _, err := s.RecordExecutorPreflightBlocked(runID, StatusExecutorBlocked, "warn", "Executor preflight blocked: "+res.BlockerText); err != nil {
+		return fmt.Errorf("executor preflight persistence failed: %s", err.Error())
 	}
-	if _, err := updateRunStatus(s, runID, StatusExecutorBlocked); err != nil {
-		errs = append(errs, "update run status: "+err.Error())
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("executor preflight persistence failed: %s", strings.Join(errs, "; "))
-	}
+
 	publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
 	publishRunEvent(p.EventHub, runID, events.KindRunSummary, "executor", "blocked")
+
+	if updatedRun, err := s.GetRun(runID); err == nil && updatedRun != nil {
+		if err := plans.NewRunLifecycleService(s).SyncAssociatedPassForRunStatus(updatedRun); err != nil {
+			_, _ = s.CreateEvent(runID, "warn", "Associated pass status sync failed: "+err.Error())
+		}
+	}
 	return nil
 }
 
@@ -633,7 +651,6 @@ func runBackgroundDispatch(
 				}
 			},
 			OnStartError: func(err error) {
-				closeLaunchDone()
 			},
 			OnProcessStarted: func(identity pipeline.ProcessIdentity) error {
 				startedAt = executionTimestampNow()
@@ -647,17 +664,17 @@ func runBackgroundDispatch(
 					OwnershipToken:      ownershipToken,
 				}); err != nil {
 					stream.recordWriteError("register_process_identity", err)
-					closeLaunchDone()
 					return fmt.Errorf("register process identity: %w", err)
 				} else if won {
 					publishRunEvent(hub, runID, events.KindStepAgent, "executor", "running")
-					closeLaunchDone()
 					return nil
 				}
 				err := fmt.Errorf("process identity registration lost ownership")
 				stream.recordWriteError("register_process_identity", err)
-				closeLaunchDone()
 				return err
+			},
+			OnLaunchSettled: func(disp pipeline.AgentLaunchDisposition) {
+				closeLaunchDone()
 			},
 		},
 	)
@@ -666,12 +683,17 @@ func runBackgroundDispatch(
 	if runResult.TerminationError == "" {
 		if current, err := s.GetAgentExecution(execID); err == nil && current != nil &&
 			current.LaunchState == "start_in_progress" && !current.ProcessIdentity.Valid {
-			if runResult.LaunchDisposition == pipeline.AgentLaunchNotStarted {
+			switch runResult.LaunchDisposition {
+			case pipeline.AgentLaunchNotStarted:
 				_, _, _ = s.RecordAgentExecutionStartPrevented(execID, ownershipToken)
-			} else if runResult.LaunchDisposition == "" {
+			case pipeline.AgentLaunchCleanupVerified:
 				markTerminationVerified(s, execID)
-			} else {
+			case pipeline.AgentLaunchCleanupPending:
+				markTerminationFailed(s, execID, "cleanup pending after launch")
+			case pipeline.AgentLaunchOwned:
 				markTerminationFailed(s, execID, "launch completed but process identity was not durably registered")
+			default:
+				markTerminationFailed(s, execID, "unknown launch disposition: "+string(runResult.LaunchDisposition))
 			}
 		}
 	}
@@ -819,10 +841,18 @@ func runBackgroundDispatch(
 		return
 	}
 
-	if ok, blocker := ensureExecutionTreeAbsentForTerminal(s, p.processController(), execID); !ok {
+	errMsg := runResult.Error
+
+	if ok, blocker, relErr := ensureExecutionTreeAbsentForTerminal(s, p.processController(), execID); !ok {
 		markTerminationFailed(s, execID, blocker)
 		createEvent(s, runID, "warn", "Executor completion cleanup is still pending: "+blocker)
 		return
+	} else if relErr != "" {
+		if errMsg != "" {
+			errMsg += "; " + relErr
+		} else {
+			errMsg = relErr
+		}
 	}
 
 	finishedStr := runResult.FinishedAt.Format(time.RFC3339Nano)
@@ -832,7 +862,6 @@ func runBackgroundDispatch(
 		execStatus = ExecutionStatusFailed
 	}
 
-	errMsg := runResult.Error
 	writeErrSummary := stream.writeErrorSummary()
 	if writeErrSummary != "" {
 		if errMsg != "" {
@@ -1057,41 +1086,47 @@ func appendError(base, extra string) string {
 	return base + "; " + extra
 }
 
-func ensureExecutionTreeAbsentForTerminal(st *store.Store, controller pipeline.ProcessController, execID int64) (bool, string) {
+func ensureExecutionTreeAbsentForTerminal(st *store.Store, controller pipeline.ProcessController, execID int64) (treeAbsent bool, cleanupError string, releaseError string) {
 	if st == nil {
-		return false, "store is unavailable for terminal cleanup verification"
+		return false, "store is unavailable for terminal cleanup verification", ""
 	}
 	exec, err := st.GetAgentExecution(execID)
 	if err != nil {
-		return false, "load execution for terminal cleanup verification: " + err.Error()
+		return false, "load execution for terminal cleanup verification: " + err.Error(), ""
 	}
 	if exec == nil {
-		return false, "execution missing during terminal cleanup verification"
+		return false, "execution missing during terminal cleanup verification", ""
 	}
 	if exec.LaunchState == "start_prevented" || exec.TerminationState == "verified_absent" {
-		return true, ""
+		return true, "", ""
 	}
 	identity, err := processIdentityFromExecution(exec)
 	if err != nil {
-		return false, "process identity unavailable during terminal cleanup verification: " + err.Error()
+		return false, "process identity unavailable during terminal cleanup verification: " + err.Error(), ""
 	}
 	if controller == nil {
 		controller = pipeline.DefaultProcessController()
 	}
 	owned, err := controller.OpenOwned(identity)
 	if err != nil {
-		return false, "process tree ownership unavailable during terminal cleanup verification: " + err.Error()
+		return false, "process tree ownership unavailable during terminal cleanup verification: " + err.Error(), ""
 	}
-	defer owned.Release()
+	defer func() {
+		if owned != nil {
+			if rerr := owned.Release(); rerr != nil {
+				releaseError = "release owned process during terminal verification: " + rerr.Error()
+			}
+		}
+	}()
 	running, err := owned.TreeRunning()
 	if err != nil {
-		return false, "process tree presence unverifiable during terminal cleanup verification: " + err.Error()
+		return false, "process tree presence unverifiable during terminal cleanup verification: " + err.Error(), ""
 	}
 	if running {
-		return false, "process tree still running after executor completion"
+		return false, "process tree still running after executor completion", ""
 	}
 	markTerminationVerified(st, execID)
-	return true, ""
+	return true, "", ""
 }
 
 func terminalReasonForStatus(status string) string {
@@ -1146,21 +1181,27 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 
 	repo, err := getRepoWorkspacePath(s, runID)
 	if err != nil {
-		createEvent(s, runID, "warn", "Executor dispatch blocked: "+err.Error())
+		if perr := recordDispatchBlocker(s, runID, "Executor dispatch blocked: "+err.Error(), ""); perr != nil {
+			return DispatchResult{}, fmt.Errorf("workspace prerequisite failed: %w; %w", err, perr)
+		}
 		publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
 		return DispatchResult{}, fmt.Errorf("workspace prerequisite failed: %w", err)
 	}
 
 	selectedModel, err := getRunModel(s, runID)
 	if err != nil {
-		createEvent(s, runID, "warn", "Executor dispatch blocked: "+err.Error())
+		if perr := recordDispatchBlocker(s, runID, "Executor dispatch blocked: "+err.Error(), ""); perr != nil {
+			return DispatchResult{}, fmt.Errorf("model prerequisite failed: %w; %w", err, perr)
+		}
 		publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
 		return DispatchResult{}, fmt.Errorf("model prerequisite failed: %w", err)
 	}
 
 	briefData, err := readExecutorBrief(s, runID)
 	if err != nil {
-		createEvent(s, runID, "warn", "Executor dispatch blocked: "+err.Error())
+		if perr := recordDispatchBlocker(s, runID, "Executor dispatch blocked: "+err.Error(), ""); perr != nil {
+			return DispatchResult{}, fmt.Errorf("executor brief prerequisite failed: %w; %w", err, perr)
+		}
 		publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
 		return DispatchResult{}, fmt.Errorf("executor brief prerequisite failed: %w", err)
 	}
@@ -1170,9 +1211,11 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 		var err error
 		adapter, err = NewAdapterFromID(run.ExecutorAdapter)
 		if err != nil {
-			createEvent(s, runID, "warn", "Executor dispatch blocked: "+err.Error())
+			blockMsg := "Executor dispatch blocked: " + err.Error()
+			if perr := recordDispatchBlocker(s, runID, blockMsg, StatusExecutorBlocked); perr != nil {
+				return DispatchResult{}, fmt.Errorf("adapter error: %w; %w", err, perr)
+			}
 			publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
-			updateRunStatus(s, runID, StatusExecutorBlocked)
 			publishRunEvent(p.EventHub, runID, events.KindRunSummary, "executor", "blocked")
 			return DispatchResult{}, fmt.Errorf("adapter error: %w", err)
 		}
@@ -1190,14 +1233,18 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 
 	invocation, err := adapter.BuildInvocation(req)
 	if err != nil {
-		createEvent(s, runID, "warn", "Executor dispatch blocked: invocation build failed: "+err.Error())
+		if perr := recordDispatchBlocker(s, runID, "Executor dispatch blocked: invocation build failed: "+err.Error(), ""); perr != nil {
+			return DispatchResult{}, fmt.Errorf("invocation build failed: %w; %w", err, perr)
+		}
 		publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
 		return DispatchResult{}, fmt.Errorf("invocation build failed: %w", err)
 	}
 
 	existingExec, err := s.GetActiveAgentExecutionByRun(runID)
 	if err == nil && existingExec != nil {
-		createEvent(s, runID, "warn", "Executor dispatch blocked: an execution is already running")
+		if perr := recordDispatchBlocker(s, runID, "Executor dispatch blocked: an execution is already running", ""); perr != nil {
+			return DispatchResult{}, fmt.Errorf("an execution is already running for this run; %w", perr)
+		}
 		publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
 		return DispatchResult{}, fmt.Errorf("an execution is already running for this run")
 	}
@@ -1214,7 +1261,9 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 	ownershipToken := newOwnershipToken()
 	exec, err := s.CreateOwnedAgentExecution(runID, string(adapter.ID()), ExecutionStatusStarting, invocation.Preview, "local_process", ownerID, ownershipToken)
 	if err != nil {
-		createEvent(s, runID, "warn", "Executor dispatch blocked: failed to create execution record: "+err.Error())
+		if perr := recordDispatchBlocker(s, runID, "Executor dispatch blocked: failed to create execution record: "+err.Error(), ""); perr != nil {
+			return DispatchResult{}, fmt.Errorf("create execution record: %w; %w", err, perr)
+		}
 		publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
 		return DispatchResult{}, fmt.Errorf("create execution record: %w", err)
 	}

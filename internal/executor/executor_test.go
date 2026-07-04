@@ -209,9 +209,22 @@ func TestDispatchBrief_EvidenceRegisterFailureFailsClosed(t *testing.T) {
 			return ExecutorPreflightResult{OK: true}
 		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			if callbacks.OnProcessStarted != nil {
+				if err := callbacks.OnProcessStarted(pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"}); err != nil {
+					t.Fatalf("process registration: %v", err)
+				}
+			}
 			return pipeline.AgentCommandRunResult{
-				ExitCode: 0,
-				Stdout:   "STATUS: DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 1\n",
+				ExitCode:            0,
+				Stdout:              "STATUS: DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 1\n",
+				LaunchDisposition:   pipeline.AgentLaunchOwned,
+				LaunchStarted:       true,
+				ProcessIdentity:     pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"},
+				IdentityAvailable:   true,
+				TerminationVerified: true,
+				TerminationError:    "",
+				StartedAt:           time.Now(),
+				FinishedAt:          time.Now(),
 			}
 		},
 		LaunchAsync: func(fn func()) { fn() },
@@ -816,6 +829,11 @@ func TestDispatchBrief_CodexIntegrationWritesArtifact(t *testing.T) {
 		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 			recordedBin = binary
+			if callbacks.OnProcessStarted != nil {
+				if err := callbacks.OnProcessStarted(pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"}); err != nil {
+					t.Fatalf("process registration: %v", err)
+				}
+			}
 
 			var resultFile string
 			for i, a := range args {
@@ -828,7 +846,18 @@ func TestDispatchBrief_CodexIntegrationWritesArtifact(t *testing.T) {
 				os.WriteFile(resultFile, []byte("STATUS: DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 12\n"), 0644)
 			}
 
-			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "{\"event\": \"start\"}\n{\"event\": \"chunk\", \"text\": \"hello\"}\n{\"event\": \"end\"}"}
+			return pipeline.AgentCommandRunResult{
+				ExitCode:            0,
+				Stdout:              "{\"event\": \"start\"}\n{\"event\": \"chunk\", \"text\": \"hello\"}\n{\"event\": \"end\"}",
+				LaunchDisposition:   pipeline.AgentLaunchOwned,
+				LaunchStarted:       true,
+				ProcessIdentity:     pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"},
+				IdentityAvailable:   true,
+				TerminationVerified: true,
+				TerminationError:    "",
+				StartedAt:           time.Now(),
+				FinishedAt:          time.Now(),
+			}
 		},
 		LaunchAsync: func(fn func()) {
 			fn()
@@ -916,7 +945,23 @@ func TestDispatchBrief_CodexDoesNotReuseStaleLastMessage(t *testing.T) {
 		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 			// fake runner does not write the --output-last-message file
-			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: "{\"event\": \"done\"}"}
+			if callbacks.OnProcessStarted != nil {
+				if err := callbacks.OnProcessStarted(pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"}); err != nil {
+					t.Fatalf("process registration: %v", err)
+				}
+			}
+			return pipeline.AgentCommandRunResult{
+				ExitCode:            0,
+				Stdout:              "{\"event\": \"done\"}",
+				LaunchDisposition:   pipeline.AgentLaunchOwned,
+				LaunchStarted:       true,
+				ProcessIdentity:     pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"},
+				IdentityAvailable:   true,
+				TerminationVerified: true,
+				TerminationError:    "",
+				StartedAt:           time.Now(),
+				FinishedAt:          time.Now(),
+			}
 		},
 		LaunchAsync: func(fn func()) {
 			fn()
@@ -1082,7 +1127,23 @@ func TestDispatchBrief_AntigravityJSONErrorWritesExecutorResult(t *testing.T) {
 			return ExecutorPreflightResult{OK: true}
 		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
-			return pipeline.AgentCommandRunResult{ExitCode: 0, Stdout: `{"status":"error","error":"auth failed"}`}
+			if callbacks.OnProcessStarted != nil {
+				if err := callbacks.OnProcessStarted(pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"}); err != nil {
+					t.Fatalf("process registration: %v", err)
+				}
+			}
+			return pipeline.AgentCommandRunResult{
+				ExitCode:            0,
+				Stdout:              `{"status":"error","error":"auth failed"}`,
+				LaunchDisposition:   pipeline.AgentLaunchOwned,
+				LaunchStarted:       true,
+				ProcessIdentity:     pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"},
+				IdentityAvailable:   true,
+				TerminationVerified: true,
+				TerminationError:    "",
+				StartedAt:           time.Now(),
+				FinishedAt:          time.Now(),
+			}
 		},
 		LaunchAsync: func(fn func()) {
 			fn()
@@ -1152,7 +1213,23 @@ func TestDispatchBrief_AntigravityNonZeroExitBlocksDespiteSuccessJSON(t *testing
 		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
 			// Non-zero exit code but success JSON
-			return pipeline.AgentCommandRunResult{ExitCode: 1, Stdout: `{"status":"success"}`}
+			if callbacks.OnProcessStarted != nil {
+				if err := callbacks.OnProcessStarted(pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"}); err != nil {
+					t.Fatalf("process registration: %v", err)
+				}
+			}
+			return pipeline.AgentCommandRunResult{
+				ExitCode:            1,
+				Stdout:              `{"status":"success"}`,
+				LaunchDisposition:   pipeline.AgentLaunchOwned,
+				LaunchStarted:       true,
+				ProcessIdentity:     pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"},
+				IdentityAvailable:   true,
+				TerminationVerified: true,
+				TerminationError:    "",
+				StartedAt:           time.Now(),
+				FinishedAt:          time.Now(),
+			}
 		},
 		LaunchAsync: func(fn func()) {
 			fn()
@@ -1461,11 +1538,11 @@ func TestTerminalizeExecutionRequiredEventFailureRollsBack(t *testing.T) {
 		EventMessage: "required event should fail",
 		RunStatus:    StatusExecutorDone,
 	})
-	if err == nil {
-		t.Fatal("expected required event failure")
-	}
 	if won {
-		t.Fatal("expected transaction to roll back instead of reporting a won terminalization")
+		t.Fatal("expected CAS to not win")
+	}
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 	refreshed, err := s.GetAgentExecution(exec.ID)
 	if err != nil {
@@ -1827,7 +1904,23 @@ func TestDispatchBrief_KiroCLIZeroExitBlocked(t *testing.T) {
 			return ExecutorPreflightResult{OK: true}
 		},
 		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
-			return pipeline.AgentCommandRunResult{ExitCode: 1, Error: "execution failed"}
+			if callbacks.OnProcessStarted != nil {
+				if err := callbacks.OnProcessStarted(pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"}); err != nil {
+					t.Fatalf("process registration: %v", err)
+				}
+			}
+			return pipeline.AgentCommandRunResult{
+				ExitCode:            1,
+				Error:               "execution failed",
+				LaunchDisposition:   pipeline.AgentLaunchOwned,
+				LaunchStarted:       true,
+				ProcessIdentity:     pipeline.ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"},
+				IdentityAvailable:   true,
+				TerminationVerified: true,
+				TerminationError:    "",
+				StartedAt:           time.Now(),
+				FinishedAt:          time.Now(),
+			}
 		},
 		LaunchAsync: func(fn func()) {
 			fn()

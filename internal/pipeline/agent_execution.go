@@ -119,6 +119,7 @@ type AgentCommandStreamCallbacks struct {
 	OnStartReturned       func(pid int)
 	OnProcessStarted      func(identity ProcessIdentity) error
 	OnStartError          func(err error)
+	OnLaunchSettled       func(disposition AgentLaunchDisposition)
 	OnStdoutReaderStarted func()
 	OnStdoutReaderDone    func(err error)
 	OnStderrReaderStarted func()
@@ -228,7 +229,7 @@ func RunLocalAgentCommandArgsStreamingWithController(
 	timeout time.Duration,
 	callbacks AgentCommandStreamCallbacks,
 	controller ProcessController,
-) AgentCommandRunResult {
+) (runResult AgentCommandRunResult) {
 	start := time.Now()
 	commandPreview := binary
 	if len(args) > 0 {
@@ -244,6 +245,9 @@ func RunLocalAgentCommandArgsStreamingWithController(
 
 	if err := runCtx.Err(); err != nil {
 		finished := time.Now()
+		if callbacks.OnLaunchSettled != nil {
+			callbacks.OnLaunchSettled(AgentLaunchNotStarted)
+		}
 		return AgentCommandRunResult{
 			Command:    commandPreview,
 			WorkDir:    workDir,
@@ -269,6 +273,9 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			callbacks.OnStartError(err)
 		}
 		finished := time.Now()
+		if callbacks.OnLaunchSettled != nil {
+			callbacks.OnLaunchSettled(AgentLaunchNotStarted)
+		}
 		return AgentCommandRunResult{
 			Command:           commandPreview,
 			WorkDir:           workDir,
@@ -282,6 +289,9 @@ func RunLocalAgentCommandArgsStreamingWithController(
 	if owned == nil {
 		finished := time.Now()
 		errMsg := "process controller returned no owned process"
+		if callbacks.OnLaunchSettled != nil {
+			callbacks.OnLaunchSettled(AgentLaunchNotStarted)
+		}
 		return AgentCommandRunResult{
 			Command:           commandPreview,
 			WorkDir:           workDir,
@@ -293,11 +303,18 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		}
 	}
 	defer func() {
-		_ = owned.Release()
+		if owned != nil {
+			if releaseErr := owned.Release(); releaseErr != nil {
+				runResult.Error = appendErrorText(runResult.Error, "release owned process: "+releaseErr.Error())
+				if runResult.ExitCode == 0 {
+					runResult.ExitCode = -1
+				}
+			}
+		}
 	}()
 	launchStarted := true
 	identity := owned.Identity()
-	identityAvailable := identity.PID > 0
+	identityAvailable := ValidateProcessIdentity(identity) == nil
 	if callbacks.OnStartReturned != nil {
 		callbacks.OnStartReturned(identity.PID)
 	}
@@ -309,20 +326,33 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		if callbacks.OnProcessStarted != nil && identityAvailable {
 			registerErr = callbacks.OnProcessStarted(identity)
 		}
-		termination, terminateErr := owned.Terminate(2 * time.Second)
+		var ownedStartErr *OwnedStartError
+		cleanup := ProcessTerminationResult{}
+		cleanupErr := error(nil)
+		if errors.As(err, &ownedStartErr) {
+			cleanup = ownedStartErr.Cleanup
+			cleanupErr = ownedStartErr.CleanupError
+		} else {
+			termination, termErr := owned.Terminate(2 * time.Second)
+			cleanup = termination
+			cleanupErr = termErr
+		}
 		finished := time.Now()
 		errMsg := err.Error()
 		if registerErr != nil {
 			errMsg = appendErrorText(errMsg, "register post-create process identity: "+registerErr.Error())
 		}
-		if terminateErr != nil && !errors.Is(terminateErr, ErrProcessNotRunning) {
-			errMsg = appendErrorText(errMsg, "terminate post-create failed process tree: "+terminateErr.Error())
-		} else if !termination.VerifiedAbsent {
-			errMsg = appendErrorText(errMsg, "terminate post-create failed process tree: absence was not verified")
+		if cleanupErr != nil && !errors.Is(cleanupErr, ErrProcessNotRunning) {
+			errMsg = appendErrorText(errMsg, "cleanup post-create process tree: "+cleanupErr.Error())
+		} else if !cleanup.VerifiedAbsent {
+			errMsg = appendErrorText(errMsg, "cleanup post-create process tree: absence was not verified")
 		}
 		disposition := AgentLaunchCleanupPending
-		if termination.VerifiedAbsent {
+		if cleanup.VerifiedAbsent && (cleanupErr == nil || errors.Is(cleanupErr, ErrProcessNotRunning)) {
 			disposition = AgentLaunchCleanupVerified
+		}
+		if callbacks.OnLaunchSettled != nil {
+			callbacks.OnLaunchSettled(disposition)
 		}
 		return AgentCommandRunResult{
 			Command:             commandPreview,
@@ -335,7 +365,7 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			LaunchDisposition:   disposition,
 			ProcessIdentity:     identity,
 			IdentityAvailable:   identityAvailable,
-			TerminationVerified: termination.VerifiedAbsent,
+			TerminationVerified: cleanup.VerifiedAbsent,
 			TerminationError:    errMsg,
 		}
 	}
@@ -351,6 +381,9 @@ func RunLocalAgentCommandArgsStreamingWithController(
 				errMsg += "; terminate unregistered process tree: " + terminateErr.Error()
 			} else if !termination.VerifiedAbsent {
 				errMsg += "; terminate unregistered process tree: absence was not verified"
+			}
+			if callbacks.OnLaunchSettled != nil {
+				callbacks.OnLaunchSettled(dispositionForTermination(termination.VerifiedAbsent))
 			}
 			return AgentCommandRunResult{
 				Command:             commandPreview,
@@ -376,6 +409,9 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		termination, terminateErr := owned.Terminate(2 * time.Second)
 		if terminateErr != nil {
 			errMsg += "; terminate pipe-less process tree: " + terminateErr.Error()
+		}
+		if callbacks.OnLaunchSettled != nil {
+			callbacks.OnLaunchSettled(dispositionForTermination(termination.VerifiedAbsent))
 		}
 		return AgentCommandRunResult{
 			Command:             commandPreview,
@@ -530,6 +566,9 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		} else if !terminationVerified {
 			errText = "terminate timed out process tree: absence was not verified"
 		}
+		if callbacks.OnLaunchSettled != nil {
+			callbacks.OnLaunchSettled(dispositionForTermination(terminationVerified))
+		}
 		return AgentCommandRunResult{
 			Command:             commandPreview,
 			WorkDir:             workDir,
@@ -580,6 +619,9 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		}
 	}
 
+	if callbacks.OnLaunchSettled != nil {
+		callbacks.OnLaunchSettled(AgentLaunchOwned)
+	}
 	return AgentCommandRunResult{
 		Command:             commandPreview,
 		WorkDir:             workDir,

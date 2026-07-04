@@ -64,8 +64,11 @@ func reconcileActiveExecution(st *store.Store, hub *events.Hub, log *slog.Logger
 				verifiedAbsent = true
 			}
 			if releaseErr := owned.Release(); releaseErr != nil {
-				message = "Executor process ownership release failed during restart reconciliation: " + releaseErr.Error()
-				verifiedAbsent = false
+				if verifiedAbsent {
+					message += "; executor process ownership release failed during restart reconciliation: " + releaseErr.Error()
+				} else {
+					message = "Executor process ownership release failed during restart reconciliation: " + releaseErr.Error()
+				}
 			}
 		}
 	} else {

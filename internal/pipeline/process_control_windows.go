@@ -30,7 +30,16 @@ const (
 	stillActive                = 259
 )
 
-type defaultProcessController struct{}
+type defaultProcessController struct {
+	processCreationTime func(pid int) (time.Time, error)
+}
+
+func (c defaultProcessController) creationTime(pid int) (time.Time, error) {
+	if c.processCreationTime != nil {
+		return c.processCreationTime(pid)
+	}
+	return windowsProcessCreationTime(pid)
+}
 
 type windowsOwnedProcess struct {
 	mu            sync.Mutex
@@ -81,7 +90,7 @@ func (c defaultProcessController) StartOwned(ctx context.Context, spec CommandSp
 		if owned == nil {
 			_ = windows.CloseHandle(job)
 		}
-		return nil, err
+		return owned, err
 	}
 	return owned, nil
 }
@@ -255,7 +264,7 @@ func (c defaultProcessController) createOwnedProcess(ctx context.Context, spec C
 		stdinRequired: spec.Stdin != "",
 		releaseOnDone: true,
 	}
-	createdAt, err := windowsProcessCreationTime(int(pi.ProcessId))
+	createdAt, err := c.creationTime(int(pi.ProcessId))
 	if err != nil {
 		cleanup, cleanupErr := owned.Terminate(2 * time.Second)
 		return owned, &OwnedStartError{

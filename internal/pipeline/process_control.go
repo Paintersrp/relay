@@ -69,6 +69,29 @@ func (p ProcessIdentity) Encode() string {
 	return string(data)
 }
 
+func ValidateProcessIdentity(id ProcessIdentity) error {
+	if id.PID <= 0 || id.Platform == "" {
+		return ErrProcessUnverifiable
+	}
+	switch id.Platform {
+	case "windows":
+		if id.Nonce == "" {
+			return ErrProcessUnverifiable
+		}
+		return nil
+	case "linux":
+		if id.StartedAt == "" {
+			return ErrProcessUnverifiable
+		}
+		return nil
+	default:
+		if id.StartedAt == "" {
+			return ErrProcessUnverifiable
+		}
+		return nil
+	}
+}
+
 func DecodeProcessIdentity(raw string) (ProcessIdentity, error) {
 	var id ProcessIdentity
 	if raw == "" {
@@ -77,8 +100,8 @@ func DecodeProcessIdentity(raw string) (ProcessIdentity, error) {
 	if err := json.Unmarshal([]byte(raw), &id); err != nil {
 		return id, err
 	}
-	if id.PID <= 0 || id.StartedAt == "" {
-		return id, ErrProcessUnverifiable
+	if err := ValidateProcessIdentity(id); err != nil {
+		return id, err
 	}
 	return id, nil
 }

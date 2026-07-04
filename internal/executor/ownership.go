@@ -262,9 +262,10 @@ func CancelExecution(ctx context.Context, st *store.Store, hub *events.Hub, log 
 					updated = failed
 				}
 			} else {
+				var releaseErr error
 				defer func() {
-					if releaseErr := owned.Release(); releaseErr != nil {
-						createEvent(st, runID, "warn", "Executor cancellation ownership release warning: "+releaseErr.Error())
+					if rerr := owned.Release(); rerr != nil {
+						releaseErr = rerr
 					}
 				}()
 				result, err := owned.Terminate(2 * time.Second)
@@ -276,6 +277,11 @@ func CancelExecution(ctx context.Context, st *store.Store, hub *events.Hub, log 
 				} else if !result.VerifiedAbsent {
 					createEvent(st, runID, "warn", "Executor cancellation termination warning: process absence was not verified")
 					if failed := markTerminationFailed(st, updated.ID, "executor cancellation termination failed: process absence was not verified"); failed != nil {
+						updated = failed
+					}
+				} else if releaseErr != nil {
+					createEvent(st, runID, "warn", "Executor cancellation release warning: "+releaseErr.Error())
+					if failed := markTerminationFailed(st, updated.ID, "executor cancellation release failed: "+releaseErr.Error()); failed != nil {
 						updated = failed
 					}
 				} else {
