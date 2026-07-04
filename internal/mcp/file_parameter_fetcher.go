@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -52,9 +53,23 @@ type HTTPSFileParameterFetcher struct {
 	Resolver interface {
 		LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
 	}
+	Dialer interface {
+		DialContext(context.Context, string, string) (net.Conn, error)
+	}
 	Timeout   time.Duration
 	MaxBytes  int64
 	Redirects int
+}
+
+type validatedDownloadTarget struct {
+	host string
+	port string
+	ips  []net.IP
+}
+
+type validatedTargetRegistry struct {
+	mu      sync.RWMutex
+	targets map[string]validatedDownloadTarget
 }
 
 func NewHTTPSFileParameterFetcher() *HTTPSFileParameterFetcher {
@@ -77,7 +92,8 @@ func (f *HTTPSFileParameterFetcher) FetchPlannerHandoff(ctx context.Context, ref
 	if err != nil || u == nil || !u.IsAbs() {
 		return FileParameterContent{}, fileParamErr(MCPBlockerFileReferenceInvalid, "planner_handoff_file.download_url must be an absolute HTTPS URL")
 	}
-	if err := f.validateURL(ctx, u); err != nil {
+	targets := newValidatedTargetRegistry()
+	if err := f.validateURL(ctx, u, targets); err != nil {
 		return FileParameterContent{}, err
 	}
 
@@ -88,7 +104,10 @@ func (f *HTTPSFileParameterFetcher) FetchPlannerHandoff(ctx context.Context, ref
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	client := f.client()
+	client, closeIdle := f.client(targets)
+	if closeIdle != nil {
+		defer closeIdle()
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return FileParameterContent{}, fileParamErr(MCPBlockerFileReferenceInvalid, "planner_handoff_file.download_url could not be requested")
@@ -128,29 +147,38 @@ func (f *HTTPSFileParameterFetcher) FetchPlannerHandoff(ctx context.Context, ref
 	return FileParameterContent{Bytes: data, DisplayName: displayName}, nil
 }
 
-func (f *HTTPSFileParameterFetcher) client() *http.Client {
+func (f *HTTPSFileParameterFetcher) client(targets *validatedTargetRegistry) (*http.Client, func()) {
 	if f.Client != nil {
-		return f.Client
+		return f.Client, nil
 	}
 	redirects := f.Redirects
 	if redirects <= 0 {
 		redirects = fileDownloadRedirects
 	}
+	transport := f.transport(targets)
 	return &http.Client{
-		Timeout: f.Timeout,
+		Timeout:   f.Timeout,
+		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= redirects {
 				return fileParamErr(MCPBlockerFileDownloadFailed, "planner_handoff_file download redirected too many times")
 			}
-			if err := f.validateURL(req.Context(), req.URL); err != nil {
+			if err := f.validateURL(req.Context(), req.URL, targets); err != nil {
 				return err
 			}
 			return nil
 		},
+	}, transport.CloseIdleConnections
+}
+
+func (f *HTTPSFileParameterFetcher) transport(targets *validatedTargetRegistry) *http.Transport {
+	return &http.Transport{
+		Proxy:       nil,
+		DialContext: f.validatedDialContext(targets),
 	}
 }
 
-func (f *HTTPSFileParameterFetcher) validateURL(ctx context.Context, u *url.URL) *FileParameterError {
+func (f *HTTPSFileParameterFetcher) validateURL(ctx context.Context, u *url.URL, targets *validatedTargetRegistry) *FileParameterError {
 	if !strings.EqualFold(u.Scheme, "https") {
 		return fileParamErr(MCPBlockerUnsafeDownloadTarget, "planner_handoff_file.download_url must use HTTPS")
 	}
@@ -161,10 +189,17 @@ func (f *HTTPSFileParameterFetcher) validateURL(ctx context.Context, u *url.URL)
 	if strings.TrimSpace(host) == "" {
 		return fileParamErr(MCPBlockerFileReferenceInvalid, "planner_handoff_file.download_url host is required")
 	}
+	port := u.Port()
+	if port == "" {
+		port = "443"
+	}
+	var ips []net.IP
 	if ip := net.ParseIP(host); ip != nil {
 		if !isPublicRoutableIP(ip) {
 			return fileParamErr(MCPBlockerUnsafeDownloadTarget, "planner_handoff_file.download_url target is not public routable")
 		}
+		ips = []net.IP{copyIP(ip)}
+		targets.register(validatedDownloadTarget{host: normalizeDownloadHost(host), port: port, ips: ips})
 		return nil
 	}
 	resolver := f.Resolver
@@ -179,8 +214,82 @@ func (f *HTTPSFileParameterFetcher) validateURL(ctx context.Context, u *url.URL)
 		if !isPublicRoutableIP(addr.IP) {
 			return fileParamErr(MCPBlockerUnsafeDownloadTarget, "planner_handoff_file.download_url target is not public routable")
 		}
+		ips = append(ips, copyIP(addr.IP))
 	}
+	targets.register(validatedDownloadTarget{host: normalizeDownloadHost(host), port: port, ips: ips})
 	return nil
+}
+
+func (f *HTTPSFileParameterFetcher) validatedDialContext(targets *validatedTargetRegistry) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, fileParamErr(MCPBlockerFileDownloadFailed, "planner_handoff_file could not be downloaded")
+		}
+		target, ok := targets.lookup(host, port)
+		if !ok || len(target.ips) == 0 {
+			return nil, fileParamErr(MCPBlockerUnsafeDownloadTarget, "planner_handoff_file download target was not approved")
+		}
+		dialer := f.Dialer
+		if dialer == nil {
+			dialer = &net.Dialer{}
+		}
+		for _, ip := range target.ips {
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), target.port))
+			if err == nil {
+				return conn, nil
+			}
+		}
+		return nil, fileParamErr(MCPBlockerFileDownloadFailed, "planner_handoff_file could not be downloaded")
+	}
+}
+
+func newValidatedTargetRegistry() *validatedTargetRegistry {
+	return &validatedTargetRegistry{targets: make(map[string]validatedDownloadTarget)}
+}
+
+func (r *validatedTargetRegistry) register(target validatedDownloadTarget) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ips := make([]net.IP, 0, len(target.ips))
+	for _, ip := range target.ips {
+		ips = append(ips, copyIP(ip))
+	}
+	target.ips = ips
+	target.host = normalizeDownloadHost(target.host)
+	r.targets[targetKey(target.host, target.port)] = target
+}
+
+func (r *validatedTargetRegistry) lookup(host, port string) (validatedDownloadTarget, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	target, ok := r.targets[targetKey(normalizeDownloadHost(host), port)]
+	if !ok {
+		return validatedDownloadTarget{}, false
+	}
+	ips := make([]net.IP, 0, len(target.ips))
+	for _, ip := range target.ips {
+		ips = append(ips, copyIP(ip))
+	}
+	target.ips = ips
+	return target, true
+}
+
+func targetKey(host, port string) string {
+	return normalizeDownloadHost(host) + "\x00" + port
+}
+
+func normalizeDownloadHost(host string) string {
+	return strings.ToLower(strings.Trim(host, "[]"))
+}
+
+func copyIP(ip net.IP) net.IP {
+	if ip == nil {
+		return nil
+	}
+	out := make(net.IP, len(ip))
+	copy(out, ip)
+	return out
 }
 
 func plannerHandoffDisplayName(name string) (string, error) {

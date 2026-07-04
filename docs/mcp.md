@@ -319,7 +319,7 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 
 **Descriptor:** The tool advertises top-level `_meta["openai/fileParams"]=["planner_handoff_file"]`. Descriptive schema text alone is not enough to activate ChatGPT file transfer.
 
-**Validation:** Relay retrieves only the supplied structured ChatGPT file reference through bounded HTTPS, rejects unsafe targets, userinfo, non-success responses, empty responses, and bodies larger than 1 MiB, computes SHA-256 over the exact downloaded bytes before converting to text, and rejects `expected_sha256` mismatches before creating any run or artifact.
+**Validation:** Relay retrieves only the supplied structured ChatGPT file reference through bounded HTTPS, rejects unsafe targets, userinfo, non-success responses, empty responses, and bodies larger than 1 MiB, computes SHA-256 over the exact downloaded bytes before converting to text, and rejects `expected_sha256` mismatches before creating any run or artifact. For the initial URL and each redirect, Relay binds the actual connection to the public IP addresses approved during destination validation.
 
 **Safety boundary:** This is a controlled run-submission ingestion path, not a context broker file-read tool. It does not browse paths, read repositories generically, execute shell commands, mutate git, or persist the temporary download URL as artifact identity. Signed download URLs are transient secrets and must not be logged, echoed, stored, or placed in blocker evidence.
 
