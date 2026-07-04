@@ -43,6 +43,7 @@ type runtimeHandle struct {
 	ownershipToken string
 	cancel         context.CancelFunc
 	controller     pipeline.ProcessController
+	launchDone     <-chan struct{}
 }
 
 type runtimeRegistry struct {
@@ -244,23 +245,42 @@ func CancelExecution(ctx context.Context, st *store.Store, hub *events.Hub, log 
 			controller = h.controller
 		}
 		h.cancel()
+		if h.launchDone != nil {
+			select {
+			case <-h.launchDone:
+			case <-time.After(5 * time.Second):
+				createEvent(st, runID, "warn", "Executor cancellation is waiting for launch ownership to settle")
+			}
+		}
 	} else {
 		identity, identityErr := processIdentityFromExecution(updated)
 		if identityErr == nil {
 			markTerminationRequested(st, updated.ID, TerminalReasonCanceled)
-			result, err := controller.TerminateTree(identity, 2*time.Second)
-			if err != nil && !errors.Is(err, pipeline.ErrProcessNotRunning) {
-				createEvent(st, runID, "warn", "Executor cancellation termination warning: "+err.Error())
-				if failed := markTerminationFailed(st, updated.ID, "executor cancellation termination failed: "+err.Error()); failed != nil {
-					updated = failed
-				}
-			} else if !result.VerifiedAbsent {
-				createEvent(st, runID, "warn", "Executor cancellation termination warning: process absence was not verified")
-				if failed := markTerminationFailed(st, updated.ID, "executor cancellation termination failed: process absence was not verified"); failed != nil {
+			owned, openErr := controller.OpenOwned(identity)
+			if openErr != nil {
+				err := openErr
+				createEvent(st, runID, "warn", "Executor cancellation ownership reopen warning: "+err.Error())
+				if failed := markTerminationFailed(st, updated.ID, "executor cancellation ownership reopen failed: "+err.Error()); failed != nil {
 					updated = failed
 				}
 			} else {
-				markTerminationVerified(st, updated.ID)
+				result, err := owned.Terminate(2 * time.Second)
+				if err != nil && !errors.Is(err, pipeline.ErrProcessNotRunning) {
+					createEvent(st, runID, "warn", "Executor cancellation termination warning: "+err.Error())
+					if failed := markTerminationFailed(st, updated.ID, "executor cancellation termination failed: "+err.Error()); failed != nil {
+						updated = failed
+					}
+				} else if !result.VerifiedAbsent {
+					createEvent(st, runID, "warn", "Executor cancellation termination warning: process absence was not verified")
+					if failed := markTerminationFailed(st, updated.ID, "executor cancellation termination failed: process absence was not verified"); failed != nil {
+						updated = failed
+					}
+				} else {
+					markTerminationVerified(st, updated.ID)
+				}
+				if result.VerifiedAbsent {
+					_ = owned.Release()
+				}
 			}
 		} else if updated.Status == ExecutionStatusCancelRequested && updated.ProcessIdentity.Valid {
 			createEvent(st, runID, "warn", "Executor cancellation could not verify process identity: "+identityErr.Error())

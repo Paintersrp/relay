@@ -3,8 +3,10 @@
 package pipeline
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -16,12 +18,51 @@ import (
 
 type defaultProcessController struct{}
 
-func (defaultProcessController) PrepareCommand(cmd *exec.Cmd) error {
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	return nil
+type unixOwnedProcess struct {
+	cmd      *exec.Cmd
+	identity ProcessIdentity
+	stdout   io.ReadCloser
+	stderr   io.ReadCloser
+	released bool
 }
 
-func (defaultProcessController) Identity(cmd *exec.Cmd, startedAt time.Time) (ProcessIdentity, error) {
+func (c defaultProcessController) StartOwned(ctx context.Context, spec CommandSpec) (OwnedProcess, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(spec.Binary, spec.Args...)
+	cmd.Dir = spec.WorkDir
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if spec.Stdin != "" {
+		cmd.Stdin = strings.NewReader(spec.Stdin)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	identity, err := c.identity(cmd)
+	if err != nil {
+		if cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		_ = waitForCommandBounded(cmd, 2*time.Second)
+		return nil, err
+	}
+	return &unixOwnedProcess{cmd: cmd, identity: identity, stdout: stdout, stderr: stderr}, nil
+}
+
+func (defaultProcessController) OpenOwned(identity ProcessIdentity) (OwnedProcess, error) {
+	return &unixOwnedProcess{identity: identity}, nil
+}
+
+func (defaultProcessController) identity(cmd *exec.Cmd) (ProcessIdentity, error) {
 	if cmd.Process == nil || cmd.Process.Pid <= 0 {
 		return ProcessIdentity{}, ErrProcessUnverifiable
 	}
@@ -41,7 +82,21 @@ func (defaultProcessController) Identity(cmd *exec.Cmd, startedAt time.Time) (Pr
 	}, nil
 }
 
-func (defaultProcessController) IsRunning(identity ProcessIdentity) (bool, error) {
+func (p *unixOwnedProcess) Identity() ProcessIdentity { return p.identity }
+
+func (p *unixOwnedProcess) Stdout() io.ReadCloser { return p.stdout }
+
+func (p *unixOwnedProcess) Stderr() io.ReadCloser { return p.stderr }
+
+func (p *unixOwnedProcess) Wait() error {
+	if p.cmd == nil {
+		return ErrProcessUnverifiable
+	}
+	return p.cmd.Wait()
+}
+
+func (p *unixOwnedProcess) TreeRunning() (bool, error) {
+	identity := p.identity
 	if err := verifyLeaderIdentity(identity); err != nil {
 		if errors.Is(err, ErrProcessNotRunning) {
 			groupID := identity.GroupID
@@ -62,7 +117,8 @@ func (defaultProcessController) IsRunning(identity ProcessIdentity) (bool, error
 	return true, nil
 }
 
-func (defaultProcessController) TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
+func (p *unixOwnedProcess) Terminate(gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
+	identity := p.identity
 	if err := verifyLeaderIdentity(identity); err != nil {
 		if errors.Is(err, ErrProcessNotRunning) {
 			groupID := identity.GroupID
@@ -85,6 +141,11 @@ func (defaultProcessController) TerminateTree(identity ProcessIdentity, graceful
 		groupID = identity.PID
 	}
 	return terminateVerifiedProcessGroup(groupID, gracefulTimeout)
+}
+
+func (p *unixOwnedProcess) Release() error {
+	p.released = true
+	return nil
 }
 
 func terminateVerifiedProcessGroup(groupID int, gracefulTimeout time.Duration) (ProcessTerminationResult, error) {

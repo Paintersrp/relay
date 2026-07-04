@@ -51,7 +51,7 @@ func TestCollectAndPersistGitEvidence(t *testing.T) {
 	}
 
 	// Call collectAndPersistGitEvidence
-	collectAndPersistGitEvidence(s, run.ID, workDir)
+	collectAndPersistGitEvidence(storeExecutionEvidenceSink{store: s}, s, run.ID, workDir)
 
 	// Assert that git status and diff artifacts were created
 	if !artifacts.Exists(run.ID, "git_status_text", "git_status.txt") {

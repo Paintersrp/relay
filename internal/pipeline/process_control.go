@@ -1,9 +1,10 @@
 package pipeline
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"os/exec"
+	"io"
 	"time"
 )
 
@@ -19,6 +20,14 @@ type ProcessIdentity struct {
 	StartedAt string `json:"started_at"`
 	Platform  string `json:"platform"`
 	Nonce     string `json:"nonce,omitempty"`
+}
+
+type CommandSpec struct {
+	WorkDir string
+	Binary  string
+	Args    []string
+	Stdin   string
+	Timeout time.Duration
 }
 
 func (p ProcessIdentity) Encode() string {
@@ -41,14 +50,22 @@ func DecodeProcessIdentity(raw string) (ProcessIdentity, error) {
 }
 
 type ProcessController interface {
-	PrepareCommand(cmd *exec.Cmd) error
-	Identity(cmd *exec.Cmd, startedAt time.Time) (ProcessIdentity, error)
-	IsRunning(identity ProcessIdentity) (bool, error)
-	TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) (ProcessTerminationResult, error)
+	StartOwned(ctx context.Context, spec CommandSpec) (OwnedProcess, error)
+	OpenOwned(identity ProcessIdentity) (OwnedProcess, error)
 }
 
 func DefaultProcessController() ProcessController {
 	return defaultProcessController{}
+}
+
+type OwnedProcess interface {
+	Identity() ProcessIdentity
+	Stdout() io.ReadCloser
+	Stderr() io.ReadCloser
+	Wait() error
+	TreeRunning() (bool, error)
+	Terminate(gracefulTimeout time.Duration) (ProcessTerminationResult, error)
+	Release() error
 }
 
 type ProcessTerminationResult struct {

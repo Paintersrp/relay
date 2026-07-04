@@ -67,6 +67,7 @@ type DispatchParams struct {
 	ProcessControl  pipeline.ProcessController
 	Adapter         ExecutorAdapter
 	Preflight       func(ExecutorInvocation) ExecutorPreflightResult
+	EvidenceSink    ExecutionEvidenceSink
 	RunAgentCmd     func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult
 	LaunchAsync     func(func())
 }
@@ -121,6 +122,50 @@ func (p *DispatchParams) processController() pipeline.ProcessController {
 		return p.ProcessControl
 	}
 	return pipeline.DefaultProcessController()
+}
+
+func (p *DispatchParams) evidenceSink() ExecutionEvidenceSink {
+	if p.EvidenceSink != nil {
+		return p.EvidenceSink
+	}
+	return storeExecutionEvidenceSink{store: p.Store}
+}
+
+type ExecutionEvidenceSink interface {
+	Write(runID int64, kind, filename string, data []byte) (string, error)
+	Register(runID int64, kind, path, mimeType string) error
+	Delete(runID int64, kind, filename string) error
+}
+
+type storeExecutionEvidenceSink struct {
+	store *store.Store
+}
+
+func (s storeExecutionEvidenceSink) Write(runID int64, kind, filename string, data []byte) (string, error) {
+	if len(data) == 0 {
+		return "", nil
+	}
+	return artifacts.Write(runID, kind, filename, redactSensitiveBytes(data))
+}
+
+func (s storeExecutionEvidenceSink) Register(runID int64, kind, path, mimeType string) error {
+	return recordExecutorArtifact(s.store, runID, kind, path, mimeType)
+}
+
+func (s storeExecutionEvidenceSink) Delete(runID int64, kind, filename string) error {
+	var errs []string
+	if s.store != nil {
+		if err := s.store.DeleteArtifactsByRunKind(runID, kind); err != nil {
+			errs = append(errs, "delete artifact rows: "+err.Error())
+		}
+	}
+	if err := artifacts.Delete(runID, kind, filename); err != nil && !os.IsNotExist(err) && !strings.Contains(err.Error(), "unknown artifact kind") {
+		errs = append(errs, "delete artifact file: "+err.Error())
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 func publishRunEvent(hub *events.Hub, runID int64, kind, source, status string) {
@@ -182,12 +227,14 @@ type executorOutputPaths struct {
 	resultPath   string
 }
 
-func writeExecutorArtifact(runID int64, kind string, data []byte) (string, error) {
+func writeExecutorArtifact(sink ExecutionEvidenceSink, runID int64, kind string, data []byte) (string, error) {
 	if len(data) == 0 {
 		return "", nil
 	}
-	redacted := redactSensitiveBytes(data)
-	return artifacts.Write(runID, kind, pipeline.ArtifactFilename(kind), redacted)
+	if sink == nil {
+		sink = storeExecutionEvidenceSink{}
+	}
+	return sink.Write(runID, kind, pipeline.ArtifactFilename(kind), data)
 }
 
 func recordExecutorArtifact(store *store.Store, runID int64, kind, path, mimeType string) error {
@@ -198,7 +245,11 @@ func recordExecutorArtifact(store *store.Store, runID int64, kind, path, mimeTyp
 	return err
 }
 
-func deleteExecutorArtifacts(store *store.Store, runID int64) {
+func deleteExecutorArtifacts(sink ExecutionEvidenceSink, runID int64) error {
+	if sink == nil {
+		sink = storeExecutionEvidenceSink{}
+	}
+	var errs []string
 	for _, kind := range []string{
 		ArtifactKindExecutorStdout,
 		ArtifactKindExecutorStderr,
@@ -207,9 +258,14 @@ func deleteExecutorArtifacts(store *store.Store, runID int64) {
 		ArtifactKindCodexLastMessage,
 		ArtifactKindExecutorUsage,
 	} {
-		store.DeleteArtifactsByRunKind(runID, kind)
-		artifacts.Delete(runID, kind, pipeline.ArtifactFilename(kind))
+		if err := sink.Delete(runID, kind, pipeline.ArtifactFilename(kind)); err != nil {
+			errs = append(errs, kind+": "+err.Error())
+		}
 	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 func updateRunStatus(st *store.Store, runID int64, status string) {
@@ -301,20 +357,33 @@ func defaultExecutorPreflight(inv ExecutorInvocation) ExecutorPreflightResult {
 }
 
 func blockExecutorPreflight(p *DispatchParams, s *store.Store, runID int64, inv ExecutorInvocation, res ExecutorPreflightResult) {
-	deleteExecutorArtifacts(s, runID)
+	sink := p.evidenceSink()
+	if err := deleteExecutorArtifacts(sink, runID); err != nil {
+		createEvent(s, runID, "warn", "Executor preflight artifact cleanup failed: "+err.Error())
+	}
 
 	jsonBytes, _ := json.MarshalIndent(res, "", "  ")
 
 	logText := fmt.Sprintf("Preflight: BLOCKED\nCommand: %s\nWorkDir: %s\nModel: %s\nAgent: %s\n\n--- PREFLIGHT DETAILS ---\n%s\n", inv.Preview, inv.WorkDir, inv.Model, inv.Agent, string(jsonBytes))
-	logPath, _ := writeExecutorArtifact(runID, ArtifactKindCommandLog, []byte(logText))
+	logPath, logErr := writeExecutorArtifact(sink, runID, ArtifactKindCommandLog, []byte(logText))
+	if logErr != nil {
+		createEvent(s, runID, "warn", "Executor preflight evidence write failed: "+logErr.Error())
+	}
 	if logPath != "" {
-		recordExecutorArtifact(s, runID, ArtifactKindCommandLog, logPath, "text/plain")
+		if err := sink.Register(runID, ArtifactKindCommandLog, logPath, "text/plain"); err != nil {
+			createEvent(s, runID, "warn", "Executor preflight evidence registration failed: "+err.Error())
+		}
 	}
 
 	resText := fmt.Sprintf("STATUS: BLOCKED\n\nBlocker/error only if blocked: executor preflight failed: %s\n", res.BlockerText)
-	resPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte(resText))
+	resPath, resErr := writeExecutorArtifact(sink, runID, ArtifactKindExecutorResult, []byte(resText))
+	if resErr != nil {
+		createEvent(s, runID, "warn", "Executor preflight result write failed: "+resErr.Error())
+	}
 	if resPath != "" {
-		recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resPath, "text/plain")
+		if err := sink.Register(runID, ArtifactKindExecutorResult, resPath, "text/plain"); err != nil {
+			createEvent(s, runID, "warn", "Executor preflight result registration failed: "+err.Error())
+		}
 	}
 
 	createEvent(s, runID, "warn", "Executor preflight blocked: "+res.BlockerText)
@@ -412,22 +481,33 @@ func runBackgroundDispatch(
 	runID int64,
 	execID int64,
 	ownershipToken string,
+	launchDone chan<- struct{},
 	invocation ExecutorInvocation,
 	adapter ExecutorAdapter,
 	repo *store.Repo,
 ) {
+	var launchDoneOnce sync.Once
+	closeLaunchDone := func() {
+		launchDoneOnce.Do(func() {
+			if launchDone != nil {
+				close(launchDone)
+			}
+		})
+	}
 	l := p.log()
 	s := p.Store
 	hub := p.EventHub
 	runner := p.runner()
+	sink := p.evidenceSink()
 
 	startedAt := executionTimestampNow()
 	createEvent(s, runID, "info", "Executor dispatched: "+invocation.Preview)
 
-	deleteExecutorArtifacts(s, runID)
-
 	stream := &streamingState{}
 	stream.progressParser = newProgressParser()
+	if err := deleteExecutorArtifacts(sink, runID); err != nil {
+		stream.recordWriteError("delete_previous_evidence", err)
+	}
 	if err := artifacts.EnsureDir(runID); err != nil {
 		l.Error("executor: ensure artifact dir", "error", err)
 	}
@@ -435,6 +515,7 @@ func runBackgroundDispatch(
 	if claimed, won, err := s.ClaimAgentExecutionLaunch(execID, ownershipToken); err != nil {
 		l.Error("executor: claim launch", "run_id", runID, "exec_id", execID, "error", err)
 		markTerminationFailed(s, execID, "claim launch failed: "+err.Error())
+		closeLaunchDone()
 		return
 	} else if !won {
 		if claimed != nil && claimed.CancellationRequestedAt.Valid {
@@ -452,10 +533,12 @@ func runBackgroundDispatch(
 					RunEventStatus:          "blocked",
 				})
 				_ = prevented
+				closeLaunchDone()
 				return
 			}
 		}
 		markTerminationFailed(s, execID, "launch ownership could not be claimed and start was not durably prevented")
+		closeLaunchDone()
 		return
 	}
 
@@ -501,11 +584,11 @@ func runBackgroundDispatch(
 				stream.lastAnyChunkAt = nowText
 				stream.mu.Unlock()
 
-				appendPath, err := writeExecutorArtifact(runID, ArtifactKindExecutorStdout, chunk)
+				appendPath, err := writeExecutorArtifact(sink, runID, ArtifactKindExecutorStdout, chunk)
 				if err != nil {
 					stream.recordWriteError("append_stdout", err)
 				} else if appendPath != "" {
-					recordExecutorArtifact(s, runID, ArtifactKindExecutorStdout, appendPath, "text/plain")
+					stream.recordWriteError("register_append_stdout", sink.Register(runID, ArtifactKindExecutorStdout, appendPath, "text/plain"))
 				}
 
 				parseEvents := stream.progressParser.feed(chunk)
@@ -526,17 +609,20 @@ func runBackgroundDispatch(
 				stream.lastAnyChunkAt = nowText
 				stream.mu.Unlock()
 
-				appendPath, err := writeExecutorArtifact(runID, ArtifactKindExecutorStderr, chunk)
+				appendPath, err := writeExecutorArtifact(sink, runID, ArtifactKindExecutorStderr, chunk)
 				if err != nil {
 					stream.recordWriteError("append_stderr", err)
 				} else if appendPath != "" {
-					recordExecutorArtifact(s, runID, ArtifactKindExecutorStderr, appendPath, "text/plain")
+					stream.recordWriteError("register_append_stderr", sink.Register(runID, ArtifactKindExecutorStderr, appendPath, "text/plain"))
 				}
 
 				parseEvents := stream.progressParser.feed(chunk)
 				for _, ev := range parseEvents {
 					stream.emitProgressEvent(s, runID, ev)
 				}
+			},
+			OnStartError: func(err error) {
+				closeLaunchDone()
 			},
 			OnProcessStarted: func(identity pipeline.ProcessIdentity) error {
 				startedAt = executionTimestampNow()
@@ -550,22 +636,30 @@ func runBackgroundDispatch(
 					OwnershipToken:      ownershipToken,
 				}); err != nil {
 					stream.recordWriteError("register_process_identity", err)
+					closeLaunchDone()
 					return fmt.Errorf("register process identity: %w", err)
 				} else if won {
 					publishRunEvent(hub, runID, events.KindStepAgent, "executor", "running")
+					closeLaunchDone()
 					return nil
 				}
 				err := fmt.Errorf("process identity registration lost ownership")
 				stream.recordWriteError("register_process_identity", err)
+				closeLaunchDone()
 				return err
 			},
 		},
 	)
+	closeLaunchDone()
 
 	if runResult.TerminationError == "" {
 		if current, err := s.GetAgentExecution(execID); err == nil && current != nil &&
 			current.LaunchState == "start_in_progress" && !current.ProcessIdentity.Valid {
-			_, _, _ = s.RecordAgentExecutionStartPrevented(execID, ownershipToken)
+			if runResult.LaunchStarted {
+				markTerminationFailed(s, execID, "launch completed but process identity was not durably registered")
+			} else {
+				_, _, _ = s.RecordAgentExecutionStartPrevented(execID, ownershipToken)
+			}
 		}
 	}
 
@@ -579,27 +673,27 @@ func runBackgroundDispatch(
 	finalStderr := stream.streamedStderr.String()
 	stream.mu.Unlock()
 
-	stdoutPath, err := writeExecutorArtifact(runID, ArtifactKindExecutorStdout, []byte(finalStdout))
+	stdoutPath, err := writeExecutorArtifact(sink, runID, ArtifactKindExecutorStdout, []byte(finalStdout))
 	stream.recordWriteError("final_stdout", err)
 	if stdoutPath != "" {
-		recordExecutorArtifact(s, runID, ArtifactKindExecutorStdout, stdoutPath, "text/plain")
+		stream.recordWriteError("register_final_stdout", sink.Register(runID, ArtifactKindExecutorStdout, stdoutPath, "text/plain"))
 	}
-	stderrPath, err := writeExecutorArtifact(runID, ArtifactKindExecutorStderr, []byte(finalStderr))
+	stderrPath, err := writeExecutorArtifact(sink, runID, ArtifactKindExecutorStderr, []byte(finalStderr))
 	stream.recordWriteError("final_stderr", err)
 	if stderrPath != "" {
-		recordExecutorArtifact(s, runID, ArtifactKindExecutorStderr, stderrPath, "text/plain")
+		stream.recordWriteError("register_final_stderr", sink.Register(runID, ArtifactKindExecutorStderr, stderrPath, "text/plain"))
 	}
 
 	combinedLog := combinedLogText(finalStdout, finalStderr)
-	combinedPath, err := writeExecutorArtifact(runID, ArtifactKindCommandLog, []byte(combinedLog))
+	combinedPath, err := writeExecutorArtifact(sink, runID, ArtifactKindCommandLog, []byte(combinedLog))
 	stream.recordWriteError("combined_log", err)
 	if combinedPath != "" {
-		recordExecutorArtifact(s, runID, ArtifactKindCommandLog, combinedPath, "text/plain")
+		stream.recordWriteError("register_combined_log", sink.Register(runID, ArtifactKindCommandLog, combinedPath, "text/plain"))
 	}
 
 	currentExec, _ := s.GetAgentExecution(execID)
 	if currentExec != nil && currentExec.CancellationRequestedAt.Valid {
-		stream.recordWriteError("git_evidence", collectAndPersistGitEvidence(s, runID, repo.Path))
+		stream.recordWriteError("git_evidence", collectAndPersistGitEvidence(sink, s, runID, repo.Path))
 		finishedStr := runResult.FinishedAt.Format(time.RFC3339Nano)
 		ec := int64(runResult.ExitCode)
 		if runResult.TimedOut {
@@ -745,9 +839,10 @@ func runBackgroundDispatch(
 			blocker = fmt.Sprintf("executor exited with code %d", runResult.ExitCode)
 		}
 		resultText := fmt.Sprintf("STATUS: BLOCKED\n\nBlocker/error only if blocked: %s\n", blocker)
-		resultPath, _ := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte(resultText))
+		resultPath, resultErr := writeExecutorArtifact(sink, runID, ArtifactKindExecutorResult, []byte(resultText))
+		stream.recordWriteError("exit_result", resultErr)
 		if resultPath != "" {
-			recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
+			stream.recordWriteError("register_exit_result", sink.Register(runID, ArtifactKindExecutorResult, resultPath, "text/plain"))
 		}
 		_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
 			Status:          execStatus,
@@ -772,7 +867,7 @@ func runBackgroundDispatch(
 		return
 	}
 
-	stream.recordWriteError("git_evidence", collectAndPersistGitEvidence(s, runID, repo.Path))
+	stream.recordWriteError("git_evidence", collectAndPersistGitEvidence(sink, s, runID, repo.Path))
 	writeErrSummary = stream.writeErrorSummary()
 	if writeErrSummary != "" {
 		errMsg = appendError(errMsg, writeErrSummary)
@@ -787,9 +882,11 @@ func runBackgroundDispatch(
 			if content, err := os.ReadFile(invocation.ResultFile); err == nil {
 				trimmed := strings.TrimSpace(string(content))
 				if trimmed != "" {
-					appendPath, wErr := writeExecutorArtifact(runID, ArtifactKindCodexLastMessage, content)
+					appendPath, wErr := writeExecutorArtifact(sink, runID, ArtifactKindCodexLastMessage, content)
 					if wErr == nil && appendPath != "" {
-						recordExecutorArtifact(s, runID, ArtifactKindCodexLastMessage, appendPath, "text/plain")
+						stream.recordWriteError("register_last_message", sink.Register(runID, ArtifactKindCodexLastMessage, appendPath, "text/plain"))
+					} else if wErr != nil {
+						stream.recordWriteError("last_message", wErr)
 					}
 					normalizationInput = string(content)
 				}
@@ -801,10 +898,18 @@ func runBackgroundDispatch(
 
 			resultPath := ""
 			if res.ExecutorResultText != "" {
-				resultPath, _ = writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte(res.ExecutorResultText))
+				var resultErr error
+				resultPath, resultErr = writeExecutorArtifact(sink, runID, ArtifactKindExecutorResult, []byte(res.ExecutorResultText))
+				stream.recordWriteError("executor_result", resultErr)
 				if resultPath != "" {
-					recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
+					stream.recordWriteError("register_executor_result", sink.Register(runID, ArtifactKindExecutorResult, resultPath, "text/plain"))
 				}
+			}
+			writeErrSummary = stream.writeErrorSummary()
+			if writeErrSummary != "" {
+				errMsg = appendError(errMsg, writeErrSummary)
+				errPtr = &errMsg
+				execStatus = ExecutionStatusFailed
 			}
 
 			switch res.Status {
@@ -875,10 +980,10 @@ func runBackgroundDispatch(
 		}
 	}
 
-	resultPath, err := writeExecutorArtifact(runID, ArtifactKindExecutorResult, []byte("STATUS: UNKNOWN\nNo stdout captured from executor.\n"))
+	resultPath, err := writeExecutorArtifact(sink, runID, ArtifactKindExecutorResult, []byte("STATUS: UNKNOWN\nNo stdout captured from executor.\n"))
 	stream.recordWriteError("executor_result", err)
 	if resultPath != "" {
-		recordExecutorArtifact(s, runID, ArtifactKindExecutorResult, resultPath, "text/plain")
+		stream.recordWriteError("register_no_output_result", sink.Register(runID, ArtifactKindExecutorResult, resultPath, "text/plain"))
 	}
 	noOutputError := "no stdout captured from executor"
 	if errMsg != "" {
@@ -945,7 +1050,11 @@ func ensureExecutionTreeAbsentForTerminal(st *store.Store, controller pipeline.P
 	if controller == nil {
 		controller = pipeline.DefaultProcessController()
 	}
-	running, err := controller.IsRunning(identity)
+	owned, err := controller.OpenOwned(identity)
+	if err != nil {
+		return false, "process tree ownership unavailable during terminal cleanup verification: " + err.Error()
+	}
+	running, err := owned.TreeRunning()
 	if err != nil {
 		return false, "process tree presence unverifiable during terminal cleanup verification: " + err.Error()
 	}
@@ -953,6 +1062,7 @@ func ensureExecutionTreeAbsentForTerminal(st *store.Store, controller pipeline.P
 		return false, "process tree still running after executor completion"
 	}
 	markTerminationVerified(st, execID)
+	_ = owned.Release()
 	return true, ""
 }
 
@@ -1082,12 +1192,14 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 	l.Info("executor: dispatching from executor_brief.md", "run_id", runID, "exec_id", exec.ID, "model", invocation.Model)
 
 	commandCtx, cancel := context.WithCancel(context.Background())
+	launchDone := make(chan struct{})
 	globalRuntimeRegistry.put(runtimeHandle{
 		execID:         exec.ID,
 		runID:          runID,
 		ownershipToken: ownershipToken,
 		cancel:         cancel,
 		controller:     p.processController(),
+		launchDone:     launchDone,
 	})
 
 	createEvent(s, runID, "info", "Executor dispatched from executor_brief.md")
@@ -1098,7 +1210,7 @@ func DispatchBrief(p *DispatchParams) (DispatchResult, error) {
 
 	p.launcher()(func() {
 		defer globalRuntimeRegistry.delete(exec.ID)
-		runBackgroundDispatch(commandCtx, p, runID, exec.ID, ownershipToken, invocation, adapter, repo)
+		runBackgroundDispatch(commandCtx, p, runID, exec.ID, ownershipToken, launchDone, invocation, adapter, repo)
 	})
 
 	return DispatchResult{
@@ -1114,7 +1226,7 @@ func WriteArtifactFromReader(runID int64, kind string, r io.Reader) (string, err
 	if _, err := io.Copy(&buf, r); err != nil {
 		return "", err
 	}
-	return writeExecutorArtifact(runID, kind, buf.Bytes())
+	return writeExecutorArtifact(storeExecutionEvidenceSink{}, runID, kind, buf.Bytes())
 }
 
 func ParseStrictStatus(raw string) (pipeline.AgentResultStatus, string) {
@@ -1156,7 +1268,7 @@ func extractBlocker(raw string) string {
 	return ""
 }
 
-func collectAndPersistGitEvidence(s *store.Store, runID int64, repoPath string) error {
+func collectAndPersistGitEvidence(sink ExecutionEvidenceSink, s *store.Store, runID int64, repoPath string) error {
 	if repoPath == "" {
 		return nil
 	}
@@ -1185,7 +1297,7 @@ func collectAndPersistGitEvidence(s *store.Store, runID int64, repoPath string) 
 		{"git_diff_name_status", ev.NameStatus},
 		{"git_diff_patch", ev.DiffPatch},
 	} {
-		if err := persistGitArtifact(s, runID, item.kind, item.content); err != nil {
+		if err := persistGitArtifact(sink, runID, item.kind, item.content); err != nil {
 			errs = append(errs, item.kind+": "+err.Error())
 		}
 	}
@@ -1195,17 +1307,20 @@ func collectAndPersistGitEvidence(s *store.Store, runID int64, repoPath string) 
 	return nil
 }
 
-func persistGitArtifact(s *store.Store, runID int64, kind, content string) error {
+func persistGitArtifact(sink ExecutionEvidenceSink, runID int64, kind, content string) error {
 	if content == "" {
 		return nil
 	}
 	filename := pipeline.ArtifactFilename(kind)
-	path, err := artifacts.Write(runID, kind, filename, []byte(content))
+	if sink == nil {
+		sink = storeExecutionEvidenceSink{}
+	}
+	path, err := sink.Write(runID, kind, filename, []byte(content))
 	if err != nil {
 		return err
 	}
-	if err == nil && path != "" && s != nil {
-		if _, err := s.CreateArtifact(runID, kind, path, "text/plain"); err != nil {
+	if path != "" {
+		if err := sink.Register(runID, kind, path, "text/plain"); err != nil {
 			return err
 		}
 	}

@@ -117,6 +117,25 @@ func writeExecutorBrief(t *testing.T, s *store.Store, runID int64, content strin
 	}
 }
 
+type failingRegisterEvidenceSink struct {
+	failKind string
+}
+
+func (s failingRegisterEvidenceSink) Write(runID int64, kind, filename string, data []byte) (string, error) {
+	return artifacts.Write(runID, kind, filename, data)
+}
+
+func (s failingRegisterEvidenceSink) Register(runID int64, kind, path, mimeType string) error {
+	if kind == s.failKind {
+		return os.ErrPermission
+	}
+	return nil
+}
+
+func (s failingRegisterEvidenceSink) Delete(runID int64, kind, filename string) error {
+	return nil
+}
+
 func TestDispatchBrief_RejectsNonApprovedStatus(t *testing.T) {
 	s := setupExecutorTestStore(t)
 	for _, status := range []string{"draft", "validated", "ready", "executor_dispatched", "executor_done", "executor_blocked"} {
@@ -173,6 +192,43 @@ func TestDispatchBrief_AcceptsApprovedForExecutor(t *testing.T) {
 	}
 	if recordedStdin != briefContent {
 		t.Fatalf("expected stdin to be brief content, got %q", recordedStdin)
+	}
+}
+
+func TestDispatchBrief_EvidenceRegisterFailureFailsClosed(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief\nDo the thing.\n")
+
+	_, err := DispatchBrief(&DispatchParams{
+		Store:        s,
+		Log:          slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:        runID,
+		EvidenceSink: failingRegisterEvidenceSink{failKind: ArtifactKindExecutorResult},
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			return pipeline.AgentCommandRunResult{
+				ExitCode: 0,
+				Stdout:   "STATUS: DONE\nBuild status: PASS\nTest status: PASS\nCount of LOC changed: 1\n",
+			}
+		},
+		LaunchAsync: func(fn func()) { fn() },
+	})
+	if err != nil {
+		t.Fatalf("expected dispatch to start, got: %v", err)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if exec.Status != ExecutionStatusFailed {
+		t.Fatalf("expected evidence failure to terminalize failed, got %s", exec.Status)
+	}
+	if !exec.Error.Valid || !strings.Contains(exec.Error.String, "register_executor_result") {
+		t.Fatalf("expected evidence registration error, got %+v", exec.Error)
 	}
 }
 
@@ -795,7 +851,7 @@ func TestDispatchBrief_CodexIntegrationWritesArtifact(t *testing.T) {
 		t.Errorf("expected runner binary codex, got %s", recordedBin)
 	}
 	if exec.Status != ExecutionStatusSucceeded {
-		t.Errorf("expected exec status %s, got %s", ExecutionStatusSucceeded, exec.Status)
+		t.Errorf("expected exec status %s, got %s: %s", ExecutionStatusSucceeded, exec.Status, exec.Error.String)
 	}
 
 	run, _ := s.GetRun(runID)
@@ -1043,7 +1099,7 @@ func TestDispatchBrief_AntigravityJSONErrorWritesExecutorResult(t *testing.T) {
 		t.Fatalf("get execution: %v", err)
 	}
 	if exec.Status != ExecutionStatusSucceeded {
-		t.Errorf("expected exec status %s, got %s", ExecutionStatusSucceeded, exec.Status)
+		t.Errorf("expected exec status %s, got %s: %s", ExecutionStatusSucceeded, exec.Status, exec.Error.String)
 	}
 
 	run, _ := s.GetRun(runID)

@@ -76,15 +76,16 @@ func RenderAgentCommandTemplate(template string, ctx AgentCommandContext) (strin
 
 // AgentCommandRunResult holds the result of running a local agent command.
 type AgentCommandRunResult struct {
-	Command    string    `json:"command"`
-	WorkDir    string    `json:"work_dir"`
-	ExitCode   int       `json:"exit_code"`
-	Stdout     string    `json:"stdout"`
-	Stderr     string    `json:"stderr"`
-	TimedOut   bool      `json:"timed_out"`
-	Error      string    `json:"error,omitempty"`
-	StartedAt  time.Time `json:"started_at"`
-	FinishedAt time.Time `json:"finished_at"`
+	Command       string    `json:"command"`
+	WorkDir       string    `json:"work_dir"`
+	ExitCode      int       `json:"exit_code"`
+	Stdout        string    `json:"stdout"`
+	Stderr        string    `json:"stderr"`
+	TimedOut      bool      `json:"timed_out"`
+	Error         string    `json:"error,omitempty"`
+	StartedAt     time.Time `json:"started_at"`
+	FinishedAt    time.Time `json:"finished_at"`
+	LaunchStarted bool      `json:"launch_started"`
 
 	TerminationVerified bool   `json:"termination_verified"`
 	TerminationError    string `json:"termination_error,omitempty"`
@@ -233,24 +234,8 @@ func RunLocalAgentCommandArgsStreamingWithController(
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.Command(binary, args...)
-	cmd.Dir = workDir
 	if controller == nil {
 		controller = DefaultProcessController()
-	}
-	if err := controller.PrepareCommand(cmd); err != nil {
-		finished := time.Now()
-		return AgentCommandRunResult{
-			Command:    commandPreview,
-			WorkDir:    workDir,
-			ExitCode:   -1,
-			Error:      err.Error(),
-			StartedAt:  start,
-			FinishedAt: finished,
-		}
-	}
-	if stdin != "" {
-		cmd.Stdin = strings.NewReader(stdin)
 	}
 
 	if err := runCtx.Err(); err != nil {
@@ -265,36 +250,17 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		}
 	}
 
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		finished := time.Now()
-		return AgentCommandRunResult{
-			Command:    commandPreview,
-			WorkDir:    workDir,
-			ExitCode:   -1,
-			Error:      err.Error(),
-			StartedAt:  start,
-			FinishedAt: finished,
-		}
-	}
-
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		finished := time.Now()
-		return AgentCommandRunResult{
-			Command:    commandPreview,
-			WorkDir:    workDir,
-			ExitCode:   -1,
-			Error:      err.Error(),
-			StartedAt:  start,
-			FinishedAt: finished,
-		}
-	}
-
 	if callbacks.OnStartCalled != nil {
 		callbacks.OnStartCalled()
 	}
-	if err := cmd.Start(); err != nil {
+	owned, err := controller.StartOwned(runCtx, CommandSpec{
+		WorkDir: workDir,
+		Binary:  binary,
+		Args:    args,
+		Stdin:   stdin,
+		Timeout: timeout,
+	})
+	if err != nil {
 		if callbacks.OnStartError != nil {
 			callbacks.OnStartError(err)
 		}
@@ -308,49 +274,52 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			FinishedAt: finished,
 		}
 	}
+	releaseOwned := true
+	defer func() {
+		if releaseOwned {
+			_ = owned.Release()
+		}
+	}()
+	launchStarted := true
+	identity := owned.Identity()
 	if callbacks.OnStartReturned != nil {
-		callbacks.OnStartReturned(cmd.Process.Pid)
+		callbacks.OnStartReturned(identity.PID)
 	}
-	var identity ProcessIdentity
-	identityRegistered := false
-	if identityValue, err := controller.Identity(cmd, start); err == nil {
-		identity = identityValue
-		if callbacks.OnProcessStarted != nil {
-			if err := callbacks.OnProcessStarted(identity); err != nil {
-				if callbacks.OnStartError != nil {
-					callbacks.OnStartError(err)
-				}
-				termination, terminateErr := controller.TerminateTree(identity, 2*time.Second)
-				waitErr := waitForCommandBounded(cmd, 2*time.Second)
-				finished := time.Now()
-				errMsg := err.Error()
-				if terminateErr != nil && !errors.Is(terminateErr, ErrProcessNotRunning) {
-					errMsg += "; terminate unregistered process tree: " + terminateErr.Error()
-				} else if !termination.VerifiedAbsent {
-					errMsg += "; terminate unregistered process tree: absence was not verified"
-				}
-				if waitErr != nil {
-					errMsg += "; bounded wait after registration failure: " + waitErr.Error()
-				}
-				return AgentCommandRunResult{
-					Command:             commandPreview,
-					WorkDir:             workDir,
-					ExitCode:            -1,
-					Error:               errMsg,
-					StartedAt:           start,
-					FinishedAt:          finished,
-					TerminationVerified: termination.VerifiedAbsent,
-					TerminationError:    errMsg,
-				}
+	if callbacks.OnProcessStarted != nil {
+		if err := callbacks.OnProcessStarted(identity); err != nil {
+			if callbacks.OnStartError != nil {
+				callbacks.OnStartError(err)
+			}
+			termination, terminateErr := owned.Terminate(2 * time.Second)
+			finished := time.Now()
+			errMsg := err.Error()
+			if terminateErr != nil && !errors.Is(terminateErr, ErrProcessNotRunning) {
+				errMsg += "; terminate unregistered process tree: " + terminateErr.Error()
+			} else if !termination.VerifiedAbsent {
+				errMsg += "; terminate unregistered process tree: absence was not verified"
+			}
+			return AgentCommandRunResult{
+				Command:             commandPreview,
+				WorkDir:             workDir,
+				ExitCode:            -1,
+				Error:               errMsg,
+				StartedAt:           start,
+				FinishedAt:          finished,
+				LaunchStarted:       launchStarted,
+				TerminationVerified: termination.VerifiedAbsent,
+				TerminationError:    errMsg,
 			}
 		}
-		identityRegistered = true
-	} else {
-		if callbacks.OnStartError != nil {
-			callbacks.OnStartError(err)
-		}
+	}
+	stdoutPipe := owned.Stdout()
+	stderrPipe := owned.Stderr()
+	if stdoutPipe == nil || stderrPipe == nil {
 		finished := time.Now()
-		errMsg := err.Error() + "; process identity unavailable, owned-tree cleanup was not attempted"
+		errMsg := "owned process did not provide stdout/stderr pipes"
+		termination, terminateErr := owned.Terminate(2 * time.Second)
+		if terminateErr != nil {
+			errMsg += "; terminate pipe-less process tree: " + terminateErr.Error()
+		}
 		return AgentCommandRunResult{
 			Command:             commandPreview,
 			WorkDir:             workDir,
@@ -358,7 +327,8 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			Error:               errMsg,
 			StartedAt:           start,
 			FinishedAt:          finished,
-			TerminationVerified: false,
+			LaunchStarted:       launchStarted,
+			TerminationVerified: termination.VerifiedAbsent,
 			TerminationError:    errMsg,
 		}
 	}
@@ -425,33 +395,15 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		select {
 		case <-runCtx.Done():
 		case <-waitDone:
-			terminationCh <- struct {
-				result ProcessTerminationResult
-				err    error
-			}{result: ProcessTerminationResult{VerifiedAbsent: true}}
 			return
 		}
-		if identityRegistered {
-			result, err := controller.TerminateTree(identity, 2*time.Second)
-			terminationCh <- struct {
-				result ProcessTerminationResult
-				err    error
-			}{result: result, err: err}
-			return
-		}
-		if cmd.Process != nil {
-			terminationCh <- struct {
-				result ProcessTerminationResult
-				err    error
-			}{err: cmd.Process.Kill()}
-			return
-		}
+		result, err := owned.Terminate(2 * time.Second)
 		terminationCh <- struct {
 			result ProcessTerminationResult
 			err    error
-		}{result: ProcessTerminationResult{VerifiedAbsent: true}}
+		}{result: result, err: err}
 	}()
-	waitErr := cmd.Wait()
+	waitErr := owned.Wait()
 	close(waitDone)
 	var terminationErr error
 	terminationVerified := true
@@ -459,6 +411,25 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		termination := <-terminationCh
 		terminationErr = termination.err
 		terminationVerified = termination.result.VerifiedAbsent
+	} else {
+		running, treeErr := owned.TreeRunning()
+		if treeErr != nil {
+			terminationErr = treeErr
+			terminationVerified = false
+		} else if running {
+			termination := struct {
+				result ProcessTerminationResult
+				err    error
+			}{}
+			termination.result, termination.err = owned.Terminate(2 * time.Second)
+			terminationErr = termination.err
+			terminationVerified = termination.result.VerifiedAbsent
+			if !terminationVerified && terminationErr == nil {
+				terminationErr = fmt.Errorf("%w: process tree still running after root exit", ErrProcessUnverifiable)
+			}
+		} else {
+			terminationVerified = true
+		}
 	}
 	cancel()
 	exitCode := 0
@@ -466,20 +437,18 @@ func RunLocalAgentCommandArgsStreamingWithController(
 	if waitErr != nil {
 		if exitErr, ok := waitErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
+		} else if exitErr, ok := waitErr.(interface{ ExitCode() int }); ok {
+			exitCode = exitErr.ExitCode()
 		} else {
 			exitCode = -1
 			errMsg = waitErr.Error()
 		}
 	}
 	if callbacks.OnWaitReturned != nil {
-		processState := ""
-		if cmd.ProcessState != nil {
-			processState = cmd.ProcessState.String()
-		}
 		callbacks.OnWaitReturned(AgentCommandWaitResult{
 			Err:          waitErr,
 			ExitCode:     exitCode,
-			ProcessState: processState,
+			ProcessState: "",
 		})
 	}
 	wg.Wait()
@@ -511,6 +480,7 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			Error:               errText,
 			StartedAt:           start,
 			FinishedAt:          finished,
+			LaunchStarted:       launchStarted,
 			TerminationVerified: terminationVerified,
 			TerminationError:    errText,
 		}
@@ -557,6 +527,7 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		Error:               errMsg,
 		StartedAt:           start,
 		FinishedAt:          finished,
+		LaunchStarted:       launchStarted,
 		TerminationVerified: terminationVerified,
 	}
 }

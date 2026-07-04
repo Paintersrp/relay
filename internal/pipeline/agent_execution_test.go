@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -490,39 +490,75 @@ type recordingProcessController struct {
 	terminated chan ProcessIdentity
 }
 
-func (c *recordingProcessController) PrepareCommand(cmd *exec.Cmd) error {
-	return nil
+type recordingOwnedProcess struct {
+	inner      OwnedProcess
+	terminated chan ProcessIdentity
 }
 
-func (c *recordingProcessController) Identity(cmd *exec.Cmd, startedAt time.Time) (ProcessIdentity, error) {
-	if cmd.Process == nil {
-		return ProcessIdentity{}, ErrProcessUnverifiable
+func (c *recordingProcessController) StartOwned(ctx context.Context, spec CommandSpec) (OwnedProcess, error) {
+	owned, err := DefaultProcessController().StartOwned(ctx, spec)
+	if err != nil {
+		return nil, err
 	}
-	return ProcessIdentity{
-		PID:       cmd.Process.Pid,
-		StartedAt: processStartedAtString(startedAt),
-		Platform:  "test",
-	}, nil
+	return &recordingOwnedProcess{inner: owned, terminated: c.terminated}, nil
 }
 
-func (c *recordingProcessController) IsRunning(identity ProcessIdentity) (bool, error) {
-	return false, nil
+func (c *recordingProcessController) OpenOwned(identity ProcessIdentity) (OwnedProcess, error) {
+	owned, err := DefaultProcessController().OpenOwned(identity)
+	if err != nil {
+		return nil, err
+	}
+	return &recordingOwnedProcess{inner: owned, terminated: c.terminated}, nil
 }
 
-func (c *recordingProcessController) TerminateTree(identity ProcessIdentity, gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
+func (p *recordingOwnedProcess) Identity() ProcessIdentity  { return p.inner.Identity() }
+func (p *recordingOwnedProcess) Stdout() io.ReadCloser      { return p.inner.Stdout() }
+func (p *recordingOwnedProcess) Stderr() io.ReadCloser      { return p.inner.Stderr() }
+func (p *recordingOwnedProcess) Wait() error                { return p.inner.Wait() }
+func (p *recordingOwnedProcess) TreeRunning() (bool, error) { return p.inner.TreeRunning() }
+func (p *recordingOwnedProcess) Release() error             { return p.inner.Release() }
+
+func (p *recordingOwnedProcess) Terminate(gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
+	identity := p.inner.Identity()
 	select {
-	case c.terminated <- identity:
+	case p.terminated <- identity:
 	default:
 	}
-	proc, err := os.FindProcess(identity.PID)
-	if err != nil {
-		return ProcessTerminationResult{}, err
-	}
-	if err := proc.Kill(); err != nil {
-		return ProcessTerminationResult{}, err
-	}
-	return ProcessTerminationResult{VerifiedAbsent: true, Forced: true}, nil
+	return p.inner.Terminate(gracefulTimeout)
 }
+
+type rootExitChildRunningController struct{}
+
+type rootExitChildRunningProcess struct {
+	stdout *io.PipeReader
+	stderr *io.PipeReader
+}
+
+func (rootExitChildRunningController) StartOwned(ctx context.Context, spec CommandSpec) (OwnedProcess, error) {
+	stdoutR, stdoutW := io.Pipe()
+	stderrR, stderrW := io.Pipe()
+	_ = stdoutW.Close()
+	_ = stderrW.Close()
+	return &rootExitChildRunningProcess{stdout: stdoutR, stderr: stderrR}, nil
+}
+
+func (rootExitChildRunningController) OpenOwned(identity ProcessIdentity) (OwnedProcess, error) {
+	return &rootExitChildRunningProcess{}, nil
+}
+
+func (p *rootExitChildRunningProcess) Identity() ProcessIdentity {
+	return ProcessIdentity{PID: 1234, GroupID: 1234, StartedAt: "fingerprint", Platform: "test"}
+}
+func (p *rootExitChildRunningProcess) Stdout() io.ReadCloser { return p.stdout }
+func (p *rootExitChildRunningProcess) Stderr() io.ReadCloser { return p.stderr }
+func (p *rootExitChildRunningProcess) Wait() error           { return nil }
+func (p *rootExitChildRunningProcess) TreeRunning() (bool, error) {
+	return true, nil
+}
+func (p *rootExitChildRunningProcess) Terminate(gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
+	return ProcessTerminationResult{}, nil
+}
+func (p *rootExitChildRunningProcess) Release() error { return nil }
 
 func TestRunLocalAgentCommandArgsStreamingTimeoutUsesProcessController(t *testing.T) {
 	t.Setenv("GO_WANT_AGENT_STREAM_HELPER", "1")
@@ -548,7 +584,30 @@ func TestRunLocalAgentCommandArgsStreamingTimeoutUsesProcessController(t *testin
 			t.Fatalf("expected recorded process identity, got %+v", identity)
 		}
 	default:
-		t.Fatal("expected timeout to call ProcessController.TerminateTree")
+		t.Fatal("expected timeout to terminate the owned process tree")
+	}
+}
+
+func TestRunLocalAgentCommandArgsStreamingRootExitDoesNotVerifyLivingTree(t *testing.T) {
+	result := RunLocalAgentCommandArgsStreamingWithController(
+		context.Background(),
+		".",
+		"fake",
+		nil,
+		"",
+		time.Second,
+		AgentCommandStreamCallbacks{},
+		rootExitChildRunningController{},
+	)
+
+	if result.TerminationVerified {
+		t.Fatal("expected root exit with running owned tree to remain unverified")
+	}
+	if result.ExitCode == 0 {
+		t.Fatalf("expected unverified tree to fail result, got exit code %d", result.ExitCode)
+	}
+	if !strings.Contains(result.Error, "absence was not verified") {
+		t.Fatalf("expected unverified absence error, got %q", result.Error)
 	}
 }
 

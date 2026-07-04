@@ -30,23 +30,30 @@ func ReconcileActiveExecutions(st *store.Store, hub *events.Hub, log *slog.Logge
 		verifiedAbsent := false
 		identity, identityErr := processIdentityFromExecution(&exec)
 		if identityErr == nil {
-			running, probeErr := controller.IsRunning(identity)
-			if probeErr != nil {
-				message = "Executor process identity could not be verified during restart reconciliation: " + probeErr.Error()
-			} else if running {
-				markTerminationRequested(st, exec.ID, TerminalReasonRestartOrphanReconcile)
-				result, termErr := controller.TerminateTree(identity, 2*time.Second)
-				if termErr != nil {
-					message = "Executor orphan termination failed during restart reconciliation: " + termErr.Error()
-				} else if !result.VerifiedAbsent {
-					message = "Executor orphan termination could not verify process absence during restart reconciliation"
-				} else {
-					message = "Executor orphan process terminated during restart reconciliation"
-					verifiedAbsent = true
-				}
+			owned, openErr := controller.OpenOwned(identity)
+			if openErr != nil {
+				message = "Executor process ownership could not be reopened during restart reconciliation: " + openErr.Error()
 			} else {
-				message = "Executor process already absent during restart reconciliation"
-				verifiedAbsent = true
+				running, probeErr := owned.TreeRunning()
+				if probeErr != nil {
+					message = "Executor process identity could not be verified during restart reconciliation: " + probeErr.Error()
+				} else if running {
+					markTerminationRequested(st, exec.ID, TerminalReasonRestartOrphanReconcile)
+					result, termErr := owned.Terminate(2 * time.Second)
+					if termErr != nil {
+						message = "Executor orphan termination failed during restart reconciliation: " + termErr.Error()
+					} else if !result.VerifiedAbsent {
+						message = "Executor orphan termination could not verify process absence during restart reconciliation"
+					} else {
+						message = "Executor orphan process terminated during restart reconciliation"
+						verifiedAbsent = true
+						_ = owned.Release()
+					}
+				} else {
+					message = "Executor process already absent during restart reconciliation"
+					verifiedAbsent = true
+					_ = owned.Release()
+				}
 			}
 		} else {
 			message = "Executor process identity missing during restart reconciliation"
