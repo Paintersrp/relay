@@ -71,9 +71,11 @@ fail-closed advancement.
 8. Perform human review and explicit confirmation of the validated handoff.
 9. Submit the reviewed handoff with
    `create_run_from_planner_handoff_file(planner_handoff_file, expected_sha256, ...)`
-   when a reviewed file exists, preserving exact file-byte provenance. Inline
-   submission via `create_run_from_planner_handoff` remains the fallback for
-   chat-only drafts.
+   when a reviewed file exists. ChatGPT supplies `planner_handoff_file` as a
+   structured file reference advertised by `_meta["openai/fileParams"]`, and
+   Relay retrieves the exact bytes through bounded HTTPS before hashing or
+   writing artifacts. Inline submission via `create_run_from_planner_handoff`
+   remains the fallback for chat-only drafts.
 10. Progress the run through the configured gates (intake -> prepare -> execute ->
     validate).
 11. During or after execution, use `get_run_artifact` for bounded inspection of

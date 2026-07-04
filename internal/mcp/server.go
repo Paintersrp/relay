@@ -11,8 +11,8 @@
 //
 // Safety boundaries:
 //   - No shell execution is exposed.
-//   - No arbitrary file read/write is exposed; file-based run submission reads
-//     only the single MCP-supplied planner handoff file parameter for intake.
+//   - No arbitrary file read/write is exposed; file-based run submission performs
+//     one bounded HTTPS retrieval of the single MCP-supplied ChatGPT file reference.
 //   - No git commit, push, branch, or worktree mutation is exposed.
 //   - All artifact writes go through relay/internal/artifacts conventions.
 //   - All run state changes use existing relay store and service behavior.
@@ -96,6 +96,13 @@ func (s *Server) activeProfile() ToolProfile {
 		return ToolProfileLocalOperator
 	}
 	return s.deps.ToolProfile
+}
+
+func (s *Server) fileParameterFetcher() FileParameterFetcher {
+	if s != nil && s.deps != nil && s.deps.FileFetcher != nil {
+		return s.deps.FileFetcher
+	}
+	return NewHTTPSFileParameterFetcher()
 }
 
 func (s *Server) toolRegistered(name string) bool {

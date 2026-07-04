@@ -1,27 +1,15 @@
 package mcp
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"relay/internal/intake"
-)
-
-const maxPlannerHandoffFileBytes = 1 * 1024 * 1024
-
-var (
-	errPlannerHandoffFileRequired   = errors.New("planner_handoff_file is required")
-	errPlannerHandoffFileUnreadable = errors.New("planner_handoff_file is not readable")
-	errPlannerHandoffFileNotRegular = errors.New("planner_handoff_file must be a regular file")
-	errPlannerHandoffFileEmpty      = errors.New("planner_handoff_file must not be empty")
-	errPlannerHandoffFileTooLarge   = errors.New("planner_handoff_file exceeds the 1 MiB limit")
-	errPlannerHandoffFileInvalidExt = errors.New("planner_handoff_file must use the .md extension")
 )
 
 // createRunInput is the expected input for create_run_from_planner_handoff.
@@ -59,8 +47,8 @@ type createRunInput struct {
 // WARNING: Do NOT include secrets, tokens, auth headers, private keys, or signed URLs
 // in the supplied handoff file. Relay stores this content as a persistent artifact.
 type createRunFromFileInput struct {
-	// PlannerHandoffFile is the mounted MCP file-parameter path to one reviewed .md handoff.
-	PlannerHandoffFile string `json:"planner_handoff_file"`
+	// PlannerHandoffFile is the structured ChatGPT file reference for one reviewed .md handoff.
+	PlannerHandoffFile ChatGPTFileReference `json:"planner_handoff_file"`
 	// ExpectedSHA256 optionally pins the exact expected SHA-256 of the file bytes.
 	ExpectedSHA256 string `json:"expected_sha256,omitempty"`
 	// RepoTarget is the target repository name or path. Optional if present in frontmatter.
@@ -191,22 +179,24 @@ func (s *Server) HandleCreateRunFromPlannerHandoffFile(rawArgs json.RawMessage) 
 	}
 
 	var input createRunFromFileInput
-	if err := json.Unmarshal(rawArgs, &input); err != nil {
+	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
 		return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, []MCPBlockerEvidence{{Kind: "schema", Ref: "create_run_from_planner_handoff_file"}}, []string{"Retry with arguments matching the create_run_from_planner_handoff_file schema."}, nil)
 	}
 
-	markdownBytes, submittedSHA, err := readPlannerHandoffFile(input.PlannerHandoffFile)
-	if err != nil {
-		return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerBlockedPath, "VALIDATION_ERROR: "+err.Error(), true, plannerHandoffFileEvidence(input.PlannerHandoffFile), []string{"Provide one readable reviewed Markdown handoff file and retry."}, nil)
+	content, fetchErr := s.fileParameterFetcher().FetchPlannerHandoff(context.Background(), input.PlannerHandoffFile)
+	if fetchErr != nil {
+		return toolBlockedResult("create_run_from_planner_handoff_file", []MCPBlocker{fileParameterBlocker(fetchErr)}, nil)
 	}
+	markdownBytes := content.Bytes
+	submittedSHA := sha256Hex(markdownBytes)
 	expectedSHA := strings.TrimSpace(input.ExpectedSHA256)
-	provenance := exactSubmissionProvenance(markdownBytes, expectedSHA, "file_parameter", input.PlannerHandoffFile)
+	provenance := exactSubmissionProvenance(markdownBytes, expectedSHA, "file_parameter", content.DisplayName)
 	if expectedSHA != "" {
 		if err := validateExpectedSHA256(expectedSHA); err != nil {
 			return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerSchemaMismatch, err.Error(), false, []MCPBlockerEvidence{{Kind: "schema", Ref: "expected_sha256"}}, []string{"Use a 64-character lowercase hex SHA-256 value."}, map[string]any{"provenance": provenance})
 		}
 		if expectedSHA != submittedSHA {
-			return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerExpectedHashMismatch, "VALIDATION_ERROR: expected_sha256 does not match submitted handoff sha256", true, expectedHashMismatchEvidence(submittedSHA, expectedSHA, provenance.ArtifactIdentity.DisplayName), []string{"Recompute expected_sha256 from the reviewed handoff file or submit the exact reviewed bytes."}, map[string]any{"provenance": provenance})
+			return createRunBlocked("create_run_from_planner_handoff_file", MCPBlockerExpectedHashMismatch, "VALIDATION_ERROR: expected_sha256 does not match submitted handoff sha256", true, expectedHashMismatchEvidence(submittedSHA, expectedSHA, provenance.ArtifactIdentity.DisplayName), []string{"Recompute expected_sha256 from the reviewed uploaded handoff file or submit the exact reviewed bytes."}, map[string]any{"provenance": provenance})
 		}
 	}
 	preflight, err := intake.ValidatePlannerHandoffForCompile(intake.HandoffPreflightInput{
@@ -276,49 +266,6 @@ func (s *Server) HandleCreateRunFromPlannerHandoffFile(rawArgs json.RawMessage) 
 	return toolOK(text)
 }
 
-func readPlannerHandoffFile(path string) ([]byte, string, error) {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return nil, "", errPlannerHandoffFileRequired
-	}
-	if !strings.EqualFold(filepath.Ext(path), ".md") {
-		return nil, "", errPlannerHandoffFileInvalidExt
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, "", errPlannerHandoffFileUnreadable
-	}
-	if info.IsDir() {
-		return nil, "", errPlannerHandoffFileNotRegular
-	}
-	if info.Size() == 0 {
-		return nil, "", errPlannerHandoffFileEmpty
-	}
-	if info.Size() > maxPlannerHandoffFileBytes {
-		return nil, "", errPlannerHandoffFileTooLarge
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, "", errPlannerHandoffFileUnreadable
-	}
-	if len(data) == 0 {
-		return nil, "", errPlannerHandoffFileEmpty
-	}
-	if len(data) > maxPlannerHandoffFileBytes {
-		return nil, "", errPlannerHandoffFileTooLarge
-	}
-	sum := sha256.Sum256(data)
-	return data, hex.EncodeToString(sum[:]), nil
-}
-
-func plannerHandoffFileEvidence(path string) []MCPBlockerEvidence {
-	name := safeArtifactDisplayName(path, "")
-	if name == "" {
-		return nil
-	}
-	return []MCPBlockerEvidence{{Kind: "artifact_name", Ref: name}}
-}
-
 func validateExpectedSHA256(value string) error {
 	if len(value) != 64 {
 		return fmt.Errorf("expected_sha256 must be a 64-character lowercase hex SHA-256")
@@ -333,8 +280,7 @@ func validateExpectedSHA256(value string) error {
 }
 
 func exactSubmissionProvenance(data []byte, expectedSHA, sourceMode, displayName string) ExactSubmissionProvenance {
-	sum := sha256.Sum256(data)
-	submittedSHA := hex.EncodeToString(sum[:])
+	submittedSHA := sha256Hex(data)
 	status := "not_supplied"
 	if strings.TrimSpace(expectedSHA) != "" {
 		status = "mismatched"
@@ -357,6 +303,11 @@ func exactSubmissionProvenance(data []byte, expectedSHA, sourceMode, displayName
 			ByteCount:    int64(len(data)),
 		},
 	}
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func createRunBlocked(tool, code, message string, recoverable bool, evidence []MCPBlockerEvidence, actions []string, metadata any) ToolCallResult {
@@ -472,8 +423,26 @@ var createRunFromFileSchema = json.RawMessage(`{
   "required": ["planner_handoff_file"],
   "properties": {
     "planner_handoff_file": {
-      "type": "string",
-      "description": "Mounted MCP file-parameter path for one reviewed Planner handoff Markdown file. Relay reads only this supplied file, requires a .md extension, and stores its exact bytes as the planner_handoff artifact."
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["download_url", "file_id"],
+      "description": "Structured ChatGPT file reference for one reviewed Planner handoff Markdown file. Relay downloads the exact temporary HTTPS bytes, requires at most 1 MiB, and stores those bytes as the planner_handoff artifact.",
+      "properties": {
+        "download_url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "file_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mime_type": {
+          "type": "string"
+        },
+        "file_name": {
+          "type": "string"
+        }
+      }
     },
     "expected_sha256": {
       "type": "string",
@@ -536,10 +505,11 @@ var ToolCreateRunFromPlannerHandoffFile = ToolDefinition{
 	Name: "create_run_from_planner_handoff_file",
 	Description: "Submit one reviewed Planner handoff Markdown file to Relay as a new run. " +
 		"Use this preferred tool when the reviewed handoff exists as a file and byte identity matters. " +
-		"The MCP client passes planner_handoff_file as a mounted file-parameter path; Relay reads only that file, " +
-		"requires .md content at most 1 MiB, computes its exact SHA-256, and optionally verifies expected_sha256 " +
+		"ChatGPT passes planner_handoff_file as a structured file reference; Relay performs one bounded HTTPS retrieval, " +
+		"requires .md display name and content at most 1 MiB, computes its exact SHA-256, and optionally verifies expected_sha256 " +
 		"before creating any run. Returns submitted_handoff_sha256, sha_match, source_mode, run_id, status, " +
 		"lifecycle_state, review_url, and artifact_kinds. Does not expose generic file browsing or arbitrary file reads. " +
 		"WARNING: do not include secrets, tokens, auth headers, private keys, or signed URLs in the handoff file.",
 	InputSchema: createRunFromFileSchema,
+	Meta:        map[string]any{"openai/fileParams": []string{"planner_handoff_file"}},
 }

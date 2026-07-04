@@ -67,6 +67,7 @@ type smokeToolDefinition struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"inputSchema"`
+	Meta        map[string]any  `json:"_meta,omitempty"`
 }
 
 type smokeToolsList struct {
@@ -1604,7 +1605,31 @@ func (h *harness) checkStreamlinedToolSchema(name string, tool smokeToolDefiniti
 		return
 	}
 	h.check("tools/list "+name+" inputSchema type object", schema["type"] == "object")
+	if name == "create_run_from_planner_handoff_file" || name == "validate_planner_handoff_for_compile" {
+		h.checkPlannerHandoffFileParameterSchema(name, tool, schema)
+	}
 	rejectUnsafeSchemaProperties(h, name, schema)
+}
+
+func (h *harness) checkPlannerHandoffFileParameterSchema(name string, tool smokeToolDefinition, schema map[string]interface{}) {
+	rawParams, ok := tool.Meta["openai/fileParams"].([]interface{})
+	h.check("tools/list "+name+" _meta.openai/fileParams present", ok)
+	if ok {
+		h.check("tools/list "+name+" fileParams exact", len(rawParams) == 1 && rawParams[0] == "planner_handoff_file")
+	}
+	props := schemaProperties(schema)
+	fileProp, _ := props["planner_handoff_file"].(map[string]interface{})
+	h.check("tools/list "+name+" planner_handoff_file object", fileProp["type"] == "object")
+	h.check("tools/list "+name+" planner_handoff_file additionalProperties false", fileProp["additionalProperties"] == false)
+	required, _ := fileProp["required"].([]interface{})
+	requiredSet := map[string]bool{}
+	for _, item := range required {
+		if s, ok := item.(string); ok {
+			requiredSet[s] = true
+		}
+	}
+	h.check("tools/list "+name+" planner_handoff_file requires download_url", requiredSet["download_url"])
+	h.check("tools/list "+name+" planner_handoff_file requires file_id", requiredSet["file_id"])
 }
 
 func rejectUnsafeSchemaProperties(h *harness, toolName string, schema map[string]interface{}) {

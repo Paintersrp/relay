@@ -108,6 +108,7 @@ type ToolDefinition struct {
 	InputSchema  json.RawMessage `json:"inputSchema"`
 	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
 	Annotations  map[string]any  `json:"annotations,omitempty"`
+	Meta         map[string]any  `json:"_meta,omitempty"`
 }
 
 // ToolCallParams is the params for tools/call.

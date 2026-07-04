@@ -12,6 +12,8 @@ const REPO_ROOT = resolve(SCRIPT_DIR, '..', '..');
 const ENV_FILE_PATHS = [join(REPO_ROOT, '.env'), join(REPO_ROOT, '.env.local')];
 const REQUIRED_TOOL_NAMES = [
   'create_run_from_planner_handoff',
+  'create_run_from_planner_handoff_file',
+  'validate_planner_handoff_for_compile',
   'submit_planner_pass_plan',
 ];
 
@@ -382,6 +384,10 @@ function runSelfTest(commandSpec) {
             throw new ValidationError(`Relay MCP tools/list did not include required tool ${requiredToolName}.`);
           }
         }
+        for (const fileToolName of ['create_run_from_planner_handoff_file', 'validate_planner_handoff_for_compile']) {
+          const tool = tools.find((candidate) => candidate?.name === fileToolName);
+          assertPlannerHandoffFileParameterTool(tool, fileToolName);
+        }
 
         console.error(`tools/list: ok (${tools.length} tools)`);
         console.error(`required tools: ${REQUIRED_TOOL_NAMES.join(', ')}`);
@@ -393,6 +399,24 @@ function runSelfTest(commandSpec) {
       }
     })();
   });
+}
+
+function assertPlannerHandoffFileParameterTool(tool, toolName) {
+  const params = tool?._meta?.['openai/fileParams'];
+  if (!Array.isArray(params) || params.length !== 1 || params[0] !== 'planner_handoff_file') {
+    throw new ValidationError(`${toolName} is missing _meta.openai/fileParams=["planner_handoff_file"].`);
+  }
+  const fileSchema = tool?.inputSchema?.properties?.planner_handoff_file;
+  if (!fileSchema || fileSchema.type !== 'object') {
+    throw new ValidationError(`${toolName} planner_handoff_file schema must be an object.`);
+  }
+  if (fileSchema.additionalProperties !== false) {
+    throw new ValidationError(`${toolName} planner_handoff_file schema must set additionalProperties=false.`);
+  }
+  const required = Array.isArray(fileSchema.required) ? new Set(fileSchema.required) : new Set();
+  if (!required.has('download_url') || !required.has('file_id')) {
+    throw new ValidationError(`${toolName} planner_handoff_file schema must require download_url and file_id.`);
+  }
 }
 
 function exitCodeFromSignal(signal) {

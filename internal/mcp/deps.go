@@ -15,6 +15,7 @@ type MCPDeps struct {
 	Store       *store.Store
 	Log         *slog.Logger
 	ToolProfile ToolProfile
+	FileFetcher FileParameterFetcher
 
 	// Drift is the optional internal drift reviewer service. It is constructed
 	// with a nil provider by default, returning model_provider_unavailable until
@@ -31,6 +32,7 @@ func NewDepsFromEnv(st *store.Store, log *slog.Logger) *MCPDeps {
 		Store:       st,
 		Log:         log,
 		ToolProfile: ToolProfileFromEnv(log),
+		FileFetcher: NewHTTPSFileParameterFetcher(),
 	}
 	deps.Drift = driftapp.NewService(appplans.NewService(st), driftapp.NewReviewerFromEnv(log), log)
 	return deps

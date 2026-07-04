@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -601,15 +600,12 @@ func TestHandleCreateRunFromPlannerHandoffFile_SuccessExactSHA(t *testing.T) {
 	srv := NewServer(discardLogger(), deps)
 
 	markdownBytes := []byte("---\ntitle: File Run\nrepo_target: test-repo\nbranch_context: main\n---\r\n\r\n<compiler_input>\r\n```yaml\r\ncompiler_input:\r\n  goal: Test.\r\n  scope: Test.\r\n  file_targets:\r\n    - path: test.go\r\n  implementation_steps:\r\n    - id: S1\r\n      title: Step\r\n      action: modify\r\n      instructions: Run.\r\n  code_requirements:\r\n    - id: CR1\r\n      requirement: Test.\r\n  validation_contract:\r\n    mode: commands\r\n    failure_policy: block\r\n  completion_contract:\r\n    done_when:\r\n      - Done.\r\n```\r\n</compiler_input>\r\n\r\n# File Run\r\n\r\nExact bytes.\r\n")
-	handoffPath := filepath.Join(t.TempDir(), "reviewed-handoff.md")
-	if err := os.WriteFile(handoffPath, markdownBytes, 0644); err != nil {
-		t.Fatalf("write handoff fixture: %v", err)
-	}
+	injectHandoffFetch(t, deps, "success-exact-sha", "reviewed-handoff.md", markdownBytes)
 	sum := sha256.Sum256(markdownBytes)
 	expectedSHA := hex.EncodeToString(sum[:])
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_file": handoffPath,
+		"planner_handoff_file": fileReference("success-exact-sha", "reviewed-handoff.md"),
 		"expected_sha256":      expectedSHA,
 		"repo_target":          "test-repo",
 		"source":               "mcp_test_file",
@@ -658,8 +654,8 @@ func TestHandleCreateRunFromPlannerHandoffFile_SuccessExactSHA(t *testing.T) {
 	if row.SourceArtifactPath != "" {
 		t.Fatalf("provenance row should not persist local file path, got %q", row.SourceArtifactPath)
 	}
-	if contains(row.SubmissionArgsJson, handoffPath) {
-		t.Fatalf("submission args should not persist local file path: %s", row.SubmissionArgsJson)
+	if contains(row.SubmissionArgsJson, "signature=secret") || contains(row.SubmissionArgsJson, "download_url") {
+		t.Fatalf("submission args should not persist file download details: %s", row.SubmissionArgsJson)
 	}
 
 	storedHandoff, err := artifacts.Read(out.RunID, "planner_handoff", "planner_handoff.md")
@@ -678,8 +674,8 @@ func TestHandleCreateRunFromPlannerHandoffFile_SuccessExactSHA(t *testing.T) {
 	if !contains(provenanceText, `"source_mode": "file_parameter"`) {
 		t.Fatalf("expected file source mode in provenance artifact: %s", provenanceText)
 	}
-	if contains(provenanceText, handoffPath) {
-		t.Fatalf("provenance artifact should not persist local file path: %s", provenanceText)
+	if contains(provenanceText, "signature=secret") || contains(provenanceText, "download_url") {
+		t.Fatalf("provenance artifact should not persist file download details: %s", provenanceText)
 	}
 }
 
@@ -687,13 +683,10 @@ func TestHandleCreateRunFromPlannerHandoffFile_SHAMismatchCreatesNoRun(t *testin
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	handoffPath := filepath.Join(t.TempDir(), "reviewed-handoff.md")
-	if err := os.WriteFile(handoffPath, []byte("---\ntitle: File Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# File Run\n"), 0644); err != nil {
-		t.Fatalf("write handoff fixture: %v", err)
-	}
+	injectHandoffFetch(t, deps, "sha-mismatch", "reviewed-handoff.md", []byte("---\ntitle: File Run\nrepo_target: test-repo\nbranch_context: main\n---\n\n<compiler_input>\n```yaml\ncompiler_input:\n  goal: Test.\n  scope: Test.\n  file_targets:\n    - path: test.go\n  implementation_steps:\n    - id: S1\n      title: Step\n      action: modify\n      instructions: Run.\n  code_requirements:\n    - id: CR1\n      requirement: Test.\n  validation_contract:\n    mode: commands\n    failure_policy: block\n  completion_contract:\n    done_when:\n      - Done.\n```\n</compiler_input>\n\n# File Run\n"))
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_file": handoffPath,
+		"planner_handoff_file": fileReference("sha-mismatch", "reviewed-handoff.md"),
 		"expected_sha256":      strings.Repeat("0", 64),
 		"repo_target":          "test-repo",
 	})
@@ -716,13 +709,10 @@ func TestHandleCreateRunFromPlannerHandoffFile_PassWithoutPlanRejectedBeforeWrit
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
 
-	handoffPath := filepath.Join(t.TempDir(), "reviewed-handoff.md")
-	if err := os.WriteFile(handoffPath, []byte(validMCPHandoffMarkdown("File Pass Without Plan", "test-repo")), 0644); err != nil {
-		t.Fatalf("write handoff fixture: %v", err)
-	}
+	injectHandoffFetch(t, deps, "pass-without-plan", "reviewed-handoff.md", []byte(validMCPHandoffMarkdown("File Pass Without Plan", "test-repo")))
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_file": handoffPath,
+		"planner_handoff_file": fileReference("pass-without-plan", "reviewed-handoff.md"),
 		"repo_target":          "test-repo",
 		"pass_id":              "PASS-001",
 	})
@@ -756,7 +746,8 @@ func TestHandleValidatePlannerHandoffForCompile_StrictInputAndSources(t *testing
 		wantText string
 	}{
 		{name: "unknown field rejected", args: map[string]any{"planner_handoff_markdown": markdown, "repo_target": "test-repo", "surprise": true}, wantErr: true, wantText: "unknown field"},
-		{name: "both source fields rejected", args: map[string]any{"planner_handoff_markdown": markdown, "planner_handoff_file": "handoff.md", "repo_target": "test-repo"}, wantErr: true, wantText: "exactly one"},
+		{name: "both source fields rejected", args: map[string]any{"planner_handoff_markdown": markdown, "planner_handoff_file": fileReference("both", "handoff.md"), "repo_target": "test-repo"}, wantErr: true, wantText: "exactly one"},
+		{name: "string file rejected", args: map[string]any{"planner_handoff_file": "handoff.md", "repo_target": "test-repo"}, wantErr: true, wantText: "cannot unmarshal string"},
 		{name: "neither source field rejected", args: map[string]any{"repo_target": "test-repo"}, wantErr: true, wantText: "exactly one"},
 		{name: "inline expected sha rejected", args: map[string]any{"planner_handoff_markdown": markdown, "repo_target": "test-repo", "expected_sha256": strings.Repeat("0", 64)}, wantErr: true, wantText: "expected_sha256"},
 		{name: "valid inline accepted", args: map[string]any{"planner_handoff_markdown": markdown, "repo_target": "test-repo"}, wantErr: false},
@@ -794,15 +785,12 @@ func TestHandleValidatePlannerHandoffForCompile_FileMode(t *testing.T) {
 	srv := NewServer(discardLogger(), deps)
 
 	markdownBytes := []byte(validMCPHandoffMarkdown("Standalone File Validation", "test-repo"))
-	handoffPath := filepath.Join(t.TempDir(), "reviewed-handoff.md")
-	if err := os.WriteFile(handoffPath, markdownBytes, 0644); err != nil {
-		t.Fatalf("write handoff fixture: %v", err)
-	}
+	injectHandoffFetch(t, deps, "validate-file", "reviewed-handoff.md", markdownBytes)
 	sum := sha256.Sum256(markdownBytes)
 	expectedSHA := hex.EncodeToString(sum[:])
 
 	args, _ := json.Marshal(map[string]any{
-		"planner_handoff_file": handoffPath,
+		"planner_handoff_file": fileReference("validate-file", "reviewed-handoff.md"),
 		"expected_sha256":      expectedSHA,
 		"repo_target":          "test-repo",
 	})
@@ -814,12 +802,12 @@ func TestHandleValidatePlannerHandoffForCompile_FileMode(t *testing.T) {
 		t.Fatalf("standalone validation must not create runs, got %d", got)
 	}
 	rawResult := string(mustMarshal(t, result.StructuredContent))
-	if contains(rawResult, handoffPath) {
-		t.Fatalf("standalone validation result must not expose file path: %s", rawResult)
+	if contains(rawResult, "signature=secret") || contains(rawResult, "download_url") {
+		t.Fatalf("standalone validation result must not expose file URL details: %s", rawResult)
 	}
 
 	badFormatArgs, _ := json.Marshal(map[string]any{
-		"planner_handoff_file": handoffPath,
+		"planner_handoff_file": fileReference("validate-file", "reviewed-handoff.md"),
 		"expected_sha256":      "ABC",
 		"repo_target":          "test-repo",
 	})
@@ -829,7 +817,7 @@ func TestHandleValidatePlannerHandoffForCompile_FileMode(t *testing.T) {
 	}
 
 	mismatchArgs, _ := json.Marshal(map[string]any{
-		"planner_handoff_file": handoffPath,
+		"planner_handoff_file": fileReference("validate-file", "reviewed-handoff.md"),
 		"expected_sha256":      strings.Repeat("0", 64),
 		"repo_target":          "test-repo",
 	})
@@ -877,66 +865,44 @@ func TestHandleValidatePlannerHandoffForCompile_PassWithoutPlanBlocks(t *testing
 func TestHandleCreateRunFromPlannerHandoffFile_InvalidFileInputs(t *testing.T) {
 	cases := []struct {
 		name string
-		path func(t *testing.T) string
+		args map[string]any
+		err  *FileParameterError
 	}{
 		{
-			name: "missing",
-			path: func(t *testing.T) string {
-				return ""
-			},
+			name: "string rejected",
+			args: map[string]any{"planner_handoff_file": "handoff.md", "repo_target": "test-repo"},
 		},
 		{
-			name: "directory",
-			path: func(t *testing.T) string {
-				return t.TempDir()
-			},
+			name: "missing download_url",
+			args: map[string]any{"planner_handoff_file": map[string]any{"file_id": "missing-url", "file_name": "handoff.md"}, "repo_target": "test-repo"},
+			err:  fileParamErr(MCPBlockerFileReferenceInvalid, "planner_handoff_file.download_url is required"),
 		},
 		{
-			name: "oversized",
-			path: func(t *testing.T) string {
-				path := filepath.Join(t.TempDir(), "too-large.md")
-				if err := os.WriteFile(path, bytes.Repeat([]byte("a"), maxPlannerHandoffFileBytes+1), 0644); err != nil {
-					t.Fatalf("write oversized fixture: %v", err)
-				}
-				return path
-			},
-		},
-		{
-			name: "non_md",
-			path: func(t *testing.T) string {
-				path := filepath.Join(t.TempDir(), "handoff.txt")
-				if err := os.WriteFile(path, []byte("# Handoff\n"), 0644); err != nil {
-					t.Fatalf("write non-md fixture: %v", err)
-				}
-				return path
-			},
+			name: "unsafe target",
+			args: map[string]any{"planner_handoff_file": fileReference("unsafe", "handoff.md"), "repo_target": "test-repo"},
+			err:  fileParamErr(MCPBlockerUnsafeDownloadTarget, "planner_handoff_file.download_url target is not public routable"),
 		},
 		{
 			name: "empty",
-			path: func(t *testing.T) string {
-				path := filepath.Join(t.TempDir(), "empty.md")
-				if err := os.WriteFile(path, nil, 0644); err != nil {
-					t.Fatalf("write empty fixture: %v", err)
-				}
-				return path
-			},
+			args: map[string]any{"planner_handoff_file": fileReference("empty", "handoff.md"), "repo_target": "test-repo"},
+			err:  fileParamErr(MCPBlockerFileDownloadEmpty, "planner_handoff_file response was empty"),
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			deps := setupTestDeps(t)
+			if tc.err != nil {
+				deps.FileFetcher = &fakeFileParameterFetcher{err: tc.err}
+			}
 			srv := NewServer(discardLogger(), deps)
-			args, _ := json.Marshal(map[string]any{
-				"planner_handoff_file": tc.path(t),
-				"repo_target":          "test-repo",
-			})
+			args, _ := json.Marshal(tc.args)
 			result := srv.HandleCreateRunFromPlannerHandoffFile(args)
 			if !result.IsError {
 				t.Fatal("expected validation error")
 			}
-			if !contains(result.Content[0].Text, "VALIDATION_ERROR") {
-				t.Fatalf("expected VALIDATION_ERROR, got: %s", result.Content[0].Text)
+			if contains(result.Content[0].Text, "signature=secret") || contains(result.Content[0].Text, "https://files.example.test") {
+				t.Fatalf("file blocker leaked URL details: %s", result.Content[0].Text)
 			}
 			if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 				t.Fatalf("expected no run rows, got %d", got)

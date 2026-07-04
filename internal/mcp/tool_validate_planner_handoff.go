@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,15 +12,15 @@ import (
 )
 
 type validatePlannerHandoffInput struct {
-	PlannerHandoffMarkdown string `json:"planner_handoff_markdown,omitempty"`
-	PlannerHandoffFile     string `json:"planner_handoff_file,omitempty"`
-	ExpectedSHA256         string `json:"expected_sha256,omitempty"`
-	RepoTarget             string `json:"repo_target,omitempty"`
-	BranchContext          string `json:"branch_context,omitempty"`
-	PlanID                 string `json:"plan_id,omitempty"`
-	PassID                 string `json:"pass_id,omitempty"`
-	ContextPacketID        string `json:"context_packet_id,omitempty"`
-	SourceSnapshotID       string `json:"source_snapshot_id,omitempty"`
+	PlannerHandoffMarkdown string                `json:"planner_handoff_markdown,omitempty"`
+	PlannerHandoffFile     *ChatGPTFileReference `json:"planner_handoff_file,omitempty"`
+	ExpectedSHA256         string                `json:"expected_sha256,omitempty"`
+	RepoTarget             string                `json:"repo_target,omitempty"`
+	BranchContext          string                `json:"branch_context,omitempty"`
+	PlanID                 string                `json:"plan_id,omitempty"`
+	PassID                 string                `json:"pass_id,omitempty"`
+	ContextPacketID        string                `json:"context_packet_id,omitempty"`
+	SourceSnapshotID       string                `json:"source_snapshot_id,omitempty"`
 }
 
 func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage) ToolCallResult {
@@ -37,14 +38,14 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 	}
 
 	markdownStr := strings.TrimSpace(input.PlannerHandoffMarkdown)
-	filePath := strings.TrimSpace(input.PlannerHandoffFile)
+	hasFile := input.PlannerHandoffFile != nil
 
-	if markdownStr == "" && filePath == "" {
+	if markdownStr == "" && !hasFile {
 		return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
 			newMCPBlocker(MCPBlockerSchemaMismatch, "exactly one of planner_handoff_markdown or planner_handoff_file is required", false, []MCPBlockerEvidence{{Kind: "schema", Ref: "planner_handoff_source"}}, []string{"Provide exactly one reviewed handoff source."}),
 		}, nil)
 	}
-	if markdownStr != "" && filePath != "" {
+	if markdownStr != "" && hasFile {
 		return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
 			newMCPBlocker(MCPBlockerSchemaMismatch, "provide exactly one of planner_handoff_markdown or planner_handoff_file, not both", false, []MCPBlockerEvidence{{Kind: "schema", Ref: "planner_handoff_source"}}, []string{"Submit either inline markdown or one file parameter, not both."}),
 		}, nil)
@@ -53,13 +54,13 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 	var sourceMode string
 	var submittedSHA string
 
-	if filePath != "" {
-		markdownBytes, sha, err := readPlannerHandoffFile(filePath)
-		if err != nil {
-			return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
-				newMCPBlocker(MCPBlockerBlockedPath, err.Error(), true, plannerHandoffFileEvidence(filePath), []string{"Provide one readable reviewed Markdown handoff file and retry."}),
-			}, nil)
+	if hasFile {
+		content, fetchErr := s.fileParameterFetcher().FetchPlannerHandoff(context.Background(), *input.PlannerHandoffFile)
+		if fetchErr != nil {
+			return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{fileParameterBlocker(fetchErr)}, nil)
 		}
+		markdownBytes := content.Bytes
+		sha := sha256Hex(markdownBytes)
 		submittedSHA = sha
 		sourceMode = "file_parameter"
 
@@ -78,12 +79,12 @@ func (s *Server) HandleValidatePlannerHandoffForCompile(rawArgs json.RawMessage)
 					SourceMode:      "file_parameter",
 					ArtifactIdentity: SubmittedArtifactIdentity{
 						ArtifactKind: "planner_handoff",
-						DisplayName:  safeArtifactDisplayName(filePath, "planner-handoff.md"),
+						DisplayName:  safeArtifactDisplayName(content.DisplayName, "planner-handoff.md"),
 						ByteCount:    int64(len(markdownBytes)),
 					},
 				}
 				return toolBlockedResult("validate_planner_handoff_for_compile", []MCPBlocker{
-					newMCPBlocker(MCPBlockerExpectedHashMismatch, "expected_sha256 does not match submitted handoff sha256", true, expectedHashMismatchEvidence(submittedSHA, expectedSHA, prov.ArtifactIdentity.DisplayName), []string{"Recompute expected_sha256 from the reviewed handoff file or submit the exact reviewed bytes."}),
+					newMCPBlocker(MCPBlockerExpectedHashMismatch, "expected_sha256 does not match submitted handoff sha256", true, expectedHashMismatchEvidence(submittedSHA, expectedSHA, prov.ArtifactIdentity.DisplayName), []string{"Recompute expected_sha256 from the reviewed uploaded handoff file or submit the exact reviewed bytes."}),
 				}, map[string]any{"provenance": prov})
 			}
 		}
@@ -188,8 +189,26 @@ var validatePlannerHandoffSchema = json.RawMessage(`{
       "description": "Full Planner handoff markdown content to validate. Provide exactly one of planner_handoff_markdown or planner_handoff_file."
     },
     "planner_handoff_file": {
-      "type": "string",
-      "description": "Mounted MCP file-parameter path to one reviewed Planner handoff Markdown file to validate. Provide exactly one of planner_handoff_markdown or planner_handoff_file."
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["download_url", "file_id"],
+      "description": "Structured ChatGPT file reference for one reviewed Planner handoff Markdown file to validate. Provide exactly one of planner_handoff_markdown or planner_handoff_file.",
+      "properties": {
+        "download_url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "file_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mime_type": {
+          "type": "string"
+        },
+        "file_name": {
+          "type": "string"
+        }
+      }
     },
     "expected_sha256": {
       "type": "string",
@@ -232,4 +251,5 @@ var ToolValidatePlannerHandoffForCompile = ToolDefinition{
 		"mutate git, or browse arbitrary paths. " +
 		"WARNING: do not include secrets, tokens, auth headers, private keys, or signed URLs.",
 	InputSchema: validatePlannerHandoffSchema,
+	Meta:        map[string]any{"openai/fileParams": []string{"planner_handoff_file"}},
 }

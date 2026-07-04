@@ -26,6 +26,12 @@ const (
 	MCPBlockerToolUnavailable          = "tool_unavailable"
 	MCPBlockerToolSchemaStale          = "tool_schema_stale"
 	MCPBlockerUnsafeRequest            = "unsafe_request"
+	MCPBlockerFileReferenceInvalid     = "file_reference_invalid"
+	MCPBlockerUnsafeDownloadTarget     = "unsafe_download_target"
+	MCPBlockerFileDownloadFailed       = "file_download_failed"
+	MCPBlockerFileDownloadStatus       = "file_download_status"
+	MCPBlockerFileDownloadEmpty        = "file_download_empty"
+	MCPBlockerFileDownloadTooLarge     = "file_download_too_large"
 )
 
 const (

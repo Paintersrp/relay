@@ -15,7 +15,7 @@
 ## Current GPT-Facing Action vs. Local/Dev Tool Inventory
 
 1.  **Project MCP Actions (Production/GPT-Facing):**
-    *   **Action:** `create_run_from_planner_handoff_file` - Preferred for reviewed Planner handoff Markdown files. Relay reads the single MCP-supplied `planner_handoff_file`, verifies optional `expected_sha256`, creates/starts the run, and records exact submitted-byte provenance.
+    *   **Action:** `create_run_from_planner_handoff_file` - Preferred for reviewed Planner handoff Markdown files. Relay retrieves the single ChatGPT file-reference `planner_handoff_file` through bounded HTTPS, verifies optional `expected_sha256`, creates/starts the run, and records exact submitted-byte provenance.
     *   **Action:** `create_run_from_planner_handoff` - Fallback for chat-only reviewed handoff Markdown content. Relay creates/starts the run and handles all downstream compiler, validator, and executor tasks.
     *   **Action:** `submit_planner_pass_plan` — Submits a reviewed structured Plan of Passes JSON artifact to Relay. Relay creates managed plan/pass records only.
     *   **User Gating:** Each submission action requires explicit user confirmation in chat before invocation.
@@ -70,7 +70,7 @@ When `prepare_handoff_context` returns blocked or warning states:
 Shared blocker envelope fields in order: `code`, `message`, `recoverable`, `evidence`, `next_actions`.
 Blocked MCP tool results set `ok=false`, `status="blocked"`, `isError=true`, and expose the bounded envelope in `structuredContent`. Business-state blockers are not successful tool calls. Deterministic compile-preflight blockers use the same envelope; bounded preflight details, work-packet summaries, and provenance diagnostics may appear only under `metadata`.
 
-Evidence is limited to safe identifiers or repo-relative slash paths; absolute local paths, traversal paths, drive-letter paths, UNC paths, control characters, raw diagnostics, and full content dumps are rejected or omitted. Artifact identity never exposes mounted MCP paths. Handoff metadata paths persisted as provenance are empty or normalized repo-relative slash paths only. Evidence and next-action arrays are bounded to eight items.
+Evidence is limited to safe identifiers or repo-relative slash paths; absolute local paths, traversal paths, drive-letter paths, UNC paths, control characters, raw diagnostics, and full content dumps are rejected or omitted. Artifact identity never exposes file transport paths or signed download URLs. Handoff metadata paths persisted as provenance are empty or normalized repo-relative slash paths only. Evidence and next-action arrays are bounded to eight items.
 
 Example:
 
@@ -97,7 +97,7 @@ Example:
 
 Required shared taxonomy codes: `unknown_resource`, `unknown_repository`, `alias_ambiguous`, `source_snapshot_stale`, `dirty_worktree`, `required_context_missing`, `required_context_truncated`, `blocked_path`, `redaction_failed`, `schema_mismatch`, `expected_hash_mismatch`, `tool_unavailable`, `tool_schema_stale`, `unsafe_request`.
 
-Successful run submission responses include normalized exact-artifact provenance without exposing MCP mount paths: `submitted_handoff_sha256`, optional `expected_sha256`, `sha_match_status` (`not_supplied`, `matched`, or `mismatched`), `source_mode` (`inline` or `file_parameter`), and `artifact_identity` containing `artifact_kind="planner_handoff"`, a sanitized `display_name`, and `byte_count`. `expected_hash_mismatch` is recoverable and blocks before any durable run, artifact, provenance, event, or pass-status write.
+Successful run submission responses include normalized exact-artifact provenance without exposing file transport details: `submitted_handoff_sha256`, optional `expected_sha256`, `sha_match_status` (`not_supplied`, `matched`, or `mismatched`), `source_mode` (`inline` or `file_parameter`), and `artifact_identity` containing `artifact_kind="planner_handoff"`, a sanitized `display_name`, and `byte_count`. `expected_hash_mismatch` is recoverable and blocks before any durable run, artifact, provenance, event, or pass-status write.
 
 ## Project-Orchestrator Work Tools (Context-Broker Profile)
 
@@ -296,7 +296,12 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 **Input:**
 ```json
 {
-  "planner_handoff_file": "string (required) - MCP file-parameter path to the reviewed .md handoff",
+  "planner_handoff_file": {
+    "download_url": "string (required) - temporary HTTPS URL supplied by ChatGPT",
+    "file_id": "string (required) - ChatGPT file identifier",
+    "mime_type": "string (optional)",
+    "file_name": "string (optional) - advisory display name; must end in .md when present"
+  },
   "expected_sha256": "string (optional) - lowercase hex SHA-256 of the exact file bytes",
   "repo_target": "string (optional) - falls back to handoff metadata/frontmatter repo_target",
   "branch_context": "string (optional) - falls back to handoff metadata/frontmatter branch_context or 'main'",
@@ -312,9 +317,11 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 
 **Output:** `ok`, `tool`, `run_id`, `status`, `lifecycle_state`, `review_url`, `artifact_kinds`, `validation_summary`, `plan_id` (when associated), `pass_id` (when associated), `provenance`, `submitted_handoff_sha256`, `expected_sha256` (when supplied), `sha_match`, `source_mode`
 
-**Validation:** Relay reads only the supplied `planner_handoff_file`, requires a `.md` file, rejects directories, empty files, and files larger than 1 MiB, computes SHA-256 over the exact bytes before converting to text, and rejects `expected_sha256` mismatches before creating any run or artifact.
+**Descriptor:** The tool advertises top-level `_meta["openai/fileParams"]=["planner_handoff_file"]`. Descriptive schema text alone is not enough to activate ChatGPT file transfer.
 
-**Safety boundary:** This is a controlled run-submission ingestion path, not a context broker file-read tool. It does not browse paths, read repositories generically, execute shell commands, mutate git, or persist absolute local file paths as artifact identity.
+**Validation:** Relay retrieves only the supplied structured ChatGPT file reference through bounded HTTPS, rejects unsafe targets, userinfo, non-success responses, empty responses, and bodies larger than 1 MiB, computes SHA-256 over the exact downloaded bytes before converting to text, and rejects `expected_sha256` mismatches before creating any run or artifact.
+
+**Safety boundary:** This is a controlled run-submission ingestion path, not a context broker file-read tool. It does not browse paths, read repositories generically, execute shell commands, mutate git, or persist the temporary download URL as artifact identity. Signed download URLs are transient secrets and must not be logged, echoed, stored, or placed in blocker evidence.
 
 **Preflight gate:** Before creating any run or artifact, both inline and file-based run submission handlers perform a deterministic compile-aware preflight (`validate_planner_handoff_for_compile`). Blocking preflight failures return a tool error and prevent durable run/provenance writes. The standalone preflight tool is also available for validation-only use without creating runs (see section 2a below).
 
@@ -334,7 +341,12 @@ The registered tool set is determined by the `RELAY_MCP_PROFILE` environment var
 {
   "additionalProperties": false,
   "planner_handoff_markdown": "string (one of markdown or file required) — full handoff markdown content",
-  "planner_handoff_file": "string (one of markdown or file required) — MCP file-parameter path to the reviewed .md handoff",
+  "planner_handoff_file": {
+    "download_url": "string (required) — temporary HTTPS URL supplied by ChatGPT",
+    "file_id": "string (required)",
+    "mime_type": "string (optional)",
+    "file_name": "string (optional) — advisory .md display name"
+  },
   "expected_sha256": "string (optional) — lowercase hex SHA-256 of the exact file bytes (file mode only)",
   "repo_target": "string (optional) — falls back to handoff metadata/frontmatter repo_target",
   "branch_context": "string (optional) — falls back to handoff metadata/frontmatter branch_context or 'main'",
@@ -397,7 +409,7 @@ Blocking validation results return `isError:true` and the shared blocker envelop
 
 **Strict input:** Unknown top-level fields are rejected. Provide exactly one source field: `planner_handoff_markdown` or `planner_handoff_file`. `expected_sha256` is valid only with `planner_handoff_file`, and `pass_id` requires `plan_id`.
 
-**Safety boundary:** This tool does not create runs, submit plans, dispatch executors, compile packets, mutate git, or browse arbitrary paths. It is a read-only validation gate. Success returns a non-error preflight payload. Blocking results return the shared typed blocker envelope with bounded compatibility details under `metadata`.
+**Safety boundary:** This tool does not create runs, submit plans, dispatch executors, compile packets, mutate git, or browse arbitrary paths. File mode uses the same bounded HTTPS ChatGPT file-reference ingestion path as run submission and does not expose signed URLs. It is a read-only validation gate. Success returns a non-error preflight payload. Blocking results return the shared typed blocker envelope with bounded compatibility details under `metadata`.
 
 **Relationship to run submission:** Run submission tools (`create_run_from_planner_handoff`, `create_run_from_planner_handoff_file`) perform the same preflight checks internally before creating any run. Blocking preflight failures prevent run/provenance/artifact writes. Preflight success is not a submission trigger — run submission still requires a reviewed Planner handoff and explicit user confirmation.
 

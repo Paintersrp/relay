@@ -1,15 +1,53 @@
 package mcp
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type fakeFileParameterFetcher struct {
+	content map[string]FileParameterContent
+	err     *FileParameterError
+	calls   []ChatGPTFileReference
+}
+
+func (f *fakeFileParameterFetcher) FetchPlannerHandoff(ctx context.Context, ref ChatGPTFileReference) (FileParameterContent, *FileParameterError) {
+	f.calls = append(f.calls, ref)
+	if f.err != nil {
+		return FileParameterContent{}, f.err
+	}
+	if ref.DownloadURL == "" || ref.FileID == "" {
+		return FileParameterContent{}, fileParamErr(MCPBlockerFileReferenceInvalid, "planner_handoff_file requires download_url and file_id")
+	}
+	if f.content != nil {
+		if out, ok := f.content[ref.FileID]; ok {
+			return out, nil
+		}
+	}
+	return FileParameterContent{}, fileParamErr(MCPBlockerFileDownloadFailed, "planner_handoff_file could not be downloaded")
+}
+
+func fileReference(fileID, fileName string) map[string]any {
+	return map[string]any{
+		"download_url": "https://files.example.test/download/" + fileID + "?signature=secret",
+		"file_id":      fileID,
+		"mime_type":    "text/markdown",
+		"file_name":    fileName,
+	}
+}
+
+func injectHandoffFetch(t *testing.T, deps *MCPDeps, fileID, fileName string, markdown []byte) {
+	t.Helper()
+	deps.FileFetcher = &fakeFileParameterFetcher{content: map[string]FileParameterContent{
+		fileID: {Bytes: markdown, DisplayName: safeArtifactDisplayName(fileName, "planner-handoff.md")},
+	}}
+}
 
 func TestCreateRunFromPlannerHandoffInlineReturnsExactProvenance(t *testing.T) {
 	setupTestArtifactDir(t)
@@ -40,20 +78,49 @@ func TestCreateRunFromPlannerHandoffInlineReturnsExactProvenance(t *testing.T) {
 	}
 }
 
+func TestPlannerHandoffFileToolsDeclareChatGPTFileParameter(t *testing.T) {
+	srv := NewServer(discardLogger(), &MCPDeps{ToolProfile: ToolProfileRestricted})
+	tools := map[string]ToolDefinition{}
+	for _, tool := range srv.tools {
+		tools[tool.Name] = tool
+	}
+	for _, name := range []string{"create_run_from_planner_handoff_file", "validate_planner_handoff_for_compile"} {
+		t.Run(name, func(t *testing.T) {
+			tool, ok := tools[name]
+			if !ok {
+				t.Fatalf("tool %q not registered", name)
+			}
+			params, ok := tool.Meta["openai/fileParams"].([]string)
+			if !ok || len(params) != 1 || params[0] != "planner_handoff_file" {
+				t.Fatalf("unexpected file params: %#v", tool.Meta["openai/fileParams"])
+			}
+			var schema map[string]any
+			if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+				t.Fatalf("decode schema: %v", err)
+			}
+			props := schema["properties"].(map[string]any)
+			fileProp := props["planner_handoff_file"].(map[string]any)
+			if fileProp["type"] != "object" || fileProp["additionalProperties"] != false {
+				t.Fatalf("unexpected file schema: %+v", fileProp)
+			}
+			required := fileProp["required"].([]any)
+			if len(required) != 2 || required[0] != "download_url" || required[1] != "file_id" {
+				t.Fatalf("unexpected required fields: %+v", required)
+			}
+		})
+	}
+}
+
 func TestCreateRunFromPlannerHandoffFileReturnsSanitizedIdentity(t *testing.T) {
 	setupTestArtifactDir(t)
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
-	dir := t.TempDir()
 	markdown := []byte(validMCPHandoffMarkdown("File Provenance", "test-repo"))
-	path := filepath.Join(dir, "reviewed.md")
-	if err := os.WriteFile(path, markdown, 0644); err != nil {
-		t.Fatalf("write handoff: %v", err)
-	}
+	injectHandoffFetch(t, deps, "file-provenance", "reviewed.md", markdown)
 	sum := sha256.Sum256(markdown)
 	expected := hex.EncodeToString(sum[:])
 	args := mustMarshal(t, map[string]any{
-		"planner_handoff_file": path,
+		"planner_handoff_file": fileReference("file-provenance", "reviewed.md"),
 		"expected_sha256":      expected,
 		"repo_target":          "test-repo",
 	})
@@ -68,7 +135,7 @@ func TestCreateRunFromPlannerHandoffFileReturnsSanitizedIdentity(t *testing.T) {
 	if out.SubmittedHandoffSHA256 != expected || out.ExpectedSHA256 != expected || out.SHAMatchStatus != "matched" {
 		t.Fatalf("unexpected hash provenance: %+v", out)
 	}
-	if out.ArtifactIdentity == nil || out.ArtifactIdentity.DisplayName == "" || out.ArtifactIdentity.DisplayName == path || strings.Contains(out.ArtifactIdentity.DisplayName, `\`) || strings.Contains(out.ArtifactIdentity.DisplayName, `/`) {
+	if out.ArtifactIdentity == nil || out.ArtifactIdentity.DisplayName != "reviewed.md" || strings.Contains(out.ArtifactIdentity.DisplayName, `\`) || strings.Contains(out.ArtifactIdentity.DisplayName, `/`) {
 		t.Fatalf("unsafe artifact identity: %+v", out.ArtifactIdentity)
 	}
 }
@@ -77,13 +144,9 @@ func TestCreateRunFromPlannerHandoffFileHashMismatchStructuredBlocker(t *testing
 	setupTestArtifactDir(t)
 	deps := setupTestDeps(t)
 	srv := NewServer(discardLogger(), deps)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "reviewed.md")
-	if err := os.WriteFile(path, []byte(validMCPHandoffMarkdown("Mismatch", "test-repo")), 0644); err != nil {
-		t.Fatalf("write handoff: %v", err)
-	}
+	injectHandoffFetch(t, deps, "mismatch", "reviewed.md", []byte(validMCPHandoffMarkdown("Mismatch", "test-repo")))
 	args := mustMarshal(t, map[string]any{
-		"planner_handoff_file": path,
+		"planner_handoff_file": fileReference("mismatch", "reviewed.md"),
 		"expected_sha256":      "0000000000000000000000000000000000000000000000000000000000000000",
 		"repo_target":          "test-repo",
 	})
@@ -106,8 +169,8 @@ func TestCreateRunFromPlannerHandoffFileHashMismatchStructuredBlocker(t *testing
 	if !strings.Contains(evidence, "submitted_sha256") || !strings.Contains(evidence, "expected_sha256") || !strings.Contains(evidence, "artifact_name") {
 		t.Fatalf("expected safe hash and artifact-name evidence, got %s", evidence)
 	}
-	if strings.Contains(evidence, dir) || strings.Contains(evidence, path) {
-		t.Fatalf("evidence leaked local path: %s", evidence)
+	if strings.Contains(evidence, "signature=secret") || strings.Contains(string(mustMarshal(t, result.StructuredContent)), "signature=secret") {
+		t.Fatalf("evidence leaked signed URL details: %s", evidence)
 	}
 	if got := countTableRows(t, deps.Store.DB(), "runs"); got != 0 {
 		t.Fatalf("expected no run rows, got %d", got)
@@ -123,17 +186,17 @@ func TestCreateRunFromPlannerHandoffFileHashMismatchStructuredBlocker(t *testing
 	}
 }
 
-func TestPlannerHandoffFileFailuresAreSanitized(t *testing.T) {
+func TestPlannerHandoffFileFetcherFailuresAreSanitized(t *testing.T) {
 	for _, tool := range []string{"create", "validate"} {
 		t.Run(tool, func(t *testing.T) {
-			for _, tc := range plannerHandoffFileFailureCases(t) {
+			for _, tc := range plannerHandoffFileFailureCases() {
 				t.Run(tc.name, func(t *testing.T) {
 					artifactDir := setupTestArtifactDir(t)
 					deps := &MCPDeps{Store: setupTestStore(t), Log: discardLogger()}
+					deps.FileFetcher = &fakeFileParameterFetcher{err: tc.err}
 					srv := NewServer(discardLogger(), deps)
-					path := tc.path(t)
 					args := mustMarshal(t, map[string]any{
-						"planner_handoff_file": path,
+						"planner_handoff_file": fileReference("blocked", "reviewed.md"),
 						"repo_target":          "test-repo",
 					})
 
@@ -144,7 +207,7 @@ func TestPlannerHandoffFileFailuresAreSanitized(t *testing.T) {
 						result = srv.HandleValidatePlannerHandoffForCompile(args)
 					}
 
-					assertPlannerHandoffFileFailureSanitized(t, result, path, filepath.Dir(path))
+					assertPlannerHandoffFileFailureSanitized(t, result)
 					for _, table := range []string{"runs", "artifacts", "run_submission_provenance", "events"} {
 						if got := countTableRows(t, deps.Store.DB(), table); got != 0 {
 							t.Fatalf("expected no %s rows, got %d", table, got)
@@ -161,80 +224,21 @@ func TestPlannerHandoffFileFailuresAreSanitized(t *testing.T) {
 
 type plannerHandoffFileFailureCase struct {
 	name string
-	path func(t *testing.T) string
+	err  *FileParameterError
 }
 
-func plannerHandoffFileFailureCases(t *testing.T) []plannerHandoffFileFailureCase {
-	t.Helper()
+func plannerHandoffFileFailureCases() []plannerHandoffFileFailureCase {
 	return []plannerHandoffFileFailureCase{
-		{
-			name: "nonexistent file",
-			path: func(t *testing.T) string {
-				return filepath.Join(t.TempDir(), "reviewed.md")
-			},
-		},
-		{
-			name: "unreadable file",
-			path: func(t *testing.T) string {
-				path := filepath.Join(t.TempDir(), "reviewed.md")
-				if err := os.WriteFile(path, []byte(validMCPHandoffMarkdown("Unreadable", "test-repo")), 0600); err != nil {
-					t.Fatalf("write unreadable fixture: %v", err)
-				}
-				if err := os.Chmod(path, 0000); err != nil {
-					t.Skipf("chmod unreadable fixture unsupported: %v", err)
-				}
-				t.Cleanup(func() { _ = os.Chmod(path, 0600) })
-				if _, err := os.ReadFile(path); err == nil {
-					t.Skip("unreadable fixture is readable on this host")
-				}
-				return path
-			},
-		},
-		{
-			name: "directory supplied",
-			path: func(t *testing.T) string {
-				path := filepath.Join(t.TempDir(), "reviewed.md")
-				if err := os.Mkdir(path, 0755); err != nil {
-					t.Fatalf("mkdir handoff dir: %v", err)
-				}
-				return path
-			},
-		},
-		{
-			name: "invalid extension",
-			path: func(t *testing.T) string {
-				path := filepath.Join(t.TempDir(), "reviewed.txt")
-				if err := os.WriteFile(path, []byte(validMCPHandoffMarkdown("Bad Extension", "test-repo")), 0644); err != nil {
-					t.Fatalf("write invalid extension fixture: %v", err)
-				}
-				return path
-			},
-		},
-		{
-			name: "empty file",
-			path: func(t *testing.T) string {
-				path := filepath.Join(t.TempDir(), "reviewed.md")
-				if err := os.WriteFile(path, nil, 0644); err != nil {
-					t.Fatalf("write empty fixture: %v", err)
-				}
-				return path
-			},
-		},
-		{
-			name: "oversized file",
-			path: func(t *testing.T) string {
-				path := filepath.Join(t.TempDir(), "reviewed.md")
-				data := []byte(strings.Repeat("a", maxPlannerHandoffFileBytes+1))
-				if err := os.WriteFile(path, data, 0644); err != nil {
-					t.Fatalf("write oversized fixture: %v", err)
-				}
-				return path
-			},
-		},
+		{name: "invalid reference", err: fileParamErr(MCPBlockerFileReferenceInvalid, "planner_handoff_file.download_url is required")},
+		{name: "unsafe target", err: fileParamErr(MCPBlockerUnsafeDownloadTarget, "planner_handoff_file.download_url target is not public routable")},
+		{name: "download failure", err: fileParamErr(MCPBlockerFileDownloadFailed, "planner_handoff_file could not be downloaded")},
+		{name: "non success", err: fileParamErr(MCPBlockerFileDownloadStatus, "planner_handoff_file download returned HTTP 403")},
+		{name: "empty", err: fileParamErr(MCPBlockerFileDownloadEmpty, "planner_handoff_file response was empty")},
+		{name: "oversized", err: fileParamErr(MCPBlockerFileDownloadTooLarge, "planner_handoff_file exceeds the 1 MiB limit")},
 	}
 }
 
-func assertPlannerHandoffFileFailureSanitized(t *testing.T, result ToolCallResult, fullPath, dir string) {
+func assertPlannerHandoffFileFailureSanitized(t *testing.T, result ToolCallResult) {
 	t.Helper()
 	if !result.IsError {
 		t.Fatalf("expected blocked result, got %+v", result)
@@ -244,19 +248,16 @@ func assertPlannerHandoffFileFailureSanitized(t *testing.T, result ToolCallResul
 	if err := json.Unmarshal([]byte(serialized), &blocked); err != nil {
 		t.Fatalf("decode blocked response: %v", err)
 	}
-	if blocked.Status != "blocked" || len(blocked.Blockers) != 1 || blocked.Blockers[0].Code != MCPBlockerBlockedPath {
+	if blocked.Status != "blocked" || len(blocked.Blockers) != 1 {
 		t.Fatalf("unexpected blocked response: %+v", blocked)
 	}
-	if !blocked.Blockers[0].Recoverable {
-		t.Fatal("expected file failure blocker to be recoverable")
-	}
 	for _, content := range result.Content {
-		if strings.Contains(content.Text, fullPath) || strings.Contains(content.Text, dir) {
-			t.Fatalf("text content leaked path %q or dir %q: %s", fullPath, dir, content.Text)
+		if strings.Contains(content.Text, "signature=secret") || strings.Contains(content.Text, "https://files.example.test") {
+			t.Fatalf("text content leaked URL details: %s", content.Text)
 		}
 	}
-	if strings.Contains(serialized, fullPath) || strings.Contains(serialized, dir) {
-		t.Fatalf("structuredContent leaked path %q or dir %q: %s", fullPath, dir, serialized)
+	if strings.Contains(serialized, "signature=secret") || strings.Contains(serialized, "https://files.example.test") {
+		t.Fatalf("structuredContent leaked URL details: %s", serialized)
 	}
 }
 
