@@ -264,16 +264,31 @@ func (s *Service) FinishExecutionAttempt(ctx context.Context, input FinishExecut
 func (s *Service) RecordValidationResult(ctx context.Context, runID string, passed bool) (workflowstore.Run, error) {
 	var updated workflowstore.Run
 	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		run, err := tx.GetRunByRunID(ctx, runID)
+		if err != nil {
+			return fmt.Errorf("load run for validation result: %w", err)
+		}
+		switch run.Status {
+		case workflowstore.RunStatusExecutionFailed:
+			run, err = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusExecutionFailed, workflowstore.RunStatusValidating)
+			if err != nil {
+				return fmt.Errorf("enter validation after execution failure: %w", err)
+			}
+		case workflowstore.RunStatusValidating:
+		default:
+			return fmt.Errorf("record validation result requires validating or execution_failed run, got %q", run.Status)
+		}
+
 		next := workflowstore.RunStatusAuditReady
 		if !passed {
 			next = workflowstore.RunStatusValidationFailed
 		}
-		run, err := tx.TransitionRun(ctx, runID, workflowstore.RunStatusValidating, next)
+		run, err = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusValidating, next)
 		if err != nil {
 			return fmt.Errorf("record validation result: %w", err)
 		}
 		if !passed {
-			run, err = tx.TransitionRun(ctx, runID, workflowstore.RunStatusValidationFailed, workflowstore.RunStatusNeedsRevision)
+			run, err = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusValidationFailed, workflowstore.RunStatusNeedsRevision)
 			if err != nil {
 				return fmt.Errorf("mark validation revision required: %w", err)
 			}

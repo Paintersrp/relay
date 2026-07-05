@@ -211,6 +211,101 @@ func TestCreateRunRejectsMismatchedAssociationAndInvalidRemediation(t *testing.T
 	}
 }
 
+func TestFailedAndTimedOutAttemptsCanEnterValidationAndRemediation(t *testing.T) {
+	cases := []struct {
+		name          string
+		suffix        string
+		attemptStatus string
+	}{
+		{name: "failed", suffix: "failed", attemptStatus: workflowstore.AttemptStatusFailed},
+		{name: "timed out", suffix: "timed-out", attemptStatus: workflowstore.AttemptStatusTimedOut},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			store, _ := openRunTestStore(t)
+			registerRunTestRepo(t, ctx, store, "relay")
+			plan := createRunTestPlan(t, ctx, store)
+			service := newRunTestService(t, store, &sequenceIDs{
+				runIDs: []string{
+					"run-" + tc.suffix + "-original",
+					"run-" + tc.suffix + "-remediation",
+				},
+				attemptIDs: []string{"attempt-" + tc.suffix},
+				artifactIDs: []string{
+					"artifact-" + tc.suffix + "-1",
+					"artifact-" + tc.suffix + "-2",
+					"artifact-" + tc.suffix + "-3",
+					"artifact-" + tc.suffix + "-4",
+				},
+			})
+
+			baseInput := CreateRunInput{
+				FeatureSlug:      "feature",
+				RepoTarget:       "relay",
+				Branch:           "main",
+				BaseCommit:       strings.Repeat("a", 40),
+				CanonicalJSON:    []byte("{}\n"),
+				RenderedMarkdown: []byte("# Brief\n"),
+				PlanID:           plan.Plan.PlanID,
+				PassNumber:       1,
+			}
+			original, err := service.CreateRun(ctx, baseInput)
+			if err != nil {
+				t.Fatal(err)
+			}
+			begun, err := service.BeginExecutionAttempt(ctx, BeginExecutionAttemptInput{
+				RunID:   original.Run.RunID,
+				Adapter: "opencode_go",
+				Model:   "test-model",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			finished, err := service.FinishExecutionAttempt(ctx, FinishExecutionAttemptInput{
+				AttemptID:  begun.Attempt.AttemptID,
+				Status:     tc.attemptStatus,
+				ResultJSON: fmt.Sprintf(`{"status":%q}`, tc.attemptStatus),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if finished.Run.Status != workflowstore.RunStatusExecutionFailed {
+				t.Fatalf("run status after %s attempt = %q", tc.attemptStatus, finished.Run.Status)
+			}
+
+			needsRevision, err := service.RecordValidationResult(ctx, original.Run.RunID, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if needsRevision.Status != workflowstore.RunStatusNeedsRevision {
+				t.Fatalf("validated run status = %q", needsRevision.Status)
+			}
+
+			remediationInput := baseInput
+			remediationInput.RemediatesRunID = original.Run.RunID
+			remediation, err := service.CreateRun(ctx, remediationInput)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !remediation.Run.RemediatesRunRowID.Valid || remediation.Run.RemediatesRunRowID.Int64 != original.Run.ID {
+				t.Fatalf("unexpected remediation relation: %+v", remediation.Run)
+			}
+			if remediation.Run.PlanRowID != original.Run.PlanRowID || remediation.Run.PlanPassRowID != original.Run.PlanPassRowID {
+				t.Fatalf("remediation association changed: original=%+v remediation=%+v", original.Run, remediation.Run)
+			}
+			pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.Plan.ID, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pass.Status != workflowstore.PassStatusInProgress {
+				t.Fatalf("managed pass status = %q", pass.Status)
+			}
+		})
+	}
+}
+
 func TestExecutionAttemptValidationAndAuditDecisionCompleteManagedWorkflow(t *testing.T) {
 	ctx := context.Background()
 	store, _ := openRunTestStore(t)
@@ -264,6 +359,21 @@ func TestExecutionAttemptValidationAndAuditDecisionCompleteManagedWorkflow(t *te
 	}
 	if validated.Status != workflowstore.RunStatusAuditReady {
 		t.Fatalf("validated run status = %q", validated.Status)
+	}
+
+	passBeforeAudit, err := store.GetPlanPassByPlanAndNumber(ctx, plan.Plan.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if passBeforeAudit.Status != workflowstore.PassStatusInProgress {
+		t.Fatalf("managed pass completed before accepted audit: %q", passBeforeAudit.Status)
+	}
+	planBeforeAudit, err := store.GetPlanByPlanID(ctx, plan.Plan.PlanID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planBeforeAudit.Status != workflowstore.PlanStatusActive {
+		t.Fatalf("managed Plan completed before accepted audit: %q", planBeforeAudit.Status)
 	}
 
 	packet := persistAuditPacket(t, ctx, store, validated)

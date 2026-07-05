@@ -161,61 +161,6 @@ func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (Create
 	return result, nil
 }
 
-func (s *Service) StartPass(ctx context.Context, planID string, passNumber int64) (workflowstore.PlanPass, error) {
-	var updated workflowstore.PlanPass
-	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
-		plan, err := tx.GetPlanByPlanID(ctx, planID)
-		if err != nil {
-			return fmt.Errorf("load plan: %w", err)
-		}
-		if plan.Status != workflowstore.PlanStatusActive {
-			return fmt.Errorf("plan %q is %q", planID, plan.Status)
-		}
-		pass, err := tx.GetPlanPassByPlanAndNumber(ctx, plan.ID, passNumber)
-		if err != nil {
-			return fmt.Errorf("load pass %d: %w", passNumber, err)
-		}
-		updated, err = tx.TransitionPlanPass(ctx, pass.PassID, workflowstore.PassStatusPlanned, workflowstore.PassStatusInProgress)
-		if err != nil {
-			return fmt.Errorf("start pass %d: %w", passNumber, err)
-		}
-		return nil
-	})
-	return updated, err
-}
-
-func (s *Service) CompletePass(ctx context.Context, planID string, passNumber int64) (CompletePassResult, error) {
-	result := CompletePassResult{}
-	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
-		plan, err := tx.GetPlanByPlanID(ctx, planID)
-		if err != nil {
-			return fmt.Errorf("load plan: %w", err)
-		}
-		pass, err := tx.GetPlanPassByPlanAndNumber(ctx, plan.ID, passNumber)
-		if err != nil {
-			return fmt.Errorf("load pass %d: %w", passNumber, err)
-		}
-		completed, err := tx.TransitionPlanPass(ctx, pass.PassID, workflowstore.PassStatusInProgress, workflowstore.PassStatusCompleted)
-		if err != nil {
-			return fmt.Errorf("complete pass %d: %w", passNumber, err)
-		}
-		result.Pass = completed
-		remaining, err := tx.CountIncompletePlanPasses(ctx, plan.ID)
-		if err != nil {
-			return fmt.Errorf("count incomplete passes: %w", err)
-		}
-		if remaining == 0 {
-			plan, err = tx.CompletePlan(ctx, plan.ID)
-			if err != nil {
-				return fmt.Errorf("complete plan: %w", err)
-			}
-		}
-		result.Plan = plan
-		return nil
-	})
-	return result, err
-}
-
 func validateCreatePlanInput(input CreatePlanInput) error {
 	if !validFeatureSlug(input.FeatureSlug) {
 		return fmt.Errorf("feature slug must be lowercase kebab-case")

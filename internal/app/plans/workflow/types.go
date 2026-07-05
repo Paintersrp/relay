@@ -28,8 +28,3 @@ type CreatePlanResult struct {
 	Passes    []workflowstore.PlanPass
 	Artifacts []workflowstore.Artifact
 }
-
-type CompletePassResult struct {
-	Plan workflowstore.Plan
-	Pass workflowstore.PlanPass
-}

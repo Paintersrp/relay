@@ -36,7 +36,7 @@ func (ids *sequenceIDs) ArtifactID() string {
 	return fmt.Sprintf("%s-%d", ids.artifactBase, ids.artifactIndex)
 }
 
-func TestCreatePlanPersistsCanonicalArtifactsAndLifecycle(t *testing.T) {
+func TestCreatePlanPersistsCanonicalArtifactsAndDependencies(t *testing.T) {
 	ctx := context.Background()
 	store, root := openPlanTestStore(t)
 	registerPlanTestRepo(t, ctx, store, "relay")
@@ -94,28 +94,18 @@ func TestCreatePlanPersistsCanonicalArtifactsAndLifecycle(t *testing.T) {
 		}
 	}
 
-	if _, err := service.StartPass(ctx, result.Plan.PlanID, 2); err == nil {
-		t.Fatal("dependent pass started before its dependency completed")
-	}
-	if _, err := service.StartPass(ctx, result.Plan.PlanID, 1); err != nil {
+	var dependencyCount int64
+	if err := store.DB().QueryRow(`
+SELECT COUNT(*)
+FROM plan_pass_dependencies
+WHERE pass_row_id = ? AND depends_on_pass_row_id = ?`,
+		result.Passes[1].ID,
+		result.Passes[0].ID,
+	).Scan(&dependencyCount); err != nil {
 		t.Fatal(err)
 	}
-	first, err := service.CompletePass(ctx, result.Plan.PlanID, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.Plan.Status != workflowstore.PlanStatusActive || first.Pass.Status != workflowstore.PassStatusCompleted {
-		t.Fatalf("unexpected first completion: %+v", first)
-	}
-	if _, err := service.StartPass(ctx, result.Plan.PlanID, 2); err != nil {
-		t.Fatal(err)
-	}
-	second, err := service.CompletePass(ctx, result.Plan.PlanID, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if second.Plan.Status != workflowstore.PlanStatusCompleted || second.Pass.Status != workflowstore.PassStatusCompleted {
-		t.Fatalf("unexpected final completion: %+v", second)
+	if dependencyCount != 1 {
+		t.Fatalf("dependency count = %d, want 1", dependencyCount)
 	}
 }
 
