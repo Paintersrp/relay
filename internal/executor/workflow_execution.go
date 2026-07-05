@@ -479,7 +479,7 @@ func (s *WorkflowExecutionService) execute(
 ) {
 	state := workflowAttemptRuntime{
 		OwnerInstanceID: s.ownerInstanceID,
-		CommandPreview:  invocation.Preview,
+		CommandPreview:  redactSensitive(invocation.Preview),
 		BriefArtifactID: briefArtifact.ArtifactID,
 		BriefSHA256:     briefArtifact.SHA256,
 	}

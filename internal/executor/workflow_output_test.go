@@ -26,14 +26,53 @@ func TestWorkflowOutputCaptureRedactsAcrossChunksAndBoundsLiveTail(t *testing.T)
 		t.Fatal(err)
 	}
 	if strings.Contains(string(data), "split-secret-value") || !strings.Contains(string(data), "[REDACTED]") {
-		t.Fatalf("redaction failed: %q", data)
+		t.Fatal("redaction failed for persisted output")
 	}
 	snapshot := capture.Snapshot()
 	if !snapshot.Truncated || len(snapshot.Text) > 16 || snapshot.TotalBytes != int64(len(data)) {
 		t.Fatalf("snapshot = %+v, file bytes = %d", snapshot, len(data))
 	}
 	if strings.Contains(snapshot.Text, "split-secret-value") {
-		t.Fatalf("live output leaked secret: %q", snapshot.Text)
+		t.Fatal("live output leaked configured secret")
+	}
+}
+
+func TestWorkflowOutputCaptureRedactsOverlappingSecretsAcrossBoundary(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "overlap-token")
+	t.Setenv("KIRO_API_KEY", "overlap-token-suffix")
+	path := filepath.Join(t.TempDir(), "stdout.log")
+	capture, err := newWorkflowOutputCapture(path, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture.Write([]byte("prefix overlap-token"))
+	capture.Write([]byte("-suffix tail"))
+	if err := capture.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := capture.Snapshot()
+	assertOverlapRedacted(t, "live snapshot", snapshot.Text)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOverlapRedacted(t, "persisted spool", string(data))
+}
+
+func assertOverlapRedacted(t *testing.T, name, text string) {
+	t.Helper()
+	if strings.Contains(text, "overlap-token-suffix") {
+		t.Fatalf("%s leaked configured secret", name)
+	}
+	if strings.Contains(text, "-suffix") {
+		t.Fatalf("%s leaked secret suffix", name)
+	}
+	if !strings.Contains(text, "[REDACTED]") {
+		t.Fatalf("%s is missing redaction marker", name)
+	}
+	if !strings.Contains(text, "prefix ") || !strings.Contains(text, " tail") {
+		t.Fatalf("%s did not retain surrounding text", name)
 	}
 }
 

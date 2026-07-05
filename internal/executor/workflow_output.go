@@ -64,8 +64,9 @@ func (b *workflowTailBuffer) Snapshot() workflowOutputSnapshot {
 }
 
 type streamSecretRedactor struct {
-	secrets [][]byte
-	pending []byte
+	secrets      [][]byte
+	maxSecretLen int
+	pending      []byte
 }
 
 func newStreamSecretRedactor() *streamSecretRedactor {
@@ -87,7 +88,11 @@ func newStreamSecretRedactor() *streamSecretRedactor {
 	})
 	redactor := &streamSecretRedactor{secrets: make([][]byte, 0, len(values))}
 	for _, value := range values {
-		redactor.secrets = append(redactor.secrets, []byte(value))
+		secret := []byte(value)
+		redactor.secrets = append(redactor.secrets, secret)
+		if len(secret) > redactor.maxSecretLen {
+			redactor.maxSecretLen = len(secret)
+		}
 	}
 	return redactor
 }
@@ -104,25 +109,25 @@ func (r *streamSecretRedactor) Close() []byte {
 func (r *streamSecretRedactor) drain(final bool) []byte {
 	var output bytes.Buffer
 	for len(r.pending) > 0 {
-		fullMatch := 0
-		prefixPossible := false
+		longestFullMatch := 0
+		longerMatchStillPossible := false
 		for _, secret := range r.secrets {
 			if len(r.pending) >= len(secret) && bytes.Equal(r.pending[:len(secret)], secret) {
-				if len(secret) > fullMatch {
-					fullMatch = len(secret)
+				if len(secret) > longestFullMatch {
+					longestFullMatch = len(secret)
 				}
 			}
-			if len(r.pending) < len(secret) && bytes.Equal(secret[:len(r.pending)], r.pending) {
-				prefixPossible = true
+			if len(r.pending) < r.maxSecretLen && len(r.pending) < len(secret) && bytes.Equal(secret[:len(r.pending)], r.pending) {
+				longerMatchStillPossible = true
 			}
 		}
-		if fullMatch > 0 {
-			output.WriteString("[REDACTED]")
-			r.pending = r.pending[fullMatch:]
-			continue
-		}
-		if prefixPossible && !final {
+		if longerMatchStillPossible && !final {
 			break
+		}
+		if longestFullMatch > 0 {
+			output.WriteString("[REDACTED]")
+			r.pending = r.pending[longestFullMatch:]
+			continue
 		}
 		output.WriteByte(r.pending[0])
 		r.pending = r.pending[1:]
