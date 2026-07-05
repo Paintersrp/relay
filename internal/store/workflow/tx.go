@@ -400,6 +400,58 @@ RETURNING id, attempt_id, run_row_id, attempt_number, adapter, model, status, re
 	return value, err
 }
 
+func (tx *Tx) GetLatestSucceededExecutionAttempt(ctx context.Context, runRowID int64) (ExecutionAttempt, error) {
+	return getLatestSucceededExecutionAttempt(ctx, tx.tx, runRowID)
+}
+
+func (tx *Tx) CreateAuditPacket(ctx context.Context, params CreateAuditPacketParams) (AuditPacket, error) {
+	return scanAuditPacket(tx.tx.QueryRowContext(ctx, `
+INSERT INTO audit_packets (
+    audit_packet_id,
+    run_row_id,
+    execution_attempt_row_id,
+    artifact_row_id,
+    base_commit,
+    audited_commit,
+    packet_sha256,
+    status
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, 'current')
+RETURNING id, audit_packet_id, run_row_id, execution_attempt_row_id, artifact_row_id,
+          base_commit, audited_commit, packet_sha256, status, stale_reason,
+          created_at, superseded_at`,
+		params.AuditPacketID,
+		params.RunRowID,
+		params.ExecutionAttemptRowID,
+		params.ArtifactRowID,
+		params.BaseCommit,
+		params.AuditedCommit,
+		params.PacketSHA256,
+	))
+}
+
+func (tx *Tx) GetAuditPacketByPacketID(ctx context.Context, packetID string) (AuditPacket, error) {
+	return getAuditPacketByPacketID(ctx, tx.tx, packetID)
+}
+
+func (tx *Tx) GetCurrentAuditPacketByRun(ctx context.Context, runRowID int64) (AuditPacket, error) {
+	return getCurrentAuditPacketByRun(ctx, tx.tx, runRowID)
+}
+
+func (tx *Tx) MarkCurrentAuditPacketsStale(ctx context.Context, runRowID int64, reason string) error {
+	if reason == "" {
+		return fmt.Errorf("audit packet stale reason is required")
+	}
+	_, err := tx.tx.ExecContext(ctx, `
+UPDATE audit_packets
+SET
+    status = 'stale',
+    stale_reason = ?,
+    superseded_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE run_row_id = ? AND status = 'current'`, reason, runRowID)
+	return err
+}
+
 func (tx *Tx) CreateArtifact(ctx context.Context, params CreateArtifactParams) (Artifact, error) {
 	return scanArtifact(tx.tx.QueryRowContext(ctx, `
 INSERT INTO artifacts (

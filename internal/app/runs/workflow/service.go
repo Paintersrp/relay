@@ -188,9 +188,16 @@ func (s *Service) BeginExecutionAttempt(ctx context.Context, input BeginExecutio
 			return fmt.Errorf("load run: %w", err)
 		}
 		switch run.Status {
-		case workflowstore.RunStatusSetupReady, workflowstore.RunStatusExecutionFailed, workflowstore.RunStatusCancelled:
+		case workflowstore.RunStatusSetupReady,
+			workflowstore.RunStatusExecutionFailed,
+			workflowstore.RunStatusCancelled,
+			workflowstore.RunStatusValidating,
+			workflowstore.RunStatusAuditReady:
 		default:
 			return fmt.Errorf("run %q cannot start execution from status %q", run.RunID, run.Status)
+		}
+		if err := tx.MarkCurrentAuditPacketsStale(ctx, run.ID, "later_execution_attempt"); err != nil {
+			return fmt.Errorf("stale prior audit packet: %w", err)
 		}
 		run, err = tx.TransitionRun(ctx, run.RunID, run.Status, workflowstore.RunStatusExecuting)
 		if err != nil {

@@ -98,6 +98,7 @@ func sanitizePlanSchemaForRuntime(schemaBytes []byte) ([]byte, error) {
 }
 
 func sanitizePlanSchemaRegexes(schemaContent string) string {
+	schemaContent = strings.ReplaceAll(schemaContent, `(?!handoffs/(?:requirements|design)/)`, "")
 	schemaContent = strings.ReplaceAll(schemaContent, `(?!/)`, "")
 	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(^|/)\\.\\.($|/))`, "")
 	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(^|/)\\.($|/))`, "")

@@ -315,8 +315,8 @@ func TestCanonicalToolDefinitionsByProfile(t *testing.T) {
 		want    []string
 	}{
 		{profile: ToolProfilePlanner, want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run"}},
-		{profile: ToolProfileAuditor, want: []string{"validate_artifact", "create_run"}},
-		{profile: ToolProfileLocalOperator, want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run"}},
+		{profile: ToolProfileAuditor, want: []string{"validate_artifact", "create_run", "get_audit_packet", "record_audit_decision"}},
+		{profile: ToolProfileLocalOperator, want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run", "get_audit_packet", "record_audit_decision"}},
 		{profile: ToolProfile("restricted"), want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run"}},
 	}
 	for _, tt := range tests {

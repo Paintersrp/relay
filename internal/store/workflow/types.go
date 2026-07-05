@@ -32,6 +32,9 @@ const (
 	ArtifactOwnerRun              = "run"
 	ArtifactOwnerExecutionAttempt = "execution_attempt"
 
+	AuditPacketStatusCurrent = "current"
+	AuditPacketStatusStale   = "stale"
+
 	AuditDecisionAccepted      = "accepted"
 	AuditDecisionNeedsRevision = "needs_revision"
 )
@@ -131,6 +134,21 @@ type Artifact struct {
 	CreatedAt             string
 }
 
+type AuditPacket struct {
+	ID                    int64
+	AuditPacketID         string
+	RunRowID              int64
+	ExecutionAttemptRowID int64
+	ArtifactRowID         int64
+	BaseCommit            string
+	AuditedCommit         string
+	PacketSHA256          string
+	Status                string
+	StaleReason           string
+	CreatedAt             string
+	SupersededAt          sql.NullString
+}
+
 type AuditDecision struct {
 	ID                       int64
 	AuditDecisionID          string
@@ -197,6 +215,16 @@ type CreateArtifactParams struct {
 	MediaType             string
 	SHA256                string
 	SizeBytes             int64
+}
+
+type CreateAuditPacketParams struct {
+	AuditPacketID         string
+	RunRowID              int64
+	ExecutionAttemptRowID int64
+	ArtifactRowID         int64
+	BaseCommit            string
+	AuditedCommit         string
+	PacketSHA256          string
 }
 
 type CreateAuditDecisionParams struct {

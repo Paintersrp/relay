@@ -204,6 +204,14 @@ func redactSensitive(input string) string {
 	return result
 }
 
+func RedactSensitiveText(value string) string {
+	return redactSensitive(value)
+}
+
+func RedactSensitiveBytes(data []byte) []byte {
+	return redactSensitiveBytes(data)
+}
+
 func redactSensitiveBytes(input []byte) []byte {
 	return []byte(redactSensitive(string(input)))
 }

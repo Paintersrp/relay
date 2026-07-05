@@ -51,7 +51,7 @@ func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 		d = deps[0]
 	}
 	s := &Server{log: log, deps: d}
-	s.tools = canonicalToolDefinitions(s.activeProfile())
+	s.tools = s.profileToolDefinitions()
 	return s
 }
 
@@ -61,9 +61,36 @@ func (s *Server) activeProfile() ToolProfile {
 	}
 	profile, ok := NormalizeToolProfile(string(s.deps.ToolProfile))
 	if !ok {
-		return ToolProfilePlanner
+		return s.deps.ToolProfile
 	}
 	return profile
+}
+
+func (s *Server) profileToolDefinitions() []ToolDefinition {
+	if s == nil || s.deps == nil {
+		return canonicalToolDefinitions(ToolProfilePlanner)
+	}
+	if s.deps.ContextBrokerEnabled {
+		out := legacyLocalOperatorToolDefinitions()
+		if s.deps.WorkflowAuditService != nil {
+			out = append(out, ToolGetAuditPacket, ToolRecordAuditDecision)
+		}
+		return out
+	}
+	switch s.activeProfile() {
+	case ToolProfilePlanner:
+		return canonicalToolDefinitions(ToolProfilePlanner)
+	case ToolProfileAuditor:
+		return canonicalToolDefinitions(ToolProfileAuditor)
+	case ToolProfileLocalOperator:
+		out := legacyLocalOperatorToolDefinitions()
+		if s.deps.WorkflowAuditService != nil {
+			out = append(out, ToolGetAuditPacket, ToolRecordAuditDecision)
+		}
+		return out
+	default:
+		return legacyBaseToolDefinitions()
+	}
 }
 
 func (s *Server) fileParameterFetcher() FileParameterFetcher {
@@ -364,6 +391,10 @@ func (s *Server) handleToolsCall(req Request) Response {
 		}
 	case "create_run":
 		result = s.HandleCreateCanonicalRun(args)
+	case "get_audit_packet":
+		result = s.HandleGetWorkflowAuditPacket(args)
+	case "record_audit_decision":
+		result = s.HandleRecordWorkflowAuditDecision(args)
 	case "submit_test_audit_packet":
 		result = HandleSubmitTestAuditPacket(args)
 	case "create_run_from_planner_handoff":

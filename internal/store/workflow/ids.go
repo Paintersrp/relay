@@ -22,6 +22,10 @@ func NewArtifactID() string {
 	return "artifact-" + uuid.NewString()
 }
 
+func NewAuditPacketID() string {
+	return "packet-" + uuid.NewString()
+}
+
 func NewAuditDecisionID() string {
 	return "audit-" + uuid.NewString()
 }

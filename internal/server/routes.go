@@ -171,8 +171,14 @@ func BuildRoutesWithWorkflowRuntime(s *store.Store, workflowStore *workflowstore
 	runSvc.SetExecutorOwnerInstanceID(ownerInstanceID)
 	runH := runsapi.NewHandler(runSvc, planLifecycleSvc)
 	var workflowExecutionH *runsapi.WorkflowExecutionHandler
+	var workflowAuditH *auditsapi.WorkflowHandler
 	if workflowStore != nil {
 		workflowExecutionH = runsapi.NewWorkflowExecutionHandler(executor.NewWorkflowExecutionService(workflowStore, log, ownerInstanceID))
+		workflowAuditService, auditErr := appaudits.NewWorkflowAuditService(workflowStore)
+		if auditErr != nil {
+			panic(auditErr)
+		}
+		workflowAuditH = auditsapi.NewWorkflowHandler(workflowAuditService)
 	}
 	artifactH := artifactsapi.NewHandler(runSvc)
 	intakeH := intakeapi.NewHandler(appintake.NewService(s), runSvc)
@@ -190,6 +196,9 @@ func BuildRoutesWithWorkflowRuntime(s *store.Store, workflowStore *workflowstore
 		mountProjectRefactorRoutes(r, apiH)
 		plansapi.MountRoutes(r, planH)
 		auditsapi.MountRoutes(r, auditH)
+		if workflowAuditH != nil {
+			auditsapi.MountWorkflowRoutes(r, workflowAuditH)
+		}
 		r.Post("/dev/setup-smoke-validation-failure", apiH.SetupSmokeValidationFailure)
 		r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")

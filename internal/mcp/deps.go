@@ -3,6 +3,7 @@ package mcp
 import (
 	"log/slog"
 
+	appaudits "relay/internal/app/audits"
 	driftapp "relay/internal/app/drift"
 	appplans "relay/internal/app/plans"
 	"relay/internal/store"
@@ -19,6 +20,7 @@ type MCPDeps struct {
 	ToolProfile          ToolProfile
 	FileFetcher          FileParameterFetcher
 	CanonicalFileFetcher CanonicalFileParameterFetcher
+	WorkflowAuditService WorkflowAuditToolService
 
 	// Drift is retained only for direct compile-time legacy handler tests. Legacy
 	// handlers are not registered in any production MCP profile.
@@ -43,11 +45,13 @@ func NewDepsFromEnv(st *store.Store, log *slog.Logger) *MCPDeps {
 
 func NewCanonicalDepsFromEnv(workflowStore *workflowstore.Store, log *slog.Logger) *MCPDeps {
 	fetcher := NewHTTPSFileParameterFetcher()
+	auditService, _ := appaudits.NewWorkflowAuditService(workflowStore)
 	return &MCPDeps{
 		WorkflowStore:        workflowStore,
 		Log:                  log,
 		ToolProfile:          ToolProfileFromEnv(log),
 		FileFetcher:          fetcher,
 		CanonicalFileFetcher: fetcher,
+		WorkflowAuditService: auditService,
 	}
 }

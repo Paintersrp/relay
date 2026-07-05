@@ -176,6 +176,10 @@ func (s *Store) GetPlanByPlanID(ctx context.Context, planID string) (Plan, error
 	return getPlanByPlanID(ctx, s.db, planID)
 }
 
+func (s *Store) GetPlanByRowID(ctx context.Context, rowID int64) (Plan, error) {
+	return getPlanByRowID(ctx, s.db, rowID)
+}
+
 func (s *Store) GetPlanPassByPassID(ctx context.Context, passID string) (PlanPass, error) {
 	return getPlanPassByPassID(ctx, s.db, passID)
 }
@@ -204,8 +208,24 @@ func (s *Store) GetArtifactByArtifactID(ctx context.Context, artifactID string) 
 	return getArtifactByArtifactID(ctx, s.db, artifactID)
 }
 
+func (s *Store) GetArtifactByRowID(ctx context.Context, rowID int64) (Artifact, error) {
+	return getArtifactByRowID(ctx, s.db, rowID)
+}
+
+func (s *Store) GetCurrentAuditPacketByRun(ctx context.Context, runRowID int64) (AuditPacket, error) {
+	return getCurrentAuditPacketByRun(ctx, s.db, runRowID)
+}
+
+func (s *Store) GetLatestAuditPacketByRun(ctx context.Context, runRowID int64) (AuditPacket, error) {
+	return getLatestAuditPacketByRun(ctx, s.db, runRowID)
+}
+
 func (s *Store) GetAuditDecisionByDecisionID(ctx context.Context, decisionID string) (AuditDecision, error) {
 	return getAuditDecisionByDecisionID(ctx, s.db, decisionID)
+}
+
+func (s *Store) GetAuditDecisionByRun(ctx context.Context, runRowID int64) (AuditDecision, error) {
+	return getAuditDecisionByRun(ctx, s.db, runRowID)
 }
 
 func (s *Store) ListPlanPasses(ctx context.Context, planRowID int64) ([]PlanPass, error) {
@@ -222,6 +242,16 @@ func (s *Store) ListArtifactsByRun(ctx context.Context, runRowID int64) ([]Artif
 
 func (s *Store) ListArtifactsByExecutionAttempt(ctx context.Context, attemptRowID int64) ([]Artifact, error) {
 	return listArtifacts(ctx, s.db, "execution_attempt_row_id", attemptRowID)
+}
+
+func (s *Store) GetLatestSucceededExecutionAttempt(ctx context.Context, runRowID int64) (ExecutionAttempt, error) {
+	return getLatestSucceededExecutionAttempt(ctx, s.db, runRowID)
+}
+
+func (s *Store) MarkCurrentAuditPacketsStale(ctx context.Context, runRowID int64, reason string) error {
+	return s.WithTx(ctx, func(tx *Tx) error {
+		return tx.MarkCurrentAuditPacketsStale(ctx, runRowID, reason)
+	})
 }
 
 func (s *Store) ListExecutionAttemptsByRun(ctx context.Context, runRowID int64) ([]ExecutionAttempt, error) {
@@ -269,6 +299,24 @@ WHERE repo_target = ? COLLATE NOCASE`, repoTarget).Scan(
 		&value.LocalPath,
 		&value.CreatedAt,
 		&value.UpdatedAt,
+	)
+	return value, err
+}
+
+func getPlanByRowID(ctx context.Context, queryer rowQueryer, rowID int64) (Plan, error) {
+	var value Plan
+	err := queryer.QueryRowContext(ctx, `
+SELECT id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
+FROM plans
+WHERE id = ?`, rowID).Scan(
+		&value.ID,
+		&value.PlanID,
+		&value.FeatureSlug,
+		&value.Status,
+		&value.CanonicalSHA256,
+		&value.CreatedAt,
+		&value.UpdatedAt,
+		&value.CompletedAt,
 	)
 	return value, err
 }
@@ -385,12 +433,97 @@ WHERE attempt_id = ?`, attemptID).Scan(
 	return value, err
 }
 
+func getArtifactByRowID(ctx context.Context, queryer rowQueryer, rowID int64) (Artifact, error) {
+	return scanArtifact(queryer.QueryRowContext(ctx, `
+SELECT id, artifact_id, owner_type, plan_row_id, run_row_id, execution_attempt_row_id,
+       kind, relative_path, media_type, sha256, size_bytes, created_at
+FROM artifacts
+WHERE id = ?`, rowID))
+}
+
 func getArtifactByArtifactID(ctx context.Context, queryer rowQueryer, artifactID string) (Artifact, error) {
 	return scanArtifact(queryer.QueryRowContext(ctx, `
 SELECT id, artifact_id, owner_type, plan_row_id, run_row_id, execution_attempt_row_id,
        kind, relative_path, media_type, sha256, size_bytes, created_at
 FROM artifacts
 WHERE artifact_id = ?`, artifactID))
+}
+
+func getLatestSucceededExecutionAttempt(ctx context.Context, queryer rowQueryer, runRowID int64) (ExecutionAttempt, error) {
+	var value ExecutionAttempt
+	err := queryer.QueryRowContext(ctx, `
+SELECT id, attempt_id, run_row_id, attempt_number, adapter, model, status, result_json,
+       created_at, started_at, finished_at, cancellation_requested_at
+FROM execution_attempts
+WHERE run_row_id = ? AND status = 'succeeded'
+ORDER BY attempt_number DESC
+LIMIT 1`, runRowID).Scan(
+		&value.ID,
+		&value.AttemptID,
+		&value.RunRowID,
+		&value.AttemptNumber,
+		&value.Adapter,
+		&value.Model,
+		&value.Status,
+		&value.ResultJSON,
+		&value.CreatedAt,
+		&value.StartedAt,
+		&value.FinishedAt,
+		&value.CancellationRequestedAt,
+	)
+	return value, err
+}
+
+func getAuditPacketByPacketID(ctx context.Context, queryer rowQueryer, packetID string) (AuditPacket, error) {
+	return scanAuditPacket(queryer.QueryRowContext(ctx, `
+SELECT id, audit_packet_id, run_row_id, execution_attempt_row_id, artifact_row_id,
+       base_commit, audited_commit, packet_sha256, status, stale_reason,
+       created_at, superseded_at
+FROM audit_packets
+WHERE audit_packet_id = ?`, packetID))
+}
+
+func getCurrentAuditPacketByRun(ctx context.Context, queryer rowQueryer, runRowID int64) (AuditPacket, error) {
+	return scanAuditPacket(queryer.QueryRowContext(ctx, `
+SELECT id, audit_packet_id, run_row_id, execution_attempt_row_id, artifact_row_id,
+       base_commit, audited_commit, packet_sha256, status, stale_reason,
+       created_at, superseded_at
+FROM audit_packets
+WHERE run_row_id = ? AND status = 'current'
+LIMIT 1`, runRowID))
+}
+
+func getLatestAuditPacketByRun(ctx context.Context, queryer rowQueryer, runRowID int64) (AuditPacket, error) {
+	return scanAuditPacket(queryer.QueryRowContext(ctx, `
+SELECT id, audit_packet_id, run_row_id, execution_attempt_row_id, artifact_row_id,
+       base_commit, audited_commit, packet_sha256, status, stale_reason,
+       created_at, superseded_at
+FROM audit_packets
+WHERE run_row_id = ?
+ORDER BY id DESC
+LIMIT 1`, runRowID))
+}
+
+func getAuditDecisionByRun(ctx context.Context, queryer rowQueryer, runRowID int64) (AuditDecision, error) {
+	var value AuditDecision
+	err := queryer.QueryRowContext(ctx, `
+SELECT id, audit_decision_id, run_row_id, audit_packet_artifact_row_id,
+       audited_commit, packet_sha256, decision, rationale, created_at
+FROM audit_decisions
+WHERE run_row_id = ?
+ORDER BY id DESC
+LIMIT 1`, runRowID).Scan(
+		&value.ID,
+		&value.AuditDecisionID,
+		&value.RunRowID,
+		&value.AuditPacketArtifactRowID,
+		&value.AuditedCommit,
+		&value.PacketSHA256,
+		&value.Decision,
+		&value.Rationale,
+		&value.CreatedAt,
+	)
+	return value, err
 }
 
 func getAuditDecisionByDecisionID(ctx context.Context, queryer rowQueryer, decisionID string) (AuditDecision, error) {
@@ -461,6 +594,25 @@ ORDER BY created_at, id`, ownerRowID)
 
 type rowScanner interface {
 	Scan(...any) error
+}
+
+func scanAuditPacket(row rowScanner) (AuditPacket, error) {
+	var value AuditPacket
+	err := row.Scan(
+		&value.ID,
+		&value.AuditPacketID,
+		&value.RunRowID,
+		&value.ExecutionAttemptRowID,
+		&value.ArtifactRowID,
+		&value.BaseCommit,
+		&value.AuditedCommit,
+		&value.PacketSHA256,
+		&value.Status,
+		&value.StaleReason,
+		&value.CreatedAt,
+		&value.SupersededAt,
+	)
+	return value, err
 }
 
 func scanPlanPass(row rowScanner) (PlanPass, error) {

@@ -540,6 +540,10 @@ func persistAuditPacket(t *testing.T, ctx context.Context, store *workflowstore.
 	}
 	var artifact workflowstore.Artifact
 	if err := store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
+		attempt, err := tx.GetLatestSucceededExecutionAttempt(ctx, run.ID)
+		if err != nil {
+			return err
+		}
 		var createErr error
 		artifact, createErr = tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
 			ArtifactID:   "artifact-audit-packet",
@@ -550,6 +554,18 @@ func persistAuditPacket(t *testing.T, ctx context.Context, store *workflowstore.
 			MediaType:    file.MediaType,
 			SHA256:       file.SHA256,
 			SizeBytes:    file.SizeBytes,
+		})
+		if createErr != nil {
+			return createErr
+		}
+		_, createErr = tx.CreateAuditPacket(ctx, workflowstore.CreateAuditPacketParams{
+			AuditPacketID:         "packet-test",
+			RunRowID:              run.ID,
+			ExecutionAttemptRowID: attempt.ID,
+			ArtifactRowID:         artifact.ID,
+			BaseCommit:            run.BaseCommit,
+			AuditedCommit:         strings.Repeat("b", 40),
+			PacketSHA256:          file.SHA256,
 		})
 		return createErr
 	}); err != nil {

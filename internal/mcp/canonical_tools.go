@@ -210,12 +210,49 @@ type executionSpecModel struct {
 func canonicalToolDefinitions(profile ToolProfile) []ToolDefinition {
 	switch profile {
 	case ToolProfileAuditor:
-		return []ToolDefinition{ToolValidateArtifact, ToolCreateCanonicalRun}
-	case ToolProfilePlanner, ToolProfileLocalOperator:
+		return []ToolDefinition{
+			ToolValidateArtifact,
+			ToolCreateCanonicalRun,
+			ToolGetAuditPacket,
+			ToolRecordAuditDecision,
+		}
+	case ToolProfileLocalOperator:
+		return []ToolDefinition{
+			ToolValidateArtifact,
+			ToolSubmitPlan,
+			ToolGetCanonicalPlan,
+			ToolCreateCanonicalRun,
+			ToolGetAuditPacket,
+			ToolRecordAuditDecision,
+		}
+	case ToolProfilePlanner:
 		return []ToolDefinition{ToolValidateArtifact, ToolSubmitPlan, ToolGetCanonicalPlan, ToolCreateCanonicalRun}
 	default:
 		return []ToolDefinition{ToolValidateArtifact, ToolSubmitPlan, ToolGetCanonicalPlan, ToolCreateCanonicalRun}
 	}
+}
+
+func legacyBaseToolDefinitions() []ToolDefinition {
+	out := []ToolDefinition{
+		ToolSubmitTestAuditPacket,
+		ToolCreateRunFromPlannerHandoff,
+		ToolCreateRunFromPlannerHandoffFile,
+		ToolValidatePlannerHandoffForCompile,
+		ToolSubmitPlannerPassPlan,
+		ToolListOpenRuns,
+		ToolGetRunStatus,
+		ToolSubmitAuditPacket,
+	}
+	out = append(out, planAttemptToolDefinitions()...)
+	out = append(out, planSeedToolDefinitions()...)
+	return out
+}
+
+func legacyLocalOperatorToolDefinitions() []ToolDefinition {
+	out := legacyBaseToolDefinitions()
+	out = append(out, contextBrokerToolDefinitions()...)
+	out = append(out, refactorBacklogToolDefinitions()...)
+	return out
 }
 
 func (s *Server) canonicalFetcher() CanonicalFileParameterFetcher {

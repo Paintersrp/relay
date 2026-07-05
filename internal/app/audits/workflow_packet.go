@@ -1,0 +1,310 @@
+package audits
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"relay/internal/executor"
+	workflowrepos "relay/internal/repos/workflow"
+	workflowstore "relay/internal/store/workflow"
+)
+
+type canonicalPlanAuditModel struct {
+	Passes []json.RawMessage `json:"passes"`
+}
+
+type canonicalPassNumber struct {
+	Number int64 `json:"number"`
+}
+
+func buildWorkflowAuditPacket(
+	ctx context.Context,
+	store *workflowstore.Store,
+	run workflowstore.Run,
+	packetID string,
+	attempt workflowstore.ExecutionAttempt,
+	commit workflowrepos.AuditCommitEvidence,
+) ([]byte, error) {
+	runArtifacts, err := store.ListArtifactsByRun(ctx, run.ID)
+	if err != nil {
+		return nil, err
+	}
+	executionSpecArtifact, err := requireArtifactKind(runArtifacts, "execution_spec")
+	if err != nil {
+		return nil, err
+	}
+	executorBriefArtifact, err := requireArtifactKind(runArtifacts, "executor_brief")
+	if err != nil {
+		return nil, err
+	}
+	executionSpec, err := readWorkflowArtifact(store, executionSpecArtifact, MaxWorkflowAuditSourceBytes)
+	if err != nil {
+		return nil, fmt.Errorf("read canonical Execution Spec: %w", err)
+	}
+	executorBrief, err := readWorkflowArtifact(store, executorBriefArtifact, MaxWorkflowAuditSourceBytes)
+	if err != nil {
+		return nil, fmt.Errorf("read rendered Executor Brief: %w", err)
+	}
+	selectedPass, planID, passID, passNumber, err := selectedPassAuthority(ctx, store, run)
+	if err != nil {
+		return nil, err
+	}
+	remediatesRunID := ""
+	if run.RemediatesRunRowID.Valid {
+		original, err := store.GetRunByRowID(ctx, run.RemediatesRunRowID.Int64)
+		if err != nil {
+			return nil, fmt.Errorf("load remediated Run: %w", err)
+		}
+		remediatesRunID = original.RunID
+	}
+	attemptArtifacts, err := store.ListArtifactsByExecutionAttempt(ctx, attempt.ID)
+	if err != nil {
+		return nil, err
+	}
+	evidence, err := workflowAuditEvidence(store, attemptArtifacts)
+	if err != nil {
+		return nil, err
+	}
+	result := json.RawMessage(attempt.ResultJSON)
+	if !json.Valid(result) {
+		result = json.RawMessage(`{}`)
+	}
+	blockers := workflowAuditBlockers(result)
+	packet := WorkflowAuditPacket{
+		SchemaVersion: WorkflowAuditPacketSchemaVersion,
+		AuditPacketID: packetID,
+		Run: WorkflowAuditRunAuthority{
+			RunID:           run.RunID,
+			FeatureSlug:     run.FeatureSlug,
+			RepoTarget:      run.RepoTarget,
+			Branch:          run.Branch,
+			BaseCommit:      run.BaseCommit,
+			CanonicalSHA256: run.CanonicalSHA256,
+			PlanID:          planID,
+			PassID:          passID,
+			PassNumber:      passNumber,
+			RemediatesRunID: remediatesRunID,
+		},
+		SelectedPass:  selectedPass,
+		ExecutionSpec: string(executionSpec),
+		ExecutorBrief: string(executorBrief),
+		Attempt: WorkflowAuditAttemptAuthority{
+			AttemptID:     attempt.AttemptID,
+			AttemptNumber: attempt.AttemptNumber,
+			Adapter:       attempt.Adapter,
+			Model:         attempt.Model,
+			Status:        attempt.Status,
+			Result:        result,
+			StartedAt:     nullableString(attempt.StartedAt),
+			FinishedAt:    nullableString(attempt.FinishedAt),
+		},
+		ValidationEvidence: evidence,
+		Commit: WorkflowAuditCommitAuthority{
+			Branch:        commit.Branch,
+			BaseCommit:    commit.BaseCommit,
+			AuditedCommit: commit.AuditedCommit,
+			ChangedFiles:  append([]string(nil), commit.ChangedFiles...),
+			NameStatus:    executor.RedactSensitiveText(commit.NameStatus),
+			DiffStat:      executor.RedactSensitiveText(commit.DiffStat),
+			CommitLog:     executor.RedactSensitiveText(commit.CommitLog),
+			Diff:          executor.RedactSensitiveText(commit.Diff),
+		},
+		Blockers: blockers,
+	}
+	data, err := json.MarshalIndent(packet, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	data = append(data, '\n')
+	if len(data) > MaxWorkflowAuditPacketBytes {
+		return nil, ErrWorkflowAuditPacketTooLarge
+	}
+	return data, nil
+}
+
+func selectedPassAuthority(ctx context.Context, store *workflowstore.Store, run workflowstore.Run) (*WorkflowAuditPassAuthority, string, string, int64, error) {
+	if !run.PlanRowID.Valid || !run.PlanPassRowID.Valid {
+		return nil, "", "", 0, nil
+	}
+	plan, err := store.GetPlanByRowID(ctx, run.PlanRowID.Int64)
+	if err != nil {
+		return nil, "", "", 0, err
+	}
+	pass, err := store.GetPlanPassByRowID(ctx, run.PlanPassRowID.Int64)
+	if err != nil {
+		return nil, "", "", 0, err
+	}
+	planArtifacts, err := store.ListArtifactsByPlan(ctx, plan.ID)
+	if err != nil {
+		return nil, "", "", 0, err
+	}
+	canonicalPlanArtifact, err := requireArtifactKind(planArtifacts, "canonical_plan")
+	if err != nil {
+		return nil, "", "", 0, err
+	}
+	canonicalPlan, err := readWorkflowArtifact(store, canonicalPlanArtifact, MaxWorkflowAuditSourceBytes)
+	if err != nil {
+		return nil, "", "", 0, err
+	}
+	var model canonicalPlanAuditModel
+	if err := json.Unmarshal(canonicalPlan, &model); err != nil {
+		return nil, "", "", 0, fmt.Errorf("decode canonical Plan for audit: %w", err)
+	}
+	for _, raw := range model.Passes {
+		var identity canonicalPassNumber
+		if err := json.Unmarshal(raw, &identity); err != nil {
+			return nil, "", "", 0, fmt.Errorf("decode canonical Plan pass identity: %w", err)
+		}
+		if identity.Number == pass.PassNumber {
+			return &WorkflowAuditPassAuthority{
+				PlanID:              plan.PlanID,
+				PlanCanonicalSHA256: plan.CanonicalSHA256,
+				PassID:              pass.PassID,
+				PassNumber:          pass.PassNumber,
+				PassName:            pass.Name,
+				CanonicalPass:       append(json.RawMessage(nil), raw...),
+			}, plan.PlanID, pass.PassID, pass.PassNumber, nil
+		}
+	}
+	return nil, "", "", 0, fmt.Errorf("canonical Plan does not contain managed pass %d", pass.PassNumber)
+}
+
+func workflowAuditEvidence(store *workflowstore.Store, artifacts []workflowstore.Artifact) ([]WorkflowAuditEvidenceItem, error) {
+	sorted := append([]workflowstore.Artifact(nil), artifacts...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Kind == sorted[j].Kind {
+			return sorted[i].ArtifactID < sorted[j].ArtifactID
+		}
+		return sorted[i].Kind < sorted[j].Kind
+	})
+	out := make([]WorkflowAuditEvidenceItem, 0, len(sorted))
+	for _, artifact := range sorted {
+		item := WorkflowAuditEvidenceItem{
+			ArtifactID: artifact.ArtifactID,
+			Kind:       artifact.Kind,
+			MediaType:  artifact.MediaType,
+			SHA256:     artifact.SHA256,
+			SizeBytes:  artifact.SizeBytes,
+		}
+		if strings.HasPrefix(artifact.MediaType, "text/") || artifact.MediaType == "application/json" {
+			content, truncated, err := readWorkflowArtifactTail(store, artifact, MaxWorkflowAuditEvidenceBytes)
+			if err != nil {
+				return nil, err
+			}
+			item.Content = executor.RedactSensitiveText(string(content))
+			item.ContentTruncated = truncated
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func workflowAuditBlockers(result json.RawMessage) []string {
+	var model struct {
+		Error       string `json:"error"`
+		BlockerText string `json:"blocker_text"`
+	}
+	if json.Unmarshal(result, &model) != nil {
+		return []string{}
+	}
+	var out []string
+	for _, value := range []string{model.Error, model.BlockerText} {
+		value = strings.TrimSpace(executor.RedactSensitiveText(value))
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	if out == nil {
+		return []string{}
+	}
+	return out
+}
+
+func requireArtifactKind(artifacts []workflowstore.Artifact, kind string) (workflowstore.Artifact, error) {
+	var found workflowstore.Artifact
+	count := 0
+	for _, artifact := range artifacts {
+		if artifact.Kind == kind {
+			found = artifact
+			count++
+		}
+	}
+	if count != 1 {
+		return workflowstore.Artifact{}, fmt.Errorf("expected exactly one %s artifact, found %d", kind, count)
+	}
+	return found, nil
+}
+
+func readWorkflowArtifact(store *workflowstore.Store, artifact workflowstore.Artifact, maxBytes int) ([]byte, error) {
+	path, err := workflowArtifactPath(store, artifact)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > int64(maxBytes) {
+		return nil, fmt.Errorf("artifact %s exceeds %d bytes", artifact.ArtifactID, maxBytes)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) != artifact.SizeBytes {
+		return nil, fmt.Errorf("artifact %s size does not match metadata", artifact.ArtifactID)
+	}
+	return data, nil
+}
+
+func readWorkflowArtifactTail(store *workflowstore.Store, artifact workflowstore.Artifact, maxBytes int) ([]byte, bool, error) {
+	path, err := workflowArtifactPath(store, artifact)
+	if err != nil {
+		return nil, false, err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, false, err
+	}
+	if info.Size() <= int64(maxBytes) {
+		data, err := os.ReadFile(path)
+		return data, false, err
+	}
+	if _, err := file.Seek(-int64(maxBytes), 2); err != nil {
+		return nil, false, err
+	}
+	data := make([]byte, maxBytes)
+	count, err := file.Read(data)
+	if err != nil {
+		return nil, false, err
+	}
+	return data[:count], true, nil
+}
+
+func workflowArtifactPath(store *workflowstore.Store, artifact workflowstore.Artifact) (string, error) {
+	root := store.ArtifactStore().Root()
+	absolute := filepath.Clean(filepath.Join(root, filepath.FromSlash(artifact.RelativePath)))
+	relative, err := filepath.Rel(root, absolute)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("artifact path escapes workflow artifact root")
+	}
+	return absolute, nil
+}
+
+func nullableString(value sql.NullString) string {
+	if value.Valid {
+		return value.String
+	}
+	return ""
+}

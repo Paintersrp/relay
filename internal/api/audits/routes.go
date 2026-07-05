@@ -19,3 +19,8 @@ func MountRoutes(r chi.Router, h *Handler) {
 	r.Post("/runs/{id}/audit/prepare-commit-message", h.PrepareCommitMessage)
 	r.Post("/runs/{id}/audit/close", h.CloseRun)
 }
+
+func MountWorkflowRoutes(r chi.Router, h *WorkflowHandler) {
+	r.Post("/workflow/runs/{runID}/audit/prepare", h.Prepare)
+	r.Get("/workflow/runs/{runID}/audit/status", h.Status)
+}
