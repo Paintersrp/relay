@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -274,7 +275,7 @@ func (s *Server) HandleSubmitPlan(rawArgs json.RawMessage) ToolCallResult {
 	}
 	svc, err := workflowplans.NewService(s.workflowStore())
 	if err != nil {
-		return canonicalBlocked("submit_plan", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", map[string]any{"provenance": provenance})
+		return canonicalBlocked("submit_plan", MCPBlockerToolUnavailable, "workflow Plan service is unavailable", false, "workflow_store", map[string]any{"provenance": provenance})
 	}
 	result, err := svc.CreatePlan(context.Background(), workflowplans.CreatePlanInput{
 		FeatureSlug:      model.FeatureSlug,
@@ -284,7 +285,7 @@ func (s *Server) HandleSubmitPlan(rawArgs json.RawMessage) ToolCallResult {
 		Passes:           canonicalPlanPasses(model),
 	})
 	if err != nil {
-		return canonicalBlocked("submit_plan", canonicalBlockerPersistenceFailed, err.Error(), true, "workflow_store", map[string]any{"provenance": provenance})
+		return canonicalServiceBlocked("submit_plan", err, provenance)
 	}
 	out := canonicalPlanOutput{OK: true, Tool: "submit_plan", Plan: planOut(result.Plan), Passes: passOut(result.Passes), Artifacts: artifactOut(result.Artifacts)}
 	return canonicalOK(out)
@@ -304,7 +305,7 @@ func (s *Server) HandleGetCanonicalPlan(rawArgs json.RawMessage) ToolCallResult 
 	}
 	result, err := svc.GetPlan(context.Background(), input.PlanID)
 	if err != nil {
-		return canonicalBlocked("get_plan", MCPBlockerUnknownResource, err.Error(), true, "plan_id", nil)
+		return canonicalServiceBlocked("get_plan", err, nil)
 	}
 	out := canonicalPlanOutput{OK: true, Tool: "get_plan", Plan: planOut(result.Plan), Passes: passOut(result.Passes), Artifacts: artifactOut(result.Artifacts)}
 	return canonicalOK(out)
@@ -336,7 +337,7 @@ func (s *Server) HandleCreateCanonicalRun(rawArgs json.RawMessage) ToolCallResul
 	}
 	svc, err := workflowruns.NewService(s.workflowStore())
 	if err != nil {
-		return canonicalBlocked("create_run", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", map[string]any{"provenance": provenance})
+		return canonicalBlocked("create_run", MCPBlockerToolUnavailable, "workflow Run service is unavailable", false, "workflow_store", map[string]any{"provenance": provenance})
 	}
 	result, err := svc.CreateRun(context.Background(), workflowruns.CreateRunInput{
 		FeatureSlug:      model.FeatureSlug,
@@ -350,7 +351,7 @@ func (s *Server) HandleCreateCanonicalRun(rawArgs json.RawMessage) ToolCallResul
 		RemediatesRunID:  strings.TrimSpace(input.RemediatesRunID),
 	})
 	if err != nil {
-		return canonicalBlocked("create_run", canonicalBlockerPersistenceFailed, err.Error(), true, "workflow_store", map[string]any{"provenance": provenance})
+		return canonicalServiceBlocked("create_run", err, provenance)
 	}
 	out := canonicalRunOutput{
 		OK:         true,
@@ -392,6 +393,32 @@ func verifyCanonicalSubmission(tool, displayName, expectedSHA, expectedKind stri
 		return canonicalBlocked(tool, canonicalBlockerArtifactKind, "artifact_file.file_name has the wrong canonical artifact kind for this tool", true, "artifact_file", map[string]any{"provenance": provenance})
 	}
 	return ToolCallResult{}
+}
+
+func canonicalServiceBlocked(tool string, err error, provenance any) ToolCallResult {
+	lower := strings.ToLower(err.Error())
+	metadata := any(nil)
+	if provenance != nil {
+		metadata = map[string]any{"provenance": provenance}
+	}
+
+	switch {
+	case errors.Is(err, sql.ErrNoRows) && strings.Contains(lower, "repository target"):
+		return canonicalBlocked(tool, MCPBlockerUnknownRepository, "repository target is not registered", true, "repo_target", metadata)
+	case errors.Is(err, sql.ErrNoRows):
+		return canonicalBlocked(tool, MCPBlockerUnknownResource, "referenced Plan, pass, or remediation Run was not found", true, "association", metadata)
+	case strings.Contains(lower, "plan id and pass number"),
+		strings.Contains(lower, "managed plan"),
+		strings.Contains(lower, "managed pass"),
+		strings.Contains(lower, "remediation source run"),
+		strings.Contains(lower, "does not match run repository"):
+		return canonicalBlocked(tool, canonicalBlockerAssociationInvalid, "Plan, pass, repository, or remediation association is invalid", true, "association", metadata)
+	case strings.Contains(lower, "repository target") &&
+		(strings.Contains(lower, "not registered") || strings.Contains(lower, "registered key casing")):
+		return canonicalBlocked(tool, MCPBlockerUnknownRepository, "repository target is not registered", true, "repo_target", metadata)
+	default:
+		return canonicalBlocked(tool, canonicalBlockerPersistenceFailed, "workflow persistence failed", false, "workflow_store", metadata)
+	}
 }
 
 func canonicalCompilerBlocked(tool string, content FileParameterContent, result speccompiler.Result, provenance ExactSubmissionProvenance) ToolCallResult {

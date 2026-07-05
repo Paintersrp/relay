@@ -45,6 +45,17 @@ describe("chatgpt-mcp local script guardrails", () => {
     );
   });
 
+  it("recognizes only canonical Relay MCP profile names and fails closed", async () => {
+    const source = await readFile(scriptPath, "utf8");
+
+    assert.match(
+      source,
+      /ALLOWED_RELAY_MCP_PROFILES\s*=\s*new Set\(\["planner", "auditor", "local_operator"\]\)/,
+    );
+    assert.match(source, /normalizeRelayMcpProfile\(process\.env\.RELAY_MCP_PROFILE\)/);
+    assert.match(source, /defaulting to planner/);
+  });
+
   it("redacts the control-plane API key before echoing tunnel output", async () => {
     const source = await readFile(scriptPath, "utf8");
 

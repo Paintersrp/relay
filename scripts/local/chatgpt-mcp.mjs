@@ -20,6 +20,7 @@ const DEFAULT_RELAY_MCP_URL = "http://127.0.0.1:8081/mcp";
 const DEFAULT_TUNNEL_MCP_TRANSPORT = "stdio";
 const DEFAULT_TUNNEL_HEALTH_LISTEN_ADDR = "127.0.0.1:8082";
 const DEFAULT_RELAY_MCP_PROFILE = "planner";
+const ALLOWED_RELAY_MCP_PROFILES = new Set(["planner", "auditor", "local_operator"]);
 const RELAY_MCP_STDIO_LAUNCHER_PATH = join(
   REPO_ROOT,
   "scripts",
@@ -87,9 +88,9 @@ function loadEnvFile(filePath, originalEnvKeys) {
 }
 
 function stripMatchingQuotes(value) {
-  if (value.length < 2) {
-    return value;
-  }
+	if (value.length < 2) {
+		return value;
+	}
 
   const first = value[0];
   const last = value[value.length - 1];
@@ -97,7 +98,18 @@ function stripMatchingQuotes(value) {
     return value.slice(1, -1);
   }
 
-  return value;
+	return value;
+}
+
+function normalizeRelayMcpProfile(raw) {
+  const profile = String(raw || DEFAULT_RELAY_MCP_PROFILE).trim().toLowerCase();
+  if (ALLOWED_RELAY_MCP_PROFILES.has(profile)) {
+    return profile;
+  }
+  console.error(
+    `Unsupported RELAY_MCP_PROFILE ${JSON.stringify(profile)}; defaulting to planner.`,
+  );
+  return DEFAULT_RELAY_MCP_PROFILE;
 }
 
 function parseOptions(args) {
@@ -137,7 +149,7 @@ function getConfig() {
     relayMcpStdioCommand:
       process.env.RELAY_MCP_STDIO_COMMAND || buildDefaultRelayMcpCommand(),
     relayMcpStdioLauncherPath: RELAY_MCP_STDIO_LAUNCHER_PATH,
-    relayMcpProfile: process.env.RELAY_MCP_PROFILE || DEFAULT_RELAY_MCP_PROFILE,
+    relayMcpProfile: normalizeRelayMcpProfile(process.env.RELAY_MCP_PROFILE),
     tunnelClientPath: process.env.TUNNEL_CLIENT_PATH || "",
     controlPlaneApiKey: process.env.CONTROL_PLANE_API_KEY || "",
     tunnelHealthListenAddr:

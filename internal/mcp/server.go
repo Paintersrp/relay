@@ -42,60 +42,28 @@ type Server struct {
 	tools []ToolDefinition
 }
 
-// NewServer constructs an MCP server with the profile-appropriate tool set registered.
-// deps may be nil for tests that only need protocol-level behavior (no real tools).
+// NewServer constructs an MCP server with the canonical profile-appropriate
+// tool set registered. Legacy handlers remain available only as unregistered
+// compile-time code until their removal pass.
 func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 	var d *MCPDeps
 	if len(deps) > 0 {
 		d = deps[0]
 	}
 	s := &Server{log: log, deps: d}
-
-	if d != nil && d.WorkflowStore != nil {
-		s.tools = canonicalToolDefinitions(s.activeProfile())
-		return s
-	}
-	s.tools = s.legacyToolDefinitions()
-	s.tools = append(s.tools, planAttemptToolDefinitions()...)
-	s.tools = append(s.tools, planSeedToolDefinitions()...)
-	if s.contextBrokerEnabled() {
-		s.tools = append(s.tools, contextBrokerToolDefinitions()...)
-		s.tools = append(s.tools, refactorBacklogToolDefinitions()...)
-	}
+	s.tools = canonicalToolDefinitions(s.activeProfile())
 	return s
 }
 
-func (s *Server) legacyToolDefinitions() []ToolDefinition {
-	return []ToolDefinition{
-		// Pass 13A feasibility tool — preserved for backward compatibility.
-		ToolSubmitTestAuditPacket,
-		// Pass 16 real tools.
-		ToolCreateRunFromPlannerHandoff,
-		ToolCreateRunFromPlannerHandoffFile,
-		ToolValidatePlannerHandoffForCompile,
-		ToolSubmitPlannerPassPlan,
-		ToolListOpenRuns,
-		ToolGetRunStatus,
-		ToolSubmitAuditPacket,
-	}
-}
-
-func (s *Server) contextBrokerEnabled() bool {
-	if s == nil {
-		return false
-	}
-	profile := ToolProfileLocalOperator
-	if s.deps != nil && strings.TrimSpace(string(s.deps.ToolProfile)) != "" {
-		profile = s.deps.ToolProfile
-	}
-	return profile.ContextBrokerEnabled()
-}
-
 func (s *Server) activeProfile() ToolProfile {
-	if s.deps == nil || strings.TrimSpace(string(s.deps.ToolProfile)) == "" {
-		return ToolProfileLocalOperator
+	if s == nil || s.deps == nil {
+		return ToolProfilePlanner
 	}
-	return s.deps.ToolProfile
+	profile, ok := NormalizeToolProfile(string(s.deps.ToolProfile))
+	if !ok {
+		return ToolProfilePlanner
+	}
+	return profile
 }
 
 func (s *Server) fileParameterFetcher() FileParameterFetcher {

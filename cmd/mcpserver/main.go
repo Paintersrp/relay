@@ -1,41 +1,26 @@
-// Command mcpserver starts the Relay MCP stdio server.
+// Command mcpserver starts the canonical Relay MCP stdio server.
 //
-// MCP clients (Claude Desktop, Cursor, etc.) launch this binary as a subprocess
-// and communicate with it over stdin/stdout using newline-delimited JSON-RPC 2.0.
-//
-// Example MCP client config (Claude Desktop):
-//
-//	{
-//	  "mcpServers": {
-//	    "relay": {
-//	      "command": "/path/to/relay-mcpserver",
-//	      "args": [],
-//	      "env": {
-//	        "RELAY_DB_PATH": "/path/to/data/relay.sqlite",
-//	        "RELAY_ARTIFACTS_DIR": "/path/to/data/artifacts"
-//	      }
-//	    }
-//	  }
-//	}
+// MCP clients launch this binary as a subprocess and communicate with it over
+// stdin/stdout using newline-delimited JSON-RPC 2.0.
 //
 // Environment variables:
-//   - RELAY_DB_PATH: path to the SQLite database (default: data/relay.sqlite)
-//   - RELAY_ARTIFACTS_DIR: path to artifact storage (default: data/artifacts)
+//   - RELAY_WORKFLOW_DB_PATH: workflow SQLite database path
+//     (default: data/workflow/relay-workflow.sqlite)
+//   - RELAY_WORKFLOW_ARTIFACTS_DIR: workflow artifact root
+//     (default: data/workflow/artifacts)
+//   - RELAY_MCP_PROFILE: planner, auditor, or local_operator
+//     (default and invalid-value fallback: planner)
 //
-// Safety boundaries: no shell execution, no arbitrary file read/write,
-// no git commit/push/branch mutation is exposed through MCP tools.
-// Tool arguments must not contain secrets, tokens, auth headers, private keys,
-// or signed URLs — these are stored as persistent artifacts.
+// Safety boundaries: no shell execution, no arbitrary local file browsing, and
+// no git mutation are exposed through MCP tools.
 package main
 
 import (
 	"log/slog"
 	"os"
 
-	"relay/internal/artifacts"
 	"relay/internal/config"
 	"relay/internal/mcp"
-	"relay/internal/store"
 	workflowstore "relay/internal/store/workflow"
 )
 
@@ -46,26 +31,6 @@ func main() {
 		log.Warn("loading local env files", "error", err)
 	}
 
-	// Configure artifact base directory.
-	artifactsDir := os.Getenv("RELAY_ARTIFACTS_DIR")
-	if artifactsDir == "" {
-		artifactsDir = "data/artifacts"
-	}
-	artifacts.SetBaseDir(artifactsDir)
-
-	// Open the Relay SQLite store. The store auto-migrates on first open.
-	dbPath := os.Getenv("RELAY_DB_PATH")
-	if dbPath == "" {
-		dbPath = "data/relay.sqlite"
-	}
-
-	s, err := store.Open(dbPath, log)
-	if err != nil {
-		log.Error("relay MCP server: cannot open database", "path", dbPath, "error", err)
-		os.Exit(1)
-	}
-	defer s.Close()
-
 	workflowDBPath := os.Getenv("RELAY_WORKFLOW_DB_PATH")
 	if workflowDBPath == "" {
 		workflowDBPath = "data/workflow/relay-workflow.sqlite"
@@ -74,6 +39,7 @@ func main() {
 	if workflowArtifactsDir == "" {
 		workflowArtifactsDir = "data/workflow/artifacts"
 	}
+
 	workflowStore, err := workflowstore.Open(workflowDBPath, workflowArtifactsDir)
 	if err != nil {
 		log.Error("relay MCP server: cannot open workflow database", "path", workflowDBPath, "error", err)
@@ -81,17 +47,15 @@ func main() {
 	}
 	defer workflowStore.Close()
 
-	log.Info("relay MCP server starting",
+	deps := mcp.NewCanonicalDepsFromEnv(workflowStore, log)
+	log.Info(
+		"relay MCP server starting",
 		"transport", "stdio",
 		"protocol", mcp.MCPProtocolVersion,
-		"db_path", dbPath,
-		"artifacts_dir", artifactsDir,
+		"mcp_profile", deps.ToolProfile,
 		"workflow_db_path", workflowDBPath,
 		"workflow_artifacts_dir", workflowArtifactsDir,
 	)
-
-	deps := mcp.NewCanonicalDepsFromEnv(workflowStore, log)
-	log.Info("relay MCP profile selected", "mcp_profile", deps.ToolProfile)
 
 	srv := mcp.NewServer(log, deps)
 	if err := srv.Serve(os.Stdin, os.Stdout); err != nil {

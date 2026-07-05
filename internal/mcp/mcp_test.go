@@ -17,6 +17,8 @@ import (
 	"relay/internal/store"
 )
 
+const ToolProfileRestricted ToolProfile = "restricted"
+
 // setupTestArtifactDir points artifact storage at a temp dir so tests don't
 // write to the real data/artifacts directory.
 func setupTestArtifactDir(t *testing.T) string {
@@ -218,40 +220,24 @@ func TestHandleSubmitTestAuditPacket_NoGitOrShellMutation(t *testing.T) {
 
 // --- Server-level tests ---
 
-// TestServerToolsList_Pass16 verifies that the MCP server advertises the
-// required base tools under the restricted profile without a fixed count gate.
-func TestServerToolsList_Pass16(t *testing.T) {
-	srv := NewServer(discardLogger(), &MCPDeps{ToolProfile: ToolProfileRestricted})
-	req := Request{
+func TestServerToolsListDefaultsToCanonicalPlannerProfile(t *testing.T) {
+	srv := NewServer(discardLogger())
+	resp := srv.handleLine(mustMarshal(t, Request{
 		JSONRPC: JSONRPCVersion,
 		ID:      json.RawMessage(`1`),
 		Method:  "tools/list",
-	}
-	resp := srv.handleLine(mustMarshal(t, req))
+	}))
 	if resp.Error != nil {
 		t.Fatalf("unexpected error: %v", resp.Error)
 	}
-
 	var list ToolsListResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &list); err != nil {
-		t.Fatalf("unmarshal tools list: %v", err)
+	body, _ := json.Marshal(resp.Result)
+	if err := json.Unmarshal(body, &list); err != nil {
+		t.Fatal(err)
 	}
-
-	expectedTools := baseToolNamesForTest()
-
-	if len(list.Tools) < len(expectedTools) {
-		t.Errorf("expected at least %d tools, got %d", len(expectedTools), len(list.Tools))
-	}
-
-	registeredNames := map[string]bool{}
-	for _, tool := range list.Tools {
-		registeredNames[tool.Name] = true
-	}
-	for _, name := range expectedTools {
-		if !registeredNames[name] {
-			t.Errorf("expected tool %q not found in tools/list", name)
-		}
+	want := []string{"validate_artifact", "submit_plan", "get_plan", "create_run"}
+	if got := toolNames(list.Tools); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("tools = %v, want %v", got, want)
 	}
 }
 
@@ -498,25 +484,14 @@ func TestHandleSubmitPlannerPassPlan_DuplicatePlanID(t *testing.T) {
 
 // --- create_run_from_planner_handoff tests ---
 
-func TestHandleCreateRunFromPlannerHandoff_NoDeps(t *testing.T) {
-	srv := NewServer(discardLogger()) // no deps
-	params, _ := json.Marshal(ToolCallParams{
-		Name:      "create_run_from_planner_handoff",
-		Arguments: json.RawMessage(`{"planner_handoff_markdown": "# Test\n\nHello"}`),
-	})
-	req := Request{JSONRPC: JSONRPCVersion, ID: json.RawMessage(`10`), Method: "tools/call", Params: params}
-	resp := srv.handleLine(mustMarshal(t, req))
-	if resp.Error != nil {
-		t.Fatalf("unexpected RPC error: %v", resp.Error)
-	}
-	var result ToolCallResult
-	b, _ := json.Marshal(resp.Result)
-	_ = json.Unmarshal(b, &result)
+func TestHandleCreateRunFromPlannerHandoffNoDepsDirect(t *testing.T) {
+	srv := NewServer(discardLogger())
+	result := srv.HandleCreateRunFromPlannerHandoff(json.RawMessage(`{"planner_handoff_markdown":"# Test\n\nHello"}`))
 	if !result.IsError {
-		t.Error("expected tool-level DEPENDENCY_ERROR when no store is wired")
+		t.Fatal("expected direct legacy handler dependency error")
 	}
-	if len(result.Content) > 0 && !contains(result.Content[0].Text, "DEPENDENCY_ERROR") {
-		t.Errorf("expected DEPENDENCY_ERROR, got: %s", result.Content[0].Text)
+	if len(result.Content) == 0 || !contains(result.Content[0].Text, "DEPENDENCY_ERROR") {
+		t.Fatalf("expected DEPENDENCY_ERROR, got %+v", result.Content)
 	}
 }
 

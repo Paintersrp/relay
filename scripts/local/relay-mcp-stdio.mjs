@@ -80,12 +80,13 @@ function loadEnvFile(filePath, originalEnvKeys) {
 
 function resolveRelayMcpProfile(raw) {
   const profile = String(raw || DEFAULT_RELAY_MCP_PROFILE).trim().toLowerCase();
-  if (!Object.prototype.hasOwnProperty.call(TOOL_NAMES_BY_PROFILE, profile)) {
-    throw new ValidationError(
-      `RELAY_MCP_PROFILE must be one of: ${Object.keys(TOOL_NAMES_BY_PROFILE).join(', ')}`,
-    );
+  if (Object.prototype.hasOwnProperty.call(TOOL_NAMES_BY_PROFILE, profile)) {
+    return profile;
   }
-  return profile;
+  console.error(
+    `Unsupported RELAY_MCP_PROFILE ${JSON.stringify(profile)}; defaulting to planner.`,
+  );
+  return DEFAULT_RELAY_MCP_PROFILE;
 }
 
 function stripMatchingQuotes(value) {
@@ -116,20 +117,9 @@ function resolveRelayMcpServerCommand() {
     };
   }
 
-  const bundledBinary = process.platform === 'win32'
-    ? join(REPO_ROOT, 'bin', 'relay-mcpserver.exe')
-    : join(REPO_ROOT, 'bin', 'relay-mcpserver');
-  if (existsSync(bundledBinary)) {
-    return {
-      command: bundledBinary,
-      args: [],
-      description: bundledBinary,
-    };
-  }
-
-  return {
-    command: 'go',
-    args: ['run', './cmd/mcpserver'],
+	return {
+		command: 'go',
+		args: ['run', './cmd/mcpserver'],
     description: 'go run ./cmd/mcpserver',
   };
 }

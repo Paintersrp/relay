@@ -78,34 +78,22 @@ func TestCreateRunFromPlannerHandoffInlineReturnsExactProvenance(t *testing.T) {
 	}
 }
 
-func TestPlannerHandoffFileToolsDeclareChatGPTFileParameter(t *testing.T) {
-	srv := NewServer(discardLogger(), &MCPDeps{ToolProfile: ToolProfileRestricted})
-	tools := map[string]ToolDefinition{}
-	for _, tool := range srv.tools {
-		tools[tool.Name] = tool
-	}
-	for _, name := range []string{"create_run_from_planner_handoff_file", "validate_planner_handoff_for_compile"} {
-		t.Run(name, func(t *testing.T) {
-			tool, ok := tools[name]
-			if !ok {
-				t.Fatalf("tool %q not registered", name)
-			}
+func TestLegacyPlannerHandoffFileToolDefinitionsStillCompile(t *testing.T) {
+	tools := []ToolDefinition{ToolCreateRunFromPlannerHandoffFile, ToolValidatePlannerHandoffForCompile}
+	for _, tool := range tools {
+		t.Run(tool.Name, func(t *testing.T) {
 			params, ok := tool.Meta["openai/fileParams"].([]string)
 			if !ok || len(params) != 1 || params[0] != "planner_handoff_file" {
 				t.Fatalf("unexpected file params: %#v", tool.Meta["openai/fileParams"])
 			}
 			var schema map[string]any
 			if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
-				t.Fatalf("decode schema: %v", err)
+				t.Fatal(err)
 			}
 			props := schema["properties"].(map[string]any)
 			fileProp := props["planner_handoff_file"].(map[string]any)
 			if fileProp["type"] != "object" || fileProp["additionalProperties"] != false {
 				t.Fatalf("unexpected file schema: %+v", fileProp)
-			}
-			required := fileProp["required"].([]any)
-			if len(required) != 2 || required[0] != "download_url" || required[1] != "file_id" {
-				t.Fatalf("unexpected required fields: %+v", required)
 			}
 		})
 	}

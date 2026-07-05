@@ -1,155 +1,68 @@
 package mcp
 
-import (
-	"testing"
-)
+import "testing"
 
-func TestToolProfileFromEnvDefaultsAndPrecedence(t *testing.T) {
-	t.Run("NoEnvDefaultsToLocalOperator", func(t *testing.T) {
-		t.Setenv(EnvMCPProfile, "")
-		t.Setenv(EnvLegacyContextBrokerEnabled, "")
-		got := ToolProfileFromEnv(nil)
-		if got != ToolProfileLocalOperator {
-			t.Errorf("expected %s, got %s", ToolProfileLocalOperator, got)
-		}
-	})
-
-	t.Run("CanonicalProfileRestricted", func(t *testing.T) {
-		t.Setenv(EnvMCPProfile, "restricted")
-		t.Setenv(EnvLegacyContextBrokerEnabled, "true") // profile takes precedence
-		got := ToolProfileFromEnv(nil)
-		if got != ToolProfileRestricted {
-			t.Errorf("expected %s, got %s", ToolProfileRestricted, got)
-		}
-	})
-
-	t.Run("CanonicalProfileLocalOperator", func(t *testing.T) {
-		t.Setenv(EnvMCPProfile, "local-operator")
-		t.Setenv(EnvLegacyContextBrokerEnabled, "false") // profile takes precedence
-		got := ToolProfileFromEnv(nil)
-		if got != ToolProfileLocalOperator {
-			t.Errorf("expected %s, got %s", ToolProfileLocalOperator, got)
-		}
-	})
-
-	t.Run("LegacyContextBrokerEnabledFalse", func(t *testing.T) {
-		t.Setenv(EnvMCPProfile, "")
-		t.Setenv(EnvLegacyContextBrokerEnabled, "false")
-		got := ToolProfileFromEnv(nil)
-		if got != ToolProfileRestricted {
-			t.Errorf("expected %s, got %s", ToolProfileRestricted, got)
-		}
-	})
-
-	t.Run("LegacyContextBrokerEnabledTrue", func(t *testing.T) {
-		t.Setenv(EnvMCPProfile, "")
-		t.Setenv(EnvLegacyContextBrokerEnabled, "true")
-		got := ToolProfileFromEnv(nil)
-		if got != ToolProfileLocalOperator {
-			t.Errorf("expected %s, got %s", ToolProfileLocalOperator, got)
-		}
-	})
-
-	t.Run("LegacyContextBrokerEnabledInvalid", func(t *testing.T) {
-		t.Setenv(EnvMCPProfile, "")
-		t.Setenv(EnvLegacyContextBrokerEnabled, "not-a-bool")
-		got := ToolProfileFromEnv(nil)
-		if got != ToolProfileLocalOperator {
-			t.Errorf("expected default %s on invalid legacy env, got %s", ToolProfileLocalOperator, got)
-		}
-	})
-
-	t.Run("CanonicalProfileInvalid", func(t *testing.T) {
-		t.Setenv(EnvMCPProfile, "invalid-profile-name")
-		got := ToolProfileFromEnv(nil)
-		if got != ToolProfileLocalOperator {
-			t.Errorf("expected default %s on invalid profile, got %s", ToolProfileLocalOperator, got)
-		}
-	})
-}
-
-func TestNewDepsFromEnvUsesCanonicalProfileForAllLaunchers(t *testing.T) {
-	t.Setenv(EnvMCPProfile, "restricted")
-	deps := NewDepsFromEnv(nil, nil)
-	if deps.ToolProfile != ToolProfileRestricted {
-		t.Errorf("expected deps to carry ToolProfileRestricted, got %s", deps.ToolProfile)
+func TestNormalizeToolProfileCanonicalValues(t *testing.T) {
+	tests := []struct {
+		name   string
+		raw    string
+		want   ToolProfile
+		wantOK bool
+	}{
+		{name: "empty defaults planner", raw: "", want: ToolProfilePlanner, wantOK: true},
+		{name: "planner", raw: "planner", want: ToolProfilePlanner, wantOK: true},
+		{name: "auditor", raw: "auditor", want: ToolProfileAuditor, wantOK: true},
+		{name: "local operator", raw: "local_operator", want: ToolProfileLocalOperator, wantOK: true},
+		{name: "trimmed case insensitive", raw: "  AUDITOR  ", want: ToolProfileAuditor, wantOK: true},
+		{name: "legacy hyphenated local operator", raw: "local-operator", want: ToolProfilePlanner, wantOK: false},
+		{name: "legacy restricted", raw: "restricted", want: ToolProfilePlanner, wantOK: false},
+		{name: "legacy audit", raw: "audit", want: ToolProfilePlanner, wantOK: false},
+		{name: "unknown", raw: "unknown-profile", want: ToolProfilePlanner, wantOK: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := NormalizeToolProfile(tt.raw)
+			if got != tt.want || ok != tt.wantOK {
+				t.Fatalf("NormalizeToolProfile(%q) = (%q, %v), want (%q, %v)", tt.raw, got, ok, tt.want, tt.wantOK)
+			}
+		})
 	}
 }
 
-func TestToolProfileAuditAliasNormalizesToLocalOperator(t *testing.T) {
-	t.Run("ExactAudit", func(t *testing.T) {
-		profile, ok := NormalizeToolProfile("audit")
-		if profile != ToolProfileLocalOperator {
-			t.Errorf("expected ToolProfileLocalOperator, got %s", profile)
-		}
-		if !ok {
-			t.Error("expected ok=true for legacy audit profile alias")
-		}
-	})
-	t.Run("CaseInsensitiveAudit", func(t *testing.T) {
-		profile, ok := NormalizeToolProfile("AUDIT")
-		if profile != ToolProfileLocalOperator {
-			t.Errorf("expected ToolProfileLocalOperator, got %s", profile)
-		}
-		if !ok {
-			t.Error("expected ok=true for AUDIT")
-		}
-	})
-	t.Run("WhitespaceTrimmedAudit", func(t *testing.T) {
-		profile, ok := NormalizeToolProfile("  audit  ")
-		if profile != ToolProfileLocalOperator {
-			t.Errorf("expected ToolProfileLocalOperator, got %s", profile)
-		}
-		if !ok {
-			t.Error("expected ok=true for trimmed audit")
-		}
-	})
-}
-
-func TestToolProfileAuditFromEnvUsesLocalOperator(t *testing.T) {
-	t.Run("RELAY_MCP_PROFILE_audit", func(t *testing.T) {
-		t.Setenv(EnvMCPProfile, "audit")
-		t.Setenv(EnvLegacyContextBrokerEnabled, "true") // profile takes precedence
-		got := ToolProfileFromEnv(nil)
-		if got != ToolProfileLocalOperator {
-			t.Errorf("expected ToolProfileLocalOperator, got %s", got)
-		}
-	})
-	t.Run("AuditProfilePrecedenceOverContextBroker", func(t *testing.T) {
-		t.Setenv(EnvMCPProfile, "audit")
-		t.Setenv(EnvLegacyContextBrokerEnabled, "false")
-		got := ToolProfileFromEnv(nil)
-		if got != ToolProfileLocalOperator {
-			t.Errorf("expected audit alias to use local-operator and take precedence over context broker env, got %s", got)
-		}
-	})
-}
-
-func TestToolProfileContextBrokerEnabled(t *testing.T) {
-	if ToolProfileRestricted.ContextBrokerEnabled() {
-		t.Error("expected restricted profile to disable context broker")
+func TestToolProfileFromEnvDefaultsAndFailsClosedToPlanner(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want ToolProfile
+	}{
+		{name: "unset", raw: "", want: ToolProfilePlanner},
+		{name: "planner", raw: "planner", want: ToolProfilePlanner},
+		{name: "auditor", raw: "auditor", want: ToolProfileAuditor},
+		{name: "local operator", raw: "local_operator", want: ToolProfileLocalOperator},
+		{name: "restricted", raw: "restricted", want: ToolProfilePlanner},
+		{name: "audit", raw: "audit", want: ToolProfilePlanner},
+		{name: "hyphenated local operator", raw: "local-operator", want: ToolProfilePlanner},
+		{name: "unknown", raw: "not-real", want: ToolProfilePlanner},
 	}
-	if !ToolProfileLocalOperator.ContextBrokerEnabled() {
-		t.Error("expected local-operator profile to enable context broker")
-	}
-	if !ToolProfile("audit").ContextBrokerEnabled() {
-		t.Error("expected legacy audit alias to enable full local-operator context broker")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvMCPProfile, tt.raw)
+			if got := ToolProfileFromEnv(nil); got != tt.want {
+				t.Fatalf("ToolProfileFromEnv() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestInvalidProfileDefaultsToLocalOperator(t *testing.T) {
-	profile, ok := NormalizeToolProfile("invalid-profile-name")
-	if profile != ToolProfileLocalOperator {
-		t.Errorf("expected default ToolProfileLocalOperator, got %s", profile)
+func TestCanonicalDepsCarryCanonicalProfile(t *testing.T) {
+	for _, profile := range []string{"planner", "auditor", "local_operator", "restricted"} {
+		t.Run(profile, func(t *testing.T) {
+			t.Setenv(EnvMCPProfile, profile)
+			deps := NewCanonicalDepsFromEnv(nil, nil)
+			want, _ := NormalizeToolProfile(profile)
+			if deps.ToolProfile != want {
+				t.Fatalf("ToolProfile = %q, want %q", deps.ToolProfile, want)
+			}
+		})
 	}
-	if ok {
-		t.Error("expected ok=false for unknown profile")
-	}
-	t.Run("UnknownEnvDefaults", func(t *testing.T) {
-		t.Setenv(EnvMCPProfile, "invalid-profile-name")
-		got := ToolProfileFromEnv(nil)
-		if got != ToolProfileLocalOperator {
-			t.Errorf("expected default %s on invalid profile, got %s", ToolProfileLocalOperator, got)
-		}
-	})
 }
