@@ -182,7 +182,7 @@ func publishRunEvent(hub *events.Hub, runID int64, kind, source, status string) 
 
 func createEvent(store *store.Store, runID int64, level, message string) error {
 	if store == nil {
-		return nil
+		return fmt.Errorf("store is unavailable")
 	}
 	_, err := store.CreateEvent(runID, level, message)
 	return err
@@ -286,14 +286,21 @@ func updateRunStatus(st *store.Store, runID int64, status string) (*store.Run, e
 
 func recordDispatchBlocker(st *store.Store, runID int64, message string, terminalRunStatus string) error {
 	if st == nil {
-		return nil
+		return fmt.Errorf("store is unavailable")
 	}
-	if _, err := st.CreateEvent(runID, "warn", message); err != nil {
+	var updatedRun *store.Run
+	var err error
+	if terminalRunStatus != "" {
+		updatedRun, err = st.RecordRunStatusEvent(runID, terminalRunStatus, "warn", message)
+		if err != nil {
+			return err
+		}
+	} else if _, err := st.CreateEvent(runID, "warn", message); err != nil {
 		return err
 	}
-	if terminalRunStatus != "" {
-		if _, err := updateRunStatus(st, runID, terminalRunStatus); err != nil {
-			return err
+	if updatedRun != nil {
+		if err := plans.NewRunLifecycleService(st).SyncAssociatedPassForRunStatus(updatedRun); err != nil {
+			return fmt.Errorf("dispatch blocker transaction committed but associated pass status sync failed: %w", err)
 		}
 	}
 	return nil
@@ -407,18 +414,16 @@ func blockExecutorPreflight(p *DispatchParams, s *store.Store, runID int64, inv 
 	}
 
 	// Stage B: durable blocker state — transactional
-	if _, err := s.RecordExecutorPreflightBlocked(runID, StatusExecutorBlocked, "warn", "Executor preflight blocked: "+res.BlockerText); err != nil {
+	updatedRun, err := s.RecordExecutorPreflightBlocked(runID, StatusExecutorBlocked, "warn", "Executor preflight blocked: "+res.BlockerText)
+	if err != nil {
 		return fmt.Errorf("executor preflight persistence failed: %s", err.Error())
+	}
+	if err := plans.NewRunLifecycleService(s).SyncAssociatedPassForRunStatus(updatedRun); err != nil {
+		return fmt.Errorf("executor preflight blocked run/event transaction committed but associated pass status sync failed: %w", err)
 	}
 
 	publishRunEvent(p.EventHub, runID, events.KindStepAgent, "executor", "blocked")
 	publishRunEvent(p.EventHub, runID, events.KindRunSummary, "executor", "blocked")
-
-	if updatedRun, err := s.GetRun(runID); err == nil && updatedRun != nil {
-		if err := plans.NewRunLifecycleService(s).SyncAssociatedPassForRunStatus(updatedRun); err != nil {
-			_, _ = s.CreateEvent(runID, "warn", "Associated pass status sync failed: "+err.Error())
-		}
-	}
 	return nil
 }
 
@@ -692,6 +697,8 @@ func runBackgroundDispatch(
 				markTerminationFailed(s, execID, "cleanup pending after launch")
 			case pipeline.AgentLaunchOwned:
 				markTerminationFailed(s, execID, "launch completed but process identity was not durably registered")
+			case pipeline.AgentLaunchUnresolved:
+				markTerminationFailed(s, execID, "launch disposition unresolved after start attempt")
 			default:
 				markTerminationFailed(s, execID, "unknown launch disposition: "+string(runResult.LaunchDisposition))
 			}
@@ -741,6 +748,9 @@ func runBackgroundDispatch(
 		if runResult.TerminationError != "" {
 			errMsg = appendError(errMsg, runResult.TerminationError)
 		}
+		if runResult.ReleaseError != "" {
+			errMsg = appendError(errMsg, "release owned process: "+runResult.ReleaseError)
+		}
 		writeErrSummary := stream.writeErrorSummary()
 		if writeErrSummary != "" {
 			errMsg = appendError(errMsg, writeErrSummary)
@@ -756,11 +766,11 @@ func runBackgroundDispatch(
 		reason := TerminalReasonCanceled
 		stepStatus := "canceled"
 		eventMessage := "Executor canceled by operator request"
-		if writeErrSummary != "" {
+		if writeErrSummary != "" || runResult.ReleaseError != "" {
 			status = ExecutionStatusFailed
 			reason = TerminalReasonFailed
 			stepStatus = "blocked"
-			eventMessage = "Executor cancellation evidence persistence failed"
+			eventMessage = "Executor cancellation failed"
 		}
 		_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
 			Status:                  status,
@@ -792,6 +802,9 @@ func runBackgroundDispatch(
 		if runResult.TerminationError != "" {
 			errMsg = appendError(errMsg, runResult.TerminationError)
 		}
+		if runResult.ReleaseError != "" {
+			errMsg = appendError(errMsg, "release owned process: "+runResult.ReleaseError)
+		}
 		writeErrSummary := stream.writeErrorSummary()
 		if writeErrSummary != "" {
 			errMsg = appendError(errMsg, writeErrSummary)
@@ -807,11 +820,11 @@ func runBackgroundDispatch(
 		reason := TerminalReasonTimedOut
 		stepStatus := "timed_out"
 		eventMessage := "Executor timed out"
-		if writeErrSummary != "" {
+		if writeErrSummary != "" || runResult.ReleaseError != "" {
 			status = ExecutionStatusFailed
 			reason = TerminalReasonFailed
 			stepStatus = "blocked"
-			eventMessage = "Executor timeout evidence persistence failed"
+			eventMessage = "Executor timeout cleanup failed"
 		}
 		_, _, err := terminalizeExecution(s, hub, l, runID, execID, terminalExecutionInput{
 			Status:          status,
@@ -842,23 +855,28 @@ func runBackgroundDispatch(
 	}
 
 	errMsg := runResult.Error
+	if runResult.ReleaseError != "" {
+		errMsg = appendError(errMsg, "release owned process: "+runResult.ReleaseError)
+	}
 
+	terminalReleaseError := ""
 	if ok, blocker, relErr := ensureExecutionTreeAbsentForTerminal(s, p.processController(), execID); !ok {
 		markTerminationFailed(s, execID, blocker)
 		createEvent(s, runID, "warn", "Executor completion cleanup is still pending: "+blocker)
 		return
 	} else if relErr != "" {
-		if errMsg != "" {
-			errMsg += "; " + relErr
-		} else {
-			errMsg = relErr
-		}
+		terminalReleaseError = relErr
+		errMsg = appendError(errMsg, relErr)
+		markTerminationFailed(s, execID, relErr)
 	}
 
 	finishedStr := runResult.FinishedAt.Format(time.RFC3339Nano)
 	ec := int64(runResult.ExitCode)
 	execStatus := ExecutionStatusSucceeded
 	if runResult.ExitCode != 0 {
+		execStatus = ExecutionStatusFailed
+	}
+	if runResult.ReleaseError != "" || terminalReleaseError != "" {
 		execStatus = ExecutionStatusFailed
 	}
 
@@ -1111,14 +1129,10 @@ func ensureExecutionTreeAbsentForTerminal(st *store.Store, controller pipeline.P
 	if err != nil {
 		return false, "process tree ownership unavailable during terminal cleanup verification: " + err.Error(), ""
 	}
-	defer func() {
-		if owned != nil {
-			if rerr := owned.Release(); rerr != nil {
-				releaseError = "release owned process during terminal verification: " + rerr.Error()
-			}
-		}
-	}()
 	running, err := owned.TreeRunning()
+	if rerr := owned.Release(); rerr != nil {
+		releaseError = "release owned process during terminal verification: " + rerr.Error()
+	}
 	if err != nil {
 		return false, "process tree presence unverifiable during terminal cleanup verification: " + err.Error(), ""
 	}
@@ -1126,7 +1140,7 @@ func ensureExecutionTreeAbsentForTerminal(st *store.Store, controller pipeline.P
 		return false, "process tree still running after executor completion", ""
 	}
 	markTerminationVerified(st, execID)
-	return true, "", ""
+	return true, "", releaseError
 }
 
 func terminalReasonForStatus(status string) string {

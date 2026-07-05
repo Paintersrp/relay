@@ -262,13 +262,8 @@ func CancelExecution(ctx context.Context, st *store.Store, hub *events.Hub, log 
 					updated = failed
 				}
 			} else {
-				var releaseErr error
-				defer func() {
-					if rerr := owned.Release(); rerr != nil {
-						releaseErr = rerr
-					}
-				}()
 				result, err := owned.Terminate(2 * time.Second)
+				releaseErr := owned.Release()
 				if err != nil && !errors.Is(err, pipeline.ErrProcessNotRunning) {
 					createEvent(st, runID, "warn", "Executor cancellation termination warning: "+err.Error())
 					if failed := markTerminationFailed(st, updated.ID, "executor cancellation termination failed: "+err.Error()); failed != nil {
@@ -280,6 +275,7 @@ func CancelExecution(ctx context.Context, st *store.Store, hub *events.Hub, log 
 						updated = failed
 					}
 				} else if releaseErr != nil {
+					markTerminationVerified(st, updated.ID)
 					createEvent(st, runID, "warn", "Executor cancellation release warning: "+releaseErr.Error())
 					if failed := markTerminationFailed(st, updated.ID, "executor cancellation release failed: "+releaseErr.Error()); failed != nil {
 						updated = failed

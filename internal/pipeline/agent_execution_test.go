@@ -624,6 +624,210 @@ func (p *postCreateFailureProcess) Release() error {
 	return nil
 }
 
+type nilOwnedController struct{}
+
+func (nilOwnedController) StartOwned(ctx context.Context, spec CommandSpec) (OwnedProcess, error) {
+	return nil, nil
+}
+
+func (nilOwnedController) OpenOwned(identity ProcessIdentity) (OwnedProcess, error) {
+	return nil, ErrProcessUnverifiable
+}
+
+type blockedWaitController struct {
+	proc *blockedWaitProcess
+}
+
+type blockedWaitProcess struct {
+	waitStarted chan struct{}
+	releaseWait chan struct{}
+	stdout      io.ReadCloser
+	stderr      io.ReadCloser
+}
+
+func newBlockedWaitController() *blockedWaitController {
+	return &blockedWaitController{proc: &blockedWaitProcess{
+		waitStarted: make(chan struct{}),
+		releaseWait: make(chan struct{}),
+		stdout:      io.NopCloser(strings.NewReader("STATUS: DONE\n")),
+		stderr:      io.NopCloser(strings.NewReader("")),
+	}}
+}
+
+func (c *blockedWaitController) StartOwned(ctx context.Context, spec CommandSpec) (OwnedProcess, error) {
+	return c.proc, nil
+}
+
+func (c *blockedWaitController) OpenOwned(identity ProcessIdentity) (OwnedProcess, error) {
+	return c.proc, nil
+}
+
+func (p *blockedWaitProcess) Identity() ProcessIdentity {
+	return ProcessIdentity{PID: 6789, GroupID: 6789, StartedAt: "fingerprint", Platform: "test", Nonce: "job"}
+}
+func (p *blockedWaitProcess) Stdout() io.ReadCloser { return p.stdout }
+func (p *blockedWaitProcess) Stderr() io.ReadCloser { return p.stderr }
+func (p *blockedWaitProcess) Wait() error {
+	close(p.waitStarted)
+	<-p.releaseWait
+	return nil
+}
+func (p *blockedWaitProcess) TreeRunning() (bool, error) { return false, nil }
+func (p *blockedWaitProcess) Terminate(gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
+	return ProcessTerminationResult{VerifiedAbsent: true}, nil
+}
+func (p *blockedWaitProcess) Release() error { return nil }
+
+type releaseFailureController struct {
+	proc *releaseFailureProcess
+}
+
+type releaseFailureProcess struct {
+	stdout io.ReadCloser
+	stderr io.ReadCloser
+}
+
+func newReleaseFailureController() *releaseFailureController {
+	return &releaseFailureController{proc: &releaseFailureProcess{
+		stdout: io.NopCloser(strings.NewReader("STATUS: DONE\n")),
+		stderr: io.NopCloser(strings.NewReader("")),
+	}}
+}
+
+func (c *releaseFailureController) StartOwned(ctx context.Context, spec CommandSpec) (OwnedProcess, error) {
+	return c.proc, nil
+}
+
+func (c *releaseFailureController) OpenOwned(identity ProcessIdentity) (OwnedProcess, error) {
+	return c.proc, nil
+}
+
+func (p *releaseFailureProcess) Identity() ProcessIdentity {
+	return ProcessIdentity{PID: 7890, GroupID: 7890, StartedAt: "fingerprint", Platform: "test", Nonce: "job"}
+}
+func (p *releaseFailureProcess) Stdout() io.ReadCloser { return p.stdout }
+func (p *releaseFailureProcess) Stderr() io.ReadCloser { return p.stderr }
+func (p *releaseFailureProcess) Wait() error           { return nil }
+func (p *releaseFailureProcess) TreeRunning() (bool, error) {
+	return false, nil
+}
+func (p *releaseFailureProcess) Terminate(gracefulTimeout time.Duration) (ProcessTerminationResult, error) {
+	return ProcessTerminationResult{VerifiedAbsent: true}, nil
+}
+func (p *releaseFailureProcess) Release() error { return fmt.Errorf("release boom") }
+
+func TestRunLocalAgentCommandArgsStreamingCanceledBeforeStartSettlesNotStarted(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var settled AgentLaunchDisposition
+
+	result := RunLocalAgentCommandArgsStreamingWithController(
+		ctx,
+		".",
+		"fake",
+		nil,
+		"",
+		time.Second,
+		AgentCommandStreamCallbacks{
+			OnLaunchSettled: func(disposition AgentLaunchDisposition) { settled = disposition },
+		},
+		nilOwnedController{},
+	)
+
+	if result.LaunchDisposition != AgentLaunchNotStarted {
+		t.Fatalf("expected not-started result, got %q", result.LaunchDisposition)
+	}
+	if settled != AgentLaunchNotStarted {
+		t.Fatalf("expected not-started settlement, got %q", settled)
+	}
+}
+
+func TestRunLocalAgentCommandArgsStreamingNilOwnedNilErrorSettlesUnresolved(t *testing.T) {
+	var settled AgentLaunchDisposition
+
+	result := RunLocalAgentCommandArgsStreamingWithController(
+		context.Background(),
+		".",
+		"fake",
+		nil,
+		"",
+		time.Second,
+		AgentCommandStreamCallbacks{
+			OnLaunchSettled: func(disposition AgentLaunchDisposition) { settled = disposition },
+		},
+		nilOwnedController{},
+	)
+
+	if result.LaunchDisposition != AgentLaunchUnresolved {
+		t.Fatalf("expected unresolved result, got %q", result.LaunchDisposition)
+	}
+	if settled != AgentLaunchUnresolved {
+		t.Fatalf("expected unresolved settlement, got %q", settled)
+	}
+}
+
+func TestRunLocalAgentCommandArgsStreamingSettlesOwnedBeforeWaitReturns(t *testing.T) {
+	controller := newBlockedWaitController()
+	settled := make(chan AgentLaunchDisposition, 1)
+	done := make(chan AgentCommandRunResult, 1)
+
+	go func() {
+		done <- RunLocalAgentCommandArgsStreamingWithController(
+			context.Background(),
+			".",
+			"fake",
+			nil,
+			"",
+			time.Second,
+			AgentCommandStreamCallbacks{
+				OnProcessStarted: func(identity ProcessIdentity) error { return nil },
+				OnLaunchSettled:  func(disposition AgentLaunchDisposition) { settled <- disposition },
+			},
+			controller,
+		)
+	}()
+
+	<-controller.proc.waitStarted
+	select {
+	case disposition := <-settled:
+		if disposition != AgentLaunchOwned {
+			t.Fatalf("expected owned settlement, got %q", disposition)
+		}
+	default:
+		t.Fatal("expected owned settlement before Wait returned")
+	}
+	close(controller.proc.releaseWait)
+	result := <-done
+	if result.LaunchDisposition != AgentLaunchOwned {
+		t.Fatalf("expected owned result, got %q", result.LaunchDisposition)
+	}
+}
+
+func TestRunLocalAgentCommandArgsStreamingReleaseFailureIsExplicit(t *testing.T) {
+	result := RunLocalAgentCommandArgsStreamingWithController(
+		context.Background(),
+		".",
+		"fake",
+		nil,
+		"",
+		time.Second,
+		AgentCommandStreamCallbacks{
+			OnProcessStarted: func(identity ProcessIdentity) error { return nil },
+		},
+		newReleaseFailureController(),
+	)
+
+	if result.ReleaseError != "release boom" {
+		t.Fatalf("expected explicit release error, got %q", result.ReleaseError)
+	}
+	if result.ExitCode == 0 {
+		t.Fatalf("expected release failure to fail result")
+	}
+	if result.LaunchDisposition != AgentLaunchOwned {
+		t.Fatalf("expected owned launch truth after release failure, got %q", result.LaunchDisposition)
+	}
+}
+
 func TestRunLocalAgentCommandArgsStreamingPostCreateFailurePreservesLaunchTruth(t *testing.T) {
 	controller := newPostCreateFailureController(true)
 	var registered ProcessIdentity

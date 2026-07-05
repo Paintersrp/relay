@@ -404,10 +404,17 @@ func (q *Queries) ListAgentExecutionsByRun(ctx context.Context, runID int64) ([]
 const markAgentExecutionTerminationFailed = `-- name: MarkAgentExecutionTerminationFailed :one
 UPDATE agent_executions
 SET status = 'termination_pending',
-    termination_state = 'failed',
+    termination_state = CASE
+        WHEN termination_state = 'verified_absent' THEN termination_state
+        ELSE 'failed'
+    END,
     termination_last_error = CASE
         WHEN termination_last_error IS NULL OR termination_last_error = '' THEN ?
-        ELSE termination_last_error
+        ELSE termination_last_error || '; ' || ?
+    END,
+    error = CASE
+        WHEN error IS NULL OR error = '' THEN ?
+        ELSE error || '; ' || ?
     END,
     updated_at = datetime('now')
 WHERE id = ?
@@ -416,12 +423,21 @@ RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, 
 `
 
 type MarkAgentExecutionTerminationFailedParams struct {
-	TerminationLastError sql.NullString `json:"termination_last_error"`
-	ID                   int64          `json:"id"`
+	TerminationLastError   sql.NullString `json:"termination_last_error"`
+	TerminationLastError_2 sql.NullString `json:"termination_last_error_2"`
+	Error                  sql.NullString `json:"error"`
+	Error_2                sql.NullString `json:"error_2"`
+	ID                     int64          `json:"id"`
 }
 
 func (q *Queries) MarkAgentExecutionTerminationFailed(ctx context.Context, arg MarkAgentExecutionTerminationFailedParams) (AgentExecution, error) {
-	row := q.db.QueryRowContext(ctx, markAgentExecutionTerminationFailed, arg.TerminationLastError, arg.ID)
+	row := q.db.QueryRowContext(ctx, markAgentExecutionTerminationFailed,
+		arg.TerminationLastError,
+		arg.TerminationLastError_2,
+		arg.Error,
+		arg.Error_2,
+		arg.ID,
+	)
 	var i AgentExecution
 	err := row.Scan(
 		&i.ID,

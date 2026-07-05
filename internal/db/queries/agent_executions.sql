@@ -93,10 +93,17 @@ RETURNING *;
 -- name: MarkAgentExecutionTerminationFailed :one
 UPDATE agent_executions
 SET status = 'termination_pending',
-    termination_state = 'failed',
+    termination_state = CASE
+        WHEN termination_state = 'verified_absent' THEN termination_state
+        ELSE 'failed'
+    END,
     termination_last_error = CASE
         WHEN termination_last_error IS NULL OR termination_last_error = '' THEN ?
-        ELSE termination_last_error
+        ELSE termination_last_error || '; ' || ?
+    END,
+    error = CASE
+        WHEN error IS NULL OR error = '' THEN ?
+        ELSE error || '; ' || ?
     END,
     updated_at = datetime('now')
 WHERE id = ?

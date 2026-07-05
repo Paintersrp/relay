@@ -37,6 +37,7 @@ const (
 	AgentLaunchOwned           AgentLaunchDisposition = "owned"
 	AgentLaunchCleanupVerified AgentLaunchDisposition = "started_cleanup_verified"
 	AgentLaunchCleanupPending  AgentLaunchDisposition = "started_cleanup_pending"
+	AgentLaunchUnresolved      AgentLaunchDisposition = "unresolved"
 )
 
 type OwnedStartError struct {

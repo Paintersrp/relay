@@ -2,6 +2,8 @@ package executor
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -134,6 +136,62 @@ func (s failingRegisterEvidenceSink) Register(runID int64, kind, path, mimeType 
 
 func (s failingRegisterEvidenceSink) Delete(runID int64, kind, filename string) error {
 	return nil
+}
+
+type executorFakeController struct {
+	owned *executorFakeOwnedProcess
+}
+
+type executorReopenController struct {
+	owned *executorFakeOwnedProcess
+}
+
+type executorFakeOwnedProcess struct {
+	identity       pipeline.ProcessIdentity
+	running        bool
+	verifiedAbsent bool
+	releaseErr     error
+	releaseCount   int
+}
+
+func newExecutorFakeController(releaseErr error) *executorFakeController {
+	return &executorFakeController{owned: &executorFakeOwnedProcess{
+		identity:       pipeline.ProcessIdentity{PID: 2468, GroupID: 2468, StartedAt: "fingerprint", Platform: "test", Nonce: "job"},
+		verifiedAbsent: true,
+		releaseErr:     releaseErr,
+	}}
+}
+
+func (c *executorFakeController) StartOwned(ctx context.Context, spec pipeline.CommandSpec) (pipeline.OwnedProcess, error) {
+	return c.owned, nil
+}
+
+func (c *executorFakeController) OpenOwned(identity pipeline.ProcessIdentity) (pipeline.OwnedProcess, error) {
+	c.owned.identity = identity
+	return c.owned, nil
+}
+
+func (c *executorReopenController) StartOwned(ctx context.Context, spec pipeline.CommandSpec) (pipeline.OwnedProcess, error) {
+	return nil, pipeline.ErrProcessUnverifiable
+}
+
+func (c *executorReopenController) OpenOwned(identity pipeline.ProcessIdentity) (pipeline.OwnedProcess, error) {
+	c.owned.identity = identity
+	return c.owned, nil
+}
+
+func (p *executorFakeOwnedProcess) Identity() pipeline.ProcessIdentity { return p.identity }
+func (p *executorFakeOwnedProcess) Stdout() io.ReadCloser              { return io.NopCloser(strings.NewReader("")) }
+func (p *executorFakeOwnedProcess) Stderr() io.ReadCloser              { return io.NopCloser(strings.NewReader("")) }
+func (p *executorFakeOwnedProcess) Wait() error                        { return nil }
+func (p *executorFakeOwnedProcess) TreeRunning() (bool, error)         { return p.running, nil }
+func (p *executorFakeOwnedProcess) Terminate(time.Duration) (pipeline.ProcessTerminationResult, error) {
+	p.running = false
+	return pipeline.ProcessTerminationResult{VerifiedAbsent: p.verifiedAbsent}, nil
+}
+func (p *executorFakeOwnedProcess) Release() error {
+	p.releaseCount++
+	return p.releaseErr
 }
 
 func TestDispatchBrief_RejectsNonApprovedStatus(t *testing.T) {
@@ -1525,9 +1583,12 @@ func TestDispatchBrief_PostCreateCleanupDispositionDoesNotRecordStartPrevented(t
 func TestTerminalizeExecutionRequiredEventFailureRollsBack(t *testing.T) {
 	s := setupExecutorTestStore(t)
 	runID := createExecutorReadyRun(t, s, "approved_for_executor")
-	exec, err := s.CreateOwnedAgentExecution(runID, "fake", ExecutionStatusRunning, "fake", "local_process", "owner", "token")
+	exec, err := s.CreateOwnedAgentExecution(runID, "fake", ExecutionStatusStarting, "fake", "local_process", "owner", "token")
 	if err != nil {
 		t.Fatalf("create execution: %v", err)
+	}
+	if _, won, err := s.ClaimAgentExecutionLaunch(exec.ID, "token"); err != nil || !won {
+		t.Fatalf("claim launch won=%v err=%v", won, err)
 	}
 	markTerminationVerified(s, exec.ID)
 
@@ -1550,6 +1611,284 @@ func TestTerminalizeExecutionRequiredEventFailureRollsBack(t *testing.T) {
 	}
 	if refreshed.TerminalizedAt.Valid || refreshed.Status == ExecutionStatusSucceeded {
 		t.Fatalf("expected terminalization rollback, got status=%s terminalized=%+v", refreshed.Status, refreshed.TerminalizedAt)
+	}
+}
+
+func TestRecordDispatchBlockerNilStoreFailsClosed(t *testing.T) {
+	if err := recordDispatchBlocker(nil, 1, "blocked", StatusExecutorBlocked); err == nil {
+		t.Fatal("expected nil store to fail")
+	}
+}
+
+func TestRecordDispatchBlockerRequiredEventFailureRollsBackRunStatus(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	if _, err := s.DB().Exec(`CREATE TRIGGER abort_executor_blocker_event BEFORE INSERT ON events
+		WHEN NEW.message = 'abort event'
+		BEGIN
+			SELECT RAISE(ABORT, 'forced event failure');
+		END;`); err != nil {
+		t.Fatalf("create abort trigger: %v", err)
+	}
+
+	err := recordDispatchBlocker(s, runID, "abort event", StatusExecutorBlocked)
+	if err == nil {
+		t.Fatal("expected forced event failure")
+	}
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status != "approved_for_executor" {
+		t.Fatalf("expected run status rollback, got %s", run.Status)
+	}
+	events, err := s.ListEventsByRun(runID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected event rollback, got %d events", len(events))
+	}
+}
+
+func TestRecordDispatchBlockerMissingRunCreatesNoEvent(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	err := recordDispatchBlocker(s, 99999, "missing run", StatusExecutorBlocked)
+	if err == nil {
+		t.Fatal("expected missing run error")
+	}
+	events, err := s.ListEventsByRun(99999)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected no event for missing run, got %d", len(events))
+	}
+}
+
+func TestRecordDispatchBlockerPassSyncFailureReturnsAfterSingleTransaction(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	forceStalePlanPassAssociation(t, s, runID)
+
+	err := recordDispatchBlocker(s, runID, "sync fails after commit", StatusExecutorBlocked)
+	if err == nil || !strings.Contains(err.Error(), "transaction committed") {
+		t.Fatalf("expected post-commit sync failure, got %v", err)
+	}
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status != StatusExecutorBlocked {
+		t.Fatalf("expected committed blocked status, got %s", run.Status)
+	}
+	events, err := s.ListEventsByRun(runID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected exactly one durable blocker event, got %d", len(events))
+	}
+}
+
+func TestBlockExecutorPreflightPassSyncFailureReturnsWithoutReplay(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	forceStalePlanPassAssociation(t, s, runID)
+
+	err := blockExecutorPreflight(&DispatchParams{Store: s}, s, runID, ExecutorInvocation{
+		Preview: "fake",
+		WorkDir: t.TempDir(),
+		Model:   "test-model",
+		Agent:   "test-agent",
+	}, ExecutorPreflightResult{
+		OK:          false,
+		BlockerText: "blocked by test",
+	})
+	if err == nil || !strings.Contains(err.Error(), "transaction committed") {
+		t.Fatalf("expected post-commit sync failure, got %v", err)
+	}
+	run, err := s.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.Status != StatusExecutorBlocked {
+		t.Fatalf("expected committed blocked status, got %s", run.Status)
+	}
+	events, err := s.ListEventsByRun(runID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected exactly one durable preflight blocker event, got %d", len(events))
+	}
+}
+
+func forceStalePlanPassAssociation(t *testing.T, s *store.Store, runID int64) {
+	t.Helper()
+	if _, err := s.DB().Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		t.Fatalf("disable foreign keys: %v", err)
+	}
+	if _, err := s.DB().Exec(`UPDATE runs SET plan_pass_row_id = 999999 WHERE id = ?`, runID); err != nil {
+		t.Fatalf("force stale pass association: %v", err)
+	}
+	if _, err := s.DB().Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		t.Fatalf("reenable foreign keys: %v", err)
+	}
+}
+
+func TestCancelExecutionReleaseFailurePreservesVerifiedAbsenceAndFailsLifecycle(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, StatusExecutorDispatched)
+	controller := newExecutorFakeController(fmt.Errorf("release boom"))
+	exec, err := s.CreateOwnedAgentExecution(runID, "fake", ExecutionStatusStarting, "fake", "local_process", "owner", "token")
+	if err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	if _, won, err := s.ClaimAgentExecutionLaunch(exec.ID, "token"); err != nil || !won {
+		t.Fatalf("claim launch won=%v err=%v", won, err)
+	}
+	if _, won, err := s.RegisterAgentExecutionProcess(exec.ID, store.AgentProcessIdentityUpdate{
+		ProcessID:           int64(controller.owned.identity.PID),
+		ProcessGroupID:      int64(controller.owned.identity.GroupID),
+		ProcessIdentity:     controller.owned.identity.Encode(),
+		ProcessStartedAt:    controller.owned.identity.StartedAt,
+		StartedAt:           executionTimestampNow(),
+		PlatformOwnershipID: controller.owned.identity.Nonce,
+		OwnershipToken:      "token",
+	}); err != nil || !won {
+		t.Fatalf("register process won=%v err=%v", won, err)
+	}
+
+	_, err = CancelExecution(context.Background(), s, nil, nil, runID, controller)
+	if err != nil {
+		t.Fatalf("cancel execution: %v", err)
+	}
+	refreshed, err := s.GetAgentExecution(exec.ID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if refreshed.TerminationState != "verified_absent" {
+		t.Fatalf("expected verified_absent to survive release failure, got %s", refreshed.TerminationState)
+	}
+	if refreshed.Status != ExecutionStatusTerminationPending {
+		t.Fatalf("expected termination_pending after release failure, got %s", refreshed.Status)
+	}
+	if !refreshed.TerminationLastError.Valid || !strings.Contains(refreshed.TerminationLastError.String, "release failed") {
+		t.Fatalf("expected release failure text, got %+v", refreshed.TerminationLastError)
+	}
+	if controller.owned.releaseCount != 1 {
+		t.Fatalf("expected one release call, got %d", controller.owned.releaseCount)
+	}
+}
+
+func TestReconcileReleaseFailureCannotTerminalizeProcessLost(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, StatusExecutorDispatched)
+	controller := newExecutorFakeController(fmt.Errorf("release boom"))
+	exec, err := s.CreateOwnedAgentExecution(runID, "fake", ExecutionStatusStarting, "fake", "local_process", "other-owner", "token")
+	if err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	if _, won, err := s.ClaimAgentExecutionLaunch(exec.ID, "token"); err != nil || !won {
+		t.Fatalf("claim launch won=%v err=%v", won, err)
+	}
+	if _, won, err := s.RegisterAgentExecutionProcess(exec.ID, store.AgentProcessIdentityUpdate{
+		ProcessID:           int64(controller.owned.identity.PID),
+		ProcessGroupID:      int64(controller.owned.identity.GroupID),
+		ProcessIdentity:     controller.owned.identity.Encode(),
+		ProcessStartedAt:    controller.owned.identity.StartedAt,
+		StartedAt:           executionTimestampNow(),
+		PlatformOwnershipID: controller.owned.identity.Nonce,
+		OwnershipToken:      "token",
+	}); err != nil || !won {
+		t.Fatalf("register process won=%v err=%v", won, err)
+	}
+
+	err = ReconcileActiveExecutions(s, nil, nil, "this-owner", controller)
+	if err == nil {
+		t.Fatal("expected release failure error")
+	}
+	refreshed, err := s.GetAgentExecution(exec.ID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if refreshed.TerminationState != "verified_absent" {
+		t.Fatalf("expected verified_absent to survive release failure, got %s", refreshed.TerminationState)
+	}
+	if refreshed.Status == ExecutionStatusProcessLost {
+		t.Fatalf("release failure must not terminalize clean process_lost")
+	}
+	if refreshed.Status != ExecutionStatusFailed {
+		t.Fatalf("expected failed terminal status, got %s", refreshed.Status)
+	}
+}
+
+func TestDispatchBriefTerminalVerificationReleaseFailureFailsExecution(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, "approved_for_executor")
+	writeExecutorBrief(t, s, runID, "# Brief")
+	identity := pipeline.ProcessIdentity{PID: 9753, GroupID: 9753, StartedAt: "fingerprint", Platform: "test", Nonce: "job"}
+	owned := &executorFakeOwnedProcess{
+		identity:       identity,
+		verifiedAbsent: true,
+		releaseErr:     fmt.Errorf("release boom"),
+	}
+	controller := &executorReopenController{owned: owned}
+
+	_, err := DispatchBrief(&DispatchParams{
+		Store:          s,
+		Log:            slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		RunID:          runID,
+		Adapter:        &fakeAdapter{},
+		ProcessControl: controller,
+		Preflight: func(ExecutorInvocation) ExecutorPreflightResult {
+			return ExecutorPreflightResult{OK: true}
+		},
+		LaunchAsync: func(fn func()) { fn() },
+		RunAgentCmd: func(ctx context.Context, workDir, binary string, args []string, stdin string, timeout time.Duration, callbacks pipeline.AgentCommandStreamCallbacks) pipeline.AgentCommandRunResult {
+			if callbacks.OnProcessStarted != nil {
+				if err := callbacks.OnProcessStarted(identity); err != nil {
+					t.Fatalf("process started callback: %v", err)
+				}
+			}
+			if callbacks.OnLaunchSettled != nil {
+				callbacks.OnLaunchSettled(pipeline.AgentLaunchOwned)
+			}
+			now := time.Now()
+			return pipeline.AgentCommandRunResult{
+				Command:           binary,
+				WorkDir:           workDir,
+				ExitCode:          0,
+				Stdout:            "STATUS: DONE\n",
+				StartedAt:         now,
+				FinishedAt:        now,
+				LaunchStarted:     true,
+				LaunchDisposition: pipeline.AgentLaunchOwned,
+				ProcessIdentity:   identity,
+				IdentityAvailable: true,
+			}
+		},
+	})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+
+	exec, err := s.GetLatestAgentExecutionByRun(runID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if owned.releaseCount != 1 {
+		t.Fatalf("expected terminal verification release once, got %d (termination_state=%s error=%+v)", owned.releaseCount, exec.TerminationState, exec.Error)
+	}
+	if exec.Status != ExecutionStatusFailed {
+		t.Fatalf("release failure must fail execution, got %s (release_err=%v exec_error=%+v)", exec.Status, owned.releaseErr, exec.Error)
+	}
+	if !exec.Error.Valid || !strings.Contains(exec.Error.String, "release owned process during terminal verification") {
+		t.Fatalf("expected terminal release error, got %+v", exec.Error)
+	}
+	if exec.TerminationState != "verified_absent" {
+		t.Fatalf("expected verified_absent to survive release failure, got %s", exec.TerminationState)
 	}
 }
 

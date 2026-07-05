@@ -93,6 +93,7 @@ type AgentCommandRunResult struct {
 
 	TerminationVerified bool   `json:"termination_verified"`
 	TerminationError    string `json:"termination_error,omitempty"`
+	ReleaseError        string `json:"release_error,omitempty"`
 }
 
 type AgentCommandWaitResult struct {
@@ -243,18 +244,29 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		controller = DefaultProcessController()
 	}
 
+	var launchOnce sync.Once
+	settleLaunch := func(disposition AgentLaunchDisposition) {
+		if disposition == "" {
+			disposition = AgentLaunchUnresolved
+		}
+		launchOnce.Do(func() {
+			if callbacks.OnLaunchSettled != nil {
+				callbacks.OnLaunchSettled(disposition)
+			}
+		})
+	}
+
 	if err := runCtx.Err(); err != nil {
 		finished := time.Now()
-		if callbacks.OnLaunchSettled != nil {
-			callbacks.OnLaunchSettled(AgentLaunchNotStarted)
-		}
+		settleLaunch(AgentLaunchNotStarted)
 		return AgentCommandRunResult{
-			Command:    commandPreview,
-			WorkDir:    workDir,
-			ExitCode:   -1,
-			Error:      err.Error(),
-			StartedAt:  start,
-			FinishedAt: finished,
+			Command:           commandPreview,
+			WorkDir:           workDir,
+			ExitCode:          -1,
+			Error:             err.Error(),
+			StartedAt:         start,
+			FinishedAt:        finished,
+			LaunchDisposition: AgentLaunchNotStarted,
 		}
 	}
 
@@ -273,9 +285,12 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			callbacks.OnStartError(err)
 		}
 		finished := time.Now()
-		if callbacks.OnLaunchSettled != nil {
-			callbacks.OnLaunchSettled(AgentLaunchNotStarted)
+		disposition := AgentLaunchNotStarted
+		var ownedStartErr *OwnedStartError
+		if errors.As(err, &ownedStartErr) && ownedStartErr.NativeStarted {
+			disposition = AgentLaunchUnresolved
 		}
+		settleLaunch(disposition)
 		return AgentCommandRunResult{
 			Command:           commandPreview,
 			WorkDir:           workDir,
@@ -283,15 +298,13 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			Error:             err.Error(),
 			StartedAt:         start,
 			FinishedAt:        finished,
-			LaunchDisposition: AgentLaunchNotStarted,
+			LaunchDisposition: disposition,
 		}
 	}
 	if owned == nil {
 		finished := time.Now()
 		errMsg := "process controller returned no owned process"
-		if callbacks.OnLaunchSettled != nil {
-			callbacks.OnLaunchSettled(AgentLaunchNotStarted)
-		}
+		settleLaunch(AgentLaunchUnresolved)
 		return AgentCommandRunResult{
 			Command:           commandPreview,
 			WorkDir:           workDir,
@@ -299,12 +312,13 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			Error:             errMsg,
 			StartedAt:         start,
 			FinishedAt:        finished,
-			LaunchDisposition: AgentLaunchNotStarted,
+			LaunchDisposition: AgentLaunchUnresolved,
 		}
 	}
 	defer func() {
 		if owned != nil {
 			if releaseErr := owned.Release(); releaseErr != nil {
+				runResult.ReleaseError = releaseErr.Error()
 				runResult.Error = appendErrorText(runResult.Error, "release owned process: "+releaseErr.Error())
 				if runResult.ExitCode == 0 {
 					runResult.ExitCode = -1
@@ -351,9 +365,7 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		if cleanup.VerifiedAbsent && (cleanupErr == nil || errors.Is(cleanupErr, ErrProcessNotRunning)) {
 			disposition = AgentLaunchCleanupVerified
 		}
-		if callbacks.OnLaunchSettled != nil {
-			callbacks.OnLaunchSettled(disposition)
-		}
+		settleLaunch(disposition)
 		return AgentCommandRunResult{
 			Command:             commandPreview,
 			WorkDir:             workDir,
@@ -382,9 +394,7 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			} else if !termination.VerifiedAbsent {
 				errMsg += "; terminate unregistered process tree: absence was not verified"
 			}
-			if callbacks.OnLaunchSettled != nil {
-				callbacks.OnLaunchSettled(dispositionForTermination(termination.VerifiedAbsent))
-			}
+			settleLaunch(dispositionForTermination(termination.VerifiedAbsent))
 			return AgentCommandRunResult{
 				Command:             commandPreview,
 				WorkDir:             workDir,
@@ -401,6 +411,7 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			}
 		}
 	}
+	settleLaunch(AgentLaunchOwned)
 	stdoutPipe := owned.Stdout()
 	stderrPipe := owned.Stderr()
 	if stdoutPipe == nil || stderrPipe == nil {
@@ -410,9 +421,6 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		if terminateErr != nil {
 			errMsg += "; terminate pipe-less process tree: " + terminateErr.Error()
 		}
-		if callbacks.OnLaunchSettled != nil {
-			callbacks.OnLaunchSettled(dispositionForTermination(termination.VerifiedAbsent))
-		}
 		return AgentCommandRunResult{
 			Command:             commandPreview,
 			WorkDir:             workDir,
@@ -421,7 +429,7 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			StartedAt:           start,
 			FinishedAt:          finished,
 			LaunchStarted:       launchStarted,
-			LaunchDisposition:   dispositionForTermination(termination.VerifiedAbsent),
+			LaunchDisposition:   AgentLaunchOwned,
 			ProcessIdentity:     identity,
 			IdentityAvailable:   identityAvailable,
 			TerminationVerified: termination.VerifiedAbsent,
@@ -566,9 +574,6 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		} else if !terminationVerified {
 			errText = "terminate timed out process tree: absence was not verified"
 		}
-		if callbacks.OnLaunchSettled != nil {
-			callbacks.OnLaunchSettled(dispositionForTermination(terminationVerified))
-		}
 		return AgentCommandRunResult{
 			Command:             commandPreview,
 			WorkDir:             workDir,
@@ -580,7 +585,7 @@ func RunLocalAgentCommandArgsStreamingWithController(
 			StartedAt:           start,
 			FinishedAt:          finished,
 			LaunchStarted:       launchStarted,
-			LaunchDisposition:   dispositionForTermination(terminationVerified),
+			LaunchDisposition:   AgentLaunchOwned,
 			ProcessIdentity:     identity,
 			IdentityAvailable:   identityAvailable,
 			TerminationVerified: terminationVerified,
@@ -619,9 +624,6 @@ func RunLocalAgentCommandArgsStreamingWithController(
 		}
 	}
 
-	if callbacks.OnLaunchSettled != nil {
-		callbacks.OnLaunchSettled(AgentLaunchOwned)
-	}
 	return AgentCommandRunResult{
 		Command:             commandPreview,
 		WorkDir:             workDir,

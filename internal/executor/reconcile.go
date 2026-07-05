@@ -39,6 +39,7 @@ func reconcileActiveExecution(st *store.Store, hub *events.Hub, log *slog.Logger
 	reason := TerminalReasonRestartOrphanReconcile
 	message := ""
 	verifiedAbsent := false
+	releaseFailed := false
 	identity, identityErr := processIdentityFromExecution(&exec)
 	if identityErr == nil {
 		owned, openErr := controller.OpenOwned(identity)
@@ -64,6 +65,7 @@ func reconcileActiveExecution(st *store.Store, hub *events.Hub, log *slog.Logger
 				verifiedAbsent = true
 			}
 			if releaseErr := owned.Release(); releaseErr != nil {
+				releaseFailed = true
 				if verifiedAbsent {
 					message += "; executor process ownership release failed during restart reconciliation: " + releaseErr.Error()
 				} else {
@@ -84,6 +86,28 @@ func reconcileActiveExecution(st *store.Store, hub *events.Hub, log *slog.Logger
 	}
 
 	markTerminationVerified(st, exec.ID)
+	if releaseFailed {
+		if failed := markTerminationFailed(st, exec.ID, message); failed == nil {
+			message += "; failed to persist release blocker"
+		}
+		createEvent(st, exec.RunID, "warn", message)
+		finished := executionTimestampNow()
+		if _, _, err := terminalizeExecution(st, hub, log, exec.RunID, exec.ID, terminalExecutionInput{
+			Status:          ExecutionStatusFailed,
+			Reason:          TerminalReasonFailed,
+			FinishedAt:      finished,
+			TerminalizedAt:  finished,
+			Error:           message,
+			EventLevel:      "warn",
+			EventMessage:    message,
+			StepEventStatus: "blocked",
+			RunStatus:       StatusExecutorBlocked,
+			RunEventStatus:  "blocked",
+		}); err != nil {
+			return fmt.Errorf("terminalize stale execution release failure %d: %w", exec.ID, err)
+		}
+		return fmt.Errorf("executor orphan release failed for execution %d: %s", exec.ID, message)
+	}
 	finished := executionTimestampNow()
 	if _, _, err := terminalizeExecution(st, hub, log, exec.RunID, exec.ID, terminalExecutionInput{
 		Status:          ExecutionStatusProcessLost,

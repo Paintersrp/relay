@@ -261,6 +261,10 @@ func (s *Store) UpdateRunStatus(id int64, status string) (*Run, error) {
 }
 
 func (s *Store) RecordExecutorPreflightBlocked(runID int64, status string, level string, message string) (*Run, error) {
+	return s.RecordRunStatusEvent(runID, status, level, message)
+}
+
+func (s *Store) RecordRunStatusEvent(runID int64, status string, level string, message string) (*Run, error) {
 	ctx := context.Background()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -663,8 +667,11 @@ func (s *Store) MarkAgentExecutionTerminationRequested(id int64, reason, attempt
 
 func (s *Store) MarkAgentExecutionTerminationFailed(id int64, errText string) (*AgentExecution, error) {
 	exec, err := s.queries.MarkAgentExecutionTerminationFailed(context.Background(), generated.MarkAgentExecutionTerminationFailedParams{
-		ID:                   id,
-		TerminationLastError: nullString(errText),
+		ID:                     id,
+		TerminationLastError:   nullString(errText),
+		TerminationLastError_2: nullString(errText),
+		Error:                  nullString(errText),
+		Error_2:                nullString(errText),
 	})
 	if err != nil {
 		return nil, err

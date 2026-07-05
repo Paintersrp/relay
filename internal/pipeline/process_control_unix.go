@@ -26,6 +26,11 @@ type unixOwnedProcess struct {
 	released bool
 }
 
+var (
+	unixProcessGroupPresent      = processGroupPresent
+	unixProcessGroupPollInterval = 50 * time.Millisecond
+)
+
 func (c defaultProcessController) StartOwned(ctx context.Context, spec CommandSpec) (OwnedProcess, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -64,15 +69,20 @@ func (c defaultProcessController) StartOwned(ctx context.Context, spec CommandSp
 		}
 		waitErr := waitForCommandBounded(cmd, 2*time.Second)
 		cleanup := ProcessTerminationResult{Forced: true}
-		if waitErr == nil {
+		groupAbsent, groupErr := waitForProcessGroupAbsent(cmd.Process.Pid, 2*time.Second)
+		if waitErr == nil && groupAbsent {
 			cleanup.VerifiedAbsent = true
+		}
+		cleanupErr := waitErr
+		if groupErr != nil {
+			cleanupErr = groupErr
 		}
 		return owned, &OwnedStartError{
 			Cause:         err,
 			NativeStarted: true,
 			Identity:      owned.identity,
 			Cleanup:       cleanup,
-			CleanupError:  waitErr,
+			CleanupError:  cleanupErr,
 		}
 	}
 	return &unixOwnedProcess{cmd: cmd, identity: identity, stdout: stdout, stderr: stderr}, nil
@@ -123,7 +133,7 @@ func (p *unixOwnedProcess) TreeRunning() (bool, error) {
 			if groupID <= 0 {
 				groupID = identity.PID
 			}
-			present, probeErr := processGroupPresent(groupID)
+			present, probeErr := unixProcessGroupPresent(groupID)
 			if probeErr != nil {
 				return false, probeErr
 			}
@@ -145,7 +155,7 @@ func (p *unixOwnedProcess) Terminate(gracefulTimeout time.Duration) (ProcessTerm
 			if groupID <= 0 {
 				groupID = identity.PID
 			}
-			present, probeErr := processGroupPresent(groupID)
+			present, probeErr := unixProcessGroupPresent(groupID)
 			if probeErr != nil {
 				return ProcessTerminationResult{}, probeErr
 			}
@@ -174,7 +184,7 @@ func terminateVerifiedProcessGroup(groupID int, gracefulTimeout time.Duration) (
 	}
 	deadline := time.Now().Add(gracefulTimeout)
 	for time.Now().Before(deadline) {
-		running, err := processGroupPresent(groupID)
+		running, err := unixProcessGroupPresent(groupID)
 		if err != nil {
 			return ProcessTerminationResult{}, err
 		}
@@ -188,7 +198,7 @@ func terminateVerifiedProcessGroup(groupID int, gracefulTimeout time.Duration) (
 	}
 	deadline = time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		running, err := processGroupPresent(groupID)
+		running, err := unixProcessGroupPresent(groupID)
 		if err != nil {
 			return ProcessTerminationResult{}, err
 		}
@@ -198,6 +208,23 @@ func terminateVerifiedProcessGroup(groupID int, gracefulTimeout time.Duration) (
 		time.Sleep(50 * time.Millisecond)
 	}
 	return ProcessTerminationResult{Forced: true}, fmt.Errorf("%w: process group %d still present after forced termination", ErrProcessUnverifiable, groupID)
+}
+
+func waitForProcessGroupAbsent(groupID int, timeout time.Duration) (bool, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		present, err := unixProcessGroupPresent(groupID)
+		if err != nil {
+			return false, err
+		}
+		if !present {
+			return true, nil
+		}
+		if !time.Now().Before(deadline) {
+			return false, fmt.Errorf("%w: process group %d still present after cleanup", ErrProcessUnverifiable, groupID)
+		}
+		time.Sleep(unixProcessGroupPollInterval)
+	}
 }
 
 func verifyLeaderIdentity(identity ProcessIdentity) error {
