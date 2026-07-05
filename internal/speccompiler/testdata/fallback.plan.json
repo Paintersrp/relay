@@ -1,0 +1,56 @@
+{
+  "feature_slug": "fallback-plan",
+  "goal": "Exercise schema-version fallback.",
+  "context": "The schema_version property is intentionally absent.",
+  "scope": {
+    "in_scope": [
+      "Return a fallback notice."
+    ],
+    "out_of_scope": [
+      "Do not block rendering solely for the missing version."
+    ]
+  },
+  "repo_targets": [
+    {
+      "repo_target": "relay",
+      "branch": "feat/simplification",
+      "planning_base_commit": "e9e1759821de943643f6ea7f6ae0ceb7db9db951"
+    }
+  ],
+  "passes": [
+    {
+      "number": 1,
+      "name": "Fallback",
+      "repo_target": "relay",
+      "goal": "Render with the latest supported schema.",
+      "context": "No dependency is required.",
+      "scope": {
+        "in_scope": [
+          "Render the Plan."
+        ],
+        "out_of_scope": [
+          "Do not insert schema_version."
+        ]
+      },
+      "depends_on": [],
+      "outcomes": [
+        "A notice accompanies successful rendering."
+      ],
+      "source_targets": [
+        {
+          "path": "internal/speccompiler",
+          "purpose": "Compiler package."
+        }
+      ],
+      "validation_intent": [
+        "Prove fallback remains nonblocking."
+      ],
+      "completion_criteria": [
+        "Rendering succeeds with one fallback notice."
+      ]
+    }
+  ],
+  "completion_criteria": [
+    "Fallback behavior is deterministic."
+  ]
+}

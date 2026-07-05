@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "feature_slug": "noncanonical-order",
+  "branch": "feat/simplification",
+  "repo_target": "relay",
+  "base_commit": "e9e1759821de943643f6ea7f6ae0ceb7db9db951",
+  "goal": "Exercise property-order validation.",
+  "context": "The branch and repository fields are intentionally reversed.",
+  "scope": {
+    "in_scope": ["Report noncanonical order."],
+    "out_of_scope": ["Do not render Markdown."]
+  },
+  "steps": [
+    {
+      "number": 1,
+      "goal": "Declare one file.",
+      "substeps": [
+        {
+          "number": 1,
+          "instruction": "Create one complete file.",
+          "files": [
+            {
+              "path": "example.go",
+              "operation": "create",
+              "purpose": "Satisfy file declaration requirements.",
+              "implementation": {
+                "content": "package example\n"
+              }
+            }
+          ],
+          "completion_criteria": ["The file is declared."]
+        }
+      ],
+      "completion_criteria": ["The step is complete."]
+    }
+  ],
+  "validation": {
+    "commands": [
+      {
+        "command": "go test ./...",
+        "expected": "Tests pass."
+      }
+    ]
+  },
+  "completion_criteria": ["The fixture is rejected for order only."]
+}

@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Execution Spec v1.0",
+  "description": "Structural schema for the canonical one-shot Execution Spec artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {},
+    "feature_slug": { "$ref": "#/$defs/feature_slug" },
+    "repo_target": { "$ref": "#/$defs/repository_key" },
+    "branch": { "$ref": "#/$defs/machine_string" },
+    "base_commit": { "$ref": "#/$defs/commit_sha" },
+    "goal": { "$ref": "#/$defs/single_line_prose" },
+    "context": { "$ref": "#/$defs/multiline_prose" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "validation": { "$ref": "#/$defs/validation" },
+    "completion_criteria": { "$ref": "#/$defs/criteria_array" }
+  },
+  "required": [
+    "feature_slug",
+    "repo_target",
+    "branch",
+    "base_commit",
+    "goal",
+    "context",
+    "scope",
+    "steps",
+    "validation",
+    "completion_criteria"
+  ],
+  "$defs": {
+    "feature_slug": {
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "single_line_prose": {
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])(?!\\s*$)[^\\r\\n]*\\S[^\\r\\n]*$"
+    },
+    "multiline_prose": {
+      "type": "string",
+      "pattern": "^[\\s\\S]*\\S[\\s\\S]*$"
+    },
+    "machine_string": {
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])(?!\\s*$)(?!\\s)(?!.*\\s$)[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "repository_key": { "$ref": "#/$defs/machine_string" },
+    "commit_sha": {
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])[0-9a-f]{40}$"
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])(?!/)(?![A-Za-z]:)(?!//)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?$)(?!.*(?:^|/)\\.\\.?/)(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F]).*\\S.*$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "in_scope": { "$ref": "#/$defs/criteria_array" },
+        "out_of_scope": { "$ref": "#/$defs/criteria_array" }
+      },
+      "required": ["in_scope", "out_of_scope"]
+    },
+    "criteria_array": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/single_line_prose" }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "goal": { "$ref": "#/$defs/single_line_prose" },
+        "substeps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/substep" }
+        },
+        "completion_criteria": { "$ref": "#/$defs/criteria_array" }
+      },
+      "required": ["number", "goal", "substeps", "completion_criteria"]
+    },
+    "substep": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "instruction": { "$ref": "#/$defs/single_line_prose" },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/file" }
+        },
+        "completion_criteria": { "$ref": "#/$defs/criteria_array" }
+      },
+      "required": ["number", "instruction", "files", "completion_criteria"]
+    },
+    "file": {
+      "oneOf": [
+        { "$ref": "#/$defs/modify_file" },
+        { "$ref": "#/$defs/create_file" },
+        { "$ref": "#/$defs/delete_file" },
+        { "$ref": "#/$defs/rename_file" }
+      ]
+    },
+    "modify_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "operation": { "const": "modify" },
+        "purpose": { "$ref": "#/$defs/single_line_prose" },
+        "implementation": { "$ref": "#/$defs/modify_implementation" }
+      },
+      "required": ["path", "operation", "purpose", "implementation"]
+    },
+    "create_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "operation": { "const": "create" },
+        "purpose": { "$ref": "#/$defs/single_line_prose" },
+        "implementation": { "$ref": "#/$defs/create_implementation" }
+      },
+      "required": ["path", "operation", "purpose", "implementation"]
+    },
+    "delete_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "operation": { "const": "delete" },
+        "purpose": { "$ref": "#/$defs/single_line_prose" },
+        "implementation": { "$ref": "#/$defs/delete_implementation" }
+      },
+      "required": ["path", "operation", "purpose", "implementation"]
+    },
+    "rename_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "destination_path": { "$ref": "#/$defs/path" },
+        "operation": { "const": "rename" },
+        "purpose": { "$ref": "#/$defs/single_line_prose" },
+        "implementation": { "$ref": "#/$defs/rename_implementation" }
+      },
+      "required": ["path", "destination_path", "operation", "purpose", "implementation"]
+    },
+    "modify_implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/modify_change" }
+        }
+      },
+      "required": ["changes"]
+    },
+    "modify_change": {
+      "oneOf": [
+        { "$ref": "#/$defs/replace_change" },
+        { "$ref": "#/$defs/insert_before_change" },
+        { "$ref": "#/$defs/insert_after_change" },
+        { "$ref": "#/$defs/remove_change" },
+        { "$ref": "#/$defs/replace_file_change" }
+      ]
+    },
+    "replace_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "replace" },
+        "old_text": { "$ref": "#/$defs/multiline_prose" },
+        "new_text": { "$ref": "#/$defs/multiline_prose" },
+        "expected_occurrences": { "$ref": "#/$defs/expected_occurrences" }
+      },
+      "required": ["kind", "old_text", "new_text", "expected_occurrences"]
+    },
+    "insert_before_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "insert_before" },
+        "anchor": { "$ref": "#/$defs/multiline_prose" },
+        "content": { "$ref": "#/$defs/multiline_prose" },
+        "expected_occurrences": { "$ref": "#/$defs/expected_occurrences" }
+      },
+      "required": ["kind", "anchor", "content", "expected_occurrences"]
+    },
+    "insert_after_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "insert_after" },
+        "anchor": { "$ref": "#/$defs/multiline_prose" },
+        "content": { "$ref": "#/$defs/multiline_prose" },
+        "expected_occurrences": { "$ref": "#/$defs/expected_occurrences" }
+      },
+      "required": ["kind", "anchor", "content", "expected_occurrences"]
+    },
+    "remove_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "remove" },
+        "old_text": { "$ref": "#/$defs/multiline_prose" },
+        "expected_occurrences": { "$ref": "#/$defs/expected_occurrences" }
+      },
+      "required": ["kind", "old_text", "expected_occurrences"]
+    },
+    "replace_file_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "replace_file" },
+        "content": { "$ref": "#/$defs/multiline_prose" }
+      },
+      "required": ["kind", "content"]
+    },
+    "expected_occurrences": { "type": "integer", "minimum": 1 },
+    "create_implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "content": { "$ref": "#/$defs/multiline_prose" }
+      },
+      "required": ["content"]
+    },
+    "delete_implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "delete_file": { "const": true }
+      },
+      "required": ["delete_file"]
+    },
+    "rename_implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preserve_content": { "const": true },
+        "content": { "$ref": "#/$defs/multiline_prose" }
+      },
+      "oneOf": [
+        {
+          "required": ["preserve_content"],
+          "not": { "required": ["content"] }
+        },
+        {
+          "required": ["content"],
+          "not": { "required": ["preserve_content"] }
+        }
+      ]
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/validation_command" }
+        },
+        "executor_checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/single_line_prose" }
+        }
+      },
+      "required": ["commands"]
+    },
+    "validation_command": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": { "$ref": "#/$defs/single_line_prose" },
+        "working_directory": { "$ref": "#/$defs/path" },
+        "expected": { "$ref": "#/$defs/single_line_prose" }
+      },
+      "required": ["command", "expected"]
+    }
+  }
+}

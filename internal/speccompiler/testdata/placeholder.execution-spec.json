@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "feature_slug": "placeholder-content",
+  "repo_target": "relay",
+  "branch": "feat/simplification",
+  "base_commit": "e9e1759821de943643f6ea7f6ae0ceb7db9db951",
+  "goal": "Exercise placeholder rejection.",
+  "context": "The created file content is intentionally invalid.",
+  "scope": {
+    "in_scope": ["Reject placeholder target content."],
+    "out_of_scope": ["Do not render Markdown."]
+  },
+  "steps": [
+    {
+      "number": 1,
+      "goal": "Declare placeholder content.",
+      "substeps": [
+        {
+          "number": 1,
+          "instruction": "Create the invalid fixture file.",
+          "files": [
+            {
+              "path": "example.go",
+              "operation": "create",
+              "purpose": "Exercise placeholder validation.",
+              "implementation": {
+                "content": "TODO"
+              }
+            }
+          ],
+          "completion_criteria": ["The placeholder is rejected."]
+        }
+      ],
+      "completion_criteria": ["The step cannot render."]
+    }
+  ],
+  "validation": {
+    "commands": [
+      {
+        "command": "go test ./...",
+        "expected": "Tests pass."
+      }
+    ]
+  },
+  "completion_criteria": ["The fixture returns a placeholder diagnostic."]
+}
