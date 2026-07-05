@@ -44,18 +44,18 @@ func parseDocument(raw []byte) (*jsonNode, []Diagnostic) {
 	dec.UseNumber()
 	root, diagnostics, err := parseValue(dec, "")
 	if err != nil {
-		return nil, []Diagnostic{
-			{Code: "invalid_json", Path: "", Message: err.Error()}}
+		diagnostics = append(diagnostics, Diagnostic{Code: "invalid_json", Path: "", Message: err.Error()})
+		return nil, normalizeDiagnostics(diagnostics)
 	}
 	if _, err := dec.Token(); err != io.EOF {
 		if err == nil {
 			err = fmt.Errorf("multiple JSON values are not allowed")
 		}
-		return nil, []Diagnostic{
-			{Code: "invalid_json", Path: "", Message: err.Error()}}
+		diagnostics = append(diagnostics, Diagnostic{Code: "invalid_json", Path: "", Message: err.Error()})
+		return nil, normalizeDiagnostics(diagnostics)
 	}
 	if len(diagnostics) != 0 {
-		return nil, diagnostics
+		return nil, normalizeDiagnostics(diagnostics)
 	}
 	return root, nil
 }

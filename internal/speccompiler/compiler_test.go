@@ -167,11 +167,14 @@ func TestSchemaAndCrossFieldDiagnosticsAreAggregatedDeterministically(t *testing
 	raw = bytes.Replace(raw, []byte(`"path": "internal/example/config.go"`), []byte(`"path": "../unsafe.go"`), 1)
 	raw = bytes.Replace(raw, []byte(`"expected_occurrences": 1`), []byte(`"expected_occurrences": 0`), 1)
 	result := Compile("compiler-fixture.execution-spec.json", raw)
-	for _, code := range []string{"invalid_commit_sha", "unsafe_repository_path", "invalid_expected_occurrences"} {
-		assertFailureCode(t, result, code)
+	got := diagnosticKeys(result.Errors)
+	want := []string{
+		"/base_commit|invalid_commit_sha",
+		"/steps/0/substeps/0/files/0/implementation/changes/0/expected_occurrences|invalid_expected_occurrences",
+		"/steps/0/substeps/0/files/0/path|unsafe_repository_path",
 	}
-	if !reflect.DeepEqual(result.Errors, normalizeDiagnostics(result.Errors)) {
-		t.Fatalf("diagnostics are not in deterministic order: %+v", result.Errors)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected diagnostic order\ngot:  %v\nwant: %v", got, want)
 	}
 }
 
