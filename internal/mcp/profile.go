@@ -10,6 +10,8 @@ import (
 type ToolProfile string
 
 const (
+	ToolProfilePlanner       ToolProfile = "planner"
+	ToolProfileAuditor       ToolProfile = "auditor"
 	ToolProfileLocalOperator ToolProfile = "local-operator"
 	ToolProfileRestricted    ToolProfile = "restricted"
 
@@ -19,8 +21,12 @@ const (
 
 func NormalizeToolProfile(raw string) (ToolProfile, bool) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", string(ToolProfileLocalOperator):
+	case "", string(ToolProfileLocalOperator), "local_operator":
 		return ToolProfileLocalOperator, true
+	case string(ToolProfilePlanner):
+		return ToolProfilePlanner, true
+	case string(ToolProfileAuditor):
+		return ToolProfileAuditor, true
 	case string(ToolProfileRestricted):
 		return ToolProfileRestricted, true
 	case "audit":

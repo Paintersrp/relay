@@ -287,6 +287,62 @@ func TestHTTPSFileParameterFetcherRejectsUnsafeResolvedAddresses(t *testing.T) {
 	}
 }
 
+func TestHTTPSFileParameterFetcherCanonicalArtifactValidation(t *testing.T) {
+	body := []byte("{\"schema_version\":\"1.0\"}\n")
+	fetcher := &HTTPSFileParameterFetcher{
+		Resolver: fakeResolver{addrs: []net.IPAddr{
+			{IP: net.ParseIP("93.184.216.34")},
+		}},
+		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Header.Get("Authorization") != "" || req.Header.Get("Cookie") != "" {
+				t.Fatal("fetcher must not send relay credentials")
+			}
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader(string(body))),
+				Header:     http.Header{},
+			}, nil
+		})},
+	}
+	for _, name := range []string{"feature.plan.json", "feature.execution-spec.json"} {
+		t.Run(name, func(t *testing.T) {
+			out, err := fetcher.FetchCanonicalArtifact(context.Background(), ChatGPTFileReference{
+				DownloadURL: "https://files.example.test/artifact?signature=secret",
+				FileID:      "file-1",
+				FileName:    name,
+				MIMEType:    "application/json",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.DisplayName != name || string(out.Bytes) != string(body) {
+				t.Fatalf("unexpected canonical file result: %+v", out)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name     string
+		fileName string
+	}{
+		{name: "missing", fileName: ""},
+		{name: "markdown", fileName: "feature.md"},
+		{name: "traversal", fileName: "../feature.plan.json"},
+		{name: "nested", fileName: "dir/feature.plan.json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := fetcher.FetchCanonicalArtifact(context.Background(), ChatGPTFileReference{
+				DownloadURL: "https://files.example.test/artifact",
+				FileID:      "file-1",
+				FileName:    tc.fileName,
+			})
+			if err == nil || err.Code != MCPBlockerFileReferenceInvalid {
+				t.Fatalf("expected file_reference_invalid, got %v", err)
+			}
+		})
+	}
+}
+
 func mustParseURL(t *testing.T, raw string) *url.URL {
 	t.Helper()
 	u, err := url.Parse(raw)

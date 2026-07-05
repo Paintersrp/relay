@@ -19,6 +19,7 @@ const DEFAULT_PROFILE = "relay-mcp";
 const DEFAULT_RELAY_MCP_URL = "http://127.0.0.1:8081/mcp";
 const DEFAULT_TUNNEL_MCP_TRANSPORT = "stdio";
 const DEFAULT_TUNNEL_HEALTH_LISTEN_ADDR = "127.0.0.1:8082";
+const DEFAULT_RELAY_MCP_PROFILE = "planner";
 const RELAY_MCP_STDIO_LAUNCHER_PATH = join(
   REPO_ROOT,
   "scripts",
@@ -43,6 +44,7 @@ function main() {
   const [command = "help", ...restArgs] = process.argv.slice(2);
   const options = parseOptions(restArgs);
   const config = getConfig();
+  process.env.RELAY_MCP_PROFILE = config.relayMcpProfile;
 
   runCommand(command, config, options).then(
     (exitCode) => {
@@ -135,6 +137,7 @@ function getConfig() {
     relayMcpStdioCommand:
       process.env.RELAY_MCP_STDIO_COMMAND || buildDefaultRelayMcpCommand(),
     relayMcpStdioLauncherPath: RELAY_MCP_STDIO_LAUNCHER_PATH,
+    relayMcpProfile: process.env.RELAY_MCP_PROFILE || DEFAULT_RELAY_MCP_PROFILE,
     tunnelClientPath: process.env.TUNNEL_CLIENT_PATH || "",
     controlPlaneApiKey: process.env.CONTROL_PLANE_API_KEY || "",
     tunnelHealthListenAddr:
@@ -175,6 +178,7 @@ function printHelp(config) {
   console.log("");
   console.log("Default transport: stdio");
   console.log(`Relay MCP command: ${config.relayMcpStdioCommand}`);
+  console.log(`Relay MCP profile: ${config.relayMcpProfile}`);
   console.log(`Tunnel health/admin listener: ${config.tunnelHealthListenAddr}`);
   console.log(
     "HTTP mode is available for advanced/dev use by setting TUNNEL_MCP_TRANSPORT=http and RELAY_MCP_URL.",
@@ -249,6 +253,7 @@ async function runStart(config, options) {
   console.log("command: start");
   console.log(`profile: ${config.tunnelProfile}`);
   console.log(`MCP transport: ${config.tunnelMcpTransport}`);
+  console.log(`Relay MCP profile: ${config.relayMcpProfile}`);
   if (config.tunnelMcpTransport === "stdio") {
     console.log(`Relay MCP command: ${config.relayMcpStdioCommand}`);
   } else {
@@ -365,6 +370,7 @@ function printDiagnostics(config, diagnostics) {
   );
   console.log(`profile: ${config.tunnelProfile}`);
   console.log(`MCP transport: ${config.tunnelMcpTransport}`);
+  console.log(`Relay MCP profile: ${config.relayMcpProfile}`);
   if (config.tunnelMcpTransport === "stdio") {
     console.log(`Relay MCP command: ${config.relayMcpStdioCommand}`);
     console.log(

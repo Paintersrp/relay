@@ -36,6 +36,7 @@ import (
 	"relay/internal/config"
 	"relay/internal/mcp"
 	"relay/internal/store"
+	workflowstore "relay/internal/store/workflow"
 )
 
 func main() {
@@ -65,14 +66,31 @@ func main() {
 	}
 	defer s.Close()
 
+	workflowDBPath := os.Getenv("RELAY_WORKFLOW_DB_PATH")
+	if workflowDBPath == "" {
+		workflowDBPath = "data/workflow/relay-workflow.sqlite"
+	}
+	workflowArtifactsDir := os.Getenv("RELAY_WORKFLOW_ARTIFACTS_DIR")
+	if workflowArtifactsDir == "" {
+		workflowArtifactsDir = "data/workflow/artifacts"
+	}
+	workflowStore, err := workflowstore.Open(workflowDBPath, workflowArtifactsDir)
+	if err != nil {
+		log.Error("relay MCP server: cannot open workflow database", "path", workflowDBPath, "error", err)
+		os.Exit(1)
+	}
+	defer workflowStore.Close()
+
 	log.Info("relay MCP server starting",
 		"transport", "stdio",
 		"protocol", mcp.MCPProtocolVersion,
 		"db_path", dbPath,
 		"artifacts_dir", artifactsDir,
+		"workflow_db_path", workflowDBPath,
+		"workflow_artifacts_dir", workflowArtifactsDir,
 	)
 
-	deps := mcp.NewDepsFromEnv(s, log)
+	deps := mcp.NewCanonicalDepsFromEnv(workflowStore, log)
 	log.Info("relay MCP profile selected", "mcp_profile", deps.ToolProfile)
 
 	srv := mcp.NewServer(log, deps)

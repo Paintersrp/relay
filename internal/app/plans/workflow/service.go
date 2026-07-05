@@ -161,6 +161,26 @@ func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (Create
 	return result, nil
 }
 
+func (s *Service) GetPlan(ctx context.Context, planID string) (GetPlanResult, error) {
+	planID = strings.TrimSpace(planID)
+	if planID == "" {
+		return GetPlanResult{}, fmt.Errorf("Plan ID is required")
+	}
+	plan, err := s.store.GetPlanByPlanID(ctx, planID)
+	if err != nil {
+		return GetPlanResult{}, err
+	}
+	passes, err := s.store.ListPlanPasses(ctx, plan.ID)
+	if err != nil {
+		return GetPlanResult{}, fmt.Errorf("list Plan passes: %w", err)
+	}
+	artifacts, err := s.store.ListArtifactsByPlan(ctx, plan.ID)
+	if err != nil {
+		return GetPlanResult{}, fmt.Errorf("list Plan artifacts: %w", err)
+	}
+	return GetPlanResult{Plan: plan, Passes: passes, Artifacts: artifacts}, nil
+}
+
 func validateCreatePlanInput(input CreatePlanInput) error {
 	if !validFeatureSlug(input.FeatureSlug) {
 		return fmt.Errorf("feature slug must be lowercase kebab-case")

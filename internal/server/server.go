@@ -7,6 +7,7 @@ import (
 	"relay/internal/events"
 	"relay/internal/repos"
 	"relay/internal/store"
+	workflowstore "relay/internal/store/workflow"
 )
 
 type Server struct {
@@ -28,6 +29,16 @@ func New(s *store.Store, rs *repos.Service, log *slog.Logger) *Server {
 
 func NewWithEvents(s *store.Store, rs *repos.Service, log *slog.Logger, eventHub *events.Hub, ownerInstanceID string) *Server {
 	mux := BuildRoutesWithRuntime(s, rs, log, eventHub, ownerInstanceID)
+	return &Server{
+		store:       s,
+		repoService: rs,
+		log:         log,
+		mux:         mux,
+	}
+}
+
+func NewWithEventsAndWorkflow(s *store.Store, workflowStore *workflowstore.Store, rs *repos.Service, log *slog.Logger, eventHub *events.Hub, ownerInstanceID string) *Server {
+	mux := BuildRoutesWithWorkflowRuntime(s, workflowStore, rs, log, eventHub, ownerInstanceID)
 	return &Server{
 		store:       s,
 		repoService: rs,

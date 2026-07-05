@@ -51,15 +51,22 @@ func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 	}
 	s := &Server{log: log, deps: d}
 
-	profile := s.activeProfile()
-	switch profile {
-	case ToolProfileRestricted:
-		// restricted keeps the base tool surface without broker/refactor tools.
-	default:
-		// local-operator includes everything.
+	if d != nil && d.WorkflowStore != nil {
+		s.tools = canonicalToolDefinitions(s.activeProfile())
+		return s
 	}
+	s.tools = s.legacyToolDefinitions()
+	s.tools = append(s.tools, planAttemptToolDefinitions()...)
+	s.tools = append(s.tools, planSeedToolDefinitions()...)
+	if s.contextBrokerEnabled() {
+		s.tools = append(s.tools, contextBrokerToolDefinitions()...)
+		s.tools = append(s.tools, refactorBacklogToolDefinitions()...)
+	}
+	return s
+}
 
-	s.tools = []ToolDefinition{
+func (s *Server) legacyToolDefinitions() []ToolDefinition {
+	return []ToolDefinition{
 		// Pass 13A feasibility tool — preserved for backward compatibility.
 		ToolSubmitTestAuditPacket,
 		// Pass 16 real tools.
@@ -71,13 +78,6 @@ func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 		ToolGetRunStatus,
 		ToolSubmitAuditPacket,
 	}
-	s.tools = append(s.tools, planAttemptToolDefinitions()...)
-	s.tools = append(s.tools, planSeedToolDefinitions()...)
-	if s.contextBrokerEnabled() {
-		s.tools = append(s.tools, contextBrokerToolDefinitions()...)
-		s.tools = append(s.tools, refactorBacklogToolDefinitions()...)
-	}
-	return s
 }
 
 func (s *Server) contextBrokerEnabled() bool {
@@ -384,6 +384,18 @@ func (s *Server) handleToolsCall(req Request) Response {
 
 	var result ToolCallResult
 	switch params.Name {
+	case "validate_artifact":
+		result = s.HandleValidateArtifact(args)
+	case "submit_plan":
+		result = s.HandleSubmitPlan(args)
+	case "get_plan":
+		if s.workflowStore() != nil {
+			result = s.HandleGetCanonicalPlan(args)
+		} else {
+			result = s.HandleGetPlan(args)
+		}
+	case "create_run":
+		result = s.HandleCreateCanonicalRun(args)
 	case "submit_test_audit_packet":
 		result = HandleSubmitTestAuditPacket(args)
 	case "create_run_from_planner_handoff":
@@ -432,8 +444,6 @@ func (s *Server) handleToolsCall(req Request) Response {
 		result = s.HandleRejectPlanSeed(args)
 	case "get_project":
 		result = s.HandleGetProject(args)
-	case "get_plan":
-		result = s.HandleGetPlan(args)
 	case "get_pass":
 		result = s.HandleGetPass(args)
 	case "get_pass_context":

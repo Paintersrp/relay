@@ -10,12 +10,12 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = dirname(SCRIPT_PATH);
 const REPO_ROOT = resolve(SCRIPT_DIR, '..', '..');
 const ENV_FILE_PATHS = [join(REPO_ROOT, '.env'), join(REPO_ROOT, '.env.local')];
-const REQUIRED_TOOL_NAMES = [
-  'create_run_from_planner_handoff',
-  'create_run_from_planner_handoff_file',
-  'validate_planner_handoff_for_compile',
-  'submit_planner_pass_plan',
-];
+const DEFAULT_RELAY_MCP_PROFILE = 'planner';
+const TOOL_NAMES_BY_PROFILE = Object.freeze({
+  planner: ['validate_artifact', 'submit_plan', 'get_plan', 'create_run'],
+  auditor: ['validate_artifact', 'create_run'],
+  local_operator: ['validate_artifact', 'submit_plan', 'get_plan', 'create_run'],
+});
 
 class ValidationError extends Error {
   constructor(message) {
@@ -30,6 +30,9 @@ async function main() {
     loadEnvFile(envFilePath, originalEnvKeys);
   }
 
+  const profile = resolveRelayMcpProfile(process.env.RELAY_MCP_PROFILE);
+  process.env.RELAY_MCP_PROFILE = profile;
+
   const args = process.argv.slice(2);
   if (args.length > 1 || (args.length === 1 && args[0] !== '--self-test')) {
     throw new ValidationError('Usage: node scripts/local/relay-mcp-stdio.mjs [--self-test]');
@@ -37,7 +40,7 @@ async function main() {
 
   const commandSpec = resolveRelayMcpServerCommand();
   if (args[0] === '--self-test') {
-    await runSelfTest(commandSpec);
+    await runSelfTest(commandSpec, profile);
     return;
   }
 
@@ -73,6 +76,16 @@ function loadEnvFile(filePath, originalEnvKeys) {
       process.env[key] = value;
     }
   }
+}
+
+function resolveRelayMcpProfile(raw) {
+  const profile = String(raw || DEFAULT_RELAY_MCP_PROFILE).trim().toLowerCase();
+  if (!Object.prototype.hasOwnProperty.call(TOOL_NAMES_BY_PROFILE, profile)) {
+    throw new ValidationError(
+      `RELAY_MCP_PROFILE must be one of: ${Object.keys(TOOL_NAMES_BY_PROFILE).join(', ')}`,
+    );
+  }
+  return profile;
 }
 
 function stripMatchingQuotes(value) {
@@ -180,7 +193,7 @@ function proxyStdio(commandSpec) {
   });
 }
 
-function runSelfTest(commandSpec) {
+function runSelfTest(commandSpec, profile) {
   return new Promise((resolvePromise, rejectPromise) => {
     console.error(`Relay MCP stdio self-test command: ${commandSpec.description}`);
 
@@ -374,23 +387,25 @@ function runSelfTest(commandSpec) {
           throw new ValidationError('Relay MCP tools/list response did not include a tools array.');
         }
 
-        const toolNames = new Set(
-          tools
-            .map((tool) => tool?.name)
-            .filter((toolName) => typeof toolName === 'string')
-        );
-        for (const requiredToolName of REQUIRED_TOOL_NAMES) {
-          if (!toolNames.has(requiredToolName)) {
-            throw new ValidationError(`Relay MCP tools/list did not include required tool ${requiredToolName}.`);
-          }
+        const actualToolNames = tools
+          .map((tool) => tool?.name)
+          .filter((toolName) => typeof toolName === 'string');
+        const expectedToolNames = TOOL_NAMES_BY_PROFILE[profile];
+        if (JSON.stringify(actualToolNames) !== JSON.stringify(expectedToolNames)) {
+          throw new ValidationError(
+            `Relay MCP tools/list for profile ${profile} returned ${actualToolNames.join(', ')}; expected ${expectedToolNames.join(', ')}.`,
+          );
         }
-        for (const fileToolName of ['create_run_from_planner_handoff_file', 'validate_planner_handoff_for_compile']) {
+        for (const fileToolName of expectedToolNames.filter((name) =>
+          ['validate_artifact', 'submit_plan', 'create_run'].includes(name)
+        )) {
           const tool = tools.find((candidate) => candidate?.name === fileToolName);
-          assertPlannerHandoffFileParameterTool(tool, fileToolName);
+          assertCanonicalFileParameterTool(tool, fileToolName);
         }
 
         console.error(`tools/list: ok (${tools.length} tools)`);
-        console.error(`required tools: ${REQUIRED_TOOL_NAMES.join(', ')}`);
+        console.error(`profile: ${profile}`);
+        console.error(`tools: ${expectedToolNames.join(', ')}`);
 
         child.stdin.end();
         finish(null);
@@ -401,21 +416,21 @@ function runSelfTest(commandSpec) {
   });
 }
 
-function assertPlannerHandoffFileParameterTool(tool, toolName) {
+function assertCanonicalFileParameterTool(tool, toolName) {
   const params = tool?._meta?.['openai/fileParams'];
-  if (!Array.isArray(params) || params.length !== 1 || params[0] !== 'planner_handoff_file') {
-    throw new ValidationError(`${toolName} is missing _meta.openai/fileParams=["planner_handoff_file"].`);
+  if (!Array.isArray(params) || params.length !== 1 || params[0] !== 'artifact_file') {
+    throw new ValidationError(`${toolName} is missing _meta.openai/fileParams=["artifact_file"].`);
   }
-  const fileSchema = tool?.inputSchema?.properties?.planner_handoff_file;
+  const fileSchema = tool?.inputSchema?.properties?.artifact_file;
   if (!fileSchema || fileSchema.type !== 'object') {
-    throw new ValidationError(`${toolName} planner_handoff_file schema must be an object.`);
+    throw new ValidationError(`${toolName} artifact_file schema must be an object.`);
   }
   if (fileSchema.additionalProperties !== false) {
-    throw new ValidationError(`${toolName} planner_handoff_file schema must set additionalProperties=false.`);
+    throw new ValidationError(`${toolName} artifact_file schema must set additionalProperties=false.`);
   }
   const required = Array.isArray(fileSchema.required) ? new Set(fileSchema.required) : new Set();
-  if (!required.has('download_url') || !required.has('file_id')) {
-    throw new ValidationError(`${toolName} planner_handoff_file schema must require download_url and file_id.`);
+  if (!required.has('download_url') || !required.has('file_id') || !required.has('file_name')) {
+    throw new ValidationError(`${toolName} artifact_file schema must require download_url, file_id, and file_name.`);
   }
 }
 

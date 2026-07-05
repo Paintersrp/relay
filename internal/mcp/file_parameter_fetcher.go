@@ -36,6 +36,10 @@ type FileParameterFetcher interface {
 	FetchPlannerHandoff(ctx context.Context, ref ChatGPTFileReference) (FileParameterContent, *FileParameterError)
 }
 
+type CanonicalFileParameterFetcher interface {
+	FetchCanonicalArtifact(ctx context.Context, ref ChatGPTFileReference) (FileParameterContent, *FileParameterError)
+}
+
 type FileParameterError struct {
 	Code    string
 	Message string
@@ -143,6 +147,77 @@ func (f *HTTPSFileParameterFetcher) FetchPlannerHandoff(ctx context.Context, ref
 	}
 	if int64(len(data)) > limit {
 		return FileParameterContent{}, fileParamErr(MCPBlockerFileDownloadTooLarge, "planner_handoff_file exceeds the 1 MiB limit")
+	}
+	return FileParameterContent{Bytes: data, DisplayName: displayName}, nil
+}
+
+func (f *HTTPSFileParameterFetcher) FetchCanonicalArtifact(ctx context.Context, ref ChatGPTFileReference) (FileParameterContent, *FileParameterError) {
+	displayName, err := canonicalArtifactDisplayName(ref.FileName)
+	if err != nil {
+		return FileParameterContent{}, fileParamErr(MCPBlockerFileReferenceInvalid, err.Error())
+	}
+	if strings.TrimSpace(ref.FileID) == "" {
+		return FileParameterContent{}, fileParamErr(MCPBlockerFileReferenceInvalid, "artifact_file.file_id is required")
+	}
+	rawURL := strings.TrimSpace(ref.DownloadURL)
+	if rawURL == "" {
+		return FileParameterContent{}, fileParamErr(MCPBlockerFileReferenceInvalid, "artifact_file.download_url is required")
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u == nil || !u.IsAbs() {
+		return FileParameterContent{}, fileParamErr(MCPBlockerFileReferenceInvalid, "artifact_file.download_url must be an absolute HTTPS URL")
+	}
+	targets := newValidatedTargetRegistry()
+	if err := f.validateURL(ctx, u, targets); err != nil {
+		return FileParameterContent{}, err
+	}
+
+	timeout := f.Timeout
+	if timeout <= 0 {
+		timeout = fileDownloadTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	client, closeIdle := f.client(targets)
+	if closeIdle != nil {
+		defer closeIdle()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return FileParameterContent{}, fileParamErr(MCPBlockerFileReferenceInvalid, "artifact_file.download_url could not be requested")
+	}
+	req.Header.Set("Accept", "application/json, application/octet-stream;q=0.8, */*;q=0.1")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		var fileErr *FileParameterError
+		if errors.As(err, &fileErr) {
+			return FileParameterContent{}, fileErr
+		}
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return FileParameterContent{}, fileParamErr(MCPBlockerFileDownloadFailed, "artifact_file download timed out")
+		}
+		return FileParameterContent{}, fileParamErr(MCPBlockerFileDownloadFailed, "artifact_file could not be downloaded")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return FileParameterContent{}, fileParamErr(MCPBlockerFileDownloadStatus, fmt.Sprintf("artifact_file download returned HTTP %d", resp.StatusCode))
+	}
+	limit := f.MaxBytes
+	if limit <= 0 {
+		limit = maxPlannerHandoffFileBytes
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return FileParameterContent{}, fileParamErr(MCPBlockerFileDownloadFailed, "artifact_file response could not be read")
+	}
+	if len(data) == 0 {
+		return FileParameterContent{}, fileParamErr(MCPBlockerFileDownloadEmpty, "artifact_file response was empty")
+	}
+	if int64(len(data)) > limit {
+		return FileParameterContent{}, fileParamErr(MCPBlockerFileDownloadTooLarge, "artifact_file exceeds the 1 MiB limit")
 	}
 	return FileParameterContent{Bytes: data, DisplayName: displayName}, nil
 }
@@ -301,6 +376,20 @@ func plannerHandoffDisplayName(name string) (string, error) {
 		return "", fmt.Errorf("planner_handoff_file.file_name must use the .md extension")
 	}
 	return base, nil
+}
+
+func canonicalArtifactDisplayName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("artifact_file.file_name is required")
+	}
+	if name != filepath.Base(name) || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("artifact_file.file_name must be a safe basename")
+	}
+	if !strings.HasSuffix(name, ".plan.json") && !strings.HasSuffix(name, ".execution-spec.json") {
+		return "", fmt.Errorf("artifact_file.file_name must end with .plan.json or .execution-spec.json")
+	}
+	return name, nil
 }
 
 func isPublicRoutableIP(ip net.IP) bool {

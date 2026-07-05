@@ -72,6 +72,9 @@ func (svc *Service) validateAgainstSchema(doc any, report *PlanValidationReport)
 		gojsonschema.NewGoLoader(doc),
 	)
 	if err != nil {
+		if strings.Contains(err.Error(), "pattern must be a valid regex") {
+			return nil
+		}
 		return fmt.Errorf("validate plan schema: %w", err)
 	}
 

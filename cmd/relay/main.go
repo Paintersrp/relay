@@ -13,6 +13,7 @@ import (
 	"relay/internal/repos"
 	"relay/internal/server"
 	"relay/internal/store"
+	workflowstore "relay/internal/store/workflow"
 )
 
 func main() {
@@ -33,6 +34,21 @@ func main() {
 		os.Exit(1)
 	}
 	defer s.Close()
+
+	workflowDBPath := "data/workflow/relay-workflow.sqlite"
+	if p := os.Getenv("RELAY_WORKFLOW_DB_PATH"); p != "" {
+		workflowDBPath = p
+	}
+	workflowArtifactsDir := "data/workflow/artifacts"
+	if p := os.Getenv("RELAY_WORKFLOW_ARTIFACTS_DIR"); p != "" {
+		workflowArtifactsDir = p
+	}
+	workflowStore, err := workflowstore.Open(workflowDBPath, workflowArtifactsDir)
+	if err != nil {
+		log.Error("open workflow store", "error", err)
+		os.Exit(1)
+	}
+	defer workflowStore.Close()
 
 	repoService := repos.NewService(s, log)
 	eventHub := events.NewHub(log)
@@ -57,7 +73,7 @@ func main() {
 		)
 	}()
 
-	srv := server.NewWithEvents(s, repoService, log, eventHub, ownerInstanceID)
+	srv := server.NewWithEventsAndWorkflow(s, workflowStore, repoService, log, eventHub, ownerInstanceID)
 
 	port := "8080"
 	if p := os.Getenv("PORT"); p != "" {

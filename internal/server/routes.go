@@ -28,6 +28,7 @@ import (
 	"relay/internal/mcp"
 	"relay/internal/repos"
 	"relay/internal/store"
+	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -130,14 +131,25 @@ func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handl
 }
 
 func BuildRoutesWithRuntime(s *store.Store, rs *repos.Service, log *slog.Logger, eventHub *events.Hub, ownerInstanceID string) http.Handler {
+	return BuildRoutesWithWorkflowRuntime(s, nil, rs, log, eventHub, ownerInstanceID)
+}
+
+func BuildRoutesWithWorkflowRuntime(s *store.Store, workflowStore *workflowstore.Store, rs *repos.Service, log *slog.Logger, eventHub *events.Hub, ownerInstanceID string) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
 
-	// Expose ChatGPT-facing remote MCP endpoint.
-	mcpDeps := mcp.NewDepsFromEnv(s, log)
+	// Expose the canonical ChatGPT-facing MCP endpoint when the fresh workflow
+	// store is supplied by the process entry point. Legacy constructors retain a
+	// dependency-blocked MCP endpoint for compile-only compatibility.
+	var mcpDeps *mcp.MCPDeps
+	if workflowStore != nil {
+		mcpDeps = mcp.NewCanonicalDepsFromEnv(workflowStore, log)
+	} else {
+		mcpDeps = mcp.NewDepsFromEnv(s, log)
+	}
 	mcpSrv := mcp.NewServer(log, mcpDeps)
 	mcpHandler := mcp.NewHTTPHandler(mcpSrv, log)
 	r.Handle("/mcp", mcpHandler)
