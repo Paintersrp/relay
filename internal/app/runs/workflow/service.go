@@ -1,0 +1,411 @@
+package workflowruns
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	workflowartifacts "relay/internal/artifacts/workflow"
+	workflowstore "relay/internal/store/workflow"
+)
+
+type IDGenerator interface {
+	RunID() string
+	ExecutionAttemptID() string
+	ArtifactID() string
+	AuditDecisionID() string
+}
+
+type defaultIDGenerator struct{}
+
+func (defaultIDGenerator) RunID() string              { return workflowstore.NewRunID() }
+func (defaultIDGenerator) ExecutionAttemptID() string { return workflowstore.NewExecutionAttemptID() }
+func (defaultIDGenerator) ArtifactID() string         { return workflowstore.NewArtifactID() }
+func (defaultIDGenerator) AuditDecisionID() string    { return workflowstore.NewAuditDecisionID() }
+
+type Service struct {
+	store *workflowstore.Store
+	ids   IDGenerator
+}
+
+func NewService(store *workflowstore.Store) (*Service, error) {
+	return NewServiceWithIDs(store, defaultIDGenerator{})
+}
+
+func NewServiceWithIDs(store *workflowstore.Store, ids IDGenerator) (*Service, error) {
+	if store == nil {
+		return nil, fmt.Errorf("workflow store is required")
+	}
+	if ids == nil {
+		return nil, fmt.Errorf("workflow ID generator is required")
+	}
+	return &Service{store: store, ids: ids}, nil
+}
+
+func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRunResult, error) {
+	if err := validateCreateRunInput(input); err != nil {
+		return CreateRunResult{}, err
+	}
+	runID := s.ids.RunID()
+	batch, err := s.store.ArtifactStore().Begin("runs/" + runID)
+	if err != nil {
+		return CreateRunResult{}, err
+	}
+	canonical, err := batch.Stage(
+		"execution_spec",
+		input.FeatureSlug+".execution-spec.json",
+		"application/json",
+		input.CanonicalJSON,
+	)
+	if err != nil {
+		_ = batch.Rollback()
+		return CreateRunResult{}, err
+	}
+	rendered, err := batch.Stage(
+		"executor_brief",
+		input.FeatureSlug+".executor-brief.md",
+		"text/markdown",
+		input.RenderedMarkdown,
+	)
+	if err != nil {
+		_ = batch.Rollback()
+		return CreateRunResult{}, err
+	}
+
+	result := CreateRunResult{}
+	err = s.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
+		registered, err := tx.GetRepositoryTarget(ctx, input.RepoTarget)
+		if err != nil {
+			return fmt.Errorf("repository target %q is not registered: %w", input.RepoTarget, err)
+		}
+		if registered.RepoTarget != input.RepoTarget {
+			return fmt.Errorf("repository target %q must use registered key casing %q", input.RepoTarget, registered.RepoTarget)
+		}
+
+		planRowID := sql.NullInt64{}
+		passRowID := sql.NullInt64{}
+		if input.PlanID != "" {
+			plan, err := tx.GetPlanByPlanID(ctx, input.PlanID)
+			if err != nil {
+				return fmt.Errorf("load managed plan %q: %w", input.PlanID, err)
+			}
+			if plan.Status != workflowstore.PlanStatusActive {
+				return fmt.Errorf("managed plan %q is %q", input.PlanID, plan.Status)
+			}
+			pass, err := tx.GetPlanPassByPlanAndNumber(ctx, plan.ID, input.PassNumber)
+			if err != nil {
+				return fmt.Errorf("load managed pass %d: %w", input.PassNumber, err)
+			}
+			if !strings.EqualFold(pass.RepoTarget, input.RepoTarget) {
+				return fmt.Errorf("managed pass repository %q does not match run repository %q", pass.RepoTarget, input.RepoTarget)
+			}
+			switch pass.Status {
+			case workflowstore.PassStatusPlanned:
+				pass, err = tx.TransitionPlanPass(ctx, pass.PassID, workflowstore.PassStatusPlanned, workflowstore.PassStatusInProgress)
+				if err != nil {
+					return fmt.Errorf("start managed pass %d: %w", input.PassNumber, err)
+				}
+			case workflowstore.PassStatusInProgress:
+			case workflowstore.PassStatusCompleted:
+				return fmt.Errorf("managed pass %d is already completed", input.PassNumber)
+			default:
+				return fmt.Errorf("managed pass %d has unsupported status %q", input.PassNumber, pass.Status)
+			}
+			planRowID = sql.NullInt64{Int64: plan.ID, Valid: true}
+			passRowID = sql.NullInt64{Int64: pass.ID, Valid: true}
+		}
+
+		remediatesRowID := sql.NullInt64{}
+		if input.RemediatesRunID != "" {
+			original, err := tx.GetRunByRunID(ctx, input.RemediatesRunID)
+			if err != nil {
+				return fmt.Errorf("load remediation source run %q: %w", input.RemediatesRunID, err)
+			}
+			if original.Status != workflowstore.RunStatusNeedsRevision ||
+				!strings.EqualFold(original.RepoTarget, input.RepoTarget) ||
+				original.PlanRowID != planRowID ||
+				original.PlanPassRowID != passRowID {
+				return fmt.Errorf("remediation source run must be needs_revision with the identical repository and Plan/pass association")
+			}
+			remediatesRowID = sql.NullInt64{Int64: original.ID, Valid: true}
+		}
+
+		run, err := tx.CreateRun(ctx, workflowstore.CreateRunParams{
+			RunID:              runID,
+			FeatureSlug:        input.FeatureSlug,
+			RepoTarget:         input.RepoTarget,
+			PlanRowID:          planRowID,
+			PlanPassRowID:      passRowID,
+			RemediatesRunRowID: remediatesRowID,
+			Status:             workflowstore.RunStatusCreated,
+			Branch:             input.Branch,
+			BaseCommit:         input.BaseCommit,
+			CanonicalSHA256:    canonical.SHA256,
+		})
+		if err != nil {
+			return fmt.Errorf("create run: %w", err)
+		}
+		run, err = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusCreated, workflowstore.RunStatusSetupReady)
+		if err != nil {
+			return fmt.Errorf("mark run setup ready: %w", err)
+		}
+		result.Run = run
+
+		for _, staged := range []workflowartifacts.File{canonical, rendered} {
+			artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
+				ArtifactID:   s.ids.ArtifactID(),
+				OwnerType:    workflowstore.ArtifactOwnerRun,
+				RunRowID:     sql.NullInt64{Int64: run.ID, Valid: true},
+				Kind:         staged.Kind,
+				RelativePath: staged.RelativePath,
+				MediaType:    staged.MediaType,
+				SHA256:       staged.SHA256,
+				SizeBytes:    staged.SizeBytes,
+			})
+			if err != nil {
+				return fmt.Errorf("create run artifact metadata: %w", err)
+			}
+			result.Artifacts = append(result.Artifacts, artifact)
+		}
+		return nil
+	})
+	if err != nil {
+		return CreateRunResult{}, err
+	}
+	return result, nil
+}
+
+func (s *Service) BeginExecutionAttempt(ctx context.Context, input BeginExecutionAttemptInput) (BeginExecutionAttemptResult, error) {
+	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.Adapter) == "" || strings.TrimSpace(input.Model) == "" {
+		return BeginExecutionAttemptResult{}, fmt.Errorf("run ID, adapter, and model are required")
+	}
+	result := BeginExecutionAttemptResult{}
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		run, err := tx.GetRunByRunID(ctx, input.RunID)
+		if err != nil {
+			return fmt.Errorf("load run: %w", err)
+		}
+		run, err = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusSetupReady, workflowstore.RunStatusExecuting)
+		if err != nil {
+			return fmt.Errorf("start run execution: %w", err)
+		}
+		number, err := tx.NextExecutionAttemptNumber(ctx, run.ID)
+		if err != nil {
+			return fmt.Errorf("select execution attempt number: %w", err)
+		}
+		attempt, err := tx.CreateExecutionAttempt(ctx, workflowstore.CreateExecutionAttemptParams{
+			AttemptID:     s.ids.ExecutionAttemptID(),
+			RunRowID:      run.ID,
+			AttemptNumber: number,
+			Adapter:       input.Adapter,
+			Model:         input.Model,
+		})
+		if err != nil {
+			return fmt.Errorf("create execution attempt: %w", err)
+		}
+		attempt, err = tx.TransitionExecutionAttempt(ctx, attempt.AttemptID, workflowstore.AttemptStatusPending, workflowstore.AttemptStatusRunning, "{}")
+		if err != nil {
+			return fmt.Errorf("start execution attempt: %w", err)
+		}
+		result.Run = run
+		result.Attempt = attempt
+		return nil
+	})
+	return result, err
+}
+
+func (s *Service) FinishExecutionAttempt(ctx context.Context, input FinishExecutionAttemptInput) (FinishExecutionAttemptResult, error) {
+	if input.Status != workflowstore.AttemptStatusSucceeded &&
+		input.Status != workflowstore.AttemptStatusFailed &&
+		input.Status != workflowstore.AttemptStatusCancelled &&
+		input.Status != workflowstore.AttemptStatusTimedOut {
+		return FinishExecutionAttemptResult{}, fmt.Errorf("unsupported terminal execution attempt status %q", input.Status)
+	}
+	if input.ResultJSON == "" {
+		input.ResultJSON = "{}"
+	}
+	if !json.Valid([]byte(input.ResultJSON)) {
+		return FinishExecutionAttemptResult{}, fmt.Errorf("execution attempt result must be valid JSON")
+	}
+	result := FinishExecutionAttemptResult{}
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		attempt, err := tx.GetExecutionAttemptByAttemptID(ctx, input.AttemptID)
+		if err != nil {
+			return fmt.Errorf("load execution attempt: %w", err)
+		}
+		attempt, err = tx.TransitionExecutionAttempt(ctx, attempt.AttemptID, workflowstore.AttemptStatusRunning, input.Status, input.ResultJSON)
+		if err != nil {
+			return fmt.Errorf("finish execution attempt: %w", err)
+		}
+		run, err := tx.GetRunByRowID(ctx, attempt.RunRowID)
+		if err != nil {
+			return fmt.Errorf("load run for execution attempt: %w", err)
+		}
+		nextRunStatus := workflowstore.RunStatusExecutionFailed
+		switch input.Status {
+		case workflowstore.AttemptStatusSucceeded:
+			nextRunStatus = workflowstore.RunStatusValidating
+		case workflowstore.AttemptStatusCancelled:
+			nextRunStatus = workflowstore.RunStatusCancelled
+		}
+		run, err = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusExecuting, nextRunStatus)
+		if err != nil {
+			return fmt.Errorf("advance run after execution attempt: %w", err)
+		}
+		result.Run = run
+		result.Attempt = attempt
+		return nil
+	})
+	return result, err
+}
+
+func (s *Service) RecordValidationResult(ctx context.Context, runID string, passed bool) (workflowstore.Run, error) {
+	var updated workflowstore.Run
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		next := workflowstore.RunStatusAuditReady
+		if !passed {
+			next = workflowstore.RunStatusValidationFailed
+		}
+		run, err := tx.TransitionRun(ctx, runID, workflowstore.RunStatusValidating, next)
+		if err != nil {
+			return fmt.Errorf("record validation result: %w", err)
+		}
+		if !passed {
+			run, err = tx.TransitionRun(ctx, runID, workflowstore.RunStatusValidationFailed, workflowstore.RunStatusNeedsRevision)
+			if err != nil {
+				return fmt.Errorf("mark validation revision required: %w", err)
+			}
+		}
+		updated = run
+		return nil
+	})
+	return updated, err
+}
+
+func (s *Service) RecordAuditDecision(ctx context.Context, input RecordAuditDecisionInput) (RecordAuditDecisionResult, error) {
+	if input.Decision != workflowstore.AuditDecisionAccepted && input.Decision != workflowstore.AuditDecisionNeedsRevision {
+		return RecordAuditDecisionResult{}, fmt.Errorf("unsupported audit decision %q", input.Decision)
+	}
+	if !validCommit(input.AuditedCommit) || !validSHA256(input.PacketSHA256) {
+		return RecordAuditDecisionResult{}, fmt.Errorf("audit decision commit or packet SHA-256 is invalid")
+	}
+	result := RecordAuditDecisionResult{}
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		run, err := tx.GetRunByRunID(ctx, input.RunID)
+		if err != nil {
+			return fmt.Errorf("load audit run: %w", err)
+		}
+		artifact, err := tx.GetArtifactByArtifactID(ctx, input.AuditPacketArtifactID)
+		if err != nil {
+			return fmt.Errorf("load audit packet artifact: %w", err)
+		}
+		decision, err := tx.CreateAuditDecision(ctx, workflowstore.CreateAuditDecisionParams{
+			AuditDecisionID:          s.ids.AuditDecisionID(),
+			RunRowID:                 run.ID,
+			AuditPacketArtifactRowID: artifact.ID,
+			AuditedCommit:            input.AuditedCommit,
+			PacketSHA256:             input.PacketSHA256,
+			Decision:                 input.Decision,
+			Rationale:                input.Rationale,
+		})
+		if err != nil {
+			return fmt.Errorf("create audit decision: %w", err)
+		}
+		nextRunStatus := workflowstore.RunStatusNeedsRevision
+		if input.Decision == workflowstore.AuditDecisionAccepted {
+			nextRunStatus = workflowstore.RunStatusCompleted
+		}
+		run, err = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusAuditReady, nextRunStatus)
+		if err != nil {
+			return fmt.Errorf("advance audited run: %w", err)
+		}
+		result.Run = run
+		result.Decision = decision
+
+		if input.Decision == workflowstore.AuditDecisionAccepted && run.PlanRowID.Valid && run.PlanPassRowID.Valid {
+			pass, err := tx.GetPlanPassByRowID(ctx, run.PlanPassRowID.Int64)
+			if err != nil {
+				return fmt.Errorf("load managed pass after audit: %w", err)
+			}
+			pass, err = tx.TransitionPlanPass(ctx, pass.PassID, workflowstore.PassStatusInProgress, workflowstore.PassStatusCompleted)
+			if err != nil {
+				return fmt.Errorf("complete managed pass after audit: %w", err)
+			}
+			result.Pass = &pass
+			remaining, err := tx.CountIncompletePlanPasses(ctx, run.PlanRowID.Int64)
+			if err != nil {
+				return fmt.Errorf("count remaining managed passes: %w", err)
+			}
+			if remaining == 0 {
+				plan, err := tx.CompletePlan(ctx, run.PlanRowID.Int64)
+				if err != nil {
+					return fmt.Errorf("complete managed plan after audit: %w", err)
+				}
+				result.Plan = &plan
+			}
+		}
+		return nil
+	})
+	return result, err
+}
+
+func validateCreateRunInput(input CreateRunInput) error {
+	if !validFeatureSlug(input.FeatureSlug) {
+		return fmt.Errorf("feature slug must be lowercase kebab-case")
+	}
+	if strings.TrimSpace(input.RepoTarget) == "" || strings.TrimSpace(input.RepoTarget) != input.RepoTarget {
+		return fmt.Errorf("repository target is required without outer whitespace")
+	}
+	if strings.TrimSpace(input.Branch) == "" || strings.TrimSpace(input.Branch) != input.Branch {
+		return fmt.Errorf("branch is required without outer whitespace")
+	}
+	if !validCommit(input.BaseCommit) {
+		return fmt.Errorf("base commit must be a lowercase full 40-character SHA")
+	}
+	if len(input.CanonicalJSON) == 0 || len(input.RenderedMarkdown) == 0 {
+		return fmt.Errorf("canonical Execution Spec JSON and rendered Executor Brief are required")
+	}
+	if (input.PlanID == "") != (input.PassNumber == 0) {
+		return fmt.Errorf("Plan ID and pass number must be supplied together")
+	}
+	return nil
+}
+
+func validFeatureSlug(value string) bool {
+	if value == "" || strings.TrimSpace(value) != value || strings.HasPrefix(value, "-") || strings.HasSuffix(value, "-") || strings.Contains(value, "--") {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validCommit(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, r := range value {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+func validSHA256(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, r := range value {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
