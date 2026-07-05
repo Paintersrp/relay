@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -267,6 +268,56 @@ func TestExecutionStructuralDiagnostics(t *testing.T) {
 			}
 			result := Compile("contract-fixture.execution-spec.json", executionDocument(files, tc.stepNumber, tc.substepNumber, tc.commands))
 			assertFailureCode(t, result, tc.code)
+		})
+	}
+}
+
+func TestRepositoryPathSafetyMatrix(t *testing.T) {
+	cases := []struct {
+		name         string
+		path         string
+		expectedCode string
+	}{
+		{name: "reject empty", path: "", expectedCode: "empty_required_value"},
+		{name: "reject absolute", path: "/absolute.go", expectedCode: "unsafe_repository_path"},
+		{name: "reject UNC or double slash", path: "//server/share.go", expectedCode: "unsafe_repository_path"},
+		{name: "reject Windows drive prefix", path: "C:/source/file.go", expectedCode: "unsafe_repository_path"},
+		{name: "reject backslash", path: "dir\\file.go", expectedCode: "unsafe_repository_path"},
+		{name: "reject empty segment", path: "dir//file.go", expectedCode: "unsafe_repository_path"},
+		{name: "reject root current segment", path: ".", expectedCode: "unsafe_repository_path"},
+		{name: "reject root parent segment", path: "..", expectedCode: "unsafe_repository_path"},
+		{name: "reject terminal current segment", path: "dir/.", expectedCode: "unsafe_repository_path"},
+		{name: "reject terminal parent segment", path: "dir/..", expectedCode: "unsafe_repository_path"},
+		{name: "reject internal current segment", path: "dir/./file.go", expectedCode: "unsafe_repository_path"},
+		{name: "reject internal parent segment", path: "dir/../file.go", expectedCode: "unsafe_repository_path"},
+		{name: "reject leading whitespace", path: " leading.go", expectedCode: "unsafe_repository_path"},
+		{name: "reject trailing whitespace", path: "trailing.go ", expectedCode: "unsafe_repository_path"},
+		{name: "reject control character", path: "dir/\u0001file.go", expectedCode: "unsafe_repository_path"},
+		{name: "accept compiler source", path: "internal/speccompiler/compiler.go"},
+		{name: "accept route parameter", path: "apps/web/src/routes/run.$runID.tsx"},
+		{name: "accept generated reference", path: "docs/generated/agent-references/index.json"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pathJSON, err := json.Marshal(tc.path)
+			if err != nil {
+				t.Fatalf("marshal path %q: %v", tc.path, err)
+			}
+			file := fmt.Sprintf(`{
+                "path": %s,
+                "operation": "create",
+                "purpose": "Exercise repository path validation.",
+                "implementation": {
+                  "content": "package example\n"
+                }
+              }`, pathJSON)
+			result := Compile("contract-fixture.execution-spec.json", executionDocument(file, 1, 1, true))
+			if tc.expectedCode == "" {
+				assertSuccess(t, result)
+				return
+			}
+			assertFailureCode(t, result, tc.expectedCode)
 		})
 	}
 }
