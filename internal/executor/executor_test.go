@@ -150,7 +150,10 @@ type executorFakeOwnedProcess struct {
 	identity       pipeline.ProcessIdentity
 	running        bool
 	verifiedAbsent bool
+	treeErr        error
+	terminateErr   error
 	releaseErr     error
+	terminateCount int
 	releaseCount   int
 }
 
@@ -184,10 +187,11 @@ func (p *executorFakeOwnedProcess) Identity() pipeline.ProcessIdentity { return 
 func (p *executorFakeOwnedProcess) Stdout() io.ReadCloser              { return io.NopCloser(strings.NewReader("")) }
 func (p *executorFakeOwnedProcess) Stderr() io.ReadCloser              { return io.NopCloser(strings.NewReader("")) }
 func (p *executorFakeOwnedProcess) Wait() error                        { return nil }
-func (p *executorFakeOwnedProcess) TreeRunning() (bool, error)         { return p.running, nil }
+func (p *executorFakeOwnedProcess) TreeRunning() (bool, error)         { return p.running, p.treeErr }
 func (p *executorFakeOwnedProcess) Terminate(time.Duration) (pipeline.ProcessTerminationResult, error) {
+	p.terminateCount++
 	p.running = false
-	return pipeline.ProcessTerminationResult{VerifiedAbsent: p.verifiedAbsent}, nil
+	return pipeline.ProcessTerminationResult{VerifiedAbsent: p.verifiedAbsent}, p.terminateErr
 }
 func (p *executorFakeOwnedProcess) Release() error {
 	p.releaseCount++
@@ -1741,7 +1745,102 @@ func TestCancelExecutionReleaseFailurePreservesVerifiedAbsenceAndFailsLifecycle(
 	s := setupExecutorTestStore(t)
 	runID := createExecutorReadyRun(t, s, StatusExecutorDispatched)
 	controller := newExecutorFakeController(fmt.Errorf("release boom"))
-	exec, err := s.CreateOwnedAgentExecution(runID, "fake", ExecutionStatusStarting, "fake", "local_process", "owner", "token")
+	exec := createRegisteredExecutorExecution(t, s, runID, controller, "owner")
+
+	_, err := CancelExecution(context.Background(), s, nil, nil, runID, controller)
+	if err != nil {
+		t.Fatalf("cancel execution: %v", err)
+	}
+	refreshed, err := s.GetAgentExecution(exec.ID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if refreshed.TerminationState != "verified_absent" {
+		t.Fatalf("expected verified_absent to survive release failure, got %s", refreshed.TerminationState)
+	}
+	if refreshed.Status != ExecutionStatusFailed {
+		t.Fatalf("expected terminal failed after release failure, got %s", refreshed.Status)
+	}
+	if !refreshed.TerminalizedAt.Valid {
+		t.Fatalf("expected release-failed cancellation to terminalize")
+	}
+	if !refreshed.TerminationLastError.Valid || !strings.Contains(refreshed.TerminationLastError.String, "release failed") {
+		t.Fatalf("expected release failure text, got %+v", refreshed.TerminationLastError)
+	}
+	if refreshed.TerminalReason.String != TerminalReasonFailed {
+		t.Fatalf("expected failed terminal reason, got %+v", refreshed.TerminalReason)
+	}
+	if controller.owned.terminateCount != 1 {
+		t.Fatalf("expected one terminate call, got %d", controller.owned.terminateCount)
+	}
+	if controller.owned.releaseCount != 1 {
+		t.Fatalf("expected one release call, got %d", controller.owned.releaseCount)
+	}
+}
+
+func TestCancelExecutionVerifiedReleaseSuccessTerminalizesCanceled(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, StatusExecutorDispatched)
+	controller := newExecutorFakeController(nil)
+	exec := createRegisteredExecutorExecution(t, s, runID, controller, "owner")
+
+	res, err := CancelExecution(context.Background(), s, nil, nil, runID, controller)
+	if err != nil {
+		t.Fatalf("cancel execution: %v", err)
+	}
+	refreshed, err := s.GetAgentExecution(exec.ID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if !res.Terminal || refreshed.Status != ExecutionStatusCanceled {
+		t.Fatalf("expected terminal canceled result, res=%+v exec=%s", res, refreshed.Status)
+	}
+	if refreshed.TerminationState != "verified_absent" {
+		t.Fatalf("expected verified_absent, got %s", refreshed.TerminationState)
+	}
+	if refreshed.CancellationCompletedAt.Valid == false {
+		t.Fatalf("expected cancellation_completed_at")
+	}
+	if controller.owned.terminateCount != 1 || controller.owned.releaseCount != 1 {
+		t.Fatalf("expected one terminate/release, got terminate=%d release=%d", controller.owned.terminateCount, controller.owned.releaseCount)
+	}
+}
+
+func TestCancelExecutionUnverifiedReleaseFailurePreservesCompoundErrors(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, StatusExecutorDispatched)
+	controller := newExecutorFakeController(fmt.Errorf("release boom"))
+	controller.owned.verifiedAbsent = false
+	controller.owned.terminateErr = fmt.Errorf("terminate boom")
+	exec := createRegisteredExecutorExecution(t, s, runID, controller, "owner")
+
+	_, err := CancelExecution(context.Background(), s, nil, nil, runID, controller)
+	if err != nil {
+		t.Fatalf("cancel execution: %v", err)
+	}
+	refreshed, err := s.GetAgentExecution(exec.ID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if refreshed.Status != ExecutionStatusTerminationPending {
+		t.Fatalf("expected nonterminal pending status, got %s", refreshed.Status)
+	}
+	if refreshed.TerminationState == "verified_absent" || refreshed.TerminalizedAt.Valid {
+		t.Fatalf("expected unverified nonterminal execution, state=%s terminalized=%+v", refreshed.TerminationState, refreshed.TerminalizedAt)
+	}
+	for _, want := range []string{"terminate boom", "process absence was not verified", "release boom"} {
+		if !refreshed.TerminationLastError.Valid || !strings.Contains(refreshed.TerminationLastError.String, want) {
+			t.Fatalf("expected compound error %q in %+v", want, refreshed.TerminationLastError)
+		}
+	}
+	if controller.owned.terminateCount != 1 || controller.owned.releaseCount != 1 {
+		t.Fatalf("expected one terminate/release, got terminate=%d release=%d", controller.owned.terminateCount, controller.owned.releaseCount)
+	}
+}
+
+func createRegisteredExecutorExecution(t *testing.T, s *store.Store, runID int64, controller *executorFakeController, owner string) *store.AgentExecution {
+	t.Helper()
+	exec, err := s.CreateOwnedAgentExecution(runID, "fake", ExecutionStatusStarting, "fake", "local_process", owner, "token")
 	if err != nil {
 		t.Fatalf("create execution: %v", err)
 	}
@@ -1759,27 +1858,7 @@ func TestCancelExecutionReleaseFailurePreservesVerifiedAbsenceAndFailsLifecycle(
 	}); err != nil || !won {
 		t.Fatalf("register process won=%v err=%v", won, err)
 	}
-
-	_, err = CancelExecution(context.Background(), s, nil, nil, runID, controller)
-	if err != nil {
-		t.Fatalf("cancel execution: %v", err)
-	}
-	refreshed, err := s.GetAgentExecution(exec.ID)
-	if err != nil {
-		t.Fatalf("get execution: %v", err)
-	}
-	if refreshed.TerminationState != "verified_absent" {
-		t.Fatalf("expected verified_absent to survive release failure, got %s", refreshed.TerminationState)
-	}
-	if refreshed.Status != ExecutionStatusTerminationPending {
-		t.Fatalf("expected termination_pending after release failure, got %s", refreshed.Status)
-	}
-	if !refreshed.TerminationLastError.Valid || !strings.Contains(refreshed.TerminationLastError.String, "release failed") {
-		t.Fatalf("expected release failure text, got %+v", refreshed.TerminationLastError)
-	}
-	if controller.owned.releaseCount != 1 {
-		t.Fatalf("expected one release call, got %d", controller.owned.releaseCount)
-	}
+	return exec
 }
 
 func TestReconcileReleaseFailureCannotTerminalizeProcessLost(t *testing.T) {
@@ -1821,6 +1900,42 @@ func TestReconcileReleaseFailureCannotTerminalizeProcessLost(t *testing.T) {
 	}
 	if refreshed.Status != ExecutionStatusFailed {
 		t.Fatalf("expected failed terminal status, got %s", refreshed.Status)
+	}
+	if !refreshed.TerminationLastError.Valid || !strings.Contains(refreshed.TerminationLastError.String, "release boom") {
+		t.Fatalf("expected release failure to be retained, got %+v", refreshed.TerminationLastError)
+	}
+}
+
+func TestReconcileUnverifiedReleaseFailureRemainsPendingWithCompoundErrors(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, StatusExecutorDispatched)
+	controller := newExecutorFakeController(fmt.Errorf("release boom"))
+	controller.owned.running = true
+	controller.owned.verifiedAbsent = false
+	controller.owned.terminateErr = fmt.Errorf("terminate boom")
+	exec := createRegisteredExecutorExecution(t, s, runID, controller, "other-owner")
+
+	err := ReconcileActiveExecutions(s, nil, nil, "this-owner", controller)
+	if err == nil {
+		t.Fatal("expected unverified cleanup error")
+	}
+	refreshed, err := s.GetAgentExecution(exec.ID)
+	if err != nil {
+		t.Fatalf("get execution: %v", err)
+	}
+	if refreshed.Status != ExecutionStatusTerminationPending {
+		t.Fatalf("expected nonterminal pending status, got %s", refreshed.Status)
+	}
+	if refreshed.TerminationState == "verified_absent" || refreshed.TerminalizedAt.Valid {
+		t.Fatalf("expected unverified nonterminal execution, state=%s terminalized=%+v", refreshed.TerminationState, refreshed.TerminalizedAt)
+	}
+	for _, want := range []string{"terminate boom", "release boom"} {
+		if !refreshed.TerminationLastError.Valid || !strings.Contains(refreshed.TerminationLastError.String, want) {
+			t.Fatalf("expected compound reconciliation error %q in %+v", want, refreshed.TerminationLastError)
+		}
+	}
+	if controller.owned.releaseCount != 1 {
+		t.Fatalf("expected one release, got %d", controller.owned.releaseCount)
 	}
 }
 
@@ -1889,6 +2004,55 @@ func TestDispatchBriefTerminalVerificationReleaseFailureFailsExecution(t *testin
 	}
 	if exec.TerminationState != "verified_absent" {
 		t.Fatalf("expected verified_absent to survive release failure, got %s", exec.TerminationState)
+	}
+}
+
+func TestEnsureExecutionTreeAbsentForTerminalRetainsProbeAndReleaseErrors(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, StatusExecutorDispatched)
+	identity := pipeline.ProcessIdentity{PID: 9753, GroupID: 9753, StartedAt: "fingerprint", Platform: "test", Nonce: "job"}
+	controller := &executorReopenController{owned: &executorFakeOwnedProcess{
+		identity:     identity,
+		treeErr:      fmt.Errorf("probe boom"),
+		releaseErr:   fmt.Errorf("release boom"),
+		releaseCount: 0,
+	}}
+	exec := createRegisteredExecutorExecution(t, s, runID, &executorFakeController{owned: controller.owned}, "owner")
+
+	evidence := ensureExecutionTreeAbsentForTerminal(s, controller, exec.ID)
+	if evidence.VerifiedAbsent {
+		t.Fatalf("expected unverified evidence")
+	}
+	msg := terminalTreeEvidenceError(evidence)
+	for _, want := range []string{"probe boom", "release boom"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("expected %q in %q", want, msg)
+		}
+	}
+	if controller.owned.releaseCount != 1 {
+		t.Fatalf("expected one release, got %d", controller.owned.releaseCount)
+	}
+}
+
+func TestEnsureExecutionTreeAbsentForTerminalRetainsRunningAndReleaseErrors(t *testing.T) {
+	s := setupExecutorTestStore(t)
+	runID := createExecutorReadyRun(t, s, StatusExecutorDispatched)
+	controller := newExecutorFakeController(fmt.Errorf("release boom"))
+	controller.owned.running = true
+	exec := createRegisteredExecutorExecution(t, s, runID, controller, "owner")
+
+	evidence := ensureExecutionTreeAbsentForTerminal(s, controller, exec.ID)
+	if evidence.VerifiedAbsent {
+		t.Fatalf("expected running tree to remain unverified")
+	}
+	msg := terminalTreeEvidenceError(evidence)
+	for _, want := range []string{"process tree still running", "release boom"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("expected %q in %q", want, msg)
+		}
+	}
+	if controller.owned.releaseCount != 1 {
+		t.Fatalf("expected one release, got %d", controller.owned.releaseCount)
 	}
 }
 

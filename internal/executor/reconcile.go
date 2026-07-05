@@ -39,7 +39,7 @@ func reconcileActiveExecution(st *store.Store, hub *events.Hub, log *slog.Logger
 	reason := TerminalReasonRestartOrphanReconcile
 	message := ""
 	verifiedAbsent := false
-	releaseFailed := false
+	var releaseErr error
 	identity, identityErr := processIdentityFromExecution(&exec)
 	if identityErr == nil {
 		owned, openErr := controller.OpenOwned(identity)
@@ -64,12 +64,12 @@ func reconcileActiveExecution(st *store.Store, hub *events.Hub, log *slog.Logger
 				message = "Executor process already absent during restart reconciliation"
 				verifiedAbsent = true
 			}
-			if releaseErr := owned.Release(); releaseErr != nil {
-				releaseFailed = true
+			if err := owned.Release(); err != nil {
+				releaseErr = err
 				if verifiedAbsent {
-					message += "; executor process ownership release failed during restart reconciliation: " + releaseErr.Error()
+					message = appendError(message, "executor process ownership release failed during restart reconciliation: "+releaseErr.Error())
 				} else {
-					message = "Executor process ownership release failed during restart reconciliation: " + releaseErr.Error()
+					message = appendError(message, "executor process ownership release failed during restart reconciliation: "+releaseErr.Error())
 				}
 			}
 		}
@@ -86,11 +86,10 @@ func reconcileActiveExecution(st *store.Store, hub *events.Hub, log *slog.Logger
 	}
 
 	markTerminationVerified(st, exec.ID)
-	if releaseFailed {
-		if failed := markTerminationFailed(st, exec.ID, message); failed == nil {
-			message += "; failed to persist release blocker"
+	if releaseErr != nil {
+		if _, err := appendLifecycleError(st, exec.ID, message); err != nil {
+			message = appendError(message, "persist lifecycle error: "+err.Error())
 		}
-		createEvent(st, exec.RunID, "warn", message)
 		finished := executionTimestampNow()
 		if _, _, err := terminalizeExecution(st, hub, log, exec.RunID, exec.ID, terminalExecutionInput{
 			Status:          ExecutionStatusFailed,

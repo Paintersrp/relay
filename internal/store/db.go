@@ -679,6 +679,20 @@ func (s *Store) MarkAgentExecutionTerminationFailed(id int64, errText string) (*
 	return &exec, nil
 }
 
+func (s *Store) AppendAgentExecutionLifecycleError(id int64, errText string) (*AgentExecution, error) {
+	exec, err := s.queries.AppendAgentExecutionLifecycleError(context.Background(), generated.AppendAgentExecutionLifecycleErrorParams{
+		ID:                     id,
+		TerminationLastError:   nullString(errText),
+		TerminationLastError_2: nullString(errText),
+		Error:                  nullString(errText),
+		Error_2:                nullString(errText),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &exec, nil
+}
+
 func (s *Store) MarkAgentExecutionTreeVerifiedAbsent(id int64, verifiedAt string) (*AgentExecution, error) {
 	exec, err := s.queries.MarkAgentExecutionTreeVerifiedAbsent(context.Background(), generated.MarkAgentExecutionTreeVerifiedAbsentParams{
 		ID:                    id,

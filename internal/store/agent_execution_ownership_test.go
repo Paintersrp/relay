@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -172,6 +173,45 @@ func TestTerminalizeAgentExecutionCASPreservesExistingArtifactPaths(t *testing.T
 		terminal.CombinedArtifactPath.String != "combined.txt" ||
 		terminal.ResultArtifactPath.String != "result.txt" {
 		t.Fatalf("artifact paths were not preserved: %+v", terminal)
+	}
+}
+
+func TestAppendAgentExecutionLifecycleErrorPreservesVerifiedAbsence(t *testing.T) {
+	st := newOwnershipTestStore(t)
+	runID := createOwnershipTestRun(t, st)
+
+	exec, err := st.CreateOwnedAgentExecution(runID, "test", "running", "preview", "local_process", "owner-a", "token-a")
+	if err != nil {
+		t.Fatalf("create execution: %v", err)
+	}
+	if _, err := st.MarkAgentExecutionTreeVerifiedAbsent(exec.ID, "2026-07-04T00:00:03Z"); err != nil {
+		t.Fatalf("mark verified absent: %v", err)
+	}
+
+	if _, err := st.MarkAgentExecutionTerminationFailed(exec.ID, "must not apply after proof"); err == nil {
+		t.Fatalf("termination-failed transition must reject verified_absent")
+	}
+	appended, err := st.AppendAgentExecutionLifecycleError(exec.ID, "release boom")
+	if err != nil {
+		t.Fatalf("append lifecycle error: %v", err)
+	}
+	if appended.Status != "running" {
+		t.Fatalf("append changed status: %s", appended.Status)
+	}
+	if appended.TerminationState != "verified_absent" {
+		t.Fatalf("append changed termination state: %s", appended.TerminationState)
+	}
+	if !appended.TerminationVerifiedAt.Valid || appended.TerminationVerifiedAt.String != "2026-07-04T00:00:03Z" {
+		t.Fatalf("append changed verified timestamp: %+v", appended.TerminationVerifiedAt)
+	}
+	if appended.TerminalizedAt.Valid || appended.FinishedAt.Valid {
+		t.Fatalf("append set terminal fields: finished=%+v terminalized=%+v", appended.FinishedAt, appended.TerminalizedAt)
+	}
+	if !appended.TerminationLastError.Valid || !strings.Contains(appended.TerminationLastError.String, "release boom") {
+		t.Fatalf("append did not record termination_last_error: %+v", appended.TerminationLastError)
+	}
+	if !appended.Error.Valid || !strings.Contains(appended.Error.String, "release boom") {
+		t.Fatalf("append did not record error: %+v", appended.Error)
 	}
 }
 

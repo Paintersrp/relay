@@ -757,6 +757,11 @@ func runBackgroundDispatch(
 		}
 		if runResult.TerminationVerified {
 			markTerminationVerified(s, execID)
+			if runResult.ReleaseError != "" {
+				if _, err := appendLifecycleError(s, execID, "release owned process: "+runResult.ReleaseError); err != nil {
+					errMsg = appendError(errMsg, "persist lifecycle error: "+err.Error())
+				}
+			}
 		} else {
 			markTerminationFailed(s, execID, errMsg)
 			createEvent(s, runID, "warn", "Executor cancellation cleanup is still pending")
@@ -811,6 +816,11 @@ func runBackgroundDispatch(
 		}
 		if runResult.TerminationVerified {
 			markTerminationVerified(s, execID)
+			if runResult.ReleaseError != "" {
+				if _, err := appendLifecycleError(s, execID, "release owned process: "+runResult.ReleaseError); err != nil {
+					errMsg = appendError(errMsg, "persist lifecycle error: "+err.Error())
+				}
+			}
 		} else {
 			markTerminationFailed(s, execID, errMsg)
 			createEvent(s, runID, "warn", "Executor timeout cleanup is still pending")
@@ -860,14 +870,18 @@ func runBackgroundDispatch(
 	}
 
 	terminalReleaseError := ""
-	if ok, blocker, relErr := ensureExecutionTreeAbsentForTerminal(s, p.processController(), execID); !ok {
+	treeEvidence := ensureExecutionTreeAbsentForTerminal(s, p.processController(), execID)
+	if !treeEvidence.VerifiedAbsent {
+		blocker := terminalTreeEvidenceError(treeEvidence)
 		markTerminationFailed(s, execID, blocker)
 		createEvent(s, runID, "warn", "Executor completion cleanup is still pending: "+blocker)
 		return
-	} else if relErr != "" {
-		terminalReleaseError = relErr
-		errMsg = appendError(errMsg, relErr)
-		markTerminationFailed(s, execID, relErr)
+	} else if treeEvidence.ReleaseError != nil {
+		terminalReleaseError = "release owned process during terminal verification: " + treeEvidence.ReleaseError.Error()
+		errMsg = appendError(errMsg, terminalReleaseError)
+		if _, err := appendLifecycleError(s, execID, terminalReleaseError); err != nil {
+			errMsg = appendError(errMsg, "persist lifecycle error: "+err.Error())
+		}
 	}
 
 	finishedStr := runResult.FinishedAt.Format(time.RFC3339Nano)
@@ -1104,43 +1118,67 @@ func appendError(base, extra string) string {
 	return base + "; " + extra
 }
 
-func ensureExecutionTreeAbsentForTerminal(st *store.Store, controller pipeline.ProcessController, execID int64) (treeAbsent bool, cleanupError string, releaseError string) {
+type terminalTreeEvidence struct {
+	VerifiedAbsent    bool
+	VerificationError error
+	ReleaseError      error
+}
+
+func terminalTreeEvidenceError(e terminalTreeEvidence) string {
+	msg := ""
+	if e.VerificationError != nil {
+		msg = appendError(msg, e.VerificationError.Error())
+	}
+	if e.ReleaseError != nil {
+		msg = appendError(msg, "release owned process during terminal verification: "+e.ReleaseError.Error())
+	}
+	if msg == "" {
+		msg = "process tree absence was not verified during terminal cleanup verification"
+	}
+	return msg
+}
+
+func ensureExecutionTreeAbsentForTerminal(st *store.Store, controller pipeline.ProcessController, execID int64) terminalTreeEvidence {
 	if st == nil {
-		return false, "store is unavailable for terminal cleanup verification", ""
+		return terminalTreeEvidence{VerificationError: fmt.Errorf("store is unavailable for terminal cleanup verification")}
 	}
 	exec, err := st.GetAgentExecution(execID)
 	if err != nil {
-		return false, "load execution for terminal cleanup verification: " + err.Error(), ""
+		return terminalTreeEvidence{VerificationError: fmt.Errorf("load execution for terminal cleanup verification: %w", err)}
 	}
 	if exec == nil {
-		return false, "execution missing during terminal cleanup verification", ""
+		return terminalTreeEvidence{VerificationError: fmt.Errorf("execution missing during terminal cleanup verification")}
 	}
 	if exec.LaunchState == "start_prevented" || exec.TerminationState == "verified_absent" {
-		return true, "", ""
+		return terminalTreeEvidence{VerifiedAbsent: true}
 	}
 	identity, err := processIdentityFromExecution(exec)
 	if err != nil {
-		return false, "process identity unavailable during terminal cleanup verification: " + err.Error(), ""
+		return terminalTreeEvidence{VerificationError: fmt.Errorf("process identity unavailable during terminal cleanup verification: %w", err)}
 	}
 	if controller == nil {
 		controller = pipeline.DefaultProcessController()
 	}
 	owned, err := controller.OpenOwned(identity)
 	if err != nil {
-		return false, "process tree ownership unavailable during terminal cleanup verification: " + err.Error(), ""
+		return terminalTreeEvidence{VerificationError: fmt.Errorf("process tree ownership unavailable during terminal cleanup verification: %w", err)}
 	}
 	running, err := owned.TreeRunning()
-	if rerr := owned.Release(); rerr != nil {
-		releaseError = "release owned process during terminal verification: " + rerr.Error()
-	}
+	releaseErr := owned.Release()
 	if err != nil {
-		return false, "process tree presence unverifiable during terminal cleanup verification: " + err.Error(), ""
+		return terminalTreeEvidence{
+			VerificationError: fmt.Errorf("process tree presence unverifiable during terminal cleanup verification: %w", err),
+			ReleaseError:      releaseErr,
+		}
 	}
 	if running {
-		return false, "process tree still running after executor completion", ""
+		return terminalTreeEvidence{
+			VerificationError: fmt.Errorf("process tree still running after executor completion"),
+			ReleaseError:      releaseErr,
+		}
 	}
 	markTerminationVerified(st, execID)
-	return true, "", releaseError
+	return terminalTreeEvidence{VerifiedAbsent: true, ReleaseError: releaseErr}
 }
 
 func terminalReasonForStatus(status string) string {

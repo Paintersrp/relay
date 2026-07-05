@@ -192,6 +192,27 @@ func markTerminationFailed(st *store.Store, execID int64, errText string) *store
 	return exec
 }
 
+func appendLifecycleError(st *store.Store, execID int64, errText string) (*store.AgentExecution, error) {
+	if st == nil {
+		return nil, fmt.Errorf("store is unavailable")
+	}
+	return st.AppendAgentExecutionLifecycleError(execID, errText)
+}
+
+func combineOwnedLifecycleErrors(prefix string, terminateErr error, verified bool, releaseErr error) string {
+	combined := ""
+	if terminateErr != nil && !errors.Is(terminateErr, pipeline.ErrProcessNotRunning) {
+		combined = appendError(combined, prefix+" termination failed: "+terminateErr.Error())
+	}
+	if !verified {
+		combined = appendError(combined, prefix+" termination failed: process absence was not verified")
+	}
+	if releaseErr != nil {
+		combined = appendError(combined, prefix+" release failed: "+releaseErr.Error())
+	}
+	return combined
+}
+
 type CancellationResult struct {
 	RunID                   int64
 	RunStatus               string
@@ -262,26 +283,53 @@ func CancelExecution(ctx context.Context, st *store.Store, hub *events.Hub, log 
 					updated = failed
 				}
 			} else {
-				result, err := owned.Terminate(2 * time.Second)
+				result, terminateErr := owned.Terminate(2 * time.Second)
 				releaseErr := owned.Release()
-				if err != nil && !errors.Is(err, pipeline.ErrProcessNotRunning) {
-					createEvent(st, runID, "warn", "Executor cancellation termination warning: "+err.Error())
-					if failed := markTerminationFailed(st, updated.ID, "executor cancellation termination failed: "+err.Error()); failed != nil {
-						updated = failed
-					}
-				} else if !result.VerifiedAbsent {
-					createEvent(st, runID, "warn", "Executor cancellation termination warning: process absence was not verified")
-					if failed := markTerminationFailed(st, updated.ID, "executor cancellation termination failed: process absence was not verified"); failed != nil {
-						updated = failed
-					}
-				} else if releaseErr != nil {
+				verified := result.VerifiedAbsent
+				combined := combineOwnedLifecycleErrors("executor cancellation", terminateErr, verified, releaseErr)
+				if verified {
 					markTerminationVerified(st, updated.ID)
-					createEvent(st, runID, "warn", "Executor cancellation release warning: "+releaseErr.Error())
-					if failed := markTerminationFailed(st, updated.ID, "executor cancellation release failed: "+releaseErr.Error()); failed != nil {
-						updated = failed
+					finished := executionTimestampNow()
+					status := ExecutionStatusCanceled
+					reason := TerminalReasonCanceled
+					eventMessage := "Executor cancellation completed after process-tree absence was verified"
+					stepStatus := "canceled"
+					terminalErr := ""
+					if releaseErr != nil {
+						status = ExecutionStatusFailed
+						reason = TerminalReasonFailed
+						eventMessage = "Executor cancellation release failed after process-tree absence was verified"
+						stepStatus = "blocked"
+						terminalErr = combined
+						if _, err := appendLifecycleError(st, updated.ID, combined); err != nil {
+							terminalErr = appendError(terminalErr, "persist lifecycle error: "+err.Error())
+						}
+					}
+					if terminal, _, err := terminalizeExecution(st, hub, log, runID, updated.ID, terminalExecutionInput{
+						Status:                  status,
+						Reason:                  reason,
+						FinishedAt:              finished,
+						TerminalizedAt:          finished,
+						Error:                   terminalErr,
+						CancellationCompletedAt: finished,
+						EventLevel:              "warn",
+						EventMessage:            eventMessage,
+						StepEventStatus:         stepStatus,
+						RunStatus:               StatusExecutorBlocked,
+						RunEventStatus:          "blocked",
+					}); err != nil {
+						return CancellationResult{}, err
+					} else if terminal != nil {
+						updated = terminal
 					}
 				} else {
-					markTerminationVerified(st, updated.ID)
+					if combined == "" {
+						combined = "executor cancellation termination failed: process absence was not verified"
+					}
+					createEvent(st, runID, "warn", "Executor cancellation cleanup is still pending: "+combined)
+					if failed := markTerminationFailed(st, updated.ID, combined); failed != nil {
+						updated = failed
+					}
 				}
 			}
 		} else if updated.Status == ExecutionStatusCancelRequested && updated.ProcessIdentity.Valid {

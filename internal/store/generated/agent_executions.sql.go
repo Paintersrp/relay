@@ -10,6 +10,77 @@ import (
 	"database/sql"
 )
 
+const appendAgentExecutionLifecycleError = `-- name: AppendAgentExecutionLifecycleError :one
+UPDATE agent_executions
+SET termination_last_error = CASE
+        WHEN termination_last_error IS NULL OR termination_last_error = '' THEN ?
+        ELSE termination_last_error || '; ' || ?
+    END,
+    error = CASE
+        WHEN error IS NULL OR error = '' THEN ?
+        ELSE error || '; ' || ?
+    END,
+    updated_at = datetime('now')
+WHERE id = ?
+  AND terminalized_at IS NULL
+RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id
+`
+
+type AppendAgentExecutionLifecycleErrorParams struct {
+	TerminationLastError   sql.NullString `json:"termination_last_error"`
+	TerminationLastError_2 sql.NullString `json:"termination_last_error_2"`
+	Error                  sql.NullString `json:"error"`
+	Error_2                sql.NullString `json:"error_2"`
+	ID                     int64          `json:"id"`
+}
+
+func (q *Queries) AppendAgentExecutionLifecycleError(ctx context.Context, arg AppendAgentExecutionLifecycleErrorParams) (AgentExecution, error) {
+	row := q.db.QueryRowContext(ctx, appendAgentExecutionLifecycleError,
+		arg.TerminationLastError,
+		arg.TerminationLastError_2,
+		arg.Error,
+		arg.Error_2,
+		arg.ID,
+	)
+	var i AgentExecution
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.Provider,
+		&i.Status,
+		&i.CommandPreview,
+		&i.ExitCode,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.StdoutArtifactPath,
+		&i.StderrArtifactPath,
+		&i.CombinedArtifactPath,
+		&i.ResultArtifactPath,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RunnerKind,
+		&i.OwnerInstanceID,
+		&i.OwnershipToken,
+		&i.ProcessID,
+		&i.ProcessGroupID,
+		&i.ProcessIdentity,
+		&i.ProcessStartedAt,
+		&i.CancellationRequestedAt,
+		&i.CancellationCompletedAt,
+		&i.TerminalReason,
+		&i.TerminalizedAt,
+		&i.LaunchState,
+		&i.TerminationState,
+		&i.TerminationRequestedReason,
+		&i.TerminationAttemptedAt,
+		&i.TerminationVerifiedAt,
+		&i.TerminationLastError,
+		&i.PlatformOwnershipID,
+	)
+	return i, err
+}
+
 const claimAgentExecutionLaunch = `-- name: ClaimAgentExecutionLaunch :one
 UPDATE agent_executions
 SET launch_state = 'start_in_progress',
@@ -404,10 +475,7 @@ func (q *Queries) ListAgentExecutionsByRun(ctx context.Context, runID int64) ([]
 const markAgentExecutionTerminationFailed = `-- name: MarkAgentExecutionTerminationFailed :one
 UPDATE agent_executions
 SET status = 'termination_pending',
-    termination_state = CASE
-        WHEN termination_state = 'verified_absent' THEN termination_state
-        ELSE 'failed'
-    END,
+    termination_state = 'failed',
     termination_last_error = CASE
         WHEN termination_last_error IS NULL OR termination_last_error = '' THEN ?
         ELSE termination_last_error || '; ' || ?
@@ -419,6 +487,7 @@ SET status = 'termination_pending',
     updated_at = datetime('now')
 WHERE id = ?
   AND terminalized_at IS NULL
+  AND termination_state != 'verified_absent'
 RETURNING id, run_id, provider, status, command_preview, exit_code, started_at, finished_at, stdout_artifact_path, stderr_artifact_path, combined_artifact_path, result_artifact_path, error, created_at, updated_at, runner_kind, owner_instance_id, ownership_token, process_id, process_group_id, process_identity, process_started_at, cancellation_requested_at, cancellation_completed_at, terminal_reason, terminalized_at, launch_state, termination_state, termination_requested_reason, termination_attempted_at, termination_verified_at, termination_last_error, platform_ownership_id
 `
 
