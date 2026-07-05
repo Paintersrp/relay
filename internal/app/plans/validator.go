@@ -93,55 +93,15 @@ func sanitizePlanSchemaForRuntime(schemaBytes []byte) ([]byte, error) {
 	if err := json.Unmarshal([]byte(sanitizePlanSchemaRegexes(string(schemaBytes))), &schemaDoc); err != nil {
 		return nil, err
 	}
-	allowRuntimeRefactorMetadata(schemaDoc)
 
 	return json.Marshal(schemaDoc)
 }
 
-func allowRuntimeRefactorMetadata(schemaDoc map[string]any) {
-	var walk func(any)
-	walk = func(value any) {
-		switch typed := value.(type) {
-		case map[string]any:
-			props, _ := typed["properties"].(map[string]any)
-			if passType, ok := props["pass_type"].(map[string]any); ok {
-				props["refactor_candidate"] = map[string]any{"type": "object"}
-				values, _ := passType["enum"].([]any)
-				for _, value := range values {
-					if value == "refactor" {
-						return
-					}
-				}
-				passType["enum"] = append(values, "refactor")
-			}
-			for _, child := range typed {
-				walk(child)
-			}
-		case []any:
-			for _, child := range typed {
-				walk(child)
-			}
-		}
-	}
-	walk(schemaDoc)
-}
-
 func sanitizePlanSchemaRegexes(schemaContent string) string {
-	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*[\\r\\n])`, "")
-	schemaContent = strings.ReplaceAll(schemaContent, `(?!\\s*$)`, "")
-	schemaContent = strings.ReplaceAll(schemaContent, `(?!\\s)`, "")
-	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*\\s$)`, "")
-	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*[\\u0000-\\u001F\\u007F])`, "")
-	schemaContent = strings.ReplaceAll(schemaContent, `(?!handoffs/(?:requirements|design)/)`, "")
 	schemaContent = strings.ReplaceAll(schemaContent, `(?!/)`, "")
-	schemaContent = strings.ReplaceAll(schemaContent, `(?![A-Za-z]:)`, "")
-	schemaContent = strings.ReplaceAll(schemaContent, `(?!//)`, "")
 	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(^|/)\\.\\.($|/))`, "")
 	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(^|/)\\.($|/))`, "")
-	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(?:^|/)\\.\\.?$)`, "")
-	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*(?:^|/)\\.\\.?/)`, "")
 	schemaContent = strings.ReplaceAll(schemaContent, `(?!.*\\\\)`, "")
-	schemaContent = strings.ReplaceAll(schemaContent, `(?:`, `(`)
 	return schemaContent
 }
 
