@@ -307,7 +307,7 @@ SET
     status = ?,
     result_json = ?,
     started_at = CASE
-        WHEN ? IN ('running', 'cancelled') THEN COALESCE(started_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        WHEN ? IN ('running', 'succeeded', 'failed', 'cancelled', 'timed_out') THEN COALESCE(started_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         ELSE started_at
     END,
     finished_at = CASE
@@ -328,6 +328,60 @@ RETURNING id, attempt_id, run_row_id, attempt_number, adapter, model, status, re
 		nextStatus,
 		attemptID,
 		expectedStatus,
+	).Scan(
+		&value.ID,
+		&value.AttemptID,
+		&value.RunRowID,
+		&value.AttemptNumber,
+		&value.Adapter,
+		&value.Model,
+		&value.Status,
+		&value.ResultJSON,
+		&value.CreatedAt,
+		&value.StartedAt,
+		&value.FinishedAt,
+		&value.CancellationRequestedAt,
+	)
+	return value, err
+}
+
+func (tx *Tx) UpdateExecutionAttemptResult(ctx context.Context, attemptID, expectedStatus, resultJSON string) (ExecutionAttempt, error) {
+	var value ExecutionAttempt
+	err := tx.tx.QueryRowContext(ctx, `
+UPDATE execution_attempts
+SET result_json = ?
+WHERE attempt_id = ? AND status = ?
+RETURNING id, attempt_id, run_row_id, attempt_number, adapter, model, status, result_json,
+          created_at, started_at, finished_at, cancellation_requested_at`,
+		resultJSON,
+		attemptID,
+		expectedStatus,
+	).Scan(
+		&value.ID,
+		&value.AttemptID,
+		&value.RunRowID,
+		&value.AttemptNumber,
+		&value.Adapter,
+		&value.Model,
+		&value.Status,
+		&value.ResultJSON,
+		&value.CreatedAt,
+		&value.StartedAt,
+		&value.FinishedAt,
+		&value.CancellationRequestedAt,
+	)
+	return value, err
+}
+
+func (tx *Tx) RequestExecutionAttemptCancellation(ctx context.Context, attemptID string) (ExecutionAttempt, error) {
+	var value ExecutionAttempt
+	err := tx.tx.QueryRowContext(ctx, `
+UPDATE execution_attempts
+SET cancellation_requested_at = COALESCE(cancellation_requested_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+WHERE attempt_id = ? AND status IN ('pending', 'running')
+RETURNING id, attempt_id, run_row_id, attempt_number, adapter, model, status, result_json,
+          created_at, started_at, finished_at, cancellation_requested_at`,
+		attemptID,
 	).Scan(
 		&value.ID,
 		&value.AttemptID,

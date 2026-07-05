@@ -24,6 +24,7 @@ import (
 	appruns "relay/internal/app/runs"
 	"relay/internal/devreload"
 	"relay/internal/events"
+	"relay/internal/executor"
 	"relay/internal/handlers"
 	"relay/internal/mcp"
 	"relay/internal/repos"
@@ -169,6 +170,10 @@ func BuildRoutesWithWorkflowRuntime(s *store.Store, workflowStore *workflowstore
 	runSvc := appruns.NewService(s, log, eventHub)
 	runSvc.SetExecutorOwnerInstanceID(ownerInstanceID)
 	runH := runsapi.NewHandler(runSvc, planLifecycleSvc)
+	var workflowExecutionH *runsapi.WorkflowExecutionHandler
+	if workflowStore != nil {
+		workflowExecutionH = runsapi.NewWorkflowExecutionHandler(executor.NewWorkflowExecutionService(workflowStore, log, ownerInstanceID))
+	}
 	artifactH := artifactsapi.NewHandler(runSvc)
 	intakeH := intakeapi.NewHandler(appintake.NewService(s), runSvc)
 	auditSvc := appaudits.NewService(s, planLifecycleSvc)
@@ -176,6 +181,9 @@ func BuildRoutesWithWorkflowRuntime(s *store.Store, workflowStore *workflowstore
 	r.Route("/api", func(r chi.Router) {
 		r.Use(shared.CORSMiddleware)
 		runsapi.MountRoutes(r, runH)
+		if workflowExecutionH != nil {
+			runsapi.MountWorkflowExecutionRoutes(r, workflowExecutionH)
+		}
 		artifactsapi.MountRoutes(r, artifactH)
 		intakeapi.MountRoutes(r, intakeH)
 		projectsapi.MountRoutes(r, projectH)

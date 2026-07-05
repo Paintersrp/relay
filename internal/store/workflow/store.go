@@ -220,6 +220,45 @@ func (s *Store) ListArtifactsByRun(ctx context.Context, runRowID int64) ([]Artif
 	return listArtifacts(ctx, s.db, "run_row_id", runRowID)
 }
 
+func (s *Store) ListArtifactsByExecutionAttempt(ctx context.Context, attemptRowID int64) ([]Artifact, error) {
+	return listArtifacts(ctx, s.db, "execution_attempt_row_id", attemptRowID)
+}
+
+func (s *Store) ListExecutionAttemptsByRun(ctx context.Context, runRowID int64) ([]ExecutionAttempt, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, attempt_id, run_row_id, attempt_number, adapter, model, status, result_json,
+       created_at, started_at, finished_at, cancellation_requested_at
+FROM execution_attempts
+WHERE run_row_id = ?
+ORDER BY attempt_number`, runRowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var values []ExecutionAttempt
+	for rows.Next() {
+		var value ExecutionAttempt
+		if err := rows.Scan(
+			&value.ID,
+			&value.AttemptID,
+			&value.RunRowID,
+			&value.AttemptNumber,
+			&value.Adapter,
+			&value.Model,
+			&value.Status,
+			&value.ResultJSON,
+			&value.CreatedAt,
+			&value.StartedAt,
+			&value.FinishedAt,
+			&value.CancellationRequestedAt,
+		); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
 func getRepositoryTarget(ctx context.Context, queryer rowQueryer, repoTarget string) (RepositoryTarget, error) {
 	var value RepositoryTarget
 	err := queryer.QueryRowContext(ctx, `
@@ -396,7 +435,7 @@ ORDER BY pass_number`, planRowID)
 }
 
 func listArtifacts(ctx context.Context, queryer rowsQueryer, ownerColumn string, ownerRowID int64) ([]Artifact, error) {
-	if ownerColumn != "plan_row_id" && ownerColumn != "run_row_id" {
+	if ownerColumn != "plan_row_id" && ownerColumn != "run_row_id" && ownerColumn != "execution_attempt_row_id" {
 		return nil, fmt.Errorf("unsupported artifact owner column %q", ownerColumn)
 	}
 	rows, err := queryer.QueryContext(ctx, `

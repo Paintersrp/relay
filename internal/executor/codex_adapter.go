@@ -59,7 +59,10 @@ func (a *CodexAdapter) BuildInvocation(req ExecutorAdapterRequest) (ExecutorInvo
 		return ExecutorInvocation{}, fmt.Errorf("invalid sandbox value %q, allowed are 'workspace-write' or 'read-only'", a.Config.Sandbox)
 	}
 
-	lastMessagePath := filepath.Join(artifacts.Dir(req.RunID), "codex_last_message.txt")
+	lastMessagePath := strings.TrimSpace(req.ResultPath)
+	if lastMessagePath == "" {
+		lastMessagePath = filepath.Join(artifacts.Dir(req.RunID), "codex_last_message.txt")
+	}
 
 	args := []string{
 		"exec",
@@ -71,6 +74,9 @@ func (a *CodexAdapter) BuildInvocation(req ExecutorAdapterRequest) (ExecutorInvo
 	}
 
 	model := strings.TrimSpace(a.Config.Model)
+	if selected := strings.TrimSpace(req.SelectedModel); selected != "" && model != "" {
+		model = selected
+	}
 	invocationModel := model
 	if model == "" {
 		invocationModel = "codex-config-default"

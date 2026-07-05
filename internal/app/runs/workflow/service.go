@@ -187,7 +187,12 @@ func (s *Service) BeginExecutionAttempt(ctx context.Context, input BeginExecutio
 		if err != nil {
 			return fmt.Errorf("load run: %w", err)
 		}
-		run, err = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusSetupReady, workflowstore.RunStatusExecuting)
+		switch run.Status {
+		case workflowstore.RunStatusSetupReady, workflowstore.RunStatusExecutionFailed, workflowstore.RunStatusCancelled:
+		default:
+			return fmt.Errorf("run %q cannot start execution from status %q", run.RunID, run.Status)
+		}
+		run, err = tx.TransitionRun(ctx, run.RunID, run.Status, workflowstore.RunStatusExecuting)
 		if err != nil {
 			return fmt.Errorf("start run execution: %w", err)
 		}
@@ -205,15 +210,77 @@ func (s *Service) BeginExecutionAttempt(ctx context.Context, input BeginExecutio
 		if err != nil {
 			return fmt.Errorf("create execution attempt: %w", err)
 		}
-		attempt, err = tx.TransitionExecutionAttempt(ctx, attempt.AttemptID, workflowstore.AttemptStatusPending, workflowstore.AttemptStatusRunning, "{}")
-		if err != nil {
-			return fmt.Errorf("start execution attempt: %w", err)
-		}
 		result.Run = run
 		result.Attempt = attempt
 		return nil
 	})
 	return result, err
+}
+
+func (s *Service) MarkExecutionAttemptRunning(ctx context.Context, attemptID, resultJSON string) (workflowstore.ExecutionAttempt, error) {
+	if resultJSON == "" {
+		resultJSON = "{}"
+	}
+	if !json.Valid([]byte(resultJSON)) {
+		return workflowstore.ExecutionAttempt{}, fmt.Errorf("execution attempt result must be valid JSON")
+	}
+	var updated workflowstore.ExecutionAttempt
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		attempt, err := tx.TransitionExecutionAttempt(ctx, attemptID, workflowstore.AttemptStatusPending, workflowstore.AttemptStatusRunning, resultJSON)
+		if err != nil {
+			return fmt.Errorf("mark execution attempt running: %w", err)
+		}
+		updated = attempt
+		return nil
+	})
+	return updated, err
+}
+
+func (s *Service) UpdateExecutionAttemptResult(ctx context.Context, attemptID, resultJSON string) (workflowstore.ExecutionAttempt, error) {
+	if !json.Valid([]byte(resultJSON)) {
+		return workflowstore.ExecutionAttempt{}, fmt.Errorf("execution attempt result must be valid JSON")
+	}
+	var updated workflowstore.ExecutionAttempt
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		attempt, err := tx.GetExecutionAttemptByAttemptID(ctx, attemptID)
+		if err != nil {
+			return fmt.Errorf("load execution attempt: %w", err)
+		}
+		if attempt.Status != workflowstore.AttemptStatusPending && attempt.Status != workflowstore.AttemptStatusRunning {
+			return fmt.Errorf("execution attempt %q is already terminal", attemptID)
+		}
+		attempt, err = tx.UpdateExecutionAttemptResult(ctx, attemptID, attempt.Status, resultJSON)
+		if err != nil {
+			return fmt.Errorf("update execution attempt result: %w", err)
+		}
+		updated = attempt
+		return nil
+	})
+	return updated, err
+}
+
+func (s *Service) RequestExecutionAttemptCancellation(ctx context.Context, attemptID string) (workflowstore.ExecutionAttempt, error) {
+	var updated workflowstore.ExecutionAttempt
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		attempt, err := tx.GetExecutionAttemptByAttemptID(ctx, attemptID)
+		if err != nil {
+			return fmt.Errorf("load execution attempt: %w", err)
+		}
+		if attempt.Status == workflowstore.AttemptStatusSucceeded ||
+			attempt.Status == workflowstore.AttemptStatusFailed ||
+			attempt.Status == workflowstore.AttemptStatusCancelled ||
+			attempt.Status == workflowstore.AttemptStatusTimedOut {
+			updated = attempt
+			return nil
+		}
+		attempt, err = tx.RequestExecutionAttemptCancellation(ctx, attemptID)
+		if err != nil {
+			return fmt.Errorf("request execution attempt cancellation: %w", err)
+		}
+		updated = attempt
+		return nil
+	})
+	return updated, err
 }
 
 func (s *Service) FinishExecutionAttempt(ctx context.Context, input FinishExecutionAttemptInput) (FinishExecutionAttemptResult, error) {
@@ -235,7 +302,10 @@ func (s *Service) FinishExecutionAttempt(ctx context.Context, input FinishExecut
 		if err != nil {
 			return fmt.Errorf("load execution attempt: %w", err)
 		}
-		attempt, err = tx.TransitionExecutionAttempt(ctx, attempt.AttemptID, workflowstore.AttemptStatusRunning, input.Status, input.ResultJSON)
+		if attempt.Status != workflowstore.AttemptStatusPending && attempt.Status != workflowstore.AttemptStatusRunning {
+			return fmt.Errorf("execution attempt %q is already terminal", input.AttemptID)
+		}
+		attempt, err = tx.TransitionExecutionAttempt(ctx, attempt.AttemptID, attempt.Status, input.Status, input.ResultJSON)
 		if err != nil {
 			return fmt.Errorf("finish execution attempt: %w", err)
 		}

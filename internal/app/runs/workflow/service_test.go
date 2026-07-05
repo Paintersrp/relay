@@ -179,6 +179,9 @@ func TestCreateRunRejectsMismatchedAssociationAndInvalidRemediation(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := service.MarkExecutionAttemptRunning(ctx, attempt.Attempt.AttemptID, `{"running":true}`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := service.FinishExecutionAttempt(ctx, FinishExecutionAttemptInput{
 		AttemptID:  attempt.Attempt.AttemptID,
 		Status:     workflowstore.AttemptStatusSucceeded,
@@ -339,8 +342,11 @@ func TestExecutionAttemptValidationAndAuditDecisionCompleteManagedWorkflow(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if begun.Run.Status != workflowstore.RunStatusExecuting || begun.Attempt.Status != workflowstore.AttemptStatusRunning {
+	if begun.Run.Status != workflowstore.RunStatusExecuting || begun.Attempt.Status != workflowstore.AttemptStatusPending {
 		t.Fatalf("unexpected begin result: %+v", begun)
+	}
+	if _, err := service.MarkExecutionAttemptRunning(ctx, begun.Attempt.AttemptID, `{"running":true}`); err != nil {
+		t.Fatal(err)
 	}
 	finished, err := service.FinishExecutionAttempt(ctx, FinishExecutionAttemptInput{
 		AttemptID:  begun.Attempt.AttemptID,

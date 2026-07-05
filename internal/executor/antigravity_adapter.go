@@ -66,7 +66,10 @@ func (a *AntigravityAdapter) BuildInvocation(req ExecutorAdapterRequest) (Execut
 
 	args = append(args, "--no-color", "--output", "json")
 
-	model := a.Config.Model
+	model := strings.TrimSpace(req.SelectedModel)
+	if model == "" {
+		model = strings.TrimSpace(a.Config.Model)
+	}
 	if model != "" {
 		args = append(args, "--model", model)
 	} else {
