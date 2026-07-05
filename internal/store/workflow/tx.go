@@ -373,15 +373,16 @@ RETURNING id, attempt_id, run_row_id, attempt_number, adapter, model, status, re
 	return value, err
 }
 
-func (tx *Tx) RequestExecutionAttemptCancellation(ctx context.Context, attemptID string) (ExecutionAttempt, error) {
+func (tx *Tx) RequestExecutionAttemptCancellation(ctx context.Context, runRowID int64, attemptID string) (ExecutionAttempt, error) {
 	var value ExecutionAttempt
 	err := tx.tx.QueryRowContext(ctx, `
 UPDATE execution_attempts
 SET cancellation_requested_at = COALESCE(cancellation_requested_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-WHERE attempt_id = ? AND status IN ('pending', 'running')
+WHERE attempt_id = ? AND run_row_id = ? AND status IN ('pending', 'running')
 RETURNING id, attempt_id, run_row_id, attempt_number, adapter, model, status, result_json,
           created_at, started_at, finished_at, cancellation_requested_at`,
 		attemptID,
+		runRowID,
 	).Scan(
 		&value.ID,
 		&value.AttemptID,

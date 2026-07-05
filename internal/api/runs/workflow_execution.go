@@ -17,6 +17,7 @@ import (
 type WorkflowExecutionService interface {
 	Start(ctx context.Context, input executor.WorkflowStartInput) (executor.WorkflowStartResult, error)
 	Cancel(ctx context.Context, runID, attemptID string) (executor.WorkflowCancelResult, error)
+	Reconcile(ctx context.Context, runID, attemptID string) (executor.WorkflowCancelResult, error)
 	ListAttempts(ctx context.Context, runID string) ([]executor.WorkflowAttemptView, error)
 	GetAttempt(ctx context.Context, runID, attemptID string) (executor.WorkflowAttemptView, error)
 }
@@ -49,6 +50,10 @@ type workflowAttemptResponse struct {
 	Artifacts               []workflowArtifactResponse `json:"artifacts"`
 	LiveStdout              string                     `json:"liveStdout,omitempty"`
 	LiveStderr              string                     `json:"liveStderr,omitempty"`
+	LiveStdoutTruncated     bool                       `json:"liveStdoutTruncated"`
+	LiveStderrTruncated     bool                       `json:"liveStderrTruncated"`
+	LiveStdoutBytes         int64                      `json:"liveStdoutBytes"`
+	LiveStderrBytes         int64                      `json:"liveStderrBytes"`
 }
 
 type workflowArtifactResponse struct {
@@ -118,6 +123,25 @@ func (h *WorkflowExecutionHandler) CancelAttempt(w http.ResponseWriter, r *http.
 	})
 }
 
+func (h *WorkflowExecutionHandler) ReconcileAttempt(w http.ResponseWriter, r *http.Request) {
+	runID := strings.TrimSpace(chi.URLParam(r, "runID"))
+	attemptID := strings.TrimSpace(chi.URLParam(r, "attemptID"))
+	result, err := h.service.Reconcile(r.Context(), runID, attemptID)
+	if err != nil {
+		writeWorkflowExecutionError(w, err)
+		return
+	}
+	view, err := h.service.GetAttempt(r.Context(), runID, result.Attempt.AttemptID)
+	if err != nil {
+		writeWorkflowExecutionError(w, err)
+		return
+	}
+	shared.JSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"attempt": workflowAttemptDTO(runID, view),
+	})
+}
+
 func (h *WorkflowExecutionHandler) ListAttempts(w http.ResponseWriter, r *http.Request) {
 	runID := strings.TrimSpace(chi.URLParam(r, "runID"))
 	views, err := h.service.ListAttempts(r.Context(), runID)
@@ -155,17 +179,21 @@ func workflowAttemptDTO(runID string, view executor.WorkflowAttemptView) workflo
 		}
 	}
 	response := workflowAttemptResponse{
-		AttemptID:     view.Attempt.AttemptID,
-		RunID:         runID,
-		AttemptNumber: view.Attempt.AttemptNumber,
-		Adapter:       view.Attempt.Adapter,
-		Model:         view.Attempt.Model,
-		Status:        view.Attempt.Status,
-		Result:        result,
-		CreatedAt:     view.Attempt.CreatedAt,
-		LiveStdout:    view.LiveStdout,
-		LiveStderr:    view.LiveStderr,
-		Artifacts:     make([]workflowArtifactResponse, 0, len(view.Artifacts)),
+		AttemptID:           view.Attempt.AttemptID,
+		RunID:               runID,
+		AttemptNumber:       view.Attempt.AttemptNumber,
+		Adapter:             view.Attempt.Adapter,
+		Model:               view.Attempt.Model,
+		Status:              view.Attempt.Status,
+		Result:              result,
+		CreatedAt:           view.Attempt.CreatedAt,
+		LiveStdout:          view.LiveStdout,
+		LiveStderr:          view.LiveStderr,
+		LiveStdoutTruncated: view.LiveStdoutTruncated,
+		LiveStderrTruncated: view.LiveStderrTruncated,
+		LiveStdoutBytes:     view.LiveStdoutBytes,
+		LiveStderrBytes:     view.LiveStderrBytes,
+		Artifacts:           make([]workflowArtifactResponse, 0, len(view.Artifacts)),
 	}
 	if view.Attempt.StartedAt.Valid {
 		response.StartedAt = view.Attempt.StartedAt.String
@@ -195,7 +223,9 @@ func writeWorkflowExecutionError(w http.ResponseWriter, err error) {
 		shared.Error(w, http.StatusNotFound, "NOT_FOUND", "Run or execution attempt was not found")
 	case strings.Contains(err.Error(), "cannot start"),
 		strings.Contains(err.Error(), "does not belong"),
-		strings.Contains(err.Error(), "already"):
+		strings.Contains(err.Error(), "already"),
+		strings.Contains(err.Error(), "cleanup"),
+		strings.Contains(err.Error(), "process absence"):
 		shared.Error(w, http.StatusConflict, "EXECUTION_CONFLICT", err.Error())
 	case strings.Contains(err.Error(), "required"),
 		strings.Contains(err.Error(), "invalid executor adapter"),
@@ -211,4 +241,5 @@ func MountWorkflowExecutionRoutes(r chi.Router, handler *WorkflowExecutionHandle
 	r.Get("/workflow/runs/{runID}/attempts", handler.ListAttempts)
 	r.Get("/workflow/runs/{runID}/attempts/{attemptID}", handler.GetAttempt)
 	r.Post("/workflow/runs/{runID}/attempts/{attemptID}/cancel", handler.CancelAttempt)
+	r.Post("/workflow/runs/{runID}/attempts/{attemptID}/reconcile", handler.ReconcileAttempt)
 }

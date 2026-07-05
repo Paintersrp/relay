@@ -43,10 +43,14 @@ type WorkflowCancelResult struct {
 }
 
 type WorkflowAttemptView struct {
-	Attempt    workflowstore.ExecutionAttempt
-	Artifacts  []workflowstore.Artifact
-	LiveStdout string
-	LiveStderr string
+	Attempt             workflowstore.ExecutionAttempt
+	Artifacts           []workflowstore.Artifact
+	LiveStdout          string
+	LiveStderr          string
+	LiveStdoutTruncated bool
+	LiveStderrTruncated bool
+	LiveStdoutBytes     int64
+	LiveStderrBytes     int64
 }
 
 type WorkflowCommandRunner func(
@@ -62,27 +66,66 @@ type WorkflowCommandRunner func(
 type workflowRuntime struct {
 	cancel   context.CancelFunc
 	mu       sync.Mutex
-	stdout   bytes.Buffer
-	stderr   bytes.Buffer
+	stdout   *workflowOutputCapture
+	stderr   *workflowOutputCapture
 	identity pipeline.ProcessIdentity
+}
+
+func (r *workflowRuntime) setOutputCaptures(stdout, stderr *workflowOutputCapture) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stdout = stdout
+	r.stderr = stderr
 }
 
 func (r *workflowRuntime) appendStdout(chunk []byte) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	_, _ = r.stdout.Write(chunk)
+	capture := r.stdout
+	r.mu.Unlock()
+	if capture != nil {
+		capture.Write(chunk)
+	}
 }
 
 func (r *workflowRuntime) appendStderr(chunk []byte) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	_, _ = r.stderr.Write(chunk)
+	capture := r.stderr
+	r.mu.Unlock()
+	if capture != nil {
+		capture.Write(chunk)
+	}
 }
 
-func (r *workflowRuntime) snapshot() (string, string) {
+func (r *workflowRuntime) snapshot() (workflowOutputSnapshot, workflowOutputSnapshot) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.stdout.String(), r.stderr.String()
+	stdout := r.stdout
+	stderr := r.stderr
+	r.mu.Unlock()
+	var stdoutSnapshot workflowOutputSnapshot
+	var stderrSnapshot workflowOutputSnapshot
+	if stdout != nil {
+		stdoutSnapshot = stdout.Snapshot()
+	}
+	if stderr != nil {
+		stderrSnapshot = stderr.Snapshot()
+	}
+	return stdoutSnapshot, stderrSnapshot
+}
+
+func (r *workflowRuntime) closeOutputs() (workflowOutputSnapshot, workflowOutputSnapshot, error) {
+	r.mu.Lock()
+	stdout := r.stdout
+	stderr := r.stderr
+	r.mu.Unlock()
+	var joined error
+	if stdout != nil {
+		joined = errors.Join(joined, stdout.Close())
+	}
+	if stderr != nil {
+		joined = errors.Join(joined, stderr.Close())
+	}
+	stdoutSnapshot, stderrSnapshot := r.snapshot()
+	return stdoutSnapshot, stderrSnapshot, joined
 }
 
 type WorkflowExecutionService struct {
@@ -202,85 +245,144 @@ func (s *WorkflowExecutionService) Start(ctx context.Context, input WorkflowStar
 }
 
 func (s *WorkflowExecutionService) Cancel(ctx context.Context, runID, attemptID string) (WorkflowCancelResult, error) {
-	attempt, err := s.runs.RequestExecutionAttemptCancellation(ctx, attemptID)
+	attempt, err := s.runs.RequestExecutionAttemptCancellation(ctx, strings.TrimSpace(runID), strings.TrimSpace(attemptID))
 	if err != nil {
 		return WorkflowCancelResult{}, err
-	}
-	if strings.TrimSpace(runID) != "" {
-		run, err := s.store.GetRunByRunID(ctx, runID)
-		if err != nil {
-			return WorkflowCancelResult{}, err
-		}
-		if run.ID != attempt.RunRowID {
-			return WorkflowCancelResult{}, fmt.Errorf("execution attempt does not belong to Run")
-		}
 	}
 	if terminalAttemptStatus(attempt.Status) {
 		run, err := s.store.GetRunByRowID(ctx, attempt.RunRowID)
 		return WorkflowCancelResult{Run: run, Attempt: attempt}, err
 	}
-
 	if runtime := s.getRuntime(attempt.AttemptID); runtime != nil {
 		runtime.cancel()
-	} else {
-		var runtimeState workflowAttemptRuntime
-		_ = json.Unmarshal([]byte(attempt.ResultJSON), &runtimeState)
-		if runtimeState.ProcessIdentity != "" {
-			identity, decodeErr := pipeline.DecodeProcessIdentity(runtimeState.ProcessIdentity)
-			if decodeErr != nil {
-				return WorkflowCancelResult{}, fmt.Errorf("decode durable process identity: %w", decodeErr)
-			}
-			owned, openErr := s.controller.OpenOwned(identity)
-			if openErr != nil {
-				return WorkflowCancelResult{}, fmt.Errorf("open owned process: %w", openErr)
-			}
-			termination, terminateErr := owned.Terminate(2 * time.Second)
-			releaseErr := owned.Release()
-			if terminateErr != nil && !errors.Is(terminateErr, pipeline.ErrProcessNotRunning) {
-				return WorkflowCancelResult{}, fmt.Errorf("terminate owned process: %w", terminateErr)
-			}
-			if releaseErr != nil {
-				return WorkflowCancelResult{}, fmt.Errorf("release owned process: %w", releaseErr)
-			}
-			if !termination.VerifiedAbsent {
-				return WorkflowCancelResult{}, fmt.Errorf("process absence was not verified")
-			}
-			runtimeState.TerminationVerified = true
-			runtimeState.Error = appendWorkflowError(runtimeState.Error, "operator cancellation requested")
-			resultJSON, _ := json.Marshal(runtimeState)
-			finished, finishErr := s.runs.FinishExecutionAttempt(ctx, workflowruns.FinishExecutionAttemptInput{
-				AttemptID:  attempt.AttemptID,
-				Status:     workflowstore.AttemptStatusCancelled,
-				ResultJSON: string(resultJSON),
-			})
-			if finishErr != nil {
-				return WorkflowCancelResult{}, finishErr
-			}
-			return WorkflowCancelResult{Run: finished.Run, Attempt: finished.Attempt}, nil
+		refreshed, err := s.store.GetExecutionAttemptByAttemptID(ctx, attempt.AttemptID)
+		if err != nil {
+			return WorkflowCancelResult{}, err
 		}
-		if attempt.Status == workflowstore.AttemptStatusPending {
-			finished, finishErr := s.runs.FinishExecutionAttempt(ctx, workflowruns.FinishExecutionAttemptInput{
-				AttemptID:  attempt.AttemptID,
-				Status:     workflowstore.AttemptStatusCancelled,
-				ResultJSON: `{"error":"operator cancellation requested before process start"}`,
-			})
-			if finishErr != nil {
-				return WorkflowCancelResult{}, finishErr
-			}
-			return WorkflowCancelResult{Run: finished.Run, Attempt: finished.Attempt}, nil
-		}
-		return WorkflowCancelResult{}, fmt.Errorf("running execution attempt has no durable process identity")
+		run, err := s.store.GetRunByRowID(ctx, refreshed.RunRowID)
+		return WorkflowCancelResult{Run: run, Attempt: refreshed}, err
 	}
+	return s.reconcileAttempt(ctx, runID, attempt, true)
+}
 
-	refreshed, err := s.store.GetExecutionAttemptByAttemptID(ctx, attemptID)
+func (s *WorkflowExecutionService) Reconcile(ctx context.Context, runID, attemptID string) (WorkflowCancelResult, error) {
+	run, attempt, err := s.loadAttemptForRun(ctx, strings.TrimSpace(runID), strings.TrimSpace(attemptID))
 	if err != nil {
 		return WorkflowCancelResult{}, err
 	}
-	run, err := s.store.GetRunByRowID(ctx, refreshed.RunRowID)
+	if terminalAttemptStatus(attempt.Status) {
+		return WorkflowCancelResult{Run: run, Attempt: attempt}, nil
+	}
+	return s.reconcileAttempt(ctx, run.RunID, attempt, false)
+}
+
+func (s *WorkflowExecutionService) reconcileAttempt(ctx context.Context, runID string, attempt workflowstore.ExecutionAttempt, forceCancel bool) (WorkflowCancelResult, error) {
+	var state workflowAttemptRuntime
+	if err := json.Unmarshal([]byte(attempt.ResultJSON), &state); err != nil {
+		return WorkflowCancelResult{}, fmt.Errorf("decode execution attempt runtime: %w", err)
+	}
+	if attempt.Status == workflowstore.AttemptStatusPending && state.ProcessIdentity == "" {
+		if !forceCancel {
+			return WorkflowCancelResult{}, fmt.Errorf("pending execution attempt has no process identity to reconcile")
+		}
+		state.TerminationVerified = true
+		state.Error = appendWorkflowError(state.Error, "operator cancellation requested before process start")
+		return s.finishReconciledAttempt(ctx, attempt, state, workflowstore.AttemptStatusCancelled)
+	}
+	if !state.CleanupPending {
+		return WorkflowCancelResult{}, fmt.Errorf("execution attempt is not awaiting process cleanup")
+	}
+	if state.ProcessIdentity == "" {
+		return WorkflowCancelResult{}, fmt.Errorf("cleanup-pending execution attempt has no durable process identity")
+	}
+	identity, err := pipeline.DecodeProcessIdentity(state.ProcessIdentity)
+	if err != nil {
+		return WorkflowCancelResult{}, fmt.Errorf("decode durable process identity: %w", err)
+	}
+	owned, err := s.controller.OpenOwned(identity)
+	if err != nil {
+		if errors.Is(err, pipeline.ErrProcessNotRunning) {
+			return s.finishReconciledAttempt(ctx, attempt, state, reconciledTerminalStatus(attempt, state, forceCancel))
+		}
+		return WorkflowCancelResult{}, fmt.Errorf("open owned process: %w", err)
+	}
+	running, treeErr := owned.TreeRunning()
+	if treeErr != nil {
+		_ = owned.Release()
+		return WorkflowCancelResult{}, fmt.Errorf("inspect owned process tree: %w", treeErr)
+	}
+	if running && !forceCancel && !attempt.CancellationRequestedAt.Valid {
+		if err := owned.Release(); err != nil {
+			return WorkflowCancelResult{}, fmt.Errorf("release owned process: %w", err)
+		}
+		run, err := s.store.GetRunByRunID(ctx, runID)
+		return WorkflowCancelResult{Run: run, Attempt: attempt}, err
+	}
+	if running {
+		termination, terminateErr := owned.Terminate(2 * time.Second)
+		releaseErr := owned.Release()
+		if terminateErr != nil && !errors.Is(terminateErr, pipeline.ErrProcessNotRunning) {
+			return WorkflowCancelResult{}, fmt.Errorf("terminate owned process: %w", terminateErr)
+		}
+		if releaseErr != nil {
+			return WorkflowCancelResult{}, fmt.Errorf("release owned process: %w", releaseErr)
+		}
+		if !termination.VerifiedAbsent {
+			return WorkflowCancelResult{}, fmt.Errorf("process absence was not verified")
+		}
+	} else if err := owned.Release(); err != nil {
+		return WorkflowCancelResult{}, fmt.Errorf("release owned process: %w", err)
+	}
+	return s.finishReconciledAttempt(ctx, attempt, state, reconciledTerminalStatus(attempt, state, forceCancel))
+}
+
+func (s *WorkflowExecutionService) finishReconciledAttempt(ctx context.Context, attempt workflowstore.ExecutionAttempt, state workflowAttemptRuntime, status string) (WorkflowCancelResult, error) {
+	state.CleanupPending = false
+	state.PendingTerminalStatus = ""
+	state.TerminationVerified = true
+	if status == workflowstore.AttemptStatusCancelled {
+		state.Error = appendWorkflowError(state.Error, "operator cancellation requested")
+	}
+	resultJSON, _ := json.Marshal(state)
+	finished, err := s.runs.FinishExecutionAttempt(ctx, workflowruns.FinishExecutionAttemptInput{
+		AttemptID:  attempt.AttemptID,
+		Status:     status,
+		ResultJSON: string(resultJSON),
+	})
 	if err != nil {
 		return WorkflowCancelResult{}, err
 	}
-	return WorkflowCancelResult{Run: run, Attempt: refreshed}, nil
+	return WorkflowCancelResult{Run: finished.Run, Attempt: finished.Attempt}, nil
+}
+
+func reconciledTerminalStatus(attempt workflowstore.ExecutionAttempt, state workflowAttemptRuntime, forceCancel bool) string {
+	if forceCancel || attempt.CancellationRequestedAt.Valid {
+		return workflowstore.AttemptStatusCancelled
+	}
+	switch state.PendingTerminalStatus {
+	case workflowstore.AttemptStatusSucceeded,
+		workflowstore.AttemptStatusFailed,
+		workflowstore.AttemptStatusCancelled,
+		workflowstore.AttemptStatusTimedOut:
+		return state.PendingTerminalStatus
+	default:
+		return workflowstore.AttemptStatusFailed
+	}
+}
+
+func (s *WorkflowExecutionService) loadAttemptForRun(ctx context.Context, runID, attemptID string) (workflowstore.Run, workflowstore.ExecutionAttempt, error) {
+	run, err := s.store.GetRunByRunID(ctx, runID)
+	if err != nil {
+		return workflowstore.Run{}, workflowstore.ExecutionAttempt{}, err
+	}
+	attempt, err := s.store.GetExecutionAttemptByAttemptID(ctx, attemptID)
+	if err != nil {
+		return workflowstore.Run{}, workflowstore.ExecutionAttempt{}, err
+	}
+	if attempt.RunRowID != run.ID {
+		return workflowstore.Run{}, workflowstore.ExecutionAttempt{}, fmt.Errorf("execution attempt does not belong to Run")
+	}
+	return run, attempt, nil
 }
 
 func (s *WorkflowExecutionService) ListAttempts(ctx context.Context, runID string) ([]WorkflowAttemptView, error) {
@@ -325,7 +427,13 @@ func (s *WorkflowExecutionService) attemptView(ctx context.Context, attempt work
 	}
 	view := WorkflowAttemptView{Attempt: attempt, Artifacts: artifacts}
 	if runtime := s.getRuntime(attempt.AttemptID); runtime != nil {
-		view.LiveStdout, view.LiveStderr = runtime.snapshot()
+		stdout, stderr := runtime.snapshot()
+		view.LiveStdout = stdout.Text
+		view.LiveStderr = stderr.Text
+		view.LiveStdoutTruncated = stdout.Truncated
+		view.LiveStderrTruncated = stderr.Truncated
+		view.LiveStdoutBytes = stdout.TotalBytes
+		view.LiveStderrBytes = stderr.TotalBytes
 	}
 	return view, nil
 }
@@ -339,18 +447,24 @@ func (e *WorkflowPreflightError) Error() string {
 }
 
 type workflowAttemptRuntime struct {
-	OwnerInstanceID     string `json:"owner_instance_id,omitempty"`
-	CommandPreview      string `json:"command_preview,omitempty"`
-	ProcessIdentity     string `json:"process_identity,omitempty"`
-	LaunchDisposition   string `json:"launch_disposition,omitempty"`
-	ExitCode            int    `json:"exit_code"`
-	TimedOut            bool   `json:"timed_out"`
-	TerminationVerified bool   `json:"termination_verified"`
-	Error               string `json:"error,omitempty"`
-	NormalizedStatus    string `json:"normalized_status,omitempty"`
-	BlockerText         string `json:"blocker_text,omitempty"`
-	BriefArtifactID     string `json:"brief_artifact_id,omitempty"`
-	BriefSHA256         string `json:"brief_sha256,omitempty"`
+	OwnerInstanceID       string `json:"owner_instance_id,omitempty"`
+	CommandPreview        string `json:"command_preview,omitempty"`
+	ProcessIdentity       string `json:"process_identity,omitempty"`
+	LaunchDisposition     string `json:"launch_disposition,omitempty"`
+	ExitCode              int    `json:"exit_code"`
+	TimedOut              bool   `json:"timed_out"`
+	TerminationVerified   bool   `json:"termination_verified"`
+	CleanupPending        bool   `json:"cleanup_pending,omitempty"`
+	PendingTerminalStatus string `json:"pending_terminal_status,omitempty"`
+	Error                 string `json:"error,omitempty"`
+	NormalizedStatus      string `json:"normalized_status,omitempty"`
+	BlockerText           string `json:"blocker_text,omitempty"`
+	BriefArtifactID       string `json:"brief_artifact_id,omitempty"`
+	BriefSHA256           string `json:"brief_sha256,omitempty"`
+	StdoutTruncated       bool   `json:"stdout_truncated,omitempty"`
+	StderrTruncated       bool   `json:"stderr_truncated,omitempty"`
+	StdoutBytes           int64  `json:"stdout_bytes,omitempty"`
+	StderrBytes           int64  `json:"stderr_bytes,omitempty"`
 }
 
 func (s *WorkflowExecutionService) execute(
@@ -375,20 +489,37 @@ func (s *WorkflowExecutionService) execute(
 	}
 	updateState()
 
-	if invocation.ResultFile != "" {
-		if err := os.MkdirAll(filepath.Dir(invocation.ResultFile), 0o700); err != nil {
-			failedJSON, _ := json.Marshal(workflowAttemptRuntime{Error: "prepare result path: " + err.Error()})
-			_, _ = s.runs.FinishExecutionAttempt(context.Background(), workflowruns.FinishExecutionAttemptInput{
-				AttemptID:  attempt.AttemptID,
-				Status:     workflowstore.AttemptStatusFailed,
-				ResultJSON: string(failedJSON),
-			})
-			return
-		}
-		defer func() {
+	runtimeDir := filepath.Join(s.store.ArtifactStore().Root(), ".runtime", run.RunID, attempt.AttemptID)
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		s.finishPrelaunchFailure(attempt, "prepare output spool: "+err.Error())
+		return
+	}
+	defer func() {
+		_ = os.RemoveAll(runtimeDir)
+		if invocation.ResultFile != "" {
 			_ = os.Remove(invocation.ResultFile)
 			_ = os.Remove(filepath.Dir(invocation.ResultFile))
-		}()
+		}
+	}()
+	stdoutCapture, err := newWorkflowOutputCapture(filepath.Join(runtimeDir, "stdout.log"), WorkflowLiveOutputLimitBytes)
+	if err != nil {
+		s.finishPrelaunchFailure(attempt, err.Error())
+		return
+	}
+	stderrCapture, err := newWorkflowOutputCapture(filepath.Join(runtimeDir, "stderr.log"), WorkflowLiveOutputLimitBytes)
+	if err != nil {
+		_ = stdoutCapture.Close()
+		s.finishPrelaunchFailure(attempt, err.Error())
+		return
+	}
+	runtime.setOutputCaptures(stdoutCapture, stderrCapture)
+
+	if invocation.ResultFile != "" {
+		if err := os.MkdirAll(filepath.Dir(invocation.ResultFile), 0o700); err != nil {
+			_, _, _ = runtime.closeOutputs()
+			s.finishPrelaunchFailure(attempt, "prepare result path: "+err.Error())
+			return
+		}
 	}
 
 	result := s.runner(
@@ -399,6 +530,7 @@ func (s *WorkflowExecutionService) execute(
 		invocation.Stdin,
 		s.timeout,
 		pipeline.AgentCommandStreamCallbacks{
+			CaptureLimitBytes: WorkflowRunnerCaptureLimitBytes,
 			OnProcessStarted: func(identity pipeline.ProcessIdentity) error {
 				runtime.mu.Lock()
 				runtime.identity = identity
@@ -419,24 +551,35 @@ func (s *WorkflowExecutionService) execute(
 		},
 		s.controller,
 	)
-	stdout, stderr := runtime.snapshot()
+	stdoutSnapshot, stderrSnapshot, outputErr := runtime.closeOutputs()
+	state.StdoutTruncated = stdoutSnapshot.Truncated
+	state.StderrTruncated = stderrSnapshot.Truncated
+	state.StdoutBytes = stdoutSnapshot.TotalBytes
+	state.StderrBytes = stderrSnapshot.TotalBytes
+
+	redactedResultPath := ""
 	resultFileContent := []byte(nil)
 	if invocation.ResultFile != "" {
-		resultFileContent, _ = os.ReadFile(invocation.ResultFile)
+		redactedResultPath = filepath.Join(runtimeDir, "executor-result-redacted.log")
+		if err := redactFileToPath(invocation.ResultFile, redactedResultPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			outputErr = errors.Join(outputErr, err)
+		} else if err == nil {
+			resultFileContent, _, _ = readFileTail(redactedResultPath, WorkflowRunnerCaptureLimitBytes)
+		}
 	}
-	normalizedInput := stdout
+	normalizedInput := result.Stdout
 	if len(resultFileContent) > 0 {
 		normalizedInput = string(resultFileContent)
 	} else if normalizedInput == "" {
-		normalizedInput = stderr
+		normalizedInput = result.Stderr
 	}
 	normalized := adapter.NormalizeResult(normalizedInput)
 	state.ExitCode = result.ExitCode
 	state.TimedOut = result.TimedOut
 	state.TerminationVerified = result.TerminationVerified
-	state.Error = strings.TrimSpace(result.Error)
+	state.Error = redactSensitive(strings.TrimSpace(result.Error))
 	state.NormalizedStatus = string(normalized.Status)
-	state.BlockerText = normalized.BlockerText
+	state.BlockerText = redactSensitive(normalized.BlockerText)
 	state.LaunchDisposition = string(result.LaunchDisposition)
 
 	status := workflowstore.AttemptStatusFailed
@@ -449,28 +592,44 @@ func (s *WorkflowExecutionService) execute(
 		status = workflowstore.AttemptStatusSucceeded
 	}
 	if normalized.ParseError != "" {
-		state.Error = appendWorkflowError(state.Error, normalized.ParseError)
+		state.Error = appendWorkflowError(state.Error, redactSensitive(normalized.ParseError))
 	}
 	if result.TerminationError != "" {
-		state.Error = appendWorkflowError(state.Error, result.TerminationError)
+		state.Error = appendWorkflowError(state.Error, redactSensitive(result.TerminationError))
 	}
 	if result.ReleaseError != "" {
-		state.Error = appendWorkflowError(state.Error, "release process: "+result.ReleaseError)
+		state.Error = appendWorkflowError(state.Error, "release process: "+redactSensitive(result.ReleaseError))
+	}
+	if outputErr != nil {
+		status = workflowstore.AttemptStatusFailed
+		state.Error = appendWorkflowError(state.Error, "capture executor output: "+redactSensitive(outputErr.Error()))
 	}
 
+	if result.LaunchStarted && !result.TerminationVerified {
+		state.CleanupPending = true
+		state.PendingTerminalStatus = status
+	}
 	resultJSON, _ := json.Marshal(state)
 	if err := s.persistAttemptEvidence(
 		attempt,
 		invocation,
-		stdout,
-		stderr,
-		normalized.ExecutorResultText,
-		resultFileContent,
+		stdoutCapture.Path(),
+		stderrCapture.Path(),
+		redactSensitive(normalized.ExecutorResultText),
+		redactedResultPath,
 		resultJSON,
 	); err != nil {
 		status = workflowstore.AttemptStatusFailed
-		state.Error = appendWorkflowError(state.Error, "persist attempt evidence: "+err.Error())
+		state.Error = appendWorkflowError(state.Error, "persist attempt evidence: "+redactSensitive(err.Error()))
 		resultJSON, _ = json.Marshal(state)
+	}
+	if state.CleanupPending {
+		state.PendingTerminalStatus = status
+		resultJSON, _ = json.Marshal(state)
+		if _, err := s.runs.UpdateExecutionAttemptResult(context.Background(), attempt.AttemptID, string(resultJSON)); err != nil && s.log != nil {
+			s.log.Error("record workflow execution cleanup pending", "run_id", run.RunID, "attempt_id", attempt.AttemptID, "error", err)
+		}
+		return
 	}
 	if _, err := s.runs.FinishExecutionAttempt(context.Background(), workflowruns.FinishExecutionAttemptInput{
 		AttemptID:  attempt.AttemptID,
@@ -482,11 +641,25 @@ func (s *WorkflowExecutionService) execute(
 	_ = repository
 }
 
+func (s *WorkflowExecutionService) finishPrelaunchFailure(attempt workflowstore.ExecutionAttempt, message string) {
+	resultJSON, _ := json.Marshal(workflowAttemptRuntime{
+		TerminationVerified: true,
+		Error:               redactSensitive(message),
+	})
+	if _, err := s.runs.FinishExecutionAttempt(context.Background(), workflowruns.FinishExecutionAttemptInput{
+		AttemptID:  attempt.AttemptID,
+		Status:     workflowstore.AttemptStatusFailed,
+		ResultJSON: string(resultJSON),
+	}); err != nil && s.log != nil {
+		s.log.Error("finish prelaunch workflow execution failure", "attempt_id", attempt.AttemptID, "error", err)
+	}
+}
+
 func (s *WorkflowExecutionService) persistAttemptEvidence(
 	attempt workflowstore.ExecutionAttempt,
 	invocation ExecutorInvocation,
-	stdout, stderr, normalized string,
-	resultFileContent, resultJSON []byte,
+	stdoutPath, stderrPath, normalized, resultFilePath string,
+	resultJSON []byte,
 ) error {
 	batch, err := s.store.ArtifactStore().Begin("attempts/" + attempt.AttemptID)
 	if err != nil {
@@ -507,24 +680,45 @@ func (s *WorkflowExecutionService) persistAttemptEvidence(
 		staged = append(staged, pendingArtifact{file: file})
 		return nil
 	}
+	stageFile := func(kind, filename, mediaType, sourcePath string) error {
+		if strings.TrimSpace(sourcePath) == "" {
+			return nil
+		}
+		info, err := os.Stat(sourcePath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if info.Size() == 0 {
+			return nil
+		}
+		file, err := batch.StageFile(kind, filename, mediaType, sourcePath)
+		if err != nil {
+			return err
+		}
+		staged = append(staged, pendingArtifact{file: file})
+		return nil
+	}
 	commandLog := []byte(fmt.Sprintf("Command: %s\nWorkDir: %s\nModel: %s\nAdapter: %s\n", invocation.Preview, invocation.WorkDir, invocation.Model, invocation.Adapter))
-	if err := stage("executor_stdout", "stdout.log", "text/plain", []byte(stdout)); err != nil {
+	if err := stageFile("executor_stdout", "stdout.log", "text/plain", stdoutPath); err != nil {
 		_ = batch.Rollback()
 		return err
 	}
-	if err := stage("executor_stderr", "stderr.log", "text/plain", []byte(stderr)); err != nil {
+	if err := stageFile("executor_stderr", "stderr.log", "text/plain", stderrPath); err != nil {
 		_ = batch.Rollback()
 		return err
 	}
-	if err := stage("command_log", "command.log", "text/plain", commandLog); err != nil {
+	if err := stage("command_log", "command.log", "text/plain", redactSensitiveBytes(commandLog)); err != nil {
 		_ = batch.Rollback()
 		return err
 	}
-	if err := stage("executor_result", "executor-result.txt", "text/plain", []byte(normalized)); err != nil {
+	if err := stage("executor_result", "executor-result.txt", "text/plain", []byte(redactSensitive(normalized))); err != nil {
 		_ = batch.Rollback()
 		return err
 	}
-	if err := stage("codex_last_message", "codex-last-message.txt", "text/plain", resultFileContent); err != nil {
+	if err := stageFile("codex_last_message", "codex-last-message.txt", "text/plain", resultFilePath); err != nil {
 		_ = batch.Rollback()
 		return err
 	}

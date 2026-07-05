@@ -29,6 +29,9 @@ func (f *fakeWorkflowExecutionService) Start(context.Context, executor.WorkflowS
 func (f *fakeWorkflowExecutionService) Cancel(context.Context, string, string) (executor.WorkflowCancelResult, error) {
 	return f.cancelResult, nil
 }
+func (f *fakeWorkflowExecutionService) Reconcile(context.Context, string, string) (executor.WorkflowCancelResult, error) {
+	return f.cancelResult, nil
+}
 func (f *fakeWorkflowExecutionService) ListAttempts(context.Context, string) ([]executor.WorkflowAttemptView, error) {
 	return f.views, nil
 }
@@ -73,7 +76,12 @@ func TestWorkflowExecutionAttemptMonitoringIsBounded(t *testing.T) {
 		ResultJSON:    `{"command_preview":"codex exec"}`,
 		CreatedAt:     "2026-07-05T00:00:00Z",
 	}
-	view := executor.WorkflowAttemptView{Attempt: attempt, LiveStdout: "working\n"}
+	view := executor.WorkflowAttemptView{
+		Attempt:             attempt,
+		LiveStdout:          "working\n",
+		LiveStdoutTruncated: true,
+		LiveStdoutBytes:     70000,
+	}
 	service := &fakeWorkflowExecutionService{
 		startResult: executor.WorkflowStartResult{Attempt: attempt, Preflight: workflowrepos.ExecutionPreflightResult{OK: true}},
 		views:       []executor.WorkflowAttemptView{view},
@@ -91,7 +99,33 @@ func TestWorkflowExecutionAttemptMonitoringIsBounded(t *testing.T) {
 	if body["attemptId"] != "attempt-test" || body["liveStdout"] != "working\n" {
 		t.Fatalf("body = %+v", body)
 	}
+	if body["liveStdoutTruncated"] != true || body["liveStdoutBytes"] != float64(70000) {
+		t.Fatalf("bounded-output metadata = %+v", body)
+	}
 	if strings.Contains(response.Body.String(), "local_path") || strings.Contains(response.Body.String(), "executor_brief") {
 		t.Fatalf("response leaked local execution details: %s", response.Body.String())
+	}
+}
+
+func TestWorkflowExecutionReconcileRoute(t *testing.T) {
+	attempt := workflowstore.ExecutionAttempt{
+		AttemptID:     "attempt-cleanup",
+		AttemptNumber: 1,
+		Adapter:       "codex",
+		Model:         "model",
+		Status:        workflowstore.AttemptStatusSucceeded,
+		ResultJSON:    `{}`,
+		CreatedAt:     "2026-07-05T00:00:00Z",
+	}
+	view := executor.WorkflowAttemptView{Attempt: attempt}
+	service := &fakeWorkflowExecutionService{
+		cancelResult: executor.WorkflowCancelResult{Attempt: attempt},
+		views:        []executor.WorkflowAttemptView{view},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/workflow/runs/run-test/attempts/attempt-cleanup/reconcile", nil)
+	response := httptest.NewRecorder()
+	workflowExecutionRouter(service).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "attempt-cleanup") {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
 }

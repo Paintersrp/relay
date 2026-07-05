@@ -259,12 +259,19 @@ func (s *Service) UpdateExecutionAttemptResult(ctx context.Context, attemptID, r
 	return updated, err
 }
 
-func (s *Service) RequestExecutionAttemptCancellation(ctx context.Context, attemptID string) (workflowstore.ExecutionAttempt, error) {
+func (s *Service) RequestExecutionAttemptCancellation(ctx context.Context, runID, attemptID string) (workflowstore.ExecutionAttempt, error) {
 	var updated workflowstore.ExecutionAttempt
 	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		run, err := tx.GetRunByRunID(ctx, runID)
+		if err != nil {
+			return fmt.Errorf("load cancellation Run: %w", err)
+		}
 		attempt, err := tx.GetExecutionAttemptByAttemptID(ctx, attemptID)
 		if err != nil {
 			return fmt.Errorf("load execution attempt: %w", err)
+		}
+		if attempt.RunRowID != run.ID {
+			return fmt.Errorf("execution attempt does not belong to Run")
 		}
 		if attempt.Status == workflowstore.AttemptStatusSucceeded ||
 			attempt.Status == workflowstore.AttemptStatusFailed ||
@@ -273,7 +280,7 @@ func (s *Service) RequestExecutionAttemptCancellation(ctx context.Context, attem
 			updated = attempt
 			return nil
 		}
-		attempt, err = tx.RequestExecutionAttemptCancellation(ctx, attemptID)
+		attempt, err = tx.RequestExecutionAttemptCancellation(ctx, run.ID, attemptID)
 		if err != nil {
 			return fmt.Errorf("request execution attempt cancellation: %w", err)
 		}

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,6 +120,66 @@ func (b *Batch) Stage(kind, filename, mediaType string, data []byte) (File, erro
 		MediaType:    mediaType,
 		SHA256:       hex.EncodeToString(digest[:]),
 		SizeBytes:    int64(len(data)),
+		tempPath:     tempPath,
+	}
+	b.files = append(b.files, staged)
+	return staged, nil
+}
+
+func (b *Batch) StageFile(kind, filename, mediaType, sourcePath string) (File, error) {
+	if b.closed || b.prepared {
+		return File{}, ErrClosed
+	}
+	if strings.TrimSpace(kind) == "" || strings.TrimSpace(kind) != kind {
+		return File{}, fmt.Errorf("artifact kind must be nonblank without outer whitespace")
+	}
+	if strings.TrimSpace(mediaType) == "" || strings.TrimSpace(mediaType) != mediaType {
+		return File{}, fmt.Errorf("artifact media type must be nonblank without outer whitespace")
+	}
+	if strings.TrimSpace(filename) == "" || strings.TrimSpace(filename) != filename || filename != filepath.Base(filename) || filename == "." || filename == ".." || strings.ContainsAny(filename, `/\\`) {
+		return File{}, fmt.Errorf("artifact filename must be a safe basename without outer whitespace")
+	}
+	for _, existing := range b.files {
+		if filepath.Base(existing.RelativePath) == filename {
+			return File{}, fmt.Errorf("artifact filename %q is already staged", filename)
+		}
+	}
+
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return File{}, fmt.Errorf("open source artifact: %w", err)
+	}
+	defer source.Close()
+	tempPath := filepath.Join(b.stagingDir, filename)
+	file, err := os.OpenFile(tempPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return File{}, fmt.Errorf("create staged artifact: %w", err)
+	}
+	digest := sha256.New()
+	size, copyErr := io.Copy(io.MultiWriter(file, digest), source)
+	if copyErr != nil {
+		_ = file.Close()
+		_ = os.Remove(tempPath)
+		return File{}, fmt.Errorf("copy staged artifact: %w", copyErr)
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		_ = os.Remove(tempPath)
+		return File{}, fmt.Errorf("sync staged artifact: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(tempPath)
+		return File{}, fmt.Errorf("close staged artifact: %w", err)
+	}
+
+	relativePath := filepath.ToSlash(filepath.Join(b.namespace, filename))
+	staged := File{
+		Kind:         kind,
+		RelativePath: relativePath,
+		AbsolutePath: filepath.Join(b.store.root, filepath.FromSlash(relativePath)),
+		MediaType:    mediaType,
+		SHA256:       hex.EncodeToString(digest.Sum(nil)),
+		SizeBytes:    size,
 		tempPath:     tempPath,
 	}
 	b.files = append(b.files, staged)
