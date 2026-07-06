@@ -482,6 +482,10 @@ RETURNING id, artifact_id, owner_type, plan_row_id, run_row_id, execution_attemp
 	))
 }
 
+func (tx *Tx) GetArtifactByRowID(ctx context.Context, rowID int64) (Artifact, error) {
+	return getArtifactByRowID(ctx, tx.tx, rowID)
+}
+
 func (tx *Tx) GetArtifactByArtifactID(ctx context.Context, artifactID string) (Artifact, error) {
 	return getArtifactByArtifactID(ctx, tx.tx, artifactID)
 }

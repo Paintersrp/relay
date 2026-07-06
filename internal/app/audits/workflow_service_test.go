@@ -17,14 +17,16 @@ import (
 )
 
 type auditFixture struct {
-	store      *workflowstore.Store
-	runs       *workflowruns.Service
-	service    *WorkflowAuditService
-	run        workflowstore.Run
-	plan       workflowstore.Plan
-	pass       workflowstore.PlanPass
-	head       string
-	inspectErr error
+	store        *workflowstore.Store
+	runs         *workflowruns.Service
+	service      *WorkflowAuditService
+	run          workflowstore.Run
+	plan         workflowstore.Plan
+	pass         workflowstore.PlanPass
+	head         string
+	inspectErr   error
+	inspectCalls int
+	inspectHook  func(int)
 }
 
 func newAuditFixture(t *testing.T, managed bool) *auditFixture {
@@ -48,6 +50,10 @@ func newAuditFixture(t *testing.T, managed bool) *auditFixture {
 	}
 	fixture := &auditFixture{store: store, head: strings.Repeat("b", 40)}
 	inspector := func(_ context.Context, _ string, branch, base, audited string) (workflowrepos.AuditCommitEvidence, error) {
+		fixture.inspectCalls++
+		if fixture.inspectHook != nil {
+			fixture.inspectHook(fixture.inspectCalls)
+		}
 		if fixture.inspectErr != nil {
 			return workflowrepos.AuditCommitEvidence{}, fixture.inspectErr
 		}
@@ -423,13 +429,24 @@ func TestWorkflowAuditDecisionReverifiesPacketArtifactInsideTransaction(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(path)
+	original, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data[0] ^= 0x01
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
+	if len(original) == 0 {
+		t.Fatal("audit packet artifact is empty")
+	}
+
+	fixture.inspectCalls = 0
+	fixture.inspectHook = func(call int) {
+		if call != 2 {
+			return
+		}
+		tampered := append([]byte(nil), original...)
+		tampered[0] ^= 0x01
+		if err := os.WriteFile(path, tampered, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	_, err = fixture.service.RecordDecision(context.Background(), RecordWorkflowAuditDecisionInput{
@@ -457,6 +474,16 @@ func TestWorkflowAuditDecisionReverifiesPacketArtifactInsideTransaction(t *testi
 	}
 	if decisions != 0 {
 		t.Fatalf("tampered packet created %d decisions", decisions)
+	}
+	var decisionArtifacts int
+	if err := fixture.store.DB().QueryRow(
+		`SELECT COUNT(*) FROM artifacts WHERE run_row_id = ? AND kind = 'audit_decision'`,
+		run.ID,
+	).Scan(&decisionArtifacts); err != nil {
+		t.Fatal(err)
+	}
+	if decisionArtifacts != 0 {
+		t.Fatalf("tampered packet created %d decision artifacts", decisionArtifacts)
 	}
 }
 

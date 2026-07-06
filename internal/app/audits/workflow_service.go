@@ -299,10 +299,6 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 			packet.AuditedCommit != input.AuditedCommit {
 			return ErrWorkflowAuditPacketStale
 		}
-		if current.Artifact.SHA256 != packet.PacketSHA256 ||
-			sha256HexBytes(current.PacketBytes) != packet.PacketSHA256 {
-			return ErrWorkflowAuditPacketStale
-		}
 		attempt, err := tx.GetLatestSucceededExecutionAttempt(ctx, run.ID)
 		if err != nil {
 			return err
@@ -315,6 +311,17 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 			return err
 		}
 		if _, err := s.inspector(ctx, repository.LocalPath, run.Branch, run.BaseCommit, input.AuditedCommit); err != nil {
+			return ErrWorkflowAuditPacketStale
+		}
+		packetArtifact, err := tx.GetArtifactByRowID(ctx, packet.ArtifactRowID)
+		if err != nil ||
+			packetArtifact.ID != packet.ArtifactRowID ||
+			packetArtifact.SHA256 != packet.PacketSHA256 ||
+			packetArtifact.SHA256 != input.PacketSHA256 {
+			return ErrWorkflowAuditPacketStale
+		}
+		packetBytes, err := readWorkflowArtifact(s.store, packetArtifact, MaxWorkflowAuditPacketBytes)
+		if err != nil || sha256HexBytes(packetBytes) != packet.PacketSHA256 {
 			return ErrWorkflowAuditPacketStale
 		}
 		artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
