@@ -15,8 +15,8 @@ func TestCanonicalServerToolSurfaceByProfile(t *testing.T) {
 	}{
 		{name: "planner", profile: ToolProfilePlanner, want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run"}},
 		{name: "auditor", profile: ToolProfileAuditor, want: []string{"validate_artifact", "create_run", "get_audit_packet", "record_audit_decision"}},
-		{name: "local operator", profile: ToolProfileLocalOperator, want: toolNames(legacyLocalOperatorToolDefinitions())},
-		{name: "invalid fails closed", profile: ToolProfile("restricted"), want: toolNames(legacyBaseToolDefinitions())},
+		{name: "local operator", profile: ToolProfileLocalOperator, want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run", "get_audit_packet", "record_audit_decision"}},
+		{name: "invalid fails closed", profile: ToolProfile("restricted"), want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -43,7 +43,7 @@ func TestLegacyToolsAreUnregisteredForEveryCanonicalProfile(t *testing.T) {
 		"create_context_packet",
 		"create_plan_seed",
 	}
-	for _, profile := range []ToolProfile{ToolProfilePlanner, ToolProfileAuditor} {
+	for _, profile := range []ToolProfile{ToolProfilePlanner, ToolProfileAuditor, ToolProfileLocalOperator} {
 		t.Run(string(profile), func(t *testing.T) {
 			srv := NewServer(nil, &MCPDeps{ToolProfile: profile})
 			for _, name := range legacyTools {

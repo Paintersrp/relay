@@ -71,11 +71,8 @@ func buildWorkflowAuditPacket(
 	if err != nil {
 		return nil, err
 	}
-	result := json.RawMessage(attempt.ResultJSON)
-	if !json.Valid(result) {
-		result = json.RawMessage(`{}`)
-	}
-	blockers := workflowAuditBlockers(result)
+	auditResult := workflowAuditAttemptResult(attempt.ResultJSON)
+	blockers := workflowAuditBlockers(auditResult)
 	packet := WorkflowAuditPacket{
 		SchemaVersion: WorkflowAuditPacketSchemaVersion,
 		AuditPacketID: packetID,
@@ -100,7 +97,7 @@ func buildWorkflowAuditPacket(
 			Adapter:       attempt.Adapter,
 			Model:         attempt.Model,
 			Status:        attempt.Status,
-			Result:        result,
+			Result:        auditResult,
 			StartedAt:     nullableString(attempt.StartedAt),
 			FinishedAt:    nullableString(attempt.FinishedAt),
 		},
@@ -175,7 +172,7 @@ func selectedPassAuthority(ctx context.Context, store *workflowstore.Store, run 
 	return nil, "", "", 0, fmt.Errorf("canonical Plan does not contain managed pass %d", pass.PassNumber)
 }
 
-func workflowAuditEvidence(store *workflowstore.Store, artifacts []workflowstore.Artifact) ([]WorkflowAuditEvidenceItem, error) {
+func workflowAuditEvidence(_ *workflowstore.Store, artifacts []workflowstore.Artifact) ([]WorkflowAuditEvidenceItem, error) {
 	sorted := append([]workflowstore.Artifact(nil), artifacts...)
 	sort.Slice(sorted, func(i, j int) bool {
 		if sorted[i].Kind == sorted[j].Kind {
@@ -185,37 +182,60 @@ func workflowAuditEvidence(store *workflowstore.Store, artifacts []workflowstore
 	})
 	out := make([]WorkflowAuditEvidenceItem, 0, len(sorted))
 	for _, artifact := range sorted {
-		item := WorkflowAuditEvidenceItem{
-			ArtifactID: artifact.ArtifactID,
-			Kind:       artifact.Kind,
-			MediaType:  artifact.MediaType,
-			SHA256:     artifact.SHA256,
-			SizeBytes:  artifact.SizeBytes,
-		}
-		if strings.HasPrefix(artifact.MediaType, "text/") || artifact.MediaType == "application/json" {
-			content, truncated, err := readWorkflowArtifactTail(store, artifact, MaxWorkflowAuditEvidenceBytes)
-			if err != nil {
-				return nil, err
-			}
-			item.Content = executor.RedactSensitiveText(string(content))
-			item.ContentTruncated = truncated
-		}
-		out = append(out, item)
+		out = append(out, WorkflowAuditEvidenceItem{
+			ArtifactID:       artifact.ArtifactID,
+			Kind:             artifact.Kind,
+			MediaType:        artifact.MediaType,
+			SHA256:           artifact.SHA256,
+			SizeBytes:        artifact.SizeBytes,
+			ContentTruncated: false,
+		})
 	}
 	return out, nil
 }
 
-func workflowAuditBlockers(result json.RawMessage) []string {
-	var model struct {
-		Error       string `json:"error"`
-		BlockerText string `json:"blocker_text"`
+func workflowAuditAttemptResult(raw string) WorkflowAuditAttemptResult {
+	var source struct {
+		ExitCode              int    `json:"exit_code"`
+		TimedOut              bool   `json:"timed_out"`
+		TerminationVerified   bool   `json:"termination_verified"`
+		CleanupPending        bool   `json:"cleanup_pending"`
+		PendingTerminalStatus string `json:"pending_terminal_status"`
+		Error                 string `json:"error"`
+		NormalizedStatus      string `json:"normalized_status"`
+		BlockerText           string `json:"blocker_text"`
+		BriefArtifactID       string `json:"brief_artifact_id"`
+		BriefSHA256           string `json:"brief_sha256"`
+		StdoutTruncated       bool   `json:"stdout_truncated"`
+		StderrTruncated       bool   `json:"stderr_truncated"`
+		StdoutBytes           int64  `json:"stdout_bytes"`
+		StderrBytes           int64  `json:"stderr_bytes"`
 	}
-	if json.Unmarshal(result, &model) != nil {
-		return []string{}
+	if json.Unmarshal([]byte(raw), &source) != nil {
+		return WorkflowAuditAttemptResult{}
 	}
+	return WorkflowAuditAttemptResult{
+		ExitCode:              source.ExitCode,
+		TimedOut:              source.TimedOut,
+		TerminationVerified:   source.TerminationVerified,
+		CleanupPending:        source.CleanupPending,
+		PendingTerminalStatus: source.PendingTerminalStatus,
+		Error:                 executor.RedactSensitiveText(source.Error),
+		NormalizedStatus:      source.NormalizedStatus,
+		BlockerText:           executor.RedactSensitiveText(source.BlockerText),
+		BriefArtifactID:       source.BriefArtifactID,
+		BriefSHA256:           source.BriefSHA256,
+		StdoutTruncated:       source.StdoutTruncated,
+		StderrTruncated:       source.StderrTruncated,
+		StdoutBytes:           source.StdoutBytes,
+		StderrBytes:           source.StderrBytes,
+	}
+}
+
+func workflowAuditBlockers(result WorkflowAuditAttemptResult) []string {
 	var out []string
-	for _, value := range []string{model.Error, model.BlockerText} {
-		value = strings.TrimSpace(executor.RedactSensitiveText(value))
+	for _, value := range []string{result.Error, result.BlockerText} {
+		value = strings.TrimSpace(value)
 		if value != "" {
 			out = append(out, value)
 		}
@@ -259,6 +279,9 @@ func readWorkflowArtifact(store *workflowstore.Store, artifact workflowstore.Art
 	}
 	if int64(len(data)) != artifact.SizeBytes {
 		return nil, fmt.Errorf("artifact %s size does not match metadata", artifact.ArtifactID)
+	}
+	if sha256HexBytes(data) != artifact.SHA256 {
+		return nil, fmt.Errorf("artifact %s SHA-256 does not match metadata", artifact.ArtifactID)
 	}
 	return data, nil
 }

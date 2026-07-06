@@ -190,14 +190,9 @@ func (s *Service) BeginExecutionAttempt(ctx context.Context, input BeginExecutio
 		switch run.Status {
 		case workflowstore.RunStatusSetupReady,
 			workflowstore.RunStatusExecutionFailed,
-			workflowstore.RunStatusCancelled,
-			workflowstore.RunStatusValidating,
-			workflowstore.RunStatusAuditReady:
+			workflowstore.RunStatusCancelled:
 		default:
 			return fmt.Errorf("run %q cannot start execution from status %q", run.RunID, run.Status)
-		}
-		if err := tx.MarkCurrentAuditPacketsStale(ctx, run.ID, "later_execution_attempt"); err != nil {
-			return fmt.Errorf("stale prior audit packet: %w", err)
 		}
 		run, err = tx.TransitionRun(ctx, run.RunID, run.Status, workflowstore.RunStatusExecuting)
 		if err != nil {
@@ -383,71 +378,8 @@ func (s *Service) RecordValidationResult(ctx context.Context, runID string, pass
 	return updated, err
 }
 
-func (s *Service) RecordAuditDecision(ctx context.Context, input RecordAuditDecisionInput) (RecordAuditDecisionResult, error) {
-	if input.Decision != workflowstore.AuditDecisionAccepted && input.Decision != workflowstore.AuditDecisionNeedsRevision {
-		return RecordAuditDecisionResult{}, fmt.Errorf("unsupported audit decision %q", input.Decision)
-	}
-	if !validCommit(input.AuditedCommit) || !validSHA256(input.PacketSHA256) {
-		return RecordAuditDecisionResult{}, fmt.Errorf("audit decision commit or packet SHA-256 is invalid")
-	}
-	result := RecordAuditDecisionResult{}
-	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
-		run, err := tx.GetRunByRunID(ctx, input.RunID)
-		if err != nil {
-			return fmt.Errorf("load audit run: %w", err)
-		}
-		artifact, err := tx.GetArtifactByArtifactID(ctx, input.AuditPacketArtifactID)
-		if err != nil {
-			return fmt.Errorf("load audit packet artifact: %w", err)
-		}
-		decision, err := tx.CreateAuditDecision(ctx, workflowstore.CreateAuditDecisionParams{
-			AuditDecisionID:          s.ids.AuditDecisionID(),
-			RunRowID:                 run.ID,
-			AuditPacketArtifactRowID: artifact.ID,
-			AuditedCommit:            input.AuditedCommit,
-			PacketSHA256:             input.PacketSHA256,
-			Decision:                 input.Decision,
-			Rationale:                input.Rationale,
-		})
-		if err != nil {
-			return fmt.Errorf("create audit decision: %w", err)
-		}
-		nextRunStatus := workflowstore.RunStatusNeedsRevision
-		if input.Decision == workflowstore.AuditDecisionAccepted {
-			nextRunStatus = workflowstore.RunStatusCompleted
-		}
-		run, err = tx.TransitionRun(ctx, run.RunID, workflowstore.RunStatusAuditReady, nextRunStatus)
-		if err != nil {
-			return fmt.Errorf("advance audited run: %w", err)
-		}
-		result.Run = run
-		result.Decision = decision
-
-		if input.Decision == workflowstore.AuditDecisionAccepted && run.PlanRowID.Valid && run.PlanPassRowID.Valid {
-			pass, err := tx.GetPlanPassByRowID(ctx, run.PlanPassRowID.Int64)
-			if err != nil {
-				return fmt.Errorf("load managed pass after audit: %w", err)
-			}
-			pass, err = tx.TransitionPlanPass(ctx, pass.PassID, workflowstore.PassStatusInProgress, workflowstore.PassStatusCompleted)
-			if err != nil {
-				return fmt.Errorf("complete managed pass after audit: %w", err)
-			}
-			result.Pass = &pass
-			remaining, err := tx.CountIncompletePlanPasses(ctx, run.PlanRowID.Int64)
-			if err != nil {
-				return fmt.Errorf("count remaining managed passes: %w", err)
-			}
-			if remaining == 0 {
-				plan, err := tx.CompletePlan(ctx, run.PlanRowID.Int64)
-				if err != nil {
-					return fmt.Errorf("complete managed plan after audit: %w", err)
-				}
-				result.Plan = &plan
-			}
-		}
-		return nil
-	})
-	return result, err
+func (s *Service) RecordAuditDecision(context.Context, RecordAuditDecisionInput) (RecordAuditDecisionResult, error) {
+	return RecordAuditDecisionResult{}, fmt.Errorf("workflow audit decisions must be recorded through audits.WorkflowAuditService")
 }
 
 func validateCreateRunInput(input CreateRunInput) error {

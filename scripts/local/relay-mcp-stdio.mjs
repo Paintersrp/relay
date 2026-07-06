@@ -20,56 +20,12 @@ const TOOL_NAMES_BY_PROFILE = Object.freeze({
     'record_audit_decision',
   ],
   local_operator: [
-    'submit_test_audit_packet',
-    'create_run_from_planner_handoff',
-    'create_run_from_planner_handoff_file',
-    'validate_planner_handoff_for_compile',
-    'submit_planner_pass_plan',
-    'list_open_runs',
-    'get_run_status',
-    'submit_audit_packet',
-    'create_plan_attempt_with_intent',
-    'get_plan_intent_review_packet',
-    'submit_intent_drift_review',
-    'revise_plan_attempt',
-    'void_plan_attempt',
-    'approve_plan_attempt',
-    'submit_plan_attempt',
-    'create_plan_seed',
-    'list_plan_seeds',
-    'get_plan_seed',
-    'get_plan_seed_planning_context',
-    'create_plan_attempt_from_seed',
-    'update_plan_seed',
-    'defer_plan_seed',
-    'reject_plan_seed',
-    'get_project',
+    'validate_artifact',
+    'submit_plan',
     'get_plan',
-    'get_pass',
-    'get_pass_context',
-    'get_next_pass_work',
-    'prepare_handoff_context',
-    'get_next_audit_work',
-    'create_source_snapshot',
-    'list_project_files',
-    'search_project_files',
-    'read_project_file',
-    'resolve_project_repository',
-    'get_repository_git_status',
-    'get_repository_recent_commit',
-    'list_repository_changed_files',
-    'get_repository_diff',
-    'create_context_packet',
-    'get_context_packet',
-    'create_local_audit',
-    'get_local_audit',
-    'list_project_local_audits',
-    'search_project_context_memory',
-    'list_project_context_records',
-    'get_project_context_record',
-    'create_project_context_record',
-    'supersede_project_context_record',
-    'get_run_artifact',
+    'create_run',
+    'get_audit_packet',
+    'record_audit_decision',
   ],
 });
 
@@ -420,18 +376,26 @@ function runSelfTest(commandSpec, profile) {
         }
         console.error('ping: ok');
 
-        const toolsListResponsePromise = awaitResponse(3, 'tools/list');
-        send({
-          jsonrpc: '2.0',
-          id: 3,
-          method: 'tools/list',
-          params: {},
-        });
-        const toolsListResponse = await toolsListResponsePromise;
-        const tools = toolsListResponse?.result?.tools;
-        if (!Array.isArray(tools)) {
-          throw new ValidationError('Relay MCP tools/list response did not include a tools array.');
-        }
+        const tools = [];
+        let cursor = '';
+        let requestID = 3;
+        do {
+          const toolsListResponsePromise = awaitResponse(requestID, 'tools/list');
+          send({
+            jsonrpc: '2.0',
+            id: requestID,
+            method: 'tools/list',
+            params: cursor ? { cursor } : {},
+          });
+          const toolsListResponse = await toolsListResponsePromise;
+          const page = toolsListResponse?.result?.tools;
+          if (!Array.isArray(page)) {
+            throw new ValidationError('Relay MCP tools/list response did not include a tools array.');
+          }
+          tools.push(...page);
+          cursor = String(toolsListResponse?.result?.nextCursor || '');
+          requestID += 1;
+        } while (cursor);
 
         const actualToolNames = tools
           .map((tool) => tool?.name)

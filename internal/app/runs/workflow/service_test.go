@@ -309,7 +309,7 @@ func TestFailedAndTimedOutAttemptsCanEnterValidationAndRemediation(t *testing.T)
 	}
 }
 
-func TestExecutionAttemptValidationAndAuditDecisionCompleteManagedWorkflow(t *testing.T) {
+func TestRecordAuditDecisionLegacyPathIsDisabled(t *testing.T) {
 	ctx := context.Background()
 	store, _ := openRunTestStore(t)
 	registerRunTestRepo(t, ctx, store, "relay")
@@ -318,7 +318,6 @@ func TestExecutionAttemptValidationAndAuditDecisionCompleteManagedWorkflow(t *te
 		runIDs:      []string{"run-lifecycle"},
 		attemptIDs:  []string{"attempt-lifecycle"},
 		artifactIDs: []string{"artifact-run-spec", "artifact-run-brief"},
-		decisionIDs: []string{"audit-decision-lifecycle"},
 	})
 
 	created, err := service.CreateRun(ctx, CreateRunInput{
@@ -335,71 +334,46 @@ func TestExecutionAttemptValidationAndAuditDecisionCompleteManagedWorkflow(t *te
 		t.Fatal(err)
 	}
 	begun, err := service.BeginExecutionAttempt(ctx, BeginExecutionAttemptInput{
-		RunID:   created.Run.RunID,
-		Adapter: "opencode_go",
-		Model:   "test-model",
+		RunID: created.Run.RunID, Adapter: "opencode_go", Model: "test-model",
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if begun.Run.Status != workflowstore.RunStatusExecuting || begun.Attempt.Status != workflowstore.AttemptStatusPending {
-		t.Fatalf("unexpected begin result: %+v", begun)
 	}
 	if _, err := service.MarkExecutionAttemptRunning(ctx, begun.Attempt.AttemptID, `{"running":true}`); err != nil {
 		t.Fatal(err)
 	}
 	finished, err := service.FinishExecutionAttempt(ctx, FinishExecutionAttemptInput{
-		AttemptID:  begun.Attempt.AttemptID,
-		Status:     workflowstore.AttemptStatusSucceeded,
-		ResultJSON: `{"exit_code":0}`,
+		AttemptID: begun.Attempt.AttemptID, Status: workflowstore.AttemptStatusSucceeded, ResultJSON: `{"exit_code":0}`,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if finished.Run.Status != workflowstore.RunStatusValidating || finished.Attempt.Status != workflowstore.AttemptStatusSucceeded {
-		t.Fatalf("unexpected finish result: %+v", finished)
-	}
-	validated, err := service.RecordValidationResult(ctx, created.Run.RunID, true)
+	validated, err := service.RecordValidationResult(ctx, finished.Run.RunID, true)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if validated.Status != workflowstore.RunStatusAuditReady {
-		t.Fatalf("validated run status = %q", validated.Status)
 	}
 
-	passBeforeAudit, err := store.GetPlanPassByPlanAndNumber(ctx, plan.Plan.ID, 1)
+	if _, err := service.RecordAuditDecision(ctx, RecordAuditDecisionInput{}); err == nil {
+		t.Fatal("legacy workflow audit decision path remained enabled")
+	}
+	current, err := store.GetRunByRunID(ctx, validated.RunID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if passBeforeAudit.Status != workflowstore.PassStatusInProgress {
-		t.Fatalf("managed pass completed before accepted audit: %q", passBeforeAudit.Status)
-	}
-	planBeforeAudit, err := store.GetPlanByPlanID(ctx, plan.Plan.PlanID)
+	pass, err := store.GetPlanPassByPlanAndNumber(ctx, plan.Plan.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if planBeforeAudit.Status != workflowstore.PlanStatusActive {
-		t.Fatalf("managed Plan completed before accepted audit: %q", planBeforeAudit.Status)
-	}
-
-	packet := persistAuditPacket(t, ctx, store, validated)
-	decision, err := service.RecordAuditDecision(ctx, RecordAuditDecisionInput{
-		RunID:                 validated.RunID,
-		AuditPacketArtifactID: packet.ArtifactID,
-		AuditedCommit:         strings.Repeat("b", 40),
-		PacketSHA256:          packet.SHA256,
-		Decision:              workflowstore.AuditDecisionAccepted,
-		Rationale:             "Accepted by test.",
-	})
+	currentPlan, err := store.GetPlanByPlanID(ctx, plan.Plan.PlanID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decision.Run.Status != workflowstore.RunStatusCompleted || decision.Pass == nil || decision.Pass.Status != workflowstore.PassStatusCompleted {
-		t.Fatalf("unexpected audit closeout: %+v", decision)
+	if current.Status != workflowstore.RunStatusAuditReady ||
+		pass.Status != workflowstore.PassStatusInProgress ||
+		currentPlan.Status != workflowstore.PlanStatusActive {
+		t.Fatalf("legacy path mutated lifecycle: run=%s pass=%s plan=%s", current.Status, pass.Status, currentPlan.Status)
 	}
-	if decision.Plan == nil || decision.Plan.Status != workflowstore.PlanStatusCompleted {
-		t.Fatalf("managed Plan was not completed: %+v", decision.Plan)
-	}
+	assertRunTableCount(t, store.DB(), "audit_decisions", 0)
 }
 
 func TestCreateRunFailuresLeaveNoRunArtifactsOrPassTransition(t *testing.T) {

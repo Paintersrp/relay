@@ -255,43 +255,22 @@ func TestWorkflowAuditNeedsRevisionPreservesManagedPass(t *testing.T) {
 	}
 }
 
-func TestWorkflowAuditPacketBecomesStaleAfterRepositoryChangeOrLaterAttempt(t *testing.T) {
-	t.Run("repository change", func(t *testing.T) {
-		fixture := newAuditFixture(t, false)
-		if _, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{RunID: fixture.run.RunID, AuditedCommit: fixture.head}); err != nil {
-			t.Fatal(err)
-		}
-		fixture.inspectErr = errors.New("head_mismatch")
-		if _, err := fixture.service.GetCurrentPacket(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowAuditPacketStale) {
-			t.Fatalf("error = %v", err)
-		}
-		latest, err := fixture.store.GetLatestAuditPacketByRun(context.Background(), fixture.run.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if latest.Status != workflowstore.AuditPacketStatusStale {
-			t.Fatalf("status = %q", latest.Status)
-		}
-	})
-
-	t.Run("later attempt", func(t *testing.T) {
-		fixture := newAuditFixture(t, false)
-		if _, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{RunID: fixture.run.RunID, AuditedCommit: fixture.head}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := fixture.runs.BeginExecutionAttempt(context.Background(), workflowruns.BeginExecutionAttemptInput{
-			RunID: fixture.run.RunID, Adapter: "codex", Model: "retry-model",
-		}); err != nil {
-			t.Fatal(err)
-		}
-		latest, err := fixture.store.GetLatestAuditPacketByRun(context.Background(), fixture.run.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if latest.Status != workflowstore.AuditPacketStatusStale || latest.StaleReason != "later_execution_attempt" {
-			t.Fatalf("packet = %+v", latest)
-		}
-	})
+func TestWorkflowAuditPacketBecomesStaleAfterRepositoryChange(t *testing.T) {
+	fixture := newAuditFixture(t, false)
+	if _, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{RunID: fixture.run.RunID, AuditedCommit: fixture.head}); err != nil {
+		t.Fatal(err)
+	}
+	fixture.inspectErr = errors.New("head_mismatch")
+	if _, err := fixture.service.GetCurrentPacket(context.Background(), fixture.run.RunID); !errors.Is(err, ErrWorkflowAuditPacketStale) {
+		t.Fatalf("error = %v", err)
+	}
+	latest, err := fixture.store.GetLatestAuditPacketByRun(context.Background(), fixture.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.Status != workflowstore.AuditPacketStatusStale {
+		t.Fatalf("status = %q", latest.Status)
+	}
 }
 
 func TestWorkflowAuditDecisionRequiresExplicitConfirmationAndExactPacket(t *testing.T) {
@@ -315,6 +294,169 @@ func TestWorkflowAuditDecisionRequiresExplicitConfirmationAndExactPacket(t *test
 	})
 	if !errors.Is(err, ErrWorkflowAuditPacketStale) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestWorkflowAuditPacketExcludesRuntimeAndEvidenceBodies(t *testing.T) {
+	fixture := newAuditFixture(t, false)
+	secret := "audit-packet-secret"
+	t.Setenv("OPENAI_API_KEY", secret)
+	unsafeResult := `{
+		"owner_instance_id":"owner-private",
+		"process_identity":"pid-private",
+		"command_preview":"C:\\Users\\operator\\relay ` + secret + `",
+		"exit_code":0,
+		"termination_verified":true,
+		"normalized_status":"done",
+		"error":"safe ` + secret + `",
+		"blocker_text":""
+	}`
+	if _, err := fixture.store.DB().Exec(
+		`UPDATE execution_attempts SET result_json = ? WHERE run_row_id = ?`,
+		unsafeResult,
+		fixture.run.ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err := fixture.store.ListArtifactsByExecutionAttempt(context.Background(), fixture.run.ID)
+	if err == nil && len(artifacts) > 0 {
+		path, pathErr := workflowArtifactPath(fixture.store, artifacts[0])
+		if pathErr != nil {
+			t.Fatal(pathErr)
+		}
+		_ = os.WriteFile(path, []byte(`C:\\Users\\operator\\relay /home/operator/relay https://example.invalid/file?token=signed-value`), 0o600)
+	}
+
+	if _, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{
+		RunID: fixture.run.RunID, AuditedCommit: fixture.head,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := fixture.service.GetCurrentPacket(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(current.PacketBytes)
+	for _, forbidden := range []string{
+		"owner-private",
+		"pid-private",
+		"command_preview",
+		`C:\\Users\\operator\\relay`,
+		"/home/operator/relay",
+		"signed-value",
+		secret,
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("packet leaked %q: %s", forbidden, text)
+		}
+	}
+	if !strings.Contains(text, "[REDACTED]") {
+		t.Fatalf("packet did not preserve configured-secret redaction: %s", text)
+	}
+}
+
+func TestWorkflowAuditAuthoritativeArtifactTamperingBlocks(t *testing.T) {
+	tests := []struct {
+		name    string
+		managed bool
+		kind    string
+		owner   string
+	}{
+		{name: "execution spec", kind: "execution_spec", owner: "run"},
+		{name: "executor brief", kind: "executor_brief", owner: "run"},
+		{name: "canonical plan", managed: true, kind: "canonical_plan", owner: "plan"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := newAuditFixture(t, tt.managed)
+			var artifacts []workflowstore.Artifact
+			var err error
+			if tt.owner == "plan" {
+				artifacts, err = fixture.store.ListArtifactsByPlan(context.Background(), fixture.plan.ID)
+			} else {
+				artifacts, err = fixture.store.ListArtifactsByRun(context.Background(), fixture.run.ID)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			artifact, err := requireArtifactKind(artifacts, tt.kind)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path, err := workflowArtifactPath(fixture.store, artifact)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(data) == 0 {
+				t.Fatal("authoritative artifact is empty")
+			}
+			data[0] ^= 0x01
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{
+				RunID: fixture.run.RunID, AuditedCommit: fixture.head,
+			}); err == nil {
+				t.Fatal("tampered authoritative artifact was accepted")
+			}
+		})
+	}
+}
+
+func TestWorkflowAuditDecisionReverifiesPacketArtifactInsideTransaction(t *testing.T) {
+	fixture := newAuditFixture(t, false)
+	prepared, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{
+		RunID: fixture.run.RunID, AuditedCommit: fixture.head,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := fixture.store.GetArtifactByRowID(context.Background(), prepared.Packet.ArtifactRowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := workflowArtifactPath(fixture.store, artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data[0] ^= 0x01
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = fixture.service.RecordDecision(context.Background(), RecordWorkflowAuditDecisionInput{
+		RunID:             fixture.run.RunID,
+		AuditPacketID:     prepared.Packet.AuditPacketID,
+		PacketSHA256:      prepared.Packet.PacketSHA256,
+		AuditedCommit:     fixture.head,
+		Decision:          workflowstore.AuditDecisionAccepted,
+		Rationale:         "must not persist",
+		OperatorConfirmed: true,
+	})
+	if !errors.Is(err, ErrWorkflowAuditPacketStale) {
+		t.Fatalf("error = %v", err)
+	}
+	run, err := fixture.store.GetRunByRunID(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != workflowstore.RunStatusAuditReady {
+		t.Fatalf("tampered packet changed Run status to %q", run.Status)
+	}
+	var decisions int
+	if err := fixture.store.DB().QueryRow(`SELECT COUNT(*) FROM audit_decisions WHERE run_row_id = ?`, run.ID).Scan(&decisions); err != nil {
+		t.Fatal(err)
+	}
+	if decisions != 0 {
+		t.Fatalf("tampered packet created %d decisions", decisions)
 	}
 }
 

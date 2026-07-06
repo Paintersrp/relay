@@ -61,36 +61,13 @@ func (s *Server) activeProfile() ToolProfile {
 	}
 	profile, ok := NormalizeToolProfile(string(s.deps.ToolProfile))
 	if !ok {
-		return s.deps.ToolProfile
+		return ToolProfilePlanner
 	}
 	return profile
 }
 
 func (s *Server) profileToolDefinitions() []ToolDefinition {
-	if s == nil || s.deps == nil {
-		return canonicalToolDefinitions(ToolProfilePlanner)
-	}
-	if s.deps.ContextBrokerEnabled {
-		out := legacyLocalOperatorToolDefinitions()
-		if s.deps.WorkflowAuditService != nil {
-			out = append(out, ToolGetAuditPacket, ToolRecordAuditDecision)
-		}
-		return out
-	}
-	switch s.activeProfile() {
-	case ToolProfilePlanner:
-		return canonicalToolDefinitions(ToolProfilePlanner)
-	case ToolProfileAuditor:
-		return canonicalToolDefinitions(ToolProfileAuditor)
-	case ToolProfileLocalOperator:
-		out := legacyLocalOperatorToolDefinitions()
-		if s.deps.WorkflowAuditService != nil {
-			out = append(out, ToolGetAuditPacket, ToolRecordAuditDecision)
-		}
-		return out
-	default:
-		return legacyBaseToolDefinitions()
-	}
+	return canonicalToolDefinitions(s.activeProfile())
 }
 
 func (s *Server) fileParameterFetcher() FileParameterFetcher {

@@ -182,7 +182,8 @@ func (s *WorkflowAuditService) GetCurrentPacket(ctx context.Context, runID strin
 	}
 	data, err := readWorkflowArtifact(s.store, artifact, MaxWorkflowAuditPacketBytes)
 	if err != nil {
-		return GetWorkflowAuditPacketResult{}, err
+		_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "packet_integrity_failed")
+		return GetWorkflowAuditPacketResult{}, ErrWorkflowAuditPacketStale
 	}
 	if sha256HexBytes(data) != packet.PacketSHA256 || packet.PacketSHA256 != artifact.SHA256 {
 		_ = s.store.MarkCurrentAuditPacketsStale(ctx, run.ID, "packet_integrity_failed")
@@ -293,8 +294,13 @@ func (s *WorkflowAuditService) RecordDecision(ctx context.Context, input RecordW
 		}
 		if packet.RunRowID != run.ID ||
 			packet.Status != workflowstore.AuditPacketStatusCurrent ||
+			packet.ArtifactRowID != current.Artifact.ID ||
 			packet.PacketSHA256 != input.PacketSHA256 ||
 			packet.AuditedCommit != input.AuditedCommit {
+			return ErrWorkflowAuditPacketStale
+		}
+		if current.Artifact.SHA256 != packet.PacketSHA256 ||
+			sha256HexBytes(current.PacketBytes) != packet.PacketSHA256 {
 			return ErrWorkflowAuditPacketStale
 		}
 		attempt, err := tx.GetLatestSucceededExecutionAttempt(ctx, run.ID)

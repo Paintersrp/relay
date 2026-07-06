@@ -63,14 +63,31 @@ type WorkflowAuditPassAuthority struct {
 }
 
 type WorkflowAuditAttemptAuthority struct {
-	AttemptID     string          `json:"attempt_id"`
-	AttemptNumber int64           `json:"attempt_number"`
-	Adapter       string          `json:"adapter"`
-	Model         string          `json:"model"`
-	Status        string          `json:"status"`
-	Result        json.RawMessage `json:"result"`
-	StartedAt     string          `json:"started_at,omitempty"`
-	FinishedAt    string          `json:"finished_at,omitempty"`
+	AttemptID     string                     `json:"attempt_id"`
+	AttemptNumber int64                      `json:"attempt_number"`
+	Adapter       string                     `json:"adapter"`
+	Model         string                     `json:"model"`
+	Status        string                     `json:"status"`
+	Result        WorkflowAuditAttemptResult `json:"result"`
+	StartedAt     string                     `json:"started_at,omitempty"`
+	FinishedAt    string                     `json:"finished_at,omitempty"`
+}
+
+type WorkflowAuditAttemptResult struct {
+	ExitCode              int    `json:"exit_code"`
+	TimedOut              bool   `json:"timed_out"`
+	TerminationVerified   bool   `json:"termination_verified"`
+	CleanupPending        bool   `json:"cleanup_pending,omitempty"`
+	PendingTerminalStatus string `json:"pending_terminal_status,omitempty"`
+	Error                 string `json:"error,omitempty"`
+	NormalizedStatus      string `json:"normalized_status,omitempty"`
+	BlockerText           string `json:"blocker_text,omitempty"`
+	BriefArtifactID       string `json:"brief_artifact_id,omitempty"`
+	BriefSHA256           string `json:"brief_sha256,omitempty"`
+	StdoutTruncated       bool   `json:"stdout_truncated,omitempty"`
+	StderrTruncated       bool   `json:"stderr_truncated,omitempty"`
+	StdoutBytes           int64  `json:"stdout_bytes,omitempty"`
+	StderrBytes           int64  `json:"stderr_bytes,omitempty"`
 }
 
 type WorkflowAuditEvidenceItem struct {
@@ -79,7 +96,6 @@ type WorkflowAuditEvidenceItem struct {
 	MediaType        string `json:"media_type"`
 	SHA256           string `json:"sha256"`
 	SizeBytes        int64  `json:"size_bytes"`
-	Content          string `json:"content,omitempty"`
 	ContentTruncated bool   `json:"content_truncated"`
 }
 
