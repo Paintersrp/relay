@@ -20,7 +20,7 @@
   "source_inputs": [
     {
       "path": "AGENTS.md",
-      "sha256": "cb2480fa513f0639ed0fd90bab0f627f0ad6b82bdda8f7000a812b03da745957",
+      "sha256": "d6f14ef51b4080ae8593a273f024b7a89db8ae9f31ee66f09a7937700ed94617",
       "role": "agent instructions"
     },
     {
@@ -30,12 +30,12 @@
     },
     {
       "path": "docs/agent-reference.md",
-      "sha256": "781ce7a717be265d38611dc1cf4fdbcb0686fde93d64de015227d01a75075691",
+      "sha256": "dc1302c44aefc6b365f458f673643d6cbe7e11d16df37473a172c973ca45e562",
       "role": "agent reference"
     },
     {
       "path": "docs/backend-code-surface-map.md",
-      "sha256": "f3eb4c9e1fdfc1d4ea3f38dc7f4cac8dc5611b78dc9ce6bcb73542f44afc1382",
+      "sha256": "920bfad94ef75bf59b0135153172158841af381960ccc784fc66bc2dde3f77d1",
       "role": "backend surface map"
     },
     {

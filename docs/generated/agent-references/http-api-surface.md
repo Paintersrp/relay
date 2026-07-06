@@ -25,13 +25,13 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `internal/api/artifacts/routes.go` | `758c96e858840df0ff2cda43ddd4121b52b8e0c416af2cad5a4d5d417b65e7e4` | route source |
-| `internal/api/audits/routes.go` | `5998ed331a093f9174ae2b95392775ff0dec67554944aade9201e426206037ef` | route source |
-| `internal/api/intake/routes.go` | `153de0341933b08bdfee0e70b1263af9d9a3a5c7ffda37315dd687d1dbeae706` | route source |
+| `internal/api/artifacts/routes.go` | `930d1e2b925521f1a8f16b4fd509feb4663095dfd4f82ac150ac482491161e0f` | route source |
+| `internal/api/audits/routes.go` | `7b032324ba4a515bc5113090256c7f7d31ce06b6237cc034de640c8d0b61dad1` | route source |
+| `internal/api/intake/routes.go` | `149c7d4c4d36a0fca2a29c45b590fea1cdc1934739975ea48f161c52e49e369c` | route source |
 | `internal/api/plans/routes.go` | `0b4388c25653944639c8916c1545daf567708105deb2032d406a28e6980f4139` | route source |
 | `internal/api/projects/routes.go` | `e1425a7930b8738eb9ac729c36d6e44676ce60312312e84a994e6fbbcb3b8e90` | route source |
 | `internal/api/runs/routes.go` | `350b631dd4770b9b2c5b6b1fe7b7db54c40e64b7099da51f1b6bd72340082fb5` | route source |
-| `internal/server/routes.go` | `eb4edda21e2f45a30002985576afad64476dc5a51b03f974c7b9ce6f72c75ffc` | route source |
+| `internal/server/routes.go` | `323befca40b7720b32778ec032d97cee67ce6d54f58e92e7a6d8e2b87c861a3e` | route source |
 
 ## Fact Labels
 
@@ -794,4 +794,20 @@ Route ANY /static/* handled by http.FileServer
 Evidence:
 
 - source: `internal/server/routes.go`
+
+### http-api-route-workflow-runs-runid-audit-prepare-post (proven)
+
+Route POST /api/workflow/runs/{runID}/audit/prepare handled by h.Prepare
+
+Evidence:
+
+- source: `internal/api/audits/routes.go`
+
+### http-api-route-workflow-runs-runid-audit-status-get (proven)
+
+Route GET /api/workflow/runs/{runID}/audit/status handled by h.Status
+
+Evidence:
+
+- source: `internal/api/audits/routes.go`
 

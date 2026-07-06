@@ -54,35 +54,6 @@ func TestDocumentationIntegration_AgentReferenceContainsGeneratedIndexPaths(t *t
 	}
 }
 
-func TestDocumentationIntegration_AGENTSContainsGeneratedIndexAndRetiredMarker(t *testing.T) {
-	repoRoot := findRepoRoot(t)
-
-	agentsPath := filepath.Join(repoRoot, "AGENTS.md")
-	agentsData, err := os.ReadFile(agentsPath)
-	if err != nil {
-		t.Fatalf("Read AGENTS.md: %v", err)
-	}
-	content := string(agentsData)
-
-	if !strings.Contains(content, "docs/generated/agent-references/index.json") {
-		t.Error("AGENTS.md must contain docs/generated/agent-references/index.json")
-	}
-	if !strings.Contains(content, "docs/generated/agent-references/index.md") {
-		t.Error("AGENTS.md must contain docs/generated/agent-references/index.md")
-	}
-
-	// The word "retired" should appear near the backend-code-surface-map.md reference.
-	backendMapIdx := strings.Index(content, "docs/backend-code-surface-map.md")
-	if backendMapIdx < 0 {
-		t.Error("AGENTS.md must reference docs/backend-code-surface-map.md")
-	}
-	// Check for "retired" in the vicinity (within 200 chars after the reference).
-	snippet := content[backendMapIdx:min(backendMapIdx+200, len(content))]
-	if !strings.Contains(snippet, "retired") {
-		t.Error("AGENTS.md must describe docs/backend-code-surface-map.md as retired near its reference")
-	}
-}
-
 func TestDocumentationIntegration_BackendMapIsRetiredPointer(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 

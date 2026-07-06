@@ -25,26 +25,28 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `docs/backend-code-surface-map.md` | `f3eb4c9e1fdfc1d4ea3f38dc7f4cac8dc5611b78dc9ce6bcb73542f44afc1382` | manual map |
+| `docs/backend-code-surface-map.md` | `920bfad94ef75bf59b0135153172158841af381960ccc784fc66bc2dde3f77d1` | manual map |
 | `internal/api/api.go` | `344edea0bf5ff8e9af5788b8a88e6b0ad05b301c484703bed81932610fd52086` | source |
-| `internal/api/api_test.go` | `b7d668070c88ae5c60af0630c1e11756a741dff1b05db289f0969639e859921d` | test |
-| `internal/api/artifacts/doc.go` | `65f3caf6725ec4f881de4cc245e27fb7bbc54ab509343b131ff71dda2ddbf52a` | source |
+| `internal/api/api_test.go` | `254fee998c268b4117bf9df12830ed353807e599909eb2e4d4a328fd72c61bf8` | test |
+| `internal/api/artifacts/doc.go` | `9e21266381db3e8eb488fe18607bf2874acb116ba89e35d893a31ab6491628cb` | source |
 | `internal/api/artifacts/handler.go` | `77ee5f16b29fa2ea05d7a5be7afb4265e691ea85d8e3c362412889023fc97f78` | source |
 | `internal/api/artifacts/handler_test.go` | `6397aec03d7b98d79bf1f8a0ee0c2a068cf68cd44a4226cbcea61c324622a57a` | test |
-| `internal/api/artifacts/routes.go` | `758c96e858840df0ff2cda43ddd4121b52b8e0c416af2cad5a4d5d417b65e7e4` | source |
+| `internal/api/artifacts/routes.go` | `930d1e2b925521f1a8f16b4fd509feb4663095dfd4f82ac150ac482491161e0f` | source |
 | `internal/api/audits/doc.go` | `53308af29c7ea0fa27158076e320760c97015fa39936b0df25178ec7d297a730` | source |
 | `internal/api/audits/dto.go` | `e5ed5188886bfd79fc80083c794d1ab988362c2c9ed9ff310ddc6dd257c99a8c` | source |
 | `internal/api/audits/handler.go` | `ded6d2bf38f8f508ccb6c4237bed80ac55a637594e740afde0ac4937c1a59232` | source |
-| `internal/api/audits/routes.go` | `5998ed331a093f9174ae2b95392775ff0dec67554944aade9201e426206037ef` | source |
+| `internal/api/audits/routes.go` | `7b032324ba4a515bc5113090256c7f7d31ce06b6237cc034de640c8d0b61dad1` | source |
+| `internal/api/audits/workflow.go` | `361e27afeb8e3a6f735611433f17d89e23a3237b601619483a08f8198bff632d` | source |
+| `internal/api/audits/workflow_test.go` | `73a4afc001351023d0d1b5c5a1fc0b06ad2ee7c7acb211c3bfc5532b0e781929` | test |
 | `internal/api/cors.go` | `85f041f6bef6f0d7c57e2b238084dc5533acb90e1f988aa564dda7ef2e5b1c2d` | source |
 | `internal/api/cors_test.go` | `53917d078c7c960a6a91b5af0f9ecf613adb512a8a7dc6a8c376e19ae36d513a` | test |
-| `internal/api/intake/doc.go` | `efa3704ad9bcf00c04317a5d1ab89c448b499215f31b81921141807255f5e794` | source |
+| `internal/api/intake/doc.go` | `5bedccbdbb2b4c3c71991ac0f3643b28eaacebb51a4dcf1ad74fa1cda6164acf` | source |
 | `internal/api/intake/dto.go` | `93bbfeecec1f21f6d59e8ffc8eb0133079401fc44c56b8cae15bb87c4c08f0ae` | source |
 | `internal/api/intake/handler.go` | `e2c0040c0f4a80d294f271b2ad17e4b530620cdf6cd6e641d7cf6713d8076ae7` | source |
-| `internal/api/intake/routes.go` | `153de0341933b08bdfee0e70b1263af9d9a3a5c7ffda37315dd687d1dbeae706` | source |
+| `internal/api/intake/routes.go` | `149c7d4c4d36a0fca2a29c45b590fea1cdc1934739975ea48f161c52e49e369c` | source |
 | `internal/api/local_audits_test.go` | `8c4e0364c372f1bb028313b324abbf6a90cdaaa8eabc736e63700820b5a95721` | test |
 | `internal/api/next_audit_work_test.go` | `3f85599730c5ce6255cbade02b3945c6b8c9e4595f3ef2c9c11e3bc0b6872d1f` | test |
-| `internal/api/next_pass_work_test.go` | `2a67ab8ff1c609db7d849de71c9d586f864838406f304ee828f57a7c194ecf05` | test |
+| `internal/api/next_pass_work_test.go` | `e6cff7170b8894cc509c143603fa5de55c596cd89af531580d0db91409170953` | test |
 | `internal/api/plans/attempt_dto.go` | `5bbd7273cf01cf336f4d5a10f66c6a2aacfc5458aaa74cb3eb5bc5b74d00361e` | source |
 | `internal/api/plans/attempt_handler.go` | `0c3306e9eae40bca3c21dd30271ede345fcabe5c8da86beb82ce081bd4ec6925` | source |
 | `internal/api/plans/attempt_handler_test.go` | `926c231f5662ef3b0837d817c7c42baaa2846a108c527c41df14d07911ce81a0` | test |
@@ -75,6 +77,8 @@ Schema version: `1.0.0`
 | `internal/api/runs/handler.go` | `0569c895b6c8b133f3c55764f80b11d1f58c1f4023fc0f287a326ecc5cc036a1` | source |
 | `internal/api/runs/presenter.go` | `ca03a9b4fa9ab1e2bb0b6814f46237ee892a5ef2482b2dde3bb719ee6cc52bb2` | source |
 | `internal/api/runs/routes.go` | `350b631dd4770b9b2c5b6b1fe7b7db54c40e64b7099da51f1b6bd72340082fb5` | source |
+| `internal/api/runs/workflow_execution.go` | `717477563c886cc58ee62e93ee9cc9bf2faf310a90751d9ec8c1ed76d3f38321` | source |
+| `internal/api/runs/workflow_execution_test.go` | `96ea8627af2df8717cdac05f98a353616e26170974e13b40aaaa5c6c178ac81f` | test |
 | `internal/api/shared/doc.go` | `af8bd8002ec78c84f55e220452afbc9290bb1c0cf11c800990e1e762f2ebf2a2` | source |
 | `internal/api/shared/middleware.go` | `2a7f8f63272125b4b60753ce914b8bbe4ee801991a15dbeb837f36e9092cea23` | source |
 | `internal/api/shared/request.go` | `ccf33d8bbcec46b27d552adcdb47f431886368b6d7f1b7b1c2eedf256ddf1efa` | source |
@@ -84,6 +88,10 @@ Schema version: `1.0.0`
 | `internal/app/audits/doc.go` | `21d5563bb2473b3010d3311060aa216779a8a27300fa3564105a56f92b7bf6f5` | source |
 | `internal/app/audits/service.go` | `92093d02fc9f6fc1609511033cd8b9e14eb8d93e99055e0a4927289d7fd0cadb` | source |
 | `internal/app/audits/types.go` | `b58afcb741cffc90911bc9471f11c0a3093c39c7c1df7d0b0742003634e11d60` | source |
+| `internal/app/audits/workflow_packet.go` | `9afdc4abf9150fe4047766cce1851dfe338ece9190c4cff192bc0911ba009e2a` | source |
+| `internal/app/audits/workflow_service.go` | `fbd93fc2da69016b8c789c2e0a5f5be79771b871541b1020ca25c2cb7f178f5b` | source |
+| `internal/app/audits/workflow_service_test.go` | `a7cd9e701a613026cbdae5d3b4fc16d570818b3bc65f88dcaba8f1a1cb3ec53d` | test |
+| `internal/app/audits/workflow_types.go` | `b648273e22aed4c88af239212042c2a5741e70fe67de179ec25464e3e4f9caa6` | source |
 | `internal/app/doc.go` | `c152ca0e8843bd4937d05ec609815518c8b77f02726046ebc5d126cc865aa80f` | source |
 | `internal/app/drift/doc.go` | `5884bbf44f43b9052e9bc342e6421b158fa067767657019ed9c00029518afbaf` | source |
 | `internal/app/drift/prompt.go` | `826b498df094e2dd960ecf04650f662bbfab67053c64304371c2cb638b327459` | source |
@@ -118,18 +126,21 @@ Schema version: `1.0.0`
 | `internal/app/plans/review_settings.go` | `2122aa721a75e922df92f7a768ee16d6d0994313596a609d06155811483a0355` | source |
 | `internal/app/plans/review_settings_test.go` | `99a9b70518880a9bea61bafacdcde4f36c9d80de440c9ccaa9063ee9a3e8d5f6` | test |
 | `internal/app/plans/service.go` | `83e80e54feb316544fa4566bce2569ee6827b0af8c2dbfff06c6227e39fe6361` | source |
-| `internal/app/plans/service_test.go` | `4d61e8bde7b0eddda3d1136a98505ea374b210b5ec8be83328c65c69a752725c` | test |
-| `internal/app/plans/types.go` | `8e61e722378940b93ad98db9e68ed915840c568fedf958ec9f86152afd89da53` | source |
-| `internal/app/plans/validator.go` | `9eb5323bcbe1b6f76a25d5f1c53607b06232c99b73674e5947ba1a6de81891dd` | source |
-| `internal/app/plans/work_packets.go` | `dbe4eee9a2e2e1d44b1347344dabd36a1f7ffa2cf9d74a477be3b5bb7876b35c` | source |
-| `internal/app/plans/work_packets_test.go` | `ec1e43663b714632953cef9cd34e150ad90966088b848b79c98ef508abdff1d2` | test |
+| `internal/app/plans/service_test.go` | `4f2f02a4f15845b53c9c860a4ff994fec225882bbbe790bf9cfe60c836268141` | test |
+| `internal/app/plans/types.go` | `1ea2d692b0bd437aee58301af9df507e9ec0baac5ee54b35891c80842acf68d5` | source |
+| `internal/app/plans/validator.go` | `d215c7f5e3eb9828d5ba5647769e94cfe60fb4f6650bc1eb95c39f38964a4f6f` | source |
+| `internal/app/plans/work_packets.go` | `7221f8218417429f05b6b93288df918144ebceced4d15d02eac42c98a30def91` | source |
+| `internal/app/plans/work_packets_test.go` | `78ccd5cd5f3f1276232ae96cb038885ef928a52b4e08fd0871f34623b935f120` | test |
+| `internal/app/plans/workflow/service.go` | `1287c267e34b2218b8124ac77ddcca774d12b0226bcd7d351ff38d143dc2c2d1` | source |
+| `internal/app/plans/workflow/service_test.go` | `b6252ec5d303986b63e3134baa8801498d756434fd874e99cc7e9d0d0f32428f` | test |
+| `internal/app/plans/workflow/types.go` | `32849a295413500453572ea832cc7631526bdc20d14ff1658f96d5b39377c42e` | source |
 | `internal/app/projects/doc.go` | `05785c89f12cd3c6466520e3a36dea624fcfcb0c5017477a253f074ba5946287` | source |
 | `internal/app/projects/plan_seed_service.go` | `e5963863344a9aa8d4497bf52a53ebeb32e5d1fd22096da593024eed74170528` | source |
 | `internal/app/projects/plan_seed_service_test.go` | `84025b75ff1dc3564fc2990a886e0a5bae7e62af194ec475742eb8fbec7353c4` | test |
 | `internal/app/projects/plan_seed_types.go` | `a5f04535d10abb3620c3d0057a0354cfd7576ed93cbaa3946930a8e8b46660a7` | source |
 | `internal/app/projects/plan_seed_validator.go` | `f53a48dd8cc9903e8217e235687cbeb3d8bbe5d6a8b10d769605d9b91560c74e` | source |
 | `internal/app/projects/service.go` | `f61dacdff227a0404106e6fc659edc815fe399afb77d0bd97be1a3c151c9da18` | source |
-| `internal/app/projects/service_test.go` | `e9d8a3edc96b4a73cfc86cd288e5b3fa923e0e068ff546a99144494bc906416f` | test |
+| `internal/app/projects/service_test.go` | `ddaa3444a82dfa36745d18059233459ddcbbf05a2f2b550be9a8b8d720c850a7` | test |
 | `internal/app/projects/types.go` | `aa1a3676eb8d2b540abf3122d768c98381c50c4d2e575ab322d64aca2aed76b2` | source |
 | `internal/app/projects/validator.go` | `4201311ea95bdecb0ebaae7852a23cbaf805874a29f3b65fb336778da82797e3` | source |
 | `internal/app/projects/validator_test.go` | `5460991238917a7d12ff146fe1fcb4bbd7bcaa77df6e349d0710699f8e839888` | test |
@@ -137,50 +148,58 @@ Schema version: `1.0.0`
 | `internal/app/runs/lifecycle.go` | `1bdccb153181b8dd9e787d84dab63af36dcded614ef860c7169b7818b4ba60ae` | source |
 | `internal/app/runs/service.go` | `87e7bfb6bf39648bb462db9ccef7c2ac5c6f14f449f217cfb8068b998a07cfc6` | source |
 | `internal/app/runs/types.go` | `ef015042f180dcf3e9cf0214160f370f30e4abceb9da6cf880743f6a4eedd35a` | source |
+| `internal/app/runs/workflow/cancellation_test.go` | `133b19514e0106159ecb4d8ecfdf84bc4917431f3308bbf5b40e1bab7a432493` | test |
+| `internal/app/runs/workflow/service.go` | `a34f23b3913f517cb045ad5c01a02102e4532f1daa839dc15f7d9b6e0c33c64e` | source |
+| `internal/app/runs/workflow/service_test.go` | `62081a083fbabee27e24f9e93a12f0ca671ae44c13f0d6042532c42006c1a9d2` | test |
+| `internal/app/runs/workflow/types.go` | `7d5559cabaece27e5dc818dbc5ccbdce3e68f2b008fafe5422d35e5a56c72999` | source |
 | `internal/mcp/artifact_readback_tools.go` | `c7712711b76eb824c71b1184c44f5b119adf0d656e8f78a0e9052ccf9a1487a8` | source |
 | `internal/mcp/artifact_readback_tools_test.go` | `a14651943ba8529dfede8a928c07eddacdf5381bf5ce37a6f4bc25187c4db005` | test |
+| `internal/mcp/audit_tools.go` | `ec04fbb564f872f12a96ad49eb6c44b344f06902405cf247c51b3a41041f7042` | source |
+| `internal/mcp/audit_tools_test.go` | `7a2b1c31b4e4d4cb6b6da203c3eb7cf25439a1a18362e333c790b66cf1807569` | test |
 | `internal/mcp/blocker_envelope.go` | `0aff048cd566bd25beacaf4f90c752fb6f72d7317f30ba225f623abcbb5b337b` | source |
 | `internal/mcp/blocker_envelope_test.go` | `6830987aa8b5d25db4929797dce1b742d03cb37dcd1aaefdd02acb1c26a52e0a` | test |
+| `internal/mcp/canonical_tools.go` | `f3227bc014632a65878a9dbe9afefd1716978a94a16e732024c50cd4044bf256` | source |
+| `internal/mcp/canonical_tools_test.go` | `d18689a9bef566ff61f7becb599270992666bc2ce911545a43d2c487ebd264d8` | test |
 | `internal/mcp/context_broker_git_tools.go` | `e8f7f942f10ee58aa9ed10cfa85995c9ba4c0b36fd7ca9aaca821fc51cfd4b7a` | source |
 | `internal/mcp/context_broker_tools.go` | `ec4994285c043f442dcceae02fe308917531c998899a6335a1282356b917bd58` | source |
 | `internal/mcp/context_broker_tools_test.go` | `50ed1fb09bfa42c9404dea8aa7f34449cc6c4a2a4434c79a736426247e693cef` | test |
-| `internal/mcp/deps.go` | `122ae9f5bba0e0ae7f592b749a2e48f12e956c363e689e17f1e795a36d3c7035` | source |
-| `internal/mcp/file_parameter_fetcher.go` | `5c0099b5e6457987a856c75dbf7bb2fe413ab1c6154b5f86eafc29ef330f6852` | source |
-| `internal/mcp/file_parameter_fetcher_test.go` | `bfe172c1a1dbdb314721885c19f6a02ab91381cef67fd94adcd85072c5daf8f5` | test |
+| `internal/mcp/deps.go` | `2fe829d42d89ac79a0dddc225c4f8e07716adfa4e7798d9b612e5aab9edce8d1` | source |
+| `internal/mcp/file_parameter_fetcher.go` | `d344191a871b4823bd4392a6da95a3d798849e01b1b3a242c20725a8436e1529` | source |
+| `internal/mcp/file_parameter_fetcher_test.go` | `7067a39c05bc7b89374d0a581ea952b945a7910367137ecdfe97963fc8543b05` | test |
 | `internal/mcp/http_handler.go` | `490414d00c581a709bf44c232dccd0d2ddde1b03bd6a1bd2d94b520025065d7c` | source |
-| `internal/mcp/http_handler_test.go` | `d4123f4eb0d57eb765ace044fd0520be59c70193119175145a7d9d831b84d69a` | test |
+| `internal/mcp/http_handler_test.go` | `c2f7bfdd34043fc602ac73cf6ebcf84a579fd0527b77e748f19716223d880072` | test |
 | `internal/mcp/local_audit_tools.go` | `dcdb5b2485267f170781711640de73fa3b1d99c7ed52b088d68a147cf5bbade1` | source |
-| `internal/mcp/mcp_test.go` | `64c2231c6fcf971c594e318ce0fe83bbe1a8097b6ca1d66327a57d6831dbf6c6` | test |
+| `internal/mcp/mcp_test.go` | `0aa38bda40506fe844dd23d178f97c25c152ed65c2a470bfd31eda9cf93a1e9c` | test |
 | `internal/mcp/orchestrator_work_tools.go` | `6ea05a043751f9822747963e889ae5c5b3144c753fa472100b66445abe4d56f1` | source |
 | `internal/mcp/orchestrator_work_tools_test.go` | `dbe5b3f19df9e719fdd78d62ba458808f627d9e9ffa30f948799e8fb1e731801` | test |
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | source |
-| `internal/mcp/plan_attempt_tools_test.go` | `84e4da35631efe508d230719d5aac87e46a639529d6a29b9f5b8c44935455cbd` | test |
+| `internal/mcp/plan_attempt_tools_test.go` | `b97e8cb29220d7739603424968e588baa6079e3af16276533f4f9eb2189e2740` | test |
 | `internal/mcp/plan_seed_tools.go` | `19a7bede46ae71836a0a942123f2d24015e7faaf93896850b57e7bd6cbbb0ad4` | source |
 | `internal/mcp/plan_seed_tools_test.go` | `b6692a1bc4b24fbbac5c88baa22f4456db0701bc3be9392a0c23cc7d376ddc91` | test |
 | `internal/mcp/plan_tools.go` | `cd624b354bc28812cc9ae68e9a7917506dc64004044b7e7d4d16afc40aef064c` | source |
 | `internal/mcp/plan_tools_test.go` | `d05b248f64aba7998e86367215638b56a3942fb77423e19539c0d33a77d9593b` | test |
-| `internal/mcp/profile.go` | `a0119a507dceb905e16f69dbfe463c93b057942a2a8a779ea6a6cb49fa5b129b` | source |
-| `internal/mcp/profile_test.go` | `95e95c279c7dcf977a971d122e6a41fb7e362e7ba5cf63f6796389dfd3ba0ef5` | test |
+| `internal/mcp/profile.go` | `0cd4564fa4f73de75bd83ee96401fd917c3bab575bd2de7fa133ddaae5691c9a` | source |
+| `internal/mcp/profile_test.go` | `9622e878e8d96acf075b527f2a38527f5067af89aef9ed44d0c1db8947044742` | test |
 | `internal/mcp/project_context_memory_tools.go` | `2f342e8ed7c0154131fd5e04a3d40a9129c9f74d477f742428df2ec75f274d8d` | source |
 | `internal/mcp/project_context_memory_tools_test.go` | `57e1f70d298e7a24bfe169f938d871fb4981f3516e81cd42824ef9ebcd8a357a` | test |
 | `internal/mcp/protocol.go` | `b680a300990c446bba40107c347f779b2d2b6e8ea16e0bccc480ee4797c18f6c` | source |
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | source |
 | `internal/mcp/refactor_backlog_tools_test.go` | `80dab3bab0e3240676606dccc6c218d8b10bc6a2b09975e9cca552d67dec4b05` | test |
-| `internal/mcp/server.go` | `520e62fdfe31fc41279bd4368d01a139eb9c009b0080c51a9a86b7ef6a7af60f` | source |
-| `internal/mcp/server_notification_test.go` | `a0da26840ec83cdec144a3fc74a92d407c4facb8054ae439107130a0884c1208` | test |
-| `internal/mcp/server_tools_list_test.go` | `4bb1163a046646181f8cedfaed435b64b464bd41b5d0b874ef71db8c1e7f5104` | test |
+| `internal/mcp/server.go` | `dbe3b433bf69645ea93084557197e9c7164ca6295eee3926525faabb1f117ce1` | source |
+| `internal/mcp/server_notification_test.go` | `5f74f4b42021be2f9cf434cb9120443c8d6b02ba7a1a9bd7d2fdf1bc1d4a17f4` | test |
+| `internal/mcp/server_tools_list_test.go` | `2c6809cfa10ce98d8d16019befd6b65544658e2876fc84dac7cfd7ab467a737b` | test |
 | `internal/mcp/tool_create_run.go` | `e80f0afee7357dd8daf001bc5ea4134c5da60549379b13e26852c171ecd61360` | source |
-| `internal/mcp/tool_create_run_test.go` | `fbe2d7eceaabd321b453a4def1acda8c05bd62762e76e0b907961bf81cd390b0` | test |
+| `internal/mcp/tool_create_run_test.go` | `af1f2898d57d6fbb891c8dbc3a6e769c36ad6d7faf409eb3ffb6f8188c316318` | test |
 | `internal/mcp/tool_get_run_status.go` | `730691b5fd5d5aa1f99dd7b32a61163ac19354774694cb6a1bdb65cf45074f13` | source |
 | `internal/mcp/tool_list_runs.go` | `8c9be8897fb0fe5fee3862ea0629e855f130626412e34daa4b3b9e54af6c5f85` | source |
 | `internal/mcp/tool_submit_audit.go` | `2aaf19f4789d5a305a5813d3d7b24cb73455233a654b326945246f82f418cd27` | source |
-| `internal/mcp/tool_surface_test.go` | `d04261b6adfb0a5d6c50c2efc106f82281711c1f788ae897f9713e0872c6b3b4` | test |
+| `internal/mcp/tool_surface_test.go` | `5f161fe5dfb844c91a4c8db310e48e5cc465d7abdeb4c0a38e9e9f87da483e9d` | test |
 | `internal/mcp/tool_test_audit_packet.go` | `4f4a99672a360621c8717a2596c81558881153f85ddffbedda681f60dea85b01` | source |
 | `internal/mcp/tool_validate_planner_handoff.go` | `f8a293f087ffec8d206fa578d5549b00e36843fca86821605febb1bd29df43a0` | source |
-| `internal/store/agent_execution_ownership_test.go` | `797dde59dd33499064e11b6757afa58f2e1e51eca952ef6943cb6156ab70f31f` | test |
+| `internal/store/agent_execution_ownership_test.go` | `4b53efa277936ed5bb7108bdb08423130d7fc59f9b92d02e7a1f2a987a7eeaba` | test |
 | `internal/store/context_packets.go` | `7a5855b46da5d63a09cb54698cb4045a919615973af9eedd6fb27523e3f92187` | source |
 | `internal/store/context_packets_test.go` | `8a14adcc8f674b7bd1ca7dd9b689ae0b71f55cb42a702f401262822e3f83830f` | test |
-| `internal/store/db.go` | `9e41bb12ccd32d18f15bd13a07012e0b03e794bec253c99748763f2ca1e9c730` | source |
+| `internal/store/db.go` | `f5fb352727e2c87053a952126a33466ab7ede3486bf4cc5bc5d4908be7563e3f` | source |
 | `internal/store/local_audits.go` | `30723cecfb2d40df733045efb63af3c71623e568480e44b0b99a12cacce11ec0` | source |
 | `internal/store/migration_compatibility_test.go` | `70a7d2d3a645ecf2f8c914dbeebaf6efc6ada45e36c2226ec2e43501b356d777` | test |
 | `internal/store/plan_seeds.go` | `78ea1e694f7dcb1f93476073cc01cca935e26a51f03d02744167932fb19f5a76` | source |
@@ -191,6 +210,14 @@ Schema version: `1.0.0`
 | `internal/store/run_submission_provenance.go` | `9197fe7cd5c62ac4b6209004c47501506f8814b0eea87d36afe100b94381a436` | source |
 | `internal/store/source_snapshots.go` | `a7f81953d4c1488fbc904920c5d59e1efa0e40f640f77313bdae87a4f2fc1294` | source |
 | `internal/store/source_snapshots_test.go` | `91e7051468dac06c859cdbf3efdc25823f9fea59ea0fcfcba0d6d26660257665` | test |
+| `internal/store/workflow/ids.go` | `dce79071b645a46bb05fdba604fdde846892ba4357b6940ce47013aa61a5a3a4` | source |
+| `internal/store/workflow/store.go` | `f67349e64102e9c0799edb1fcddbd060b2e0a1fa9fc3e55b3f36f6e32626c896` | source |
+| `internal/store/workflow/store_test.go` | `5ffd9ede502a7b3f9454d3dd69af3ba093317c1f48630f21547a9e0dd2c25113` | test |
+| `internal/store/workflow/tx.go` | `18b46a4261a0876e33976f207db9396ff2649a5674c1226ce9c0b989ce2aa08b` | source |
+| `internal/store/workflow/types.go` | `cb315d71fab1445ab527a1e8bb5565e58ae3cacd007bb41930eb6c8574e0649d` | source |
+| `internal/store/workflowgenerated/db.go` | `dafbdf51bb5c4391c62539fb72b814fad8f5f59812c5c9bb74bd98ff98a4f0dc` | source |
+| `internal/store/workflowgenerated/models.go` | `64a9bb22b1cc0b81d5e7601f2376b34a061e53690218c7f163777604dbec087d` | source |
+| `internal/store/workflowgenerated/workflow.sql.go` | `72b1122113172c3d43fdca74cbfcff7280d1a0fceda6b6a4a641e17347915b42` | source |
 
 ## Fact Labels
 
@@ -241,6 +268,22 @@ Handler-like symbol NewHandler (constructor) in internal/api/audits/handler.go �
 Evidence:
 
 - source: `internal/api/audits/handler.go`
+
+### backend-handler-like-internal-api-audits-newworkflowhandler (convention)
+
+Handler-like symbol NewWorkflowHandler (constructor) in internal/api/audits/workflow.go — identified by naming convention (named Handler, ending in Handler, or NewHandler/New*Handler constructor).
+
+Evidence:
+
+- source: `internal/api/audits/workflow.go`
+
+### backend-handler-like-internal-api-audits-workflowhandler (convention)
+
+Handler-like symbol WorkflowHandler (type) in internal/api/audits/workflow.go — identified by naming convention (named Handler, ending in Handler, or NewHandler/New*Handler constructor).
+
+Evidence:
+
+- source: `internal/api/audits/workflow.go`
 
 ### backend-handler-like-internal-api-intake-handler (convention)
 
@@ -314,6 +357,22 @@ Evidence:
 
 - source: `internal/api/runs/handler.go`
 
+### backend-handler-like-internal-api-runs-newworkflowexecutionhandler (convention)
+
+Handler-like symbol NewWorkflowExecutionHandler (constructor) in internal/api/runs/workflow_execution.go — identified by naming convention (named Handler, ending in Handler, or NewHandler/New*Handler constructor).
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
+
+### backend-handler-like-internal-api-runs-workflowexecutionhandler (convention)
+
+Handler-like symbol WorkflowExecutionHandler (type) in internal/api/runs/workflow_execution.go — identified by naming convention (named Handler, ending in Handler, or NewHandler/New*Handler constructor).
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
+
 ### backend-handler-like-internal-mcp-httphandler (convention)
 
 Handler-like symbol HTTPHandler (type) in internal/mcp/http_handler.go — identified by naming convention (named Handler, ending in Handler, or NewHandler/New*Handler constructor).
@@ -360,6 +419,14 @@ Import edge: internal/api/audits imports relay/internal/api/shared
 
 Evidence:
 
+- source: `internal/api/audits/workflow.go`
+
+### backend-import-edge-internal-api-audits-relay-internal-api-shared-2 (derived)
+
+Import edge: internal/api/audits imports relay/internal/api/shared
+
+Evidence:
+
 - source: `internal/api/audits/handler.go`
 
 ### backend-import-edge-internal-api-audits-relay-internal-app-audits (derived)
@@ -376,7 +443,23 @@ Import edge: internal/api/audits imports relay/internal/app/audits
 
 Evidence:
 
+- source: `internal/api/audits/workflow.go`
+
+### backend-import-edge-internal-api-audits-relay-internal-app-audits-3 (derived)
+
+Import edge: internal/api/audits imports relay/internal/app/audits
+
+Evidence:
+
 - source: `internal/api/audits/handler.go`
+
+### backend-import-edge-internal-api-audits-relay-internal-store-workflow (derived)
+
+Import edge: internal/api/audits imports relay/internal/store/workflow
+
+Evidence:
+
+- source: `internal/api/audits/workflow.go`
 
 ### backend-import-edge-internal-api-intake-relay-internal-api-runs (derived)
 
@@ -384,7 +467,7 @@ Import edge: internal/api/intake imports relay/internal/api/runs
 
 Evidence:
 
-- source: `internal/api/intake/handler.go`
+- source: `internal/api/intake/dto.go`
 
 ### backend-import-edge-internal-api-intake-relay-internal-api-runs-2 (derived)
 
@@ -392,7 +475,7 @@ Import edge: internal/api/intake imports relay/internal/api/runs
 
 Evidence:
 
-- source: `internal/api/intake/dto.go`
+- source: `internal/api/intake/handler.go`
 
 ### backend-import-edge-internal-api-intake-relay-internal-api-shared (derived)
 
@@ -424,7 +507,7 @@ Import edge: internal/api/plans imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/plans/attempt_handler.go`
+- source: `internal/api/plans/mapper.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-api-shared-2 (derived)
 
@@ -432,7 +515,7 @@ Import edge: internal/api/plans imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/plans/handler.go`
+- source: `internal/api/plans/review_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-api-shared-3 (derived)
 
@@ -440,7 +523,7 @@ Import edge: internal/api/plans imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/plans/mapper.go`
+- source: `internal/api/plans/attempt_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-api-shared-4 (derived)
 
@@ -448,7 +531,7 @@ Import edge: internal/api/plans imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/plans/review_handler.go`
+- source: `internal/api/plans/handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-drift (derived)
 
@@ -464,7 +547,7 @@ Import edge: internal/api/plans imports relay/internal/app/drift
 
 Evidence:
 
-- source: `internal/api/plans/attempt_handler.go`
+- source: `internal/api/plans/handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-drift-3 (derived)
 
@@ -472,7 +555,7 @@ Import edge: internal/api/plans imports relay/internal/app/drift
 
 Evidence:
 
-- source: `internal/api/plans/handler.go`
+- source: `internal/api/plans/attempt_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans (derived)
 
@@ -480,7 +563,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/attempt_dto.go`
+- source: `internal/api/plans/attempt_handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-2 (derived)
 
@@ -488,7 +571,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/attempt_handler.go`
+- source: `internal/api/plans/handler.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-3 (derived)
 
@@ -496,7 +579,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/dto.go`
+- source: `internal/api/plans/attempt_dto.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-4 (derived)
 
@@ -512,7 +595,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/handler.go`
+- source: `internal/api/plans/review_dto.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-6 (derived)
 
@@ -520,7 +603,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/review_dto.go`
+- source: `internal/api/plans/mapper.go`
 
 ### backend-import-edge-internal-api-plans-relay-internal-app-plans-7 (derived)
 
@@ -528,7 +611,7 @@ Import edge: internal/api/plans imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/api/plans/mapper.go`
+- source: `internal/api/plans/dto.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-api-shared (derived)
 
@@ -536,7 +619,7 @@ Import edge: internal/api/projects imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/projects/plan_seed_handler.go`
+- source: `internal/api/projects/handler.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-api-shared-2 (derived)
 
@@ -552,7 +635,7 @@ Import edge: internal/api/projects imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/projects/handler.go`
+- source: `internal/api/projects/plan_seed_handler.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-app-plans (derived)
 
@@ -568,7 +651,7 @@ Import edge: internal/api/projects imports relay/internal/app/projects
 
 Evidence:
 
-- source: `internal/api/projects/plan_seed_dto.go`
+- source: `internal/api/projects/dto.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-app-projects-2 (derived)
 
@@ -576,7 +659,7 @@ Import edge: internal/api/projects imports relay/internal/app/projects
 
 Evidence:
 
-- source: `internal/api/projects/plan_seed_handler.go`
+- source: `internal/api/projects/plan_seed_dto.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-app-projects-3 (derived)
 
@@ -592,7 +675,7 @@ Import edge: internal/api/projects imports relay/internal/app/projects
 
 Evidence:
 
-- source: `internal/api/projects/dto.go`
+- source: `internal/api/projects/handler.go`
 
 ### backend-import-edge-internal-api-projects-relay-internal-app-projects-5 (derived)
 
@@ -600,7 +683,7 @@ Import edge: internal/api/projects imports relay/internal/app/projects
 
 Evidence:
 
-- source: `internal/api/projects/handler.go`
+- source: `internal/api/projects/plan_seed_handler.go`
 
 ### backend-import-edge-internal-api-relay-internal-api-intake (derived)
 
@@ -696,9 +779,17 @@ Import edge: internal/api/runs imports relay/internal/api/shared
 
 Evidence:
 
-- source: `internal/api/runs/presenter.go`
+- source: `internal/api/runs/workflow_execution.go`
 
 ### backend-import-edge-internal-api-runs-relay-internal-api-shared-2 (derived)
+
+Import edge: internal/api/runs imports relay/internal/api/shared
+
+Evidence:
+
+- source: `internal/api/runs/presenter.go`
+
+### backend-import-edge-internal-api-runs-relay-internal-api-shared-3 (derived)
 
 Import edge: internal/api/runs imports relay/internal/api/shared
 
@@ -729,6 +820,14 @@ Import edge: internal/api/runs imports relay/internal/app/runs
 Evidence:
 
 - source: `internal/api/runs/handler.go`
+
+### backend-import-edge-internal-api-runs-relay-internal-executor (derived)
+
+Import edge: internal/api/runs imports relay/internal/executor
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-app-plans (derived)
 
@@ -768,7 +867,39 @@ Import edge: internal/app/audits imports relay/internal/executor
 
 Evidence:
 
+- source: `internal/app/audits/workflow_packet.go`
+
+### backend-import-edge-internal-app-audits-relay-internal-executor-2 (derived)
+
+Import edge: internal/app/audits imports relay/internal/executor
+
+Evidence:
+
 - source: `internal/app/audits/service.go`
+
+### backend-import-edge-internal-app-audits-relay-internal-repos-workflow (derived)
+
+Import edge: internal/app/audits imports relay/internal/repos/workflow
+
+Evidence:
+
+- source: `internal/app/audits/workflow_service.go`
+
+### backend-import-edge-internal-app-audits-relay-internal-repos-workflow-2 (derived)
+
+Import edge: internal/app/audits imports relay/internal/repos/workflow
+
+Evidence:
+
+- source: `internal/app/audits/workflow_packet.go`
+
+### backend-import-edge-internal-app-audits-relay-internal-repos-workflow-3 (derived)
+
+Import edge: internal/app/audits imports relay/internal/repos/workflow
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-store (derived)
 
@@ -785,6 +916,30 @@ Import edge: internal/app/audits imports relay/internal/store
 Evidence:
 
 - source: `internal/app/audits/types.go`
+
+### backend-import-edge-internal-app-audits-relay-internal-store-workflow (derived)
+
+Import edge: internal/app/audits imports relay/internal/store/workflow
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-import-edge-internal-app-audits-relay-internal-store-workflow-2 (derived)
+
+Import edge: internal/app/audits imports relay/internal/store/workflow
+
+Evidence:
+
+- source: `internal/app/audits/workflow_service.go`
+
+### backend-import-edge-internal-app-audits-relay-internal-store-workflow-3 (derived)
+
+Import edge: internal/app/audits imports relay/internal/store/workflow
+
+Evidence:
+
+- source: `internal/app/audits/workflow_packet.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-validationrunner (derived)
 
@@ -888,7 +1043,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/review_settings.go`
+- source: `internal/app/plans/audit_work_packets.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-10 (derived)
 
@@ -896,7 +1051,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/work_packets.go`
+- source: `internal/app/plans/types.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-2 (derived)
 
@@ -904,7 +1059,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/review_gate.go`
+- source: `internal/app/plans/service.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-3 (derived)
 
@@ -912,7 +1067,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/attempt_service.go`
+- source: `internal/app/plans/attempt_types.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-4 (derived)
 
@@ -920,7 +1075,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/attempt_types.go`
+- source: `internal/app/plans/attempt_service.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-5 (derived)
 
@@ -928,7 +1083,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/audit_work_packets.go`
+- source: `internal/app/plans/lifecycle.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-6 (derived)
 
@@ -936,7 +1091,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/lifecycle.go`
+- source: `internal/app/plans/read_queries.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-7 (derived)
 
@@ -944,7 +1099,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/read_queries.go`
+- source: `internal/app/plans/review_gate.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-8 (derived)
 
@@ -952,7 +1107,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/service.go`
+- source: `internal/app/plans/work_packets.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-9 (derived)
 
@@ -960,7 +1115,7 @@ Import edge: internal/app/plans imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/plans/types.go`
+- source: `internal/app/plans/review_settings.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-generated (derived)
 
@@ -976,7 +1131,7 @@ Import edge: internal/app/plans imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/app/plans/review_gate.go`
+- source: `internal/app/plans/service.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-store-generated-3 (derived)
 
@@ -992,7 +1147,7 @@ Import edge: internal/app/plans imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/app/plans/service.go`
+- source: `internal/app/plans/review_gate.go`
 
 ### backend-import-edge-internal-app-plans-relay-internal-validation (derived)
 
@@ -1009,6 +1164,30 @@ Import edge: internal/app/plans imports relay/internal/validation
 Evidence:
 
 - source: `internal/app/plans/attempt_hash.go`
+
+### backend-import-edge-internal-app-plans-workflow-relay-internal-artifacts-workflow (derived)
+
+Import edge: internal/app/plans/workflow imports relay/internal/artifacts/workflow
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+
+### backend-import-edge-internal-app-plans-workflow-relay-internal-store-workflow (derived)
+
+Import edge: internal/app/plans/workflow imports relay/internal/store/workflow
+
+Evidence:
+
+- source: `internal/app/plans/workflow/types.go`
+
+### backend-import-edge-internal-app-plans-workflow-relay-internal-store-workflow-2 (derived)
+
+Import edge: internal/app/plans/workflow imports relay/internal/store/workflow
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
 
 ### backend-import-edge-internal-app-projects-relay-internal-app-plans (derived)
 
@@ -1120,7 +1299,7 @@ Import edge: internal/app/runs imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/runs/service.go`
+- source: `internal/app/runs/lifecycle.go`
 
 ### backend-import-edge-internal-app-runs-relay-internal-store-2 (derived)
 
@@ -1128,7 +1307,7 @@ Import edge: internal/app/runs imports relay/internal/store
 
 Evidence:
 
-- source: `internal/app/runs/lifecycle.go`
+- source: `internal/app/runs/service.go`
 
 ### backend-import-edge-internal-app-runs-relay-internal-store-3 (derived)
 
@@ -1162,6 +1341,46 @@ Evidence:
 
 - source: `internal/app/runs/lifecycle.go`
 
+### backend-import-edge-internal-app-runs-workflow-relay-internal-artifacts-workflow (derived)
+
+Import edge: internal/app/runs/workflow imports relay/internal/artifacts/workflow
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-import-edge-internal-app-runs-workflow-relay-internal-store-workflow (derived)
+
+Import edge: internal/app/runs/workflow imports relay/internal/store/workflow
+
+Evidence:
+
+- source: `internal/app/runs/workflow/types.go`
+
+### backend-import-edge-internal-app-runs-workflow-relay-internal-store-workflow-2 (derived)
+
+Import edge: internal/app/runs/workflow imports relay/internal/store/workflow
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-import-edge-internal-mcp-relay-internal-app-audits (derived)
+
+Import edge: internal/mcp imports relay/internal/app/audits
+
+Evidence:
+
+- source: `internal/mcp/audit_tools.go`
+
+### backend-import-edge-internal-mcp-relay-internal-app-audits-2 (derived)
+
+Import edge: internal/mcp imports relay/internal/app/audits
+
+Evidence:
+
+- source: `internal/mcp/deps.go`
+
 ### backend-import-edge-internal-mcp-relay-internal-app-drift (derived)
 
 Import edge: internal/mcp imports relay/internal/app/drift
@@ -1184,7 +1403,7 @@ Import edge: internal/mcp imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/mcp/plan_tools.go`
+- source: `internal/mcp/server.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-app-plans-3 (derived)
 
@@ -1200,7 +1419,7 @@ Import edge: internal/mcp imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/mcp/server.go`
+- source: `internal/mcp/orchestrator_work_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-app-plans-5 (derived)
 
@@ -1208,7 +1427,15 @@ Import edge: internal/mcp imports relay/internal/app/plans
 
 Evidence:
 
-- source: `internal/mcp/orchestrator_work_tools.go`
+- source: `internal/mcp/plan_tools.go`
+
+### backend-import-edge-internal-mcp-relay-internal-app-plans-workflow (derived)
+
+Import edge: internal/mcp imports relay/internal/app/plans/workflow
+
+Evidence:
+
+- source: `internal/mcp/canonical_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-app-projects (derived)
 
@@ -1218,13 +1445,21 @@ Evidence:
 
 - source: `internal/mcp/plan_seed_tools.go`
 
+### backend-import-edge-internal-mcp-relay-internal-app-runs-workflow (derived)
+
+Import edge: internal/mcp imports relay/internal/app/runs/workflow
+
+Evidence:
+
+- source: `internal/mcp/canonical_tools.go`
+
 ### backend-import-edge-internal-mcp-relay-internal-artifacts (derived)
 
 Import edge: internal/mcp imports relay/internal/artifacts
 
 Evidence:
 
-- source: `internal/mcp/tool_test_audit_packet.go`
+- source: `internal/mcp/context_broker_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-artifacts-2 (derived)
 
@@ -1240,7 +1475,7 @@ Import edge: internal/mcp imports relay/internal/artifacts
 
 Evidence:
 
-- source: `internal/mcp/context_broker_tools.go`
+- source: `internal/mcp/tool_test_audit_packet.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-auditor (derived)
 
@@ -1264,7 +1499,7 @@ Import edge: internal/mcp imports relay/internal/contextpackets
 
 Evidence:
 
-- source: `internal/mcp/context_broker_tools.go`
+- source: `internal/mcp/orchestrator_work_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-contextpackets-2 (derived)
 
@@ -1272,7 +1507,7 @@ Import edge: internal/mcp imports relay/internal/contextpackets
 
 Evidence:
 
-- source: `internal/mcp/orchestrator_work_tools.go`
+- source: `internal/mcp/context_broker_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-intake (derived)
 
@@ -1320,7 +1555,7 @@ Import edge: internal/mcp imports relay/internal/sources
 
 Evidence:
 
-- source: `internal/mcp/context_broker_git_tools.go`
+- source: `internal/mcp/context_broker_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-sources-2 (derived)
 
@@ -1336,7 +1571,15 @@ Import edge: internal/mcp imports relay/internal/sources
 
 Evidence:
 
-- source: `internal/mcp/context_broker_tools.go`
+- source: `internal/mcp/context_broker_git_tools.go`
+
+### backend-import-edge-internal-mcp-relay-internal-speccompiler (derived)
+
+Import edge: internal/mcp imports relay/internal/speccompiler
+
+Evidence:
+
+- source: `internal/mcp/canonical_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-store (derived)
 
@@ -1344,7 +1587,7 @@ Import edge: internal/mcp imports relay/internal/store
 
 Evidence:
 
-- source: `internal/mcp/context_broker_tools.go`
+- source: `internal/mcp/deps.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-store-2 (derived)
 
@@ -1352,7 +1595,7 @@ Import edge: internal/mcp imports relay/internal/store
 
 Evidence:
 
-- source: `internal/mcp/deps.go`
+- source: `internal/mcp/context_broker_tools.go`
 
 ### backend-import-edge-internal-mcp-relay-internal-store-3 (derived)
 
@@ -1361,6 +1604,30 @@ Import edge: internal/mcp imports relay/internal/store
 Evidence:
 
 - source: `internal/mcp/context_broker_git_tools.go`
+
+### backend-import-edge-internal-mcp-relay-internal-store-workflow (derived)
+
+Import edge: internal/mcp imports relay/internal/store/workflow
+
+Evidence:
+
+- source: `internal/mcp/deps.go`
+
+### backend-import-edge-internal-mcp-relay-internal-store-workflow-2 (derived)
+
+Import edge: internal/mcp imports relay/internal/store/workflow
+
+Evidence:
+
+- source: `internal/mcp/audit_tools.go`
+
+### backend-import-edge-internal-mcp-relay-internal-store-workflow-3 (derived)
+
+Import edge: internal/mcp imports relay/internal/store/workflow
+
+Evidence:
+
+- source: `internal/mcp/canonical_tools.go`
 
 ### backend-import-edge-internal-store-relay-internal-db (derived)
 
@@ -1376,7 +1643,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/source_snapshots.go`
+- source: `internal/store/plan_seeds.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-2 (derived)
 
@@ -1384,7 +1651,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/run_submission_provenance.go`
+- source: `internal/store/source_snapshots.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-3 (derived)
 
@@ -1392,7 +1659,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/refactor_backlog.go`
+- source: `internal/store/run_submission_provenance.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-4 (derived)
 
@@ -1400,7 +1667,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/projects.go`
+- source: `internal/store/refactor_backlog.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-5 (derived)
 
@@ -1408,7 +1675,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/project_context_records.go`
+- source: `internal/store/projects.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-6 (derived)
 
@@ -1416,7 +1683,7 @@ Import edge: internal/store imports relay/internal/store/generated
 
 Evidence:
 
-- source: `internal/store/plan_seeds.go`
+- source: `internal/store/project_context_records.go`
 
 ### backend-import-edge-internal-store-relay-internal-store-generated-7 (derived)
 
@@ -1441,6 +1708,22 @@ Import edge: internal/store imports relay/internal/store/generated
 Evidence:
 
 - source: `internal/store/context_packets.go`
+
+### backend-import-edge-internal-store-workflow-relay-internal-artifacts-workflow (derived)
+
+Import edge: internal/store/workflow imports relay/internal/artifacts/workflow
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-import-edge-internal-store-workflow-relay-internal-db (derived)
+
+Import edge: internal/store/workflow imports relay/internal/db
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
 
 ### backend-package-internal-api (proven)
 
@@ -1484,6 +1767,8 @@ Evidence:
 - source: `internal/api/audits/dto.go`
 - source: `internal/api/audits/handler.go`
 - source: `internal/api/audits/routes.go`
+- source: `internal/api/audits/workflow.go`
+- test: `internal/api/audits/workflow_test.go`
 
 ### backend-package-internal-api-intake (proven)
 
@@ -1540,6 +1825,8 @@ Evidence:
 - source: `internal/api/runs/handler.go`
 - source: `internal/api/runs/presenter.go`
 - source: `internal/api/runs/routes.go`
+- source: `internal/api/runs/workflow_execution.go`
+- test: `internal/api/runs/workflow_execution_test.go`
 
 ### backend-package-internal-api-shared (proven)
 
@@ -1570,6 +1857,10 @@ Evidence:
 - source: `internal/app/audits/doc.go`
 - source: `internal/app/audits/service.go`
 - source: `internal/app/audits/types.go`
+- source: `internal/app/audits/workflow_packet.go`
+- source: `internal/app/audits/workflow_service.go`
+- source: `internal/app/audits/workflow_types.go`
+- test: `internal/app/audits/workflow_service_test.go`
 
 ### backend-package-internal-app-drift (proven)
 
@@ -1630,6 +1921,16 @@ Evidence:
 - test: `internal/app/plans/service_test.go`
 - test: `internal/app/plans/work_packets_test.go`
 
+### backend-package-internal-app-plans-workflow (proven)
+
+Backend package internal/app/plans/workflow (workflowplans)
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+- source: `internal/app/plans/workflow/types.go`
+- test: `internal/app/plans/workflow/service_test.go`
+
 ### backend-package-internal-app-projects (proven)
 
 Backend package internal/app/projects (projects)
@@ -1658,6 +1959,17 @@ Evidence:
 - source: `internal/app/runs/service.go`
 - source: `internal/app/runs/types.go`
 
+### backend-package-internal-app-runs-workflow (proven)
+
+Backend package internal/app/runs/workflow (workflowruns)
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+- source: `internal/app/runs/workflow/types.go`
+- test: `internal/app/runs/workflow/cancellation_test.go`
+- test: `internal/app/runs/workflow/service_test.go`
+
 ### backend-package-internal-mcp (proven)
 
 Backend package internal/mcp (mcp)
@@ -1665,7 +1977,9 @@ Backend package internal/mcp (mcp)
 Evidence:
 
 - source: `internal/mcp/artifact_readback_tools.go`
+- source: `internal/mcp/audit_tools.go`
 - source: `internal/mcp/blocker_envelope.go`
+- source: `internal/mcp/canonical_tools.go`
 - source: `internal/mcp/context_broker_git_tools.go`
 - source: `internal/mcp/context_broker_tools.go`
 - source: `internal/mcp/deps.go`
@@ -1688,7 +2002,9 @@ Evidence:
 - source: `internal/mcp/tool_test_audit_packet.go`
 - source: `internal/mcp/tool_validate_planner_handoff.go`
 - test: `internal/mcp/artifact_readback_tools_test.go`
+- test: `internal/mcp/audit_tools_test.go`
 - test: `internal/mcp/blocker_envelope_test.go`
+- test: `internal/mcp/canonical_tools_test.go`
 - test: `internal/mcp/context_broker_tools_test.go`
 - test: `internal/mcp/file_parameter_fetcher_test.go`
 - test: `internal/mcp/http_handler_test.go`
@@ -1725,6 +2041,28 @@ Evidence:
 - test: `internal/store/migration_compatibility_test.go`
 - test: `internal/store/refactor_backlog_test.go`
 - test: `internal/store/source_snapshots_test.go`
+
+### backend-package-internal-store-workflow (proven)
+
+Backend package internal/store/workflow (workflowstore)
+
+Evidence:
+
+- source: `internal/store/workflow/ids.go`
+- source: `internal/store/workflow/store.go`
+- source: `internal/store/workflow/tx.go`
+- source: `internal/store/workflow/types.go`
+- test: `internal/store/workflow/store_test.go`
+
+### backend-package-internal-store-workflowgenerated (proven)
+
+Backend package internal/store/workflowgenerated (workflowgenerated)
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/db.go`
+- source: `internal/store/workflowgenerated/models.go`
+- source: `internal/store/workflowgenerated/workflow.sql.go`
 
 ### backend-route-mounter-like-internal-api-artifacts-mountroutes (convention)
 
@@ -1790,6 +2128,14 @@ Evidence:
 
 - source: `internal/api/audits/handler.go`
 
+### backend-service-like-internal-api-audits-workflowauditservice (convention)
+
+Service-like symbol WorkflowAuditService (type) in internal/api/audits/workflow.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
+
+Evidence:
+
+- source: `internal/api/audits/workflow.go`
+
 ### backend-service-like-internal-api-intake-newhandler (convention)
 
 Service-like symbol NewHandler (constructor) in internal/api/intake/handler.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
@@ -1822,6 +2168,14 @@ Evidence:
 
 - source: `internal/api/runs/handler.go`
 
+### backend-service-like-internal-api-runs-workflowexecutionservice (convention)
+
+Service-like symbol WorkflowExecutionService (type) in internal/api/runs/workflow_execution.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
+
 ### backend-service-like-internal-app-audits-newservice (convention)
 
 Service-like symbol NewService (constructor) in internal/app/audits/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
@@ -1830,6 +2184,14 @@ Evidence:
 
 - source: `internal/app/audits/service.go`
 
+### backend-service-like-internal-app-audits-newworkflowauditservice (convention)
+
+Service-like symbol NewWorkflowAuditService (constructor) in internal/app/audits/workflow_service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
+
+Evidence:
+
+- source: `internal/app/audits/workflow_service.go`
+
 ### backend-service-like-internal-app-audits-service (convention)
 
 Service-like symbol Service (type) in internal/app/audits/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
@@ -1837,6 +2199,14 @@ Service-like symbol Service (type) in internal/app/audits/service.go — identif
 Evidence:
 
 - source: `internal/app/audits/service.go`
+
+### backend-service-like-internal-app-audits-workflowauditservice (convention)
+
+Service-like symbol WorkflowAuditService (type) in internal/app/audits/workflow_service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
+
+Evidence:
+
+- source: `internal/app/audits/workflow_service.go`
 
 ### backend-service-like-internal-app-drift-newservice (convention)
 
@@ -1926,6 +2296,22 @@ Evidence:
 
 - source: `internal/app/plans/service.go`
 
+### backend-service-like-internal-app-plans-workflow-newservice (convention)
+
+Service-like symbol NewService (constructor) in internal/app/plans/workflow/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+
+### backend-service-like-internal-app-plans-workflow-service (convention)
+
+Service-like symbol Service (type) in internal/app/plans/workflow/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+
 ### backend-service-like-internal-app-projects-newservice (convention)
 
 Service-like symbol NewService (constructor) in internal/app/projects/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
@@ -1957,6 +2343,30 @@ Service-like symbol Service (type) in internal/app/runs/service.go — identifie
 Evidence:
 
 - source: `internal/app/runs/service.go`
+
+### backend-service-like-internal-app-runs-workflow-newservice (convention)
+
+Service-like symbol NewService (constructor) in internal/app/runs/workflow/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-service-like-internal-app-runs-workflow-service (convention)
+
+Service-like symbol Service (type) in internal/app/runs/workflow/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-service-like-internal-mcp-workflowaudittoolservice (convention)
+
+Service-like symbol WorkflowAuditToolService (type) in internal/mcp/audit_tools.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).
+
+Evidence:
+
+- source: `internal/mcp/audit_tools.go`
 
 ### backend-symbol-internal-api-artifacts-func-getartifactcontent (proven)
 
@@ -2062,6 +2472,14 @@ Evidence:
 
 - source: `internal/api/audits/routes.go`
 
+### backend-symbol-internal-api-audits-func-mountworkflowroutes (proven)
+
+Exported func MountWorkflowRoutes in internal/api/audits/routes.go
+
+Evidence:
+
+- source: `internal/api/audits/routes.go`
+
 ### backend-symbol-internal-api-audits-func-newhandler (proven)
 
 Exported func NewHandler in internal/api/audits/handler.go
@@ -2069,6 +2487,22 @@ Exported func NewHandler in internal/api/audits/handler.go
 Evidence:
 
 - source: `internal/api/audits/handler.go`
+
+### backend-symbol-internal-api-audits-func-newworkflowhandler (proven)
+
+Exported func NewWorkflowHandler in internal/api/audits/workflow.go
+
+Evidence:
+
+- source: `internal/api/audits/workflow.go`
+
+### backend-symbol-internal-api-audits-func-prepare (proven)
+
+Exported func Prepare in internal/api/audits/workflow.go
+
+Evidence:
+
+- source: `internal/api/audits/workflow.go`
 
 ### backend-symbol-internal-api-audits-func-preparecommitmessage (proven)
 
@@ -2085,6 +2519,14 @@ Exported func RequestAuditRevision in internal/api/audits/handler.go
 Evidence:
 
 - source: `internal/api/audits/handler.go`
+
+### backend-symbol-internal-api-audits-func-status (proven)
+
+Exported func Status in internal/api/audits/workflow.go
+
+Evidence:
+
+- source: `internal/api/audits/workflow.go`
 
 ### backend-symbol-internal-api-audits-func-submitauditpacket (proven)
 
@@ -2117,6 +2559,22 @@ Exported type RelayAuditStatus in internal/api/audits/dto.go
 Evidence:
 
 - source: `internal/api/audits/dto.go`
+
+### backend-symbol-internal-api-audits-type-workflowauditservice (proven)
+
+Exported type WorkflowAuditService in internal/api/audits/workflow.go
+
+Evidence:
+
+- source: `internal/api/audits/workflow.go`
+
+### backend-symbol-internal-api-audits-type-workflowhandler (proven)
+
+Exported type WorkflowHandler in internal/api/audits/workflow.go
+
+Evidence:
+
+- source: `internal/api/audits/workflow.go`
 
 ### backend-symbol-internal-api-func-closerefactordiscoverytask (proven)
 
@@ -3134,6 +3592,14 @@ Evidence:
 
 - source: `internal/api/runs/presenter.go`
 
+### backend-symbol-internal-api-runs-func-cancelattempt (proven)
+
+Exported func CancelAttempt in internal/api/runs/workflow_execution.go
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
+
 ### backend-symbol-internal-api-runs-func-executerun (proven)
 
 Exported func ExecuteRun in internal/api/runs/handler.go
@@ -3142,6 +3608,14 @@ Evidence:
 
 - source: `internal/api/runs/handler.go`
 
+### backend-symbol-internal-api-runs-func-getattempt (proven)
+
+Exported func GetAttempt in internal/api/runs/workflow_execution.go
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
+
 ### backend-symbol-internal-api-runs-func-getrun (proven)
 
 Exported func GetRun in internal/api/runs/handler.go
@@ -3149,6 +3623,14 @@ Exported func GetRun in internal/api/runs/handler.go
 Evidence:
 
 - source: `internal/api/runs/handler.go`
+
+### backend-symbol-internal-api-runs-func-listattempts (proven)
+
+Exported func ListAttempts in internal/api/runs/workflow_execution.go
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
 
 ### backend-symbol-internal-api-runs-func-listevents (proven)
 
@@ -3182,6 +3664,14 @@ Evidence:
 
 - source: `internal/api/runs/routes.go`
 
+### backend-symbol-internal-api-runs-func-mountworkflowexecutionroutes (proven)
+
+Exported func MountWorkflowExecutionRoutes in internal/api/runs/workflow_execution.go
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
+
 ### backend-symbol-internal-api-runs-func-newhandler (proven)
 
 Exported func NewHandler in internal/api/runs/handler.go
@@ -3190,6 +3680,14 @@ Evidence:
 
 - source: `internal/api/runs/handler.go`
 
+### backend-symbol-internal-api-runs-func-newworkflowexecutionhandler (proven)
+
+Exported func NewWorkflowExecutionHandler in internal/api/runs/workflow_execution.go
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
+
 ### backend-symbol-internal-api-runs-func-preparerun (proven)
 
 Exported func PrepareRun in internal/api/runs/handler.go
@@ -3197,6 +3695,14 @@ Exported func PrepareRun in internal/api/runs/handler.go
 Evidence:
 
 - source: `internal/api/runs/handler.go`
+
+### backend-symbol-internal-api-runs-func-reconcileattempt (proven)
+
+Exported func ReconcileAttempt in internal/api/runs/workflow_execution.go
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
 
 ### backend-symbol-internal-api-runs-func-renderbrief (proven)
 
@@ -3221,6 +3727,14 @@ Exported func ResolveRunDisplayState in internal/api/runs/presenter.go
 Evidence:
 
 - source: `internal/api/runs/presenter.go`
+
+### backend-symbol-internal-api-runs-func-startattempt (proven)
+
+Exported func StartAttempt in internal/api/runs/workflow_execution.go
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
 
 ### backend-symbol-internal-api-runs-func-validaterun (proven)
 
@@ -3317,6 +3831,22 @@ Exported type RelayValidationResult in internal/api/runs/dto.go
 Evidence:
 
 - source: `internal/api/runs/dto.go`
+
+### backend-symbol-internal-api-runs-type-workflowexecutionhandler (proven)
+
+Exported type WorkflowExecutionHandler in internal/api/runs/workflow_execution.go
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
+
+### backend-symbol-internal-api-runs-type-workflowexecutionservice (proven)
+
+Exported type WorkflowExecutionService in internal/api/runs/workflow_execution.go
+
+Evidence:
+
+- source: `internal/api/runs/workflow_execution.go`
 
 ### backend-symbol-internal-api-shared-func-corsmiddleware (proven)
 
@@ -3638,6 +4168,38 @@ Evidence:
 
 - source: `internal/app/audits/types.go`
 
+### backend-symbol-internal-app-audits-const-maxworkflowauditevidencebytes (proven)
+
+Exported const MaxWorkflowAuditEvidenceBytes in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-const-maxworkflowauditpacketbytes (proven)
+
+Exported const MaxWorkflowAuditPacketBytes in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-const-maxworkflowauditsourcebytes (proven)
+
+Exported const MaxWorkflowAuditSourceBytes in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-const-workflowauditpacketschemaversion (proven)
+
+Exported const WorkflowAuditPacketSchemaVersion in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
 ### backend-symbol-internal-app-audits-func-closerun (proven)
 
 Exported func CloseRun in internal/app/audits/service.go
@@ -3678,6 +4240,14 @@ Evidence:
 
 - source: `internal/app/audits/service.go`
 
+### backend-symbol-internal-app-audits-func-getcurrentpacket (proven)
+
+Exported func GetCurrentPacket in internal/app/audits/workflow_service.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_service.go`
+
 ### backend-symbol-internal-app-audits-func-getlocalaudit (proven)
 
 Exported func GetLocalAudit in internal/app/audits/service.go
@@ -3685,6 +4255,14 @@ Exported func GetLocalAudit in internal/app/audits/service.go
 Evidence:
 
 - source: `internal/app/audits/service.go`
+
+### backend-symbol-internal-app-audits-func-getstatus (proven)
+
+Exported func GetStatus in internal/app/audits/workflow_service.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_service.go`
 
 ### backend-symbol-internal-app-audits-func-isauditdecisionerror (proven)
 
@@ -3710,6 +4288,30 @@ Evidence:
 
 - source: `internal/app/audits/service.go`
 
+### backend-symbol-internal-app-audits-func-newworkflowauditservice (proven)
+
+Exported func NewWorkflowAuditService in internal/app/audits/workflow_service.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_service.go`
+
+### backend-symbol-internal-app-audits-func-newworkflowauditservicewithinspector (proven)
+
+Exported func NewWorkflowAuditServiceWithInspector in internal/app/audits/workflow_service.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_service.go`
+
+### backend-symbol-internal-app-audits-func-prepare (proven)
+
+Exported func Prepare in internal/app/audits/workflow_service.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_service.go`
+
 ### backend-symbol-internal-app-audits-func-preparecommitmessage (proven)
 
 Exported func PrepareCommitMessage in internal/app/audits/service.go
@@ -3717,6 +4319,14 @@ Exported func PrepareCommitMessage in internal/app/audits/service.go
 Evidence:
 
 - source: `internal/app/audits/service.go`
+
+### backend-symbol-internal-app-audits-func-recorddecision (proven)
+
+Exported func RecordDecision in internal/app/audits/workflow_service.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_service.go`
 
 ### backend-symbol-internal-app-audits-func-requestrevision (proven)
 
@@ -3798,6 +4408,14 @@ Evidence:
 
 - source: `internal/app/audits/types.go`
 
+### backend-symbol-internal-app-audits-type-getworkflowauditpacketresult (proven)
+
+Exported type GetWorkflowAuditPacketResult in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
 ### backend-symbol-internal-app-audits-type-localauditinput (proven)
 
 Exported type LocalAuditInput in internal/app/audits/types.go
@@ -3830,6 +4448,38 @@ Evidence:
 
 - source: `internal/app/audits/types.go`
 
+### backend-symbol-internal-app-audits-type-prepareworkflowauditinput (proven)
+
+Exported type PrepareWorkflowAuditInput in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-type-prepareworkflowauditresult (proven)
+
+Exported type PrepareWorkflowAuditResult in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-type-recordworkflowauditdecisioninput (proven)
+
+Exported type RecordWorkflowAuditDecisionInput in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-type-recordworkflowauditdecisionresult (proven)
+
+Exported type RecordWorkflowAuditDecisionResult in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
 ### backend-symbol-internal-app-audits-type-revisioninput (proven)
 
 Exported type RevisionInput in internal/app/audits/types.go
@@ -3854,6 +4504,78 @@ Evidence:
 
 - source: `internal/app/audits/types.go`
 
+### backend-symbol-internal-app-audits-type-workflowauditattemptauthority (proven)
+
+Exported type WorkflowAuditAttemptAuthority in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-type-workflowauditcommitauthority (proven)
+
+Exported type WorkflowAuditCommitAuthority in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-type-workflowauditevidenceitem (proven)
+
+Exported type WorkflowAuditEvidenceItem in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-type-workflowauditinspector (proven)
+
+Exported type WorkflowAuditInspector in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-type-workflowauditpacket (proven)
+
+Exported type WorkflowAuditPacket in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-type-workflowauditpassauthority (proven)
+
+Exported type WorkflowAuditPassAuthority in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-type-workflowauditrunauthority (proven)
+
+Exported type WorkflowAuditRunAuthority in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-type-workflowauditservice (proven)
+
+Exported type WorkflowAuditService in internal/app/audits/workflow_service.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_service.go`
+
+### backend-symbol-internal-app-audits-type-workflowauditstatus (proven)
+
+Exported type WorkflowAuditStatus in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
 ### backend-symbol-internal-app-audits-var-errauditdecisionnotready (proven)
 
 Exported var ErrAuditDecisionNotReady in internal/app/audits/types.go
@@ -3877,6 +4599,54 @@ Exported var ErrUnsupportedDecision in internal/app/audits/types.go
 Evidence:
 
 - source: `internal/app/audits/types.go`
+
+### backend-symbol-internal-app-audits-var-errworkflowauditconfirmation (proven)
+
+Exported var ErrWorkflowAuditConfirmation in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-var-errworkflowauditdecisionrecorded (proven)
+
+Exported var ErrWorkflowAuditDecisionRecorded in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-var-errworkflowauditnotready (proven)
+
+Exported var ErrWorkflowAuditNotReady in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-var-errworkflowauditpacketnotfound (proven)
+
+Exported var ErrWorkflowAuditPacketNotFound in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-var-errworkflowauditpacketstale (proven)
+
+Exported var ErrWorkflowAuditPacketStale in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-var-errworkflowauditpackettoolarge (proven)
+
+Exported var ErrWorkflowAuditPacketTooLarge in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
 
 ### backend-symbol-internal-app-drift-const-failureattemptnotdraft (proven)
 
@@ -6630,6 +7400,118 @@ Evidence:
 
 - source: `internal/app/plans/read_queries.go`
 
+### backend-symbol-internal-app-plans-workflow-func-artifactid (proven)
+
+Exported func ArtifactID in internal/app/plans/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+
+### backend-symbol-internal-app-plans-workflow-func-createplan (proven)
+
+Exported func CreatePlan in internal/app/plans/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+
+### backend-symbol-internal-app-plans-workflow-func-getplan (proven)
+
+Exported func GetPlan in internal/app/plans/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+
+### backend-symbol-internal-app-plans-workflow-func-newservice (proven)
+
+Exported func NewService in internal/app/plans/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+
+### backend-symbol-internal-app-plans-workflow-func-newservicewithids (proven)
+
+Exported func NewServiceWithIDs in internal/app/plans/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+
+### backend-symbol-internal-app-plans-workflow-func-passid (proven)
+
+Exported func PassID in internal/app/plans/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+
+### backend-symbol-internal-app-plans-workflow-func-planid (proven)
+
+Exported func PlanID in internal/app/plans/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+
+### backend-symbol-internal-app-plans-workflow-type-createplaninput (proven)
+
+Exported type CreatePlanInput in internal/app/plans/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/types.go`
+
+### backend-symbol-internal-app-plans-workflow-type-createplanresult (proven)
+
+Exported type CreatePlanResult in internal/app/plans/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/types.go`
+
+### backend-symbol-internal-app-plans-workflow-type-getplanresult (proven)
+
+Exported type GetPlanResult in internal/app/plans/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/types.go`
+
+### backend-symbol-internal-app-plans-workflow-type-idgenerator (proven)
+
+Exported type IDGenerator in internal/app/plans/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+
+### backend-symbol-internal-app-plans-workflow-type-passinput (proven)
+
+Exported type PassInput in internal/app/plans/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/types.go`
+
+### backend-symbol-internal-app-plans-workflow-type-repositorytargetinput (proven)
+
+Exported type RepositoryTargetInput in internal/app/plans/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/types.go`
+
+### backend-symbol-internal-app-plans-workflow-type-service (proven)
+
+Exported type Service in internal/app/plans/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/plans/workflow/service.go`
+
 ### backend-symbol-internal-app-projects-const-defaultbranch (proven)
 
 Exported const DefaultBranch in internal/app/projects/types.go
@@ -7526,6 +8408,198 @@ Evidence:
 
 - source: `internal/app/runs/service.go`
 
+### backend-symbol-internal-app-runs-workflow-func-artifactid (proven)
+
+Exported func ArtifactID in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-auditdecisionid (proven)
+
+Exported func AuditDecisionID in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-beginexecutionattempt (proven)
+
+Exported func BeginExecutionAttempt in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-createrun (proven)
+
+Exported func CreateRun in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-executionattemptid (proven)
+
+Exported func ExecutionAttemptID in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-finishexecutionattempt (proven)
+
+Exported func FinishExecutionAttempt in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-markexecutionattemptrunning (proven)
+
+Exported func MarkExecutionAttemptRunning in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-newservice (proven)
+
+Exported func NewService in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-newservicewithids (proven)
+
+Exported func NewServiceWithIDs in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-recordauditdecision (proven)
+
+Exported func RecordAuditDecision in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-recordvalidationresult (proven)
+
+Exported func RecordValidationResult in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-requestexecutionattemptcancellation (proven)
+
+Exported func RequestExecutionAttemptCancellation in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-runid (proven)
+
+Exported func RunID in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-func-updateexecutionattemptresult (proven)
+
+Exported func UpdateExecutionAttemptResult in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-type-beginexecutionattemptinput (proven)
+
+Exported type BeginExecutionAttemptInput in internal/app/runs/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/types.go`
+
+### backend-symbol-internal-app-runs-workflow-type-beginexecutionattemptresult (proven)
+
+Exported type BeginExecutionAttemptResult in internal/app/runs/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/types.go`
+
+### backend-symbol-internal-app-runs-workflow-type-createruninput (proven)
+
+Exported type CreateRunInput in internal/app/runs/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/types.go`
+
+### backend-symbol-internal-app-runs-workflow-type-createrunresult (proven)
+
+Exported type CreateRunResult in internal/app/runs/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/types.go`
+
+### backend-symbol-internal-app-runs-workflow-type-finishexecutionattemptinput (proven)
+
+Exported type FinishExecutionAttemptInput in internal/app/runs/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/types.go`
+
+### backend-symbol-internal-app-runs-workflow-type-finishexecutionattemptresult (proven)
+
+Exported type FinishExecutionAttemptResult in internal/app/runs/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/types.go`
+
+### backend-symbol-internal-app-runs-workflow-type-idgenerator (proven)
+
+Exported type IDGenerator in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
+### backend-symbol-internal-app-runs-workflow-type-recordauditdecisioninput (proven)
+
+Exported type RecordAuditDecisionInput in internal/app/runs/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/types.go`
+
+### backend-symbol-internal-app-runs-workflow-type-recordauditdecisionresult (proven)
+
+Exported type RecordAuditDecisionResult in internal/app/runs/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/types.go`
+
+### backend-symbol-internal-app-runs-workflow-type-service (proven)
+
+Exported type Service in internal/app/runs/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/runs/workflow/service.go`
+
 ### backend-symbol-internal-mcp-const-blockerartifactbinary (proven)
 
 Exported const BlockerArtifactBinary in internal/mcp/artifact_readback_tools.go
@@ -7637,14 +8711,6 @@ Exported const CodeParseError in internal/mcp/protocol.go
 Evidence:
 
 - source: `internal/mcp/protocol.go`
-
-### backend-symbol-internal-mcp-const-envlegacycontextbrokerenabled (proven)
-
-Exported const EnvLegacyContextBrokerEnabled in internal/mcp/profile.go
-
-Evidence:
-
-- source: `internal/mcp/profile.go`
 
 ### backend-symbol-internal-mcp-const-envmcpprofile (proven)
 
@@ -7886,6 +8952,14 @@ Evidence:
 
 - source: `internal/mcp/artifact_readback_tools.go`
 
+### backend-symbol-internal-mcp-const-toolprofileauditor (proven)
+
+Exported const ToolProfileAuditor in internal/mcp/profile.go
+
+Evidence:
+
+- source: `internal/mcp/profile.go`
+
 ### backend-symbol-internal-mcp-const-toolprofilelocaloperator (proven)
 
 Exported const ToolProfileLocalOperator in internal/mcp/profile.go
@@ -7894,9 +8968,9 @@ Evidence:
 
 - source: `internal/mcp/profile.go`
 
-### backend-symbol-internal-mcp-const-toolprofilerestricted (proven)
+### backend-symbol-internal-mcp-const-toolprofileplanner (proven)
 
-Exported const ToolProfileRestricted in internal/mcp/profile.go
+Exported const ToolProfilePlanner in internal/mcp/profile.go
 
 Evidence:
 
@@ -7934,14 +9008,6 @@ Evidence:
 
 - source: `internal/mcp/artifact_readback_tools.go`
 
-### backend-symbol-internal-mcp-func-contextbrokerenabled (proven)
-
-Exported func ContextBrokerEnabled in internal/mcp/profile.go
-
-Evidence:
-
-- source: `internal/mcp/profile.go`
-
 ### backend-symbol-internal-mcp-func-createcontextpacket (proven)
 
 Exported func CreateContextPacket in internal/mcp/orchestrator_work_tools.go
@@ -7969,6 +9035,14 @@ Evidence:
 ### backend-symbol-internal-mcp-func-error-2 (proven)
 
 Exported func Error in internal/mcp/file_parameter_fetcher.go
+
+Evidence:
+
+- source: `internal/mcp/file_parameter_fetcher.go`
+
+### backend-symbol-internal-mcp-func-fetchcanonicalartifact (proven)
+
+Exported func FetchCanonicalArtifact in internal/mcp/file_parameter_fetcher.go
 
 Evidence:
 
@@ -8013,6 +9087,14 @@ Exported func HandleCompleteRefactorDiscoveryTask in internal/mcp/refactor_backl
 Evidence:
 
 - source: `internal/mcp/refactor_backlog_tools.go`
+
+### backend-symbol-internal-mcp-func-handlecreatecanonicalrun (proven)
+
+Exported func HandleCreateCanonicalRun in internal/mcp/canonical_tools.go
+
+Evidence:
+
+- source: `internal/mcp/canonical_tools.go`
 
 ### backend-symbol-internal-mcp-func-handlecreatecontextpacket (proven)
 
@@ -8125,6 +9207,14 @@ Exported func HandleGenerateRefactorOnlyPlan in internal/mcp/refactor_backlog_to
 Evidence:
 
 - source: `internal/mcp/refactor_backlog_tools.go`
+
+### backend-symbol-internal-mcp-func-handlegetcanonicalplan (proven)
+
+Exported func HandleGetCanonicalPlan in internal/mcp/canonical_tools.go
+
+Evidence:
+
+- source: `internal/mcp/canonical_tools.go`
 
 ### backend-symbol-internal-mcp-func-handlegetcontextpacket (proven)
 
@@ -8278,6 +9368,14 @@ Evidence:
 
 - source: `internal/mcp/tool_get_run_status.go`
 
+### backend-symbol-internal-mcp-func-handlegetworkflowauditpacket (proven)
+
+Exported func HandleGetWorkflowAuditPacket in internal/mcp/audit_tools.go
+
+Evidence:
+
+- source: `internal/mcp/audit_tools.go`
+
 ### backend-symbol-internal-mcp-func-handlelistopenruns (proven)
 
 Exported func HandleListOpenRuns in internal/mcp/tool_list_runs.go
@@ -8366,6 +9464,14 @@ Evidence:
 
 - source: `internal/mcp/context_broker_tools.go`
 
+### backend-symbol-internal-mcp-func-handlerecordworkflowauditdecision (proven)
+
+Exported func HandleRecordWorkflowAuditDecision in internal/mcp/audit_tools.go
+
+Evidence:
+
+- source: `internal/mcp/audit_tools.go`
+
 ### backend-symbol-internal-mcp-func-handlerejectplanseed (proven)
 
 Exported func HandleRejectPlanSeed in internal/mcp/plan_seed_tools.go
@@ -8437,6 +9543,14 @@ Exported func HandleSubmitIntentDriftReview in internal/mcp/plan_attempt_tools.g
 Evidence:
 
 - source: `internal/mcp/plan_attempt_tools.go`
+
+### backend-symbol-internal-mcp-func-handlesubmitplan (proven)
+
+Exported func HandleSubmitPlan in internal/mcp/canonical_tools.go
+
+Evidence:
+
+- source: `internal/mcp/canonical_tools.go`
 
 ### backend-symbol-internal-mcp-func-handlesubmitplanattempt (proven)
 
@@ -8518,6 +9632,14 @@ Evidence:
 
 - source: `internal/mcp/refactor_backlog_tools.go`
 
+### backend-symbol-internal-mcp-func-handlevalidateartifact (proven)
+
+Exported func HandleValidateArtifact in internal/mcp/canonical_tools.go
+
+Evidence:
+
+- source: `internal/mcp/canonical_tools.go`
+
 ### backend-symbol-internal-mcp-func-handlevalidateplannerhandoffforcompile (proven)
 
 Exported func HandleValidatePlannerHandoffForCompile in internal/mcp/tool_validate_planner_handoff.go
@@ -8533,6 +9655,14 @@ Exported func HandleVoidPlanAttempt in internal/mcp/plan_attempt_tools.go
 Evidence:
 
 - source: `internal/mcp/plan_attempt_tools.go`
+
+### backend-symbol-internal-mcp-func-newcanonicaldepsfromenv (proven)
+
+Exported func NewCanonicalDepsFromEnv in internal/mcp/deps.go
+
+Evidence:
+
+- source: `internal/mcp/deps.go`
 
 ### backend-symbol-internal-mcp-func-newdepsfromenv (proven)
 
@@ -8597,6 +9727,14 @@ Exported func ToolProfileFromEnv in internal/mcp/profile.go
 Evidence:
 
 - source: `internal/mcp/profile.go`
+
+### backend-symbol-internal-mcp-type-canonicalfileparameterfetcher (proven)
+
+Exported type CanonicalFileParameterFetcher in internal/mcp/file_parameter_fetcher.go
+
+Evidence:
+
+- source: `internal/mcp/file_parameter_fetcher.go`
 
 ### backend-symbol-internal-mcp-type-capabilities (proven)
 
@@ -8830,6 +9968,14 @@ Evidence:
 
 - source: `internal/mcp/protocol.go`
 
+### backend-symbol-internal-mcp-type-workflowaudittoolservice (proven)
+
+Exported type WorkflowAuditToolService in internal/mcp/audit_tools.go
+
+Evidence:
+
+- source: `internal/mcp/audit_tools.go`
+
 ### backend-symbol-internal-mcp-var-toolapproveplanattempt (proven)
 
 Exported var ToolApprovePlanAttempt in internal/mcp/plan_attempt_tools.go
@@ -8853,6 +9999,14 @@ Exported var ToolCompleteRefactorDiscoveryTask in internal/mcp/refactor_backlog_
 Evidence:
 
 - source: `internal/mcp/refactor_backlog_tools.go`
+
+### backend-symbol-internal-mcp-var-toolcreatecanonicalrun (proven)
+
+Exported var ToolCreateCanonicalRun in internal/mcp/canonical_tools.go
+
+Evidence:
+
+- source: `internal/mcp/canonical_tools.go`
 
 ### backend-symbol-internal-mcp-var-toolcreatecontextpacket (proven)
 
@@ -8941,6 +10095,22 @@ Exported var ToolGenerateRefactorOnlyPlan in internal/mcp/refactor_backlog_tools
 Evidence:
 
 - source: `internal/mcp/refactor_backlog_tools.go`
+
+### backend-symbol-internal-mcp-var-toolgetauditpacket (proven)
+
+Exported var ToolGetAuditPacket in internal/mcp/audit_tools.go
+
+Evidence:
+
+- source: `internal/mcp/audit_tools.go`
+
+### backend-symbol-internal-mcp-var-toolgetcanonicalplan (proven)
+
+Exported var ToolGetCanonicalPlan in internal/mcp/canonical_tools.go
+
+Evidence:
+
+- source: `internal/mcp/canonical_tools.go`
 
 ### backend-symbol-internal-mcp-var-toolgetcontextpacket (proven)
 
@@ -9158,6 +10328,14 @@ Evidence:
 
 - source: `internal/mcp/context_broker_tools.go`
 
+### backend-symbol-internal-mcp-var-toolrecordauditdecision (proven)
+
+Exported var ToolRecordAuditDecision in internal/mcp/audit_tools.go
+
+Evidence:
+
+- source: `internal/mcp/audit_tools.go`
+
 ### backend-symbol-internal-mcp-var-toolrejectrefactorcandidate (proven)
 
 Exported var ToolRejectRefactorCandidate in internal/mcp/refactor_backlog_tools.go
@@ -9221,6 +10399,14 @@ Exported var ToolSubmitIntentDriftReview in internal/mcp/plan_attempt_tools.go
 Evidence:
 
 - source: `internal/mcp/plan_attempt_tools.go`
+
+### backend-symbol-internal-mcp-var-toolsubmitplan (proven)
+
+Exported var ToolSubmitPlan in internal/mcp/canonical_tools.go
+
+Evidence:
+
+- source: `internal/mcp/canonical_tools.go`
 
 ### backend-symbol-internal-mcp-var-toolsubmitplanattempt (proven)
 
@@ -9294,6 +10480,14 @@ Evidence:
 
 - source: `internal/mcp/refactor_backlog_tools.go`
 
+### backend-symbol-internal-mcp-var-toolvalidateartifact (proven)
+
+Exported var ToolValidateArtifact in internal/mcp/canonical_tools.go
+
+Evidence:
+
+- source: `internal/mcp/canonical_tools.go`
+
 ### backend-symbol-internal-mcp-var-toolvalidateplannerhandoffforcompile (proven)
 
 Exported var ToolValidatePlannerHandoffForCompile in internal/mcp/tool_validate_planner_handoff.go
@@ -9318,6 +10512,14 @@ Evidence:
 
 - source: `internal/store/db.go`
 
+### backend-symbol-internal-store-func-appendagentexecutionlifecycleerror (proven)
+
+Exported func AppendAgentExecutionLifecycleError in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
 ### backend-symbol-internal-store-func-archiveproject (proven)
 
 Exported func ArchiveProject in internal/store/projects.go
@@ -9325,6 +10527,14 @@ Exported func ArchiveProject in internal/store/projects.go
 Evidence:
 
 - source: `internal/store/projects.go`
+
+### backend-symbol-internal-store-func-claimagentexecutionlaunch (proven)
+
+Exported func ClaimAgentExecutionLaunch in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
 
 ### backend-symbol-internal-store-func-close (proven)
 
@@ -9585,6 +10795,14 @@ Evidence:
 ### backend-symbol-internal-store-func-ensuredefaultreporoots (proven)
 
 Exported func EnsureDefaultRepoRoots in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
+### backend-symbol-internal-store-func-finalizeagentexecutioncas (proven)
+
+Exported func FinalizeAgentExecutionCAS in internal/store/db.go
 
 Evidence:
 
@@ -10214,6 +11432,30 @@ Evidence:
 
 - source: `internal/store/source_snapshots.go`
 
+### backend-symbol-internal-store-func-markagentexecutionterminationfailed (proven)
+
+Exported func MarkAgentExecutionTerminationFailed in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
+### backend-symbol-internal-store-func-markagentexecutionterminationrequested (proven)
+
+Exported func MarkAgentExecutionTerminationRequested in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
+### backend-symbol-internal-store-func-markagentexecutiontreeverifiedabsent (proven)
+
+Exported func MarkAgentExecutionTreeVerifiedAbsent in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
 ### backend-symbol-internal-store-func-markplanseedplanned (proven)
 
 Exported func MarkPlanSeedPlanned in internal/store/plan_seeds.go
@@ -10249,6 +11491,30 @@ Evidence:
 ### backend-symbol-internal-store-func-open (proven)
 
 Exported func Open in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
+### backend-symbol-internal-store-func-recordagentexecutionstartprevented (proven)
+
+Exported func RecordAgentExecutionStartPrevented in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
+### backend-symbol-internal-store-func-recordexecutorpreflightblocked (proven)
+
+Exported func RecordExecutorPreflightBlocked in internal/store/db.go
+
+Evidence:
+
+- source: `internal/store/db.go`
+
+### backend-symbol-internal-store-func-recordrunstatusevent (proven)
+
+Exported func RecordRunStatusEvent in internal/store/db.go
 
 Evidence:
 
@@ -11086,6 +12352,1406 @@ Evidence:
 
 - source: `internal/store/db.go`
 
+### backend-symbol-internal-store-workflow-const-artifactownerexecutionattempt (proven)
+
+Exported const ArtifactOwnerExecutionAttempt in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-artifactownerplan (proven)
+
+Exported const ArtifactOwnerPlan in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-artifactownerrun (proven)
+
+Exported const ArtifactOwnerRun in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-attemptstatuscancelled (proven)
+
+Exported const AttemptStatusCancelled in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-attemptstatusfailed (proven)
+
+Exported const AttemptStatusFailed in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-attemptstatuspending (proven)
+
+Exported const AttemptStatusPending in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-attemptstatusrunning (proven)
+
+Exported const AttemptStatusRunning in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-attemptstatussucceeded (proven)
+
+Exported const AttemptStatusSucceeded in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-attemptstatustimedout (proven)
+
+Exported const AttemptStatusTimedOut in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-auditdecisionaccepted (proven)
+
+Exported const AuditDecisionAccepted in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-auditdecisionneedsrevision (proven)
+
+Exported const AuditDecisionNeedsRevision in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-auditpacketstatuscurrent (proven)
+
+Exported const AuditPacketStatusCurrent in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-auditpacketstatusstale (proven)
+
+Exported const AuditPacketStatusStale in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-passstatuscompleted (proven)
+
+Exported const PassStatusCompleted in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-passstatusinprogress (proven)
+
+Exported const PassStatusInProgress in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-passstatusplanned (proven)
+
+Exported const PassStatusPlanned in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-planstatusactive (proven)
+
+Exported const PlanStatusActive in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-planstatuscompleted (proven)
+
+Exported const PlanStatusCompleted in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-runstatusauditready (proven)
+
+Exported const RunStatusAuditReady in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-runstatuscancelled (proven)
+
+Exported const RunStatusCancelled in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-runstatuscompleted (proven)
+
+Exported const RunStatusCompleted in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-runstatuscreated (proven)
+
+Exported const RunStatusCreated in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-runstatusexecuting (proven)
+
+Exported const RunStatusExecuting in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-runstatusexecutionfailed (proven)
+
+Exported const RunStatusExecutionFailed in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-runstatusneedsrevision (proven)
+
+Exported const RunStatusNeedsRevision in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-runstatussetupready (proven)
+
+Exported const RunStatusSetupReady in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-runstatusvalidating (proven)
+
+Exported const RunStatusValidating in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-const-runstatusvalidationfailed (proven)
+
+Exported const RunStatusValidationFailed in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-func-artifactstore (proven)
+
+Exported func ArtifactStore in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-close (proven)
+
+Exported func Close in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-commitartifactbatch (proven)
+
+Exported func CommitArtifactBatch in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-completeplan (proven)
+
+Exported func CompletePlan in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-countincompleteplanpasses (proven)
+
+Exported func CountIncompletePlanPasses in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-createartifact (proven)
+
+Exported func CreateArtifact in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-createauditdecision (proven)
+
+Exported func CreateAuditDecision in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-createauditpacket (proven)
+
+Exported func CreateAuditPacket in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-createexecutionattempt (proven)
+
+Exported func CreateExecutionAttempt in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-createplan (proven)
+
+Exported func CreatePlan in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-createplanpass (proven)
+
+Exported func CreatePlanPass in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-createplanpassdependency (proven)
+
+Exported func CreatePlanPassDependency in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-createplanrepositorytarget (proven)
+
+Exported func CreatePlanRepositoryTarget in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-createrepositorytarget (proven)
+
+Exported func CreateRepositoryTarget in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-createrun (proven)
+
+Exported func CreateRun in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-db (proven)
+
+Exported func DB in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getartifactbyartifactid (proven)
+
+Exported func GetArtifactByArtifactID in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getartifactbyartifactid-2 (proven)
+
+Exported func GetArtifactByArtifactID in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-getartifactbyrowid (proven)
+
+Exported func GetArtifactByRowID in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getauditdecisionbydecisionid (proven)
+
+Exported func GetAuditDecisionByDecisionID in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getauditdecisionbyrun (proven)
+
+Exported func GetAuditDecisionByRun in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getauditpacketbypacketid (proven)
+
+Exported func GetAuditPacketByPacketID in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-getcurrentauditpacketbyrun (proven)
+
+Exported func GetCurrentAuditPacketByRun in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getcurrentauditpacketbyrun-2 (proven)
+
+Exported func GetCurrentAuditPacketByRun in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-getexecutionattemptbyattemptid (proven)
+
+Exported func GetExecutionAttemptByAttemptID in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getexecutionattemptbyattemptid-2 (proven)
+
+Exported func GetExecutionAttemptByAttemptID in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-getlatestauditpacketbyrun (proven)
+
+Exported func GetLatestAuditPacketByRun in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getlatestsucceededexecutionattempt (proven)
+
+Exported func GetLatestSucceededExecutionAttempt in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getlatestsucceededexecutionattempt-2 (proven)
+
+Exported func GetLatestSucceededExecutionAttempt in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-getplanbyplanid (proven)
+
+Exported func GetPlanByPlanID in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getplanbyplanid-2 (proven)
+
+Exported func GetPlanByPlanID in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-getplanbyrowid (proven)
+
+Exported func GetPlanByRowID in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getplanpassbypassid (proven)
+
+Exported func GetPlanPassByPassID in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getplanpassbypassid-2 (proven)
+
+Exported func GetPlanPassByPassID in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-getplanpassbyplanandnumber (proven)
+
+Exported func GetPlanPassByPlanAndNumber in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getplanpassbyplanandnumber-2 (proven)
+
+Exported func GetPlanPassByPlanAndNumber in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-getplanpassbyrowid (proven)
+
+Exported func GetPlanPassByRowID in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getplanpassbyrowid-2 (proven)
+
+Exported func GetPlanPassByRowID in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-getrepositorytarget (proven)
+
+Exported func GetRepositoryTarget in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getrepositorytarget-2 (proven)
+
+Exported func GetRepositoryTarget in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-getrunbyrowid (proven)
+
+Exported func GetRunByRowID in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getrunbyrowid-2 (proven)
+
+Exported func GetRunByRowID in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-getrunbyrunid (proven)
+
+Exported func GetRunByRunID in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-getrunbyrunid-2 (proven)
+
+Exported func GetRunByRunID in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-listartifactsbyexecutionattempt (proven)
+
+Exported func ListArtifactsByExecutionAttempt in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-listartifactsbyplan (proven)
+
+Exported func ListArtifactsByPlan in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-listartifactsbyrun (proven)
+
+Exported func ListArtifactsByRun in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-listexecutionattemptsbyrun (proven)
+
+Exported func ListExecutionAttemptsByRun in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-listplanpasses (proven)
+
+Exported func ListPlanPasses in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-markcurrentauditpacketsstale (proven)
+
+Exported func MarkCurrentAuditPacketsStale in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-markcurrentauditpacketsstale-2 (proven)
+
+Exported func MarkCurrentAuditPacketsStale in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-new (proven)
+
+Exported func New in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-newartifactid (proven)
+
+Exported func NewArtifactID in internal/store/workflow/ids.go
+
+Evidence:
+
+- source: `internal/store/workflow/ids.go`
+
+### backend-symbol-internal-store-workflow-func-newauditdecisionid (proven)
+
+Exported func NewAuditDecisionID in internal/store/workflow/ids.go
+
+Evidence:
+
+- source: `internal/store/workflow/ids.go`
+
+### backend-symbol-internal-store-workflow-func-newauditpacketid (proven)
+
+Exported func NewAuditPacketID in internal/store/workflow/ids.go
+
+Evidence:
+
+- source: `internal/store/workflow/ids.go`
+
+### backend-symbol-internal-store-workflow-func-newexecutionattemptid (proven)
+
+Exported func NewExecutionAttemptID in internal/store/workflow/ids.go
+
+Evidence:
+
+- source: `internal/store/workflow/ids.go`
+
+### backend-symbol-internal-store-workflow-func-newpassid (proven)
+
+Exported func NewPassID in internal/store/workflow/ids.go
+
+Evidence:
+
+- source: `internal/store/workflow/ids.go`
+
+### backend-symbol-internal-store-workflow-func-newplanid (proven)
+
+Exported func NewPlanID in internal/store/workflow/ids.go
+
+Evidence:
+
+- source: `internal/store/workflow/ids.go`
+
+### backend-symbol-internal-store-workflow-func-newrunid (proven)
+
+Exported func NewRunID in internal/store/workflow/ids.go
+
+Evidence:
+
+- source: `internal/store/workflow/ids.go`
+
+### backend-symbol-internal-store-workflow-func-nextexecutionattemptnumber (proven)
+
+Exported func NextExecutionAttemptNumber in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-open (proven)
+
+Exported func Open in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-func-requestexecutionattemptcancellation (proven)
+
+Exported func RequestExecutionAttemptCancellation in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-transitionexecutionattempt (proven)
+
+Exported func TransitionExecutionAttempt in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-transitionplanpass (proven)
+
+Exported func TransitionPlanPass in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-transitionrun (proven)
+
+Exported func TransitionRun in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-updateexecutionattemptresult (proven)
+
+Exported func UpdateExecutionAttemptResult in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflow-func-withtx (proven)
+
+Exported func WithTx in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-type-artifact (proven)
+
+Exported type Artifact in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-auditdecision (proven)
+
+Exported type AuditDecision in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-auditpacket (proven)
+
+Exported type AuditPacket in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-createartifactparams (proven)
+
+Exported type CreateArtifactParams in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-createauditdecisionparams (proven)
+
+Exported type CreateAuditDecisionParams in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-createauditpacketparams (proven)
+
+Exported type CreateAuditPacketParams in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-createexecutionattemptparams (proven)
+
+Exported type CreateExecutionAttemptParams in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-createplanparams (proven)
+
+Exported type CreatePlanParams in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-createplanpassparams (proven)
+
+Exported type CreatePlanPassParams in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-createplanrepositorytargetparams (proven)
+
+Exported type CreatePlanRepositoryTargetParams in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-createrunparams (proven)
+
+Exported type CreateRunParams in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-executionattempt (proven)
+
+Exported type ExecutionAttempt in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-plan (proven)
+
+Exported type Plan in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-planpass (proven)
+
+Exported type PlanPass in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-planpassdependency (proven)
+
+Exported type PlanPassDependency in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-planrepositorytarget (proven)
+
+Exported type PlanRepositoryTarget in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-repositorytarget (proven)
+
+Exported type RepositoryTarget in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-run (proven)
+
+Exported type Run in internal/store/workflow/types.go
+
+Evidence:
+
+- source: `internal/store/workflow/types.go`
+
+### backend-symbol-internal-store-workflow-type-store (proven)
+
+Exported type Store in internal/store/workflow/store.go
+
+Evidence:
+
+- source: `internal/store/workflow/store.go`
+
+### backend-symbol-internal-store-workflow-type-tx (proven)
+
+Exported type Tx in internal/store/workflow/tx.go
+
+Evidence:
+
+- source: `internal/store/workflow/tx.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-completeplan (proven)
+
+Exported func CompletePlan in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-countincompleteplanpasses (proven)
+
+Exported func CountIncompletePlanPasses in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-createartifact (proven)
+
+Exported func CreateArtifact in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-createauditdecision (proven)
+
+Exported func CreateAuditDecision in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-createexecutionattempt (proven)
+
+Exported func CreateExecutionAttempt in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-createplan (proven)
+
+Exported func CreatePlan in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-createplanpass (proven)
+
+Exported func CreatePlanPass in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-createplanpassdependency (proven)
+
+Exported func CreatePlanPassDependency in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-createplanrepositorytarget (proven)
+
+Exported func CreatePlanRepositoryTarget in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-createrepositorytarget (proven)
+
+Exported func CreateRepositoryTarget in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-createrun (proven)
+
+Exported func CreateRun in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-getartifactbyartifactid (proven)
+
+Exported func GetArtifactByArtifactID in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-getauditdecisionbydecisionid (proven)
+
+Exported func GetAuditDecisionByDecisionID in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-getexecutionattemptbyattemptid (proven)
+
+Exported func GetExecutionAttemptByAttemptID in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-getlatestexecutionattemptbyrun (proven)
+
+Exported func GetLatestExecutionAttemptByRun in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-getplanbyplanid (proven)
+
+Exported func GetPlanByPlanID in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-getplanpassbypassid (proven)
+
+Exported func GetPlanPassByPassID in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-getplanpassbyplanandnumber (proven)
+
+Exported func GetPlanPassByPlanAndNumber in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-getplanpassbyrowid (proven)
+
+Exported func GetPlanPassByRowID in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-getrepositorytarget (proven)
+
+Exported func GetRepositoryTarget in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-getrunbyrowid (proven)
+
+Exported func GetRunByRowID in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-getrunbyrunid (proven)
+
+Exported func GetRunByRunID in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-listartifactsbyexecutionattempt (proven)
+
+Exported func ListArtifactsByExecutionAttempt in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-listartifactsbyplan (proven)
+
+Exported func ListArtifactsByPlan in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-listartifactsbyrun (proven)
+
+Exported func ListArtifactsByRun in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-listplanpassdependencies (proven)
+
+Exported func ListPlanPassDependencies in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-listplanpasses (proven)
+
+Exported func ListPlanPasses in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-listplanrepositorytargets (proven)
+
+Exported func ListPlanRepositoryTargets in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-listrepositorytargets (proven)
+
+Exported func ListRepositoryTargets in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-listrunsbyplanpass (proven)
+
+Exported func ListRunsByPlanPass in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-new (proven)
+
+Exported func New in internal/store/workflowgenerated/db.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/db.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-nextexecutionattemptnumber (proven)
+
+Exported func NextExecutionAttemptNumber in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-transitionexecutionattemptstatus (proven)
+
+Exported func TransitionExecutionAttemptStatus in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-transitionplanpassstatus (proven)
+
+Exported func TransitionPlanPassStatus in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-transitionrunstatus (proven)
+
+Exported func TransitionRunStatus in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-func-withtx (proven)
+
+Exported func WithTx in internal/store/workflowgenerated/db.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/db.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-artifact (proven)
+
+Exported type Artifact in internal/store/workflowgenerated/models.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/models.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-auditdecision (proven)
+
+Exported type AuditDecision in internal/store/workflowgenerated/models.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/models.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-createartifactparams (proven)
+
+Exported type CreateArtifactParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-createauditdecisionparams (proven)
+
+Exported type CreateAuditDecisionParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-createexecutionattemptparams (proven)
+
+Exported type CreateExecutionAttemptParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-createplanparams (proven)
+
+Exported type CreatePlanParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-createplanpassdependencyparams (proven)
+
+Exported type CreatePlanPassDependencyParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-createplanpassparams (proven)
+
+Exported type CreatePlanPassParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-createplanrepositorytargetparams (proven)
+
+Exported type CreatePlanRepositoryTargetParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-createrepositorytargetparams (proven)
+
+Exported type CreateRepositoryTargetParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-createrunparams (proven)
+
+Exported type CreateRunParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-dbtx (proven)
+
+Exported type DBTX in internal/store/workflowgenerated/db.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/db.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-executionattempt (proven)
+
+Exported type ExecutionAttempt in internal/store/workflowgenerated/models.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/models.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-getplanpassbyplanandnumberparams (proven)
+
+Exported type GetPlanPassByPlanAndNumberParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-plan (proven)
+
+Exported type Plan in internal/store/workflowgenerated/models.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/models.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-planpass (proven)
+
+Exported type PlanPass in internal/store/workflowgenerated/models.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/models.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-planpassdependency (proven)
+
+Exported type PlanPassDependency in internal/store/workflowgenerated/models.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/models.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-planrepositorytarget (proven)
+
+Exported type PlanRepositoryTarget in internal/store/workflowgenerated/models.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/models.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-queries (proven)
+
+Exported type Queries in internal/store/workflowgenerated/db.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/db.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-repositorytarget (proven)
+
+Exported type RepositoryTarget in internal/store/workflowgenerated/models.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/models.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-run (proven)
+
+Exported type Run in internal/store/workflowgenerated/models.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/models.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-transitionexecutionattemptstatusparams (proven)
+
+Exported type TransitionExecutionAttemptStatusParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-transitionplanpassstatusparams (proven)
+
+Exported type TransitionPlanPassStatusParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
+### backend-symbol-internal-store-workflowgenerated-type-transitionrunstatusparams (proven)
+
+Exported type TransitionRunStatusParams in internal/store/workflowgenerated/workflow.sql.go
+
+Evidence:
+
+- source: `internal/store/workflowgenerated/workflow.sql.go`
+
 ### backend-test-internal-api-artifacts-testlistartifactsmissingrun (proven)
 
 Test function TestListArtifactsMissingRun in internal/api/artifacts/handler_test.go
@@ -11101,6 +13767,30 @@ Test function TestListArtifactsRunLookupError in internal/api/artifacts/handler_
 Evidence:
 
 - test: `internal/api/artifacts/handler_test.go`
+
+### backend-test-internal-api-audits-testworkflowauditpreparemapsstaletoconflict (proven)
+
+Test function TestWorkflowAuditPrepareMapsStaleToConflict in internal/api/audits/workflow_test.go
+
+Evidence:
+
+- test: `internal/api/audits/workflow_test.go`
+
+### backend-test-internal-api-audits-testworkflowauditpreparereturnspacketidentity (proven)
+
+Test function TestWorkflowAuditPrepareReturnsPacketIdentity in internal/api/audits/workflow_test.go
+
+Evidence:
+
+- test: `internal/api/audits/workflow_test.go`
+
+### backend-test-internal-api-audits-testworkflowauditstatusreturnscurrentandlatest (proven)
+
+Test function TestWorkflowAuditStatusReturnsCurrentAndLatest in internal/api/audits/workflow_test.go
+
+Evidence:
+
+- test: `internal/api/audits/workflow_test.go`
 
 ### backend-test-internal-api-plans-testplanattempthttpblockerspreservecodes (proven)
 
@@ -11229,6 +13919,30 @@ Test function TestProjectAPIRejectsInvalidRepositoryConfig in internal/api/proje
 Evidence:
 
 - test: `internal/api/projects/handler_test.go`
+
+### backend-test-internal-api-runs-testworkflowexecutionattemptmonitoringisbounded (proven)
+
+Test function TestWorkflowExecutionAttemptMonitoringIsBounded in internal/api/runs/workflow_execution_test.go
+
+Evidence:
+
+- test: `internal/api/runs/workflow_execution_test.go`
+
+### backend-test-internal-api-runs-testworkflowexecutionreconcileroute (proven)
+
+Test function TestWorkflowExecutionReconcileRoute in internal/api/runs/workflow_execution_test.go
+
+Evidence:
+
+- test: `internal/api/runs/workflow_execution_test.go`
+
+### backend-test-internal-api-runs-testworkflowexecutionstartpreflightblocker (proven)
+
+Test function TestWorkflowExecutionStartPreflightBlocker in internal/api/runs/workflow_execution_test.go
+
+Evidence:
+
+- test: `internal/api/runs/workflow_execution_test.go`
 
 ### backend-test-internal-api-testapi (proven)
 
@@ -11645,6 +14359,46 @@ Test function TestValidatePlanReturnsReportWithoutPersisting in internal/api/pla
 Evidence:
 
 - test: `internal/api/plans_test.go`
+
+### backend-test-internal-app-audits-testworkflowauditaccepteddecisioncompletesrunpassandplan (proven)
+
+Test function TestWorkflowAuditAcceptedDecisionCompletesRunPassAndPlan in internal/app/audits/workflow_service_test.go
+
+Evidence:
+
+- test: `internal/app/audits/workflow_service_test.go`
+
+### backend-test-internal-app-audits-testworkflowauditdecisionrequiresexplicitconfirmationandexactpacket (proven)
+
+Test function TestWorkflowAuditDecisionRequiresExplicitConfirmationAndExactPacket in internal/app/audits/workflow_service_test.go
+
+Evidence:
+
+- test: `internal/app/audits/workflow_service_test.go`
+
+### backend-test-internal-app-audits-testworkflowauditneedsrevisionpreservesmanagedpass (proven)
+
+Test function TestWorkflowAuditNeedsRevisionPreservesManagedPass in internal/app/audits/workflow_service_test.go
+
+Evidence:
+
+- test: `internal/app/audits/workflow_service_test.go`
+
+### backend-test-internal-app-audits-testworkflowauditpacketbecomesstaleafterrepositorychangeorlaterattempt (proven)
+
+Test function TestWorkflowAuditPacketBecomesStaleAfterRepositoryChangeOrLaterAttempt in internal/app/audits/workflow_service_test.go
+
+Evidence:
+
+- test: `internal/app/audits/workflow_service_test.go`
+
+### backend-test-internal-app-audits-testworkflowauditpacketcontainscompleteauthority (proven)
+
+Test function TestWorkflowAuditPacketContainsCompleteAuthority in internal/app/audits/workflow_service_test.go
+
+Evidence:
+
+- test: `internal/app/audits/workflow_service_test.go`
 
 ### backend-test-internal-app-drift-testnormalizemodeloutputnestssourceartifactpathinprovenance (proven)
 
@@ -13006,6 +15760,30 @@ Evidence:
 
 - test: `internal/app/plans/attempt_service_test.go`
 
+### backend-test-internal-app-plans-workflow-testcreateplandatabasefailureleavesnorecordsorartifacts (proven)
+
+Test function TestCreatePlanDatabaseFailureLeavesNoRecordsOrArtifacts in internal/app/plans/workflow/service_test.go
+
+Evidence:
+
+- test: `internal/app/plans/workflow/service_test.go`
+
+### backend-test-internal-app-plans-workflow-testcreateplanpersistscanonicalartifactsanddependencies (proven)
+
+Test function TestCreatePlanPersistsCanonicalArtifactsAndDependencies in internal/app/plans/workflow/service_test.go
+
+Evidence:
+
+- test: `internal/app/plans/workflow/service_test.go`
+
+### backend-test-internal-app-plans-workflow-testcreateplanpromotionfailurerollsbackdatabase (proven)
+
+Test function TestCreatePlanPromotionFailureRollsBackDatabase in internal/app/plans/workflow/service_test.go
+
+Evidence:
+
+- test: `internal/app/plans/workflow/service_test.go`
+
 ### backend-test-internal-app-projects-testcreateplanattemptfromseedblocksinvalidseedstatesandplaninput (proven)
 
 Test function TestCreatePlanAttemptFromSeedBlocksInvalidSeedStatesAndPlanInput in internal/app/projects/plan_seed_service_test.go
@@ -13118,6 +15896,54 @@ Evidence:
 
 - test: `internal/app/projects/validator_test.go`
 
+### backend-test-internal-app-runs-workflow-testcreatemanagedandstandaloneruns (proven)
+
+Test function TestCreateManagedAndStandaloneRuns in internal/app/runs/workflow/service_test.go
+
+Evidence:
+
+- test: `internal/app/runs/workflow/service_test.go`
+
+### backend-test-internal-app-runs-workflow-testcreaterunfailuresleavenorunartifactsorpasstransition (proven)
+
+Test function TestCreateRunFailuresLeaveNoRunArtifactsOrPassTransition in internal/app/runs/workflow/service_test.go
+
+Evidence:
+
+- test: `internal/app/runs/workflow/service_test.go`
+
+### backend-test-internal-app-runs-workflow-testcreaterunrejectsmismatchedassociationandinvalidremediation (proven)
+
+Test function TestCreateRunRejectsMismatchedAssociationAndInvalidRemediation in internal/app/runs/workflow/service_test.go
+
+Evidence:
+
+- test: `internal/app/runs/workflow/service_test.go`
+
+### backend-test-internal-app-runs-workflow-testexecutionattemptvalidationandauditdecisioncompletemanagedworkflow (proven)
+
+Test function TestExecutionAttemptValidationAndAuditDecisionCompleteManagedWorkflow in internal/app/runs/workflow/service_test.go
+
+Evidence:
+
+- test: `internal/app/runs/workflow/service_test.go`
+
+### backend-test-internal-app-runs-workflow-testfailedandtimedoutattemptscanentervalidationandremediation (proven)
+
+Test function TestFailedAndTimedOutAttemptsCanEnterValidationAndRemediation in internal/app/runs/workflow/service_test.go
+
+Evidence:
+
+- test: `internal/app/runs/workflow/service_test.go`
+
+### backend-test-internal-app-runs-workflow-testrequestexecutionattemptcancellationrequiresmatchingrunbeforemutation (proven)
+
+Test function TestRequestExecutionAttemptCancellationRequiresMatchingRunBeforeMutation in internal/app/runs/workflow/cancellation_test.go
+
+Evidence:
+
+- test: `internal/app/runs/workflow/cancellation_test.go`
+
 ### backend-test-internal-mcp-testblockerenvelopeboundsandsanitizes (proven)
 
 Test function TestBlockerEnvelopeBoundsAndSanitizes in internal/mcp/blocker_envelope_test.go
@@ -13125,6 +15951,54 @@ Test function TestBlockerEnvelopeBoundsAndSanitizes in internal/mcp/blocker_enve
 Evidence:
 
 - test: `internal/mcp/blocker_envelope_test.go`
+
+### backend-test-internal-mcp-testcanonicaldepscarrycanonicalprofile (proven)
+
+Test function TestCanonicalDepsCarryCanonicalProfile in internal/mcp/profile_test.go
+
+Evidence:
+
+- test: `internal/mcp/profile_test.go`
+
+### backend-test-internal-mcp-testcanonicalpersistencefailureisboundedandrollsbackartifacts (proven)
+
+Test function TestCanonicalPersistenceFailureIsBoundedAndRollsBackArtifacts in internal/mcp/canonical_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/canonical_tools_test.go`
+
+### backend-test-internal-mcp-testcanonicalservertoolsurfacebyprofile (proven)
+
+Test function TestCanonicalServerToolSurfaceByProfile in internal/mcp/tool_surface_test.go
+
+Evidence:
+
+- test: `internal/mcp/tool_surface_test.go`
+
+### backend-test-internal-mcp-testcanonicalsubmissionfailuresareatomicandclassified (proven)
+
+Test function TestCanonicalSubmissionFailuresAreAtomicAndClassified in internal/mcp/canonical_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/canonical_tools_test.go`
+
+### backend-test-internal-mcp-testcanonicaltooldefinitionsbyprofile (proven)
+
+Test function TestCanonicalToolDefinitionsByProfile in internal/mcp/canonical_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/canonical_tools_test.go`
+
+### backend-test-internal-mcp-testcanonicaltoolnamesdonotexposeunsafecapabilities (proven)
+
+Test function TestCanonicalToolNamesDoNotExposeUnsafeCapabilities in internal/mcp/tool_surface_test.go
+
+Evidence:
+
+- test: `internal/mcp/tool_surface_test.go`
 
 ### backend-test-internal-mcp-testcontextbrokertoolschemasareboundedandsafe (proven)
 
@@ -13182,13 +16056,21 @@ Evidence:
 
 - test: `internal/mcp/tool_create_run_test.go`
 
-### backend-test-internal-mcp-testdefaultlocaloperatortoolsurfaceincludesallsafetools (proven)
+### backend-test-internal-mcp-testcreaterunpersistssetupreadymetadataandartifacts (proven)
 
-Test function TestDefaultLocalOperatorToolSurfaceIncludesAllSafeTools in internal/mcp/tool_surface_test.go
+Test function TestCreateRunPersistsSetupReadyMetadataAndArtifacts in internal/mcp/canonical_tools_test.go
 
 Evidence:
 
-- test: `internal/mcp/tool_surface_test.go`
+- test: `internal/mcp/canonical_tools_test.go`
+
+### backend-test-internal-mcp-testgetauditpacketreturnsauthoritativebody (proven)
+
+Test function TestGetAuditPacketReturnsAuthoritativeBody in internal/mcp/audit_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/audit_tools_test.go`
 
 ### backend-test-internal-mcp-testgetnextauditworkunknownproject (proven)
 
@@ -13558,14 +16440,6 @@ Evidence:
 
 - test: `internal/mcp/mcp_test.go`
 
-### backend-test-internal-mcp-testhandlecreaterunfromplannerhandoff-nodeps (proven)
-
-Test function TestHandleCreateRunFromPlannerHandoff_NoDeps in internal/mcp/mcp_test.go
-
-Evidence:
-
-- test: `internal/mcp/mcp_test.go`
-
 ### backend-test-internal-mcp-testhandlecreaterunfromplannerhandoff-norepotarget (proven)
 
 Test function TestHandleCreateRunFromPlannerHandoff_NoRepoTarget in internal/mcp/mcp_test.go
@@ -13673,6 +16547,14 @@ Evidence:
 ### backend-test-internal-mcp-testhandlecreaterunfromplannerhandofffile-successexactsha (proven)
 
 Test function TestHandleCreateRunFromPlannerHandoffFile_SuccessExactSHA in internal/mcp/mcp_test.go
+
+Evidence:
+
+- test: `internal/mcp/mcp_test.go`
+
+### backend-test-internal-mcp-testhandlecreaterunfromplannerhandoffnodepsdirect (proven)
+
+Test function TestHandleCreateRunFromPlannerHandoffNoDepsDirect in internal/mcp/mcp_test.go
 
 Evidence:
 
@@ -14118,29 +17000,37 @@ Evidence:
 
 - test: `internal/mcp/mcp_test.go`
 
-### backend-test-internal-mcp-testhttphandler-auth (proven)
+### backend-test-internal-mcp-testhttphandlerauth (proven)
 
-Test function TestHTTPHandler_Auth in internal/mcp/http_handler_test.go
-
-Evidence:
-
-- test: `internal/mcp/http_handler_test.go`
-
-### backend-test-internal-mcp-testhttphandler-protocol (proven)
-
-Test function TestHTTPHandler_Protocol in internal/mcp/http_handler_test.go
+Test function TestHTTPHandlerAuth in internal/mcp/http_handler_test.go
 
 Evidence:
 
 - test: `internal/mcp/http_handler_test.go`
 
-### backend-test-internal-mcp-testhttphandlertoolslistusesservertoolsurface (proven)
+### backend-test-internal-mcp-testhttphandlercanonicalprotocol (proven)
 
-Test function TestHTTPHandlerToolsListUsesServerToolSurface in internal/mcp/http_handler_test.go
+Test function TestHTTPHandlerCanonicalProtocol in internal/mcp/http_handler_test.go
 
 Evidence:
 
 - test: `internal/mcp/http_handler_test.go`
+
+### backend-test-internal-mcp-testhttphandlertoolslistusescanonicalprofiles (proven)
+
+Test function TestHTTPHandlerToolsListUsesCanonicalProfiles in internal/mcp/http_handler_test.go
+
+Evidence:
+
+- test: `internal/mcp/http_handler_test.go`
+
+### backend-test-internal-mcp-testhttpsfileparameterfetchercanonicalartifactvalidation (proven)
+
+Test function TestHTTPSFileParameterFetcherCanonicalArtifactValidation in internal/mcp/file_parameter_fetcher_test.go
+
+Evidence:
+
+- test: `internal/mcp/file_parameter_fetcher_test.go`
 
 ### backend-test-internal-mcp-testhttpsfileparameterfetcherdialsvalidatedliteralip (proven)
 
@@ -14230,13 +17120,21 @@ Evidence:
 
 - test: `internal/mcp/file_parameter_fetcher_test.go`
 
-### backend-test-internal-mcp-testinvalidprofiledefaultstolocaloperator (proven)
+### backend-test-internal-mcp-testlegacyplannerhandofffiletooldefinitionsstillcompile (proven)
 
-Test function TestInvalidProfileDefaultsToLocalOperator in internal/mcp/profile_test.go
+Test function TestLegacyPlannerHandoffFileToolDefinitionsStillCompile in internal/mcp/tool_create_run_test.go
 
 Evidence:
 
-- test: `internal/mcp/profile_test.go`
+- test: `internal/mcp/tool_create_run_test.go`
+
+### backend-test-internal-mcp-testlegacytoolsareunregisteredforeverycanonicalprofile (proven)
+
+Test function TestLegacyToolsAreUnregisteredForEveryCanonicalProfile in internal/mcp/tool_surface_test.go
+
+Evidence:
+
+- test: `internal/mcp/tool_surface_test.go`
 
 ### backend-test-internal-mcp-testlifecyclestatefromstatus (proven)
 
@@ -14245,14 +17143,6 @@ Test function TestLifecycleStateFromStatus in internal/mcp/mcp_test.go
 Evidence:
 
 - test: `internal/mcp/mcp_test.go`
-
-### backend-test-internal-mcp-testnewdepsfromenvusescanonicalprofileforalllaunchers (proven)
-
-Test function TestNewDepsFromEnvUsesCanonicalProfileForAllLaunchers in internal/mcp/profile_test.go
-
-Evidence:
-
-- test: `internal/mcp/profile_test.go`
 
 ### backend-test-internal-mcp-testnormalizeplanpayload-bothpresent (proven)
 
@@ -14325,6 +17215,14 @@ Test function TestNormalizePlanPayload_ObjectWrongType in internal/mcp/plan_tool
 Evidence:
 
 - test: `internal/mcp/plan_tools_test.go`
+
+### backend-test-internal-mcp-testnormalizetoolprofilecanonicalvalues (proven)
+
+Test function TestNormalizeToolProfileCanonicalValues in internal/mcp/profile_test.go
+
+Evidence:
+
+- test: `internal/mcp/profile_test.go`
 
 ### backend-test-internal-mcp-testorchestratorworktools-getnextauditworksuccessthroughtool (proven)
 
@@ -14534,14 +17432,6 @@ Evidence:
 
 - test: `internal/mcp/tool_create_run_test.go`
 
-### backend-test-internal-mcp-testplannerhandofffiletoolsdeclarechatgptfileparameter (proven)
-
-Test function TestPlannerHandoffFileToolsDeclareChatGPTFileParameter in internal/mcp/tool_create_run_test.go
-
-Evidence:
-
-- test: `internal/mcp/tool_create_run_test.go`
-
 ### backend-test-internal-mcp-testplanseedmcpattemptmissingrequiredfields (proven)
 
 Test function TestPlanSeedMCPAttemptMissingRequiredFields in internal/mcp/plan_seed_tools_test.go
@@ -14622,6 +17512,22 @@ Evidence:
 
 - test: `internal/mcp/orchestrator_work_tools_test.go`
 
+### backend-test-internal-mcp-testrecordauditdecisionmapsstalepacket (proven)
+
+Test function TestRecordAuditDecisionMapsStalePacket in internal/mcp/audit_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/audit_tools_test.go`
+
+### backend-test-internal-mcp-testrecordauditdecisionrequiresconfirmationandreturnslifecycle (proven)
+
+Test function TestRecordAuditDecisionRequiresConfirmationAndReturnsLifecycle in internal/mcp/audit_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/audit_tools_test.go`
+
 ### backend-test-internal-mcp-testrefactorbacklogschemasarestrictandprojectscoped (proven)
 
 Test function TestRefactorBacklogSchemasAreStrictAndProjectScoped in internal/mcp/refactor_backlog_tools_test.go
@@ -14694,46 +17600,6 @@ Evidence:
 
 - test: `internal/mcp/refactor_backlog_tools_test.go`
 
-### backend-test-internal-mcp-testrestrictedbrokertoolcallisunknown (proven)
-
-Test function TestRestrictedBrokerToolCallIsUnknown in internal/mcp/tool_surface_test.go
-
-Evidence:
-
-- test: `internal/mcp/tool_surface_test.go`
-
-### backend-test-internal-mcp-testrestrictedgitbrokertoolcallisunknown (proven)
-
-Test function TestRestrictedGitBrokerToolCallIsUnknown in internal/mcp/tool_surface_test.go
-
-Evidence:
-
-- test: `internal/mcp/tool_surface_test.go`
-
-### backend-test-internal-mcp-testrestrictedlocalauditbrokertoolcallisunknown (proven)
-
-Test function TestRestrictedLocalAuditBrokerToolCallIsUnknown in internal/mcp/tool_surface_test.go
-
-Evidence:
-
-- test: `internal/mcp/tool_surface_test.go`
-
-### backend-test-internal-mcp-testrestrictedmemorybrokertoolcallisunknown (proven)
-
-Test function TestRestrictedMemoryBrokerToolCallIsUnknown in internal/mcp/tool_surface_test.go
-
-Evidence:
-
-- test: `internal/mcp/tool_surface_test.go`
-
-### backend-test-internal-mcp-testrestrictedtoolsurfacehidesbrokertools (proven)
-
-Test function TestRestrictedToolSurfaceHidesBrokerTools in internal/mcp/tool_surface_test.go
-
-Evidence:
-
-- test: `internal/mcp/tool_surface_test.go`
-
 ### backend-test-internal-mcp-testsafeartifactdisplaynamecrossplatform (proven)
 
 Test function TestSafeArtifactDisplayNameCrossPlatform in internal/mcp/blocker_envelope_test.go
@@ -14798,9 +17664,9 @@ Evidence:
 
 - test: `internal/mcp/server_notification_test.go`
 
-### backend-test-internal-mcp-testservertoolslist-pass16 (proven)
+### backend-test-internal-mcp-testservertoolslistdefaultstocanonicalplannerprofile (proven)
 
-Test function TestServerToolsList_Pass16 in internal/mcp/mcp_test.go
+Test function TestServerToolsListDefaultsToCanonicalPlannerProfile in internal/mcp/mcp_test.go
 
 Evidence:
 
@@ -14838,6 +17704,14 @@ Evidence:
 
 - test: `internal/mcp/mcp_test.go`
 
+### backend-test-internal-mcp-testsubmitplanandgetplanpersistboundedmetadata (proven)
+
+Test function TestSubmitPlanAndGetPlanPersistBoundedMetadata in internal/mcp/canonical_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/canonical_tools_test.go`
+
 ### backend-test-internal-mcp-testsubmitplannerpassplanschema-additionalpropertiesfalse (proven)
 
 Test function TestSubmitPlannerPassPlanSchema_AdditionalPropertiesFalse in internal/mcp/plan_tools_test.go
@@ -14870,81 +17744,57 @@ Evidence:
 
 - test: `internal/mcp/blocker_envelope_test.go`
 
-### backend-test-internal-mcp-testtoolprofileauditaliasnormalizestolocaloperator (proven)
+### backend-test-internal-mcp-testtoolprofilefromenvdefaultsandfailsclosedtoplanner (proven)
 
-Test function TestToolProfileAuditAliasNormalizesToLocalOperator in internal/mcp/profile_test.go
-
-Evidence:
-
-- test: `internal/mcp/profile_test.go`
-
-### backend-test-internal-mcp-testtoolprofileauditfromenvuseslocaloperator (proven)
-
-Test function TestToolProfileAuditFromEnvUsesLocalOperator in internal/mcp/profile_test.go
+Test function TestToolProfileFromEnvDefaultsAndFailsClosedToPlanner in internal/mcp/profile_test.go
 
 Evidence:
 
 - test: `internal/mcp/profile_test.go`
 
-### backend-test-internal-mcp-testtoolprofilecontextbrokerenabled (proven)
+### backend-test-internal-mcp-testtoolslistcanonicalprofilesareexactandschemasarebounded (proven)
 
-Test function TestToolProfileContextBrokerEnabled in internal/mcp/profile_test.go
-
-Evidence:
-
-- test: `internal/mcp/profile_test.go`
-
-### backend-test-internal-mcp-testtoolprofilefromenvdefaultsandprecedence (proven)
-
-Test function TestToolProfileFromEnvDefaultsAndPrecedence in internal/mcp/profile_test.go
-
-Evidence:
-
-- test: `internal/mcp/profile_test.go`
-
-### backend-test-internal-mcp-testtoolscall-auditprofilealiasusesfulllocaloperatorregistry (proven)
-
-Test function TestToolsCall_AuditProfileAliasUsesFullLocalOperatorRegistry in internal/mcp/server_tools_list_test.go
+Test function TestToolsListCanonicalProfilesAreExactAndSchemasAreBounded in internal/mcp/server_tools_list_test.go
 
 Evidence:
 
 - test: `internal/mcp/server_tools_list_test.go`
 
-### backend-test-internal-mcp-testtoolslist-invalidcursor (proven)
+### backend-test-internal-mcp-testtoolslistinvalidcursor (proven)
 
-Test function TestToolsList_InvalidCursor in internal/mcp/server_tools_list_test.go
-
-Evidence:
-
-- test: `internal/mcp/server_tools_list_test.go`
-
-### backend-test-internal-mcp-testtoolslist-localoperatorpageddiscoveryincludesplannerandauditor (proven)
-
-Test function TestToolsList_LocalOperatorPagedDiscoveryIncludesPlannerAndAuditor in internal/mcp/server_tools_list_test.go
+Test function TestToolsListInvalidCursor in internal/mcp/server_tools_list_test.go
 
 Evidence:
 
 - test: `internal/mcp/server_tools_list_test.go`
 
-### backend-test-internal-mcp-testtoolslist-localoperatorschemasarevalidandbounded (proven)
+### backend-test-internal-mcp-testtoolslistqueryfilteringdoesnotmutatecanonicalregistry (proven)
 
-Test function TestToolsList_LocalOperatorSchemasAreValidAndBounded in internal/mcp/server_tools_list_test.go
-
-Evidence:
-
-- test: `internal/mcp/server_tools_list_test.go`
-
-### backend-test-internal-mcp-testtoolslist-queryfilteringdoesnotmutateregistry (proven)
-
-Test function TestToolsList_QueryFilteringDoesNotMutateRegistry in internal/mcp/server_tools_list_test.go
+Test function TestToolsListQueryFilteringDoesNotMutateCanonicalRegistry in internal/mcp/server_tools_list_test.go
 
 Evidence:
 
 - test: `internal/mcp/server_tools_list_test.go`
+
+### backend-test-internal-mcp-testvalidateartifactisnonmutatingandbounded (proven)
+
+Test function TestValidateArtifactIsNonMutatingAndBounded in internal/mcp/canonical_tools_test.go
+
+Evidence:
+
+- test: `internal/mcp/canonical_tools_test.go`
 
 ### backend-test-internal-store-testagentexecutionownershipcancellationandcas (proven)
 
 Test function TestAgentExecutionOwnershipCancellationAndCAS in internal/store/agent_execution_ownership_test.go
+
+Evidence:
+
+- test: `internal/store/agent_execution_ownership_test.go`
+
+### backend-test-internal-store-testappendagentexecutionlifecycleerrorpreservesverifiedabsence (proven)
+
+Test function TestAppendAgentExecutionLifecycleErrorPreservesVerifiedAbsence in internal/store/agent_execution_ownership_test.go
 
 Evidence:
 
@@ -15037,4 +17887,36 @@ Test function TestSourceSnapshotStoreRoundTrip in internal/store/source_snapshot
 Evidence:
 
 - test: `internal/store/source_snapshots_test.go`
+
+### backend-test-internal-store-testterminalizeagentexecutioncaspreservesexistingartifactpaths (proven)
+
+Test function TestTerminalizeAgentExecutionCASPreservesExistingArtifactPaths in internal/store/agent_execution_ownership_test.go
+
+Evidence:
+
+- test: `internal/store/agent_execution_ownership_test.go`
+
+### backend-test-internal-store-workflow-testcommitartifactbatchrollsbackdatabaseandfilesystemtogether (proven)
+
+Test function TestCommitArtifactBatchRollsBackDatabaseAndFilesystemTogether in internal/store/workflow/store_test.go
+
+Evidence:
+
+- test: `internal/store/workflow/store_test.go`
+
+### backend-test-internal-store-workflow-testdatabaseconstraintsrejectinvalidrelationshipsandtransitions (proven)
+
+Test function TestDatabaseConstraintsRejectInvalidRelationshipsAndTransitions in internal/store/workflow/store_test.go
+
+Evidence:
+
+- test: `internal/store/workflow/store_test.go`
+
+### backend-test-internal-store-workflow-testfreshworkflowdatabasecontainsonlyworkflowtables (proven)
+
+Test function TestFreshWorkflowDatabaseContainsOnlyWorkflowTables in internal/store/workflow/store_test.go
+
+Evidence:
+
+- test: `internal/store/workflow/store_test.go`
 

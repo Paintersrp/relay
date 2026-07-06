@@ -29,11 +29,7 @@ Schema version: `1.0.0`
 | `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | mcp_tool_source |
 | `internal/mcp/plan_seed_tools.go` | `19a7bede46ae71836a0a942123f2d24015e7faaf93896850b57e7bd6cbbb0ad4` | mcp_tool_source |
 | `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | mcp_tool_source |
-| `internal/mcp/server.go` | `520e62fdfe31fc41279bd4368d01a139eb9c009b0080c51a9a86b7ef6a7af60f` | mcp_tool_source |
-| `relay-contracts/contracts/planner_mcp_context_broker_contract.md` | `eb8b868408e141e054adf43fe478f0667b71f6f2d78a573a767d25e33ace22f5` | mcp_contract_source |
-| `relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md` | `838204edb0b38d68e4f38e1a06d73e5977366215450c37b7909f9e91b350d29e` | mcp_contract_source |
-| `relay-contracts/contracts/planner_mcp_plan_attempt_contract.md` | `3cf8df06e87a55560bd4fb900eef70061695c7d40bc81ec9d1c95ef694622997` | mcp_contract_source |
-| `relay-contracts/contracts/planner_mcp_plan_submission_contract.md` | `3f8df84cf7ba886c6401aba191b664006e3fddca96c86c081260ce83d5496d89` | mcp_contract_source |
+| `internal/mcp/server.go` | `dbe3b433bf69645ea93084557197e9c7164ca6295eee3926525faabb1f117ce1` | mcp_tool_source |
 
 ## Fact Labels
 

@@ -127,7 +127,7 @@ describe("relay-plans api", () => {
               associated_runs: [],
               pass_type: "ui_visibility",
               context_plan: {
-                required_repositories: ["relay", "relay-contracts"],
+                required_repositories: ["relay", "relay-specs"],
                 seed_search_terms: [
                   {
                     repo_id: "relay",
@@ -170,7 +170,7 @@ describe("relay-plans api", () => {
     expect(response.passes[0]).toMatchObject({
       passType: "ui_visibility",
       contextPlan: {
-        requiredRepositories: ["relay", "relay-contracts"],
+        requiredRepositories: ["relay", "relay-specs"],
         seedSearchTerms: [{ repoId: "relay", query: "context packet" }],
         seedFilesToRead: [
           { repoId: "relay", path: "apps/web/src/routes/runs/$runId/intake.tsx" },

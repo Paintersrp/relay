@@ -219,7 +219,7 @@ func (svc *Service) RepairValidation(runID int64, packetJSON []byte, report *val
 	}
 
 	// Re-validate repaired packet
-	valReport, valErr := validation.ValidatePacketJSON(repairedJSON, "relay-contracts/schema/canonical_packet.schema.json")
+	valReport, valErr := validation.ValidatePacketJSON(repairedJSON, "relay-specs/schema/canonical_packet.schema.json")
 	if valErr != nil {
 		result.ReValidationError = fmt.Sprintf("re-validation error: %v", valErr)
 		result.Error = result.ReValidationError

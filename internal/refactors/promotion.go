@@ -1244,7 +1244,7 @@ func buildGeneratedPlan(projectID, planID, title string, now time.Time, orderedC
 			ProjectContext: &plans.ProjectContext{
 				PrimaryProject:     projectID,
 				PrimaryRepository:  generatedPlanRepoID,
-				ContractRepository: "relay-contracts",
+				ContractRepository: "relay-specs",
 				GitHubRole:         "repo_host_and_origin_only",
 			},
 			MCPCapabilityProfile: &plans.MCPCapabilityProfile{

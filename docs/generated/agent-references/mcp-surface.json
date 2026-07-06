@@ -40,28 +40,8 @@
     },
     {
       "path": "internal/mcp/server.go",
-      "sha256": "520e62fdfe31fc41279bd4368d01a139eb9c009b0080c51a9a86b7ef6a7af60f",
+      "sha256": "dbe3b433bf69645ea93084557197e9c7164ca6295eee3926525faabb1f117ce1",
       "role": "mcp_tool_source"
-    },
-    {
-      "path": "relay-contracts/contracts/planner_mcp_context_broker_contract.md",
-      "sha256": "eb8b868408e141e054adf43fe478f0667b71f6f2d78a573a767d25e33ace22f5",
-      "role": "mcp_contract_source"
-    },
-    {
-      "path": "relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md",
-      "sha256": "838204edb0b38d68e4f38e1a06d73e5977366215450c37b7909f9e91b350d29e",
-      "role": "mcp_contract_source"
-    },
-    {
-      "path": "relay-contracts/contracts/planner_mcp_plan_attempt_contract.md",
-      "sha256": "3cf8df06e87a55560bd4fb900eef70061695c7d40bc81ec9d1c95ef694622997",
-      "role": "mcp_contract_source"
-    },
-    {
-      "path": "relay-contracts/contracts/planner_mcp_plan_submission_contract.md",
-      "sha256": "3f8df84cf7ba886c6401aba191b664006e3fddca96c86c081260ce83d5496d89",
-      "role": "mcp_contract_source"
     }
   ],
   "fact_labels": [

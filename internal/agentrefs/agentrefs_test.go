@@ -9,6 +9,10 @@ import (
 	"testing"
 )
 
+func legacyRepoName() string {
+	return "relay" + "-" + "contracts"
+}
+
 func TestValidateRepoRelativePath_AcceptsNormal(t *testing.T) {
 	cases := []string{
 		"foo.txt",
@@ -443,28 +447,34 @@ func TestBuildWorkflowSurfaceDoc_NoWallClockTimestamps(t *testing.T) {
 	}
 }
 
-func TestBuildWorkflowSurfaceDoc_ContractSourceInputs(t *testing.T) {
+func TestBuildWorkflowSurfaceDoc_RelaySourceInputsOnly(t *testing.T) {
 	doc, err := BuildWorkflowSurfaceDoc(findRepoRoot(t))
 	if err != nil {
 		t.Fatalf("BuildWorkflowSurfaceDoc: %v", err)
 	}
 
-	requiredContractPaths := []string{
-		"relay-contracts/contracts/intent_drift_review_contract.md",
-		"relay-contracts/contracts/planner_mcp_plan_attempt_contract.md",
-		"relay-contracts/contracts/refactor_backlog_contract.md",
-		"relay-contracts/policies/pipeline_lifecycle_policy.md",
+	requiredSourcePaths := []string{
+		"internal/app/plans/attempt_types.go",
+		"internal/app/plans/attempt_service.go",
+		"internal/api/plans/attempt_handler.go",
+		"internal/mcp/plan_attempt_tools.go",
+		"internal/refactors/types.go",
+		"internal/mcp/refactor_backlog_tools.go",
+		"internal/app/plans/work_packets.go",
 	}
 
 	sourceInputPaths := make(map[string]SourceInput)
 	for _, si := range doc.SourceInputs {
+		if strings.Contains(si.Path, legacyRepoName()) {
+			t.Errorf("workflow source input should not reference legacy checkout: %q", si.Path)
+		}
 		sourceInputPaths[si.Path] = si
 	}
 
-	for _, p := range requiredContractPaths {
+	for _, p := range requiredSourcePaths {
 		si, ok := sourceInputPaths[p]
 		if !ok {
-			t.Errorf("required relay-contracts source input %q not found in source_inputs", p)
+			t.Errorf("required Relay source input %q not found in source_inputs", p)
 			continue
 		}
 		if si.Path != p {
@@ -511,10 +521,12 @@ func TestBuildWorkflowSurfaceDoc_RefactorCandidateStatuses(t *testing.T) {
 	}
 
 	expectedEvidences := map[string]bool{
-		"internal/refactors/types.go":                            false,
-		"relay-contracts/contracts/refactor_backlog_contract.md": false,
+		"internal/refactors/types.go": false,
 	}
 	for _, e := range fact.Evidence {
+		if strings.Contains(e.Value, legacyRepoName()) {
+			t.Errorf("refactor candidate fact should not reference legacy checkout evidence %q", e.Value)
+		}
 		expectedEvidences[e.Value] = true
 	}
 	for path, found := range expectedEvidences {
@@ -531,7 +543,6 @@ func TestBuildWorkflowSurfaceDoc_GapFacts(t *testing.T) {
 	}
 
 	requiredGapFactIDs := []string{
-		"workflow-gap-contract-runtime-comparison",
 		"workflow-gap-untested-state-values",
 		"workflow-gap-lifecycle-observed-writes",
 		"workflow-gap-transport-coverage",
@@ -573,33 +584,31 @@ func TestBuildWorkflowSurfaceDoc_EvidenceRelativity(t *testing.T) {
 	}
 }
 
-func TestBuildWorkflowSurfaceDoc_MissingContractReturnsError(t *testing.T) {
+func TestBuildWorkflowSurfaceDoc_MissingRelaySourceReturnsError(t *testing.T) {
 	dir := t.TempDir()
 
-	contractsDir := filepath.Join(dir, "relay-contracts", "contracts")
-	if err := os.MkdirAll(contractsDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	policiesDir := filepath.Join(dir, "relay-contracts", "policies")
-	if err := os.MkdirAll(policiesDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
 	for _, p := range []string{
-		filepath.Join(contractsDir, "intent_drift_review_contract.md"),
-		filepath.Join(contractsDir, "planner_mcp_plan_attempt_contract.md"),
-		filepath.Join(contractsDir, "refactor_backlog_contract.md"),
+		"internal/app/plans/attempt_types.go",
+		"internal/app/plans/attempt_service.go",
+		"internal/api/plans/attempt_handler.go",
+		"internal/mcp/plan_attempt_tools.go",
+		"internal/refactors/types.go",
+		"internal/mcp/refactor_backlog_tools.go",
 	} {
-		if err := os.WriteFile(p, []byte("placeholder"), 0644); err != nil {
+		fullPath := filepath.Join(dir, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, []byte("placeholder"), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	_, err := BuildWorkflowSurfaceDoc(dir)
 	if err == nil {
-		t.Fatal("expected error for missing pipeline lifecycle policy, got nil")
+		t.Fatal("expected error for missing Relay source input, got nil")
 	}
-	missingPath := "relay-contracts/policies/pipeline_lifecycle_policy.md"
+	missingPath := "internal/app/plans/work_packets.go"
 	if !strings.Contains(err.Error(), missingPath) {
 		t.Errorf("error should name missing path %q, got: %v", missingPath, err)
 	}
@@ -964,35 +973,39 @@ func TestBuildMCPSurfaceDoc_PlanSeedToolsPresent(t *testing.T) {
 	}
 }
 
-func TestBuildMCPSurfaceDoc_MPCContractSourceInputs(t *testing.T) {
+func TestBuildMCPSurfaceDoc_RelaySourceInputsOnly(t *testing.T) {
 	doc, err := BuildMCPSurfaceDoc(findRepoRoot(t))
 	if err != nil {
 		t.Fatalf("BuildMCPSurfaceDoc: %v", err)
 	}
 
-	requiredContractPaths := []string{
-		"relay-contracts/contracts/planner_mcp_context_broker_contract.md",
-		"relay-contracts/contracts/planner_mcp_plan_submission_contract.md",
-		"relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md",
-		"relay-contracts/contracts/planner_mcp_plan_attempt_contract.md",
+	requiredSourcePaths := []string{
+		"internal/mcp/server.go",
+		"internal/mcp/context_broker_tools.go",
+		"internal/mcp/plan_attempt_tools.go",
+		"internal/mcp/plan_seed_tools.go",
+		"internal/mcp/refactor_backlog_tools.go",
 	}
 
 	sourceInputPaths := make(map[string]SourceInput)
 	for _, si := range doc.SourceInputs {
+		if strings.Contains(si.Path, legacyRepoName()) {
+			t.Errorf("MCP source input should not reference legacy checkout: %q", si.Path)
+		}
 		sourceInputPaths[si.Path] = si
 	}
 
-	for _, p := range requiredContractPaths {
+	for _, p := range requiredSourcePaths {
 		si, ok := sourceInputPaths[p]
 		if !ok {
-			t.Errorf("required MCP contract source input %q not found", p)
+			t.Errorf("required MCP source input %q not found", p)
 			continue
 		}
-		if si.Role != "mcp_contract_source" {
-			t.Errorf("contract %q role: got %q, want mcp_contract_source", p, si.Role)
+		if si.Role != "mcp_tool_source" {
+			t.Errorf("source %q role: got %q, want mcp_tool_source", p, si.Role)
 		}
 		if len(si.SHA256) != 64 {
-			t.Errorf("contract %q SHA256 length: got %d, want 64", p, len(si.SHA256))
+			t.Errorf("source %q SHA256 length: got %d, want 64", p, len(si.SHA256))
 		}
 	}
 }
@@ -1088,29 +1101,14 @@ func TestMCPSurfaceCheckModeCoverage(t *testing.T) {
 	}
 }
 
-func TestBuildMCPSurfaceDoc_MissingContractReturnsError(t *testing.T) {
+func TestBuildMCPSurfaceDoc_MissingRelaySourceReturnsError(t *testing.T) {
 	dir := t.TempDir()
-
-	contractsDir := filepath.Join(dir, "relay-contracts", "contracts")
-	if err := os.MkdirAll(contractsDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, p := range []string{
-		"planner_mcp_context_broker_contract.md",
-		"planner_mcp_plan_submission_contract.md",
-		"planner_mcp_orchestrator_work_contract.md",
-	} {
-		if err := os.WriteFile(filepath.Join(contractsDir, p), []byte("placeholder"), 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
 
 	mcpDir := filepath.Join(dir, "internal", "mcp")
 	if err := os.MkdirAll(mcpDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{"server.go", "context_broker_tools.go", "plan_attempt_tools.go", "plan_seed_tools.go", "refactor_backlog_tools.go"} {
+	for _, f := range []string{"server.go", "context_broker_tools.go", "plan_attempt_tools.go", "plan_seed_tools.go"} {
 		if err := os.WriteFile(filepath.Join(mcpDir, f), []byte("package mcp\nvar ToolSomething = struct{}{}"), 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -1118,9 +1116,9 @@ func TestBuildMCPSurfaceDoc_MissingContractReturnsError(t *testing.T) {
 
 	_, err := BuildMCPSurfaceDoc(dir)
 	if err == nil {
-		t.Fatal("expected error for missing contract file, got nil")
+		t.Fatal("expected error for missing MCP source file, got nil")
 	}
-	missingPath := "relay-contracts/contracts/planner_mcp_plan_attempt_contract.md"
+	missingPath := "internal/mcp/refactor_backlog_tools.go"
 	if !strings.Contains(err.Error(), missingPath) {
 		t.Errorf("error should name missing path %q, got: %v", missingPath, err)
 	}

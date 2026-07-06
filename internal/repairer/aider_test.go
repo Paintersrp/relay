@@ -254,9 +254,9 @@ func TestService_RepairValidation(t *testing.T) {
 	run, _ := s.CreateRun(repo.ID, "test-run", "packet_validation_failed", "gpt-4o", "gpt-4o", "main")
 
 	t.Run("eligible one-call behavior, valid output", func(t *testing.T) {
-		validBytes, err := os.ReadFile("../../relay-contracts/examples/canonical_packet.valid.example.json")
+		validBytes, err := os.ReadFile("../../relay-specs/examples/canonical_packet.valid.example.json")
 		if err != nil {
-			validBytes, err = os.ReadFile("../../../relay-contracts/examples/canonical_packet.valid.example.json")
+			validBytes, err = os.ReadFile("../../../relay-specs/examples/canonical_packet.valid.example.json")
 			if err != nil {
 				t.Fatalf("failed to read valid packet for test: %v", err)
 			}

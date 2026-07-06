@@ -87,7 +87,7 @@ func TestListEnabledProjectRepositoriesExcludesDisabled(t *testing.T) {
 		t.Fatalf("expected no issues, got %+v", issues)
 	}
 
-	for _, repoID := range []string{"relay", "relay-contracts"} {
+	for _, repoID := range []string{"relay", "relay-specs"} {
 		_, issues, err := svc.UpsertProjectRepository(t.Context(), project.ProjectID, ProjectRepositoryInput{
 			RepoID:           repoID,
 			Role:             RepositoryRolePrimary,
@@ -103,7 +103,7 @@ func TestListEnabledProjectRepositoriesExcludesDisabled(t *testing.T) {
 		}
 	}
 
-	if _, err := svc.SetProjectRepositoryEnabled(t.Context(), project.ProjectID, "relay-contracts", false); err != nil {
+	if _, err := svc.SetProjectRepositoryEnabled(t.Context(), project.ProjectID, "relay-specs", false); err != nil {
 		t.Fatalf("SetProjectRepositoryEnabled error: %v", err)
 	}
 

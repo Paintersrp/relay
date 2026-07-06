@@ -13,7 +13,7 @@ When instructions conflict, use this order:
 1. Current user/task instructions
 2. The selected Planner handoff or canonical packet for the run, when provided
 3. Checked-out source code and tests
-4. The canonical relay-contracts GitHub repository for Planner/pipeline behavior
+4. The canonical relay-specs GitHub repository for Planner/pipeline behavior
 5. Older repo notes, prior chat, or stale instructions
 
 Do not treat repo-local notes as more authoritative than:
@@ -24,11 +24,11 @@ Do not treat repo-local notes as more authoritative than:
 - Relay DB state
 - run artifacts
 - audit evidence
-- relay-contracts source files
+- relay-specs source files
 
 ## Planner / Pipeline Contract Source
 
-For Planner handoffs, pass plans, canonical packets, validation reports, executor briefs, audit packets, policy behavior, and schema behavior, use the canonical relay-contracts source.
+For Planner handoffs, pass plans, canonical packets, validation reports, executor briefs, audit packets, policy behavior, and schema behavior, use the canonical relay-specs source.
 
 ## Stack
 
@@ -83,7 +83,7 @@ A managed plan stores a Planner pass plan JSON submission as a `plans` row plus 
 
 For deeper repo orientation, see `docs/agent-reference.md`.
 
-`docs/agent-reference.md` remains compact human orientation and does not override generated references, source code, tests, selected handoffs, canonical packets, Relay DB state, run artifacts, audit evidence, or relay-contracts.
+`docs/agent-reference.md` remains compact human orientation and does not override generated references, source code, tests, selected handoffs, canonical packets, Relay DB state, run artifacts, audit evidence, or relay-specs.
 
 For backend/API/MCP/storage/workflow/contract navigation, use the generated project-level agent references as the default source-backed navigation entry point:
 

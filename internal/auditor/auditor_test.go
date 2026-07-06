@@ -1666,9 +1666,9 @@ func TestAuditPacketTemplateContractPathRegression(t *testing.T) {
 		t.Fatalf("Forbidden file exists: %s", forbiddenPath)
 	}
 
-	// Authoritative template in relay-contracts must exist relative to repository root/test context
-	// We can check it at ../../relay-contracts/templates/audit_packet_template.md
-	authoritativePath := filepath.Join("..", "..", "relay-contracts", "templates", "audit_packet_template.md")
+	// Authoritative template in relay-specs must exist relative to repository root/test context
+	// We can check it at ../../relay-specs/templates/audit_packet_template.md
+	authoritativePath := filepath.Join("..", "..", "relay-specs", "templates", "audit_packet_template.md")
 	if _, err := os.Stat(authoritativePath); err != nil {
 		t.Fatalf("Authoritative template is missing or cannot be read: %v", err)
 	}

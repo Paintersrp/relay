@@ -17,7 +17,7 @@ The manual map has been retired by generated project-level agent references. Thi
 
 ## Authority
 
-Source code, tests, selected Planner handoffs, canonical packets, Relay DB state, run artifacts, audit evidence, and relay-contracts override repo-local docs.
+Source code, tests, selected canonical artifacts, Relay DB state, run artifacts, audit evidence, and manifest-selected `relay-specs` sources override repository-local docs.
 
 ## Compatibility Note
 

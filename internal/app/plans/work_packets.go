@@ -777,7 +777,7 @@ const (
 )
 
 const (
-	requiredContextManifestRepoID = "relay-contracts"
+	requiredContextManifestRepoID = "relay-specs"
 	requiredContextManifestPath   = "agents/knowledge/planner_github_knowledge_manifest.json"
 )
 

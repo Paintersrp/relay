@@ -26,7 +26,7 @@ const (
 	defaultAgentRefsCheck      = "make agentrefs-check"
 	validationReportJSON       = "handoffs/validation/latest.validation-report.json"
 	validationReportMarkdown   = "handoffs/validation/latest.validation-summary.md"
-	closeoutEvidenceSchemaPath = "relay-contracts/schema/closeout_evidence.schema.json"
+	closeoutEvidenceSchemaPath = "relay-specs/schema/closeout_evidence.schema.json"
 
 	defaultProjectID  = "relay"
 	defaultRepoTarget = "Paintersrp/relay"
@@ -69,7 +69,7 @@ type CommandResult struct {
 }
 
 // Report is the schema-conformant closeout evidence document. It conforms to
-// relay-contracts/schema/closeout_evidence.schema.json and intentionally
+// relay-specs/schema/closeout_evidence.schema.json and intentionally
 // avoids the legacy custom report-shape top-level fields.
 type Report struct {
 	EvidenceKind       string                `json:"evidence_kind"`

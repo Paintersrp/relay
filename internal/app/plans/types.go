@@ -2,7 +2,7 @@ package plans
 
 import "relay/internal/store"
 
-const defaultSchemaPath = "relay-contracts/schema/planner_pass_plan.schema.json"
+const defaultSchemaPath = "relay-specs/schema/planner_pass_plan.schema.json"
 
 const (
 	IssuePlanJSONSyntax                       = "PLAN_JSON_SYNTAX"

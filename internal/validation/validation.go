@@ -697,12 +697,12 @@ func docsOrPolicyOnlyTargets(exec map[string]interface{}) bool {
 func isDocsOrPolicyArtifactPath(path string) bool {
 	lowerPath := strings.TrimPrefix(strings.ToLower(filepath.ToSlash(path)), "./")
 	if strings.HasPrefix(lowerPath, "docs/") ||
-		strings.HasPrefix(lowerPath, "relay-contracts/policies/") ||
-		strings.HasPrefix(lowerPath, "relay-contracts/contracts/") ||
-		strings.HasPrefix(lowerPath, "relay-contracts/schema/") ||
-		strings.HasPrefix(lowerPath, "relay-contracts/templates/") ||
-		strings.HasPrefix(lowerPath, "relay-contracts/examples/") ||
-		strings.HasPrefix(lowerPath, "relay-contracts/agents/") {
+		strings.HasPrefix(lowerPath, "relay-specs/policies/") ||
+		strings.HasPrefix(lowerPath, "relay-specs/contracts/") ||
+		strings.HasPrefix(lowerPath, "relay-specs/schema/") ||
+		strings.HasPrefix(lowerPath, "relay-specs/templates/") ||
+		strings.HasPrefix(lowerPath, "relay-specs/examples/") ||
+		strings.HasPrefix(lowerPath, "relay-specs/agents/") {
 		return true
 	}
 	return strings.HasSuffix(lowerPath, ".md")
@@ -961,9 +961,9 @@ func locateSchemaFile(p string) string {
 		if _, err := os.Stat(tryPath); err == nil {
 			return tryPath
 		}
-		// Also map handoffs/ to relay-contracts/
+		// Also map handoffs/ to relay-specs/
 		if strings.HasPrefix(p, "handoffs/") {
-			tryMapped := filepath.Join(dir, strings.Replace(p, "handoffs/", "relay-contracts/", 1))
+			tryMapped := filepath.Join(dir, strings.Replace(p, "handoffs/", "relay-specs/", 1))
 			if _, err := os.Stat(tryMapped); err == nil {
 				return tryMapped
 			}

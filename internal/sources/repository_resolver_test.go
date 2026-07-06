@@ -7,7 +7,7 @@ import (
 )
 
 func TestResolveProjectRepositoryExactCanonical(t *testing.T) {
-	repos := resolverRepos("Paintersrp/relay", "relay-contracts")
+	repos := resolverRepos("Paintersrp/relay", "relay-specs")
 
 	result := ResolveProjectRepository(" Paintersrp/relay ", repos)
 
@@ -23,17 +23,17 @@ func TestResolveProjectRepositoryExactCanonical(t *testing.T) {
 }
 
 func TestResolveProjectRepositoryUniqueSuffixAlias(t *testing.T) {
-	result := ResolveProjectRepository("relay-contracts", resolverRepos("Paintersrp/relay", "openai/relay-contracts"))
+	result := ResolveProjectRepository("relay-specs", resolverRepos("Paintersrp/relay", "openai/relay-specs"))
 
-	if len(result.Blockers) != 0 || result.CanonicalRepoID != "openai/relay-contracts" {
+	if len(result.Blockers) != 0 || result.CanonicalRepoID != "openai/relay-specs" {
 		t.Fatalf("expected unique suffix resolution, got %+v", result)
 	}
 }
 
 func TestResolveProjectRepositoryOwnerQualifiedCanonical(t *testing.T) {
-	result := ResolveProjectRepository("openai/relay-contracts", resolverRepos("openai/relay-contracts"))
+	result := ResolveProjectRepository("openai/relay-specs", resolverRepos("openai/relay-specs"))
 
-	if len(result.Blockers) != 0 || result.CanonicalRepoID != "openai/relay-contracts" {
+	if len(result.Blockers) != 0 || result.CanonicalRepoID != "openai/relay-specs" {
 		t.Fatalf("expected owner-qualified canonical resolution, got %+v", result)
 	}
 }

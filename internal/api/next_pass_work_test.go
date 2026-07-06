@@ -743,7 +743,7 @@ func apiAcquisitionPlan(planID string) appplans.PlannerPassPlan {
 					{RepoID: "relay", Path: "internal/contextpackets/service.go", Purpose: "packet", Required: planAPIBoolPtr(true)},
 					{RepoID: "relay", Path: "internal/mcp/orchestrator_work_tools.go", Purpose: "mcp", Required: planAPIBoolPtr(true)},
 					{RepoID: "relay", Path: "internal/api/plans/handler.go", Purpose: "api", Required: planAPIBoolPtr(true)},
-					{RepoID: "relay", Path: "relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md", Purpose: "contract", Required: planAPIBoolPtr(true)},
+					{RepoID: "relay", Path: "relay-specs/contracts/planner_mcp_orchestrator_work_contract.md", Purpose: "contract", Required: planAPIBoolPtr(true)},
 				},
 				SeedSearchTerms: []appplans.ContextSearchTerm{
 					{RepoID: "relay", Query: "get_next_pass_work", Purpose: "acquisition", Required: planAPIBoolPtr(true)},

@@ -138,7 +138,7 @@ func (c *Compiler) CompileApprovedRun(ctx context.Context, runID int64) (*Compil
 	}
 
 	// 5. Validate packet
-	report, err := validation.ValidatePacketJSON(packetBytes, "relay-contracts/schema/canonical_packet.schema.json")
+	report, err := validation.ValidatePacketJSON(packetBytes, "relay-specs/schema/canonical_packet.schema.json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run packet validation: %w", err)
 	}

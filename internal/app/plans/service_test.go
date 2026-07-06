@@ -440,7 +440,7 @@ func validPlannerPassPlan() PlannerPassPlan {
 			ProjectContext: &ProjectContext{
 				PrimaryProject:        "relay",
 				PrimaryRepository:     "relay",
-				ContractRepository:    "relay-contracts",
+				ContractRepository:    "relay-specs",
 				GitHubRole:            "repo_host_and_origin_only",
 				ExcludedGitHubDomains: []string{"issues", "pull request comments"},
 				LocalFirstAssumption:  "Relay remains the local source of runtime context.",
@@ -477,7 +477,7 @@ func validPlannerPassPlan() PlannerPassPlan {
 				Status:                 "planned",
 				PassType:               "schema_contract",
 				ContextPlan: ContextPlan{
-					RequiredRepositories: []string{"relay", "relay-contracts"},
+					RequiredRepositories: []string{"relay", "relay-specs"},
 					SeedSearchTerms: []ContextSearchTerm{
 						{
 							RepoID:   "relay",
@@ -486,7 +486,7 @@ func validPlannerPassPlan() PlannerPassPlan {
 							Required: boolPtr(true),
 						},
 						{
-							RepoID:   "relay-contracts",
+							RepoID:   "relay-specs",
 							Query:    "planner_pass_plan schema",
 							Purpose:  "Ground validation against the source-controlled contract.",
 							Required: boolPtr(false),

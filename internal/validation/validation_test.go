@@ -14,7 +14,7 @@ func TestValidation(t *testing.T) {
 	schemaPath := filepath.Join(tmpDir, "test_schema.json")
 
 	// Read existing schema
-	schemaBytes, err := os.ReadFile(locateSchemaFile("relay-contracts/schema/canonical_packet.schema.json"))
+	schemaBytes, err := readExternalSpecFileForTest(t, "relay-specs/schema/canonical_packet.schema.json")
 	if err != nil {
 		t.Fatalf("failed to read real schema for test: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestValidation(t *testing.T) {
 		t.Fatalf("failed to write test schema: %v", err)
 	}
 
-	validPacketBytes, err := os.ReadFile(locateSchemaFile("relay-contracts/examples/canonical_packet.valid.example.json"))
+	validPacketBytes, err := readExternalSpecFileForTest(t, "relay-specs/examples/canonical_packet.valid.example.json")
 	if err != nil {
 		t.Fatalf("failed to read valid packet example: %v", err)
 	}
@@ -543,10 +543,10 @@ func TestValidation(t *testing.T) {
 		exec := packet["execution_payload"].(map[string]interface{})
 		prohibitedSample := joinPhrase("wire", "as", "needed")
 		exec["goal"] = "Update artifact naming policy examples for invalid executor delegation wording."
-		exec["scope"] = "Patch relay-contracts/policies/artifact_naming_policy.md only; no runtime behavior changes are in scope."
+		exec["scope"] = "Patch relay-specs/policies/artifact_naming_policy.md only; no runtime behavior changes are in scope."
 		exec["file_targets"] = []interface{}{
 			map[string]interface{}{
-				"path":   "relay-contracts/policies/artifact_naming_policy.md",
+				"path":   "relay-specs/policies/artifact_naming_policy.md",
 				"role":   "primary",
 				"action": "must_edit",
 				"reason": "policy text",
@@ -556,7 +556,7 @@ func TestValidation(t *testing.T) {
 			"id":                  "S1",
 			"title":               "Document prohibited examples",
 			"action":              "modify",
-			"target_paths":        []interface{}{"relay-contracts/policies/artifact_naming_policy.md"},
+			"target_paths":        []interface{}{"relay-specs/policies/artifact_naming_policy.md"},
 			"instructions":        "Add policy text under a prohibited examples heading.",
 			"acceptance_criteria": []interface{}{"Policy text lists invalid sample language without changing runtime behavior."},
 		}}
@@ -566,7 +566,7 @@ func TestValidation(t *testing.T) {
 				"## Prohibited examples:",
 				"- The invalid sample `" + prohibitedSample + "` documents language that policy authors must not use.",
 			}, "\n"),
-			"applies_to": []interface{}{"relay-contracts/policies/artifact_naming_policy.md"},
+			"applies_to": []interface{}{"relay-specs/policies/artifact_naming_policy.md"},
 		}}
 		exec["expected_behavior"] = []interface{}{
 			"Policy docs describe prohibited executor-delegating examples as invalid samples.",
@@ -840,10 +840,14 @@ func TestValidation(t *testing.T) {
 
 func TestSchemaAuditCriteria(t *testing.T) {
 	// Paths
-	canonicalSchemaPath := locateSchemaFile("relay-contracts/schema/canonical_packet.schema.json")
-	plannerSchemaPath := locateSchemaFile("relay-contracts/schema/planner_handoff_manifest.schema.json")
-	reportSchemaPath := locateSchemaFile("relay-contracts/schema/validation_report.schema.json")
-	taxonomyPath := locateSchemaFile("relay-contracts/schema/middleware_failure_codes.json")
+	canonicalSchemaPath := locateSchemaFile("relay-specs/schema/canonical_packet.schema.json")
+	plannerSchemaPath := locateSchemaFile("relay-specs/schema/planner_handoff_manifest.schema.json")
+	reportSchemaPath := locateSchemaFile("relay-specs/schema/validation_report.schema.json")
+	taxonomyPath := locateSchemaFile("relay-specs/schema/middleware_failure_codes.json")
+	requireExternalSpecFileForTest(t, canonicalSchemaPath)
+	requireExternalSpecFileForTest(t, plannerSchemaPath)
+	requireExternalSpecFileForTest(t, reportSchemaPath)
+	requireExternalSpecFileForTest(t, taxonomyPath)
 
 	// 1-3. Planner Handoff Tests
 	t.Run("Planner handoff containing packet_maker_brief fails", func(t *testing.T) {
@@ -995,7 +999,10 @@ func TestSchemaAuditCriteria(t *testing.T) {
 	})
 
 	// 7-8. Canonical Packet Tests
-	validPacketBytes, _ := os.ReadFile(locateSchemaFile("relay-contracts/examples/canonical_packet.valid.example.json"))
+	validPacketBytes, err := readExternalSpecFileForTest(t, "relay-specs/examples/canonical_packet.valid.example.json")
+	if err != nil {
+		t.Fatalf("failed to read valid packet example: %v", err)
+	}
 	var validPacket map[string]interface{}
 	json.Unmarshal(validPacketBytes, &validPacket)
 
@@ -1024,6 +1031,23 @@ func TestSchemaAuditCriteria(t *testing.T) {
 			t.Error("expected canonical packet with producer packet-maker to fail")
 		}
 	})
+}
+
+func requireExternalSpecFileForTest(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			t.Skipf("external spec file %s is not present in this checkout", path)
+		}
+		t.Fatalf("stat external spec file %s: %v", path, err)
+	}
+}
+
+func readExternalSpecFileForTest(t *testing.T, path string) ([]byte, error) {
+	t.Helper()
+	located := locateSchemaFile(path)
+	requireExternalSpecFileForTest(t, located)
+	return os.ReadFile(located)
 }
 
 func joinPhrase(parts ...string) string {

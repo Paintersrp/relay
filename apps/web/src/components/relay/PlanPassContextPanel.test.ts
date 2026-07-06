@@ -28,7 +28,7 @@ describe("summarizePlanPassContext", () => {
     const summary = summarizePlanPassContext(
       buildPass({
         contextPlan: {
-          requiredRepositories: ["relay", "relay-contracts"],
+          requiredRepositories: ["relay", "relay-specs"],
           seedSearchTerms: [
             { repoId: "relay", query: "context packet", purpose: "Locate UI" },
           ],

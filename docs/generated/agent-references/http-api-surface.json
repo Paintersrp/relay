@@ -20,17 +20,17 @@
   "source_inputs": [
     {
       "path": "internal/api/artifacts/routes.go",
-      "sha256": "758c96e858840df0ff2cda43ddd4121b52b8e0c416af2cad5a4d5d417b65e7e4",
+      "sha256": "930d1e2b925521f1a8f16b4fd509feb4663095dfd4f82ac150ac482491161e0f",
       "role": "route source"
     },
     {
       "path": "internal/api/audits/routes.go",
-      "sha256": "5998ed331a093f9174ae2b95392775ff0dec67554944aade9201e426206037ef",
+      "sha256": "7b032324ba4a515bc5113090256c7f7d31ce06b6237cc034de640c8d0b61dad1",
       "role": "route source"
     },
     {
       "path": "internal/api/intake/routes.go",
-      "sha256": "153de0341933b08bdfee0e70b1263af9d9a3a5c7ffda37315dd687d1dbeae706",
+      "sha256": "149c7d4c4d36a0fca2a29c45b590fea1cdc1934739975ea48f161c52e49e369c",
       "role": "route source"
     },
     {
@@ -50,7 +50,7 @@
     },
     {
       "path": "internal/server/routes.go",
-      "sha256": "eb4edda21e2f45a30002985576afad64476dc5a51b03f974c7b9ce6f72c75ffc",
+      "sha256": "323befca40b7720b32778ec032d97cee67ce6d54f58e92e7a6d8e2b87c861a3e",
       "role": "route source"
     }
   ],
@@ -1093,6 +1093,28 @@
         {
           "kind": "source",
           "value": "internal/server/routes.go"
+        }
+      ]
+    },
+    {
+      "id": "http-api-route-workflow-runs-runid-audit-prepare-post",
+      "label": "proven",
+      "statement": "Route POST /api/workflow/runs/{runID}/audit/prepare handled by h.Prepare",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/audits/routes.go"
+        }
+      ]
+    },
+    {
+      "id": "http-api-route-workflow-runs-runid-audit-status-get",
+      "label": "proven",
+      "statement": "Route GET /api/workflow/runs/{runID}/audit/status handled by h.Status",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/audits/routes.go"
         }
       ]
     }

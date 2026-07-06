@@ -1,11 +1,11 @@
 # Relay Refactor Backlog (v1)
 
 This document describes the Relay refactor backlog workflow as shipped in v1. It
-is an operator-facing concept and workflow reference. The authoritative behavioral
-contract lives in `Paintersrp/relay-contracts` at
-`contracts/refactor_backlog_contract.md`; this guide describes how the
-already-implemented Relay surfaces (backend service, MCP local-operator tools,
-and the React workbench) expose that contract.
+is an operator-facing concept and workflow reference. Checked-out Relay source
+and tests are authoritative for the implemented runtime behavior. Canonical
+planning and artifact contracts are owned by `Paintersrp/relay-specs`; this guide
+describes the already-implemented backend service, MCP local-operator tools, and
+React workbench without requiring a repository-local contract checkout.
 
 The refactor backlog lets an operator capture refactor ideas, develop them into
 pass-ready work, and feed them into the normal managed plan/pass/run/audit

@@ -306,37 +306,37 @@ func TestIsNestedCheckoutMarker(t *testing.T) {
 		description string
 	}{
 		{
-			path:        "relay-contracts",
-			targets:     []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			path:        "relay-specs",
+			targets:     []string{"relay-specs/contracts/intent_drift_review_contract.md"},
 			expected:    true,
 			description: "nested checkout marker detected",
 		},
 		{
 			path:        "internal/server/routes.go",
-			targets:     []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			targets:     []string{"relay-specs/contracts/intent_drift_review_contract.md"},
 			expected:    false,
 			description: "normal file with extension not a marker",
 		},
 		{
 			path:        "",
-			targets:     []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			targets:     []string{"relay-specs/contracts/intent_drift_review_contract.md"},
 			expected:    false,
 			description: "empty path not a marker",
 		},
 		{
-			path:        "relay-contracts",
+			path:        "relay-specs",
 			targets:     []string{"docs/mcp.md"},
 			expected:    false,
 			description: "path with no matching target prefix not a marker",
 		},
 		{
-			path:        "relay-contracts/file.go",
-			targets:     []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			path:        "relay-specs/file.go",
+			targets:     []string{"relay-specs/contracts/intent_drift_review_contract.md"},
 			expected:    false,
 			description: "file inside nested dir not a marker (has extension)",
 		},
 		{
-			path:        "relay-contracts",
+			path:        "relay-specs",
 			targets:     nil,
 			expected:    false,
 			description: "no file targets means no marker",
@@ -358,21 +358,21 @@ func TestIsNestedCheckoutMarker(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestNestedCheckout_CollapsedMarker_NoFalseFail verifies that a collapsed nested
-// checkout marker (e.g. "M	relay-contracts") with no expanded nested evidence does
+// checkout marker (e.g. "M	relay-specs") with no expanded nested evidence does
 // not produce a file-scope failure.
 func TestNestedCheckout_CollapsedMarker_NoFalseFail(t *testing.T) {
 	ev := &Evidence{
 		RunID: 500, RunTitle: "nested collapsed", RunStatus: "executor_done",
 		Packet: PacketMetadata{
-			FileTargets: []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			FileTargets: []string{"relay-specs/contracts/intent_drift_review_contract.md"},
 		},
 		ChangedFiles: ChangedFilesEvidence{
 			Present: true,
 			Files: []ChangedFileEntry{
-				{Status: "M", Path: "relay-contracts"},
+				{Status: "M", Path: "relay-specs"},
 			},
 			ImplementationFiles:   nil, // filtered as nested marker
-			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-specs"}},
 			NestedCheckoutFiles:   nil,
 			NestedEvidenceGap:     true,
 			RawArtifactPath:       "/fake/path",
@@ -383,8 +383,8 @@ func TestNestedCheckout_CollapsedMarker_NoFalseFail(t *testing.T) {
 	c.evaluateFileScopeResults(ev)
 
 	for _, r := range ev.FileScopeResults {
-		if r.Result == CheckFail && strings.Contains(r.Rationale, "relay-contracts") {
-			t.Errorf("file scope must not name relay-contracts as out-of-scope when it is only a nested marker: %s", r.Rationale)
+		if r.Result == CheckFail && strings.Contains(r.Rationale, "relay-specs") {
+			t.Errorf("file scope must not name relay-specs as out-of-scope when it is only a nested marker: %s", r.Rationale)
 		}
 		if r.Result == CheckFail {
 			t.Errorf("collapsed nested marker must not produce file-scope failure, got %q: %s", r.ID, r.Rationale)
@@ -401,17 +401,17 @@ func TestNestedCheckout_ExpandedEvidencePassing(t *testing.T) {
 	ev := &Evidence{
 		RunID: 501, RunTitle: "nested expanded pass", RunStatus: "executor_done",
 		Packet: PacketMetadata{
-			FileTargets: []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			FileTargets: []string{"relay-specs/contracts/intent_drift_review_contract.md"},
 		},
 		ChangedFiles: ChangedFilesEvidence{
 			Present: true,
 			Files: []ChangedFileEntry{
-				{Status: "M", Path: "relay-contracts"},
+				{Status: "M", Path: "relay-specs"},
 			},
 			ImplementationFiles:   nil,
-			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-specs"}},
 			NestedCheckoutFiles: []ChangedFileEntry{
-				{Status: "M", Path: "relay-contracts/contracts/intent_drift_review_contract.md"},
+				{Status: "M", Path: "relay-specs/contracts/intent_drift_review_contract.md"},
 			},
 			NestedEvidenceGap: false,
 			RawArtifactPath:   "/fake/path",
@@ -438,17 +438,17 @@ func TestNestedCheckout_ExpandedEvidenceFailing(t *testing.T) {
 	ev := &Evidence{
 		RunID: 502, RunTitle: "nested expanded fail", RunStatus: "executor_done",
 		Packet: PacketMetadata{
-			FileTargets: []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			FileTargets: []string{"relay-specs/contracts/intent_drift_review_contract.md"},
 		},
 		ChangedFiles: ChangedFilesEvidence{
 			Present: true,
 			Files: []ChangedFileEntry{
-				{Status: "M", Path: "relay-contracts"},
+				{Status: "M", Path: "relay-specs"},
 			},
 			ImplementationFiles:   nil,
-			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-specs"}},
 			NestedCheckoutFiles: []ChangedFileEntry{
-				{Status: "M", Path: "relay-contracts/schema/planner_pass_plan.schema.json"},
+				{Status: "M", Path: "relay-specs/schema/planner_pass_plan.schema.json"},
 			},
 			NestedEvidenceGap: false,
 			RawArtifactPath:   "/fake/path",
@@ -460,7 +460,7 @@ func TestNestedCheckout_ExpandedEvidenceFailing(t *testing.T) {
 
 	foundFailNamingNested := false
 	for _, r := range ev.FileScopeResults {
-		if r.Result == CheckFail && strings.Contains(r.Rationale, "relay-contracts/schema/planner_pass_plan.schema.json") {
+		if r.Result == CheckFail && strings.Contains(r.Rationale, "relay-specs/schema/planner_pass_plan.schema.json") {
 			foundFailNamingNested = true
 		}
 	}
@@ -475,18 +475,18 @@ func TestNestedCheckout_UnrelatedParentDrift(t *testing.T) {
 	ev := &Evidence{
 		RunID: 503, RunTitle: "parent drift", RunStatus: "executor_done",
 		Packet: PacketMetadata{
-			FileTargets: []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			FileTargets: []string{"relay-specs/contracts/intent_drift_review_contract.md"},
 		},
 		ChangedFiles: ChangedFilesEvidence{
 			Present: true,
 			Files: []ChangedFileEntry{
-				{Status: "M", Path: "relay-contracts"},
+				{Status: "M", Path: "relay-specs"},
 				{Status: "M", Path: "internal/server/routes.go"},
 			},
 			ImplementationFiles: []ChangedFileEntry{
 				{Status: "M", Path: "internal/server/routes.go"},
 			},
-			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-specs"}},
 			NestedCheckoutFiles:   nil,
 			NestedEvidenceGap:     true,
 			RawArtifactPath:       "/fake/path",
@@ -513,14 +513,14 @@ func TestNestedCheckout_ValidationSeparation(t *testing.T) {
 	ev := &Evidence{
 		RunID: 504, RunTitle: "validation separation", RunStatus: "executor_done",
 		Packet: PacketMetadata{
-			FileTargets: []string{"relay-contracts/contracts/intent_drift_review_contract.md"},
+			FileTargets: []string{"relay-specs/contracts/intent_drift_review_contract.md"},
 		},
 		ChangedFiles: ChangedFilesEvidence{
 			Present: true,
 			Files: []ChangedFileEntry{
-				{Status: "M", Path: "relay-contracts"},
+				{Status: "M", Path: "relay-specs"},
 			},
-			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-specs"}},
 			NestedEvidenceGap:     true,
 			RawArtifactPath:       "/fake/path",
 			SourceKind:            "git_diff_name_status",
@@ -554,19 +554,19 @@ func TestNormalizeNestedChangedPath(t *testing.T) {
 		want       string
 	}{
 		{
-			nestedRoot: "relay-contracts",
+			nestedRoot: "relay-specs",
 			rawPath:    "contracts/intent_drift_review_contract.md",
-			want:       "relay-contracts/contracts/intent_drift_review_contract.md",
+			want:       "relay-specs/contracts/intent_drift_review_contract.md",
 		},
 		{
-			nestedRoot: "relay-contracts",
-			rawPath:    "relay-contracts/contracts/intent_drift_review_contract.md",
-			want:       "relay-contracts/contracts/intent_drift_review_contract.md",
+			nestedRoot: "relay-specs",
+			rawPath:    "relay-specs/contracts/intent_drift_review_contract.md",
+			want:       "relay-specs/contracts/intent_drift_review_contract.md",
 		},
 		{
-			nestedRoot: "relay-contracts",
+			nestedRoot: "relay-specs",
 			rawPath:    `contracts\intent_drift_review_contract.md`,
-			want:       "relay-contracts/contracts/intent_drift_review_contract.md",
+			want:       "relay-specs/contracts/intent_drift_review_contract.md",
 		},
 		{
 			nestedRoot: "",
@@ -633,11 +633,11 @@ func TestCollector_NestedChangedFilesPass(t *testing.T) {
 	}
 
 	// Write canonical_packet with file_targets
-	pktData := `{"execution_payload": {"goal": "test", "scope": "test", "non_goals": [], "file_targets": ["relay-contracts/contracts/intent_drift_review_contract.md"]}, "audit_seed": {"audit_checklist": []}}`
+	pktData := `{"execution_payload": {"goal": "test", "scope": "test", "non_goals": [], "file_targets": ["relay-specs/contracts/intent_drift_review_contract.md"]}, "audit_seed": {"audit_checklist": []}}`
 	writeArtifact(t, s, run.ID, "canonical_packet", "canonical_packet.json", []byte(pktData), "application/json")
 
 	// Write git_diff_name_status with a nested checkout marker
-	writeArtifact(t, s, run.ID, "git_diff_name_status", "git_diff_name_status.txt", []byte("M\trelay-contracts\n"), "text/plain")
+	writeArtifact(t, s, run.ID, "git_diff_name_status", "git_diff_name_status.txt", []byte("M\trelay-specs\n"), "text/plain")
 
 	// Write nested_changed_files via direct helper (kind not in artifacts.allowedKinds)
 	writeDirectArtifact(t, s, run.ID, "nested_changed_files", "nested_changed_files.txt", []byte("M\tcontracts/intent_drift_review_contract.md\n"), "text/plain")
@@ -652,8 +652,8 @@ func TestCollector_NestedChangedFilesPass(t *testing.T) {
 	if len(ev.ChangedFiles.NestedCheckoutFiles) != 1 {
 		t.Fatalf("expected 1 NestedCheckoutFile, got %d", len(ev.ChangedFiles.NestedCheckoutFiles))
 	}
-	if ev.ChangedFiles.NestedCheckoutFiles[0].Path != "relay-contracts/contracts/intent_drift_review_contract.md" {
-		t.Errorf("NestedCheckoutFiles[0].Path = %q, want %q", ev.ChangedFiles.NestedCheckoutFiles[0].Path, "relay-contracts/contracts/intent_drift_review_contract.md")
+	if ev.ChangedFiles.NestedCheckoutFiles[0].Path != "relay-specs/contracts/intent_drift_review_contract.md" {
+		t.Errorf("NestedCheckoutFiles[0].Path = %q, want %q", ev.ChangedFiles.NestedCheckoutFiles[0].Path, "relay-specs/contracts/intent_drift_review_contract.md")
 	}
 	if ev.ChangedFiles.NestedEvidenceGap {
 		t.Error("NestedEvidenceGap should be false when nested_changed_files are present")
@@ -666,7 +666,7 @@ func TestCollector_NestedChangedFilesPass(t *testing.T) {
 			foundPass = true
 		}
 		if r.Result == CheckFail && strings.Contains(r.Rationale, "contracts/intent_drift_review_contract.md") {
-			t.Errorf("FS-TARGETS should not fail naming the nested-relative path without the relay-contracts prefix: %s", r.Rationale)
+			t.Errorf("FS-TARGETS should not fail naming the nested-relative path without the relay-specs prefix: %s", r.Rationale)
 		}
 	}
 	if !foundPass {
@@ -699,11 +699,11 @@ func TestCollector_NestedChangedFilesFail(t *testing.T) {
 	}
 
 	// Write canonical_packet with file_targets
-	pktData := `{"execution_payload": {"goal": "test", "scope": "test", "non_goals": [], "file_targets": ["relay-contracts/contracts/intent_drift_review_contract.md"]}, "audit_seed": {"audit_checklist": []}}`
+	pktData := `{"execution_payload": {"goal": "test", "scope": "test", "non_goals": [], "file_targets": ["relay-specs/contracts/intent_drift_review_contract.md"]}, "audit_seed": {"audit_checklist": []}}`
 	writeArtifact(t, s, run.ID, "canonical_packet", "canonical_packet.json", []byte(pktData), "application/json")
 
 	// Write git_diff_name_status with a nested checkout marker
-	writeArtifact(t, s, run.ID, "git_diff_name_status", "git_diff_name_status.txt", []byte("M\trelay-contracts\n"), "text/plain")
+	writeArtifact(t, s, run.ID, "git_diff_name_status", "git_diff_name_status.txt", []byte("M\trelay-specs\n"), "text/plain")
 
 	// Write nested_changed_files via direct helper (kind not in artifacts.allowedKinds)
 	writeDirectArtifact(t, s, run.ID, "nested_changed_files", "nested_changed_files.txt", []byte("M\tschema/planner_pass_plan.schema.json\n"), "text/plain")
@@ -718,27 +718,27 @@ func TestCollector_NestedChangedFilesFail(t *testing.T) {
 	if len(ev.ChangedFiles.NestedCheckoutFiles) != 1 {
 		t.Fatalf("expected 1 NestedCheckoutFile, got %d", len(ev.ChangedFiles.NestedCheckoutFiles))
 	}
-	if ev.ChangedFiles.NestedCheckoutFiles[0].Path != "relay-contracts/schema/planner_pass_plan.schema.json" {
-		t.Errorf("NestedCheckoutFiles[0].Path = %q, want %q", ev.ChangedFiles.NestedCheckoutFiles[0].Path, "relay-contracts/schema/planner_pass_plan.schema.json")
+	if ev.ChangedFiles.NestedCheckoutFiles[0].Path != "relay-specs/schema/planner_pass_plan.schema.json" {
+		t.Errorf("NestedCheckoutFiles[0].Path = %q, want %q", ev.ChangedFiles.NestedCheckoutFiles[0].Path, "relay-specs/schema/planner_pass_plan.schema.json")
 	}
 
 	// FS-TARGETS should fail naming the parent-relative path
 	foundFailWithPrefix := false
 	foundFailWithoutPrefix := false
 	for _, r := range ev.FileScopeResults {
-		if r.Result == CheckFail && strings.Contains(r.Rationale, "relay-contracts/schema/planner_pass_plan.schema.json") {
+		if r.Result == CheckFail && strings.Contains(r.Rationale, "relay-specs/schema/planner_pass_plan.schema.json") {
 			foundFailWithPrefix = true
 		}
 		if r.Result == CheckFail && strings.Contains(r.Rationale, "schema/planner_pass_plan.schema.json") &&
-			!strings.Contains(r.Rationale, "relay-contracts/schema/planner_pass_plan.schema.json") {
+			!strings.Contains(r.Rationale, "relay-specs/schema/planner_pass_plan.schema.json") {
 			foundFailWithoutPrefix = true
 		}
 	}
 	if !foundFailWithPrefix {
-		t.Errorf("expected file-scope failure naming relay-contracts/schema/planner_pass_plan.schema.json, got: %+v", ev.FileScopeResults)
+		t.Errorf("expected file-scope failure naming relay-specs/schema/planner_pass_plan.schema.json, got: %+v", ev.FileScopeResults)
 	}
 	if foundFailWithoutPrefix {
-		t.Errorf("file-scope failure must not name schema/planner_pass_plan.schema.json without the relay-contracts prefix: %+v", ev.FileScopeResults)
+		t.Errorf("file-scope failure must not name schema/planner_pass_plan.schema.json without the relay-specs prefix: %+v", ev.FileScopeResults)
 	}
 }
 
@@ -747,35 +747,35 @@ func TestCollector_NestedChangedFilesFail(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFilePathInScope_ExactMatch(t *testing.T) {
-	targets := []string{"relay-contracts/agents/instructions/planner_agent_instructions.md"}
-	if !filePathInScope("relay-contracts/agents/instructions/planner_agent_instructions.md", targets) {
+	targets := []string{"relay-specs/agents/instructions/planner_agent_instructions.md"}
+	if !filePathInScope("relay-specs/agents/instructions/planner_agent_instructions.md", targets) {
 		t.Error("expected exact match to pass")
 	}
 }
 
 func TestFilePathInScope_NestedRootRelativeMatch(t *testing.T) {
-	targets := []string{"relay-contracts/agents/instructions/planner_agent_instructions.md"}
+	targets := []string{"relay-specs/agents/instructions/planner_agent_instructions.md"}
 	if !filePathInScope("agents/instructions/planner_agent_instructions.md", targets) {
 		t.Error("expected nested-root relative match to pass")
 	}
 }
 
 func TestFilePathInScope_NoMatch(t *testing.T) {
-	targets := []string{"relay-contracts/contracts/planner_to_compiler_contract.md"}
+	targets := []string{"relay-specs/contracts/planner_to_compiler_contract.md"}
 	if filePathInScope("schema/planner_pass_plan.schema.json", targets) {
 		t.Error("expected unrelated path to not match")
 	}
 }
 
 func TestFilePathInScope_BackslashNormalization(t *testing.T) {
-	targets := []string{"relay-contracts/agents/instructions/planner_agent_instructions.md"}
+	targets := []string{"relay-specs/agents/instructions/planner_agent_instructions.md"}
 	if !filePathInScope(`agents\instructions\planner_agent_instructions.md`, targets) {
 		t.Error("expected backslash path to match after normalization")
 	}
 }
 
 func TestFilePathInScope_WhitespaceTrim(t *testing.T) {
-	targets := []string{"  relay-contracts/agents/instructions/planner_agent_instructions.md  "}
+	targets := []string{"  relay-specs/agents/instructions/planner_agent_instructions.md  "}
 	if !filePathInScope("agents/instructions/planner_agent_instructions.md", targets) {
 		t.Error("expected whitespace-trimmed target to match")
 	}
@@ -791,7 +791,7 @@ func TestFilePathInScope_EmptyTargets(t *testing.T) {
 }
 
 func TestFilePathInScope_EmptyPath(t *testing.T) {
-	targets := []string{"relay-contracts/agents/instructions/planner_agent_instructions.md"}
+	targets := []string{"relay-specs/agents/instructions/planner_agent_instructions.md"}
 	if filePathInScope("", targets) {
 		t.Error("expected empty path to not match")
 	}
@@ -808,20 +808,20 @@ func TestRun155_NestedPathEquivalencePass(t *testing.T) {
 		RunID: 600, RunTitle: "run-155 nested path eq", RunStatus: "executor_done",
 		Packet: PacketMetadata{
 			FileTargets: []string{
-				"relay-contracts/agents/instructions/planner_agent_instructions.md",
-				"relay-contracts/contracts/docs_review_contract.md",
+				"relay-specs/agents/instructions/planner_agent_instructions.md",
+				"relay-specs/contracts/docs_review_contract.md",
 			},
 		},
 		ChangedFiles: ChangedFilesEvidence{
 			Present: true,
 			Files: []ChangedFileEntry{
-				{Status: "M", Path: "relay-contracts"},
+				{Status: "M", Path: "relay-specs"},
 				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
 			},
 			ImplementationFiles: []ChangedFileEntry{
 				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
 			},
-			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-specs"}},
 			NestedCheckoutFiles:   nil,
 			NestedEvidenceGap:     true,
 			RawArtifactPath:       "/fake/path",
@@ -847,19 +847,19 @@ func TestRun155_UnmatchedNestedFileStillFails(t *testing.T) {
 		RunID: 601, RunTitle: "run-155 unmatched nested", RunStatus: "executor_done",
 		Packet: PacketMetadata{
 			FileTargets: []string{
-				"relay-contracts/contracts/intent_drift_review_contract.md",
+				"relay-specs/contracts/intent_drift_review_contract.md",
 			},
 		},
 		ChangedFiles: ChangedFilesEvidence{
 			Present: true,
 			Files: []ChangedFileEntry{
-				{Status: "M", Path: "relay-contracts"},
+				{Status: "M", Path: "relay-specs"},
 				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
 			},
 			ImplementationFiles: []ChangedFileEntry{
 				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
 			},
-			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-specs"}},
 			NestedCheckoutFiles:   nil,
 			NestedEvidenceGap:     true,
 			RawArtifactPath:       "/fake/path",
@@ -890,13 +890,13 @@ func TestRun155_ParentRuntimeDriftStillFails(t *testing.T) {
 		RunID: 602, RunTitle: "run-155 parent drift", RunStatus: "executor_done",
 		Packet: PacketMetadata{
 			FileTargets: []string{
-				"relay-contracts/contracts/intent_drift_review_contract.md",
+				"relay-specs/contracts/intent_drift_review_contract.md",
 			},
 		},
 		ChangedFiles: ChangedFilesEvidence{
 			Present: true,
 			Files: []ChangedFileEntry{
-				{Status: "M", Path: "relay-contracts"},
+				{Status: "M", Path: "relay-specs"},
 				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
 				{Status: "M", Path: "internal/server/routes.go"},
 			},
@@ -904,7 +904,7 @@ func TestRun155_ParentRuntimeDriftStillFails(t *testing.T) {
 				{Status: "M", Path: "internal/server/routes.go"},
 				{Status: "M", Path: "agents/instructions/planner_agent_instructions.md"},
 			},
-			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-contracts"}},
+			NestedCheckoutMarkers: []ChangedFileEntry{{Status: "M", Path: "relay-specs"}},
 			NestedCheckoutFiles:   nil,
 			NestedEvidenceGap:     true,
 			RawArtifactPath:       "/fake/path",

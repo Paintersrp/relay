@@ -36,13 +36,6 @@ var mcpSourceFiles = []string{
 	"internal/mcp/refactor_backlog_tools.go",
 }
 
-var mcpContractFiles = []string{
-	"relay-contracts/contracts/planner_mcp_context_broker_contract.md",
-	"relay-contracts/contracts/planner_mcp_plan_submission_contract.md",
-	"relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md",
-	"relay-contracts/contracts/planner_mcp_plan_attempt_contract.md",
-}
-
 var profileGatedToolNames = map[string]bool{
 	"get_project":                          true,
 	"get_plan":                             true,
@@ -314,22 +307,6 @@ func BuildMCPSurfaceDoc(repoRoot string) (*ReferenceDocument, error) {
 			Path:   f,
 			SHA256: hash,
 			Role:   "mcp_tool_source",
-		})
-	}
-
-	for _, cf := range mcpContractFiles {
-		fullPath := filepath.Join(repoRoot, cf)
-		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-			return nil, fmt.Errorf("required MCP contract file not found: %s", cf)
-		}
-		hash, err := ComputeSHA256(fullPath)
-		if err != nil {
-			return nil, fmt.Errorf("compute hash for contract %s: %w", cf, err)
-		}
-		sourceInputs = append(sourceInputs, SourceInput{
-			Path:   cf,
-			SHA256: hash,
-			Role:   "mcp_contract_source",
 		})
 	}
 

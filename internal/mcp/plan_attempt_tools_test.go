@@ -388,7 +388,7 @@ func mcpAttemptRawPlan(t *testing.T, planID string) (json.RawMessage, string) {
 			"project_context": map[string]any{
 				"primary_project":         "relay",
 				"primary_repository":      "relay",
-				"contract_repository":     "relay-contracts",
+				"contract_repository":     "relay-specs",
 				"github_role":             "repo_host_and_origin_only",
 				"excluded_github_domains": []string{"issues"},
 				"local_first_assumption":  "Relay is the local source of context.",

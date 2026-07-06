@@ -119,8 +119,13 @@
       "role": "migration"
     },
     {
+      "path": "internal/db/migrations/20260704000200_agent_execution_launch_termination_state.sql",
+      "sha256": "a5731bea0c2bfda9043ba4c5ff1c3f7e8945b75da51f3e1349b6636583360077",
+      "role": "migration"
+    },
+    {
       "path": "internal/db/queries/agent_executions.sql",
-      "sha256": "776aeee9d9e002ed48d21576abc38e48f8d953f60464dc98b92f5d0ec3fcf444",
+      "sha256": "189ce128e844effeb24d5e94abd6f7ec0af4a2278d20e497c2dddfe64dc06181",
       "role": "sqlc query file"
     },
     {
@@ -215,12 +220,12 @@
     },
     {
       "path": "internal/store/db.go",
-      "sha256": "9e41bb12ccd32d18f15bd13a07012e0b03e794bec253c99748763f2ca1e9c730",
+      "sha256": "f5fb352727e2c87053a952126a33466ab7ede3486bf4cc5bc5d4908be7563e3f",
       "role": "store wrapper"
     },
     {
       "path": "internal/store/generated/agent_executions.sql.go",
-      "sha256": "5ab51439973ef2b32b06c9a4058af34ecb1d37242ff3a2b3def56287cecccbd8",
+      "sha256": "602f113763da0a91670d9c3b4d19cfe3a331103121f380a2f62e9ffbdccda24d",
       "role": "generated sqlc boundary"
     },
     {
@@ -255,7 +260,7 @@
     },
     {
       "path": "internal/store/generated/models.go",
-      "sha256": "32962325753d6bdb66e20105539248288a1550ad239e938937ae5491a5cd9aa4",
+      "sha256": "4c67f6b0a820041ff98da0ae9dabadff01d48e65db8d0e200bb146b5d6f0fa36",
       "role": "generated sqlc boundary"
     },
     {
@@ -325,7 +330,7 @@
     },
     {
       "path": "sqlc.yaml",
-      "sha256": "ae9bd13e167b752ab0bd8ef07b9e81a3b2e721c601e75991aa975fbdc2d1f392",
+      "sha256": "1d0c77cbbe4dc680cc3cfbfe54e257b87adfb85d6342a5ecd817f8e7a6903a55",
       "role": "sqlc config"
     }
   ],
@@ -661,6 +666,39 @@
       ]
     },
     {
+      "id": "storage-migration-internal-db-migrations-20260704000200-agent-execution-launch-termination-state-sql",
+      "label": "convention",
+      "statement": "Migration file \"internal/db/migrations/20260704000200_agent_execution_launch_termination_state.sql\" is present; no simple CREATE TABLE statement was detected.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/migrations/20260704000200_agent_execution_launch_termination_state.sql"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-agent-executions-appendagentexecutionlifecycleerror",
+      "label": "proven",
+      "statement": "sqlc query \"AppendAgentExecutionLifecycleError\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql#L111"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-agent-executions-claimagentexecutionlaunch",
+      "label": "proven",
+      "statement": "sqlc query \"ClaimAgentExecutionLaunch\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql#L39"
+        }
+      ]
+    },
+    {
       "id": "storage-query-agent-executions-createagentexecution",
       "label": "proven",
       "statement": "sqlc query \"CreateAgentExecution\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
@@ -727,13 +765,57 @@
       ]
     },
     {
+      "id": "storage-query-agent-executions-markagentexecutionterminationfailed",
+      "label": "proven",
+      "statement": "sqlc query \"MarkAgentExecutionTerminationFailed\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql#L93"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-agent-executions-markagentexecutionterminationrequested",
+      "label": "proven",
+      "statement": "sqlc query \"MarkAgentExecutionTerminationRequested\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql#L80"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-agent-executions-markagentexecutiontreeverifiedabsent",
+      "label": "proven",
+      "statement": "sqlc query \"MarkAgentExecutionTreeVerifiedAbsent\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql#L126"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-agent-executions-recordagentexecutionstartprevented",
+      "label": "proven",
+      "statement": "sqlc query \"RecordAgentExecutionStartPrevented\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql#L51"
+        }
+      ]
+    },
+    {
       "id": "storage-query-agent-executions-registeragentexecutionprocess",
       "label": "proven",
       "statement": "sqlc query \"RegisterAgentExecutionProcess\" (one) declared in \"internal/db/queries/agent_executions.sql\".",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/db/queries/agent_executions.sql#L39"
+          "value": "internal/db/queries/agent_executions.sql#L62"
         }
       ]
     },
@@ -744,7 +826,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/db/queries/agent_executions.sql#L54"
+          "value": "internal/db/queries/agent_executions.sql#L136"
         }
       ]
     },
@@ -755,7 +837,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/db/queries/agent_executions.sql#L64"
+          "value": "internal/db/queries/agent_executions.sql#L149"
         }
       ]
     },
@@ -947,6 +1029,28 @@
       ]
     },
     {
+      "id": "storage-query-domain-agent-executions-appendagentexecutionlifecycleerror",
+      "label": "derived",
+      "statement": "sqlc query \"AppendAgentExecutionLifecycleError\" belongs to SQL domain \"agent_executions\" by file-path convention.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-domain-agent-executions-claimagentexecutionlaunch",
+      "label": "derived",
+      "statement": "sqlc query \"ClaimAgentExecutionLaunch\" belongs to SQL domain \"agent_executions\" by file-path convention.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql"
+        }
+      ]
+    },
+    {
       "id": "storage-query-domain-agent-executions-createagentexecution",
       "label": "derived",
       "statement": "sqlc query \"CreateAgentExecution\" belongs to SQL domain \"agent_executions\" by file-path convention.",
@@ -1005,6 +1109,50 @@
       "id": "storage-query-domain-agent-executions-listagentexecutionsbyrun",
       "label": "derived",
       "statement": "sqlc query \"ListAgentExecutionsByRun\" belongs to SQL domain \"agent_executions\" by file-path convention.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-domain-agent-executions-markagentexecutionterminationfailed",
+      "label": "derived",
+      "statement": "sqlc query \"MarkAgentExecutionTerminationFailed\" belongs to SQL domain \"agent_executions\" by file-path convention.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-domain-agent-executions-markagentexecutionterminationrequested",
+      "label": "derived",
+      "statement": "sqlc query \"MarkAgentExecutionTerminationRequested\" belongs to SQL domain \"agent_executions\" by file-path convention.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-domain-agent-executions-markagentexecutiontreeverifiedabsent",
+      "label": "derived",
+      "statement": "sqlc query \"MarkAgentExecutionTreeVerifiedAbsent\" belongs to SQL domain \"agent_executions\" by file-path convention.",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/db/queries/agent_executions.sql"
+        }
+      ]
+    },
+    {
+      "id": "storage-query-domain-agent-executions-recordagentexecutionstartprevented",
+      "label": "derived",
+      "statement": "sqlc query \"RecordAgentExecutionStartPrevented\" belongs to SQL domain \"agent_executions\" by file-path convention.",
       "evidence": [
         {
           "kind": "source",
@@ -2907,7 +3055,7 @@
     {
       "id": "storage-query-file-internal-db-queries-agent-executions-sql",
       "label": "proven",
-      "statement": "SQL query file \"internal/db/queries/agent_executions.sql\" defines 10 sqlc query declaration(s).",
+      "statement": "SQL query file \"internal/db/queries/agent_executions.sql\" defines 16 sqlc query declaration(s).",
       "evidence": [
         {
           "kind": "source",
@@ -4744,7 +4892,7 @@
     {
       "id": "storage-sqlc-config",
       "label": "proven",
-      "statement": "sqlc configuration version  \"2 uses sqlite engine with query directory \" \\\"internal/db/queries\", schema directory \" \\\"internal/db/migrations\", generated package \" \\\"generated\", and output \" \\\"internal/store/generated\".",
+      "statement": "sqlc configuration version  \"2 uses sqlite engine with query directory \" \\\"internal/db/workflow_queries\", schema directory \" \\\"internal/db/workflow_migrations\", generated package \" \\\"workflowgenerated\", and output \" \\\"internal/store/workflowgenerated\".",
       "evidence": [
         {
           "kind": "source",
@@ -4752,15 +4900,37 @@
         },
         {
           "kind": "source",
-          "value": " \"internal/db/queries"
+          "value": " \"internal/db/workflow_queries"
         },
         {
           "kind": "source",
-          "value": " \"internal/db/migrations"
+          "value": " \"internal/db/workflow_migrations"
         },
         {
           "kind": "source",
-          "value": " \"internal/store/generated"
+          "value": " \"internal/store/workflowgenerated"
+        }
+      ]
+    },
+    {
+      "id": "storage-store-wrapper-store-wrapper-method-appendagentexecutionlifecycleerror",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"AppendAgentExecutionLifecycleError\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#AppendAgentExecutionLifecycleError"
+        }
+      ]
+    },
+    {
+      "id": "storage-store-wrapper-store-wrapper-method-claimagentexecutionlaunch",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"ClaimAgentExecutionLaunch\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#ClaimAgentExecutionLaunch"
         }
       ]
     },
@@ -4937,6 +5107,17 @@
         {
           "kind": "source",
           "value": "internal/store/db.go#EnsureDefaultRepoRoots"
+        }
+      ]
+    },
+    {
+      "id": "storage-store-wrapper-store-wrapper-method-finalizeagentexecutioncas",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"FinalizeAgentExecutionCAS\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#FinalizeAgentExecutionCAS"
         }
       ]
     },
@@ -5326,6 +5507,39 @@
       ]
     },
     {
+      "id": "storage-store-wrapper-store-wrapper-method-markagentexecutionterminationfailed",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"MarkAgentExecutionTerminationFailed\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#MarkAgentExecutionTerminationFailed"
+        }
+      ]
+    },
+    {
+      "id": "storage-store-wrapper-store-wrapper-method-markagentexecutionterminationrequested",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"MarkAgentExecutionTerminationRequested\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#MarkAgentExecutionTerminationRequested"
+        }
+      ]
+    },
+    {
+      "id": "storage-store-wrapper-store-wrapper-method-markagentexecutiontreeverifiedabsent",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"MarkAgentExecutionTreeVerifiedAbsent\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#MarkAgentExecutionTreeVerifiedAbsent"
+        }
+      ]
+    },
+    {
       "id": "storage-store-wrapper-store-wrapper-method-markstalevalidationexecutionerror",
       "label": "proven",
       "statement": "Store wrapper store_wrapper_method \"MarkStaleValidationExecutionError\" on receiver \"Store\" in \"internal/store/db.go\".",
@@ -5344,6 +5558,39 @@
         {
           "kind": "source",
           "value": "internal/store/db.go#MarkValidationExecutionRunning"
+        }
+      ]
+    },
+    {
+      "id": "storage-store-wrapper-store-wrapper-method-recordagentexecutionstartprevented",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"RecordAgentExecutionStartPrevented\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#RecordAgentExecutionStartPrevented"
+        }
+      ]
+    },
+    {
+      "id": "storage-store-wrapper-store-wrapper-method-recordexecutorpreflightblocked",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"RecordExecutorPreflightBlocked\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#RecordExecutorPreflightBlocked"
+        }
+      ]
+    },
+    {
+      "id": "storage-store-wrapper-store-wrapper-method-recordrunstatusevent",
+      "label": "proven",
+      "statement": "Store wrapper store_wrapper_method \"RecordRunStatusEvent\" on receiver \"Store\" in \"internal/store/db.go\".",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go#RecordRunStatusEvent"
         }
       ]
     },

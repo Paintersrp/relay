@@ -20,7 +20,7 @@
   "source_inputs": [
     {
       "path": "docs/backend-code-surface-map.md",
-      "sha256": "f3eb4c9e1fdfc1d4ea3f38dc7f4cac8dc5611b78dc9ce6bcb73542f44afc1382",
+      "sha256": "920bfad94ef75bf59b0135153172158841af381960ccc784fc66bc2dde3f77d1",
       "role": "manual map"
     },
     {
@@ -30,12 +30,12 @@
     },
     {
       "path": "internal/api/api_test.go",
-      "sha256": "b7d668070c88ae5c60af0630c1e11756a741dff1b05db289f0969639e859921d",
+      "sha256": "254fee998c268b4117bf9df12830ed353807e599909eb2e4d4a328fd72c61bf8",
       "role": "test"
     },
     {
       "path": "internal/api/artifacts/doc.go",
-      "sha256": "65f3caf6725ec4f881de4cc245e27fb7bbc54ab509343b131ff71dda2ddbf52a",
+      "sha256": "9e21266381db3e8eb488fe18607bf2874acb116ba89e35d893a31ab6491628cb",
       "role": "source"
     },
     {
@@ -50,7 +50,7 @@
     },
     {
       "path": "internal/api/artifacts/routes.go",
-      "sha256": "758c96e858840df0ff2cda43ddd4121b52b8e0c416af2cad5a4d5d417b65e7e4",
+      "sha256": "930d1e2b925521f1a8f16b4fd509feb4663095dfd4f82ac150ac482491161e0f",
       "role": "source"
     },
     {
@@ -70,8 +70,18 @@
     },
     {
       "path": "internal/api/audits/routes.go",
-      "sha256": "5998ed331a093f9174ae2b95392775ff0dec67554944aade9201e426206037ef",
+      "sha256": "7b032324ba4a515bc5113090256c7f7d31ce06b6237cc034de640c8d0b61dad1",
       "role": "source"
+    },
+    {
+      "path": "internal/api/audits/workflow.go",
+      "sha256": "361e27afeb8e3a6f735611433f17d89e23a3237b601619483a08f8198bff632d",
+      "role": "source"
+    },
+    {
+      "path": "internal/api/audits/workflow_test.go",
+      "sha256": "73a4afc001351023d0d1b5c5a1fc0b06ad2ee7c7acb211c3bfc5532b0e781929",
+      "role": "test"
     },
     {
       "path": "internal/api/cors.go",
@@ -85,7 +95,7 @@
     },
     {
       "path": "internal/api/intake/doc.go",
-      "sha256": "efa3704ad9bcf00c04317a5d1ab89c448b499215f31b81921141807255f5e794",
+      "sha256": "5bedccbdbb2b4c3c71991ac0f3643b28eaacebb51a4dcf1ad74fa1cda6164acf",
       "role": "source"
     },
     {
@@ -100,7 +110,7 @@
     },
     {
       "path": "internal/api/intake/routes.go",
-      "sha256": "153de0341933b08bdfee0e70b1263af9d9a3a5c7ffda37315dd687d1dbeae706",
+      "sha256": "149c7d4c4d36a0fca2a29c45b590fea1cdc1934739975ea48f161c52e49e369c",
       "role": "source"
     },
     {
@@ -115,7 +125,7 @@
     },
     {
       "path": "internal/api/next_pass_work_test.go",
-      "sha256": "2a67ab8ff1c609db7d849de71c9d586f864838406f304ee828f57a7c194ecf05",
+      "sha256": "e6cff7170b8894cc509c143603fa5de55c596cd89af531580d0db91409170953",
       "role": "test"
     },
     {
@@ -269,6 +279,16 @@
       "role": "source"
     },
     {
+      "path": "internal/api/runs/workflow_execution.go",
+      "sha256": "717477563c886cc58ee62e93ee9cc9bf2faf310a90751d9ec8c1ed76d3f38321",
+      "role": "source"
+    },
+    {
+      "path": "internal/api/runs/workflow_execution_test.go",
+      "sha256": "96ea8627af2df8717cdac05f98a353616e26170974e13b40aaaa5c6c178ac81f",
+      "role": "test"
+    },
+    {
       "path": "internal/api/shared/doc.go",
       "sha256": "af8bd8002ec78c84f55e220452afbc9290bb1c0cf11c800990e1e762f2ebf2a2",
       "role": "source"
@@ -311,6 +331,26 @@
     {
       "path": "internal/app/audits/types.go",
       "sha256": "b58afcb741cffc90911bc9471f11c0a3093c39c7c1df7d0b0742003634e11d60",
+      "role": "source"
+    },
+    {
+      "path": "internal/app/audits/workflow_packet.go",
+      "sha256": "9afdc4abf9150fe4047766cce1851dfe338ece9190c4cff192bc0911ba009e2a",
+      "role": "source"
+    },
+    {
+      "path": "internal/app/audits/workflow_service.go",
+      "sha256": "fbd93fc2da69016b8c789c2e0a5f5be79771b871541b1020ca25c2cb7f178f5b",
+      "role": "source"
+    },
+    {
+      "path": "internal/app/audits/workflow_service_test.go",
+      "sha256": "a7cd9e701a613026cbdae5d3b4fc16d570818b3bc65f88dcaba8f1a1cb3ec53d",
+      "role": "test"
+    },
+    {
+      "path": "internal/app/audits/workflow_types.go",
+      "sha256": "b648273e22aed4c88af239212042c2a5741e70fe67de179ec25464e3e4f9caa6",
       "role": "source"
     },
     {
@@ -485,28 +525,43 @@
     },
     {
       "path": "internal/app/plans/service_test.go",
-      "sha256": "4d61e8bde7b0eddda3d1136a98505ea374b210b5ec8be83328c65c69a752725c",
+      "sha256": "4f2f02a4f15845b53c9c860a4ff994fec225882bbbe790bf9cfe60c836268141",
       "role": "test"
     },
     {
       "path": "internal/app/plans/types.go",
-      "sha256": "8e61e722378940b93ad98db9e68ed915840c568fedf958ec9f86152afd89da53",
+      "sha256": "1ea2d692b0bd437aee58301af9df507e9ec0baac5ee54b35891c80842acf68d5",
       "role": "source"
     },
     {
       "path": "internal/app/plans/validator.go",
-      "sha256": "9eb5323bcbe1b6f76a25d5f1c53607b06232c99b73674e5947ba1a6de81891dd",
+      "sha256": "d215c7f5e3eb9828d5ba5647769e94cfe60fb4f6650bc1eb95c39f38964a4f6f",
       "role": "source"
     },
     {
       "path": "internal/app/plans/work_packets.go",
-      "sha256": "dbe4eee9a2e2e1d44b1347344dabd36a1f7ffa2cf9d74a477be3b5bb7876b35c",
+      "sha256": "7221f8218417429f05b6b93288df918144ebceced4d15d02eac42c98a30def91",
       "role": "source"
     },
     {
       "path": "internal/app/plans/work_packets_test.go",
-      "sha256": "ec1e43663b714632953cef9cd34e150ad90966088b848b79c98ef508abdff1d2",
+      "sha256": "78ccd5cd5f3f1276232ae96cb038885ef928a52b4e08fd0871f34623b935f120",
       "role": "test"
+    },
+    {
+      "path": "internal/app/plans/workflow/service.go",
+      "sha256": "1287c267e34b2218b8124ac77ddcca774d12b0226bcd7d351ff38d143dc2c2d1",
+      "role": "source"
+    },
+    {
+      "path": "internal/app/plans/workflow/service_test.go",
+      "sha256": "b6252ec5d303986b63e3134baa8801498d756434fd874e99cc7e9d0d0f32428f",
+      "role": "test"
+    },
+    {
+      "path": "internal/app/plans/workflow/types.go",
+      "sha256": "32849a295413500453572ea832cc7631526bdc20d14ff1658f96d5b39377c42e",
+      "role": "source"
     },
     {
       "path": "internal/app/projects/doc.go",
@@ -540,7 +595,7 @@
     },
     {
       "path": "internal/app/projects/service_test.go",
-      "sha256": "e9d8a3edc96b4a73cfc86cd288e5b3fa923e0e068ff546a99144494bc906416f",
+      "sha256": "ddaa3444a82dfa36745d18059233459ddcbbf05a2f2b550be9a8b8d720c850a7",
       "role": "test"
     },
     {
@@ -579,6 +634,26 @@
       "role": "source"
     },
     {
+      "path": "internal/app/runs/workflow/cancellation_test.go",
+      "sha256": "133b19514e0106159ecb4d8ecfdf84bc4917431f3308bbf5b40e1bab7a432493",
+      "role": "test"
+    },
+    {
+      "path": "internal/app/runs/workflow/service.go",
+      "sha256": "a34f23b3913f517cb045ad5c01a02102e4532f1daa839dc15f7d9b6e0c33c64e",
+      "role": "source"
+    },
+    {
+      "path": "internal/app/runs/workflow/service_test.go",
+      "sha256": "62081a083fbabee27e24f9e93a12f0ca671ae44c13f0d6042532c42006c1a9d2",
+      "role": "test"
+    },
+    {
+      "path": "internal/app/runs/workflow/types.go",
+      "sha256": "7d5559cabaece27e5dc818dbc5ccbdce3e68f2b008fafe5422d35e5a56c72999",
+      "role": "source"
+    },
+    {
       "path": "internal/mcp/artifact_readback_tools.go",
       "sha256": "c7712711b76eb824c71b1184c44f5b119adf0d656e8f78a0e9052ccf9a1487a8",
       "role": "source"
@@ -589,6 +664,16 @@
       "role": "test"
     },
     {
+      "path": "internal/mcp/audit_tools.go",
+      "sha256": "ec04fbb564f872f12a96ad49eb6c44b344f06902405cf247c51b3a41041f7042",
+      "role": "source"
+    },
+    {
+      "path": "internal/mcp/audit_tools_test.go",
+      "sha256": "7a2b1c31b4e4d4cb6b6da203c3eb7cf25439a1a18362e333c790b66cf1807569",
+      "role": "test"
+    },
+    {
       "path": "internal/mcp/blocker_envelope.go",
       "sha256": "0aff048cd566bd25beacaf4f90c752fb6f72d7317f30ba225f623abcbb5b337b",
       "role": "source"
@@ -596,6 +681,16 @@
     {
       "path": "internal/mcp/blocker_envelope_test.go",
       "sha256": "6830987aa8b5d25db4929797dce1b742d03cb37dcd1aaefdd02acb1c26a52e0a",
+      "role": "test"
+    },
+    {
+      "path": "internal/mcp/canonical_tools.go",
+      "sha256": "f3227bc014632a65878a9dbe9afefd1716978a94a16e732024c50cd4044bf256",
+      "role": "source"
+    },
+    {
+      "path": "internal/mcp/canonical_tools_test.go",
+      "sha256": "d18689a9bef566ff61f7becb599270992666bc2ce911545a43d2c487ebd264d8",
       "role": "test"
     },
     {
@@ -615,17 +710,17 @@
     },
     {
       "path": "internal/mcp/deps.go",
-      "sha256": "122ae9f5bba0e0ae7f592b749a2e48f12e956c363e689e17f1e795a36d3c7035",
+      "sha256": "2fe829d42d89ac79a0dddc225c4f8e07716adfa4e7798d9b612e5aab9edce8d1",
       "role": "source"
     },
     {
       "path": "internal/mcp/file_parameter_fetcher.go",
-      "sha256": "5c0099b5e6457987a856c75dbf7bb2fe413ab1c6154b5f86eafc29ef330f6852",
+      "sha256": "d344191a871b4823bd4392a6da95a3d798849e01b1b3a242c20725a8436e1529",
       "role": "source"
     },
     {
       "path": "internal/mcp/file_parameter_fetcher_test.go",
-      "sha256": "bfe172c1a1dbdb314721885c19f6a02ab91381cef67fd94adcd85072c5daf8f5",
+      "sha256": "7067a39c05bc7b89374d0a581ea952b945a7910367137ecdfe97963fc8543b05",
       "role": "test"
     },
     {
@@ -635,7 +730,7 @@
     },
     {
       "path": "internal/mcp/http_handler_test.go",
-      "sha256": "d4123f4eb0d57eb765ace044fd0520be59c70193119175145a7d9d831b84d69a",
+      "sha256": "c2f7bfdd34043fc602ac73cf6ebcf84a579fd0527b77e748f19716223d880072",
       "role": "test"
     },
     {
@@ -645,7 +740,7 @@
     },
     {
       "path": "internal/mcp/mcp_test.go",
-      "sha256": "64c2231c6fcf971c594e318ce0fe83bbe1a8097b6ca1d66327a57d6831dbf6c6",
+      "sha256": "0aa38bda40506fe844dd23d178f97c25c152ed65c2a470bfd31eda9cf93a1e9c",
       "role": "test"
     },
     {
@@ -665,7 +760,7 @@
     },
     {
       "path": "internal/mcp/plan_attempt_tools_test.go",
-      "sha256": "84e4da35631efe508d230719d5aac87e46a639529d6a29b9f5b8c44935455cbd",
+      "sha256": "b97e8cb29220d7739603424968e588baa6079e3af16276533f4f9eb2189e2740",
       "role": "test"
     },
     {
@@ -690,12 +785,12 @@
     },
     {
       "path": "internal/mcp/profile.go",
-      "sha256": "a0119a507dceb905e16f69dbfe463c93b057942a2a8a779ea6a6cb49fa5b129b",
+      "sha256": "0cd4564fa4f73de75bd83ee96401fd917c3bab575bd2de7fa133ddaae5691c9a",
       "role": "source"
     },
     {
       "path": "internal/mcp/profile_test.go",
-      "sha256": "95e95c279c7dcf977a971d122e6a41fb7e362e7ba5cf63f6796389dfd3ba0ef5",
+      "sha256": "9622e878e8d96acf075b527f2a38527f5067af89aef9ed44d0c1db8947044742",
       "role": "test"
     },
     {
@@ -725,17 +820,17 @@
     },
     {
       "path": "internal/mcp/server.go",
-      "sha256": "520e62fdfe31fc41279bd4368d01a139eb9c009b0080c51a9a86b7ef6a7af60f",
+      "sha256": "dbe3b433bf69645ea93084557197e9c7164ca6295eee3926525faabb1f117ce1",
       "role": "source"
     },
     {
       "path": "internal/mcp/server_notification_test.go",
-      "sha256": "a0da26840ec83cdec144a3fc74a92d407c4facb8054ae439107130a0884c1208",
+      "sha256": "5f74f4b42021be2f9cf434cb9120443c8d6b02ba7a1a9bd7d2fdf1bc1d4a17f4",
       "role": "test"
     },
     {
       "path": "internal/mcp/server_tools_list_test.go",
-      "sha256": "4bb1163a046646181f8cedfaed435b64b464bd41b5d0b874ef71db8c1e7f5104",
+      "sha256": "2c6809cfa10ce98d8d16019befd6b65544658e2876fc84dac7cfd7ab467a737b",
       "role": "test"
     },
     {
@@ -745,7 +840,7 @@
     },
     {
       "path": "internal/mcp/tool_create_run_test.go",
-      "sha256": "fbe2d7eceaabd321b453a4def1acda8c05bd62762e76e0b907961bf81cd390b0",
+      "sha256": "af1f2898d57d6fbb891c8dbc3a6e769c36ad6d7faf409eb3ffb6f8188c316318",
       "role": "test"
     },
     {
@@ -765,7 +860,7 @@
     },
     {
       "path": "internal/mcp/tool_surface_test.go",
-      "sha256": "d04261b6adfb0a5d6c50c2efc106f82281711c1f788ae897f9713e0872c6b3b4",
+      "sha256": "5f161fe5dfb844c91a4c8db310e48e5cc465d7abdeb4c0a38e9e9f87da483e9d",
       "role": "test"
     },
     {
@@ -780,7 +875,7 @@
     },
     {
       "path": "internal/store/agent_execution_ownership_test.go",
-      "sha256": "797dde59dd33499064e11b6757afa58f2e1e51eca952ef6943cb6156ab70f31f",
+      "sha256": "4b53efa277936ed5bb7108bdb08423130d7fc59f9b92d02e7a1f2a987a7eeaba",
       "role": "test"
     },
     {
@@ -795,7 +890,7 @@
     },
     {
       "path": "internal/store/db.go",
-      "sha256": "9e41bb12ccd32d18f15bd13a07012e0b03e794bec253c99748763f2ca1e9c730",
+      "sha256": "f5fb352727e2c87053a952126a33466ab7ede3486bf4cc5bc5d4908be7563e3f",
       "role": "source"
     },
     {
@@ -847,6 +942,46 @@
       "path": "internal/store/source_snapshots_test.go",
       "sha256": "91e7051468dac06c859cdbf3efdc25823f9fea59ea0fcfcba0d6d26660257665",
       "role": "test"
+    },
+    {
+      "path": "internal/store/workflow/ids.go",
+      "sha256": "dce79071b645a46bb05fdba604fdde846892ba4357b6940ce47013aa61a5a3a4",
+      "role": "source"
+    },
+    {
+      "path": "internal/store/workflow/store.go",
+      "sha256": "f67349e64102e9c0799edb1fcddbd060b2e0a1fa9fc3e55b3f36f6e32626c896",
+      "role": "source"
+    },
+    {
+      "path": "internal/store/workflow/store_test.go",
+      "sha256": "5ffd9ede502a7b3f9454d3dd69af3ba093317c1f48630f21547a9e0dd2c25113",
+      "role": "test"
+    },
+    {
+      "path": "internal/store/workflow/tx.go",
+      "sha256": "18b46a4261a0876e33976f207db9396ff2649a5674c1226ce9c0b989ce2aa08b",
+      "role": "source"
+    },
+    {
+      "path": "internal/store/workflow/types.go",
+      "sha256": "cb315d71fab1445ab527a1e8bb5565e58ae3cacd007bb41930eb6c8574e0649d",
+      "role": "source"
+    },
+    {
+      "path": "internal/store/workflowgenerated/db.go",
+      "sha256": "dafbdf51bb5c4391c62539fb72b814fad8f5f59812c5c9bb74bd98ff98a4f0dc",
+      "role": "source"
+    },
+    {
+      "path": "internal/store/workflowgenerated/models.go",
+      "sha256": "64a9bb22b1cc0b81d5e7601f2376b34a061e53690218c7f163777604dbec087d",
+      "role": "source"
+    },
+    {
+      "path": "internal/store/workflowgenerated/workflow.sql.go",
+      "sha256": "72b1122113172c3d43fdca74cbfcff7280d1a0fceda6b6a4a641e17347915b42",
+      "role": "source"
     }
   ],
   "fact_labels": [
@@ -909,6 +1044,28 @@
         {
           "kind": "source",
           "value": "internal/api/audits/handler.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-handler-like-internal-api-audits-newworkflowhandler",
+      "label": "convention",
+      "statement": "Handler-like symbol NewWorkflowHandler (constructor) in internal/api/audits/workflow.go — identified by naming convention (named Handler, ending in Handler, or NewHandler/New*Handler constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/audits/workflow.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-handler-like-internal-api-audits-workflowhandler",
+      "label": "convention",
+      "statement": "Handler-like symbol WorkflowHandler (type) in internal/api/audits/workflow.go — identified by naming convention (named Handler, ending in Handler, or NewHandler/New*Handler constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/audits/workflow.go"
         }
       ]
     },
@@ -1012,6 +1169,28 @@
       ]
     },
     {
+      "id": "backend-handler-like-internal-api-runs-newworkflowexecutionhandler",
+      "label": "convention",
+      "statement": "Handler-like symbol NewWorkflowExecutionHandler (constructor) in internal/api/runs/workflow_execution.go — identified by naming convention (named Handler, ending in Handler, or NewHandler/New*Handler constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-handler-like-internal-api-runs-workflowexecutionhandler",
+      "label": "convention",
+      "statement": "Handler-like symbol WorkflowExecutionHandler (type) in internal/api/runs/workflow_execution.go — identified by naming convention (named Handler, ending in Handler, or NewHandler/New*Handler constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
+        }
+      ]
+    },
+    {
       "id": "backend-handler-like-internal-mcp-httphandler",
       "label": "convention",
       "statement": "Handler-like symbol HTTPHandler (type) in internal/mcp/http_handler.go — identified by naming convention (named Handler, ending in Handler, or NewHandler/New*Handler constructor).",
@@ -1073,6 +1252,17 @@
       "evidence": [
         {
           "kind": "source",
+          "value": "internal/api/audits/workflow.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-api-audits-relay-internal-api-shared-2",
+      "label": "derived",
+      "statement": "Import edge: internal/api/audits imports relay/internal/api/shared",
+      "evidence": [
+        {
+          "kind": "source",
           "value": "internal/api/audits/handler.go"
         }
       ]
@@ -1095,7 +1285,29 @@
       "evidence": [
         {
           "kind": "source",
+          "value": "internal/api/audits/workflow.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-api-audits-relay-internal-app-audits-3",
+      "label": "derived",
+      "statement": "Import edge: internal/api/audits imports relay/internal/app/audits",
+      "evidence": [
+        {
+          "kind": "source",
           "value": "internal/api/audits/handler.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-api-audits-relay-internal-store-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/api/audits imports relay/internal/store/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/audits/workflow.go"
         }
       ]
     },
@@ -1106,7 +1318,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/intake/handler.go"
+          "value": "internal/api/intake/dto.go"
         }
       ]
     },
@@ -1117,7 +1329,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/intake/dto.go"
+          "value": "internal/api/intake/handler.go"
         }
       ]
     },
@@ -1161,7 +1373,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/attempt_handler.go"
+          "value": "internal/api/plans/mapper.go"
         }
       ]
     },
@@ -1172,7 +1384,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/handler.go"
+          "value": "internal/api/plans/review_handler.go"
         }
       ]
     },
@@ -1183,7 +1395,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/mapper.go"
+          "value": "internal/api/plans/attempt_handler.go"
         }
       ]
     },
@@ -1194,7 +1406,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/review_handler.go"
+          "value": "internal/api/plans/handler.go"
         }
       ]
     },
@@ -1216,7 +1428,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/attempt_handler.go"
+          "value": "internal/api/plans/handler.go"
         }
       ]
     },
@@ -1227,7 +1439,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/handler.go"
+          "value": "internal/api/plans/attempt_handler.go"
         }
       ]
     },
@@ -1238,7 +1450,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/attempt_dto.go"
+          "value": "internal/api/plans/attempt_handler.go"
         }
       ]
     },
@@ -1249,7 +1461,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/attempt_handler.go"
+          "value": "internal/api/plans/handler.go"
         }
       ]
     },
@@ -1260,7 +1472,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/dto.go"
+          "value": "internal/api/plans/attempt_dto.go"
         }
       ]
     },
@@ -1282,7 +1494,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/handler.go"
+          "value": "internal/api/plans/review_dto.go"
         }
       ]
     },
@@ -1293,7 +1505,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/review_dto.go"
+          "value": "internal/api/plans/mapper.go"
         }
       ]
     },
@@ -1304,7 +1516,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/plans/mapper.go"
+          "value": "internal/api/plans/dto.go"
         }
       ]
     },
@@ -1315,7 +1527,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/plan_seed_handler.go"
+          "value": "internal/api/projects/handler.go"
         }
       ]
     },
@@ -1337,7 +1549,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/handler.go"
+          "value": "internal/api/projects/plan_seed_handler.go"
         }
       ]
     },
@@ -1359,7 +1571,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/plan_seed_dto.go"
+          "value": "internal/api/projects/dto.go"
         }
       ]
     },
@@ -1370,7 +1582,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/plan_seed_handler.go"
+          "value": "internal/api/projects/plan_seed_dto.go"
         }
       ]
     },
@@ -1392,7 +1604,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/dto.go"
+          "value": "internal/api/projects/handler.go"
         }
       ]
     },
@@ -1403,7 +1615,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/projects/handler.go"
+          "value": "internal/api/projects/plan_seed_handler.go"
         }
       ]
     },
@@ -1535,12 +1747,23 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/api/runs/presenter.go"
+          "value": "internal/api/runs/workflow_execution.go"
         }
       ]
     },
     {
       "id": "backend-import-edge-internal-api-runs-relay-internal-api-shared-2",
+      "label": "derived",
+      "statement": "Import edge: internal/api/runs imports relay/internal/api/shared",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/presenter.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-api-runs-relay-internal-api-shared-3",
       "label": "derived",
       "statement": "Import edge: internal/api/runs imports relay/internal/api/shared",
       "evidence": [
@@ -1580,6 +1803,17 @@
         {
           "kind": "source",
           "value": "internal/api/runs/handler.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-api-runs-relay-internal-executor",
+      "label": "derived",
+      "statement": "Import edge: internal/api/runs imports relay/internal/executor",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
         }
       ]
     },
@@ -1634,7 +1868,51 @@
       "evidence": [
         {
           "kind": "source",
+          "value": "internal/app/audits/workflow_packet.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-audits-relay-internal-executor-2",
+      "label": "derived",
+      "statement": "Import edge: internal/app/audits imports relay/internal/executor",
+      "evidence": [
+        {
+          "kind": "source",
           "value": "internal/app/audits/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-audits-relay-internal-repos-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/app/audits imports relay/internal/repos/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-audits-relay-internal-repos-workflow-2",
+      "label": "derived",
+      "statement": "Import edge: internal/app/audits imports relay/internal/repos/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_packet.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-audits-relay-internal-repos-workflow-3",
+      "label": "derived",
+      "statement": "Import edge: internal/app/audits imports relay/internal/repos/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
         }
       ]
     },
@@ -1657,6 +1935,39 @@
         {
           "kind": "source",
           "value": "internal/app/audits/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-audits-relay-internal-store-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/app/audits imports relay/internal/store/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-audits-relay-internal-store-workflow-2",
+      "label": "derived",
+      "statement": "Import edge: internal/app/audits imports relay/internal/store/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-audits-relay-internal-store-workflow-3",
+      "label": "derived",
+      "statement": "Import edge: internal/app/audits imports relay/internal/store/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_packet.go"
         }
       ]
     },
@@ -1799,7 +2110,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/review_settings.go"
+          "value": "internal/app/plans/audit_work_packets.go"
         }
       ]
     },
@@ -1810,7 +2121,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/work_packets.go"
+          "value": "internal/app/plans/types.go"
         }
       ]
     },
@@ -1821,7 +2132,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/review_gate.go"
+          "value": "internal/app/plans/service.go"
         }
       ]
     },
@@ -1832,7 +2143,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/attempt_service.go"
+          "value": "internal/app/plans/attempt_types.go"
         }
       ]
     },
@@ -1843,7 +2154,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/attempt_types.go"
+          "value": "internal/app/plans/attempt_service.go"
         }
       ]
     },
@@ -1854,7 +2165,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/audit_work_packets.go"
+          "value": "internal/app/plans/lifecycle.go"
         }
       ]
     },
@@ -1865,7 +2176,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/lifecycle.go"
+          "value": "internal/app/plans/read_queries.go"
         }
       ]
     },
@@ -1876,7 +2187,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/read_queries.go"
+          "value": "internal/app/plans/review_gate.go"
         }
       ]
     },
@@ -1887,7 +2198,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/service.go"
+          "value": "internal/app/plans/work_packets.go"
         }
       ]
     },
@@ -1898,7 +2209,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/types.go"
+          "value": "internal/app/plans/review_settings.go"
         }
       ]
     },
@@ -1920,7 +2231,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/review_gate.go"
+          "value": "internal/app/plans/service.go"
         }
       ]
     },
@@ -1942,7 +2253,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/plans/service.go"
+          "value": "internal/app/plans/review_gate.go"
         }
       ]
     },
@@ -1965,6 +2276,39 @@
         {
           "kind": "source",
           "value": "internal/app/plans/attempt_hash.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-plans-workflow-relay-internal-artifacts-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/app/plans/workflow imports relay/internal/artifacts/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-plans-workflow-relay-internal-store-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/app/plans/workflow imports relay/internal/store/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-plans-workflow-relay-internal-store-workflow-2",
+      "label": "derived",
+      "statement": "Import edge: internal/app/plans/workflow imports relay/internal/store/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
         }
       ]
     },
@@ -2118,7 +2462,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/runs/service.go"
+          "value": "internal/app/runs/lifecycle.go"
         }
       ]
     },
@@ -2129,7 +2473,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/runs/lifecycle.go"
+          "value": "internal/app/runs/service.go"
         }
       ]
     },
@@ -2178,6 +2522,61 @@
       ]
     },
     {
+      "id": "backend-import-edge-internal-app-runs-workflow-relay-internal-artifacts-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/app/runs/workflow imports relay/internal/artifacts/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-runs-workflow-relay-internal-store-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/app/runs/workflow imports relay/internal/store/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-runs-workflow-relay-internal-store-workflow-2",
+      "label": "derived",
+      "statement": "Import edge: internal/app/runs/workflow imports relay/internal/store/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-app-audits",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/app/audits",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/audit_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-app-audits-2",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/app/audits",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/deps.go"
+        }
+      ]
+    },
+    {
       "id": "backend-import-edge-internal-mcp-relay-internal-app-drift",
       "label": "derived",
       "statement": "Import edge: internal/mcp imports relay/internal/app/drift",
@@ -2206,7 +2605,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/plan_tools.go"
+          "value": "internal/mcp/server.go"
         }
       ]
     },
@@ -2228,7 +2627,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/server.go"
+          "value": "internal/mcp/orchestrator_work_tools.go"
         }
       ]
     },
@@ -2239,7 +2638,18 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/orchestrator_work_tools.go"
+          "value": "internal/mcp/plan_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-app-plans-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/app/plans/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
         }
       ]
     },
@@ -2255,13 +2665,24 @@
       ]
     },
     {
+      "id": "backend-import-edge-internal-mcp-relay-internal-app-runs-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/app/runs/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-import-edge-internal-mcp-relay-internal-artifacts",
       "label": "derived",
       "statement": "Import edge: internal/mcp imports relay/internal/artifacts",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/tool_test_audit_packet.go"
+          "value": "internal/mcp/context_broker_tools.go"
         }
       ]
     },
@@ -2283,7 +2704,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/context_broker_tools.go"
+          "value": "internal/mcp/tool_test_audit_packet.go"
         }
       ]
     },
@@ -2316,7 +2737,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/context_broker_tools.go"
+          "value": "internal/mcp/orchestrator_work_tools.go"
         }
       ]
     },
@@ -2327,7 +2748,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/orchestrator_work_tools.go"
+          "value": "internal/mcp/context_broker_tools.go"
         }
       ]
     },
@@ -2393,7 +2814,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/context_broker_git_tools.go"
+          "value": "internal/mcp/context_broker_tools.go"
         }
       ]
     },
@@ -2415,7 +2836,18 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/context_broker_tools.go"
+          "value": "internal/mcp/context_broker_git_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-speccompiler",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/speccompiler",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
         }
       ]
     },
@@ -2426,7 +2858,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/context_broker_tools.go"
+          "value": "internal/mcp/deps.go"
         }
       ]
     },
@@ -2437,7 +2869,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/deps.go"
+          "value": "internal/mcp/context_broker_tools.go"
         }
       ]
     },
@@ -2449,6 +2881,39 @@
         {
           "kind": "source",
           "value": "internal/mcp/context_broker_git_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-store-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/store/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/deps.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-store-workflow-2",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/store/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/audit_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-store-workflow-3",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/store/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
         }
       ]
     },
@@ -2470,7 +2935,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/source_snapshots.go"
+          "value": "internal/store/plan_seeds.go"
         }
       ]
     },
@@ -2481,7 +2946,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/run_submission_provenance.go"
+          "value": "internal/store/source_snapshots.go"
         }
       ]
     },
@@ -2492,7 +2957,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/refactor_backlog.go"
+          "value": "internal/store/run_submission_provenance.go"
         }
       ]
     },
@@ -2503,7 +2968,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/projects.go"
+          "value": "internal/store/refactor_backlog.go"
         }
       ]
     },
@@ -2514,7 +2979,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/project_context_records.go"
+          "value": "internal/store/projects.go"
         }
       ]
     },
@@ -2525,7 +2990,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/store/plan_seeds.go"
+          "value": "internal/store/project_context_records.go"
         }
       ]
     },
@@ -2559,6 +3024,28 @@
         {
           "kind": "source",
           "value": "internal/store/context_packets.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-store-workflow-relay-internal-artifacts-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/store/workflow imports relay/internal/artifacts/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-store-workflow-relay-internal-db",
+      "label": "derived",
+      "statement": "Import edge: internal/store/workflow imports relay/internal/db",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
         }
       ]
     },
@@ -2668,6 +3155,14 @@
         {
           "kind": "source",
           "value": "internal/api/audits/routes.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/api/audits/workflow.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/api/audits/workflow_test.go"
         }
       ]
     },
@@ -2808,6 +3303,14 @@
         {
           "kind": "source",
           "value": "internal/api/runs/routes.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/api/runs/workflow_execution_test.go"
         }
       ]
     },
@@ -2865,6 +3368,22 @@
         {
           "kind": "source",
           "value": "internal/app/audits/types.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_packet.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/app/audits/workflow_service_test.go"
         }
       ]
     },
@@ -3042,6 +3561,25 @@
       ]
     },
     {
+      "id": "backend-package-internal-app-plans-workflow",
+      "label": "proven",
+      "statement": "Backend package internal/app/plans/workflow (workflowplans)",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/types.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/app/plans/workflow/service_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-package-internal-app-projects",
       "label": "proven",
       "statement": "Backend package internal/app/projects (projects)",
@@ -3112,6 +3650,29 @@
       ]
     },
     {
+      "id": "backend-package-internal-app-runs-workflow",
+      "label": "proven",
+      "statement": "Backend package internal/app/runs/workflow (workflowruns)",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/types.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/app/runs/workflow/cancellation_test.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/app/runs/workflow/service_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-package-internal-mcp",
       "label": "proven",
       "statement": "Backend package internal/mcp (mcp)",
@@ -3122,7 +3683,15 @@
         },
         {
           "kind": "source",
+          "value": "internal/mcp/audit_tools.go"
+        },
+        {
+          "kind": "source",
           "value": "internal/mcp/blocker_envelope.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
         },
         {
           "kind": "source",
@@ -3214,7 +3783,15 @@
         },
         {
           "kind": "test",
+          "value": "internal/mcp/audit_tools_test.go"
+        },
+        {
+          "kind": "test",
           "value": "internal/mcp/blocker_envelope_test.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/mcp/canonical_tools_test.go"
         },
         {
           "kind": "test",
@@ -3342,6 +3919,52 @@
       ]
     },
     {
+      "id": "backend-package-internal-store-workflow",
+      "label": "proven",
+      "statement": "Backend package internal/store/workflow (workflowstore)",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/ids.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/store/workflow/store_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-package-internal-store-workflowgenerated",
+      "label": "proven",
+      "statement": "Backend package internal/store/workflowgenerated (workflowgenerated)",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/db.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/models.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
       "id": "backend-route-mounter-like-internal-api-artifacts-mountroutes",
       "label": "convention",
       "statement": "Route-mounter function MountRoutes in internal/api/artifacts/routes.go — this is router-surface evidence only, not a complete HTTP route/API reference.",
@@ -3430,6 +4053,17 @@
       ]
     },
     {
+      "id": "backend-service-like-internal-api-audits-workflowauditservice",
+      "label": "convention",
+      "statement": "Service-like symbol WorkflowAuditService (type) in internal/api/audits/workflow.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/audits/workflow.go"
+        }
+      ]
+    },
+    {
       "id": "backend-service-like-internal-api-intake-newhandler",
       "label": "convention",
       "statement": "Service-like symbol NewHandler (constructor) in internal/api/intake/handler.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
@@ -3474,6 +4108,17 @@
       ]
     },
     {
+      "id": "backend-service-like-internal-api-runs-workflowexecutionservice",
+      "label": "convention",
+      "statement": "Service-like symbol WorkflowExecutionService (type) in internal/api/runs/workflow_execution.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
+        }
+      ]
+    },
+    {
       "id": "backend-service-like-internal-app-audits-newservice",
       "label": "convention",
       "statement": "Service-like symbol NewService (constructor) in internal/app/audits/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
@@ -3485,6 +4130,17 @@
       ]
     },
     {
+      "id": "backend-service-like-internal-app-audits-newworkflowauditservice",
+      "label": "convention",
+      "statement": "Service-like symbol NewWorkflowAuditService (constructor) in internal/app/audits/workflow_service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
+        }
+      ]
+    },
+    {
       "id": "backend-service-like-internal-app-audits-service",
       "label": "convention",
       "statement": "Service-like symbol Service (type) in internal/app/audits/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
@@ -3492,6 +4148,17 @@
         {
           "kind": "source",
           "value": "internal/app/audits/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-service-like-internal-app-audits-workflowauditservice",
+      "label": "convention",
+      "statement": "Service-like symbol WorkflowAuditService (type) in internal/app/audits/workflow_service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
         }
       ]
     },
@@ -3617,6 +4284,28 @@
       ]
     },
     {
+      "id": "backend-service-like-internal-app-plans-workflow-newservice",
+      "label": "convention",
+      "statement": "Service-like symbol NewService (constructor) in internal/app/plans/workflow/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-service-like-internal-app-plans-workflow-service",
+      "label": "convention",
+      "statement": "Service-like symbol Service (type) in internal/app/plans/workflow/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        }
+      ]
+    },
+    {
       "id": "backend-service-like-internal-app-projects-newservice",
       "label": "convention",
       "statement": "Service-like symbol NewService (constructor) in internal/app/projects/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
@@ -3657,6 +4346,39 @@
         {
           "kind": "source",
           "value": "internal/app/runs/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-service-like-internal-app-runs-workflow-newservice",
+      "label": "convention",
+      "statement": "Service-like symbol NewService (constructor) in internal/app/runs/workflow/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-service-like-internal-app-runs-workflow-service",
+      "label": "convention",
+      "statement": "Service-like symbol Service (type) in internal/app/runs/workflow/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-service-like-internal-mcp-workflowaudittoolservice",
+      "label": "convention",
+      "statement": "Service-like symbol WorkflowAuditToolService (type) in internal/mcp/audit_tools.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/audit_tools.go"
         }
       ]
     },
@@ -3804,6 +4526,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-api-audits-func-mountworkflowroutes",
+      "label": "proven",
+      "statement": "Exported func MountWorkflowRoutes in internal/api/audits/routes.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/audits/routes.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-api-audits-func-newhandler",
       "label": "proven",
       "statement": "Exported func NewHandler in internal/api/audits/handler.go",
@@ -3811,6 +4544,28 @@
         {
           "kind": "source",
           "value": "internal/api/audits/handler.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-api-audits-func-newworkflowhandler",
+      "label": "proven",
+      "statement": "Exported func NewWorkflowHandler in internal/api/audits/workflow.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/audits/workflow.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-api-audits-func-prepare",
+      "label": "proven",
+      "statement": "Exported func Prepare in internal/api/audits/workflow.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/audits/workflow.go"
         }
       ]
     },
@@ -3833,6 +4588,17 @@
         {
           "kind": "source",
           "value": "internal/api/audits/handler.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-api-audits-func-status",
+      "label": "proven",
+      "statement": "Exported func Status in internal/api/audits/workflow.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/audits/workflow.go"
         }
       ]
     },
@@ -3877,6 +4643,28 @@
         {
           "kind": "source",
           "value": "internal/api/audits/dto.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-api-audits-type-workflowauditservice",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditService in internal/api/audits/workflow.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/audits/workflow.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-api-audits-type-workflowhandler",
+      "label": "proven",
+      "statement": "Exported type WorkflowHandler in internal/api/audits/workflow.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/audits/workflow.go"
         }
       ]
     },
@@ -5278,6 +6066,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-api-runs-func-cancelattempt",
+      "label": "proven",
+      "statement": "Exported func CancelAttempt in internal/api/runs/workflow_execution.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-api-runs-func-executerun",
       "label": "proven",
       "statement": "Exported func ExecuteRun in internal/api/runs/handler.go",
@@ -5289,6 +6088,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-api-runs-func-getattempt",
+      "label": "proven",
+      "statement": "Exported func GetAttempt in internal/api/runs/workflow_execution.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-api-runs-func-getrun",
       "label": "proven",
       "statement": "Exported func GetRun in internal/api/runs/handler.go",
@@ -5296,6 +6106,17 @@
         {
           "kind": "source",
           "value": "internal/api/runs/handler.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-api-runs-func-listattempts",
+      "label": "proven",
+      "statement": "Exported func ListAttempts in internal/api/runs/workflow_execution.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
         }
       ]
     },
@@ -5344,6 +6165,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-api-runs-func-mountworkflowexecutionroutes",
+      "label": "proven",
+      "statement": "Exported func MountWorkflowExecutionRoutes in internal/api/runs/workflow_execution.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-api-runs-func-newhandler",
       "label": "proven",
       "statement": "Exported func NewHandler in internal/api/runs/handler.go",
@@ -5355,6 +6187,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-api-runs-func-newworkflowexecutionhandler",
+      "label": "proven",
+      "statement": "Exported func NewWorkflowExecutionHandler in internal/api/runs/workflow_execution.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-api-runs-func-preparerun",
       "label": "proven",
       "statement": "Exported func PrepareRun in internal/api/runs/handler.go",
@@ -5362,6 +6205,17 @@
         {
           "kind": "source",
           "value": "internal/api/runs/handler.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-api-runs-func-reconcileattempt",
+      "label": "proven",
+      "statement": "Exported func ReconcileAttempt in internal/api/runs/workflow_execution.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
         }
       ]
     },
@@ -5395,6 +6249,17 @@
         {
           "kind": "source",
           "value": "internal/api/runs/presenter.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-api-runs-func-startattempt",
+      "label": "proven",
+      "statement": "Exported func StartAttempt in internal/api/runs/workflow_execution.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
         }
       ]
     },
@@ -5527,6 +6392,28 @@
         {
           "kind": "source",
           "value": "internal/api/runs/dto.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-api-runs-type-workflowexecutionhandler",
+      "label": "proven",
+      "statement": "Exported type WorkflowExecutionHandler in internal/api/runs/workflow_execution.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-api-runs-type-workflowexecutionservice",
+      "label": "proven",
+      "statement": "Exported type WorkflowExecutionService in internal/api/runs/workflow_execution.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/api/runs/workflow_execution.go"
         }
       ]
     },
@@ -5971,6 +6858,50 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-audits-const-maxworkflowauditevidencebytes",
+      "label": "proven",
+      "statement": "Exported const MaxWorkflowAuditEvidenceBytes in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-const-maxworkflowauditpacketbytes",
+      "label": "proven",
+      "statement": "Exported const MaxWorkflowAuditPacketBytes in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-const-maxworkflowauditsourcebytes",
+      "label": "proven",
+      "statement": "Exported const MaxWorkflowAuditSourceBytes in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-const-workflowauditpacketschemaversion",
+      "label": "proven",
+      "statement": "Exported const WorkflowAuditPacketSchemaVersion in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-audits-func-closerun",
       "label": "proven",
       "statement": "Exported func CloseRun in internal/app/audits/service.go",
@@ -6026,6 +6957,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-audits-func-getcurrentpacket",
+      "label": "proven",
+      "statement": "Exported func GetCurrentPacket in internal/app/audits/workflow_service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-audits-func-getlocalaudit",
       "label": "proven",
       "statement": "Exported func GetLocalAudit in internal/app/audits/service.go",
@@ -6033,6 +6975,17 @@
         {
           "kind": "source",
           "value": "internal/app/audits/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-func-getstatus",
+      "label": "proven",
+      "statement": "Exported func GetStatus in internal/app/audits/workflow_service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
         }
       ]
     },
@@ -6070,6 +7023,39 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-audits-func-newworkflowauditservice",
+      "label": "proven",
+      "statement": "Exported func NewWorkflowAuditService in internal/app/audits/workflow_service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-func-newworkflowauditservicewithinspector",
+      "label": "proven",
+      "statement": "Exported func NewWorkflowAuditServiceWithInspector in internal/app/audits/workflow_service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-func-prepare",
+      "label": "proven",
+      "statement": "Exported func Prepare in internal/app/audits/workflow_service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-audits-func-preparecommitmessage",
       "label": "proven",
       "statement": "Exported func PrepareCommitMessage in internal/app/audits/service.go",
@@ -6077,6 +7063,17 @@
         {
           "kind": "source",
           "value": "internal/app/audits/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-func-recorddecision",
+      "label": "proven",
+      "statement": "Exported func RecordDecision in internal/app/audits/workflow_service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
         }
       ]
     },
@@ -6191,6 +7188,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-audits-type-getworkflowauditpacketresult",
+      "label": "proven",
+      "statement": "Exported type GetWorkflowAuditPacketResult in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-audits-type-localauditinput",
       "label": "proven",
       "statement": "Exported type LocalAuditInput in internal/app/audits/types.go",
@@ -6235,6 +7243,50 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-audits-type-prepareworkflowauditinput",
+      "label": "proven",
+      "statement": "Exported type PrepareWorkflowAuditInput in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-prepareworkflowauditresult",
+      "label": "proven",
+      "statement": "Exported type PrepareWorkflowAuditResult in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-recordworkflowauditdecisioninput",
+      "label": "proven",
+      "statement": "Exported type RecordWorkflowAuditDecisionInput in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-recordworkflowauditdecisionresult",
+      "label": "proven",
+      "statement": "Exported type RecordWorkflowAuditDecisionResult in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-audits-type-revisioninput",
       "label": "proven",
       "statement": "Exported type RevisionInput in internal/app/audits/types.go",
@@ -6268,6 +7320,105 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditattemptauthority",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditAttemptAuthority in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditcommitauthority",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditCommitAuthority in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditevidenceitem",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditEvidenceItem in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditinspector",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditInspector in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditpacket",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditPacket in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditpassauthority",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditPassAuthority in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditrunauthority",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditRunAuthority in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditservice",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditService in internal/app/audits/workflow_service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditstatus",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditStatus in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-audits-var-errauditdecisionnotready",
       "label": "proven",
       "statement": "Exported var ErrAuditDecisionNotReady in internal/app/audits/types.go",
@@ -6297,6 +7448,72 @@
         {
           "kind": "source",
           "value": "internal/app/audits/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-var-errworkflowauditconfirmation",
+      "label": "proven",
+      "statement": "Exported var ErrWorkflowAuditConfirmation in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-var-errworkflowauditdecisionrecorded",
+      "label": "proven",
+      "statement": "Exported var ErrWorkflowAuditDecisionRecorded in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-var-errworkflowauditnotready",
+      "label": "proven",
+      "statement": "Exported var ErrWorkflowAuditNotReady in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-var-errworkflowauditpacketnotfound",
+      "label": "proven",
+      "statement": "Exported var ErrWorkflowAuditPacketNotFound in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-var-errworkflowauditpacketstale",
+      "label": "proven",
+      "statement": "Exported var ErrWorkflowAuditPacketStale in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-var-errworkflowauditpackettoolarge",
+      "label": "proven",
+      "statement": "Exported var ErrWorkflowAuditPacketTooLarge in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
         }
       ]
     },
@@ -10085,6 +11302,160 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-plans-workflow-func-artifactid",
+      "label": "proven",
+      "statement": "Exported func ArtifactID in internal/app/plans/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-func-createplan",
+      "label": "proven",
+      "statement": "Exported func CreatePlan in internal/app/plans/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-func-getplan",
+      "label": "proven",
+      "statement": "Exported func GetPlan in internal/app/plans/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-func-newservice",
+      "label": "proven",
+      "statement": "Exported func NewService in internal/app/plans/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-func-newservicewithids",
+      "label": "proven",
+      "statement": "Exported func NewServiceWithIDs in internal/app/plans/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-func-passid",
+      "label": "proven",
+      "statement": "Exported func PassID in internal/app/plans/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-func-planid",
+      "label": "proven",
+      "statement": "Exported func PlanID in internal/app/plans/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-type-createplaninput",
+      "label": "proven",
+      "statement": "Exported type CreatePlanInput in internal/app/plans/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-type-createplanresult",
+      "label": "proven",
+      "statement": "Exported type CreatePlanResult in internal/app/plans/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-type-getplanresult",
+      "label": "proven",
+      "statement": "Exported type GetPlanResult in internal/app/plans/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-type-idgenerator",
+      "label": "proven",
+      "statement": "Exported type IDGenerator in internal/app/plans/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-type-passinput",
+      "label": "proven",
+      "statement": "Exported type PassInput in internal/app/plans/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-type-repositorytargetinput",
+      "label": "proven",
+      "statement": "Exported type RepositoryTargetInput in internal/app/plans/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-plans-workflow-type-service",
+      "label": "proven",
+      "statement": "Exported type Service in internal/app/plans/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/plans/workflow/service.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-projects-const-defaultbranch",
       "label": "proven",
       "statement": "Exported const DefaultBranch in internal/app/projects/types.go",
@@ -11317,6 +12688,270 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-runs-workflow-func-artifactid",
+      "label": "proven",
+      "statement": "Exported func ArtifactID in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-auditdecisionid",
+      "label": "proven",
+      "statement": "Exported func AuditDecisionID in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-beginexecutionattempt",
+      "label": "proven",
+      "statement": "Exported func BeginExecutionAttempt in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-createrun",
+      "label": "proven",
+      "statement": "Exported func CreateRun in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-executionattemptid",
+      "label": "proven",
+      "statement": "Exported func ExecutionAttemptID in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-finishexecutionattempt",
+      "label": "proven",
+      "statement": "Exported func FinishExecutionAttempt in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-markexecutionattemptrunning",
+      "label": "proven",
+      "statement": "Exported func MarkExecutionAttemptRunning in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-newservice",
+      "label": "proven",
+      "statement": "Exported func NewService in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-newservicewithids",
+      "label": "proven",
+      "statement": "Exported func NewServiceWithIDs in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-recordauditdecision",
+      "label": "proven",
+      "statement": "Exported func RecordAuditDecision in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-recordvalidationresult",
+      "label": "proven",
+      "statement": "Exported func RecordValidationResult in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-requestexecutionattemptcancellation",
+      "label": "proven",
+      "statement": "Exported func RequestExecutionAttemptCancellation in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-runid",
+      "label": "proven",
+      "statement": "Exported func RunID in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-func-updateexecutionattemptresult",
+      "label": "proven",
+      "statement": "Exported func UpdateExecutionAttemptResult in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-type-beginexecutionattemptinput",
+      "label": "proven",
+      "statement": "Exported type BeginExecutionAttemptInput in internal/app/runs/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-type-beginexecutionattemptresult",
+      "label": "proven",
+      "statement": "Exported type BeginExecutionAttemptResult in internal/app/runs/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-type-createruninput",
+      "label": "proven",
+      "statement": "Exported type CreateRunInput in internal/app/runs/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-type-createrunresult",
+      "label": "proven",
+      "statement": "Exported type CreateRunResult in internal/app/runs/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-type-finishexecutionattemptinput",
+      "label": "proven",
+      "statement": "Exported type FinishExecutionAttemptInput in internal/app/runs/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-type-finishexecutionattemptresult",
+      "label": "proven",
+      "statement": "Exported type FinishExecutionAttemptResult in internal/app/runs/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-type-idgenerator",
+      "label": "proven",
+      "statement": "Exported type IDGenerator in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-type-recordauditdecisioninput",
+      "label": "proven",
+      "statement": "Exported type RecordAuditDecisionInput in internal/app/runs/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-type-recordauditdecisionresult",
+      "label": "proven",
+      "statement": "Exported type RecordAuditDecisionResult in internal/app/runs/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-runs-workflow-type-service",
+      "label": "proven",
+      "statement": "Exported type Service in internal/app/runs/workflow/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-const-blockerartifactbinary",
       "label": "proven",
       "statement": "Exported const BlockerArtifactBinary in internal/mcp/artifact_readback_tools.go",
@@ -11467,17 +13102,6 @@
         {
           "kind": "source",
           "value": "internal/mcp/protocol.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-mcp-const-envlegacycontextbrokerenabled",
-      "label": "proven",
-      "statement": "Exported const EnvLegacyContextBrokerEnabled in internal/mcp/profile.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/mcp/profile.go"
         }
       ]
     },
@@ -11812,6 +13436,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-const-toolprofileauditor",
+      "label": "proven",
+      "statement": "Exported const ToolProfileAuditor in internal/mcp/profile.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/profile.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-const-toolprofilelocaloperator",
       "label": "proven",
       "statement": "Exported const ToolProfileLocalOperator in internal/mcp/profile.go",
@@ -11823,9 +13458,9 @@
       ]
     },
     {
-      "id": "backend-symbol-internal-mcp-const-toolprofilerestricted",
+      "id": "backend-symbol-internal-mcp-const-toolprofileplanner",
       "label": "proven",
-      "statement": "Exported const ToolProfileRestricted in internal/mcp/profile.go",
+      "statement": "Exported const ToolProfilePlanner in internal/mcp/profile.go",
       "evidence": [
         {
           "kind": "source",
@@ -11878,17 +13513,6 @@
       ]
     },
     {
-      "id": "backend-symbol-internal-mcp-func-contextbrokerenabled",
-      "label": "proven",
-      "statement": "Exported func ContextBrokerEnabled in internal/mcp/profile.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/mcp/profile.go"
-        }
-      ]
-    },
-    {
       "id": "backend-symbol-internal-mcp-func-createcontextpacket",
       "label": "proven",
       "statement": "Exported func CreateContextPacket in internal/mcp/orchestrator_work_tools.go",
@@ -11925,6 +13549,17 @@
       "id": "backend-symbol-internal-mcp-func-error-2",
       "label": "proven",
       "statement": "Exported func Error in internal/mcp/file_parameter_fetcher.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/file_parameter_fetcher.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-func-fetchcanonicalartifact",
+      "label": "proven",
+      "statement": "Exported func FetchCanonicalArtifact in internal/mcp/file_parameter_fetcher.go",
       "evidence": [
         {
           "kind": "source",
@@ -11984,6 +13619,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/refactor_backlog_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-func-handlecreatecanonicalrun",
+      "label": "proven",
+      "statement": "Exported func HandleCreateCanonicalRun in internal/mcp/canonical_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
         }
       ]
     },
@@ -12138,6 +13784,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/refactor_backlog_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-func-handlegetcanonicalplan",
+      "label": "proven",
+      "statement": "Exported func HandleGetCanonicalPlan in internal/mcp/canonical_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
         }
       ]
     },
@@ -12351,6 +14008,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-func-handlegetworkflowauditpacket",
+      "label": "proven",
+      "statement": "Exported func HandleGetWorkflowAuditPacket in internal/mcp/audit_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/audit_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-func-handlelistopenruns",
       "label": "proven",
       "statement": "Exported func HandleListOpenRuns in internal/mcp/tool_list_runs.go",
@@ -12472,6 +14140,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-func-handlerecordworkflowauditdecision",
+      "label": "proven",
+      "statement": "Exported func HandleRecordWorkflowAuditDecision in internal/mcp/audit_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/audit_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-func-handlerejectplanseed",
       "label": "proven",
       "statement": "Exported func HandleRejectPlanSeed in internal/mcp/plan_seed_tools.go",
@@ -12567,6 +14246,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/plan_attempt_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-func-handlesubmitplan",
+      "label": "proven",
+      "statement": "Exported func HandleSubmitPlan in internal/mcp/canonical_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
         }
       ]
     },
@@ -12681,6 +14371,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-func-handlevalidateartifact",
+      "label": "proven",
+      "statement": "Exported func HandleValidateArtifact in internal/mcp/canonical_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-func-handlevalidateplannerhandoffforcompile",
       "label": "proven",
       "statement": "Exported func HandleValidatePlannerHandoffForCompile in internal/mcp/tool_validate_planner_handoff.go",
@@ -12699,6 +14400,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/plan_attempt_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-func-newcanonicaldepsfromenv",
+      "label": "proven",
+      "statement": "Exported func NewCanonicalDepsFromEnv in internal/mcp/deps.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/deps.go"
         }
       ]
     },
@@ -12787,6 +14499,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/profile.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-type-canonicalfileparameterfetcher",
+      "label": "proven",
+      "statement": "Exported type CanonicalFileParameterFetcher in internal/mcp/file_parameter_fetcher.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/file_parameter_fetcher.go"
         }
       ]
     },
@@ -13110,6 +14833,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-type-workflowaudittoolservice",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditToolService in internal/mcp/audit_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/audit_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-var-toolapproveplanattempt",
       "label": "proven",
       "statement": "Exported var ToolApprovePlanAttempt in internal/mcp/plan_attempt_tools.go",
@@ -13139,6 +14873,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/refactor_backlog_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-var-toolcreatecanonicalrun",
+      "label": "proven",
+      "statement": "Exported var ToolCreateCanonicalRun in internal/mcp/canonical_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
         }
       ]
     },
@@ -13260,6 +15005,28 @@
         {
           "kind": "source",
           "value": "internal/mcp/refactor_backlog_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-var-toolgetauditpacket",
+      "label": "proven",
+      "statement": "Exported var ToolGetAuditPacket in internal/mcp/audit_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/audit_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-var-toolgetcanonicalplan",
+      "label": "proven",
+      "statement": "Exported var ToolGetCanonicalPlan in internal/mcp/canonical_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
         }
       ]
     },
@@ -13561,6 +15328,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-var-toolrecordauditdecision",
+      "label": "proven",
+      "statement": "Exported var ToolRecordAuditDecision in internal/mcp/audit_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/audit_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-var-toolrejectrefactorcandidate",
       "label": "proven",
       "statement": "Exported var ToolRejectRefactorCandidate in internal/mcp/refactor_backlog_tools.go",
@@ -13645,6 +15423,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/plan_attempt_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-var-toolsubmitplan",
+      "label": "proven",
+      "statement": "Exported var ToolSubmitPlan in internal/mcp/canonical_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
         }
       ]
     },
@@ -13748,6 +15537,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-mcp-var-toolvalidateartifact",
+      "label": "proven",
+      "statement": "Exported var ToolValidateArtifact in internal/mcp/canonical_tools.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_tools.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-mcp-var-toolvalidateplannerhandoffforcompile",
       "label": "proven",
       "statement": "Exported var ToolValidatePlannerHandoffForCompile in internal/mcp/tool_validate_planner_handoff.go",
@@ -13781,6 +15581,17 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-store-func-appendagentexecutionlifecycleerror",
+      "label": "proven",
+      "statement": "Exported func AppendAgentExecutionLifecycleError in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-store-func-archiveproject",
       "label": "proven",
       "statement": "Exported func ArchiveProject in internal/store/projects.go",
@@ -13788,6 +15599,17 @@
         {
           "kind": "source",
           "value": "internal/store/projects.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-func-claimagentexecutionlaunch",
+      "label": "proven",
+      "statement": "Exported func ClaimAgentExecutionLaunch in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
         }
       ]
     },
@@ -14147,6 +15969,17 @@
       "id": "backend-symbol-internal-store-func-ensuredefaultreporoots",
       "label": "proven",
       "statement": "Exported func EnsureDefaultRepoRoots in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-func-finalizeagentexecutioncas",
+      "label": "proven",
+      "statement": "Exported func FinalizeAgentExecutionCAS in internal/store/db.go",
       "evidence": [
         {
           "kind": "source",
@@ -15013,6 +16846,39 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-store-func-markagentexecutionterminationfailed",
+      "label": "proven",
+      "statement": "Exported func MarkAgentExecutionTerminationFailed in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-func-markagentexecutionterminationrequested",
+      "label": "proven",
+      "statement": "Exported func MarkAgentExecutionTerminationRequested in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-func-markagentexecutiontreeverifiedabsent",
+      "label": "proven",
+      "statement": "Exported func MarkAgentExecutionTreeVerifiedAbsent in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-store-func-markplanseedplanned",
       "label": "proven",
       "statement": "Exported func MarkPlanSeedPlanned in internal/store/plan_seeds.go",
@@ -15060,6 +16926,39 @@
       "id": "backend-symbol-internal-store-func-open",
       "label": "proven",
       "statement": "Exported func Open in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-func-recordagentexecutionstartprevented",
+      "label": "proven",
+      "statement": "Exported func RecordAgentExecutionStartPrevented in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-func-recordexecutorpreflightblocked",
+      "label": "proven",
+      "statement": "Exported func RecordExecutorPreflightBlocked in internal/store/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-func-recordrunstatusevent",
+      "label": "proven",
+      "statement": "Exported func RecordRunStatusEvent in internal/store/db.go",
       "evidence": [
         {
           "kind": "source",
@@ -16212,6 +18111,1931 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-store-workflow-const-artifactownerexecutionattempt",
+      "label": "proven",
+      "statement": "Exported const ArtifactOwnerExecutionAttempt in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-artifactownerplan",
+      "label": "proven",
+      "statement": "Exported const ArtifactOwnerPlan in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-artifactownerrun",
+      "label": "proven",
+      "statement": "Exported const ArtifactOwnerRun in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-attemptstatuscancelled",
+      "label": "proven",
+      "statement": "Exported const AttemptStatusCancelled in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-attemptstatusfailed",
+      "label": "proven",
+      "statement": "Exported const AttemptStatusFailed in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-attemptstatuspending",
+      "label": "proven",
+      "statement": "Exported const AttemptStatusPending in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-attemptstatusrunning",
+      "label": "proven",
+      "statement": "Exported const AttemptStatusRunning in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-attemptstatussucceeded",
+      "label": "proven",
+      "statement": "Exported const AttemptStatusSucceeded in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-attemptstatustimedout",
+      "label": "proven",
+      "statement": "Exported const AttemptStatusTimedOut in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-auditdecisionaccepted",
+      "label": "proven",
+      "statement": "Exported const AuditDecisionAccepted in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-auditdecisionneedsrevision",
+      "label": "proven",
+      "statement": "Exported const AuditDecisionNeedsRevision in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-auditpacketstatuscurrent",
+      "label": "proven",
+      "statement": "Exported const AuditPacketStatusCurrent in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-auditpacketstatusstale",
+      "label": "proven",
+      "statement": "Exported const AuditPacketStatusStale in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-passstatuscompleted",
+      "label": "proven",
+      "statement": "Exported const PassStatusCompleted in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-passstatusinprogress",
+      "label": "proven",
+      "statement": "Exported const PassStatusInProgress in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-passstatusplanned",
+      "label": "proven",
+      "statement": "Exported const PassStatusPlanned in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-planstatusactive",
+      "label": "proven",
+      "statement": "Exported const PlanStatusActive in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-planstatuscompleted",
+      "label": "proven",
+      "statement": "Exported const PlanStatusCompleted in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-runstatusauditready",
+      "label": "proven",
+      "statement": "Exported const RunStatusAuditReady in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-runstatuscancelled",
+      "label": "proven",
+      "statement": "Exported const RunStatusCancelled in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-runstatuscompleted",
+      "label": "proven",
+      "statement": "Exported const RunStatusCompleted in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-runstatuscreated",
+      "label": "proven",
+      "statement": "Exported const RunStatusCreated in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-runstatusexecuting",
+      "label": "proven",
+      "statement": "Exported const RunStatusExecuting in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-runstatusexecutionfailed",
+      "label": "proven",
+      "statement": "Exported const RunStatusExecutionFailed in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-runstatusneedsrevision",
+      "label": "proven",
+      "statement": "Exported const RunStatusNeedsRevision in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-runstatussetupready",
+      "label": "proven",
+      "statement": "Exported const RunStatusSetupReady in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-runstatusvalidating",
+      "label": "proven",
+      "statement": "Exported const RunStatusValidating in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-const-runstatusvalidationfailed",
+      "label": "proven",
+      "statement": "Exported const RunStatusValidationFailed in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-artifactstore",
+      "label": "proven",
+      "statement": "Exported func ArtifactStore in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-close",
+      "label": "proven",
+      "statement": "Exported func Close in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-commitartifactbatch",
+      "label": "proven",
+      "statement": "Exported func CommitArtifactBatch in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-completeplan",
+      "label": "proven",
+      "statement": "Exported func CompletePlan in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-countincompleteplanpasses",
+      "label": "proven",
+      "statement": "Exported func CountIncompletePlanPasses in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-createartifact",
+      "label": "proven",
+      "statement": "Exported func CreateArtifact in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-createauditdecision",
+      "label": "proven",
+      "statement": "Exported func CreateAuditDecision in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-createauditpacket",
+      "label": "proven",
+      "statement": "Exported func CreateAuditPacket in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-createexecutionattempt",
+      "label": "proven",
+      "statement": "Exported func CreateExecutionAttempt in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-createplan",
+      "label": "proven",
+      "statement": "Exported func CreatePlan in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-createplanpass",
+      "label": "proven",
+      "statement": "Exported func CreatePlanPass in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-createplanpassdependency",
+      "label": "proven",
+      "statement": "Exported func CreatePlanPassDependency in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-createplanrepositorytarget",
+      "label": "proven",
+      "statement": "Exported func CreatePlanRepositoryTarget in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-createrepositorytarget",
+      "label": "proven",
+      "statement": "Exported func CreateRepositoryTarget in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-createrun",
+      "label": "proven",
+      "statement": "Exported func CreateRun in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-db",
+      "label": "proven",
+      "statement": "Exported func DB in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getartifactbyartifactid",
+      "label": "proven",
+      "statement": "Exported func GetArtifactByArtifactID in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getartifactbyartifactid-2",
+      "label": "proven",
+      "statement": "Exported func GetArtifactByArtifactID in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getartifactbyrowid",
+      "label": "proven",
+      "statement": "Exported func GetArtifactByRowID in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getauditdecisionbydecisionid",
+      "label": "proven",
+      "statement": "Exported func GetAuditDecisionByDecisionID in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getauditdecisionbyrun",
+      "label": "proven",
+      "statement": "Exported func GetAuditDecisionByRun in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getauditpacketbypacketid",
+      "label": "proven",
+      "statement": "Exported func GetAuditPacketByPacketID in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getcurrentauditpacketbyrun",
+      "label": "proven",
+      "statement": "Exported func GetCurrentAuditPacketByRun in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getcurrentauditpacketbyrun-2",
+      "label": "proven",
+      "statement": "Exported func GetCurrentAuditPacketByRun in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getexecutionattemptbyattemptid",
+      "label": "proven",
+      "statement": "Exported func GetExecutionAttemptByAttemptID in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getexecutionattemptbyattemptid-2",
+      "label": "proven",
+      "statement": "Exported func GetExecutionAttemptByAttemptID in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getlatestauditpacketbyrun",
+      "label": "proven",
+      "statement": "Exported func GetLatestAuditPacketByRun in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getlatestsucceededexecutionattempt",
+      "label": "proven",
+      "statement": "Exported func GetLatestSucceededExecutionAttempt in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getlatestsucceededexecutionattempt-2",
+      "label": "proven",
+      "statement": "Exported func GetLatestSucceededExecutionAttempt in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getplanbyplanid",
+      "label": "proven",
+      "statement": "Exported func GetPlanByPlanID in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getplanbyplanid-2",
+      "label": "proven",
+      "statement": "Exported func GetPlanByPlanID in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getplanbyrowid",
+      "label": "proven",
+      "statement": "Exported func GetPlanByRowID in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getplanpassbypassid",
+      "label": "proven",
+      "statement": "Exported func GetPlanPassByPassID in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getplanpassbypassid-2",
+      "label": "proven",
+      "statement": "Exported func GetPlanPassByPassID in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getplanpassbyplanandnumber",
+      "label": "proven",
+      "statement": "Exported func GetPlanPassByPlanAndNumber in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getplanpassbyplanandnumber-2",
+      "label": "proven",
+      "statement": "Exported func GetPlanPassByPlanAndNumber in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getplanpassbyrowid",
+      "label": "proven",
+      "statement": "Exported func GetPlanPassByRowID in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getplanpassbyrowid-2",
+      "label": "proven",
+      "statement": "Exported func GetPlanPassByRowID in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getrepositorytarget",
+      "label": "proven",
+      "statement": "Exported func GetRepositoryTarget in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getrepositorytarget-2",
+      "label": "proven",
+      "statement": "Exported func GetRepositoryTarget in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getrunbyrowid",
+      "label": "proven",
+      "statement": "Exported func GetRunByRowID in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getrunbyrowid-2",
+      "label": "proven",
+      "statement": "Exported func GetRunByRowID in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getrunbyrunid",
+      "label": "proven",
+      "statement": "Exported func GetRunByRunID in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-getrunbyrunid-2",
+      "label": "proven",
+      "statement": "Exported func GetRunByRunID in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-listartifactsbyexecutionattempt",
+      "label": "proven",
+      "statement": "Exported func ListArtifactsByExecutionAttempt in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-listartifactsbyplan",
+      "label": "proven",
+      "statement": "Exported func ListArtifactsByPlan in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-listartifactsbyrun",
+      "label": "proven",
+      "statement": "Exported func ListArtifactsByRun in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-listexecutionattemptsbyrun",
+      "label": "proven",
+      "statement": "Exported func ListExecutionAttemptsByRun in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-listplanpasses",
+      "label": "proven",
+      "statement": "Exported func ListPlanPasses in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-markcurrentauditpacketsstale",
+      "label": "proven",
+      "statement": "Exported func MarkCurrentAuditPacketsStale in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-markcurrentauditpacketsstale-2",
+      "label": "proven",
+      "statement": "Exported func MarkCurrentAuditPacketsStale in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-new",
+      "label": "proven",
+      "statement": "Exported func New in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-newartifactid",
+      "label": "proven",
+      "statement": "Exported func NewArtifactID in internal/store/workflow/ids.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/ids.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-newauditdecisionid",
+      "label": "proven",
+      "statement": "Exported func NewAuditDecisionID in internal/store/workflow/ids.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/ids.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-newauditpacketid",
+      "label": "proven",
+      "statement": "Exported func NewAuditPacketID in internal/store/workflow/ids.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/ids.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-newexecutionattemptid",
+      "label": "proven",
+      "statement": "Exported func NewExecutionAttemptID in internal/store/workflow/ids.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/ids.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-newpassid",
+      "label": "proven",
+      "statement": "Exported func NewPassID in internal/store/workflow/ids.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/ids.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-newplanid",
+      "label": "proven",
+      "statement": "Exported func NewPlanID in internal/store/workflow/ids.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/ids.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-newrunid",
+      "label": "proven",
+      "statement": "Exported func NewRunID in internal/store/workflow/ids.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/ids.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-nextexecutionattemptnumber",
+      "label": "proven",
+      "statement": "Exported func NextExecutionAttemptNumber in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-open",
+      "label": "proven",
+      "statement": "Exported func Open in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-requestexecutionattemptcancellation",
+      "label": "proven",
+      "statement": "Exported func RequestExecutionAttemptCancellation in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-transitionexecutionattempt",
+      "label": "proven",
+      "statement": "Exported func TransitionExecutionAttempt in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-transitionplanpass",
+      "label": "proven",
+      "statement": "Exported func TransitionPlanPass in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-transitionrun",
+      "label": "proven",
+      "statement": "Exported func TransitionRun in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-updateexecutionattemptresult",
+      "label": "proven",
+      "statement": "Exported func UpdateExecutionAttemptResult in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-func-withtx",
+      "label": "proven",
+      "statement": "Exported func WithTx in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-artifact",
+      "label": "proven",
+      "statement": "Exported type Artifact in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-auditdecision",
+      "label": "proven",
+      "statement": "Exported type AuditDecision in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-auditpacket",
+      "label": "proven",
+      "statement": "Exported type AuditPacket in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-createartifactparams",
+      "label": "proven",
+      "statement": "Exported type CreateArtifactParams in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-createauditdecisionparams",
+      "label": "proven",
+      "statement": "Exported type CreateAuditDecisionParams in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-createauditpacketparams",
+      "label": "proven",
+      "statement": "Exported type CreateAuditPacketParams in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-createexecutionattemptparams",
+      "label": "proven",
+      "statement": "Exported type CreateExecutionAttemptParams in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-createplanparams",
+      "label": "proven",
+      "statement": "Exported type CreatePlanParams in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-createplanpassparams",
+      "label": "proven",
+      "statement": "Exported type CreatePlanPassParams in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-createplanrepositorytargetparams",
+      "label": "proven",
+      "statement": "Exported type CreatePlanRepositoryTargetParams in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-createrunparams",
+      "label": "proven",
+      "statement": "Exported type CreateRunParams in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-executionattempt",
+      "label": "proven",
+      "statement": "Exported type ExecutionAttempt in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-plan",
+      "label": "proven",
+      "statement": "Exported type Plan in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-planpass",
+      "label": "proven",
+      "statement": "Exported type PlanPass in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-planpassdependency",
+      "label": "proven",
+      "statement": "Exported type PlanPassDependency in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-planrepositorytarget",
+      "label": "proven",
+      "statement": "Exported type PlanRepositoryTarget in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-repositorytarget",
+      "label": "proven",
+      "statement": "Exported type RepositoryTarget in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-run",
+      "label": "proven",
+      "statement": "Exported type Run in internal/store/workflow/types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-store",
+      "label": "proven",
+      "statement": "Exported type Store in internal/store/workflow/store.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/store.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflow-type-tx",
+      "label": "proven",
+      "statement": "Exported type Tx in internal/store/workflow/tx.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflow/tx.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-completeplan",
+      "label": "proven",
+      "statement": "Exported func CompletePlan in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-countincompleteplanpasses",
+      "label": "proven",
+      "statement": "Exported func CountIncompletePlanPasses in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-createartifact",
+      "label": "proven",
+      "statement": "Exported func CreateArtifact in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-createauditdecision",
+      "label": "proven",
+      "statement": "Exported func CreateAuditDecision in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-createexecutionattempt",
+      "label": "proven",
+      "statement": "Exported func CreateExecutionAttempt in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-createplan",
+      "label": "proven",
+      "statement": "Exported func CreatePlan in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-createplanpass",
+      "label": "proven",
+      "statement": "Exported func CreatePlanPass in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-createplanpassdependency",
+      "label": "proven",
+      "statement": "Exported func CreatePlanPassDependency in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-createplanrepositorytarget",
+      "label": "proven",
+      "statement": "Exported func CreatePlanRepositoryTarget in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-createrepositorytarget",
+      "label": "proven",
+      "statement": "Exported func CreateRepositoryTarget in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-createrun",
+      "label": "proven",
+      "statement": "Exported func CreateRun in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-getartifactbyartifactid",
+      "label": "proven",
+      "statement": "Exported func GetArtifactByArtifactID in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-getauditdecisionbydecisionid",
+      "label": "proven",
+      "statement": "Exported func GetAuditDecisionByDecisionID in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-getexecutionattemptbyattemptid",
+      "label": "proven",
+      "statement": "Exported func GetExecutionAttemptByAttemptID in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-getlatestexecutionattemptbyrun",
+      "label": "proven",
+      "statement": "Exported func GetLatestExecutionAttemptByRun in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-getplanbyplanid",
+      "label": "proven",
+      "statement": "Exported func GetPlanByPlanID in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-getplanpassbypassid",
+      "label": "proven",
+      "statement": "Exported func GetPlanPassByPassID in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-getplanpassbyplanandnumber",
+      "label": "proven",
+      "statement": "Exported func GetPlanPassByPlanAndNumber in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-getplanpassbyrowid",
+      "label": "proven",
+      "statement": "Exported func GetPlanPassByRowID in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-getrepositorytarget",
+      "label": "proven",
+      "statement": "Exported func GetRepositoryTarget in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-getrunbyrowid",
+      "label": "proven",
+      "statement": "Exported func GetRunByRowID in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-getrunbyrunid",
+      "label": "proven",
+      "statement": "Exported func GetRunByRunID in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-listartifactsbyexecutionattempt",
+      "label": "proven",
+      "statement": "Exported func ListArtifactsByExecutionAttempt in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-listartifactsbyplan",
+      "label": "proven",
+      "statement": "Exported func ListArtifactsByPlan in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-listartifactsbyrun",
+      "label": "proven",
+      "statement": "Exported func ListArtifactsByRun in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-listplanpassdependencies",
+      "label": "proven",
+      "statement": "Exported func ListPlanPassDependencies in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-listplanpasses",
+      "label": "proven",
+      "statement": "Exported func ListPlanPasses in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-listplanrepositorytargets",
+      "label": "proven",
+      "statement": "Exported func ListPlanRepositoryTargets in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-listrepositorytargets",
+      "label": "proven",
+      "statement": "Exported func ListRepositoryTargets in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-listrunsbyplanpass",
+      "label": "proven",
+      "statement": "Exported func ListRunsByPlanPass in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-new",
+      "label": "proven",
+      "statement": "Exported func New in internal/store/workflowgenerated/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-nextexecutionattemptnumber",
+      "label": "proven",
+      "statement": "Exported func NextExecutionAttemptNumber in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-transitionexecutionattemptstatus",
+      "label": "proven",
+      "statement": "Exported func TransitionExecutionAttemptStatus in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-transitionplanpassstatus",
+      "label": "proven",
+      "statement": "Exported func TransitionPlanPassStatus in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-transitionrunstatus",
+      "label": "proven",
+      "statement": "Exported func TransitionRunStatus in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-func-withtx",
+      "label": "proven",
+      "statement": "Exported func WithTx in internal/store/workflowgenerated/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-artifact",
+      "label": "proven",
+      "statement": "Exported type Artifact in internal/store/workflowgenerated/models.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/models.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-auditdecision",
+      "label": "proven",
+      "statement": "Exported type AuditDecision in internal/store/workflowgenerated/models.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/models.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-createartifactparams",
+      "label": "proven",
+      "statement": "Exported type CreateArtifactParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-createauditdecisionparams",
+      "label": "proven",
+      "statement": "Exported type CreateAuditDecisionParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-createexecutionattemptparams",
+      "label": "proven",
+      "statement": "Exported type CreateExecutionAttemptParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-createplanparams",
+      "label": "proven",
+      "statement": "Exported type CreatePlanParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-createplanpassdependencyparams",
+      "label": "proven",
+      "statement": "Exported type CreatePlanPassDependencyParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-createplanpassparams",
+      "label": "proven",
+      "statement": "Exported type CreatePlanPassParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-createplanrepositorytargetparams",
+      "label": "proven",
+      "statement": "Exported type CreatePlanRepositoryTargetParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-createrepositorytargetparams",
+      "label": "proven",
+      "statement": "Exported type CreateRepositoryTargetParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-createrunparams",
+      "label": "proven",
+      "statement": "Exported type CreateRunParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-dbtx",
+      "label": "proven",
+      "statement": "Exported type DBTX in internal/store/workflowgenerated/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-executionattempt",
+      "label": "proven",
+      "statement": "Exported type ExecutionAttempt in internal/store/workflowgenerated/models.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/models.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-getplanpassbyplanandnumberparams",
+      "label": "proven",
+      "statement": "Exported type GetPlanPassByPlanAndNumberParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-plan",
+      "label": "proven",
+      "statement": "Exported type Plan in internal/store/workflowgenerated/models.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/models.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-planpass",
+      "label": "proven",
+      "statement": "Exported type PlanPass in internal/store/workflowgenerated/models.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/models.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-planpassdependency",
+      "label": "proven",
+      "statement": "Exported type PlanPassDependency in internal/store/workflowgenerated/models.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/models.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-planrepositorytarget",
+      "label": "proven",
+      "statement": "Exported type PlanRepositoryTarget in internal/store/workflowgenerated/models.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/models.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-queries",
+      "label": "proven",
+      "statement": "Exported type Queries in internal/store/workflowgenerated/db.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/db.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-repositorytarget",
+      "label": "proven",
+      "statement": "Exported type RepositoryTarget in internal/store/workflowgenerated/models.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/models.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-run",
+      "label": "proven",
+      "statement": "Exported type Run in internal/store/workflowgenerated/models.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/models.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-transitionexecutionattemptstatusparams",
+      "label": "proven",
+      "statement": "Exported type TransitionExecutionAttemptStatusParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-transitionplanpassstatusparams",
+      "label": "proven",
+      "statement": "Exported type TransitionPlanPassStatusParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-store-workflowgenerated-type-transitionrunstatusparams",
+      "label": "proven",
+      "statement": "Exported type TransitionRunStatusParams in internal/store/workflowgenerated/workflow.sql.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/store/workflowgenerated/workflow.sql.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-api-artifacts-testlistartifactsmissingrun",
       "label": "proven",
       "statement": "Test function TestListArtifactsMissingRun in internal/api/artifacts/handler_test.go",
@@ -16230,6 +20054,39 @@
         {
           "kind": "test",
           "value": "internal/api/artifacts/handler_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-api-audits-testworkflowauditpreparemapsstaletoconflict",
+      "label": "proven",
+      "statement": "Test function TestWorkflowAuditPrepareMapsStaleToConflict in internal/api/audits/workflow_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/api/audits/workflow_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-api-audits-testworkflowauditpreparereturnspacketidentity",
+      "label": "proven",
+      "statement": "Test function TestWorkflowAuditPrepareReturnsPacketIdentity in internal/api/audits/workflow_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/api/audits/workflow_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-api-audits-testworkflowauditstatusreturnscurrentandlatest",
+      "label": "proven",
+      "statement": "Test function TestWorkflowAuditStatusReturnsCurrentAndLatest in internal/api/audits/workflow_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/api/audits/workflow_test.go"
         }
       ]
     },
@@ -16406,6 +20263,39 @@
         {
           "kind": "test",
           "value": "internal/api/projects/handler_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-api-runs-testworkflowexecutionattemptmonitoringisbounded",
+      "label": "proven",
+      "statement": "Test function TestWorkflowExecutionAttemptMonitoringIsBounded in internal/api/runs/workflow_execution_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/api/runs/workflow_execution_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-api-runs-testworkflowexecutionreconcileroute",
+      "label": "proven",
+      "statement": "Test function TestWorkflowExecutionReconcileRoute in internal/api/runs/workflow_execution_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/api/runs/workflow_execution_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-api-runs-testworkflowexecutionstartpreflightblocker",
+      "label": "proven",
+      "statement": "Test function TestWorkflowExecutionStartPreflightBlocker in internal/api/runs/workflow_execution_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/api/runs/workflow_execution_test.go"
         }
       ]
     },
@@ -16978,6 +20868,61 @@
         {
           "kind": "test",
           "value": "internal/api/plans_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-audits-testworkflowauditaccepteddecisioncompletesrunpassandplan",
+      "label": "proven",
+      "statement": "Test function TestWorkflowAuditAcceptedDecisionCompletesRunPassAndPlan in internal/app/audits/workflow_service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/audits/workflow_service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-audits-testworkflowauditdecisionrequiresexplicitconfirmationandexactpacket",
+      "label": "proven",
+      "statement": "Test function TestWorkflowAuditDecisionRequiresExplicitConfirmationAndExactPacket in internal/app/audits/workflow_service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/audits/workflow_service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-audits-testworkflowauditneedsrevisionpreservesmanagedpass",
+      "label": "proven",
+      "statement": "Test function TestWorkflowAuditNeedsRevisionPreservesManagedPass in internal/app/audits/workflow_service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/audits/workflow_service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-audits-testworkflowauditpacketbecomesstaleafterrepositorychangeorlaterattempt",
+      "label": "proven",
+      "statement": "Test function TestWorkflowAuditPacketBecomesStaleAfterRepositoryChangeOrLaterAttempt in internal/app/audits/workflow_service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/audits/workflow_service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-audits-testworkflowauditpacketcontainscompleteauthority",
+      "label": "proven",
+      "statement": "Test function TestWorkflowAuditPacketContainsCompleteAuthority in internal/app/audits/workflow_service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/audits/workflow_service_test.go"
         }
       ]
     },
@@ -18852,6 +22797,39 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-plans-workflow-testcreateplandatabasefailureleavesnorecordsorartifacts",
+      "label": "proven",
+      "statement": "Test function TestCreatePlanDatabaseFailureLeavesNoRecordsOrArtifacts in internal/app/plans/workflow/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/workflow/service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-workflow-testcreateplanpersistscanonicalartifactsanddependencies",
+      "label": "proven",
+      "statement": "Test function TestCreatePlanPersistsCanonicalArtifactsAndDependencies in internal/app/plans/workflow/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/workflow/service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-plans-workflow-testcreateplanpromotionfailurerollsbackdatabase",
+      "label": "proven",
+      "statement": "Test function TestCreatePlanPromotionFailureRollsBackDatabase in internal/app/plans/workflow/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/plans/workflow/service_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-projects-testcreateplanattemptfromseedblocksinvalidseedstatesandplaninput",
       "label": "proven",
       "statement": "Test function TestCreatePlanAttemptFromSeedBlocksInvalidSeedStatesAndPlanInput in internal/app/projects/plan_seed_service_test.go",
@@ -19006,6 +22984,72 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-runs-workflow-testcreatemanagedandstandaloneruns",
+      "label": "proven",
+      "statement": "Test function TestCreateManagedAndStandaloneRuns in internal/app/runs/workflow/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/runs/workflow/service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-runs-workflow-testcreaterunfailuresleavenorunartifactsorpasstransition",
+      "label": "proven",
+      "statement": "Test function TestCreateRunFailuresLeaveNoRunArtifactsOrPassTransition in internal/app/runs/workflow/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/runs/workflow/service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-runs-workflow-testcreaterunrejectsmismatchedassociationandinvalidremediation",
+      "label": "proven",
+      "statement": "Test function TestCreateRunRejectsMismatchedAssociationAndInvalidRemediation in internal/app/runs/workflow/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/runs/workflow/service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-runs-workflow-testexecutionattemptvalidationandauditdecisioncompletemanagedworkflow",
+      "label": "proven",
+      "statement": "Test function TestExecutionAttemptValidationAndAuditDecisionCompleteManagedWorkflow in internal/app/runs/workflow/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/runs/workflow/service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-runs-workflow-testfailedandtimedoutattemptscanentervalidationandremediation",
+      "label": "proven",
+      "statement": "Test function TestFailedAndTimedOutAttemptsCanEnterValidationAndRemediation in internal/app/runs/workflow/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/runs/workflow/service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-runs-workflow-testrequestexecutionattemptcancellationrequiresmatchingrunbeforemutation",
+      "label": "proven",
+      "statement": "Test function TestRequestExecutionAttemptCancellationRequiresMatchingRunBeforeMutation in internal/app/runs/workflow/cancellation_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/runs/workflow/cancellation_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testblockerenvelopeboundsandsanitizes",
       "label": "proven",
       "statement": "Test function TestBlockerEnvelopeBoundsAndSanitizes in internal/mcp/blocker_envelope_test.go",
@@ -19013,6 +23057,72 @@
         {
           "kind": "test",
           "value": "internal/mcp/blocker_envelope_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testcanonicaldepscarrycanonicalprofile",
+      "label": "proven",
+      "statement": "Test function TestCanonicalDepsCarryCanonicalProfile in internal/mcp/profile_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/profile_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testcanonicalpersistencefailureisboundedandrollsbackartifacts",
+      "label": "proven",
+      "statement": "Test function TestCanonicalPersistenceFailureIsBoundedAndRollsBackArtifacts in internal/mcp/canonical_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/canonical_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testcanonicalservertoolsurfacebyprofile",
+      "label": "proven",
+      "statement": "Test function TestCanonicalServerToolSurfaceByProfile in internal/mcp/tool_surface_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/tool_surface_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testcanonicalsubmissionfailuresareatomicandclassified",
+      "label": "proven",
+      "statement": "Test function TestCanonicalSubmissionFailuresAreAtomicAndClassified in internal/mcp/canonical_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/canonical_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testcanonicaltooldefinitionsbyprofile",
+      "label": "proven",
+      "statement": "Test function TestCanonicalToolDefinitionsByProfile in internal/mcp/canonical_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/canonical_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testcanonicaltoolnamesdonotexposeunsafecapabilities",
+      "label": "proven",
+      "statement": "Test function TestCanonicalToolNamesDoNotExposeUnsafeCapabilities in internal/mcp/tool_surface_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/tool_surface_test.go"
         }
       ]
     },
@@ -19094,13 +23204,24 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testdefaultlocaloperatortoolsurfaceincludesallsafetools",
+      "id": "backend-test-internal-mcp-testcreaterunpersistssetupreadymetadataandartifacts",
       "label": "proven",
-      "statement": "Test function TestDefaultLocalOperatorToolSurfaceIncludesAllSafeTools in internal/mcp/tool_surface_test.go",
+      "statement": "Test function TestCreateRunPersistsSetupReadyMetadataAndArtifacts in internal/mcp/canonical_tools_test.go",
       "evidence": [
         {
           "kind": "test",
-          "value": "internal/mcp/tool_surface_test.go"
+          "value": "internal/mcp/canonical_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetauditpacketreturnsauthoritativebody",
+      "label": "proven",
+      "statement": "Test function TestGetAuditPacketReturnsAuthoritativeBody in internal/mcp/audit_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/audit_tools_test.go"
         }
       ]
     },
@@ -19611,17 +23732,6 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testhandlecreaterunfromplannerhandoff-nodeps",
-      "label": "proven",
-      "statement": "Test function TestHandleCreateRunFromPlannerHandoff_NoDeps in internal/mcp/mcp_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/mcp_test.go"
-        }
-      ]
-    },
-    {
       "id": "backend-test-internal-mcp-testhandlecreaterunfromplannerhandoff-norepotarget",
       "label": "proven",
       "statement": "Test function TestHandleCreateRunFromPlannerHandoff_NoRepoTarget in internal/mcp/mcp_test.go",
@@ -19768,6 +23878,17 @@
       "id": "backend-test-internal-mcp-testhandlecreaterunfromplannerhandofffile-successexactsha",
       "label": "proven",
       "statement": "Test function TestHandleCreateRunFromPlannerHandoffFile_SuccessExactSHA in internal/mcp/mcp_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/mcp_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhandlecreaterunfromplannerhandoffnodepsdirect",
+      "label": "proven",
+      "statement": "Test function TestHandleCreateRunFromPlannerHandoffNoDepsDirect in internal/mcp/mcp_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -20381,9 +24502,9 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testhttphandler-auth",
+      "id": "backend-test-internal-mcp-testhttphandlerauth",
       "label": "proven",
-      "statement": "Test function TestHTTPHandler_Auth in internal/mcp/http_handler_test.go",
+      "statement": "Test function TestHTTPHandlerAuth in internal/mcp/http_handler_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -20392,9 +24513,9 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testhttphandler-protocol",
+      "id": "backend-test-internal-mcp-testhttphandlercanonicalprotocol",
       "label": "proven",
-      "statement": "Test function TestHTTPHandler_Protocol in internal/mcp/http_handler_test.go",
+      "statement": "Test function TestHTTPHandlerCanonicalProtocol in internal/mcp/http_handler_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -20403,13 +24524,24 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testhttphandlertoolslistusesservertoolsurface",
+      "id": "backend-test-internal-mcp-testhttphandlertoolslistusescanonicalprofiles",
       "label": "proven",
-      "statement": "Test function TestHTTPHandlerToolsListUsesServerToolSurface in internal/mcp/http_handler_test.go",
+      "statement": "Test function TestHTTPHandlerToolsListUsesCanonicalProfiles in internal/mcp/http_handler_test.go",
       "evidence": [
         {
           "kind": "test",
           "value": "internal/mcp/http_handler_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetchercanonicalartifactvalidation",
+      "label": "proven",
+      "statement": "Test function TestHTTPSFileParameterFetcherCanonicalArtifactValidation in internal/mcp/file_parameter_fetcher_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/file_parameter_fetcher_test.go"
         }
       ]
     },
@@ -20535,13 +24667,24 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testinvalidprofiledefaultstolocaloperator",
+      "id": "backend-test-internal-mcp-testlegacyplannerhandofffiletooldefinitionsstillcompile",
       "label": "proven",
-      "statement": "Test function TestInvalidProfileDefaultsToLocalOperator in internal/mcp/profile_test.go",
+      "statement": "Test function TestLegacyPlannerHandoffFileToolDefinitionsStillCompile in internal/mcp/tool_create_run_test.go",
       "evidence": [
         {
           "kind": "test",
-          "value": "internal/mcp/profile_test.go"
+          "value": "internal/mcp/tool_create_run_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testlegacytoolsareunregisteredforeverycanonicalprofile",
+      "label": "proven",
+      "statement": "Test function TestLegacyToolsAreUnregisteredForEveryCanonicalProfile in internal/mcp/tool_surface_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/tool_surface_test.go"
         }
       ]
     },
@@ -20553,17 +24696,6 @@
         {
           "kind": "test",
           "value": "internal/mcp/mcp_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-mcp-testnewdepsfromenvusescanonicalprofileforalllaunchers",
-      "label": "proven",
-      "statement": "Test function TestNewDepsFromEnvUsesCanonicalProfileForAllLaunchers in internal/mcp/profile_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/profile_test.go"
         }
       ]
     },
@@ -20663,6 +24795,17 @@
         {
           "kind": "test",
           "value": "internal/mcp/plan_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testnormalizetoolprofilecanonicalvalues",
+      "label": "proven",
+      "statement": "Test function TestNormalizeToolProfileCanonicalValues in internal/mcp/profile_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/profile_test.go"
         }
       ]
     },
@@ -20953,17 +25096,6 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testplannerhandofffiletoolsdeclarechatgptfileparameter",
-      "label": "proven",
-      "statement": "Test function TestPlannerHandoffFileToolsDeclareChatGPTFileParameter in internal/mcp/tool_create_run_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/tool_create_run_test.go"
-        }
-      ]
-    },
-    {
       "id": "backend-test-internal-mcp-testplanseedmcpattemptmissingrequiredfields",
       "label": "proven",
       "statement": "Test function TestPlanSeedMCPAttemptMissingRequiredFields in internal/mcp/plan_seed_tools_test.go",
@@ -21074,6 +25206,28 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testrecordauditdecisionmapsstalepacket",
+      "label": "proven",
+      "statement": "Test function TestRecordAuditDecisionMapsStalePacket in internal/mcp/audit_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/audit_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testrecordauditdecisionrequiresconfirmationandreturnslifecycle",
+      "label": "proven",
+      "statement": "Test function TestRecordAuditDecisionRequiresConfirmationAndReturnsLifecycle in internal/mcp/audit_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/audit_tools_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testrefactorbacklogschemasarestrictandprojectscoped",
       "label": "proven",
       "statement": "Test function TestRefactorBacklogSchemasAreStrictAndProjectScoped in internal/mcp/refactor_backlog_tools_test.go",
@@ -21173,61 +25327,6 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testrestrictedbrokertoolcallisunknown",
-      "label": "proven",
-      "statement": "Test function TestRestrictedBrokerToolCallIsUnknown in internal/mcp/tool_surface_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/tool_surface_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-mcp-testrestrictedgitbrokertoolcallisunknown",
-      "label": "proven",
-      "statement": "Test function TestRestrictedGitBrokerToolCallIsUnknown in internal/mcp/tool_surface_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/tool_surface_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-mcp-testrestrictedlocalauditbrokertoolcallisunknown",
-      "label": "proven",
-      "statement": "Test function TestRestrictedLocalAuditBrokerToolCallIsUnknown in internal/mcp/tool_surface_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/tool_surface_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-mcp-testrestrictedmemorybrokertoolcallisunknown",
-      "label": "proven",
-      "statement": "Test function TestRestrictedMemoryBrokerToolCallIsUnknown in internal/mcp/tool_surface_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/tool_surface_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-mcp-testrestrictedtoolsurfacehidesbrokertools",
-      "label": "proven",
-      "statement": "Test function TestRestrictedToolSurfaceHidesBrokerTools in internal/mcp/tool_surface_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/tool_surface_test.go"
-        }
-      ]
-    },
-    {
       "id": "backend-test-internal-mcp-testsafeartifactdisplaynamecrossplatform",
       "label": "proven",
       "statement": "Test function TestSafeArtifactDisplayNameCrossPlatform in internal/mcp/blocker_envelope_test.go",
@@ -21316,9 +25415,9 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testservertoolslist-pass16",
+      "id": "backend-test-internal-mcp-testservertoolslistdefaultstocanonicalplannerprofile",
       "label": "proven",
-      "statement": "Test function TestServerToolsList_Pass16 in internal/mcp/mcp_test.go",
+      "statement": "Test function TestServerToolsListDefaultsToCanonicalPlannerProfile in internal/mcp/mcp_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -21371,6 +25470,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testsubmitplanandgetplanpersistboundedmetadata",
+      "label": "proven",
+      "statement": "Test function TestSubmitPlanAndGetPlanPersistBoundedMetadata in internal/mcp/canonical_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/canonical_tools_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testsubmitplannerpassplanschema-additionalpropertiesfalse",
       "label": "proven",
       "statement": "Test function TestSubmitPlannerPassPlanSchema_AdditionalPropertiesFalse in internal/mcp/plan_tools_test.go",
@@ -21415,9 +25525,9 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testtoolprofileauditaliasnormalizestolocaloperator",
+      "id": "backend-test-internal-mcp-testtoolprofilefromenvdefaultsandfailsclosedtoplanner",
       "label": "proven",
-      "statement": "Test function TestToolProfileAuditAliasNormalizesToLocalOperator in internal/mcp/profile_test.go",
+      "statement": "Test function TestToolProfileFromEnvDefaultsAndFailsClosedToPlanner in internal/mcp/profile_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -21426,42 +25536,9 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testtoolprofileauditfromenvuseslocaloperator",
+      "id": "backend-test-internal-mcp-testtoolslistcanonicalprofilesareexactandschemasarebounded",
       "label": "proven",
-      "statement": "Test function TestToolProfileAuditFromEnvUsesLocalOperator in internal/mcp/profile_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/profile_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-mcp-testtoolprofilecontextbrokerenabled",
-      "label": "proven",
-      "statement": "Test function TestToolProfileContextBrokerEnabled in internal/mcp/profile_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/profile_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-mcp-testtoolprofilefromenvdefaultsandprecedence",
-      "label": "proven",
-      "statement": "Test function TestToolProfileFromEnvDefaultsAndPrecedence in internal/mcp/profile_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/profile_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-mcp-testtoolscall-auditprofilealiasusesfulllocaloperatorregistry",
-      "label": "proven",
-      "statement": "Test function TestToolsCall_AuditProfileAliasUsesFullLocalOperatorRegistry in internal/mcp/server_tools_list_test.go",
+      "statement": "Test function TestToolsListCanonicalProfilesAreExactAndSchemasAreBounded in internal/mcp/server_tools_list_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -21470,9 +25547,9 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testtoolslist-invalidcursor",
+      "id": "backend-test-internal-mcp-testtoolslistinvalidcursor",
       "label": "proven",
-      "statement": "Test function TestToolsList_InvalidCursor in internal/mcp/server_tools_list_test.go",
+      "statement": "Test function TestToolsListInvalidCursor in internal/mcp/server_tools_list_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -21481,9 +25558,9 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testtoolslist-localoperatorpageddiscoveryincludesplannerandauditor",
+      "id": "backend-test-internal-mcp-testtoolslistqueryfilteringdoesnotmutatecanonicalregistry",
       "label": "proven",
-      "statement": "Test function TestToolsList_LocalOperatorPagedDiscoveryIncludesPlannerAndAuditor in internal/mcp/server_tools_list_test.go",
+      "statement": "Test function TestToolsListQueryFilteringDoesNotMutateCanonicalRegistry in internal/mcp/server_tools_list_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -21492,24 +25569,13 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testtoolslist-localoperatorschemasarevalidandbounded",
+      "id": "backend-test-internal-mcp-testvalidateartifactisnonmutatingandbounded",
       "label": "proven",
-      "statement": "Test function TestToolsList_LocalOperatorSchemasAreValidAndBounded in internal/mcp/server_tools_list_test.go",
+      "statement": "Test function TestValidateArtifactIsNonMutatingAndBounded in internal/mcp/canonical_tools_test.go",
       "evidence": [
         {
           "kind": "test",
-          "value": "internal/mcp/server_tools_list_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-mcp-testtoolslist-queryfilteringdoesnotmutateregistry",
-      "label": "proven",
-      "statement": "Test function TestToolsList_QueryFilteringDoesNotMutateRegistry in internal/mcp/server_tools_list_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/server_tools_list_test.go"
+          "value": "internal/mcp/canonical_tools_test.go"
         }
       ]
     },
@@ -21517,6 +25583,17 @@
       "id": "backend-test-internal-store-testagentexecutionownershipcancellationandcas",
       "label": "proven",
       "statement": "Test function TestAgentExecutionOwnershipCancellationAndCAS in internal/store/agent_execution_ownership_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/store/agent_execution_ownership_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-store-testappendagentexecutionlifecycleerrorpreservesverifiedabsence",
+      "label": "proven",
+      "statement": "Test function TestAppendAgentExecutionLifecycleErrorPreservesVerifiedAbsence in internal/store/agent_execution_ownership_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -21642,6 +25719,50 @@
         {
           "kind": "test",
           "value": "internal/store/source_snapshots_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-store-testterminalizeagentexecutioncaspreservesexistingartifactpaths",
+      "label": "proven",
+      "statement": "Test function TestTerminalizeAgentExecutionCASPreservesExistingArtifactPaths in internal/store/agent_execution_ownership_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/store/agent_execution_ownership_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-store-workflow-testcommitartifactbatchrollsbackdatabaseandfilesystemtogether",
+      "label": "proven",
+      "statement": "Test function TestCommitArtifactBatchRollsBackDatabaseAndFilesystemTogether in internal/store/workflow/store_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/store/workflow/store_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-store-workflow-testdatabaseconstraintsrejectinvalidrelationshipsandtransitions",
+      "label": "proven",
+      "statement": "Test function TestDatabaseConstraintsRejectInvalidRelationshipsAndTransitions in internal/store/workflow/store_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/store/workflow/store_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-store-workflow-testfreshworkflowdatabasecontainsonlyworkflowtables",
+      "label": "proven",
+      "statement": "Test function TestFreshWorkflowDatabaseContainsOnlyWorkflowTables in internal/store/workflow/store_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/store/workflow/store_test.go"
         }
       ]
     }

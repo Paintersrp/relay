@@ -101,7 +101,7 @@ Successful run submission responses include normalized exact-artifact provenance
 
 ## Project-Orchestrator Work Tools (Context-Broker Profile)
 
-*   `get_next_pass_work`, `prepare_handoff_context`, and `get_next_audit_work` are defined by the `Paintersrp/relay-contracts` repository at `contracts/planner_mcp_orchestrator_work_contract.md`.
+*   `get_next_pass_work`, `prepare_handoff_context`, and `get_next_audit_work` are implemented by Relay's checked-out plan, work-packet, and MCP source. Canonical planning and artifact contracts are owned by `Paintersrp/relay-specs`; these runtime tools do not require a repository-local contract checkout.
 *   They serve as retrieval-only work-packet surfaces for project-scoped sequential orchestration.
 *   These tools are registered when the MCP context-broker-enabled profile is active (`RELAY_MCP_PROFILE=local-operator`) and hidden under `RELAY_MCP_PROFILE=restricted`.
 *   `get_next_pass_work` requires `project_id` and `plan_id` and returns the next eligible pass work packet or structured blockers.
@@ -123,7 +123,7 @@ For the end-to-end operator loop that combines these retrieval tools with the Re
 
 ## Refactor Backlog Tools (Local Operator Profile)
 
-*   The source-controlled refactor backlog semantics (refactor discovery tasks, pass-ready refactor candidates, scheduled refactor pass representation, generated refactor-only plan review, sidecar deferral, and audit-derived candidate completion) are defined in `Paintersrp/relay-contracts` at `contracts/refactor_backlog_contract.md`.
+*   The current refactor backlog runtime semantics are implemented by the checked-out `internal/refactors` service and exposed through Relay's local-operator MCP adapters. Canonical planning and artifact contracts are owned by `Paintersrp/relay-specs`; Relay does not load a repository-local contract file for this feature.
 *   PASS-005 exposes the refactor backlog through MCP tools registered **only** when the context-broker-enabled profile is active (`RELAY_MCP_PROFILE=local-operator`). They are hidden under `RELAY_MCP_PROFILE=restricted`, where calling them returns an unknown-tool error.
 *   Every tool is project-scoped and requires `project_id`. Callers must not infer `project_id` from repo, branch, chat, or working directory. All input schemas are strict (`additionalProperties: false`). All business logic, validation, and lifecycle rules are delegated to the `internal/refactors` service; the MCP layer is a thin wrapper.
 *   The surface is organized into three classes:

@@ -98,7 +98,7 @@ func pass002ShapedContextPlan() ContextPlan {
 			{RepoID: "relay", Path: "internal/contextpackets/service.go", Purpose: "context packet service", Required: boolPtr(true)},
 			{RepoID: "relay", Path: "internal/mcp/orchestrator_work_tools.go", Purpose: "mcp surface", Required: boolPtr(true)},
 			{RepoID: "relay", Path: "internal/api/plans/handler.go", Purpose: "api surface", Required: boolPtr(true)},
-			{RepoID: "relay", Path: "relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md", Purpose: "contract", Required: boolPtr(true)},
+			{RepoID: "relay", Path: "relay-specs/contracts/planner_mcp_orchestrator_work_contract.md", Purpose: "contract", Required: boolPtr(true)},
 		},
 		SeedSearchTerms: []ContextSearchTerm{
 			{RepoID: "relay", Query: "get_next_pass_work context packet", Purpose: "work packet acquisition", Required: boolPtr(true)},
@@ -2005,7 +2005,7 @@ func TestGetNextPassWork_ContextAcquisitionFailureReport(t *testing.T) {
 			Summary:            CtxPacketSummary{SourceCount: 6, CoveredSeedCount: 6, BlockedSeedCount: 1, MaxSources: 12, MaxTotalBytes: 180000},
 			Coverage: []CtxCoverageEntry{
 				{SeedID: "file:1", SeedType: "file", Required: true, Status: "covered", Path: "internal/app/plans/work_packets.go"},
-				{SeedID: "file:5", SeedType: "file", Required: true, Status: "blocked", Path: "relay-contracts/contracts/planner_mcp_orchestrator_work_contract.md", MissingCause: "blocked"},
+				{SeedID: "file:5", SeedType: "file", Required: true, Status: "blocked", Path: "relay-specs/contracts/planner_mcp_orchestrator_work_contract.md", MissingCause: "blocked"},
 			},
 			LimitHit: "none",
 		},
@@ -2048,7 +2048,7 @@ func TestGetNextPassWork_ContextAcquisitionFailureReport(t *testing.T) {
 		resp.PlannerJumpstart.RequiredContextBundle.TaskDomain != bundle.TaskDomain {
 		t.Fatalf("expected top-level and jumpstart bundle metadata to match: top=%+v jumpstart=%+v", bundle, resp.PlannerJumpstart.RequiredContextBundle)
 	}
-	if bundle.ManifestRepoID != "relay-contracts" || bundle.ManifestPath != requiredContextManifestPath {
+	if bundle.ManifestRepoID != "relay-specs" || bundle.ManifestPath != requiredContextManifestPath {
 		t.Fatalf("expected manifest metadata in bundle, got %+v", bundle)
 	}
 	if bundle.TaskDomain == "" {
@@ -2246,7 +2246,7 @@ func seedSnapshotFileMetadataByRepo(t *testing.T, st *store.Store, snapshotID st
 			continue
 		}
 		role := "reference"
-		if repoID == "relay-contracts" {
+		if repoID == "relay-specs" {
 			role = "contracts"
 		}
 		if _, err := st.UpsertProjectRepository(store.UpsertProjectRepositoryParams{
@@ -2505,7 +2505,7 @@ func TestGetNextPassWork_ReadyPassIncludesRequiredContextBundleWithSnapshotHashe
 			{Path: "internal/app/plans/work_packets.go", SizeBytes: 4096, ContentHash: "hash-work-packets", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
 			{Path: "docs/mcp.md", SizeBytes: 2048, ContentHash: "hash-docs-mcp", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
 		},
-		"relay-contracts": {
+		"relay-specs": {
 			{Path: requiredContextManifestPath, SizeBytes: 1024, ContentHash: "hash-manifest", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
 		},
 	})
@@ -2526,7 +2526,7 @@ func TestGetNextPassWork_ReadyPassIncludesRequiredContextBundleWithSnapshotHashe
 	if bundle == nil {
 		t.Fatal("expected required_context_bundle")
 	}
-	if bundle.ManifestRepoID != "relay-contracts" || bundle.ManifestPath != requiredContextManifestPath || bundle.ManifestHash != "hash-manifest" {
+	if bundle.ManifestRepoID != "relay-specs" || bundle.ManifestPath != requiredContextManifestPath || bundle.ManifestHash != "hash-manifest" {
 		t.Fatalf("unexpected manifest metadata: %+v", bundle)
 	}
 	if bundle.TaskDomain != "planner_mcp_behavior_update" {
@@ -2570,7 +2570,7 @@ func TestGetNextPassWork_RequiredContextBundleReportsMissingSnapshotMetadata(t *
 		"relay": {
 			{Path: "docs/mcp.md", SizeBytes: 2048, ContentHash: "hash-docs-mcp", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
 		},
-		"relay-contracts": {
+		"relay-specs": {
 			{Path: "agents/knowledge/planner_knowledge_manifest.json", SizeBytes: 1024, ContentHash: "hash-wrong-manifest", HashAlgorithm: "sha256", Tracked: 1, Included: 1},
 		},
 	})

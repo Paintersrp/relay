@@ -717,12 +717,12 @@ func assertSchemaConformant(t *testing.T, jsonPath string) {
 }
 
 // validateAgainstCloseoutSchema runs a full JSON schema validation pass for
-// the generated evidence against relay-contracts/schema/closeout_evidence.schema.json.
+// the generated evidence against relay-specs/schema/closeout_evidence.schema.json.
 // The schema uses RE2-incompatible lookahead regexes which are sanitized
 // before validation (mirroring internal/validation's approach).
 func validateAgainstCloseoutSchema(t *testing.T, evidenceJSON []byte) {
 	t.Helper()
-	absPath, ok := repoSchemaPath("relay-contracts/schema/closeout_evidence.schema.json")
+	absPath, ok := repoSchemaPath("relay-specs/schema/closeout_evidence.schema.json")
 	if !ok {
 		t.Logf("closeout evidence schema not available; skipping full JSON schema validation")
 		return

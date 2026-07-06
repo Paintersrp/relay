@@ -482,9 +482,9 @@ func locateTemplateFile(p string) string {
 		if _, err := os.Stat(tryPath); err == nil {
 			return tryPath
 		}
-		// Also map handoffs/ to relay-contracts/
+		// Also map handoffs/ to relay-specs/
 		if strings.HasPrefix(p, "handoffs/") {
-			tryMapped := filepath.Join(dir, strings.Replace(p, "handoffs/", "relay-contracts/", 1))
+			tryMapped := filepath.Join(dir, strings.Replace(p, "handoffs/", "relay-specs/", 1))
 			if _, err := os.Stat(tryMapped); err == nil {
 				return tryMapped
 			}

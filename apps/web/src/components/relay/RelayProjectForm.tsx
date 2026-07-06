@@ -108,7 +108,7 @@ export function RelayProjectForm() {
             <Label htmlFor="projectId">Project ID <span className="text-destructive">*</span></Label>
             <Input
               id="projectId"
-              placeholder="e.g. relay-contracts"
+              placeholder="e.g. relay-specs"
               value={projectId}
               onChange={(e) => setProjectId(e.target.value)}
               required

@@ -45,7 +45,8 @@ Schema version: `1.0.0`
 | `internal/db/migrations/20260626000500_plan_review_settings.sql` | `8c1285982fefa4002ae13592be351bb658907bc884869000d3b567026203224b` | migration |
 | `internal/db/migrations/20260627000100_plan_seeds.sql` | `4d87210653ba5e27108fe0ddebc632561dcb140e7f3c59379bce1a1b443d79fd` | migration |
 | `internal/db/migrations/20260704000100_durable_agent_execution_ownership.sql` | `95405f634258b95ec1d7752e58d5e988766a690118bbd1c93252a98043a52c33` | migration |
-| `internal/db/queries/agent_executions.sql` | `776aeee9d9e002ed48d21576abc38e48f8d953f60464dc98b92f5d0ec3fcf444` | sqlc query file |
+| `internal/db/migrations/20260704000200_agent_execution_launch_termination_state.sql` | `a5731bea0c2bfda9043ba4c5ff1c3f7e8945b75da51f3e1349b6636583360077` | migration |
+| `internal/db/queries/agent_executions.sql` | `189ce128e844effeb24d5e94abd6f7ec0af4a2278d20e497c2dddfe64dc06181` | sqlc query file |
 | `internal/db/queries/artifacts.sql` | `eaf6f5c10b4b4cb90bdcc80c8ee56d8fc17f3f1719c33f282a25e4b3dc39d648` | sqlc query file |
 | `internal/db/queries/checks.sql` | `1af94a12f4acaffe20545c0826a2ecb561bb3bc5d2e463986499d05d08416223` | sqlc query file |
 | `internal/db/queries/context_packets.sql` | `36c1f5a91eb4db76b04821f498d394b83ad88f75e9092354bf9f7e458a4dd28c` | sqlc query file |
@@ -64,15 +65,15 @@ Schema version: `1.0.0`
 | `internal/db/queries/runs.sql` | `47f674c09a457249ed0ff18866250742316c1b73ceeff1719525c9415b9fc9af` | sqlc query file |
 | `internal/db/queries/source_snapshots.sql` | `b3e759a9cf1996500c44883eaa7cad56ce9fbb8d6fa06ec31786aeefc672b0be` | sqlc query file |
 | `internal/db/queries/validation_executions.sql` | `3ba0a7d5515de1812a6aefded80684d204b30f5b03d3660ea0cf7061dfc65b1b` | sqlc query file |
-| `internal/store/db.go` | `9e41bb12ccd32d18f15bd13a07012e0b03e794bec253c99748763f2ca1e9c730` | store wrapper |
-| `internal/store/generated/agent_executions.sql.go` | `5ab51439973ef2b32b06c9a4058af34ecb1d37242ff3a2b3def56287cecccbd8` | generated sqlc boundary |
+| `internal/store/db.go` | `f5fb352727e2c87053a952126a33466ab7ede3486bf4cc5bc5d4908be7563e3f` | store wrapper |
+| `internal/store/generated/agent_executions.sql.go` | `602f113763da0a91670d9c3b4d19cfe3a331103121f380a2f62e9ffbdccda24d` | generated sqlc boundary |
 | `internal/store/generated/artifacts.sql.go` | `90af82cb23517dd99e0df1300260f08c2afb780525602a3bd0629e3006c45ef2` | generated sqlc boundary |
 | `internal/store/generated/checks.sql.go` | `cb65e61d2f0932518eaa1ebc8db6bab60f5ade05856c9d533379f436a75db9a7` | generated sqlc boundary |
 | `internal/store/generated/context_packets.sql.go` | `2f7a43974cab55dd1874ed4603a043b71cb809948c8c10f9e5eeb8df1fb6524b` | generated sqlc boundary |
 | `internal/store/generated/db.go` | `693c98a857e53105cd4f966b7bd7790a412f6fe558879e63f439cb6a79d23360` | generated sqlc boundary |
 | `internal/store/generated/events.sql.go` | `9e4d5ea0e03312ee3dfc0cf80c13135224836f4f02192bd8ce0a9174a48da587` | generated sqlc boundary |
 | `internal/store/generated/local_audits.sql.go` | `f214c0c9f803f07b87ced68ecd58d09d29165432ec6afeb638be4cffeda80b7e` | generated sqlc boundary |
-| `internal/store/generated/models.go` | `32962325753d6bdb66e20105539248288a1550ad239e938937ae5491a5cd9aa4` | generated sqlc boundary |
+| `internal/store/generated/models.go` | `4c67f6b0a820041ff98da0ae9dabadff01d48e65db8d0e200bb146b5d6f0fa36` | generated sqlc boundary |
 | `internal/store/generated/plan_attempts.sql.go` | `acee38c6dbb91e061a11a1c655250fe6b7d9c7f1ad18ab3c6fbbb9a83272bfc4` | generated sqlc boundary |
 | `internal/store/generated/plan_review_settings.sql.go` | `c82f6af0217c281508499e5adb0018209e40f0385dd4a390d09601eff70ced34` | generated sqlc boundary |
 | `internal/store/generated/plan_seeds.sql.go` | `ab9be17266ca412dc9d1c15024b6482618dd097bf55c5aff7e481c5353576d3d` | generated sqlc boundary |
@@ -86,7 +87,7 @@ Schema version: `1.0.0`
 | `internal/store/generated/runs.sql.go` | `71ff3775f49904ec30734c51e82ff3815c810928325db00ecdd8af385b727550` | generated sqlc boundary |
 | `internal/store/generated/source_snapshots.sql.go` | `fd26a92588e21b7c080498e7bf54a0d6ae4563f2fd3a3bb1bd4496bc5976eb56` | generated sqlc boundary |
 | `internal/store/generated/validation_executions.sql.go` | `764f1ac3b94f967b6d234bbaf0012d61e7a56aa53d1191d72e1caa48db6f33a6` | generated sqlc boundary |
-| `sqlc.yaml` | `ae9bd13e167b752ab0bd8ef07b9e81a3b2e721c601e75991aa975fbdc2d1f392` | sqlc config |
+| `sqlc.yaml` | `1d0c77cbbe4dc680cc3cfbfe54e257b87adfb85d6342a5ecd817f8e7a6903a55` | sqlc config |
 
 ## Fact Labels
 
@@ -310,6 +311,30 @@ Evidence:
 
 - source: `internal/db/migrations/20260704000100_durable_agent_execution_ownership.sql`
 
+### storage-migration-internal-db-migrations-20260704000200-agent-execution-launch-termination-state-sql (convention)
+
+Migration file "internal/db/migrations/20260704000200_agent_execution_launch_termination_state.sql" is present; no simple CREATE TABLE statement was detected.
+
+Evidence:
+
+- source: `internal/db/migrations/20260704000200_agent_execution_launch_termination_state.sql`
+
+### storage-query-agent-executions-appendagentexecutionlifecycleerror (proven)
+
+sqlc query "AppendAgentExecutionLifecycleError" (one) declared in "internal/db/queries/agent_executions.sql".
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql#L111`
+
+### storage-query-agent-executions-claimagentexecutionlaunch (proven)
+
+sqlc query "ClaimAgentExecutionLaunch" (one) declared in "internal/db/queries/agent_executions.sql".
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql#L39`
+
 ### storage-query-agent-executions-createagentexecution (proven)
 
 sqlc query "CreateAgentExecution" (one) declared in "internal/db/queries/agent_executions.sql".
@@ -358,13 +383,45 @@ Evidence:
 
 - source: `internal/db/queries/agent_executions.sql#L11`
 
+### storage-query-agent-executions-markagentexecutionterminationfailed (proven)
+
+sqlc query "MarkAgentExecutionTerminationFailed" (one) declared in "internal/db/queries/agent_executions.sql".
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql#L93`
+
+### storage-query-agent-executions-markagentexecutionterminationrequested (proven)
+
+sqlc query "MarkAgentExecutionTerminationRequested" (one) declared in "internal/db/queries/agent_executions.sql".
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql#L80`
+
+### storage-query-agent-executions-markagentexecutiontreeverifiedabsent (proven)
+
+sqlc query "MarkAgentExecutionTreeVerifiedAbsent" (one) declared in "internal/db/queries/agent_executions.sql".
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql#L126`
+
+### storage-query-agent-executions-recordagentexecutionstartprevented (proven)
+
+sqlc query "RecordAgentExecutionStartPrevented" (one) declared in "internal/db/queries/agent_executions.sql".
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql#L51`
+
 ### storage-query-agent-executions-registeragentexecutionprocess (proven)
 
 sqlc query "RegisterAgentExecutionProcess" (one) declared in "internal/db/queries/agent_executions.sql".
 
 Evidence:
 
-- source: `internal/db/queries/agent_executions.sql#L39`
+- source: `internal/db/queries/agent_executions.sql#L62`
 
 ### storage-query-agent-executions-requestagentexecutioncancellation (proven)
 
@@ -372,7 +429,7 @@ sqlc query "RequestAgentExecutionCancellation" (one) declared in "internal/db/qu
 
 Evidence:
 
-- source: `internal/db/queries/agent_executions.sql#L54`
+- source: `internal/db/queries/agent_executions.sql#L136`
 
 ### storage-query-agent-executions-terminalizeagentexecutioncas (proven)
 
@@ -380,7 +437,7 @@ sqlc query "TerminalizeAgentExecutionCAS" (one) declared in "internal/db/queries
 
 Evidence:
 
-- source: `internal/db/queries/agent_executions.sql#L64`
+- source: `internal/db/queries/agent_executions.sql#L149`
 
 ### storage-query-agent-executions-updateagentexecutionstatus (proven)
 
@@ -518,6 +575,22 @@ Evidence:
 
 - source: `internal/db/queries/context_packets.sql#L54`
 
+### storage-query-domain-agent-executions-appendagentexecutionlifecycleerror (derived)
+
+sqlc query "AppendAgentExecutionLifecycleError" belongs to SQL domain "agent_executions" by file-path convention.
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql`
+
+### storage-query-domain-agent-executions-claimagentexecutionlaunch (derived)
+
+sqlc query "ClaimAgentExecutionLaunch" belongs to SQL domain "agent_executions" by file-path convention.
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql`
+
 ### storage-query-domain-agent-executions-createagentexecution (derived)
 
 sqlc query "CreateAgentExecution" belongs to SQL domain "agent_executions" by file-path convention.
@@ -561,6 +634,38 @@ Evidence:
 ### storage-query-domain-agent-executions-listagentexecutionsbyrun (derived)
 
 sqlc query "ListAgentExecutionsByRun" belongs to SQL domain "agent_executions" by file-path convention.
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql`
+
+### storage-query-domain-agent-executions-markagentexecutionterminationfailed (derived)
+
+sqlc query "MarkAgentExecutionTerminationFailed" belongs to SQL domain "agent_executions" by file-path convention.
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql`
+
+### storage-query-domain-agent-executions-markagentexecutionterminationrequested (derived)
+
+sqlc query "MarkAgentExecutionTerminationRequested" belongs to SQL domain "agent_executions" by file-path convention.
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql`
+
+### storage-query-domain-agent-executions-markagentexecutiontreeverifiedabsent (derived)
+
+sqlc query "MarkAgentExecutionTreeVerifiedAbsent" belongs to SQL domain "agent_executions" by file-path convention.
+
+Evidence:
+
+- source: `internal/db/queries/agent_executions.sql`
+
+### storage-query-domain-agent-executions-recordagentexecutionstartprevented (derived)
+
+sqlc query "RecordAgentExecutionStartPrevented" belongs to SQL domain "agent_executions" by file-path convention.
 
 Evidence:
 
@@ -1944,7 +2049,7 @@ Evidence:
 
 ### storage-query-file-internal-db-queries-agent-executions-sql (proven)
 
-SQL query file "internal/db/queries/agent_executions.sql" defines 10 sqlc query declaration(s).
+SQL query file "internal/db/queries/agent_executions.sql" defines 16 sqlc query declaration(s).
 
 Evidence:
 
@@ -3280,14 +3385,30 @@ Evidence:
 
 ### storage-sqlc-config (proven)
 
-sqlc configuration version  "2 uses sqlite engine with query directory " \"internal/db/queries", schema directory " \"internal/db/migrations", generated package " \"generated", and output " \"internal/store/generated".
+sqlc configuration version  "2 uses sqlite engine with query directory " \"internal/db/workflow_queries", schema directory " \"internal/db/workflow_migrations", generated package " \"workflowgenerated", and output " \"internal/store/workflowgenerated".
 
 Evidence:
 
 - source: `sqlc.yaml`
-- source: ` "internal/db/queries`
-- source: ` "internal/db/migrations`
-- source: ` "internal/store/generated`
+- source: ` "internal/db/workflow_queries`
+- source: ` "internal/db/workflow_migrations`
+- source: ` "internal/store/workflowgenerated`
+
+### storage-store-wrapper-store-wrapper-method-appendagentexecutionlifecycleerror (proven)
+
+Store wrapper store_wrapper_method "AppendAgentExecutionLifecycleError" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#AppendAgentExecutionLifecycleError`
+
+### storage-store-wrapper-store-wrapper-method-claimagentexecutionlaunch (proven)
+
+Store wrapper store_wrapper_method "ClaimAgentExecutionLaunch" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#ClaimAgentExecutionLaunch`
 
 ### storage-store-wrapper-store-wrapper-method-close (proven)
 
@@ -3416,6 +3537,14 @@ Store wrapper store_wrapper_method "EnsureDefaultRepoRoots" on receiver "Store" 
 Evidence:
 
 - source: `internal/store/db.go#EnsureDefaultRepoRoots`
+
+### storage-store-wrapper-store-wrapper-method-finalizeagentexecutioncas (proven)
+
+Store wrapper store_wrapper_method "FinalizeAgentExecutionCAS" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#FinalizeAgentExecutionCAS`
 
 ### storage-store-wrapper-store-wrapper-method-finishvalidationexecution (proven)
 
@@ -3697,6 +3826,30 @@ Evidence:
 
 - source: `internal/store/db.go#ListRunsByPlanPass`
 
+### storage-store-wrapper-store-wrapper-method-markagentexecutionterminationfailed (proven)
+
+Store wrapper store_wrapper_method "MarkAgentExecutionTerminationFailed" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#MarkAgentExecutionTerminationFailed`
+
+### storage-store-wrapper-store-wrapper-method-markagentexecutionterminationrequested (proven)
+
+Store wrapper store_wrapper_method "MarkAgentExecutionTerminationRequested" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#MarkAgentExecutionTerminationRequested`
+
+### storage-store-wrapper-store-wrapper-method-markagentexecutiontreeverifiedabsent (proven)
+
+Store wrapper store_wrapper_method "MarkAgentExecutionTreeVerifiedAbsent" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#MarkAgentExecutionTreeVerifiedAbsent`
+
 ### storage-store-wrapper-store-wrapper-method-markstalevalidationexecutionerror (proven)
 
 Store wrapper store_wrapper_method "MarkStaleValidationExecutionError" on receiver "Store" in "internal/store/db.go".
@@ -3712,6 +3865,30 @@ Store wrapper store_wrapper_method "MarkValidationExecutionRunning" on receiver 
 Evidence:
 
 - source: `internal/store/db.go#MarkValidationExecutionRunning`
+
+### storage-store-wrapper-store-wrapper-method-recordagentexecutionstartprevented (proven)
+
+Store wrapper store_wrapper_method "RecordAgentExecutionStartPrevented" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#RecordAgentExecutionStartPrevented`
+
+### storage-store-wrapper-store-wrapper-method-recordexecutorpreflightblocked (proven)
+
+Store wrapper store_wrapper_method "RecordExecutorPreflightBlocked" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#RecordExecutorPreflightBlocked`
+
+### storage-store-wrapper-store-wrapper-method-recordrunstatusevent (proven)
+
+Store wrapper store_wrapper_method "RecordRunStatusEvent" on receiver "Store" in "internal/store/db.go".
+
+Evidence:
+
+- source: `internal/store/db.go#RecordRunStatusEvent`
 
 ### storage-store-wrapper-store-wrapper-method-registeragentexecutionprocess (proven)
 
