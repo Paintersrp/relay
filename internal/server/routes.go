@@ -127,15 +127,15 @@ func mountProjectRefactorRoutes(r chi.Router, h *api.APIHandler) {
 	r.Post("/projects/{projectId}/refactor/plans/generate", h.GenerateRefactorOnlyPlan)
 }
 
-func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handler {
-	return BuildRoutesWithRuntime(s, rs, log, nil, "")
+func buildLegacyRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handler {
+	return buildLegacyRoutesWithRuntime(s, rs, log, nil, "")
 }
 
-func BuildRoutesWithRuntime(s *store.Store, rs *repos.Service, log *slog.Logger, eventHub *events.Hub, ownerInstanceID string) http.Handler {
-	return BuildRoutesWithWorkflowRuntime(s, nil, rs, log, eventHub, ownerInstanceID)
+func buildLegacyRoutesWithRuntime(s *store.Store, rs *repos.Service, log *slog.Logger, eventHub *events.Hub, ownerInstanceID string) http.Handler {
+	return buildLegacyRoutesWithWorkflowRuntime(s, nil, rs, log, eventHub, ownerInstanceID)
 }
 
-func BuildRoutesWithWorkflowRuntime(s *store.Store, workflowStore *workflowstore.Store, rs *repos.Service, log *slog.Logger, eventHub *events.Hub, ownerInstanceID string) http.Handler {
+func buildLegacyRoutesWithWorkflowRuntime(s *store.Store, workflowStore *workflowstore.Store, rs *repos.Service, log *slog.Logger, eventHub *events.Hub, ownerInstanceID string) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.Logger)

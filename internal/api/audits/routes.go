@@ -21,6 +21,6 @@ func MountRoutes(r chi.Router, h *Handler) {
 }
 
 func MountWorkflowRoutes(r chi.Router, h *WorkflowHandler) {
-	r.Post("/workflow/runs/{runID}/audit/prepare", h.Prepare)
-	r.Get("/workflow/runs/{runID}/audit/status", h.Status)
+	r.Post("/runs/{runID}/audit/prepare", h.Prepare)
+	r.Get("/runs/{runID}/audit/status", h.Status)
 }

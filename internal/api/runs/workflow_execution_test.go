@@ -58,7 +58,7 @@ func TestWorkflowExecutionStartPreflightBlocker(t *testing.T) {
 			BlockerText: "repository is dirty",
 		}},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/workflow/runs/run-test/attempts", strings.NewReader(`{"adapter":"codex","model":"model"}`))
+	request := httptest.NewRequest(http.MethodPost, "/runs/run-test/attempts", strings.NewReader(`{"adapter":"codex","model":"model"}`))
 	response := httptest.NewRecorder()
 	workflowExecutionRouter(service).ServeHTTP(response, request)
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "EXECUTION_PREFLIGHT_BLOCKED") {
@@ -86,7 +86,7 @@ func TestWorkflowExecutionAttemptMonitoringIsBounded(t *testing.T) {
 		startResult: executor.WorkflowStartResult{Attempt: attempt, Preflight: workflowrepos.ExecutionPreflightResult{OK: true}},
 		views:       []executor.WorkflowAttemptView{view},
 	}
-	request := httptest.NewRequest(http.MethodGet, "/workflow/runs/run-test/attempts/attempt-test", nil)
+	request := httptest.NewRequest(http.MethodGet, "/runs/run-test/attempts/attempt-test", nil)
 	response := httptest.NewRecorder()
 	workflowExecutionRouter(service).ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -107,6 +107,25 @@ func TestWorkflowExecutionAttemptMonitoringIsBounded(t *testing.T) {
 	}
 }
 
+func TestWorkflowExecutionAttemptListUsesBoundedEnvelope(t *testing.T) {
+	attempt := workflowstore.ExecutionAttempt{
+		AttemptID: "attempt-test", AttemptNumber: 1, Adapter: "codex",
+		Model: "model", Status: workflowstore.AttemptStatusSucceeded,
+		ResultJSON: `{}`, CreatedAt: "2026-07-05T00:00:00Z",
+	}
+	service := &fakeWorkflowExecutionService{
+		views: []executor.WorkflowAttemptView{{Attempt: attempt}},
+	}
+	request := httptest.NewRequest(http.MethodGet, "/runs/run-test/attempts", nil)
+	response := httptest.NewRecorder()
+	workflowExecutionRouter(service).ServeHTTP(response, request)
+	if response.Code != http.StatusOK ||
+		!strings.Contains(response.Body.String(), `"count":1`) ||
+		!strings.Contains(response.Body.String(), `"items"`) {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestWorkflowExecutionReconcileRoute(t *testing.T) {
 	attempt := workflowstore.ExecutionAttempt{
 		AttemptID:     "attempt-cleanup",
@@ -122,7 +141,7 @@ func TestWorkflowExecutionReconcileRoute(t *testing.T) {
 		cancelResult: executor.WorkflowCancelResult{Attempt: attempt},
 		views:        []executor.WorkflowAttemptView{view},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/workflow/runs/run-test/attempts/attempt-cleanup/reconcile", nil)
+	request := httptest.NewRequest(http.MethodPost, "/runs/run-test/attempts/attempt-cleanup/reconcile", nil)
 	response := httptest.NewRecorder()
 	workflowExecutionRouter(service).ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "attempt-cleanup") {

@@ -29,17 +29,17 @@ func NewWorkflowHandler(service WorkflowAuditService) *WorkflowHandler {
 }
 
 type prepareWorkflowAuditRequest struct {
-	AuditedCommit string `json:"audited_commit"`
+	AuditedCommit string `json:"auditedCommit"`
 }
 
 type workflowAuditPacketResponse struct {
-	AuditPacketID string `json:"audit_packet_id"`
-	AuditedCommit string `json:"audited_commit"`
-	PacketSHA256  string `json:"packet_sha256"`
+	AuditPacketID string `json:"auditPacketId"`
+	AuditedCommit string `json:"auditedCommit"`
+	PacketSHA256  string `json:"packetSha256"`
 	Status        string `json:"status"`
-	StaleReason   string `json:"stale_reason,omitempty"`
-	CreatedAt     string `json:"created_at"`
-	SupersededAt  string `json:"superseded_at,omitempty"`
+	StaleReason   string `json:"staleReason,omitempty"`
+	CreatedAt     string `json:"createdAt"`
+	SupersededAt  string `json:"supersededAt,omitempty"`
 }
 
 func (h *WorkflowHandler) Prepare(w http.ResponseWriter, r *http.Request) {
@@ -59,15 +59,16 @@ func (h *WorkflowHandler) Prepare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shared.JSON(w, http.StatusCreated, map[string]any{
-		"success":    true,
-		"run_id":     result.Run.RunID,
-		"run_status": result.Run.Status,
-		"packet":     workflowAuditPacketDTO(result.Packet),
+		"success":   true,
+		"runId":     result.Run.RunID,
+		"runStatus": result.Run.Status,
+		"packet":    workflowAuditPacketDTO(result.Packet),
 		"artifact": map[string]any{
-			"artifact_id": result.Artifact.ArtifactID,
-			"kind":        result.Artifact.Kind,
-			"sha256":      result.Artifact.SHA256,
-			"size_bytes":  result.Artifact.SizeBytes,
+			"artifactId": result.Artifact.ArtifactID,
+			"kind":       result.Artifact.Kind,
+			"sha256":     result.Artifact.SHA256,
+			"sizeBytes":  result.Artifact.SizeBytes,
+			"contentUrl": "/api/artifacts/" + result.Artifact.ArtifactID + "/content",
 		},
 	})
 }
@@ -80,23 +81,23 @@ func (h *WorkflowHandler) Status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response := map[string]any{
-		"run_id":     status.RunID,
-		"run_status": status.RunStatus,
+		"runId":     status.RunID,
+		"runStatus": status.RunStatus,
 	}
 	if status.CurrentPacket != nil {
-		response["current_packet"] = workflowAuditPacketDTO(*status.CurrentPacket)
+		response["currentPacket"] = workflowAuditPacketDTO(*status.CurrentPacket)
 	}
 	if status.LatestPacket != nil {
-		response["latest_packet"] = workflowAuditPacketDTO(*status.LatestPacket)
+		response["latestPacket"] = workflowAuditPacketDTO(*status.LatestPacket)
 	}
 	if status.Decision != nil {
 		response["decision"] = map[string]any{
-			"audit_decision_id": status.Decision.AuditDecisionID,
-			"audited_commit":    status.Decision.AuditedCommit,
-			"packet_sha256":     status.Decision.PacketSHA256,
-			"decision":          status.Decision.Decision,
-			"rationale":         status.Decision.Rationale,
-			"created_at":        status.Decision.CreatedAt,
+			"auditDecisionId": status.Decision.AuditDecisionID,
+			"auditedCommit":   status.Decision.AuditedCommit,
+			"packetSha256":    status.Decision.PacketSHA256,
+			"decision":        status.Decision.Decision,
+			"rationale":       status.Decision.Rationale,
+			"createdAt":       status.Decision.CreatedAt,
 		}
 	}
 	shared.JSON(w, http.StatusOK, response)

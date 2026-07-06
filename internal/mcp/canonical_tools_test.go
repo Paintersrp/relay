@@ -386,11 +386,15 @@ func TestSubmitPlanAndGetPlanPersistBoundedMetadata(t *testing.T) {
 }
 
 func TestCreateRunPersistsSetupReadyMetadataAndArtifacts(t *testing.T) {
+	t.Setenv("RELAY_WEB_BASE_URL", "http://localhost:3000/")
 	h := newCanonicalTestHarness(t, ToolProfilePlanner)
 	h.registerRepo(t, "relay")
 	out := createCanonicalTestRun(t, h, "relay", canonicalSubmissionArgs{})
 	if !out.OK || out.Run.Status != workflowstore.RunStatusSetupReady || len(out.Artifacts) != 2 {
 		t.Fatalf("unexpected Run output: %+v", out)
+	}
+	if out.ReviewURL != "http://localhost:3000/runs/"+out.Run.RunID+"/specification" {
+		t.Fatalf("review URL = %q", out.ReviewURL)
 	}
 	if workflowRowCount(t, h.store, "runs") != 1 || workflowRowCount(t, h.store, "artifacts") != 2 {
 		t.Fatal("Run persistence rows were not created")

@@ -36,6 +36,7 @@ ORDER BY name`)
 	want := []string{
 		"artifacts",
 		"audit_decisions",
+		"audit_packets",
 		"execution_attempts",
 		"goose_db_version",
 		"plan_pass_dependencies",

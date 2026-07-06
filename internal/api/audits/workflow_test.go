@@ -44,17 +44,19 @@ func TestWorkflowAuditPrepareReturnsPacketIdentity(t *testing.T) {
 		},
 		Artifact: workflowstore.Artifact{ArtifactID: "artifact-test", Kind: "audit_packet", SHA256: strings.Repeat("c", 64), SizeBytes: 10},
 	}}
-	request := httptest.NewRequest(http.MethodPost, "/workflow/runs/run-test/audit/prepare", strings.NewReader(`{"audited_commit":"`+strings.Repeat("b", 40)+`"}`))
+	request := httptest.NewRequest(http.MethodPost, "/runs/run-test/audit/prepare", strings.NewReader(`{"auditedCommit":"`+strings.Repeat("b", 40)+`"}`))
 	response := httptest.NewRecorder()
 	workflowAuditRouter(service).ServeHTTP(response, request)
-	if response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), "packet-test") {
+	if response.Code != http.StatusCreated ||
+		!strings.Contains(response.Body.String(), `"auditPacketId":"packet-test"`) ||
+		!strings.Contains(response.Body.String(), `"/api/artifacts/artifact-test/content"`) {
 		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
 }
 
 func TestWorkflowAuditPrepareMapsStaleToConflict(t *testing.T) {
 	service := &fakeWorkflowAuditService{prepareErr: appaudits.ErrWorkflowAuditPacketStale}
-	request := httptest.NewRequest(http.MethodPost, "/workflow/runs/run-test/audit/prepare", strings.NewReader(`{"audited_commit":"`+strings.Repeat("b", 40)+`"}`))
+	request := httptest.NewRequest(http.MethodPost, "/runs/run-test/audit/prepare", strings.NewReader(`{"auditedCommit":"`+strings.Repeat("b", 40)+`"}`))
 	response := httptest.NewRecorder()
 	workflowAuditRouter(service).ServeHTTP(response, request)
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "AUDIT_CONFLICT") {
@@ -69,8 +71,8 @@ func TestWorkflowAuditStatusReturnsCurrentAndLatest(t *testing.T) {
 		CurrentPacket: &packet, LatestPacket: &packet,
 	}}
 	response := httptest.NewRecorder()
-	workflowAuditRouter(service).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/workflow/runs/run-test/audit/status", nil))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "current_packet") {
+	workflowAuditRouter(service).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/runs/run-test/audit/status", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"currentPacket"`) {
 		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
 }

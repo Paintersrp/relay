@@ -390,7 +390,11 @@ func (s *WorkflowExecutionService) ListAttempts(ctx context.Context, runID strin
 	if err != nil {
 		return nil, err
 	}
-	attempts, err := s.store.ListExecutionAttemptsByRun(ctx, run.ID)
+	attempts, err := s.store.ListRecentExecutionAttemptsByRun(
+		ctx,
+		run.ID,
+		workflowstore.MaxWorkflowAttemptLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

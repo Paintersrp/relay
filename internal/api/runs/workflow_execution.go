@@ -153,7 +153,10 @@ func (h *WorkflowExecutionHandler) ListAttempts(w http.ResponseWriter, r *http.R
 	for _, view := range views {
 		response = append(response, workflowAttemptDTO(runID, view))
 	}
-	shared.JSON(w, http.StatusOK, response)
+	shared.JSON(w, http.StatusOK, map[string]any{
+		"items": response,
+		"count": len(response),
+	})
 }
 
 func (h *WorkflowExecutionHandler) GetAttempt(w http.ResponseWriter, r *http.Request) {
@@ -237,9 +240,9 @@ func writeWorkflowExecutionError(w http.ResponseWriter, err error) {
 }
 
 func MountWorkflowExecutionRoutes(r chi.Router, handler *WorkflowExecutionHandler) {
-	r.Post("/workflow/runs/{runID}/attempts", handler.StartAttempt)
-	r.Get("/workflow/runs/{runID}/attempts", handler.ListAttempts)
-	r.Get("/workflow/runs/{runID}/attempts/{attemptID}", handler.GetAttempt)
-	r.Post("/workflow/runs/{runID}/attempts/{attemptID}/cancel", handler.CancelAttempt)
-	r.Post("/workflow/runs/{runID}/attempts/{attemptID}/reconcile", handler.ReconcileAttempt)
+	r.Post("/runs/{runID}/attempts", handler.StartAttempt)
+	r.Get("/runs/{runID}/attempts", handler.ListAttempts)
+	r.Get("/runs/{runID}/attempts/{attemptID}", handler.GetAttempt)
+	r.Post("/runs/{runID}/attempts/{attemptID}/cancel", handler.CancelAttempt)
+	r.Post("/runs/{runID}/attempts/{attemptID}/reconcile", handler.ReconcileAttempt)
 }

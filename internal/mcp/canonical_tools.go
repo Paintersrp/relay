@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"os"
 	"strings"
 
 	workflowplans "relay/internal/app/plans/workflow"
@@ -140,6 +142,7 @@ type canonicalRunOutput struct {
 	Run        runMetadata               `json:"run"`
 	Artifacts  []workflowArtifactOutput  `json:"artifacts"`
 	Provenance ExactSubmissionProvenance `json:"provenance"`
+	ReviewURL  string                    `json:"review_url"`
 }
 
 type planMetadata struct {
@@ -396,8 +399,17 @@ func (s *Server) HandleCreateCanonicalRun(rawArgs json.RawMessage) ToolCallResul
 		Run:        runOut(result.Run, s.workflowStore()),
 		Artifacts:  artifactOut(result.Artifacts),
 		Provenance: provenance,
+		ReviewURL:  canonicalRunReviewURL(result.Run.RunID),
 	}
 	return canonicalOK(out)
+}
+
+func canonicalRunReviewURL(runID string) string {
+	base := strings.TrimSpace(os.Getenv("RELAY_WEB_BASE_URL"))
+	if base == "" {
+		base = "http://localhost:3000"
+	}
+	return strings.TrimRight(base, "/") + "/runs/" + url.PathEscape(runID) + "/specification"
 }
 
 func canonicalValidationResult(tool string, content FileParameterContent) ToolCallResult {
