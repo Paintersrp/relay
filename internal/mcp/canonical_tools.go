@@ -371,6 +371,9 @@ func (s *Server) HandleCreateCanonicalRun(rawArgs json.RawMessage) ToolCallResul
 	if len(compile.Errors) > 0 || compile.Markdown == nil {
 		return canonicalCompilerBlocked("create_run", content, compile, provenance)
 	}
+	if blocked := verifyCanonicalRunFilenameAssociation(content.DisplayName, input, provenance); blocked.IsError {
+		return blocked
+	}
 	var model executionSpecModel
 	if err := json.Unmarshal(content.Bytes, &model); err != nil {
 		return canonicalBlocked("create_run", canonicalBlockerCompilerRejected, "compiled Execution Spec could not be decoded for persistence metadata", false, "artifact_file", map[string]any{"provenance": provenance})
@@ -402,6 +405,31 @@ func (s *Server) HandleCreateCanonicalRun(rawArgs json.RawMessage) ToolCallResul
 		ReviewURL:  canonicalRunReviewURL(result.Run.RunID),
 	}
 	return canonicalOK(out)
+}
+
+func verifyCanonicalRunFilenameAssociation(filename string, input canonicalSubmissionArgs, provenance ExactSubmissionProvenance) ToolCallResult {
+	identity, diagnostics := speccompiler.ParseFilename(filename)
+	if len(diagnostics) != 0 {
+		return canonicalBlocked("create_run", canonicalBlockerCompilerRejected, "canonical Execution Spec filename is invalid", true, "artifact_file", map[string]any{
+			"provenance":  provenance,
+			"diagnostics": boundedDiagnostics(diagnostics),
+		})
+	}
+
+	if strings.TrimSpace(input.PlanID) != "" {
+		if !identity.HasPassQualifier {
+			return canonicalBlocked("create_run", canonicalBlockerAssociationInvalid, "managed Run Execution Spec filename must include a .pass-<number> qualifier", true, "artifact_file.file_name", map[string]any{"provenance": provenance})
+		}
+		if identity.PassNumber != input.PassNumber {
+			return canonicalBlocked("create_run", canonicalBlockerAssociationInvalid, "Execution Spec filename pass qualifier does not match pass_number", true, "artifact_file.file_name", map[string]any{"provenance": provenance})
+		}
+		return ToolCallResult{}
+	}
+
+	if identity.HasPassQualifier {
+		return canonicalBlocked("create_run", canonicalBlockerAssociationInvalid, "standalone Run Execution Spec filename must not include a pass qualifier", true, "artifact_file.file_name", map[string]any{"provenance": provenance})
+	}
+	return ToolCallResult{}
 }
 
 func canonicalRunReviewURL(runID string) string {

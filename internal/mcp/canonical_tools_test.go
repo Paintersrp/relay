@@ -405,6 +405,91 @@ func TestCreateRunPersistsSetupReadyMetadataAndArtifacts(t *testing.T) {
 	}
 }
 
+func TestCreateRunEnforcesPassQualifiedFilenames(t *testing.T) {
+	t.Run("managed matching qualifier", func(t *testing.T) {
+		h := newCanonicalTestHarness(t, ToolProfilePlanner)
+		h.registerRepo(t, "relay")
+		plan := submitCanonicalTestPlan(t, h, "relay")
+		data := canonicalExecutionSpecBytes("relay")
+		ref := h.put("managed-match", "canonical-test.pass-1.execution-spec.json", data)
+		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+			ArtifactFile:   ref,
+			ExpectedSHA256: canonicalTestSHA(data),
+			PlanID:         plan.Plan.PlanID,
+			PassNumber:     1,
+		}))
+		if result.IsError {
+			t.Fatalf("create managed Run failed: %s", canonicalToolText(t, result))
+		}
+		var out canonicalRunOutput
+		if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &out); err != nil {
+			t.Fatal(err)
+		}
+		if out.Run.PlanID != plan.Plan.PlanID || out.Run.PassNumber != 1 {
+			t.Fatalf("unexpected managed association: %+v", out.Run)
+		}
+	})
+
+	t.Run("managed missing qualifier", func(t *testing.T) {
+		h := newCanonicalTestHarness(t, ToolProfilePlanner)
+		h.registerRepo(t, "relay")
+		plan := submitCanonicalTestPlan(t, h, "relay")
+		beforeArtifacts := workflowRowCount(t, h.store, "artifacts")
+		beforeFiles := artifactFileCount(t, h.artifactRoot)
+		data := canonicalExecutionSpecBytes("relay")
+		ref := h.put("managed-missing", "canonical-test.execution-spec.json", data)
+		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+			ArtifactFile:   ref,
+			ExpectedSHA256: canonicalTestSHA(data),
+			PlanID:         plan.Plan.PlanID,
+			PassNumber:     1,
+		}))
+		if code := canonicalBlockerCode(t, result); code != canonicalBlockerAssociationInvalid {
+			t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
+		}
+		if workflowRowCount(t, h.store, "runs") != 0 || workflowRowCount(t, h.store, "artifacts") != beforeArtifacts || artifactFileCount(t, h.artifactRoot) != beforeFiles {
+			t.Fatal("missing qualifier created Run or artifact state")
+		}
+	})
+
+	t.Run("managed mismatched qualifier", func(t *testing.T) {
+		h := newCanonicalTestHarness(t, ToolProfilePlanner)
+		h.registerRepo(t, "relay")
+		plan := submitCanonicalTestPlan(t, h, "relay")
+		beforeArtifacts := workflowRowCount(t, h.store, "artifacts")
+		beforeFiles := artifactFileCount(t, h.artifactRoot)
+		data := canonicalExecutionSpecBytes("relay")
+		ref := h.put("managed-mismatch", "canonical-test.pass-2.execution-spec.json", data)
+		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+			ArtifactFile:   ref,
+			ExpectedSHA256: canonicalTestSHA(data),
+			PlanID:         plan.Plan.PlanID,
+			PassNumber:     1,
+		}))
+		if code := canonicalBlockerCode(t, result); code != canonicalBlockerAssociationInvalid {
+			t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
+		}
+		if workflowRowCount(t, h.store, "runs") != 0 || workflowRowCount(t, h.store, "artifacts") != beforeArtifacts || artifactFileCount(t, h.artifactRoot) != beforeFiles {
+			t.Fatal("mismatched qualifier created Run or artifact state")
+		}
+	})
+
+	t.Run("standalone qualified filename", func(t *testing.T) {
+		h := newCanonicalTestHarness(t, ToolProfilePlanner)
+		h.registerRepo(t, "relay")
+		data := canonicalExecutionSpecBytes("relay")
+		ref := h.put("standalone-qualified", "canonical-test.pass-1.execution-spec.json", data)
+		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+			ArtifactFile:   ref,
+			ExpectedSHA256: canonicalTestSHA(data),
+		}))
+		if code := canonicalBlockerCode(t, result); code != canonicalBlockerAssociationInvalid {
+			t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
+		}
+		assertCanonicalNoWrites(t, h)
+	})
+}
+
 func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 	t.Run("hash mismatch", func(t *testing.T) {
 		h := newCanonicalTestHarness(t, ToolProfilePlanner)
@@ -455,7 +540,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 		h := newCanonicalTestHarness(t, ToolProfilePlanner)
 		h.registerRepo(t, "relay")
 		data := canonicalExecutionSpecBytes("relay")
-		ref := h.put("unknown-plan", "canonical-test.execution-spec.json", data)
+		ref := h.put("unknown-plan", "canonical-test.pass-1.execution-spec.json", data)
 		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),
@@ -480,7 +565,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 		plan := submitCanonicalTestPlan(t, h, "relay")
 		beforeArtifacts := workflowRowCount(t, h.store, "artifacts")
 		data := canonicalExecutionSpecBytes("other")
-		ref := h.put("association-mismatch", "canonical-test.execution-spec.json", data)
+		ref := h.put("association-mismatch", "canonical-test.pass-1.execution-spec.json", data)
 		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),

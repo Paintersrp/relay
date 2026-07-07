@@ -4,13 +4,14 @@ import (
 	_ "embed"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 const (
 	SchemaVersion       = "1.0"
 	RelaySpecsRepo      = "Paintersrp/relay-specs"
-	RelaySpecsCommit    = "1d6afbea47a246b3b473176c760aed53457774d6"
+	RelaySpecsCommit    = "cc4cd6d8fc5a3cd4a3b14b0366033e187afa2d77"
 	planSuffix          = ".plan.json"
 	executionSpecSuffix = ".execution-spec.json"
 )
@@ -21,6 +22,14 @@ const (
 	ArtifactPlan          ArtifactKind = "plan"
 	ArtifactExecutionSpec ArtifactKind = "execution_spec"
 )
+
+type FilenameInfo struct {
+	Kind             ArtifactKind
+	FeatureSlug      string
+	PassNumber       int64
+	HasPassQualifier bool
+	OutputStem       string
+}
 
 type Diagnostic struct {
 	Code    string `json:"code"`
@@ -54,10 +63,12 @@ func SourceProvenance() Provenance {
 }
 
 func Compile(filenameBasename string, rawJSON []byte) Result {
-	kind, slug, filenameErrors := classifyFilename(filenameBasename)
+	filename, filenameErrors := ParseFilename(filenameBasename)
 	if len(filenameErrors) != 0 {
 		return failed(filenameErrors, nil)
 	}
+	kind := filename.Kind
+	slug := filename.FeatureSlug
 
 	root, lexicalErrors := parseDocument(rawJSON)
 	if len(lexicalErrors) != 0 {
@@ -95,10 +106,10 @@ func Compile(filenameBasename string, rawJSON []byte) Result {
 	switch kind {
 	case ArtifactExecutionSpec:
 		markdown, err = renderExecutionSpec(rawJSON)
-		output = slug + ".executor-brief.md"
+		output = filename.OutputStem + ".executor-brief.md"
 	case ArtifactPlan:
 		markdown, err = renderPlan(rawJSON)
-		output = slug + ".plan.md"
+		output = filename.OutputStem + ".plan.md"
 	}
 	if err != nil {
 		return failed([]Diagnostic{
@@ -113,28 +124,70 @@ func Compile(filenameBasename string, rawJSON []byte) Result {
 	}
 }
 
-func classifyFilename(filename string) (ArtifactKind, string, []Diagnostic) {
+func ParseFilename(filename string) (FilenameInfo, []Diagnostic) {
 	if strings.ContainsAny(filename, `/\\`) {
-		return "", "", []Diagnostic{
+		return FilenameInfo{}, []Diagnostic{
 			{Code: "invalid_filename_basename", Path: "", Message: "Filename must be a basename without path separators."}}
 	}
-	var kind ArtifactKind
-	var suffix string
+
 	switch {
 	case strings.HasSuffix(filename, executionSpecSuffix):
-		kind, suffix = ArtifactExecutionSpec, executionSpecSuffix
+		stem := strings.TrimSuffix(filename, executionSpecSuffix)
+		info := FilenameInfo{
+			Kind:        ArtifactExecutionSpec,
+			FeatureSlug: stem,
+			OutputStem:  stem,
+		}
+		if qualifierIndex := strings.LastIndex(stem, ".pass-"); qualifierIndex >= 0 {
+			featureSlug := stem[:qualifierIndex]
+			qualifier := stem[qualifierIndex+len(".pass-"):]
+			passNumber, ok := parsePassQualifier(qualifier)
+			if !ok || featureSlug == "" || strings.Contains(featureSlug, ".pass-") {
+				return FilenameInfo{}, []Diagnostic{{
+					Code:    "invalid_pass_qualifier",
+					Path:    "",
+					Message: "Execution Spec pass qualifier must be one terminal .pass-<number> segment using a positive decimal number without leading zeros.",
+				}}
+			}
+			info.FeatureSlug = featureSlug
+			info.PassNumber = passNumber
+			info.HasPassQualifier = true
+		}
+		if !validFeatureSlug(info.FeatureSlug) {
+			return FilenameInfo{}, []Diagnostic{
+				{Code: "invalid_feature_slug", Path: "/feature_slug", Message: "Filename feature slug must be lowercase kebab-case."}}
+		}
+		return info, nil
+
 	case strings.HasSuffix(filename, planSuffix):
-		kind, suffix = ArtifactPlan, planSuffix
+		slug := strings.TrimSuffix(filename, planSuffix)
+		if !validFeatureSlug(slug) {
+			return FilenameInfo{}, []Diagnostic{
+				{Code: "invalid_feature_slug", Path: "/feature_slug", Message: "Filename feature slug must be lowercase kebab-case."}}
+		}
+		return FilenameInfo{
+			Kind:        ArtifactPlan,
+			FeatureSlug: slug,
+			OutputStem:  slug,
+		}, nil
+
 	default:
-		return "", "", []Diagnostic{
+		return FilenameInfo{}, []Diagnostic{
 			{Code: "unsupported_artifact_filename", Path: "", Message: "Filename must end with .execution-spec.json or .plan.json."}}
 	}
-	slug := strings.TrimSuffix(filename, suffix)
-	if !validFeatureSlug(slug) {
-		return "", "", []Diagnostic{
-			{Code: "invalid_feature_slug", Path: "/feature_slug", Message: "Filename feature slug must be lowercase kebab-case."}}
+}
+
+func parsePassQualifier(value string) (int64, bool) {
+	if value == "" || value[0] < '1' || value[0] > '9' {
+		return 0, false
 	}
-	return kind, slug, nil
+	for index := 1; index < len(value); index++ {
+		if value[index] < '0' || value[index] > '9' {
+			return 0, false
+		}
+	}
+	number, err := strconv.ParseInt(value, 10, 64)
+	return number, err == nil
 }
 
 func schemaVersionNotices(root *jsonNode) []Diagnostic {

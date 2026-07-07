@@ -49,13 +49,17 @@ func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRu
 		return CreateRunResult{}, err
 	}
 	runID := s.ids.RunID()
+	artifactStem := input.FeatureSlug
+	if input.PlanID != "" {
+		artifactStem = fmt.Sprintf("%s.pass-%d", input.FeatureSlug, input.PassNumber)
+	}
 	batch, err := s.store.ArtifactStore().Begin("runs/" + runID)
 	if err != nil {
 		return CreateRunResult{}, err
 	}
 	canonical, err := batch.Stage(
 		"execution_spec",
-		input.FeatureSlug+".execution-spec.json",
+		artifactStem+".execution-spec.json",
 		"application/json",
 		input.CanonicalJSON,
 	)
@@ -65,7 +69,7 @@ func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRu
 	}
 	rendered, err := batch.Stage(
 		"executor_brief",
-		input.FeatureSlug+".executor-brief.md",
+		artifactStem+".executor-brief.md",
 		"text/markdown",
 		input.RenderedMarkdown,
 	)

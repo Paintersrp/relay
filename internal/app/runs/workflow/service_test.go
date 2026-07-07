@@ -104,8 +104,8 @@ func TestCreateManagedAndStandaloneRuns(t *testing.T) {
 		path string
 		data []byte
 	}{
-		{path: filepath.Join(root, "artifacts", "runs", "run-managed", "feature.execution-spec.json"), data: canonical},
-		{path: filepath.Join(root, "artifacts", "runs", "run-managed", "feature.executor-brief.md"), data: brief},
+		{path: filepath.Join(root, "artifacts", "runs", "run-managed", "feature.pass-1.execution-spec.json"), data: canonical},
+		{path: filepath.Join(root, "artifacts", "runs", "run-managed", "feature.pass-1.executor-brief.md"), data: brief},
 	} {
 		data, err := os.ReadFile(expected.path)
 		if err != nil {

@@ -23,6 +23,19 @@ func TestCompileExecutionSpecMatchesGolden(t *testing.T) {
 	assertOneFinalNewline(t, *result.Markdown)
 }
 
+func TestCompileQualifiedExecutionSpecMatchesGolden(t *testing.T) {
+	raw := readFixture(t, "valid.execution-spec.json")
+	golden := string(readFixture(t, "compiler-fixture.executor-brief.md"))
+	result := Compile("compiler-fixture.pass-12.execution-spec.json", raw)
+	assertSuccess(t, result)
+	if result.OutputFilename == nil || *result.OutputFilename != "compiler-fixture.pass-12.executor-brief.md" {
+		t.Fatalf("unexpected output filename: %#v", result.OutputFilename)
+	}
+	if result.Markdown == nil || *result.Markdown != golden {
+		t.Fatalf("qualified rendered brief does not match golden")
+	}
+}
+
 func TestCompilePlanMatchesGolden(t *testing.T) {
 	raw := readFixture(t, "valid.plan.json")
 	golden := string(readFixture(t, "compiler-plan-fixture.plan.md"))
@@ -93,6 +106,23 @@ func TestUnsupportedFilenameStopsBeforeParsing(t *testing.T) {
 	}
 }
 
+func TestInvalidExecutionPassQualifiersBlockRendering(t *testing.T) {
+	raw := readFixture(t, "valid.execution-spec.json")
+	for _, filename := range []string{
+		"compiler-fixture.pass-.execution-spec.json",
+		"compiler-fixture.pass-0.execution-spec.json",
+		"compiler-fixture.pass-01.execution-spec.json",
+		"compiler-fixture.pass-x.execution-spec.json",
+		"compiler-fixture.pass-1-extra.execution-spec.json",
+		"compiler-fixture.pass-1.pass-2.execution-spec.json",
+	} {
+		t.Run(filename, func(t *testing.T) {
+			result := Compile(filename, raw)
+			assertFailureCode(t, result, "invalid_pass_qualifier")
+		})
+	}
+}
+
 func TestFilenameMustBeBasename(t *testing.T) {
 	result := Compile("dir/compiler-fixture.plan.json", readFixture(t, "valid.plan.json"))
 	assertFailureCode(t, result, "invalid_filename_basename")
@@ -100,7 +130,7 @@ func TestFilenameMustBeBasename(t *testing.T) {
 
 func TestSourceProvenanceIsPinned(t *testing.T) {
 	provenance := SourceProvenance()
-	if provenance.Repository != "Paintersrp/relay-specs" || provenance.Commit != "1d6afbea47a246b3b473176c760aed53457774d6" {
+	if provenance.Repository != "Paintersrp/relay-specs" || provenance.Commit != "cc4cd6d8fc5a3cd4a3b14b0366033e187afa2d77" {
 		t.Fatalf("unexpected provenance: %+v", provenance)
 	}
 }
