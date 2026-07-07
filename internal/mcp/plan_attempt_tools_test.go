@@ -39,7 +39,9 @@ func baseToolNamesForTest() []string {
 }
 
 func TestPlanAttemptMCPToolsListIncludesAttemptActions(t *testing.T) {
-	srv := NewServer(discardLogger(), &MCPDeps{ToolProfile: ToolProfileRestricted})
+	deps := setupTestDeps(t)
+	deps.ToolProfile = ToolProfileRestricted
+	srv := NewServer(discardLogger(), deps)
 	names := toolNames(srv.tools)
 	for _, want := range []string{
 		toolCreatePlanAttemptWithIntent,

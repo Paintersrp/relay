@@ -92,7 +92,7 @@ func TestHTTPHandlerCanonicalProtocol(t *testing.T) {
 		if err := json.Unmarshal(data, &list); err != nil {
 			t.Fatal(err)
 		}
-		want := []string{"validate_artifact", "submit_plan", "get_plan", "create_run"}
+		want := []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run"}
 		if got := toolNames(list.Tools); !reflect.DeepEqual(got, want) {
 			t.Fatalf("tools = %v, want %v", got, want)
 		}

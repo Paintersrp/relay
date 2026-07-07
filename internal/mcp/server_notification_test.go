@@ -89,7 +89,8 @@ func TestServerToolsList_ExactMatch(t *testing.T) {
 }
 
 func TestServerToolsList_BrokerFlagDoesNotExpandCanonicalSurface(t *testing.T) {
-	deps := setupTestDeps(t)
+	harness := newCanonicalTestHarness(t, ToolProfileLocalOperator)
+	deps := harness.server.deps
 	deps.ToolProfile = ToolProfileLocalOperator
 	deps.ContextBrokerEnabled = true
 	srv := NewServer(discardLogger(), deps)

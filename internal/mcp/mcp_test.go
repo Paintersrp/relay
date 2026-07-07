@@ -235,7 +235,7 @@ func TestServerToolsListDefaultsToCanonicalPlannerProfile(t *testing.T) {
 	if err := json.Unmarshal(body, &list); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"validate_artifact", "submit_plan", "get_plan", "create_run"}
+	want := []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run"}
 	if got := toolNames(list.Tools); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("tools = %v, want %v", got, want)
 	}

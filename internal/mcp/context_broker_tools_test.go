@@ -41,10 +41,14 @@ func TestServerToolsList_ContextBrokerDisabled(t *testing.T) {
 	srv := NewServer(discardLogger(), deps)
 
 	list := listTools(t, srv)
-	if len(list.Tools) != len(baseToolNamesForTest()) {
-		t.Fatalf("expected disabled broker mode to keep %d tools, got %d", len(baseToolNamesForTest()), len(list.Tools))
+	expectedTotal := len(canonicalToolDefinitions(ToolProfilePlanner)) + len(baseToolNamesForTest())
+	if len(list.Tools) != expectedTotal {
+		t.Fatalf("expected disabled broker mode to keep %d tools, got %d", expectedTotal, len(list.Tools))
 	}
 	for _, name := range brokerToolNames() {
+		if hasNameForPlanAttemptTest(toolNames(canonicalToolDefinitions(ToolProfilePlanner)), name) {
+			continue
+		}
 		if hasTool(list, name) {
 			t.Fatalf("did not expect broker tool %q when disabled", name)
 		}
@@ -63,7 +67,7 @@ func TestServerToolsList_ContextBrokerEnabled(t *testing.T) {
 			t.Fatalf("expected broker tool %q when enabled", name)
 		}
 	}
-	expectedTotal := len(baseToolNamesForTest()) + len(contextBrokerToolDefinitions()) + len(refactorBacklogToolDefinitions())
+	expectedTotal := len(canonicalToolDefinitions(ToolProfileLocalOperator)) + len(baseToolNamesForTest()) + len(contextBrokerToolDefinitions()) + len(refactorBacklogToolDefinitions())
 	if len(list.Tools) != expectedTotal {
 		t.Fatalf("expected %d total tools when broker is enabled, got %d", expectedTotal, len(list.Tools))
 	}

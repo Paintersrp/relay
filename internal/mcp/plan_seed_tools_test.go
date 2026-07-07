@@ -10,7 +10,9 @@ import (
 )
 
 func TestServerToolsListIncludesPlanSeedTools(t *testing.T) {
-	srv := NewServer(discardLogger(), &MCPDeps{ToolProfile: ToolProfileLocalOperator})
+	deps := setupTestDeps(t)
+	deps.ToolProfile = ToolProfileLocalOperator
+	srv := NewServer(discardLogger(), deps)
 	req := Request{
 		JSONRPC: JSONRPCVersion,
 		ID:      json.RawMessage(`1`),

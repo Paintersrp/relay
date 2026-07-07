@@ -69,7 +69,13 @@ func (s *Server) activeProfile() ToolProfile {
 func (s *Server) profileToolDefinitions() []ToolDefinition {
 	profile := s.activeProfile()
 	tools := canonicalToolDefinitions(profile)
-	if s == nil || s.deps == nil || s.deps.Store == nil || s.deps.WorkflowStore != nil {
+	if s == nil || s.deps == nil || s.deps.WorkflowStore != nil {
+		return tools
+	}
+	if s.deps.Store == nil {
+		if s.deps.ContextBrokerEnabled {
+			return append(tools, contextBrokerToolDefinitions()...)
+		}
 		return tools
 	}
 	tools = append(tools, legacyBaseToolDefinitions()...)
