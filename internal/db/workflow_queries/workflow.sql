@@ -14,8 +14,14 @@ FROM repository_targets
 ORDER BY repo_target COLLATE NOCASE;
 
 -- name: CreatePlan :one
-INSERT INTO plans (plan_id, feature_slug, status, canonical_sha256)
-VALUES (?, ?, 'active', ?)
+INSERT INTO plans (
+    project_row_id,
+    plan_id,
+    feature_slug,
+    status,
+    canonical_sha256
+)
+VALUES (?, ?, ?, 'active', ?)
 RETURNING *;
 
 -- name: GetPlanByPlanID :one

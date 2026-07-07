@@ -208,19 +208,31 @@ func (q *Queries) CreateExecutionAttempt(ctx context.Context, arg CreateExecutio
 }
 
 const createPlan = `-- name: CreatePlan :one
-INSERT INTO plans (plan_id, feature_slug, status, canonical_sha256)
-VALUES (?, ?, 'active', ?)
+INSERT INTO plans (
+    project_row_id,
+    plan_id,
+    feature_slug,
+    status,
+    canonical_sha256
+)
+VALUES (?, ?, ?, 'active', ?)
 RETURNING id, project_row_id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
 `
 
 type CreatePlanParams struct {
+	ProjectRowID    int64  `json:"project_row_id"`
 	PlanID          string `json:"plan_id"`
 	FeatureSlug     string `json:"feature_slug"`
 	CanonicalSha256 string `json:"canonical_sha256"`
 }
 
 func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error) {
-	row := q.db.QueryRowContext(ctx, createPlan, arg.PlanID, arg.FeatureSlug, arg.CanonicalSha256)
+	row := q.db.QueryRowContext(ctx, createPlan,
+		arg.ProjectRowID,
+		arg.PlanID,
+		arg.FeatureSlug,
+		arg.CanonicalSha256,
+	)
 	var i Plan
 	err := row.Scan(
 		&i.ID,

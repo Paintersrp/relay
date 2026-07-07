@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	workflowgenerated "relay/internal/store/workflowgenerated"
 )
 
 func TestFreshWorkflowDatabaseContainsOnlyWorkflowTables(t *testing.T) {
@@ -51,6 +53,72 @@ ORDER BY name`)
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected fresh workflow tables\ngot:  %v\nwant: %v", got, want)
+	}
+}
+
+func TestGeneratedCreatePlanPersistsRequiredProjectAssociation(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openWorkflowTestStore(t)
+
+	var projectRowID int64
+	if err := store.DB().QueryRowContext(ctx, `
+INSERT INTO projects (project_id, name, description)
+VALUES (?, ?, ?)
+RETURNING id`,
+		"project-00000000-0000-0000-0000-000000000099",
+		"Generated CreatePlan",
+		"Project used to verify the generated Plan query.",
+	).Scan(&projectRowID); err != nil {
+		t.Fatal(err)
+	}
+
+	queries := workflowgenerated.New(store.DB())
+	canonicalSHA := strings.Repeat("a", 64)
+
+	if _, err := queries.CreatePlan(ctx, workflowgenerated.CreatePlanParams{
+		ProjectRowID:    projectRowID + 1000,
+		PlanID:          "plan-generated-invalid-project",
+		FeatureSlug:     "generated-invalid-project",
+		CanonicalSha256: canonicalSHA,
+	}); err == nil {
+		t.Fatal("generated CreatePlan accepted an unknown Project row")
+	}
+	var invalidCount int
+	if err := store.DB().QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM plans
+WHERE plan_id = ?`, "plan-generated-invalid-project").Scan(&invalidCount); err != nil {
+		t.Fatal(err)
+	}
+	if invalidCount != 0 {
+		t.Fatalf("invalid generated Plan rows = %d, want 0", invalidCount)
+	}
+
+	created, err := queries.CreatePlan(ctx, workflowgenerated.CreatePlanParams{
+		ProjectRowID:    projectRowID,
+		PlanID:          "plan-generated-project-association",
+		FeatureSlug:     "generated-project-association",
+		CanonicalSha256: canonicalSHA,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.ProjectRowID != projectRowID {
+		t.Fatalf("created ProjectRowID = %d, want %d", created.ProjectRowID, projectRowID)
+	}
+	if created.Status != PlanStatusActive {
+		t.Fatalf("created status = %q, want %q", created.Status, PlanStatusActive)
+	}
+
+	var storedProjectRowID int64
+	if err := store.DB().QueryRowContext(ctx, `
+SELECT project_row_id
+FROM plans
+WHERE plan_id = ?`, created.PlanID).Scan(&storedProjectRowID); err != nil {
+		t.Fatal(err)
+	}
+	if storedProjectRowID != projectRowID {
+		t.Fatalf("stored ProjectRowID = %d, want %d", storedProjectRowID, projectRowID)
 	}
 }
 
