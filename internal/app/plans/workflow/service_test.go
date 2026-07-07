@@ -52,6 +52,7 @@ func TestCreatePlanPersistsCanonicalArtifactsAndDependencies(t *testing.T) {
 	canonical := []byte("{\"feature_slug\":\"feature\"}\n")
 	rendered := []byte("# Plan of Passes\n")
 	result, err := service.CreatePlan(ctx, CreatePlanInput{
+		ProjectID:        createPlanTestProject(t, ctx, store),
 		FeatureSlug:      "feature",
 		CanonicalJSON:    canonical,
 		RenderedMarkdown: rendered,
@@ -123,6 +124,7 @@ func TestCreatePlanDatabaseFailureLeavesNoRecordsOrArtifacts(t *testing.T) {
 	}
 
 	_, err = service.CreatePlan(ctx, CreatePlanInput{
+		ProjectID:        createPlanTestProject(t, ctx, store),
 		FeatureSlug:      "feature",
 		CanonicalJSON:    []byte("{}\n"),
 		RenderedMarkdown: []byte("# Plan\n"),
@@ -161,6 +163,7 @@ func TestCreatePlanPromotionFailureRollsBackDatabase(t *testing.T) {
 	}
 
 	_, err = service.CreatePlan(ctx, CreatePlanInput{
+		ProjectID:        createPlanTestProject(t, ctx, store),
 		FeatureSlug:      "feature",
 		CanonicalJSON:    []byte("{}\n"),
 		RenderedMarkdown: []byte("# Plan\n"),
@@ -180,6 +183,83 @@ func TestCreatePlanPromotionFailureRollsBackDatabase(t *testing.T) {
 	assertTableCount(t, store.DB(), "plans", 0)
 }
 
+func TestMovePlanRequiresActiveDestinationAndPreservesArtifacts(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openPlanTestStore(t)
+	registerPlanTestRepo(t, ctx, store, "relay")
+	sourceID := createPlanTestProject(t, ctx, store)
+	var destination workflowstore.Project
+	var archived workflowstore.Project
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		var err error
+		destination, err = tx.CreateProject(ctx, workflowstore.CreateProjectParams{
+			ProjectID: "project-destination",
+			Name:      "Destination",
+		})
+		if err != nil {
+			return err
+		}
+		archived, err = tx.CreateProject(ctx, workflowstore.CreateProjectParams{
+			ProjectID: "project-archived",
+			Name:      "Archived",
+		})
+		if err != nil {
+			return err
+		}
+		archived, err = tx.TransitionProjectStatus(ctx, archived.ProjectID, workflowstore.ProjectStatusActive, workflowstore.ProjectStatusArchived)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewServiceWithIDs(store, &sequenceIDs{
+		planID:       "plan-move",
+		passIDs:      []string{"pass-move"},
+		artifactBase: "artifact-move",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreatePlan(ctx, CreatePlanInput{
+		ProjectID:        sourceID,
+		FeatureSlug:      "feature",
+		CanonicalJSON:    []byte("{}\n"),
+		RenderedMarkdown: []byte("# Plan\n"),
+		Repositories: []RepositoryTargetInput{
+			RepositoryTargetInput{
+				RepoTarget: "relay", Branch: "main", PlanningBaseCommit: strings.Repeat("a", 40),
+			},
+		},
+		Passes: []PassInput{
+			PassInput{Number: 1, Name: "One", RepoTarget: "relay"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactCount := len(created.Artifacts)
+	moved, err := service.MovePlan(ctx, MovePlanInput{PlanID: created.Plan.PlanID, ProjectID: destination.ProjectID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.Plan.ProjectRowID != destination.ID || moved.Project.ProjectID != destination.ProjectID {
+		t.Fatalf("move result = %+v", moved)
+	}
+	artifacts, err := store.ListArtifactsByPlan(ctx, moved.Plan.ID)
+	if err != nil || len(artifacts) != artifactCount {
+		t.Fatalf("artifacts = %+v, error = %v", artifacts, err)
+	}
+	if _, err := service.MovePlan(ctx, MovePlanInput{PlanID: moved.Plan.PlanID, ProjectID: archived.ProjectID}); !errors.Is(err, ErrProjectArchived) {
+		t.Fatalf("error = %v", err)
+	}
+	current, err := store.GetPlanByPlanID(ctx, moved.Plan.PlanID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.ProjectRowID != destination.ID {
+		t.Fatalf("failed move changed Project row to %d", current.ProjectRowID)
+	}
+}
+
 func openPlanTestStore(t *testing.T) (*workflowstore.Store, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -189,6 +269,22 @@ func openPlanTestStore(t *testing.T) (*workflowstore.Store, string) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	return store, root
+}
+
+func createPlanTestProject(t *testing.T, ctx context.Context, store *workflowstore.Store) string {
+	t.Helper()
+	var project workflowstore.Project
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		var err error
+		project, err = tx.CreateProject(ctx, workflowstore.CreateProjectParams{
+			ProjectID: "project-plan-tests",
+			Name:      "Plan tests",
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return project.ProjectID
 }
 
 func registerPlanTestRepo(t *testing.T, ctx context.Context, store *workflowstore.Store, key string) {

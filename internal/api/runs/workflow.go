@@ -28,25 +28,32 @@ func NewWorkflowReadHandler(service WorkflowReadService) *WorkflowReadHandler {
 	return &WorkflowReadHandler{service: service}
 }
 
+type workflowProjectReferenceResponse struct {
+	ProjectID string `json:"projectId"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+}
+
 type workflowRunSummaryResponse struct {
-	RunID           string                           `json:"runId"`
-	FeatureSlug     string                           `json:"featureSlug"`
-	RepoTarget      string                           `json:"repoTarget"`
-	Status          string                           `json:"status"`
-	Stage           string                           `json:"stage"`
-	Branch          string                           `json:"branch"`
-	BaseCommit      string                           `json:"baseCommit"`
-	CanonicalSHA256 string                           `json:"canonicalSha256"`
-	PlanID          string                           `json:"planId,omitempty"`
-	PassID          string                           `json:"passId,omitempty"`
-	PassNumber      int64                            `json:"passNumber,omitempty"`
-	RemediatesRunID string                           `json:"remediatesRunId,omitempty"`
-	CreatedAt       string                           `json:"createdAt"`
-	UpdatedAt       string                           `json:"updatedAt"`
-	CompletedAt     string                           `json:"completedAt,omitempty"`
-	LatestAttempt   *workflowAttemptSummaryResponse  `json:"latestAttempt,omitempty"`
-	CurrentPacket   *workflowAuditPacketLinkResponse `json:"currentPacket,omitempty"`
-	LatestDecision  *workflowAuditDecisionResponse   `json:"latestDecision,omitempty"`
+	RunID           string                            `json:"runId"`
+	FeatureSlug     string                            `json:"featureSlug"`
+	RepoTarget      string                            `json:"repoTarget"`
+	Status          string                            `json:"status"`
+	Stage           string                            `json:"stage"`
+	Branch          string                            `json:"branch"`
+	BaseCommit      string                            `json:"baseCommit"`
+	CanonicalSHA256 string                            `json:"canonicalSha256"`
+	PlanID          string                            `json:"planId,omitempty"`
+	PassID          string                            `json:"passId,omitempty"`
+	PassNumber      int64                             `json:"passNumber,omitempty"`
+	Project         *workflowProjectReferenceResponse `json:"project,omitempty"`
+	RemediatesRunID string                            `json:"remediatesRunId,omitempty"`
+	CreatedAt       string                            `json:"createdAt"`
+	UpdatedAt       string                            `json:"updatedAt"`
+	CompletedAt     string                            `json:"completedAt,omitempty"`
+	LatestAttempt   *workflowAttemptSummaryResponse   `json:"latestAttempt,omitempty"`
+	CurrentPacket   *workflowAuditPacketLinkResponse  `json:"currentPacket,omitempty"`
+	LatestDecision  *workflowAuditDecisionResponse    `json:"latestDecision,omitempty"`
 }
 
 type workflowAttemptSummaryResponse struct {
@@ -203,6 +210,13 @@ func workflowRunSummaryDTO(value workflowapp.RunSummary) workflowRunSummaryRespo
 		RemediatesRunID: value.RemediatesRunID,
 		CreatedAt:       value.Run.CreatedAt,
 		UpdatedAt:       value.Run.UpdatedAt,
+	}
+	if value.Project != nil {
+		response.Project = &workflowProjectReferenceResponse{
+			ProjectID: value.Project.ProjectID,
+			Name:      value.Project.Name,
+			Status:    value.Project.Status,
+		}
 	}
 	if value.Run.CompletedAt.Valid {
 		response.CompletedAt = value.Run.CompletedAt.String

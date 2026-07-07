@@ -50,7 +50,7 @@ func TestWorkflowRuntimeMountsOnlyNewOperationalRoutes(t *testing.T) {
 	store, service := openWorkflowRouteTestStore(t)
 	handler := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test")
 
-	for _, path := range []string{"/api/repositories", "/api/plans", "/api/runs"} {
+	for _, path := range []string{"/api/repositories", "/api/projects", "/api/plans", "/api/runs"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusOK {
@@ -62,7 +62,6 @@ func TestWorkflowRuntimeMountsOnlyNewOperationalRoutes(t *testing.T) {
 		method string
 		path   string
 	}{
-		{http.MethodGet, "/api/projects"},
 		{http.MethodPost, "/api/runs/1/approve-intake"},
 		{http.MethodPost, "/api/runs/1/prepare"},
 		{http.MethodPost, "/api/runs/1/render-brief"},

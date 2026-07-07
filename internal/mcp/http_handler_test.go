@@ -150,9 +150,9 @@ func TestHTTPHandlerToolsListUsesCanonicalProfiles(t *testing.T) {
 		profile ToolProfile
 		want    []string
 	}{
-		{profile: ToolProfilePlanner, want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run"}},
+		{profile: ToolProfilePlanner, want: []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run"}},
 		{profile: ToolProfileAuditor, want: []string{"validate_artifact", "create_run", "get_audit_packet", "record_audit_decision"}},
-		{profile: ToolProfileLocalOperator, want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run", "get_audit_packet", "record_audit_decision"}},
+		{profile: ToolProfileLocalOperator, want: []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run", "get_audit_packet", "record_audit_decision"}},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.profile), func(t *testing.T) {

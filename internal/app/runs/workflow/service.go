@@ -4,11 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	workflowartifacts "relay/internal/artifacts/workflow"
 	workflowstore "relay/internal/store/workflow"
+)
+
+var (
+	ErrInvalidRunInput          = errors.New("invalid Run input")
+	ErrRepositoryTargetNotFound = errors.New("repository target not found")
+	ErrPlanPassAssociation      = errors.New("Plan/pass association invalid")
+	ErrRemediationAssociation   = errors.New("remediation association invalid")
 )
 
 type IDGenerator interface {
@@ -81,29 +89,38 @@ func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRu
 	result := CreateRunResult{}
 	err = s.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
 		registered, err := tx.GetRepositoryTarget(ctx, input.RepoTarget)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: %s", ErrRepositoryTargetNotFound, input.RepoTarget)
+		}
 		if err != nil {
-			return fmt.Errorf("repository target %q is not registered: %w", input.RepoTarget, err)
+			return err
 		}
 		if registered.RepoTarget != input.RepoTarget {
-			return fmt.Errorf("repository target %q must use registered key casing %q", input.RepoTarget, registered.RepoTarget)
+			return fmt.Errorf("%w: repository target %q must use registered key casing %q", ErrRepositoryTargetNotFound, input.RepoTarget, registered.RepoTarget)
 		}
 
 		planRowID := sql.NullInt64{}
 		passRowID := sql.NullInt64{}
 		if input.PlanID != "" {
 			plan, err := tx.GetPlanByPlanID(ctx, input.PlanID)
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w: managed Plan %s was not found", ErrPlanPassAssociation, input.PlanID)
+			}
 			if err != nil {
-				return fmt.Errorf("load managed plan %q: %w", input.PlanID, err)
+				return err
 			}
 			if plan.Status != workflowstore.PlanStatusActive {
-				return fmt.Errorf("managed plan %q is %q", input.PlanID, plan.Status)
+				return fmt.Errorf("%w: managed Plan %s is %s", ErrPlanPassAssociation, input.PlanID, plan.Status)
 			}
 			pass, err := tx.GetPlanPassByPlanAndNumber(ctx, plan.ID, input.PassNumber)
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w: managed pass %d was not found", ErrPlanPassAssociation, input.PassNumber)
+			}
 			if err != nil {
-				return fmt.Errorf("load managed pass %d: %w", input.PassNumber, err)
+				return err
 			}
 			if !strings.EqualFold(pass.RepoTarget, input.RepoTarget) {
-				return fmt.Errorf("managed pass repository %q does not match run repository %q", pass.RepoTarget, input.RepoTarget)
+				return fmt.Errorf("%w: managed pass repository %q does not match Run repository %q", ErrPlanPassAssociation, pass.RepoTarget, input.RepoTarget)
 			}
 			switch pass.Status {
 			case workflowstore.PassStatusPlanned:
@@ -113,9 +130,9 @@ func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRu
 				}
 			case workflowstore.PassStatusInProgress:
 			case workflowstore.PassStatusCompleted:
-				return fmt.Errorf("managed pass %d is already completed", input.PassNumber)
+				return fmt.Errorf("%w: managed pass %d is already completed", ErrPlanPassAssociation, input.PassNumber)
 			default:
-				return fmt.Errorf("managed pass %d has unsupported status %q", input.PassNumber, pass.Status)
+				return fmt.Errorf("%w: managed pass %d has unsupported status %q", ErrPlanPassAssociation, input.PassNumber, pass.Status)
 			}
 			planRowID = sql.NullInt64{Int64: plan.ID, Valid: true}
 			passRowID = sql.NullInt64{Int64: pass.ID, Valid: true}
@@ -124,14 +141,17 @@ func (s *Service) CreateRun(ctx context.Context, input CreateRunInput) (CreateRu
 		remediatesRowID := sql.NullInt64{}
 		if input.RemediatesRunID != "" {
 			original, err := tx.GetRunByRunID(ctx, input.RemediatesRunID)
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w: remediation source Run %s was not found", ErrRemediationAssociation, input.RemediatesRunID)
+			}
 			if err != nil {
-				return fmt.Errorf("load remediation source run %q: %w", input.RemediatesRunID, err)
+				return err
 			}
 			if original.Status != workflowstore.RunStatusNeedsRevision ||
 				!strings.EqualFold(original.RepoTarget, input.RepoTarget) ||
 				original.PlanRowID != planRowID ||
 				original.PlanPassRowID != passRowID {
-				return fmt.Errorf("remediation source run must be needs_revision with the identical repository and Plan/pass association")
+				return fmt.Errorf("%w: remediation source Run must be needs_revision with the identical repository and Plan/pass association", ErrRemediationAssociation)
 			}
 			remediatesRowID = sql.NullInt64{Int64: original.ID, Valid: true}
 		}
@@ -388,22 +408,22 @@ func (s *Service) RecordAuditDecision(context.Context, RecordAuditDecisionInput)
 
 func validateCreateRunInput(input CreateRunInput) error {
 	if !validFeatureSlug(input.FeatureSlug) {
-		return fmt.Errorf("feature slug must be lowercase kebab-case")
+		return fmt.Errorf("%w: feature slug must be lowercase kebab-case", ErrInvalidRunInput)
 	}
 	if strings.TrimSpace(input.RepoTarget) == "" || strings.TrimSpace(input.RepoTarget) != input.RepoTarget {
-		return fmt.Errorf("repository target is required without outer whitespace")
+		return fmt.Errorf("%w: repository target is required without outer whitespace", ErrInvalidRunInput)
 	}
 	if strings.TrimSpace(input.Branch) == "" || strings.TrimSpace(input.Branch) != input.Branch {
-		return fmt.Errorf("branch is required without outer whitespace")
+		return fmt.Errorf("%w: branch is required without outer whitespace", ErrInvalidRunInput)
 	}
 	if !validCommit(input.BaseCommit) {
-		return fmt.Errorf("base commit must be a lowercase full 40-character SHA")
+		return fmt.Errorf("%w: base commit must be a lowercase full 40-character SHA", ErrInvalidRunInput)
 	}
 	if len(input.CanonicalJSON) == 0 || len(input.RenderedMarkdown) == 0 {
-		return fmt.Errorf("canonical Execution Spec JSON and rendered Executor Brief are required")
+		return fmt.Errorf("%w: canonical Execution Spec JSON and rendered Executor Brief are required", ErrInvalidRunInput)
 	}
 	if (input.PlanID == "") != (input.PassNumber == 0) {
-		return fmt.Errorf("Plan ID and pass number must be supplied together")
+		return fmt.Errorf("%w: Plan ID and pass number must be supplied together", ErrPlanPassAssociation)
 	}
 	return nil
 }

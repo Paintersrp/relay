@@ -83,6 +83,17 @@ func newAuditFixture(t *testing.T, managed bool) *auditFixture {
 	planID := ""
 	passNumber := int64(0)
 	if managed {
+		var project workflowstore.Project
+		if err := store.WithTx(context.Background(), func(tx *workflowstore.Tx) error {
+			var err error
+			project, err = tx.CreateProject(context.Background(), workflowstore.CreateProjectParams{
+				ProjectID: "project-audit-tests",
+				Name:      "Audit tests",
+			})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
 		planService, err := workflowplans.NewService(store)
 		if err != nil {
 			t.Fatal(err)
@@ -98,6 +109,7 @@ func newAuditFixture(t *testing.T, managed bool) *auditFixture {
   "completion_criteria":["Complete."]
 }`)
 		created, err := planService.CreatePlan(context.Background(), workflowplans.CreatePlanInput{
+			ProjectID:        project.ProjectID,
 			FeatureSlug:      "audit-test",
 			CanonicalJSON:    planJSON,
 			RenderedMarkdown: []byte("# Plan\n"),

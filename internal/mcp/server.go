@@ -67,7 +67,19 @@ func (s *Server) activeProfile() ToolProfile {
 }
 
 func (s *Server) profileToolDefinitions() []ToolDefinition {
-	return canonicalToolDefinitions(s.activeProfile())
+	profile := s.activeProfile()
+	tools := canonicalToolDefinitions(profile)
+	if s == nil || s.deps == nil || s.deps.Store == nil || s.deps.WorkflowStore != nil {
+		return tools
+	}
+	tools = append(tools, legacyBaseToolDefinitions()...)
+	if profile == ToolProfileLocalOperator || s.deps.ContextBrokerEnabled {
+		tools = append(tools, contextBrokerToolDefinitions()...)
+	}
+	if profile == ToolProfileLocalOperator {
+		tools = append(tools, refactorBacklogToolDefinitions()...)
+	}
+	return tools
 }
 
 func (s *Server) fileParameterFetcher() FileParameterFetcher {
@@ -358,6 +370,8 @@ func (s *Server) handleToolsCall(req Request) Response {
 	switch params.Name {
 	case "validate_artifact":
 		result = s.HandleValidateArtifact(args)
+	case "list_projects":
+		result = s.HandleListCanonicalProjects(args)
 	case "submit_plan":
 		result = s.HandleSubmitPlan(args)
 	case "get_plan":

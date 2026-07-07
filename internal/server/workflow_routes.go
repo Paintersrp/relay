@@ -9,11 +9,16 @@ import (
 
 	artifactsapi "relay/internal/api/artifacts"
 	auditsapi "relay/internal/api/audits"
+	canonicalapi "relay/internal/api/canonical"
 	plansapi "relay/internal/api/plans"
+	projectsapi "relay/internal/api/projects"
 	repositoriesapi "relay/internal/api/repositories"
 	runsapi "relay/internal/api/runs"
 	"relay/internal/api/shared"
 	appaudits "relay/internal/app/audits"
+	workflowcanonical "relay/internal/app/canonical"
+	workflowplans "relay/internal/app/plans/workflow"
+	workflowprojects "relay/internal/app/projects/workflow"
 	workflowapp "relay/internal/app/workflow"
 	"relay/internal/executor"
 	"relay/internal/mcp"
@@ -35,6 +40,18 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	if err != nil {
 		panic(err)
 	}
+	projectService, err := workflowprojects.NewService(workflowStore)
+	if err != nil {
+		panic(err)
+	}
+	planMutationService, err := workflowplans.NewService(workflowStore)
+	if err != nil {
+		panic(err)
+	}
+	canonicalService, err := workflowcanonical.NewService(workflowStore)
+	if err != nil {
+		panic(err)
+	}
 	auditService, err := appaudits.NewWorkflowAuditService(workflowStore)
 	if err != nil {
 		panic(err)
@@ -42,6 +59,8 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	executionService := executor.NewWorkflowExecutionService(workflowStore, log, ownerInstanceID)
 
 	repositoryHandler := repositoriesapi.NewWorkflowHandler(readService)
+	projectHandler := projectsapi.NewWorkflowHandler(projectService)
+	canonicalHandler := canonicalapi.NewWorkflowHandler(canonicalService, planMutationService)
 	planHandler := plansapi.NewWorkflowHandler(readService)
 	runHandler := runsapi.NewWorkflowReadHandler(readService)
 	executionHandler := runsapi.NewWorkflowExecutionHandler(executionService)
@@ -59,6 +78,8 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	router.Route("/api", func(api chi.Router) {
 		api.Use(shared.CORSMiddleware)
 		repositoriesapi.MountWorkflowRoutes(api, repositoryHandler)
+		projectsapi.MountWorkflowRoutes(api, projectHandler)
+		canonicalapi.MountWorkflowRoutes(api, canonicalHandler)
 		plansapi.MountWorkflowRoutes(api, planHandler)
 		runsapi.MountWorkflowReadRoutes(api, runHandler)
 		runsapi.MountWorkflowExecutionRoutes(api, executionHandler)

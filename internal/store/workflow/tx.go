@@ -31,14 +31,16 @@ func (tx *Tx) GetRepositoryTarget(ctx context.Context, repoTarget string) (Repos
 func (tx *Tx) CreatePlan(ctx context.Context, params CreatePlanParams) (Plan, error) {
 	var value Plan
 	err := tx.tx.QueryRowContext(ctx, `
-INSERT INTO plans (plan_id, feature_slug, status, canonical_sha256)
-VALUES (?, ?, 'active', ?)
-RETURNING id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at`,
+INSERT INTO plans (project_row_id, plan_id, feature_slug, status, canonical_sha256)
+VALUES (?, ?, ?, 'active', ?)
+RETURNING id, project_row_id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at`,
+		params.ProjectRowID,
 		params.PlanID,
 		params.FeatureSlug,
 		params.CanonicalSHA256,
 	).Scan(
 		&value.ID,
+		&value.ProjectRowID,
 		&value.PlanID,
 		&value.FeatureSlug,
 		&value.Status,
@@ -151,8 +153,9 @@ SET
     completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ? AND status = 'active'
-RETURNING id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at`, planRowID).Scan(
+RETURNING id, project_row_id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at`, planRowID).Scan(
 		&value.ID,
+		&value.ProjectRowID,
 		&value.PlanID,
 		&value.FeatureSlug,
 		&value.Status,

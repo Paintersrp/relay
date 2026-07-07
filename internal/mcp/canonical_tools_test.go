@@ -77,6 +77,22 @@ func (h *canonicalTestHarness) registerRepo(t *testing.T, repoTarget string) {
 	}
 }
 
+func (h *canonicalTestHarness) createProject(t *testing.T) workflowstore.Project {
+	t.Helper()
+	var project workflowstore.Project
+	if err := h.store.WithTx(context.Background(), func(tx *workflowstore.Tx) error {
+		var err error
+		project, err = tx.CreateProject(context.Background(), workflowstore.CreateProjectParams{
+			ProjectID: "project-canonical-tests",
+			Name:      "Canonical tests",
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return project
+}
+
 func (h *canonicalTestHarness) put(fileID, name string, data []byte) ChatGPTFileReference {
 	h.fetcher.content[fileID] = FileParameterContent{Bytes: append([]byte(nil), data...), DisplayName: name}
 	return ChatGPTFileReference{
@@ -279,7 +295,9 @@ func submitCanonicalTestPlan(t *testing.T, h *canonicalTestHarness, repoTarget s
 	t.Helper()
 	data := canonicalPlanBytes(repoTarget)
 	ref := h.put("plan-"+repoTarget, "canonical-test.plan.json", data)
+	project := h.createProject(t)
 	result := h.server.HandleSubmitPlan(canonicalArgs(t, canonicalSubmissionArgs{
+		ProjectID:      project.ProjectID,
 		ArtifactFile:   ref,
 		ExpectedSHA256: canonicalTestSHA(data),
 	}))
@@ -314,10 +332,19 @@ func TestCanonicalToolDefinitionsByProfile(t *testing.T) {
 		profile ToolProfile
 		want    []string
 	}{
-		{profile: ToolProfilePlanner, want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run"}},
+		{
+			profile: ToolProfilePlanner,
+			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run"},
+		},
 		{profile: ToolProfileAuditor, want: []string{"validate_artifact", "create_run", "get_audit_packet", "record_audit_decision"}},
-		{profile: ToolProfileLocalOperator, want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run", "get_audit_packet", "record_audit_decision"}},
-		{profile: ToolProfile("restricted"), want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run"}},
+		{
+			profile: ToolProfileLocalOperator,
+			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run", "get_audit_packet", "record_audit_decision"},
+		},
+		{
+			profile: ToolProfile("restricted"),
+			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.profile), func(t *testing.T) {
@@ -325,6 +352,22 @@ func TestCanonicalToolDefinitionsByProfile(t *testing.T) {
 				t.Fatalf("tools = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestListProjectsReturnsBoundedPlannerMetadata(t *testing.T) {
+	h := newCanonicalTestHarness(t, ToolProfilePlanner)
+	project := h.createProject(t)
+	result := h.server.HandleListCanonicalProjects(canonicalArgs(t, listCanonicalProjectsArgs{Limit: 1}))
+	if result.IsError {
+		t.Fatalf("list Projects failed: %s", canonicalToolText(t, result))
+	}
+	var out canonicalProjectsOutput
+	if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Count != 1 || len(out.Projects) != 1 || out.Projects[0].ProjectID != project.ProjectID {
+		t.Fatalf("Projects output = %+v", out)
 	}
 }
 
@@ -361,7 +404,7 @@ func TestSubmitPlanAndGetPlanPersistBoundedMetadata(t *testing.T) {
 	h := newCanonicalTestHarness(t, ToolProfilePlanner)
 	h.registerRepo(t, "relay")
 	submitted := submitCanonicalTestPlan(t, h, "relay")
-	if !submitted.OK || submitted.Plan.Status != workflowstore.PlanStatusActive || len(submitted.Passes) != 1 || len(submitted.Artifacts) != 2 {
+	if !submitted.OK || submitted.Project.ProjectID == "" || submitted.Plan.Status != workflowstore.PlanStatusActive || len(submitted.Passes) != 1 || len(submitted.Artifacts) != 2 {
 		t.Fatalf("unexpected Plan output: %+v", submitted)
 	}
 	if submitted.Passes[0].Status != workflowstore.PassStatusPlanned {
@@ -382,6 +425,32 @@ func TestSubmitPlanAndGetPlanPersistBoundedMetadata(t *testing.T) {
 		if strings.Contains(text, "Canonical Plan context") || strings.Contains(text, `"repo_targets"`) {
 			t.Fatalf("Plan response leaked artifact body: %s", text)
 		}
+	}
+}
+
+func TestGetPlanMissingReturnsRecoverableUnknownResource(t *testing.T) {
+	h := newCanonicalTestHarness(t, ToolProfilePlanner)
+	beforePlans := workflowRowCount(t, h.store, "plans")
+	beforePasses := workflowRowCount(t, h.store, "plan_passes")
+	beforeArtifacts := workflowRowCount(t, h.store, "artifacts")
+
+	result := h.server.HandleGetCanonicalPlan(canonicalArgs(t, getCanonicalPlanArgs{PlanID: "plan-missing"}))
+	if code := canonicalBlockerCode(t, result); code != MCPBlockerUnknownResource {
+		t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
+	}
+	text := canonicalToolText(t, result)
+	if !strings.Contains(text, `"recoverable":true`) {
+		t.Fatalf("missing Plan blocker is not recoverable: %s", text)
+	}
+	for _, forbidden := range []string{"sql.ErrNoRows", "no rows in result set", "database/sql", "persistence_failed"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("missing Plan blocker leaked persistence detail %q: %s", forbidden, text)
+		}
+	}
+	if workflowRowCount(t, h.store, "plans") != beforePlans ||
+		workflowRowCount(t, h.store, "plan_passes") != beforePasses ||
+		workflowRowCount(t, h.store, "artifacts") != beforeArtifacts {
+		t.Fatal("missing Plan lookup mutated workflow state")
 	}
 }
 

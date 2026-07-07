@@ -8,8 +8,42 @@ CREATE TABLE repository_targets (
     CHECK (local_path <> '' AND trim(local_path) = local_path)
 );
 
+CREATE TABLE projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    CHECK (project_id GLOB 'project-*' AND trim(project_id) = project_id),
+    CHECK (name <> '' AND trim(name) <> '')
+);
+
+CREATE TABLE project_repository_targets (
+    project_row_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE RESTRICT,
+    repo_target TEXT NOT NULL COLLATE NOCASE REFERENCES repository_targets(repo_target) ON DELETE RESTRICT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (project_row_id, repo_target)
+);
+
+CREATE TABLE project_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id TEXT NOT NULL UNIQUE,
+    project_row_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE RESTRICT,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done')),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    CHECK (note_id GLOB 'note-*' AND trim(note_id) = note_id),
+    CHECK (title <> '' AND trim(title) <> ''),
+    CHECK (body <> '' AND trim(body) <> '')
+);
+
 CREATE TABLE plans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_row_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE RESTRICT,
     plan_id TEXT NOT NULL UNIQUE,
     feature_slug TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed')),
@@ -214,6 +248,40 @@ BEGIN
 END;
 -- +goose StatementEnd
 
+
+-- +goose StatementBegin
+CREATE TRIGGER project_delete_guard
+BEFORE DELETE ON projects
+FOR EACH ROW
+BEGIN
+    SELECT RAISE(ABORT, 'Projects cannot be deleted; archive the Project instead');
+END;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE TRIGGER plan_project_insert_guard
+BEFORE INSERT ON plans
+FOR EACH ROW
+WHEN NOT EXISTS (
+    SELECT 1 FROM projects WHERE id = NEW.project_row_id AND status = 'active'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'new Plans require an active Project');
+END;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE TRIGGER plan_project_move_guard
+BEFORE UPDATE OF project_row_id ON plans
+FOR EACH ROW
+WHEN NEW.project_row_id <> OLD.project_row_id AND NOT EXISTS (
+    SELECT 1 FROM projects WHERE id = NEW.project_row_id AND status = 'active'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Plans may move only to an active Project');
+END;
+-- +goose StatementEnd
+
 -- +goose StatementBegin
 CREATE TRIGGER plan_initial_status_guard
 BEFORE INSERT ON plans
@@ -391,6 +459,10 @@ BEGIN
 END;
 -- +goose StatementEnd
 
+CREATE INDEX idx_projects_status ON projects(status, id);
+CREATE INDEX idx_project_repository_targets_project ON project_repository_targets(project_row_id, repo_target);
+CREATE INDEX idx_project_notes_project ON project_notes(project_row_id, status, id);
+CREATE INDEX idx_plans_project ON plans(project_row_id, id);
 CREATE INDEX idx_plan_repository_targets_plan ON plan_repository_targets(plan_row_id, sequence);
 CREATE INDEX idx_plan_passes_plan ON plan_passes(plan_row_id, pass_number);
 CREATE INDEX idx_plan_passes_status ON plan_passes(status);
@@ -405,6 +477,9 @@ CREATE INDEX idx_artifacts_attempt ON artifacts(execution_attempt_row_id, create
 CREATE INDEX idx_audit_decisions_run ON audit_decisions(run_row_id, created_at);
 
 -- +goose Down
+DROP TRIGGER IF EXISTS plan_project_move_guard;
+DROP TRIGGER IF EXISTS plan_project_insert_guard;
+DROP TRIGGER IF EXISTS project_delete_guard;
 DROP TRIGGER IF EXISTS audit_decision_guard;
 DROP TRIGGER IF EXISTS execution_attempt_status_transition_guard;
 DROP TRIGGER IF EXISTS execution_attempt_insert_guard;
@@ -426,4 +501,7 @@ DROP TABLE IF EXISTS plan_pass_dependencies;
 DROP TABLE IF EXISTS plan_passes;
 DROP TABLE IF EXISTS plan_repository_targets;
 DROP TABLE IF EXISTS plans;
+DROP TABLE IF EXISTS project_notes;
+DROP TABLE IF EXISTS project_repository_targets;
+DROP TABLE IF EXISTS projects;
 DROP TABLE IF EXISTS repository_targets;

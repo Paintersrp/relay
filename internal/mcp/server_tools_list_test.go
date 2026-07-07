@@ -13,9 +13,9 @@ func TestToolsListCanonicalProfilesAreExactAndSchemasAreBounded(t *testing.T) {
 		profile ToolProfile
 		want    []string
 	}{
-		{name: "planner", profile: ToolProfilePlanner, want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run"}},
+		{name: "planner", profile: ToolProfilePlanner, want: []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run"}},
 		{name: "auditor", profile: ToolProfileAuditor, want: []string{"validate_artifact", "create_run", "get_audit_packet", "record_audit_decision"}},
-		{name: "local operator", profile: ToolProfileLocalOperator, want: []string{"validate_artifact", "submit_plan", "get_plan", "create_run", "get_audit_packet", "record_audit_decision"}},
+		{name: "local operator", profile: ToolProfileLocalOperator, want: []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run", "get_audit_packet", "record_audit_decision"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

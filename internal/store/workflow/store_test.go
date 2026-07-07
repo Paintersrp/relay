@@ -43,6 +43,9 @@ ORDER BY name`)
 		"plan_passes",
 		"plan_repository_targets",
 		"plans",
+		"project_notes",
+		"project_repository_targets",
+		"projects",
 		"repository_targets",
 		"runs",
 	}
@@ -246,8 +249,15 @@ func seedConstraintRecords(t *testing.T, ctx context.Context, store *Store) cons
 				return err
 			}
 		}
-		var err error
+		project, err := tx.CreateProject(ctx, CreateProjectParams{
+			ProjectID: "project-constraints",
+			Name:      "Constraint tests",
+		})
+		if err != nil {
+			return err
+		}
 		seed.firstPlan, err = tx.CreatePlan(ctx, CreatePlanParams{
+			ProjectRowID:    project.ID,
 			PlanID:          "plan-one",
 			FeatureSlug:     "feature",
 			CanonicalSHA256: strings.Repeat("a", 64),
@@ -278,6 +288,7 @@ func seedConstraintRecords(t *testing.T, ctx context.Context, store *Store) cons
 		}
 
 		seed.secondPlan, err = tx.CreatePlan(ctx, CreatePlanParams{
+			ProjectRowID:    project.ID,
 			PlanID:          "plan-two",
 			FeatureSlug:     "other-feature",
 			CanonicalSHA256: strings.Repeat("b", 64),

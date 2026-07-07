@@ -28,19 +28,26 @@ func NewWorkflowHandler(service WorkflowPlanService) *WorkflowHandler {
 	return &WorkflowHandler{service: service}
 }
 
+type workflowProjectReferenceResponse struct {
+	ProjectID string `json:"projectId"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+}
+
 type workflowPlanSummaryResponse struct {
-	PlanID              string `json:"planId"`
-	FeatureSlug         string `json:"featureSlug"`
-	Status              string `json:"status"`
-	CanonicalSHA256     string `json:"canonicalSha256"`
-	CreatedAt           string `json:"createdAt"`
-	UpdatedAt           string `json:"updatedAt"`
-	CompletedAt         string `json:"completedAt,omitempty"`
-	PassCount           int    `json:"passCount"`
-	CompletedPassCount  int    `json:"completedPassCount"`
-	InProgressPassCount int    `json:"inProgressPassCount"`
-	PlannedPassCount    int    `json:"plannedPassCount"`
-	CurrentPassID       string `json:"currentPassId,omitempty"`
+	PlanID              string                           `json:"planId"`
+	Project             workflowProjectReferenceResponse `json:"project"`
+	FeatureSlug         string                           `json:"featureSlug"`
+	Status              string                           `json:"status"`
+	CanonicalSHA256     string                           `json:"canonicalSha256"`
+	CreatedAt           string                           `json:"createdAt"`
+	UpdatedAt           string                           `json:"updatedAt"`
+	CompletedAt         string                           `json:"completedAt,omitempty"`
+	PassCount           int                              `json:"passCount"`
+	CompletedPassCount  int                              `json:"completedPassCount"`
+	InProgressPassCount int                              `json:"inProgressPassCount"`
+	PlannedPassCount    int                              `json:"plannedPassCount"`
+	CurrentPassID       string                           `json:"currentPassId,omitempty"`
 }
 
 type workflowPlanRepositoryResponse struct {
@@ -93,8 +100,9 @@ func (h *WorkflowHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	values, err := h.service.ListPlans(r.Context(), workflowapp.ListPlansInput{
-		Status: strings.TrimSpace(r.URL.Query().Get("status")),
-		Limit:  limit,
+		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
+		ProjectID: strings.TrimSpace(r.URL.Query().Get("projectId")),
+		Limit:     limit,
 	})
 	if err != nil {
 		writeWorkflowPlanError(w, err)
@@ -130,7 +138,7 @@ func (h *WorkflowHandler) Get(w http.ResponseWriter, r *http.Request) {
 	for _, artifact := range detail.Artifacts {
 		artifacts = append(artifacts, workflowPlanArtifactDTO(artifact))
 	}
-	summary := workflowapp.PlanSummary{Plan: detail.Plan, PassCount: len(detail.Passes)}
+	summary := workflowapp.PlanSummary{Plan: detail.Plan, Project: detail.Project, PassCount: len(detail.Passes)}
 	for _, pass := range detail.Passes {
 		switch pass.Pass.Status {
 		case "completed":
@@ -179,7 +187,12 @@ func workflowPlanLimit(r *http.Request) (int, bool) {
 
 func workflowPlanSummaryDTO(value workflowapp.PlanSummary) workflowPlanSummaryResponse {
 	response := workflowPlanSummaryResponse{
-		PlanID:              value.Plan.PlanID,
+		PlanID: value.Plan.PlanID,
+		Project: workflowProjectReferenceResponse{
+			ProjectID: value.Project.ProjectID,
+			Name:      value.Project.Name,
+			Status:    value.Project.Status,
+		},
 		FeatureSlug:         value.Plan.FeatureSlug,
 		Status:              value.Plan.Status,
 		CanonicalSHA256:     value.Plan.CanonicalSHA256,

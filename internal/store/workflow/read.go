@@ -14,8 +14,9 @@ const (
 )
 
 type PlanListQuery struct {
-	Status string
-	Limit  int
+	Status       string
+	ProjectRowID sql.NullInt64
+	Limit        int
 }
 
 type RunListQuery struct {
@@ -59,12 +60,21 @@ ORDER BY repo_target COLLATE NOCASE`)
 func (s *Store) ListPlans(ctx context.Context, query PlanListQuery) ([]Plan, error) {
 	var sqlText strings.Builder
 	sqlText.WriteString(`
-SELECT id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
+SELECT id, project_row_id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
 FROM plans`)
-	args := make([]any, 0, 2)
+	conditions := make([]string, 0, 2)
+	args := make([]any, 0, 3)
 	if strings.TrimSpace(query.Status) != "" {
-		sqlText.WriteString(" WHERE status = ?")
+		conditions = append(conditions, "status = ?")
 		args = append(args, strings.TrimSpace(query.Status))
+	}
+	if query.ProjectRowID.Valid {
+		conditions = append(conditions, "project_row_id = ?")
+		args = append(args, query.ProjectRowID.Int64)
+	}
+	if len(conditions) > 0 {
+		sqlText.WriteString(" WHERE ")
+		sqlText.WriteString(strings.Join(conditions, " AND "))
 	}
 	sqlText.WriteString(" ORDER BY id DESC LIMIT ?")
 	args = append(args, normalizeWorkflowListLimit(query.Limit))
@@ -233,6 +243,7 @@ func scanPlan(row rowScanner) (Plan, error) {
 	var value Plan
 	err := row.Scan(
 		&value.ID,
+		&value.ProjectRowID,
 		&value.PlanID,
 		&value.FeatureSlug,
 		&value.Status,

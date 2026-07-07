@@ -39,11 +39,15 @@ func workflowPlanRouter(service WorkflowPlanService) http.Handler {
 
 func TestWorkflowPlanRoutesReturnNewRecordIdentities(t *testing.T) {
 	plan := workflowstore.Plan{PlanID: "plan-test", FeatureSlug: "feature", Status: workflowstore.PlanStatusActive}
+	project := workflowapp.ProjectReference{ProjectID: "project-test", Name: "Relay", Status: workflowstore.ProjectStatusActive}
 	pass := workflowstore.PlanPass{PassID: "pass-test", PassNumber: 1, Name: "Pass", RepoTarget: "relay", Status: workflowstore.PassStatusPlanned}
 	service := &fakeWorkflowPlanService{
-		summaries: []workflowapp.PlanSummary{{Plan: plan, PassCount: 1, PlannedPassCount: 1, CurrentPassID: pass.PassID}},
+		summaries: []workflowapp.PlanSummary{
+			workflowapp.PlanSummary{Plan: plan, Project: project, PassCount: 1, PlannedPassCount: 1, CurrentPassID: pass.PassID},
+		},
 		detail: workflowapp.PlanDetail{
 			Plan:      plan,
+			Project:   project,
 			Passes:    []workflowapp.PlanPassDetail{{Pass: pass, DependsOn: []string{}, Runs: []workflowapp.RunSummary{}}},
 			Artifacts: []workflowapp.ArtifactMetadata{{ArtifactID: "artifact-plan", Kind: "canonical_plan"}},
 		},
@@ -60,7 +64,7 @@ func TestWorkflowPlanRoutesReturnNewRecordIdentities(t *testing.T) {
 	if response.Code != http.StatusOK ||
 		!strings.Contains(response.Body.String(), `"passId":"pass-test"`) ||
 		!strings.Contains(response.Body.String(), `"/api/artifacts/artifact-plan/content"`) ||
-		strings.Contains(response.Body.String(), "projectId") {
+		!strings.Contains(response.Body.String(), `"projectId":"project-test"`) {
 		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
 }

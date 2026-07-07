@@ -3,11 +3,19 @@ package workflowplans
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
 	workflowartifacts "relay/internal/artifacts/workflow"
 	workflowstore "relay/internal/store/workflow"
+)
+
+var (
+	ErrProjectNotFound          = errors.New("Project not found")
+	ErrProjectArchived          = errors.New("Project is archived")
+	ErrRepositoryTargetNotFound = errors.New("repository target not found")
+	ErrPlanNotFound             = errors.New("Plan not found")
 )
 
 type IDGenerator interface {
@@ -79,17 +87,33 @@ func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (Create
 
 	result := CreatePlanResult{}
 	err = s.store.CommitArtifactBatch(ctx, batch, func(tx *workflowstore.Tx) error {
+		project, err := tx.GetProjectByProjectID(ctx, input.ProjectID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: %s", ErrProjectNotFound, input.ProjectID)
+		}
+		if err != nil {
+			return err
+		}
+		if project.Status != workflowstore.ProjectStatusActive {
+			return fmt.Errorf("%w: %s", ErrProjectArchived, project.ProjectID)
+		}
+		result.Project = project
+
 		for _, target := range input.Repositories {
 			registered, err := tx.GetRepositoryTarget(ctx, target.RepoTarget)
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w: %s", ErrRepositoryTargetNotFound, target.RepoTarget)
+			}
 			if err != nil {
-				return fmt.Errorf("repository target %q is not registered: %w", target.RepoTarget, err)
+				return err
 			}
 			if registered.RepoTarget != target.RepoTarget {
-				return fmt.Errorf("repository target %q must use registered key casing %q", target.RepoTarget, registered.RepoTarget)
+				return fmt.Errorf("%w: repository target %q must use registered key casing %q", ErrRepositoryTargetNotFound, target.RepoTarget, registered.RepoTarget)
 			}
 		}
 
 		plan, err := tx.CreatePlan(ctx, workflowstore.CreatePlanParams{
+			ProjectRowID:    project.ID,
 			PlanID:          planID,
 			FeatureSlug:     input.FeatureSlug,
 			CanonicalSHA256: canonical.SHA256,
@@ -164,9 +188,16 @@ func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (Create
 func (s *Service) GetPlan(ctx context.Context, planID string) (GetPlanResult, error) {
 	planID = strings.TrimSpace(planID)
 	if planID == "" {
-		return GetPlanResult{}, fmt.Errorf("Plan ID is required")
+		return GetPlanResult{}, fmt.Errorf("%w: Plan ID is required", ErrPlanNotFound)
 	}
 	plan, err := s.store.GetPlanByPlanID(ctx, planID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return GetPlanResult{}, fmt.Errorf("%w: %s", ErrPlanNotFound, planID)
+	}
+	if err != nil {
+		return GetPlanResult{}, err
+	}
+	project, err := s.store.GetProjectByRowID(ctx, plan.ProjectRowID)
 	if err != nil {
 		return GetPlanResult{}, err
 	}
@@ -178,10 +209,55 @@ func (s *Service) GetPlan(ctx context.Context, planID string) (GetPlanResult, er
 	if err != nil {
 		return GetPlanResult{}, fmt.Errorf("list Plan artifacts: %w", err)
 	}
-	return GetPlanResult{Plan: plan, Passes: passes, Artifacts: artifacts}, nil
+	return GetPlanResult{Project: project, Plan: plan, Passes: passes, Artifacts: artifacts}, nil
+}
+
+func (s *Service) MovePlan(ctx context.Context, input MovePlanInput) (MovePlanResult, error) {
+	planID := strings.TrimSpace(input.PlanID)
+	projectID := strings.TrimSpace(input.ProjectID)
+	if planID == "" {
+		return MovePlanResult{}, fmt.Errorf("%w: Plan ID is required", ErrPlanNotFound)
+	}
+	if projectID == "" {
+		return MovePlanResult{}, fmt.Errorf("%w: Project ID is required", ErrProjectNotFound)
+	}
+	result := MovePlanResult{}
+	err := s.store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		plan, err := tx.GetPlanByPlanID(ctx, planID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: %s", ErrPlanNotFound, planID)
+		}
+		if err != nil {
+			return err
+		}
+		project, err := tx.GetProjectByProjectID(ctx, projectID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: %s", ErrProjectNotFound, projectID)
+		}
+		if err != nil {
+			return err
+		}
+		if project.Status != workflowstore.ProjectStatusActive {
+			return fmt.Errorf("%w: %s", ErrProjectArchived, project.ProjectID)
+		}
+		result.Project = project
+		if plan.ProjectRowID == project.ID {
+			result.Plan = plan
+			return nil
+		}
+		result.Plan, err = tx.MovePlanToProject(ctx, planID, project.ID)
+		return err
+	})
+	if err != nil {
+		return MovePlanResult{}, err
+	}
+	return result, nil
 }
 
 func validateCreatePlanInput(input CreatePlanInput) error {
+	if input.ProjectID == "" || strings.TrimSpace(input.ProjectID) != input.ProjectID {
+		return fmt.Errorf("%w: Project ID is required without outer whitespace", ErrProjectNotFound)
+	}
 	if !validFeatureSlug(input.FeatureSlug) {
 		return fmt.Errorf("feature slug must be lowercase kebab-case")
 	}

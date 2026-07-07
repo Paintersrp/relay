@@ -16,6 +16,7 @@ type PassInput struct {
 }
 
 type CreatePlanInput struct {
+	ProjectID        string
 	FeatureSlug      string
 	CanonicalJSON    []byte
 	RenderedMarkdown []byte
@@ -24,13 +25,25 @@ type CreatePlanInput struct {
 }
 
 type CreatePlanResult struct {
+	Project   workflowstore.Project
 	Plan      workflowstore.Plan
 	Passes    []workflowstore.PlanPass
 	Artifacts []workflowstore.Artifact
 }
 
 type GetPlanResult struct {
+	Project   workflowstore.Project
 	Plan      workflowstore.Plan
 	Passes    []workflowstore.PlanPass
 	Artifacts []workflowstore.Artifact
+}
+
+type MovePlanInput struct {
+	PlanID    string
+	ProjectID string
+}
+
+type MovePlanResult struct {
+	Project workflowstore.Project
+	Plan    workflowstore.Plan
 }

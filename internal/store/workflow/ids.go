@@ -2,6 +2,14 @@ package workflowstore
 
 import "github.com/google/uuid"
 
+func NewProjectID() string {
+	return "project-" + uuid.NewString()
+}
+
+func NewProjectNoteID() string {
+	return "note-" + uuid.NewString()
+}
+
 func NewPlanID() string {
 	return "plan-" + uuid.NewString()
 }

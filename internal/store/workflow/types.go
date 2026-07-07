@@ -3,6 +3,12 @@ package workflowstore
 import "database/sql"
 
 const (
+	ProjectStatusActive   = "active"
+	ProjectStatusArchived = "archived"
+
+	ProjectNoteStatusOpen = "open"
+	ProjectNoteStatusDone = "done"
+
 	PlanStatusActive    = "active"
 	PlanStatusCompleted = "completed"
 
@@ -39,6 +45,33 @@ const (
 	AuditDecisionNeedsRevision = "needs_revision"
 )
 
+type Project struct {
+	ID          int64
+	ProjectID   string
+	Name        string
+	Description string
+	Status      string
+	CreatedAt   string
+	UpdatedAt   string
+}
+
+type ProjectRepositoryTarget struct {
+	ProjectRowID int64
+	RepoTarget   string
+	CreatedAt    string
+}
+
+type ProjectNote struct {
+	ID           int64
+	NoteID       string
+	ProjectRowID int64
+	Title        string
+	Body         string
+	Status       string
+	CreatedAt    string
+	UpdatedAt    string
+}
+
 type RepositoryTarget struct {
 	RepoTarget string
 	LocalPath  string
@@ -48,6 +81,7 @@ type RepositoryTarget struct {
 
 type Plan struct {
 	ID              int64
+	ProjectRowID    int64
 	PlanID          string
 	FeatureSlug     string
 	Status          string
@@ -161,7 +195,29 @@ type AuditDecision struct {
 	CreatedAt                string
 }
 
+type CreateProjectParams struct {
+	ProjectID   string
+	Name        string
+	Description string
+}
+
+type CreateProjectNoteParams struct {
+	NoteID       string
+	ProjectRowID int64
+	Title        string
+	Body         string
+}
+
+type UpdateProjectNoteParams struct {
+	NoteID       string
+	ProjectRowID int64
+	Title        string
+	Body         string
+	Status       string
+}
+
 type CreatePlanParams struct {
+	ProjectRowID    int64
 	PlanID          string
 	FeatureSlug     string
 	CanonicalSHA256 string

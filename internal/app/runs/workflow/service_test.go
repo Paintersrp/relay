@@ -469,11 +469,23 @@ func registerRunTestRepo(t *testing.T, ctx context.Context, store *workflowstore
 
 func createRunTestPlan(t *testing.T, ctx context.Context, store *workflowstore.Store) workflowplans.CreatePlanResult {
 	t.Helper()
+	var project workflowstore.Project
+	if err := store.WithTx(ctx, func(tx *workflowstore.Tx) error {
+		var err error
+		project, err = tx.CreateProject(ctx, workflowstore.CreateProjectParams{
+			ProjectID: "project-run-tests",
+			Name:      "Run tests",
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	service, err := workflowplans.NewServiceWithIDs(store, &planIDs{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	result, err := service.CreatePlan(ctx, workflowplans.CreatePlanInput{
+		ProjectID:        project.ProjectID,
 		FeatureSlug:      "feature",
 		CanonicalJSON:    []byte("{}\n"),
 		RenderedMarkdown: []byte("# Plan\n"),

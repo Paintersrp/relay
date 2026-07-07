@@ -2,7 +2,7 @@
 
 ## Runtime boundary
 
-The Go daemon is the only backend authority for repository targets, Plans, Runs, execution attempts, artifacts, audit packets, audit decisions, and lifecycle transitions.
+The Go daemon is the only backend authority for Projects, repository targets, Plans, Runs, execution attempts, artifacts, audit packets, audit decisions, and lifecycle transitions.
 
 The React workbench uses this JSON API only. The backend exposes no handoff intake, prepare, brief-approval, project-scoped planning, source/context, seed, Plan Attempt, refactor-backlog, or legacy closeout routes.
 
@@ -13,7 +13,7 @@ Default development addresses:
 - Frontend backend configuration: `VITE_RELAY_API_BASE_URL`
 - Backend frontend configuration: `RELAY_WEB_BASE_URL`
 
-All IDs in paths are Relay string identities such as `plan-*`, `pass-*`, `run-*`, `attempt-*`, and `artifact-*`. Numeric legacy IDs are not accepted.
+All IDs in paths are Relay string identities such as `project-*`, `note-*`, `plan-*`, `pass-*`, `run-*`, `attempt-*`, and `artifact-*`. Numeric legacy IDs are not accepted.
 
 ## Workflow stages
 
@@ -44,8 +44,8 @@ A newly created Run therefore opens at `/specification`.
 
 ## List bounds
 
-- Plan and Run lists default to 50 items.
-- Plan and Run lists are capped at 100 items.
+- Project, Plan, and Run lists default to 50 items.
+- Project, Plan, and Run lists are capped at 100 items.
 - A Run detail exposes at most the 50 most recent execution attempts.
 - Artifact content defaults to 64 KiB and is capped at 64 KiB per request.
 - Artifact bodies are never embedded in Plan, Run, execution-attempt, or audit metadata responses.
@@ -87,7 +87,90 @@ Repository targets are globally unique case-insensitive keys. The local path mus
 
 Returns one repository target or `404 NOT_FOUND`.
 
-No project-scoped repository route exists.
+Project repository routes create or remove non-owning references to these global targets; they never copy repository configuration.
+
+
+## Projects
+
+Projects are lightweight organizational records. They contain attached Plan references, non-owning repository references, and bounded Notes.
+
+### `GET /api/projects`
+
+Optional query parameters:
+
+- `status=active|archived`
+- `limit=1..100`
+
+Returns compact Projects with repository and note counts.
+
+### `POST /api/projects`
+
+Request:
+
+```json
+{
+  "name": "Relay",
+  "description": "Primary Relay workflow work."
+}
+```
+
+Returns `201 Created` with the created active Project.
+
+### `GET /api/projects/{projectId}`
+
+Returns one Project with repository references and bounded Notes.
+
+### `PATCH /api/projects/{projectId}`
+
+Updates Project name, description, or status. Archived Projects remain readable.
+
+### `POST /api/projects/{projectId}/repositories`
+
+Request:
+
+```json
+{
+  "repoTarget": "relay"
+}
+```
+
+Attaches an existing global repository target to the Project as a non-owning case-insensitive reference.
+
+### `DELETE /api/projects/{projectId}/repositories/{repoTarget}`
+
+Removes the non-owning Project repository reference.
+
+### `POST /api/projects/{projectId}/notes`
+
+Request:
+
+```json
+{
+  "title": "Future cleanup",
+  "body": "Review remaining legacy cleanup."
+}
+```
+
+Creates an open Project Note.
+
+### `PATCH /api/projects/{projectId}/notes/{noteId}`
+
+Updates title, body, or `status=open|done`.
+
+## Canonical browser validation
+
+### `POST /api/canonical-artifacts/validate`
+
+Request:
+
+```json
+{
+  "fileName": "feature.plan.json",
+  "canonicalContent": "{...}\n"
+}
+```
+
+Returns the computed hash, artifact kind, bounded compiler diagnostics, and notices without creating database rows or artifact files. Validation does not accept an expected hash. Canonical basenames and mutation `expectedSha256` values are validated exactly and are not whitespace-normalized.
 
 ## Plans
 
@@ -96,6 +179,7 @@ No project-scoped repository route exists.
 Optional query parameters:
 
 - `status=active|completed`
+- `projectId=project-*`
 - `limit=1..100`
 
 Returns:
@@ -105,6 +189,7 @@ Returns:
   "items": [
     {
       "planId": "plan-*",
+      "project": {"projectId": "project-*", "name": "Relay", "status": "active"},
       "featureSlug": "feature",
       "status": "active",
       "canonicalSha256": "64 lowercase hex characters",
@@ -121,6 +206,21 @@ Returns:
 }
 ```
 
+### `POST /api/plans`
+
+Request:
+
+```json
+{
+  "projectId": "project-*",
+  "fileName": "feature.plan.json",
+  "canonicalContent": "{...}\n",
+  "expectedSha256": "64 lowercase hex characters"
+}
+```
+
+The exact UTF-8 bytes of `canonicalContent` are hash-checked and compiled through the same application service used by MCP. The destination Project must be active. Project metadata is stored separately from canonical Plan JSON.
+
 ### `GET /api/plans/{planId}`
 
 Returns:
@@ -134,11 +234,23 @@ Returns:
 
 Canonical Plan JSON and rendered Plan Markdown are retrieved only through the artifact content endpoint.
 
+### `PATCH /api/plans/{planId}/project`
+
+Request:
+
+```json
+{
+  "projectId": "project-*"
+}
+```
+
+Moves the Plan atomically to an active Project without changing canonical artifacts, passes, Runs, or audit evidence.
+
 ### `GET /api/plans/{planId}/passes/{passId}`
 
 Returns one pass with dependency IDs and associated Run summaries.
 
-No Plan validation, submission, project review settings, Plan Attempt, seed, next-pass-work, or next-audit-work HTTP route exists. Canonical Plan validation and submission remain MCP operations.
+No Project review settings, Plan Attempt, legacy Plan Seed orchestration, next-pass-work, or next-audit-work HTTP route exists.
 
 ## Runs
 
@@ -168,6 +280,7 @@ Returns:
       "planId": "plan-*",
       "passId": "pass-*",
       "passNumber": 1,
+      "project": {"projectId": "project-*", "name": "Relay", "status": "active"},
       "remediatesRunId": "run-*",
       "createdAt": "ISO-8601",
       "updatedAt": "ISO-8601",
@@ -181,6 +294,23 @@ Returns:
 ```
 
 Optional properties are omitted when not applicable.
+
+### `POST /api/runs`
+
+Request:
+
+```json
+{
+  "fileName": "feature.pass-1.execution-spec.json",
+  "canonicalContent": "{...}\n",
+  "expectedSha256": "64 lowercase hex characters",
+  "planId": "plan-*",
+  "passNumber": 1,
+  "remediatesRunId": "run-*"
+}
+```
+
+`planId` and `passNumber` are supplied together for a Managed Run, whose `fileName` must end in the matching `.pass-<number>.execution-spec.json` qualifier. A Standalone Run omits both association fields and must use the unqualified `feature.execution-spec.json` form. Missing, malformed, mismatched, or Standalone pass qualifiers block before persistence. Run creation never accepts or stores a direct Project association.
 
 ### `GET /api/runs/{runId}`
 
@@ -347,9 +477,11 @@ The former local-audit, project-audit, audit submit, approve, request-revision, 
 
 Canonical tool inventories remain profile-specific:
 
-- Planner: `validate_artifact`, `submit_plan`, `get_plan`, `create_run`
+- Planner: `validate_artifact`, `list_projects`, `submit_plan`, `get_plan`, `create_run`
 - Auditor: `validate_artifact`, `create_run`, `get_audit_packet`, `record_audit_decision`
-- Local operator: the union of Planner and Auditor tools
+- Local operator: the union of Planner and Auditor tools, including `list_projects`
+
+`submit_plan` requires external `project_id`. `validate_artifact` and `create_run` remain Project-independent. `get_plan` returns compact Project metadata.
 
 Successful `create_run` output includes:
 
@@ -365,7 +497,6 @@ The URL uses `RELAY_WEB_BASE_URL` when configured.
 
 The daemon returns `404 NOT_FOUND` for every obsolete workflow route, including:
 
-- `/api/projects...`
 - `/api/runs/{legacyNumericId}/approve-intake`
 - `/api/runs/{legacyNumericId}/prepare`
 - `/api/runs/{legacyNumericId}/render-brief`

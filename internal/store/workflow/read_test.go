@@ -19,8 +19,15 @@ func TestWorkflowReadQueriesAreBoundedAndOrdered(t *testing.T) {
 		if _, err := tx.CreateRepositoryTarget(ctx, "relay", filepath.Join(t.TempDir(), "relay")); err != nil {
 			return err
 		}
-		var err error
+		project, err := tx.CreateProject(ctx, CreateProjectParams{
+			ProjectID: "project-read",
+			Name:      "Read tests",
+		})
+		if err != nil {
+			return err
+		}
 		plan, err = tx.CreatePlan(ctx, CreatePlanParams{
+			ProjectRowID:    project.ID,
 			PlanID:          "plan-read",
 			FeatureSlug:     "read-test",
 			CanonicalSHA256: strings.Repeat("a", 64),
@@ -93,6 +100,13 @@ func TestWorkflowReadQueriesAreBoundedAndOrdered(t *testing.T) {
 	plans, err := store.ListPlans(ctx, PlanListQuery{Status: PlanStatusActive, Limit: 1})
 	if err != nil || len(plans) != 1 || plans[0].PlanID != plan.PlanID {
 		t.Fatalf("plans = %+v, error = %v", plans, err)
+	}
+	projectPlans, err := store.ListPlans(ctx, PlanListQuery{
+		ProjectRowID: sql.NullInt64{Int64: plan.ProjectRowID, Valid: true},
+		Limit:        1,
+	})
+	if err != nil || len(projectPlans) != 1 || projectPlans[0].ProjectRowID != plan.ProjectRowID {
+		t.Fatalf("project plans = %+v, error = %v", projectPlans, err)
 	}
 	targets, err := store.ListPlanRepositoryTargets(ctx, plan.ID)
 	if err != nil || len(targets) != 1 || targets[0].Sequence != 1 {

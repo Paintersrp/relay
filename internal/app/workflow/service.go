@@ -76,7 +76,15 @@ func (s *Service) ListPlans(ctx context.Context, input ListPlansInput) ([]PlanSu
 	); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidWorkflowRequest, err)
 	}
-	plans, err := s.store.ListPlans(ctx, workflowstore.PlanListQuery{Status: input.Status, Limit: input.Limit})
+	query := workflowstore.PlanListQuery{Status: input.Status, Limit: input.Limit}
+	if strings.TrimSpace(input.ProjectID) != "" {
+		project, err := s.store.GetProjectByProjectID(ctx, strings.TrimSpace(input.ProjectID))
+		if err != nil {
+			return nil, err
+		}
+		query.ProjectRowID = sql.NullInt64{Int64: project.ID, Valid: true}
+	}
+	plans, err := s.store.ListPlans(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +101,10 @@ func (s *Service) ListPlans(ctx context.Context, input ListPlansInput) ([]PlanSu
 
 func (s *Service) GetPlan(ctx context.Context, planID string) (PlanDetail, error) {
 	plan, err := s.store.GetPlanByPlanID(ctx, strings.TrimSpace(planID))
+	if err != nil {
+		return PlanDetail{}, err
+	}
+	project, err := s.store.GetProjectByRowID(ctx, plan.ProjectRowID)
 	if err != nil {
 		return PlanDetail{}, err
 	}
@@ -149,6 +161,7 @@ func (s *Service) GetPlan(ctx context.Context, planID string) (PlanDetail, error
 	}
 	return PlanDetail{
 		Plan:         plan,
+		Project:      projectReference(project),
 		Repositories: repositories,
 		Passes:       passDetails,
 		Artifacts:    artifactMetadataList(artifacts),
@@ -368,11 +381,15 @@ func (s *Service) GetArtifactContent(ctx context.Context, input ArtifactContentI
 }
 
 func (s *Service) planSummary(ctx context.Context, plan workflowstore.Plan) (PlanSummary, error) {
+	project, err := s.store.GetProjectByRowID(ctx, plan.ProjectRowID)
+	if err != nil {
+		return PlanSummary{}, err
+	}
 	passes, err := s.store.ListPlanPasses(ctx, plan.ID)
 	if err != nil {
 		return PlanSummary{}, err
 	}
-	summary := PlanSummary{Plan: plan, PassCount: len(passes)}
+	summary := PlanSummary{Plan: plan, Project: projectReference(project), PassCount: len(passes)}
 	for _, pass := range passes {
 		switch pass.Status {
 		case workflowstore.PassStatusCompleted:
@@ -404,6 +421,12 @@ func (s *Service) runSummary(ctx context.Context, run workflowstore.Run) (RunSum
 			return RunSummary{}, err
 		}
 		summary.PlanID = plan.PlanID
+		project, err := s.store.GetProjectByRowID(ctx, plan.ProjectRowID)
+		if err != nil {
+			return RunSummary{}, err
+		}
+		value := projectReference(project)
+		summary.Project = &value
 	}
 	if run.PlanPassRowID.Valid {
 		pass, err := s.store.GetPlanPassByRowID(ctx, run.PlanPassRowID.Int64)
@@ -480,6 +503,10 @@ func (s *Service) artifactPath(artifact workflowstore.Artifact) (string, error) 
 		return "", fmt.Errorf("artifact path escapes workflow artifact root")
 	}
 	return path, nil
+}
+
+func projectReference(value workflowstore.Project) ProjectReference {
+	return ProjectReference{ProjectID: value.ProjectID, Name: value.Name, Status: value.Status}
 }
 
 func artifactMetadataList(values []workflowstore.Artifact) []ArtifactMetadata {

@@ -15,16 +15,41 @@ INSERT INTO repository_targets (repo_target, local_path) VALUES
     ('relay-infra',  'D:/Code/relay-infra');
 
 -- ============================================================
+-- projects and lightweight Project organization
+-- ============================================================
+INSERT INTO projects (project_id, name, description) VALUES
+    ('project-00000000-0000-0000-0000-000000000001', 'Relay', 'Primary Relay workflow work.'),
+    ('project-00000000-0000-0000-0000-000000000002', 'Relay Infrastructure', 'Infrastructure and store refactor work.');
+
+INSERT INTO project_repository_targets (project_row_id, repo_target)
+    SELECT id, 'relay' FROM projects WHERE project_id = 'project-00000000-0000-0000-0000-000000000001';
+
+INSERT INTO project_repository_targets (project_row_id, repo_target)
+    SELECT id, 'relay' FROM projects WHERE project_id = 'project-00000000-0000-0000-0000-000000000002';
+
+INSERT INTO project_repository_targets (project_row_id, repo_target)
+    SELECT id, 'relay-infra' FROM projects WHERE project_id = 'project-00000000-0000-0000-0000-000000000002';
+
+INSERT INTO project_notes (note_id, project_row_id, title, body)
+    SELECT 'note-00000000-0000-0000-0000-000000000001', id, 'Future cleanup', 'Review remaining legacy cleanup after the canonical workflow pivot.'
+    FROM projects WHERE project_id = 'project-00000000-0000-0000-0000-000000000001';
+
+-- ============================================================
 -- plans  (must start 'active'; completed_at must be NULL)
 -- ============================================================
-INSERT INTO plans (plan_id, feature_slug, canonical_sha256) VALUES
-    ('plan-00000000-0000-0000-0000-000000000001',
-     'feat/simplification',
-     'aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899'),
+INSERT INTO plans (project_row_id, plan_id, feature_slug, canonical_sha256)
+    SELECT id,
+           'plan-00000000-0000-0000-0000-000000000001',
+           'feat/simplification',
+           'aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899'
+    FROM projects WHERE project_id = 'project-00000000-0000-0000-0000-000000000001';
 
-    ('plan-00000000-0000-0000-0000-000000000002',
-     'feat/refactor-store',
-     '1122334455667788990011223344556677889900112233445566778899001122');
+INSERT INTO plans (project_row_id, plan_id, feature_slug, canonical_sha256)
+    SELECT id,
+           'plan-00000000-0000-0000-0000-000000000002',
+           'feat/refactor-store',
+           '1122334455667788990011223344556677889900112233445566778899001122'
+    FROM projects WHERE project_id = 'project-00000000-0000-0000-0000-000000000002';
 
 -- ============================================================
 -- plan_repository_targets

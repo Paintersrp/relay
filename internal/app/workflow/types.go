@@ -25,8 +25,15 @@ type RepositoryDetail struct {
 	Repository workflowstore.RepositoryTarget
 }
 
+type ProjectReference struct {
+	ProjectID string
+	Name      string
+	Status    string
+}
+
 type PlanSummary struct {
 	Plan                workflowstore.Plan
+	Project             ProjectReference
 	PassCount           int
 	CompletedPassCount  int
 	InProgressPassCount int
@@ -42,6 +49,7 @@ type PlanPassDetail struct {
 
 type PlanDetail struct {
 	Plan         workflowstore.Plan
+	Project      ProjectReference
 	Repositories []workflowstore.PlanRepositoryTarget
 	Passes       []PlanPassDetail
 	Artifacts    []ArtifactMetadata
@@ -82,6 +90,7 @@ type AuditDecisionSummary struct {
 type RunSummary struct {
 	Run             workflowstore.Run
 	Stage           string
+	Project         *ProjectReference
 	PlanID          string
 	PassID          string
 	PassNumber      int64
@@ -117,8 +126,9 @@ type ArtifactContent struct {
 }
 
 type ListPlansInput struct {
-	Status string
-	Limit  int
+	Status    string
+	ProjectID string
+	Limit     int
 }
 
 type ListRunsInput struct {

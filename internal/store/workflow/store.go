@@ -306,10 +306,11 @@ WHERE repo_target = ? COLLATE NOCASE`, repoTarget).Scan(
 func getPlanByRowID(ctx context.Context, queryer rowQueryer, rowID int64) (Plan, error) {
 	var value Plan
 	err := queryer.QueryRowContext(ctx, `
-SELECT id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
+SELECT id, project_row_id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
 FROM plans
 WHERE id = ?`, rowID).Scan(
 		&value.ID,
+		&value.ProjectRowID,
 		&value.PlanID,
 		&value.FeatureSlug,
 		&value.Status,
@@ -324,10 +325,11 @@ WHERE id = ?`, rowID).Scan(
 func getPlanByPlanID(ctx context.Context, queryer rowQueryer, planID string) (Plan, error) {
 	var value Plan
 	err := queryer.QueryRowContext(ctx, `
-SELECT id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
+SELECT id, project_row_id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
 FROM plans
 WHERE plan_id = ?`, planID).Scan(
 		&value.ID,
+		&value.ProjectRowID,
 		&value.PlanID,
 		&value.FeatureSlug,
 		&value.Status,

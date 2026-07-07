@@ -44,6 +44,8 @@ func TestWorkflowRunRoutesExposeThreeStageStateAndExplicitArtifacts(t *testing.T
 		BaseCommit: strings.Repeat("a", 40), CanonicalSHA256: strings.Repeat("b", 64),
 	}
 	summary := workflowapp.RunSummary{Run: run, Stage: workflowapp.RunStageSpecification}
+	project := workflowapp.ProjectReference{ProjectID: "project-test", Name: "Relay", Status: workflowstore.ProjectStatusArchived}
+	summary.Project = &project
 	service := &fakeWorkflowReadService{
 		runs:   []workflowapp.RunSummary{summary},
 		detail: workflowapp.RunDetail{Summary: summary, Attempts: []workflowapp.ExecutionAttemptSummary{}, Artifacts: []workflowapp.ArtifactMetadata{}},
@@ -57,6 +59,7 @@ func TestWorkflowRunRoutesExposeThreeStageStateAndExplicitArtifacts(t *testing.T
 	workflowReadRouter(service).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/runs", nil))
 	if response.Code != http.StatusOK ||
 		!strings.Contains(response.Body.String(), `"stage":"specification"`) ||
+		!strings.Contains(response.Body.String(), `"projectId":"project-test"`) ||
 		strings.Contains(response.Body.String(), "intake") ||
 		strings.Contains(response.Body.String(), "prepare") {
 		t.Fatalf("response = %d %s", response.Code, response.Body.String())
