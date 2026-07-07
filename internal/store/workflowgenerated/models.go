@@ -35,6 +35,21 @@ type AuditDecision struct {
 	CreatedAt                string `json:"created_at"`
 }
 
+type AuditPacket struct {
+	ID                    int64          `json:"id"`
+	AuditPacketID         string         `json:"audit_packet_id"`
+	RunRowID              int64          `json:"run_row_id"`
+	ExecutionAttemptRowID int64          `json:"execution_attempt_row_id"`
+	ArtifactRowID         int64          `json:"artifact_row_id"`
+	BaseCommit            string         `json:"base_commit"`
+	AuditedCommit         string         `json:"audited_commit"`
+	PacketSha256          string         `json:"packet_sha256"`
+	Status                string         `json:"status"`
+	StaleReason           string         `json:"stale_reason"`
+	CreatedAt             string         `json:"created_at"`
+	SupersededAt          sql.NullString `json:"superseded_at"`
+}
+
 type ExecutionAttempt struct {
 	ID                      int64          `json:"id"`
 	AttemptID               string         `json:"attempt_id"`
@@ -52,6 +67,7 @@ type ExecutionAttempt struct {
 
 type Plan struct {
 	ID              int64          `json:"id"`
+	ProjectRowID    int64          `json:"project_row_id"`
 	PlanID          string         `json:"plan_id"`
 	FeatureSlug     string         `json:"feature_slug"`
 	Status          string         `json:"status"`
@@ -89,6 +105,33 @@ type PlanRepositoryTarget struct {
 	Branch             string `json:"branch"`
 	PlanningBaseCommit string `json:"planning_base_commit"`
 	CreatedAt          string `json:"created_at"`
+}
+
+type Project struct {
+	ID          int64  `json:"id"`
+	ProjectID   string `json:"project_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+type ProjectNote struct {
+	ID           int64  `json:"id"`
+	NoteID       string `json:"note_id"`
+	ProjectRowID int64  `json:"project_row_id"`
+	Title        string `json:"title"`
+	Body         string `json:"body"`
+	Status       string `json:"status"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
+type ProjectRepositoryTarget struct {
+	ProjectRowID int64  `json:"project_row_id"`
+	RepoTarget   string `json:"repo_target"`
+	CreatedAt    string `json:"created_at"`
 }
 
 type RepositoryTarget struct {

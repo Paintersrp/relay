@@ -17,7 +17,7 @@ SET
     completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ? AND status = 'active'
-RETURNING id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
+RETURNING id, project_row_id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
 `
 
 func (q *Queries) CompletePlan(ctx context.Context, id int64) (Plan, error) {
@@ -25,6 +25,7 @@ func (q *Queries) CompletePlan(ctx context.Context, id int64) (Plan, error) {
 	var i Plan
 	err := row.Scan(
 		&i.ID,
+		&i.ProjectRowID,
 		&i.PlanID,
 		&i.FeatureSlug,
 		&i.Status,
@@ -209,7 +210,7 @@ func (q *Queries) CreateExecutionAttempt(ctx context.Context, arg CreateExecutio
 const createPlan = `-- name: CreatePlan :one
 INSERT INTO plans (plan_id, feature_slug, status, canonical_sha256)
 VALUES (?, ?, 'active', ?)
-RETURNING id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
+RETURNING id, project_row_id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
 `
 
 type CreatePlanParams struct {
@@ -223,6 +224,7 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, e
 	var i Plan
 	err := row.Scan(
 		&i.ID,
+		&i.ProjectRowID,
 		&i.PlanID,
 		&i.FeatureSlug,
 		&i.Status,
@@ -524,7 +526,7 @@ func (q *Queries) GetLatestExecutionAttemptByRun(ctx context.Context, runRowID i
 }
 
 const getPlanByPlanID = `-- name: GetPlanByPlanID :one
-SELECT id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
+SELECT id, project_row_id, plan_id, feature_slug, status, canonical_sha256, created_at, updated_at, completed_at
 FROM plans
 WHERE plan_id = ?
 `
@@ -534,6 +536,7 @@ func (q *Queries) GetPlanByPlanID(ctx context.Context, planID string) (Plan, err
 	var i Plan
 	err := row.Scan(
 		&i.ID,
+		&i.ProjectRowID,
 		&i.PlanID,
 		&i.FeatureSlug,
 		&i.Status,
