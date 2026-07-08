@@ -531,6 +531,56 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
     );
   });
 
+  it("makes Execute normally reachable from the setup-ready Specification view", async () => {
+    const user = userEvent.setup();
+    mocks.getRun.mockResolvedValue(
+      makeDetail(makeRun("setup_ready", "specification")),
+    );
+    mocks.getSpecification.mockResolvedValue({
+      run: makeRun("setup_ready", "specification"),
+      executionSpec: {
+        artifactId: "spec-art",
+        kind: "execution_spec",
+        mediaType: "application/json",
+        sha256: "spec-sha",
+        sizeBytes: 10,
+        contentUrl: "/spec",
+        createdAt: "2026",
+      },
+      executorBrief: {
+        artifactId: "brief-art",
+        kind: "executor_brief",
+        mediaType: "application/json",
+        sha256: "brief-sha",
+        sizeBytes: 10,
+        contentUrl: "/brief",
+        createdAt: "2026",
+      },
+    });
+
+    renderWorkbench("specification");
+
+    expect(
+      await screen.findByText("Canonical execution inputs"),
+    ).toBeInTheDocument();
+    const navigation = screen.getByRole("navigation", {
+      name: "Run stages",
+    });
+    const executeLink = within(navigation).getByRole("link", {
+      name: "Execute",
+    });
+    const auditLink = within(navigation).getByRole("link", {
+      name: "Audit",
+    });
+    expect(executeLink).not.toHaveAttribute("aria-disabled", "true");
+    expect(auditLink).toHaveAttribute("aria-disabled", "true");
+
+    await user.click(executeLink);
+    expect(mocks.link).toHaveBeenCalledWith(
+      "/runs/$runId/execute",
+    );
+  });
+
   it.each([
     ["audit", "setup_ready", "specification", "execute"],
     ["audit", "executing", "execute", "execute"],

@@ -40,14 +40,14 @@ INSERT INTO project_notes (note_id, project_row_id, title, body)
 INSERT INTO plans (project_row_id, plan_id, feature_slug, canonical_sha256)
     SELECT id,
            'plan-00000000-0000-0000-0000-000000000001',
-           'feat/simplification',
+           'relay-specification-workflow-pivot',
            'aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899'
     FROM projects WHERE project_id = 'project-00000000-0000-0000-0000-000000000001';
 
 INSERT INTO plans (project_row_id, plan_id, feature_slug, canonical_sha256)
     SELECT id,
            'plan-00000000-0000-0000-0000-000000000002',
-           'feat/refactor-store',
+           'relay-store-refactor',
            '1122334455667788990011223344556677889900112233445566778899001122'
     FROM projects WHERE project_id = 'project-00000000-0000-0000-0000-000000000002';
 
@@ -138,7 +138,7 @@ INSERT INTO runs (
 )
 SELECT
     'run-00000000-0000-0000-0001-000000000001',
-    'feat/simplification',
+    'relay-specification-workflow-pivot',
     'relay',
     pl.id,
     pp.id,
@@ -160,7 +160,7 @@ INSERT INTO runs (
     status, branch, base_commit, canonical_sha256
 ) VALUES (
     'run-00000000-0000-0000-0000-000000000099',
-    'feat/hotfix-logging',
+    'hotfix-logging',
     'relay',
     NULL, NULL, NULL,
     'created',

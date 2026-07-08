@@ -32,7 +32,7 @@ describe("RunStepper canonical durable-stage gating", () => {
     expect(screen.getByRole("button", { name: "Audit" })).toBeInTheDocument();
   });
 
-  it("does not navigate ahead of the durable Specification stage", async () => {
+  it("exposes Execute as the setup-ready next stage and still blocks Audit", async () => {
     const user = userEvent.setup();
     render(
       <RunStepper
@@ -42,9 +42,14 @@ describe("RunStepper canonical durable-stage gating", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Execute" }));
     await user.click(screen.getByRole("button", { name: "Audit" }));
     expect(mocks.navigate).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Execute" }));
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: "/runs/$runId/execute",
+      params: { runId: "run-1" },
+    });
   });
 
   it("returns from backward review to the durable Audit stage", async () => {

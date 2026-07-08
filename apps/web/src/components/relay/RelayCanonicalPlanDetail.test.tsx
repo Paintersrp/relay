@@ -110,6 +110,18 @@ describe("RelayCanonicalPlanDetail", () => {
     mocks.movePlan.mockReset();
   });
 
+  it("renders the normalized ordered pass collection", () => {
+  renderDetail();
+
+  expect(screen.getByText("Pass 1: First")).toBeInTheDocument();
+  expect(
+    screen.getByText("pass-1 · relay · planned"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("link", { name: /Create Managed Run/ }),
+  ).toBeInTheDocument();
+});
+
   it("contains dialog focus and restores focus to the opener on Escape", async () => {
     const user = userEvent.setup();
     renderDetail();

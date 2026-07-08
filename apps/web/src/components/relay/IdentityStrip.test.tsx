@@ -57,6 +57,26 @@ describe("IdentityStrip canonical three-stage navigation", () => {
     });
   });
 
+  it("exposes Execute as the setup-ready next stage while keeping Audit blocked", async () => {
+    const user = userEvent.setup();
+    render(
+      <IdentityStrip
+        run={run("setup_ready")}
+        selectedStage="specification"
+      />,
+    );
+
+    const group = screen.getByRole("group", { name: "Pipeline position" });
+    await user.click(within(group).getByRole("button", { name: "Audit" }));
+    expect(mocks.navigate).not.toHaveBeenCalled();
+
+    await user.click(within(group).getByRole("button", { name: "Execute" }));
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: "/runs/$runId/execute",
+      params: { runId: "run-1" },
+    });
+  });
+
   it("allows backward review followed by return to the durable Audit stage", async () => {
     const user = userEvent.setup();
     render(

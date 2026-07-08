@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 import type { WorkflowRunStage } from '@/features/relay-runs'
 import {
   derivePipelineStages,
+  resolveWorkflowAvailableThroughStage,
   resolveWorkflowStage,
 } from '@/features/relay-navigation/pipeline'
 import { resolveStatusColorToken } from '@/features/relay-navigation/statusColor'
@@ -48,7 +49,16 @@ export function RunStepper({
 }: RunStepperProps) {
   const router = useRouter()
   const durableStage = resolveWorkflowStage(status)
-  const stages = derivePipelineStages(durableStage, selectedStage, status)
+  const availableThroughStage = resolveWorkflowAvailableThroughStage(
+    status,
+    durableStage,
+  )
+  const stages = derivePipelineStages(
+    durableStage,
+    selectedStage,
+    status,
+    availableThroughStage,
+  )
   const attentionTokenColor = `var(${resolveStatusColorToken(status as string)})`
 
   return (

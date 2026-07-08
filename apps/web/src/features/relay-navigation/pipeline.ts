@@ -99,6 +99,20 @@ export function resolveWorkflowStage(
     : undefined;
 }
 
+/**
+ * Resolve the maximum stage that may be opened from the current lifecycle.
+ *
+ * `setup_ready` remains durably at Specification, but its canonical next
+ * action is to enter Execute and start an attempt. Every other lifecycle
+ * uses its durable stage as the reachability ceiling.
+ */
+export function resolveWorkflowAvailableThroughStage(
+  status: WorkflowRunStatus | string,
+  durableStage: WorkflowRunStage | undefined = resolveWorkflowStage(status),
+): WorkflowRunStage | undefined {
+  return status === "setup_ready" ? "execute" : durableStage;
+}
+
 // ------------------------------------------------------------
 // Attention classification (closed set only)
 // ------------------------------------------------------------
@@ -145,28 +159,32 @@ export function derivePipelineStages(
   durableStage: WorkflowRunStage | undefined,
   selectedRouteStage?: WorkflowRunStage | undefined,
   runStatus?: WorkflowRunStatus | string,
+  availableThroughStage: WorkflowRunStage | undefined = durableStage,
 ): PipelineStageView[] {
   const durableIndex =
     durableStage !== undefined ? PIPELINE_STAGE_ORDER.indexOf(durableStage) : -1;
+  const availableThroughIndex =
+    availableThroughStage !== undefined
+      ? PIPELINE_STAGE_ORDER.indexOf(availableThroughStage)
+      : -1;
   const needsAttention =
     runStatus !== undefined && durableIndex !== -1 && isAttentionStatus(runStatus);
 
   return PIPELINE_STAGE_ORDER.map((step, index) => {
     const isSelected = step === selectedRouteStage;
     const isAtOrBeforeDurable = durableIndex !== -1 && index <= durableIndex;
+    const isAvailable =
+      availableThroughIndex !== -1 && index <= availableThroughIndex;
 
     let stageStatus: PipelineStageStatus;
     if (durableIndex === -1) {
-      // No durable stage resolved: all stages are pending.
       stageStatus = "pending";
     } else if (isSelected) {
-      // The currently viewed route stage: mark as current or attention.
-      stageStatus = needsAttention && step === durableStage ? "attention" : "current";
+      stageStatus =
+        needsAttention && step === durableStage ? "attention" : "current";
     } else if (isAtOrBeforeDurable) {
-      // Stages at or before the durable position that aren't selected: completed.
       stageStatus = "completed";
     } else {
-      // Stages beyond the durable position: pending.
       stageStatus = "pending";
     }
 
@@ -175,9 +193,7 @@ export function derivePipelineStages(
       label: PIPELINE_STAGE_LABELS[step],
       status: stageStatus,
       to: PIPELINE_STAGE_ROUTES[step],
-      // Stages at or before the durable stage are navigable; stages beyond
-      // the durable stage remain unavailable per the brief requirement.
-      navigable: isAtOrBeforeDurable,
+      navigable: isAvailable,
     } satisfies PipelineStageView;
   });
 }

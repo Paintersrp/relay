@@ -46,6 +46,7 @@ import {
   type WorkflowRunStatus,
 } from "@/features/relay-runs";
 import { EXECUTOR_ADAPTER_OPTIONS } from "@/features/relay-runs";
+import { resolveWorkflowAvailableThroughStage } from "@/features/relay-navigation/pipeline";
 import { cn } from "@/lib/utils";
 
 interface RelayCanonicalRunWorkbenchProps {
@@ -615,11 +616,12 @@ export function RelayCanonicalRunWorkbench({
   const detail = query.data;
   const run = detail.run;
 
-  const maxStage = run.status === "setup_ready" ? "execute" : run.stage;
-  if (stageIndex(stage) > stageIndex(maxStage)) {
+  const availableThroughStage =
+    resolveWorkflowAvailableThroughStage(run.status, run.stage) ?? run.stage;
+  if (stageIndex(stage) > stageIndex(availableThroughStage)) {
     return (
       <Navigate
-        to={workflowRunStageRoute(maxStage)}
+        to={workflowRunStageRoute(availableThroughStage)}
         params={{ runId }}
         replace
       />
@@ -648,7 +650,7 @@ export function RelayCanonicalRunWorkbench({
         <StageNavigation
           runId={runId}
           selectedStage={stage}
-          availableThroughStage={run.stage}
+          availableThroughStage={availableThroughStage}
         />
         {stage === "specification" ? <SpecificationPanel runId={runId} /> : null}
         {stage === "execute" ? (

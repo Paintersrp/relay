@@ -217,7 +217,7 @@ func workflowPassDTO(value workflowapp.PlanPassDetail) workflowPassResponse {
 		Name:       value.Pass.Name,
 		RepoTarget: value.Pass.RepoTarget,
 		Status:     value.Pass.Status,
-		DependsOn:  append([]string(nil), value.DependsOn...),
+		DependsOn:  append([]string{}, value.DependsOn...),
 		CreatedAt:  value.Pass.CreatedAt,
 		UpdatedAt:  value.Pass.UpdatedAt,
 		Runs:       make([]workflowRunReferenceResponse, 0, len(value.Runs)),

@@ -12,6 +12,7 @@ import { useNavigate } from '@tanstack/react-router'
 import type { WorkflowRunStage } from '@/features/relay-runs'
 import {
   derivePipelineStages,
+  resolveWorkflowAvailableThroughStage,
   resolveWorkflowStage,
 } from '@/features/relay-navigation/pipeline'
 import { resolveStatusColorToken } from '@/features/relay-navigation/statusColor'
@@ -40,7 +41,16 @@ interface IdentityStripProps {
 export function IdentityStrip({ run, selectedStage, className }: IdentityStripProps) {
   const navigate = useNavigate()
   const durableStage = resolveWorkflowStage(run.status)
-  const stages = derivePipelineStages(durableStage, selectedStage, run.status)
+  const availableThroughStage = resolveWorkflowAvailableThroughStage(
+    run.status,
+    durableStage,
+  )
+  const stages = derivePipelineStages(
+    durableStage,
+    selectedStage,
+    run.status,
+    availableThroughStage,
+  )
   const attentionTokenColor = `var(${resolveStatusColorToken(run.status)})`
 
   return (

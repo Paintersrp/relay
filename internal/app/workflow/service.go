@@ -155,7 +155,7 @@ func (s *Service) GetPlan(ctx context.Context, planID string) (PlanDetail, error
 		}
 		passDetails = append(passDetails, PlanPassDetail{
 			Pass:      pass,
-			DependsOn: append([]string(nil), dependenciesByPass[pass.ID]...),
+			DependsOn: append([]string{}, dependenciesByPass[pass.ID]...),
 			Runs:      runSummaries,
 		})
 	}
