@@ -19,6 +19,7 @@ import { Route as ProjectsNewRouteImport } from './routes/projects/new'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
 import { Route as PlansNewRouteImport } from './routes/plans/new'
 import { Route as PlansPlanIdRouteImport } from './routes/plans/$planId'
+import { Route as RunsRunIdSpecificationRouteImport } from './routes/runs/$runId/specification'
 import { Route as RunsRunIdPrepareRouteImport } from './routes/runs/$runId/prepare'
 import { Route as RunsRunIdIntakeRouteImport } from './routes/runs/$runId/intake'
 import { Route as RunsRunIdExecuteRouteImport } from './routes/runs/$runId/execute'
@@ -76,6 +77,11 @@ const PlansPlanIdRoute = PlansPlanIdRouteImport.update({
   path: '/plans/$planId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RunsRunIdSpecificationRoute = RunsRunIdSpecificationRouteImport.update({
+  id: '/specification',
+  path: '/specification',
+  getParentRoute: () => RunsRunIdRoute,
+} as any)
 const RunsRunIdPrepareRoute = RunsRunIdPrepareRouteImport.update({
   id: '/prepare',
   path: '/prepare',
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
   '/runs/$runId/intake': typeof RunsRunIdIntakeRoute
   '/runs/$runId/prepare': typeof RunsRunIdPrepareRoute
+  '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
   '/plans/$planId/passes/$passId': typeof PlansPlanIdPassesPassIdRoute
 }
 export interface FileRoutesByTo {
@@ -142,6 +149,7 @@ export interface FileRoutesByTo {
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
   '/runs/$runId/intake': typeof RunsRunIdIntakeRoute
   '/runs/$runId/prepare': typeof RunsRunIdPrepareRoute
+  '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
   '/plans/$planId/passes/$passId': typeof PlansPlanIdPassesPassIdRoute
 }
 export interface FileRoutesById {
@@ -161,6 +169,7 @@ export interface FileRoutesById {
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
   '/runs/$runId/intake': typeof RunsRunIdIntakeRoute
   '/runs/$runId/prepare': typeof RunsRunIdPrepareRoute
+  '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
   '/plans/$planId/passes/$passId': typeof PlansPlanIdPassesPassIdRoute
 }
 export interface FileRouteTypes {
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/runs/$runId/execute'
     | '/runs/$runId/intake'
     | '/runs/$runId/prepare'
+    | '/runs/$runId/specification'
     | '/plans/$planId/passes/$passId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/runs/$runId/execute'
     | '/runs/$runId/intake'
     | '/runs/$runId/prepare'
+    | '/runs/$runId/specification'
     | '/plans/$planId/passes/$passId'
   id:
     | '__root__'
@@ -217,6 +228,7 @@ export interface FileRouteTypes {
     | '/runs/$runId/execute'
     | '/runs/$runId/intake'
     | '/runs/$runId/prepare'
+    | '/runs/$runId/specification'
     | '/plans/$planId/passes/$passId'
   fileRoutesById: FileRoutesById
 }
@@ -305,6 +317,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlansPlanIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/runs/$runId/specification': {
+      id: '/runs/$runId/specification'
+      path: '/specification'
+      fullPath: '/runs/$runId/specification'
+      preLoaderRoute: typeof RunsRunIdSpecificationRouteImport
+      parentRoute: typeof RunsRunIdRoute
+    }
     '/runs/$runId/prepare': {
       id: '/runs/$runId/prepare'
       path: '/prepare'
@@ -378,6 +397,7 @@ interface RunsRunIdRouteChildren {
   RunsRunIdExecuteRoute: typeof RunsRunIdExecuteRoute
   RunsRunIdIntakeRoute: typeof RunsRunIdIntakeRoute
   RunsRunIdPrepareRoute: typeof RunsRunIdPrepareRoute
+  RunsRunIdSpecificationRoute: typeof RunsRunIdSpecificationRoute
 }
 
 const RunsRunIdRouteChildren: RunsRunIdRouteChildren = {
@@ -385,6 +405,7 @@ const RunsRunIdRouteChildren: RunsRunIdRouteChildren = {
   RunsRunIdExecuteRoute: RunsRunIdExecuteRoute,
   RunsRunIdIntakeRoute: RunsRunIdIntakeRoute,
   RunsRunIdPrepareRoute: RunsRunIdPrepareRoute,
+  RunsRunIdSpecificationRoute: RunsRunIdSpecificationRoute,
 }
 
 const RunsRunIdRouteWithChildren = RunsRunIdRoute._addFileChildren(

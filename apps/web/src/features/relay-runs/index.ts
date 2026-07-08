@@ -99,3 +99,7 @@ export {
 } from './executorOptions'
 export { runArtifactContentQueryOptions } from './queries'
 export { evaluateValidationGate, evaluateExecuteValidationAction, evaluateRepairEligibility, isAuditCandidateStatus } from './validationGate'
+
+export * from "./canonical-types";
+export * from "./canonical-api";
+export * from "./canonical-queries";

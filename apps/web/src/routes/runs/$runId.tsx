@@ -1,9 +1,12 @@
-import { createFileRoute, Outlet, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { runDetailQueryOptions } from "@/features/relay-runs";
-import { Skeleton } from "@/components/ui/skeleton";
+import { createFileRoute, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
+
+import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import {
+  workflowRunDetailQueryOptions,
+  workflowRunStageRoute,
+} from "@/features/relay-runs";
 
 export const Route = createFileRoute("/runs/$runId")({
   component: RunLayout,
@@ -11,39 +14,35 @@ export const Route = createFileRoute("/runs/$runId")({
 
 function RunLayout() {
   const { runId } = Route.useParams();
-  const { data: run, isLoading } = useQuery(runDetailQueryOptions(runId));
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const query = useQuery(workflowRunDetailQueryOptions(runId));
+  const hasStagePath =
+    pathname.endsWith("/specification") ||
+    pathname.endsWith("/execute") ||
+    pathname.endsWith("/audit");
 
-  if (isLoading) {
+  if (hasStagePath) return <Outlet />;
+
+  if (query.isLoading) {
+    return <RelayStateSurface tone="loading" title="Loading Run" description="Resolving the canonical Run stage." />;
+  }
+  if (query.error || !query.data) {
     return (
-      <div className="flex flex-col gap-3 p-6">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-4 w-96" />
-        <Skeleton className="h-4 w-48" />
+      <div className="p-6">
+        <RelayStateSurface
+          tone="danger"
+          title="Run failed to load"
+          description={query.error instanceof Error ? query.error.message : "Relay could not load this Run."}
+          action={<Button type="button" variant="outline" size="sm" onClick={() => void query.refetch()}>Retry Run</Button>}
+        />
       </div>
     );
   }
-
-  if (!run) {
-    return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center">
-        <div className="text-4xl">⚠️</div>
-        <h1 className="text-lg font-semibold">Run not found</h1>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          No relay run with ID{" "}
-          <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
-            {runId}
-          </code>{" "}
-          was found in the Relay backend database.
-        </p>
-        <Button variant="outline" size="sm" asChild>
-          <Link to="/runs">
-            <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
-            Back to Runs
-          </Link>
-        </Button>
-      </div>
-    );
-  }
-
-  return <Outlet />;
+  return (
+    <Navigate
+      to={workflowRunStageRoute(query.data.run.stage)}
+      params={{ runId }}
+      replace
+    />
+  );
 }

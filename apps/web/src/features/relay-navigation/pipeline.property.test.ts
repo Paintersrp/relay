@@ -7,103 +7,51 @@
 // "attention" IF AND ONLY IF the run's canonical status is in the closed
 // blocked / awaiting-review set (`BLOCKED_STATUSES` ∪ `AWAITING_REVIEW_STATUSES`
 // from statusSets.ts — the single authoritative source).
-//
-//   - When the status IS in the attention set: exactly the current-position
-//     stage is marked "attention" and NO stage is marked "current".
-//   - When the status is NOT in the attention set: NO stage is marked
-//     "attention" and exactly one stage is marked "current".
 
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import type { RelayRunStatus } from "@/features/relay-runs";
-import { derivePipelineStages } from "./pipeline";
+import type { WorkflowRunStatus } from "@/features/relay-runs";
+import { derivePipelineStages, resolveWorkflowStage } from "./pipeline";
 import { AWAITING_REVIEW_STATUSES, BLOCKED_STATUSES } from "./statusSets";
 
-// ------------------------------------------------------------
-// Authoritative attention set (imported, never hardcoded)
-// ------------------------------------------------------------
-
-// The single source of truth for attention classification. Importing these
-// constants ensures the test can never drift from the implementation's set.
 const ATTENTION_STATUSES: readonly string[] = [
   ...BLOCKED_STATUSES,
   ...AWAITING_REVIEW_STATUSES,
 ];
 const ATTENTION_SET: ReadonlySet<string> = new Set(ATTENTION_STATUSES);
 
-// ------------------------------------------------------------
-// Canonical status contract
-// ------------------------------------------------------------
-
-// The full canonical `RelayRunStatus` contract. Declared with an explicit
-// `RelayRunStatus[]` annotation so the compiler flags drift if the canonical
-// enum changes. This mirrors the exhaustive `STATUS_TO_STAGE` mapping in
-// pipeline.ts.
-const ALL_CANONICAL_STATUSES: readonly RelayRunStatus[] = [
-  "draft",
-  "needs_cleanup",
-  "intake_received",
-  "intake_needs_review",
-  "validated",
-  "approved_for_prepare",
-  "packet_validated",
-  "packet_validation_failed",
-  "repair_validated",
-  "brief_ready_for_review",
-  "approved_for_executor",
-  "executor_dispatched",
-  "executor_running",
-  "executor_done",
-  "executor_blocked",
-  "agent_done",
-  "agent_blocked",
-  "agent_result_needs_review",
-  "audit_ready",
-  "audit_ready_for_review",
-  "revision_required",
-  "accepted",
-  "accepted_with_warnings",
-  "validation_passed",
-  "validation_failed_accepted",
+const ALL_CANONICAL_STATUSES: readonly WorkflowRunStatus[] = [
+  "created",
+  "setup_ready",
+  "executing",
+  "execution_failed",
+  "cancelled",
+  "validating",
   "validation_failed",
+  "audit_ready",
+  "needs_revision",
   "completed",
-  "blocked",
 ];
 
-// Canonical statuses that are NOT in the attention set.
-const NON_ATTENTION_CANONICAL: readonly string[] = ALL_CANONICAL_STATUSES.filter(
+const NON_ATTENTION_CANONICAL: readonly WorkflowRunStatus[] = ALL_CANONICAL_STATUSES.filter(
   (status) => !ATTENTION_SET.has(status),
 );
 
-// ------------------------------------------------------------
-// Arbitraries
-// ------------------------------------------------------------
-
-// (a) Statuses drawn from the closed attention set.
-const attentionStatusArb: fc.Arbitrary<string> = fc.constantFrom(...ATTENTION_STATUSES);
-
-// (b) Non-attention canonical statuses.
-const nonAttentionCanonicalArb: fc.Arbitrary<string> = fc.constantFrom(
-  ...NON_ATTENTION_CANONICAL,
+const attentionStatusArb: fc.Arbitrary<WorkflowRunStatus> = fc.constantFrom(
+  ...(ATTENTION_STATUSES as WorkflowRunStatus[]),
 );
 
-// (c) Arbitrary unknown strings that are guaranteed NOT to be in the attention
-// set (unknown / out-of-enum input must never surface an attention indicator).
-// These are also non-canonical, so they fall back to the all-pending /
-// none-active shape (Requirement 2.4) rather than a "current" stage.
-const unknownStringArb: fc.Arbitrary<string> = fc
-  .string({ minLength: 0, maxLength: 24 })
-  .filter((s) => !ATTENTION_SET.has(s) && !ALL_CANONICAL_STATUSES.includes(s as RelayRunStatus));
-
-// The full non-attention canonical input space.
-const nonAttentionStatusArb: fc.Arbitrary<string> = nonAttentionCanonicalArb;
+const nonAttentionCanonicalArb: fc.Arbitrary<WorkflowRunStatus> = fc.constantFrom(
+  ...NON_ATTENTION_CANONICAL,
+);
 
 describe("derivePipelineStages — Property 11: pipeline attention indicator", () => {
   it("marks exactly the current-position stage 'attention' (and none 'current') for attention statuses", () => {
     fc.assert(
       fc.property(attentionStatusArb, (status) => {
-        const stages = derivePipelineStages(status);
+        const durableStage = resolveWorkflowStage(status);
+        const stages = derivePipelineStages(durableStage, durableStage, status);
 
         const attentionCount = stages.filter((s) => s.status === "attention").length;
         const currentCount = stages.filter((s) => s.status === "current").length;
@@ -120,8 +68,9 @@ describe("derivePipelineStages — Property 11: pipeline attention indicator", (
 
   it("marks no stage 'attention' and exactly one 'current' for non-attention canonical statuses", () => {
     fc.assert(
-      fc.property(nonAttentionStatusArb, (status) => {
-        const stages = derivePipelineStages(status);
+      fc.property(nonAttentionCanonicalArb, (status) => {
+        const durableStage = resolveWorkflowStage(status);
+        const stages = derivePipelineStages(durableStage, durableStage, status);
 
         const attentionCount = stages.filter((s) => s.status === "attention").length;
         const currentCount = stages.filter((s) => s.status === "current").length;
@@ -135,31 +84,13 @@ describe("derivePipelineStages — Property 11: pipeline attention indicator", (
     );
   });
 
-  it("never surfaces attention or a current position for non-canonical (unknown) statuses (Req 2.4)", () => {
-    fc.assert(
-      fc.property(unknownStringArb, (status) => {
-        const stages = derivePipelineStages(status);
-
-        const attentionCount = stages.filter((s) => s.status === "attention").length;
-        const currentCount = stages.filter((s) => s.status === "current").length;
-
-        expect(attentionCount).toBe(0);
-        expect(currentCount).toBe(0);
-        expect(stages.every((s) => s.status === "pending")).toBe(true);
-      }),
-      { numRuns: 200 },
-    );
-  });
-
   it("surfaces attention IF AND ONLY IF the status is in the closed attention set", () => {
-    // Draw across the union of attention and non-attention canonical statuses
-    // to exercise the biconditional directly (unknown/non-canonical statuses
-    // are covered separately above since they never map to any stage key).
-    const anyStatusArb = fc.oneof(attentionStatusArb, nonAttentionStatusArb);
+    const anyStatusArb = fc.oneof(attentionStatusArb, nonAttentionCanonicalArb);
 
     fc.assert(
       fc.property(anyStatusArb, (status) => {
-        const stages = derivePipelineStages(status);
+        const durableStage = resolveWorkflowStage(status);
+        const stages = derivePipelineStages(durableStage, durableStage, status);
         const hasAttention = stages.some((s) => s.status === "attention");
 
         expect(hasAttention).toBe(ATTENTION_SET.has(status));

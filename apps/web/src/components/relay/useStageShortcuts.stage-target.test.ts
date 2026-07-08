@@ -5,8 +5,8 @@
 //
 // Validates: Requirements 4.8, 4.9
 //   - 4.8: next/previous move to the immediately adjacent stage in pipeline
-//     order (Intake -> Compile/Render -> Execute -> Audit).
-//   - 4.9: at the first stage (Intake) previous is a no-op; at the last stage
+//     order (Specification -> Execute -> Audit).
+//   - 4.9: at the first stage (Specification) previous is a no-op; at the last stage
 //     (Audit) next is a no-op.
 
 import { describe, expect, it } from "vitest";
@@ -16,15 +16,11 @@ import {
   type StageShortcutRoute,
 } from "./useStageShortcuts";
 import { PIPELINE_STAGE_ROUTES } from "@/features/relay-navigation/pipeline";
-import type { RelayRunStep } from "@/features/relay-runs";
+import type { WorkflowRunStage } from "@/features/relay-runs";
 
 describe("resolveStageShortcutTarget — adjacent stage navigation (Req 4.8)", () => {
   it("moves forward through interior stages", () => {
-    expect(resolveStageShortcutTarget("intake", "next")).toEqual({
-      step: "prepare",
-      to: "/runs/$runId/prepare",
-    });
-    expect(resolveStageShortcutTarget("prepare", "next")).toEqual({
+    expect(resolveStageShortcutTarget("specification", "next")).toEqual({
       step: "execute",
       to: "/runs/$runId/execute",
     });
@@ -40,19 +36,15 @@ describe("resolveStageShortcutTarget — adjacent stage navigation (Req 4.8)", (
       to: "/runs/$runId/execute",
     });
     expect(resolveStageShortcutTarget("execute", "previous")).toEqual({
-      step: "prepare",
-      to: "/runs/$runId/prepare",
-    });
-    expect(resolveStageShortcutTarget("prepare", "previous")).toEqual({
-      step: "intake",
-      to: "/runs/$runId/intake",
+      step: "specification",
+      to: "/runs/$runId/specification",
     });
   });
 });
 
 describe("resolveStageShortcutTarget — clamped boundaries (Req 4.9)", () => {
-  it("is a no-op for previous at the first stage (Intake)", () => {
-    expect(resolveStageShortcutTarget("intake", "previous")).toBeNull();
+  it("is a no-op for previous at the first stage (Specification)", () => {
+    expect(resolveStageShortcutTarget("specification", "previous")).toBeNull();
   });
 
   it("is a no-op for next at the last stage (Audit)", () => {
@@ -63,16 +55,14 @@ describe("resolveStageShortcutTarget — clamped boundaries (Req 4.9)", () => {
 describe("resolveStageShortcutTarget — route mapping stays in sync with pipeline", () => {
   it("resolves each target to its documented PIPELINE_STAGE_ROUTES template", () => {
     const cases: Array<{
-      current: RelayRunStep;
+      current: WorkflowRunStage;
       direction: "next" | "previous";
-      expected: RelayRunStep;
+      expected: WorkflowRunStage;
     }> = [
-      { current: "intake", direction: "next", expected: "prepare" },
-      { current: "prepare", direction: "next", expected: "execute" },
+      { current: "specification", direction: "next", expected: "execute" },
       { current: "execute", direction: "next", expected: "audit" },
       { current: "audit", direction: "previous", expected: "execute" },
-      { current: "execute", direction: "previous", expected: "prepare" },
-      { current: "prepare", direction: "previous", expected: "intake" },
+      { current: "execute", direction: "previous", expected: "specification" },
     ];
 
     for (const { current, direction, expected } of cases) {

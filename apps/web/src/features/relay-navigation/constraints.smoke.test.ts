@@ -338,12 +338,9 @@ describe("Task 13.5 — architecture-boundary constraints", () => {
     const actual = [...BLOCKED_STATUSES, ...AWAITING_REVIEW_STATUSES].sort();
     const expected = [
       "audit_ready",
-      "audit_ready_for_review",
-      "blocked",
-      "brief_ready_for_review",
-      "executor_blocked",
-      "intake_needs_review",
-      "revision_required",
+      "cancelled",
+      "execution_failed",
+      "needs_revision",
     ];
     expect(actual).toEqual(expected);
   });

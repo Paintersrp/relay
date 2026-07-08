@@ -6,9 +6,9 @@
 // For any stage in `PIPELINE_STAGE_ORDER` and any direction ("next" |
 // "previous"), `adjacentStage` returns the immediately adjacent stage in
 // pipeline order, clamped to the range [0, len - 1]:
-//   - "previous" from the first stage (Intake) stays Intake.
+//   - "previous" from the first stage (Specification) stays Specification.
 //   - "next" from the last stage (Audit) stays Audit.
-// The result is always one of the four valid, in-range stages.
+// The result is always one of the three valid, in-range stages.
 
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -19,9 +19,6 @@ import { adjacentStage, PIPELINE_STAGE_ORDER } from "./pipeline";
 // Independent reference implementation
 // ------------------------------------------------------------
 
-// Compute the expected adjacent stage from first principles: locate the stage's
-// index, step +/- 1 based on direction, then clamp into [0, len - 1]. This is
-// deliberately independent of the implementation under test.
 function expectedAdjacent(
   current: (typeof PIPELINE_STAGE_ORDER)[number],
   direction: "next" | "previous",
@@ -66,8 +63,8 @@ describe("adjacentStage — Property 7: clamped stage adjacency", () => {
   });
 
   // Explicit boundary example cases.
-  it("clamps 'previous' at the first stage (Intake stays Intake)", () => {
-    expect(adjacentStage("intake", "previous")).toBe("intake");
+  it("clamps 'previous' at the first stage (Specification stays Specification)", () => {
+    expect(adjacentStage("specification", "previous")).toBe("specification");
   });
 
   it("clamps 'next' at the last stage (Audit stays Audit)", () => {
@@ -75,14 +72,12 @@ describe("adjacentStage — Property 7: clamped stage adjacency", () => {
   });
 
   it("steps forward through interior stages", () => {
-    expect(adjacentStage("intake", "next")).toBe("prepare");
-    expect(adjacentStage("prepare", "next")).toBe("execute");
+    expect(adjacentStage("specification", "next")).toBe("execute");
     expect(adjacentStage("execute", "next")).toBe("audit");
   });
 
   it("steps backward through interior stages", () => {
     expect(adjacentStage("audit", "previous")).toBe("execute");
-    expect(adjacentStage("execute", "previous")).toBe("prepare");
-    expect(adjacentStage("prepare", "previous")).toBe("intake");
+    expect(adjacentStage("execute", "previous")).toBe("specification");
   });
 });

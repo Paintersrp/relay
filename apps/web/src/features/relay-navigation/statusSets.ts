@@ -17,17 +17,15 @@
 // the Run_Pipeline attention classification. These constants remain the sole
 // authority for both.
 //
-// Values are drawn from the canonical `RelayRunStatus` contract in the runs
-// feature; this module does not redefine that contract.
+// Values are drawn from the canonical `WorkflowRunStatus` contract in the
+// relay-runs feature (canonical-types.ts). This module does not redefine
+// that contract.
 
-export const BLOCKED_STATUSES = ["blocked", "executor_blocked"] as const;
+export const BLOCKED_STATUSES = ["execution_failed", "cancelled"] as const;
 
 export const AWAITING_REVIEW_STATUSES = [
-  "intake_needs_review",
-  "brief_ready_for_review",
   "audit_ready",
-  "audit_ready_for_review",
-  "revision_required",
+  "needs_revision",
 ] as const;
 
 export type BlockedStatus = (typeof BLOCKED_STATUSES)[number];

@@ -1,22 +1,21 @@
 import { useRouter } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
-import type { RelayRunStatus, RelayRunStep } from '@/features/relay-runs'
-import { derivePipelineStages } from '@/features/relay-navigation/pipeline'
+import type { WorkflowRunStage } from '@/features/relay-runs'
+import {
+  derivePipelineStages,
+  resolveWorkflowStage,
+} from '@/features/relay-navigation/pipeline'
 import { resolveStatusColorToken } from '@/features/relay-navigation/statusColor'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 
-// Typed route templates keyed by pipeline stage. `derivePipelineStages` returns
-// the same route templates as opaque strings; this map re-associates them with
-// the TanStack Router-typed `to` union so navigation stays type-checked.
+// Typed route templates keyed by canonical pipeline stage.
 const STAGE_ROUTES: Record<
-  RelayRunStep,
-  | '/runs/$runId/intake'
-  | '/runs/$runId/prepare'
+  WorkflowRunStage,
+  | '/runs/$runId/specification'
   | '/runs/$runId/execute'
   | '/runs/$runId/audit'
 > = {
-  intake: '/runs/$runId/intake',
-  prepare: '/runs/$runId/prepare',
+  specification: '/runs/$runId/specification',
   execute: '/runs/$runId/execute',
   audit: '/runs/$runId/audit',
 }
@@ -24,11 +23,18 @@ const STAGE_ROUTES: Record<
 interface RunStepperProps {
   runId: string
   /**
-   * Canonical Run `status`. Stage derivation is driven SOLELY by this field via
-   * `derivePipelineStages` (Requirements 6.3, 6.7); the stepper never gates on
-   * `activeStep`, `lifecycleState`, `state`, or `statusSeverity`.
+   * Canonical Run `status`. The durable stage is derived SOLELY from this
+   * field via `resolveWorkflowStage` (brief requirement: durable-stage
+   * navigation gating). The stepper never gates on legacy derived display
+   * fields (`activeStep`, `lifecycleState`, `state`, `statusSeverity`).
    */
-  status: RelayRunStatus
+  status: any
+  /**
+   * The currently selected route stage. Controls `aria-current` and panel
+   * highlighting. Reviewing an earlier stage does not reduce navigability
+   * of the durable stage.
+   */
+  selectedStage?: WorkflowRunStage
   isRunning?: boolean
   className?: string
 }
@@ -36,12 +42,14 @@ interface RunStepperProps {
 export function RunStepper({
   runId,
   status,
+  selectedStage,
   isRunning = false,
   className,
 }: RunStepperProps) {
   const router = useRouter()
-  const stages = derivePipelineStages(status)
-  const attentionTokenColor = `var(${resolveStatusColorToken(status)})`
+  const durableStage = resolveWorkflowStage(status)
+  const stages = derivePipelineStages(durableStage, selectedStage, status)
+  const attentionTokenColor = `var(${resolveStatusColorToken(status as string)})`
 
   return (
     <nav
@@ -49,10 +57,6 @@ export function RunStepper({
       className={cn('flex h-10 items-stretch gap-0 overflow-x-auto', className)}
     >
       {stages.map((stage) => {
-        // The affected (current-position) stage is reported as "attention" when
-        // the canonical status is in the closed blocked / awaiting-review set;
-        // it is still the current position, so treat both as "current" visually
-        // and add a distinct attention indicator on top (Req 6.2, 6.4).
         const isAttention = stage.status === 'attention'
         const isCurrent = stage.status === 'current' || isAttention
         const isCompleted = stage.status === 'completed'
@@ -72,7 +76,7 @@ export function RunStepper({
               !isCurrent &&
                 !isCompleted &&
                 'border-transparent text-muted-foreground hover:text-foreground',
-              !stage.navigable && 'cursor-default',
+              !stage.navigable && 'cursor-default opacity-40',
             )}
             style={
               isAttention
@@ -82,9 +86,7 @@ export function RunStepper({
             aria-current={isCurrent ? 'step' : undefined}
             data-stage-status={stage.status}
             onClick={() => {
-              // Non-navigable stages are a no-op and keep the current route
-              // (Req 6.6). Navigable stages route to their run-scoped stage
-              // route (Req 6.5).
+              // Non-navigable stages (beyond the durable stage) are a no-op.
               if (!stage.navigable) return
               void router.navigate({
                 to: STAGE_ROUTES[stage.step],

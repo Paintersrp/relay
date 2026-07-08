@@ -203,7 +203,7 @@ describe("Home_Overview per-section states (Req 3.7)", () => {
         {
           id: "run-1",
           title: "Blocked run alpha",
-          status: "blocked",
+          status: "execution_failed",
           updatedAt: "2024-03-01T12:00:00.000Z",
         },
       ],
