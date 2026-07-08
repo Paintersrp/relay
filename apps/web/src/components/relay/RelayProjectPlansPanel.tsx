@@ -1,122 +1,82 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { plansListQueryOptions } from "@/features/relay-plans";
+import { ArrowRight, Plus } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import type {
+  WorkflowProject,
+  WorkflowProjectPlanSummary,
+} from "@/features/relay-projects";
 
 interface RelayProjectPlansPanelProps {
-  projectId: string;
+  project: WorkflowProject;
+  plans: WorkflowProjectPlanSummary[];
 }
 
-export function RelayProjectPlansPanel({ projectId }: RelayProjectPlansPanelProps) {
-  const plansQuery = useQuery(plansListQueryOptions({ projectId, limit: 100 }));
-
-  if (plansQuery.isLoading) {
-    return (
-      <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
-        <div className="border-b border-[var(--relay-row-border)] px-5 py-3">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            Managed Plans
-          </h2>
-        </div>
-        <div className="p-5 text-sm text-muted-foreground">Loading plans...</div>
-      </section>
-    );
-  }
-
-  if (plansQuery.isError) {
-    return (
-      <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
-        <div className="border-b border-[var(--relay-row-border)] px-5 py-3">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            Managed Plans
-          </h2>
-        </div>
-        <div className="p-5 text-sm text-destructive">
-          Failed to load plans: {plansQuery.error instanceof Error ? plansQuery.error.message : "Unknown error"}
-        </div>
-      </section>
-    );
-  }
-
-  const plans = plansQuery.data?.plans || [];
+export function RelayProjectPlansPanel({
+  project,
+  plans,
+}: RelayProjectPlansPanelProps) {
+  const planSearch = { projectId: project.projectId };
 
   return (
     <section className="border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]">
-      <div className="border-b border-[var(--relay-row-border)] px-5 py-3">
-        <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-          Managed Plans
-        </h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--relay-row-border)] px-5 py-3">
+        <div>
+          <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            Attached Plans
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Plans are organized by this Project without giving it authority over canonical content or execution.
+          </p>
+        </div>
+        {project.status === "active" ? (
+          <Button asChild size="sm">
+            <Link to="/plans/new" search={planSearch}>
+              <Plus className="size-3.5" />
+              Submit Plan
+            </Link>
+          </Button>
+        ) : (
+          <span className="max-w-xs text-right text-xs text-muted-foreground">
+            Restore this Project before submitting or moving another Plan into it.
+          </span>
+        )}
       </div>
 
       {plans.length === 0 ? (
         <div className="p-5 text-sm text-muted-foreground">
-          No managed plans are currently scoped to this project.
+          No Plans are attached to this Project.
         </div>
       ) : (
         <div className="divide-y divide-[var(--relay-row-border)]">
-          {plans.map((plan) => (
-            <Link
-              key={plan.id}
-              to="/plans/$planId"
-              params={{ planId: plan.planId }}
-              className="block px-5 py-3 hover:bg-[var(--relay-content-bg)] transition-colors"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm">{plan.title}</span>
-                    <Badge variant={plan.status === "active" ? "running" : "outline"} className="text-xs">
+          {plans.map((plan) => {
+            const planParams = { planId: plan.planId };
+            return (
+              <Link
+                key={plan.planId}
+                to="/plans/$planId"
+                params={planParams}
+                className="flex flex-col gap-3 px-5 py-3 transition-colors hover:bg-[var(--relay-content-bg)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--relay-accent)] sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-foreground">{plan.featureSlug}</span>
+                    <Badge variant={plan.status === "active" ? "running" : "outline"}>
                       {plan.status}
                     </Badge>
                   </div>
-                  <div className="font-mono text-xs text-muted-foreground">
+                  <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">
                     {plan.planId}
-                  </div>
-                  {plan.goal && (
-                    <div className="text-xs text-muted-foreground line-clamp-2">
-                      {plan.goal}
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>Project: {plan.projectId || projectId}</span>
-                    <span>•</span>
-                    <span>{plan.passCount} passes</span>
-                    {plan.completedPassCount !== undefined && (
-                      <>
-                        <span>•</span>
-                        <span>{plan.completedPassCount} completed</span>
-                      </>
-                    )}
-                    {plan.completionReady && (
-                      <>
-                        <span>•</span>
-                        <Badge variant="warning" className="text-xs">Completion Ready</Badge>
-                      </>
-                    )}
-                  </div>
+                  </p>
                 </div>
-                <div className="text-xs text-muted-foreground whitespace-nowrap">
-                  {new Date(plan.updatedAt).toLocaleDateString()}
-                </div>
-              </div>
-              {(plan.currentPassName || plan.nextPassName) && (
-                <div className="mt-2 text-xs">
-                  {plan.currentPassName && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Current:</span>
-                      <span>{plan.currentPassName}</span>
-                    </div>
-                  )}
-                  {plan.nextPassName && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Next:</span>
-                      <span>{plan.nextPassName}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </Link>
-          ))}
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  Open Plan
+                  <ArrowRight className="size-3.5" />
+                </span>
+              </Link>
+            );
+          })}
         </div>
       )}
     </section>

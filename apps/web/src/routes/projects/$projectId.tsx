@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { RelayProjectDetail } from "@/components/relay/RelayProjectDetail";
 import { RelayStateSurface } from "@/components/relay/RelayStateSurface";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { projectDetailQueryOptions } from "@/features/relay-projects";
+import { workflowProjectDetailQueryOptions } from "@/features/relay-projects";
 
 export const Route = createFileRoute("/projects/$projectId")({
   component: ProjectDetailPage,
@@ -13,37 +13,30 @@ export const Route = createFileRoute("/projects/$projectId")({
 
 function ProjectDetailPage() {
   const { projectId } = Route.useParams();
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const isChildRoute = pathname.startsWith(`/projects/${projectId}/`);
-  const { data, isLoading, error } = useQuery(projectDetailQueryOptions(projectId));
+  const projectQuery = useQuery(workflowProjectDetailQueryOptions(projectId));
   const shellClassName = "mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5";
-
-  if (isChildRoute) {
-    return <Outlet />;
-  }
 
   return (
     <section className="min-h-0 flex-1 overflow-y-auto bg-[var(--relay-page-body-bg)]">
-      {isLoading ? (
+      {projectQuery.isLoading ? (
         <div className={shellClassName}>
           <div className="space-y-3 border-b border-[var(--relay-row-border)] pb-4">
             <Skeleton className="h-4 w-40" />
             <Skeleton className="h-7 w-80 max-w-full" />
             <Skeleton className="h-4 w-full max-w-4xl" />
           </div>
-          <Skeleton className="h-28 w-full rounded" />
-          <Skeleton className="h-14 w-full rounded" />
-          <Skeleton className="h-72 w-full rounded" />
-          <Skeleton className="h-36 w-full rounded" />
+          <Skeleton className="h-40 w-full rounded" />
+          <Skeleton className="h-48 w-full rounded" />
+          <Skeleton className="h-48 w-full rounded" />
         </div>
       ) : null}
 
-      {!isLoading && error ? (
+      {!projectQuery.isLoading && projectQuery.error ? (
         <div className={shellClassName}>
           <RelayStateSurface
             tone="danger"
             title="Project failed to load"
-            description="Relay could not load this project configuration. Check the API process and try again."
+            description="Relay could not load this Project. Check the API process and try again."
             metadata={`Project ID: ${projectId}`}
             action={
               <Button variant="outline" size="sm" asChild>
@@ -54,12 +47,12 @@ function ProjectDetailPage() {
         </div>
       ) : null}
 
-      {!isLoading && !error && !data?.project ? (
+      {!projectQuery.isLoading && !projectQuery.error && !projectQuery.data?.project.projectId ? (
         <div className={shellClassName}>
           <RelayStateSurface
             tone="empty"
             title="Project not available"
-            description="Relay returned an incomplete project response for this project identifier."
+            description="Relay returned an incomplete Project response for this identifier."
             metadata={`Project ID: ${projectId}`}
             action={
               <Button variant="outline" size="sm" asChild>
@@ -70,9 +63,9 @@ function ProjectDetailPage() {
         </div>
       ) : null}
 
-      {!isLoading && !error && data?.project ? (
+      {!projectQuery.isLoading && !projectQuery.error && projectQuery.data?.project.projectId ? (
         <div className={shellClassName}>
-          <RelayProjectDetail project={data.project} />
+          <RelayProjectDetail detail={projectQuery.data} />
         </div>
       ) : null}
     </section>

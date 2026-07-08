@@ -803,7 +803,13 @@ function RightPane(props: RightPaneProps) {
 
 // ─── Main Workbench ─────────────────────────────────────────────────────────────────────────────────
 
-export function RelayPlanSubmissionWorkbench() {
+interface RelayPlanSubmissionWorkbenchProps {
+  initialProjectId?: string;
+}
+
+export function RelayPlanSubmissionWorkbench({
+  initialProjectId = "",
+}: RelayPlanSubmissionWorkbenchProps) {
   const queryClient = useQueryClient();
   const [rawJson, setRawJson] = React.useState("");
   const [state, setState] = React.useState<AttemptReviewState>("draft");
@@ -812,7 +818,7 @@ export function RelayPlanSubmissionWorkbench() {
   const [parsedPlan, setParsedPlan] = React.useState<PlannerPassPlan | undefined>();
   const [issues, setIssues] = React.useState<PlanValidationIssue[]>([]);
   const [actionError, setActionError] = React.useState<ActionError | undefined>();
-  const [projectId, setProjectId] = React.useState("");
+  const [projectId, setProjectId] = React.useState(initialProjectId);
   const [planJsonArtifactPath, setPlanJsonArtifactPath] = React.useState("");
   const [planJsonArtifactSha256, setPlanJsonArtifactSha256] = React.useState("");
   const [planMarkdownArtifactPath, setPlanMarkdownArtifactPath] = React.useState("");
