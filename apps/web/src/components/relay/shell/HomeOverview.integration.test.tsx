@@ -237,8 +237,6 @@ describe("Home_Overview per-section states (Req 3.7)", () => {
 const REQ_10_1_ROUTES: ReadonlyArray<{ pattern: string; nav: string }> = [
   { pattern: "/runs", nav: "/runs" },
   { pattern: "/runs/new", nav: "/runs/new" },
-  { pattern: "/runs/$runId/intake", nav: "/runs/run-1/intake" },
-  { pattern: "/runs/$runId/prepare", nav: "/runs/run-1/prepare" },
   { pattern: "/runs/$runId/execute", nav: "/runs/run-1/execute" },
   { pattern: "/runs/$runId/audit", nav: "/runs/run-1/audit" },
   { pattern: "/plans", nav: "/plans" },

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, Navigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -197,6 +197,12 @@ function isNonterminalAttemptStatus(
   return status !== undefined && NONTERMINAL_ATTEMPT_STATUSES.has(status);
 }
 
+function isTerminalAttempt(
+  status: WorkflowExecutionAttemptStatus | undefined,
+): boolean {
+  return status !== undefined && !NONTERMINAL_ATTEMPT_STATUSES.has(status);
+}
+
 function isCleanupPendingAttempt(
   attempt: WorkflowExecutionAttempt | WorkflowExecutionAttemptSummary | null,
 ): attempt is WorkflowExecutionAttempt {
@@ -242,9 +248,14 @@ function ExecutePanel({
     }
   }, [attempts, selectedAttemptId]);
 
+  const cachedAttempt = queryClient.getQueryData<WorkflowExecutionAttempt>(
+    workflowRunKeys.attempt(runId, selectedAttemptId ?? ""),
+  );
+  const isCachedTerminal = cachedAttempt && isTerminalAttempt(cachedAttempt.status);
+
   const attemptQuery = useQuery({
     ...workflowAttemptQueryOptions(runId, selectedAttemptId ?? ""),
-    enabled: selectedAttemptId !== null,
+    enabled: selectedAttemptId !== null && !isCachedTerminal,
     refetchInterval: (query) => {
       const detailed = query.state.data as WorkflowExecutionAttempt | undefined;
       const status = detailed?.status ?? selectedSummary?.status;
@@ -258,6 +269,18 @@ function ExecutePanel({
       queryKey: workflowRunKeys.detail(runId),
     });
   }, [queryClient, runId]);
+
+  const attemptStatus = attemptQuery.data?.status;
+  const [lastStatus, setLastStatus] = React.useState<WorkflowExecutionAttemptStatus | undefined>(undefined);
+
+  React.useEffect(() => {
+    if (attemptStatus) {
+      if (lastStatus && isNonterminalAttemptStatus(lastStatus) && !isNonterminalAttemptStatus(attemptStatus)) {
+        refreshRun();
+      }
+      setLastStatus(attemptStatus);
+    }
+  }, [attemptStatus, lastStatus, refreshRun]);
 
   const retainDetailedAttempt = React.useCallback(
     (attempt: WorkflowExecutionAttempt) => {
@@ -591,6 +614,18 @@ export function RelayCanonicalRunWorkbench({
   }
   const detail = query.data;
   const run = detail.run;
+
+  const maxStage = run.status === "setup_ready" ? "execute" : run.stage;
+  if (stageIndex(stage) > stageIndex(maxStage)) {
+    return (
+      <Navigate
+        to={workflowRunStageRoute(maxStage)}
+        params={{ runId }}
+        replace
+      />
+    );
+  }
+
   return (
     <section
       className="min-h-0 flex-1 overflow-y-auto bg-[var(--relay-page-body-bg)]"

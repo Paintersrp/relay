@@ -807,8 +807,8 @@ export function RunIntakeStageActions({
   if (run.status === "approved_for_prepare" || run.activeStep === "prepare") {
     return (
       <Button size="sm" asChild>
-        <Link to="/runs/$runId/prepare" params={{ runId: run.id }}>
-          Proceed to Compile / Render
+        <Link to="/runs/$runId/specification" params={{ runId: run.id }}>
+          Proceed to Specification
           <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
         </Link>
       </Button>

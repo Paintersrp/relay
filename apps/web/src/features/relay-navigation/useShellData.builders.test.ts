@@ -9,8 +9,6 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { RelayRun } from "@/features/relay-runs";
-
 import {
   buildAttentionInputs,
   buildRecentActivityItems,
@@ -166,8 +164,8 @@ describe("buildRecentActivityItems", () => {
 });
 
 describe("buildRunHierarchy", () => {
-  function makeRun(overrides: Partial<RelayRun>): RelayRun {
-    return { id: "run-1", title: "First Run", name: "First Run", ...overrides } as RelayRun;
+  function makeRun(overrides: any): any {
+    return { runId: "run-1", featureSlug: "First Run", ...overrides };
   }
 
   it("returns an empty hierarchy for a missing run", () => {
@@ -175,19 +173,20 @@ describe("buildRunHierarchy", () => {
   });
 
   it("returns only the run leaf for a standalone run (Req 2.6)", () => {
-    const hierarchy = buildRunHierarchy(makeRun({ planContext: undefined }), plans, projects);
+    const hierarchy = buildRunHierarchy(makeRun({ planId: undefined }), plans, projects);
     expect(hierarchy).toEqual({ run: { id: "run-1", label: "First Run" } });
   });
 
   it("resolves plan, pass, and project ancestors from planContext + loaded lists", () => {
     const hierarchy = buildRunHierarchy(
       makeRun({
-        planContext: {
-          planId: "plan-1",
-          planTitle: "Alpha Plan",
-          passId: "pass-1",
-          passName: "Bootstrap",
-          passSequence: 1,
+        planId: "plan-1",
+        passId: "pass-1",
+        passNumber: 1,
+        project: {
+          projectId: "proj-1",
+          name: "Core Project",
+          status: "active",
         },
       }),
       plans,
@@ -196,18 +195,18 @@ describe("buildRunHierarchy", () => {
 
     expect(hierarchy.run).toEqual({ id: "run-1", label: "First Run" });
     expect(hierarchy.plan).toEqual({ id: "plan-1", label: "Alpha Plan" });
-    expect(hierarchy.pass).toEqual({ id: "pass-1", label: "Bootstrap", sequence: 1 });
+    expect(hierarchy.pass).toEqual({ id: "pass-1", label: "Pass 1", sequence: 1 });
     expect(hierarchy.project).toEqual({ id: "proj-1", label: "Core Project" });
   });
 
   it("omits the project ancestor when the plan/project cannot be resolved (Req 2.7, 2.10)", () => {
     const hierarchy = buildRunHierarchy(
-      makeRun({ planContext: { planId: "plan-unknown", planTitle: "Ghost Plan" } }),
+      makeRun({ planId: "plan-unknown" }),
       plans,
       projects,
     );
 
-    expect(hierarchy.plan).toEqual({ id: "plan-unknown", label: "Ghost Plan" });
+    expect(hierarchy.plan).toEqual({ id: "plan-unknown", label: "plan-unknown" });
     expect(hierarchy.project).toBeUndefined();
     expect(hierarchy.pass).toBeUndefined();
   });

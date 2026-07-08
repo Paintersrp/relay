@@ -20,8 +20,6 @@ import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projec
 import { Route as PlansNewRouteImport } from './routes/plans/new'
 import { Route as PlansPlanIdRouteImport } from './routes/plans/$planId'
 import { Route as RunsRunIdSpecificationRouteImport } from './routes/runs/$runId/specification'
-import { Route as RunsRunIdPrepareRouteImport } from './routes/runs/$runId/prepare'
-import { Route as RunsRunIdIntakeRouteImport } from './routes/runs/$runId/intake'
 import { Route as RunsRunIdExecuteRouteImport } from './routes/runs/$runId/execute'
 import { Route as RunsRunIdAuditRouteImport } from './routes/runs/$runId/audit'
 import { Route as ProjectsProjectIdRefactorBacklogRouteImport } from './routes/projects/$projectId.refactor-backlog'
@@ -82,16 +80,6 @@ const RunsRunIdSpecificationRoute = RunsRunIdSpecificationRouteImport.update({
   path: '/specification',
   getParentRoute: () => RunsRunIdRoute,
 } as any)
-const RunsRunIdPrepareRoute = RunsRunIdPrepareRouteImport.update({
-  id: '/prepare',
-  path: '/prepare',
-  getParentRoute: () => RunsRunIdRoute,
-} as any)
-const RunsRunIdIntakeRoute = RunsRunIdIntakeRouteImport.update({
-  id: '/intake',
-  path: '/intake',
-  getParentRoute: () => RunsRunIdRoute,
-} as any)
 const RunsRunIdExecuteRoute = RunsRunIdExecuteRouteImport.update({
   id: '/execute',
   path: '/execute',
@@ -128,8 +116,6 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId/refactor-backlog': typeof ProjectsProjectIdRefactorBacklogRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
-  '/runs/$runId/intake': typeof RunsRunIdIntakeRoute
-  '/runs/$runId/prepare': typeof RunsRunIdPrepareRoute
   '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
   '/plans/$planId/passes/$passId': typeof PlansPlanIdPassesPassIdRoute
 }
@@ -147,8 +133,6 @@ export interface FileRoutesByTo {
   '/projects/$projectId/refactor-backlog': typeof ProjectsProjectIdRefactorBacklogRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
-  '/runs/$runId/intake': typeof RunsRunIdIntakeRoute
-  '/runs/$runId/prepare': typeof RunsRunIdPrepareRoute
   '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
   '/plans/$planId/passes/$passId': typeof PlansPlanIdPassesPassIdRoute
 }
@@ -167,8 +151,6 @@ export interface FileRoutesById {
   '/projects/$projectId/refactor-backlog': typeof ProjectsProjectIdRefactorBacklogRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
-  '/runs/$runId/intake': typeof RunsRunIdIntakeRoute
-  '/runs/$runId/prepare': typeof RunsRunIdPrepareRoute
   '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
   '/plans/$planId/passes/$passId': typeof PlansPlanIdPassesPassIdRoute
 }
@@ -188,8 +170,6 @@ export interface FileRouteTypes {
     | '/projects/$projectId/refactor-backlog'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
-    | '/runs/$runId/intake'
-    | '/runs/$runId/prepare'
     | '/runs/$runId/specification'
     | '/plans/$planId/passes/$passId'
   fileRoutesByTo: FileRoutesByTo
@@ -207,8 +187,6 @@ export interface FileRouteTypes {
     | '/projects/$projectId/refactor-backlog'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
-    | '/runs/$runId/intake'
-    | '/runs/$runId/prepare'
     | '/runs/$runId/specification'
     | '/plans/$planId/passes/$passId'
   id:
@@ -226,8 +204,6 @@ export interface FileRouteTypes {
     | '/projects/$projectId/refactor-backlog'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
-    | '/runs/$runId/intake'
-    | '/runs/$runId/prepare'
     | '/runs/$runId/specification'
     | '/plans/$planId/passes/$passId'
   fileRoutesById: FileRoutesById
@@ -324,20 +300,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RunsRunIdSpecificationRouteImport
       parentRoute: typeof RunsRunIdRoute
     }
-    '/runs/$runId/prepare': {
-      id: '/runs/$runId/prepare'
-      path: '/prepare'
-      fullPath: '/runs/$runId/prepare'
-      preLoaderRoute: typeof RunsRunIdPrepareRouteImport
-      parentRoute: typeof RunsRunIdRoute
-    }
-    '/runs/$runId/intake': {
-      id: '/runs/$runId/intake'
-      path: '/intake'
-      fullPath: '/runs/$runId/intake'
-      preLoaderRoute: typeof RunsRunIdIntakeRouteImport
-      parentRoute: typeof RunsRunIdRoute
-    }
     '/runs/$runId/execute': {
       id: '/runs/$runId/execute'
       path: '/execute'
@@ -395,16 +357,12 @@ const ProjectsProjectIdRouteWithChildren =
 interface RunsRunIdRouteChildren {
   RunsRunIdAuditRoute: typeof RunsRunIdAuditRoute
   RunsRunIdExecuteRoute: typeof RunsRunIdExecuteRoute
-  RunsRunIdIntakeRoute: typeof RunsRunIdIntakeRoute
-  RunsRunIdPrepareRoute: typeof RunsRunIdPrepareRoute
   RunsRunIdSpecificationRoute: typeof RunsRunIdSpecificationRoute
 }
 
 const RunsRunIdRouteChildren: RunsRunIdRouteChildren = {
   RunsRunIdAuditRoute: RunsRunIdAuditRoute,
   RunsRunIdExecuteRoute: RunsRunIdExecuteRoute,
-  RunsRunIdIntakeRoute: RunsRunIdIntakeRoute,
-  RunsRunIdPrepareRoute: RunsRunIdPrepareRoute,
   RunsRunIdSpecificationRoute: RunsRunIdSpecificationRoute,
 }
 

@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   reconcileAttempt: vi.fn(),
   prepareAudit: vi.fn(),
   link: vi.fn(),
+  navigate: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -36,6 +37,10 @@ vi.mock("@tanstack/react-router", () => ({
       {children}
     </a>
   ),
+  Navigate: (props: unknown) => {
+    mocks.navigate(props);
+    return <div data-testid="run-stage-redirect" />;
+  },
 }));
 
 vi.mock("@/features/relay-runs", () => ({
@@ -235,7 +240,6 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
   );
 
   it.each([
-    ["created", "specification"],
     ["executing", "execute"],
     ["validating", "audit"],
     ["audit_ready", "audit"],
@@ -254,6 +258,27 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
       ).toBeDisabled();
     },
   );
+
+  it("disables Start for the created lifecycle at specification stage", async () => {
+    mocks.getRun.mockResolvedValue(
+      makeDetail(makeRun("created", "specification")),
+    );
+    mocks.getSpecification.mockResolvedValue({
+      run: makeRun("created", "specification"),
+      executionSpec: { artifactId: "spec-art", kind: "execution_spec", mediaType: "application/json", sha256: "spec-sha", sizeBytes: 10, contentUrl: "/spec", createdAt: "2026" },
+      executorBrief: { artifactId: "brief-art", kind: "executor_brief", mediaType: "application/json", sha256: "brief-sha", sizeBytes: 10, contentUrl: "/brief", createdAt: "2026" },
+    });
+
+    renderWorkbench("specification");
+
+    // At specification stage, the Execute panel is not rendered, so no Start button
+    expect(
+      await screen.findByText("Canonical execution inputs"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Start attempt" }),
+    ).not.toBeInTheDocument();
+  });
 
   it("allows active cancellation but does not expose generic reconciliation", async () => {
     const user = userEvent.setup();
@@ -437,6 +462,102 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
     expect(mocks.getAttempt).toHaveBeenCalledTimes(3);
   });
 
+  it("refreshes durable Run state after a naturally failed attempt and clears the stale active summary", async () => {
+    const runningSummary = makeSummary("running");
+    const failedSummary = makeSummary("failed", {
+      finishedAt: "2026-07-08T00:03:00Z",
+    });
+    mocks.getRun
+      .mockResolvedValueOnce(
+        makeDetail(makeRun("executing", "execute"), [runningSummary]),
+      )
+      .mockResolvedValueOnce(
+        makeDetail(makeRun("execution_failed", "execute"), [failedSummary]),
+      );
+    mocks.getAttempt.mockResolvedValue(makeDetailedAttempt("running"));
+
+    const { queryClient } = renderWorkbench("execute");
+    expect(await screen.findByText("current output")).toBeInTheDocument();
+
+    act(() => {
+      queryClient.setQueryData(
+        ["workflow-runs", "detail", "run-1", "attempt", "attempt-1"],
+        makeDetailedAttempt("failed", {
+          finishedAt: "2026-07-08T00:03:00Z",
+        }),
+      );
+    });
+
+    await waitFor(() => expect(mocks.getRun).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Start attempt" })).toBeEnabled(),
+    );
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("refreshes durable Run state after natural success and exposes the Audit stage", async () => {
+    const runningSummary = makeSummary("running");
+    const succeededSummary = makeSummary("succeeded", {
+      finishedAt: "2026-07-08T00:03:00Z",
+    });
+    mocks.getRun
+      .mockResolvedValueOnce(
+        makeDetail(makeRun("executing", "execute"), [runningSummary]),
+      )
+      .mockResolvedValueOnce(
+        makeDetail(makeRun("audit_ready", "audit"), [succeededSummary]),
+      );
+    mocks.getAttempt.mockResolvedValue(makeDetailedAttempt("running"));
+
+    const { queryClient } = renderWorkbench("execute");
+    expect(await screen.findByText("current output")).toBeInTheDocument();
+
+    act(() => {
+      queryClient.setQueryData(
+        ["workflow-runs", "detail", "run-1", "attempt", "attempt-1"],
+        makeDetailedAttempt("succeeded", {
+          finishedAt: "2026-07-08T00:03:00Z",
+        }),
+      );
+    });
+
+    await waitFor(() => expect(mocks.getRun).toHaveBeenCalledTimes(2));
+    const navigation = screen.getByRole("navigation", { name: "Run stages" });
+    await waitFor(() =>
+      expect(within(navigation).getByRole("link", { name: "Audit" })).not.toHaveAttribute(
+        "aria-disabled",
+        "true",
+      ),
+    );
+  });
+
+  it.each([
+    ["audit", "setup_ready", "specification", "execute"],
+    ["audit", "executing", "execute", "execute"],
+  ] as const)(
+    "redirects direct %s access when the durable lifecycle is %s",
+    async (requestedStage, status, runStage, expectedRedirectStage) => {
+      mocks.getRun.mockResolvedValueOnce(
+        makeDetail(makeRun(status, runStage)),
+      );
+
+      renderWorkbench(requestedStage);
+
+      await waitFor(() => {
+        const calls = mocks.navigate.mock.calls;
+        expect(calls.length).toBeGreaterThan(0);
+        const lastCall = calls[calls.length - 1];
+        expect(lastCall).toEqual([{
+          to: `/runs/$runId/${expectedRedirectStage}`,
+          params: { runId: "run-1" },
+          replace: true,
+        }]);
+      });
+    },
+  );
+
+
+
   it("uses the selected route only for current presentation and returns by keyboard to the durable Execute stage", async () => {
     const user = userEvent.setup();
     mocks.getRun.mockResolvedValue(
@@ -460,4 +581,25 @@ describe("RelayCanonicalRunWorkbench canonical lifecycle and navigation", () => 
     await user.click(executeLink);
     expect(mocks.link).toHaveBeenCalledWith("/runs/$runId/execute");
   });
+
+  it("redirects direct URLs that exceed the durable backend stage to the current durable stage", async () => {
+    mocks.getRun.mockResolvedValueOnce(
+      makeDetail(makeRun("created", "specification")),
+    );
+
+    renderWorkbench("execute");
+
+    await waitFor(() => {
+      const calls = mocks.navigate.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall).toEqual([{
+        to: "/runs/$runId/specification",
+        params: { runId: "run-1" },
+        replace: true,
+      }]);
+    });
+  });
+
+
 });
