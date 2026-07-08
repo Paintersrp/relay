@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"relay/internal/executor"
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -67,13 +68,22 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 		return PrepareWorkflowAuditResult{Run: current.Run, Packet: current.Packet, Artifact: current.Artifact}, nil
 	}
 
+
 	packetID := workflowstore.NewAuditPacketID()
-	packetBytes, err := buildWorkflowAuditPacket(ctx, s.store, run, packetID, attempt, commit)
+	batch, err := s.store.ArtifactStore().Begin("audit-packets/" + packetID)
 	if err != nil {
 		return PrepareWorkflowAuditResult{}, err
 	}
-	batch, err := s.store.ArtifactStore().Begin("audit-packets/" + packetID)
+	diffArtifactID := workflowstore.NewArtifactID()
+	stagedDiff, err := batch.Stage("unified_diff", "unified-diff.patch", "text/x-diff; charset=utf-8", []byte(executor.RedactSensitiveText(commit.Diff)))
 	if err != nil {
+		_ = batch.Rollback()
+		return PrepareWorkflowAuditResult{}, err
+	}
+	diffArtifact := workflowstore.Artifact{ArtifactID: diffArtifactID, OwnerType: workflowstore.ArtifactOwnerExecutionAttempt, ExecutionAttemptRowID: sql.NullInt64{Int64: attempt.ID, Valid: true}, Kind: stagedDiff.Kind, RelativePath: stagedDiff.RelativePath, MediaType: stagedDiff.MediaType, SHA256: stagedDiff.SHA256, SizeBytes: stagedDiff.SizeBytes}
+	packetBytes, err := buildWorkflowAuditPacket(ctx, s.store, run, packetID, attempt, commit, diffArtifact)
+	if err != nil {
+		_ = batch.Rollback()
 		return PrepareWorkflowAuditResult{}, err
 	}
 	staged, err := batch.Stage("audit_packet", "audit-packet.json", "application/json", packetBytes)
@@ -112,6 +122,9 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 			return ErrWorkflowAuditPacketStale
 		}
 		if err := tx.MarkCurrentAuditPacketsStale(ctx, currentRun.ID, "superseded_by_new_packet"); err != nil {
+			return err
+		}
+		if _, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{ArtifactID: diffArtifactID, OwnerType: workflowstore.ArtifactOwnerExecutionAttempt, ExecutionAttemptRowID: sql.NullInt64{Int64: currentAttempt.ID, Valid: true}, Kind: stagedDiff.Kind, RelativePath: stagedDiff.RelativePath, MediaType: stagedDiff.MediaType, SHA256: stagedDiff.SHA256, SizeBytes: stagedDiff.SizeBytes}); err != nil {
 			return err
 		}
 		artifact, err := tx.CreateArtifact(ctx, workflowstore.CreateArtifactParams{
@@ -278,26 +291,27 @@ func (s *WorkflowAuditService) GetCurrentArtifact(ctx context.Context, input Get
 	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
 		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditPacketStale
 	}
-	var declared *WorkflowAuditEvidenceItem
-	for index := range packet.ValidationEvidence {
-		item := &packet.ValidationEvidence[index]
-		if item.ArtifactID == input.ArtifactReference {
-			if declared != nil {
-				return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactReference
-			}
-			declared = item
-		}
-	}
-	if declared == nil {
-		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactReference
+	declared, err := resolvePacketArtifact(packet.Artifacts, input.ArtifactReference)
+	if err != nil {
+		return GetWorkflowAuditArtifactResult{}, err
 	}
 
-	artifact, err := s.store.GetArtifactByArtifactID(ctx, input.ArtifactReference)
+
+	attemptArtifacts, err := s.store.ListArtifactsByExecutionAttempt(ctx, current.Packet.ExecutionAttemptRowID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactReference
-		}
 		return GetWorkflowAuditArtifactResult{}, err
+	}
+	var artifact workflowstore.Artifact
+	found := false
+	for _, a := range attemptArtifacts {
+		if a.SHA256 == declared.SHA256 && a.Kind == declared.Kind {
+			artifact = a
+			found = true
+			break
+		}
+	}
+	if !found {
+		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactReference
 	}
 	if artifact.OwnerType != workflowstore.ArtifactOwnerExecutionAttempt ||
 		!artifact.ExecutionAttemptRowID.Valid ||
@@ -322,6 +336,26 @@ func (s *WorkflowAuditService) GetCurrentArtifact(ctx context.Context, input Get
 		Content:   content,
 		Truncated: truncated,
 	}, nil
+}
+
+func resolvePacketArtifact(artifacts []WorkflowAuditPacketArtifact, reference string) (WorkflowAuditPacketArtifact, error) {
+	reference = strings.TrimSpace(reference)
+	var found *WorkflowAuditPacketArtifact
+	for index := range artifacts {
+		artifact := &artifacts[index]
+		if artifact.ArtifactReference != reference {
+			continue
+		}
+		if found != nil {
+			return WorkflowAuditPacketArtifact{}, ErrWorkflowAuditArtifactReference
+		}
+		copy := *artifact
+		found = &copy
+	}
+	if found == nil {
+		return WorkflowAuditPacketArtifact{}, ErrWorkflowAuditArtifactReference
+	}
+	return *found, nil
 }
 
 func (s *WorkflowAuditService) GetStatus(ctx context.Context, runID string) (WorkflowAuditStatus, error) {

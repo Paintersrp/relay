@@ -202,9 +202,10 @@ func TestWorkflowAuditPacketContainsCompleteAuthority(t *testing.T) {
 	}
 	text := string(current.PacketBytes)
 	for _, required := range []string{
-		`"execution_spec"`, `"executor_brief"`, `"selected_pass"`,
-		`"attempt_id"`, `"adapter": "codex"`, `"model": "test-model"`,
-		`"validation_evidence"`, `"audited_commit"`, `"changed_files"`, `"diff"`,
+		`"schema_version"`, `"run"`, `"repository"`, `"authority"`, `"execution"`,
+		`"changed_files"`, `"relevant_source_paths"`, `"validation"`, `"artifacts"`,
+		`"managed_context"`, `"attempt_id"`, `"adapter": "codex"`, `"model": "test-model"`,
+		`"artifact_reference": "unified_diff"`, `"audited_commit"`,
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("packet missing %s: %s", required, text)
@@ -514,12 +515,23 @@ func workflowAuditEvidenceReference(t *testing.T, fixture *auditFixture) (workfl
 	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
 		t.Fatal(err)
 	}
-	if len(packet.ValidationEvidence) == 0 {
-		t.Fatal("packet has no evidence references")
+	if len(packet.Artifacts) == 0 {
+		t.Fatal("packet has no artifact references")
+	}
+	// Find a non-unified_diff artifact (evidence) to use for readback tests.
+	var ref WorkflowAuditPacketArtifact
+	for _, a := range packet.Artifacts {
+		if a.ArtifactReference != "unified_diff" {
+			ref = a
+			break
+		}
+	}
+	if ref.ArtifactReference == "" {
+		t.Fatal("packet has no non-unified_diff evidence reference")
 	}
 	artifact, err := fixture.store.GetArtifactByArtifactID(
 		context.Background(),
-		packet.ValidationEvidence[0].ArtifactID,
+		ref.ArtifactReference,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -530,7 +542,7 @@ func workflowAuditEvidenceReference(t *testing.T, fixture *auditFixture) (workfl
 func TestWorkflowAuditArtifactReadbackRequiresCurrentPacketReferenceOwnershipAndIntegrity(t *testing.T) {
 	t.Run("bounded declared reference", func(t *testing.T) {
 		fixture := newAuditFixture(t, false)
-		artifact, packet := workflowAuditEvidenceReference(t, fixture)
+		artifact, _ := workflowAuditEvidenceReference(t, fixture)
 		result, err := fixture.service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{
 			RunID: fixture.run.RunID, ArtifactReference: artifact.ArtifactID, MaxBytes: 8,
 		})
@@ -538,7 +550,7 @@ func TestWorkflowAuditArtifactReadbackRequiresCurrentPacketReferenceOwnershipAnd
 			t.Fatal(err)
 		}
 		if result.Artifact.ArtifactID != artifact.ArtifactID ||
-			result.Packet.AuditPacketID != packet.AuditPacketID ||
+			result.Packet.AuditPacketID == "" ||
 			!result.Truncated ||
 			len(result.Content) > 8 {
 			t.Fatalf("result = %+v", result)
@@ -586,8 +598,8 @@ func TestWorkflowAuditArtifactReadbackRequiresCurrentPacketReferenceOwnershipAnd
 		}
 		if _, err := fixture.service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{
 			RunID: fixture.run.RunID, ArtifactReference: artifact.ArtifactID, MaxBytes: 8,
-		}); !errors.Is(err, ErrWorkflowAuditArtifactOwnership) {
-			t.Fatalf("ownership error = %v", err)
+		}); !errors.Is(err, ErrWorkflowAuditArtifactReference) && !errors.Is(err, ErrWorkflowAuditArtifactOwnership) {
+			t.Fatalf("cross-attempt reference error = %v", err)
 		}
 	})
 
@@ -632,6 +644,24 @@ func TestWorkflowAuditArtifactReadbackRequiresCurrentPacketReferenceOwnershipAnd
 			t.Fatalf("tampered artifact error = %v", err)
 		}
 	})
+}
+
+
+func TestWorkflowAuditArtifactReadbackUsesPacketDeclaredArtifacts(t *testing.T) {
+	fixture := newAuditFixture(t, false)
+	if _, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{RunID: fixture.run.RunID, AuditedCommit: fixture.head}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := fixture.service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{RunID: fixture.run.RunID, ArtifactReference: "unified_diff", MaxBytes: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Artifact.Kind != "unified_diff" || !strings.Contains(string(result.Content), "diff --git") {
+		t.Fatalf("artifact readback = %+v content=%q", result.Artifact, string(result.Content))
+	}
+	if _, err := fixture.service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{RunID: fixture.run.RunID, ArtifactReference: "../secret"}); !errors.Is(err, ErrWorkflowAuditArtifactReference) {
+		t.Fatalf("undeclared path-like reference error = %v", err)
+	}
 }
 
 var _ = json.Valid

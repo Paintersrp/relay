@@ -20,7 +20,7 @@ var getRunArtifactSchema = json.RawMessage(`{
       "type": "string",
       "minLength": 1,
       "maxLength": 128,
-      "description": "Exact artifact_id declared in the current audit packet validation_evidence collection."
+      "description": "Exact artifact_reference declared in the current audit packet artifacts collection."
     },
     "max_bytes": {"type": "integer", "minimum": 1, "maximum": 65536}
   }
@@ -65,7 +65,7 @@ func (s *Server) HandleGetRunArtifact(rawArgs json.RawMessage) ToolCallResult {
 		"run_id":             result.Run.RunID,
 		"audit_packet_id":    result.Packet.AuditPacketID,
 		"packet_sha256":      result.Packet.PacketSHA256,
-		"artifact_reference": result.Artifact.ArtifactID,
+		"artifact_reference": input.ArtifactReference,
 		"artifact": map[string]any{
 			"artifact_id":    result.Artifact.ArtifactID,
 			"kind":           result.Artifact.Kind,

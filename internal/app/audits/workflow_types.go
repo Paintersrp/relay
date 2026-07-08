@@ -33,16 +33,87 @@ var (
 type WorkflowAuditInspector func(context.Context, string, string, string, string) (workflowrepos.AuditCommitEvidence, error)
 
 type WorkflowAuditPacket struct {
-	SchemaVersion      string                        `json:"schema_version"`
-	AuditPacketID      string                        `json:"audit_packet_id"`
-	Run                WorkflowAuditRunAuthority     `json:"run"`
-	SelectedPass       *WorkflowAuditPassAuthority   `json:"selected_pass,omitempty"`
-	ExecutionSpec      string                        `json:"execution_spec"`
-	ExecutorBrief      string                        `json:"executor_brief"`
-	Attempt            WorkflowAuditAttemptAuthority `json:"attempt"`
-	ValidationEvidence []WorkflowAuditEvidenceItem   `json:"validation_evidence"`
-	Commit             WorkflowAuditCommitAuthority  `json:"commit"`
-	Blockers           []string                      `json:"blockers"`
+	SchemaVersion       string                           `json:"schema_version"`
+	Run                 WorkflowAuditRunAuthority        `json:"run"`
+	Repository          WorkflowAuditRepository          `json:"repository"`
+	Authority           WorkflowAuditAuthority           `json:"authority"`
+	Execution           WorkflowAuditExecution           `json:"execution"`
+	ChangedFiles        []WorkflowAuditChangedFile       `json:"changed_files"`
+	RelevantSourcePaths []string                         `json:"relevant_source_paths"`
+	Validation          []WorkflowAuditValidationResult  `json:"validation"`
+	Artifacts           []WorkflowAuditPacketArtifact    `json:"artifacts"`
+	RemediationContext  *WorkflowAuditRemediationContext `json:"remediation_context,omitempty"`
+}
+
+type WorkflowAuditRepository struct {
+	RepoTarget    string `json:"repo_target"`
+	Branch        string `json:"branch"`
+	BaseCommit    string `json:"base_commit"`
+	AuditedCommit string `json:"audited_commit"`
+}
+
+type WorkflowAuditAuthority struct {
+	ExecutionSpec  WorkflowAuditEmbeddedJSON     `json:"execution_spec"`
+	ExecutorBrief  WorkflowAuditEmbeddedMarkdown `json:"executor_brief"`
+	ManagedContext *WorkflowAuditManagedContext  `json:"managed_context,omitempty"`
+}
+
+type WorkflowAuditEmbeddedJSON struct {
+	Filename string          `json:"filename"`
+	SHA256   string          `json:"sha256"`
+	Content  json.RawMessage `json:"content"`
+}
+
+type WorkflowAuditEmbeddedMarkdown struct {
+	Filename string `json:"filename"`
+	SHA256   string `json:"sha256"`
+	Content  string `json:"content"`
+}
+
+type WorkflowAuditManagedContext struct {
+	PlanGoal               string          `json:"plan_goal"`
+	PlanContext            string          `json:"plan_context"`
+	PlanScope              json.RawMessage `json:"plan_scope"`
+	RepositoryTarget       json.RawMessage `json:"repository_target"`
+	SelectedPass           json.RawMessage `json:"selected_pass"`
+	PlanCompletionCriteria []string        `json:"plan_completion_criteria"`
+}
+
+type WorkflowAuditExecution struct {
+	Status                   string                        `json:"status"`
+	CommittedSHA             string                        `json:"committed_sha"`
+	CompletionSummary        string                        `json:"completion_summary"`
+	BlockersOrIncompleteWork []string                      `json:"blockers_or_incomplete_work"`
+	ReportedChangedFiles     []string                      `json:"reported_changed_files"`
+	Attempt                  WorkflowAuditAttemptAuthority `json:"attempt"`
+}
+
+type WorkflowAuditChangedFile struct {
+	Path       string `json:"path"`
+	ChangeType string `json:"change_type"`
+	Additions  int64  `json:"additions"`
+	Deletions  int64  `json:"deletions"`
+}
+
+type WorkflowAuditValidationResult struct {
+	Command           string `json:"command"`
+	Status            string `json:"status"`
+	ConciseResult     string `json:"concise_result"`
+	ArtifactReference string `json:"artifact_reference,omitempty"`
+}
+
+type WorkflowAuditPacketArtifact struct {
+	ArtifactReference string `json:"artifact_reference"`
+	ArtifactType      string `json:"artifact_type"`
+	SHA256            string `json:"sha256"`
+	Description       string `json:"description"`
+	Kind              string `json:"kind"`
+	MediaType         string `json:"media_type"`
+	SizeBytes         int64  `json:"size_bytes"`
+}
+
+type WorkflowAuditRemediationContext struct {
+	RemediatesRunID string `json:"remediates_run_id"`
 }
 
 type WorkflowAuditRunAuthority struct {
@@ -102,17 +173,6 @@ type WorkflowAuditEvidenceItem struct {
 	SHA256           string `json:"sha256"`
 	SizeBytes        int64  `json:"size_bytes"`
 	ContentTruncated bool   `json:"content_truncated"`
-}
-
-type WorkflowAuditCommitAuthority struct {
-	Branch        string   `json:"branch"`
-	BaseCommit    string   `json:"base_commit"`
-	AuditedCommit string   `json:"audited_commit"`
-	ChangedFiles  []string `json:"changed_files"`
-	NameStatus    string   `json:"name_status"`
-	DiffStat      string   `json:"diff_stat"`
-	CommitLog     string   `json:"commit_log"`
-	Diff          string   `json:"diff"`
 }
 
 type GetWorkflowAuditArtifactInput struct {

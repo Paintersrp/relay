@@ -30,6 +30,7 @@ func buildWorkflowAuditPacket(
 	packetID string,
 	attempt workflowstore.ExecutionAttempt,
 	commit workflowrepos.AuditCommitEvidence,
+	diffArtifact workflowstore.Artifact,
 ) ([]byte, error) {
 	runArtifacts, err := store.ListArtifactsByRun(ctx, run.ID)
 	if err != nil {
@@ -73,9 +74,16 @@ func buildWorkflowAuditPacket(
 	}
 	auditResult := workflowAuditAttemptResult(attempt.ResultJSON)
 	blockers := workflowAuditBlockers(auditResult)
+	var executionSpecJSON json.RawMessage
+	if err := json.Unmarshal(executionSpec, &executionSpecJSON); err != nil {
+		return nil, fmt.Errorf("decode canonical Execution Spec for audit packet: %w", err)
+	}
+	managedContext, err := workflowAuditManagedContext(selectedPass)
+	if err != nil {
+		return nil, err
+	}
 	packet := WorkflowAuditPacket{
 		SchemaVersion: WorkflowAuditPacketSchemaVersion,
-		AuditPacketID: packetID,
 		Run: WorkflowAuditRunAuthority{
 			RunID:           run.RunID,
 			FeatureSlug:     run.FeatureSlug,
@@ -88,31 +96,27 @@ func buildWorkflowAuditPacket(
 			PassNumber:      passNumber,
 			RemediatesRunID: remediatesRunID,
 		},
-		SelectedPass:  selectedPass,
-		ExecutionSpec: string(executionSpec),
-		ExecutorBrief: string(executorBrief),
-		Attempt: WorkflowAuditAttemptAuthority{
-			AttemptID:     attempt.AttemptID,
-			AttemptNumber: attempt.AttemptNumber,
-			Adapter:       attempt.Adapter,
-			Model:         attempt.Model,
-			Status:        attempt.Status,
-			Result:        auditResult,
-			StartedAt:     nullableString(attempt.StartedAt),
-			FinishedAt:    nullableString(attempt.FinishedAt),
+		Repository: WorkflowAuditRepository{RepoTarget: run.RepoTarget, Branch: commit.Branch, BaseCommit: commit.BaseCommit, AuditedCommit: commit.AuditedCommit},
+		Authority: WorkflowAuditAuthority{
+			ExecutionSpec: WorkflowAuditEmbeddedJSON{Filename: "execution-spec.json", SHA256: executionSpecArtifact.SHA256, Content: executionSpecJSON},
+			ExecutorBrief: WorkflowAuditEmbeddedMarkdown{Filename: "executor-brief.md", SHA256: executorBriefArtifact.SHA256, Content: string(executorBrief)},
+			ManagedContext: managedContext,
 		},
-		ValidationEvidence: evidence,
-		Commit: WorkflowAuditCommitAuthority{
-			Branch:        commit.Branch,
-			BaseCommit:    commit.BaseCommit,
-			AuditedCommit: commit.AuditedCommit,
-			ChangedFiles:  append([]string(nil), commit.ChangedFiles...),
-			NameStatus:    executor.RedactSensitiveText(commit.NameStatus),
-			DiffStat:      executor.RedactSensitiveText(commit.DiffStat),
-			CommitLog:     executor.RedactSensitiveText(commit.CommitLog),
-			Diff:          executor.RedactSensitiveText(commit.Diff),
+		Execution: WorkflowAuditExecution{
+			Status:                   attempt.Status,
+			CommittedSHA:             commit.AuditedCommit,
+			CompletionSummary:        workflowAuditCompletionSummary(auditResult),
+			BlockersOrIncompleteWork: blockers,
+			ReportedChangedFiles:     append([]string(nil), commit.ChangedFiles...),
+			Attempt:                  WorkflowAuditAttemptAuthority{AttemptID: attempt.AttemptID, AttemptNumber: attempt.AttemptNumber, Adapter: attempt.Adapter, Model: attempt.Model, Status: attempt.Status, Result: auditResult, StartedAt: nullableString(attempt.StartedAt), FinishedAt: nullableString(attempt.FinishedAt)},
 		},
-		Blockers: blockers,
+		ChangedFiles:        workflowAuditChangedFiles(commit),
+		RelevantSourcePaths: workflowAuditRelevantSourcePaths(commit, selectedPass),
+		Validation:          workflowAuditValidation(evidence),
+		Artifacts:           workflowAuditArtifacts(evidence, diffArtifact),
+	}
+	if remediatesRunID != "" {
+		packet.RemediationContext = &WorkflowAuditRemediationContext{RemediatesRunID: remediatesRunID}
 	}
 	data, err := json.MarshalIndent(packet, "", "  ")
 	if err != nil {
@@ -123,6 +127,90 @@ func buildWorkflowAuditPacket(
 		return nil, ErrWorkflowAuditPacketTooLarge
 	}
 	return data, nil
+}
+
+func workflowAuditManagedContext(selectedPass *WorkflowAuditPassAuthority) (*WorkflowAuditManagedContext, error) {
+	if selectedPass == nil {
+		return nil, nil
+	}
+	var pass struct {
+		Goal               string          `json:"goal"`
+		Context            string          `json:"context"`
+		Scope              json.RawMessage `json:"scope"`
+		RepoTarget         string          `json:"repo_target"`
+		CompletionCriteria []string        `json:"completion_criteria"`
+	}
+	if err := json.Unmarshal(selectedPass.CanonicalPass, &pass); err != nil {
+		return nil, fmt.Errorf("decode selected pass for managed audit context: %w", err)
+	}
+	repositoryTarget, _ := json.Marshal(map[string]string{"repo_target": pass.RepoTarget})
+	return &WorkflowAuditManagedContext{PlanGoal: pass.Goal, PlanContext: pass.Context, PlanScope: append(json.RawMessage(nil), pass.Scope...), RepositoryTarget: repositoryTarget, SelectedPass: append(json.RawMessage(nil), selectedPass.CanonicalPass...), PlanCompletionCriteria: append([]string(nil), pass.CompletionCriteria...)}, nil
+}
+
+func workflowAuditCompletionSummary(result WorkflowAuditAttemptResult) string {
+	for _, value := range []string{result.NormalizedStatus, result.BlockerText, result.Error} {
+		if strings.TrimSpace(value) != "" {
+			return executor.RedactSensitiveText(strings.TrimSpace(value))
+		}
+	}
+	return "Execution attempt completed with status recorded in Relay."
+}
+
+func workflowAuditValidation(evidence []WorkflowAuditEvidenceItem) []WorkflowAuditValidationResult {
+	out := make([]WorkflowAuditValidationResult, 0, len(evidence))
+	for _, item := range evidence {
+		out = append(out, WorkflowAuditValidationResult{Command: item.Kind, Status: "captured", ConciseResult: "Evidence captured for audit.", ArtifactReference: item.ArtifactID})
+	}
+	return out
+}
+
+func workflowAuditArtifacts(evidence []WorkflowAuditEvidenceItem, diffArtifact workflowstore.Artifact) []WorkflowAuditPacketArtifact {
+	out := make([]WorkflowAuditPacketArtifact, 0, len(evidence)+1)
+	out = append(out, WorkflowAuditPacketArtifact{ArtifactReference: "unified_diff", ArtifactType: "unified_diff", SHA256: diffArtifact.SHA256, Description: "Complete unified diff for the audited commit range.", Kind: diffArtifact.Kind, MediaType: diffArtifact.MediaType, SizeBytes: diffArtifact.SizeBytes})
+	for _, item := range evidence {
+		out = append(out, WorkflowAuditPacketArtifact{ArtifactReference: item.ArtifactID, ArtifactType: item.Kind, SHA256: item.SHA256, Description: "Execution evidence captured by Relay.", Kind: item.Kind, MediaType: item.MediaType, SizeBytes: item.SizeBytes})
+	}
+	return out
+}
+
+func workflowAuditChangedFiles(commit workflowrepos.AuditCommitEvidence) []WorkflowAuditChangedFile {
+	out := make([]WorkflowAuditChangedFile, 0, len(commit.ChangedFiles))
+	for _, path := range commit.ChangedFiles {
+		out = append(out, WorkflowAuditChangedFile{Path: path, ChangeType: "modified", Additions: 0, Deletions: 0})
+	}
+	return out
+}
+
+func workflowAuditRelevantSourcePaths(commit workflowrepos.AuditCommitEvidence, selectedPass *WorkflowAuditPassAuthority) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	for _, value := range commit.ChangedFiles {
+		add(value)
+	}
+	if selectedPass != nil {
+		var pass struct {
+			SourceTargets []struct {
+				Path string `json:"path"`
+			} `json:"source_targets"`
+		}
+		if json.Unmarshal(selectedPass.CanonicalPass, &pass) == nil {
+			for _, target := range pass.SourceTargets {
+				add(target.Path)
+			}
+		}
+	}
+	return out
 }
 
 func selectedPassAuthority(ctx context.Context, store *workflowstore.Store, run workflowstore.Run) (*WorkflowAuditPassAuthority, string, string, int64, error) {

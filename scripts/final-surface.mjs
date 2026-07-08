@@ -263,6 +263,16 @@ if (!fs.statSync(abs("internal/repos/workflow")).isDirectory()) {
 }
 
 const requiredText = [
+  ["package.json", '"release:smoke": "bash scripts/release-smoke.sh"'],
+  ["package.json", '"build:web": "npm --prefix apps/web run build"'],
+  ["scripts/release-smoke.sh", "go run ./cmd/mcp-smoke"],
+  ["scripts/release-smoke.sh", "go vet ./..."],
+  ["internal/app/audits/workflow_types.go", "ChangedFiles"],
+  ["internal/app/audits/workflow_types.go", "Artifacts"],
+  ["internal/app/audits/workflow_packet.go", 'ArtifactReference: "unified_diff"'],
+  ["internal/app/audits/workflow_service.go", 'batch.Stage("unified_diff"'],
+  ["internal/app/audits/workflow_service.go", "resolvePacketArtifact"],
+  ["internal/mcp/artifact_readback_tools.go", "artifact_reference"],
   ["internal/store/workflow/store.go", 'workflowartifacts "relay/internal/artifacts/workflow"'],
   ["internal/app/audits/workflow_packet.go", 'workflowrepos "relay/internal/repos/workflow"'],
   ["apps/web/src/routes/runs/$runId/index.tsx", 'createFileRoute("/runs/$runId/")'],
@@ -279,6 +289,10 @@ for (const [relative, expected] of requiredText) {
 }
 
 const forbiddenChecks = [
+  ["package.json", /build:css|build:js|plan-seed-smoke|htmx\.org|alpinejs|make validate|make mcp-smoke/],
+  ["scripts/release-smoke.sh", /plan-seed-smoke|internal\/refactors|make mcp-smoke|npm run smoke|make validate/],
+  ["internal/app/audits/workflow_types.go", /AuditPacketID\s+string\s*`|SelectedPass\s+\*WorkflowAuditPassAuthority|ValidationEvidence|Commit\s+WorkflowAuditCommitAuthority|Blockers\s+\[\]string/],
+  ["internal/app/audits/workflow_service.go", /packet\.ValidationEvidence/],
   ["internal/mcp/server.go", /planner_handoff|plan_attempt|plan_seed|context_packet|context_memory|refactor/i],
   ["internal/mcp/deps.go", /relay\/internal\/store"|ContextBroker|Drift/i],
   ["apps/web/src/routeTree.gen.ts", /refactor-backlog|\/intake|\/prepare/],
