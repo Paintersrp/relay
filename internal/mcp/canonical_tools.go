@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -192,22 +194,9 @@ type workflowArtifactOutput struct {
 func canonicalToolDefinitions(profile ToolProfile) []ToolDefinition {
 	switch profile {
 	case ToolProfileAuditor:
-		return []ToolDefinition{
-			ToolValidateArtifact,
-			ToolCreateCanonicalRun,
-			ToolGetAuditPacket,
-			ToolRecordAuditDecision,
-		}
+		return []ToolDefinition{ToolValidateArtifact, ToolCreateCanonicalRun, ToolGetAuditPacket, ToolGetRunArtifact, ToolRecordAuditDecision}
 	case ToolProfileLocalOperator:
-		return []ToolDefinition{
-			ToolValidateArtifact,
-			ToolListProjects,
-			ToolSubmitPlan,
-			ToolGetCanonicalPlan,
-			ToolCreateCanonicalRun,
-			ToolGetAuditPacket,
-			ToolRecordAuditDecision,
-		}
+		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetCanonicalPlan, ToolCreateCanonicalRun, ToolGetAuditPacket, ToolGetRunArtifact, ToolRecordAuditDecision}
 	case ToolProfilePlanner:
 		return []ToolDefinition{ToolValidateArtifact, ToolListProjects, ToolSubmitPlan, ToolGetCanonicalPlan, ToolCreateCanonicalRun}
 	default:
@@ -215,37 +204,9 @@ func canonicalToolDefinitions(profile ToolProfile) []ToolDefinition {
 	}
 }
 
-func legacyBaseToolDefinitions() []ToolDefinition {
-	out := []ToolDefinition{
-		ToolSubmitTestAuditPacket,
-		ToolCreateRunFromPlannerHandoff,
-		ToolCreateRunFromPlannerHandoffFile,
-		ToolValidatePlannerHandoffForCompile,
-		ToolSubmitPlannerPassPlan,
-		ToolListOpenRuns,
-		ToolGetRunStatus,
-		ToolSubmitAuditPacket,
-	}
-	out = append(out, planAttemptToolDefinitions()...)
-	out = append(out, planSeedToolDefinitions()...)
-	return out
-}
-
-func legacyLocalOperatorToolDefinitions() []ToolDefinition {
-	out := legacyBaseToolDefinitions()
-	out = append(out, contextBrokerToolDefinitions()...)
-	out = append(out, refactorBacklogToolDefinitions()...)
-	return out
-}
-
 func (s *Server) canonicalFetcher() CanonicalFileParameterFetcher {
 	if s != nil && s.deps != nil && s.deps.CanonicalFileFetcher != nil {
 		return s.deps.CanonicalFileFetcher
-	}
-	if s != nil && s.deps != nil && s.deps.FileFetcher != nil {
-		if fetcher, ok := s.deps.FileFetcher.(CanonicalFileParameterFetcher); ok {
-			return fetcher
-		}
 	}
 	return NewHTTPSFileParameterFetcher()
 }
@@ -421,6 +382,32 @@ func exactCanonicalProvenance(content FileParameterContent, expectedSHA string) 
 	out.ArtifactIdentity.ArtifactKind = canonicalKind(content.DisplayName)
 	out.ArtifactIdentity.DisplayName = safeArtifactDisplayName(content.DisplayName, "artifact.json")
 	return out
+}
+
+func exactSubmissionProvenance(data []byte, expectedSHA, sourceMode, displayName string) ExactSubmissionProvenance {
+	submittedSHA := sha256Hex(data)
+	status := "not_supplied"
+	if strings.TrimSpace(expectedSHA) != "" {
+		status = "mismatched"
+		if expectedSHA == submittedSHA {
+			status = "matched"
+		}
+	}
+	return ExactSubmissionProvenance{
+		SubmittedSHA256: submittedSHA,
+		ExpectedSHA256:  strings.TrimSpace(expectedSHA),
+		SHAMatchStatus:  status,
+		SourceMode:      sourceMode,
+		ArtifactIdentity: SubmittedArtifactIdentity{
+			DisplayName: safeArtifactDisplayName(displayName, "artifact.json"),
+			ByteCount:   int64(len(data)),
+		},
+	}
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func canonicalFileParameterBlocker(err *FileParameterError) MCPBlocker {

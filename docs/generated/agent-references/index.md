@@ -26,9 +26,8 @@ Schema version: `1.0.0`
 | Path | SHA256 | Role |
 | --- | --- | --- |
 | `AGENTS.md` | `d6f14ef51b4080ae8593a273f024b7a89db8ae9f31ee66f09a7937700ed94617` | agent instructions |
-| `Makefile` | `106cd4e3542835e9c3dda124d2706d581e80ea5222414a1387a07a4a96c6db36` | build configuration |
+| `Makefile` | `2709ae60ce5be6a7bea6512becb082184e04d6314306b929784c3b19b92c5441` | build configuration |
 | `docs/agent-reference.md` | `dc1302c44aefc6b365f458f673643d6cbe7e11d16df37473a172c973ca45e562` | agent reference |
-| `docs/backend-code-surface-map.md` | `920bfad94ef75bf59b0135153172158841af381960ccc784fc66bc2dde3f77d1` | backend surface map |
 | `schema/project_agent_reference.schema.json` | `d48d8471f6d8d99a2ae978b2efd94dab52ca2b307b34f00b4fa71cc95d5fedfd` | schema contract |
 
 ## Fact Labels

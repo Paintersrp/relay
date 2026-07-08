@@ -13,14 +13,8 @@ import (
 
 	workflowruns "relay/internal/app/runs/workflow"
 	workflowapp "relay/internal/app/workflow"
-	"relay/internal/repos"
-	"relay/internal/store"
 	workflowstore "relay/internal/store/workflow"
 )
-
-func BuildRoutes(s *store.Store, rs *repos.Service, log *slog.Logger) http.Handler {
-	return buildLegacyRoutes(s, rs, log)
-}
 
 func TestResolveWorkflowRunStage(t *testing.T) {
 	tests := map[string]string{

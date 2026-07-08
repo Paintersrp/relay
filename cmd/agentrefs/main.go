@@ -16,7 +16,6 @@ func buildFoundationDoc(repoRoot string) (*agentrefs.ReferenceDocument, error) {
 	}{
 		{"AGENTS.md", "agent instructions"},
 		{"docs/agent-reference.md", "agent reference"},
-		{"docs/backend-code-surface-map.md", "backend surface map"},
 		{"Makefile", "build configuration"},
 		{"schema/project_agent_reference.schema.json", "schema contract"},
 	}

@@ -14,15 +14,20 @@ const (
 	MaxWorkflowAuditPacketBytes      = 2 * 1024 * 1024
 	MaxWorkflowAuditSourceBytes      = 512 * 1024
 	MaxWorkflowAuditEvidenceBytes    = 128 * 1024
+	MaxWorkflowAuditReadBytes        = 64 * 1024
 )
 
 var (
-	ErrWorkflowAuditNotReady         = errors.New("workflow Run is not ready to prepare an audit packet")
-	ErrWorkflowAuditPacketNotFound   = errors.New("workflow audit packet was not found")
-	ErrWorkflowAuditPacketStale      = errors.New("workflow audit packet is stale")
-	ErrWorkflowAuditDecisionRecorded = errors.New("workflow audit decision has already been recorded")
-	ErrWorkflowAuditConfirmation     = errors.New("operator confirmation is required")
-	ErrWorkflowAuditPacketTooLarge   = errors.New("workflow audit packet exceeds the configured bound")
+	ErrWorkflowAuditNotReady            = errors.New("workflow Run is not ready to prepare an audit packet")
+	ErrWorkflowAuditPacketNotFound      = errors.New("workflow audit packet was not found")
+	ErrWorkflowAuditPacketStale         = errors.New("workflow audit packet is stale")
+	ErrWorkflowAuditDecisionRecorded    = errors.New("workflow audit decision has already been recorded")
+	ErrWorkflowAuditConfirmation        = errors.New("operator confirmation is required")
+	ErrWorkflowAuditPacketTooLarge      = errors.New("workflow audit packet exceeds the configured bound")
+	ErrWorkflowAuditArtifactReference   = errors.New("workflow audit artifact reference is not declared by the current packet")
+	ErrWorkflowAuditArtifactOwnership   = errors.New("workflow audit artifact does not belong to the packet execution attempt")
+	ErrWorkflowAuditArtifactIntegrity   = errors.New("workflow audit artifact failed integrity verification")
+	ErrWorkflowAuditArtifactUnsupported = errors.New("workflow audit artifact is not supported for textual readback")
 )
 
 type WorkflowAuditInspector func(context.Context, string, string, string, string) (workflowrepos.AuditCommitEvidence, error)
@@ -108,6 +113,20 @@ type WorkflowAuditCommitAuthority struct {
 	DiffStat      string   `json:"diff_stat"`
 	CommitLog     string   `json:"commit_log"`
 	Diff          string   `json:"diff"`
+}
+
+type GetWorkflowAuditArtifactInput struct {
+	RunID             string
+	ArtifactReference string
+	MaxBytes          int
+}
+
+type GetWorkflowAuditArtifactResult struct {
+	Run       workflowstore.Run
+	Packet    workflowstore.AuditPacket
+	Artifact  workflowstore.Artifact
+	Content   []byte
+	Truncated bool
 }
 
 type PrepareWorkflowAuditInput struct {

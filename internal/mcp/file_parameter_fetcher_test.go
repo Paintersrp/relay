@@ -343,6 +343,10 @@ func TestHTTPSFileParameterFetcherCanonicalArtifactValidation(t *testing.T) {
 	}
 }
 
+func validMCPHandoffMarkdown(title, repoTarget string) string {
+	return "---\ntitle: " + title + "\nrepo_target: " + repoTarget + "\nbranch_context: main\n---\n\n# " + title + "\n\nSynthetic handoff fixture body.\n"
+}
+
 func mustParseURL(t *testing.T, raw string) *url.URL {
 	t.Helper()
 	u, err := url.Parse(raw)

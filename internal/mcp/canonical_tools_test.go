@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,19 @@ import (
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
 )
+
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func mustMarshal(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
 
 type fakeCanonicalArtifactFetcher struct {
 	content map[string]FileParameterContent
@@ -336,10 +351,10 @@ func TestCanonicalToolDefinitionsByProfile(t *testing.T) {
 			profile: ToolProfilePlanner,
 			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run"},
 		},
-		{profile: ToolProfileAuditor, want: []string{"validate_artifact", "create_run", "get_audit_packet", "record_audit_decision"}},
+		{profile: ToolProfileAuditor, want: []string{"validate_artifact", "create_run", "get_audit_packet", "get_run_artifact", "record_audit_decision"}},
 		{
 			profile: ToolProfileLocalOperator,
-			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run", "get_audit_packet", "record_audit_decision"},
+			want:    []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run", "get_audit_packet", "get_run_artifact", "record_audit_decision"},
 		},
 		{
 			profile: ToolProfile("restricted"),

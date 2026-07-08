@@ -1,5 +1,4 @@
-import { API_BASE_URL, RelayApiError } from "@/features/relay-runs";
-import type { RelayApiErrorShape } from "@/features/relay-runs/types";
+import { API_BASE_URL, RelayApiError, type RelayApiErrorShape } from "../workflow-canonical-api";
 import type {
   CreateWorkflowProjectNoteRequest,
   CreateWorkflowProjectRequest,

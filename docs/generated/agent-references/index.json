@@ -25,18 +25,13 @@
     },
     {
       "path": "Makefile",
-      "sha256": "106cd4e3542835e9c3dda124d2706d581e80ea5222414a1387a07a4a96c6db36",
+      "sha256": "2709ae60ce5be6a7bea6512becb082184e04d6314306b929784c3b19b92c5441",
       "role": "build configuration"
     },
     {
       "path": "docs/agent-reference.md",
       "sha256": "dc1302c44aefc6b365f458f673643d6cbe7e11d16df37473a172c973ca45e562",
       "role": "agent reference"
-    },
-    {
-      "path": "docs/backend-code-surface-map.md",
-      "sha256": "920bfad94ef75bf59b0135153172158841af381960ccc784fc66bc2dde3f77d1",
-      "role": "backend surface map"
     },
     {
       "path": "schema/project_agent_reference.schema.json",

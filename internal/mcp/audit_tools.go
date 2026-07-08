@@ -58,6 +58,7 @@ var (
 
 type WorkflowAuditToolService interface {
 	GetCurrentPacket(context.Context, string) (appaudits.GetWorkflowAuditPacketResult, error)
+	GetCurrentArtifact(context.Context, appaudits.GetWorkflowAuditArtifactInput) (appaudits.GetWorkflowAuditArtifactResult, error)
 	RecordDecision(context.Context, appaudits.RecordWorkflowAuditDecisionInput) (appaudits.RecordWorkflowAuditDecisionResult, error)
 }
 
@@ -162,6 +163,14 @@ func workflowAuditBlocked(tool string, err error) ToolCallResult {
 	switch {
 	case errors.Is(err, sql.ErrNoRows), errors.Is(err, appaudits.ErrWorkflowAuditPacketNotFound):
 		return canonicalBlocked(tool, MCPBlockerUnknownResource, "workflow Run or audit packet was not found", true, "run_id", nil)
+	case errors.Is(err, appaudits.ErrWorkflowAuditArtifactReference):
+		return canonicalBlocked(tool, "artifact_reference_not_declared", "artifact_reference is not declared by the current audit packet", true, "artifact_reference", nil)
+	case errors.Is(err, appaudits.ErrWorkflowAuditArtifactOwnership):
+		return canonicalBlocked(tool, "artifact_ownership_mismatch", "artifact_reference does not belong to the current packet execution attempt", false, "artifact_reference", nil)
+	case errors.Is(err, appaudits.ErrWorkflowAuditArtifactIntegrity):
+		return canonicalBlocked(tool, "artifact_integrity_failed", "stored artifact size, SHA-256, or packet metadata verification failed", false, "artifact_reference", nil)
+	case errors.Is(err, appaudits.ErrWorkflowAuditArtifactUnsupported):
+		return canonicalBlocked(tool, "artifact_content_unsupported", "artifact content is not supported for bounded UTF-8 readback", true, "artifact_reference", nil)
 	case errors.Is(err, appaudits.ErrWorkflowAuditConfirmation):
 		return canonicalBlocked(tool, "operator_confirmation_required", "operator_confirmed must be true after explicit operator confirmation", true, "operator_confirmed", nil)
 	case errors.Is(err, appaudits.ErrWorkflowAuditPacketStale):

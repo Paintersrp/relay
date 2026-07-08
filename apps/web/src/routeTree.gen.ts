@@ -23,7 +23,6 @@ import { Route as RunsRunIdIndexRouteImport } from './routes/runs/$runId/index'
 import { Route as RunsRunIdSpecificationRouteImport } from './routes/runs/$runId/specification'
 import { Route as RunsRunIdExecuteRouteImport } from './routes/runs/$runId/execute'
 import { Route as RunsRunIdAuditRouteImport } from './routes/runs/$runId/audit'
-import { Route as ProjectsProjectIdRefactorBacklogRouteImport } from './routes/projects/$projectId.refactor-backlog'
 import { Route as PlansPlanIdPassesPassIdRouteImport } from './routes/plans/$planId.passes.$passId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -96,12 +95,6 @@ const RunsRunIdAuditRoute = RunsRunIdAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => RunsRunIdRoute,
 } as any)
-const ProjectsProjectIdRefactorBacklogRoute =
-  ProjectsProjectIdRefactorBacklogRouteImport.update({
-    id: '/refactor-backlog',
-    path: '/refactor-backlog',
-    getParentRoute: () => ProjectsProjectIdRoute,
-  } as any)
 const PlansPlanIdPassesPassIdRoute = PlansPlanIdPassesPassIdRouteImport.update({
   id: '/passes/$passId',
   path: '/passes/$passId',
@@ -112,14 +105,13 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
+  '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/runs/$runId': typeof RunsRunIdRouteWithChildren
   '/runs/new': typeof RunsNewRoute
   '/plans/': typeof PlansIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/runs/': typeof RunsIndexRoute
-  '/projects/$projectId/refactor-backlog': typeof ProjectsProjectIdRefactorBacklogRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
   '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
@@ -130,13 +122,12 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
+  '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/runs/new': typeof RunsNewRoute
   '/plans': typeof PlansIndexRoute
   '/projects': typeof ProjectsIndexRoute
   '/runs': typeof RunsIndexRoute
-  '/projects/$projectId/refactor-backlog': typeof ProjectsProjectIdRefactorBacklogRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
   '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
@@ -148,14 +139,13 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/plans/$planId': typeof PlansPlanIdRouteWithChildren
   '/plans/new': typeof PlansNewRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
+  '/projects/$projectId': typeof ProjectsProjectIdRoute
   '/projects/new': typeof ProjectsNewRoute
   '/runs/$runId': typeof RunsRunIdRouteWithChildren
   '/runs/new': typeof RunsNewRoute
   '/plans/': typeof PlansIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/runs/': typeof RunsIndexRoute
-  '/projects/$projectId/refactor-backlog': typeof ProjectsProjectIdRefactorBacklogRoute
   '/runs/$runId/audit': typeof RunsRunIdAuditRoute
   '/runs/$runId/execute': typeof RunsRunIdExecuteRoute
   '/runs/$runId/specification': typeof RunsRunIdSpecificationRoute
@@ -175,7 +165,6 @@ export interface FileRouteTypes {
     | '/plans/'
     | '/projects/'
     | '/runs/'
-    | '/projects/$projectId/refactor-backlog'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
     | '/runs/$runId/specification'
@@ -192,7 +181,6 @@ export interface FileRouteTypes {
     | '/plans'
     | '/projects'
     | '/runs'
-    | '/projects/$projectId/refactor-backlog'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
     | '/runs/$runId/specification'
@@ -210,7 +198,6 @@ export interface FileRouteTypes {
     | '/plans/'
     | '/projects/'
     | '/runs/'
-    | '/projects/$projectId/refactor-backlog'
     | '/runs/$runId/audit'
     | '/runs/$runId/execute'
     | '/runs/$runId/specification'
@@ -222,7 +209,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PlansPlanIdRoute: typeof PlansPlanIdRouteWithChildren
   PlansNewRoute: typeof PlansNewRoute
-  ProjectsProjectIdRoute: typeof ProjectsProjectIdRouteWithChildren
+  ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
   ProjectsNewRoute: typeof ProjectsNewRoute
   RunsRunIdRoute: typeof RunsRunIdRouteWithChildren
   RunsNewRoute: typeof RunsNewRoute
@@ -331,13 +318,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RunsRunIdAuditRouteImport
       parentRoute: typeof RunsRunIdRoute
     }
-    '/projects/$projectId/refactor-backlog': {
-      id: '/projects/$projectId/refactor-backlog'
-      path: '/refactor-backlog'
-      fullPath: '/projects/$projectId/refactor-backlog'
-      preLoaderRoute: typeof ProjectsProjectIdRefactorBacklogRouteImport
-      parentRoute: typeof ProjectsProjectIdRoute
-    }
     '/plans/$planId/passes/$passId': {
       id: '/plans/$planId/passes/$passId'
       path: '/passes/$passId'
@@ -359,17 +339,6 @@ const PlansPlanIdRouteChildren: PlansPlanIdRouteChildren = {
 const PlansPlanIdRouteWithChildren = PlansPlanIdRoute._addFileChildren(
   PlansPlanIdRouteChildren,
 )
-
-interface ProjectsProjectIdRouteChildren {
-  ProjectsProjectIdRefactorBacklogRoute: typeof ProjectsProjectIdRefactorBacklogRoute
-}
-
-const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
-  ProjectsProjectIdRefactorBacklogRoute: ProjectsProjectIdRefactorBacklogRoute,
-}
-
-const ProjectsProjectIdRouteWithChildren =
-  ProjectsProjectIdRoute._addFileChildren(ProjectsProjectIdRouteChildren)
 
 interface RunsRunIdRouteChildren {
   RunsRunIdAuditRoute: typeof RunsRunIdAuditRoute
@@ -393,7 +362,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PlansPlanIdRoute: PlansPlanIdRouteWithChildren,
   PlansNewRoute: PlansNewRoute,
-  ProjectsProjectIdRoute: ProjectsProjectIdRouteWithChildren,
+  ProjectsProjectIdRoute: ProjectsProjectIdRoute,
   ProjectsNewRoute: ProjectsNewRoute,
   RunsRunIdRoute: RunsRunIdRouteWithChildren,
   RunsNewRoute: RunsNewRoute,

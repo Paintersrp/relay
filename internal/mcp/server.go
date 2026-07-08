@@ -1,23 +1,7 @@
-// Package mcp provides the MCP server entry point and tool registry.
-// It serves the MCP JSON-RPC 2.0 protocol over stdio.
-//
-// Usage (from cmd/mcpserver):
-//
-//	deps := &mcp.MCPDeps{Store: store, Log: log}
-//	srv := mcp.NewServer(log, deps)
-//	if err := srv.Serve(os.Stdin, os.Stdout); err != nil {
-//	    log.Error("mcp serve", "error", err)
-//	}
-//
-// Safety boundaries:
-//   - No shell execution is exposed.
-//   - No arbitrary file read/write is exposed; file-based run submission performs
-//     one bounded HTTPS retrieval of the single MCP-supplied ChatGPT file reference.
-//   - No git commit, push, branch, or worktree mutation is exposed.
-//   - All artifact writes go through relay/internal/artifacts conventions.
-//   - All run state changes use existing relay store and service behavior.
-//   - Tool descriptions explicitly note that Relay does not read chat messages.
-//   - Callers must not pass secrets, tokens, auth headers, or private keys as tool arguments.
+// Package mcp serves the canonical Relay JSON-RPC tool registry over stdio and HTTP.
+// It exposes no shell, arbitrary file, or git-mutation tooling, and no legacy
+// compatibility surface. File-bearing tools retrieve one bounded HTTPS
+// canonical artifact and verify exact bytes before persistence.
 package mcp
 
 import (
@@ -28,8 +12,6 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
-
-	appplans "relay/internal/app/plans"
 )
 
 const toolsListPageSize = 50
@@ -42,9 +24,7 @@ type Server struct {
 	tools []ToolDefinition
 }
 
-// NewServer constructs an MCP server with the canonical profile-appropriate
-// tool set registered. Legacy handlers remain available only as unregistered
-// compile-time code until their removal pass.
+// NewServer constructs an MCP server with the exact canonical profile registry.
 func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 	var d *MCPDeps
 	if len(deps) > 0 {
@@ -67,34 +47,10 @@ func (s *Server) activeProfile() ToolProfile {
 }
 
 func (s *Server) profileToolDefinitions() []ToolDefinition {
-	profile := s.activeProfile()
-	tools := canonicalToolDefinitions(profile)
-	if s == nil || s.deps == nil || s.deps.WorkflowStore != nil {
-		return tools
-	}
-	if s.deps.Store == nil {
-		if s.deps.ContextBrokerEnabled {
-			return append(tools, contextBrokerToolDefinitions()...)
-		}
-		return tools
-	}
-	tools = append(tools, legacyBaseToolDefinitions()...)
-	if profile == ToolProfileLocalOperator || s.deps.ContextBrokerEnabled {
-		tools = append(tools, contextBrokerToolDefinitions()...)
-	}
-	if profile == ToolProfileLocalOperator {
-		tools = append(tools, refactorBacklogToolDefinitions()...)
-	}
-	return tools
+	return canonicalToolDefinitions(s.activeProfile())
 }
 
-func (s *Server) fileParameterFetcher() FileParameterFetcher {
-	if s != nil && s.deps != nil && s.deps.FileFetcher != nil {
-		return s.deps.FileFetcher
-	}
-	return NewHTTPSFileParameterFetcher()
-}
-
+// toolRegistered checks if a tool is in the registry.
 func (s *Server) toolRegistered(name string) bool {
 	for _, tool := range s.tools {
 		if tool.Name == name {
@@ -105,11 +61,7 @@ func (s *Server) toolRegistered(name string) bool {
 }
 
 // Serve reads JSON-RPC 2.0 requests from r and writes responses to w until r
-// is closed. Each request and response is a single line of JSON (no Content-Length
-// framing required by this transport; the MCP client must send one JSON object per line).
-//
-// Notifications (JSON-RPC messages with no "id" field) are dispatched but produce
-// no response line, per the JSON-RPC 2.0 specification.
+// is closed. Each request and response is a single line of JSON.
 func (s *Server) Serve(r io.Reader, w io.Writer) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
@@ -131,14 +83,12 @@ func (s *Server) Serve(r io.Reader, w io.Writer) error {
 	return scanner.Err()
 }
 
-// handleLine dispatches a single JSON-RPC 2.0 request line (used in tests).
+// handleLine dispatches a single JSON-RPC 2.0 request line.
 func (s *Server) handleLine(line []byte) Response {
 	resp, _ := s.handleLineWithSkip(line)
 	return resp
 }
 
-// handleLineWithSkip dispatches a single JSON-RPC 2.0 request line.
-// skip is true for notifications that must not produce a response.
 func (s *Server) handleLineWithSkip(line []byte) (resp Response, skip bool) {
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(line, &envelope); err != nil {
@@ -155,9 +105,6 @@ func (s *Server) handleLineWithSkip(line []byte) (resp Response, skip bool) {
 	}
 
 	if _, hasID := envelope["id"]; !hasID {
-		if s.log != nil {
-			s.log.Debug("mcp notification ignored", "method", req.Method)
-		}
 		return Response{}, true
 	}
 
@@ -175,24 +122,17 @@ func (s *Server) handleLineWithSkip(line []byte) (resp Response, skip bool) {
 	}
 }
 
-// handleInitialize responds to the MCP initialize handshake.
 func (s *Server) handleInitialize(req Request) Response {
 	result := InitializeResult{
 		ProtocolVersion: MCPProtocolVersion,
-		Capabilities: Capabilities{
-			Tools: &ToolsCapability{ListChanged: false},
-		},
-		ServerInfo: ServerInfo{
-			Name:    "relay-mcp",
-			Version: "0.2.0",
-		},
+		Capabilities:   Capabilities{Tools: &ToolsCapability{ListChanged: false}},
+		ServerInfo:     ServerInfo{Name: "relay-mcp", Version: "0.2.0"},
 	}
 	return okResponse(req.ID, result)
 }
 
-// handleToolsList returns a bounded, pageable list of registered tools.
 func (s *Server) handleToolsList(req Request) Response {
-	params, paramKeys, err := parseToolsListParams(req.Params)
+	params, _, err := parseToolsListParams(req.Params)
 	if err != nil {
 		return errResponse(req.ID, CodeInvalidParams, "invalid params: "+err.Error())
 	}
@@ -215,24 +155,6 @@ func (s *Server) handleToolsList(req Request) Response {
 	result := ToolsListResult{Tools: append([]ToolDefinition(nil), filtered[start:end]...)}
 	if end < len(filtered) {
 		result.NextCursor = strconv.Itoa(end)
-	}
-	if s.log != nil {
-		approxBytes := 0
-		if b, err := json.Marshal(result); err == nil {
-			approxBytes = len(b)
-		}
-		s.log.Debug("mcp tools/list",
-			"method", req.Method,
-			"param_keys", paramKeys,
-			"has_cursor", params.Cursor != "",
-			"has_query", strings.TrimSpace(params.Query) != "",
-			"has_include_tags", len(params.IncludeTags) > 0,
-			"registered_count", len(s.tools),
-			"filtered_count", len(filtered),
-			"returned_count", len(result.Tools),
-			"has_next_cursor", result.NextCursor != "",
-			"approx_response_bytes", approxBytes,
-		)
 	}
 	return okResponse(req.ID, result)
 }
@@ -261,11 +183,10 @@ func parseToolsListParams(raw json.RawMessage) (ToolsListParams, []string, error
 		if tag == "" {
 			continue
 		}
-		if _, ok := seen[tag]; ok {
-			continue
+		if _, ok := seen[tag]; !ok {
+			seen[tag] = struct{}{}
+			cleanTags = append(cleanTags, tag)
 		}
-		seen[tag] = struct{}{}
-		cleanTags = append(cleanTags, tag)
 	}
 	params.IncludeTags = cleanTags
 	return params, keys, nil
@@ -327,28 +248,12 @@ func toolTagsByName(name string) []string {
 		tags = append(tags, tag)
 	}
 	switch {
-	case strings.Contains(lower, "audit"):
+	case lower == "get_run_artifact" || strings.Contains(lower, "audit"):
 		add("audit")
-	case strings.Contains(lower, "planner") || strings.Contains(lower, "plan_attempt") || strings.Contains(lower, "plan_seed"):
-		add("planner")
+	case strings.Contains(lower, "plan"):
 		add("plan")
 	case strings.Contains(lower, "run"):
 		add("run")
-	}
-	if strings.Contains(lower, "plan") {
-		add("plan")
-	}
-	if strings.Contains(lower, "pass") {
-		add("planner")
-	}
-	if strings.Contains(lower, "context") {
-		add("context")
-	}
-	if strings.Contains(lower, "source") || strings.Contains(lower, "repository") || strings.Contains(lower, "project_file") {
-		add("source")
-	}
-	if strings.Contains(lower, "refactor") {
-		add("refactor")
 	}
 	if strings.Contains(lower, "test") || strings.Contains(lower, "validation") {
 		add("test")
@@ -356,7 +261,6 @@ func toolTagsByName(name string) []string {
 	return tags
 }
 
-// handleToolsCall dispatches a tools/call request to the matching handler.
 func (s *Server) handleToolsCall(req Request) Response {
 	var params ToolCallParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
@@ -381,151 +285,15 @@ func (s *Server) handleToolsCall(req Request) Response {
 	case "submit_plan":
 		result = s.HandleSubmitPlan(args)
 	case "get_plan":
-		if s.workflowStore() != nil {
-			result = s.HandleGetCanonicalPlan(args)
-		} else {
-			result = s.HandleGetPlan(args)
-		}
+		result = s.HandleGetCanonicalPlan(args)
 	case "create_run":
 		result = s.HandleCreateCanonicalRun(args)
 	case "get_audit_packet":
 		result = s.HandleGetWorkflowAuditPacket(args)
-	case "record_audit_decision":
-		result = s.HandleRecordWorkflowAuditDecision(args)
-	case "submit_test_audit_packet":
-		result = HandleSubmitTestAuditPacket(args)
-	case "create_run_from_planner_handoff":
-		result = s.HandleCreateRunFromPlannerHandoff(args)
-	case "create_run_from_planner_handoff_file":
-		result = s.HandleCreateRunFromPlannerHandoffFile(args)
-	case "validate_planner_handoff_for_compile":
-		result = s.HandleValidatePlannerHandoffForCompile(args)
-	case "submit_planner_pass_plan":
-		result = s.HandleSubmitPlannerPassPlan(args)
-	case "list_open_runs":
-		result = s.HandleListOpenRuns(args)
-	case "get_run_status":
-		result = s.HandleGetRunStatus(args)
-	case "submit_audit_packet":
-		result = s.HandleSubmitAuditPacket(args)
-	case toolCreatePlanAttemptWithIntent:
-		result = s.HandleCreatePlanAttemptWithIntent(args)
-	case toolGetPlanIntentReviewPacket:
-		result = s.HandleGetPlanIntentReviewPacket(args)
-	case toolSubmitIntentDriftReview:
-		result = s.HandleSubmitIntentDriftReview(args)
-	case toolRevisePlanAttempt:
-		result = s.HandleRevisePlanAttempt(args)
-	case toolVoidPlanAttempt:
-		result = s.HandleVoidPlanAttempt(args)
-	case toolApprovePlanAttempt:
-		result = s.HandleApprovePlanAttempt(args)
-	case toolSubmitPlanAttempt:
-		result = s.HandleSubmitPlanAttempt(args)
-	case toolCreatePlanSeed:
-		result = s.HandleCreatePlanSeed(args)
-	case toolListPlanSeeds:
-		result = s.HandleListPlanSeeds(args)
-	case toolGetPlanSeed:
-		result = s.HandleGetPlanSeed(args)
-	case toolGetPlanSeedPlanningContext:
-		result = s.HandleGetPlanSeedPlanningContext(args)
-	case toolCreatePlanAttemptFromSeed:
-		result = s.HandleCreatePlanAttemptFromSeed(args)
-	case toolUpdatePlanSeed:
-		result = s.HandleUpdatePlanSeed(args)
-	case toolDeferPlanSeed:
-		result = s.HandleDeferPlanSeed(args)
-	case toolRejectPlanSeed:
-		result = s.HandleRejectPlanSeed(args)
-	case "get_project":
-		result = s.HandleGetProject(args)
-	case "get_pass":
-		result = s.HandleGetPass(args)
-	case "get_pass_context":
-		result = s.HandleGetPassContext(args)
-	case appplans.NextPassWorkTool:
-		result = s.HandleGetNextPassWork(args)
-	case appplans.PrepareHandoffContextTool:
-		result = s.HandlePrepareHandoffContext(args)
-	case appplans.NextAuditWorkTool:
-		result = s.HandleGetNextAuditWork(args)
-	case "create_source_snapshot":
-		result = s.HandleCreateSourceSnapshot(args)
-	case "list_project_files":
-		result = s.HandleListProjectFiles(args)
-	case "search_project_files":
-		result = s.HandleSearchProjectFiles(args)
-	case "read_project_file":
-		result = s.HandleReadProjectFile(args)
-	case "resolve_project_repository":
-		result = s.HandleResolveProjectRepository(args)
-	case "get_repository_git_status":
-		result = s.HandleGetRepositoryGitStatus(args)
-	case "get_repository_recent_commit":
-		result = s.HandleGetRepositoryRecentCommit(args)
-	case "list_repository_changed_files":
-		result = s.HandleListRepositoryChangedFiles(args)
-	case "get_repository_diff":
-		result = s.HandleGetRepositoryDiff(args)
-	case "create_context_packet":
-		result = s.HandleCreateContextPacket(args)
-	case "get_context_packet":
-		result = s.HandleGetContextPacket(args)
-	case "create_local_audit":
-		result = s.HandleCreateLocalAudit(args)
-	case "get_local_audit":
-		result = s.HandleGetLocalAudit(args)
-	case "list_project_local_audits":
-		result = s.HandleListProjectLocalAudits(args)
-	case "search_project_context_memory":
-		result = s.HandleSearchProjectContextMemory(args)
-	case "list_project_context_records":
-		result = s.HandleListProjectContextRecords(args)
-	case "get_project_context_record":
-		result = s.HandleGetProjectContextRecord(args)
-	case "create_project_context_record":
-		result = s.HandleCreateProjectContextRecord(args)
-	case "supersede_project_context_record":
-		result = s.HandleSupersedeProjectContextRecord(args)
-	case "list_refactor_discovery_tasks":
-		result = s.HandleListRefactorDiscoveryTasks(args)
-	case "get_refactor_discovery_task":
-		result = s.HandleGetRefactorDiscoveryTask(args)
-	case "create_refactor_discovery_task":
-		result = s.HandleCreateRefactorDiscoveryTask(args)
-	case "update_refactor_discovery_task":
-		result = s.HandleUpdateRefactorDiscoveryTask(args)
-	case "complete_refactor_discovery_task":
-		result = s.HandleCompleteRefactorDiscoveryTask(args)
-	case "close_refactor_discovery_task":
-		result = s.HandleCloseRefactorDiscoveryTask(args)
-	case "supersede_refactor_discovery_task":
-		result = s.HandleSupersedeRefactorDiscoveryTask(args)
-	case "list_refactor_candidates":
-		result = s.HandleListRefactorCandidates(args)
-	case "get_refactor_candidate":
-		result = s.HandleGetRefactorCandidate(args)
-	case "search_refactor_candidates":
-		result = s.HandleSearchRefactorCandidates(args)
-	case "create_refactor_candidate":
-		result = s.HandleCreateRefactorCandidate(args)
-	case "update_refactor_candidate":
-		result = s.HandleUpdateRefactorCandidate(args)
-	case "defer_refactor_candidate":
-		result = s.HandleDeferRefactorCandidate(args)
-	case "reject_refactor_candidate":
-		result = s.HandleRejectRefactorCandidate(args)
-	case "supersede_refactor_candidate":
-		result = s.HandleSupersedeRefactorCandidate(args)
-	case "suggest_refactor_candidate_placement":
-		result = s.HandleSuggestRefactorCandidatePlacement(args)
-	case "promote_refactor_candidate_to_plan":
-		result = s.HandlePromoteRefactorCandidateToPlan(args)
-	case "generate_refactor_only_plan":
-		result = s.HandleGenerateRefactorOnlyPlan(args)
 	case "get_run_artifact":
 		result = s.HandleGetRunArtifact(args)
+	case "record_audit_decision":
+		result = s.HandleRecordWorkflowAuditDecision(args)
 	default:
 		return errResponse(req.ID, CodeMethodNotFound, fmt.Sprintf("unknown tool: %q", params.Name))
 	}

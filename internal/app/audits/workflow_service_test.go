@@ -499,4 +499,139 @@ func TestWorkflowAuditDecisionReverifiesPacketArtifactInsideTransaction(t *testi
 	}
 }
 
+func workflowAuditEvidenceReference(t *testing.T, fixture *auditFixture) (workflowstore.Artifact, WorkflowAuditPacket) {
+	t.Helper()
+	if _, err := fixture.service.Prepare(context.Background(), PrepareWorkflowAuditInput{
+		RunID: fixture.run.RunID, AuditedCommit: fixture.head,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := fixture.service.GetCurrentPacket(context.Background(), fixture.run.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var packet WorkflowAuditPacket
+	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+		t.Fatal(err)
+	}
+	if len(packet.ValidationEvidence) == 0 {
+		t.Fatal("packet has no evidence references")
+	}
+	artifact, err := fixture.store.GetArtifactByArtifactID(
+		context.Background(),
+		packet.ValidationEvidence[0].ArtifactID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return artifact, packet
+}
+
+func TestWorkflowAuditArtifactReadbackRequiresCurrentPacketReferenceOwnershipAndIntegrity(t *testing.T) {
+	t.Run("bounded declared reference", func(t *testing.T) {
+		fixture := newAuditFixture(t, false)
+		artifact, packet := workflowAuditEvidenceReference(t, fixture)
+		result, err := fixture.service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{
+			RunID: fixture.run.RunID, ArtifactReference: artifact.ArtifactID, MaxBytes: 8,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Artifact.ArtifactID != artifact.ArtifactID ||
+			result.Packet.AuditPacketID != packet.AuditPacketID ||
+			!result.Truncated ||
+			len(result.Content) > 8 {
+			t.Fatalf("result = %+v", result)
+		}
+	})
+
+	t.Run("arbitrary and undeclared references", func(t *testing.T) {
+		fixture := newAuditFixture(t, false)
+		_, _ = workflowAuditEvidenceReference(t, fixture)
+		for _, invalid := range []string{"/tmp/arbitrary", "../artifact", "artifact-missing"} {
+			if _, err := fixture.service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{
+				RunID: fixture.run.RunID, ArtifactReference: invalid, MaxBytes: 8,
+			}); !errors.Is(err, ErrWorkflowAuditArtifactReference) {
+				t.Fatalf("reference %q error = %v", invalid, err)
+			}
+		}
+	})
+
+	t.Run("packet reference cannot cross execution attempts", func(t *testing.T) {
+		fixture := newAuditFixture(t, false)
+		artifact, _ := workflowAuditEvidenceReference(t, fixture)
+		otherRun, err := fixture.runs.CreateRun(context.Background(), workflowruns.CreateRunInput{
+			FeatureSlug:      "audit-readback-other",
+			RepoTarget:       fixture.run.RepoTarget,
+			Branch:           fixture.run.Branch,
+			BaseCommit:       fixture.run.BaseCommit,
+			CanonicalJSON:    []byte(`{"schema_version":"1.0"}`),
+			RenderedMarkdown: []byte("# Other brief\n"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		otherAttempt, err := fixture.runs.BeginExecutionAttempt(context.Background(), workflowruns.BeginExecutionAttemptInput{
+			RunID: otherRun.Run.RunID, Adapter: "codex", Model: "other-model",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fixture.store.DB().Exec(
+			`UPDATE artifacts SET execution_attempt_row_id = ? WHERE artifact_id = ?`,
+			otherAttempt.Attempt.ID,
+			artifact.ArtifactID,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fixture.service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{
+			RunID: fixture.run.RunID, ArtifactReference: artifact.ArtifactID, MaxBytes: 8,
+		}); !errors.Is(err, ErrWorkflowAuditArtifactOwnership) {
+			t.Fatalf("ownership error = %v", err)
+		}
+	})
+
+	t.Run("dangling packet reference", func(t *testing.T) {
+		fixture := newAuditFixture(t, false)
+		artifact, _ := workflowAuditEvidenceReference(t, fixture)
+		if _, err := fixture.store.DB().Exec(
+			`DELETE FROM artifacts WHERE artifact_id = ?`,
+			artifact.ArtifactID,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fixture.service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{
+			RunID: fixture.run.RunID, ArtifactReference: artifact.ArtifactID, MaxBytes: 8,
+		}); !errors.Is(err, ErrWorkflowAuditArtifactReference) {
+			t.Fatalf("dangling reference error = %v", err)
+		}
+	})
+
+	t.Run("tampered artifact", func(t *testing.T) {
+		fixture := newAuditFixture(t, false)
+		artifact, _ := workflowAuditEvidenceReference(t, fixture)
+		path, err := workflowArtifactPath(fixture.store, artifact)
+		if err != nil {
+			t.Fatal(err)
+		}
+		original, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(original) == 0 {
+			t.Fatal("evidence artifact is empty")
+		}
+		tampered := append([]byte(nil), original...)
+		tampered[0] ^= 0x01
+		if err := os.WriteFile(path, tampered, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fixture.service.GetCurrentArtifact(context.Background(), GetWorkflowAuditArtifactInput{
+			RunID: fixture.run.RunID, ArtifactReference: artifact.ArtifactID, MaxBytes: 8,
+		}); !errors.Is(err, ErrWorkflowAuditArtifactIntegrity) {
+			t.Fatalf("tampered artifact error = %v", err)
+		}
+	})
+}
+
 var _ = json.Valid

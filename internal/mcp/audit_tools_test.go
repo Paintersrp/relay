@@ -20,6 +20,9 @@ type fakeWorkflowAuditToolService struct {
 func (f *fakeWorkflowAuditToolService) GetCurrentPacket(context.Context, string) (appaudits.GetWorkflowAuditPacketResult, error) {
 	return f.packet, f.packetErr
 }
+func (f *fakeWorkflowAuditToolService) GetCurrentArtifact(context.Context, appaudits.GetWorkflowAuditArtifactInput) (appaudits.GetWorkflowAuditArtifactResult, error) {
+	return appaudits.GetWorkflowAuditArtifactResult{}, nil
+}
 func (f *fakeWorkflowAuditToolService) RecordDecision(context.Context, appaudits.RecordWorkflowAuditDecisionInput) (appaudits.RecordWorkflowAuditDecisionResult, error) {
 	return f.decision, f.decisionErr
 }

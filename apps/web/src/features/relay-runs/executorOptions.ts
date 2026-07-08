@@ -1,4 +1,4 @@
-import type { RelayExecutorAdapter } from "./types";
+export type RelayExecutorAdapter = "opencode_go" | "codex" | "antigravity" | "kiro_cli";
 
 export type RelayExecutorOption = {
   value: RelayExecutorAdapter;

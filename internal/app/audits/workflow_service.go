@@ -8,7 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
+	"unicode/utf8"
 
 	workflowrepos "relay/internal/repos/workflow"
 	workflowstore "relay/internal/store/workflow"
@@ -191,6 +194,133 @@ func (s *WorkflowAuditService) GetCurrentPacket(ctx context.Context, runID strin
 	}
 	return GetWorkflowAuditPacketResult{
 		Run: run, Packet: packet, Artifact: artifact, PacketBytes: data,
+	}, nil
+}
+
+func workflowArtifactSupportsTextReadback(mediaType string) bool {
+	mediaType = strings.ToLower(strings.TrimSpace(strings.Split(mediaType, ";")[0]))
+	return strings.HasPrefix(mediaType, "text/") ||
+		mediaType == "application/json" ||
+		mediaType == "application/x-ndjson" ||
+		strings.HasSuffix(mediaType, "+json")
+}
+
+func readWorkflowArtifactForAudit(
+	store *workflowstore.Store,
+	artifact workflowstore.Artifact,
+	maxBytes int,
+) ([]byte, bool, error) {
+	if !workflowArtifactSupportsTextReadback(artifact.MediaType) {
+		return nil, false, ErrWorkflowAuditArtifactUnsupported
+	}
+	path, err := workflowArtifactPath(store, artifact)
+	if err != nil {
+		return nil, false, fmt.Errorf("%w: %v", ErrWorkflowAuditArtifactIntegrity, err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, false, fmt.Errorf("%w: %v", ErrWorkflowAuditArtifactIntegrity, err)
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil || info.Size() != artifact.SizeBytes {
+		return nil, false, ErrWorkflowAuditArtifactIntegrity
+	}
+	digest := sha256.New()
+	if _, err := io.Copy(digest, file); err != nil {
+		return nil, false, fmt.Errorf("%w: %v", ErrWorkflowAuditArtifactIntegrity, err)
+	}
+	if hex.EncodeToString(digest.Sum(nil)) != artifact.SHA256 {
+		return nil, false, ErrWorkflowAuditArtifactIntegrity
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, false, fmt.Errorf("%w: %v", ErrWorkflowAuditArtifactIntegrity, err)
+	}
+
+	buffer := make([]byte, maxBytes+1)
+	count, err := io.ReadFull(file, buffer)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, false, fmt.Errorf("%w: %v", ErrWorkflowAuditArtifactIntegrity, err)
+	}
+	truncated := count > maxBytes
+	if truncated {
+		count = maxBytes
+	}
+	content := append([]byte(nil), buffer[:count]...)
+	for trimmed := 0; trimmed < utf8.UTFMax-1 && !utf8.Valid(content); trimmed++ {
+		content = content[:len(content)-1]
+	}
+	if !utf8.Valid(content) || strings.IndexByte(string(content), 0) >= 0 {
+		return nil, false, ErrWorkflowAuditArtifactUnsupported
+	}
+	return content, truncated, nil
+}
+
+func (s *WorkflowAuditService) GetCurrentArtifact(ctx context.Context, input GetWorkflowAuditArtifactInput) (GetWorkflowAuditArtifactResult, error) {
+	input.RunID = strings.TrimSpace(input.RunID)
+	input.ArtifactReference = strings.TrimSpace(input.ArtifactReference)
+	if input.RunID == "" || input.ArtifactReference == "" {
+		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactReference
+	}
+	if input.MaxBytes == 0 {
+		input.MaxBytes = 12000
+	}
+	if input.MaxBytes < 1 || input.MaxBytes > MaxWorkflowAuditReadBytes {
+		return GetWorkflowAuditArtifactResult{}, fmt.Errorf("max_bytes must be between 1 and %d", MaxWorkflowAuditReadBytes)
+	}
+
+	current, err := s.GetCurrentPacket(ctx, input.RunID)
+	if err != nil {
+		return GetWorkflowAuditArtifactResult{}, err
+	}
+	var packet WorkflowAuditPacket
+	if err := json.Unmarshal(current.PacketBytes, &packet); err != nil {
+		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditPacketStale
+	}
+	var declared *WorkflowAuditEvidenceItem
+	for index := range packet.ValidationEvidence {
+		item := &packet.ValidationEvidence[index]
+		if item.ArtifactID == input.ArtifactReference {
+			if declared != nil {
+				return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactReference
+			}
+			declared = item
+		}
+	}
+	if declared == nil {
+		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactReference
+	}
+
+	artifact, err := s.store.GetArtifactByArtifactID(ctx, input.ArtifactReference)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactReference
+		}
+		return GetWorkflowAuditArtifactResult{}, err
+	}
+	if artifact.OwnerType != workflowstore.ArtifactOwnerExecutionAttempt ||
+		!artifact.ExecutionAttemptRowID.Valid ||
+		artifact.ExecutionAttemptRowID.Int64 != current.Packet.ExecutionAttemptRowID {
+		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactOwnership
+	}
+	if artifact.Kind != declared.Kind ||
+		artifact.MediaType != declared.MediaType ||
+		artifact.SHA256 != declared.SHA256 ||
+		artifact.SizeBytes != declared.SizeBytes {
+		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactIntegrity
+	}
+
+	content, truncated, err := readWorkflowArtifactForAudit(s.store, artifact, input.MaxBytes)
+	if err != nil {
+		return GetWorkflowAuditArtifactResult{}, err
+	}
+	return GetWorkflowAuditArtifactResult{
+		Run:       current.Run,
+		Packet:    current.Packet,
+		Artifact:  artifact,
+		Content:   content,
+		Truncated: truncated,
 	}, nil
 }
 

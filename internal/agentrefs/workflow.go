@@ -13,13 +13,8 @@ type requiredSourceInput struct {
 }
 
 var workflowInputs = []requiredSourceInput{
-	{"internal/app/plans/attempt_types.go", "plan attempt type model"},
-	{"internal/app/plans/attempt_service.go", "plan attempt service"},
-	{"internal/api/plans/attempt_handler.go", "plan attempt HTTP handler"},
-	{"internal/mcp/plan_attempt_tools.go", "plan attempt MCP tools"},
-	{"internal/refactors/types.go", "refactor backlog type model"},
-	{"internal/mcp/refactor_backlog_tools.go", "refactor backlog MCP tools"},
-	{"internal/app/plans/work_packets.go", "next-pass work packet model"},
+	{"internal/app/workflow/types.go", "workflow types"},
+	{"internal/store/workflow/types.go", "workflow store types"},
 }
 
 func BuildWorkflowSurfaceDoc(repoRoot string) (*ReferenceDocument, error) {
@@ -42,162 +37,22 @@ func BuildWorkflowSurfaceDoc(repoRoot string) (*ReferenceDocument, error) {
 
 	facts := []Fact{
 		{
-			ID:    "workflow-plan-attempt-status-model",
+			ID:    "workflow-canonical-model",
 			Label: FactLabelProven,
-			Statement: "PlanAttemptStatus constants (draft, approved, submitted, voided, superseded) and " +
-				"PlanAttemptReviewState constants model the complete plan attempt lifecycle in internal/app/plans/attempt_types.go. " +
-				"ModelTier constants (economy, standard, high_assurance, auto_escalate) define compute tier selection.",
+			Statement: "Relay uses a canonical workflow model with Projects, Plans, Runs, and Audit. " +
+				"Projects organize Plans; Plans contain Passes; Runs are Managed (by Plan/pass) or Standalone. " +
+				"Run stages are Specification, Execute, and Audit.",
 			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/app/plans/attempt_types.go"},
+				{Kind: "source", Value: "internal/app/workflow/types.go"},
 			},
 		},
 		{
-			ID:    "workflow-intent-packet-lineage",
+			ID:    "workflow-persistence",
 			Label: FactLabelProven,
-			Statement: "Intent packet lineage is tracked through root_intent_packet_id and reviewed_intent_packet_id in " +
-				"PlanIntentReviewPacket. IntentPacketEvidence captures the full chain: kind (original/revision), " +
-				"content_hash, redaction_status, and source_artifact_path. PriorAttemptInfo and PriorReviewInfo " +
-				"in the review packet connect intent thread history.",
+			Statement: "Workflow data is persisted in SQLite through internal/store/workflow. " +
+				"Canonical bytes are stored immutably with SHA-256 hashes.",
 			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/app/plans/attempt_types.go"},
-			},
-		},
-		{
-			ID:    "workflow-review-packet-retrieval-only",
-			Label: FactLabelProven,
-			Statement: "PlanIntentReviewPacket.RetrievalSemantics controls whether the review packet performs " +
-				"a model call and mutates state. RetrievalOnly=true means no model call and no state mutation; " +
-				"this is the safe read-only path for external reviewers.",
-			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/app/plans/attempt_types.go"},
-			},
-		},
-		{
-			ID:    "workflow-drift-review-submit-boundary",
-			Label: FactLabelProven,
-			Statement: "DriftReviewInput is the bounded input for submitting an intent drift review. " +
-				"It carries overall_alignment, recommended_action, approval_gate_status, and findings JSON. " +
-				"SubmitIntentDriftReviewRequest wraps it with project_id and plan_attempt_id. " +
-				"DriftReviewMode constants (disabled, manual, automatic, external) control drift behavior.",
-			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/app/plans/attempt_types.go"},
-			},
-		},
-		{
-			ID:    "workflow-approval-submit-gates",
-			Label: FactLabelDerived,
-			Statement: "Approval gate status constants (not_required, ready, acknowledgement_required, " +
-				"revision_required, blocked) gate both the ApprovePlanAttemptRequest and SubmitPlanAttemptRequest " +
-				"boundaries. SubmitPlanAttemptRequest requires submission_confirmed and " +
-				"reviewed_plan_json_artifact_sha256. These gates are enforced across attempt_types.go, " +
-				"attempt_service.go, and attempt_handler.go.",
-			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/app/plans/attempt_types.go"},
-				{Kind: "source", Value: "internal/app/plans/attempt_service.go"},
-				{Kind: "source", Value: "internal/api/plans/attempt_handler.go"},
-			},
-		},
-		{
-			ID:    "workflow-refactor-backlog-candidate-model",
-			Label: FactLabelProven,
-			Statement: "Refactor candidate statuses (ready, scheduled, scheduled_revision_required, completed, " +
-				"completed_with_warnings, deferred, rejected, superseded) are defined by internal/refactors/types.go. " +
-				"DiscoveryTaskInput and CandidateInput define the bounded creation surface. RiskLevel constants " +
-				"(low, medium, high) classify candidate severity. CandidateScheduleInput records a passive scheduling reference. " +
-				"Completion status handling is implemented by the checked-out Relay runtime.",
-			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/refactors/types.go"},
-			},
-		},
-		{
-			ID:    "workflow-refactor-mcp-safety-boundaries",
-			Label: FactLabelDerived,
-			Statement: "Refactor backlog MCP tools in internal/mcp/refactor_backlog_tools.go expose " +
-				"discovery task and candidate CRUD operations. The safety boundary is enforced through " +
-				"lifecycle validation in internal/refactors/types.go: terminal statuses block transitions, " +
-				"secret-like values are rejected, cross-project references are blocked, and " +
-				"not_pass_ready validation prevents premature candidate elevation.",
-			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/mcp/refactor_backlog_tools.go"},
-				{Kind: "source", Value: "internal/refactors/types.go"},
-			},
-		},
-		{
-			ID:    "workflow-next-pass-work-blockers",
-			Label: FactLabelProven,
-			Statement: "NextPassWorkResponse reports business-state blockers through WorkBlocker entries. " +
-				"Blocker codes in internal/app/plans/work_packets.go include unknown_plan, " +
-				"plan_not_active, dependencies_incomplete, prior_pass_awaits_audit, active_run_exists, " +
-				"revision_required_same_pass, and no_eligible_pass. Blockers have a Recoverable flag.",
-			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/app/plans/work_packets.go"},
-			},
-		},
-		{
-			ID:    "workflow-work-packet-read-only",
-			Label: FactLabelDerived,
-			Statement: "NextPassWorkResponse and its nested types (WorkPlanSummary, WorkPassSummary, " +
-				"WorkContextSummary) are read-only projections. The get_next_pass_work tool " +
-				"(NextPassWorkTool constant) does not mutate state. WorkBlocker entries guide the caller " +
-				"toward recoverable actions without automatic remediation.",
-			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/app/plans/work_packets.go"},
-			},
-		},
-		{
-			ID:    "workflow-route-touchpoints",
-			Label: FactLabelConvention,
-			Statement: "Plan attempt HTTP handlers in internal/api/plans/attempt_handler.go serve as " +
-				"the primary REST touchpoint for plan attempt creation, review packet retrieval, " +
-				"drift review submission, approval, submission, revision, and voiding. The handler names " +
-				"(HandleCreate, HandleGetReviewPacket, HandleSubmitDriftReview, HandleApprove, " +
-				"HandleSubmit, HandleRevise, HandleVoid) follow the Handler naming convention and " +
-				"are routed through MountRoutes in internal/api/plans/routes.go.",
-			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/api/plans/attempt_handler.go"},
-				{Kind: "source", Value: "internal/api/plans/routes.go"},
-			},
-		},
-		{
-			ID:    "workflow-gap-untested-state-values",
-			Label: FactLabelUnresolved,
-			Statement: "The generator does not yet inspect tests for every state value; untested state-value " +
-				"coverage remains unresolved. PlanAttemptStatus, PlanAttemptReviewState, " +
-				"ApprovalGateStatus, DriftReviewMode, ModelTier, RefactorCandidateStatus, and " +
-				"WorkBlocker codes are declared in runtime source files but not cross-referenced against " +
-				"test coverage by this generator. PASS-006 owns test-coverage completeness.",
-			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/app/plans/attempt_types.go"},
-				{Kind: "source", Value: "internal/refactors/types.go"},
-				{Kind: "source", Value: "internal/app/plans/work_packets.go"},
-			},
-		},
-		{
-			ID:    "workflow-gap-lifecycle-observed-writes",
-			Label: FactLabelUnresolved,
-			Statement: "The generator does not yet enumerate all direct lifecycle/status writes; " +
-				"observed-write coverage remains unresolved. Plan attempt status transitions, refactor " +
-				"candidate lifecycle operations, and work-packet state changes are implemented across " +
-				"service and handler files but are not enumerated by this generator. " +
-				"PASS-007 owns lifecycle-write audit coverage.",
-			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/app/plans/attempt_service.go"},
-				{Kind: "source", Value: "internal/api/plans/attempt_handler.go"},
-				{Kind: "source", Value: "internal/mcp/refactor_backlog_tools.go"},
-			},
-		},
-		{
-			ID:    "workflow-gap-transport-coverage",
-			Label: FactLabelUnresolved,
-			Statement: "The generator identifies plan attempt handler touchpoints but does not provide " +
-				"complete HTTP route/API coverage; PASS-006 owns route/API completeness. MCP tool " +
-				"registration and server wiring for plan attempt and refactor backlog tools are noted " +
-				"but not exhaustively enumerated by this generator.",
-			Evidence: []Evidence{
-				{Kind: "source", Value: "internal/api/plans/attempt_handler.go"},
-				{Kind: "source", Value: "internal/api/plans/routes.go"},
-				{Kind: "source", Value: "internal/mcp/plan_attempt_tools.go"},
-				{Kind: "source", Value: "internal/mcp/refactor_backlog_tools.go"},
+				{Kind: "source", Value: "internal/store/workflow/types.go"},
 			},
 		},
 	}

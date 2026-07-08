@@ -246,7 +246,6 @@ const REQ_10_1_ROUTES: ReadonlyArray<{ pattern: string; nav: string }> = [
   { pattern: "/projects", nav: "/projects" },
   { pattern: "/projects/new", nav: "/projects/new" },
   { pattern: "/projects/$projectId", nav: "/projects/proj-1" },
-  { pattern: "/projects/$projectId/refactor-backlog", nav: "/projects/proj-1/refactor-backlog" },
 ];
 
 const NOT_FOUND_TESTID = "route-not-found";

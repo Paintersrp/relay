@@ -88,25 +88,6 @@ func TestServerToolsList_ExactMatch(t *testing.T) {
 	}
 }
 
-func TestServerToolsList_BrokerFlagDoesNotExpandCanonicalSurface(t *testing.T) {
-	harness := newCanonicalTestHarness(t, ToolProfileLocalOperator)
-	deps := harness.server.deps
-	deps.ToolProfile = ToolProfileLocalOperator
-	deps.ContextBrokerEnabled = true
-	srv := NewServer(discardLogger(), deps)
-	list := collectAllTools(t, srv, ToolsListParams{})
-
-	expectedTools := toolNames(canonicalToolDefinitions(ToolProfileLocalOperator))
-	if len(list.Tools) != len(expectedTools) {
-		t.Fatalf("expected exactly %d tools, got %d", len(expectedTools), len(list.Tools))
-	}
-	for i, name := range expectedTools {
-		if list.Tools[i].Name != name {
-			t.Fatalf("expected tool at %d to be %q, got %q", i, name, list.Tools[i].Name)
-		}
-	}
-}
-
 func TestHandleLineWithSkipPingRequestResponds(t *testing.T) {
 	srv := NewServer(discardLogger())
 	req := Request{
