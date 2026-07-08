@@ -20,6 +20,15 @@ const MaxDiagnostics = 50
 
 var lowercaseSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// Type aliases for API packages to use app-layer names instead of importing internal/store/workflow
+type (
+	Project  = workflowstore.Project
+	Plan     = workflowstore.Plan
+	PlanPass = workflowstore.PlanPass
+	Artifact = workflowstore.Artifact
+	Run      = workflowstore.Run
+)
+
 type ValidationInput struct {
 	DisplayName    string
 	CanonicalBytes []byte

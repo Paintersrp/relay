@@ -11,9 +11,8 @@ import (
 	"strings"
 
 	"relay/internal/api/shared"
-	workflowsubmissions "relay/internal/app/submissions"
 	workflowplans "relay/internal/app/plans/workflow"
-	workflowstore "relay/internal/store/workflow"
+	workflowsubmissions "relay/internal/app/submissions"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -222,7 +221,7 @@ func (h *WorkflowHandler) CreateRun(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func planDTO(plan workflowstore.Plan, project workflowstore.Project) planResponse {
+func planDTO(plan workflowsubmissions.Plan, project workflowsubmissions.Project) planResponse {
 	return planResponse{
 		PlanID:          plan.PlanID,
 		FeatureSlug:     plan.FeatureSlug,
@@ -238,7 +237,7 @@ func planDTO(plan workflowstore.Plan, project workflowstore.Project) planRespons
 	}
 }
 
-func passDTO(value workflowstore.PlanPass) passResponse {
+func passDTO(value workflowsubmissions.PlanPass) passResponse {
 	return passResponse{
 		PassID:     value.PassID,
 		Number:     value.PassNumber,
@@ -248,7 +247,7 @@ func passDTO(value workflowstore.PlanPass) passResponse {
 	}
 }
 
-func artifactDTO(value workflowstore.Artifact) artifactResponse {
+func artifactDTO(value workflowsubmissions.Artifact) artifactResponse {
 	return artifactResponse{
 		ArtifactID: value.ArtifactID,
 		OwnerType:  value.OwnerType,

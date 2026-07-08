@@ -20,7 +20,7 @@
   "source_inputs": [
     {
       "path": "internal/app/workflow/types.go",
-      "sha256": "c0ceec927bc733f49d11ae73ed706a3652756d2bc059bfccd1781cf8de654ae5",
+      "sha256": "3b6ce7c66bb8bedcd42504e884b05e3faceea5199237ad2ce1e0f449bd32f698",
       "role": "workflow types"
     },
     {

@@ -25,7 +25,7 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `internal/app/workflow/types.go` | `c0ceec927bc733f49d11ae73ed706a3652756d2bc059bfccd1781cf8de654ae5` | workflow types |
+| `internal/app/workflow/types.go` | `3b6ce7c66bb8bedcd42504e884b05e3faceea5199237ad2ce1e0f449bd32f698` | workflow types |
 | `internal/store/workflow/types.go` | `2b462e8fd11bb276f742b170ed188f4708c6e5ab888669aacec6c3e45c3d795c` | workflow store types |
 
 ## Fact Labels

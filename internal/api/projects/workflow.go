@@ -12,22 +12,21 @@ import (
 
 	"relay/internal/api/shared"
 	workflowprojects "relay/internal/app/projects/workflow"
-	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 )
 
 type WorkflowProjectService interface {
-	ListProjects(context.Context, workflowprojects.ListProjectsInput) ([]workflowstore.Project, error)
+	ListProjects(context.Context, workflowprojects.ListProjectsInput) ([]workflowprojects.Project, error)
 	GetProject(context.Context, workflowprojects.GetProjectInput) (workflowprojects.ProjectDetail, error)
-	CreateProject(context.Context, workflowprojects.CreateProjectInput) (workflowstore.Project, error)
-	UpdateProject(context.Context, workflowprojects.UpdateProjectInput) (workflowstore.Project, error)
-	ArchiveProject(context.Context, string) (workflowstore.Project, error)
-	RestoreProject(context.Context, string) (workflowstore.Project, error)
-	AttachRepository(context.Context, string, string) (workflowstore.ProjectRepositoryTarget, error)
+	CreateProject(context.Context, workflowprojects.CreateProjectInput) (workflowprojects.Project, error)
+	UpdateProject(context.Context, workflowprojects.UpdateProjectInput) (workflowprojects.Project, error)
+	ArchiveProject(context.Context, string) (workflowprojects.Project, error)
+	RestoreProject(context.Context, string) (workflowprojects.Project, error)
+	AttachRepository(context.Context, string, string) (workflowprojects.ProjectRepositoryTarget, error)
 	DetachRepository(context.Context, string, string) error
-	CreateNote(context.Context, workflowprojects.CreateNoteInput) (workflowstore.ProjectNote, error)
-	UpdateNote(context.Context, workflowprojects.UpdateNoteInput) (workflowstore.ProjectNote, error)
+	CreateNote(context.Context, workflowprojects.CreateNoteInput) (workflowprojects.ProjectNote, error)
+	UpdateNote(context.Context, workflowprojects.UpdateNoteInput) (workflowprojects.ProjectNote, error)
 	DeleteNote(context.Context, string, string) error
 }
 
@@ -304,7 +303,7 @@ func projectID(r *http.Request) string {
 	return strings.TrimSpace(chi.URLParam(r, "projectID"))
 }
 
-func projectDTO(value workflowstore.Project) projectResponse {
+func projectDTO(value workflowprojects.Project) projectResponse {
 	return projectResponse{
 		ProjectID:   value.ProjectID,
 		Name:        value.Name,
@@ -315,7 +314,7 @@ func projectDTO(value workflowstore.Project) projectResponse {
 	}
 }
 
-func projectNoteDTO(value workflowstore.ProjectNote) projectNoteResponse {
+func projectNoteDTO(value workflowprojects.ProjectNote) projectNoteResponse {
 	return projectNoteResponse{
 		NoteID:    value.NoteID,
 		Title:     value.Title,

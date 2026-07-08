@@ -9,6 +9,12 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
+// Type aliases for API packages to use app-layer names instead of importing internal/store/workflow
+type (
+	AuditPacket   = workflowstore.AuditPacket
+	AuditDecision = workflowstore.AuditDecision
+)
+
 const (
 	WorkflowAuditPacketSchemaVersion = "1.0"
 	MaxWorkflowAuditPacketBytes      = 2 * 1024 * 1024

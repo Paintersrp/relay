@@ -10,15 +10,14 @@ import (
 
 	"relay/internal/api/shared"
 	workflowapp "relay/internal/app/workflow"
-	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 )
 
 type WorkflowRepositoryService interface {
-	ListRepositories(context.Context) ([]workflowstore.RepositoryTarget, error)
-	GetRepository(context.Context, string) (workflowstore.RepositoryTarget, error)
-	RegisterRepository(context.Context, string, string) (workflowstore.RepositoryTarget, error)
+	ListRepositories(context.Context) ([]workflowapp.RepositoryTarget, error)
+	GetRepository(context.Context, string) (workflowapp.RepositoryTarget, error)
+	RegisterRepository(context.Context, string, string) (workflowapp.RepositoryTarget, error)
 }
 
 type WorkflowHandler struct {
@@ -79,7 +78,7 @@ func (h *WorkflowHandler) Create(w http.ResponseWriter, r *http.Request) {
 	shared.JSON(w, http.StatusCreated, repositoryDTO(value))
 }
 
-func repositoryDTO(value workflowstore.RepositoryTarget) repositoryResponse {
+func repositoryDTO(value workflowapp.RepositoryTarget) repositoryResponse {
 	return repositoryResponse{
 		RepoTarget: value.RepoTarget,
 		LocalPath:  value.LocalPath,

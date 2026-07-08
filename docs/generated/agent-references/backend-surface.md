@@ -28,15 +28,15 @@ Schema version: `1.0.0`
 | `internal/api/artifacts/workflow.go` | `f9de500e2b585347542d62b4e7f539905609ab4d043a9e6140ef7973652e90e4` | source |
 | `internal/api/artifacts/workflow_test.go` | `81d6d699e0d34b0b402be539b77f8918b1f0b37f12d8cf596b23fb1c291ee2a1` | test |
 | `internal/api/audits/routes.go` | `25d4eba355b6d9a3673f56f1e7cb647eaaed355a36f34725fce3cbb0d71bc8f5` | source |
-| `internal/api/audits/workflow.go` | `29503119087bf2d1298d5feabd43cbf1f973e5374d804f733aa265b411f4a587` | source |
+| `internal/api/audits/workflow.go` | `e6636be4cf917c56ceecc0cbba1893a29531c4cc0c5c4e733d437f79317bf548` | source |
 | `internal/api/audits/workflow_test.go` | `cf3eb855f5d736404f8d285616bda64b2cc325b45b1dfe31a0571f2225806a4e` | test |
-| `internal/api/canonical/workflow.go` | `27da13c2bf6c44e670c8a135cda57cfab2c5861ab0624eacf37fb5ce3df9bc57` | source |
+| `internal/api/canonical/workflow.go` | `84e58753fe70611d3a60545c8f36ba45262390538fb9d7245b6f327e6eb6489f` | source |
 | `internal/api/canonical/workflow_test.go` | `a852271851b236589a9c474ad230778886db9d02fc88c0335afac33a26675489` | test |
 | `internal/api/plans/workflow.go` | `de0884b9eeba8d09d8531c1d8ef92901a3247a81610c6a51ad4df312ce7700af` | source |
 | `internal/api/plans/workflow_test.go` | `c96c91c88d54ae50c21b0d2551f8a2078ac65829a6e920b330906b2985024ac9` | test |
-| `internal/api/projects/workflow.go` | `3be5827c790ee4a6a6e31c55e933cb461e1f793964e581a27812c9602076d0e3` | source |
+| `internal/api/projects/workflow.go` | `b0b77ddf44b0a6c1d103746edc02ff3a5405e3d25c4195c029f777ebe04f1353` | source |
 | `internal/api/projects/workflow_test.go` | `829f48d21323163ce7ff21f2cd52a779fc9584ac67e5c9d3719c08791b5545a1` | test |
-| `internal/api/repositories/workflow.go` | `07aae568b29c50fd23b2100e8403c10de43d99b0cfbda8f58deffbd00cd50d56` | source |
+| `internal/api/repositories/workflow.go` | `1afd3e9dfc96d76117bba68ba315792bba3bb524cc48da82d1fe7a25340a749c` | source |
 | `internal/api/repositories/workflow_test.go` | `1da04707733041ad718760c627c6819b6a4ea9dd50227c1d29ae16688cc0651f` | test |
 | `internal/api/runs/workflow.go` | `bb454a3c07c6f216d8f0ab94c139cedc21cddaaadd4fa881413d4992ba2d96fc` | source |
 | `internal/api/runs/workflow_execution.go` | `75f69add69c8c8c8a116993a918f824570f922eaa84acf3b47f05818fad85169` | source |
@@ -51,24 +51,24 @@ Schema version: `1.0.0`
 | `internal/app/audits/workflow_packet.go` | `de82ed0c5afff398bdece6f78a233344c279666a1a725fe580ed8cf09620ffee` | source |
 | `internal/app/audits/workflow_service.go` | `3cc57996179152e15ed6fb6df251bb81ea20c5a8af81f879bd2f48d973ff1265` | source |
 | `internal/app/audits/workflow_service_test.go` | `347f7069d5a4fd00c205ba2a608bcdd3ca5e8eb450da882c9ba7cf9e8366444c` | test |
-| `internal/app/audits/workflow_types.go` | `3a444969c7c44c14b85e2ddf289475d37f283b1d199495e401297296d9ce0046` | source |
+| `internal/app/audits/workflow_types.go` | `24933c8ea93907eb437e58a668a8fdf7492af725bb945e6038859f0a4a9e3df5` | source |
 | `internal/app/plans/workflow/service.go` | `0697a9937927af2086e9edefd9ee2d50e12e90a58cdd1da4e0ee71b9cb1b4566` | source |
 | `internal/app/plans/workflow/service_test.go` | `2a5e08e56684ab71470c0d87e5bd5c8441d30f69c06870128132ea6782775da1` | test |
 | `internal/app/plans/workflow/types.go` | `f8822a09a27a4aa81687c8a4ac2d443cf9dc22167866f1c0001c20602ea47727` | source |
-| `internal/app/projects/workflow/service.go` | `9d311d24653c2e92f3697c7efcb7afb023c97186f2719dd18ec7c698035f20d5` | source |
+| `internal/app/projects/workflow/service.go` | `6d0711acf1bc204669f19ef100d0781938b8eb9ae6212d8b9bc75998a6ff3763` | source |
 | `internal/app/projects/workflow/service_test.go` | `64daa3fa866df642e412d7e65eff033433ac0d28f0c6f7320ef794e434fe6fc3` | test |
 | `internal/app/runs/workflow/cancellation_test.go` | `133b19514e0106159ecb4d8ecfdf84bc4917431f3308bbf5b40e1bab7a432493` | test |
 | `internal/app/runs/workflow/service.go` | `1dce809a950a6b734b4c3b37b59bcf14856e63ef1a1592d48a1311045ad4a180` | source |
 | `internal/app/runs/workflow/service_test.go` | `63829de3abbe0dfb1ed796b007dd394cc06e9ab7f3349b3ab0b6a89ae78bace8` | test |
 | `internal/app/runs/workflow/types.go` | `7d5559cabaece27e5dc818dbc5ccbdce3e68f2b008fafe5422d35e5a56c72999` | source |
 | `internal/app/submissions/errors.go` | `c729a372cddc30fabc6c0533bee19448b3d0f8ce8dd9e81279e215d5c2e80a7b` | source |
-| `internal/app/submissions/service.go` | `bccec5205043e609334af3fb96c2df817a297c9b608459ddd7b52d70cd8968a1` | source |
+| `internal/app/submissions/service.go` | `15c64b07adcd37736ff9ae3f0edbe59a38366d73953dc4065aafee8011174cd1` | source |
 | `internal/app/submissions/service_test.go` | `b6a733615b4072b1fe6e8a2c433a855c398b8afa23ac55135734a24417f028ee` | test |
 | `internal/app/workflow/project_projection_test.go` | `40bd3eaeae9a8daf3f358641021497c7335b48e08d4e29cc6cf30a110dc77696` | test |
 | `internal/app/workflow/seed_contract_test.go` | `8f40fcaf1ea4670394017b5ece166366578643883637ac3d8106df4e18f1913f` | test |
 | `internal/app/workflow/service.go` | `b09075fb8a9a7e08abd98f149807c4928678da1d29184593a6ef8e04b28b8d1d` | source |
 | `internal/app/workflow/service_test.go` | `2b1dec468a7b78837cb857ee0817280c11742590c2bdf52d02454c4f229fdc05` | test |
-| `internal/app/workflow/types.go` | `c0ceec927bc733f49d11ae73ed706a3652756d2bc059bfccd1781cf8de654ae5` | source |
+| `internal/app/workflow/types.go` | `3b6ce7c66bb8bedcd42504e884b05e3faceea5199237ad2ce1e0f449bd32f698` | source |
 | `internal/mcp/artifact_readback_tools.go` | `4e58796631a03d99332b0ed6866dca6904be87e126350c05083188102f295666` | source |
 | `internal/mcp/artifact_readback_tools_test.go` | `ebd59fc6216ae1a0cb5ab3a2c8218a2bb30adbd4fc85f3264578cebe96df9a9c` | test |
 | `internal/mcp/artifact_submission_tools.go` | `e077d82a74a3419ad7011a3b90fee1e5be4cf6ea9048f8623756e0ce0e1b0514` | source |
@@ -291,14 +291,6 @@ Evidence:
 
 - source: `internal/api/audits/workflow.go`
 
-### backend-import-edge-internal-api-audits-relay-internal-store-workflow (derived)
-
-Import edge: internal/api/audits imports relay/internal/store/workflow
-
-Evidence:
-
-- source: `internal/api/audits/workflow.go`
-
 ### backend-import-edge-internal-api-canonical-relay-internal-api-shared (derived)
 
 Import edge: internal/api/canonical imports relay/internal/api/shared
@@ -318,14 +310,6 @@ Evidence:
 ### backend-import-edge-internal-api-canonical-relay-internal-app-submissions (derived)
 
 Import edge: internal/api/canonical imports relay/internal/app/submissions
-
-Evidence:
-
-- source: `internal/api/canonical/workflow.go`
-
-### backend-import-edge-internal-api-canonical-relay-internal-store-workflow (derived)
-
-Import edge: internal/api/canonical imports relay/internal/store/workflow
 
 Evidence:
 
@@ -363,14 +347,6 @@ Evidence:
 
 - source: `internal/api/projects/workflow.go`
 
-### backend-import-edge-internal-api-projects-relay-internal-store-workflow (derived)
-
-Import edge: internal/api/projects imports relay/internal/store/workflow
-
-Evidence:
-
-- source: `internal/api/projects/workflow.go`
-
 ### backend-import-edge-internal-api-repositories-relay-internal-api-shared (derived)
 
 Import edge: internal/api/repositories imports relay/internal/api/shared
@@ -382,14 +358,6 @@ Evidence:
 ### backend-import-edge-internal-api-repositories-relay-internal-app-workflow (derived)
 
 Import edge: internal/api/repositories imports relay/internal/app/workflow
-
-Evidence:
-
-- source: `internal/api/repositories/workflow.go`
-
-### backend-import-edge-internal-api-repositories-relay-internal-store-workflow (derived)
-
-Import edge: internal/api/repositories imports relay/internal/store/workflow
 
 Evidence:
 
@@ -433,7 +401,7 @@ Import edge: internal/app/audits imports relay/internal/executor
 
 Evidence:
 
-- source: `internal/app/audits/workflow_service.go`
+- source: `internal/app/audits/workflow_packet.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-executor-2 (derived)
 
@@ -441,7 +409,7 @@ Import edge: internal/app/audits imports relay/internal/executor
 
 Evidence:
 
-- source: `internal/app/audits/workflow_packet.go`
+- source: `internal/app/audits/workflow_service.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-repos-workflow (derived)
 
@@ -449,7 +417,7 @@ Import edge: internal/app/audits imports relay/internal/repos/workflow
 
 Evidence:
 
-- source: `internal/app/audits/workflow_packet.go`
+- source: `internal/app/audits/workflow_types.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-repos-workflow-2 (derived)
 
@@ -465,7 +433,7 @@ Import edge: internal/app/audits imports relay/internal/repos/workflow
 
 Evidence:
 
-- source: `internal/app/audits/workflow_types.go`
+- source: `internal/app/audits/workflow_packet.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-store-workflow (derived)
 
@@ -481,7 +449,7 @@ Import edge: internal/app/audits imports relay/internal/store/workflow
 
 Evidence:
 
-- source: `internal/app/audits/workflow_packet.go`
+- source: `internal/app/audits/workflow_service.go`
 
 ### backend-import-edge-internal-app-audits-relay-internal-store-workflow-3 (derived)
 
@@ -489,7 +457,7 @@ Import edge: internal/app/audits imports relay/internal/store/workflow
 
 Evidence:
 
-- source: `internal/app/audits/workflow_service.go`
+- source: `internal/app/audits/workflow_packet.go`
 
 ### backend-import-edge-internal-app-plans-workflow-relay-internal-artifacts-workflow (derived)
 
@@ -505,7 +473,7 @@ Import edge: internal/app/plans/workflow imports relay/internal/store/workflow
 
 Evidence:
 
-- source: `internal/app/plans/workflow/service.go`
+- source: `internal/app/plans/workflow/types.go`
 
 ### backend-import-edge-internal-app-plans-workflow-relay-internal-store-workflow-2 (derived)
 
@@ -513,7 +481,7 @@ Import edge: internal/app/plans/workflow imports relay/internal/store/workflow
 
 Evidence:
 
-- source: `internal/app/plans/workflow/types.go`
+- source: `internal/app/plans/workflow/service.go`
 
 ### backend-import-edge-internal-app-projects-workflow-relay-internal-store-workflow (derived)
 
@@ -537,7 +505,7 @@ Import edge: internal/app/runs/workflow imports relay/internal/store/workflow
 
 Evidence:
 
-- source: `internal/app/runs/workflow/service.go`
+- source: `internal/app/runs/workflow/types.go`
 
 ### backend-import-edge-internal-app-runs-workflow-relay-internal-store-workflow-2 (derived)
 
@@ -545,7 +513,7 @@ Import edge: internal/app/runs/workflow imports relay/internal/store/workflow
 
 Evidence:
 
-- source: `internal/app/runs/workflow/types.go`
+- source: `internal/app/runs/workflow/service.go`
 
 ### backend-import-edge-internal-app-submissions-relay-internal-app-plans-workflow (derived)
 
@@ -1785,6 +1753,22 @@ Evidence:
 
 - source: `internal/app/audits/workflow_service.go`
 
+### backend-symbol-internal-app-audits-type-auditdecision (proven)
+
+Exported type AuditDecision in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
+### backend-symbol-internal-app-audits-type-auditpacket (proven)
+
+Exported type AuditPacket in internal/app/audits/workflow_types.go
+
+Evidence:
+
+- source: `internal/app/audits/workflow_types.go`
+
 ### backend-symbol-internal-app-audits-type-getworkflowauditartifactinput (proven)
 
 Exported type GetWorkflowAuditArtifactInput in internal/app/audits/workflow_types.go
@@ -2409,9 +2393,41 @@ Evidence:
 
 - source: `internal/app/projects/workflow/service.go`
 
+### backend-symbol-internal-app-projects-workflow-type-plan (proven)
+
+Exported type Plan in internal/app/projects/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/projects/workflow/service.go`
+
+### backend-symbol-internal-app-projects-workflow-type-project (proven)
+
+Exported type Project in internal/app/projects/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/projects/workflow/service.go`
+
 ### backend-symbol-internal-app-projects-workflow-type-projectdetail (proven)
 
 Exported type ProjectDetail in internal/app/projects/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/projects/workflow/service.go`
+
+### backend-symbol-internal-app-projects-workflow-type-projectnote (proven)
+
+Exported type ProjectNote in internal/app/projects/workflow/service.go
+
+Evidence:
+
+- source: `internal/app/projects/workflow/service.go`
+
+### backend-symbol-internal-app-projects-workflow-type-projectrepositorytarget (proven)
+
+Exported type ProjectRepositoryTarget in internal/app/projects/workflow/service.go
 
 Evidence:
 
@@ -2857,6 +2873,14 @@ Evidence:
 
 - source: `internal/app/submissions/errors.go`
 
+### backend-symbol-internal-app-submissions-type-artifact (proven)
+
+Exported type Artifact in internal/app/submissions/service.go
+
+Evidence:
+
+- source: `internal/app/submissions/service.go`
+
 ### backend-symbol-internal-app-submissions-type-createruninput (proven)
 
 Exported type CreateRunInput in internal/app/submissions/service.go
@@ -2880,6 +2904,38 @@ Exported type ErrorCode in internal/app/submissions/errors.go
 Evidence:
 
 - source: `internal/app/submissions/errors.go`
+
+### backend-symbol-internal-app-submissions-type-plan (proven)
+
+Exported type Plan in internal/app/submissions/service.go
+
+Evidence:
+
+- source: `internal/app/submissions/service.go`
+
+### backend-symbol-internal-app-submissions-type-planpass (proven)
+
+Exported type PlanPass in internal/app/submissions/service.go
+
+Evidence:
+
+- source: `internal/app/submissions/service.go`
+
+### backend-symbol-internal-app-submissions-type-project (proven)
+
+Exported type Project in internal/app/submissions/service.go
+
+Evidence:
+
+- source: `internal/app/submissions/service.go`
+
+### backend-symbol-internal-app-submissions-type-run (proven)
+
+Exported type Run in internal/app/submissions/service.go
+
+Evidence:
+
+- source: `internal/app/submissions/service.go`
 
 ### backend-symbol-internal-app-submissions-type-service (proven)
 
@@ -3164,6 +3220,14 @@ Evidence:
 ### backend-symbol-internal-app-workflow-type-repositorydetail (proven)
 
 Exported type RepositoryDetail in internal/app/workflow/types.go
+
+Evidence:
+
+- source: `internal/app/workflow/types.go`
+
+### backend-symbol-internal-app-workflow-type-repositorytarget (proven)
+
+Exported type RepositoryTarget in internal/app/workflow/types.go
 
 Evidence:
 

@@ -2,6 +2,9 @@ package workflow
 
 import workflowstore "relay/internal/store/workflow"
 
+// Type alias for API packages to use app-layer names instead of importing internal/store/workflow
+type RepositoryTarget = workflowstore.RepositoryTarget
+
 const (
 	RunStageSpecification = "specification"
 	RunStageExecute       = "execute"

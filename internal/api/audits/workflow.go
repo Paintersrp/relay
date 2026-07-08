@@ -10,7 +10,6 @@ import (
 
 	"relay/internal/api/shared"
 	appaudits "relay/internal/app/audits"
-	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -103,7 +102,7 @@ func (h *WorkflowHandler) Status(w http.ResponseWriter, r *http.Request) {
 	shared.JSON(w, http.StatusOK, response)
 }
 
-func workflowAuditPacketDTO(packet workflowstore.AuditPacket) workflowAuditPacketResponse {
+func workflowAuditPacketDTO(packet appaudits.AuditPacket) workflowAuditPacketResponse {
 	response := workflowAuditPacketResponse{
 		AuditPacketID: packet.AuditPacketID,
 		AuditedCommit: packet.AuditedCommit,

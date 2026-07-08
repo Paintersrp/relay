@@ -12,6 +12,14 @@ import (
 
 var ErrInvalidProjectRequest = errors.New("invalid Project request")
 
+// Type aliases for API packages to use app-layer names instead of importing internal/store/workflow
+type (
+	Project                 = workflowstore.Project
+	ProjectRepositoryTarget = workflowstore.ProjectRepositoryTarget
+	ProjectNote             = workflowstore.ProjectNote
+	Plan                    = workflowstore.Plan
+)
+
 type IDGenerator interface {
 	ProjectID() string
 	NoteID() string
