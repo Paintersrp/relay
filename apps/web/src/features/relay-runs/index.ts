@@ -1,8 +1,8 @@
-export * from "./canonical-types";
-export * from "./canonical-api";
-export * from "./canonical-queries";
-export { API_BASE_URL, RelayApiError } from "../workflow-canonical-api";
-export type { RelayApiErrorShape } from "../workflow-canonical-api";
+export * from "./types";
+export * from "./api";
+export * from "./queries";
+export { API_BASE_URL, RelayApiError } from "../workflow-api";
+export type { RelayApiErrorShape } from "../workflow-api";
 export {
   EXECUTOR_ADAPTER_OPTIONS,
   KIRO_MODEL_OPTIONS,

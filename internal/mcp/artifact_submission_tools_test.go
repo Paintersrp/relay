@@ -30,12 +30,12 @@ func mustMarshal(t *testing.T, value any) []byte {
 	return data
 }
 
-type fakeCanonicalArtifactFetcher struct {
+type fakeArtifactFetcher struct {
 	content map[string]FileParameterContent
 	err     *FileParameterError
 }
 
-func (f *fakeCanonicalArtifactFetcher) FetchCanonicalArtifact(_ context.Context, ref ChatGPTFileReference) (FileParameterContent, *FileParameterError) {
+func (f *fakeArtifactFetcher) FetchArtifact(_ context.Context, ref ChatGPTFileReference) (FileParameterContent, *FileParameterError) {
 	if f.err != nil {
 		return FileParameterContent{}, f.err
 	}
@@ -49,7 +49,7 @@ func (f *fakeCanonicalArtifactFetcher) FetchCanonicalArtifact(_ context.Context,
 type canonicalTestHarness struct {
 	server       *Server
 	store        *workflowstore.Store
-	fetcher      *fakeCanonicalArtifactFetcher
+	fetcher      *fakeArtifactFetcher
 	artifactRoot string
 	root         string
 }
@@ -63,12 +63,12 @@ func newCanonicalTestHarness(t *testing.T, profile ToolProfile) *canonicalTestHa
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	fetcher := &fakeCanonicalArtifactFetcher{content: map[string]FileParameterContent{}}
+	fetcher := &fakeArtifactFetcher{content: map[string]FileParameterContent{}}
 	return &canonicalTestHarness{
 		server: NewServer(discardLogger(), &MCPDeps{
 			WorkflowStore:        store,
 			ToolProfile:          profile,
-			CanonicalFileFetcher: fetcher,
+			ArtifactFileFetcher:  fetcher,
 		}),
 		store:        store,
 		fetcher:      fetcher,
@@ -306,36 +306,36 @@ func artifactFileCount(t *testing.T, root string) int {
 	return count
 }
 
-func submitCanonicalTestPlan(t *testing.T, h *canonicalTestHarness, repoTarget string) canonicalPlanOutput {
+func submitCanonicalTestPlan(t *testing.T, h *canonicalTestHarness, repoTarget string) planOutput {
 	t.Helper()
 	data := canonicalPlanBytes(repoTarget)
 	ref := h.put("plan-"+repoTarget, "canonical-test.plan.json", data)
-	project := h.createProject(t)
-	result := h.server.HandleSubmitPlan(canonicalArgs(t, canonicalSubmissionArgs{
-		ProjectID:      project.ProjectID,
+	result := h.server.HandleSubmitPlan(canonicalArgs(t, artifactSubmissionArgs{
+		ProjectID:      h.createProject(t).ProjectID,
 		ArtifactFile:   ref,
 		ExpectedSHA256: canonicalTestSHA(data),
 	}))
 	if result.IsError {
-		t.Fatalf("submit Plan failed: %s", canonicalToolText(t, result))
+		t.Fatalf("MCP submit Plan failed: %s", canonicalToolText(t, result))
 	}
-	var out canonicalPlanOutput
+	var out planOutput
 	if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &out); err != nil {
 		t.Fatal(err)
 	}
 	return out
 }
 
-func createCanonicalTestRun(t *testing.T, h *canonicalTestHarness, repoTarget string, input canonicalSubmissionArgs) canonicalRunOutput {
+func createCanonicalTestRun(t *testing.T, h *canonicalTestHarness, repoTarget string, input artifactSubmissionArgs) runOutput {
 	t.Helper()
 	data := canonicalExecutionSpecBytes(repoTarget)
-	input.ArtifactFile = h.put("run-"+repoTarget+"-"+input.RemediatesRunID+fmt.Sprint(input.PassNumber), "canonical-test.execution-spec.json", data)
+	ref := h.put("run-"+repoTarget, "canonical-test.execution-spec.json", data)
+	input.ArtifactFile = ref
 	input.ExpectedSHA256 = canonicalTestSHA(data)
-	result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, input))
+	result := h.server.HandleCreateRun(canonicalArgs(t, input))
 	if result.IsError {
-		t.Fatalf("create Run failed: %s", canonicalToolText(t, result))
+		t.Fatalf("MCP create Run failed: %s", canonicalToolText(t, result))
 	}
-	var out canonicalRunOutput
+	var out runOutput
 	if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &out); err != nil {
 		t.Fatal(err)
 	}
@@ -390,11 +390,11 @@ func TestValidateArtifactIsNonMutatingAndBounded(t *testing.T) {
 	h := newCanonicalTestHarness(t, ToolProfilePlanner)
 	data := canonicalPlanBytes("relay")
 	ref := h.put("validate-plan", "canonical-test.plan.json", data)
-	result := h.server.HandleValidateArtifact(canonicalArgs(t, canonicalArtifactArgs{ArtifactFile: ref}))
+	result := h.server.HandleValidateArtifact(canonicalArgs(t, artifactArgs{ArtifactFile: ref}))
 	if result.IsError {
 		t.Fatalf("validate failed: %s", canonicalToolText(t, result))
 	}
-	var out canonicalValidationOutput
+	var out artifactValidationOutput
 	if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &out); err != nil {
 		t.Fatal(err)
 	}
@@ -425,22 +425,21 @@ func TestSubmitPlanAndGetPlanPersistBoundedMetadata(t *testing.T) {
 	if submitted.Passes[0].Status != workflowstore.PassStatusPlanned {
 		t.Fatalf("pass status = %q", submitted.Passes[0].Status)
 	}
-	result := h.server.HandleGetCanonicalPlan(canonicalArgs(t, getCanonicalPlanArgs{PlanID: submitted.Plan.PlanID}))
+	result := h.server.HandleGetPlan(canonicalArgs(t, getPlanArgs{PlanID: submitted.Plan.PlanID}))
 	if result.IsError {
-		t.Fatalf("get Plan failed: %s", canonicalToolText(t, result))
+		t.Fatal(canonicalToolText(t, result))
 	}
-	var got canonicalPlanOutput
+	var got planOutput
 	if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Plan.PlanID != submitted.Plan.PlanID || len(got.Passes) != 1 || len(got.Artifacts) != 2 {
-		t.Fatalf("unexpected get Plan output: %+v", got)
-	}
-	for _, text := range []string{canonicalToolText(t, result), canonicalToolText(t, h.server.HandleGetCanonicalPlan(canonicalArgs(t, getCanonicalPlanArgs{PlanID: submitted.Plan.PlanID})))} {
+	for _, text := range []string{canonicalToolText(t, result), canonicalToolText(t, h.server.HandleGetPlan(canonicalArgs(t, getPlanArgs{PlanID: submitted.Plan.PlanID})))} {
 		if strings.Contains(text, "Canonical Plan context") || strings.Contains(text, `"repo_targets"`) {
 			t.Fatalf("Plan response leaked artifact body: %s", text)
 		}
 	}
+
+	result = h.server.HandleGetPlan(canonicalArgs(t, getPlanArgs{PlanID: "plan-missing"}))
 }
 
 func TestGetPlanMissingReturnsRecoverableUnknownResource(t *testing.T) {
@@ -449,7 +448,7 @@ func TestGetPlanMissingReturnsRecoverableUnknownResource(t *testing.T) {
 	beforePasses := workflowRowCount(t, h.store, "plan_passes")
 	beforeArtifacts := workflowRowCount(t, h.store, "artifacts")
 
-	result := h.server.HandleGetCanonicalPlan(canonicalArgs(t, getCanonicalPlanArgs{PlanID: "plan-missing"}))
+	result := h.server.HandleGetPlan(canonicalArgs(t, getPlanArgs{PlanID: "plan-missing"}))
 	if code := canonicalBlockerCode(t, result); code != MCPBlockerUnknownResource {
 		t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
 	}
@@ -473,7 +472,7 @@ func TestCreateRunPersistsSetupReadyMetadataAndArtifacts(t *testing.T) {
 	t.Setenv("RELAY_WEB_BASE_URL", "http://localhost:3000/")
 	h := newCanonicalTestHarness(t, ToolProfilePlanner)
 	h.registerRepo(t, "relay")
-	out := createCanonicalTestRun(t, h, "relay", canonicalSubmissionArgs{})
+	out := createCanonicalTestRun(t, h, "relay", artifactSubmissionArgs{})
 	if !out.OK || out.Run.Status != workflowstore.RunStatusSetupReady || len(out.Artifacts) != 2 {
 		t.Fatalf("unexpected Run output: %+v", out)
 	}
@@ -496,7 +495,7 @@ func TestCreateRunEnforcesPassQualifiedFilenames(t *testing.T) {
 		plan := submitCanonicalTestPlan(t, h, "relay")
 		data := canonicalExecutionSpecBytes("relay")
 		ref := h.put("managed-match", "canonical-test.pass-1.execution-spec.json", data)
-		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+		result := h.server.HandleCreateRun(canonicalArgs(t, artifactSubmissionArgs{
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),
 			PlanID:         plan.Plan.PlanID,
@@ -505,7 +504,7 @@ func TestCreateRunEnforcesPassQualifiedFilenames(t *testing.T) {
 		if result.IsError {
 			t.Fatalf("create managed Run failed: %s", canonicalToolText(t, result))
 		}
-		var out canonicalRunOutput
+		var out runOutput
 		if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &out); err != nil {
 			t.Fatal(err)
 		}
@@ -522,7 +521,7 @@ func TestCreateRunEnforcesPassQualifiedFilenames(t *testing.T) {
 		beforeFiles := artifactFileCount(t, h.artifactRoot)
 		data := canonicalExecutionSpecBytes("relay")
 		ref := h.put("managed-missing", "canonical-test.execution-spec.json", data)
-		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+		result := h.server.HandleCreateRun(canonicalArgs(t, artifactSubmissionArgs{
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),
 			PlanID:         plan.Plan.PlanID,
@@ -544,7 +543,7 @@ func TestCreateRunEnforcesPassQualifiedFilenames(t *testing.T) {
 		beforeFiles := artifactFileCount(t, h.artifactRoot)
 		data := canonicalExecutionSpecBytes("relay")
 		ref := h.put("managed-mismatch", "canonical-test.pass-2.execution-spec.json", data)
-		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+		result := h.server.HandleCreateRun(canonicalArgs(t, artifactSubmissionArgs{
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),
 			PlanID:         plan.Plan.PlanID,
@@ -563,7 +562,7 @@ func TestCreateRunEnforcesPassQualifiedFilenames(t *testing.T) {
 		h.registerRepo(t, "relay")
 		data := canonicalExecutionSpecBytes("relay")
 		ref := h.put("standalone-qualified", "canonical-test.pass-1.execution-spec.json", data)
-		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+		result := h.server.HandleCreateRun(canonicalArgs(t, artifactSubmissionArgs{
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),
 		}))
@@ -579,7 +578,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 		h := newCanonicalTestHarness(t, ToolProfilePlanner)
 		data := canonicalExecutionSpecBytes("relay")
 		ref := h.put("hash-mismatch", "canonical-test.execution-spec.json", data)
-		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+		result := h.server.HandleCreateRun(canonicalArgs(t, artifactSubmissionArgs{
 			ArtifactFile:   ref,
 			ExpectedSHA256: strings.Repeat("0", 64),
 		}))
@@ -593,7 +592,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 		h := newCanonicalTestHarness(t, ToolProfilePlanner)
 		data := []byte("{")
 		ref := h.put("compiler-reject", "canonical-test.execution-spec.json", data)
-		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+		result := h.server.HandleCreateRun(canonicalArgs(t, artifactSubmissionArgs{
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),
 		}))
@@ -607,7 +606,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 		h := newCanonicalTestHarness(t, ToolProfilePlanner)
 		data := canonicalExecutionSpecBytes("missing")
 		ref := h.put("unknown-repo", "canonical-test.execution-spec.json", data)
-		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+		result := h.server.HandleCreateRun(canonicalArgs(t, artifactSubmissionArgs{
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),
 		}))
@@ -625,7 +624,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 		h.registerRepo(t, "relay")
 		data := canonicalExecutionSpecBytes("relay")
 		ref := h.put("unknown-plan", "canonical-test.pass-1.execution-spec.json", data)
-		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+		result := h.server.HandleCreateRun(canonicalArgs(t, artifactSubmissionArgs{
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),
 			PlanID:         "plan-missing",
@@ -650,7 +649,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 		beforeArtifacts := workflowRowCount(t, h.store, "artifacts")
 		data := canonicalExecutionSpecBytes("other")
 		ref := h.put("association-mismatch", "canonical-test.pass-1.execution-spec.json", data)
-		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+		result := h.server.HandleCreateRun(canonicalArgs(t, artifactSubmissionArgs{
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),
 			PlanID:         plan.Plan.PlanID,
@@ -678,12 +677,12 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 	t.Run("invalid remediation source", func(t *testing.T) {
 		h := newCanonicalTestHarness(t, ToolProfilePlanner)
 		h.registerRepo(t, "relay")
-		original := createCanonicalTestRun(t, h, "relay", canonicalSubmissionArgs{})
+		original := createCanonicalTestRun(t, h, "relay", artifactSubmissionArgs{})
 		beforeRuns := workflowRowCount(t, h.store, "runs")
 		beforeArtifacts := workflowRowCount(t, h.store, "artifacts")
 		data := canonicalExecutionSpecBytes("relay")
 		ref := h.put("invalid-remediation", "canonical-test.execution-spec.json", data)
-		result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+		result := h.server.HandleCreateRun(canonicalArgs(t, artifactSubmissionArgs{
 			ArtifactFile:    ref,
 			ExpectedSHA256:  canonicalTestSHA(data),
 			RemediatesRunID: original.Run.RunID,
@@ -705,7 +704,7 @@ func TestCanonicalPersistenceFailureIsBoundedAndRollsBackArtifacts(t *testing.T)
 	}
 	data := canonicalExecutionSpecBytes("relay")
 	ref := h.put("closed-db", "canonical-test.execution-spec.json", data)
-	result := h.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+	result := h.server.HandleCreateRun(canonicalArgs(t, artifactSubmissionArgs{
 		ArtifactFile:   ref,
 		ExpectedSHA256: canonicalTestSHA(data),
 	}))

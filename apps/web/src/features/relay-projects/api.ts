@@ -1,4 +1,4 @@
-import { API_BASE_URL, RelayApiError, type RelayApiErrorShape } from "../workflow-canonical-api";
+import { API_BASE_URL, RelayApiError, type RelayApiErrorShape } from "../workflow-api";
 import type {
   CreateWorkflowProjectNoteRequest,
   CreateWorkflowProjectRequest,
@@ -16,7 +16,7 @@ import type {
   WorkflowProjectStatus,
   WorkflowRepositoryTarget,
   WorkflowRepositoryTargetListResponse,
-} from "./canonical-types";
+} from "./types";
 
 type JsonRecord = Record<string, unknown>;
 type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";

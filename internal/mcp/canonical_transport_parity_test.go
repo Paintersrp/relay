@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	apicanonical "relay/internal/api/canonical"
-	workflowcanonical "relay/internal/app/canonical"
+	workflowsubmissions "relay/internal/app/submissions"
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowstore "relay/internal/store/workflow"
@@ -35,7 +35,7 @@ func newTransportFixture(t *testing.T) *transportFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	canonicalService, err := workflowcanonical.NewService(harness.store)
+	canonicalService, err := workflowsubmissions.NewService(harness.store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,11 +48,11 @@ func newTransportFixture(t *testing.T) *transportFixture {
 	return &transportFixture{harness: harness, project: project, router: router}
 }
 
-func (f *transportFixture) submitPlanThroughMCP(t *testing.T, fileID string) canonicalPlanOutput {
+func (f *transportFixture) submitPlanThroughMCP(t *testing.T, fileID string) planOutput {
 	t.Helper()
 	data := canonicalPlanBytes("relay")
 	ref := f.harness.put(fileID, "canonical-test.plan.json", data)
-	result := f.harness.server.HandleSubmitPlan(canonicalArgs(t, canonicalSubmissionArgs{
+	result := f.harness.server.HandleSubmitPlan(canonicalArgs(t, artifactSubmissionArgs{
 		ProjectID:      f.project.ProjectID,
 		ArtifactFile:   ref,
 		ExpectedSHA256: canonicalTestSHA(data),
@@ -60,7 +60,7 @@ func (f *transportFixture) submitPlanThroughMCP(t *testing.T, fileID string) can
 	if result.IsError {
 		t.Fatalf("MCP submit Plan failed: %s", canonicalToolText(t, result))
 	}
-	var output canonicalPlanOutput
+	var output planOutput
 	if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &output); err != nil {
 		t.Fatal(err)
 	}
@@ -105,11 +105,11 @@ func TestCanonicalMCPAndHTTPValidationAndPlanSubmissionParity(t *testing.T) {
 	data := canonicalPlanBytes("relay")
 
 	ref := mcpFixture.harness.put("parity-validate", "canonical-test.plan.json", data)
-	mcpResult := mcpFixture.harness.server.HandleValidateArtifact(canonicalArgs(t, canonicalArtifactArgs{ArtifactFile: ref}))
+	mcpResult := mcpFixture.harness.server.HandleValidateArtifact(canonicalArgs(t, artifactArgs{ArtifactFile: ref}))
 	if mcpResult.IsError {
 		t.Fatalf("MCP validation failed: %s", canonicalToolText(t, mcpResult))
 	}
-	var mcpValidation canonicalValidationOutput
+	var mcpValidation artifactValidationOutput
 	if err := json.Unmarshal([]byte(canonicalToolText(t, mcpResult)), &mcpValidation); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestCanonicalMCPAndHTTPAssociationFailureParityAndRollback(t *testing.T) {
 	mcpBeforeFiles := artifactFileCount(t, mcpFixture.harness.artifactRoot)
 	data := canonicalExecutionSpecBytes("relay")
 	ref := mcpFixture.harness.put("parity-run-mcp", "canonical-test.execution-spec.json", data)
-	mcpFailure := mcpFixture.harness.server.HandleCreateCanonicalRun(canonicalArgs(t, canonicalSubmissionArgs{
+	mcpFailure := mcpFixture.harness.server.HandleCreateRun(canonicalArgs(t, artifactSubmissionArgs{
 		ArtifactFile:   ref,
 		ExpectedSHA256: canonicalTestSHA(data),
 		PlanID:         mcpPlan.Plan.PlanID,

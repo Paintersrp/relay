@@ -1,4 +1,4 @@
-export { workflowApiUrl } from "@/features/workflow-canonical-api";
+export { workflowApiUrl } from "@/features/workflow-api";
 
 import {
   asWorkflowRecord,
@@ -12,14 +12,14 @@ import {
   requiredWorkflowString,
   type WorkflowHttpMethod,
   type WorkflowJsonRecord,
-} from "@/features/workflow-canonical-api";
+} from "@/features/workflow-api";
 import type {
   WorkflowArtifactReference,
   WorkflowCanonicalValidation,
   WorkflowProjectReference,
   WorkflowProjectStatus,
   WorkflowRunStage,
-} from "@/features/relay-plans/canonical-types";
+} from "@/features/relay-plans/types";
 import type {
   CreateWorkflowRunRequest,
   CreateWorkflowRunResponse,
@@ -40,7 +40,7 @@ import type {
   WorkflowRunStatus,
   WorkflowRunSummary,
   WorkflowSpecificationReview,
-} from "./canonical-types";
+} from "./types";
 
 const RUN_STATUSES: readonly WorkflowRunStatus[] = [
   "created",

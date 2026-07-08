@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"relay/internal/api/shared"
-	workflowcanonical "relay/internal/app/canonical"
+	workflowsubmissions "relay/internal/app/submissions"
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowstore "relay/internal/store/workflow"
 
@@ -19,9 +19,9 @@ import (
 )
 
 type WorkflowCanonicalService interface {
-	ValidateArtifact(context.Context, workflowcanonical.ValidationInput) (workflowcanonical.ValidationResult, error)
-	SubmitPlan(context.Context, workflowcanonical.SubmitPlanInput) (workflowcanonical.SubmitPlanResult, error)
-	CreateRun(context.Context, workflowcanonical.CreateRunInput) (workflowcanonical.CreateRunResult, error)
+	ValidateArtifact(context.Context, workflowsubmissions.ValidationInput) (workflowsubmissions.ValidationResult, error)
+	SubmitPlan(context.Context, workflowsubmissions.SubmitPlanInput) (workflowsubmissions.SubmitPlanResult, error)
+	CreateRun(context.Context, workflowsubmissions.CreateRunInput) (workflowsubmissions.CreateRunResult, error)
 }
 
 type WorkflowPlanMover interface {
@@ -116,7 +116,7 @@ func (h *WorkflowHandler) ValidateArtifact(w http.ResponseWriter, r *http.Reques
 		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid canonical artifact request")
 		return
 	}
-	result, err := h.canonical.ValidateArtifact(r.Context(), workflowcanonical.ValidationInput{
+	result, err := h.canonical.ValidateArtifact(r.Context(), workflowsubmissions.ValidationInput{
 		DisplayName:    request.FileName,
 		CanonicalBytes: []byte(request.CanonicalContent),
 	})
@@ -140,7 +140,7 @@ func (h *WorkflowHandler) SubmitPlan(w http.ResponseWriter, r *http.Request) {
 		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid Plan submission request")
 		return
 	}
-	result, err := h.canonical.SubmitPlan(r.Context(), workflowcanonical.SubmitPlanInput{
+	result, err := h.canonical.SubmitPlan(r.Context(), workflowsubmissions.SubmitPlanInput{
 		ProjectID:      request.ProjectID,
 		DisplayName:    request.FileName,
 		ExpectedSHA256: request.ExpectedSHA256,
@@ -188,7 +188,7 @@ func (h *WorkflowHandler) CreateRun(w http.ResponseWriter, r *http.Request) {
 		shared.Error(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid Run creation request")
 		return
 	}
-	result, err := h.canonical.CreateRun(r.Context(), workflowcanonical.CreateRunInput{
+	result, err := h.canonical.CreateRun(r.Context(), workflowsubmissions.CreateRunInput{
 		DisplayName:     request.FileName,
 		ExpectedSHA256:  request.ExpectedSHA256,
 		CanonicalBytes:  []byte(request.CanonicalContent),
@@ -283,36 +283,36 @@ func decodeStrict(r *http.Request, destination any) error {
 }
 
 func writeCanonicalError(w http.ResponseWriter, err error) {
-	application, ok := workflowcanonical.AsApplicationError(err)
+	application, ok := workflowsubmissions.AsApplicationError(err)
 	if !ok {
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Canonical submission failed")
 		return
 	}
 	switch application.Code {
-	case workflowcanonical.ErrorCompilerRejected:
+	case workflowsubmissions.ErrorCompilerRejected:
 		shared.JSON(w, http.StatusUnprocessableEntity, map[string]any{
 			"error":       "COMPILER_REJECTED",
 			"message":     application.Message,
 			"diagnostics": application.Diagnostics,
 			"notices":     application.Notices,
 		})
-	case workflowcanonical.ErrorExpectedHashMismatch:
+	case workflowsubmissions.ErrorExpectedHashMismatch:
 		shared.Error(w, http.StatusConflict, "HASH_MISMATCH", application.Message)
-	case workflowcanonical.ErrorInvalidExpectedHash:
+	case workflowsubmissions.ErrorInvalidExpectedHash:
 		shared.Error(w, http.StatusBadRequest, "INVALID_EXPECTED_HASH", application.Message)
-	case workflowcanonical.ErrorInvalidArtifactKind:
+	case workflowsubmissions.ErrorInvalidArtifactKind:
 		shared.Error(w, http.StatusBadRequest, "ARTIFACT_KIND_MISMATCH", application.Message)
-	case workflowcanonical.ErrorProjectNotFound:
+	case workflowsubmissions.ErrorProjectNotFound:
 		shared.Error(w, http.StatusNotFound, "PROJECT_NOT_FOUND", application.Message)
-	case workflowcanonical.ErrorProjectArchived:
+	case workflowsubmissions.ErrorProjectArchived:
 		shared.Error(w, http.StatusConflict, "PROJECT_ARCHIVED", application.Message)
-	case workflowcanonical.ErrorRepositoryNotFound:
+	case workflowsubmissions.ErrorRepositoryNotFound:
 		shared.Error(w, http.StatusNotFound, "UNKNOWN_REPOSITORY", application.Message)
-	case workflowcanonical.ErrorPlanPassAssociation,
-		workflowcanonical.ErrorSelectedPassFilename,
-		workflowcanonical.ErrorRemediationAssociation:
+	case workflowsubmissions.ErrorPlanPassAssociation,
+		workflowsubmissions.ErrorSelectedPassFilename,
+		workflowsubmissions.ErrorRemediationAssociation:
 		shared.Error(w, http.StatusBadRequest, "ASSOCIATION_INVALID", application.Message)
-	case workflowcanonical.ErrorPersistence:
+	case workflowsubmissions.ErrorPersistence:
 		shared.Error(w, http.StatusInternalServerError, "PERSISTENCE_FAILED", application.Message)
 	default:
 		shared.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Canonical submission failed")

@@ -16,7 +16,7 @@ import (
 	runsapi "relay/internal/api/runs"
 	"relay/internal/api/shared"
 	appaudits "relay/internal/app/audits"
-	workflowcanonical "relay/internal/app/canonical"
+	workflowsubmissions "relay/internal/app/submissions"
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowprojects "relay/internal/app/projects/workflow"
 	workflowapp "relay/internal/app/workflow"
@@ -48,7 +48,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	if err != nil {
 		panic(err)
 	}
-	canonicalService, err := workflowcanonical.NewService(workflowStore)
+	submissionService, err := workflowsubmissions.NewService(workflowStore)
 	if err != nil {
 		panic(err)
 	}
@@ -60,7 +60,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 
 	repositoryHandler := repositoriesapi.NewWorkflowHandler(readService)
 	projectHandler := projectsapi.NewWorkflowHandler(projectService)
-	canonicalHandler := canonicalapi.NewWorkflowHandler(canonicalService, planMutationService)
+	canonicalHandler := canonicalapi.NewWorkflowHandler(submissionService, planMutationService)
 	planHandler := plansapi.NewWorkflowHandler(readService)
 	runHandler := runsapi.NewWorkflowReadHandler(readService)
 	executionHandler := runsapi.NewWorkflowExecutionHandler(executionService)
@@ -72,7 +72,7 @@ func BuildWorkflowRoutes(workflowStore *workflowstore.Store, log *slog.Logger, o
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.RealIP)
 
-	mcpServer := mcp.NewServer(log, mcp.NewCanonicalDepsFromEnv(workflowStore, log))
+	mcpServer := mcp.NewServer(log, mcp.NewWorkflowDepsFromEnv(workflowStore, log))
 	router.Handle("/mcp", mcp.NewHTTPHandler(mcpServer, log))
 
 	router.Route("/api", func(api chi.Router) {

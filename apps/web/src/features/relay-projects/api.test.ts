@@ -15,7 +15,7 @@ import {
   listWorkflowRepositoryTargets,
   updateWorkflowProject,
   updateWorkflowProjectNote,
-} from "./canonical-api";
+} from "./api";
 
 function response(status: number, value?: unknown) {
   return {

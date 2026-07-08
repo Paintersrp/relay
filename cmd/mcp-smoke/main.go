@@ -27,7 +27,7 @@ type memoryFetcher struct {
 	files map[string]mcp.FileParameterContent
 }
 
-func (f memoryFetcher) FetchCanonicalArtifact(_ context.Context, ref mcp.ChatGPTFileReference) (mcp.FileParameterContent, *mcp.FileParameterError) {
+func (f memoryFetcher) FetchArtifact(_ context.Context, ref mcp.ChatGPTFileReference) (mcp.FileParameterContent, *mcp.FileParameterError) {
 	value, ok := f.files[ref.FileID]
 	if !ok {
 		return mcp.FileParameterContent{}, &mcp.FileParameterError{
@@ -269,7 +269,7 @@ func run() error {
 	server := mcp.NewServer(slog.Default(), &mcp.MCPDeps{
 		WorkflowStore:        store,
 		ToolProfile:          mcp.ToolProfileLocalOperator,
-		CanonicalFileFetcher: fetcher,
+		ArtifactFileFetcher:  fetcher,
 	})
 
 	listed, err := call(server, 1, "tools/list", map[string]any{})
@@ -384,12 +384,12 @@ func run() error {
 		return err
 	}
 	packet, _ := packetResult["packet"].(map[string]any)
-	evidence, _ := packet["validation_evidence"].([]any)
+	evidence, _ := packet["validation"].([]any)
 	if len(evidence) == 0 {
 		return fmt.Errorf("get_audit_packet returned no validation evidence")
 	}
 	evidenceItem, _ := evidence[0].(map[string]any)
-	artifactReference, _ := evidenceItem["artifact_id"].(string)
+	artifactReference, _ := evidenceItem["artifact_reference"].(string)
 	if artifactReference == "" {
 		return fmt.Errorf("audit packet evidence omitted artifact_id")
 	}

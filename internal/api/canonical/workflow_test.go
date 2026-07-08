@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	workflowcanonical "relay/internal/app/canonical"
+	workflowsubmissions "relay/internal/app/submissions"
 	workflowplans "relay/internal/app/plans/workflow"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
@@ -16,26 +16,26 @@ import (
 )
 
 type fakeCanonicalService struct {
-	validation     workflowcanonical.ValidationResult
-	plan           workflowcanonical.SubmitPlanResult
-	run            workflowcanonical.CreateRunResult
-	lastValidation workflowcanonical.ValidationInput
-	lastPlan       workflowcanonical.SubmitPlanInput
-	lastRun        workflowcanonical.CreateRunInput
+	validation     workflowsubmissions.ValidationResult
+	plan           workflowsubmissions.SubmitPlanResult
+	run            workflowsubmissions.CreateRunResult
+	lastValidation workflowsubmissions.ValidationInput
+	lastPlan       workflowsubmissions.SubmitPlanInput
+	lastRun        workflowsubmissions.CreateRunInput
 	err            error
 }
 
-func (f *fakeCanonicalService) ValidateArtifact(_ context.Context, input workflowcanonical.ValidationInput) (workflowcanonical.ValidationResult, error) {
+func (f *fakeCanonicalService) ValidateArtifact(_ context.Context, input workflowsubmissions.ValidationInput) (workflowsubmissions.ValidationResult, error) {
 	f.lastValidation = input
 	return f.validation, f.err
 }
 
-func (f *fakeCanonicalService) SubmitPlan(_ context.Context, input workflowcanonical.SubmitPlanInput) (workflowcanonical.SubmitPlanResult, error) {
+func (f *fakeCanonicalService) SubmitPlan(_ context.Context, input workflowsubmissions.SubmitPlanInput) (workflowsubmissions.SubmitPlanResult, error) {
 	f.lastPlan = input
 	return f.plan, f.err
 }
 
-func (f *fakeCanonicalService) CreateRun(_ context.Context, input workflowcanonical.CreateRunInput) (workflowcanonical.CreateRunResult, error) {
+func (f *fakeCanonicalService) CreateRun(_ context.Context, input workflowsubmissions.CreateRunInput) (workflowsubmissions.CreateRunResult, error) {
 	f.lastRun = input
 	return f.run, f.err
 }
@@ -57,12 +57,12 @@ func canonicalRouter(service WorkflowCanonicalService, mover WorkflowPlanMover) 
 
 func TestCanonicalHTTPRoutesPreserveExactCanonicalIdentityInputs(t *testing.T) {
 	service := &fakeCanonicalService{
-		validation: workflowcanonical.ValidationResult{OK: true, Status: "valid", Kind: "plan", SHA256: strings.Repeat("a", 64)},
-		plan: workflowcanonical.SubmitPlanResult{
+		validation: workflowsubmissions.ValidationResult{OK: true, Status: "valid", Kind: "plan", SHA256: strings.Repeat("a", 64)},
+		plan: workflowsubmissions.SubmitPlanResult{
 			Project: workflowstore.Project{ProjectID: "project-test", Name: "Relay", Status: workflowstore.ProjectStatusActive},
 			Plan:    workflowstore.Plan{PlanID: "plan-test", FeatureSlug: "feature", Status: workflowstore.PlanStatusActive},
 		},
-		run: workflowcanonical.CreateRunResult{
+		run: workflowsubmissions.CreateRunResult{
 			Run: workflowstore.Run{
 				RunID: "run-test", FeatureSlug: "feature", RepoTarget: "relay",
 				Status: workflowstore.RunStatusSetupReady, Branch: "main",
@@ -125,14 +125,14 @@ func TestCanonicalHTTPValidationDoesNotAcceptExpectedHashField(t *testing.T) {
 func TestCanonicalHTTPApplicationErrorsHaveStableClassifications(t *testing.T) {
 	tests := []struct {
 		name        string
-		application *workflowcanonical.ApplicationError
+		application *workflowsubmissions.ApplicationError
 		status      int
 		code        string
 	}{
 		{
 			name: "compiler",
-			application: &workflowcanonical.ApplicationError{
-				Code:    workflowcanonical.ErrorCompilerRejected,
+			application: &workflowsubmissions.ApplicationError{
+				Code:    workflowsubmissions.ErrorCompilerRejected,
 				Message: "rejected",
 				Diagnostics: []speccompiler.Diagnostic{
 					speccompiler.Diagnostic{Code: "invalid_json", Message: "invalid"},
@@ -141,9 +141,9 @@ func TestCanonicalHTTPApplicationErrorsHaveStableClassifications(t *testing.T) {
 			status: http.StatusUnprocessableEntity,
 			code:   "COMPILER_REJECTED",
 		},
-		{name: "hash", application: &workflowcanonical.ApplicationError{Code: workflowcanonical.ErrorInvalidExpectedHash, Message: "invalid"}, status: http.StatusBadRequest, code: "INVALID_EXPECTED_HASH"},
-		{name: "association", application: &workflowcanonical.ApplicationError{Code: workflowcanonical.ErrorSelectedPassFilename, Message: "invalid"}, status: http.StatusBadRequest, code: "ASSOCIATION_INVALID"},
-		{name: "repository", application: &workflowcanonical.ApplicationError{Code: workflowcanonical.ErrorRepositoryNotFound, Message: "missing"}, status: http.StatusNotFound, code: "UNKNOWN_REPOSITORY"},
+		{name: "hash", application: &workflowsubmissions.ApplicationError{Code: workflowsubmissions.ErrorInvalidExpectedHash, Message: "invalid"}, status: http.StatusBadRequest, code: "INVALID_EXPECTED_HASH"},
+		{name: "association", application: &workflowsubmissions.ApplicationError{Code: workflowsubmissions.ErrorSelectedPassFilename, Message: "invalid"}, status: http.StatusBadRequest, code: "ASSOCIATION_INVALID"},
+		{name: "repository", application: &workflowsubmissions.ApplicationError{Code: workflowsubmissions.ErrorRepositoryNotFound, Message: "missing"}, status: http.StatusNotFound, code: "UNKNOWN_REPOSITORY"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

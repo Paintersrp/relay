@@ -1,4 +1,4 @@
-package canonical
+package submissions
 
 import (
 	"context"
@@ -13,14 +13,14 @@ import (
 	workflowstore "relay/internal/store/workflow"
 )
 
-type canonicalFixture struct {
+type submissionFixture struct {
 	store   *workflowstore.Store
 	root    string
 	service *Service
 	project workflowstore.Project
 }
 
-func newCanonicalFixture(t *testing.T) *canonicalFixture {
+func newSubmissionFixture(t *testing.T) *submissionFixture {
 	t.Helper()
 	root := t.TempDir()
 	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
@@ -51,10 +51,10 @@ func newCanonicalFixture(t *testing.T) *canonicalFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &canonicalFixture{store: store, root: root, service: service, project: project}
+	return &submissionFixture{store: store, root: root, service: service, project: project}
 }
 
-func (f *canonicalFixture) submitPlan(t *testing.T) SubmitPlanResult {
+func (f *submissionFixture) submitPlan(t *testing.T) SubmitPlanResult {
 	t.Helper()
 	data := canonicalPlanBytes("relay")
 	result, err := f.service.SubmitPlan(context.Background(), SubmitPlanInput{
@@ -70,7 +70,7 @@ func (f *canonicalFixture) submitPlan(t *testing.T) SubmitPlanResult {
 }
 
 func TestValidationComputesHashWithoutExpectedHashAndDoesNotNormalizeFilename(t *testing.T) {
-	fixture := newCanonicalFixture(t)
+	fixture := newSubmissionFixture(t)
 	data := canonicalPlanBytes("relay")
 	valid, err := fixture.service.ValidateArtifact(context.Background(), ValidationInput{
 		DisplayName:    "canonical-service.plan.json",
@@ -95,7 +95,7 @@ func TestValidationComputesHashWithoutExpectedHashAndDoesNotNormalizeFilename(t 
 }
 
 func TestPlanSubmissionReturnsCommittedProjectAggregate(t *testing.T) {
-	fixture := newCanonicalFixture(t)
+	fixture := newSubmissionFixture(t)
 	result := fixture.submitPlan(t)
 	if result.Project.ProjectID != fixture.project.ProjectID ||
 		result.Plan.ProjectRowID != fixture.project.ID ||
@@ -107,7 +107,7 @@ func TestPlanSubmissionReturnsCommittedProjectAggregate(t *testing.T) {
 
 func TestRunSubmissionPreservesSelectedPassFilenameContract(t *testing.T) {
 	t.Run("matching managed qualifier succeeds and persists qualified basenames", func(t *testing.T) {
-		fixture := newCanonicalFixture(t)
+		fixture := newSubmissionFixture(t)
 		plan := fixture.submitPlan(t)
 		data := canonicalExecutionSpecBytes("relay")
 		result, err := fixture.service.CreateRun(context.Background(), CreateRunInput{
@@ -146,7 +146,7 @@ func TestRunSubmissionPreservesSelectedPassFilenameContract(t *testing.T) {
 		{name: "standalone qualified", fileName: "canonical-service.pass-1.execution-spec.json"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			fixture := newCanonicalFixture(t)
+			fixture := newSubmissionFixture(t)
 			input := CreateRunInput{
 				DisplayName:    test.fileName,
 				ExpectedSHA256: SHA256(canonicalExecutionSpecBytes("relay")),
@@ -175,7 +175,7 @@ func TestRunSubmissionPreservesSelectedPassFilenameContract(t *testing.T) {
 	}
 
 	t.Run("standalone unqualified succeeds", func(t *testing.T) {
-		fixture := newCanonicalFixture(t)
+		fixture := newSubmissionFixture(t)
 		data := canonicalExecutionSpecBytes("relay")
 		result, err := fixture.service.CreateRun(context.Background(), CreateRunInput{
 			DisplayName:    "canonical-service.execution-spec.json",
@@ -193,7 +193,7 @@ func TestRunSubmissionPreservesSelectedPassFilenameContract(t *testing.T) {
 
 func TestMutationInputsAreStrictAndFailuresAreTypedAndAtomic(t *testing.T) {
 	t.Run("whitespace padded hash is malformed", func(t *testing.T) {
-		fixture := newCanonicalFixture(t)
+		fixture := newSubmissionFixture(t)
 		data := canonicalPlanBytes("relay")
 		_, err := fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
 			ProjectID:      fixture.project.ProjectID,
@@ -202,11 +202,11 @@ func TestMutationInputsAreStrictAndFailuresAreTypedAndAtomic(t *testing.T) {
 			CanonicalBytes: data,
 		})
 		assertApplicationCode(t, err, ErrorInvalidExpectedHash)
-		assertNoPlanMutation(t, fixture)
+		assertNoPlanSubmission(t, fixture)
 	})
 
 	t.Run("whitespace padded filename is compiler rejected", func(t *testing.T) {
-		fixture := newCanonicalFixture(t)
+		fixture := newSubmissionFixture(t)
 		data := canonicalPlanBytes("relay")
 		_, err := fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
 			ProjectID:      fixture.project.ProjectID,
@@ -215,11 +215,11 @@ func TestMutationInputsAreStrictAndFailuresAreTypedAndAtomic(t *testing.T) {
 			CanonicalBytes: data,
 		})
 		assertApplicationCode(t, err, ErrorCompilerRejected)
-		assertNoPlanMutation(t, fixture)
+		assertNoPlanSubmission(t, fixture)
 	})
 
 	t.Run("missing Project", func(t *testing.T) {
-		fixture := newCanonicalFixture(t)
+		fixture := newSubmissionFixture(t)
 		data := canonicalPlanBytes("relay")
 		_, err := fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
 			ProjectID:      "project-missing",
@@ -228,11 +228,11 @@ func TestMutationInputsAreStrictAndFailuresAreTypedAndAtomic(t *testing.T) {
 			CanonicalBytes: data,
 		})
 		assertApplicationCode(t, err, ErrorProjectNotFound)
-		assertNoPlanMutation(t, fixture)
+		assertNoPlanSubmission(t, fixture)
 	})
 
 	t.Run("archived Project", func(t *testing.T) {
-		fixture := newCanonicalFixture(t)
+		fixture := newSubmissionFixture(t)
 		projects, _ := workflowprojects.NewService(fixture.store)
 		if _, err := projects.ArchiveProject(context.Background(), fixture.project.ProjectID); err != nil {
 			t.Fatal(err)
@@ -245,11 +245,11 @@ func TestMutationInputsAreStrictAndFailuresAreTypedAndAtomic(t *testing.T) {
 			CanonicalBytes: data,
 		})
 		assertApplicationCode(t, err, ErrorProjectArchived)
-		assertNoPlanMutation(t, fixture)
+		assertNoPlanSubmission(t, fixture)
 	})
 
 	t.Run("unknown repository", func(t *testing.T) {
-		fixture := newCanonicalFixture(t)
+		fixture := newSubmissionFixture(t)
 		data := canonicalPlanBytes("missing")
 		_, err := fixture.service.SubmitPlan(context.Background(), SubmitPlanInput{
 			ProjectID:      fixture.project.ProjectID,
@@ -258,7 +258,7 @@ func TestMutationInputsAreStrictAndFailuresAreTypedAndAtomic(t *testing.T) {
 			CanonicalBytes: data,
 		})
 		assertApplicationCode(t, err, ErrorRepositoryNotFound)
-		assertNoPlanMutation(t, fixture)
+		assertNoPlanSubmission(t, fixture)
 	})
 }
 
@@ -270,7 +270,7 @@ func assertApplicationCode(t *testing.T, err error, expected ErrorCode) {
 	}
 }
 
-func assertNoPlanMutation(t *testing.T, fixture *canonicalFixture) {
+func assertNoPlanSubmission(t *testing.T, fixture *submissionFixture) {
 	t.Helper()
 	if tableCount(t, fixture.store, "plans") != 0 ||
 		tableCount(t, fixture.store, "artifacts") != 0 ||

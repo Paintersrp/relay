@@ -26,7 +26,7 @@ Schema version: `1.0.0`
 | Path | SHA256 | Role |
 | --- | --- | --- |
 | `internal/store/db.go` | `unavailable` | store wrapper |
-| `sqlc.yaml` | `3f898110f5738fb7beba9dbc30b2b7cb0af5d034c4a3d5308ae64b328308ce0a` | sqlc config |
+| `sqlc.yaml` | `a9242c4511e12026b6fcc2c09f8286f5177d5282c09ae1105632d4e13beef0be` | sqlc config |
 
 ## Fact Labels
 

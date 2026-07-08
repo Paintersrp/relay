@@ -25,7 +25,13 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `docs/generated/agent-references/http-api-surface.json` | `fd0427351f10f17ee7935ab6283a14e6f60d509f065368c85c49625d660696d4` | generated HTTP API reference |
+| `apps/web/src/features/relay-plans/api.ts` | `70692d8b6c29e97b233cedf906816606cbd196662715a6431428a41c74a35955` | frontend source |
+| `apps/web/src/features/relay-plans/queries.ts` | `ef5f6101773549baaebc5f5e2e801e64a68422abfa74b1e82779ea2c47ebd942` | frontend source |
+| `apps/web/src/features/relay-plans/types.ts` | `0ca9afa2c045c81261d99fba2531f1ff2650de7bdda34b7f6c80361b71c03c02` | frontend source |
+| `apps/web/src/features/relay-runs/api.ts` | `5476efe1610114f291142683ed2b10c8a7ebda999d68f7f9fede0ea46415347d` | frontend source |
+| `apps/web/src/features/relay-runs/queries.ts` | `59056d93507603509846f88914bc0e2abc42c1d67df038285ec34cc409b72a4f` | frontend source |
+| `apps/web/src/features/relay-runs/types.ts` | `ad0d53a38380ebfce436df106c9cb4d0396c6914b8372c04abd73a0daa54bd49` | frontend source |
+| `docs/generated/agent-references/http-api-surface.json` | `fe5a646195ea4c44d691a65a4e405bcb070490a54ed59b1f7e369206fcfe9a9c` | generated HTTP API reference |
 | `internal/agentrefs/http_api.go` | `1836cb8c0699d067b6eaf190de18d45d16b8a3e0e766c88ef6f4c0305fb143d4` | backend route scanner source |
 
 ## Fact Labels
@@ -37,6 +43,110 @@ Schema version: `1.0.0`
 - `conflict`
 
 ## Facts
+
+### frontend-query-key-workflowplankeys-detail (derived)
+
+Frontend query key workflowPlanKeys.detail bound in apps/web/src/features/relay-plans/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-plans/queries.ts`
+
+### frontend-query-key-workflowplankeys-details (derived)
+
+Frontend query key workflowPlanKeys.details bound in apps/web/src/features/relay-plans/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-plans/queries.ts`
+
+### frontend-query-key-workflowplankeys-list (derived)
+
+Frontend query key workflowPlanKeys.list bound in apps/web/src/features/relay-plans/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-plans/queries.ts`
+
+### frontend-query-key-workflowplankeys-lists (derived)
+
+Frontend query key workflowPlanKeys.lists bound in apps/web/src/features/relay-plans/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-plans/queries.ts`
+
+### frontend-query-key-workflowplankeys-pass (derived)
+
+Frontend query key workflowPlanKeys.pass bound in apps/web/src/features/relay-plans/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-plans/queries.ts`
+
+### frontend-query-key-workflowrunkeys-artifact (derived)
+
+Frontend query key workflowRunKeys.artifact bound in apps/web/src/features/relay-runs/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-runs/queries.ts`
+
+### frontend-query-key-workflowrunkeys-attempt (derived)
+
+Frontend query key workflowRunKeys.attempt bound in apps/web/src/features/relay-runs/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-runs/queries.ts`
+
+### frontend-query-key-workflowrunkeys-audit (derived)
+
+Frontend query key workflowRunKeys.audit bound in apps/web/src/features/relay-runs/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-runs/queries.ts`
+
+### frontend-query-key-workflowrunkeys-detail (derived)
+
+Frontend query key workflowRunKeys.detail bound in apps/web/src/features/relay-runs/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-runs/queries.ts`
+
+### frontend-query-key-workflowrunkeys-details (derived)
+
+Frontend query key workflowRunKeys.details bound in apps/web/src/features/relay-runs/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-runs/queries.ts`
+
+### frontend-query-key-workflowrunkeys-list (derived)
+
+Frontend query key workflowRunKeys.list bound in apps/web/src/features/relay-runs/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-runs/queries.ts`
+
+### frontend-query-key-workflowrunkeys-lists (derived)
+
+Frontend query key workflowRunKeys.lists bound in apps/web/src/features/relay-runs/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-runs/queries.ts`
+
+### frontend-query-key-workflowrunkeys-specification (derived)
+
+Frontend query key workflowRunKeys.specification bound in apps/web/src/features/relay-runs/queries.ts
+
+Evidence:
+
+- source: `apps/web/src/features/relay-runs/queries.ts`
 
 ### frontend-type-dto-planapipass-planapipass (proven)
 

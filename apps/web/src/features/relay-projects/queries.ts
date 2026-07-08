@@ -3,11 +3,11 @@ import {
   getWorkflowProject,
   listWorkflowProjects,
   listWorkflowRepositoryTargets,
-} from "./canonical-api";
+} from "./api";
 import type {
   WorkflowProjectDetailLimits,
   WorkflowProjectListFilters,
-} from "./canonical-types";
+} from "./types";
 
 export const workflowProjectKeys = {
   all: ["workflow-projects"] as const,

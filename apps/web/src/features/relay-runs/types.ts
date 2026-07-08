@@ -3,13 +3,13 @@ import type {
   WorkflowCanonicalValidation,
   WorkflowProjectReference,
   WorkflowRunStage,
-} from "@/features/relay-plans/canonical-types";
+} from "@/features/relay-plans/types";
 
 export type {
   WorkflowArtifactReference,
   WorkflowProjectReference,
   WorkflowRunStage,
-} from "@/features/relay-plans/canonical-types";
+} from "@/features/relay-plans/types";
 
 export type WorkflowRunStatus =
   | "created"

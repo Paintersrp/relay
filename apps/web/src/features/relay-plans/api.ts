@@ -9,7 +9,7 @@ import {
   requiredWorkflowString,
   type WorkflowHttpMethod,
   type WorkflowJsonRecord,
-} from "@/features/workflow-canonical-api";
+} from "@/features/workflow-api";
 import type {
   MoveWorkflowPlanRequest,
   SubmitWorkflowPlanRequest,
@@ -28,7 +28,7 @@ import type {
   WorkflowProjectReference,
   WorkflowProjectStatus,
   WorkflowRunStage,
-} from "./canonical-types";
+} from "./types";
 
 function enumValue<T extends string>(
   value: unknown,

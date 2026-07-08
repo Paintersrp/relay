@@ -4,7 +4,7 @@ import {
   getWorkflowAttempt,
   getWorkflowRun,
   startWorkflowAttempt,
-} from "./canonical-api";
+} from "./api";
 
 const reducedArtifact = {
   artifactId: "artifact-attempt",

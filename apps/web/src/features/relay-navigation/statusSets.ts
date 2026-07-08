@@ -18,7 +18,7 @@
 // authority for both.
 //
 // Values are drawn from the canonical `WorkflowRunStatus` contract in the
-// relay-runs feature (canonical-types.ts). This module does not redefine
+// relay-runs feature (types.ts). This module does not redefine
 // that contract.
 
 export const BLOCKED_STATUSES = ["execution_failed", "cancelled"] as const;

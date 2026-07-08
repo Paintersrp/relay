@@ -6,8 +6,8 @@ import {
   getWorkflowRun,
   getWorkflowSpecification,
   listWorkflowRuns,
-} from "./canonical-api";
-import type { WorkflowRunListFilters } from "./canonical-types";
+} from "./api";
+import type { WorkflowRunListFilters } from "./types";
 
 export const workflowRunKeys = {
   all: ["workflow-runs"] as const,

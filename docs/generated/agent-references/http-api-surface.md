@@ -25,7 +25,7 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `internal/api/audits/routes.go` | `cb280a66be4f337b0bf8e64f0aa4c52d1104ea05ccf0cd216929c1db84cf242e` | route source |
+| `internal/api/audits/routes.go` | `25d4eba355b6d9a3673f56f1e7cb647eaaed355a36f34725fce3cbb0d71bc8f5` | route source |
 
 ## Fact Labels
 

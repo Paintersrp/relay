@@ -30,7 +30,7 @@
     },
     {
       "path": "internal/api/audits/routes.go",
-      "sha256": "cb280a66be4f337b0bf8e64f0aa4c52d1104ea05ccf0cd216929c1db84cf242e",
+      "sha256": "25d4eba355b6d9a3673f56f1e7cb647eaaed355a36f34725fce3cbb0d71bc8f5",
       "role": "source"
     },
     {
@@ -45,12 +45,12 @@
     },
     {
       "path": "internal/api/canonical/workflow.go",
-      "sha256": "8acba60da29c9025ce1af9a1b06654a78c11e304bf71cbfa90df9bff8e6cb4d3",
+      "sha256": "27da13c2bf6c44e670c8a135cda57cfab2c5861ab0624eacf37fb5ce3df9bc57",
       "role": "source"
     },
     {
       "path": "internal/api/canonical/workflow_test.go",
-      "sha256": "dca627f6b59a60b47e4bb89c502ec86685f37a70a62102ec21a13dd023dd6574",
+      "sha256": "a852271851b236589a9c474ad230778886db9d02fc88c0335afac33a26675489",
       "role": "test"
     },
     {
@@ -135,38 +135,23 @@
     },
     {
       "path": "internal/app/audits/workflow_packet.go",
-      "sha256": "79dee2bd6b202e7987e51ff570a1c1a953e61f65992a7407f3a1c766cc572dd9",
+      "sha256": "d77a0c3f8d23338b0d3397d51dd95b3fd762d0745dff321de09fe4727e72a6d0",
       "role": "source"
     },
     {
       "path": "internal/app/audits/workflow_service.go",
-      "sha256": "46c9b2e5ad2982cad1506cd1da959c934deb4ffa2bb0135784bdf5e8fa4d3ef9",
+      "sha256": "76caa6f336242b338fbf47bcd8fd70b816b0c94dbb580d2989c2cedcd2038eb5",
       "role": "source"
     },
     {
       "path": "internal/app/audits/workflow_service_test.go",
-      "sha256": "68a5966e039a9f83ab4acb5ad3d72a44fd2d007546b2c86e52e9761239b7ba41",
+      "sha256": "33d25cdf91fa917a954e0254610f4edc3b7201ef0f413139021896911b7a9ea5",
       "role": "test"
     },
     {
       "path": "internal/app/audits/workflow_types.go",
-      "sha256": "33a21b9c4cab79e1a1f2e4a0e757145adac805f17e8d52d61662a5112dc22f13",
+      "sha256": "dfcb1692bb720484bc89241d387e3aa566ab1145a2d9f4cafcbb5e141ff23042",
       "role": "source"
-    },
-    {
-      "path": "internal/app/canonical/errors.go",
-      "sha256": "142e1be86bdee6f8353477d9a353212f77b667154c915817c8f8b31d281af09f",
-      "role": "source"
-    },
-    {
-      "path": "internal/app/canonical/service.go",
-      "sha256": "aac09bfdffbb5a59489a441c5b761c9c1c2d42f2d087689962a6fafd71038105",
-      "role": "source"
-    },
-    {
-      "path": "internal/app/canonical/service_test.go",
-      "sha256": "38a98415a2cb9cec718b910f373cd08841b9871cfceea8b5b93b3df17fbf2eb4",
-      "role": "test"
     },
     {
       "path": "internal/app/plans/workflow/service.go",
@@ -214,6 +199,21 @@
       "role": "source"
     },
     {
+      "path": "internal/app/submissions/errors.go",
+      "sha256": "c729a372cddc30fabc6c0533bee19448b3d0f8ce8dd9e81279e215d5c2e80a7b",
+      "role": "source"
+    },
+    {
+      "path": "internal/app/submissions/service.go",
+      "sha256": "bccec5205043e609334af3fb96c2df817a297c9b608459ddd7b52d70cd8968a1",
+      "role": "source"
+    },
+    {
+      "path": "internal/app/submissions/service_test.go",
+      "sha256": "b6a733615b4072b1fe6e8a2c433a855c398b8afa23ac55135734a24417f028ee",
+      "role": "test"
+    },
+    {
       "path": "internal/app/workflow/project_projection_test.go",
       "sha256": "40bd3eaeae9a8daf3f358641021497c7335b48e08d4e29cc6cf30a110dc77696",
       "role": "test"
@@ -240,22 +240,32 @@
     },
     {
       "path": "internal/mcp/artifact_readback_tools.go",
-      "sha256": "5e7b3f85f135c87058e66b65d7a38baccd8eee0925021a45e6dcc1a50a8c7fea",
+      "sha256": "6bc47a6b03889c32350efe1db1efe721773b881f8a77f31028af06be496763b9",
       "role": "source"
     },
     {
       "path": "internal/mcp/artifact_readback_tools_test.go",
-      "sha256": "ebd59fc6216ae1a0cb5ab3a2c8218a2bb30adbd4fc85f3264578cebe96df9a9c",
+      "sha256": "58c4bffd8f0d26fa4c4fa8a2278fee72f90cf44106e82d0cf15ac5d72f4eb869",
+      "role": "test"
+    },
+    {
+      "path": "internal/mcp/artifact_submission_tools.go",
+      "sha256": "47e68a79e76666ae9c8127646c8773e2aeff8ff54bbe756c145df3c88beaa977",
+      "role": "source"
+    },
+    {
+      "path": "internal/mcp/artifact_submission_tools_test.go",
+      "sha256": "7736100013ec0506dfbd7f6d237580587e16ca99243bfa79d2d2e7cf0df90043",
       "role": "test"
     },
     {
       "path": "internal/mcp/audit_tools.go",
-      "sha256": "30834574aa2ba67b9cd332460e6354cf33bc54d557b6919f4d00c06fbbf7a4c4",
+      "sha256": "2277b186610e24ae6529971cbd10c5bdefb70cda15b0c2b52990345b36387188",
       "role": "source"
     },
     {
       "path": "internal/mcp/audit_tools_test.go",
-      "sha256": "6e8ec612ac5a78e9f573ef8ad8e759548815b377fa04444516890f1839486b29",
+      "sha256": "fe5ef83273f83ec99b2d20a366c3d522d1551de8dffe0a67cea7b33217d0b4fc",
       "role": "test"
     },
     {
@@ -270,42 +280,27 @@
     },
     {
       "path": "internal/mcp/canonical_application.go",
-      "sha256": "2bfcaa4c33eeb16dd1f92c8b3eddd51010e52ff346029df2dcf628409381e95e",
+      "sha256": "d32c457bc1c9975ef355be1bd2310cb911bc8ace37d5b2b81988444e113d9a09",
       "role": "source"
-    },
-    {
-      "path": "internal/mcp/canonical_decode.go",
-      "sha256": "bc7e702cfe61cc257543f92379a6d08ac99506f71b5b3f4444431b668d61840d",
-      "role": "source"
-    },
-    {
-      "path": "internal/mcp/canonical_tools.go",
-      "sha256": "515eb453a75a3d76738876fde91f9e4d785c58387e7624aa35bfa4d4db601e69",
-      "role": "source"
-    },
-    {
-      "path": "internal/mcp/canonical_tools_test.go",
-      "sha256": "d2d4539286ab8a45f6461458d11a71cfa4397247bbfdcd3867d6f85eabd811cd",
-      "role": "test"
     },
     {
       "path": "internal/mcp/canonical_transport_parity_test.go",
-      "sha256": "c8274783c514b10c617c6b8025756fe6f1c4e460791e70e966e35711afc5cffa",
+      "sha256": "36f98c713911e8bba771b9fd0082412b46b8d3261e2dd78dcb546d8033a2b2b1",
       "role": "test"
     },
     {
       "path": "internal/mcp/deps.go",
-      "sha256": "1e1a6e3bd9f955f8b11d73ec48c9befc942c14281df3fabff10c9725259632c1",
+      "sha256": "40925ecd638fcc4341ba9d94c22591039a3180ff6d65507732c50322b928b8cb",
       "role": "source"
     },
     {
       "path": "internal/mcp/file_parameter_fetcher.go",
-      "sha256": "d344191a871b4823bd4392a6da95a3d798849e01b1b3a242c20725a8436e1529",
+      "sha256": "0adfa3e7513c8342db5baca930b4337397dd8ebf4b34a6cc0989ad0310142293",
       "role": "source"
     },
     {
       "path": "internal/mcp/file_parameter_fetcher_test.go",
-      "sha256": "ee21de388c885b50816c0b499a28f2f5576f346000e5b5f3f97dcde10ee03be6",
+      "sha256": "3c2678eac2bd7dab6018762d739f75af2850a6f9c36109010941afa398145a44",
       "role": "test"
     },
     {
@@ -320,7 +315,7 @@
     },
     {
       "path": "internal/mcp/http_handler_test.go",
-      "sha256": "31212809fca4f7997d06d882364fb552e5a6981c7faaf909b1e5dd23c7a62411",
+      "sha256": "157943abc1da1beb6b12fc6850efe85538980feda0069914567c9573ef1f9325",
       "role": "test"
     },
     {
@@ -330,7 +325,7 @@
     },
     {
       "path": "internal/mcp/profile_test.go",
-      "sha256": "9622e878e8d96acf075b527f2a38527f5067af89aef9ed44d0c1db8947044742",
+      "sha256": "acd21d91c91819c64e98b08b0e74a848e11b8dc5f2a4ed8fcead6fbae371cce7",
       "role": "test"
     },
     {
@@ -340,18 +335,23 @@
     },
     {
       "path": "internal/mcp/server.go",
-      "sha256": "a9713a078d49391f37bfe2244c524aac607326fec61caecb02b75c149af22f54",
+      "sha256": "c25d7b97454940dd4bd6785f9fa3123b7c36721186b7576f40205cebf50637c9",
       "role": "source"
     },
     {
       "path": "internal/mcp/server_notification_test.go",
-      "sha256": "2057d9e251817439a066949e8a0f887c5842205ff507c698f6d1c143a9ea6894",
+      "sha256": "abe1f0dd738415bb0856f2372e21a57649385f218230b15857cfaae4c0f983da",
       "role": "test"
     },
     {
       "path": "internal/mcp/server_tools_list_test.go",
-      "sha256": "c5820a2349a5ff88828bb89d210fcf61343b61dd957765c6875af13d42dbfad5",
+      "sha256": "3020dc6bff586ed66593af7c3d5280c7bcb078097471180be35e25e22800a2d0",
       "role": "test"
+    },
+    {
+      "path": "internal/mcp/strict_decode.go",
+      "sha256": "bc7e702cfe61cc257543f92379a6d08ac99506f71b5b3f4444431b668d61840d",
+      "role": "source"
     },
     {
       "path": "internal/store/workflow/ids.go",
@@ -687,9 +687,9 @@
       ]
     },
     {
-      "id": "backend-import-edge-internal-api-canonical-relay-internal-app-canonical",
+      "id": "backend-import-edge-internal-api-canonical-relay-internal-app-plans-workflow",
       "label": "derived",
-      "statement": "Import edge: internal/api/canonical imports relay/internal/app/canonical",
+      "statement": "Import edge: internal/api/canonical imports relay/internal/app/plans/workflow",
       "evidence": [
         {
           "kind": "source",
@@ -698,9 +698,9 @@
       ]
     },
     {
-      "id": "backend-import-edge-internal-api-canonical-relay-internal-app-plans-workflow",
+      "id": "backend-import-edge-internal-api-canonical-relay-internal-app-submissions",
       "label": "derived",
-      "statement": "Import edge: internal/api/canonical imports relay/internal/app/plans/workflow",
+      "statement": "Import edge: internal/api/canonical imports relay/internal/app/submissions",
       "evidence": [
         {
           "kind": "source",
@@ -858,6 +858,17 @@
       "evidence": [
         {
           "kind": "source",
+          "value": "internal/app/audits/workflow_service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-audits-relay-internal-executor-2",
+      "label": "derived",
+      "statement": "Import edge: internal/app/audits imports relay/internal/executor",
+      "evidence": [
+        {
+          "kind": "source",
           "value": "internal/app/audits/workflow_packet.go"
         }
       ]
@@ -902,7 +913,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/audits/workflow_packet.go"
+          "value": "internal/app/audits/workflow_types.go"
         }
       ]
     },
@@ -913,7 +924,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/audits/workflow_service.go"
+          "value": "internal/app/audits/workflow_packet.go"
         }
       ]
     },
@@ -924,62 +935,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/audits/workflow_types.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-import-edge-internal-app-canonical-relay-internal-app-plans-workflow",
-      "label": "derived",
-      "statement": "Import edge: internal/app/canonical imports relay/internal/app/plans/workflow",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-import-edge-internal-app-canonical-relay-internal-app-runs-workflow",
-      "label": "derived",
-      "statement": "Import edge: internal/app/canonical imports relay/internal/app/runs/workflow",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-import-edge-internal-app-canonical-relay-internal-speccompiler",
-      "label": "derived",
-      "statement": "Import edge: internal/app/canonical imports relay/internal/speccompiler",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-import-edge-internal-app-canonical-relay-internal-speccompiler-2",
-      "label": "derived",
-      "statement": "Import edge: internal/app/canonical imports relay/internal/speccompiler",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-import-edge-internal-app-canonical-relay-internal-store-workflow",
-      "label": "derived",
-      "statement": "Import edge: internal/app/canonical imports relay/internal/store/workflow",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
+          "value": "internal/app/audits/workflow_service.go"
         }
       ]
     },
@@ -1061,6 +1017,61 @@
       ]
     },
     {
+      "id": "backend-import-edge-internal-app-submissions-relay-internal-app-plans-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/app/submissions imports relay/internal/app/plans/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-submissions-relay-internal-app-runs-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/app/submissions imports relay/internal/app/runs/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-submissions-relay-internal-speccompiler",
+      "label": "derived",
+      "statement": "Import edge: internal/app/submissions imports relay/internal/speccompiler",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-submissions-relay-internal-speccompiler-2",
+      "label": "derived",
+      "statement": "Import edge: internal/app/submissions imports relay/internal/speccompiler",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-app-submissions-relay-internal-store-workflow",
+      "label": "derived",
+      "statement": "Import edge: internal/app/submissions imports relay/internal/store/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
       "id": "backend-import-edge-internal-app-workflow-relay-internal-repos-workflow",
       "label": "derived",
       "statement": "Import edge: internal/app/workflow imports relay/internal/repos/workflow",
@@ -1078,7 +1089,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/workflow/types.go"
+          "value": "internal/app/workflow/service.go"
         }
       ]
     },
@@ -1089,7 +1100,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/workflow/service.go"
+          "value": "internal/app/workflow/types.go"
         }
       ]
     },
@@ -1111,7 +1122,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/artifact_readback_tools.go"
+          "value": "internal/mcp/deps.go"
         }
       ]
     },
@@ -1122,29 +1133,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/deps.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-import-edge-internal-mcp-relay-internal-app-canonical",
-      "label": "derived",
-      "statement": "Import edge: internal/mcp imports relay/internal/app/canonical",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/mcp/canonical_application.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-import-edge-internal-mcp-relay-internal-app-canonical-2",
-      "label": "derived",
-      "statement": "Import edge: internal/mcp imports relay/internal/app/canonical",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
+          "value": "internal/mcp/artifact_readback_tools.go"
         }
       ]
     },
@@ -1155,7 +1144,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_application.go"
+          "value": "internal/mcp/artifact_submission_tools.go"
         }
       ]
     },
@@ -1166,7 +1155,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
+          "value": "internal/mcp/canonical_application.go"
         }
       ]
     },
@@ -1174,6 +1163,28 @@
       "id": "backend-import-edge-internal-mcp-relay-internal-app-projects-workflow",
       "label": "derived",
       "statement": "Import edge: internal/mcp imports relay/internal/app/projects/workflow",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/canonical_application.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-app-submissions",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/app/submissions",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/artifact_submission_tools.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-import-edge-internal-mcp-relay-internal-app-submissions-2",
+      "label": "derived",
+      "statement": "Import edge: internal/mcp imports relay/internal/app/submissions",
       "evidence": [
         {
           "kind": "source",
@@ -1199,7 +1210,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
+          "value": "internal/mcp/artifact_submission_tools.go"
         }
       ]
     },
@@ -1210,7 +1221,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_application.go"
+          "value": "internal/mcp/artifact_submission_tools.go"
         }
       ]
     },
@@ -1232,7 +1243,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
+          "value": "internal/mcp/canonical_application.go"
         }
       ]
     },
@@ -1452,25 +1463,6 @@
       ]
     },
     {
-      "id": "backend-package-internal-app-canonical",
-      "label": "proven",
-      "statement": "Backend package internal/app/canonical (canonical)",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        },
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        },
-        {
-          "kind": "test",
-          "value": "internal/app/canonical/service_test.go"
-        }
-      ]
-    },
-    {
       "id": "backend-package-internal-app-plans-workflow",
       "label": "proven",
       "statement": "Backend package internal/app/plans/workflow (workflowplans)",
@@ -1528,6 +1520,25 @@
       ]
     },
     {
+      "id": "backend-package-internal-app-submissions",
+      "label": "proven",
+      "statement": "Backend package internal/app/submissions (submissions)",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/app/submissions/service_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-package-internal-app-workflow",
       "label": "proven",
       "statement": "Backend package internal/app/workflow (workflow)",
@@ -1565,6 +1576,10 @@
         },
         {
           "kind": "source",
+          "value": "internal/mcp/artifact_submission_tools.go"
+        },
+        {
+          "kind": "source",
           "value": "internal/mcp/audit_tools.go"
         },
         {
@@ -1574,14 +1589,6 @@
         {
           "kind": "source",
           "value": "internal/mcp/canonical_application.go"
-        },
-        {
-          "kind": "source",
-          "value": "internal/mcp/canonical_decode.go"
-        },
-        {
-          "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
         },
         {
           "kind": "source",
@@ -1608,8 +1615,16 @@
           "value": "internal/mcp/server.go"
         },
         {
+          "kind": "source",
+          "value": "internal/mcp/strict_decode.go"
+        },
+        {
           "kind": "test",
           "value": "internal/mcp/artifact_readback_tools_test.go"
+        },
+        {
+          "kind": "test",
+          "value": "internal/mcp/artifact_submission_tools_test.go"
         },
         {
           "kind": "test",
@@ -1618,10 +1633,6 @@
         {
           "kind": "test",
           "value": "internal/mcp/blocker_envelope_test.go"
-        },
-        {
-          "kind": "test",
-          "value": "internal/mcp/canonical_tools_test.go"
         },
         {
           "kind": "test",
@@ -1826,28 +1837,6 @@
       ]
     },
     {
-      "id": "backend-service-like-internal-app-canonical-newservice",
-      "label": "convention",
-      "statement": "Service-like symbol NewService (constructor) in internal/app/canonical/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-service-like-internal-app-canonical-service",
-      "label": "convention",
-      "statement": "Service-like symbol Service (type) in internal/app/canonical/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
       "id": "backend-service-like-internal-app-plans-workflow-newservice",
       "label": "convention",
       "statement": "Service-like symbol NewService (constructor) in internal/app/plans/workflow/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
@@ -1910,6 +1899,28 @@
         {
           "kind": "source",
           "value": "internal/app/runs/workflow/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-service-like-internal-app-submissions-newservice",
+      "label": "convention",
+      "statement": "Service-like symbol NewService (constructor) in internal/app/submissions/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-service-like-internal-app-submissions-service",
+      "label": "convention",
+      "statement": "Service-like symbol Service (type) in internal/app/submissions/service.go — identified by naming convention (named Service, ending in Service, or NewService/New*Service constructor).",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
         }
       ]
     },
@@ -2970,9 +2981,42 @@
       ]
     },
     {
-      "id": "backend-symbol-internal-app-audits-type-workflowauditcommitauthority",
+      "id": "backend-symbol-internal-app-audits-type-workflowauditauthority",
       "label": "proven",
-      "statement": "Exported type WorkflowAuditCommitAuthority in internal/app/audits/workflow_types.go",
+      "statement": "Exported type WorkflowAuditAuthority in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditchangedfile",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditChangedFile in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditembeddedjson",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditEmbeddedJSON in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditembeddedmarkdown",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditEmbeddedMarkdown in internal/app/audits/workflow_types.go",
       "evidence": [
         {
           "kind": "source",
@@ -2992,9 +3036,31 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditexecution",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditExecution in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-audits-type-workflowauditinspector",
       "label": "proven",
       "statement": "Exported type WorkflowAuditInspector in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditmanagedcontext",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditManagedContext in internal/app/audits/workflow_types.go",
       "evidence": [
         {
           "kind": "source",
@@ -3014,9 +3080,42 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditpacketartifact",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditPacketArtifact in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-audits-type-workflowauditpassauthority",
       "label": "proven",
       "statement": "Exported type WorkflowAuditPassAuthority in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditremediationcontext",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditRemediationContext in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditrepository",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditRepository in internal/app/audits/workflow_types.go",
       "evidence": [
         {
           "kind": "source",
@@ -3050,6 +3149,17 @@
       "id": "backend-symbol-internal-app-audits-type-workflowauditstatus",
       "label": "proven",
       "statement": "Exported type WorkflowAuditStatus in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditvalidationresult",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditValidationResult in internal/app/audits/workflow_types.go",
       "evidence": [
         {
           "kind": "source",
@@ -3164,347 +3274,6 @@
         {
           "kind": "source",
           "value": "internal/app/audits/workflow_types.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-errorcompilerrejected",
-      "label": "proven",
-      "statement": "Exported const ErrorCompilerRejected in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-errorexpectedhashmismatch",
-      "label": "proven",
-      "statement": "Exported const ErrorExpectedHashMismatch in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-errorinvalidartifactkind",
-      "label": "proven",
-      "statement": "Exported const ErrorInvalidArtifactKind in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-errorinvalidexpectedhash",
-      "label": "proven",
-      "statement": "Exported const ErrorInvalidExpectedHash in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-errorpersistence",
-      "label": "proven",
-      "statement": "Exported const ErrorPersistence in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-errorplanpassassociation",
-      "label": "proven",
-      "statement": "Exported const ErrorPlanPassAssociation in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-errorprojectarchived",
-      "label": "proven",
-      "statement": "Exported const ErrorProjectArchived in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-errorprojectnotfound",
-      "label": "proven",
-      "statement": "Exported const ErrorProjectNotFound in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-errorremediationassociation",
-      "label": "proven",
-      "statement": "Exported const ErrorRemediationAssociation in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-errorrepositorynotfound",
-      "label": "proven",
-      "statement": "Exported const ErrorRepositoryNotFound in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-errorselectedpassfilename",
-      "label": "proven",
-      "statement": "Exported const ErrorSelectedPassFilename in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-errorunknownresource",
-      "label": "proven",
-      "statement": "Exported const ErrorUnknownResource in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-const-maxdiagnostics",
-      "label": "proven",
-      "statement": "Exported const MaxDiagnostics in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-func-artifactkind",
-      "label": "proven",
-      "statement": "Exported func ArtifactKind in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-func-asapplicationerror",
-      "label": "proven",
-      "statement": "Exported func AsApplicationError in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-func-createrun",
-      "label": "proven",
-      "statement": "Exported func CreateRun in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-func-error",
-      "label": "proven",
-      "statement": "Exported func Error in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-func-newservice",
-      "label": "proven",
-      "statement": "Exported func NewService in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-func-sha256",
-      "label": "proven",
-      "statement": "Exported func SHA256 in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-func-submitplan",
-      "label": "proven",
-      "statement": "Exported func SubmitPlan in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-func-unwrap",
-      "label": "proven",
-      "statement": "Exported func Unwrap in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-func-validateartifact",
-      "label": "proven",
-      "statement": "Exported func ValidateArtifact in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-type-applicationerror",
-      "label": "proven",
-      "statement": "Exported type ApplicationError in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-type-createruninput",
-      "label": "proven",
-      "statement": "Exported type CreateRunInput in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-type-createrunresult",
-      "label": "proven",
-      "statement": "Exported type CreateRunResult in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-type-errorcode",
-      "label": "proven",
-      "statement": "Exported type ErrorCode in internal/app/canonical/errors.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/errors.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-type-service",
-      "label": "proven",
-      "statement": "Exported type Service in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-type-submitplaninput",
-      "label": "proven",
-      "statement": "Exported type SubmitPlanInput in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-type-submitplanresult",
-      "label": "proven",
-      "statement": "Exported type SubmitPlanResult in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-type-validationinput",
-      "label": "proven",
-      "statement": "Exported type ValidationInput in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-app-canonical-type-validationresult",
-      "label": "proven",
-      "statement": "Exported type ValidationResult in internal/app/canonical/service.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/app/canonical/service.go"
         }
       ]
     },
@@ -4323,6 +4092,347 @@
       ]
     },
     {
+      "id": "backend-symbol-internal-app-submissions-const-errorcompilerrejected",
+      "label": "proven",
+      "statement": "Exported const ErrorCompilerRejected in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-const-errorexpectedhashmismatch",
+      "label": "proven",
+      "statement": "Exported const ErrorExpectedHashMismatch in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-const-errorinvalidartifactkind",
+      "label": "proven",
+      "statement": "Exported const ErrorInvalidArtifactKind in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-const-errorinvalidexpectedhash",
+      "label": "proven",
+      "statement": "Exported const ErrorInvalidExpectedHash in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-const-errorpersistence",
+      "label": "proven",
+      "statement": "Exported const ErrorPersistence in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-const-errorplanpassassociation",
+      "label": "proven",
+      "statement": "Exported const ErrorPlanPassAssociation in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-const-errorprojectarchived",
+      "label": "proven",
+      "statement": "Exported const ErrorProjectArchived in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-const-errorprojectnotfound",
+      "label": "proven",
+      "statement": "Exported const ErrorProjectNotFound in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-const-errorremediationassociation",
+      "label": "proven",
+      "statement": "Exported const ErrorRemediationAssociation in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-const-errorrepositorynotfound",
+      "label": "proven",
+      "statement": "Exported const ErrorRepositoryNotFound in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-const-errorselectedpassfilename",
+      "label": "proven",
+      "statement": "Exported const ErrorSelectedPassFilename in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-const-errorunknownresource",
+      "label": "proven",
+      "statement": "Exported const ErrorUnknownResource in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-const-maxdiagnostics",
+      "label": "proven",
+      "statement": "Exported const MaxDiagnostics in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-func-artifactkind",
+      "label": "proven",
+      "statement": "Exported func ArtifactKind in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-func-asapplicationerror",
+      "label": "proven",
+      "statement": "Exported func AsApplicationError in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-func-createrun",
+      "label": "proven",
+      "statement": "Exported func CreateRun in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-func-error",
+      "label": "proven",
+      "statement": "Exported func Error in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-func-newservice",
+      "label": "proven",
+      "statement": "Exported func NewService in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-func-sha256",
+      "label": "proven",
+      "statement": "Exported func SHA256 in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-func-submitplan",
+      "label": "proven",
+      "statement": "Exported func SubmitPlan in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-func-unwrap",
+      "label": "proven",
+      "statement": "Exported func Unwrap in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-func-validateartifact",
+      "label": "proven",
+      "statement": "Exported func ValidateArtifact in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-type-applicationerror",
+      "label": "proven",
+      "statement": "Exported type ApplicationError in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-type-createruninput",
+      "label": "proven",
+      "statement": "Exported type CreateRunInput in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-type-createrunresult",
+      "label": "proven",
+      "statement": "Exported type CreateRunResult in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-type-errorcode",
+      "label": "proven",
+      "statement": "Exported type ErrorCode in internal/app/submissions/errors.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/errors.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-type-service",
+      "label": "proven",
+      "statement": "Exported type Service in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-type-submitplaninput",
+      "label": "proven",
+      "statement": "Exported type SubmitPlanInput in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-type-submitplanresult",
+      "label": "proven",
+      "statement": "Exported type SubmitPlanResult in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-type-validationinput",
+      "label": "proven",
+      "statement": "Exported type ValidationInput in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-submissions-type-validationresult",
+      "label": "proven",
+      "statement": "Exported type ValidationResult in internal/app/submissions/service.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/submissions/service.go"
+        }
+      ]
+    },
+    {
       "id": "backend-symbol-internal-app-workflow-const-defaultartifactcontentlimit",
       "label": "proven",
       "statement": "Exported const DefaultArtifactContentLimit in internal/app/workflow/types.go",
@@ -5082,9 +5192,9 @@
       ]
     },
     {
-      "id": "backend-symbol-internal-mcp-func-fetchcanonicalartifact",
+      "id": "backend-symbol-internal-mcp-func-fetchartifact",
       "label": "proven",
-      "statement": "Exported func FetchCanonicalArtifact in internal/mcp/file_parameter_fetcher.go",
+      "statement": "Exported func FetchArtifact in internal/mcp/file_parameter_fetcher.go",
       "evidence": [
         {
           "kind": "source",
@@ -5104,24 +5214,24 @@
       ]
     },
     {
-      "id": "backend-symbol-internal-mcp-func-handlecreatecanonicalrun",
+      "id": "backend-symbol-internal-mcp-func-handlecreaterun",
       "label": "proven",
-      "statement": "Exported func HandleCreateCanonicalRun in internal/mcp/canonical_tools.go",
+      "statement": "Exported func HandleCreateRun in internal/mcp/artifact_submission_tools.go",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
+          "value": "internal/mcp/artifact_submission_tools.go"
         }
       ]
     },
     {
-      "id": "backend-symbol-internal-mcp-func-handlegetcanonicalplan",
+      "id": "backend-symbol-internal-mcp-func-handlegetplan",
       "label": "proven",
-      "statement": "Exported func HandleGetCanonicalPlan in internal/mcp/canonical_tools.go",
+      "statement": "Exported func HandleGetPlan in internal/mcp/artifact_submission_tools.go",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
+          "value": "internal/mcp/artifact_submission_tools.go"
         }
       ]
     },
@@ -5172,33 +5282,22 @@
     {
       "id": "backend-symbol-internal-mcp-func-handlesubmitplan",
       "label": "proven",
-      "statement": "Exported func HandleSubmitPlan in internal/mcp/canonical_tools.go",
+      "statement": "Exported func HandleSubmitPlan in internal/mcp/artifact_submission_tools.go",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
+          "value": "internal/mcp/artifact_submission_tools.go"
         }
       ]
     },
     {
       "id": "backend-symbol-internal-mcp-func-handlevalidateartifact",
       "label": "proven",
-      "statement": "Exported func HandleValidateArtifact in internal/mcp/canonical_tools.go",
+      "statement": "Exported func HandleValidateArtifact in internal/mcp/artifact_submission_tools.go",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-symbol-internal-mcp-func-newcanonicaldepsfromenv",
-      "label": "proven",
-      "statement": "Exported func NewCanonicalDepsFromEnv in internal/mcp/deps.go",
-      "evidence": [
-        {
-          "kind": "source",
-          "value": "internal/mcp/deps.go"
+          "value": "internal/mcp/artifact_submission_tools.go"
         }
       ]
     },
@@ -5232,6 +5331,17 @@
         {
           "kind": "source",
           "value": "internal/mcp/server.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-mcp-func-newworkflowdepsfromenv",
+      "label": "proven",
+      "statement": "Exported func NewWorkflowDepsFromEnv in internal/mcp/deps.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/mcp/deps.go"
         }
       ]
     },
@@ -5280,9 +5390,9 @@
       ]
     },
     {
-      "id": "backend-symbol-internal-mcp-type-canonicalfileparameterfetcher",
+      "id": "backend-symbol-internal-mcp-type-artifactfileparameterfetcher",
       "label": "proven",
-      "statement": "Exported type CanonicalFileParameterFetcher in internal/mcp/file_parameter_fetcher.go",
+      "statement": "Exported type ArtifactFileParameterFetcher in internal/mcp/file_parameter_fetcher.go",
       "evidence": [
         {
           "kind": "source",
@@ -5621,13 +5731,13 @@
       ]
     },
     {
-      "id": "backend-symbol-internal-mcp-var-toolcreatecanonicalrun",
+      "id": "backend-symbol-internal-mcp-var-toolcreaterun",
       "label": "proven",
-      "statement": "Exported var ToolCreateCanonicalRun in internal/mcp/canonical_tools.go",
+      "statement": "Exported var ToolCreateRun in internal/mcp/artifact_submission_tools.go",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
+          "value": "internal/mcp/artifact_submission_tools.go"
         }
       ]
     },
@@ -5643,13 +5753,13 @@
       ]
     },
     {
-      "id": "backend-symbol-internal-mcp-var-toolgetcanonicalplan",
+      "id": "backend-symbol-internal-mcp-var-toolgetplan",
       "label": "proven",
-      "statement": "Exported var ToolGetCanonicalPlan in internal/mcp/canonical_tools.go",
+      "statement": "Exported var ToolGetPlan in internal/mcp/artifact_submission_tools.go",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
+          "value": "internal/mcp/artifact_submission_tools.go"
         }
       ]
     },
@@ -5689,22 +5799,22 @@
     {
       "id": "backend-symbol-internal-mcp-var-toolsubmitplan",
       "label": "proven",
-      "statement": "Exported var ToolSubmitPlan in internal/mcp/canonical_tools.go",
+      "statement": "Exported var ToolSubmitPlan in internal/mcp/artifact_submission_tools.go",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
+          "value": "internal/mcp/artifact_submission_tools.go"
         }
       ]
     },
     {
       "id": "backend-symbol-internal-mcp-var-toolvalidateartifact",
       "label": "proven",
-      "statement": "Exported var ToolValidateArtifact in internal/mcp/canonical_tools.go",
+      "statement": "Exported var ToolValidateArtifact in internal/mcp/artifact_submission_tools.go",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_tools.go"
+          "value": "internal/mcp/artifact_submission_tools.go"
         }
       ]
     },
@@ -8415,6 +8525,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-audits-testworkflowauditartifactreadbackusespacketdeclaredartifacts",
+      "label": "proven",
+      "statement": "Test function TestWorkflowAuditArtifactReadbackUsesPacketDeclaredArtifacts in internal/app/audits/workflow_service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/audits/workflow_service_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-audits-testworkflowauditauthoritativeartifacttamperingblocks",
       "label": "proven",
       "statement": "Test function TestWorkflowAuditAuthoritativeArtifactTamperingBlocks in internal/app/audits/workflow_service_test.go",
@@ -8488,50 +8609,6 @@
         {
           "kind": "test",
           "value": "internal/app/audits/workflow_service_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-app-canonical-testmutationinputsarestrictandfailuresaretypedandatomic",
-      "label": "proven",
-      "statement": "Test function TestMutationInputsAreStrictAndFailuresAreTypedAndAtomic in internal/app/canonical/service_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/app/canonical/service_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-app-canonical-testplansubmissionreturnscommittedprojectaggregate",
-      "label": "proven",
-      "statement": "Test function TestPlanSubmissionReturnsCommittedProjectAggregate in internal/app/canonical/service_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/app/canonical/service_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-app-canonical-testrunsubmissionpreservesselectedpassfilenamecontract",
-      "label": "proven",
-      "statement": "Test function TestRunSubmissionPreservesSelectedPassFilenameContract in internal/app/canonical/service_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/app/canonical/service_test.go"
-        }
-      ]
-    },
-    {
-      "id": "backend-test-internal-app-canonical-testvalidationcomputeshashwithoutexpectedhashanddoesnotnormalizefilename",
-      "label": "proven",
-      "statement": "Test function TestValidationComputesHashWithoutExpectedHashAndDoesNotNormalizeFilename in internal/app/canonical/service_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/app/canonical/service_test.go"
         }
       ]
     },
@@ -8679,6 +8756,50 @@
       ]
     },
     {
+      "id": "backend-test-internal-app-submissions-testmutationinputsarestrictandfailuresaretypedandatomic",
+      "label": "proven",
+      "statement": "Test function TestMutationInputsAreStrictAndFailuresAreTypedAndAtomic in internal/app/submissions/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/submissions/service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-submissions-testplansubmissionreturnscommittedprojectaggregate",
+      "label": "proven",
+      "statement": "Test function TestPlanSubmissionReturnsCommittedProjectAggregate in internal/app/submissions/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/submissions/service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-submissions-testrunsubmissionpreservesselectedpassfilenamecontract",
+      "label": "proven",
+      "statement": "Test function TestRunSubmissionPreservesSelectedPassFilenameContract in internal/app/submissions/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/submissions/service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-submissions-testvalidationcomputeshashwithoutexpectedhashanddoesnotnormalizefilename",
+      "label": "proven",
+      "statement": "Test function TestValidationComputesHashWithoutExpectedHashAndDoesNotNormalizeFilename in internal/app/submissions/service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/submissions/service_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-app-workflow-testresolverunstageusesthreestageworkflow",
       "label": "proven",
       "statement": "Test function TestResolveRunStageUsesThreeStageWorkflow in internal/app/workflow/service_test.go",
@@ -8734,17 +8855,6 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testcanonicaldepscarrycanonicalprofile",
-      "label": "proven",
-      "statement": "Test function TestCanonicalDepsCarryCanonicalProfile in internal/mcp/profile_test.go",
-      "evidence": [
-        {
-          "kind": "test",
-          "value": "internal/mcp/profile_test.go"
-        }
-      ]
-    },
-    {
       "id": "backend-test-internal-mcp-testcanonicalmcpandhttpassociationfailureparityandrollback",
       "label": "proven",
       "statement": "Test function TestCanonicalMCPAndHTTPAssociationFailureParityAndRollback in internal/mcp/canonical_transport_parity_test.go",
@@ -8769,55 +8879,55 @@
     {
       "id": "backend-test-internal-mcp-testcanonicalpersistencefailureisboundedandrollsbackartifacts",
       "label": "proven",
-      "statement": "Test function TestCanonicalPersistenceFailureIsBoundedAndRollsBackArtifacts in internal/mcp/canonical_tools_test.go",
+      "statement": "Test function TestCanonicalPersistenceFailureIsBoundedAndRollsBackArtifacts in internal/mcp/artifact_submission_tools_test.go",
       "evidence": [
         {
           "kind": "test",
-          "value": "internal/mcp/canonical_tools_test.go"
+          "value": "internal/mcp/artifact_submission_tools_test.go"
         }
       ]
     },
     {
       "id": "backend-test-internal-mcp-testcanonicalsubmissionfailuresareatomicandclassified",
       "label": "proven",
-      "statement": "Test function TestCanonicalSubmissionFailuresAreAtomicAndClassified in internal/mcp/canonical_tools_test.go",
+      "statement": "Test function TestCanonicalSubmissionFailuresAreAtomicAndClassified in internal/mcp/artifact_submission_tools_test.go",
       "evidence": [
         {
           "kind": "test",
-          "value": "internal/mcp/canonical_tools_test.go"
+          "value": "internal/mcp/artifact_submission_tools_test.go"
         }
       ]
     },
     {
       "id": "backend-test-internal-mcp-testcanonicaltooldefinitionsbyprofile",
       "label": "proven",
-      "statement": "Test function TestCanonicalToolDefinitionsByProfile in internal/mcp/canonical_tools_test.go",
+      "statement": "Test function TestCanonicalToolDefinitionsByProfile in internal/mcp/artifact_submission_tools_test.go",
       "evidence": [
         {
           "kind": "test",
-          "value": "internal/mcp/canonical_tools_test.go"
+          "value": "internal/mcp/artifact_submission_tools_test.go"
         }
       ]
     },
     {
       "id": "backend-test-internal-mcp-testcreaterunenforcespassqualifiedfilenames",
       "label": "proven",
-      "statement": "Test function TestCreateRunEnforcesPassQualifiedFilenames in internal/mcp/canonical_tools_test.go",
+      "statement": "Test function TestCreateRunEnforcesPassQualifiedFilenames in internal/mcp/artifact_submission_tools_test.go",
       "evidence": [
         {
           "kind": "test",
-          "value": "internal/mcp/canonical_tools_test.go"
+          "value": "internal/mcp/artifact_submission_tools_test.go"
         }
       ]
     },
     {
       "id": "backend-test-internal-mcp-testcreaterunpersistssetupreadymetadataandartifacts",
       "label": "proven",
-      "statement": "Test function TestCreateRunPersistsSetupReadyMetadataAndArtifacts in internal/mcp/canonical_tools_test.go",
+      "statement": "Test function TestCreateRunPersistsSetupReadyMetadataAndArtifacts in internal/mcp/artifact_submission_tools_test.go",
       "evidence": [
         {
           "kind": "test",
-          "value": "internal/mcp/canonical_tools_test.go"
+          "value": "internal/mcp/artifact_submission_tools_test.go"
         }
       ]
     },
@@ -8857,11 +8967,11 @@
     {
       "id": "backend-test-internal-mcp-testgetplanmissingreturnsrecoverableunknownresource",
       "label": "proven",
-      "statement": "Test function TestGetPlanMissingReturnsRecoverableUnknownResource in internal/mcp/canonical_tools_test.go",
+      "statement": "Test function TestGetPlanMissingReturnsRecoverableUnknownResource in internal/mcp/artifact_submission_tools_test.go",
       "evidence": [
         {
           "kind": "test",
-          "value": "internal/mcp/canonical_tools_test.go"
+          "value": "internal/mcp/artifact_submission_tools_test.go"
         }
       ]
     },
@@ -8877,6 +8987,17 @@
       ]
     },
     {
+      "id": "backend-test-internal-mcp-testgetrunartifactmapsundeclaredreferenceerror",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactMapsUndeclaredReferenceError in internal/mcp/audit_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/audit_tools_test.go"
+        }
+      ]
+    },
+    {
       "id": "backend-test-internal-mcp-testgetrunartifactrejectspathandkindarguments",
       "label": "proven",
       "statement": "Test function TestGetRunArtifactRejectsPathAndKindArguments in internal/mcp/artifact_readback_tools_test.go",
@@ -8884,6 +9005,17 @@
         {
           "kind": "test",
           "value": "internal/mcp/artifact_readback_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testgetrunartifactusespacketreference",
+      "label": "proven",
+      "statement": "Test function TestGetRunArtifactUsesPacketReference in internal/mcp/audit_tools_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/audit_tools_test.go"
         }
       ]
     },
@@ -8987,9 +9119,9 @@
       ]
     },
     {
-      "id": "backend-test-internal-mcp-testhttpsfileparameterfetchercanonicalartifactvalidation",
+      "id": "backend-test-internal-mcp-testhttpsfileparameterfetcherartifactvalidation",
       "label": "proven",
-      "statement": "Test function TestHTTPSFileParameterFetcherCanonicalArtifactValidation in internal/mcp/file_parameter_fetcher_test.go",
+      "statement": "Test function TestHTTPSFileParameterFetcherArtifactValidation in internal/mcp/file_parameter_fetcher_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -9121,11 +9253,11 @@
     {
       "id": "backend-test-internal-mcp-testlistprojectsreturnsboundedplannermetadata",
       "label": "proven",
-      "statement": "Test function TestListProjectsReturnsBoundedPlannerMetadata in internal/mcp/canonical_tools_test.go",
+      "statement": "Test function TestListProjectsReturnsBoundedPlannerMetadata in internal/mcp/artifact_submission_tools_test.go",
       "evidence": [
         {
           "kind": "test",
-          "value": "internal/mcp/canonical_tools_test.go"
+          "value": "internal/mcp/artifact_submission_tools_test.go"
         }
       ]
     },
@@ -9198,11 +9330,11 @@
     {
       "id": "backend-test-internal-mcp-testsubmitplanandgetplanpersistboundedmetadata",
       "label": "proven",
-      "statement": "Test function TestSubmitPlanAndGetPlanPersistBoundedMetadata in internal/mcp/canonical_tools_test.go",
+      "statement": "Test function TestSubmitPlanAndGetPlanPersistBoundedMetadata in internal/mcp/artifact_submission_tools_test.go",
       "evidence": [
         {
           "kind": "test",
-          "value": "internal/mcp/canonical_tools_test.go"
+          "value": "internal/mcp/artifact_submission_tools_test.go"
         }
       ]
     },
@@ -9264,11 +9396,22 @@
     {
       "id": "backend-test-internal-mcp-testvalidateartifactisnonmutatingandbounded",
       "label": "proven",
-      "statement": "Test function TestValidateArtifactIsNonMutatingAndBounded in internal/mcp/canonical_tools_test.go",
+      "statement": "Test function TestValidateArtifactIsNonMutatingAndBounded in internal/mcp/artifact_submission_tools_test.go",
       "evidence": [
         {
           "kind": "test",
-          "value": "internal/mcp/canonical_tools_test.go"
+          "value": "internal/mcp/artifact_submission_tools_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-mcp-testworkflowdepscarryprofile",
+      "label": "proven",
+      "statement": "Test function TestWorkflowDepsCarryProfile in internal/mcp/profile_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/mcp/profile_test.go"
         }
       ]
     },

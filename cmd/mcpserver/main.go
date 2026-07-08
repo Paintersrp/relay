@@ -47,7 +47,7 @@ func main() {
 	}
 	defer workflowStore.Close()
 
-	deps := mcp.NewCanonicalDepsFromEnv(workflowStore, log)
+	deps := mcp.NewWorkflowDepsFromEnv(workflowStore, log)
 	log.Info(
 		"relay MCP server starting",
 		"transport", "stdio",

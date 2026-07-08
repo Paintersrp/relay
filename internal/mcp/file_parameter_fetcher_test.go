@@ -287,7 +287,7 @@ func TestHTTPSFileParameterFetcherRejectsUnsafeResolvedAddresses(t *testing.T) {
 	}
 }
 
-func TestHTTPSFileParameterFetcherCanonicalArtifactValidation(t *testing.T) {
+func TestHTTPSFileParameterFetcherArtifactValidation(t *testing.T) {
 	body := []byte("{\"schema_version\":\"1.0\"}\n")
 	fetcher := &HTTPSFileParameterFetcher{
 		Resolver: fakeResolver{addrs: []net.IPAddr{
@@ -306,7 +306,7 @@ func TestHTTPSFileParameterFetcherCanonicalArtifactValidation(t *testing.T) {
 	}
 	for _, name := range []string{"feature.plan.json", "feature.execution-spec.json"} {
 		t.Run(name, func(t *testing.T) {
-			out, err := fetcher.FetchCanonicalArtifact(context.Background(), ChatGPTFileReference{
+			out, err := fetcher.FetchArtifact(context.Background(), ChatGPTFileReference{
 				DownloadURL: "https://files.example.test/artifact?signature=secret",
 				FileID:      "file-1",
 				FileName:    name,
@@ -331,7 +331,7 @@ func TestHTTPSFileParameterFetcherCanonicalArtifactValidation(t *testing.T) {
 		{name: "nested", fileName: "dir/feature.plan.json"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := fetcher.FetchCanonicalArtifact(context.Background(), ChatGPTFileReference{
+			_, err := fetcher.FetchArtifact(context.Background(), ChatGPTFileReference{
 				DownloadURL: "https://files.example.test/artifact",
 				FileID:      "file-1",
 				FileName:    tc.fileName,

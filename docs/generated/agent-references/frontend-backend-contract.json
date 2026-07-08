@@ -19,8 +19,38 @@
   },
   "source_inputs": [
     {
+      "path": "apps/web/src/features/relay-plans/api.ts",
+      "sha256": "70692d8b6c29e97b233cedf906816606cbd196662715a6431428a41c74a35955",
+      "role": "frontend source"
+    },
+    {
+      "path": "apps/web/src/features/relay-plans/queries.ts",
+      "sha256": "ef5f6101773549baaebc5f5e2e801e64a68422abfa74b1e82779ea2c47ebd942",
+      "role": "frontend source"
+    },
+    {
+      "path": "apps/web/src/features/relay-plans/types.ts",
+      "sha256": "0ca9afa2c045c81261d99fba2531f1ff2650de7bdda34b7f6c80361b71c03c02",
+      "role": "frontend source"
+    },
+    {
+      "path": "apps/web/src/features/relay-runs/api.ts",
+      "sha256": "5476efe1610114f291142683ed2b10c8a7ebda999d68f7f9fede0ea46415347d",
+      "role": "frontend source"
+    },
+    {
+      "path": "apps/web/src/features/relay-runs/queries.ts",
+      "sha256": "59056d93507603509846f88914bc0e2abc42c1d67df038285ec34cc409b72a4f",
+      "role": "frontend source"
+    },
+    {
+      "path": "apps/web/src/features/relay-runs/types.ts",
+      "sha256": "ad0d53a38380ebfce436df106c9cb4d0396c6914b8372c04abd73a0daa54bd49",
+      "role": "frontend source"
+    },
+    {
       "path": "docs/generated/agent-references/http-api-surface.json",
-      "sha256": "fd0427351f10f17ee7935ab6283a14e6f60d509f065368c85c49625d660696d4",
+      "sha256": "fe5a646195ea4c44d691a65a4e405bcb070490a54ed59b1f7e369206fcfe9a9c",
       "role": "generated HTTP API reference"
     },
     {
@@ -37,6 +67,149 @@
     "conflict"
   ],
   "facts": [
+    {
+      "id": "frontend-query-key-workflowplankeys-detail",
+      "label": "derived",
+      "statement": "Frontend query key workflowPlanKeys.detail bound in apps/web/src/features/relay-plans/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-plans/queries.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-query-key-workflowplankeys-details",
+      "label": "derived",
+      "statement": "Frontend query key workflowPlanKeys.details bound in apps/web/src/features/relay-plans/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-plans/queries.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-query-key-workflowplankeys-list",
+      "label": "derived",
+      "statement": "Frontend query key workflowPlanKeys.list bound in apps/web/src/features/relay-plans/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-plans/queries.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-query-key-workflowplankeys-lists",
+      "label": "derived",
+      "statement": "Frontend query key workflowPlanKeys.lists bound in apps/web/src/features/relay-plans/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-plans/queries.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-query-key-workflowplankeys-pass",
+      "label": "derived",
+      "statement": "Frontend query key workflowPlanKeys.pass bound in apps/web/src/features/relay-plans/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-plans/queries.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-query-key-workflowrunkeys-artifact",
+      "label": "derived",
+      "statement": "Frontend query key workflowRunKeys.artifact bound in apps/web/src/features/relay-runs/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-runs/queries.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-query-key-workflowrunkeys-attempt",
+      "label": "derived",
+      "statement": "Frontend query key workflowRunKeys.attempt bound in apps/web/src/features/relay-runs/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-runs/queries.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-query-key-workflowrunkeys-audit",
+      "label": "derived",
+      "statement": "Frontend query key workflowRunKeys.audit bound in apps/web/src/features/relay-runs/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-runs/queries.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-query-key-workflowrunkeys-detail",
+      "label": "derived",
+      "statement": "Frontend query key workflowRunKeys.detail bound in apps/web/src/features/relay-runs/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-runs/queries.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-query-key-workflowrunkeys-details",
+      "label": "derived",
+      "statement": "Frontend query key workflowRunKeys.details bound in apps/web/src/features/relay-runs/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-runs/queries.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-query-key-workflowrunkeys-list",
+      "label": "derived",
+      "statement": "Frontend query key workflowRunKeys.list bound in apps/web/src/features/relay-runs/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-runs/queries.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-query-key-workflowrunkeys-lists",
+      "label": "derived",
+      "statement": "Frontend query key workflowRunKeys.lists bound in apps/web/src/features/relay-runs/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-runs/queries.ts"
+        }
+      ]
+    },
+    {
+      "id": "frontend-query-key-workflowrunkeys-specification",
+      "label": "derived",
+      "statement": "Frontend query key workflowRunKeys.specification bound in apps/web/src/features/relay-runs/queries.ts",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "apps/web/src/features/relay-runs/queries.ts"
+        }
+      ]
+    },
     {
       "id": "frontend-type-dto-planapipass-planapipass",
       "label": "proven",

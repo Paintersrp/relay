@@ -109,21 +109,9 @@ const legacyMCPFiles = new Set([
 ]);
 
 const legacyFrontendFiles = [
-  "apps/web/src/features/relay-plans/api.ts",
-  "apps/web/src/features/relay-plans/api.test.ts",
-  "apps/web/src/features/relay-plans/queries.ts",
-  "apps/web/src/features/relay-plans/types.ts",
-  "apps/web/src/features/relay-projects/api.ts",
-  "apps/web/src/features/relay-projects/api.test.ts",
-  "apps/web/src/features/relay-projects/queries.ts",
-  "apps/web/src/features/relay-projects/types.ts",
-  "apps/web/src/features/relay-runs/api.ts",
-  "apps/web/src/features/relay-runs/api.test.ts",
   "apps/web/src/features/relay-runs/api.audit-status.test.ts",
   "apps/web/src/features/relay-runs/mock-data.ts",
-  "apps/web/src/features/relay-runs/queries.ts",
   "apps/web/src/features/relay-runs/queries.test.ts",
-  "apps/web/src/features/relay-runs/types.ts",
   "apps/web/src/features/relay-runs/derivation.ts",
   "apps/web/src/features/relay-runs/derivation.test.ts",
   "apps/web/src/features/relay-runs/progression.ts",

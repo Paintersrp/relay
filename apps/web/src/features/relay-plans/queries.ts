@@ -3,8 +3,8 @@ import {
   getWorkflowPlan,
   getWorkflowPlanPass,
   listWorkflowPlans,
-} from "./canonical-api";
-import type { WorkflowPlanListFilters } from "./canonical-types";
+} from "./api";
+import type { WorkflowPlanListFilters } from "./types";
 
 export const workflowPlanKeys = {
   all: ["workflow-plans"] as const,

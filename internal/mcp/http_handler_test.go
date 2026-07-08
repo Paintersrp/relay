@@ -101,7 +101,7 @@ func TestHTTPHandlerCanonicalProtocol(t *testing.T) {
 	t.Run("structured file parameter reaches canonical handler", func(t *testing.T) {
 		data := canonicalPlanBytes("relay")
 		ref := harness.put("http-validate", "canonical-test.plan.json", data)
-		args := canonicalArgs(t, canonicalArtifactArgs{ArtifactFile: ref})
+		args := canonicalArgs(t, artifactArgs{ArtifactFile: ref})
 		resp := postMCPRequest(t, handler, Request{
 			JSONRPC: JSONRPCVersion,
 			ID:      json.RawMessage(`3`),
@@ -119,7 +119,7 @@ func TestHTTPHandlerCanonicalProtocol(t *testing.T) {
 		if result.IsError {
 			t.Fatalf("validate_artifact failed: %s", canonicalToolText(t, result))
 		}
-		var out canonicalValidationOutput
+		var out artifactValidationOutput
 		if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &out); err != nil {
 			t.Fatal(err)
 		}

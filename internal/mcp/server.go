@@ -285,9 +285,9 @@ func (s *Server) handleToolsCall(req Request) Response {
 	case "submit_plan":
 		result = s.HandleSubmitPlan(args)
 	case "get_plan":
-		result = s.HandleGetCanonicalPlan(args)
+		result = s.HandleGetPlan(args)
 	case "create_run":
-		result = s.HandleCreateCanonicalRun(args)
+		result = s.HandleCreateRun(args)
 	case "get_audit_packet":
 		result = s.HandleGetWorkflowAuditPacket(args)
 	case "get_run_artifact":

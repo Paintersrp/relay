@@ -36,8 +36,8 @@ type FileParameterFetcher interface {
 	FetchPlannerHandoff(ctx context.Context, ref ChatGPTFileReference) (FileParameterContent, *FileParameterError)
 }
 
-type CanonicalFileParameterFetcher interface {
-	FetchCanonicalArtifact(ctx context.Context, ref ChatGPTFileReference) (FileParameterContent, *FileParameterError)
+type ArtifactFileParameterFetcher interface {
+	FetchArtifact(ctx context.Context, ref ChatGPTFileReference) (FileParameterContent, *FileParameterError)
 }
 
 type FileParameterError struct {
@@ -151,7 +151,7 @@ func (f *HTTPSFileParameterFetcher) FetchPlannerHandoff(ctx context.Context, ref
 	return FileParameterContent{Bytes: data, DisplayName: displayName}, nil
 }
 
-func (f *HTTPSFileParameterFetcher) FetchCanonicalArtifact(ctx context.Context, ref ChatGPTFileReference) (FileParameterContent, *FileParameterError) {
+func (f *HTTPSFileParameterFetcher) FetchArtifact(ctx context.Context, ref ChatGPTFileReference) (FileParameterContent, *FileParameterError) {
 	displayName, err := canonicalArtifactDisplayName(ref.FileName)
 	if err != nil {
 		return FileParameterContent{}, fileParamErr(MCPBlockerFileReferenceInvalid, err.Error())

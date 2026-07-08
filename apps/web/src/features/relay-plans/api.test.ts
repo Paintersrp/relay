@@ -7,7 +7,7 @@ import {
   moveWorkflowPlan,
   submitWorkflowPlan,
   validateWorkflowPlan,
-} from "./canonical-api";
+} from "./api";
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
