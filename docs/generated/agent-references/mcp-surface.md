@@ -25,8 +25,8 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `internal/mcp/audit_tools.go` | `2277b186610e24ae6529971cbd10c5bdefb70cda15b0c2b52990345b36387188` | mcp_tool_source |
-| `internal/mcp/server.go` | `c25d7b97454940dd4bd6785f9fa3123b7c36721186b7576f40205cebf50637c9` | mcp_tool_source |
+| `internal/mcp/audit_tools.go` | `149372f4e719bb04aa591c32205b894e1287ee9a59ddd4d4105b5edccaf2c281` | mcp_tool_source |
+| `internal/mcp/server.go` | `ca8c46471048d1e2800262b653664993e8dcfff08503c1ec14d70131f4aed733` | mcp_tool_source |
 
 ## Fact Labels
 

@@ -24,7 +24,7 @@ type Server struct {
 	tools []ToolDefinition
 }
 
-// NewServer constructs an MCP server with the exact canonical profile registry.
+// NewServer constructs an MCP server with the exact workflow profile registry.
 func NewServer(log *slog.Logger, deps ...*MCPDeps) *Server {
 	var d *MCPDeps
 	if len(deps) > 0 {
@@ -47,7 +47,7 @@ func (s *Server) activeProfile() ToolProfile {
 }
 
 func (s *Server) profileToolDefinitions() []ToolDefinition {
-	return canonicalToolDefinitions(s.activeProfile())
+	return workflowToolDefinitions(s.activeProfile())
 }
 
 // toolRegistered checks if a tool is in the registry.
@@ -125,8 +125,8 @@ func (s *Server) handleLineWithSkip(line []byte) (resp Response, skip bool) {
 func (s *Server) handleInitialize(req Request) Response {
 	result := InitializeResult{
 		ProtocolVersion: MCPProtocolVersion,
-		Capabilities:   Capabilities{Tools: &ToolsCapability{ListChanged: false}},
-		ServerInfo:     ServerInfo{Name: "relay-mcp", Version: "0.2.0"},
+		Capabilities:    Capabilities{Tools: &ToolsCapability{ListChanged: false}},
+		ServerInfo:      ServerInfo{Name: "relay-mcp", Version: "0.2.0"},
 	}
 	return okResponse(req.ID, result)
 }
@@ -281,7 +281,7 @@ func (s *Server) handleToolsCall(req Request) Response {
 	case "validate_artifact":
 		result = s.HandleValidateArtifact(args)
 	case "list_projects":
-		result = s.HandleListCanonicalProjects(args)
+		result = s.HandleListProjects(args)
 	case "submit_plan":
 		result = s.HandleSubmitPlan(args)
 	case "get_plan":

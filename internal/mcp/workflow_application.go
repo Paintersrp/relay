@@ -7,13 +7,13 @@ import (
 	"errors"
 	"strings"
 
-	workflowsubmissions "relay/internal/app/submissions"
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowprojects "relay/internal/app/projects/workflow"
+	workflowsubmissions "relay/internal/app/submissions"
 	workflowstore "relay/internal/store/workflow"
 )
 
-var listCanonicalProjectsSchema = json.RawMessage(`{
+var listProjectsSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -25,10 +25,10 @@ var listCanonicalProjectsSchema = json.RawMessage(`{
 var ToolListProjects = ToolDefinition{
 	Name:        "list_projects",
 	Description: "List bounded Relay Projects so the Planner can select the required external Project association before Plan submission.",
-	InputSchema: listCanonicalProjectsSchema,
+	InputSchema: listProjectsSchema,
 }
 
-type listCanonicalProjectsArgs struct {
+type listProjectsArgs struct {
 	Status string `json:"status,omitempty"`
 	Limit  int    `json:"limit,omitempty"`
 }
@@ -39,31 +39,31 @@ type projectMetadata struct {
 	Status    string `json:"status"`
 }
 
-type canonicalProjectsOutput struct {
+type projectsOutput struct {
 	OK       bool              `json:"ok"`
 	Tool     string            `json:"tool"`
 	Projects []projectMetadata `json:"projects"`
 	Count    int               `json:"count"`
 }
 
-func (s *Server) canonicalWorkflowService() (*workflowsubmissions.Service, error) {
+func (s *Server) submissionService() (*workflowsubmissions.Service, error) {
 	if s.workflowStore() == nil {
 		return nil, errors.New("MCP server is not connected to a workflow store")
 	}
 	return workflowsubmissions.NewService(s.workflowStore())
 }
 
-func (s *Server) HandleListCanonicalProjects(rawArgs json.RawMessage) ToolCallResult {
+func (s *Server) HandleListProjects(rawArgs json.RawMessage) ToolCallResult {
 	if s.workflowStore() == nil {
-		return canonicalBlocked("list_projects", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
+		return workflowBlocked("list_projects", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
 	}
-	var input listCanonicalProjectsArgs
+	var input listProjectsArgs
 	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
-		return canonicalBlocked("list_projects", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "list_projects", nil)
+		return workflowBlocked("list_projects", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "list_projects", nil)
 	}
 	service, err := workflowprojects.NewService(s.workflowStore())
 	if err != nil {
-		return canonicalBlocked("list_projects", MCPBlockerToolUnavailable, "workflow Project service is unavailable", false, "workflow_store", nil)
+		return workflowBlocked("list_projects", MCPBlockerToolUnavailable, "workflow Project service is unavailable", false, "workflow_store", nil)
 	}
 	values, err := service.ListProjects(context.Background(), workflowprojects.ListProjectsInput{
 		Status: strings.TrimSpace(input.Status),
@@ -76,7 +76,7 @@ func (s *Server) HandleListCanonicalProjects(rawArgs json.RawMessage) ToolCallRe
 	for _, value := range values {
 		projects = append(projects, projectOut(value))
 	}
-	return canonicalOK(canonicalProjectsOutput{
+	return workflowOK(projectsOutput{
 		OK:       true,
 		Tool:     "list_projects",
 		Projects: projects,
@@ -94,13 +94,13 @@ func submissionApplicationBlocked(tool string, err error, provenance any) ToolCa
 	if !ok {
 		switch {
 		case errors.Is(err, workflowplans.ErrPlanNotFound):
-			return canonicalBlocked(tool, MCPBlockerUnknownResource, "referenced Plan was not found", true, "plan_id", emptyMetadata(metadata))
+			return workflowBlocked(tool, MCPBlockerUnknownResource, "referenced Plan was not found", true, "plan_id", emptyMetadata(metadata))
 		case errors.Is(err, workflowprojects.ErrInvalidProjectRequest):
-			return canonicalBlocked(tool, MCPBlockerSchemaMismatch, err.Error(), true, "request", emptyMetadata(metadata))
+			return workflowBlocked(tool, MCPBlockerSchemaMismatch, err.Error(), true, "request", emptyMetadata(metadata))
 		case errors.Is(err, sql.ErrNoRows):
-			return canonicalBlocked(tool, MCPBlockerUnknownResource, "referenced Project or Project child was not found", true, "association", emptyMetadata(metadata))
+			return workflowBlocked(tool, MCPBlockerUnknownResource, "referenced Project or Project child was not found", true, "association", emptyMetadata(metadata))
 		default:
-			return canonicalBlocked(tool, canonicalBlockerPersistenceFailed, "workflow persistence failed", false, "workflow_store", emptyMetadata(metadata))
+			return workflowBlocked(tool, submissionBlockerPersistenceFailed, "workflow persistence failed", false, "workflow_store", emptyMetadata(metadata))
 		}
 	}
 
@@ -117,29 +117,29 @@ func submissionApplicationBlocked(tool string, err error, provenance any) ToolCa
 
 	switch applicationError.Code {
 	case workflowsubmissions.ErrorCompilerRejected:
-		return canonicalBlocked(tool, canonicalBlockerCompilerRejected, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
+		return workflowBlocked(tool, submissionBlockerCompilerRejected, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
 	case workflowsubmissions.ErrorInvalidExpectedHash:
-		return canonicalBlocked(tool, MCPBlockerSchemaMismatch, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
+		return workflowBlocked(tool, MCPBlockerSchemaMismatch, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
 	case workflowsubmissions.ErrorExpectedHashMismatch:
-		return canonicalBlocked(tool, MCPBlockerExpectedHashMismatch, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
+		return workflowBlocked(tool, MCPBlockerExpectedHashMismatch, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
 	case workflowsubmissions.ErrorInvalidArtifactKind:
-		return canonicalBlocked(tool, canonicalBlockerArtifactKind, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
+		return workflowBlocked(tool, submissionBlockerArtifactKind, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
 	case workflowsubmissions.ErrorProjectNotFound:
-		return canonicalBlocked(tool, MCPBlockerUnknownResource, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
+		return workflowBlocked(tool, MCPBlockerUnknownResource, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
 	case workflowsubmissions.ErrorUnknownResource:
-		return canonicalBlocked(tool, MCPBlockerUnknownResource, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
+		return workflowBlocked(tool, MCPBlockerUnknownResource, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
 	case workflowsubmissions.ErrorProjectArchived:
-		return canonicalBlocked(tool, "project_archived", applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
+		return workflowBlocked(tool, "project_archived", applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
 	case workflowsubmissions.ErrorRepositoryNotFound:
-		return canonicalBlocked(tool, MCPBlockerUnknownRepository, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
+		return workflowBlocked(tool, MCPBlockerUnknownRepository, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
 	case workflowsubmissions.ErrorPlanPassAssociation,
 		workflowsubmissions.ErrorSelectedPassFilename,
 		workflowsubmissions.ErrorRemediationAssociation:
-		return canonicalBlocked(tool, canonicalBlockerAssociationInvalid, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
+		return workflowBlocked(tool, submissionBlockerAssociationInvalid, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
 	case workflowsubmissions.ErrorPersistence:
-		return canonicalBlocked(tool, canonicalBlockerPersistenceFailed, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
+		return workflowBlocked(tool, submissionBlockerPersistenceFailed, applicationError.Message, applicationError.Recoverable, ref, emptyMetadata(metadata))
 	default:
-		return canonicalBlocked(tool, canonicalBlockerPersistenceFailed, "workflow persistence failed", false, "workflow_store", emptyMetadata(metadata))
+		return workflowBlocked(tool, submissionBlockerPersistenceFailed, "workflow persistence failed", false, "workflow_store", emptyMetadata(metadata))
 	}
 }
 

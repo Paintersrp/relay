@@ -10,8 +10,8 @@ import (
 	"os"
 	"strings"
 
-	workflowsubmissions "relay/internal/app/submissions"
 	workflowplans "relay/internal/app/plans/workflow"
+	workflowsubmissions "relay/internal/app/submissions"
 	"relay/internal/speccompiler"
 	workflowstore "relay/internal/store/workflow"
 )
@@ -19,10 +19,10 @@ import (
 const maxSubmissionDiagnostics = 50
 
 const (
-	canonicalBlockerCompilerRejected   = "compiler_rejected"
-	canonicalBlockerPersistenceFailed  = "persistence_failed"
-	canonicalBlockerAssociationInvalid = "association_invalid"
-	canonicalBlockerArtifactKind       = "artifact_kind_mismatch"
+	submissionBlockerCompilerRejected   = "compiler_rejected"
+	submissionBlockerPersistenceFailed  = "persistence_failed"
+	submissionBlockerAssociationInvalid = "association_invalid"
+	submissionBlockerArtifactKind       = "artifact_kind_mismatch"
 )
 
 var artifactFileSchema = json.RawMessage(`{
@@ -191,7 +191,7 @@ type workflowArtifactOutput struct {
 	CreatedAt    string `json:"created_at"`
 }
 
-func canonicalToolDefinitions(profile ToolProfile) []ToolDefinition {
+func workflowToolDefinitions(profile ToolProfile) []ToolDefinition {
 	switch profile {
 	case ToolProfileAuditor:
 		return []ToolDefinition{ToolValidateArtifact, ToolCreateRun, ToolGetAuditPacket, ToolGetRunArtifact, ToolRecordAuditDecision}
@@ -221,15 +221,15 @@ func (s *Server) workflowStore() *workflowstore.Store {
 func (s *Server) HandleValidateArtifact(rawArgs json.RawMessage) ToolCallResult {
 	var input artifactArgs
 	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
-		return canonicalBlocked("validate_artifact", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "validate_artifact", nil)
+		return workflowBlocked("validate_artifact", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "validate_artifact", nil)
 	}
 	content, fetchErr := s.artifactFetcher().FetchArtifact(context.Background(), input.ArtifactFile)
 	if fetchErr != nil {
-		return toolBlockedResult("validate_artifact", []MCPBlocker{canonicalFileParameterBlocker(fetchErr)}, nil)
+		return toolBlockedResult("validate_artifact", []MCPBlocker{artifactFileParameterBlocker(fetchErr)}, nil)
 	}
-	service, err := s.canonicalWorkflowService()
+	service, err := s.submissionService()
 	if err != nil {
-		return canonicalBlocked("validate_artifact", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", nil)
+		return workflowBlocked("validate_artifact", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", nil)
 	}
 	result, err := service.ValidateArtifact(context.Background(), workflowsubmissions.ValidationInput{
 		DisplayName:    content.DisplayName,
@@ -238,7 +238,7 @@ func (s *Server) HandleValidateArtifact(rawArgs json.RawMessage) ToolCallResult 
 	if err != nil {
 		return submissionApplicationBlocked("validate_artifact", err, nil)
 	}
-	return canonicalOK(artifactValidationOutput{
+	return workflowOK(artifactValidationOutput{
 		OK:          result.OK,
 		Tool:        "validate_artifact",
 		Status:      result.Status,
@@ -252,20 +252,20 @@ func (s *Server) HandleValidateArtifact(rawArgs json.RawMessage) ToolCallResult 
 
 func (s *Server) HandleSubmitPlan(rawArgs json.RawMessage) ToolCallResult {
 	if s.workflowStore() == nil {
-		return canonicalBlocked("submit_plan", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
+		return workflowBlocked("submit_plan", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
 	}
 	var input artifactSubmissionArgs
 	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
-		return canonicalBlocked("submit_plan", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "submit_plan", nil)
+		return workflowBlocked("submit_plan", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "submit_plan", nil)
 	}
 	content, fetchErr := s.artifactFetcher().FetchArtifact(context.Background(), input.ArtifactFile)
 	if fetchErr != nil {
-		return toolBlockedResult("submit_plan", []MCPBlocker{canonicalFileParameterBlocker(fetchErr)}, nil)
+		return toolBlockedResult("submit_plan", []MCPBlocker{artifactFileParameterBlocker(fetchErr)}, nil)
 	}
-	provenance := exactCanonicalProvenance(content, input.ExpectedSHA256)
-	service, err := s.canonicalWorkflowService()
+	provenance := exactArtifactProvenance(content, input.ExpectedSHA256)
+	service, err := s.submissionService()
 	if err != nil {
-		return canonicalBlocked("submit_plan", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", map[string]any{"provenance": provenance})
+		return workflowBlocked("submit_plan", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", map[string]any{"provenance": provenance})
 	}
 	result, err := service.SubmitPlan(context.Background(), workflowsubmissions.SubmitPlanInput{
 		ProjectID:      input.ProjectID,
@@ -276,7 +276,7 @@ func (s *Server) HandleSubmitPlan(rawArgs json.RawMessage) ToolCallResult {
 	if err != nil {
 		return submissionApplicationBlocked("submit_plan", err, provenance)
 	}
-	return canonicalOK(planOutput{
+	return workflowOK(planOutput{
 		OK:        true,
 		Tool:      "submit_plan",
 		Project:   projectOut(result.Project),
@@ -288,21 +288,21 @@ func (s *Server) HandleSubmitPlan(rawArgs json.RawMessage) ToolCallResult {
 
 func (s *Server) HandleGetPlan(rawArgs json.RawMessage) ToolCallResult {
 	if s.workflowStore() == nil {
-		return canonicalBlocked("get_plan", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
+		return workflowBlocked("get_plan", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
 	}
 	var input getPlanArgs
 	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
-		return canonicalBlocked("get_plan", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "get_plan", nil)
+		return workflowBlocked("get_plan", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "get_plan", nil)
 	}
 	svc, err := workflowplans.NewService(s.workflowStore())
 	if err != nil {
-		return canonicalBlocked("get_plan", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", nil)
+		return workflowBlocked("get_plan", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", nil)
 	}
 	result, err := svc.GetPlan(context.Background(), input.PlanID)
 	if err != nil {
 		return submissionApplicationBlocked("get_plan", err, nil)
 	}
-	return canonicalOK(planOutput{
+	return workflowOK(planOutput{
 		OK:        true,
 		Tool:      "get_plan",
 		Project:   projectOut(result.Project),
@@ -314,20 +314,20 @@ func (s *Server) HandleGetPlan(rawArgs json.RawMessage) ToolCallResult {
 
 func (s *Server) HandleCreateRun(rawArgs json.RawMessage) ToolCallResult {
 	if s.workflowStore() == nil {
-		return canonicalBlocked("create_run", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
+		return workflowBlocked("create_run", MCPBlockerToolUnavailable, "MCP server is not connected to a workflow store.", false, "workflow_store", nil)
 	}
 	var input artifactSubmissionArgs
 	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
-		return canonicalBlocked("create_run", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "create_run", nil)
+		return workflowBlocked("create_run", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "create_run", nil)
 	}
 	content, fetchErr := s.artifactFetcher().FetchArtifact(context.Background(), input.ArtifactFile)
 	if fetchErr != nil {
-		return toolBlockedResult("create_run", []MCPBlocker{canonicalFileParameterBlocker(fetchErr)}, nil)
+		return toolBlockedResult("create_run", []MCPBlocker{artifactFileParameterBlocker(fetchErr)}, nil)
 	}
-	provenance := exactCanonicalProvenance(content, input.ExpectedSHA256)
-	service, err := s.canonicalWorkflowService()
+	provenance := exactArtifactProvenance(content, input.ExpectedSHA256)
+	service, err := s.submissionService()
 	if err != nil {
-		return canonicalBlocked("create_run", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", map[string]any{"provenance": provenance})
+		return workflowBlocked("create_run", MCPBlockerToolUnavailable, err.Error(), false, "workflow_store", map[string]any{"provenance": provenance})
 	}
 	result, err := service.CreateRun(context.Background(), workflowsubmissions.CreateRunInput{
 		DisplayName:     content.DisplayName,
@@ -340,17 +340,17 @@ func (s *Server) HandleCreateRun(rawArgs json.RawMessage) ToolCallResult {
 	if err != nil {
 		return submissionApplicationBlocked("create_run", err, provenance)
 	}
-	return canonicalOK(runOutput{
+	return workflowOK(runOutput{
 		OK:         true,
 		Tool:       "create_run",
 		Run:        runOut(result.Run, s.workflowStore()),
 		Artifacts:  artifactOut(result.Artifacts),
 		Provenance: provenance,
-		ReviewURL:  canonicalRunReviewURL(result.Run.RunID),
+		ReviewURL:  runReviewURL(result.Run.RunID),
 	})
 }
 
-func canonicalRunReviewURL(runID string) string {
+func runReviewURL(runID string) string {
 	base := strings.TrimSpace(os.Getenv("RELAY_WEB_BASE_URL"))
 	if base == "" {
 		base = "http://localhost:3000"
@@ -358,11 +358,11 @@ func canonicalRunReviewURL(runID string) string {
 	return strings.TrimRight(base, "/") + "/runs/" + url.PathEscape(runID) + "/specification"
 }
 
-func canonicalBlocked(tool, code, message string, recoverable bool, ref string, metadata any) ToolCallResult {
+func workflowBlocked(tool, code, message string, recoverable bool, ref string, metadata any) ToolCallResult {
 	return toolBlockedResult(tool, []MCPBlocker{newMCPBlocker(code, message, recoverable, []MCPBlockerEvidence{{Kind: "field", Ref: ref}}, []string{"Correct the blocker and retry the tool."})}, metadata)
 }
 
-func canonicalOK(out any) ToolCallResult {
+func workflowOK(out any) ToolCallResult {
 	text, err := marshalTool(out)
 	if err != nil {
 		return toolErr(fmt.Sprintf("INTERNAL_ERROR: %s", err))
@@ -373,13 +373,13 @@ func canonicalOK(out any) ToolCallResult {
 	}
 }
 
-func canonicalKind(displayName string) string {
+func artifactKind(displayName string) string {
 	return workflowsubmissions.ArtifactKind(displayName)
 }
 
-func exactCanonicalProvenance(content FileParameterContent, expectedSHA string) ExactSubmissionProvenance {
+func exactArtifactProvenance(content FileParameterContent, expectedSHA string) ExactSubmissionProvenance {
 	out := exactSubmissionProvenance(content.Bytes, expectedSHA, "file_parameter", content.DisplayName)
-	out.ArtifactIdentity.ArtifactKind = canonicalKind(content.DisplayName)
+	out.ArtifactIdentity.ArtifactKind = artifactKind(content.DisplayName)
 	out.ArtifactIdentity.DisplayName = safeArtifactDisplayName(content.DisplayName, "artifact.json")
 	return out
 }
@@ -410,7 +410,7 @@ func sha256Hex(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func canonicalFileParameterBlocker(err *FileParameterError) MCPBlocker {
+func artifactFileParameterBlocker(err *FileParameterError) MCPBlocker {
 	if err == nil {
 		err = fileParamErr(MCPBlockerFileDownloadFailed, "artifact_file could not be downloaded")
 	}

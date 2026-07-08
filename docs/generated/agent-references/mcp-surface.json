@@ -20,12 +20,12 @@
   "source_inputs": [
     {
       "path": "internal/mcp/audit_tools.go",
-      "sha256": "2277b186610e24ae6529971cbd10c5bdefb70cda15b0c2b52990345b36387188",
+      "sha256": "149372f4e719bb04aa591c32205b894e1287ee9a59ddd4d4105b5edccaf2c281",
       "role": "mcp_tool_source"
     },
     {
       "path": "internal/mcp/server.go",
-      "sha256": "c25d7b97454940dd4bd6785f9fa3123b7c36721186b7576f40205cebf50637c9",
+      "sha256": "ca8c46471048d1e2800262b653664993e8dcfff08503c1ec14d70131f4aed733",
       "role": "mcp_tool_source"
     }
   ],

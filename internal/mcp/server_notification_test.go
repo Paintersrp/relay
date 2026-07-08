@@ -75,7 +75,7 @@ func TestServerToolsList_ExactMatch(t *testing.T) {
 	srv := NewServer(discardLogger())
 	list := collectAllTools(t, srv, ToolsListParams{})
 
-	expectedTools := toolNames(canonicalToolDefinitions(ToolProfilePlanner))
+	expectedTools := toolNames(workflowToolDefinitions(ToolProfilePlanner))
 
 	if len(list.Tools) != len(expectedTools) {
 		t.Fatalf("expected exactly %d tools, got %d", len(expectedTools), len(list.Tools))

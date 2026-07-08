@@ -39,11 +39,11 @@ func TestGetRunArtifactUsesPacketReference(t *testing.T) {
 		Content:  []byte("diff --git\n"),
 	}}
 	server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAuditor, WorkflowAuditService: service})
-	result := server.HandleGetRunArtifact(json.RawMessage(`{"run_id":"run-test","artifact_reference":"unified_diff","max_bytes":128}`))
-	if result.IsError || !strings.Contains(result.Content[0].Text, `"artifact_reference": "unified_diff"`) {
+	result := server.HandleGetRunArtifact(json.RawMessage(`{"run_id":"run-test","artifact_reference":"art_test_unified_diff","max_bytes":128}`))
+	if result.IsError || !strings.Contains(result.Content[0].Text, `"artifact_reference": "art_test_unified_diff"`) {
 		t.Fatalf("result = %+v", result)
 	}
-	if service.artifactInput.ArtifactReference != "unified_diff" || service.artifactInput.MaxBytes != 128 {
+	if service.artifactInput.ArtifactReference != "art_test_unified_diff" || service.artifactInput.MaxBytes != 128 {
 		t.Fatalf("artifact input = %+v", service.artifactInput)
 	}
 }
@@ -65,11 +65,11 @@ func TestGetAuditPacketReturnsAuthoritativeBody(t *testing.T) {
 			PacketSHA256:  strings.Repeat("c", 64),
 			AuditedCommit: strings.Repeat("b", 40),
 		},
-		PacketBytes: []byte(`{"schema_version":"1.0","audit_packet_id":"packet-test"}`),
+		PacketBytes: []byte(`{"schema_version":"1.0","run":{"run_id":1}}`),
 	}}
 	server := NewServer(nil, &MCPDeps{ToolProfile: ToolProfileAuditor, WorkflowAuditService: service})
 	result := server.HandleGetWorkflowAuditPacket(json.RawMessage(`{"run_id":"run-test"}`))
-	if result.IsError || !strings.Contains(result.Content[0].Text, `"audit_packet_id": "packet-test"`) {
+	if result.IsError || !strings.Contains(result.Content[0].Text, `"run_id": 1`) {
 		t.Fatalf("result = %+v", result)
 	}
 }

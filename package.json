@@ -10,7 +10,6 @@
     "test:local-scripts": "node --test scripts/local/chatgpt-mcp.test.mjs",
     "agentrefs:generate": "go run ./cmd/agentrefs generate",
     "agentrefs:check": "go run ./cmd/agentrefs check",
-    "final-surface:check": "node scripts/final-surface.mjs --check",
     "release:smoke": "bash scripts/release-smoke.sh"
   },
   "devDependencies": {},

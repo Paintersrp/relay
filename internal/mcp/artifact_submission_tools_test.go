@@ -66,9 +66,9 @@ func newCanonicalTestHarness(t *testing.T, profile ToolProfile) *canonicalTestHa
 	fetcher := &fakeArtifactFetcher{content: map[string]FileParameterContent{}}
 	return &canonicalTestHarness{
 		server: NewServer(discardLogger(), &MCPDeps{
-			WorkflowStore:        store,
-			ToolProfile:          profile,
-			ArtifactFileFetcher:  fetcher,
+			WorkflowStore:       store,
+			ToolProfile:         profile,
+			ArtifactFileFetcher: fetcher,
 		}),
 		store:        store,
 		fetcher:      fetcher,
@@ -261,7 +261,7 @@ func canonicalToolText(t *testing.T, result ToolCallResult) string {
 	return result.Content[0].Text
 }
 
-func canonicalBlockerCode(t *testing.T, result ToolCallResult) string {
+func workflowBlockerCode(t *testing.T, result ToolCallResult) string {
 	t.Helper()
 	if !result.IsError {
 		t.Fatalf("expected blocked result, got %s", canonicalToolText(t, result))
@@ -363,7 +363,7 @@ func TestCanonicalToolDefinitionsByProfile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.profile), func(t *testing.T) {
-			if got := toolNames(canonicalToolDefinitions(tt.profile)); strings.Join(got, ",") != strings.Join(tt.want, ",") {
+			if got := toolNames(workflowToolDefinitions(tt.profile)); strings.Join(got, ",") != strings.Join(tt.want, ",") {
 				t.Fatalf("tools = %v, want %v", got, tt.want)
 			}
 		})
@@ -373,11 +373,11 @@ func TestCanonicalToolDefinitionsByProfile(t *testing.T) {
 func TestListProjectsReturnsBoundedPlannerMetadata(t *testing.T) {
 	h := newCanonicalTestHarness(t, ToolProfilePlanner)
 	project := h.createProject(t)
-	result := h.server.HandleListCanonicalProjects(canonicalArgs(t, listCanonicalProjectsArgs{Limit: 1}))
+	result := h.server.HandleListProjects(canonicalArgs(t, listProjectsArgs{Limit: 1}))
 	if result.IsError {
 		t.Fatalf("list Projects failed: %s", canonicalToolText(t, result))
 	}
-	var out canonicalProjectsOutput
+	var out projectsOutput
 	if err := json.Unmarshal([]byte(canonicalToolText(t, result)), &out); err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +449,7 @@ func TestGetPlanMissingReturnsRecoverableUnknownResource(t *testing.T) {
 	beforeArtifacts := workflowRowCount(t, h.store, "artifacts")
 
 	result := h.server.HandleGetPlan(canonicalArgs(t, getPlanArgs{PlanID: "plan-missing"}))
-	if code := canonicalBlockerCode(t, result); code != MCPBlockerUnknownResource {
+	if code := workflowBlockerCode(t, result); code != MCPBlockerUnknownResource {
 		t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
 	}
 	text := canonicalToolText(t, result)
@@ -527,7 +527,7 @@ func TestCreateRunEnforcesPassQualifiedFilenames(t *testing.T) {
 			PlanID:         plan.Plan.PlanID,
 			PassNumber:     1,
 		}))
-		if code := canonicalBlockerCode(t, result); code != canonicalBlockerAssociationInvalid {
+		if code := workflowBlockerCode(t, result); code != submissionBlockerAssociationInvalid {
 			t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
 		}
 		if workflowRowCount(t, h.store, "runs") != 0 || workflowRowCount(t, h.store, "artifacts") != beforeArtifacts || artifactFileCount(t, h.artifactRoot) != beforeFiles {
@@ -549,7 +549,7 @@ func TestCreateRunEnforcesPassQualifiedFilenames(t *testing.T) {
 			PlanID:         plan.Plan.PlanID,
 			PassNumber:     1,
 		}))
-		if code := canonicalBlockerCode(t, result); code != canonicalBlockerAssociationInvalid {
+		if code := workflowBlockerCode(t, result); code != submissionBlockerAssociationInvalid {
 			t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
 		}
 		if workflowRowCount(t, h.store, "runs") != 0 || workflowRowCount(t, h.store, "artifacts") != beforeArtifacts || artifactFileCount(t, h.artifactRoot) != beforeFiles {
@@ -566,7 +566,7 @@ func TestCreateRunEnforcesPassQualifiedFilenames(t *testing.T) {
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),
 		}))
-		if code := canonicalBlockerCode(t, result); code != canonicalBlockerAssociationInvalid {
+		if code := workflowBlockerCode(t, result); code != submissionBlockerAssociationInvalid {
 			t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
 		}
 		assertCanonicalNoWrites(t, h)
@@ -582,7 +582,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 			ArtifactFile:   ref,
 			ExpectedSHA256: strings.Repeat("0", 64),
 		}))
-		if code := canonicalBlockerCode(t, result); code != MCPBlockerExpectedHashMismatch {
+		if code := workflowBlockerCode(t, result); code != MCPBlockerExpectedHashMismatch {
 			t.Fatalf("code = %q", code)
 		}
 		assertCanonicalNoWrites(t, h)
@@ -596,7 +596,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),
 		}))
-		if code := canonicalBlockerCode(t, result); code != canonicalBlockerCompilerRejected {
+		if code := workflowBlockerCode(t, result); code != submissionBlockerCompilerRejected {
 			t.Fatalf("code = %q", code)
 		}
 		assertCanonicalNoWrites(t, h)
@@ -610,7 +610,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 			ArtifactFile:   ref,
 			ExpectedSHA256: canonicalTestSHA(data),
 		}))
-		if code := canonicalBlockerCode(t, result); code != MCPBlockerUnknownRepository {
+		if code := workflowBlockerCode(t, result); code != MCPBlockerUnknownRepository {
 			t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
 		}
 		if strings.Contains(strings.ToLower(canonicalToolText(t, result)), "no rows") {
@@ -630,7 +630,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 			PlanID:         "plan-missing",
 			PassNumber:     1,
 		}))
-		if code := canonicalBlockerCode(t, result); code != MCPBlockerUnknownResource {
+		if code := workflowBlockerCode(t, result); code != MCPBlockerUnknownResource {
 			t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
 		}
 		if workflowRowCount(t, h.store, "runs") != 0 || workflowRowCount(t, h.store, "artifacts") != 0 {
@@ -655,7 +655,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 			PlanID:         plan.Plan.PlanID,
 			PassNumber:     1,
 		}))
-		if code := canonicalBlockerCode(t, result); code != canonicalBlockerAssociationInvalid {
+		if code := workflowBlockerCode(t, result); code != submissionBlockerAssociationInvalid {
 			t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
 		}
 		if workflowRowCount(t, h.store, "runs") != 0 || workflowRowCount(t, h.store, "artifacts") != beforeArtifacts {
@@ -687,7 +687,7 @@ func TestCanonicalSubmissionFailuresAreAtomicAndClassified(t *testing.T) {
 			ExpectedSHA256:  canonicalTestSHA(data),
 			RemediatesRunID: original.Run.RunID,
 		}))
-		if code := canonicalBlockerCode(t, result); code != canonicalBlockerAssociationInvalid {
+		if code := workflowBlockerCode(t, result); code != submissionBlockerAssociationInvalid {
 			t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
 		}
 		if workflowRowCount(t, h.store, "runs") != beforeRuns || workflowRowCount(t, h.store, "artifacts") != beforeArtifacts {
@@ -708,7 +708,7 @@ func TestCanonicalPersistenceFailureIsBoundedAndRollsBackArtifacts(t *testing.T)
 		ArtifactFile:   ref,
 		ExpectedSHA256: canonicalTestSHA(data),
 	}))
-	if code := canonicalBlockerCode(t, result); code != canonicalBlockerPersistenceFailed {
+	if code := workflowBlockerCode(t, result); code != submissionBlockerPersistenceFailed {
 		t.Fatalf("code = %q; response = %s", code, canonicalToolText(t, result))
 	}
 	text := strings.ToLower(canonicalToolText(t, result))

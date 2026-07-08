@@ -23,7 +23,7 @@ func TestFinalCanonicalProfileInventories(t *testing.T) {
 		{ToolProfileLocalOperator, []string{"validate_artifact", "list_projects", "submit_plan", "get_plan", "create_run", "get_audit_packet", "get_run_artifact", "record_audit_decision"}},
 	}
 	for _, tt := range tests {
-		got := finalToolNames(canonicalToolDefinitions(tt.profile))
+		got := finalToolNames(workflowToolDefinitions(tt.profile))
 		if len(got) != len(tt.want) {
 			t.Fatalf("%s tools = %v, want %v", tt.profile, got, tt.want)
 		}

@@ -80,12 +80,11 @@ type WorkflowAuditManagedContext struct {
 }
 
 type WorkflowAuditExecution struct {
-	Status                   string                        `json:"status"`
-	CommittedSHA             string                        `json:"committed_sha"`
-	CompletionSummary        string                        `json:"completion_summary"`
-	BlockersOrIncompleteWork []string                      `json:"blockers_or_incomplete_work"`
-	ReportedChangedFiles     []string                      `json:"reported_changed_files"`
-	Attempt                  WorkflowAuditAttemptAuthority `json:"attempt"`
+	Status                   string   `json:"status"`
+	CommittedSHA             string   `json:"committed_sha"`
+	CompletionSummary        string   `json:"completion_summary"`
+	BlockersOrIncompleteWork []string `json:"blockers_or_incomplete_work"`
+	ReportedChangedFiles     []string `json:"reported_changed_files"`
 }
 
 type WorkflowAuditChangedFile struct {
@@ -97,8 +96,10 @@ type WorkflowAuditChangedFile struct {
 
 type WorkflowAuditValidationResult struct {
 	Command           string `json:"command"`
+	Expected          string `json:"expected"`
 	Status            string `json:"status"`
 	ConciseResult     string `json:"concise_result"`
+	ExitCode          *int   `json:"exit_code,omitempty"`
 	ArtifactReference string `json:"artifact_reference,omitempty"`
 }
 
@@ -107,26 +108,32 @@ type WorkflowAuditPacketArtifact struct {
 	ArtifactType      string `json:"artifact_type"`
 	SHA256            string `json:"sha256"`
 	Description       string `json:"description"`
-	Kind              string `json:"kind"`
-	MediaType         string `json:"media_type"`
-	SizeBytes         int64  `json:"size_bytes"`
 }
 
 type WorkflowAuditRemediationContext struct {
-	RemediatesRunID string `json:"remediates_run_id"`
+	RemediatedRunID  int64                          `json:"remediated_run_id"`
+	MaterialFindings []WorkflowAuditMaterialFinding `json:"material_findings"`
+}
+
+type WorkflowAuditMaterialFinding struct {
+	Source              string `json:"source"`
+	Summary             string `json:"summary"`
+	Evidence            string `json:"evidence"`
+	RequiredRemediation string `json:"required_remediation"`
 }
 
 type WorkflowAuditRunAuthority struct {
-	RunID           string `json:"run_id"`
+	RunID           int64  `json:"run_id"`
 	FeatureSlug     string `json:"feature_slug"`
 	RepoTarget      string `json:"repo_target"`
 	Branch          string `json:"branch"`
 	BaseCommit      string `json:"base_commit"`
 	CanonicalSHA256 string `json:"canonical_sha256"`
-	PlanID          string `json:"plan_id,omitempty"`
-	PassID          string `json:"pass_id,omitempty"`
+	PlanID          int64  `json:"plan_id,omitempty"`
+	PassID          int64  `json:"pass_id,omitempty"`
 	PassNumber      int64  `json:"pass_number,omitempty"`
-	RemediatesRunID string `json:"remediates_run_id,omitempty"`
+	RemediatesRunID int64  `json:"remediates_run_id,omitempty"`
+	UserIntent      string `json:"user_intent,omitempty"`
 }
 
 type WorkflowAuditPassAuthority struct {

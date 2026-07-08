@@ -90,11 +90,11 @@ func (s *Server) workflowAuditService() (WorkflowAuditToolService, error) {
 func (s *Server) HandleGetWorkflowAuditPacket(rawArgs json.RawMessage) ToolCallResult {
 	var input getAuditPacketArgs
 	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
-		return canonicalBlocked("get_audit_packet", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "get_audit_packet", nil)
+		return workflowBlocked("get_audit_packet", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "get_audit_packet", nil)
 	}
 	service, err := s.workflowAuditService()
 	if err != nil {
-		return canonicalBlocked("get_audit_packet", MCPBlockerToolUnavailable, "workflow audit service is unavailable", false, "workflow_store", nil)
+		return workflowBlocked("get_audit_packet", MCPBlockerToolUnavailable, "workflow audit service is unavailable", false, "workflow_store", nil)
 	}
 	result, err := service.GetCurrentPacket(context.Background(), strings.TrimSpace(input.RunID))
 	if err != nil {
@@ -102,9 +102,9 @@ func (s *Server) HandleGetWorkflowAuditPacket(rawArgs json.RawMessage) ToolCallR
 	}
 	var packet any
 	if err := json.Unmarshal(result.PacketBytes, &packet); err != nil {
-		return canonicalBlocked("get_audit_packet", canonicalBlockerPersistenceFailed, "stored audit packet could not be decoded", false, "audit_packet", nil)
+		return workflowBlocked("get_audit_packet", submissionBlockerPersistenceFailed, "stored audit packet could not be decoded", false, "audit_packet", nil)
 	}
-	return canonicalOK(map[string]any{
+	return workflowOK(map[string]any{
 		"ok":              true,
 		"tool":            "get_audit_packet",
 		"run_id":          result.Run.RunID,
@@ -119,11 +119,11 @@ func (s *Server) HandleGetWorkflowAuditPacket(rawArgs json.RawMessage) ToolCallR
 func (s *Server) HandleRecordWorkflowAuditDecision(rawArgs json.RawMessage) ToolCallResult {
 	var input recordAuditDecisionArgs
 	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
-		return canonicalBlocked("record_audit_decision", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "record_audit_decision", nil)
+		return workflowBlocked("record_audit_decision", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "record_audit_decision", nil)
 	}
 	service, err := s.workflowAuditService()
 	if err != nil {
-		return canonicalBlocked("record_audit_decision", MCPBlockerToolUnavailable, "workflow audit service is unavailable", false, "workflow_store", nil)
+		return workflowBlocked("record_audit_decision", MCPBlockerToolUnavailable, "workflow audit service is unavailable", false, "workflow_store", nil)
 	}
 	result, err := service.RecordDecision(context.Background(), appaudits.RecordWorkflowAuditDecisionInput{
 		RunID:             input.RunID,
@@ -156,29 +156,29 @@ func (s *Server) HandleRecordWorkflowAuditDecision(rawArgs json.RawMessage) Tool
 		out["plan_id"] = result.Plan.PlanID
 		out["plan_status"] = result.Plan.Status
 	}
-	return canonicalOK(out)
+	return workflowOK(out)
 }
 
 func workflowAuditBlocked(tool string, err error) ToolCallResult {
 	switch {
 	case errors.Is(err, sql.ErrNoRows), errors.Is(err, appaudits.ErrWorkflowAuditPacketNotFound):
-		return canonicalBlocked(tool, MCPBlockerUnknownResource, "workflow Run or audit packet was not found", true, "run_id", nil)
+		return workflowBlocked(tool, MCPBlockerUnknownResource, "workflow Run or audit packet was not found", true, "run_id", nil)
 	case errors.Is(err, appaudits.ErrWorkflowAuditArtifactReference):
-		return canonicalBlocked(tool, "artifact_reference_not_declared", "artifact_reference is not declared by the current audit packet", true, "artifact_reference", nil)
+		return workflowBlocked(tool, "artifact_reference_not_declared", "artifact_reference is not declared by the current audit packet", true, "artifact_reference", nil)
 	case errors.Is(err, appaudits.ErrWorkflowAuditArtifactOwnership):
-		return canonicalBlocked(tool, "artifact_ownership_mismatch", "artifact_reference does not belong to the current packet execution attempt", false, "artifact_reference", nil)
+		return workflowBlocked(tool, "artifact_ownership_mismatch", "artifact_reference does not belong to the current packet execution attempt", false, "artifact_reference", nil)
 	case errors.Is(err, appaudits.ErrWorkflowAuditArtifactIntegrity):
-		return canonicalBlocked(tool, "artifact_integrity_failed", "stored artifact size, SHA-256, or packet metadata verification failed", false, "artifact_reference", nil)
+		return workflowBlocked(tool, "artifact_integrity_failed", "stored artifact size, SHA-256, or packet metadata verification failed", false, "artifact_reference", nil)
 	case errors.Is(err, appaudits.ErrWorkflowAuditArtifactUnsupported):
-		return canonicalBlocked(tool, "artifact_content_unsupported", "artifact content is not supported for bounded UTF-8 readback", true, "artifact_reference", nil)
+		return workflowBlocked(tool, "artifact_content_unsupported", "artifact content is not supported for bounded UTF-8 readback", true, "artifact_reference", nil)
 	case errors.Is(err, appaudits.ErrWorkflowAuditConfirmation):
-		return canonicalBlocked(tool, "operator_confirmation_required", "operator_confirmed must be true after explicit operator confirmation", true, "operator_confirmed", nil)
+		return workflowBlocked(tool, "operator_confirmation_required", "operator_confirmed must be true after explicit operator confirmation", true, "operator_confirmed", nil)
 	case errors.Is(err, appaudits.ErrWorkflowAuditPacketStale):
-		return canonicalBlocked(tool, "audit_packet_stale", "audit packet is no longer current for the repository or selected execution attempt", true, "audit_packet_id", nil)
+		return workflowBlocked(tool, "audit_packet_stale", "audit packet is no longer current for the repository or selected execution attempt", true, "audit_packet_id", nil)
 	case errors.Is(err, appaudits.ErrWorkflowAuditNotReady), errors.Is(err, appaudits.ErrWorkflowAuditDecisionRecorded):
-		return canonicalBlocked(tool, "audit_state_conflict", err.Error(), true, "run_id", nil)
+		return workflowBlocked(tool, "audit_state_conflict", err.Error(), true, "run_id", nil)
 	default:
-		return canonicalBlocked(tool, canonicalBlockerPersistenceFailed, "workflow audit operation failed", false, "workflow_store", nil)
+		return workflowBlocked(tool, submissionBlockerPersistenceFailed, "workflow audit operation failed", false, "workflow_store", nil)
 	}
 }
 

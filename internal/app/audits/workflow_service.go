@@ -68,7 +68,6 @@ func (s *WorkflowAuditService) Prepare(ctx context.Context, input PrepareWorkflo
 		return PrepareWorkflowAuditResult{Run: current.Run, Packet: current.Packet, Artifact: current.Artifact}, nil
 	}
 
-
 	packetID := workflowstore.NewAuditPacketID()
 	batch, err := s.store.ArtifactStore().Begin("audit-packets/" + packetID)
 	if err != nil {
@@ -296,33 +295,25 @@ func (s *WorkflowAuditService) GetCurrentArtifact(ctx context.Context, input Get
 		return GetWorkflowAuditArtifactResult{}, err
 	}
 
-
-	attemptArtifacts, err := s.store.ListArtifactsByExecutionAttempt(ctx, current.Packet.ExecutionAttemptRowID)
+	artifact, err := s.store.GetArtifactByArtifactID(ctx, declared.ArtifactReference)
 	if err != nil {
-		return GetWorkflowAuditArtifactResult{}, err
-	}
-	var artifact workflowstore.Artifact
-	found := false
-	for _, a := range attemptArtifacts {
-		if a.SHA256 == declared.SHA256 && a.Kind == declared.Kind {
-			artifact = a
-			found = true
-			break
+		if errors.Is(err, sql.ErrNoRows) {
+			return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactReference
 		}
-	}
-	if !found {
-		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactReference
+		return GetWorkflowAuditArtifactResult{}, err
 	}
 	if artifact.OwnerType != workflowstore.ArtifactOwnerExecutionAttempt ||
 		!artifact.ExecutionAttemptRowID.Valid ||
 		artifact.ExecutionAttemptRowID.Int64 != current.Packet.ExecutionAttemptRowID {
 		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactOwnership
 	}
-	if artifact.Kind != declared.Kind ||
-		artifact.MediaType != declared.MediaType ||
-		artifact.SHA256 != declared.SHA256 ||
-		artifact.SizeBytes != declared.SizeBytes {
+	if artifact.SHA256 != declared.SHA256 {
 		return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactIntegrity
+	}
+	if declared.ArtifactType == "unified_diff" || declared.ArtifactType == "execution_evidence" {
+		if artifact.Kind != declared.ArtifactType {
+			return GetWorkflowAuditArtifactResult{}, ErrWorkflowAuditArtifactIntegrity
+		}
 	}
 
 	content, truncated, err := readWorkflowArtifactForAudit(s.store, artifact, input.MaxBytes)

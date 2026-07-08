@@ -135,22 +135,22 @@
     },
     {
       "path": "internal/app/audits/workflow_packet.go",
-      "sha256": "d77a0c3f8d23338b0d3397d51dd95b3fd762d0745dff321de09fe4727e72a6d0",
+      "sha256": "de82ed0c5afff398bdece6f78a233344c279666a1a725fe580ed8cf09620ffee",
       "role": "source"
     },
     {
       "path": "internal/app/audits/workflow_service.go",
-      "sha256": "76caa6f336242b338fbf47bcd8fd70b816b0c94dbb580d2989c2cedcd2038eb5",
+      "sha256": "3cc57996179152e15ed6fb6df251bb81ea20c5a8af81f879bd2f48d973ff1265",
       "role": "source"
     },
     {
       "path": "internal/app/audits/workflow_service_test.go",
-      "sha256": "33d25cdf91fa917a954e0254610f4edc3b7201ef0f413139021896911b7a9ea5",
+      "sha256": "347f7069d5a4fd00c205ba2a608bcdd3ca5e8eb450da882c9ba7cf9e8366444c",
       "role": "test"
     },
     {
       "path": "internal/app/audits/workflow_types.go",
-      "sha256": "dfcb1692bb720484bc89241d387e3aa566ab1145a2d9f4cafcbb5e141ff23042",
+      "sha256": "3a444969c7c44c14b85e2ddf289475d37f283b1d199495e401297296d9ce0046",
       "role": "source"
     },
     {
@@ -240,32 +240,32 @@
     },
     {
       "path": "internal/mcp/artifact_readback_tools.go",
-      "sha256": "6bc47a6b03889c32350efe1db1efe721773b881f8a77f31028af06be496763b9",
+      "sha256": "4e58796631a03d99332b0ed6866dca6904be87e126350c05083188102f295666",
       "role": "source"
     },
     {
       "path": "internal/mcp/artifact_readback_tools_test.go",
-      "sha256": "58c4bffd8f0d26fa4c4fa8a2278fee72f90cf44106e82d0cf15ac5d72f4eb869",
+      "sha256": "ebd59fc6216ae1a0cb5ab3a2c8218a2bb30adbd4fc85f3264578cebe96df9a9c",
       "role": "test"
     },
     {
       "path": "internal/mcp/artifact_submission_tools.go",
-      "sha256": "47e68a79e76666ae9c8127646c8773e2aeff8ff54bbe756c145df3c88beaa977",
+      "sha256": "e077d82a74a3419ad7011a3b90fee1e5be4cf6ea9048f8623756e0ce0e1b0514",
       "role": "source"
     },
     {
       "path": "internal/mcp/artifact_submission_tools_test.go",
-      "sha256": "7736100013ec0506dfbd7f6d237580587e16ca99243bfa79d2d2e7cf0df90043",
+      "sha256": "9718650978934c6083f68fcbb67e101cf6ab1b712e4a65640ef15756d626b7e6",
       "role": "test"
     },
     {
       "path": "internal/mcp/audit_tools.go",
-      "sha256": "2277b186610e24ae6529971cbd10c5bdefb70cda15b0c2b52990345b36387188",
+      "sha256": "149372f4e719bb04aa591c32205b894e1287ee9a59ddd4d4105b5edccaf2c281",
       "role": "source"
     },
     {
       "path": "internal/mcp/audit_tools_test.go",
-      "sha256": "fe5ef83273f83ec99b2d20a366c3d522d1551de8dffe0a67cea7b33217d0b4fc",
+      "sha256": "23015521e449c9a6e8c0df3ccab15664f4725c76fd4c93f0d541df813d18efa3",
       "role": "test"
     },
     {
@@ -279,18 +279,13 @@
       "role": "test"
     },
     {
-      "path": "internal/mcp/canonical_application.go",
-      "sha256": "d32c457bc1c9975ef355be1bd2310cb911bc8ace37d5b2b81988444e113d9a09",
-      "role": "source"
-    },
-    {
       "path": "internal/mcp/canonical_transport_parity_test.go",
-      "sha256": "36f98c713911e8bba771b9fd0082412b46b8d3261e2dd78dcb546d8033a2b2b1",
+      "sha256": "13b31f9a8e604bd5c908c1563cedfed3874acf220952f36fb2699af49f1ca9c9",
       "role": "test"
     },
     {
       "path": "internal/mcp/deps.go",
-      "sha256": "40925ecd638fcc4341ba9d94c22591039a3180ff6d65507732c50322b928b8cb",
+      "sha256": "a825702d277552c200f673f707d1c7b41fbbad2f56fc8d814bdefc2c21ac82d2",
       "role": "source"
     },
     {
@@ -300,12 +295,12 @@
     },
     {
       "path": "internal/mcp/file_parameter_fetcher_test.go",
-      "sha256": "3c2678eac2bd7dab6018762d739f75af2850a6f9c36109010941afa398145a44",
+      "sha256": "15eb2650f54ea187bb931a6f93170988135d2a2bfc29f6179f4998094d765f1c",
       "role": "test"
     },
     {
       "path": "internal/mcp/final_surface_test.go",
-      "sha256": "37226e8859477c2265779b3650accb5faf74c4b9d3767313dfcaeb45800f3073",
+      "sha256": "0b0f9583ab2b36d0abd98e97d23e75306e60b0e3816ee9e4d1efde0e07ea1970",
       "role": "test"
     },
     {
@@ -315,7 +310,7 @@
     },
     {
       "path": "internal/mcp/http_handler_test.go",
-      "sha256": "157943abc1da1beb6b12fc6850efe85538980feda0069914567c9573ef1f9325",
+      "sha256": "7fec26b6c5aad8a53c641aa5660298c9c9b539f44bc4df58d0ccefed58125938",
       "role": "test"
     },
     {
@@ -335,22 +330,27 @@
     },
     {
       "path": "internal/mcp/server.go",
-      "sha256": "c25d7b97454940dd4bd6785f9fa3123b7c36721186b7576f40205cebf50637c9",
+      "sha256": "ca8c46471048d1e2800262b653664993e8dcfff08503c1ec14d70131f4aed733",
       "role": "source"
     },
     {
       "path": "internal/mcp/server_notification_test.go",
-      "sha256": "abe1f0dd738415bb0856f2372e21a57649385f218230b15857cfaae4c0f983da",
+      "sha256": "52430224a06eee48edba949578b4df8376bf7848ff9c4e91ec15e3682f0264cf",
       "role": "test"
     },
     {
       "path": "internal/mcp/server_tools_list_test.go",
-      "sha256": "3020dc6bff586ed66593af7c3d5280c7bcb078097471180be35e25e22800a2d0",
+      "sha256": "c5820a2349a5ff88828bb89d210fcf61343b61dd957765c6875af13d42dbfad5",
       "role": "test"
     },
     {
       "path": "internal/mcp/strict_decode.go",
       "sha256": "bc7e702cfe61cc257543f92379a6d08ac99506f71b5b3f4444431b668d61840d",
+      "role": "source"
+    },
+    {
+      "path": "internal/mcp/workflow_application.go",
+      "sha256": "e44219e2b92a2fa63b4f3a8f350767634737baa46e106491b303beed7dbbff43",
       "role": "source"
     },
     {
@@ -1089,7 +1089,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/workflow/service.go"
+          "value": "internal/app/workflow/types.go"
         }
       ]
     },
@@ -1100,7 +1100,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/app/workflow/types.go"
+          "value": "internal/app/workflow/service.go"
         }
       ]
     },
@@ -1111,7 +1111,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/audit_tools.go"
+          "value": "internal/mcp/deps.go"
         }
       ]
     },
@@ -1122,7 +1122,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/deps.go"
+          "value": "internal/mcp/audit_tools.go"
         }
       ]
     },
@@ -1155,7 +1155,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_application.go"
+          "value": "internal/mcp/workflow_application.go"
         }
       ]
     },
@@ -1166,7 +1166,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_application.go"
+          "value": "internal/mcp/workflow_application.go"
         }
       ]
     },
@@ -1188,7 +1188,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_application.go"
+          "value": "internal/mcp/workflow_application.go"
         }
       ]
     },
@@ -1243,7 +1243,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_application.go"
+          "value": "internal/mcp/deps.go"
         }
       ]
     },
@@ -1254,7 +1254,7 @@
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/deps.go"
+          "value": "internal/mcp/workflow_application.go"
         }
       ]
     },
@@ -1588,10 +1588,6 @@
         },
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_application.go"
-        },
-        {
-          "kind": "source",
           "value": "internal/mcp/deps.go"
         },
         {
@@ -1617,6 +1613,10 @@
         {
           "kind": "source",
           "value": "internal/mcp/strict_decode.go"
+        },
+        {
+          "kind": "source",
+          "value": "internal/mcp/workflow_application.go"
         },
         {
           "kind": "test",
@@ -3061,6 +3061,17 @@
       "id": "backend-symbol-internal-app-audits-type-workflowauditmanagedcontext",
       "label": "proven",
       "statement": "Exported type WorkflowAuditManagedContext in internal/app/audits/workflow_types.go",
+      "evidence": [
+        {
+          "kind": "source",
+          "value": "internal/app/audits/workflow_types.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-symbol-internal-app-audits-type-workflowauditmaterialfinding",
+      "label": "proven",
+      "statement": "Exported type WorkflowAuditMaterialFinding in internal/app/audits/workflow_types.go",
       "evidence": [
         {
           "kind": "source",
@@ -5258,13 +5269,13 @@
       ]
     },
     {
-      "id": "backend-symbol-internal-mcp-func-handlelistcanonicalprojects",
+      "id": "backend-symbol-internal-mcp-func-handlelistprojects",
       "label": "proven",
-      "statement": "Exported func HandleListCanonicalProjects in internal/mcp/canonical_application.go",
+      "statement": "Exported func HandleListProjects in internal/mcp/workflow_application.go",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_application.go"
+          "value": "internal/mcp/workflow_application.go"
         }
       ]
     },
@@ -5777,11 +5788,11 @@
     {
       "id": "backend-symbol-internal-mcp-var-toollistprojects",
       "label": "proven",
-      "statement": "Exported var ToolListProjects in internal/mcp/canonical_application.go",
+      "statement": "Exported var ToolListProjects in internal/mcp/workflow_application.go",
       "evidence": [
         {
           "kind": "source",
-          "value": "internal/mcp/canonical_application.go"
+          "value": "internal/mcp/workflow_application.go"
         }
       ]
     },
@@ -8591,9 +8602,9 @@
       ]
     },
     {
-      "id": "backend-test-internal-app-audits-testworkflowauditpacketcontainscompleteauthority",
+      "id": "backend-test-internal-app-audits-testworkflowauditpacketconformstoschemacontract",
       "label": "proven",
-      "statement": "Test function TestWorkflowAuditPacketContainsCompleteAuthority in internal/app/audits/workflow_service_test.go",
+      "statement": "Test function TestWorkflowAuditPacketConformsToSchemaContract in internal/app/audits/workflow_service_test.go",
       "evidence": [
         {
           "kind": "test",
@@ -8605,6 +8616,17 @@
       "id": "backend-test-internal-app-audits-testworkflowauditpacketexcludesruntimeandevidencebodies",
       "label": "proven",
       "statement": "Test function TestWorkflowAuditPacketExcludesRuntimeAndEvidenceBodies in internal/app/audits/workflow_service_test.go",
+      "evidence": [
+        {
+          "kind": "test",
+          "value": "internal/app/audits/workflow_service_test.go"
+        }
+      ]
+    },
+    {
+      "id": "backend-test-internal-app-audits-testworkflowauditremediationpacketconformstoschemacontract",
+      "label": "proven",
+      "statement": "Test function TestWorkflowAuditRemediationPacketConformsToSchemaContract in internal/app/audits/workflow_service_test.go",
       "evidence": [
         {
           "kind": "test",

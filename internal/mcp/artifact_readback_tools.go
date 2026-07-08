@@ -41,11 +41,11 @@ type getRunArtifactArgs struct {
 func (s *Server) HandleGetRunArtifact(rawArgs json.RawMessage) ToolCallResult {
 	var input getRunArtifactArgs
 	if err := brokerDecodeStrict(rawArgs, &input); err != nil {
-		return canonicalBlocked("get_run_artifact", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "artifact_reference", nil)
+		return workflowBlocked("get_run_artifact", MCPBlockerSchemaMismatch, "invalid arguments: "+err.Error(), false, "artifact_reference", nil)
 	}
 	service, err := s.workflowAuditService()
 	if err != nil {
-		return canonicalBlocked("get_run_artifact", MCPBlockerToolUnavailable, "workflow audit service is unavailable", false, "workflow_store", nil)
+		return workflowBlocked("get_run_artifact", MCPBlockerToolUnavailable, "workflow audit service is unavailable", false, "workflow_store", nil)
 	}
 	maxBytes := input.MaxBytes
 	if maxBytes == 0 {
@@ -59,7 +59,7 @@ func (s *Server) HandleGetRunArtifact(rawArgs json.RawMessage) ToolCallResult {
 	if err != nil {
 		return workflowAuditBlocked("get_run_artifact", err)
 	}
-	return canonicalOK(map[string]any{
+	return workflowOK(map[string]any{
 		"ok":                 true,
 		"tool":               "get_run_artifact",
 		"run_id":             result.Run.RunID,

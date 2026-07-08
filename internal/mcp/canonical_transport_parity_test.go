@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	apicanonical "relay/internal/api/canonical"
-	workflowsubmissions "relay/internal/app/submissions"
 	workflowplans "relay/internal/app/plans/workflow"
 	workflowprojects "relay/internal/app/projects/workflow"
+	workflowsubmissions "relay/internal/app/submissions"
 	workflowstore "relay/internal/store/workflow"
 
 	"github.com/go-chi/chi/v5"
@@ -177,7 +177,7 @@ func TestCanonicalMCPAndHTTPAssociationFailureParityAndRollback(t *testing.T) {
 		PlanID:         mcpPlan.Plan.PlanID,
 		PassNumber:     1,
 	}))
-	if code := canonicalBlockerCode(t, mcpFailure); code != canonicalBlockerAssociationInvalid {
+	if code := workflowBlockerCode(t, mcpFailure); code != submissionBlockerAssociationInvalid {
 		t.Fatalf("MCP blocker code = %q", code)
 	}
 	if workflowRowCount(t, mcpFixture.harness.store, "runs") != 0 ||
