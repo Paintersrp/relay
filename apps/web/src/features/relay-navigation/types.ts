@@ -10,7 +10,7 @@
 // canonical status contract: the canonical `RelayRunStep` and `RelayRunStatus`
 // types are reused from the runs feature.
 
-import type { RelayRunStep } from "@/features/relay-runs";
+import type { WorkflowRunStage } from "@/features/relay-runs";
 
 // ------------------------------------------------------------
 // Primary domains
@@ -86,8 +86,8 @@ export type CommandEntry =
 export type PipelineStageStatus = "completed" | "current" | "pending" | "attention";
 
 export interface PipelineStageView {
-  step: RelayRunStep; // "intake" | "prepare" | "execute" | "audit"
-  label: string; // "Intake" | "Compile / Render" | "Execute" | "Audit"
+  step: WorkflowRunStage; // "specification" | "execute" | "audit"
+  label: string; // "Specification" | "Execute" | "Audit"
   status: PipelineStageStatus;
   to: string; // stage route
   navigable: boolean;

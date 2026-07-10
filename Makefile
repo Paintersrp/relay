@@ -101,3 +101,9 @@ agentrefs-generate:
 
 agentrefs-check:
 	go run ./cmd/agentrefs check
+
+workflow-db-status:
+	goose -dir internal/db/workflow_migrations sqlite3 data/workflow/relay-workflow.sqlite status
+
+workflow-db-migrate:
+	goose -dir internal/db/workflow_migrations sqlite3 data/workflow/relay-workflow.sqlite up

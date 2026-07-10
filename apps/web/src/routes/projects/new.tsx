@@ -13,9 +13,9 @@ function NewProjectPage() {
   return (
     <AppPageFrame
       title="New Project"
-      description="Create a local Relay project for source-aware Planner work."
+      description="Create a lightweight organizational Project."
       leading={
-        <Button asChild variant="ghost" size="icon-sm" aria-label="Back to projects">
+        <Button asChild variant="ghost" size="icon-sm" aria-label="Back to Projects">
           <Link to="/projects">
             <ArrowLeft className="size-4" />
           </Link>

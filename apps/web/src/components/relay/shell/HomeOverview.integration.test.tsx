@@ -203,7 +203,7 @@ describe("Home_Overview per-section states (Req 3.7)", () => {
         {
           id: "run-1",
           title: "Blocked run alpha",
-          status: "blocked",
+          status: "execution_failed",
           updatedAt: "2024-03-01T12:00:00.000Z",
         },
       ],
@@ -237,8 +237,6 @@ describe("Home_Overview per-section states (Req 3.7)", () => {
 const REQ_10_1_ROUTES: ReadonlyArray<{ pattern: string; nav: string }> = [
   { pattern: "/runs", nav: "/runs" },
   { pattern: "/runs/new", nav: "/runs/new" },
-  { pattern: "/runs/$runId/intake", nav: "/runs/run-1/intake" },
-  { pattern: "/runs/$runId/prepare", nav: "/runs/run-1/prepare" },
   { pattern: "/runs/$runId/execute", nav: "/runs/run-1/execute" },
   { pattern: "/runs/$runId/audit", nav: "/runs/run-1/audit" },
   { pattern: "/plans", nav: "/plans" },
@@ -248,7 +246,6 @@ const REQ_10_1_ROUTES: ReadonlyArray<{ pattern: string; nav: string }> = [
   { pattern: "/projects", nav: "/projects" },
   { pattern: "/projects/new", nav: "/projects/new" },
   { pattern: "/projects/$projectId", nav: "/projects/proj-1" },
-  { pattern: "/projects/$projectId/refactor-backlog", nav: "/projects/proj-1/refactor-backlog" },
 ];
 
 const NOT_FOUND_TESTID = "route-not-found";

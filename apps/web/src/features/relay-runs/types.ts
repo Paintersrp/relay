@@ -1,532 +1,234 @@
-// ============================================================
-// Relay Run Types — Canonical frontend type contract
-// ============================================================
+import type {
+  WorkflowArtifactReference,
+  WorkflowCanonicalValidation,
+  WorkflowProjectReference,
+  WorkflowRunStage,
+} from "@/features/relay-plans/types";
 
-// Required mock run IDs
-export type RelayRunId =
-  | "intake_needs_review"
-  | "brief_ready_for_review"
-  | "executor_running"
-  | "audit_ready_for_review"
-  | string;
+export type {
+  WorkflowArtifactReference,
+  WorkflowProjectReference,
+  WorkflowRunStage,
+} from "@/features/relay-plans/types";
 
-// Required step values
-export type RelayRunStep = "intake" | "prepare" | "execute" | "audit";
-
-// Compatibility alias for Step Key
-export type RelayRunStepKey = RelayRunStep;
-
-// Canonical workflow states for action gating — all statuses the API can emit
-export type RelayRunStatus =
-  | "draft"
-  | "needs_cleanup"
-  | "intake_received"
-  | "intake_needs_review"
-  | "validated"
-  | "approved_for_prepare"
-  | "packet_validated"
-  | "packet_validation_failed"
-  | "repair_validated"
-  | "brief_ready_for_review"
-  | "approved_for_executor"
-  | "executor_dispatched"
-  | "executor_running"
-  | "executor_done"
-  | "executor_blocked"
-  | "agent_done"
-  | "agent_blocked"
-  | "agent_result_needs_review"
-  | "audit_ready"
-  | "audit_ready_for_review"
-  | "revision_required"
-  | "accepted"
-  | "accepted_with_warnings"
-  | "validation_passed"
-  | "validation_failed_accepted"
+export type WorkflowRunStatus =
+  | "created"
+  | "setup_ready"
+  | "executing"
+  | "execution_failed"
+  | "cancelled"
+  | "validating"
   | "validation_failed"
-  | "completed"
-  | "blocked";
+  | "audit_ready"
+  | "needs_revision"
+  | "completed";
 
-// Required lifecycle values
-export type RelayRunLifecycleState =
-  | "intake"
-  | "prepare"
-  | "execute"
-  | "audit"
-  | "completed"
-  | "failed";
+export type WorkflowExecutionAttemptStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "timed_out";
 
-// Artifact kinds
-export type RelayArtifactKind =
-  | "prompt"
-  | "handoff"
-  | "result"
-  | "audit"
-  | "validation"
-  | "diff"
-  | "planner_handoff"
-  | "parsed_frontmatter"
-  | "run_config"
-  | "intake_validation_report"
-  | "mcp_audit_handback"
-  | "executor_result"
-  | "executor_stdout"
-  | "executor_stderr"
-  | "command_log"
-  | "codex_last_message"
-  | "validation_run_json"
-  | "validation_progress_json"
-  | "validation_stdout"
-  | "validation_stderr"
-  | "git_status_text"
-  | "git_diff_stat"
-  | "git_diff_numstat"
-  | "git_diff_patch"
-  | "git_diff_name_status"
-  | string;
+export type WorkflowTerminalExecutionAttemptStatus = Exclude<
+  WorkflowExecutionAttemptStatus,
+  "pending" | "running"
+>;
 
-// Canonical Relay Artifact type
-export interface RelayArtifact {
-  id: string;
-  label: string;
-  path: string;
-  kind: RelayArtifactKind;
-  storageKind?: string;
-  contentUrl?: string;
-  sizeHint?: string;
-  createdAt?: string;
-
-  // Compatibility fields for legacy components
-  status: string;
-  filename: string;
-  preview?: string;
+export interface WorkflowExecutionArtifact {
+  artifactId: string;
+  kind: string;
+  mediaType: string;
+  sha256: string;
+  sizeBytes: number;
+  createdAt: string;
 }
 
-// Compatibility alias for Artifact Preview
-export type RelayArtifactPreview = RelayArtifact;
-
-// Compatibility alias for old components that look for specific properties
-export type RelayRunArtifactPreview = RelayArtifact;
-
-// Validation types
-export interface RelayValidationIssue {
-  severity: "error" | "warning" | "info";
-  code: string;
-  message: string;
-  path?: string;
+export interface WorkflowExecutionAttemptSummary {
+  attemptId: string;
+  attemptNumber: number;
+  adapter: string;
+  model: string;
+  status: WorkflowExecutionAttemptStatus;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  cancellationRequestedAt?: string;
+  artifacts: WorkflowArtifactReference[];
 }
 
-export interface RelayValidationResult {
-  errors: number;
-  warnings: number;
-  passed: number;
-  issues?: RelayValidationIssue[];
+export interface WorkflowExecutionAttemptResult
+  extends Record<string, unknown> {
+  cleanup_pending?: boolean;
+  pending_terminal_status?: WorkflowTerminalExecutionAttemptStatus;
+  termination_verified?: boolean;
 }
 
-// Compatibility alias for old validation panel item structure
-export interface RelayRunValidationItem {
-  label: string;
-  message: string;
-  status: string; // e.g. "error", "warning", "passed"
-}
-
-// Event kinds
-export type RelayRunEventKind =
-  | "log"
-  | "status_change"
-  | "artifact_created"
-  | "validation_run"
-  | "step_transition";
-
-// Canonical Event structure
-export interface RelayRunEvent {
-  id: string;
+export interface WorkflowExecutionAttempt
+  extends Omit<WorkflowExecutionAttemptSummary, "artifacts"> {
   runId: string;
-  kind: RelayRunEventKind;
-  message: string;
-  createdAt: string; // ISO-8601
-  details?: Record<string, any>;
+  result: WorkflowExecutionAttemptResult;
+  artifacts: WorkflowExecutionArtifact[];
+  liveStdout: string;
+  liveStderr: string;
+  liveStdoutTruncated: boolean;
+  liveStderrTruncated: boolean;
+  liveStdoutBytes: number;
+  liveStderrBytes: number;
 }
 
-// Approval and Action models
-export type RelayApprovalAction = "approve" | "needs_revision" | "blocked" | "reject" | "skip";
+export interface WorkflowAuditPacket {
+  auditPacketId: string;
+  auditedCommit: string;
+  packetSha256: string;
+  status: string;
+  staleReason?: string;
+  createdAt: string;
+  supersededAt?: string;
+}
 
-export interface RelayActionRequest {
-  action: RelayApprovalAction | string;
-  notes?: string;
-  overrides?: {
-    model?: string;
-    repo?: string;
-    branch?: string;
-    worktree?: string;
-    validationCommands?: string;
-    executorAdapter?: RelayExecutorAdapter | string;
+export interface WorkflowAuditDecision {
+  auditDecisionId: string;
+  auditedCommit: string;
+  packetSha256: string;
+  decision: string;
+  rationale: string;
+  createdAt: string;
+}
+
+export interface WorkflowRunSummary {
+  runId: string;
+  featureSlug: string;
+  repoTarget: string;
+  status: WorkflowRunStatus;
+  stage: WorkflowRunStage;
+  branch: string;
+  baseCommit: string;
+  canonicalSha256: string;
+  planId?: string;
+  passId?: string;
+  passNumber?: number;
+  project?: WorkflowProjectReference;
+  remediatesRunId?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  latestAttempt?: WorkflowExecutionAttemptSummary;
+  currentPacket?: WorkflowAuditPacket;
+  latestDecision?: WorkflowAuditDecision;
+}
+
+export interface WorkflowRunDetail {
+  run: WorkflowRunSummary;
+  attempts: WorkflowExecutionAttemptSummary[];
+  artifacts: WorkflowArtifactReference[];
+}
+
+export interface WorkflowRunListFilters {
+  status?: WorkflowRunStatus;
+  planId?: string;
+  passId?: string;
+  limit?: number;
+}
+
+export interface WorkflowRunListResponse {
+  count: number;
+  runs: WorkflowRunSummary[];
+}
+
+export interface WorkflowSpecificationReview {
+  run: WorkflowRunSummary;
+  executionSpec: WorkflowArtifactReference;
+  executorBrief: WorkflowArtifactReference;
+  plan?: {
+    planId: string;
+    featureSlug: string;
+    status: string;
+  };
+  pass?: {
+    passId: string;
+    number: number;
+    name: string;
+    repoTarget: string;
+    status: string;
+  };
+  remediatesRunId?: string;
+}
+
+export interface CreateWorkflowRunRequest {
+  fileName: string;
+  canonicalContent: string;
+  expectedSha256: string;
+  planId?: string;
+  passNumber?: number;
+  remediatesRunId?: string;
+}
+
+export interface CreateWorkflowRunResponse {
+  run: {
+    runId: string;
+    featureSlug: string;
+    repoTarget: string;
+    status: WorkflowRunStatus;
+    branch: string;
+    baseCommit: string;
+    canonicalSha256: string;
+    createdAt: string;
+    updatedAt: string;
+    reviewUrl: string;
+  };
+  artifacts: WorkflowArtifactReference[];
+}
+
+export interface WorkflowAuditStatus {
+  runId: string;
+  runStatus: WorkflowRunStatus;
+  currentPacket?: WorkflowAuditPacket;
+  latestPacket?: WorkflowAuditPacket;
+  decision?: WorkflowAuditDecision;
+}
+
+export interface PrepareWorkflowAuditResponse {
+  success: boolean;
+  runId: string;
+  runStatus: WorkflowRunStatus;
+  packet: WorkflowAuditPacket;
+  artifact: {
+    artifactId: string;
+    kind: string;
+    sha256: string;
+    sizeBytes: number;
+    contentUrl: string;
   };
 }
 
-export interface RelayActionResponse {
-  success: boolean;
-  runId: string;
-  status: RelayRunStatus;
-  lifecycleState: RelayRunLifecycleState;
-  updatedAt: string;
-}
-
-export interface PlannerHandoffIntakeRequest {
-  // Primary v2 fields
-  planner_handoff_markdown?: string;
-  repo_target?: string;
-  branch_context?: string;
-  run_id?: string;
-  name?: string;
-
-  // Optional managed-plan association fields
-  planId?: string;
-  passId?: string;
-  plan_id?: string;
-  pass_id?: string;
-
-  // Compatibility aliases
-  repo?: string;
-  branch?: string;
-  handoffPath?: string;
-  packetId?: string;
-  source?: string;
-  executorAdapter?: string;
-  executor_adapter?: string;
-  executorModelProfile?: string;
-  executor_model_profile?: string;
-  recommended_model?: string;
-  model?: string;
-}
-
-export interface PlannerHandoffIntakeResponse {
-  success: boolean;
-  runId: string;
-  run_id?: string;
-  status: RelayRunStatus;
-  lifecycleState: RelayRunLifecycleState;
-  createdAt: string;
-  review_url?: string;
-  planId?: string;
-  passId?: string;
-  plan_id?: string;
-  pass_id?: string;
-}
-
-// Canonical API Error shape
-export interface RelayApiErrorShape {
-  error: string;
-  message: string;
-  code?: string;
-  details?: Record<string, any>;
-  currentStatus?: string;
-  requiredStatuses?: string[];
-}
-
-// Legacy structure compatibility support
-export interface RelayApprovalGate {
-  label: string;
-  state: "pending" | "approved" | "rejected" | "skipped";
-  note?: string;
-}
-
-export interface RelayLogPreview {
-  lines: string[];
+export interface WorkflowArtifactContent {
+  artifact: WorkflowArtifactReference;
+  offset: number;
+  byteCount: number;
+  encoding: "utf-8" | "base64";
+  content: string;
   truncated: boolean;
+  nextOffset?: number;
 }
 
-// Status severity for UI Badge
-export type RelayRunStatusSeverity = "neutral" | "info" | "success" | "warning" | "danger";
+export type WorkflowExecutionSpecValidation = WorkflowCanonicalValidation;
 
-// Run summary used by header component
-export interface RelayRunSummary {
-  id: string;
-  title: string;
-  repo: string;
-  branch?: string;
-  updatedAt: string;
-  model?: string;
-  statusSeverity: RelayRunStatusSeverity;
-  state: string;
-}
-
-export interface RelayRunPlanContext {
-  planId?: string;
-  planTitle?: string;
-  planRowId?: string;
-  passId?: string;
-  passName?: string;
-  passRowId?: string;
-  passSequence?: number;
-  passStatus?: string;
-  sourceArtifactPath?: string;
-  contextPacketId?: string;
-  sourceSnapshotId?: string;
-  plannerHandoffSha256?: string;
-}
-
-export interface RelayRunProvenance {
-  plannerHandoffSha256?: string;
-  plannerHandoffBytes?: number;
-  sourceArtifactPath?: string;
-  source?: string;
-  clientTraceId?: string;
-  planId?: string;
-  passId?: string;
-  contextPacketId?: string;
-  sourceSnapshotId?: string;
-  artifactKind?: "planner_handoff_provenance_json";
-}
-
-export interface RelayRunSourceContext {
-  planId?: string;
-  passId?: string;
-  sourceSnapshotId?: string;
-  contextPacketId?: string;
-  coverageReportPath?: string;
-  recordedAt?: string;
-}
-
-export interface RelaySourceVisibilitySummary {
-  contextPacketId?: string;
-  sourceSnapshotId?: string;
-  coverageReportPath?: string;
-  sourceArtifactPath?: string;
-  plannerHandoffSha256?: string;
-  coverageReportArtifact?: RelayArtifact;
-  contextPacketArtifact?: RelayArtifact;
-  provenanceArtifact?: RelayArtifact;
-  blockers?: string[];
-  warnings?: string[];
-}
-
-// Executor usage telemetry (Kiro-only for now)
-export interface RelayExecutorUsage {
-  provider: "kiro" | string;
-  adapter: "kiro_cli" | string;
-  creditsText?: string;
-  credits?: number;
-  sourceStream?: "stdout" | "stderr" | string;
-  model?: string;
-  rawLine?: string;
-}
-
-// Canonical RelayRun struct
-export interface RelayRun {
-  id: RelayRunId;
-  name: string;
-  repo: string;
-  branch: string;
-  activeStep: RelayRunStep;
-  status: RelayRunStatus;
-  lifecycleState: RelayRunLifecycleState;
-  createdAt: string; // ISO-8601
-  updatedAt: string; // ISO-8601
-  summary: string;
-  model: string;
-  riskLevel: "low" | "medium" | "high" | "critical";
-  validation: RelayValidationResult;
-  artifacts: RelayArtifact[];
-  latestEvents: RelayRunEvent[];
-  statusSeverity: RelayRunStatusSeverity;
-  state: string;
-  planContext?: RelayRunPlanContext;
-  provenance?: RelayRunProvenance;
-  sourceContext?: RelayRunSourceContext;
-
-  // Legacy field support to prevent breaking current views
-  title: string;
-  packetId: string;
-  worktree?: string;
-  executor: string;
-  executorAdapter: string;
-  validationSummary: RelayValidationResult;
-  approvalGate: RelayApprovalGate;
-  logPreview: RelayLogPreview;
-  stepLabels: Record<RelayRunStep, string>;
-
-  // Latest agent execution phase (separate from canonical status)
-  latestExecutionStatus?: string;
-}
-
-// Run detail page workbench input structure
-export interface RelayRunDetail extends RelayRun {
-  validations: RelayRunValidationItem[];
-  logs: string[];
-}
-
-// Step info structure
-export interface RelayRunStepInfo {
-  key: RelayRunStep;
-  label: string;
-  description: string;
-}
-
-// Step 4: Audit / Close-specific types
-
-export type RelayExecutorAdapter = "opencode_go" | "codex" | "antigravity" | "kiro_cli";
-
-export type RelayAuditDecisionValue =
-  | "accepted"
-  | "accepted_with_warnings"
-  | "revision_required"
-  | "blocked"
-  | "manual_review_required";
-
-export const RELAY_AUDIT_DECISION_VALUES: RelayAuditDecisionValue[] = [
-  "accepted",
-  "accepted_with_warnings",
-  "revision_required",
-  "blocked",
-  "manual_review_required",
-];
-
-export interface RelayAuditInputSummaryInfo {
-  artifactId: string;
-  artifactPath: string;
-  available: boolean;
-  generatedAt?: string;
-  preview?: string;
-  evidenceIncluded: string[];
-  missingEvidence: string[];
-}
-
-export interface RelayAuditPacketInfo {
-  artifactId: string;
-  artifactPath: string;
-  available: boolean;
-  isManual: boolean;
-  generatedAt?: string;
-  decision?: RelayAuditDecisionValue;
-  preview?: string;
-  warnings: string[];
-}
-
-export interface RelayAuditDecisionStatus {
-  currentDecision?: RelayAuditDecisionValue;
-  source: "generated" | "manual" | "approved" | "none";
-  approvedAt?: string;
-  approvedBy?: string;
-  notes?: string;
-}
-
-export type RelayAuditWorkflowState =
-  | "not_ready"
-  | "candidate"
-  | "ready"
-  | "decision_submitted"
-  | "revision_required"
-  | "accepted"
-  | "completed";
-
-export interface RelayAuditStatus {
-  runId: string;
-  runStatus: string;
-  auditState: RelayAuditWorkflowState;
-  canGenerateAudit: boolean;
-  canSubmitDecision: boolean;
-  canApprove: boolean;
-  canRequestRevision: boolean;
-  canCloseRun: boolean;
-  evidenceManifestArtifact?: RelayArtifact;
-  generatedAuditPacketArtifact?: RelayArtifact;
-  manualAuditPacketArtifact?: RelayArtifact;
-  decisionArtifact?: RelayArtifact;
-  blockers: string[];
-  warnings: string[];
-  revisionRequirements: string[];
-  localOnly: true;
-}
-
-export interface RelayCommitSummary {
-  changedFileArtifactIds: string[];
-  commitMessageArtifactId?: string;
-  commitMessagePreview?: string;
-  commitMessageAvailable: boolean;
-  validationSummary: string;
-  auditDecisionSummary: string;
-}
-
-export interface RelayAuditActions {
-  canGenerateAudit: boolean;
-  canSubmitManual: boolean;
-  canApproveAudit: boolean;
-  canRequestRevision: boolean;
-  canPrepareCommitMessage: boolean;
-  canCloseRun: boolean;
-  generateAuditUnavailableReason?: string;
-  submitManualUnavailableReason?: string;
-  approveAuditUnavailableReason?: string;
-  requestRevisionUnavailableReason?: string;
-  prepareCommitMessageUnavailableReason?: string;
-  closeRunUnavailableReason?: string;
-}
-
-export interface RelayAuditPageData {
-  runId: string;
-  inputSummary: RelayAuditInputSummaryInfo;
-  generatedPacket: RelayAuditPacketInfo;
-  manualPacket?: RelayAuditPacketInfo;
-  decision: RelayAuditDecisionStatus;
-  commitSummary: RelayCommitSummary;
-  actions: RelayAuditActions;
-  warnings: string[];
-  revisionRequirements: string[];
-  blockers: string[];
-}
-
-// Step 3: Execute-specific types
-
-export type RelayExecutorPhase =
-  | "idle"
-  | "dispatched"
-  | "running"
-  | "done"
-  | "blocked"
-  | "failed"
-  | "unavailable";
-
-export interface RelayChangedFile {
-  path: string;
-  status: string;
-}
-
-export interface RelayValidationCommand {
-  command: string;
-  status: string;
-  output?: string;
-}
-
-export interface RelayExecuteActions {
-  canStart: boolean;
-  canCancel: boolean;
-  canRecover: boolean;
-  startUnavailableReason?: string;
-  cancelUnavailableReason?: string;
-  recoverUnavailableReason?: string;
-}
-
-// Exported standard steps array
-export const RELAY_RUN_STEPS: RelayRunStepInfo[] = [
-  {
-    key: "intake",
-    label: "Intake / Configure",
-    description: "Submit handoff packet and review intake metadata."
-  },
-  {
-    key: "prepare",
-    label: "Compile / Render",
-    description: "Compile implementation instructions and preview prompt brief."
-  },
-  {
-    key: "execute",
-    label: "Execute",
-    description: "Run repository agent and stream execution feedback."
-  },
-  {
-    key: "audit",
-    label: "Audit / Close",
-    description: "Generate audit packet, verify checks, and close work session."
+export function workflowRunStageRoute(
+  stage: WorkflowRunStage,
+):
+  | "/runs/$runId/specification"
+  | "/runs/$runId/execute"
+  | "/runs/$runId/audit" {
+  switch (stage) {
+    case "specification":
+      return "/runs/$runId/specification";
+    case "execute":
+      return "/runs/$runId/execute";
+    case "audit":
+      return "/runs/$runId/audit";
+    default:
+      throw new Error(`Unsupported workflow Run stage: ${String(stage)}`);
   }
-];
+}

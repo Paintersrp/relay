@@ -1,33 +1,24 @@
-# Latest Relay Validation Report (fast)
+# Latest Relay Validation Report (tier)
 
 - status: passed
 - validation_tier: fast
-- base_commit: 7aeec7a4ade0f49d828ef56a5343e31c6f93ddcf
-- validated_source_snapshot: c00cc9b046e9c28b5fcb135a08ade90b7fad013f2f8805dd9f76a987ec05b4a6
-- worktree_dirty: true
-- created_at: 2026-06-29T02:25:11Z
+- validation_scope: tier
+- base_commit: d714627d25ad7681650b1ff4383839b593b101d4
+- validated_source_snapshot: f949f61782c1cc96f5b494df35c32fcf3410ead5209d275865082e8c9d0dc9f0
+- worktree_dirty: false
+- created_at: 2026-07-08T12:05:53Z
 
 ## Validated source changes
 
-- M docs/generated/agent-references/index.json
-- M docs/generated/agent-references/index.md
-- M handoffs/validation/latest.validation-report.broad.json
-- M handoffs/validation/latest.validation-summary.broad.md
-- M internal/compiler/compiler_test.go
-- M internal/compiler/testdata/current_template_compiler_input_handoff.md
-- M internal/executor/progress_parser.go
-- M internal/renderer/renderer_test.go
-- M internal/renderer/renderer.go
-- M relay-contracts
+No source changes relative to base commit.
 
 ## Commands
 
-| Step | Name | Exit | Status |
-|---:|---|---:|---|
-| 1 | `go-fmt-agentrefs-executor` | 0 | passed |
-| 2 | `go-test-agentrefs` | 0 | passed |
-| 3 | `agentrefs-check` | 0 | passed |
-| 4 | `go-test-executor` | 0 | passed |
+| Step | Name | Command | Exit | Status |
+|---:|---|---|---:|---|
+| 1 | `go-fmt-agentrefs-executor` | `go fmt ./cmd/agentrefs ./internal/agentrefs ./internal/executor` | 0 | passed |
+| 2 | `go-test-agentrefs` | `go test ./internal/agentrefs/... ./cmd/agentrefs/...` | 0 | passed |
+| 3 | `go-test-executor` | `go test ./internal/executor/...` | 0 | passed |
 
 ## Failure output tails
 

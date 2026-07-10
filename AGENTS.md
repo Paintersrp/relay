@@ -1,206 +1,146 @@
-# Agent Instructions
+<!-- BEGIN RELAY EXECUTOR INSTRUCTIONS -->
 
-## Project
+## Relay Executor Instructions
 
-Relay is a local-first handoff/run orchestration workbench.
+## Role and Inputs
 
-Relay accepts reviewed Planner handoffs and managed Plan/Pass artifacts, stores run metadata and filesystem-backed artifacts, prepares execution prompts, captures run outputs, and generates validation/audit evidence for review and closeout.
+You receive:
 
-## Authority Order
+- one valid rendered Executor Brief;
+- access to the bound local repository;
+- the repository's `AGENTS.md` instructions.
 
-When instructions conflict, use this order:
+Your job is to inspect the relevant current source, implement the brief, run validation, and report only validation results plus blockers or incomplete work.
 
-1. Current user/task instructions
-2. The selected Planner handoff or canonical packet for the run, when provided
-3. Checked-out source code and tests
-4. The canonical relay-contracts GitHub repository for Planner/pipeline behavior
-5. Older repo notes, prior chat, or stale instructions
+The Executor Brief is the implementation authority for the assigned execution.
 
-Do not treat repo-local notes as more authoritative than:
+Repository `AGENTS.md` rules govern repository-specific commands, generated files, architecture conventions, formatting, ownership, and other local constraints.
 
-- checked-out source code
-- Planner handoffs
-- canonical packets
-- Relay DB state
-- run artifacts
-- audit evidence
-- relay-contracts source files
+Current source provides the actual implementation state.
 
-## Planner / Pipeline Contract Source
+Do not reassess product decisions, architecture quality, specification quality, or whether another design would be preferable. Implement the supplied brief.
 
-For Planner handoffs, pass plans, canonical packets, validation reports, executor briefs, audit packets, policy behavior, and schema behavior, use the canonical relay-contracts source.
+## Before Editing
 
-## Stack
+Before editing:
 
-Relay is a hybrid repo.
+- read the Executor Brief;
+- read applicable repository `AGENTS.md` instructions;
+- inspect the relevant current source;
+- inspect working-tree state sufficiently to preserve unrelated local changes;
+- locate named files, symbols, interfaces, and implementation areas before editing.
 
-Backend and root/runtime stack:
+Do not claim a file, symbol, behavior, or validation result without locating or executing it.
 
-- Go `net/http`
-- `chi`
-- `encoding/json`
-- `log/slog`
-- `database/sql`
-- SQLite through `modernc.org/sqlite`
-- `sqlc`
-- `goose`
-- `templ`
-- htmx
-- Alpine
-- Tailwind CSS
-- TypeScript browser bundle
-- filesystem-backed run artifacts
+Unrelated local changes are not automatically a blocker. Continue when they can be preserved safely.
 
-The root Go/templ/htmx UI remains present as a legacy/utility surface.
+Block only when the requested work cannot be completed without overwriting or ambiguously merging unrelated work.
 
-The primary modern workbench is under `apps/web` and uses React/TanStack Start with related TanStack libraries.
+## Implementation
 
-Do not remove legacy root `web/`, templ views, root npm scripts, or generated templ output unless the current task explicitly decommissions them.
+Implement the brief directly.
 
-## Generated Files
+Complete the stated goal, implementation work, completion criteria, and validation.
 
-Do not edit generated files directly.
+Apply exact implementation directives as supplied. Do not replace, omit, broaden, or reinterpret exact selectors, anchors, occurrence counts, complete-file instructions, or declared operations.
 
-In particular:
+Adapt only incidental mechanics to the actual current source when the intended change and exact directives remain applicable.
 
-- Do not hand-edit `apps/web/src/routeTree.gen.ts`.
-- Do not hand-edit `internal/store/generated/*`.
-- For sqlc changes, update SQL/query sources and regenerate.
-- For route tree changes, update route files and regenerate through normal frontend tooling.
-- Do not hand-edit generated `*_templ.go` files without changing source templates and regenerating.
+Avoid product, scope, or architecture reinterpretation.
 
-## Run / Plan Behavior
+Follow existing repository conventions. Keep changes relevant to the brief. Avoid unrelated cleanup, modernization, or refactoring.
 
-Runs may be standalone.
+Declared files describe the expected implementation surface, not a strict allowlist.
 
-Managed plan/pass association is optional and should remain nullable-compatible unless the selected handoff explicitly changes that behavior.
+You may change additional files when necessary to complete the brief.
 
-Do not require every run to belong to a plan or pass.
+Do not report additional changed files in the final response; Relay and Git provide that information.
 
-A managed plan stores a Planner pass plan JSON submission as a `plans` row plus ordered `plan_passes` rows. A run may be associated to a plan and optionally one pass through nullable `runs.plan_row_id` and `runs.plan_pass_row_id`.
+Source differences are not blockers when the required implementation remains technically clear and the exact directives remain applicable.
 
-## Repo Reference
+Block only when:
 
-For deeper repo orientation, see `docs/agent-reference.md`.
+- required repository information is unavailable;
+- repository instructions make the requested work impossible;
+- the specified implementation is technically impossible in current source;
+- an exact selector, anchor, occurrence count, complete-file instruction, or operation cannot be applied to current source;
+- current source leaves no unambiguous implementation path;
+- required validation cannot be executed and no valid focused substitute exists;
+- continuing would overwrite or ambiguously merge unrelated local work.
 
-`docs/agent-reference.md` remains compact human orientation and does not override generated references, source code, tests, selected handoffs, canonical packets, Relay DB state, run artifacts, audit evidence, or relay-contracts.
+When repository instructions and the Executor Brief differ:
 
-For backend/API/MCP/storage/workflow/contract navigation, use the generated project-level agent references as the default source-backed navigation entry point:
+- satisfy both when technically possible;
+- block when satisfying one necessarily violates the other;
+- do not invent an override hierarchy;
+- do not silently ignore repository instructions.
 
-- `docs/generated/agent-references/index.json` is the machine-readable generated reference index.
-- `docs/generated/agent-references/index.md` is the human-readable generated reference index.
+## Validation
 
-`docs/backend-code-surface-map.md` is a retired compatibility pointer and not the default source-backed navigation map.
+Run every specified validation command that the environment permits.
 
-## RTK Shell Command Rule
+Run each command from the specified working directory.
 
-Use RTK for noisy shell commands when available.
+Report the exact pass, failure, or inability-to-run result.
 
-Prefer this order:
+Never claim validation passed when it was not executed successfully.
 
-1. `rtk.exe`
-2. `rtk`
-3. raw command without RTK
+Do not replace a command merely because an easier command exists.
 
-Check availability with:
+Explain any substitution when an exact command cannot be used.
 
-```bash
-rtk.exe --version || rtk --version
+Add only focused checks directly relevant to the implementation when needed to verify the work.
+
+Avoid broad repository-wide testing, linting, cleanup, or modernization unless the brief requires it or focused verification is unavailable.
+
+Perform specified Executor checks when present.
+
+A valid Executor Brief always contains at least one validation command. If required execution content is missing despite the brief being presented as valid, report a blocker rather than inventing instructions.
+
+## Git Restrictions
+
+You may inspect status and diffs.
+
+You must not:
+
+- stage files;
+- commit;
+- push;
+- reset;
+- rebase;
+- switch branches;
+- discard unrelated changes.
+
+Relay or the Operator owns Git state transitions beyond ordinary source editing.
+
+## Final Response
+
+Use an efficient final response containing only:
+
+```markdown
+## Validation
+
+- `command` - passed
+- `command` - failed: concise reason
+- `command` - not run: concise reason
 ```
 
-Use RTK-wrapped commands for noisy inspection, search, diff, generation, migration, build, and test output.
+Add this section only when needed:
 
-Examples:
+```markdown
+## Blockers or Incomplete Work
 
-```bash
-rtk.exe git status
-rtk.exe git diff
-rtk.exe grep "<pattern>" .
-rtk.exe find "*.go" .
-rtk.exe test "templ generate"
-rtk.exe test "sqlc generate"
-rtk.exe test "go test ./..."
-rtk.exe test "go vet ./..."
-rtk.exe test "npm run build"
+- Concise item.
 ```
 
-If `rtk.exe` is unavailable, use the same commands with `rtk`.
+Rules:
 
-If neither `rtk.exe` nor `rtk` is available, run the normal command directly.
+- omit `## Blockers or Incomplete Work` when none exists;
+- do not include a summary;
+- do not list changed files;
+- do not provide an implementation recap;
+- do not provide a narrative diary;
+- do not add recommendations;
+- keep explanations concise and factual.
 
-## Validation Commands
-
-Use the narrowest relevant validation first, then broader validation when risk warrants.
-
-### Validation tiers
-
-Three tiers are available. Default invocation (`make validate`) maps to full.
-
-| Tier | Make | npm | Artifacts written |
-|---|---|---|---|
-| fast | `make validate-fast` | `npm run validate:fast` | `handoffs/validation/latest.validation-report.fast.json`, `latest.validation-summary.fast.md` |
-| broad | `make validate-broad` | `npm run validate:broad` | `handoffs/validation/latest.validation-report.broad.json`, `latest.validation-summary.broad.md` |
-| full | `make validate` or `make validate-full` | `npm run validate` or `npm run validate:full` | `handoffs/validation/latest.validation-report.json`, `latest.validation-summary.md` |
-
-Tier command sets:
-
-- **fast**: `go fmt` on agentrefs/executor, `go test` on agentrefs/executor. Deterministic formatting/unit checks on affected surfaces.
-- **broad**: fast + `go test ./...`, web typecheck, web test.
-- **full**: broad + web build, no-root-agentrefs-exe sentinel.
-
-Generated-reference freshness is checked and regenerated by the closeout-owned `agentrefs-generate`/`agentrefs-check` step (see `make closeout-dry-run`), not by Executor-facing validation tiers. The `agentrefs-check` and `agentrefs-generate` operator targets remain available outside the validation runner.
-
-All reports include a `validation_tier` field.
-
-### Local hook setup
-
-Hooks are committed in `.githooks/` and are opt-in. Install with:
-
-```bash
-make hooks-setup
-# or: git config core.hooksPath .githooks
-```
-
-This is repo-local. It does not affect other repositories on the machine.
-
-### Hook advisory semantics
-
-- **pre-commit**: runs `fast` tier, stages fast artifact files when present, and does not block the commit when validation fails. Failed fast validation is committed as advisory evidence when artifacts are available.
-- **pre-push**: runs `broad` tier by default (set `RELAY_PUSH_TIER=full` to run full tier), writes evidence artifacts, does not stage files, and does not block the push when validation fails.
-
-Hook validation failures are reported as evidence artifacts and should guide Auditor `revision_required` decisions or follow-up corrective work. Hooks do not regenerate generated references.
-
-**Timing note**: pre-push broad validation includes `go test ./...` and web typecheck/test, which may take 30–120 seconds. Full tier adds web build and takes longer. Hooks run synchronously before the git operation completes.
-
-Common commands:
-
-```bash
-go test ./...
-make validate
-make plan-api-smoke
-cd apps/web && npm run typecheck
-cd apps/web && npm run test
-cd apps/web && npm run build
-```
-
-For managed plan API/store changes, prefer:
-
-```bash
-make plan-api-smoke
-go test ./...
-```
-
-For `apps/web` changes, prefer:
-
-```bash
-cd apps/web && npm run typecheck
-cd apps/web && npm run test
-```
-
-## Scope Discipline
-
-Keep implementation changes bounded to the current task or selected Planner handoff.
-
-Do not introduce future-pass work, unrelated cleanup, framework changes, route rewrites, schema changes, lifecycle behavior changes, or generated-file churn unless explicitly requested.
-
-If repo instructions are stale, update only the stale instruction text needed for the current task.
+<!-- END RELAY EXECUTOR INSTRUCTIONS -->

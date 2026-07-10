@@ -3,36 +3,41 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 
 import { AppPageFrame } from "@/components/relay/AppPageFrame";
-import { RelayPlansRegistry } from "@/components/relay/RelayPlansRegistry";
+import { RelayCanonicalPlansRegistry } from "@/components/relay/RelayCanonicalPlansRegistry";
 import { Button } from "@/components/ui/button";
-import { plansListQueryOptions } from "@/features/relay-plans";
+import { workflowPlansListQueryOptions } from "@/features/relay-plans";
+import { workflowProjectsListQueryOptions } from "@/features/relay-projects";
 
 export const Route = createFileRoute("/plans/")({
   component: PlansListPage,
 });
 
 function PlansListPage() {
-  const { data, isLoading, error } = useQuery(plansListQueryOptions({ limit: 100 }));
+  const plansQuery = useQuery(workflowPlansListQueryOptions({ limit: 100 }));
+  const projectsQuery = useQuery(
+    workflowProjectsListQueryOptions({ limit: 100 }),
+  );
 
   return (
     <AppPageFrame
       title="Plans"
-      description="Managed multi-pass orchestration plans"
+      description="Canonical Plans organized by Relay Projects."
       actions={
-        <Button
-          asChild
-          variant="outline"
-          size="sm"
-        >
+        <Button asChild variant="outline" size="sm">
           <Link to="/plans/new">
             <Plus className="size-3.5" />
-            New Plan
+            Submit Plan
           </Link>
         </Button>
       }
       bodyClassName="flex min-h-0 flex-col overflow-hidden p-0"
     >
-      <RelayPlansRegistry plans={data?.plans} isLoading={isLoading} error={error} />
+      <RelayCanonicalPlansRegistry
+        plans={plansQuery.data?.plans}
+        projects={projectsQuery.data?.projects}
+        isLoading={plansQuery.isLoading || projectsQuery.isLoading}
+        error={plansQuery.error || projectsQuery.error}
+      />
     </AppPageFrame>
   );
 }

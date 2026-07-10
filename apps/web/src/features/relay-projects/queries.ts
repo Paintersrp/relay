@@ -1,64 +1,50 @@
 import { queryOptions } from "@tanstack/react-query";
-import { getPlanSeed, getPlanSeedPlanningContext, getPlanSeeds, getProject, getProjects } from "./api";
-import type { PlanSeedListFilters, ProjectListFilters } from "./types";
+import {
+  getWorkflowProject,
+  listWorkflowProjects,
+  listWorkflowRepositoryTargets,
+} from "./api";
+import type {
+  WorkflowProjectDetailLimits,
+  WorkflowProjectListFilters,
+} from "./types";
 
-export const relayProjectKeys = {
-  all: ["relay-projects"] as const,
-  lists: () => [...relayProjectKeys.all, "list"] as const,
-  list: (filters: ProjectListFilters = {}) =>
-    [...relayProjectKeys.lists(), filters] as const,
-  details: () => [...relayProjectKeys.all, "detail"] as const,
-  detail: (projectId: string) =>
-    [...relayProjectKeys.details(), projectId] as const,
-  planSeeds: (projectId: string) =>
-    [...relayProjectKeys.detail(projectId), "plan-seeds"] as const,
-  planSeedList: (projectId: string, filters: PlanSeedListFilters = {}) =>
-    [...relayProjectKeys.planSeeds(projectId), "list", filters] as const,
-  planSeedDetail: (projectId: string, seedId: string) =>
-    [...relayProjectKeys.planSeeds(projectId), "detail", seedId] as const,
-  planSeedPlanningContext: (projectId: string, seedId: string) =>
-    [...relayProjectKeys.planSeedDetail(projectId, seedId), "planning-context"] as const,
+export const workflowProjectKeys = {
+  all: ["workflow-projects"] as const,
+  lists: () => [...workflowProjectKeys.all, "list"] as const,
+  list: (filters: WorkflowProjectListFilters = {}) =>
+    [...workflowProjectKeys.lists(), filters] as const,
+  details: () => [...workflowProjectKeys.all, "detail"] as const,
+  detail: (projectId: string, limits: WorkflowProjectDetailLimits = {}) =>
+    [...workflowProjectKeys.details(), projectId, limits] as const,
+  repositories: () => [...workflowProjectKeys.all, "repository-targets"] as const,
 };
 
-export function projectsListQueryOptions(filters: ProjectListFilters = {}) {
-  return queryOptions({
-    queryKey: relayProjectKeys.list(filters),
-    queryFn: () => getProjects(filters),
-    staleTime: 2 * 60 * 1000,
-  });
-}
-
-export function projectDetailQueryOptions(projectId: string) {
-  return queryOptions({
-    queryKey: relayProjectKeys.detail(projectId),
-    queryFn: () => getProject(projectId),
-    staleTime: 2 * 60 * 1000,
-  });
-}
-
-export function planSeedsListQueryOptions(
-  projectId: string,
-  filters: PlanSeedListFilters = {},
+export function workflowProjectsListQueryOptions(
+  filters: WorkflowProjectListFilters = {},
 ) {
   return queryOptions({
-    queryKey: relayProjectKeys.planSeedList(projectId, filters),
-    queryFn: () => getPlanSeeds(projectId, filters),
+    queryKey: workflowProjectKeys.list(filters),
+    queryFn: () => listWorkflowProjects(filters),
+    staleTime: 2 * 60 * 1000,
+  });
+}
+
+export function workflowProjectDetailQueryOptions(
+  projectId: string,
+  limits: WorkflowProjectDetailLimits = {},
+) {
+  return queryOptions({
+    queryKey: workflowProjectKeys.detail(projectId, limits),
+    queryFn: () => getWorkflowProject(projectId, limits),
     staleTime: 60 * 1000,
   });
 }
 
-export function planSeedDetailQueryOptions(projectId: string, seedId: string) {
+export function workflowRepositoryTargetsQueryOptions() {
   return queryOptions({
-    queryKey: relayProjectKeys.planSeedDetail(projectId, seedId),
-    queryFn: () => getPlanSeed(projectId, seedId),
-    staleTime: 60 * 1000,
-  });
-}
-
-export function planSeedPlanningContextQueryOptions(projectId: string, seedId: string) {
-  return queryOptions({
-    queryKey: relayProjectKeys.planSeedPlanningContext(projectId, seedId),
-    queryFn: () => getPlanSeedPlanningContext(projectId, seedId),
-    staleTime: 30 * 1000,
+    queryKey: workflowProjectKeys.repositories(),
+    queryFn: listWorkflowRepositoryTargets,
+    staleTime: 2 * 60 * 1000,
   });
 }

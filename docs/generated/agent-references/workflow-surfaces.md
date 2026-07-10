@@ -25,17 +25,8 @@ Schema version: `1.0.0`
 
 | Path | SHA256 | Role |
 | --- | --- | --- |
-| `internal/api/plans/attempt_handler.go` | `0c3306e9eae40bca3c21dd30271ede345fcabe5c8da86beb82ce081bd4ec6925` | plan attempt HTTP handler |
-| `internal/app/plans/attempt_service.go` | `20aaf203df2b7d1f38c95ba0b1335034a8d0078ed6318e671fc1360c41c93633` | plan attempt service |
-| `internal/app/plans/attempt_types.go` | `5c9ba968328c4c99ea4ff87c0638dd8cac5c096290ce31fc67c152aa513590f5` | plan attempt type model |
-| `internal/app/plans/work_packets.go` | `dbe4eee9a2e2e1d44b1347344dabd36a1f7ffa2cf9d74a477be3b5bb7876b35c` | next-pass work packet model |
-| `internal/mcp/plan_attempt_tools.go` | `f766d958e79c5428321c8b932299e8a2b6755acb37a0673a8edd1811ae3b4d1a` | plan attempt MCP tools |
-| `internal/mcp/refactor_backlog_tools.go` | `f176ac4f35cff568eca07633bae1810463d97a0432c9dd49bbee659bd74b31e3` | refactor backlog MCP tools |
-| `internal/refactors/types.go` | `09bd11e1868897593f61ca678a4ba221b4d0a58a37f68307669a319f80320eb7` | refactor backlog type model |
-| `relay-contracts/contracts/intent_drift_review_contract.md` | `1cac289dcc7beacd68ae56dd105b7788ca78b408d27a65168e92cb0971e6ecda` | intent drift review contract |
-| `relay-contracts/contracts/planner_mcp_plan_attempt_contract.md` | `3cf8df06e87a55560bd4fb900eef70061695c7d40bc81ec9d1c95ef694622997` | planner MCP plan attempt contract |
-| `relay-contracts/contracts/refactor_backlog_contract.md` | `7b4f61fef9650274546d498cce3c5b6943e4b85b84d70682bf7d861fe1604966` | refactor backlog contract |
-| `relay-contracts/policies/pipeline_lifecycle_policy.md` | `550af4651703b9132a9bc6eeafab2a0192f69a4a59100653268606929f39437b` | pipeline lifecycle policy |
+| `internal/app/workflow/types.go` | `3b6ce7c66bb8bedcd42504e884b05e3faceea5199237ad2ce1e0f449bd32f698` | workflow types |
+| `internal/store/workflow/types.go` | `2b462e8fd11bb276f742b170ed188f4708c6e5ab888669aacec6c3e45c3d795c` | workflow store types |
 
 ## Fact Labels
 
@@ -47,139 +38,19 @@ Schema version: `1.0.0`
 
 ## Facts
 
-### workflow-approval-submit-gates (derived)
+### workflow-canonical-model (proven)
 
-Approval gate status constants (not_required, ready, acknowledgement_required, revision_required, blocked) gate both the ApprovePlanAttemptRequest and SubmitPlanAttemptRequest boundaries. SubmitPlanAttemptRequest requires submission_confirmed and reviewed_plan_json_artifact_sha256. These gates are enforced across attempt_types.go, attempt_service.go, and attempt_handler.go.
-
-Evidence:
-
-- source: `internal/app/plans/attempt_types.go`
-- source: `internal/app/plans/attempt_service.go`
-- source: `internal/api/plans/attempt_handler.go`
-
-### workflow-drift-review-submit-boundary (proven)
-
-DriftReviewInput is the bounded input for submitting an intent drift review. It carries overall_alignment, recommended_action, approval_gate_status, and findings JSON. SubmitIntentDriftReviewRequest wraps it with project_id and plan_attempt_id. DriftReviewMode constants (disabled, manual, automatic, external) control drift behavior.
+Relay uses a canonical workflow model with Projects, Plans, Runs, and Audit. Projects organize Plans; Plans contain Passes; Runs are Managed (by Plan/pass) or Standalone. Run stages are Specification, Execute, and Audit.
 
 Evidence:
 
-- source: `internal/app/plans/attempt_types.go`
+- source: `internal/app/workflow/types.go`
 
-### workflow-gap-contract-runtime-comparison (unresolved)
+### workflow-persistence (proven)
 
-Contract/runtime semantic comparison is hash-grounded but not fully parsed by this generator; semantic mismatch review remains unresolved. Source inputs include hashed relay-contracts contract and policy files alongside runtime Go sources, but the generator does not parse contract semantic claims against runtime behavior. A future deterministic comparison pass (PASS-006+) may resolve this gap.
-
-Evidence:
-
-- contract: `relay-contracts/contracts/intent_drift_review_contract.md`
-- contract: `relay-contracts/contracts/planner_mcp_plan_attempt_contract.md`
-- contract: `relay-contracts/contracts/refactor_backlog_contract.md`
-- policy: `relay-contracts/policies/pipeline_lifecycle_policy.md`
-
-### workflow-gap-lifecycle-observed-writes (unresolved)
-
-The generator does not yet enumerate all direct lifecycle/status writes; observed-write coverage remains unresolved. Plan attempt status transitions, refactor candidate lifecycle operations, and work-packet state changes are implemented across service and handler files but are not enumerated by this generator. PASS-007 owns lifecycle-write audit coverage.
+Workflow data is persisted in SQLite through internal/store/workflow. Canonical bytes are stored immutably with SHA-256 hashes.
 
 Evidence:
 
-- source: `internal/app/plans/attempt_service.go`
-- source: `internal/api/plans/attempt_handler.go`
-- source: `internal/mcp/refactor_backlog_tools.go`
-
-### workflow-gap-transport-coverage (unresolved)
-
-The generator identifies plan attempt handler touchpoints but does not provide complete HTTP route/API coverage; PASS-006 owns route/API completeness. MCP tool registration and server wiring for plan attempt and refactor backlog tools are noted but not exhaustively enumerated by this generator.
-
-Evidence:
-
-- source: `internal/api/plans/attempt_handler.go`
-- source: `internal/api/plans/routes.go`
-- source: `internal/mcp/plan_attempt_tools.go`
-- source: `internal/mcp/refactor_backlog_tools.go`
-
-### workflow-gap-untested-state-values (unresolved)
-
-The generator does not yet inspect tests for every state value; untested state-value coverage remains unresolved. PlanAttemptStatus, PlanAttemptReviewState, ApprovalGateStatus, DriftReviewMode, ModelTier, RefactorCandidateStatus, and WorkBlocker codes are declared in runtime source files but not cross-referenced against test coverage by this generator. PASS-006 owns test-coverage completeness.
-
-Evidence:
-
-- source: `internal/app/plans/attempt_types.go`
-- source: `internal/refactors/types.go`
-- source: `internal/app/plans/work_packets.go`
-
-### workflow-intent-packet-lineage (proven)
-
-Intent packet lineage is tracked through root_intent_packet_id and reviewed_intent_packet_id in PlanIntentReviewPacket. IntentPacketEvidence captures the full chain: kind (original/revision), content_hash, redaction_status, and source_artifact_path. PriorAttemptInfo and PriorReviewInfo in the review packet connect intent thread history.
-
-Evidence:
-
-- source: `internal/app/plans/attempt_types.go`
-
-### workflow-next-pass-work-blockers (proven)
-
-NextPassWorkResponse reports business-state blockers through WorkBlocker entries. Blocker codes in internal/app/plans/work_packets.go include unknown_plan, plan_not_active, dependencies_incomplete, prior_pass_awaits_audit, active_run_exists, revision_required_same_pass, and no_eligible_pass. Blockers have a Recoverable flag.
-
-Evidence:
-
-- source: `internal/app/plans/work_packets.go`
-
-### workflow-plan-attempt-status-model (proven)
-
-PlanAttemptStatus constants (draft, approved, submitted, voided, superseded) and PlanAttemptReviewState constants model the complete plan attempt lifecycle in internal/app/plans/attempt_types.go. ModelTier constants (economy, standard, high_assurance, auto_escalate) define compute tier selection.
-
-Evidence:
-
-- source: `internal/app/plans/attempt_types.go`
-
-### workflow-refactor-backlog-candidate-model (proven)
-
-Refactor candidate statuses (ready, scheduled, scheduled_revision_required, completed, completed_with_warnings, deferred, rejected, superseded) model the full candidate lifecycle as defined by internal/refactors/types.go (runtime) and relay-contracts/contracts/refactor_backlog_contract.md (contract). DiscoveryTaskInput and CandidateInput define the bounded creation surface. RiskLevel constants (low, medium, high) classify candidate severity. CandidateScheduleInput records a passive scheduling reference. Completion statuses (completed, completed_with_warnings, scheduled_revision_required) are derived from scheduled pass audit outcomes per the contract.
-
-Evidence:
-
-- source: `internal/refactors/types.go`
-- contract: `relay-contracts/contracts/refactor_backlog_contract.md`
-
-### workflow-refactor-mcp-safety-boundaries (derived)
-
-Refactor backlog MCP tools in internal/mcp/refactor_backlog_tools.go expose discovery task and candidate CRUD operations. The safety boundary is enforced through lifecycle validation in internal/refactors/types.go: terminal statuses block transitions, secret-like values are rejected, cross-project references are blocked, and not_pass_ready validation prevents premature candidate elevation.
-
-Evidence:
-
-- source: `internal/mcp/refactor_backlog_tools.go`
-- source: `internal/refactors/types.go`
-
-### workflow-review-packet-retrieval-only (proven)
-
-PlanIntentReviewPacket.RetrievalSemantics controls whether the review packet performs a model call and mutates state. RetrievalOnly=true means no model call and no state mutation; this is the safe read-only path for external reviewers.
-
-Evidence:
-
-- source: `internal/app/plans/attempt_types.go`
-
-### workflow-route-touchpoints (convention)
-
-Plan attempt HTTP handlers in internal/api/plans/attempt_handler.go serve as the primary REST touchpoint for plan attempt creation, review packet retrieval, drift review submission, approval, submission, revision, and voiding. The handler names (HandleCreate, HandleGetReviewPacket, HandleSubmitDriftReview, HandleApprove, HandleSubmit, HandleRevise, HandleVoid) follow the Handler naming convention and are routed through MountRoutes in internal/api/plans/routes.go.
-
-Evidence:
-
-- source: `internal/api/plans/attempt_handler.go`
-- source: `internal/api/plans/routes.go`
-
-### workflow-work-packet-read-only (derived)
-
-NextPassWorkResponse and its nested types (WorkPlanSummary, WorkPassSummary, WorkContextSummary) are read-only projections. The get_next_pass_work tool (NextPassWorkTool constant) does not mutate state. WorkBlocker entries guide the caller toward recoverable actions without automatic remediation.
-
-Evidence:
-
-- source: `internal/app/plans/work_packets.go`
-
-## References
-
-| ID | Kind | Path | Description |
-| --- | --- | --- | --- |
-| `intent-drift-review-contract` | contract | `contracts/intent_drift_review_contract.md` | Planner intent drift review contract from relay-contracts. |
-| `pipeline-lifecycle-policy` | policy | `policies/pipeline_lifecycle_policy.md` | Pipeline lifecycle policy from relay-contracts. |
-| `planner-mcp-plan-attempt-contract` | contract | `contracts/planner_mcp_plan_attempt_contract.md` | Planner MCP plan attempt contract from relay-contracts. |
-| `refactor-backlog-contract` | contract | `contracts/refactor_backlog_contract.md` | Refactor backlog contract from relay-contracts. |
+- source: `internal/store/workflow/types.go`
 

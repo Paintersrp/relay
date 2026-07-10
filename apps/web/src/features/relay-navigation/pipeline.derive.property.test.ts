@@ -3,27 +3,22 @@
 // Property 10: Pipeline derivation well-formedness and determinism
 // Validates: Requirements 6.1, 6.2, 6.3, 6.7
 //
-// For any canonical `RelayRunStatus` (and any arbitrary unknown string),
+// For any canonical `WorkflowRunStage` (and any arbitrary unknown string),
 // `derivePipelineStages`:
-//   - Returns exactly four stages equal to `PIPELINE_STAGE_ORDER` in order,
+//   - Returns exactly three stages equal to `PIPELINE_STAGE_ORDER` in order,
 //     each carrying the correct label (`PIPELINE_STAGE_LABELS`) and route
 //     (`PIPELINE_STAGE_ROUTES`) (Requirement 6.1).
-//   - For canonical statuses, marks exactly one stage as the CURRENT POSITION,
+//   - Marks exactly one stage as the CURRENT POSITION,
 //     expressed as exactly one stage whose status is in {"current",
-//     "attention"}. The implementation marks the current-position stage
-//     "attention" (instead of "current") when the run is in the closed
-//     attention set — this reconciles Property 10 with the single-enum
-//     stage-status design. All stages before the current position are
-//     "completed"; all stages after are "pending" (Requirement 6.2).
-//   - Is deterministic: two calls with the same status are deep-equal
-//     (Requirements 6.3, 6.7).
+//     "attention"}.
+//   - Is deterministic: two calls with the same status are deep-equal.
 //   - Is total: arbitrary unknown / out-of-enum strings fall back to no
-//     current/attention stage and all four stages "pending" (Requirement 2.4).
+//     current/attention stage and all stages "pending" (Requirement 2.4).
 
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import type { RelayRunStatus } from "@/features/relay-runs";
+import type { WorkflowRunStage } from "@/features/relay-runs";
 import {
   derivePipelineStages,
   PIPELINE_STAGE_LABELS,
@@ -31,92 +26,42 @@ import {
   PIPELINE_STAGE_ROUTES,
 } from "./pipeline";
 
-// ------------------------------------------------------------
-// Canonical status contract
-// ------------------------------------------------------------
-
-// The full canonical `RelayRunStatus` contract, mirroring the exhaustive
-// `STATUS_TO_STAGE` mapping in pipeline.ts. Declared with an explicit
-// `RelayRunStatus[]` annotation so the compiler flags drift if the canonical
-// enum changes.
-const ALL_CANONICAL_STATUSES: readonly RelayRunStatus[] = [
-  "draft",
-  "needs_cleanup",
-  "intake_received",
-  "intake_needs_review",
-  "validated",
-  "approved_for_prepare",
-  "packet_validated",
-  "packet_validation_failed",
-  "repair_validated",
-  "brief_ready_for_review",
-  "approved_for_executor",
-  "executor_dispatched",
-  "executor_running",
-  "executor_done",
-  "executor_blocked",
-  "agent_done",
-  "agent_blocked",
-  "agent_result_needs_review",
-  "blocked",
-  "audit_ready",
-  "audit_ready_for_review",
-  "revision_required",
-  "accepted",
-  "accepted_with_warnings",
-  "validation_passed",
-  "validation_failed_accepted",
-  "validation_failed",
-  "completed",
+const ALL_CANONICAL_STAGES: readonly WorkflowRunStage[] = [
+  "specification",
+  "execute",
+  "audit",
 ];
 
-// ------------------------------------------------------------
-// Arbitraries
-// ------------------------------------------------------------
-
-const canonicalStatusArb: fc.Arbitrary<string> = fc.constantFrom(
-  ...ALL_CANONICAL_STATUSES,
+const canonicalStageArb: fc.Arbitrary<WorkflowRunStage> = fc.constantFrom(
+  ...ALL_CANONICAL_STAGES,
 );
 
-// Arbitrary unknown strings exercise the total-function / all-pending
-// fallback behavior (Requirement 2.4). Excludes any canonical status so the
-// branch is unambiguous.
-const canonicalSet: ReadonlySet<string> = new Set<string>(ALL_CANONICAL_STATUSES);
-const unknownStringArb: fc.Arbitrary<string> = fc
-  .string({ minLength: 0, maxLength: 24 })
-  .filter((s) => !canonicalSet.has(s));
-
-const anyStatusArb: fc.Arbitrary<string> = fc.oneof(
-  canonicalStatusArb,
-  unknownStringArb,
-);
+const anyStringArb: fc.Arbitrary<string> = fc.string({ minLength: 0, maxLength: 24 });
 
 describe("derivePipelineStages — Property 10: derivation well-formedness and determinism", () => {
-  it("returns exactly four stages in PIPELINE_STAGE_ORDER with correct labels and routes (Req 6.1)", () => {
+  it("returns exactly three stages in PIPELINE_STAGE_ORDER with correct labels and routes (Req 6.1)", () => {
     fc.assert(
-      fc.property(anyStatusArb, (status) => {
-        const stages = derivePipelineStages(status);
+      fc.property(canonicalStageArb, (stage) => {
+        const stages = derivePipelineStages(stage, stage);
 
         expect(stages).toHaveLength(PIPELINE_STAGE_ORDER.length);
 
-        stages.forEach((stage, index) => {
+        stages.forEach((s, index) => {
           const expectedStep = PIPELINE_STAGE_ORDER[index];
-          expect(stage.step).toBe(expectedStep);
-          expect(stage.label).toBe(PIPELINE_STAGE_LABELS[expectedStep]);
-          expect(stage.to).toBe(PIPELINE_STAGE_ROUTES[expectedStep]);
+          expect(s.step).toBe(expectedStep);
+          expect(s.label).toBe(PIPELINE_STAGE_LABELS[expectedStep]);
+          expect(s.to).toBe(PIPELINE_STAGE_ROUTES[expectedStep]);
         });
       }),
       { numRuns: 200 },
     );
   });
 
-  it("marks exactly one current position with completed-before / pending-after ordering for canonical statuses (Req 6.2)", () => {
+  it("marks exactly one current position when selectedRouteStage matches a stage (Req 6.2)", () => {
     fc.assert(
-      fc.property(canonicalStatusArb, (status) => {
-        const stages = derivePipelineStages(status);
+      fc.property(canonicalStageArb, (stage) => {
+        const stages = derivePipelineStages(stage, stage);
 
-        // The current position is the single stage whose status is in
-        // {"current", "attention"}.
         const currentPositionIndices = stages
           .map((s, i) => (s.status === "current" || s.status === "attention" ? i : -1))
           .filter((i) => i !== -1);
@@ -124,13 +69,13 @@ describe("derivePipelineStages — Property 10: derivation well-formedness and d
         expect(currentPositionIndices).toHaveLength(1);
         const currentIndex = currentPositionIndices[0];
 
-        stages.forEach((stage, index) => {
+        stages.forEach((s, index) => {
           if (index < currentIndex) {
-            expect(stage.status).toBe("completed");
+            expect(s.status).toBe("completed");
           } else if (index > currentIndex) {
-            expect(stage.status).toBe("pending");
+            expect(s.status).toBe("pending");
           } else {
-            expect(["current", "attention"]).toContain(stage.status);
+            expect(["current", "attention"]).toContain(s.status);
           }
         });
       }),
@@ -138,41 +83,34 @@ describe("derivePipelineStages — Property 10: derivation well-formedness and d
     );
   });
 
-  it("is deterministic — two calls with the same status are deep-equal (Req 6.3, 6.7)", () => {
+  it("is deterministic — two calls with the same params are deep-equal (Req 6.3, 6.7)", () => {
     fc.assert(
-      fc.property(anyStatusArb, (status) => {
-        const first = derivePipelineStages(status);
-        const second = derivePipelineStages(status);
+      fc.property(canonicalStageArb, (stage) => {
+        const first = derivePipelineStages(stage, stage);
+        const second = derivePipelineStages(stage, stage);
         expect(first).toEqual(second);
       }),
       { numRuns: 200 },
     );
   });
 
-  it("is total — arbitrary unknown strings fall back to no current/attention stage and all pending (Req 2.4)", () => {
+  it("is total — arbitrary unknown strings as durable stage fall back to no current/attention stage and all pending (Req 2.4)", () => {
     fc.assert(
-      fc.property(unknownStringArb, (status) => {
-        const stages = derivePipelineStages(status);
+      fc.property(anyStringArb, (durableStr) => {
+        // Exclude actual stage strings from the test
+        if (ALL_CANONICAL_STAGES.includes(durableStr as any)) return;
+
+        const stages = derivePipelineStages(durableStr as any, "execute");
 
         const currentPositionIndex = stages.findIndex(
           (s) => s.status === "current" || s.status === "attention",
         );
 
-        // Non-canonical status: no stage is marked active, all four fall back
-        // to "pending" (upcoming).
+        // Non-canonical durable stage: all fall back to "pending"
         expect(currentPositionIndex).toBe(-1);
         expect(stages.every((s) => s.status === "pending")).toBe(true);
       }),
       { numRuns: 200 },
     );
-  });
-
-  // Cross-check the totality fallback: every unknown string produces the same
-  // all-pending shape regardless of its value.
-  it("unknown strings all produce the same all-pending shape", () => {
-    const reference = derivePipelineStages("totally-not-a-status-xyz");
-    const other = derivePipelineStages("also-not-a-status-abc");
-    expect(other).toEqual(reference);
-    expect(reference.every((s) => s.status === "pending")).toBe(true);
   });
 });

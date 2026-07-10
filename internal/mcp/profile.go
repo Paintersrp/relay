@@ -3,63 +3,37 @@ package mcp
 import (
 	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 )
 
 type ToolProfile string
 
 const (
-	ToolProfileLocalOperator ToolProfile = "local-operator"
-	ToolProfileRestricted    ToolProfile = "restricted"
+	ToolProfilePlanner       ToolProfile = "planner"
+	ToolProfileAuditor       ToolProfile = "auditor"
+	ToolProfileLocalOperator ToolProfile = "local_operator"
 
-	EnvMCPProfile                 = "RELAY_MCP_PROFILE"
-	EnvLegacyContextBrokerEnabled = "RELAY_MCP_CONTEXT_BROKER_ENABLED"
+	EnvMCPProfile = "RELAY_MCP_PROFILE"
 )
 
 func NormalizeToolProfile(raw string) (ToolProfile, bool) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "", string(ToolProfileLocalOperator):
-		return ToolProfileLocalOperator, true
-	case string(ToolProfileRestricted):
-		return ToolProfileRestricted, true
-	case "audit":
+	case "", string(ToolProfilePlanner):
+		return ToolProfilePlanner, true
+	case string(ToolProfileAuditor):
+		return ToolProfileAuditor, true
+	case string(ToolProfileLocalOperator):
 		return ToolProfileLocalOperator, true
 	default:
-		return ToolProfileLocalOperator, false
+		return ToolProfilePlanner, false
 	}
 }
 
 func ToolProfileFromEnv(log *slog.Logger) ToolProfile {
-	if raw := strings.TrimSpace(os.Getenv(EnvMCPProfile)); raw != "" {
-		profile, ok := NormalizeToolProfile(raw)
-		if !ok && log != nil {
-			log.Warn("invalid RELAY_MCP_PROFILE value; defaulting to local-operator", "value", raw)
-		}
-		return profile
+	raw := strings.TrimSpace(os.Getenv(EnvMCPProfile))
+	profile, ok := NormalizeToolProfile(raw)
+	if !ok && log != nil {
+		log.Warn("invalid RELAY_MCP_PROFILE value; defaulting to planner", "value", raw)
 	}
-
-	if raw := strings.TrimSpace(os.Getenv(EnvLegacyContextBrokerEnabled)); raw != "" {
-		enabled, err := strconv.ParseBool(raw)
-		if err != nil {
-			if log != nil {
-				log.Warn("invalid RELAY_MCP_CONTEXT_BROKER_ENABLED value; defaulting to local-operator", "value", raw, "error", err)
-			}
-			return ToolProfileLocalOperator
-		}
-		if enabled {
-			return ToolProfileLocalOperator
-		}
-		return ToolProfileRestricted
-	}
-
-	return ToolProfileLocalOperator
-}
-
-func (p ToolProfile) ContextBrokerEnabled() bool {
-	profile, ok := NormalizeToolProfile(string(p))
-	if !ok {
-		profile = ToolProfileLocalOperator
-	}
-	return profile == ToolProfileLocalOperator
+	return profile
 }

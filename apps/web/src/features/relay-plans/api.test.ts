@@ -1,314 +1,197 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { RelayApiError } from "@/features/relay-runs";
 import {
-  getPlan,
-  getPlanPass,
-  getPlans,
-  submitPlan,
-  validatePlan,
+  getWorkflowPlan,
+  getWorkflowPlanPass,
+  listWorkflowPlans,
+  moveWorkflowPlan,
+  submitWorkflowPlan,
+  validateWorkflowPlan,
 } from "./api";
 
-describe("relay-plans api", () => {
-  const originalFetch = globalThis.fetch;
-
-  beforeEach(() => {
-    vi.restoreAllMocks();
+function response(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
   });
+}
 
-  afterAll(() => {
-    globalThis.fetch = originalFetch;
-  });
+const project = {
+  projectId: "project-1",
+  name: "Relay",
+  status: "active",
+};
 
-  it("getPlans({ limit: 100 }) calls /api/plans with the limit query param", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({ success: true, count: 0, plans: [] }),
-    });
-    globalThis.fetch = fetchSpy;
+const planSummary = {
+  planId: "plan-1",
+  project,
+  featureSlug: "relay-specification-workflow-pivot",
+  status: "active",
+  canonicalSha256: "a".repeat(64),
+  createdAt: "2026-07-08T00:00:00Z",
+  updatedAt: "2026-07-08T00:00:00Z",
+  passCount: 1,
+  completedPassCount: 0,
+  inProgressPassCount: 0,
+  plannedPassCount: 1,
+  currentPassId: "pass-1",
+};
 
-    await getPlans({ limit: 100 });
+const pass = {
+  passId: "pass-1",
+  number: 1,
+  name: "First",
+  repoTarget: "relay",
+  status: "planned",
+  dependsOn: [],
+  createdAt: "2026-07-08T00:00:00Z",
+  updatedAt: "2026-07-08T00:00:00Z",
+  runs: [],
+};
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toContain("/api/plans?limit=100");
-  });
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
-  it("getPlans({ status: 'active', limit: 50 }) calls /api/plans with both query params", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({ success: true, count: 0, plans: [] }),
-    });
-    globalThis.fetch = fetchSpy;
-
-    await getPlans({ status: "active", limit: 50 });
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toContain("/api/plans?status=active&limit=50");
-  });
-
-  it("getPlans() calls /api/plans without a query string", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({ success: true, count: 0, plans: [] }),
-    });
-    globalThis.fetch = fetchSpy;
-
-    await getPlans();
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toMatch(/\/api\/plans$/);
-  });
-
-  it("getPlan encodes the plan id", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () =>
-        JSON.stringify({
-          success: true,
-          plan: { id: "1", planId: "plan/a b" },
-          passes: [],
-          completionReady: false,
+describe("canonical Plan API", () => {
+  it("parses list, detail, and pass responses with concrete empty collections", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ items: [planSummary], count: 1 }))
+      .mockResolvedValueOnce(
+        response({
+          plan: planSummary,
+          repositories: [],
+          passes: [pass],
+          artifacts: [],
         }),
-    });
-    globalThis.fetch = fetchSpy;
+      )
+      .mockResolvedValueOnce(response(pass));
+    vi.stubGlobal("fetch", fetchMock);
 
-    await getPlan("plan/a b");
+    const list = await listWorkflowPlans({ limit: 100 });
+    const detail = await getWorkflowPlan("plan-1");
+    const passDetail = await getWorkflowPlanPass("plan-1", "pass-1");
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toContain("/api/plans/plan%2Fa%20b");
+    expect(list.count).toBe(1);
+    expect(list.plans[0]?.featureSlug).toBe("relay-specification-workflow-pivot");
+    expect(detail.repositories).toEqual([]);
+    expect(detail.artifacts).toEqual([]);
+    expect(detail.passes[0]?.dependsOn).toEqual([]);
+    expect(detail.passes[0]?.runs).toEqual([]);
+    expect(passDetail.dependsOn).toEqual([]);
+    expect(passDetail.runs).toEqual([]);
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      expect.stringContaining("/api/plans?limit=100"),
+      expect.stringContaining("/api/plans/plan-1"),
+      expect.stringContaining("/api/plans/plan-1/passes/pass-1"),
+    ]);
   });
 
-  it("getPlanPass calls the pass detail endpoint", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () =>
-        JSON.stringify({
-          success: true,
-          plan: { id: "1", planId: "plan-1" },
-          pass: { id: "2", passId: "PASS-001" },
-          completionReady: false,
-        }),
-    });
-    globalThis.fetch = fetchSpy;
-
-    await getPlanPass("plan-1", "PASS-001");
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toContain(
-      "/api/plans/plan-1/passes/PASS-001",
+  it("rejects null dependency collections instead of silently coercing malformed DTOs", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({
+        plan: planSummary,
+        repositories: [],
+        passes: [{ ...pass, dependsOn: null }],
+        artifacts: [],
+      }),
     );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getWorkflowPlan("plan-1")).rejects.toThrow(/dependsOn/);
   });
 
-  it("getPlan normalizes pass context fields from snake_case payloads", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () =>
-        JSON.stringify({
-          success: true,
-          plan: { id: "1", planId: "plan-1" },
+  it("submits exact canonical content with external Project metadata", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response(
+        {
+          plan: {
+            planId: "plan-1",
+            featureSlug: "feature",
+            status: "active",
+            canonicalSha256: "a".repeat(64),
+            project: {
+              projectId: "project-1",
+              name: "Relay",
+              status: "active",
+            },
+            createdAt: "2026-07-08T00:00:00Z",
+            updatedAt: "2026-07-08T00:00:00Z",
+          },
           passes: [
             {
-              id: "2",
-              plan_row_id: "1",
-              pass_id: "PASS-009",
-              sequence: 9,
-              name: "Source visibility",
-              goal: "Expose source visibility",
-              intended_execution_scope: ["apps/web"],
-              non_goals: ["No workflow changes"],
-              dependencies: ["PASS-008"],
+              passId: "pass-1",
+              number: 1,
+              name: "First",
+              repoTarget: "relay",
               status: "planned",
-              associated_runs: [],
-              pass_type: "ui_visibility",
-              context_plan: {
-                required_repositories: ["relay", "relay-contracts"],
-                seed_search_terms: [
-                  {
-                    repo_id: "relay",
-                    query: "context packet",
-                    purpose: "Locate source visibility surfaces",
-                    required: true,
-                  },
-                ],
-                seed_files_to_read: [
-                  {
-                    repo_id: "relay",
-                    path: "apps/web/src/routes/runs/$runId/intake.tsx",
-                    purpose: "Add panel",
-                    required: true,
-                  },
-                ],
-                context_coverage_expectations: ["Show metadata only"],
-                blocked_if_missing: ["No persisted provenance"],
-              },
-              source_snapshot_requirements: {
-                require_git_status: true,
-                require_commit_sha: false,
-                allow_dirty_worktree: true,
-              },
-              handoff_readiness_criteria: ["Source metadata is visible"],
-              context_budget: {
-                max_files: 8,
-                max_search_results: 12,
-              },
-              context_parse_warnings: ["example warning"],
             },
           ],
-          completionReady: false,
-        }),
-    });
-    globalThis.fetch = fetchSpy;
-
-    const response = await getPlan("plan-1");
-
-    expect(response.passes[0]).toMatchObject({
-      passType: "ui_visibility",
-      contextPlan: {
-        requiredRepositories: ["relay", "relay-contracts"],
-        seedSearchTerms: [{ repoId: "relay", query: "context packet" }],
-        seedFilesToRead: [
-          { repoId: "relay", path: "apps/web/src/routes/runs/$runId/intake.tsx" },
-        ],
-        contextCoverageExpectations: ["Show metadata only"],
-        blockedIfMissing: ["No persisted provenance"],
-      },
-      sourceSnapshotRequirements: {
-        requireGitStatus: true,
-        requireCommitSha: false,
-        allowDirtyWorktree: true,
-      },
-      handoffReadinessCriteria: ["Source metadata is visible"],
-      contextBudget: {
-        maxFiles: 8,
-        maxSearchResults: 12,
-      },
-      contextParseWarnings: ["example warning"],
-    });
-  });
-
-  it("validatePlan posts plan JSON to /api/plans/validate", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () =>
-        JSON.stringify({
-          success: true,
-          validation: { valid: true, issues: [] },
-        }),
-    });
-    globalThis.fetch = fetchSpy;
-
-    await validatePlan({
-      plan: {
-        plan_meta: {
-          plan_id: "plan-1",
-          schema_version: "1.0.0",
-          created_at: "2026-06-21T00:00:00Z",
-          title: "Plan",
-          goal: "Goal",
-          repo_target: "Paintersrp/relay",
-          branch_context: "main",
-          status: "active",
+          artifacts: [],
         },
-        source_intent: { summary: "Summary" },
-        passes: [],
-      },
+        201,
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const canonicalContent = "{\n  \"schema_version\": \"1.0\"\n}\n";
+
+    await submitWorkflowPlan({
+      projectId: "project-1",
+      fileName: "feature.plan.json",
+      canonicalContent,
+      expectedSha256: "a".repeat(64),
     });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toContain("/api/plans/validate");
-    expect(fetchSpy.mock.calls[0][1]).toMatchObject({
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toEqual({
+      projectId: "project-1",
+      fileName: "feature.plan.json",
+      canonicalContent,
+      expectedSha256: "a".repeat(64),
     });
-    expect(fetchSpy.mock.calls[0][1]?.body).toContain('"plan_id":"plan-1"');
   });
 
-  it("submitPlan posts plan JSON to /api/plans", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () =>
-        JSON.stringify({
-          success: true,
-          plan: { id: "1", planId: "plan-1" },
-          passes: [],
-          validation: { valid: true, issues: [] },
+  it("uses canonical validation and atomic movement endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response({
+          ok: true,
+          status: "valid",
+          kind: "plan",
+          sha256: "b".repeat(64),
+          diagnostics: [],
+          notices: [],
         }),
-    });
-    globalThis.fetch = fetchSpy;
-
-    await submitPlan({
-      plan: {
-        plan_meta: {
-          plan_id: "plan-1",
-          schema_version: "1.0.0",
-          created_at: "2026-06-21T00:00:00Z",
-          title: "Plan",
-          goal: "Goal",
-          repo_target: "Paintersrp/relay",
-          branch_context: "main",
+      )
+      .mockResolvedValueOnce(
+        response({
+          planId: "plan-1",
+          featureSlug: "feature",
           status: "active",
-        },
-        source_intent: { summary: "Summary" },
-        passes: [],
-      },
-    });
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toMatch(/\/api\/plans$/);
-    expect(fetchSpy.mock.calls[0][1]?.method).toBe("POST");
-  });
-
-  it("non-OK responses throw RelayApiError", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 422,
-      text: async () =>
-        JSON.stringify({
-          error: "validation_failed",
-          message: "Plan invalid",
-        }),
-    });
-    globalThis.fetch = fetchSpy;
-
-    await expect(
-      submitPlan({
-        plan: {
-          plan_meta: {
-            plan_id: "plan-1",
-            schema_version: "1.0.0",
-            created_at: "2026-06-21T00:00:00Z",
-            title: "Plan",
-            goal: "Goal",
-            repo_target: "Paintersrp/relay",
-            branch_context: "main",
+          canonicalSha256: "b".repeat(64),
+          project: {
+            projectId: "project-2",
+            name: "Destination",
             status: "active",
           },
-          source_intent: { summary: "Summary" },
-          passes: [],
-        },
-      }),
-    ).rejects.toThrow(RelayApiError);
-  });
+          createdAt: "2026-07-08T00:00:00Z",
+          updatedAt: "2026-07-08T00:01:00Z",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
 
-  it("malformed JSON success responses throw RelayApiError", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () => "{not json",
-    });
-    globalThis.fetch = fetchSpy;
+    await validateWorkflowPlan("feature.plan.json", "{}");
+    const moved = await moveWorkflowPlan("plan-1", { projectId: "project-2" });
 
-    await expect(getPlans()).rejects.toThrow(RelayApiError);
+    expect(fetchMock.mock.calls[0][0]).toContain(
+      "/api/canonical-artifacts/validate",
+    );
+    expect(fetchMock.mock.calls[1][0]).toContain(
+      "/api/plans/plan-1/project",
+    );
+    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("PATCH");
+    expect(moved.project.projectId).toBe("project-2");
   });
 });

@@ -1,817 +1,1040 @@
+export { workflowApiUrl } from "@/features/workflow-api";
+
+import {
+  asWorkflowRecord,
+  malformedWorkflowResponse,
+  optionalEmptyWorkflowString,
+  optionalWorkflowString,
+  requestWorkflowJson,
+  requiredWorkflowArray,
+  requiredWorkflowBoolean,
+  requiredWorkflowInteger,
+  requiredWorkflowString,
+  type WorkflowHttpMethod,
+  type WorkflowJsonRecord,
+} from "@/features/workflow-api";
 import type {
-  RelayRun,
-  RelayArtifact,
-  RelayRunEvent,
-  RelayActionRequest,
-  RelayActionResponse,
-  PlannerHandoffIntakeRequest,
-  PlannerHandoffIntakeResponse,
-  RelayApiErrorShape,
-  RelayAuditDecisionValue,
-  RelayAuditStatus,
-  RelayRunProvenance,
-  RelayRunPlanContext,
-  RelayRunSourceContext,
-  RelayValidationResult,
-  RelayValidationCommand,
-  RelayExecutorUsage,
+  WorkflowArtifactReference,
+  WorkflowCanonicalValidation,
+  WorkflowProjectReference,
+  WorkflowProjectStatus,
+  WorkflowRunStage,
+} from "@/features/relay-plans/types";
+import type {
+  CreateWorkflowRunRequest,
+  CreateWorkflowRunResponse,
+  PrepareWorkflowAuditResponse,
+  WorkflowArtifactContent,
+  WorkflowAuditDecision,
+  WorkflowAuditPacket,
+  WorkflowAuditStatus,
+  WorkflowExecutionArtifact,
+  WorkflowExecutionAttempt,
+  WorkflowExecutionAttemptResult,
+  WorkflowExecutionAttemptStatus,
+  WorkflowExecutionAttemptSummary,
+  WorkflowTerminalExecutionAttemptStatus,
+  WorkflowRunDetail,
+  WorkflowRunListFilters,
+  WorkflowRunListResponse,
+  WorkflowRunStatus,
+  WorkflowRunSummary,
+  WorkflowSpecificationReview,
 } from "./types";
 
-// Custom API Error Class
-export class RelayApiError extends Error {
-  status: number;
-  endpoint: string;
-  method: string;
-  errorShape?: RelayApiErrorShape;
+const RUN_STATUSES: readonly WorkflowRunStatus[] = [
+  "created",
+  "setup_ready",
+  "executing",
+  "execution_failed",
+  "cancelled",
+  "validating",
+  "validation_failed",
+  "audit_ready",
+  "needs_revision",
+  "completed",
+];
 
-  constructor(
-    message: string,
-    status: number,
-    endpoint: string,
-    method: string,
-    errorShape?: RelayApiErrorShape
+
+const ATTEMPT_STATUSES: readonly WorkflowExecutionAttemptStatus[] = [
+  "pending",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "timed_out",
+];
+
+const TERMINAL_ATTEMPT_STATUSES: readonly WorkflowTerminalExecutionAttemptStatus[] = [
+  "succeeded",
+  "failed",
+  "cancelled",
+  "timed_out",
+];
+
+function parseAttemptStatus(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowExecutionAttemptStatus {
+  if (
+    typeof value === "string" &&
+    ATTEMPT_STATUSES.includes(value as WorkflowExecutionAttemptStatus)
   ) {
-    super(message);
-    this.name = "RelayApiError";
-    this.status = status;
-    this.endpoint = endpoint;
-    this.method = method;
-    this.errorShape = errorShape;
+    return value as WorkflowExecutionAttemptStatus;
   }
+  return malformedWorkflowResponse(
+    method,
+    path,
+    `${context} is not a supported workflow execution-attempt status`,
+  );
 }
 
-// Read API base URL from Vite environment, default to localhost:8080
-export const API_BASE_URL =
-  (typeof import.meta !== "undefined" &&
-    import.meta.env?.VITE_RELAY_API_BASE_URL) ||
-  "http://localhost:8080";
+function parseAttemptResult(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowExecutionAttemptResult {
+  const record = asWorkflowRecord(value, method, path, context);
+  const result: WorkflowExecutionAttemptResult = { ...record };
 
-/**
- * Executes a GET request. Throws if the daemon returns invalid JSON or errors.
- */
-async function getJson<T>(path: string): Promise<T> {
-  const url = `${API_BASE_URL}${path}`;
-  try {
-    const res = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-      },
-    });
-
-    if (!res.ok) {
-      throw new RelayApiError(
-        `Failed to fetch from GET ${path} (status: ${res.status})`,
-        res.status,
+  if ("cleanup_pending" in record) {
+    if (typeof record.cleanup_pending !== "boolean") {
+      return malformedWorkflowResponse(
+        method,
         path,
-        "GET"
+        `${context}.cleanup_pending must be a boolean when present`,
       );
     }
+    result.cleanup_pending = record.cleanup_pending;
+  }
 
-    const text = await res.text();
-    try {
-      return JSON.parse(text) as T;
-    } catch (err: any) {
-      throw new RelayApiError(
-        `Malformed JSON response from GET ${path}: ${err.message}`,
-        res.status,
+  if ("termination_verified" in record) {
+    if (typeof record.termination_verified !== "boolean") {
+      return malformedWorkflowResponse(
+        method,
         path,
-        "GET"
+        `${context}.termination_verified must be a boolean when present`,
       );
     }
-  } catch (err: any) {
-    if (err instanceof RelayApiError) {
-      throw err;
+    result.termination_verified = record.termination_verified;
+  }
+
+  if ("pending_terminal_status" in record) {
+    if (
+      typeof record.pending_terminal_status !== "string" ||
+      !TERMINAL_ATTEMPT_STATUSES.includes(
+        record.pending_terminal_status as WorkflowTerminalExecutionAttemptStatus,
+      )
+    ) {
+      return malformedWorkflowResponse(
+        method,
+        path,
+        `${context}.pending_terminal_status must be a supported terminal workflow execution-attempt status when present`,
+      );
     }
-    // Connection refused / network offline.
-    throw new RelayApiError(
-      `Network error fetching from GET ${path}: ${err.message}`,
-      503,
+    result.pending_terminal_status =
+      record.pending_terminal_status as WorkflowTerminalExecutionAttemptStatus;
+  }
+
+  return result;
+}
+
+function parseRunStatus(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowRunStatus {
+  if (typeof value === "string" && RUN_STATUSES.includes(value as WorkflowRunStatus)) {
+    return value as WorkflowRunStatus;
+  }
+  return malformedWorkflowResponse(
+    method,
+    path,
+    `${context} is not a supported workflow Run status`,
+  );
+}
+
+function parseStage(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowRunStage {
+  if (value === "specification" || value === "execute" || value === "audit") {
+    return value;
+  }
+  return malformedWorkflowResponse(
+    method,
+    path,
+    `${context} must be "specification", "execute", or "audit"`,
+  );
+}
+
+function parseProject(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowProjectReference {
+  const record = asWorkflowRecord(value, method, path, context);
+  const status = record.status;
+  if (status !== "active" && status !== "archived") {
+    return malformedWorkflowResponse(
+      method,
       path,
-      "GET"
+      `${context}.status must be "active" or "archived"`,
     );
   }
+  return {
+    projectId: requiredWorkflowString(record, "projectId", method, path, context),
+    name: requiredWorkflowString(record, "name", method, path, context),
+    status: status as WorkflowProjectStatus,
+  };
 }
 
-/**
- * Executes a POST request. Strictly forbids mock success; throws descriptive
- * RelayApiError on failure, unavailable daemon, or non-2xx response.
- */
-async function postJson<TReq, TRes>(path: string, body?: TReq): Promise<TRes> {
-  const url = `${API_BASE_URL}${path}`;
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+function parseArtifact(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowArtifactReference {
+  const record = asWorkflowRecord(value, method, path, context);
+  return {
+    artifactId: requiredWorkflowString(record, "artifactId", method, path, context),
+    ownerType: requiredWorkflowString(record, "ownerType", method, path, context),
+    kind: requiredWorkflowString(record, "kind", method, path, context),
+    mediaType: requiredWorkflowString(record, "mediaType", method, path, context),
+    sha256: requiredWorkflowString(record, "sha256", method, path, context),
+    sizeBytes: requiredWorkflowInteger(record, "sizeBytes", method, path, context),
+    createdAt: requiredWorkflowString(record, "createdAt", method, path, context),
+    contentUrl: requiredWorkflowString(record, "contentUrl", method, path, context),
+  };
+}
 
-    if (!res.ok) {
-      let errorShape: RelayApiErrorShape | undefined;
-      try {
-        const text = await res.text();
-        errorShape = JSON.parse(text);
-      } catch {
-        // Ignore JSON parsing failures for error responses
-      }
-      throw new RelayApiError(
-        `Mutation failed on POST ${path} (status: ${res.status})`,
-        res.status,
+function parseExecutionArtifact(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowExecutionArtifact {
+  const record = asWorkflowRecord(value, method, path, context);
+  return {
+    artifactId: requiredWorkflowString(record, "artifactId", method, path, context),
+    kind: requiredWorkflowString(record, "kind", method, path, context),
+    mediaType: requiredWorkflowString(record, "mediaType", method, path, context),
+    sha256: requiredWorkflowString(record, "sha256", method, path, context),
+    sizeBytes: requiredWorkflowInteger(record, "sizeBytes", method, path, context),
+    createdAt: requiredWorkflowString(record, "createdAt", method, path, context),
+  };
+}
+
+function parseAttemptSummary(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowExecutionAttemptSummary {
+  const record = asWorkflowRecord(value, method, path, context);
+  return {
+    attemptId: requiredWorkflowString(record, "attemptId", method, path, context),
+    attemptNumber: requiredWorkflowInteger(
+      record,
+      "attemptNumber",
+      method,
+      path,
+      context,
+      1,
+    ),
+    adapter: requiredWorkflowString(record, "adapter", method, path, context),
+    model: requiredWorkflowString(record, "model", method, path, context),
+    status: parseAttemptStatus(record.status, method, path, `${context}.status`),
+    createdAt: requiredWorkflowString(record, "createdAt", method, path, context),
+    startedAt: optionalWorkflowString(record, "startedAt", method, path, context),
+    finishedAt: optionalWorkflowString(record, "finishedAt", method, path, context),
+    cancellationRequestedAt: optionalWorkflowString(
+      record,
+      "cancellationRequestedAt",
+      method,
+      path,
+      context,
+    ),
+    artifacts: requiredWorkflowArray(
+      record,
+      "artifacts",
+      method,
+      path,
+      context,
+    ).map((entry, index) =>
+      parseArtifact(entry, method, path, `${context}.artifacts[${index}]`),
+    ),
+  };
+}
+
+function parseDetailedAttempt(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowExecutionAttempt {
+  const record = asWorkflowRecord(value, method, path, context);
+  return {
+    attemptId: requiredWorkflowString(record, "attemptId", method, path, context),
+    runId: requiredWorkflowString(record, "runId", method, path, context),
+    attemptNumber: requiredWorkflowInteger(
+      record,
+      "attemptNumber",
+      method,
+      path,
+      context,
+      1,
+    ),
+    adapter: requiredWorkflowString(record, "adapter", method, path, context),
+    model: requiredWorkflowString(record, "model", method, path, context),
+    status: parseAttemptStatus(record.status, method, path, `${context}.status`),
+    result: parseAttemptResult(record.result, method, path, `${context}.result`),
+    createdAt: requiredWorkflowString(record, "createdAt", method, path, context),
+    startedAt: optionalWorkflowString(record, "startedAt", method, path, context),
+    finishedAt: optionalWorkflowString(record, "finishedAt", method, path, context),
+    cancellationRequestedAt: optionalWorkflowString(
+      record,
+      "cancellationRequestedAt",
+      method,
+      path,
+      context,
+    ),
+    artifacts: requiredWorkflowArray(
+      record,
+      "artifacts",
+      method,
+      path,
+      context,
+    ).map((entry, index) =>
+      parseExecutionArtifact(
+        entry,
+        method,
         path,
+        `${context}.artifacts[${index}]`,
+      ),
+    ),
+    liveStdout: optionalEmptyWorkflowString(
+      record,
+      "liveStdout",
+      method,
+      path,
+      context,
+    ),
+    liveStderr: optionalEmptyWorkflowString(
+      record,
+      "liveStderr",
+      method,
+      path,
+      context,
+    ),
+    liveStdoutTruncated: requiredWorkflowBoolean(
+      record,
+      "liveStdoutTruncated",
+      method,
+      path,
+      context,
+    ),
+    liveStderrTruncated: requiredWorkflowBoolean(
+      record,
+      "liveStderrTruncated",
+      method,
+      path,
+      context,
+    ),
+    liveStdoutBytes: requiredWorkflowInteger(
+      record,
+      "liveStdoutBytes",
+      method,
+      path,
+      context,
+    ),
+    liveStderrBytes: requiredWorkflowInteger(
+      record,
+      "liveStderrBytes",
+      method,
+      path,
+      context,
+    ),
+  };
+}
+
+function parsePacket(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowAuditPacket {
+  const record = asWorkflowRecord(value, method, path, context);
+  return {
+    auditPacketId: requiredWorkflowString(
+      record,
+      "auditPacketId",
+      method,
+      path,
+      context,
+    ),
+    auditedCommit: requiredWorkflowString(
+      record,
+      "auditedCommit",
+      method,
+      path,
+      context,
+    ),
+    packetSha256: requiredWorkflowString(
+      record,
+      "packetSha256",
+      method,
+      path,
+      context,
+    ),
+    status: requiredWorkflowString(record, "status", method, path, context),
+    staleReason: optionalWorkflowString(
+      record,
+      "staleReason",
+      method,
+      path,
+      context,
+    ),
+    createdAt: requiredWorkflowString(record, "createdAt", method, path, context),
+    supersededAt: optionalWorkflowString(
+      record,
+      "supersededAt",
+      method,
+      path,
+      context,
+    ),
+  };
+}
+
+function parseDecision(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowAuditDecision {
+  const record = asWorkflowRecord(value, method, path, context);
+  return {
+    auditDecisionId: requiredWorkflowString(
+      record,
+      "auditDecisionId",
+      method,
+      path,
+      context,
+    ),
+    auditedCommit: requiredWorkflowString(
+      record,
+      "auditedCommit",
+      method,
+      path,
+      context,
+    ),
+    packetSha256: requiredWorkflowString(
+      record,
+      "packetSha256",
+      method,
+      path,
+      context,
+    ),
+    decision: requiredWorkflowString(record, "decision", method, path, context),
+    rationale: requiredWorkflowString(
+      record,
+      "rationale",
+      method,
+      path,
+      context,
+      true,
+    ),
+    createdAt: requiredWorkflowString(record, "createdAt", method, path, context),
+  };
+}
+
+function optionalRecord(
+  record: WorkflowJsonRecord,
+  field: string,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): unknown | undefined {
+  const value = record[field];
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return malformedWorkflowResponse(
+      method,
+      path,
+      `${context}.${field} must be an object when present`,
+    );
+  }
+  return value;
+}
+
+function parseRun(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+  context: string,
+): WorkflowRunSummary {
+  const record = asWorkflowRecord(value, method, path, context);
+  const latestAttempt = optionalRecord(
+    record,
+    "latestAttempt",
+    method,
+    path,
+    context,
+  );
+  const currentPacket = optionalRecord(
+    record,
+    "currentPacket",
+    method,
+    path,
+    context,
+  );
+  const latestDecision = optionalRecord(
+    record,
+    "latestDecision",
+    method,
+    path,
+    context,
+  );
+  const project = optionalRecord(record, "project", method, path, context);
+  return {
+    runId: requiredWorkflowString(record, "runId", method, path, context),
+    featureSlug: requiredWorkflowString(
+      record,
+      "featureSlug",
+      method,
+      path,
+      context,
+    ),
+    repoTarget: requiredWorkflowString(record, "repoTarget", method, path, context),
+    status: parseRunStatus(record.status, method, path, `${context}.status`),
+    stage: parseStage(record.stage, method, path, `${context}.stage`),
+    branch: requiredWorkflowString(record, "branch", method, path, context),
+    baseCommit: requiredWorkflowString(record, "baseCommit", method, path, context),
+    canonicalSha256: requiredWorkflowString(
+      record,
+      "canonicalSha256",
+      method,
+      path,
+      context,
+    ),
+    planId: optionalWorkflowString(record, "planId", method, path, context),
+    passId: optionalWorkflowString(record, "passId", method, path, context),
+    passNumber:
+      record.passNumber === undefined
+        ? undefined
+        : requiredWorkflowInteger(
+            record,
+            "passNumber",
+            method,
+            path,
+            context,
+            1,
+          ),
+    project: project
+      ? parseProject(project, method, path, `${context}.project`)
+      : undefined,
+    remediatesRunId: optionalWorkflowString(
+      record,
+      "remediatesRunId",
+      method,
+      path,
+      context,
+    ),
+    createdAt: requiredWorkflowString(record, "createdAt", method, path, context),
+    updatedAt: requiredWorkflowString(record, "updatedAt", method, path, context),
+    completedAt: optionalWorkflowString(
+      record,
+      "completedAt",
+      method,
+      path,
+      context,
+    ),
+    latestAttempt: latestAttempt
+      ? parseAttemptSummary(
+          latestAttempt,
+          method,
+          path,
+          `${context}.latestAttempt`,
+        )
+      : undefined,
+    currentPacket: currentPacket
+      ? parsePacket(currentPacket, method, path, `${context}.currentPacket`)
+      : undefined,
+    latestDecision: latestDecision
+      ? parseDecision(latestDecision, method, path, `${context}.latestDecision`)
+      : undefined,
+  };
+}
+
+function parseDiagnostics(
+  record: WorkflowJsonRecord,
+  field: "diagnostics" | "notices",
+  method: WorkflowHttpMethod,
+  path: string,
+): Record<string, unknown>[] {
+  return requiredWorkflowArray(record, field, method, path, "response").map(
+    (entry, index) =>
+      asWorkflowRecord(entry, method, path, `${field}[${index}]`),
+  );
+}
+
+function parseDetailedEnvelope(
+  value: unknown,
+  method: WorkflowHttpMethod,
+  path: string,
+): WorkflowExecutionAttempt {
+  const record = asWorkflowRecord(value, method, path, "response");
+  return parseDetailedAttempt(record.attempt, method, path, "attempt");
+}
+
+export async function listWorkflowRuns(
+  filters: WorkflowRunListFilters = {},
+): Promise<WorkflowRunListResponse> {
+  const params = new URLSearchParams();
+  if (filters.status) params.set("status", filters.status);
+  if (filters.planId) params.set("planId", filters.planId);
+  if (filters.passId) params.set("passId", filters.passId);
+  if (filters.limit !== undefined) params.set("limit", String(filters.limit));
+  const query = params.toString();
+  const path = `/api/runs${query ? `?${query}` : ""}`;
+  const record = asWorkflowRecord(
+    await requestWorkflowJson<unknown>("GET", path),
+    "GET",
+    path,
+    "response",
+  );
+  return {
+    count: requiredWorkflowInteger(record, "count", "GET", path, "response"),
+    runs: requiredWorkflowArray(record, "items", "GET", path, "response").map(
+      (entry, index) => parseRun(entry, "GET", path, `items[${index}]`),
+    ),
+  };
+}
+
+export async function getWorkflowRun(runId: string): Promise<WorkflowRunDetail> {
+  const path = `/api/runs/${encodeURIComponent(runId)}`;
+  const record = asWorkflowRecord(
+    await requestWorkflowJson<unknown>("GET", path),
+    "GET",
+    path,
+    "response",
+  );
+  return {
+    run: parseRun(record.run, "GET", path, "run"),
+    attempts: requiredWorkflowArray(
+      record,
+      "attempts",
+      "GET",
+      path,
+      "response",
+    ).map((entry, index) =>
+      parseAttemptSummary(entry, "GET", path, `attempts[${index}]`),
+    ),
+    artifacts: requiredWorkflowArray(
+      record,
+      "artifacts",
+      "GET",
+      path,
+      "response",
+    ).map((entry, index) =>
+      parseArtifact(entry, "GET", path, `artifacts[${index}]`),
+    ),
+  };
+}
+
+export async function getWorkflowSpecification(
+  runId: string,
+): Promise<WorkflowSpecificationReview> {
+  const path = `/api/runs/${encodeURIComponent(runId)}/specification`;
+  const record = asWorkflowRecord(
+    await requestWorkflowJson<unknown>("GET", path),
+    "GET",
+    path,
+    "response",
+  );
+  const planValue = optionalRecord(record, "plan", "GET", path, "response");
+  const passValue = optionalRecord(record, "pass", "GET", path, "response");
+  const plan = planValue
+    ? (() => {
+        const value = asWorkflowRecord(planValue, "GET", path, "plan");
+        return {
+          planId: requiredWorkflowString(value, "planId", "GET", path, "plan"),
+          featureSlug: requiredWorkflowString(
+            value,
+            "featureSlug",
+            "GET",
+            path,
+            "plan",
+          ),
+          status: requiredWorkflowString(value, "status", "GET", path, "plan"),
+        };
+      })()
+    : undefined;
+  const pass = passValue
+    ? (() => {
+        const value = asWorkflowRecord(passValue, "GET", path, "pass");
+        return {
+          passId: requiredWorkflowString(value, "passId", "GET", path, "pass"),
+          number: requiredWorkflowInteger(value, "number", "GET", path, "pass", 1),
+          name: requiredWorkflowString(value, "name", "GET", path, "pass"),
+          repoTarget: requiredWorkflowString(
+            value,
+            "repoTarget",
+            "GET",
+            path,
+            "pass",
+          ),
+          status: requiredWorkflowString(value, "status", "GET", path, "pass"),
+        };
+      })()
+    : undefined;
+  return {
+    run: parseRun(record.run, "GET", path, "run"),
+    executionSpec: parseArtifact(
+      record.executionSpec,
+      "GET",
+      path,
+      "executionSpec",
+    ),
+    executorBrief: parseArtifact(
+      record.executorBrief,
+      "GET",
+      path,
+      "executorBrief",
+    ),
+    plan,
+    pass,
+    remediatesRunId: optionalWorkflowString(
+      record,
+      "remediatesRunId",
+      "GET",
+      path,
+      "response",
+    ),
+  };
+}
+
+export async function validateWorkflowExecutionSpec(
+  fileName: string,
+  canonicalContent: string,
+): Promise<WorkflowCanonicalValidation> {
+  const path = "/api/canonical-artifacts/validate";
+  const record = asWorkflowRecord(
+    await requestWorkflowJson<unknown>("POST", path, {
+      fileName,
+      canonicalContent,
+    }),
+    "POST",
+    path,
+    "response",
+  );
+  return {
+    ok: requiredWorkflowBoolean(record, "ok", "POST", path, "response"),
+    status: requiredWorkflowString(record, "status", "POST", path, "response"),
+    kind: requiredWorkflowString(record, "kind", "POST", path, "response"),
+    sha256: requiredWorkflowString(record, "sha256", "POST", path, "response"),
+    diagnostics: parseDiagnostics(record, "diagnostics", "POST", path),
+    notices: parseDiagnostics(record, "notices", "POST", path),
+  };
+}
+
+export async function createWorkflowRun(
+  request: CreateWorkflowRunRequest,
+): Promise<CreateWorkflowRunResponse> {
+  const path = "/api/runs";
+  const record = asWorkflowRecord(
+    await requestWorkflowJson<unknown>("POST", path, request),
+    "POST",
+    path,
+    "response",
+  );
+  const run = asWorkflowRecord(record.run, "POST", path, "run");
+  return {
+    run: {
+      runId: requiredWorkflowString(run, "runId", "POST", path, "run"),
+      featureSlug: requiredWorkflowString(
+        run,
+        "featureSlug",
         "POST",
-        errorShape
-      );
-    }
-
-    const text = await res.text();
-    try {
-      return JSON.parse(text) as TRes;
-    } catch (err: any) {
-      throw new RelayApiError(
-        `Malformed JSON response from POST ${path}: ${err.message}`,
-        res.status,
         path,
-        "POST"
-      );
-    }
-  } catch (err: any) {
-    if (err instanceof RelayApiError) {
-      throw err;
-    }
-    // Daemon unavailable or connection refused
-    throw new RelayApiError(
-      `Daemon unavailable or connection refused on POST ${path}: ${err.message}`,
-      503,
-      path,
-      "POST"
-    );
-  }
-}
-
-function firstNonEmptyString(...values: unknown[]): string | undefined {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim();
-    }
-  }
-
-  return undefined;
-}
-
-function optionalNumber(...values: unknown[]): number | undefined {
-  for (const value of values) {
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return value;
-    }
-
-    if (typeof value === "string" && value.trim().length > 0) {
-      const parsed = Number(value.trim());
-      if (Number.isFinite(parsed)) {
-        return parsed;
-      }
-    }
-  }
-
-  return undefined;
-}
-
-function normalizeRunProvenance(run: any): RelayRunProvenance | undefined {
-  const provenance = run?.provenance ?? run?.provenance_summary ?? run?.provenanceSummary;
-
-  const plannerHandoffSha256 = firstNonEmptyString(
-    provenance?.plannerHandoffSha256,
-    provenance?.planner_handoff_sha256,
-  );
-  const sourceArtifactPath = firstNonEmptyString(
-    provenance?.sourceArtifactPath,
-    provenance?.source_artifact_path,
-  );
-  const source = firstNonEmptyString(provenance?.source);
-  const clientTraceId = firstNonEmptyString(
-    provenance?.clientTraceId,
-    provenance?.client_trace_id,
-  );
-  const planId = firstNonEmptyString(provenance?.planId, provenance?.plan_id);
-  const passId = firstNonEmptyString(provenance?.passId, provenance?.pass_id);
-  const contextPacketId = firstNonEmptyString(
-    provenance?.contextPacketId,
-    provenance?.context_packet_id,
-  );
-  const sourceSnapshotId = firstNonEmptyString(
-    provenance?.sourceSnapshotId,
-    provenance?.source_snapshot_id,
-  );
-  const plannerHandoffBytes = optionalNumber(
-    provenance?.plannerHandoffBytes,
-    provenance?.planner_handoff_bytes,
-  );
-  const artifactKind = firstNonEmptyString(
-    provenance?.artifactKind,
-    provenance?.artifact_kind,
-  );
-
-  if (
-    !plannerHandoffSha256 &&
-    !sourceArtifactPath &&
-    !planId &&
-    !passId &&
-    !contextPacketId &&
-    !sourceSnapshotId
-  ) {
-    return undefined;
-  }
-
-  return {
-    plannerHandoffSha256,
-    plannerHandoffBytes,
-    sourceArtifactPath,
-    source,
-    clientTraceId,
-    planId,
-    passId,
-    contextPacketId,
-    sourceSnapshotId,
-    artifactKind:
-      artifactKind === "planner_handoff_provenance_json"
-        ? "planner_handoff_provenance_json"
-        : undefined,
-  };
-}
-
-function normalizeRunPlanContext(run: any): RelayRunPlanContext | undefined {
-  const planContext = run?.planContext ?? run?.plan_context;
-  const provenance = normalizeRunProvenance(run);
-  const planId = firstNonEmptyString(
-    planContext?.planId,
-    planContext?.plan_id,
-    run.planId,
-    run.plan_id,
-    provenance?.planId,
-  );
-  const passId = firstNonEmptyString(
-    planContext?.passId,
-    planContext?.pass_id,
-    run.passId,
-    run.pass_id,
-    provenance?.passId,
-  );
-
-  if (
-    !planId &&
-    !passId &&
-    !firstNonEmptyString(
-      planContext?.contextPacketId,
-      planContext?.context_packet_id,
-      provenance?.contextPacketId,
-    ) &&
-    !firstNonEmptyString(
-      planContext?.sourceSnapshotId,
-      planContext?.source_snapshot_id,
-      provenance?.sourceSnapshotId,
-    )
-  ) {
-    return undefined;
-  }
-
-  return {
-    planId,
-    planTitle: firstNonEmptyString(
-      planContext?.planTitle,
-      planContext?.plan_title,
-      run.planTitle,
-      run.plan_title,
-    ),
-    planRowId: firstNonEmptyString(
-      planContext?.planRowId,
-      planContext?.plan_row_id,
-    ),
-    passId,
-    passName: firstNonEmptyString(
-      planContext?.passName,
-      planContext?.pass_name,
-      run.passName,
-      run.pass_name,
-    ),
-    passRowId: firstNonEmptyString(
-      planContext?.passRowId,
-      planContext?.pass_row_id,
-    ),
-    passSequence: optionalNumber(
-      planContext?.passSequence,
-      planContext?.pass_sequence,
-      run.passSequence,
-      run.pass_sequence,
-    ),
-    passStatus: firstNonEmptyString(
-      planContext?.passStatus,
-      planContext?.pass_status,
-      run.passStatus,
-      run.pass_status,
-    ),
-    sourceArtifactPath: firstNonEmptyString(
-      planContext?.sourceArtifactPath,
-      planContext?.source_artifact_path,
-      provenance?.sourceArtifactPath,
-    ),
-    contextPacketId: firstNonEmptyString(
-      planContext?.contextPacketId,
-      planContext?.context_packet_id,
-      provenance?.contextPacketId,
-    ),
-    sourceSnapshotId: firstNonEmptyString(
-      planContext?.sourceSnapshotId,
-      planContext?.source_snapshot_id,
-      provenance?.sourceSnapshotId,
-    ),
-    plannerHandoffSha256: firstNonEmptyString(
-      planContext?.plannerHandoffSha256,
-      planContext?.planner_handoff_sha256,
-      provenance?.plannerHandoffSha256,
-    ),
-  };
-}
-
-function normalizeRunSourceContext(run: any): RelayRunSourceContext | undefined {
-  const sourceContext = run?.sourceContext ?? run?.source_context;
-  const provenance = normalizeRunProvenance(run);
-  const planContext = normalizeRunPlanContext(run);
-  const planId = firstNonEmptyString(
-    sourceContext?.planId,
-    sourceContext?.plan_id,
-    planContext?.planId,
-    provenance?.planId,
-  );
-  const passId = firstNonEmptyString(
-    sourceContext?.passId,
-    sourceContext?.pass_id,
-    planContext?.passId,
-    provenance?.passId,
-  );
-  const contextPacketId = firstNonEmptyString(
-    sourceContext?.contextPacketId,
-    sourceContext?.context_packet_id,
-    planContext?.contextPacketId,
-    provenance?.contextPacketId,
-  );
-  const sourceSnapshotId = firstNonEmptyString(
-    sourceContext?.sourceSnapshotId,
-    sourceContext?.source_snapshot_id,
-    planContext?.sourceSnapshotId,
-    provenance?.sourceSnapshotId,
-  );
-
-  if (!planId && !passId && !contextPacketId && !sourceSnapshotId) {
-    return undefined;
-  }
-
-  return {
-    planId,
-    passId,
-    contextPacketId,
-    sourceSnapshotId,
-    coverageReportPath: firstNonEmptyString(
-      sourceContext?.coverageReportPath,
-      sourceContext?.coverage_report_path,
-    ),
-    recordedAt: firstNonEmptyString(
-      sourceContext?.recordedAt,
-      sourceContext?.recorded_at,
-    ),
-  };
-}
-
-/**
- * Helper to normalize backend runs with defaults for frontend UI-only optional fields.
- */
-export function normalizeRun(run: any): RelayRun {
-  if (!run) return run;
-
-  const defaultStepLabels = {
-    intake: "Intake / Configure",
-    prepare: "Compile / Render",
-    execute: "Execute",
-    audit: "Audit / Close",
-  };
-
-  const defaultValidation: RelayValidationResult = {
-    errors: 0,
-    warnings: 0,
-    passed: 0,
-    issues: [],
-  };
-
-  return {
-    ...run,
-    id: String(run.id),
-    name: run.name || `Run ${run.id}`,
-    repo: run.repo || "",
-    branch: run.branch || "",
-    status: run.status || "draft",
-    activeStep: run.activeStep || "intake",
-    lifecycleState: run.lifecycleState || "intake",
-    createdAt: run.createdAt || new Date().toISOString(),
-    updatedAt: run.updatedAt || new Date().toISOString(),
-    summary: run.summary || "",
-    model:
-      firstNonEmptyString(
-        run.model,
-        run.selectedModel,
-        run.selected_model,
-        run.recommendedModel,
-        run.recommended_model,
-      ) || "-",
-    riskLevel: run.riskLevel || "low",
-    validation: run.validation || defaultValidation,
-    artifacts: run.artifacts || [],
-    latestEvents: run.latestEvents || [],
-    statusSeverity: run.statusSeverity || "neutral",
-    state: run.state || "Draft",
-    planContext: normalizeRunPlanContext(run),
-    provenance: normalizeRunProvenance(run),
-    sourceContext: normalizeRunSourceContext(run),
-    title: run.title || run.name || `Run ${run.id}`,
-    packetId: run.packetId || "",
-    executorAdapter: run.executorAdapter || run.executor || "opencode_go",
-    executor: run.executor || run.executorAdapter || "opencode_go",
-    validationSummary: run.validationSummary || run.validation || defaultValidation,
-    approvalGate: run.approvalGate || {
-      label: "Intake Approval",
-      state: "pending",
+        "run",
+      ),
+      repoTarget: requiredWorkflowString(
+        run,
+        "repoTarget",
+        "POST",
+        path,
+        "run",
+      ),
+      status: parseRunStatus(run.status, "POST", path, "run.status"),
+      branch: requiredWorkflowString(run, "branch", "POST", path, "run"),
+      baseCommit: requiredWorkflowString(
+        run,
+        "baseCommit",
+        "POST",
+        path,
+        "run",
+      ),
+      canonicalSha256: requiredWorkflowString(
+        run,
+        "canonicalSha256",
+        "POST",
+        path,
+        "run",
+      ),
+      createdAt: requiredWorkflowString(
+        run,
+        "createdAt",
+        "POST",
+        path,
+        "run",
+      ),
+      updatedAt: requiredWorkflowString(
+        run,
+        "updatedAt",
+        "POST",
+        path,
+        "run",
+      ),
+      reviewUrl: requiredWorkflowString(
+        run,
+        "reviewUrl",
+        "POST",
+        path,
+        "run",
+      ),
     },
-    logPreview: run.logPreview || {
-      lines: [],
-      truncated: false,
-    },
-    stepLabels: {
-      ...defaultStepLabels,
-      ...run.stepLabels,
-    },
-  };
-}
-
-export function assertValidPlannerHandoffPlanAssociation(
-  req: PlannerHandoffIntakeRequest,
-): void {
-  const planId = firstNonEmptyString(req.planId, req.plan_id);
-  const passId = firstNonEmptyString(req.passId, req.pass_id);
-
-  if (passId && !planId) {
-    throw new RelayApiError(
-      "Planner handoff intake plan association is invalid: passId/pass_id requires planId/plan_id.",
-      400,
-      "/api/intake/planner-handoff",
+    artifacts: requiredWorkflowArray(
+      record,
+      "artifacts",
       "POST",
-      {
-        error: "invalid_plan_association",
-        message: "passId/pass_id requires planId/plan_id.",
-        code: "INVALID_PLAN_ASSOCIATION",
-      },
+      path,
+      "response",
+    ).map((entry, index) =>
+      parseArtifact(entry, "POST", path, `artifacts[${index}]`),
+    ),
+  };
+}
+
+export async function startWorkflowAttempt(
+  runId: string,
+  adapter: string,
+  model: string,
+): Promise<WorkflowExecutionAttempt> {
+  const path = `/api/runs/${encodeURIComponent(runId)}/attempts`;
+  return parseDetailedEnvelope(
+    await requestWorkflowJson<unknown>("POST", path, { adapter, model }),
+    "POST",
+    path,
+  );
+}
+
+export async function getWorkflowAttempt(
+  runId: string,
+  attemptId: string,
+): Promise<WorkflowExecutionAttempt> {
+  const path = `/api/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}`;
+  return parseDetailedAttempt(
+    await requestWorkflowJson<unknown>("GET", path),
+    "GET",
+    path,
+    "attempt",
+  );
+}
+
+export async function cancelWorkflowAttempt(
+  runId: string,
+  attemptId: string,
+): Promise<WorkflowExecutionAttempt> {
+  const path = `/api/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}/cancel`;
+  return parseDetailedEnvelope(
+    await requestWorkflowJson<unknown>("POST", path),
+    "POST",
+    path,
+  );
+}
+
+export async function reconcileWorkflowAttempt(
+  runId: string,
+  attemptId: string,
+): Promise<WorkflowExecutionAttempt> {
+  const path = `/api/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}/reconcile`;
+  return parseDetailedEnvelope(
+    await requestWorkflowJson<unknown>("POST", path),
+    "POST",
+    path,
+  );
+}
+
+export async function getWorkflowAuditStatus(
+  runId: string,
+): Promise<WorkflowAuditStatus> {
+  const path = `/api/runs/${encodeURIComponent(runId)}/audit/status`;
+  const record = asWorkflowRecord(
+    await requestWorkflowJson<unknown>("GET", path),
+    "GET",
+    path,
+    "response",
+  );
+  const current = optionalRecord(record, "currentPacket", "GET", path, "response");
+  const latest = optionalRecord(record, "latestPacket", "GET", path, "response");
+  const decision = optionalRecord(record, "decision", "GET", path, "response");
+  return {
+    runId: requiredWorkflowString(record, "runId", "GET", path, "response"),
+    runStatus: parseRunStatus(
+      record.runStatus,
+      "GET",
+      path,
+      "response.runStatus",
+    ),
+    currentPacket: current
+      ? parsePacket(current, "GET", path, "currentPacket")
+      : undefined,
+    latestPacket: latest
+      ? parsePacket(latest, "GET", path, "latestPacket")
+      : undefined,
+    decision: decision
+      ? parseDecision(decision, "GET", path, "decision")
+      : undefined,
+  };
+}
+
+export async function prepareWorkflowAudit(
+  runId: string,
+  auditedCommit: string,
+): Promise<PrepareWorkflowAuditResponse> {
+  const path = `/api/runs/${encodeURIComponent(runId)}/audit/prepare`;
+  const record = asWorkflowRecord(
+    await requestWorkflowJson<unknown>("POST", path, { auditedCommit }),
+    "POST",
+    path,
+    "response",
+  );
+  const artifact = asWorkflowRecord(record.artifact, "POST", path, "artifact");
+  return {
+    success: requiredWorkflowBoolean(record, "success", "POST", path, "response"),
+    runId: requiredWorkflowString(record, "runId", "POST", path, "response"),
+    runStatus: parseRunStatus(
+      record.runStatus,
+      "POST",
+      path,
+      "response.runStatus",
+    ),
+    packet: parsePacket(record.packet, "POST", path, "packet"),
+    artifact: {
+      artifactId: requiredWorkflowString(
+        artifact,
+        "artifactId",
+        "POST",
+        path,
+        "artifact",
+      ),
+      kind: requiredWorkflowString(
+        artifact,
+        "kind",
+        "POST",
+        path,
+        "artifact",
+      ),
+      sha256: requiredWorkflowString(
+        artifact,
+        "sha256",
+        "POST",
+        path,
+        "artifact",
+      ),
+      sizeBytes: requiredWorkflowInteger(
+        artifact,
+        "sizeBytes",
+        "POST",
+        path,
+        "artifact",
+      ),
+      contentUrl: requiredWorkflowString(
+        artifact,
+        "contentUrl",
+        "POST",
+        path,
+        "artifact",
+      ),
+    },
+  };
+}
+
+export async function getWorkflowArtifactContent(
+  contentUrl: string,
+): Promise<WorkflowArtifactContent> {
+  if (!contentUrl.startsWith("/api/artifacts/")) {
+    throw new Error("Artifact content URL must use /api/artifacts/.");
+  }
+  const record = asWorkflowRecord(
+    await requestWorkflowJson<unknown>("GET", contentUrl),
+    "GET",
+    contentUrl,
+    "response",
+  );
+  const encoding = requiredWorkflowString(
+    record,
+    "encoding",
+    "GET",
+    contentUrl,
+    "response",
+  );
+  if (encoding !== "utf-8" && encoding !== "base64") {
+    return malformedWorkflowResponse(
+      "GET",
+      contentUrl,
+      'response.encoding must be "utf-8" or "base64"',
     );
   }
-}
-
-// GET endpoints
-export async function getRuns(): Promise<RelayRun[]> {
-  const runs = await getJson<any[]>("/api/runs");
-  return (runs || []).map(normalizeRun);
-}
-
-// Legacy compatibility alias
-export const listRuns = getRuns;
-
-export async function getRun(id: string): Promise<RelayRun | null> {
-  const run = await getJson<any>(`/api/runs/${id}`);
-  return normalizeRun(run);
-}
-
-export async function getRunArtifacts(id: string): Promise<RelayArtifact[]> {
-  const artifacts = await getJson<any[]>(`/api/runs/${id}/artifacts`);
-  return (artifacts || []).map(normalizeArtifact);
-}
-
-export async function getRunEvents(id: string): Promise<RelayRunEvent[]> {
-  return getJson<RelayRunEvent[]>(`/api/runs/${id}/events`);
-}
-
-function normalizeArtifact(art: any): RelayArtifact {
   return {
-    ...art,
-    status: art.status || "ready",
-    filename: art.filename || art.path?.split("/").pop() || "",
+    artifact: parseArtifact(record.artifact, "GET", contentUrl, "artifact"),
+    offset: requiredWorkflowInteger(
+      record,
+      "offset",
+      "GET",
+      contentUrl,
+      "response",
+    ),
+    byteCount: requiredWorkflowInteger(
+      record,
+      "byteCount",
+      "GET",
+      contentUrl,
+      "response",
+    ),
+    encoding,
+    content: requiredWorkflowString(
+      record,
+      "content",
+      "GET",
+      contentUrl,
+      "response",
+      true,
+    ),
+    truncated: requiredWorkflowBoolean(
+      record,
+      "truncated",
+      "GET",
+      contentUrl,
+      "response",
+    ),
+    nextOffset:
+      record.nextOffset === undefined
+        ? undefined
+        : requiredWorkflowInteger(
+            record,
+            "nextOffset",
+            "GET",
+            contentUrl,
+            "response",
+          ),
   };
-}
-
-export function normalizeAuditStatus(status: any): RelayAuditStatus {
-  return {
-    runId: String(status?.runId ?? ""),
-    runStatus: status?.runStatus ?? "",
-    auditState: status?.auditState ?? "not_ready",
-    canGenerateAudit: Boolean(status?.canGenerateAudit),
-    canSubmitDecision: Boolean(status?.canSubmitDecision),
-    canApprove: Boolean(status?.canApprove),
-    canRequestRevision: Boolean(status?.canRequestRevision),
-    canCloseRun: Boolean(status?.canCloseRun),
-    evidenceManifestArtifact: status?.evidenceManifestArtifact
-      ? normalizeArtifact(status.evidenceManifestArtifact)
-      : undefined,
-    generatedAuditPacketArtifact: status?.generatedAuditPacketArtifact
-      ? normalizeArtifact(status.generatedAuditPacketArtifact)
-      : undefined,
-    manualAuditPacketArtifact: status?.manualAuditPacketArtifact
-      ? normalizeArtifact(status.manualAuditPacketArtifact)
-      : undefined,
-    decisionArtifact: status?.decisionArtifact
-      ? normalizeArtifact(status.decisionArtifact)
-      : undefined,
-    blockers: Array.isArray(status?.blockers) ? status.blockers : [],
-    warnings: Array.isArray(status?.warnings) ? status.warnings : [],
-    revisionRequirements: Array.isArray(status?.revisionRequirements)
-      ? status.revisionRequirements
-      : [],
-    localOnly: true,
-  };
-}
-
-export async function getAuditStatus(id: string): Promise<RelayAuditStatus> {
-  const status = await getJson<any>(`/api/runs/${id}/audit/status`);
-  return normalizeAuditStatus(status);
-}
-
-// POST endpoints (mutations)
-export async function submitPlannerHandoff(
-  req: PlannerHandoffIntakeRequest
-): Promise<PlannerHandoffIntakeResponse> {
-  assertValidPlannerHandoffPlanAssociation(req);
-
-  return postJson<PlannerHandoffIntakeRequest, PlannerHandoffIntakeResponse>(
-    "/api/intake/planner-handoff",
-    req
-  );
-}
-
-export async function approveIntake(
-  id: string,
-  req: RelayActionRequest
-): Promise<RelayActionResponse> {
-  return postJson<RelayActionRequest, RelayActionResponse>(
-    `/api/runs/${id}/approve-intake`,
-    req
-  );
-}
-
-export async function prepareRun(id: string): Promise<RelayActionResponse> {
-  return postJson<undefined, RelayActionResponse>(`/api/runs/${id}/prepare`);
-}
-
-export async function renderBrief(id: string): Promise<RelayActionResponse> {
-  return postJson<undefined, RelayActionResponse>(`/api/runs/${id}/render-brief`);
-}
-
-export async function approveBrief(
-  id: string,
-  req: RelayActionRequest
-): Promise<RelayActionResponse> {
-  return postJson<RelayActionRequest, RelayActionResponse>(
-    `/api/runs/${id}/approve-brief`,
-    req
-  );
-}
-
-export interface ExecuteActionPayload {
-  action: "start" | "cancel" | "recover";
-}
-
-export async function executeRun(id: string): Promise<RelayActionResponse> {
-  return postJson<ExecuteActionPayload, RelayActionResponse>(`/api/runs/${id}/execute`, { action: "start" });
-}
-
-export async function cancelRun(id: string): Promise<RelayActionResponse> {
-  return postJson<ExecuteActionPayload, RelayActionResponse>(`/api/runs/${id}/execute`, { action: "cancel" });
-}
-
-export async function recoverRun(id: string): Promise<RelayActionResponse> {
-  return postJson<ExecuteActionPayload, RelayActionResponse>(`/api/runs/${id}/execute`, { action: "recover" });
-}
-
-export async function getArtifactContent(id: string, kind: string): Promise<string> {
-  const url = `${API_BASE_URL}/api/runs/${id}/artifacts/${kind}`;
-  try {
-    const res = await fetch(url, { headers: { Accept: "text/plain, application/json" } });
-    if (!res.ok) {
-      throw new RelayApiError(`Failed to fetch artifact content from GET /api/runs/${id}/artifacts/${kind} (status: ${res.status})`, res.status, `/api/runs/${id}/artifacts/${kind}`, "GET");
-    }
-    return await res.text();
-  } catch (err: any) {
-    if (err instanceof RelayApiError) throw err;
-    throw new RelayApiError(`Daemon unavailable fetching artifact content for run ${id} kind ${kind}: ${err.message}`, 503, `/api/runs/${id}/artifacts/${kind}`, "GET");
-  }
-}
-
-export async function getArtifactContentByUrl(contentUrl: string): Promise<string> {
-  if (!contentUrl.startsWith("/api/runs/")) {
-    throw new Error(`Invalid content URL: ${contentUrl}. Must start with '/api/runs/'.`);
-  }
-  const url = `${API_BASE_URL}${contentUrl}`;
-  try {
-    const res = await fetch(url, { headers: { Accept: "text/plain, application/json" } });
-    if (!res.ok) {
-      throw new RelayApiError(`Failed to fetch artifact content from GET ${contentUrl} (status: ${res.status})`, res.status, contentUrl, "GET");
-    }
-    return await res.text();
-  } catch (err: any) {
-    if (err instanceof RelayApiError) throw err;
-    throw new RelayApiError(`Daemon unavailable fetching artifact content from URL ${contentUrl}: ${err.message}`, 503, contentUrl, "GET");
-  }
-}
-
-export interface ValidateRunResponse {
-  success: boolean;
-  runId: string;
-  status: string;
-  runStatus: string;
-  commands: RelayValidationCommand[];
-  stdout?: string;
-  stderr?: string;
-  progress?: string;
-}
-
-export async function validateRun(id: string): Promise<ValidateRunResponse> {
-  return postJson<undefined, ValidateRunResponse>(`/api/runs/${id}/validate`);
-}
-
-export async function acceptFailedValidation(
-  id: string,
-  reason: string
-): Promise<AuditActionResponse> {
-  return postJson<{ reason: string }, AuditActionResponse>(
-    `/api/runs/${id}/validate/accept-failure`,
-    { reason }
-  );
-}
-
-export interface RepairValidationResponse {
-  success: boolean;
-  runId: string;
-  eligible: boolean;
-  repairAttempted?: boolean;
-  blockedReason?: string;
-  ineligibleReason?: string;
-  reValidationValid?: boolean;
-  reValidationError?: string;
-  reValidationReport?: any;
-  error?: string;
-  repairArtifacts?: Record<string, string>;
-}
-
-export async function repairValidation(id: string): Promise<RepairValidationResponse> {
-  return postJson<undefined, RepairValidationResponse>(`/api/runs/${id}/repair/validation`);
-}
-
-export async function auditRun(id: string): Promise<RelayActionResponse> {
-  return postJson<undefined, RelayActionResponse>(`/api/runs/${id}/audit`);
-}
-
-export async function approveCloseout(
-  id: string,
-  req: RelayActionRequest
-): Promise<RelayActionResponse> {
-  return postJson<RelayActionRequest, RelayActionResponse>(
-    `/api/runs/${id}/approve-closeout`,
-    req
-  );
-}
-
-// Step 4: Audit / Close API methods
-
-export interface SubmitManualAuditPayload {
-  audit_packet_markdown: string;
-  decision: RelayAuditDecisionValue;
-  notes?: string;
-}
-
-export interface SubmitManualAuditResponse {
-  success: boolean;
-  runId: string;
-  auditPacket: string;
-  decision: RelayAuditDecisionValue;
-  status: string;
-  lifecycleState: string;
-  decisionArtifactPath?: string;
-  updatedAt: string;
-}
-
-export async function submitManualAuditPacket(
-  id: string,
-  payload: SubmitManualAuditPayload
-): Promise<SubmitManualAuditResponse> {
-  return postJson<SubmitManualAuditPayload, SubmitManualAuditResponse>(
-    `/api/runs/${id}/audit/submit`,
-    payload
-  );
-}
-
-export interface AuditApprovePayload {
-  decision: "accepted" | "accepted_with_warnings";
-  notes?: string;
-}
-
-export interface AuditActionResponse {
-  success: boolean;
-  runId: string;
-  status: string;
-  lifecycleState: string;
-  state?: string;
-  updatedAt: string;
-}
-
-export async function approveAudit(
-  id: string,
-  payload: AuditApprovePayload
-): Promise<AuditActionResponse> {
-  return postJson<AuditApprovePayload, AuditActionResponse>(
-    `/api/runs/${id}/audit/approve`,
-    payload
-  );
-}
-
-export interface AuditRevisionPayload {
-  notes?: string;
-  reason?: string;
-}
-
-export async function requestAuditRevision(
-  id: string,
-  payload?: AuditRevisionPayload
-): Promise<AuditActionResponse> {
-  return postJson<AuditRevisionPayload, AuditActionResponse>(
-    `/api/runs/${id}/audit/request-revision`,
-    payload || {}
-  );
-}
-
-export interface PrepareCommitMessageResponse {
-  success: boolean;
-  runId: string;
-  commitMessage: string;
-  artifactPath: string;
-  artifactKind: string;
-}
-
-export async function prepareCommitMessage(
-  id: string
-): Promise<PrepareCommitMessageResponse> {
-  return postJson<undefined, PrepareCommitMessageResponse>(
-    `/api/runs/${id}/audit/prepare-commit-message`
-  );
-}
-
-export async function closeRun(
-  id: string
-): Promise<AuditActionResponse> {
-  return postJson<undefined, AuditActionResponse>(
-    `/api/runs/${id}/audit/close`
-  );
-}
-
-/**
- * Parse executor usage telemetry from an artifact.
- * Returns undefined if the artifact is not usage telemetry or is malformed.
- */
-export function parseExecutorUsage(artifact: RelayArtifact | undefined): RelayExecutorUsage | undefined {
-  if (!artifact) return undefined;
-
-  // Check if this is a usage artifact
-  const id = [
-    artifact.storageKind,
-    artifact.kind,
-    artifact.filename,
-    artifact.label,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  if (!id.includes("executor_usage") && !id.includes("usage")) {
-    return undefined;
-  }
-
-  // Try to parse preview JSON
-  if (!artifact.preview) return undefined;
-
-  try {
-    const parsed = JSON.parse(artifact.preview);
-    return {
-      provider: parsed.provider || "kiro",
-      adapter: parsed.adapter || "kiro_cli",
-      creditsText: parsed.creditsText,
-      credits: typeof parsed.credits === "number" ? parsed.credits : undefined,
-      sourceStream: parsed.sourceStream,
-      model: parsed.model,
-      rawLine: parsed.rawLine,
-    };
-  } catch {
-    return undefined;
-  }
 }

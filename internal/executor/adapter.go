@@ -86,6 +86,7 @@ type ExecutorAdapterRequest struct {
 	RepoPath      string
 	BriefContent  string
 	BriefPath     string
+	ResultPath    string
 	SelectedModel string
 	Timeout       time.Duration
 }
@@ -118,4 +119,8 @@ type ExecutorAdapter interface {
 	ID() AdapterID
 	BuildInvocation(req ExecutorAdapterRequest) (ExecutorInvocation, error)
 	NormalizeResult(raw string) NormalizedExecutorResult
+}
+
+func ValidateInvocationPreflight(invocation ExecutorInvocation) ExecutorPreflightResult {
+	return defaultExecutorPreflight(invocation)
 }

@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Plan of Passes v1.0",
+  "description": "Structural schema for the canonical Plan of Passes artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {},
+    "feature_slug": {
+      "$ref": "#/$defs/feature_slug"
+    },
+    "goal": {
+      "$ref": "#/$defs/single_line_prose"
+    },
+    "context": {
+      "$ref": "#/$defs/multiline_prose"
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "repo_targets": {
+      "title": "Repository targets",
+      "description": "Declared local repository targets for the Plan.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/repository_target"
+      }
+    },
+    "passes": {
+      "title": "Passes",
+      "description": "Ordered bounded planning passes.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/pass"
+      }
+    },
+    "completion_criteria": {
+      "$ref": "#/$defs/criteria_array"
+    }
+  },
+  "required": [
+    "feature_slug",
+    "goal",
+    "context",
+    "scope",
+    "repo_targets",
+    "passes",
+    "completion_criteria"
+  ],
+  "$defs": {
+    "feature_slug": {
+      "title": "Feature slug",
+      "description": "Lowercase kebab-case feature slug.",
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "single_line_prose": {
+      "title": "Single-line prose",
+      "description": "Nonblank human prose without line breaks.",
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])(?!\\s*$)[^\\r\\n]*\\S[^\\r\\n]*$"
+    },
+    "multiline_prose": {
+      "title": "Markdown-capable prose",
+      "description": "Nonblank prose that may contain Markdown and line breaks.",
+      "type": "string",
+      "pattern": "^[\\s\\S]*\\S[\\s\\S]*$"
+    },
+    "machine_string": {
+      "title": "Machine string",
+      "description": "Nonblank single-line value without outer whitespace or control characters.",
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])(?!\\s*$)(?!\\s)(?!.*\\s$)[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "repository_key": {
+      "title": "Repository key",
+      "description": "Nonblank local repository binding or key.",
+      "$ref": "#/$defs/machine_string"
+    },
+    "commit_sha": {
+      "title": "Commit SHA",
+      "description": "Lowercase full 40-character Git commit SHA.",
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])[0-9a-f]{40}$"
+    },
+    "path": {
+      "title": "Repository-relative path",
+      "description": "Basic POSIX-style repository-relative path or source area.",
+      "type": "string",
+      "pattern": "^(?!.*[\\r\\n])(?!/)(?![A-Za-z]:)(?!//)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?$)(?!.*(?:^|/)\\.\\.?/)(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001F\\u007F]).*\\S.*$"
+    },
+    "scope": {
+      "title": "Scope",
+      "description": "In-scope and out-of-scope boundaries.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "in_scope": {
+          "$ref": "#/$defs/criteria_array"
+        },
+        "out_of_scope": {
+          "$ref": "#/$defs/criteria_array"
+        }
+      },
+      "required": [
+        "in_scope",
+        "out_of_scope"
+      ]
+    },
+    "criteria_array": {
+      "title": "Criteria array",
+      "description": "Nonempty list of single-line nonblank prose items.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/single_line_prose"
+      }
+    },
+    "repository_target": {
+      "title": "Repository target",
+      "description": "One local repository target.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repo_target": {
+          "$ref": "#/$defs/repository_key"
+        },
+        "branch": {
+          "$ref": "#/$defs/machine_string"
+        },
+        "planning_base_commit": {
+          "$ref": "#/$defs/commit_sha"
+        }
+      },
+      "required": [
+        "repo_target",
+        "branch",
+        "planning_base_commit"
+      ]
+    },
+    "pass": {
+      "title": "Pass",
+      "description": "One bounded planning pass.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "$ref": "#/$defs/single_line_prose"
+        },
+        "repo_target": {
+          "$ref": "#/$defs/repository_key"
+        },
+        "goal": {
+          "$ref": "#/$defs/single_line_prose"
+        },
+        "context": {
+          "$ref": "#/$defs/multiline_prose"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "outcomes": {
+          "$ref": "#/$defs/criteria_array"
+        },
+        "source_targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/source_target"
+          }
+        },
+        "validation_intent": {
+          "$ref": "#/$defs/criteria_array"
+        },
+        "completion_criteria": {
+          "$ref": "#/$defs/criteria_array"
+        }
+      },
+      "required": [
+        "number",
+        "name",
+        "repo_target",
+        "goal",
+        "context",
+        "scope",
+        "depends_on",
+        "outcomes",
+        "source_targets",
+        "validation_intent",
+        "completion_criteria"
+      ]
+    },
+    "source_target": {
+      "title": "Source target",
+      "description": "Expected source area for a pass.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "purpose": {
+          "$ref": "#/$defs/single_line_prose"
+        }
+      },
+      "required": [
+        "path",
+        "purpose"
+      ]
+    }
+  }
+}

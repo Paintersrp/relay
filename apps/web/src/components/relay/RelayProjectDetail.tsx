@@ -1,426 +1,322 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  Plus,
-  Edit2,
-  FolderGit2,
-  AlertCircle,
-  ToggleLeft,
-  ToggleRight,
-  Info,
-  Calendar,
-} from "lucide-react";
+import { Archive, ArrowLeft, Edit2, Loader2, RotateCcw } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { RelayProjectNotesPanel } from "@/components/relay/RelayProjectNotesPanel";
+import { RelayProjectPlansPanel } from "@/components/relay/RelayProjectPlansPanel";
+import { RelayProjectRepositoriesPanel } from "@/components/relay/RelayProjectRepositoriesPanel";
 import { formatPlanDate } from "@/components/relay/relayPlanVisualState";
-import { RelayProjectPlansPanel } from "./RelayProjectPlansPanel";
-import { RelayProjectPlanSeedsPanel } from "./RelayProjectPlanSeedsPanel";
-import { RelayProjectRepositoryForm } from "./RelayProjectRepositoryForm";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-  setProjectRepositoryEnabled,
-  relayProjectKeys,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  archiveWorkflowProject,
+  restoreWorkflowProject,
+  updateWorkflowProject,
+  workflowProjectKeys,
+  type WorkflowProjectDetail,
 } from "@/features/relay-projects";
-import type { RelayProject, RelayProjectRepository } from "@/features/relay-projects/types";
+import { RelayApiError } from "@/features/relay-runs";
 
 interface RelayProjectDetailProps {
-  project: RelayProject;
+  detail: WorkflowProjectDetail;
 }
 
-export function RelayProjectDetail({ project }: RelayProjectDetailProps) {
-  const queryClient = useQueryClient();
-  const [formMode, setFormMode] = React.useState<"none" | "add" | "edit">("none");
-  const [editingRepo, setEditingRepo] = React.useState<RelayProjectRepository | undefined>(undefined);
-  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+function projectErrorMessage(error: unknown): string {
+  if (error instanceof RelayApiError) {
+    return error.errorShape?.message || error.message;
+  }
+  if (error instanceof Error) return error.message;
+  return "Project update failed.";
+}
 
-  const toggleEnabledMutation = useMutation({
-    mutationFn: (variables: { repoId: string; enabled: boolean }) =>
-      setProjectRepositoryEnabled(project.projectId, variables.repoId, variables.enabled),
+export function RelayProjectDetail({ detail }: RelayProjectDetailProps) {
+  const queryClient = useQueryClient();
+  const project = detail.project;
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [archiveOpen, setArchiveOpen] = React.useState(false);
+  const [name, setName] = React.useState(project.name);
+  const [description, setDescription] = React.useState(project.description);
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!editOpen) {
+      setName(project.name);
+      setDescription(project.description);
+    }
+  }, [editOpen, project.description, project.name]);
+
+  const invalidateProject = React.useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: workflowProjectKeys.all });
+  }, [queryClient]);
+
+  const updateMutation = useMutation({
+    mutationFn: () => updateWorkflowProject(project.projectId, {
+      name: name.trim(),
+      description: description.trim(),
+    }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: relayProjectKeys.detail(project.projectId),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: relayProjectKeys.all,
-      });
+      setEditOpen(false);
+      setErrorMessage(null);
+      invalidateProject();
     },
-    onError: (err: any) => {
-      setErrorMsg(err?.message || "Failed to update repository enabled state");
-    },
+    onError: (error) => setErrorMessage(projectErrorMessage(error)),
   });
 
-  const handleEditClick = (repo: RelayProjectRepository) => {
-    setEditingRepo(repo);
-    setFormMode("edit");
-  };
+  const lifecycleMutation = useMutation({
+    mutationFn: () => project.status === "active"
+      ? archiveWorkflowProject(project.projectId)
+      : restoreWorkflowProject(project.projectId),
+    onSuccess: () => {
+      setArchiveOpen(false);
+      setErrorMessage(null);
+      invalidateProject();
+    },
+    onError: (error) => setErrorMessage(projectErrorMessage(error)),
+  });
 
-  const handleAddClick = () => {
-    setEditingRepo(undefined);
-    setFormMode("add");
+  const submitEdit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setErrorMessage(null);
+    updateMutation.mutate();
   };
-
-  const handleFormClose = () => {
-    setFormMode("none");
-    setEditingRepo(undefined);
-  };
-
-  const handleToggleEnable = (repoId: string, currentEnabled: boolean) => {
-    toggleEnabledMutation.mutate({ repoId, enabled: !currentEnabled });
-  };
-
-  const repositories = project.repositories ?? [];
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <Button asChild variant="ghost" size="sm" className="h-8 w-8 p-0">
           <Link to="/projects">
-            <ArrowLeft className="h-4 w-4" />
-            <span className="sr-only">Back to projects</span>
+            <ArrowLeft className="size-4" />
+            <span className="sr-only">Back to Projects</span>
           </Link>
         </Button>
         <span className="text-sm font-medium text-muted-foreground">Back to Projects</span>
       </div>
 
-      {errorMsg && (
-        <div className="rounded border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive flex items-start gap-2">
-          <AlertCircle className="size-4 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p>{errorMsg}</p>
-            <Button variant="link" size="sm" className="h-auto p-0 text-destructive underline mt-1" onClick={() => setErrorMsg(null)}>
-              Dismiss
-            </Button>
-          </div>
+      {errorMessage ? (
+        <div
+          role="alert"
+          className="rounded border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
+        >
+          {errorMessage}
         </div>
-      )}
+      ) : null}
 
-      {/* Project Details Panel */}
-      <div className="rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--relay-row-border)] pb-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold text-foreground">{project.name}</h2>
+      <section className="space-y-4 rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-6">
+        <div className="flex flex-col gap-4 border-b border-[var(--relay-row-border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-lg font-semibold text-foreground">{project.name}</h1>
               <Badge variant={project.status === "archived" ? "secondary" : "success"}>
                 {project.status === "archived" ? "Archived" : "Active"}
               </Badge>
             </div>
-            <p className="font-mono text-xs text-muted-foreground">ID: {project.projectId}</p>
-          </div>
-
-          <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
-            <Calendar className="size-3" />
-            <span>Created: {formatPlanDate(project.createdAt)}</span>
-          </div>
-        </div>
-
-        {project.description && (
-          <div className="space-y-1">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Description</h4>
-            <p className="text-sm text-foreground/90 whitespace-pre-wrap">{project.description}</p>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pt-2 text-xs">
-          <div className="space-y-1">
-            <span className="font-semibold text-muted-foreground">Default Repository ID:</span>
-            <div className="font-mono text-foreground flex items-center gap-1.5">
-              {project.defaultRepositoryId ? (
-                <>
-                  <FolderGit2 className="size-3.5 text-muted-foreground" />
-                  {project.defaultRepositoryId}
-                </>
-              ) : (
-                <span className="text-muted-foreground/60">—</span>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <span className="font-semibold text-muted-foreground">Last Updated:</span>
-            <div className="text-foreground">{formatPlanDate(project.updatedAt)}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Info notice about repository validation limitation */}
-      <div className="rounded border border-info/20 bg-info/10 p-3.5 text-xs text-info flex items-start gap-2">
-        <Info className="size-4 shrink-0 mt-0.5 text-info" />
-        <p className="leading-normal">
-          Repository readiness is shown from saved configuration only; validation/refresh is not available in this pass.
-        </p>
-      </div>
-
-      {/* Refactor backlog entry point */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4">
-        <div className="min-w-0 space-y-1">
-          <h3 className="text-sm font-semibold text-foreground">Refactor Backlog</h3>
-          <p className="text-xs text-muted-foreground">
-            Track discovery prompts and pass-ready refactor candidates for this project.
-          </p>
-        </div>
-        <Button asChild variant="outline" size="sm">
-          <Link to="/projects/$projectId/refactor-backlog" params={{ projectId: project.projectId }}>
-            Open Refactor Backlog
-          </Link>
-        </Button>
-      </div>
-
-      {/* Project-scoped plan seeds */}
-      <RelayProjectPlanSeedsPanel projectId={project.projectId} />
-
-      {/* Project-scoped managed plans */}
-      <RelayProjectPlansPanel projectId={project.projectId} />
-
-      {/* Repositories section */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground">
-            Registered Repositories ({repositories.length})
-          </h3>
-          {formMode === "none" && (
-            <Button size="sm" onClick={handleAddClick} className="gap-1">
-              <Plus className="size-3.5" />
-              Add Repository
-            </Button>
-          )}
-        </div>
-
-        {formMode !== "none" && (
-          <RelayProjectRepositoryForm
-            projectId={project.projectId}
-            repository={editingRepo}
-            onSuccess={handleFormClose}
-            onCancel={handleFormClose}
-          />
-        )}
-
-        {repositories.length === 0 ? (
-          <div className="rounded border border-dashed border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)]/40 p-8 text-center">
-            <FolderGit2 className="size-8 mx-auto text-muted-foreground/50 mb-2" />
-            <p className="text-sm font-medium text-muted-foreground">No repositories registered yet.</p>
-            <p className="text-xs text-muted-foreground/75 mt-1">
-              Add a repository context to associate directories and branches with this project.
+            <p className="break-all font-mono text-xs text-muted-foreground">
+              {project.projectId}
             </p>
-            {formMode === "none" && (
-              <Button size="sm" variant="outline" className="mt-4" onClick={handleAddClick}>
-                <Plus className="size-3.5 mr-1" /> Add Repository
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setErrorMessage(null);
+                setEditOpen(true);
+              }}
+            >
+              <Edit2 className="size-3.5" />
+              Edit Project
+            </Button>
+            {project.status === "active" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setErrorMessage(null);
+                  setArchiveOpen(true);
+                }}
+              >
+                <Archive className="size-3.5" />
+                Archive Project
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={lifecycleMutation.isPending}
+                onClick={() => lifecycleMutation.mutate()}
+              >
+                {lifecycleMutation.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="size-3.5" />
+                )}
+                Restore Project
               </Button>
             )}
           </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Desktop Table View */}
-            <div className="hidden border border-[var(--relay-row-border)] rounded overflow-hidden lg:block bg-[var(--relay-panel-bg)]">
-              <table className="w-full text-left border-collapse table-fixed text-xs">
-                <thead>
-                  <tr className="border-b border-[var(--relay-row-border)] bg-muted/30 text-muted-foreground font-medium">
-                    <th className="p-3 w-[15%]">Repo ID & Role</th>
-                    <th className="p-3 w-[25%]">Local Filesystem Path</th>
-                    <th className="p-3 w-[25%]">Remote URL & Label</th>
-                    <th className="p-3 w-[12%]">Branch & Size</th>
-                    <th className="p-3 w-[13%]">Policy Rules</th>
-                    <th className="p-3 w-[10%] text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {repositories.map((repo) => (
-                    <tr
-                      key={repo.repoId}
-                      className={cn(
-                        "border-b border-[var(--relay-row-border)] last:border-none",
-                        !repo.enabled && "opacity-60"
-                      )}
-                    >
-                      <td className="p-3 align-top space-y-1">
-                        <div className="font-semibold font-mono break-all">{repo.repoId}</div>
-                        <Badge variant="outline" className="text-[10px] rounded px-1 py-0.5 uppercase tracking-wider">
-                          {repo.role}
-                        </Badge>
-                      </td>
+        </div>
 
-                      <td className="p-3 align-top font-mono break-all text-[11px]">
-                        {repo.localPath}
-                      </td>
+        <div className="space-y-1">
+          <h2 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            Description
+          </h2>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+            {project.description || "No description provided."}
+          </p>
+        </div>
 
-                      <td className="p-3 align-top space-y-1 font-mono text-[11px] break-all">
-                        {repo.remoteUrl ? (
-                          <div className="text-foreground">{repo.remoteUrl}</div>
-                        ) : (
-                          <span className="text-muted-foreground/60">—</span>
-                        )}
-                        {repo.remoteLabel && (
-                          <div className="text-[10px] text-muted-foreground">Label: {repo.remoteLabel}</div>
-                        )}
-                      </td>
-
-                      <td className="p-3 align-top space-y-1">
-                        <div className="font-mono">{repo.defaultBranch}</div>
-                        <div className="text-[10px] text-muted-foreground">
-                          Max: {(repo.maxFileSizeBytes / 1024).toFixed(0)} KB
-                        </div>
-                      </td>
-
-                      <td className="p-3 align-top space-y-1">
-                        <div className="text-[10px] text-muted-foreground">
-                          Untracked: <span className="font-medium text-foreground">{repo.includeUntracked ? "Yes" : "No"}</span>
-                        </div>
-                        {repo.allowedRoots.length > 0 && (
-                          <div className="text-[10px] text-muted-foreground truncate" title={repo.allowedRoots.join(", ")}>
-                            Roots: {repo.allowedRoots.length} rules
-                          </div>
-                        )}
-                        {repo.ignoredGlobs.length > 0 && (
-                          <div className="text-[10px] text-muted-foreground truncate" title={repo.ignoredGlobs.join(", ")}>
-                            Ignore: {repo.ignoredGlobs.length} rules
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="p-3 align-top text-right space-y-2">
-                        <div className="flex flex-col items-end gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs gap-1"
-                            onClick={() => handleEditClick(repo)}
-                          >
-                            <Edit2 className="size-3" />
-                            Edit
-                          </Button>
-
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className={cn(
-                              "h-7 px-2 text-xs gap-1.5 font-normal",
-                              repo.enabled ? "text-success" : "text-muted-foreground"
-                            )}
-                            onClick={() => handleToggleEnable(repo.repoId, repo.enabled)}
-                            disabled={toggleEnabledMutation.isPending}
-                          >
-                            {repo.enabled ? (
-                              <>
-                                <ToggleRight className="size-4 text-success" />
-                                Enabled
-                              </>
-                            ) : (
-                              <>
-                                <ToggleLeft className="size-4 text-muted-foreground" />
-                                Disabled
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile Card List View */}
-            <div className="grid grid-cols-1 gap-4 lg:hidden">
-              {repositories.map((repo) => (
-                <div
-                  key={repo.repoId}
-                  className={cn(
-                    "rounded border border-[var(--relay-row-border)] bg-[var(--relay-panel-bg)] p-4 space-y-3",
-                    !repo.enabled && "opacity-60"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="font-semibold font-mono text-sm">{repo.repoId}</span>
-                      <div className="mt-1 flex items-center gap-1.5">
-                        <Badge variant="outline" className="text-[9px] rounded-none py-0 px-1 uppercase">
-                          {repo.role}
-                        </Badge>
-                        <Badge variant={repo.enabled ? "success" : "secondary"} className="text-[9px] rounded-none py-0 px-1">
-                          {repo.enabled ? "Enabled" : "Disabled"}
-                        </Badge>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleEditClick(repo)}>
-                        <Edit2 className="size-3.5" />
-                        <span className="sr-only">Edit repository</span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0"
-                        onClick={() => handleToggleEnable(repo.repoId, repo.enabled)}
-                        disabled={toggleEnabledMutation.isPending}
-                      >
-                        {repo.enabled ? (
-                          <ToggleRight className="size-4 text-success" />
-                        ) : (
-                          <ToggleLeft className="size-4 text-muted-foreground" />
-                        )}
-                        <span className="sr-only">Toggle enabled</span>
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 text-xs border-t border-[var(--relay-row-border)] pt-2.5">
-                    <div>
-                      <span className="font-semibold text-muted-foreground block text-[10px] uppercase">
-                        Local Path:
-                      </span>
-                      <span className="font-mono break-all text-[11px] block mt-0.5">{repo.localPath}</span>
-                    </div>
-
-                    {repo.remoteUrl && (
-                      <div>
-                        <span className="font-semibold text-muted-foreground block text-[10px] uppercase">
-                          Remote URL:
-                        </span>
-                        <span className="font-mono break-all text-[11px] block mt-0.5">{repo.remoteUrl}</span>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="font-semibold text-muted-foreground block text-[10px] uppercase">
-                          Branch:
-                        </span>
-                        <span className="font-mono">{repo.defaultBranch}</span>
-                      </div>
-                      <div>
-                        <span className="font-semibold text-muted-foreground block text-[10px] uppercase">
-                          Max Size limit:
-                        </span>
-                        <span>{(repo.maxFileSizeBytes / 1024).toFixed(0)} KB</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="font-semibold text-muted-foreground block text-[10px] uppercase">
-                          Untracked:
-                        </span>
-                        <span>{repo.includeUntracked ? "Included" : "Excluded"}</span>
-                      </div>
-                      <div>
-                        <span className="font-semibold text-muted-foreground block text-[10px] uppercase">
-                          Filters:
-                        </span>
-                        <span>
-                          {repo.allowedRoots.length} allowed, {repo.ignoredGlobs.length} ignored
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+        <dl className="grid gap-4 border-t border-[var(--relay-row-border)] pt-4 text-xs sm:grid-cols-2">
+          <div>
+            <dt className="font-semibold text-muted-foreground">Created</dt>
+            <dd className="mt-1 text-foreground">{formatPlanDate(project.createdAt)}</dd>
           </div>
-        )}
-      </div>
+          <div>
+            <dt className="font-semibold text-muted-foreground">Last Updated</dt>
+            <dd className="mt-1 text-foreground">{formatPlanDate(project.updatedAt)}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <RelayProjectPlansPanel project={project} plans={detail.plans} />
+      <RelayProjectRepositoriesPanel
+        projectId={project.projectId}
+        repositories={detail.repositories}
+      />
+      <RelayProjectNotesPanel projectId={project.projectId} notes={detail.notes} />
+
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          if (!updateMutation.isPending) setEditOpen(open);
+        }}
+      >
+        <DialogContent>
+          <form onSubmit={submitEdit}>
+            <DialogHeader>
+              <DialogTitle>Edit Project</DialogTitle>
+              <DialogDescription>
+                Update the organizational name and description. Canonical artifacts and attached work are not modified.
+              </DialogDescription>
+            </DialogHeader>
+            {errorMessage ? (
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="mt-4 rounded border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
+              >
+                {errorMessage}
+              </div>
+            ) : null}
+            <div className="space-y-4 py-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-project-name">Project Name</Label>
+                <Input
+                  id="edit-project-name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  required
+                  disabled={updateMutation.isPending}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-project-description">Description</Label>
+                <Textarea
+                  id="edit-project-description"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  rows={5}
+                  disabled={updateMutation.isPending}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={updateMutation.isPending}
+                onClick={() => setEditOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={updateMutation.isPending || name.trim().length === 0}
+              >
+                {updateMutation.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : null}
+                Save Project
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={archiveOpen}
+        onOpenChange={(open) => {
+          if (!lifecycleMutation.isPending) setArchiveOpen(open);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Archive Project?</DialogTitle>
+            <DialogDescription>
+              Existing Plans and Runs remain available, but this Project cannot receive newly submitted or moved Plans until restored.
+            </DialogDescription>
+          </DialogHeader>
+          {errorMessage ? (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="mt-4 rounded border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              {errorMessage}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={lifecycleMutation.isPending}
+              onClick={() => setArchiveOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={lifecycleMutation.isPending}
+              onClick={() => lifecycleMutation.mutate()}
+            >
+              {lifecycleMutation.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Archive className="size-3.5" />
+              )}
+              Archive Project
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <span className="sr-only" aria-live="polite">
+        Project {project.name} is {project.status}.
+      </span>
     </div>
   );
 }

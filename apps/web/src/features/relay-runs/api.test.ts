@@ -1,283 +1,230 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { afterEach, describe, expect, it, vi } from "vitest";
+
 import {
-  getRun,
-  getRuns,
-  validateRun,
-  RelayApiError,
-  submitPlannerHandoff,
-} from './api';
-import { runsListQueryOptions, runDetailQueryOptions } from './queries';
+  getWorkflowAttempt,
+  getWorkflowRun,
+  startWorkflowAttempt,
+} from "./api";
 
-describe('Relay API Client Boundary (Real Data Wiring)', () => {
-  const originalFetch = globalThis.fetch;
+const reducedArtifact = {
+  artifactId: "artifact-attempt",
+  kind: "executor_stdout",
+  mediaType: "text/plain",
+  sha256: "a".repeat(64),
+  sizeBytes: 12,
+  createdAt: "2026-07-08T00:00:00Z",
+};
 
-  beforeEach(() => {
-    vi.restoreAllMocks();
+const fullArtifact = {
+  ...reducedArtifact,
+  ownerType: "attempt",
+  contentUrl: "/api/artifacts/artifact-attempt/content",
+};
+
+const detailedAttempt = {
+  attemptId: "attempt-1",
+  runId: "run-1",
+  attemptNumber: 1,
+  adapter: "codex",
+  model: "gpt-5.5",
+  status: "running",
+  result: {},
+  createdAt: "2026-07-08T00:00:00Z",
+  artifacts: [reducedArtifact],
+  liveStdoutTruncated: false,
+  liveStderrTruncated: false,
+  liveStdoutBytes: 0,
+  liveStderrBytes: 0,
+};
+
+function response(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("canonical Run attempt transport", () => {
+  it("accepts reduced detailed-attempt artifacts and omitted empty live output", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(detailedAttempt)));
+
+    const attempt = await getWorkflowAttempt("run-1", "attempt-1");
+
+    expect(attempt.artifacts).toEqual([reducedArtifact]);
+    expect(attempt.liveStdout).toBe("");
+    expect(attempt.liveStderr).toBe("");
+    expect(attempt.artifacts[0]).not.toHaveProperty("ownerType");
+    expect(attempt.artifacts[0]).not.toHaveProperty("contentUrl");
   });
 
-  afterAll(() => {
-    globalThis.fetch = originalFetch;
-  });
-
-  it("getRun('58') issues GET /api/runs/58 and does not call mock data", async () => {
-    const mockRun = { id: 58, name: 'Real Run 58', status: 'intake_needs_review' };
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify(mockRun),
-    });
-    globalThis.fetch = fetchSpy;
-
-    const run = await getRun('58');
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toContain('/api/runs/58');
-    expect(run).toBeDefined();
-    expect(run?.id).toBe('58');
-    expect(run?.name).toBe('Real Run 58');
-  });
-
-  it("getRun normalizes snake_case plan/pass association fields", async () => {
-    const mockRun = {
-      id: 58,
-      name: "Associated Run",
-      plan_id: "plan-1",
-      pass_id: "PASS-001",
-      pass_name: "First pass",
-      pass_status: "in_progress",
-    };
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify(mockRun),
-    });
-    globalThis.fetch = fetchSpy;
-
-    const run = await getRun("58");
-
-    expect(run?.planContext).toMatchObject({
-      planId: "plan-1",
-      passId: "PASS-001",
-      passName: "First pass",
-      passStatus: "in_progress",
-    });
-  });
-
-  it("getRun normalizes camelCase plan/pass association fields", async () => {
-    const mockRun = {
-      id: 59,
-      name: "Associated Run",
-      planId: "plan-2",
-      planTitle: "Plan Two",
-      passId: "PASS-002",
-      passName: "Second pass",
-      passSequence: "2",
-      passStatus: "ready",
-    };
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify(mockRun),
-    });
-    globalThis.fetch = fetchSpy;
-
-    const run = await getRun("59");
-
-    expect(run?.planContext).toMatchObject({
-      planId: "plan-2",
-      planTitle: "Plan Two",
-      passId: "PASS-002",
-      passName: "Second pass",
-      passSequence: 2,
-      passStatus: "ready",
-    });
-  });
-
-  it("getRun normalizes nested planContext and provenance metadata", async () => {
-    const mockRun = {
-      id: 61,
-      name: "Provenance Run",
-      planContext: {
-        planId: "plan-ctx",
-        planTitle: "Context Plan",
-        planRowId: "11",
-        passId: "PASS-009",
-        passName: "Source visibility",
-        passRowId: "19",
-        passSequence: 9,
-        passStatus: "in_progress",
-        sourceArtifactPath:
-          "handoffs/planner/2026-06-23_source-visibility.planner-handoff.md",
-        contextPacketId: "ctxpkt-123",
-        sourceSnapshotId: "srcsnap-456",
-        plannerHandoffSha256: "abc123",
-      },
-      provenance: {
-        plannerHandoffSha256: "abc123",
-        plannerHandoffBytes: 321,
-        sourceArtifactPath:
-          "handoffs/planner/2026-06-23_source-visibility.planner-handoff.md",
-        source: "mcp_chat",
-        clientTraceId: "trace-123",
-        planId: "plan-ctx",
-        passId: "PASS-009",
-        contextPacketId: "ctxpkt-123",
-        sourceSnapshotId: "srcsnap-456",
-        artifactKind: "planner_handoff_provenance_json",
-      },
-    };
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify(mockRun),
-    });
-    globalThis.fetch = fetchSpy;
-
-    const run = await getRun("61");
-
-    expect(run?.planContext).toMatchObject({
-      planId: "plan-ctx",
-      planRowId: "11",
-      passId: "PASS-009",
-      passRowId: "19",
-      contextPacketId: "ctxpkt-123",
-      sourceSnapshotId: "srcsnap-456",
-      plannerHandoffSha256: "abc123",
-    });
-    expect(run?.provenance).toMatchObject({
-      plannerHandoffSha256: "abc123",
-      plannerHandoffBytes: 321,
-      source: "mcp_chat",
-      clientTraceId: "trace-123",
-      artifactKind: "planner_handoff_provenance_json",
-    });
-  });
-
-  it("getRun leaves planContext undefined for standalone runs", async () => {
-    const mockRun = { id: 60, name: "Standalone Run" };
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify(mockRun),
-    });
-    globalThis.fetch = fetchSpy;
-
-    const run = await getRun("60");
-
-    expect(run?.planContext).toBeUndefined();
-  });
-
-  it("GET /api/runs/58 returning 404 surfaces a RelayApiError instead of mock/null fallback", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-    });
-    globalThis.fetch = fetchSpy;
-
-    await expect(getRun('58')).rejects.toThrow(RelayApiError);
-  });
-
-  it("GET /api/runs network failure surfaces a RelayApiError instead of mock runs", async () => {
-    const fetchSpy = vi.fn().mockRejectedValue(new Error('Network offline'));
-    globalThis.fetch = fetchSpy;
-
-    await expect(getRuns()).rejects.toThrow(RelayApiError);
-  });
-
-  it("runsListQueryOptions queryFn uses getRuns which queries the real backend", async () => {
-    const mockRuns = [{ id: 12, name: 'Backend Run' }];
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify(mockRuns),
-    });
-    globalThis.fetch = fetchSpy;
-
-    const queryFn = runsListQueryOptions.queryFn;
-    const result = await queryFn!({} as any);
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toContain('/api/runs');
-    expect(result[0].id).toBe('12');
-    expect(result[0].name).toBe('Backend Run');
-  });
-
-  it("runDetailQueryOptions queryFn uses getRun which queries the real backend for numeric ID", async () => {
-    const mockRun = { id: 58, name: 'Backend Run 58' };
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify(mockRun),
-    });
-    globalThis.fetch = fetchSpy;
-
-    const queryOpts = runDetailQueryOptions('58');
-    const result = await queryOpts.queryFn!({} as any);
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toContain('/api/runs/58');
-    expect(result?.id).toBe('58');
-  });
-
-  it("validateRun('58') issues POST /api/runs/58/validate", async () => {
-    const mockResponse = { success: true, runId: '58', status: 'passed' };
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify(mockResponse),
-    });
-    globalThis.fetch = fetchSpy;
-
-    const res = await validateRun('58');
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toContain('/api/runs/58/validate');
-    expect(fetchSpy.mock.calls[0][1]?.method).toBe('POST');
-    expect(res.success).toBe(true);
-    expect(res.status).toBe('passed');
-  });
-
-  it("submitPlannerHandoff rejects passId without planId before fetch", async () => {
-    const fetchSpy = vi.fn();
-    globalThis.fetch = fetchSpy;
-
-    await expect(
-      submitPlannerHandoff({
-        planner_handoff_markdown: "# handoff",
-        passId: "UI-PLAN-01",
-      }),
-    ).rejects.toMatchObject({
-      name: "RelayApiError",
-      status: 400,
-      endpoint: "/api/intake/planner-handoff",
-      method: "POST",
-    });
-
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("submitPlannerHandoff accepts planId with passId and posts association fields", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () =>
-        JSON.stringify({
+  it("accepts the same reduced detailed projection returned after attempt start", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
           success: true,
-          runId: "42",
-          status: "intake_received",
-          lifecycleState: "intake",
-          createdAt: "2026-06-21T00:00:00Z",
+          preflight: { ok: true },
+          attempt: detailedAttempt,
+        }, 202),
+      ),
+    );
+
+    const attempt = await startWorkflowAttempt(
+      "run-1",
+      "codex",
+      "gpt-5.5",
+    );
+
+    expect(attempt.liveStdout).toBe("");
+    expect(attempt.liveStderr).toBe("");
+    expect(attempt.artifacts[0]).toEqual(reducedArtifact);
+  });
+
+  it("still requires full artifact links in Run summary attempt projections", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          run: {
+            runId: "run-1",
+            featureSlug: "feature",
+            repoTarget: "relay",
+            status: "executing",
+            stage: "execute",
+            branch: "feat/simplification",
+            baseCommit: "b".repeat(40),
+            canonicalSha256: "c".repeat(64),
+            createdAt: "2026-07-08T00:00:00Z",
+            updatedAt: "2026-07-08T00:00:01Z",
+            latestAttempt: {
+              attemptId: "attempt-1",
+              attemptNumber: 1,
+              adapter: "codex",
+              model: "gpt-5.5",
+              status: "running",
+              createdAt: "2026-07-08T00:00:00Z",
+              artifacts: [fullArtifact],
+            },
+          },
+          attempts: [
+            {
+              attemptId: "attempt-1",
+              attemptNumber: 1,
+              adapter: "codex",
+              model: "gpt-5.5",
+              status: "running",
+              createdAt: "2026-07-08T00:00:00Z",
+              artifacts: [fullArtifact],
+            },
+          ],
+          artifacts: [fullArtifact],
         }),
-    });
-    globalThis.fetch = fetchSpy;
+      ),
+    );
 
-    await submitPlannerHandoff({
-      planner_handoff_markdown: "# handoff",
-      planId: "plan-ui-04",
-      passId: "pass-detail",
-      plan_id: "plan-ui-04",
-      pass_id: "pass-detail",
-    });
+    const detail = await getWorkflowRun("run-1");
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const request = fetchSpy.mock.calls[0][1];
-    expect(request?.method).toBe("POST");
-    expect(JSON.parse(String(request?.body))).toMatchObject({
-      planId: "plan-ui-04",
-      passId: "pass-detail",
-      plan_id: "plan-ui-04",
-      pass_id: "pass-detail",
+    expect(detail.attempts[0].artifacts[0]).toEqual(fullArtifact);
+    expect(detail.run.latestAttempt?.artifacts[0].contentUrl).toBe(
+      "/api/artifacts/artifact-attempt/content",
+    );
+  });
+
+  it("rejects malformed present live output instead of coercing it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          ...detailedAttempt,
+          liveStdout: 42,
+        }),
+      ),
+    );
+
+    await expect(getWorkflowAttempt("run-1", "attempt-1")).rejects.toThrow(
+      /liveStdout/,
+    );
+  });
+
+  it("accepts exact cleanup-pending lifecycle metadata", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          ...detailedAttempt,
+          result: {
+            cleanup_pending: true,
+            pending_terminal_status: "cancelled",
+            termination_verified: false,
+          },
+        }),
+      ),
+    );
+
+    const attempt = await getWorkflowAttempt("run-1", "attempt-1");
+
+    expect(attempt.status).toBe("running");
+    expect(attempt.result).toMatchObject({
+      cleanup_pending: true,
+      pending_terminal_status: "cancelled",
+      termination_verified: false,
     });
+  });
+
+  it("rejects unsupported attempt lifecycle statuses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          ...detailedAttempt,
+          status: "cleanup_pending",
+        }),
+      ),
+    );
+
+    await expect(getWorkflowAttempt("run-1", "attempt-1")).rejects.toThrow(
+      /execution-attempt status/,
+    );
+  });
+
+  it("rejects malformed cleanup-pending lifecycle metadata", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          ...detailedAttempt,
+          result: {
+            cleanup_pending: "yes",
+          },
+        }),
+      ),
+    );
+
+    await expect(getWorkflowAttempt("run-1", "attempt-1")).rejects.toThrow(
+      /cleanup_pending/,
+    );
+  });
+
+  it("rejects nonterminal pending_terminal_status values", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          ...detailedAttempt,
+          result: {
+            cleanup_pending: true,
+            pending_terminal_status: "running",
+          },
+        }),
+      ),
+    );
+
+    await expect(getWorkflowAttempt("run-1", "attempt-1")).rejects.toThrow(
+      /pending_terminal_status/,
+    );
   });
 });

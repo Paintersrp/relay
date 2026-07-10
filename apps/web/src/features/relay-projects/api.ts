@@ -1,473 +1,484 @@
-import { API_BASE_URL, RelayApiError } from "@/features/relay-runs";
-import type { RelayApiErrorShape } from "@/features/relay-runs/types";
+import { API_BASE_URL, RelayApiError, type RelayApiErrorShape } from "../workflow-api";
 import type {
-  CreatePlanAttemptFromSeedRequest,
-  CreatePlanAttemptFromSeedResponse,
-  PlanSeedAPIRequest,
-  PlanSeedDetailResponse,
-  PlanSeedLifecycleAPIRequest,
-  PlanSeedListFilters,
-  PlanSeedListResponse,
-  PlanSeedMutationResponse,
-  PlanSeedPlanningContextResponse,
-  PlanSeedUpdateAPIRequest,
-  ProjectAPIRequest,
-  ProjectDetailResponse,
-  ProjectListFilters,
-  ProjectListResponse,
-  ProjectRepositoryAPIRequest,
-  ProjectRepositoryMutationResponse,
-  RelayPlanSeed,
-  RelayProject,
-  RelayProjectRepository,
-  SeedPlanAttempt,
+  CreateWorkflowProjectNoteRequest,
+  CreateWorkflowProjectRequest,
+  UpdateWorkflowProjectNoteRequest,
+  UpdateWorkflowProjectRequest,
+  WorkflowProject,
+  WorkflowProjectDetail,
+  WorkflowProjectDetailLimits,
+  WorkflowProjectListFilters,
+  WorkflowProjectListResponse,
+  WorkflowProjectNote,
+  WorkflowProjectNoteStatus,
+  WorkflowProjectPlanSummary,
+  WorkflowProjectRepositoryReference,
+  WorkflowProjectStatus,
+  WorkflowRepositoryTarget,
+  WorkflowRepositoryTargetListResponse,
 } from "./types";
 
-function normalizeProjectRepository(repo: any): RelayProjectRepository {
-  return {
-    repoId: repo?.repoId ?? "",
-    role: repo?.role ?? "primary",
-    localPath: repo?.localPath ?? "",
-    remoteLabel: repo?.remoteLabel ?? "",
-    remoteUrl: repo?.remoteUrl ?? "",
-    defaultBranch: repo?.defaultBranch ?? "main",
-    allowedRoots: Array.isArray(repo?.allowedRoots) ? repo.allowedRoots : [],
-    ignoredGlobs: Array.isArray(repo?.ignoredGlobs) ? repo.ignoredGlobs : [],
-    maxFileSizeBytes: typeof repo?.maxFileSizeBytes === "number" ? repo.maxFileSizeBytes : 262144,
-    includeUntracked: !!repo?.includeUntracked,
-    enabled: !!repo?.enabled,
-    createdAt: repo?.createdAt ?? "",
-    updatedAt: repo?.updatedAt ?? "",
-  };
+type JsonRecord = Record<string, unknown>;
+type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+
+function malformedWorkflowResponse(
+  method: HttpMethod,
+  path: string,
+  detail: string,
+): never {
+  throw new RelayApiError(
+    `Malformed JSON response from ${method} ${path}: ${detail}`,
+    502,
+    path,
+    method,
+  );
 }
 
-function normalizeProject(project: any): RelayProject {
-  return {
-    projectId: project?.projectId ?? "",
-    name: project?.name ?? "",
-    description: project?.description ?? "",
-    status: project?.status ?? "active",
-    defaultRepositoryId: project?.defaultRepositoryId ?? "",
-    createdAt: project?.createdAt ?? "",
-    updatedAt: project?.updatedAt ?? "",
-    repositories: Array.isArray(project?.repositories)
-      ? project.repositories.map(normalizeProjectRepository)
-      : [],
-  };
-}
-
-function normalizePlanSeed(seed: any): RelayPlanSeed {
-  return {
-    seedId: seed?.seedId ?? "",
-    projectId: seed?.projectId ?? "",
-    title: seed?.title ?? "",
-    quickContext: seed?.quickContext ?? "",
-    constraints: Array.isArray(seed?.constraints) ? seed.constraints : [],
-    nonGoals: Array.isArray(seed?.nonGoals) ? seed.nonGoals : [],
-    tags: Array.isArray(seed?.tags) ? seed.tags : [],
-    priority: seed?.priority ?? "normal",
-    status: seed?.status ?? "captured",
-    sourceType: seed?.sourceType ?? "manual",
-    sourceLabel: seed?.sourceLabel ?? "",
-    sourceRefId: seed?.sourceRefId ?? "",
-    planAttemptId: seed?.planAttemptId ?? "",
-    managedPlanId: seed?.managedPlanId ?? "",
-    plannedAt: seed?.plannedAt ?? "",
-    deferReason: seed?.deferReason ?? "",
-    rejectReason: seed?.rejectReason ?? "",
-    createdAt: seed?.createdAt ?? "",
-    updatedAt: seed?.updatedAt ?? "",
-  };
-}
-
-function normalizeSeedPlanAttempt(attempt: any): SeedPlanAttempt {
-  return {
-    planAttemptId: attempt?.planAttemptId ?? "",
-    status: attempt?.status ?? "",
-    reviewState: attempt?.reviewState ?? "",
-    planJsonArtifactPath: attempt?.planJsonArtifactPath ?? "",
-    planJsonArtifactSha256: attempt?.planJsonArtifactSHA256 ?? attempt?.planJsonArtifactSha256 ?? "",
-  };
-}
-
-async function getProjectJson<T>(path: string): Promise<T> {
-  const url = `${API_BASE_URL}${path}`;
-
-  try {
-    const res = await fetch(url, {
-      headers: { Accept: "application/json" },
-    });
-
-    if (!res.ok) {
-      throw new RelayApiError(
-        `Failed to fetch from GET ${path} (status: ${res.status})`,
-        res.status,
-        path,
-        "GET",
-      );
-    }
-
-    const text = await res.text();
-    try {
-      return JSON.parse(text) as T;
-    } catch (err: any) {
-      throw new RelayApiError(
-        `Malformed JSON response from GET ${path}: ${err.message}`,
-        res.status,
-        path,
-        "GET",
-      );
-    }
-  } catch (err: any) {
-    if (err instanceof RelayApiError) throw err;
-
-    throw new RelayApiError(
-      `Network error fetching from GET ${path}: ${err.message}`,
-      503,
+function requiredRecord(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): JsonRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return malformedWorkflowResponse(
+      method,
       path,
-      "GET",
+      `${context} must be an object; received ${String(value)}`,
     );
+  }
+  return value as JsonRecord;
+}
+
+function requiredArray(
+  record: JsonRecord,
+  field: string,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): unknown[] {
+  const value = record[field];
+  if (!Array.isArray(value)) {
+    return malformedWorkflowResponse(
+      method,
+      path,
+      `${context}.${field} must be an array; received ${String(value)}`,
+    );
+  }
+  return value;
+}
+
+function requiredCount(
+  record: JsonRecord,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): number {
+  const value = record.count;
+  if (!Number.isInteger(value) || (value as number) < 0) {
+    return malformedWorkflowResponse(
+      method,
+      path,
+      `${context}.count must be a non-negative integer; received ${String(value)}`,
+    );
+  }
+  return value as number;
+}
+
+function requiredString(
+  record: JsonRecord,
+  field: string,
+  method: HttpMethod,
+  path: string,
+  context: string,
+  allowEmpty = false,
+): string {
+  const value = record[field];
+  if (typeof value !== "string") {
+    return malformedWorkflowResponse(
+      method,
+      path,
+      `${context}.${field} must be a string; received ${String(value)}`,
+    );
+  }
+  if (!allowEmpty && value.trim().length === 0) {
+    return malformedWorkflowResponse(
+      method,
+      path,
+      `${context}.${field} must be a non-empty string`,
+    );
+  }
+  return value;
+}
+
+function projectStatus(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): WorkflowProjectStatus {
+  if (value === "active" || value === "archived") return value;
+  return malformedWorkflowResponse(
+    method,
+    path,
+    `${context}.status must be "active" or "archived"; received ${String(value)}`,
+  );
+}
+
+function noteStatus(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context: string,
+): WorkflowProjectNoteStatus {
+  if (value === "open" || value === "done") return value;
+  return malformedWorkflowResponse(
+    method,
+    path,
+    `${context}.status must be "open" or "done"; received ${String(value)}`,
+  );
+}
+
+function normalizeProject(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context = "project",
+): WorkflowProject {
+  const record = requiredRecord(value, method, path, context);
+  return {
+    projectId: requiredString(record, "projectId", method, path, context),
+    name: requiredString(record, "name", method, path, context),
+    description: requiredString(
+      record,
+      "description",
+      method,
+      path,
+      context,
+      true,
+    ),
+    status: projectStatus(record.status, method, path, context),
+    createdAt: requiredString(record, "createdAt", method, path, context),
+    updatedAt: requiredString(record, "updatedAt", method, path, context),
+  };
+}
+
+function normalizeRepositoryReference(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context = "repositoryReference",
+): WorkflowProjectRepositoryReference {
+  const record = requiredRecord(value, method, path, context);
+  return {
+    repoTarget: requiredString(record, "repoTarget", method, path, context),
+    createdAt: requiredString(record, "createdAt", method, path, context),
+  };
+}
+
+function normalizeProjectNote(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context = "note",
+): WorkflowProjectNote {
+  const record = requiredRecord(value, method, path, context);
+  return {
+    noteId: requiredString(record, "noteId", method, path, context),
+    title: requiredString(record, "title", method, path, context),
+    body: requiredString(record, "body", method, path, context),
+    status: noteStatus(record.status, method, path, context),
+    createdAt: requiredString(record, "createdAt", method, path, context),
+    updatedAt: requiredString(record, "updatedAt", method, path, context),
+  };
+}
+
+function normalizeProjectPlan(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context = "plan",
+): WorkflowProjectPlanSummary {
+  const record = requiredRecord(value, method, path, context);
+  return {
+    planId: requiredString(record, "planId", method, path, context),
+    featureSlug: requiredString(record, "featureSlug", method, path, context),
+    status: requiredString(record, "status", method, path, context),
+    createdAt: requiredString(record, "createdAt", method, path, context),
+    updatedAt: requiredString(record, "updatedAt", method, path, context),
+  };
+}
+
+function normalizeRepositoryTarget(
+  value: unknown,
+  method: HttpMethod,
+  path: string,
+  context = "repository",
+): WorkflowRepositoryTarget {
+  const record = requiredRecord(value, method, path, context);
+  return {
+    repoTarget: requiredString(record, "repoTarget", method, path, context),
+    localPath: requiredString(record, "localPath", method, path, context),
+    createdAt: requiredString(record, "createdAt", method, path, context),
+    updatedAt: requiredString(record, "updatedAt", method, path, context),
+  };
+}
+
+function parseErrorShape(text: string): RelayApiErrorShape | undefined {
+  if (!text) return undefined;
+  try {
+    const value = JSON.parse(text);
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value as RelayApiErrorShape
+      : undefined;
+  } catch {
+    return undefined;
   }
 }
 
-async function postProjectJson<TReq, TRes>(path: string, body: TReq): Promise<TRes> {
-  const url = `${API_BASE_URL}${path}`;
+async function requestWorkflow(
+  method: HttpMethod,
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; text: string }> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
 
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(body),
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
+    const text = await response.text();
 
-    if (!res.ok) {
-      let errorShape: RelayApiErrorShape | undefined;
-      try {
-        const text = await res.text();
-        errorShape = JSON.parse(text);
-      } catch {
-        // Ignore malformed error response body.
-      }
-
+    if (!response.ok) {
+      const errorShape = parseErrorShape(text);
       throw new RelayApiError(
-        `Mutation failed on POST ${path} (status: ${res.status})`,
-        res.status,
+        errorShape?.message || `${method} ${path} failed with status ${response.status}`,
+        response.status,
         path,
-        "POST",
+        method,
         errorShape,
       );
     }
 
-    const text = await res.text();
-    try {
-      return JSON.parse(text) as TRes;
-    } catch (err: any) {
-      throw new RelayApiError(
-        `Malformed JSON response from POST ${path}: ${err.message}`,
-        res.status,
-        path,
-        "POST",
-      );
-    }
-  } catch (err: any) {
-    if (err instanceof RelayApiError) throw err;
-
+    return { status: response.status, text };
+  } catch (error) {
+    if (error instanceof RelayApiError) throw error;
+    const message = error instanceof Error ? error.message : "Unknown network error";
     throw new RelayApiError(
-      `Daemon unavailable or connection refused on POST ${path}: ${err.message}`,
+      `Network error during ${method} ${path}: ${message}`,
       503,
       path,
-      "POST",
+      method,
     );
   }
 }
 
-async function postProjectJsonAllowBlocker<TReq, TRes>(path: string, body: TReq): Promise<TRes> {
-  const url = `${API_BASE_URL}${path}`;
+async function requestWorkflowJson<T>(
+  method: HttpMethod,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const response = await requestWorkflow(method, path, body);
+  if (response.status === 204 || response.text.length === 0) {
+    return malformedWorkflowResponse(
+      method,
+      path,
+      `expected a JSON response body; received status ${response.status}`,
+    );
+  }
 
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    const text = await res.text();
-    try {
-      return JSON.parse(text) as TRes;
-    } catch (err: any) {
-      throw new RelayApiError(
-        `Malformed JSON response from POST ${path}: ${err.message}`,
-        res.status,
-        path,
-        "POST",
-      );
-    }
-  } catch (err: any) {
-    if (err instanceof RelayApiError) throw err;
+    return JSON.parse(response.text) as T;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid JSON";
+    return malformedWorkflowResponse(method, path, message);
+  }
+}
 
-    throw new RelayApiError(
-      `Daemon unavailable or connection refused on POST ${path}: ${err.message}`,
-      503,
+async function requestWorkflowNoContent(
+  method: Extract<HttpMethod, "DELETE">,
+  path: string,
+): Promise<void> {
+  const response = await requestWorkflow(method, path);
+  if (response.status !== 204) {
+    return malformedWorkflowResponse(
+      method,
       path,
-      "POST",
+      `expected HTTP 204 with no response body; received status ${response.status}`,
+    );
+  }
+  if (response.text.length !== 0) {
+    return malformedWorkflowResponse(
+      method,
+      path,
+      "HTTP 204 response must not include a response body",
     );
   }
 }
 
-export async function getProjects(
-  filters: ProjectListFilters = {},
-): Promise<ProjectListResponse> {
+export async function listWorkflowProjects(
+  filters: WorkflowProjectListFilters = {},
+): Promise<WorkflowProjectListResponse> {
   const params = new URLSearchParams();
-  if (typeof filters.limit === "number") {
-    params.set("limit", String(filters.limit));
-  }
+  if (filters.status) params.set("status", filters.status);
+  if (typeof filters.limit === "number") params.set("limit", String(filters.limit));
   const query = params.toString();
-  const response = await getProjectJson<any>(`/api/projects${query ? `?${query}` : ""}`);
-
-  return {
-    success: !!response?.success,
-    count: response?.count ?? 0,
-    projects: Array.isArray(response?.projects)
-      ? response.projects.map(normalizeProject)
-      : [],
-  };
-}
-
-export async function getProject(projectId: string): Promise<ProjectDetailResponse> {
-  const response = await getProjectJson<any>(
-    `/api/projects/${encodeURIComponent(projectId)}`,
+  const path = `/api/projects${query ? `?${query}` : ""}`;
+  const response = requiredRecord(
+    await requestWorkflowJson<unknown>("GET", path),
+    "GET",
+    path,
+    "response",
   );
-
+  const items = requiredArray(response, "items", "GET", path, "response");
   return {
-    success: !!response?.success,
-    project: normalizeProject(response?.project),
+    count: requiredCount(response, "GET", path, "response"),
+    projects: items.map((item, index) =>
+      normalizeProject(item, "GET", path, `items[${index}]`)),
   };
 }
 
-export async function createProject(
-  request: ProjectAPIRequest,
-): Promise<ProjectDetailResponse> {
-  const response = await postProjectJson<ProjectAPIRequest, any>(
-    "/api/projects",
-    request,
-  );
-
-  return {
-    success: !!response?.success,
-    project: normalizeProject(response?.project),
-  };
-}
-
-export async function upsertProjectRepository(
+export async function getWorkflowProject(
   projectId: string,
-  request: ProjectRepositoryAPIRequest,
-): Promise<ProjectRepositoryMutationResponse> {
-  const response = await postProjectJson<ProjectRepositoryAPIRequest, any>(
-    `/api/projects/${encodeURIComponent(projectId)}/repositories`,
-    request,
-  );
-
-  return {
-    success: !!response?.success,
-    repository: normalizeProjectRepository(response?.repository),
-  };
-}
-
-export async function updateProjectRepository(
-  projectId: string,
-  repoId: string,
-  request: ProjectRepositoryAPIRequest,
-): Promise<ProjectRepositoryMutationResponse> {
-  const response = await postProjectJson<ProjectRepositoryAPIRequest, any>(
-    `/api/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repoId)}/update`,
-    request,
-  );
-
-  return {
-    success: !!response?.success,
-    repository: normalizeProjectRepository(response?.repository),
-  };
-}
-
-export async function setProjectRepositoryEnabled(
-  projectId: string,
-  repoId: string,
-  enabled: boolean,
-): Promise<ProjectRepositoryMutationResponse> {
-  const response = await postProjectJson<{ enabled: boolean }, any>(
-    `/api/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repoId)}/set-enabled`,
-    { enabled },
-  );
-
-  return {
-    success: !!response?.success,
-    repository: normalizeProjectRepository(response?.repository),
-  };
-}
-
-export async function getPlanSeeds(
-  projectId: string,
-  filters: PlanSeedListFilters = {},
-): Promise<PlanSeedListResponse> {
+  limits: WorkflowProjectDetailLimits = {},
+): Promise<WorkflowProjectDetail> {
   const params = new URLSearchParams();
-  if (filters.status) {
-    params.set("status", filters.status);
-  }
-  if (typeof filters.limit === "number") {
-    params.set("limit", String(filters.limit));
-  }
-  const query = params.toString();
-  const response = await getProjectJson<any>(
-    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds${query ? `?${query}` : ""}`,
+  params.set("repositoryLimit", String(limits.repositoryLimit ?? 100));
+  params.set("noteLimit", String(limits.noteLimit ?? 100));
+  params.set("planLimit", String(limits.planLimit ?? 100));
+  const path = `/api/projects/${encodeURIComponent(projectId)}?${params.toString()}`;
+  const response = requiredRecord(
+    await requestWorkflowJson<unknown>("GET", path),
+    "GET",
+    path,
+    "response",
   );
-
+  const repositories = requiredArray(
+    response,
+    "repositories",
+    "GET",
+    path,
+    "response",
+  );
+  const notes = requiredArray(response, "notes", "GET", path, "response");
+  const plans = requiredArray(response, "plans", "GET", path, "response");
   return {
-    success: !!response?.success,
-    count: response?.count ?? 0,
-    seeds: Array.isArray(response?.seeds)
-      ? response.seeds.map(normalizePlanSeed)
-      : [],
+    project: normalizeProject(response.project, "GET", path),
+    repositories: repositories.map((repository, index) =>
+      normalizeRepositoryReference(
+        repository,
+        "GET",
+        path,
+        `repositories[${index}]`,
+      )),
+    notes: notes.map((note, index) =>
+      normalizeProjectNote(note, "GET", path, `notes[${index}]`)),
+    plans: plans.map((plan, index) =>
+      normalizeProjectPlan(plan, "GET", path, `plans[${index}]`)),
   };
 }
 
-export async function getPlanSeed(
-  projectId: string,
-  seedId: string,
-): Promise<PlanSeedDetailResponse> {
-  const response = await getProjectJson<any>(
-    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds/${encodeURIComponent(seedId)}`,
-  );
+export async function createWorkflowProject(
+  request: CreateWorkflowProjectRequest,
+): Promise<WorkflowProject> {
+  const path = "/api/projects";
+  const response = await requestWorkflowJson<unknown>("POST", path, request);
+  return normalizeProject(response, "POST", path);
+}
 
+export async function updateWorkflowProject(
+  projectId: string,
+  request: UpdateWorkflowProjectRequest,
+): Promise<WorkflowProject> {
+  const path = `/api/projects/${encodeURIComponent(projectId)}`;
+  const response = await requestWorkflowJson<unknown>("PATCH", path, request);
+  return normalizeProject(response, "PATCH", path);
+}
+
+export async function archiveWorkflowProject(projectId: string): Promise<WorkflowProject> {
+  const path = `/api/projects/${encodeURIComponent(projectId)}/archive`;
+  const response = await requestWorkflowJson<unknown>("POST", path);
+  return normalizeProject(response, "POST", path);
+}
+
+export async function restoreWorkflowProject(projectId: string): Promise<WorkflowProject> {
+  const path = `/api/projects/${encodeURIComponent(projectId)}/restore`;
+  const response = await requestWorkflowJson<unknown>("POST", path);
+  return normalizeProject(response, "POST", path);
+}
+
+export async function listWorkflowRepositoryTargets(): Promise<WorkflowRepositoryTargetListResponse> {
+  const path = "/api/repositories";
+  const response = requiredRecord(
+    await requestWorkflowJson<unknown>("GET", path),
+    "GET",
+    path,
+    "response",
+  );
+  const items = requiredArray(response, "items", "GET", path, "response");
   return {
-    success: !!response?.success,
-    seed: normalizePlanSeed(response?.seed),
+    count: requiredCount(response, "GET", path, "response"),
+    repositories: items.map((item, index) =>
+      normalizeRepositoryTarget(item, "GET", path, `items[${index}]`)),
   };
 }
 
-export async function getPlanSeedPlanningContext(
+export async function attachWorkflowProjectRepository(
   projectId: string,
-  seedId: string,
-): Promise<PlanSeedPlanningContextResponse> {
-  const response = await getProjectJson<any>(
-    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds/${encodeURIComponent(seedId)}/planning-context`,
+  repoTarget: string,
+): Promise<WorkflowProjectRepositoryReference> {
+  const path = `/api/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repoTarget)}`;
+  const response = await requestWorkflowJson<unknown>("PUT", path);
+  return normalizeRepositoryReference(
+    response,
+    "PUT",
+    path,
+    "repositoryReference",
   );
-
-  return {
-    success: !!response?.success,
-    planningContext: {
-      project: {
-        projectId: response?.planningContext?.project?.projectId ?? "",
-        name: response?.planningContext?.project?.name ?? "",
-        description: response?.planningContext?.project?.description ?? "",
-        status: response?.planningContext?.project?.status ?? "",
-        defaultRepositoryId: response?.planningContext?.project?.defaultRepositoryId ?? "",
-      },
-      seed: normalizePlanSeed(response?.planningContext?.seed),
-      existingLinks: {
-        planAttemptId: response?.planningContext?.existingLinks?.planAttemptId ?? "",
-        managedPlanId: response?.planningContext?.existingLinks?.managedPlanId ?? "",
-      },
-      plannerInstructions: Array.isArray(response?.planningContext?.plannerInstructions)
-        ? response.planningContext.plannerInstructions
-        : [],
-      retrievalSemantics: {
-        retrievalOnly: !!response?.planningContext?.retrievalSemantics?.retrievalOnly,
-        stateMutated: !!response?.planningContext?.retrievalSemantics?.stateMutated,
-        intentPacketCreated: !!response?.planningContext?.retrievalSemantics?.intentPacketCreated,
-        planAttemptCreated: !!response?.planningContext?.retrievalSemantics?.planAttemptCreated,
-        managedPlanSubmitted: !!response?.planningContext?.retrievalSemantics?.managedPlanSubmitted,
-        runCreated: !!response?.planningContext?.retrievalSemantics?.runCreated,
-        modelCallPerformed: !!response?.planningContext?.retrievalSemantics?.modelCallPerformed,
-      },
-    },
-  };
 }
 
-export async function createPlanSeed(
+export async function detachWorkflowProjectRepository(
   projectId: string,
-  request: PlanSeedAPIRequest,
-): Promise<PlanSeedMutationResponse> {
-  const response = await postProjectJson<PlanSeedAPIRequest, any>(
-    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds`,
-    request,
+  repoTarget: string,
+): Promise<void> {
+  await requestWorkflowNoContent(
+    "DELETE",
+    `/api/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repoTarget)}`,
   );
-
-  return {
-    success: !!response?.success,
-    seed: normalizePlanSeed(response?.seed),
-  };
 }
 
-export async function createPlanAttemptFromSeed(
+export async function createWorkflowProjectNote(
   projectId: string,
-  seedId: string,
-  request: CreatePlanAttemptFromSeedRequest,
-): Promise<CreatePlanAttemptFromSeedResponse> {
-  const response = await postProjectJsonAllowBlocker<CreatePlanAttemptFromSeedRequest, any>(
-    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds/${encodeURIComponent(seedId)}/plan-attempts`,
-    request,
-  );
-
-  return {
-    success: !!response?.success,
-    blockerCode: response?.blockerCode ?? "",
-    message: response?.message ?? "",
-    seed: response?.seed ? normalizePlanSeed(response.seed) : undefined,
-    planAttempt: response?.planAttempt ? normalizeSeedPlanAttempt(response.planAttempt) : undefined,
-    intentPacket: response?.intentPacket,
-    reviewGate: response?.reviewGate,
-  };
+  request: CreateWorkflowProjectNoteRequest,
+): Promise<WorkflowProjectNote> {
+  const path = `/api/projects/${encodeURIComponent(projectId)}/notes`;
+  const response = await requestWorkflowJson<unknown>("POST", path, request);
+  return normalizeProjectNote(response, "POST", path);
 }
 
-export async function updatePlanSeed(
+export async function updateWorkflowProjectNote(
   projectId: string,
-  seedId: string,
-  request: PlanSeedUpdateAPIRequest,
-): Promise<PlanSeedMutationResponse> {
-  const response = await postProjectJson<PlanSeedUpdateAPIRequest, any>(
-    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds/${encodeURIComponent(seedId)}/update`,
-    request,
-  );
-
-  return {
-    success: !!response?.success,
-    seed: normalizePlanSeed(response?.seed),
-  };
+  noteId: string,
+  request: UpdateWorkflowProjectNoteRequest,
+): Promise<WorkflowProjectNote> {
+  const path = `/api/projects/${encodeURIComponent(projectId)}/notes/${encodeURIComponent(noteId)}`;
+  const response = await requestWorkflowJson<unknown>("PATCH", path, request);
+  return normalizeProjectNote(response, "PATCH", path);
 }
 
-export async function deferPlanSeed(
+export async function deleteWorkflowProjectNote(
   projectId: string,
-  seedId: string,
-  request: PlanSeedLifecycleAPIRequest,
-): Promise<PlanSeedMutationResponse> {
-  const response = await postProjectJson<PlanSeedLifecycleAPIRequest, any>(
-    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds/${encodeURIComponent(seedId)}/defer`,
-    request,
+  noteId: string,
+): Promise<void> {
+  await requestWorkflowNoContent(
+    "DELETE",
+    `/api/projects/${encodeURIComponent(projectId)}/notes/${encodeURIComponent(noteId)}`,
   );
-
-  return {
-    success: !!response?.success,
-    seed: normalizePlanSeed(response?.seed),
-  };
-}
-
-export async function rejectPlanSeed(
-  projectId: string,
-  seedId: string,
-  request: PlanSeedLifecycleAPIRequest,
-): Promise<PlanSeedMutationResponse> {
-  const response = await postProjectJson<PlanSeedLifecycleAPIRequest, any>(
-    `/api/projects/${encodeURIComponent(projectId)}/plan-seeds/${encodeURIComponent(seedId)}/reject`,
-    request,
-  );
-
-  return {
-    success: !!response?.success,
-    seed: normalizePlanSeed(response?.seed),
-  };
 }

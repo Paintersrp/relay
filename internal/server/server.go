@@ -4,35 +4,18 @@ import (
 	"log/slog"
 	"net/http"
 
-	"relay/internal/events"
-	"relay/internal/repos"
-	"relay/internal/store"
+	workflowstore "relay/internal/store/workflow"
 )
 
 type Server struct {
-	store       *store.Store
-	repoService *repos.Service
-	log         *slog.Logger
-	mux         http.Handler
+	log *slog.Logger
+	mux http.Handler
 }
 
-func New(s *store.Store, rs *repos.Service, log *slog.Logger) *Server {
-	mux := BuildRoutes(s, rs, log)
+func NewWorkflow(store *workflowstore.Store, log *slog.Logger, ownerInstanceID string) *Server {
 	return &Server{
-		store:       s,
-		repoService: rs,
-		log:         log,
-		mux:         mux,
-	}
-}
-
-func NewWithEvents(s *store.Store, rs *repos.Service, log *slog.Logger, eventHub *events.Hub, ownerInstanceID string) *Server {
-	mux := BuildRoutesWithRuntime(s, rs, log, eventHub, ownerInstanceID)
-	return &Server{
-		store:       s,
-		repoService: rs,
-		log:         log,
-		mux:         mux,
+		log: log,
+		mux: BuildWorkflowRoutes(store, log, ownerInstanceID),
 	}
 }
 

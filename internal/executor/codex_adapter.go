@@ -3,10 +3,8 @@ package executor
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"relay/internal/artifacts"
 	"relay/internal/pipeline"
 )
 
@@ -54,13 +52,13 @@ func (a *CodexAdapter) BuildInvocation(req ExecutorAdapterRequest) (ExecutorInvo
 	if strings.TrimSpace(req.BriefContent) == "" {
 		return ExecutorInvocation{}, fmt.Errorf("executor brief content is empty")
 	}
-
 	if a.Config.Sandbox != "workspace-write" && a.Config.Sandbox != "read-only" {
 		return ExecutorInvocation{}, fmt.Errorf("invalid sandbox value %q, allowed are 'workspace-write' or 'read-only'", a.Config.Sandbox)
 	}
-
-	lastMessagePath := filepath.Join(artifacts.Dir(req.RunID), "codex_last_message.txt")
-
+	lastMessagePath := strings.TrimSpace(req.ResultPath)
+	if lastMessagePath == "" {
+		return ExecutorInvocation{}, fmt.Errorf("result path is empty")
+	}
 	args := []string{
 		"exec",
 		"--cd", req.RepoPath,
@@ -69,8 +67,10 @@ func (a *CodexAdapter) BuildInvocation(req ExecutorAdapterRequest) (ExecutorInvo
 		"--json",
 		"--output-last-message", lastMessagePath,
 	}
-
 	model := strings.TrimSpace(a.Config.Model)
+	if selected := strings.TrimSpace(req.SelectedModel); selected != "" && model != "" {
+		model = selected
+	}
 	invocationModel := model
 	if model == "" {
 		invocationModel = "codex-config-default"
@@ -78,16 +78,12 @@ func (a *CodexAdapter) BuildInvocation(req ExecutorAdapterRequest) (ExecutorInvo
 	} else {
 		args = append(args, "--model", model)
 	}
-
 	if a.Config.Profile != "" {
 		args = append(args, "--profile", a.Config.Profile)
 	}
-
 	args = append(args, "-")
-
 	preview := pipeline.ShellPreview(a.Config.Binary, args)
 	preview += " < " + quotePreview(req.BriefPath)
-
 	return ExecutorInvocation{
 		Adapter:     a.ID(),
 		Binary:      a.Config.Binary,
@@ -105,31 +101,25 @@ func (a *CodexAdapter) BuildInvocation(req ExecutorAdapterRequest) (ExecutorInvo
 
 func (a *CodexAdapter) NormalizeResult(raw string) NormalizedExecutorResult {
 	parsed := pipeline.ParseAgentResult(raw)
-
 	res := NormalizedExecutorResult{
 		Status:        parsed.Status,
 		AssistantText: raw,
 	}
-
 	if parsed.Status == pipeline.AgentResultUnknown || parsed.Status == "" {
 		res.Status = pipeline.AgentResultUnknown
 		res.ParseError = "executor result parse failed: missing or invalid STATUS line"
 		res.ExecutorResultText = fmt.Sprintf("STATUS: UNKNOWN\n\nRaw output:\n%s\n", raw)
 		return res
 	}
-
 	executorResult := fmt.Sprintf("STATUS: %s\n\nBuild status: %s\nTest status: %s\nCount of LOC changed: %s\n",
 		string(parsed.Status), parsed.BuildStatus, parsed.TestStatus, parsed.LOCChanged)
-
 	blockerText := parsed.BlockerError
 	if blockerText != "" {
 		executorResult += fmt.Sprintf("Blocker/error only if blocked: %s\n", blockerText)
 	} else if parsed.Status == pipeline.AgentResultBlocked {
 		blockerText = "executor reported BLOCKED"
 	}
-
 	res.ExecutorResultText = executorResult
 	res.BlockerText = blockerText
-
 	return res
 }

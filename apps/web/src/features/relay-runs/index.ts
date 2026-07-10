@@ -1,101 +1,29 @@
-export { MOCK_RUNS, getMockRun, getActiveStepRoute } from './mock-data'
-export {
-  relayRunKeys,
-  runsListQueryOptions,
-  runDetailQueryOptions,
-  runArtifactsQueryOptions,
-  runEventsQueryOptions,
-  auditStatusQueryOptions,
-  runArtifactContentQueryOptionsForArtifact,
-  executeActiveRunDetailQueryOptions,
-  executeActiveRunArtifactsQueryOptions,
-  executeActiveRunEventsQueryOptions,
-  isExecuteLiveStatus,
-  formatRunDate,
-  formatRunDateRelative
-} from './queries'
-export {
-  getRuns,
-  getRun,
-  getRunArtifacts,
-  getRunEvents,
-  getAuditStatus,
-  approveIntake,
-  prepareRun,
-  renderBrief,
-  approveBrief,
-  executeRun,
-  cancelRun,
-  recoverRun,
-  getArtifactContent,
-  getArtifactContentByUrl,
-  validateRun,
-  acceptFailedValidation,
-  auditRun,
-  approveCloseout,
-  submitManualAuditPacket,
-  approveAudit,
-  requestAuditRevision,
-  prepareCommitMessage,
-  closeRun,
-  submitPlannerHandoff,
-  assertValidPlannerHandoffPlanAssociation,
-  RelayApiError,
-  repairValidation,
-  API_BASE_URL,
-} from './api'
-export type {
-  SubmitManualAuditPayload,
-  SubmitManualAuditResponse,
-  AuditApprovePayload,
-  AuditRevisionPayload,
-  PrepareCommitMessageResponse,
-  AuditActionResponse,
-  ValidateRunResponse,
-  RepairValidationResponse,
-} from './api'
-export type {
-  RelayRun,
-  RelayRunPlanContext,
-  RelayRunProvenance,
-  RelayArtifact,
-  RelayArtifactKind,
-  RelaySourceVisibilitySummary,
-  RelayRunStatus,
-  RelayRunStep,
-  RelayRunEvent,
-  RelayRunEventKind,
-  RelayValidationIssue,
-  RelayArtifactPreview,
-  RelayApprovalGate,
-  RelayLogPreview,
-  RelayExecutorPhase,
-  RelayChangedFile,
-  RelayValidationCommand,
-  RelayExecuteActions,
-  RelayAuditDecisionValue,
-  RelayAuditInputSummaryInfo,
-  RelayAuditPacketInfo,
-  RelayAuditDecisionStatus,
-  RelayAuditWorkflowState,
-  RelayAuditStatus,
-  RelayCommitSummary,
-  RelayAuditActions,
-  RelayAuditPageData,
-  PlannerHandoffIntakeRequest,
-  PlannerHandoffIntakeResponse,
-} from './types'
-export {
-  RELAY_AUDIT_DECISION_VALUES,
-  RELAY_RUN_STEPS,
-} from './types'
-export type { RelayRunStepInfo } from './types'
+export * from "./types";
+export * from "./api";
+export * from "./queries";
+export { API_BASE_URL, RelayApiError } from "../workflow-api";
+export type { RelayApiErrorShape } from "../workflow-api";
 export {
   EXECUTOR_ADAPTER_OPTIONS,
   KIRO_MODEL_OPTIONS,
   getDefaultModelForAdapter,
   getModelOptionsForAdapter,
   isKnownExecutorAdapter,
-} from './executorOptions'
-export { runArtifactContentQueryOptions } from './queries'
-export { evaluateValidationGate, evaluateExecuteValidationAction, evaluateRepairEligibility, isAuditCandidateStatus } from './validationGate'
+} from "./executorOptions";
+
+// Legacy stub exports for compatibility
+export function formatRunDate(date: string | Date): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return d.toLocaleDateString();
+}
+
+export function formatRunDateRelative(date: string | Date): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  return d.toLocaleDateString();
+}

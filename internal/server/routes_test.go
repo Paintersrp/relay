@@ -1,8 +1,7 @@
 package server
 
 import (
-	"encoding/json"
-	"fmt"
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,310 +11,118 @@ import (
 	"strings"
 	"testing"
 
-	"relay/internal/repos"
-	"relay/internal/store"
+	workflowruns "relay/internal/app/runs/workflow"
+	workflowapp "relay/internal/app/workflow"
+	workflowstore "relay/internal/store/workflow"
 )
 
-// TestResolveRunStep verifies the status-to-step mapping table.
-func TestResolveRunStep(t *testing.T) {
-	tests := []struct {
-		status string
-		want   string
+func TestResolveWorkflowRunStage(t *testing.T) {
+	tests := map[string]string{
+		workflowstore.RunStatusCreated:          workflowapp.RunStageSpecification,
+		workflowstore.RunStatusSetupReady:       workflowapp.RunStageSpecification,
+		workflowstore.RunStatusExecuting:        workflowapp.RunStageExecute,
+		workflowstore.RunStatusExecutionFailed:  workflowapp.RunStageExecute,
+		workflowstore.RunStatusCancelled:        workflowapp.RunStageExecute,
+		workflowstore.RunStatusValidating:       workflowapp.RunStageAudit,
+		workflowstore.RunStatusValidationFailed: workflowapp.RunStageAudit,
+		workflowstore.RunStatusAuditReady:       workflowapp.RunStageAudit,
+		workflowstore.RunStatusNeedsRevision:    workflowapp.RunStageAudit,
+		workflowstore.RunStatusCompleted:        workflowapp.RunStageAudit,
+	}
+	for status, expected := range tests {
+		stage, err := resolveWorkflowRunStage(status)
+		if err != nil || stage != expected {
+			t.Fatalf("status %q => %q, %v; want %q", status, stage, err, expected)
+		}
+	}
+	if _, err := resolveWorkflowRunStage("intake_received"); err == nil {
+		t.Fatal("legacy status was routed")
+	}
+}
+
+func TestWorkflowRuntimeMountsOnlyNewOperationalRoutes(t *testing.T) {
+	store, service := openWorkflowRouteTestStore(t)
+	handler := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test")
+
+	for _, path := range []string{"/api/repositories", "/api/projects", "/api/plans", "/api/runs"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s => %d %s", path, response.Code, response.Body.String())
+		}
+	}
+
+	for _, request := range []struct {
+		method string
+		path   string
 	}{
-		// intake statuses
-		{"draft", "intake"},
-		{"validated", "intake"},
-		{"needs_cleanup", "intake"},
-		{"needs_review", "intake"},
-		{"intake_received", "intake"},
-		{"intake_needs_review", "intake"},
-		{"intake_approved", "intake"},
-		{"intake_rejected", "intake"},
-		{"intake_blocked", "intake"},
-		{"blocked", "intake"},
-		// prepare statuses
-		{"approved_for_prepare", "prepare"},
-		{"packet_ready", "prepare"},
-		{"packet_validated", "prepare"},
-		{"packet_validation_failed", "prepare"},
-		{"repair_validated", "prepare"},
-		{"brief_ready_for_review", "prepare"},
-		{"brief_validation_failed", "prepare"},
-		// execute statuses
-		{"approved_for_executor", "execute"},
-		{"executor_dispatched", "execute"},
-		{"executor_running", "execute"},
-		{"executor_done", "execute"},
-		{"executor_blocked", "execute"},
-		{"executor_error", "execute"},
-		{"executor_cancelled", "execute"},
-		{"agent_done", "execute"},
-		{"agent_blocked", "execute"},
-		{"agent_result_needs_review", "execute"},
-		// audit statuses
-		{"validation_passed", "audit"},
-		{"validation_failed_accepted", "audit"},
-		{"validation_failed", "audit"},
-		{"audit_ready", "audit"},
-		{"audit_ready_for_review", "audit"},
-		{"revision_required", "audit"},
-		{"accepted", "audit"},
-		{"accepted_with_warnings", "audit"},
-		{"completed", "audit"},
-		{"audit_pending", "audit"},
-		{"audit_generated", "audit"},
-		{"audit_submitted", "audit"},
-		{"audit_approved", "audit"},
-		{"audit_approved_with_warnings", "audit"},
-		{"audit_revision_requested", "audit"},
-		{"audit_closed", "audit"},
-		{"closed", "audit"},
-		// unknown — safe fallback
-		{"", "intake"},
-		{"unknown_status", "intake"},
-	}
-
-	for _, tt := range tests {
-		got := resolveRunStep(tt.status)
-		if got != tt.want {
-			t.Errorf("resolveRunStep(%q) = %q, want %q", tt.status, got, tt.want)
-		}
-	}
-}
-
-// TestWebBaseURL_DefaultsToLocalhost verifies the fallback when env is unset.
-func TestWebBaseURL_DefaultsToLocalhost(t *testing.T) {
-	t.Setenv("RELAY_WEB_BASE_URL", "")
-	got := webBaseURL()
-	if got != "http://localhost:3000" {
-		t.Errorf("expected default, got %q", got)
-	}
-}
-
-// TestWebBaseURL_RespectsEnvVar verifies RELAY_WEB_BASE_URL is honoured.
-func TestWebBaseURL_RespectsEnvVar(t *testing.T) {
-	t.Setenv("RELAY_WEB_BASE_URL", "http://relay.internal:4000/")
-	got := webBaseURL()
-	if got != "http://relay.internal:4000" {
-		t.Errorf("expected trimmed URL, got %q", got)
-	}
-}
-
-// TestWebURL_AppendsPath verifies internal paths are appended correctly.
-func TestWebURL_AppendsPath(t *testing.T) {
-	t.Setenv("RELAY_WEB_BASE_URL", "http://localhost:3000")
-	got := webURL("/runs/42/intake")
-	if got != "http://localhost:3000/runs/42/intake" {
-		t.Errorf("unexpected webURL result: %q", got)
-	}
-}
-
-// TestRootRedirectsToReactRuns verifies GET / → React /runs.
-func TestRootRedirectsToReactRuns(t *testing.T) {
-	t.Setenv("RELAY_WEB_BASE_URL", "http://localhost:3000")
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, webURL("/runs"), http.StatusFound)
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusFound {
-		t.Errorf("expected 302, got %d", w.Code)
-	}
-	loc := w.Header().Get("Location")
-	if loc != "http://localhost:3000/runs" {
-		t.Errorf("expected redirect to React /runs, got %q", loc)
-	}
-}
-
-// TestHandoffNewRedirectsToReactRunsNew verifies GET /handoffs/new → React /runs/new.
-func TestHandoffNewRedirectsToReactRunsNew(t *testing.T) {
-	t.Setenv("RELAY_WEB_BASE_URL", "http://localhost:3000")
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, webURL("/runs/new"), http.StatusFound)
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/handoffs/new", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusFound {
-		t.Errorf("expected 302, got %d", w.Code)
-	}
-	loc := w.Header().Get("Location")
-	if loc != "http://localhost:3000/runs/new" {
-		t.Errorf("expected redirect to React /runs/new, got %q", loc)
-	}
-}
-
-// TestAgentRunMonitorRedirectsToExecute verifies GET /runs/{id}/agent-run-monitor → React execute.
-func TestAgentRunMonitorRedirectsToExecute(t *testing.T) {
-	t.Setenv("RELAY_WEB_BASE_URL", "http://localhost:3000")
-
-	// Test the redirect URL construction.
-	runID := "42"
-	got := webURL("/runs/" + runID + "/execute")
-	want := "http://localhost:3000/runs/42/execute"
-	if got != want {
-		t.Errorf("expected %q, got %q", want, got)
-	}
-}
-
-// TestWebBaseURL_NoTrailingSlashFromEnv verifies trailing slash stripping.
-func TestWebBaseURL_NoTrailingSlashFromEnv(t *testing.T) {
-	for _, input := range []string{
-		"http://relay.local:3000/",
-		"http://relay.local:3000//",
+		{http.MethodPost, "/api/runs/1/approve-intake"},
+		{http.MethodPost, "/api/runs/1/prepare"},
+		{http.MethodPost, "/api/runs/1/render-brief"},
+		{http.MethodGet, "/api/workflow/runs/run-test/attempts"},
+		{http.MethodPost, "/api/projects/project/plan-attempts"},
+		{http.MethodGet, "/api/projects/project/refactor/candidates"},
+		{http.MethodPost, "/handoffs"},
 	} {
-		t.Setenv("RELAY_WEB_BASE_URL", input)
-		got := webBaseURL()
-		if strings.HasSuffix(got, "/") {
-			t.Errorf("webBaseURL(%q) should not have trailing slash, got %q", input, got)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(request.method, request.path, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s %s => %d %s", request.method, request.path, response.Code, response.Body.String())
 		}
-		// Ensure os.Setenv does not persist across sub-test iteration
-		os.Unsetenv("RELAY_WEB_BASE_URL")
 	}
+	_ = service
 }
 
-func TestBuildRoutes_Compatibility(t *testing.T) {
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "test.db")
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s, err := store.Open(dbPath, logger)
+func TestWorkflowRunRedirectUsesSpecificationStage(t *testing.T) {
+	store, service := openWorkflowRouteTestStore(t)
+	runService, err := workflowruns.NewService(store)
 	if err != nil {
-		t.Fatalf("failed to open store: %v", err)
+		t.Fatal(err)
 	}
-	defer s.Close()
-
-	rs := repos.NewService(s, logger)
-	handler := BuildRoutes(s, rs, logger)
-
-	// GET /api/runs returns a JSON array
-	t.Run("GET /api/runs returns JSON", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/runs", nil)
-		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Errorf("expected 200, got %d", w.Code)
-		}
-		if !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
-			t.Errorf("expected JSON content type, got %q", w.Header().Get("Content-Type"))
-		}
-		body := w.Body.String()
-		if !strings.HasPrefix(body, "[") {
-			t.Errorf("expected JSON array, got %q", body)
-		}
+	created, err := runService.CreateRun(context.Background(), workflowruns.CreateRunInput{
+		FeatureSlug:      "route-test",
+		RepoTarget:       "relay",
+		Branch:           "main",
+		BaseCommit:       strings.Repeat("a", 40),
+		CanonicalJSON:    []byte(`{"feature_slug":"route-test"}`),
+		RenderedMarkdown: []byte("# Brief\n"),
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// GET /api/projects returns a JSON array
-	// GET /api/projects returns a JSON array
-	t.Run("GET /api/projects returns JSON", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/projects", nil)
-		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Errorf("expected 200, got %d", w.Code)
-		}
-		if !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
-			t.Errorf("expected JSON content type, got %q", w.Header().Get("Content-Type"))
-		}
-		body := w.Body.String()
-		if !strings.HasPrefix(body, "{\"") {
-			t.Errorf("expected JSON object, got %q", body)
-		}
-	})
+	t.Setenv("RELAY_WEB_BASE_URL", "http://localhost:3000/")
+	handler := BuildWorkflowRoutes(store, slog.New(slog.NewTextHandler(io.Discard, nil)), "owner-test")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/runs/"+created.Run.RunID, nil))
+	if response.Code != http.StatusFound {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+	expected := "http://localhost:3000/runs/" + created.Run.RunID + "/specification"
+	if response.Header().Get("Location") != expected {
+		t.Fatalf("location = %q, want %q", response.Header().Get("Location"), expected)
+	}
+	_ = service
+}
 
-	// GET /api/plans returns a JSON array
-	t.Run("GET /api/plans returns JSON", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/plans", nil)
-		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Errorf("expected 200, got %d", w.Code)
-		}
-		if !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
-			t.Errorf("expected JSON content type, got %q", w.Header().Get("Content-Type"))
-		}
-		body := w.Body.String()
-		if !strings.HasPrefix(body, "{\"") {
-			t.Errorf("expected JSON object, got %q", body)
-		}
-	})
-
-	// GET /api/runs/{id}/audit/status returns structured JSON
-	t.Run("GET /api/runs/{id}/audit/status returns structured JSON", func(t *testing.T) {
-		repo, _ := s.CreateRepo("test-repo", filepath.Join(dir, "repo"))
-		run, _ := s.CreateRun(repo.ID, "Test Run", "draft", "gpt-4o", "gpt-4o", "main")
-		req := httptest.NewRequest("GET", fmt.Sprintf("/api/runs/%d/audit/status", run.ID), nil)
-		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Errorf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
-		}
-		var resp map[string]interface{}
-		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-			t.Fatalf("failed to decode response: %v", err)
-		}
-		if _, ok := resp["auditState"]; !ok {
-			t.Error("expected auditState key in response")
-		}
-	})
-
-	// POST /mcp performs initialize and tools/list requests over HTTP transport
-	t.Run("POST /mcp performs initialize and tools/list", func(t *testing.T) {
-		initReq := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}`
-		req := httptest.NewRequest("POST", "/mcp", strings.NewReader(initReq))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Errorf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
-		}
-
-		var initResp map[string]interface{}
-		if err := json.Unmarshal(w.Body.Bytes(), &initResp); err != nil {
-			t.Fatalf("failed to decode response: %v", err)
-		}
-		if _, ok := initResp["result"]; !ok {
-			t.Errorf("expected JSON-RPC result, got %+v", initResp)
-		}
-	})
-
-	// GET/POST to missing paths under /api namespace return JSON error with Status 404
-	t.Run("GET /api/nonexistent returns JSON 404", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/nonexistent", nil)
-		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
-		if w.Code != http.StatusNotFound {
-			t.Errorf("expected 404, got %d", w.Code)
-		}
-		if !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
-			t.Errorf("expected JSON content type, got %q", w.Header().Get("Content-Type"))
-		}
-		var resp map[string]interface{}
-		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-			t.Fatalf("failed to decode response: %v", err)
-		}
-		if resp["error"] != "NOT_FOUND" {
-			t.Errorf("expected error=NOT_FOUND, got %v", resp["error"])
-		}
-	})
-
-	// Non-/api redirect routes redirect as expected
-	t.Run("GET / redirects to React UI", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/", nil)
-		w := httptest.NewRecorder()
-		handler.ServeHTTP(w, req)
-		if w.Code != http.StatusFound {
-			t.Errorf("expected 302 redirect, got %d", w.Code)
-		}
-		loc := w.Header().Get("Location")
-		if !strings.HasSuffix(loc, "/runs") {
-			t.Errorf("expected redirect to /runs, got %q", loc)
-		}
-	})
+func openWorkflowRouteTestStore(t *testing.T) (*workflowstore.Store, *workflowapp.Service) {
+	t.Helper()
+	root := t.TempDir()
+	store, err := workflowstore.Open(filepath.Join(root, "workflow.sqlite"), filepath.Join(root, "artifacts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	service, err := workflowapp.NewService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoPath := filepath.Join(root, "repo")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.RegisterRepository(context.Background(), "relay", repoPath); err != nil {
+		t.Fatal(err)
+	}
+	return store, service
 }
