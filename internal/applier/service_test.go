@@ -86,6 +86,30 @@ func TestApplyRejectsUnsafePathBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestApplyRejectsGitMetadataPathBeforeMutation(t *testing.T) {
+	root := t.TempDir()
+	gitHead := filepath.Join(root, ".git", "HEAD")
+	mustWrite(t, gitHead, "ref: refs/heads/main\n")
+	projection := speccompiler.ExecutionPayloadProjection{
+		DeterministicOperations: []speccompiler.ProjectedDeterministicOperation{
+			{
+				ID: "op-git-head", Kind: "replace", Mode: "exact", Paths: []string{".git/HEAD"}, ExpectedOccurrences: 1,
+				Payload: rawJSON(t, map[string]any{"old_text": "ref: refs/heads/main\n", "new_text": "ref: refs/heads/changed\n"}),
+			},
+		},
+	}
+	result, err := NewService().Apply(context.Background(), Input{WorkspaceRoot: root, Projection: projection})
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	if result.Outcome != OutcomeBlocked || result.FailurePacket == nil {
+		t.Fatalf("expected blocked Git metadata operation, got %+v", result)
+	}
+	if got := string(mustRead(t, gitHead)); got != "ref: refs/heads/main\n" {
+		t.Fatalf("git metadata changed: %q", got)
+	}
+}
+
 func TestApplyOccurrenceMismatchBlocks(t *testing.T) {
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "config.txt"), "alpha\n")

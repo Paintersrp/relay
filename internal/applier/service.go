@@ -645,10 +645,14 @@ func safePath(root, rel string) (string, string, error) {
 	if filepath.IsAbs(rel) || strings.HasPrefix(rel, "//") || strings.Contains(rel, "\\") || strings.Contains(rel, ":") {
 		return "", "", fmt.Errorf("unsafe repository path: %s", rel)
 	}
-	for _, part := range strings.Split(rel, "/") {
+	parts := strings.Split(rel, "/")
+	for _, part := range parts {
 		if part == "" || part == "." || part == ".." {
 			return "", "", fmt.Errorf("unsafe repository path: %s", rel)
 		}
+	}
+	if parts[0] == ".git" {
+		return "", "", fmt.Errorf("unsafe repository path targets git metadata: %s", rel)
 	}
 	abs := filepath.Clean(filepath.Join(root, filepath.FromSlash(rel)))
 	prefix := root + string(os.PathSeparator)
